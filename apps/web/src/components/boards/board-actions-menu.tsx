@@ -198,9 +198,7 @@ function BoardSettingsDialog({
         </DialogHeader>
         <div className="space-y-4">
           <label className="block">
-            <span className="mb-1 block font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-              Name
-            </span>
+            <span className="mb-1 block text-xs text-fg-dim">Name</span>
             <input
               value={draft.name}
               disabled={pending}
@@ -211,9 +209,7 @@ function BoardSettingsDialog({
             />
           </label>
           <label className="block">
-            <span className="mb-1 block font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-              Description
-            </span>
+            <span className="mb-1 block text-xs text-fg-dim">Description</span>
             <textarea
               value={draft.purpose}
               disabled={pending}

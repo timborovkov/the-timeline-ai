@@ -249,10 +249,8 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
 
   if (loadedFiles.length === 0) {
     return (
-      <div className="rounded-sm border border-dashed border-border bg-card/30 p-8 text-center">
-        <p className="font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">
-          No captured files
-        </p>
+      <div className="rounded-lg border border-border bg-card/30 p-8 text-center">
+        <p className="text-xs text-fg-dim">No captured files</p>
         <p className="mx-auto mt-2 max-w-md text-sm text-fg-muted">
           Telegram and Slack attachments will appear here before they are promoted to documents.
         </p>
@@ -304,10 +302,7 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
           </FilterSelect>
         </div>
         <div className="flex flex-wrap items-center gap-2 xl:justify-end xl:pt-[1.125rem]">
-          <output
-            className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
-            aria-live="polite"
-          >
+          <output className="text-xs text-fg-dim" aria-live="polite">
             {activeFilterCount > 0
               ? `${String(visibleFiles.length)} / ${String(loadedFiles.length)}`
               : `${String(loadedFiles.length)} visible`}
@@ -339,7 +334,7 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
         ))}
       </ul>
       {visibleFiles.length === 0 ? (
-        <div className="rounded-sm border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+        <div className="rounded-lg border border-border p-6 text-center text-sm text-muted-foreground">
           {cursor
             ? 'No loaded captured files match these filters. Load older captures to keep searching.'
             : 'No captured files match these filters.'}
@@ -377,9 +372,7 @@ function FilterSelect({
 }) {
   return (
     <label className="space-y-1">
-      <span className="block font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
-        {label}
-      </span>
+      <span className="block text-[11px] text-fg-dim">{label}</span>
       <select
         value={value}
         onChange={(event) => {
@@ -425,7 +418,7 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
             >
               {presentation.displayTitle}
             </span>
-            <span className="mt-0.5 block truncate font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+            <span className="mt-0.5 block truncate text-xs text-fg-dim">
               {contentType || 'captured file'}
               {storedName ? (
                 <span
@@ -440,18 +433,16 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
           </span>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Badge variant="secondary" className="rounded-sm font-mono text-[10px] uppercase">
+          <Badge variant="secondary" className="rounded-sm text-[11px]">
             {file.provenance.source}
           </Badge>
-          <Badge variant="outline" className="rounded-sm font-mono text-[10px] uppercase">
+          <Badge variant="outline" className="rounded-sm text-[11px]">
             {file.currentVersion?.processingStatus ?? 'pending'}
           </Badge>
-          <Badge variant="outline" className="rounded-sm font-mono text-[10px] uppercase">
+          <Badge variant="outline" className="rounded-sm text-[11px]">
             {file.visibility}
           </Badge>
-          <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-            {formatDate(file.updatedAt)}
-          </span>
+          <span className="text-xs text-fg-dim">{formatDate(file.updatedAt)}</span>
         </div>
         {file.description ? (
           <p className="mt-2 line-clamp-1 text-xs text-muted-foreground">{file.description}</p>
@@ -472,7 +463,7 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
             previewText={file.provenance.summary}
             source={file.provenance.source}
             occurredAt={file.provenance.occurredAt}
-            className="inline-flex h-8 items-center gap-1 rounded-sm border border-border px-2 font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"
+            className="inline-flex h-8 items-center gap-1 rounded-sm border border-border px-2 text-xs text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"
           >
             <Link2 className="size-3.5" />
             Event
@@ -574,9 +565,7 @@ function PromoteDialog({
         </div>
         <div className="space-y-3">
           <label className="block space-y-1">
-            <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
-              Title
-            </span>
+            <span className="text-[11px] text-fg-dim">Title</span>
             <input
               value={form.name}
               onChange={(event) => {
@@ -586,9 +575,7 @@ function PromoteDialog({
             />
           </label>
           <label className="block space-y-1">
-            <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
-              Folder
-            </span>
+            <span className="text-[11px] text-fg-dim">Folder</span>
             <select
               value={form.folderId}
               onChange={(event) => {
@@ -605,9 +592,7 @@ function PromoteDialog({
             </select>
           </label>
           <label className="block space-y-1">
-            <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
-              Visibility
-            </span>
+            <span className="text-[11px] text-fg-dim">Visibility</span>
             <select
               value={form.visibility}
               onChange={(event) => {

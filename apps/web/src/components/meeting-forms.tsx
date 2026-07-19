@@ -612,7 +612,7 @@ export function SavedMeetingForm({
           </div>
         ) : null}
       </div>
-      <div className="space-y-3 rounded-md border border-dashed p-3">
+      <div className="space-y-3 rounded-lg border border-border bg-surface p-3">
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
@@ -805,7 +805,7 @@ export function EditSavedMeetingForm({
             </div>
           ) : null}
         </div>
-        <div className="space-y-3 rounded-md border border-dashed p-3">
+        <div className="space-y-3 rounded-lg border border-border bg-surface p-3">
           <label className="flex items-center gap-2">
             <input
               type="checkbox"

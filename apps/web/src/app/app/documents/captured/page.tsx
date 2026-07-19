@@ -7,9 +7,12 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 
 import { CapturedFilesList } from '@/components/captured-files/captured-files-list';
+import { PageHeader } from '@/components/page-header';
+import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { displayMemberLabel } from '@/lib/display-labels';
 
 export const metadata: Metadata = {
   title: 'Captured files',
@@ -46,25 +49,20 @@ export default async function CapturedFilesPage() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-lg font-semibold text-foreground">Captured files</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Source attachments stay here until someone promotes them into the document drive.
-          </p>
-        </div>
-        <Link
-          href="/app/documents"
-          className="inline-flex h-9 items-center rounded-sm border border-border px-3 font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"
-        >
-          Documents
-        </Link>
-      </header>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <PageHeader
+          title="Captured files"
+          subtitle="Source attachments stay here until someone promotes them into the document drive."
+        />
+        <Button asChild variant="outline">
+          <Link href="/app/documents">Documents</Link>
+        </Button>
+      </div>
       <CapturedFilesList
         folders={folders.map((folder) => ({ id: folder.id, name: folder.name }))}
         members={members.map((member) => {
           const user = ownerMap.get(member.userId);
-          return { id: member.userId, label: user?.name ?? user?.email ?? member.userId };
+          return { id: member.userId, label: displayMemberLabel(user) };
         })}
         files={page.items.map((file) => {
           const owner = file.ownerUserId ? ownerMap.get(file.ownerUserId) : null;

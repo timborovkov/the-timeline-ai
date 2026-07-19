@@ -32,7 +32,9 @@ import {
 } from '@/app/actions/suggestions';
 import { EmptyAction } from '@/components/empty-action';
 import { EvidenceLink } from '@/components/evidence-link';
+import { TechnicalDetails } from '@/components/technical-details';
 import { Button } from '@/components/ui/button';
+import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { useProjectSearch } from '@/hooks/use-project-search';
 import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/display-dates';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
@@ -352,7 +354,7 @@ function formatPayloadValue(key: string, value: unknown, timezone?: string): str
     return formatDueDateValue(value, timezone);
   }
   if ((key === 'startAt' || key === 'endAt') && typeof value === 'string') {
-    return formatDisplayDateTime(value, { timezone });
+    return formatDisplayDateTime(value, { timezone: timezone ?? 'UTC' });
   }
   if (key === 'status' && typeof value === 'string') {
     const labels: Record<string, string> = {
@@ -400,7 +402,9 @@ function formatDueDateValue(value: string, timezone?: string): string {
   const localDate = LOCAL_DATE_RE.test(value);
   const utcDateOnlyInstant = UTC_DATE_ONLY_INSTANT_RE.test(value);
   if ((localDate || utcDateOnlyInstant) && !hasExactUtcDate(value)) return value;
-  return formatDisplayDate(value, { timezone: localDate || utcDateOnlyInstant ? 'UTC' : timezone });
+  return formatDisplayDate(value, {
+    timezone: localDate || utcDateOnlyInstant ? 'UTC' : (timezone ?? 'UTC'),
+  });
 }
 
 function hasExactUtcDate(value: string): boolean {
@@ -478,7 +482,7 @@ function calendarRangeLabel(input: {
   startAt: string | null;
   endAt: string | null;
   allDay?: boolean | null;
-  timezone?: string;
+  timezone: string;
 }): string | null {
   if (!input.startAt || !input.endAt) return null;
   if (input.allDay) {
@@ -493,7 +497,7 @@ function calendarRangeLabel(input: {
   })} -> ${formatDisplayDateTime(input.endAt, { timezone: input.timezone })}`;
 }
 
-function proposedCalendarRange(item: SuggestionItem, timezone?: string): string | null {
+function proposedCalendarRange(item: SuggestionItem, timezone: string): string | null {
   const eventTimezone = payloadString(item.proposedPayload, 'timezone') ?? timezone;
   return calendarRangeLabel({
     startAt: payloadString(item.proposedPayload, 'startAt'),
@@ -503,7 +507,7 @@ function proposedCalendarRange(item: SuggestionItem, timezone?: string): string 
   });
 }
 
-function calendarEventRange(event: CalendarResolutionEvent, timezone?: string): string {
+function calendarEventRange(event: CalendarResolutionEvent, timezone: string): string {
   return (
     calendarRangeLabel({
       startAt: event.startAt,
@@ -630,6 +634,8 @@ export function ApprovalsClient({
   emptyState,
   folded,
 }: Props) {
+  const workspaceTimezone = useWorkspaceTimezone();
+  const resolvedTimezone = timezone ?? workspaceTimezone;
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -814,7 +820,7 @@ export function ApprovalsClient({
       error={error}
       pending={pending}
       run={run}
-      timezone={timezone}
+      timezone={resolvedTimezone}
       taskCategoriesEnabled={taskCategoriesEnabled}
       visibleSuggestions={visibleSuggestions}
     />
@@ -827,25 +833,12 @@ export function ApprovalsClient({
       <summary className={folded.summaryClassName ?? 'cursor-pointer list-none'}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2
-              className={
-                folded.titleClassName ?? 'font-mono text-[11px] uppercase tracking-[0.14em] text-fg'
-              }
-            >
-              {folded.title}
-            </h2>
+            <h2 className={folded.titleClassName ?? 'text-xs text-fg'}>{folded.title}</h2>
             <p className={folded.countClassName ?? 'mt-1 text-sm text-fg-muted'}>
               {foldedSummaryText(visiblePendingItemCount, folded.summary)}
             </p>
           </div>
-          <span
-            className={
-              folded.openLabelClassName ??
-              'font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim'
-            }
-          >
-            Open
-          </span>
+          <span className={folded.openLabelClassName ?? 'text-xs text-fg-dim'}>Open</span>
         </div>
       </summary>
       <div className={folded.bodyClassName ?? 'mt-4'}>{body}</div>
@@ -882,7 +875,7 @@ function ApprovalListBody({
   error: string | null;
   pending: boolean;
   run: ApprovalAction;
-  timezone?: string;
+  timezone: string;
   taskCategoriesEnabled: boolean;
   visibleSuggestions: SuggestionBundle[];
 }) {
@@ -921,7 +914,7 @@ function ApprovalListBody({
 
 function ApprovalUpdatingState() {
   return (
-    <output className="border border-border bg-muted/30 px-3 py-2 font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">
+    <output className="border border-border bg-muted/30 px-3 py-2 text-xs text-fg-dim">
       Updating approvals...
     </output>
   );
@@ -963,7 +956,7 @@ function PageBulkActions({
   return (
     <div className="flex flex-wrap items-center justify-end gap-2">
       {canAccept && mergeReviewItemCount > 0 ? (
-        <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+        <span className="text-xs text-fg-dim">
           {mergeReviewItemCount} merge{' '}
           {mergeReviewItemCount === 1 ? 'proposal needs' : 'proposals need'} review
         </span>
@@ -1023,7 +1016,7 @@ function ApprovalBundleRow({
   busyItemIds: Set<string>;
   pending: boolean;
   run: ApprovalAction;
-  timezone?: string;
+  timezone: string;
   taskCategoriesEnabled: boolean;
 }) {
   const pendingItems = bundle.items.filter((item) => isActionableSuggestionStatus(item.status));
@@ -1069,7 +1062,7 @@ function ApprovalBundleRow({
           />
         ))}
       </ul>
-      <ApprovalEvidence bundle={bundle} />
+      <ApprovalEvidence bundle={bundle} timezone={timezone} />
       <ApprovalProcessingDetails bundle={bundle} />
     </article>
   );
@@ -1080,19 +1073,22 @@ function ApprovalBundleHeader({
   timezone,
 }: {
   bundle: SuggestionBundle;
-  timezone?: string;
+  timezone: string;
 }) {
   const source = approvalSourceLabel(bundle);
   return (
     <div className="min-w-0 flex-1">
-      <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-        {source} · {formatDisplayDateTime(bundle.createdAt, { timezone })}
+      <div className="text-xs text-fg-dim">
+        {source} ·{' '}
+        <span className="font-mono tabular-nums">
+          {formatDisplayDateTime(bundle.createdAt, { timezone })}
+        </span>
       </div>
       <h2 className="mt-1 text-base font-semibold tracking-tight text-fg">
-        {displayText(bundle.title)}
+        {displayText(bundle.title, { timezone })}
       </h2>
       {bundle.summary ? (
-        <p className="mt-1 text-sm text-fg-muted">{displayText(bundle.summary)}</p>
+        <p className="mt-1 text-sm text-fg-muted">{displayText(bundle.summary, { timezone })}</p>
       ) : null}
     </div>
   );
@@ -1122,12 +1118,12 @@ function ApprovalItemRow({
   item: SuggestionItem;
   pending: boolean;
   run: ApprovalAction;
-  timezone?: string;
+  timezone: string;
   taskCategoriesEnabled: boolean;
 }) {
   return (
     <li className="grid gap-3 p-3 md:grid-cols-[minmax(0,1.3fr)_minmax(10rem,0.8fr)_minmax(9rem,auto)]">
-      <ApprovalItemMain actionFailed={actionFailed} item={item} />
+      <ApprovalItemMain actionFailed={actionFailed} item={item} timezone={timezone} />
       <ApprovalItemPayload
         bundle={bundle}
         item={item}
@@ -1141,22 +1137,28 @@ function ApprovalItemRow({
   );
 }
 
-function ApprovalItemMain({ actionFailed, item }: { actionFailed: boolean; item: SuggestionItem }) {
+function ApprovalItemMain({
+  actionFailed,
+  item,
+  timezone,
+}: {
+  actionFailed: boolean;
+  item: SuggestionItem;
+  timezone: string;
+}) {
   const actionFailureReason = actionFailed ? localActionFailureReason(item) : null;
   return (
     <div className="min-w-0 self-center">
       {item.status !== 'pending' ? (
-        <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-          {itemStatusLabel(item.status)}
-        </div>
+        <div className="text-xs text-fg-dim">{itemStatusLabel(item.status)}</div>
       ) : null}
       <div
         className={item.status === 'pending' ? 'font-medium text-fg' : 'mt-1 font-medium text-fg'}
       >
-        {displayText(item.title)}
+        {displayText(item.title, { timezone })}
       </div>
       {item.description ? (
-        <p className="mt-1 text-sm text-fg-muted">{displayText(item.description)}</p>
+        <p className="mt-1 text-sm text-fg-muted">{displayText(item.description, { timezone })}</p>
       ) : null}
       {actionFailureReason ? (
         <p className="mt-1 text-xs text-danger">{actionFailureReason}</p>
@@ -1175,7 +1177,7 @@ function ApprovalItemPayload({
 }: {
   bundle: SuggestionBundle;
   item: SuggestionItem;
-  timezone?: string;
+  timezone: string;
   taskCategoriesEnabled: boolean;
 }) {
   if (item.targetKind === 'calendar_event') {
@@ -1197,13 +1199,9 @@ function ApprovalItemPayload({
     : formatPayloadFields(item.proposedPayload, timezone, item.title, item.operation);
   return (
     <div className="min-w-0 self-center">
-      <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-        {itemActionLabel(item)}
-      </div>
+      <div className="text-xs text-fg-dim">{itemActionLabel(item)}</div>
       {relationshipSummary ? (
-        <p className="mt-1 line-clamp-2 break-words font-mono text-[11px] text-fg-dim">
-          {relationshipSummary}
-        </p>
+        <p className="mt-1 line-clamp-2 break-words text-xs text-fg-dim">{relationshipSummary}</p>
       ) : (
         <ApprovalPayloadSummary fields={fields} />
       )}
@@ -1396,9 +1394,7 @@ function ApprovalPayloadSummary({ fields }: { fields: FormattedPayloadField[] })
   return (
     <>
       {summary ? (
-        <p
-          className={`mt-1 break-words font-mono text-[11px] text-fg-dim${canExpand ? ' line-clamp-2' : ''}`}
-        >
+        <p className={`mt-1 break-words text-xs text-fg-dim${canExpand ? ' line-clamp-2' : ''}`}>
           {summary}
         </p>
       ) : null}
@@ -1426,7 +1422,7 @@ function ApprovalPayloadDisclosure({
       <dl className="mt-2 grid gap-2 border-l border-border pl-2">
         {fields.map((field) => (
           <div key={field.key}>
-            <dt className="font-mono text-[10px] uppercase tracking-[0.1em]">{field.label}</dt>
+            <dt className="text-xs font-medium text-fg-muted">{field.label}</dt>
             <dd className="mt-0.5 whitespace-pre-wrap break-words text-fg-muted">{field.value}</dd>
           </div>
         ))}
@@ -1446,7 +1442,7 @@ function ApprovalItemDependency({
   return dependency ? <p className="mt-2 text-xs text-fg-dim">{dependency}</p> : null;
 }
 
-function CalendarApprovalPayload({ item, timezone }: { item: SuggestionItem; timezone?: string }) {
+function CalendarApprovalPayload({ item, timezone }: { item: SuggestionItem; timezone: string }) {
   const action = calendarActionSummary(item);
   const Icon = action.icon;
   const proposedRange = proposedCalendarRange(item, timezone);
@@ -1479,7 +1475,7 @@ function CalendarApprovalPayload({ item, timezone }: { item: SuggestionItem; tim
   return (
     <div className="min-w-0 self-center space-y-2">
       <div
-        className={`inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] ${toneClass}`}
+        className={`inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 text-[11px] ${toneClass}`}
       >
         <Icon className="size-3" />
         {action.label}
@@ -1507,7 +1503,7 @@ function CalendarResolutionLine({
 }: {
   item: SuggestionItem;
   proposedRange: string | null;
-  timezone?: string;
+  timezone: string;
 }) {
   const hint = item.calendarResolutionHint;
   if (hint?.kind === 'exact_duplicate_reuse') {
@@ -1603,11 +1599,11 @@ function ApprovalItemActions({
   );
 }
 
-function ApprovalEvidence({ bundle }: { bundle: SuggestionBundle }) {
+function ApprovalEvidence({ bundle, timezone }: { bundle: SuggestionBundle; timezone: string }) {
   if (bundle.evidence.length === 0 && !bundle.reason) return null;
   return (
     <details className="mt-2 border-l border-border pl-3">
-      <summary className="cursor-pointer font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim hover:text-fg">
+      <summary className="cursor-pointer text-xs text-fg-dim hover:text-fg">
         Why this was suggested
         {bundle.evidence.length > 0
           ? ` · ${bundle.evidence.length} ${bundle.evidence.length === 1 ? 'source' : 'sources'}`
@@ -1615,7 +1611,7 @@ function ApprovalEvidence({ bundle }: { bundle: SuggestionBundle }) {
       </summary>
       {bundle.reason ? (
         <p className="max-w-3xl py-2 text-xs leading-5 text-fg-muted">
-          {displayText(bundle.reason)}
+          {displayText(bundle.reason, { timezone })}
         </p>
       ) : null}
       {bundle.evidence.map((ev) => (
@@ -1627,12 +1623,14 @@ function ApprovalEvidence({ bundle }: { bundle: SuggestionBundle }) {
           occurredAt={ev.occurredAt}
           className="group grid gap-1 py-1 text-xs text-fg-dim transition-colors hover:text-fg"
         >
-          <span className="inline-flex items-center gap-1.5 font-mono uppercase tracking-[0.1em]">
+          <span className="inline-flex items-center gap-1.5 text-xs">
             <ExternalLink className="size-3" />
             Evidence from {evidenceSourceLabel(ev.source)}
           </span>
           <span className="line-clamp-2 text-fg-muted group-hover:text-fg">
-            {ev.quote ? displayText(ev.quote) : 'Open the source event on the timeline.'}
+            {ev.quote
+              ? displayText(ev.quote, { timezone })
+              : 'Open the source event on the timeline.'}
           </span>
         </EvidenceLink>
       ))}
@@ -1666,10 +1664,21 @@ function ApprovalProcessingDetails({ bundle }: { bundle: SuggestionBundle }) {
         }))
       : [{ key: 'dashboard', href: '/app/team/reconciliation' }];
   return (
-    <details className="mt-2 border-l border-border pl-3 text-xs text-fg-dim">
-      <summary className="cursor-pointer font-mono text-[11px] uppercase tracking-[0.12em] hover:text-fg">
-        Technical details
-      </summary>
+    <TechnicalDetails
+      className="mt-2 border-l border-t-0 pl-3 pt-0"
+      items={[
+        ...clusterIds.map((clusterId, index) => ({
+          label: `Cluster ID ${index + 1}`,
+          value: clusterId,
+          copyValue: clusterId,
+        })),
+        ...outputIds.map((outputId, index) => ({
+          label: `Output ID ${index + 1}`,
+          value: outputId,
+          copyValue: outputId,
+        })),
+      ]}
+    >
       <div className="mt-2 grid gap-1">
         {records.map((record, index) => (
           <Link
@@ -1684,6 +1693,6 @@ function ApprovalProcessingDetails({ bundle }: { bundle: SuggestionBundle }) {
           </Link>
         ))}
       </div>
-    </details>
+    </TechnicalDetails>
   );
 }

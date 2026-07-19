@@ -85,6 +85,34 @@ describe('BoardAddItemForm', () => {
     expect(html).not.toContain('Add to board');
   });
 
+  it('hides UUID-shaped object names and aliases in the existing-object picker', async () => {
+    const internalName = '018f22e2-7a9b-7cc3-98c4-3a2b1c0d9e8f';
+    const internalAlias = '11111111-1111-4111-8111-111111111111';
+    const user = userEvent.setup();
+
+    render(
+      <BoardAddItemForm
+        boardId="board-1"
+        defaultLaneId={null}
+        recommendedTypes={['company']}
+        candidates={[
+          objectRow({
+            id: 'object-1',
+            canonicalName: internalName,
+            type: 'company',
+            aliases: [internalAlias],
+          }),
+        ]}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Expand add item' }));
+
+    expect(screen.getByRole('button', { name: /Untitled object/ })).toBeTruthy();
+    expect(document.body.textContent).not.toContain(internalName);
+    expect(document.body.textContent).not.toContain(internalAlias);
+  });
+
   it('unfolds existing-object search, selects an object, and adds it to the board', async () => {
     const addedObject = objectRow({
       id: 'object-1',

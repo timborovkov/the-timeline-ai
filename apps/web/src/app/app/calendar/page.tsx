@@ -11,11 +11,12 @@ import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { CalendarSubscriptionPanel } from '@/components/calendar/calendar-subscription-panel';
 import { CalendarView } from '@/components/calendar/calendar-view';
 import { PageHeader } from '@/components/page-header';
-import { WORK_BACK_LINK } from '@/components/work-back-link';
+import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { calendarEventListWindow } from '@/lib/calendar-event-list-range';
 import { db } from '@/lib/db';
+import { displayMemberLabel } from '@/lib/display-labels';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
 
 export const metadata: Metadata = {
@@ -199,11 +200,8 @@ export default async function CalendarPage({ searchParams }: PageProps) {
   });
   return (
     <div className="space-y-6">
-      <PageHeader title="Calendar" leading={WORK_BACK_LINK} />
-
-      <p className="text-sm text-muted-foreground">
-        Track deadlines, meetings, and follow-ups. Events appear on the timeline.
-      </p>
+      <PageHeader title="Calendar" subtitle="Track deadlines, meetings, and follow-ups." />
+      <WorkSubnav current="/app/calendar" />
 
       <CalendarView
         events={serialized}
@@ -217,7 +215,7 @@ export default async function CalendarPage({ searchParams }: PageProps) {
         defaultVisibilityUserIds={defaultRow.visibilityUserIds}
         members={members.map((m) => {
           const u = memberUserMap.get(m.userId);
-          return { id: m.userId, label: u?.name ?? u?.email ?? m.userId };
+          return { id: m.userId, label: displayMemberLabel(u) };
         })}
       />
 

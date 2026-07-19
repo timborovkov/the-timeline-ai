@@ -246,8 +246,7 @@ function summarize(name: string, input: unknown, output: unknown, state: string)
     return out?.title ? `Looked up route ${out.title}` : `Looked up route "${id}"`;
   }
   if (name === 'get_event') {
-    const id = typeof inp.id === 'string' ? inp.id.slice(0, 8) : '';
-    return `Fetched event ${id}…`;
+    return 'Fetched timeline event';
   }
   if (name === 'suggest_object_memory') {
     const out = output as { suggestion?: { items?: unknown[] } } | undefined;
@@ -371,12 +370,12 @@ function InlineApprovalCard({ suggestion }: { suggestion: SuggestionBundle }) {
               {evidence.quote ? <span className="text-foreground">"{evidence.quote}"</span> : null}
               <EvidenceLink
                 eventId={evidence.rawEventId}
-                className="ml-1 font-mono uppercase tracking-[0.12em] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                className="ml-1 text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
                 previewText={evidence.quote}
                 source={evidence.source}
                 title="Approval evidence"
               >
-                {evidence.source ?? 'event'} {evidence.rawEventId.slice(0, 8)}
+                Timeline evidence · {evidence.source ?? 'Unavailable source'}
               </EvidenceLink>
             </div>
           ))}
@@ -480,7 +479,7 @@ function ReconnectButton({ serverId, serverName }: { serverId: string; serverNam
             setBusy(false);
           });
       }}
-      className="mt-1 rounded-sm border border-danger/40 bg-danger/10 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-danger hover:bg-danger/20 disabled:opacity-50"
+      className="mt-1 rounded-sm border border-danger/40 bg-danger/10 px-2 py-1 text-xs text-danger hover:bg-danger/20 disabled:opacity-50"
     >
       {busy ? 'Opening…' : `Reconnect ${serverName}`}
     </button>
@@ -726,7 +725,7 @@ export function ToolStep({ name, state, input, output, approval, onApprovalRespo
     state === 'approval-requested' && approval && onApprovalResponse ? approval : null;
   const approvalResponse = needsApproval && onApprovalResponse ? onApprovalResponse : null;
   return (
-    <div className="rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs">
+    <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs">
       <button
         type="button"
         className="flex w-full items-center justify-between gap-2 text-left font-mono"

@@ -217,9 +217,7 @@ function DateFilterInput({
 }) {
   return (
     <label className="min-w-36">
-      <span className="mb-1 block font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
-        {label}
-      </span>
+      <span className="mb-1 block text-[11px] text-fg-dim">{label}</span>
       <input
         type="date"
         value={value}
@@ -243,18 +241,18 @@ function SearchResultRow({ result }: { result: GlobalSearchResult }) {
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 flex-wrap items-center gap-2">
           <span className="truncate text-sm font-medium">{result.title}</span>
-          <span className="rounded-sm border border-border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+          <span className="rounded-sm border border-border px-1.5 py-0.5 text-[11px] text-fg-dim">
             {kindLabel(result.kind)}
           </span>
         </span>
         <span className="mt-1 line-clamp-2 text-sm text-fg-muted">{result.snippet}</span>
-        <span className="mt-2 flex flex-wrap gap-2 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+        <span className="mt-2 flex flex-wrap gap-2 text-[11px] text-fg-dim">
           {date ? <span>{date}</span> : null}
           {result.metadata?.source ? <span>{result.metadata.source}</span> : null}
           {result.metadata?.type ? <span>{result.metadata.type}</span> : null}
         </span>
         {relatedEvidence ? (
-          <span className="mt-2 inline-flex max-w-full rounded-sm border border-border bg-surface px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+          <span className="mt-2 inline-flex max-w-full rounded-sm border border-border bg-surface px-1.5 py-0.5 text-[11px] text-fg-dim">
             <span className="truncate">Related evidence · {relatedEvidence}</span>
           </span>
         ) : null}
@@ -422,7 +420,7 @@ export function GlobalSearchPage({
         />
         <button
           type="submit"
-          className="absolute right-2 top-1/2 h-8 -translate-y-1/2 rounded-sm px-3 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
+          className="absolute right-2 top-1/2 h-8 -translate-y-1/2 rounded-sm px-3 text-xs text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
         >
           Search
         </button>
@@ -488,7 +486,7 @@ export function GlobalSearchPage({
 
       <section className="overflow-hidden rounded-sm border border-border bg-bg">
         <div className="flex items-center justify-between border-b border-border px-3 py-2">
-          <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+          <p className="text-xs text-fg-dim">
             {state.loading ? 'Searching' : `${state.results.length} results`}
           </p>
           {state.loading ? (

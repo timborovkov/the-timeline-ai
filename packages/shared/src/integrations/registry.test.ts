@@ -48,10 +48,11 @@ describe('integration registry catalog visibility', () => {
     resetEnvForTests();
   });
 
-  it('hides unconfigured native providers from connectable and featured UI lists', () => {
+  it('lists unconfigured native providers as unavailable while hiding them from featured UI', () => {
     resetEnv();
 
-    expect(listAvailableProviders()).toEqual([]);
+    expect(listAvailableProviders()).toHaveLength(listRegisteredNativeProviderIds().length);
+    expect(listAvailableProviders().every((entry) => !entry.available)).toBe(true);
     expect(listFeaturedCatalog().filter((entry) => entry.kind === 'native')).toEqual([]);
   });
 
@@ -61,7 +62,11 @@ describe('integration registry catalog visibility', () => {
       GITHUB_APP_CLIENT_SECRET: 'github-client-secret',
     });
 
-    expect(listAvailableProviders().map((entry) => entry.id)).toEqual(['github']);
+    expect(
+      listAvailableProviders()
+        .filter((entry) => entry.available)
+        .map((entry) => entry.id),
+    ).toEqual(['github']);
     expect(
       listFeaturedCatalog()
         .filter((entry) => entry.kind === 'native')
@@ -78,7 +83,11 @@ describe('integration registry catalog visibility', () => {
 
     const byId = new Map(listCatalog().map((entry) => [entry.id, entry]));
     expect(byId.get('slack')?.status).toBe('native_available');
-    expect(listAvailableProviders().map((entry) => entry.id)).toEqual(['slack']);
+    expect(
+      listAvailableProviders()
+        .filter((entry) => entry.available)
+        .map((entry) => entry.id),
+    ).toEqual(['slack']);
   });
 
   it('tracks the required first-party ingestion catalog', () => {

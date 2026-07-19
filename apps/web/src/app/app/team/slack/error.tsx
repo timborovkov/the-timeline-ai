@@ -1,6 +1,6 @@
 'use client';
 
-import { ErrorState } from '@/components/error-state';
+import { RouteError } from '@/components/route-error';
 
 export default function ErrorPage({
   error,
@@ -9,12 +9,5 @@ export default function ErrorPage({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  return (
-    <ErrorState
-      title="Couldn't load Slack settings"
-      description="The Slack settings failed to load. This is usually transient."
-      error={error}
-      reset={reset}
-    />
-  );
+  return <RouteError title="Slack" error={error} reset={reset} />;
 }

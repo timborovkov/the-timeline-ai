@@ -81,8 +81,9 @@ describe('DocumentSearch', () => {
     expect(result.getAttribute('href')).toBe(
       '/app/documents/11111111-1111-4111-8111-111111111111?version=2#chunk-33333333-3333-4333-8333-333333333333',
     );
-    expect(result.textContent).toContain('score 0.935');
-    expect(result.textContent).toContain('v2 · document · source text · page 7');
+    expect(result.textContent).not.toContain('score 0.935');
+    expect(result.textContent).not.toContain('source text');
+    expect(result.textContent).toContain('v2 · document · page 7');
     expect(result.textContent).toContain('Acme launch requires security signoff');
   });
 

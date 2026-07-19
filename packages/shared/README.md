@@ -5,7 +5,8 @@ inference layer, Qdrant + S3 wrappers, Telegram dispatch, shared messaging and
 email templates, BullMQ queue names, the shared embedding source planner, the
 integrations module (Drive/Linear/GitHub/Monday.com/Slack/Sentry providers,
 person-owned provider connections, team resource shares, active source paths, connection attention),
-the objects module, the documents module (Phase 9 —
+the objects module, the reversible task-category classifier and state machine,
+the documents module (Phase 9 —
 folders/documents/versions/chunks scope + RustFS object-key builder + text
 chunker), the meeting-bots module (Phase 10 — Recall.ai provider + Svix webhook
 verifier) and meetings scope (meeting/chunk/usage helpers), and shared env

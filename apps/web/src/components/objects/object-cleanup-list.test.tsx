@@ -59,7 +59,7 @@ describe('ObjectCleanupList', () => {
     render(<ObjectCleanupList rows={[object()]} typeLabels={{ task: 'Task' }} />);
 
     expect(screen.getByRole('link', { name: 'Legacy suggested cleanup row' })).toBeTruthy();
-    expect(screen.getByText('suggested')).toBeTruthy();
-    expect(screen.queryByText('suggested', { selector: '.text-signal' })).toBeNull();
+    expect(screen.getByText('Suggested')).toBeTruthy();
+    expect(screen.queryByText('Suggested', { selector: '.text-signal' })).toBeNull();
   });
 });

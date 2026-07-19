@@ -534,10 +534,9 @@ export function listFeaturedCatalog(): CatalogEntry[] {
 }
 
 /**
- * Backwards-compatible wrapper for the settings-page catalog grid: it
- * still expects `available: boolean`. Returns only the natives because
- * those are the ones with a one-click Connect button. MCP entries land
- * in the cloud + the `/app/team/mcp-servers` flow.
+ * Settings-page native catalog. MCP entries land in the cloud and the
+ * `/app/team/mcp-servers` flow; unconfigured native providers remain in
+ * this list with `available: false` so the UI can disclose them quietly.
  */
 export interface LegacyCatalogEntry {
   id: 'google_drive' | 'linear' | 'github' | 'monday' | 'slack' | 'sentry';
@@ -548,19 +547,13 @@ export interface LegacyCatalogEntry {
 }
 
 export function listAvailableProviders(): LegacyCatalogEntry[] {
-  // Hide unconfigured natives entirely. The card grid is for "things
-  // you can connect right now", not a teaser for what would be possible
-  // if an admin set env vars. Operators who want to enable a new native
-  // follow docs/setup/integrations.html and the card appears once the
-  // env vars land. This trades discoverability for a cleaner UI — the
-  // setup doc is linked from the page footer.
   return listCatalog()
-    .filter((c) => c.kind === 'native' && c.status === 'native_available')
+    .filter((c) => c.kind === 'native')
     .map((c) => ({
       id: c.id as LegacyCatalogEntry['id'],
       label: c.label,
       description: c.description,
       logo: c.logo,
-      available: true,
+      available: c.status === 'native_available',
     }));
 }

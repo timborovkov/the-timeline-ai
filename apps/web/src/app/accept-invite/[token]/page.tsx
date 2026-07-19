@@ -5,8 +5,8 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 
 import { acceptInviteAction } from '@/app/actions/invites';
+import { AuthShell } from '@/components/auth-shell';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 
@@ -32,27 +32,19 @@ export default async function AcceptInvitePage({ params, searchParams }: Props) 
     const signInHref = `/sign-in?callbackUrl=${encodeURIComponent(inviteUrl)}`;
     const signUpHref = `/sign-up?invite=${encodeURIComponent(token)}`;
     return (
-      <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-16">
-        <Card>
-          <CardHeader>
-            <CardTitle>Accept invite</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Sign in if you already have an account, or sign up to create one with the invited
-              email.
-            </p>
-            <div className="flex gap-3">
-              <Button asChild>
-                <Link href={signInHref}>Sign in</Link>
-              </Button>
-              <Button asChild variant="outline">
-                <Link href={signUpHref}>Sign up</Link>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </main>
+      <AuthShell
+        title="Accept invite"
+        subtitle="Sign in if you already have an account, or sign up to create one with the invited email."
+      >
+        <div className="flex gap-3">
+          <Button asChild>
+            <Link href={signInHref}>Sign in</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href={signUpHref}>Sign up</Link>
+          </Button>
+        </div>
+      </AuthShell>
     );
   }
 
@@ -85,90 +77,60 @@ export default async function AcceptInvitePage({ params, searchParams }: Props) 
 
   if (!invite || invite.expiresAt < new Date() || invite.role === 'owner' || error === 'invalid') {
     return (
-      <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-16">
-        <Card>
-          <CardHeader>
-            <CardTitle>Invite invalid</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              This invite link has expired or has already been used. Ask the team owner for a new
-              one.
-            </p>
-            <Button asChild>
-              <Link href="/app/timeline">Continue</Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </main>
+      <AuthShell
+        title="Invite invalid"
+        subtitle="This invite link has expired or has already been used. Ask the team owner for a new one."
+      >
+        <Button asChild>
+          <Link href="/app/timeline">Continue</Link>
+        </Button>
+      </AuthShell>
     );
   }
 
   if (!sessionEmail || sessionEmail !== invite.email.toLowerCase() || error === 'wrong-account') {
     return (
-      <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-16">
-        <Card>
-          <CardHeader>
-            <CardTitle>Wrong account</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              This invite was sent to{' '}
-              <span className="font-medium text-foreground">{invite.email}</span>. Sign in with that
-              email to accept.
-            </p>
-          </CardContent>
-        </Card>
-      </main>
+      <AuthShell title="Wrong account">
+        <p className="text-sm text-muted-foreground">
+          This invite was sent to{' '}
+          <span className="font-medium text-foreground">{invite.email}</span>. Sign in with that
+          email to accept.
+        </p>
+      </AuthShell>
     );
   }
 
   if (error === 'already-member') {
     return (
-      <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-16">
-        <Card>
-          <CardHeader>
-            <CardTitle>Already a member</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              This account is already a member of {invite.teamName}. Role changes happen from Team
-              settings.
-            </p>
-            <Button asChild>
-              <Link href="/app/timeline">Continue</Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </main>
+      <AuthShell
+        title="Already a member"
+        subtitle={`This account is already a member of ${invite.teamName}. Role changes happen from Team settings.`}
+      >
+        <Button asChild>
+          <Link href="/app/timeline">Continue</Link>
+        </Button>
+      </AuthShell>
     );
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-16">
-      <Card>
-        <CardHeader>
-          <CardTitle>Join {invite.teamName}?</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            You've been invited to join <span className="font-medium">{invite.teamName}</span> as{' '}
-            <span className="font-medium">{invite.role}</span>.
-          </p>
-          {error === 'failed' ? (
-            <p className="text-sm text-destructive">
-              Something went wrong while joining. Please try again.
-            </p>
-          ) : null}
-          <form action={acceptInviteAction} className="flex items-center gap-3">
-            <input type="hidden" name="token" value={token} />
-            <Button type="submit">Join team</Button>
-            <Button asChild variant="ghost">
-              <Link href="/app/timeline">Decline</Link>
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-    </main>
+    <AuthShell title={`Join ${invite.teamName}?`}>
+      <p className="text-sm text-muted-foreground">
+        You've been invited to join <span className="font-medium">{invite.teamName}</span> as{' '}
+        <span className="font-medium">{invite.role}</span>.
+      </p>
+      {error === 'failed' ? (
+        <p className="text-sm text-destructive">
+          Something went wrong while joining. Please try again.
+        </p>
+      ) : null}
+      <form action={acceptInviteAction} className="flex items-center gap-3">
+        <input type="hidden" name="token" value={token} />
+        <Button type="submit">Join team</Button>
+        <Button asChild variant="ghost">
+          <Link href="/app/timeline">Decline</Link>
+        </Button>
+      </form>
+    </AuthShell>
   );
 }

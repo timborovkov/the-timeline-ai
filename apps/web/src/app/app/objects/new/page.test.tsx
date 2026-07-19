@@ -44,6 +44,13 @@ beforeEach(() => {
 });
 
 describe('NewObjectPage', () => {
+  it('keeps the Objects work navigation available', async () => {
+    const html = renderToStaticMarkup(await NewObjectPage({ searchParams: Promise.resolve({}) }));
+
+    expect(html).toContain('aria-label="Work"');
+    expect(html).toMatch(/aria-current="page"[^>]*href="\/app\/objects"/);
+  });
+
   it('hydrates the requested project outside the preload window', async () => {
     const projectId = '00000000-0000-4000-8000-000000000099';
     fakes.listObjects.mockImplementation((filter: { id?: string[] }) =>

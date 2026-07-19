@@ -39,6 +39,7 @@ import {
   requestDocumentUploadAction,
 } from '@/app/actions/documents';
 import { EvidenceLink } from '@/components/evidence-link';
+import { SectionHeading } from '@/components/section-heading';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -609,9 +610,7 @@ function NewItemVisibilityPicker({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-sm border border-border p-3 text-sm">
-      <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-        New item visibility
-      </span>
+      <span className="text-xs text-fg-dim">New item visibility</span>
       <select
         aria-label="New item visibility"
         value={visibility}
@@ -668,7 +667,7 @@ function DocumentDropZone({
         e.preventDefault();
       }}
       onDrop={onDrop}
-      className="rounded-sm border border-dashed border-border bg-card/30 p-6"
+      className="rounded-lg border border-border bg-card/30 p-6"
     >
       {isEmpty ? (
         <EmptyDocumentDrive fileInputRef={fileInputRef} />
@@ -689,7 +688,7 @@ function EmptyDocumentDrive({
 }) {
   return (
     <div className="py-8 text-center">
-      <p className="font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">No documents yet</p>
+      <p className="text-xs text-fg-dim">No documents yet</p>
       <p className="mx-auto mt-2 max-w-md text-sm text-fg-muted">
         Upload a document to make contracts, policies, notes, and customer files searchable and
         citeable.
@@ -697,7 +696,7 @@ function EmptyDocumentDrive({
       <button
         type="button"
         onClick={() => fileInputRef.current?.click()}
-        className="mt-4 inline-flex min-h-9 items-center rounded-sm border border-signal/40 bg-signal-soft px-3 font-mono text-[11px] uppercase tracking-[0.12em] text-signal transition-colors hover:bg-signal/20"
+        className="mt-4 inline-flex min-h-9 items-center rounded-sm border border-signal/40 bg-signal-soft px-3 text-xs text-signal transition-colors hover:bg-signal/20"
       >
         Upload first document
       </button>
@@ -715,9 +714,7 @@ function FolderList({
   if (folders.length === 0) return null;
   return (
     <section>
-      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        Folders
-      </h2>
+      <SectionHeading className="mb-3">Folders</SectionHeading>
       <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {folders.map((f) => (
           <li
@@ -765,9 +762,7 @@ function DocumentList({
   if (documents.length === 0) return null;
   return (
     <section>
-      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        Documents
-      </h2>
+      <SectionHeading className="mb-3">Documents</SectionHeading>
       <ul className="space-y-2">
         {documents.map((d) => (
           <DocumentListItem key={d.id} document={d} />
@@ -849,15 +844,13 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
               previewText={summary}
               source={document.provenance.source}
               occurredAt={document.provenance.occurredAt}
-              className="inline-flex h-8 items-center gap-1 rounded-sm border border-border px-2 font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"
+              className="inline-flex h-8 items-center gap-1 rounded-sm border border-border px-2 text-xs text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"
             >
               <Link2 className="size-3.5" />
               Event
             </EvidenceLink>
           ) : null}
-          <span className="hidden font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim sm:inline">
-            {updatedAt}
-          </span>
+          <span className="hidden text-xs text-fg-dim sm:inline">{updatedAt}</span>
         </div>
       </div>
     </li>
@@ -887,7 +880,7 @@ function DocumentTitleRow({
         <span className="block truncate text-sm font-semibold text-foreground" title={title}>
           {title}
         </span>
-        <span className="mt-0.5 flex min-w-0 items-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+        <span className="mt-0.5 flex min-w-0 items-center gap-2 text-xs text-fg-dim">
           <span className="shrink-0">{fileKind.label}</span>
           {storedName ? (
             <span
@@ -938,7 +931,7 @@ function SourceBadge({
 }) {
   const Icon = source.icon;
   return (
-    <Badge variant="secondary" className="gap-1 rounded-sm px-1.5 font-mono text-[10px] uppercase">
+    <Badge variant="secondary" className="gap-1 rounded-sm px-1.5 text-[11px]">
       <Icon className="size-3" />
       {source.shortLabel}
     </Badge>
@@ -949,7 +942,7 @@ function ProcessingBadge({ status, optimistic }: { status: string | null; optimi
   if (!status || status === 'embedded') return null;
   const label = optimistic ? 'uploading' : status.replace(/_/g, ' ');
   return (
-    <Badge variant="outline" className="rounded-sm font-mono text-[10px] uppercase">
+    <Badge variant="outline" className="rounded-sm text-[11px]">
       {label}
     </Badge>
   );
@@ -958,7 +951,7 @@ function ProcessingBadge({ status, optimistic }: { status: string | null; optimi
 function VisibilityBadge({ visibility }: { visibility: string }) {
   if (visibility === 'team') return null;
   return (
-    <Badge variant="outline" className="rounded-sm font-mono text-[10px] uppercase">
+    <Badge variant="outline" className="rounded-sm text-[11px]">
       {visibility}
     </Badge>
   );

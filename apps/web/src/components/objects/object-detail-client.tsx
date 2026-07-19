@@ -35,6 +35,7 @@ import {
 } from '@/app/actions/objects';
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { ArtifactReferenceChip } from '@/components/artifact-reference-chip';
+import { ContextualAskLink } from '@/components/chat/contextual-ask-link';
 import {
   type ObjectSearchResponse,
   type ObjectSearchResult,
@@ -44,11 +45,16 @@ import { ObjectSectionFeed } from '@/components/objects/object-section-feed';
 import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { TaskCategorySelect } from '@/components/tasks/task-category-select';
 import { TaskProjectSelect } from '@/components/tasks/task-project-select';
+import { TechnicalDetails } from '@/components/technical-details';
+import { WorkSubnav } from '@/components/work-subnav';
+import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
+import { isInternalIdentifier } from '@/lib/display-labels';
 import { formatTaskCategoryChangeValue } from '@/lib/object-change-format';
 import { displayObjectTitle } from '@/lib/object-title';
 import { readJson } from '@/lib/paginated-api';
 import { queryKeys } from '@/lib/query-keys';
+import { statusLabel } from '@/lib/status-labels';
 import { cn, errorMessage } from '@/lib/utils';
 
 const RELATIONSHIP_KINDS = [
@@ -68,6 +74,7 @@ type DraftField = 'canonicalName' | 'aliases' | 'stage' | 'dueAt';
 
 interface Props {
   detail: ObjectDetail;
+  teamId?: string;
   userId: string;
   suggestions: LocalSuggestion[];
   projects?: { id: string; label: string }[];
@@ -764,6 +771,7 @@ function ObjectDetailView(props: Props) {
     <div className="space-y-5">
       <ObjectDetailHeader
         detail={view.viewDetail}
+        teamId={props.teamId}
         error={view.error}
         pending={view.pending}
         repairPending={view.repairPending}
@@ -771,6 +779,7 @@ function ObjectDetailView(props: Props) {
         savingCount={view.savingCount}
         onRepairMemory={view.repairMemory}
       />
+      <WorkSubnav current={`/app/objects/${view.detail.id}`} />
 
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_23rem]">
         <main className="min-w-0 space-y-6">
@@ -790,7 +799,7 @@ function ObjectDetailView(props: Props) {
                 bodyClassName: 'border-t border-border p-4',
                 titleClassName: 'text-sm font-semibold tracking-tight',
                 countClassName: 'mt-1 text-xs text-fg-muted',
-                openLabelClassName: 'font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim',
+                openLabelClassName: 'text-[11px] text-fg-dim',
               }}
             />
           ) : null}
@@ -909,9 +918,7 @@ function ObjectContactSection({ detail }: { detail: ObjectDetail }) {
               className="flex min-w-0 items-center justify-between gap-3 border border-border px-3 py-2 text-sm transition hover:border-signal/60 hover:bg-signal-soft/20"
             >
               <span className="min-w-0 truncate">{facet.value}</span>
-              <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
-                {facet.kind}
-              </span>
+              <span className="shrink-0 text-[11px] text-fg-dim">{statusLabel(facet.kind)}</span>
             </a>
           );
         })}
@@ -935,11 +942,7 @@ function ObjectPanel({
     <section className={cn('border border-border bg-bg', className)}>
       <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2">
         <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
-        {eyebrow ? (
-          <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
-            {eyebrow}
-          </span>
-        ) : null}
+        {eyebrow ? <span className="text-[11px] text-fg-dim">{eyebrow}</span> : null}
       </div>
       <div className="p-4">{children}</div>
     </section>
@@ -947,6 +950,7 @@ function ObjectPanel({
 }
 
 function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
+  const timezone = useWorkspaceTimezone();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const summary = detail.summary ?? null;
@@ -1016,9 +1020,9 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
       )}
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
-        <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+        <p className="text-xs text-fg-dim">
           {summary?.generatedAt
-            ? `Updated ${formatDisplayDateTime(summary.generatedAt)} · ${
+            ? `Updated ${formatDisplayDateTime(summary.generatedAt, { timezone })} · ${
                 summary.sourceRefs.length
               } sources`
             : summary?.status === 'pending'
@@ -1032,7 +1036,7 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
         {canRequest ? (
           <button
             type="button"
-            className="border border-border bg-bg px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg transition hover:border-fg disabled:cursor-not-allowed disabled:opacity-60"
+            className="border border-border bg-bg px-3 py-2 text-xs text-fg transition hover:border-fg disabled:cursor-not-allowed disabled:opacity-60"
             disabled={pending}
             onClick={requestSummary}
           >
@@ -1052,7 +1056,7 @@ function SourceChips({ refs }: { refs: objects.ObjectSummarySourceRef[] }) {
       {refs.slice(0, 3).map((ref) => {
         const artifactRef = summaryRefToArtifactRef(ref);
         const className =
-          'border border-border bg-bg px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim hover:border-signal hover:text-signal';
+          'border border-border bg-bg px-1.5 py-0.5 text-[11px] text-fg-dim hover:border-signal hover:text-signal';
         return artifactRef ? (
           <ArtifactReferenceChip
             key={`${ref.kind}:${ref.id}`}
@@ -1154,10 +1158,8 @@ function ProvenanceGroup({
   return (
     <section className="grid min-w-0 gap-3 py-4 first:pt-0 last:pb-0 sm:grid-cols-[10rem_minmax(0,1fr)]">
       <div>
-        <h3 className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted">{title}</h3>
-        <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
-          {sourceCount}
-        </p>
+        <h3 className="text-xs text-fg-muted">{title}</h3>
+        <p className="mt-1 text-[11px] text-fg-dim">{sourceCount}</p>
       </div>
       {entries.length === 0 ? (
         <p className="text-sm text-fg-muted">{empty}</p>
@@ -1170,7 +1172,7 @@ function ProvenanceGroup({
             <details
               className={cn('group border border-border', previewEntries.length > 0 && 'mt-3')}
             >
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-surface px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-bg">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-surface px-3 py-2 text-xs text-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-bg">
                 <span>{reviewLabel}</span>
                 <span aria-hidden="true" className="text-fg-dim group-open:hidden">
                   +
@@ -1248,7 +1250,7 @@ function ProvenanceSourceLinks({
       ))}
       {remainingEvidence.length > 0 ? (
         <details className="pt-1">
-          <summary className="cursor-pointer list-none font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim hover:text-fg">
+          <summary className="cursor-pointer list-none text-[11px] text-fg-dim hover:text-fg">
             Review {remainingEvidence.length} more source
             {remainingEvidence.length === 1 ? '' : 's'}
           </summary>
@@ -1268,12 +1270,13 @@ function ProvenanceSourceLink({
 }: {
   source: ObjectDetail['provenance']['whyThisExists'][number]['evidence'][number];
 }) {
+  const timezone = useWorkspaceTimezone();
   return (
     <Link
       href={`/app/timeline?event=${source.rawEventId}#ev-${source.rawEventId}`}
       className="block break-words text-xs text-fg-muted underline-offset-2 hover:text-fg hover:underline"
     >
-      {displayText(source.source)} · {formatDisplayDateTime(source.occurredAt)}
+      {displayText(source.source)} · {formatDisplayDateTime(source.occurredAt, { timezone })}
     </Link>
   );
 }
@@ -1291,6 +1294,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 function ObjectDetailHeader({
   detail,
+  teamId,
   error,
   pending,
   repairPending,
@@ -1299,6 +1303,7 @@ function ObjectDetailHeader({
   onRepairMemory,
 }: {
   detail: ObjectDetail;
+  teamId?: string;
   error: string | null;
   pending: boolean;
   repairPending: boolean;
@@ -1307,32 +1312,30 @@ function ObjectDetailHeader({
   onRepairMemory: () => void;
 }) {
   const pendingCount = detail.recentChanges.filter((c) => c.status === 'suggested').length;
+  const visibleAliases = detail.aliases.filter((alias) => !isInternalIdentifier(alias));
   const alerts = (
     <>
       {detail.newSinceLastVisit > 0 && (
-        <output className="rounded-sm border border-signal/40 bg-signal-soft px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-signal">
+        <output className="rounded-sm border border-signal/40 bg-signal-soft px-3 py-2 text-xs text-signal">
           {detail.newSinceLastVisit} new change
           {detail.newSinceLastVisit === 1 ? '' : 's'} since your last visit
         </output>
       )}
       {pendingCount > 0 ? (
-        <output className="rounded-sm border border-signal/40 bg-signal-soft px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-signal">
+        <output className="rounded-sm border border-signal/40 bg-signal-soft px-3 py-2 text-xs text-signal">
           {pendingCount} suggestion{pendingCount === 1 ? '' : 's'} awaiting review
         </output>
       ) : null}
       {error ? (
         <div
           role="alert"
-          className="rounded-sm border border-danger/40 bg-bg px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-danger"
+          className="rounded-sm border border-danger/40 bg-bg px-3 py-2 text-xs text-danger"
         >
           {error}
         </div>
       ) : null}
       {saveState !== 'idle' ? (
-        <output
-          aria-live="polite"
-          className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
-        >
+        <output aria-live="polite" className="text-xs text-fg-dim">
           {saveState === 'saving'
             ? `Saving${savingCount > 1 ? ` ${savingCount} changes` : ''}...`
             : 'Saved'}
@@ -1344,10 +1347,8 @@ function ObjectDetailHeader({
     <header className="border-b border-border pb-5">
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-            <span className="text-fg-muted">{detail.type}</span>
-            <span aria-hidden="true">·</span>
-            <span>id {detail.id.slice(0, 8)}</span>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-dim">
+            <span className="text-fg-muted">{statusLabel(detail.type)}</span>
           </div>
           {detail.type === 'task' ? (
             <LiveTaskCategoryBadge
@@ -1361,18 +1362,31 @@ function ObjectDetailHeader({
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-fg">
             {displayText(displayObjectTitle(detail))}
           </h1>
-          {detail.aliases.length > 0 && (
-            <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-              aka {detail.aliases.map((alias) => displayText(alias)).join(' · ')}
+          {visibleAliases.length > 0 && (
+            <p className="mt-2 text-xs text-fg-dim">
+              aka {visibleAliases.map((alias) => displayText(alias)).join(' · ')}
             </p>
           )}
         </div>
         <div className="flex flex-col items-start gap-2 lg:max-w-sm lg:items-end">
           {alerts}
+          {teamId ? (
+            <ContextualAskLink
+              teamId={teamId}
+              context={{
+                pathname: `/app/objects/${detail.id}`,
+                routeKind: 'object-detail',
+                objectId: detail.id,
+              }}
+              pinnedEntityId={detail.id}
+              pinnedEntityName={displayObjectTitle(detail)}
+              label="Ask about object"
+            />
+          ) : null}
           {detail.type === 'project' && detail.archivedAt === null ? (
             <Link
               href={`/app/objects/new?project=${encodeURIComponent(detail.id)}&returnTo=${encodeURIComponent(`/app/objects/${detail.id}`)}`}
-              className="rounded-sm border border-signal/40 bg-signal-soft px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-signal hover:bg-signal/20"
+              className="rounded-sm border border-signal/40 bg-signal-soft px-3 py-2 text-xs font-medium text-signal hover:bg-signal/20"
             >
               Add task
             </Link>
@@ -1386,7 +1400,7 @@ function ObjectDetailHeader({
                 ? 'Unarchive this object before repairing memory'
                 : 'Queue object-scoped duplicate cleanup'
             }
-            className="rounded-sm border border-border bg-surface px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted transition hover:border-signal/50 hover:text-signal disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-sm border border-border bg-surface px-3 py-2 text-xs text-fg-muted transition hover:border-signal/50 hover:text-signal disabled:cursor-not-allowed disabled:opacity-50"
           >
             {detail.archivedAt
               ? 'Repair unavailable'
@@ -1396,6 +1410,10 @@ function ObjectDetailHeader({
           </button>
         </div>
       </div>
+      <TechnicalDetails
+        className="mt-4"
+        items={[{ label: 'Object ID', value: detail.id, copyValue: detail.id }]}
+      />
     </header>
   );
 }
@@ -1512,11 +1530,11 @@ function ObjectEditableFields({
         >
           {options.map((s) => (
             <option key={s} value={s}>
-              {s}
+              {statusLabel(s)}
             </option>
           ))}
           {!options.includes(detail.status) && (
-            <option value={detail.status}>{detail.status}</option>
+            <option value={detail.status}>{statusLabel(detail.status)}</option>
           )}
         </select>
       </Field>
@@ -1665,6 +1683,7 @@ function ObjectNoteItem({
   onSaveNote: (noteId: string, body: string) => void;
   onDeleteNote: (noteId: string) => void;
 }) {
+  const timezone = useWorkspaceTimezone();
   return (
     <li className="rounded-sm border border-border bg-surface px-4 py-3 text-sm">
       {isEditing ? (
@@ -1701,10 +1720,10 @@ function ObjectNoteItem({
           </div>
         </div>
       ) : (
-        <div className="whitespace-pre-wrap">{displayText(note.body)}</div>
+        <div className="whitespace-pre-wrap">{displayText(note.body, { timezone })}</div>
       )}
       <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
-        <span>{formatDisplayDateTime(note.createdAt)}</span>
+        <span>{formatDisplayDateTime(note.createdAt, { timezone })}</span>
         {isOwner && !isEditing ? (
           <div className="flex gap-3">
             <button
@@ -1782,9 +1801,7 @@ function ObjectConnectedWorkSection({
 function ConnectedWorkSection({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="min-w-0">
-      <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted">
-        {title}
-      </h3>
+      <h3 className="mb-2 text-xs text-fg-muted">{title}</h3>
       {children}
     </section>
   );
@@ -1815,8 +1832,8 @@ function ConnectedTaskList({
               <a href={`/app/objects/${task.id}`} className="font-medium hover:underline">
                 {displayText(displayObjectTitle(task))}
               </a>
-              <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
-                {task.status}
+              <span className="text-[11px] text-fg-dim">
+                {statusLabel(task.status)}
                 {showDueDate && task.dueAt
                   ? ` · due ${new Date(task.dueAt).toLocaleDateString()}`
                   : ''}
@@ -1834,6 +1851,7 @@ function ConnectedCalendarList({
 }: {
   events: ObjectDetail['connectedWork']['calendarEvents'];
 }) {
+  const timezone = useWorkspaceTimezone();
   return (
     <ConnectedWorkSection title="Calendar">
       {events.length === 0 ? (
@@ -1846,8 +1864,8 @@ function ConnectedCalendarList({
               className="grid gap-1 rounded-sm border border-border bg-surface px-3 py-2 text-sm"
             >
               <span className="font-medium">{displayText(event.title)}</span>
-              <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
-                {formatDisplayDateTime(event.startAt)} · {event.showAs}
+              <span className="text-[11px] text-fg-dim">
+                {formatDisplayDateTime(event.startAt, { timezone })} · {statusLabel(event.showAs)}
               </span>
             </li>
           ))}
@@ -1872,8 +1890,9 @@ function ConnectedObjectList({ objects }: { objects: ObjectDetail['connectedWork
               <a href={`/app/objects/${object.id}`} className="font-medium hover:underline">
                 {displayText(object.canonicalName)}
               </a>
-              <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
-                {object.type} · {object.factCount} fact{object.factCount === 1 ? '' : 's'}
+              <span className="text-[11px] text-fg-dim">
+                {statusLabel(object.type)} · {object.factCount} fact
+                {object.factCount === 1 ? '' : 's'}
               </span>
             </li>
           ))}
@@ -1901,7 +1920,7 @@ function ConnectedBoardList({ boards }: { boards: ObjectDetail['connectedWork'][
               >
                 {displayText(board.boardName)}
               </a>
-              <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+              <span className="text-[11px] text-fg-dim">
                 {board.laneName ?? 'no lane'}
                 {board.dueAt ? ` · due ${new Date(board.dueAt).toLocaleDateString()}` : ''}
                 {board.priority !== null ? ` · P${board.priority}` : ''}
@@ -1936,7 +1955,7 @@ function ConnectedApprovalList({
               <Link href="/app/approvals" className="font-medium hover:underline">
                 {displayText(approval.title)}
               </Link>
-              <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+              <span className="text-[11px] text-fg-dim">
                 {approval.operation} · {approval.targetKind}
               </span>
             </li>
@@ -1952,6 +1971,7 @@ function ConnectedDocumentList({
 }: {
   documents: ObjectDetail['connectedWork']['documents'];
 }) {
+  const timezone = useWorkspaceTimezone();
   return (
     <ConnectedWorkSection title="Documents">
       {documents.length === 0 ? (
@@ -1970,8 +1990,9 @@ function ConnectedDocumentList({
               >
                 {displayText(truncateFilenameMiddle(document.name))}
               </a>
-              <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
-                {document.fileKind} · updated {formatDisplayDateTime(document.updatedAt)}
+              <span className="text-[11px] text-fg-dim">
+                {document.fileKind} · updated{' '}
+                {formatDisplayDateTime(document.updatedAt, { timezone })}
               </span>
             </li>
           ))}
@@ -1982,6 +2003,7 @@ function ConnectedDocumentList({
 }
 
 function ConnectedLinkList({ links }: { links: ObjectDetail['connectedWork']['links'] }) {
+  const timezone = useWorkspaceTimezone();
   return (
     <ConnectedWorkSection title="Links">
       {links.length === 0 ? (
@@ -2005,9 +2027,9 @@ function ConnectedLinkList({ links }: { links: ObjectDetail['connectedWork']['li
               ) : (
                 <span className="font-medium">{displayText(link.canonicalName)}</span>
               )}
-              <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+              <span className="text-[11px] text-fg-dim">
                 {link.provider ?? link.domain ?? 'shared link'} · updated{' '}
-                {formatDisplayDateTime(link.updatedAt)}
+                {formatDisplayDateTime(link.updatedAt, { timezone })}
               </span>
             </li>
           ))}
@@ -2022,6 +2044,7 @@ function ConnectedCapturedFileList({
 }: {
   files: ObjectDetail['connectedWork']['capturedFiles'];
 }) {
+  const timezone = useWorkspaceTimezone();
   return (
     <ConnectedWorkSection title="Files">
       {files.length === 0 ? (
@@ -2036,9 +2059,9 @@ function ConnectedCapturedFileList({
               <Link href="/app/documents/captured" className="font-medium hover:underline">
                 {displayText(truncateFilenameMiddle(file.name))}
               </Link>
-              <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+              <span className="text-[11px] text-fg-dim">
                 {file.contentType ?? 'captured file'} · updated{' '}
-                {formatDisplayDateTime(file.updatedAt)}
+                {formatDisplayDateTime(file.updatedAt, { timezone })}
               </span>
             </li>
           ))}
@@ -2144,7 +2167,7 @@ function ObjectRelationshipsSection({
                 }}
               >
                 <span className="font-medium">{displayText(result.canonicalName)}</span>{' '}
-                <span className="text-xs text-muted-foreground">{result.type}</span>
+                <span className="text-xs text-muted-foreground">{statusLabel(result.type)}</span>
               </button>
             </li>
           ))}
@@ -2244,6 +2267,7 @@ function ObjectRecentChangeItem({
   onAcceptChange: (changeId: string) => void;
   onRejectChange: (changeId: string) => void;
 }) {
+  const timezone = useWorkspaceTimezone();
   const isSuggested = change.status === 'suggested';
   const isRejected = change.status === 'rejected';
   return (
@@ -2253,15 +2277,15 @@ function ObjectRecentChangeItem({
       <div className="flex min-w-0 items-start justify-between gap-3">
         <span className="min-w-0 break-words font-medium">{changeFieldLabel(change.field)}</span>
         <span className="shrink-0 text-[11px] uppercase tracking-wide text-muted-foreground">
-          {change.actorKind} · {change.status}
+          {statusLabel(change.actorKind)} · {statusLabel(change.status)}
         </span>
       </div>
       <div className="mt-1 break-words text-xs text-muted-foreground">
-        {formatValue(change.previousValue, change.field)} →{' '}
-        {formatValue(change.newValue, change.field)}
+        {formatValue(change.previousValue, timezone, change.field)} →{' '}
+        {formatValue(change.newValue, timezone, change.field)}
       </div>
       <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
-        <span>{formatDisplayDateTime(change.changedAt)}</span>
+        <span>{formatDisplayDateTime(change.changedAt, { timezone })}</span>
         {isSuggested ? (
           <div className="flex gap-2">
             <button
@@ -2351,13 +2375,13 @@ function toLocalInput(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function formatValue(v: unknown, field = ''): string {
+function formatValue(v: unknown, timezone: string, field = ''): string {
   const category = formatTaskCategoryChangeValue(field, v);
   if (category !== null) return category;
   if (v === null || v === undefined) return '∅';
-  if (typeof v === 'string') return displayText(v);
-  if (Array.isArray(v)) return v.map((item) => formatValue(item)).join(', ');
-  if (v instanceof Date) return formatDisplayDateTime(v);
+  if (typeof v === 'string') return displayText(v, { timezone });
+  if (Array.isArray(v)) return v.map((item) => formatValue(item, timezone, field)).join(', ');
+  if (v instanceof Date) return formatDisplayDateTime(v, { timezone });
   if (typeof v === 'object') return summarizeObjectValue(v as Record<string, unknown>);
   if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'bigint') return String(v);
   return 'updated';

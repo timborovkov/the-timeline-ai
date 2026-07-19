@@ -1,21 +1,17 @@
 import { Skeleton } from '@/components/ui/skeleton';
 
 /**
- * Index-strip skeleton — the mono one-liner that opens every operational
- * surface. Match the heights and widths of the real `<IndexStrip>` so CLS
- * stays zero.
+ * Quiet page-header skeleton matching title, subtitle, and optional metadata.
  */
 export function PageHeaderSkeleton() {
   return (
-    <div
-      className="flex items-baseline gap-x-4 border-y border-border py-3"
-      aria-busy="true"
-      aria-label="Loading"
-    >
-      <Skeleton className="h-3 w-24" />
-      <Skeleton className="h-3 w-16" />
-      <Skeleton className="h-3 w-20" />
-      <Skeleton className="h-3 w-12" />
+    <div className="space-y-2 py-1" aria-busy="true" aria-label="Loading">
+      <Skeleton className="h-7 w-40" />
+      <Skeleton className="h-4 w-full max-w-md" />
+      <div className="flex gap-3 pt-1">
+        <Skeleton className="h-3 w-16" />
+        <Skeleton className="h-3 w-20" />
+      </div>
     </div>
   );
 }
@@ -102,10 +98,7 @@ export function EntityGridSkeleton({ count = 6 }: { count?: number }) {
 
 export function InlineSpinner({ label = 'Loading…' }: { label?: string }) {
   return (
-    <div
-      className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
-      aria-live="polite"
-    >
+    <div className="flex items-center gap-2 text-xs text-fg-dim" aria-live="polite">
       <span aria-hidden="true" className="size-1.5 animate-pulse rounded-sm bg-signal" />
       {label}
     </div>

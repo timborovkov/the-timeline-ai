@@ -122,4 +122,13 @@ describe('displayObjectTitle', () => {
       'Send proposal',
     );
   });
+
+  it('never exposes a UUID-only object title', () => {
+    expect(
+      displayObjectTitle({
+        canonicalName: '11111111-1111-4111-8111-111111111111',
+        metadata: {},
+      }),
+    ).toBe('Untitled object');
+  });
 });

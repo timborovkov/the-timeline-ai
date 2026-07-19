@@ -7,11 +7,12 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 
 import { ChatPane } from '@/components/chat/chat-pane';
-import { SessionSidebar } from '@/components/chat/session-sidebar';
+import { MobileSessionNav, SessionSidebar } from '@/components/chat/session-sidebar';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { hydrateChatSessionMessages } from '@/lib/chat-session';
 import { db } from '@/lib/db';
+import { displayObjectLabel } from '@/lib/display-labels';
 
 export const metadata: Metadata = {
   title: 'Chat',
@@ -31,7 +32,7 @@ async function loadPinnedEntity(
     .select({ id: entities.id, canonicalName: entities.canonicalName })
     .from(entities)
     .where(and(eq(entities.teamId, teamId), inArray(entities.id, entityIds)));
-  for (const r of rows) out.set(r.id, r.canonicalName);
+  for (const r of rows) out.set(r.id, displayObjectLabel(r));
   return out;
 }
 
@@ -82,35 +83,40 @@ export default async function ChatPage({
     }
   }
 
+  const sessionEntries = sessions.map((chatSession) => ({
+    id: chatSession.id,
+    title: chatSession.title,
+    pinnedEntityId: chatSession.pinnedEntityId,
+    pinnedEntityName: chatSession.pinnedEntityId
+      ? (pinnedNames.get(chatSession.pinnedEntityId) ?? null)
+      : null,
+  }));
+
   return (
     // Escape main's px/py with negative margins so the chat fills the
-    // entire viewport minus the AppShell header (h-14 = 3.5rem). The chat
+    // entire viewport minus the AppShell header (h-12 = 3rem). The chat
     // pane has its own internal scroll, so a fixed outer height keeps the
     // layout stable regardless of message count.
     <div
       data-app-layout="full-bleed"
-      className="-mx-4 -my-6 flex h-[calc(100dvh-3.5rem)] md:-mx-8 md:-my-8"
+      className="-mx-4 -my-6 flex h-[calc(100dvh-3rem)] md:-mx-8 md:-my-8"
     >
-      <SessionSidebar
-        activeSessionId={activeSessionId}
-        sessions={sessions.map((s) => ({
-          id: s.id,
-          title: s.title,
-          pinnedEntityId: s.pinnedEntityId,
-          pinnedEntityName: s.pinnedEntityId ? (pinnedNames.get(s.pinnedEntityId) ?? null) : null,
-        }))}
-      />
-      <div className="flex min-h-0 flex-1 flex-col px-4 py-5 md:px-8 md:py-6">
+      <SessionSidebar activeSessionId={activeSessionId} sessions={sessionEntries} />
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col px-4 py-5 md:px-8 md:py-6">
+        <MobileSessionNav activeSessionId={activeSessionId} sessions={sessionEntries} />
         <header
-          className="mb-5 flex shrink-0 items-baseline gap-x-4 border-y border-border py-3 font-mono text-xs uppercase tracking-[0.12em] text-fg-muted"
+          className="mb-5 flex shrink-0 items-baseline gap-x-4 border-b border-border pb-3 text-sm text-fg-muted"
           aria-label={`Chat with ${team?.name ?? active.teamName}'s timeline`}
         >
-          <span className="text-fg">CHAT</span>
-          <span aria-hidden="true" className="text-fg-dim">
-            ask the timeline
-          </span>
-          <span className="ml-auto text-fg-dim">
-            <span aria-hidden="true">{sessions.length} sessions</span>
+          <h1 className="text-base font-semibold text-fg">Ask</h1>
+          <span aria-hidden="true">Ask the timeline</span>
+          <span
+            className="ml-auto w-20 text-right font-mono text-xs text-fg-dim"
+            data-visual-dynamic="chat-session-count"
+          >
+            <span aria-hidden="true">
+              {sessions.length} session{sessions.length === 1 ? '' : 's'}
+            </span>
           </span>
         </header>
         <div className="flex min-h-0 flex-1 flex-col">
@@ -122,6 +128,7 @@ export default async function ChatPage({
             // useRef) keeps session A's messages alive — new messages get
             // sent against the wrong session id even though props change.
             key={activeSessionId ?? 'new'}
+            teamId={active.teamId}
             teamName={team?.name ?? active.teamName}
             sessionId={activeSessionId}
             initialMessages={initialMessages}

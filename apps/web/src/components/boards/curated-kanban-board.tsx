@@ -32,9 +32,11 @@ import {
   type CuratedKanbanSaveState,
 } from '@/components/boards/curated-kanban-state';
 import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
+import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { boardViewHref } from '@/lib/board-links';
 import { displayText, formatDisplayDate } from '@/lib/display-dates';
 import { displayObjectTitle } from '@/lib/object-title';
+import { statusLabel } from '@/lib/status-labels';
 import { cn, errorMessage } from '@/lib/utils';
 
 interface Props {
@@ -202,7 +204,7 @@ export function CuratedKanbanBoard({
           ) : null}
         </div>
         {saveState !== 'idle' ? (
-          <output className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+          <output className="text-xs text-fg-dim">
             {saveState === 'saving' ? 'Saving…' : 'Saved'}
           </output>
         ) : null}
@@ -240,12 +242,8 @@ function KanbanColumn({
       )}
     >
       <div className="mb-3 flex shrink-0 items-baseline justify-between">
-        <h3 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-          {lane.name}
-        </h3>
-        <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg">
-          {items.length}
-        </span>
+        <h3 className="text-xs text-fg-dim">{lane.name}</h3>
+        <span className="text-xs text-fg">{items.length}</span>
       </div>
       <ul className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
         {items.map((item) => (
@@ -285,6 +283,7 @@ function KanbanCard({
   members: BoardMemberOption[];
   filterParams: Record<string, string>;
 }) {
+  const timezone = useWorkspaceTimezone();
   const optimistic = item.id.startsWith('optimistic-');
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: item.id,
@@ -294,7 +293,7 @@ function KanbanCard({
     ? { transform: `translate3d(${String(transform.x)}px,${String(transform.y)}px,0)` }
     : undefined;
   const blocked = lane.kind === 'blocked';
-  const due = dueState(item.dueAt);
+  const due = dueState(item.dueAt, timezone);
   const title = displayObjectTitle(item.object);
   return (
     <li
@@ -324,8 +323,8 @@ function KanbanCard({
           {displayText(title)}
         </Link>
       )}
-      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
-        <span>{item.object.type}</span>
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-fg-dim">
+        <span>{statusLabel(item.object.type)}</span>
         {item.object.type === 'task' ? (
           <LiveTaskCategoryBadge
             taskId={item.object.id}
@@ -336,7 +335,7 @@ function KanbanCard({
         ) : null}
         {blocked ? <span className="text-danger">Blocked</span> : null}
       </div>
-      <div className="mt-2 grid grid-cols-3 gap-px overflow-hidden rounded-sm border border-border bg-border font-mono text-[10px] uppercase tracking-[0.08em]">
+      <div className="mt-2 grid grid-cols-3 gap-px overflow-hidden rounded-sm border border-border bg-border text-[11px]">
         <CardMeta
           value={ownerLabel(item.responsibleUserId, members)}
           missing={!item.responsibleUserId}
@@ -350,9 +349,7 @@ function KanbanCard({
       {item.nextStep ? (
         <p className="mt-2 line-clamp-2 text-xs text-fg-muted">{displayText(item.nextStep)}</p>
       ) : null}
-      {error ? (
-        <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.1em] text-danger">{error}</p>
-      ) : null}
+      {error ? <p className="mt-2 text-xs text-danger">{error}</p> : null}
     </li>
   );
 }
@@ -384,13 +381,17 @@ function ownerLabel(userId: string | null, members: BoardMemberOption[]): string
   return members.find((member) => member.id === userId)?.label ?? 'Assigned';
 }
 
-function dateLabel(value: Date): string {
-  return formatDisplayDate(value);
+function dateLabel(value: Date, timezone: string): string {
+  return formatDisplayDate(value, { timezone });
 }
 
-function dueState(value: Date | null): { label: string; tone: 'danger' | 'neutral' } {
+function dueState(
+  value: Date | null,
+  timezone: string,
+): { label: string; tone: 'danger' | 'neutral' } {
   if (!value) return { label: 'No due', tone: 'neutral' };
   const due = new Date(value);
-  if (due.getTime() < Date.now()) return { label: `Overdue ${dateLabel(due)}`, tone: 'danger' };
-  return { label: `Due ${dateLabel(due)}`, tone: 'neutral' };
+  if (due.getTime() < Date.now())
+    return { label: `Overdue ${dateLabel(due, timezone)}`, tone: 'danger' };
+  return { label: `Due ${dateLabel(due, timezone)}`, tone: 'neutral' };
 }

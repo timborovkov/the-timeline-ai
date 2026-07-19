@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { displayMemberLabel } from '@/lib/display-labels';
 import { connectionErrorMessage } from '@/lib/ux-errors';
 
 export const metadata: Metadata = {
@@ -249,7 +250,7 @@ async function loadIntegrationsPageModel(input: { teamId: string; userId: string
   }));
   const connectedMembers: ConnectedMemberOption[] = members.map((m) => {
     const u = memberUserMap.get(m.userId);
-    return { id: m.userId, label: u?.name ?? u?.email ?? m.userId };
+    return { id: m.userId, label: displayMemberLabel(u) };
   });
   const mcpServerRows: McpServerUiRow[] = mcpServers.map((s) => ({
     id: s.id,
@@ -487,7 +488,7 @@ function IntegrationWorkflow({
       ) : hasActiveImports ? null : (
         <section className="space-y-3" aria-labelledby="active-team-sync">
           <SectionHeading id="active-team-sync">Active team sync</SectionHeading>
-          <p className="rounded-sm border border-dashed border-border bg-surface p-4 text-sm text-fg-muted">
+          <p className="rounded-lg border border-border bg-surface p-4 text-sm text-fg-muted">
             No provider sources are actively syncing yet.
           </p>
         </section>
@@ -599,7 +600,7 @@ function AdvancedIntegrationSection({
 
 function NoSourcesState({ isAdmin }: { isAdmin: boolean }) {
   return (
-    <div className="rounded-sm border border-dashed border-border bg-surface p-6 text-sm text-fg-muted">
+    <div className="rounded-lg border border-border bg-surface p-6 text-sm text-fg-muted">
       <p className="mb-1 font-medium text-fg">No sources connected yet.</p>
       <p>
         Connect a native provider to sync work into the timeline, or add an MCP-compatible server

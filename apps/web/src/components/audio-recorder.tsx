@@ -177,7 +177,7 @@ export function AudioRecorder({ onClipChange, disabled = false }: AudioRecorderP
   }
 
   return (
-    <div className="space-y-2 rounded-sm border border-dashed border-border p-2 sm:p-3">
+    <div className="space-y-2 rounded-sm border border-border bg-surface p-2 sm:p-3">
       <div className="flex flex-wrap items-center gap-2 sm:gap-3">
         <span className="text-xs font-medium text-muted-foreground">Voice note</span>
         {phase === 'idle' || phase === 'error' ? (

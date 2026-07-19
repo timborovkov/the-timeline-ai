@@ -19,7 +19,7 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Personal MCP overlay. Servers visible only to the owner, layered on
- * top of the team-shared catalog at /app/team/integrations.
+ * top of the team-shared catalog linked from /app/sources.
  */
 export default async function PersonalMcpServersPage() {
   const session = await auth();
@@ -31,11 +31,7 @@ export default async function PersonalMcpServersPage() {
   return (
     <div className="space-y-8">
       <Breadcrumb
-        items={[
-          { label: 'Team', href: '/app/team' },
-          { label: 'Integrations', href: '/app/team/integrations' },
-          { label: 'Personal MCP' },
-        ]}
+        items={[{ label: 'Connections', href: '/app/sources' }, { label: 'Personal MCP' }]}
       />
       <PageHeader
         title="Personal MCP servers"

@@ -10,12 +10,12 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Slack conversational capture setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-03</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-18</span></div>
       <p class="tldr">
         Slack is a first-party Capture Surface like Telegram: install the app with OAuth, link Slack
         users with OAuth, bind channels from Timeline, and let DMs route through the user's active
         external team. The same app credentials can also power native Slack workspace ingestion for
-        selected channels from <code>/app/team/integrations</code>.
+        selected channels from <code>/app/sources</code>.
       </p>
 
       <nav class="toc" aria-label="On this page">
@@ -119,7 +119,7 @@ app_mention
 
       <h2 id="install">4. Install and bind conversations</h2>
       <ol>
-        <li>Open <strong>Team → Slack</strong> in Timeline.</li>
+        <li>Open <strong>Connections → Slack</strong> in Timeline.</li>
         <li>Team owner/admin installs or reconnects the Slack app.</li>
         <li>
           Members can click <strong>Connect identity</strong> to link their Slack user. Linking is
@@ -172,8 +172,8 @@ SLACK_CAPTURE_CANARY_ALLOWED_ORIGIN=https://thetimeline.cc
         actively route through Timeline. Native workspace ingestion is passive: a member connects
         Slack from the native catalog, shares selected channels from
         <code>/app/me/connections</code>, and an admin activates those shared channels from
-        <code>/app/team/integrations</code>. The integration worker imports message history, thread
-        replies, files, reactions, and edits as <code>source='integration'</code> with
+        <code>/app/sources</code>. The integration worker imports message history, thread replies,
+        files, reactions, and edits as <code>source='integration'</code> with
         <code>provider='slack'</code>. This makes selected channel history searchable and citable
         even when nobody mentioned Timeline in the moment.
       </p>

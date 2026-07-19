@@ -85,9 +85,7 @@ function McpStatusGrid() {
         ['Visibility', 'Team-visible only', 'Private and specific-user events stay out.'],
       ].map(([label, value, description]) => (
         <div key={label} className="rounded-sm border border-border bg-surface p-3">
-          <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
-            {label}
-          </div>
+          <div className="text-[11px] text-fg-muted">{label}</div>
           <div className="mt-1 text-sm font-medium text-fg">{value}</div>
           <p className="mt-1 text-xs leading-5 text-fg-muted">{description}</p>
         </div>
@@ -102,7 +100,7 @@ function McpEndpointCard({ mcpUrl }: { mcpUrl: string }) {
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle className="text-sm">MCP endpoint</CardTitle>
-          <Badge variant="outline" className="rounded-sm font-mono uppercase tracking-[0.14em]">
+          <Badge variant="outline" className="rounded-sm ">
             Streamable HTTP
           </Badge>
         </div>
@@ -146,9 +144,7 @@ function McpEndpointCard({ mcpUrl }: { mcpUrl: string }) {
 function McpRetrievalSummary() {
   return (
     <section className="space-y-3">
-      <div className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">
-        Available retrieval
-      </div>
+      <div className="text-xs text-fg-muted">Available retrieval</div>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {[
           ['Workspace context', 'retrieve_workspace_context for broad cross-surface questions.'],
@@ -191,9 +187,7 @@ function McpClientGuides({ mcpUrl, mintedKey }: { mcpUrl: string; mintedKey: Min
 
   return (
     <section className="space-y-3">
-      <div className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">
-        Connect from clients
-      </div>
+      <div className="text-xs text-fg-muted">Connect from clients</div>
       <div className="grid gap-3 lg:grid-cols-3">
         <Card>
           <CardHeader>
@@ -249,7 +243,7 @@ function McpClientGuides({ mcpUrl, mintedKey }: { mcpUrl: string; mintedKey: Min
           <CardHeader>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <CardTitle className="text-sm">ChatGPT</CardTitle>
-              <Badge variant="outline" className="rounded-sm font-mono uppercase tracking-[0.14em]">
+              <Badge variant="outline" className="rounded-sm ">
                 Needs OAuth
               </Badge>
             </div>
@@ -413,9 +407,7 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
       ) : null}
 
       <div className="flex items-center justify-between">
-        <div className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">
-          Active keys ({keys.length})
-        </div>
+        <div className="text-xs text-fg-muted">Active keys ({keys.length})</div>
         <Button
           size="sm"
           onClick={() => {

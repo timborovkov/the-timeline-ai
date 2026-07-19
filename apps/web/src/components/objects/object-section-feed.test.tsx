@@ -203,6 +203,7 @@ describe('ObjectSectionFeed', () => {
       `Observed ${new Date('2026-06-14T12:45:00.000Z').toLocaleString(undefined, {
         dateStyle: 'medium',
         timeStyle: 'short',
+        timeZone: 'Europe/Helsinki',
       })} · telegram · confidence 0.91`,
     );
     expect(html).toContain('Fact (2)');

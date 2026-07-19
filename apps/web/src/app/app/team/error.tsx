@@ -1,7 +1,6 @@
 'use client';
 
-import { ErrorState } from '@/components/error-state';
-import { IndexStrip } from '@/components/index-strip';
+import { RouteError } from '@/components/route-error';
 
 export default function TeamError({
   error,
@@ -10,18 +9,5 @@ export default function TeamError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  return (
-    <div className="space-y-8">
-      <IndexStrip
-        srLabel="Team · error"
-        segments={[{ value: 'TEAM' }, { label: 'status', value: 'ERROR', danger: true }]}
-      />
-      <ErrorState
-        title="Couldn't load team settings"
-        description="The team settings failed to load. This is usually transient."
-        error={error}
-        reset={reset}
-      />
-    </div>
-  );
+  return <RouteError title="Team" error={error} reset={reset} />;
 }

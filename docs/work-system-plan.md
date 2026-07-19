@@ -18,10 +18,11 @@ This plan defines the direction for turning Work into that place.
 The current branch completes the first two slices of this plan:
 
 - **Phase 0: Work hub IA and Work Queue.** `/app/work` is now centered on a
-  single Work Queue, with team boards, compact recent changes, attention counts,
-  and secondary navigation into Objects, Tasks, Boards, Calendar, and Approvals.
-  `/app` remains the broader home/capture dashboard, with Quick actions reduced
-  so Work absorbs the operational object/task/board entry points.
+  single Work Queue, with team boards, attention counts, and shared navigation
+  into Objects, Tasks, Boards, Calendar, and Approvals. `/app` is the broader
+  Home surface for Ask, actionable attention, focused capture, the latest
+  digest, pinned work, recent moments, and one next setup step; Work owns the
+  operational object/task/board entry points.
 - **Phase 1: Board Item Command Center.** The board item side panel now supports
   responsible person, lane and blocked-state changes, due date, priority, next
   step, notes, and readable recent activity using the existing board item schema.

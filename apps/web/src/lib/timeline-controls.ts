@@ -149,12 +149,30 @@ export function timelineOriginValue(origin: TimelineOriginFilter): string {
 export function timelineOriginOptions(
   facets: readonly TimelineSourceFacet[],
 ): TimelineOriginOption[] {
-  return facets.map((facet) => ({
-    value: timelineOriginValue(facet.filter),
-    label: `${originGroupLabel(facet.filter)} · ${
-      facet.filter.kind === 'provider' ? 'All activity' : facet.label
-    }`,
-  }));
+  const unnamedSlackChannels = facets.filter(
+    (facet) => facet.filter.kind === 'slack_channel' && facet.label === 'Unnamed channel',
+  );
+  const unnamedSlackChannelNumbers = new Map(
+    unnamedSlackChannels
+      .map((facet) => timelineOriginValue(facet.filter))
+      .sort()
+      .map((value, index) => [value, index + 1]),
+  );
+
+  return facets.map((facet) => {
+    const value = timelineOriginValue(facet.filter);
+    const unnamedChannelNumber = unnamedSlackChannelNumbers.get(value);
+    const resourceLabel =
+      unnamedChannelNumber && unnamedSlackChannels.length > 1
+        ? `Unnamed channel ${unnamedChannelNumber}`
+        : facet.label;
+    return {
+      value,
+      label: `${originGroupLabel(facet.filter)} · ${
+        facet.filter.kind === 'provider' ? 'All activity' : resourceLabel
+      }`,
+    };
+  });
 }
 
 export function updateTimelineSourceSelection(

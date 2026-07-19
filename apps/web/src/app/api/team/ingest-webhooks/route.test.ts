@@ -61,7 +61,7 @@ describe('/api/team/ingest-webhooks', () => {
     fakes.auth.mockResolvedValue({ user: { id: USER_ID } });
     fakes.resolveActiveTeam.mockResolvedValue({ active: { teamId: TEAM_ID } });
     fakes.requireMembership.mockResolvedValue('admin');
-  }, 20_000);
+  }, 30_000);
 
   afterEach(async () => {
     fakes.db = null;

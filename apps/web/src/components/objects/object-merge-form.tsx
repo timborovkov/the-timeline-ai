@@ -10,6 +10,7 @@ import type * as objects from '@timeline/shared/objects/types';
 import { mergeObjectsAction } from '@/app/actions/objects';
 import { Button } from '@/components/ui/button';
 import { displayText } from '@/lib/display-dates';
+import { statusLabel } from '@/lib/status-labels';
 
 interface Props {
   objects: objects.ObjectRow[];
@@ -131,18 +132,16 @@ export function ObjectMergeForm({
                   <span className="block truncate font-medium text-fg">
                     {displayText(object.canonicalName)}
                   </span>
-                  <span className="block font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-                    {object.type} · {object.status}
+                  <span className="block text-xs text-fg-dim">
+                    {statusLabel(object.type)} · {statusLabel(object.status)}
                   </span>
                 </span>
                 {survivorId === object.id ? (
-                  <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-signal">
-                    Keep
-                  </span>
+                  <span className="text-xs text-signal">Keep</span>
                 ) : null}
               </label>
               <details className="border-t border-border/70 px-3 py-2 text-sm">
-                <summary className="cursor-pointer select-none font-mono text-[11px] uppercase tracking-[0.1em] text-fg-muted hover:text-fg">
+                <summary className="cursor-pointer select-none text-xs text-fg-muted hover:text-fg">
                   Related facts ({factSamples.length})
                 </summary>
                 {factSamples.length > 0 ? (
@@ -150,7 +149,7 @@ export function ObjectMergeForm({
                     {factSamples.map((fact) => (
                       <li key={fact.id} className="border-l border-border pl-3">
                         <p>{displayText(fact.statement)}</p>
-                        <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
+                        <div className="mt-1 text-[11px] text-fg-dim">
                           Confidence {Math.round(fact.confidence * 100)}%
                         </div>
                       </li>
@@ -168,7 +167,7 @@ export function ObjectMergeForm({
       </div>
 
       <section className="space-y-3 border-y border-border py-4">
-        <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg">Merge Preview</h2>
+        <h2 className="text-xs text-fg">Merge Preview</h2>
         <div className="grid gap-px overflow-hidden border border-border sm:grid-cols-4">
           {[
             ['Facts', counts.facts],
@@ -177,9 +176,7 @@ export function ObjectMergeForm({
             ['Open tasks', counts.openTasks],
           ].map(([label, value]) => (
             <div key={label} className="bg-bg px-3 py-2">
-              <div className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-                {label}
-              </div>
+              <div className="text-xs text-fg-dim">{label}</div>
               <div className="text-lg font-semibold text-fg">{value}</div>
             </div>
           ))}
@@ -220,7 +217,7 @@ export function ObjectMergeForm({
         ) : (
           <Link
             href="/app/objects"
-            className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-border px-3 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
+            className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-border px-3 text-xs text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
           >
             <X className="size-3.5" aria-hidden />
             Cancel
@@ -231,7 +228,7 @@ export function ObjectMergeForm({
           size="sm"
           onClick={confirmMerge}
           disabled={isPending}
-          className="border border-signal/40 bg-signal-soft font-mono text-[11px] uppercase tracking-[0.1em] text-signal hover:bg-signal-soft/80"
+          className="border border-signal/40 bg-signal-soft text-xs text-signal hover:bg-signal-soft/80"
         >
           <GitMerge className="size-4" />
           {isPending ? 'Merging' : 'Merge'}

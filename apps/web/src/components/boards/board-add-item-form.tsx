@@ -9,6 +9,7 @@ import type { Dispatch } from 'react';
 
 import { addBoardItemAction, quickCreateBoardItemAction } from '@/app/actions/boards';
 import { displayText } from '@/lib/display-dates';
+import { displayObjectLabel, isInternalIdentifier } from '@/lib/display-labels';
 import { filterObjectsByText } from '@/lib/object-filter';
 import { OBJECT_TYPES } from '@/lib/object-types';
 import { cn, errorMessage } from '@/lib/utils';
@@ -137,7 +138,7 @@ function ModeSwitch({ mode, dispatch }: { mode: State['mode']; dispatch: Dispatc
             onClick={() => {
               dispatch({ type: 'mode', mode: option });
             }}
-            className={`px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] ${
+            className={`px-2 py-1 text-[11px] ${
               mode === option ? 'bg-signal text-signal-fg' : 'bg-bg text-fg-muted'
             }`}
           >
@@ -199,17 +200,14 @@ function ExistingObjectPicker({
             </button>
           ) : null}
         </label>
-        <output
-          className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
-          aria-live="polite"
-        >
+        <output className="text-xs text-fg-dim" aria-live="polite">
           {selectableCandidates.length} / {candidates.length}
         </output>
       </div>
 
       {existingTypeOptions.length > 1 ? (
         <div
-          className="flex flex-wrap gap-1.5 font-mono text-[10px] uppercase tracking-[0.12em]"
+          className="flex flex-wrap gap-1.5 text-[11px]"
           aria-label="Filter existing objects by type"
         >
           {(['all', ...existingTypeOptions] as const).map((type) => (
@@ -227,9 +225,7 @@ function ExistingObjectPicker({
 
       {selectedCandidate ? (
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-            Selected
-          </span>
+          <span className="text-xs text-fg-dim">Selected</span>
           <button
             type="button"
             onClick={() => {
@@ -237,7 +233,7 @@ function ExistingObjectPicker({
             }}
             className="inline-flex items-center gap-2 rounded-sm border border-border bg-surface px-2 py-1 text-fg transition-colors hover:bg-surface-2"
           >
-            <span>{displayText(selectedCandidate.canonicalName)}</span>
+            <span>{displayObjectLabel(selectedCandidate)}</span>
             <X className="size-3.5 text-fg-dim" aria-hidden="true" />
           </button>
         </div>
@@ -289,6 +285,9 @@ function CandidateList({
         <ul className="divide-y divide-border">
           {candidates.map((row) => {
             const selected = row.id === entityId;
+            const visibleAliases = row.aliases
+              .filter((alias) => !isInternalIdentifier(alias))
+              .slice(0, 2);
             return (
               <li key={row.id}>
                 <button
@@ -304,15 +303,12 @@ function CandidateList({
                 >
                   <span className="min-w-0">
                     <span className="block truncate font-medium text-fg">
-                      {displayText(row.canonicalName)}
+                      {displayObjectLabel(row)}
                     </span>
-                    <span className="block truncate font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+                    <span className="block truncate text-[11px] text-fg-dim">
                       {row.type}
-                      {row.aliases.length > 0
-                        ? ` · ${row.aliases
-                            .slice(0, 2)
-                            .map((alias) => displayText(alias))
-                            .join(', ')}`
+                      {visibleAliases.length > 0
+                        ? ` · ${visibleAliases.map((alias) => displayText(alias)).join(', ')}`
                         : ''}
                     </span>
                   </span>
@@ -480,7 +476,7 @@ export function BoardAddItemForm({
   return (
     <div className="rounded-sm border border-border bg-surface p-3">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">Add item</h2>
+        <h2 className="text-xs text-fg-dim">Add item</h2>
         <button
           type="button"
           onClick={() => {
@@ -520,11 +516,7 @@ export function BoardAddItemForm({
               dispatch={dispatch}
             />
           )}
-          {state.error ? (
-            <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.1em] text-danger">
-              {state.error}
-            </p>
-          ) : null}
+          {state.error ? <p className="mt-2 text-xs text-danger">{state.error}</p> : null}
           <button
             type="button"
             onClick={submit}

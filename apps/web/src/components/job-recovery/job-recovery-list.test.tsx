@@ -176,6 +176,43 @@ describe('JobRecoveryList', () => {
     expect(fakes.routerRefresh).toHaveBeenCalledOnce();
   });
 
+  it('keeps a failed retry error inside the closed technical disclosure', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date('2026-07-02T10:00:00.000Z'));
+    const rawError =
+      'Provider payload ref 018f22e2-7a9b-7cc3-98c4-3a2b1c0d9e8f could not be processed';
+    installFinishedJobsQuery({
+      items: [
+        finishedJob({
+          status: 'failed',
+          finishedAt: new Date('2026-07-02T10:01:00.000Z'),
+          error: rawError,
+        }),
+      ],
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }))),
+    );
+
+    render(<JobRecoveryList items={[recoverableJob()]} />);
+    await userEvent
+      .setup({ advanceTimers: vi.advanceTimersByTime })
+      .click(screen.getByRole('button', { name: 'Retry' }));
+
+    const recoveryRow = screen.getAllByText('Transcribe customer call')[0]?.closest('li');
+    expect(recoveryRow).not.toBeNull();
+    await waitFor(() => {
+      expect(
+        within(recoveryRow as HTMLElement).getByText(
+          'Retry failed. Review technical details, then retry the job or dismiss it.',
+        ),
+      ).toBeTruthy();
+    });
+    const rawErrorValue = within(recoveryRow as HTMLElement).getByText(rawError);
+    expect(rawErrorValue.closest('details')?.open).toBe(false);
+  });
+
   it('bulk retries visible failed jobs and reports partial queue failures', async () => {
     const user = userEvent.setup();
     const requests: { body: unknown; method: string; url: string }[] = [];

@@ -123,9 +123,7 @@ export function MobileNav({ active, memberships, recipientInvites, badges = EMPT
           />
           <aside className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col overscroll-contain border-r border-border bg-bg px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-[max(1.25rem,env(safe-area-inset-top))]">
             <div className="flex items-center justify-between px-2">
-              <span className="font-mono text-xs uppercase tracking-[0.14em] text-fg">
-                The Timeline
-              </span>
+              <span className="text-sm font-semibold tracking-tight text-fg">The Timeline</span>
               <button
                 ref={closeRef}
                 type="button"

@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useId, useReducer, useRef, useState } from 'react';
 
+import { TechnicalDetails } from '@/components/technical-details';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -464,9 +465,7 @@ export function McpServersUi({
               <li key={s.id} className="space-y-2 p-3">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">{s.name}</span>
-                  <span className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">
-                    {s.authType}
-                  </span>
+                  <span className="text-xs text-fg-muted">{s.authType}</span>
                   {!s.enabled ? (
                     <span className="rounded-sm border border-border px-1 text-[10px] uppercase text-fg-muted">
                       Disabled
@@ -514,7 +513,20 @@ export function McpServersUi({
                 </div>
                 <div className="break-all text-xs text-fg-muted">{s.url}</div>
                 {s.lastError ? (
-                  <div className="text-xs text-destructive">Error: {s.lastError}</div>
+                  <div className="space-y-2">
+                    <p className="text-xs text-destructive">
+                      This server needs attention. Reconnect it or test the connection again.
+                    </p>
+                    <TechnicalDetails
+                      items={[
+                        {
+                          label: 'Connection error',
+                          value: s.lastError,
+                          copyValue: s.lastError,
+                        },
+                      ]}
+                    />
+                  </div>
                 ) : null}
                 {mutation.error ? (
                   <p className="text-xs text-destructive" role="alert">
@@ -523,9 +535,7 @@ export function McpServersUi({
                 ) : null}
                 {s.cachedTools.length > 0 ? (
                   <div className="space-y-1">
-                    <div className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">
-                      Tools ({s.cachedTools.length})
-                    </div>
+                    <div className="text-xs text-fg-muted">Tools ({s.cachedTools.length})</div>
                     <ul className="space-y-1">
                       {s.cachedTools.map((t) => (
                         <li

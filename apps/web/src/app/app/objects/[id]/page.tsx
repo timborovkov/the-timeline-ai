@@ -126,6 +126,7 @@ export default async function ObjectDetailPage({ params, searchParams }: PagePro
       <ObjectBoardContext rows={boardContext} />
       <ObjectDetailClient
         detail={detail}
+        teamId={active.teamId}
         userId={session.user.id}
         suggestions={suggestions}
         projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}

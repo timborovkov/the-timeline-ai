@@ -17,7 +17,9 @@ import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
+import { CopyButton } from '@/components/copy-button';
 import { PageHeader } from '@/components/page-header';
+import { SectionHeading } from '@/components/section-heading';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -29,6 +31,9 @@ export const metadata: Metadata = {
 };
 
 type SourceStatus = 'connected' | 'attention' | 'not-setup';
+
+const CAPTURE_LABELS = new Set(['Email', 'Slack', 'Telegram']);
+const ADVANCED_LABELS = new Set(['MCP servers']);
 
 interface SourceEntry {
   href: string;
@@ -42,13 +47,15 @@ interface SourceEntry {
   secondaryActionHref?: string;
   secondaryActionLabel?: string;
   detail: string;
+  copyValue?: string;
+  note?: string;
 }
 
 function buildSources(summary: SourcesStatusSummary): SourceEntry[] {
   const emailConnected = Boolean(summary.inboundEmail);
   const emailForwarded = summary.emailForwarded;
   const email: SourceEntry = {
-    href: '/app#email-ingest',
+    href: '/app/sources',
     label: 'Email',
     description: 'Forward, CC, or BCC team mail into the archive.',
     icon: Mail,
@@ -58,9 +65,13 @@ function buildSources(summary: SourcesStatusSummary): SourceEntry[] {
       : emailConnected
         ? 'Ready, no mail yet'
         : 'Not set up',
-    actionHref: emailConnected ? '/app#email-ingest' : '/app/team',
-    actionLabel: emailConnected ? 'Manage' : 'Set up email',
-    detail: emailConnected ? `Inbound: ${summary.inboundEmail}` : 'No inbound address configured',
+    actionHref: '/app/team?section=email',
+    actionLabel: emailConnected ? 'Manage email' : 'Set up email',
+    detail: summary.inboundEmail ?? 'No inbound address configured',
+    copyValue: summary.inboundEmail ?? undefined,
+    note: emailConnected
+      ? 'Member email addresses are attributed automatically. Unknown senders are captured and marked unverified.'
+      : undefined,
   };
 
   const slackConnected = summary.slackConnections > 0;
@@ -189,13 +200,21 @@ function StatusIcon({ status }: { status: SourceStatus }) {
   return <Circle className="size-4 text-fg-dim" aria-hidden="true" />;
 }
 
+function sourceDoesNotNeedAttention(source: SourceEntry): boolean {
+  return source.status !== 'attention';
+}
+
 export default async function SourcesPage() {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) redirect('/sign-in');
   const scope = withTeam(db, active.teamId, session.user.id);
-  const summary = await getSourcesStatusSummary(scope);
+  const [role, summary] = await Promise.all([
+    scope.requireMembership(),
+    getSourcesStatusSummary(scope),
+  ]);
+  const isAdmin = role === 'owner' || role === 'admin';
   const sources = buildSources(summary);
   const attentionSources = sources.filter((s) => s.status === 'attention');
   const notSetupSources = sources.filter((s) => s.status === 'not-setup');
@@ -203,7 +222,16 @@ export default async function SourcesPage() {
   const attentionCount = summary.attention;
   const connectedCount = connectedSources.length;
   const notSetupCount = notSetupSources.length;
-  const sorted = [...attentionSources, ...notSetupSources, ...connectedSources];
+  const connectedProviders = connectedSources.filter(
+    (source) => !CAPTURE_LABELS.has(source.label) && !ADVANCED_LABELS.has(source.label),
+  );
+  const addable = notSetupSources.filter(
+    (source) => !CAPTURE_LABELS.has(source.label) && !ADVANCED_LABELS.has(source.label),
+  );
+  const captureSources = sources.filter(
+    (source) => CAPTURE_LABELS.has(source.label) && sourceDoesNotNeedAttention(source),
+  );
+  const advancedSources = sources.filter((source) => ADVANCED_LABELS.has(source.label));
 
   return (
     <div className="space-y-6">
@@ -212,63 +240,152 @@ export default async function SourcesPage() {
         subtitle="Capture surfaces, native sync, and live external tools."
         srLabel={`Connections · ${active.teamName} · ${connectedCount} connected · ${attentionCount} need attention · ${notSetupCount} not set up`}
         metadata={[
-          { label: 'team', value: active.teamName, signal: true },
-          { label: 'connected', value: connectedCount },
+          { label: 'Team', value: active.teamName },
+          { label: 'Connected', value: connectedCount, mono: true },
           ...(attentionCount > 0
-            ? ([{ label: 'attention', value: attentionCount, danger: true }] as const)
+            ? ([{ label: 'Attention', value: attentionCount, mono: true, danger: true }] as const)
             : ([] as const)),
           ...(notSetupCount > 0
-            ? ([{ label: 'not set up', value: notSetupCount }] as const)
+            ? ([{ label: 'Not set up', value: notSetupCount, mono: true }] as const)
             : ([] as const)),
         ]}
       />
 
-      <div className="space-y-3">
-        {sorted.map((source) => (
-          <div
-            key={source.label}
-            className="flex flex-wrap items-center gap-3 rounded-sm border border-border bg-surface p-4"
-          >
-            <div className="flex min-w-0 flex-1 items-start gap-3">
-              <source.icon className="mt-0.5 size-5 shrink-0 text-fg-muted" aria-hidden="true" />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-fg">{source.label}</span>
-                  <span
-                    className={
-                      source.status === 'attention'
-                        ? 'text-xs font-medium text-danger'
-                        : source.status === 'connected'
-                          ? 'text-xs font-medium text-signal'
-                          : 'text-xs text-fg-muted'
-                    }
-                  >
-                    {source.statusLabel}
-                  </span>
-                </div>
-                <p className="mt-0.5 text-sm text-fg-muted">{source.description}</p>
-                <p className="mt-0.5 text-xs text-fg-dim">{source.detail}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <StatusIcon status={source.status} />
-              {source.secondaryActionHref ? (
-                <Link
-                  href={source.secondaryActionHref}
-                  className="inline-flex min-h-8 items-center rounded-sm border border-transparent px-2.5 text-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
-                >
-                  {source.secondaryActionLabel}
-                </Link>
-              ) : null}
+      {attentionSources.length > 0 ? (
+        <SourceGroup title="Needs attention" sources={attentionSources} />
+      ) : null}
+      {connectedProviders.length > 0 ? (
+        <SourceGroup title="Connected sources" sources={connectedProviders} />
+      ) : null}
+      <SourceGroup
+        title="Add a connection"
+        sources={addable}
+        empty="All available providers are connected."
+      />
+      <SourceGroup
+        title="Capture from email and chat"
+        sources={captureSources}
+        description="Forwarding and chat bindings attribute captured work to the person or conversation that sent it."
+      />
+      <section className="space-y-3">
+        <SectionHeading>Advanced tools</SectionHeading>
+        <details className="rounded-lg border border-border bg-surface p-4">
+          <summary className="cursor-pointer text-sm font-medium text-fg">
+            MCP, webhooks, and audit tools
+          </summary>
+          <div className="mt-4 space-y-3 border-t border-border pt-4">
+            {advancedSources.map((source) => (
+              <SourceRow key={source.label} source={source} />
+            ))}
+            <div className="flex flex-wrap gap-2 text-sm">
               <Link
-                href={source.actionHref}
-                className="inline-flex min-h-8 items-center rounded-sm border border-border px-2.5 text-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
+                href="/app/team/integrations"
+                className="rounded-sm border border-border px-3 py-2 hover:bg-surface-2"
               >
-                {source.actionLabel}
+                Provider resources and webhooks
               </Link>
+              {isAdmin ? (
+                <>
+                  <Link
+                    href="/app/team/mcp-share"
+                    className="rounded-sm border border-border px-3 py-2 hover:bg-surface-2"
+                  >
+                    Outbound MCP sharing
+                  </Link>
+                  <Link
+                    href="/app/team/integrations/audit"
+                    className="rounded-sm border border-border px-3 py-2 hover:bg-surface-2"
+                  >
+                    Integration audit
+                  </Link>
+                </>
+              ) : null}
             </div>
           </div>
-        ))}
+        </details>
+      </section>
+    </div>
+  );
+}
+
+function SourceGroup({
+  title,
+  sources,
+  description,
+  empty,
+}: {
+  title: string;
+  sources: SourceEntry[];
+  description?: string;
+  empty?: string;
+}) {
+  return (
+    <section className="space-y-3">
+      <SectionHeading>{title}</SectionHeading>
+      {description ? <p className="max-w-3xl text-sm text-fg-muted">{description}</p> : null}
+      {sources.length > 0 ? (
+        <div className="space-y-2">
+          {sources.map((source) => (
+            <SourceRow key={source.label} source={source} />
+          ))}
+        </div>
+      ) : empty ? (
+        <p className="text-sm text-fg-muted">{empty}</p>
+      ) : null}
+    </section>
+  );
+}
+
+function SourceRow({ source }: { source: SourceEntry }) {
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface p-4">
+      <div className="flex min-w-0 flex-1 items-start gap-3">
+        <source.icon className="mt-0.5 size-5 shrink-0 text-fg-muted" aria-hidden="true" />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium text-fg">{source.label}</span>
+            <span
+              className={
+                source.status === 'attention'
+                  ? 'text-xs font-medium text-danger'
+                  : source.status === 'connected'
+                    ? 'text-xs font-medium text-signal'
+                    : 'text-xs text-fg-muted'
+              }
+            >
+              {source.statusLabel}
+            </span>
+          </div>
+          <p className="mt-0.5 text-sm text-fg-muted">{source.description}</p>
+          {source.copyValue ? (
+            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
+              <code className="min-w-0 break-all font-mono text-xs text-fg-dim">
+                {source.detail}
+              </code>
+              <CopyButton value={source.copyValue} label="Copy address" />
+            </div>
+          ) : (
+            <p className="mt-0.5 text-xs text-fg-dim">{source.detail}</p>
+          )}
+          {source.note ? <p className="mt-1 text-xs text-fg-muted">{source.note}</p> : null}
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <StatusIcon status={source.status} />
+        {source.secondaryActionHref ? (
+          <Link
+            href={source.secondaryActionHref}
+            className="inline-flex min-h-8 items-center rounded-sm px-2.5 text-sm text-fg-muted hover:bg-surface-2 hover:text-fg"
+          >
+            {source.secondaryActionLabel}
+          </Link>
+        ) : null}
+        <Link
+          href={source.actionHref}
+          className="inline-flex min-h-8 items-center rounded-sm border border-border px-2.5 text-sm text-fg-muted hover:bg-surface-2 hover:text-fg"
+        >
+          {source.actionLabel}
+        </Link>
       </div>
     </div>
   );

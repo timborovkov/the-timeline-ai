@@ -77,6 +77,26 @@ describe('timeline controls', () => {
     ]);
   });
 
+  it('keeps multiple unnamed Slack channels distinguishable without exposing channel IDs', () => {
+    expect(
+      timelineOriginOptions([
+        {
+          filter: { kind: 'slack_channel', workspaceId: 'T1', channelId: 'C2' },
+          label: 'Unnamed channel',
+          eventCount: 2,
+        },
+        {
+          filter: { kind: 'slack_channel', workspaceId: 'T1', channelId: 'C1' },
+          label: 'Unnamed channel',
+          eventCount: 1,
+        },
+      ]),
+    ).toEqual([
+      { value: 'slack:T1:C2', label: 'Slack channel · Unnamed channel 2' },
+      { value: 'slack:T1:C1', label: 'Slack channel · Unnamed channel 1' },
+    ]);
+  });
+
   it('lets the most recently selected source scope replace the other scope', () => {
     expect(
       updateTimelineSourceSelection(

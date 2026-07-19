@@ -1,3 +1,5 @@
+'use client';
+
 import { truncateFilenameMiddle } from '@timeline/shared/documents/presentation';
 import {
   ExternalLink,
@@ -12,6 +14,7 @@ import Link from 'next/link';
 import type { ObjectDetail } from '@timeline/shared/objects/types';
 import type { ReactNode } from 'react';
 
+import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 
 type ConnectedWork = ObjectDetail['connectedWork'];
@@ -40,17 +43,14 @@ export function ObjectRelatedContext({
   connectedWork: ConnectedWork | null | undefined;
   compact?: boolean;
 }) {
+  const timezone = useWorkspaceTimezone();
   if (!connectedWork || contextCount(connectedWork) === 0) return null;
 
   return (
     <section className="border-b border-border p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-          Related context
-        </h3>
-        <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
-          {contextCount(connectedWork)}
-        </span>
+        <h3 className="text-xs text-fg-dim">Related context</h3>
+        <span className="text-[11px] text-fg-dim">{contextCount(connectedWork)}</span>
       </div>
       <div className={compact ? 'space-y-3' : 'grid gap-3 sm:grid-cols-2'}>
         <ContextGroup
@@ -70,7 +70,7 @@ export function ObjectRelatedContext({
           items={connectedWork.documents.slice(0, compact ? 3 : 6).map((document) => ({
             key: document.id,
             label: truncateFilenameMiddle(document.name),
-            detail: `updated ${formatDisplayDateTime(document.updatedAt)}`,
+            detail: `updated ${formatDisplayDateTime(document.updatedAt, { timezone })}`,
             href: `/app/documents/${document.id}`,
           }))}
         />
@@ -95,7 +95,7 @@ export function ObjectRelatedContext({
           items={connectedWork.timelineEvents.slice(0, compact ? 3 : 6).map((event) => ({
             key: event.id,
             label: timelinePreview(event.contentText),
-            detail: `${event.source} · ${formatDisplayDateTime(event.occurredAt)}`,
+            detail: `${event.source} · ${formatDisplayDateTime(event.occurredAt, { timezone })}`,
             href: `/app/timeline?event=${event.id}#ev-${event.id}`,
           }))}
         />
@@ -124,7 +124,7 @@ function ContextGroup({
 
   return (
     <div className="min-w-0">
-      <div className="mb-1.5 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
+      <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-fg-dim">
         {icon}
         <span>{title}</span>
       </div>
@@ -155,9 +155,7 @@ function ContextGroup({
             ) : (
               <span className="block truncate text-sm font-medium">{displayText(item.label)}</span>
             )}
-            <div className="mt-1 truncate font-mono text-[10px] uppercase tracking-[0.08em] text-fg-dim">
-              {displayText(item.detail)}
-            </div>
+            <div className="mt-1 truncate text-[11px] text-fg-dim">{displayText(item.detail)}</div>
           </li>
         ))}
       </ul>

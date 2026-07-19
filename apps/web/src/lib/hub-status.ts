@@ -5,6 +5,7 @@ import {
   type meetingStatus,
   type mcpServers,
 } from '@timeline/db';
+import { composePostmarkHashAddress } from '@timeline/shared/slug';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, eq, isNull, lt, or, sql } from 'drizzle-orm';
 
@@ -56,6 +57,16 @@ export function attentionCount(...counts: number[]): number {
   return counts.reduce((sum, count) => sum + Math.max(0, count), 0);
 }
 
+export function displayInboundEmail(
+  team: { slug: string; inboundEmail: string | null } | null,
+  postmarkInboundAddress: string | undefined,
+): string | null {
+  if (!team) return null;
+  const configuredAddress =
+    team.inboundEmail && !team.inboundEmail.endsWith('@inbound.invalid') ? team.inboundEmail : null;
+  return configuredAddress ?? composePostmarkHashAddress(team.slug, postmarkInboundAddress);
+}
+
 export function workAttentionCount({
   pendingApprovals,
   overdueTasks,
@@ -64,6 +75,11 @@ export function workAttentionCount({
   overdueTasks: number;
 }): number {
   return attentionCount(pendingApprovals, overdueTasks);
+}
+
+/** Home shows approvals separately, so work attention is overdue tasks only. */
+export function homeWorkNeedingAttentionCount(summary: WorkAttentionSummary): number {
+  return Math.max(0, summary.overdueTasks);
 }
 
 function countIntegrationErrors(rows: IntegrationRow[]): number {
@@ -236,8 +252,9 @@ export async function getSourcesStatusSummary(
   ]);
   const integrationErrors = countIntegrationErrors(integrations);
   const mcpErrors = countMcpErrors(mcpServerRows);
+  const inboundEmail = displayInboundEmail(team, process.env.POSTMARK_INBOUND_ADDRESS);
   const emailAttention =
-    team?.inboundEmail &&
+    inboundEmail &&
     !onboarding.steps.some((step) => step.step === 'email_forwarding' && step.completed)
       ? 1
       : 0;
@@ -250,7 +267,7 @@ export async function getSourcesStatusSummary(
       mcpErrors,
       emailAttention,
     ),
-    inboundEmail: team?.inboundEmail ?? null,
+    inboundEmail,
     emailForwarded: onboarding.steps.some(
       (step) => step.step === 'email_forwarding' && step.completed,
     ),

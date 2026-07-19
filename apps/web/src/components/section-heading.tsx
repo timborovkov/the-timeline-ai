@@ -18,14 +18,13 @@ interface SectionHeadingProps {
  * tracking-[0.14em]`) that sat above content blocks on Home, Sources,
  * Integrations, etc.
  *
- * Operational surfaces keep mono eyebrows / `IndexStrip` for their
- * metadata strips; this component is for plain section titles on
- * non-operational pages.
+ * Timeline and explicit audit/operator surfaces may keep `IndexStrip` for
+ * compact metadata; all ordinary section titles use this component.
  */
 export function SectionHeading({ children, actions, id, className }: SectionHeadingProps) {
   return (
     <div className={cn('flex items-center justify-between gap-3', className)}>
-      <h2 id={id} className="m-0 text-lg font-semibold tracking-tight text-fg">
+      <h2 id={id} className="m-0 text-base font-semibold tracking-tight text-fg">
         {children}
       </h2>
       {actions ? <div className="flex items-center gap-2">{actions}</div> : null}

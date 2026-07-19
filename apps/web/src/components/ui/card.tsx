@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { Slot } from '@radix-ui/react-slot';
 
 import { cn } from '@/lib/utils';
 
@@ -10,7 +11,10 @@ function Card({ className, ref, ...props }: DivProps) {
   return (
     <div
       ref={ref}
-      className={cn('rounded-sm border border-border bg-card text-card-foreground', className)}
+      className={cn(
+        'min-w-0 rounded-lg border border-border bg-card text-card-foreground',
+        className,
+      )}
       {...props}
     />
   );
@@ -18,15 +22,21 @@ function Card({ className, ref, ...props }: DivProps) {
 Card.displayName = 'Card';
 
 function CardHeader({ className, ref, ...props }: DivProps) {
-  return <div ref={ref} className={cn('flex flex-col space-y-1.5 p-6', className)} {...props} />;
+  return <div ref={ref} className={cn('flex flex-col space-y-1.5 p-4', className)} {...props} />;
 }
 CardHeader.displayName = 'CardHeader';
 
-function CardTitle({ className, ref, ...props }: DivProps) {
+type CardTitleProps = DivProps & {
+  as?: 'div' | 'h2' | 'h3';
+  asChild?: boolean;
+};
+
+function CardTitle({ className, ref, as = 'div', asChild = false, ...props }: CardTitleProps) {
+  const Comp = asChild ? Slot : as;
   return (
-    <div
+    <Comp
       ref={ref}
-      className={cn('text-lg font-semibold leading-none tracking-tight', className)}
+      className={cn('text-base font-semibold leading-tight tracking-tight', className)}
       {...props}
     />
   );
@@ -39,12 +49,12 @@ function CardDescription({ className, ref, ...props }: DivProps) {
 CardDescription.displayName = 'CardDescription';
 
 function CardContent({ className, ref, ...props }: DivProps) {
-  return <div ref={ref} className={cn('p-6 pt-0', className)} {...props} />;
+  return <div ref={ref} className={cn('min-w-0 p-4 pt-0', className)} {...props} />;
 }
 CardContent.displayName = 'CardContent';
 
 function CardFooter({ className, ref, ...props }: DivProps) {
-  return <div ref={ref} className={cn('flex items-center p-6 pt-0', className)} {...props} />;
+  return <div ref={ref} className={cn('flex items-center p-4 pt-0', className)} {...props} />;
 }
 CardFooter.displayName = 'CardFooter';
 

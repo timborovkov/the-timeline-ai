@@ -148,8 +148,9 @@ describe('DocumentDetail', () => {
     expect(screen.getByRole('link', { name: 'Back' }).getAttribute('href')).toBe(
       '/app/documents?folder=folder-1',
     );
-    expect(screen.getByText('Acme launch packet.txt')).toBeTruthy();
-    expect(screen.getByText('specific_users')).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 1, name: 'Acme launch packet.txt' })).toBeTruthy();
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(screen.getByText('Specific users')).toBeTruthy();
     expect(screen.getByText('Selected version')).toBeTruthy();
     expect(screen.getByText(/v1 · 4\.0 KB · application\/octet-stream/)).toBeTruthy();
     expect(screen.getByText('Extracted text')).toBeTruthy();
@@ -160,15 +161,19 @@ describe('DocumentDetail', () => {
       screen.getAllByText('Visual summary of the Acme launch packet.').length,
     ).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('email capture')).toBeTruthy();
-    expect(screen.getAllByText('chunked').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Chunked').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('2 chunks')).toBeTruthy();
-    expect(screen.getByText('Extracted chunks')).toBeTruthy();
-    expect(screen.getByText('Chunk 1')).toBeTruthy();
-    expect(screen.getByText('source text')).toBeTruthy();
+    expect(screen.getByText('Content excerpts')).toBeTruthy();
+    expect(screen.queryByText('Chunk 1')).toBeNull();
+    expect(screen.queryByText('source text')).toBeNull();
     expect(screen.getAllByText('Page 1').length).toBeGreaterThanOrEqual(1);
     expect(document.getElementById('chunk-chunk-text')?.textContent).toContain(
       'Customer asks for launch readiness',
     );
+    const indexingDetails = screen.getByText('Indexing details').closest('details');
+    expect(indexingDetails?.open).toBe(false);
+    expect(indexingDetails?.textContent).toContain('chunk-text');
+    expect(indexingDetails?.textContent).toContain('source_text');
     const previewLinks = screen.getAllByRole('link', { name: 'Preview' });
     expect(previewLinks.map((link) => link.getAttribute('href'))).toEqual([
       '/app/documents/doc-1?version=2',
@@ -222,9 +227,10 @@ describe('DocumentDetail', () => {
     expect(screen.getByText('Preview is not available for this file type.')).toBeTruthy();
     expect(screen.getByText('No extracted description is available yet.')).toBeTruthy();
     expect(screen.getByText('0 chunks')).toBeTruthy();
-    expect(screen.getAllByText('failed').length).toBeGreaterThanOrEqual(1);
-    expect(
-      screen.getAllByText('OCR failed because the provider returned unreadable content.').length,
-    ).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Failed').length).toBeGreaterThanOrEqual(1);
+    const error = screen.getAllByText(
+      'OCR failed because the provider returned unreadable content.',
+    )[0];
+    expect(error?.closest('details')?.open).toBe(false);
   });
 });

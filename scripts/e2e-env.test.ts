@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { buildE2eEnv } from './e2e-env.js';
+import { buildE2eEnv, buildE2eWebServerConfig } from './e2e-env.js';
 
 const dockerPorts = new Map<string, string>([
   ['timeline-e2e-postgres-1:5432', '55432'],
@@ -153,6 +153,53 @@ function lookupPort(container: string, port: number): string | null {
     else process.env.PATH = originalPath;
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+{
+  const first = buildE2eEnv({}, { publishedPort: lookupPort, workspacePath: '/workspace/one' });
+  const repeat = buildE2eEnv({}, { publishedPort: lookupPort, workspacePath: '/workspace/one' });
+  const second = buildE2eEnv({}, { publishedPort: lookupPort, workspacePath: '/workspace/two' });
+
+  assert.equal(first.E2E_RUN_ID, undefined);
+  assert.match(first.E2E_NAMESPACE ?? '', /^worktree-[a-f0-9]{12}$/);
+  assert.equal(first.E2E_NAMESPACE, repeat.E2E_NAMESPACE);
+  assert.notEqual(first.E2E_NAMESPACE, second.E2E_NAMESPACE);
+  assert.equal(first.E2E_WEB_PORT, repeat.E2E_WEB_PORT);
+  assert.notEqual(first.E2E_WEB_PORT, second.E2E_WEB_PORT);
+
+  const firstServer = buildE2eWebServerConfig(first);
+  const secondServer = buildE2eWebServerConfig(second);
+  assert.notEqual(firstServer.baseURL, secondServer.baseURL);
+  assert.notEqual(firstServer.command, secondServer.command);
+  assert.match(firstServer.command, new RegExp(` -p ${first.E2E_WEB_PORT}$`));
+}
+
+{
+  const compose = readFileSync(path.join(process.cwd(), 'docker-compose.yml'), 'utf8');
+  assert.match(compose, /<AllowedOrigin>http:\/\/localhost:\*<\/AllowedOrigin>/);
+  assert.match(compose, /<AllowedOrigin>http:\/\/127\.0\.0\.1:\*<\/AllowedOrigin>/);
+}
+
+{
+  const env = buildE2eEnv(
+    { E2E_RUN_ID: 'explicit-run', E2E_WEB_PORT: '43123' },
+    { publishedPort: lookupPort, workspacePath: '/workspace/ignored' },
+  );
+
+  assert.equal(env.E2E_RUN_ID, 'explicit-run');
+  assert.equal(env.E2E_NAMESPACE, 'explicit-run');
+  assert.equal(env.E2E_WEB_PORT, '43123');
+  assert.deepEqual(buildE2eWebServerConfig(env), {
+    baseURL: 'http://localhost:43123',
+    command: 'pnpm --filter @timeline/web exec next dev -H 127.0.0.1 -p 43123',
+  });
+}
+
+{
+  assert.throws(
+    () => buildE2eWebServerConfig({ E2E_WEB_PORT: '3000; rm -rf /' }),
+    /Invalid E2E_WEB_PORT/,
+  );
 }
 
 console.log('e2e-env tests passed');

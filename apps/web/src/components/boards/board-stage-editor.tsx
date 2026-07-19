@@ -50,16 +50,14 @@ export function BoardStageEditor({ stages, onChange, disabled = false, className
   return (
     <div className={cn('space-y-2', className)}>
       <div className="flex items-center justify-between gap-3">
-        <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-          Stages
-        </span>
+        <span className="text-xs text-fg-dim">Stages</span>
         <button
           type="button"
           disabled={disabled}
           onClick={() => {
             onChange([...rows, { name: 'New stage', kind: 'active' }]);
           }}
-          className="inline-flex items-center gap-1 rounded-sm border border-border bg-bg px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-muted transition-colors hover:border-border-strong hover:text-fg disabled:opacity-40"
+          className="inline-flex items-center gap-1 rounded-sm border border-border bg-bg px-2 py-1 text-[11px] text-fg-muted transition-colors hover:border-border-strong hover:text-fg disabled:opacity-40"
         >
           <Plus className="size-3" aria-hidden="true" />
           Stage

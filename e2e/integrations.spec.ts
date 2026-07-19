@@ -748,9 +748,14 @@ test('Slack settings page renders seeded workspace status for members', async ({
 
   await expect(page.getByRole('heading', { name: 'Slack', level: 1 })).toBeVisible();
   await expect(page.getByText(`${SLACK_SETTINGS_PREFIX} workspace`)).toBeVisible();
-  await expect(page.getByText(`workspace ${SLACK_SETTINGS_TEAM_ID} · enabled`)).toBeVisible();
+  await expect(page.getByText('Enabled', { exact: true })).toBeVisible();
+  const workspaceDetails = page.locator('details').filter({ hasText: SLACK_SETTINGS_TEAM_ID });
+  await expect(workspaceDetails).not.toHaveAttribute('open', '');
+  await expect(page.getByText(SLACK_SETTINGS_TEAM_ID, { exact: true })).not.toBeVisible();
+  await workspaceDetails.locator('summary').click();
+  await expect(page.getByText(SLACK_SETTINGS_TEAM_ID, { exact: true })).toBeVisible();
   await expect(page.getByText(`${SLACK_SETTINGS_PREFIX} #launch`)).toBeVisible();
-  await expect(page.getByText('channel · default visibility team')).toBeVisible();
+  await expect(page.getByText('Channel · Team visibility')).toBeVisible();
   await expect(page.getByText(e2eUsers.member.name)).toBeVisible();
   await expect(
     page.getByText(`Slack ${SLACK_SETTINGS_PREFIX} Member · ${e2eUsers.member.email}`),
@@ -785,7 +790,8 @@ test('Slack settings admins can bind and unbind seeded provider conversations', 
 
   await page.locator('select[name="conversationId"]').selectOption('C_E2E_SUPPORT');
   await page.getByRole('button', { name: 'Bind', exact: true }).click();
-  await expect(page.getByText('support')).toBeVisible();
+  await expect(page.getByText('support', { exact: true })).toBeVisible();
+  await expect(page.getByText('C_E2E_SUPPORT', { exact: true })).not.toBeVisible();
   await expect(page.getByRole('option', { name: '#support' })).toHaveCount(0);
   await expect
     .poll(slackBindingRows)
@@ -816,7 +822,16 @@ test('Telegram settings admins can generate tokens, revoke tokens, and unbind gr
   await expect(page.getByText('Group binding', { exact: true })).toBeVisible();
   await expect(page.getByText('issued by another teammate')).toBeVisible();
   await expect(page.getByText(`${TELEGRAM_SETTINGS_PREFIX} group`)).toBeVisible();
-  await expect(page.getByText(`chat_id ${String(TELEGRAM_SETTINGS_CHAT_ID)}`)).toBeVisible();
+  const groupRow = page
+    .getByRole('listitem')
+    .filter({ hasText: `${TELEGRAM_SETTINGS_PREFIX} group` });
+  const groupDetails = groupRow.locator('details');
+  await expect(groupDetails).not.toHaveAttribute('open', '');
+  await expect(
+    page.getByText(String(TELEGRAM_SETTINGS_CHAT_ID), { exact: true }),
+  ).not.toBeVisible();
+  await groupDetails.locator('summary').click();
+  await expect(page.getByText(String(TELEGRAM_SETTINGS_CHAT_ID), { exact: true })).toBeVisible();
   await expect(page.getByText(e2eUsers.member.name)).toBeVisible();
   await expect(page.getByText(`tg:timeline_e2e_member · ${e2eUsers.member.email}`)).toBeVisible();
   await expect(page.getByText('active DM')).toBeVisible();
@@ -833,9 +848,6 @@ test('Telegram settings admins can generate tokens, revoke tokens, and unbind gr
   await expect(page.getByText('issued by another teammate')).toHaveCount(0);
   await expect.poll(telegramPendingTokenUsernames).toEqual(['e2egroupadmin']);
 
-  const groupRow = page
-    .getByRole('listitem')
-    .filter({ hasText: `${TELEGRAM_SETTINGS_PREFIX} group` });
   await groupRow.getByRole('button', { name: 'Unbind' }).click();
   await expect(page.getByText('No groups bound yet.')).toBeVisible();
   await expect.poll(telegramBoundGroupTitles).toEqual([]);

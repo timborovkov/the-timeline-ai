@@ -4,8 +4,9 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 
 import { HistoryBackLink } from '@/components/history-back-link';
-import { IndexStrip } from '@/components/index-strip';
 import { NewObjectForm } from '@/components/objects/new-object-form';
+import { PageHeader } from '@/components/page-header';
+import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -49,11 +50,12 @@ export default async function NewObjectPage({
   const returnTo = returnToParam?.startsWith('/app/') ? returnToParam : undefined;
   return (
     <div className="space-y-6">
-      <IndexStrip
-        srLabel="Create a new workspace object"
-        segments={[{ value: 'OBJECTS / NEW' }, { label: 'mode', value: 'create', signal: true }]}
+      <PageHeader
+        title="New object"
+        subtitle="Create a tracked object for your team."
         leading={objectsBackLink}
       />
+      <WorkSubnav current="/app/objects/new" />
       <NewObjectForm
         projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}
         defaultProjectId={defaultProjectId}

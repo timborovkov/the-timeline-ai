@@ -1664,9 +1664,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             channelId: row.slackChannelId,
             ...(row.slackWorkspaceId ? { workspaceId: row.slackWorkspaceId } : {}),
           },
-          label: row.slackChannelName
-            ? `#${row.slackChannelName.replace(/^#/, '')}`
-            : row.slackChannelId,
+          label: slackChannelDisplayLabel(row.slackChannelName),
           eventCount: 1,
         },
         Boolean(row.slackChannelName),
@@ -1683,6 +1681,11 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         Boolean(row.telegramChatTitle),
       );
     }
+  }
+
+  function slackChannelDisplayLabel(label: string | null): string {
+    const normalized = label?.trim().replace(/^#/, '');
+    return normalized ? `#${normalized}` : 'Unnamed channel';
   }
 
   async function listSourceFacets(): Promise<TimelineSourceFacet[]> {
@@ -1834,7 +1837,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             channelId: row.externalId,
             ...(workspaceId ? { workspaceId } : {}),
           },
-          label: row.externalLabel ?? row.externalId,
+          label: slackChannelDisplayLabel(row.externalLabel),
           eventCount: 0,
         });
       }
@@ -1863,7 +1866,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           workspaceId: row.workspaceId,
           channelId: row.channelId,
         },
-        label: row.label ? `#${row.label.replace(/^#/, '')}` : row.channelId,
+        label: slackChannelDisplayLabel(row.label),
         eventCount: 0,
       });
     }

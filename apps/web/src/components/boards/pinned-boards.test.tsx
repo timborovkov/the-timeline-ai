@@ -34,10 +34,11 @@ describe('PinnedBoards', () => {
       />,
     );
 
-    expect(html).toContain('Boards');
-    expect(html).toContain('New: 3');
-    expect(html).toContain('1 overdue');
-    expect(html).toContain('2 due soon');
+    expect(html).toContain('Pinned work');
+    expect(html).toContain('New:');
+    expect(html).toContain('>3</span>');
+    expect(html).toContain('>1</span> overdue');
+    expect(html).toContain('>2</span> due soon');
     expect(html).not.toContain('Pinned boards</h2>');
   });
 });

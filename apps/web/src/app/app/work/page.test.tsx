@@ -15,6 +15,7 @@ const fakes = vi.hoisted(() => ({
   listPinnedBoards: vi.fn(),
   listBoards: vi.fn(),
   listEventsPage: vi.fn(),
+  getCalendarSettings: vi.fn(),
   redirect: vi.fn((path: string) => {
     throw new Error(`redirect:${path}`);
   }),
@@ -36,6 +37,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
     objects: { countObjects: fakes.countObjects, listObjects: fakes.listObjects },
     suggestions: { getApprovalItemCounts: fakes.getApprovalItemCounts },
     timeline: { listEventsPage: fakes.listEventsPage },
+    calendar: { getCalendarSettings: fakes.getCalendarSettings },
   }),
 }));
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
@@ -103,6 +105,7 @@ beforeEach(() => {
   fakes.listPinnedBoards.mockResolvedValue([]);
   fakes.listBoards.mockResolvedValue([]);
   fakes.listEventsPage.mockResolvedValue({ items: [], nextCursor: null });
+  fakes.getCalendarSettings.mockResolvedValue({ defaultTimezone: 'America/Los_Angeles' });
 });
 
 afterEach(() => {
@@ -120,12 +123,12 @@ describe('WorkPage', () => {
       suggestions: { getApprovalItemCounts: fakes.getApprovalItemCounts },
     } as never);
 
-    expect(html).toContain('Work Queue');
+    expect(html).toContain('Work queue');
     expect(html).toContain('3 pending approvals');
     expect(html).toContain('Pending approval');
     expect(html).toContain('/app/approvals?status=pending');
-    expect(html).toContain('attention');
-    expect(html).toContain('>5</span>');
+    expect(html).toContain('>Attention</dt>');
+    expect(html).toContain('>5</dd>');
     expect(navWorkAttention).toBe(5);
   });
 
@@ -198,6 +201,22 @@ describe('WorkPage', () => {
     expect(html).toContain('Unassigned due deal');
     expect(html).toContain('Team due');
     expect(html).not.toContain('Completed task');
+  });
+
+  it('never renders a UUID-only object name in the work queue', async () => {
+    const internalId = '11111111-1111-4111-8111-111111111111';
+    fakes.listObjects.mockResolvedValue([
+      objectRow({
+        id: 'owned-task',
+        canonicalName: internalId,
+        ownerUserId: USER_ID,
+      }),
+    ]);
+
+    const html = renderToStaticMarkup(await WorkPage());
+
+    expect(html).toContain('Untitled object');
+    expect(html).not.toContain(internalId);
   });
 
   it('includes unassigned objects due exactly at the due-soon boundary', async () => {
@@ -294,7 +313,7 @@ describe('WorkPage', () => {
 
     expect((html.match(/Revigo pilot/g) ?? []).length).toBe(1);
     expect(html).toContain('/app/boards/board-1?item=board-item-1');
-    expect(html).toContain('1/20');
+    expect(html).toContain('Queue');
   });
 
   it('renders empty state when no queue items exist', async () => {
@@ -302,12 +321,11 @@ describe('WorkPage', () => {
 
     expect(html).toContain('Work queue clear');
     expect(html).toContain('Open boards');
-    expect(html).toContain('Work surfaces');
-    expect(html).toContain('/app/meetings');
-    expect(html).toContain('Invite notetakers');
+    expect(html).toContain('Pinned and team boards');
+    expect(html).not.toContain('Work surfaces');
   });
 
-  it('renders compact boards and recent changes modules', async () => {
+  it('renders compact boards without duplicating recent timeline changes', async () => {
     fakes.listPinnedBoards.mockResolvedValue([
       {
         id: 'board-1',
@@ -333,10 +351,10 @@ describe('WorkPage', () => {
 
     expect(html).toContain('Pilot pipeline');
     expect(html).toContain('Pinned');
-    expect(html).toContain('Moved Revigo into scoping.');
+    expect(html).not.toContain('Moved Revigo into scoping.');
   });
 
-  it('formats ISO instants embedded in recent change text', async () => {
+  it('does not duplicate timeline event text on the work overview', async () => {
     fakes.listEventsPage.mockResolvedValue({
       items: [
         {
@@ -351,7 +369,7 @@ describe('WorkPage', () => {
 
     const html = renderToStaticMarkup(await WorkPage());
 
-    expect(html).toContain('Meeting with Miika');
+    expect(html).not.toContain('Meeting with Miika');
     expect(html).not.toContain('2026-07-01T00:00:00.000Z');
     expect(html).not.toContain('2026-07-02T00:00:00.000Z');
   });

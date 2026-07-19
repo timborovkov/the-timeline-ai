@@ -102,7 +102,7 @@ describe('/api/webhooks/ingest', () => {
     fakes.enqueueExtractJob.mockResolvedValue(undefined);
     fakes.enqueueEmbedJob.mockResolvedValue(undefined);
     fakes.enqueueSuggestionJob.mockResolvedValue({ enqueued: true, jobId: 'job' });
-  }, 20_000);
+  }, 30_000);
 
   afterEach(async () => {
     fakes.db = null;

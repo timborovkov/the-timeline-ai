@@ -37,6 +37,12 @@ const EMPTY_FILTERS: WorkFilterState = {
   updatedTo: '',
 };
 
+async function waitForMenuToClose(): Promise<void> {
+  await waitFor(() => {
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+}
+
 describe('WorkFilterBar', () => {
   afterEach(() => {
     cleanup();
@@ -69,6 +75,7 @@ describe('WorkFilterBar', () => {
 
     await user.click(screen.getByRole('button', { name: 'Type' }));
     await user.click(screen.getByRole('menuitem', { name: 'Any type' }));
+    await waitForMenuToClose();
     await waitFor(() => {
       expect(replace).toHaveBeenLastCalledWith('/app/objects?q=proposal', { scroll: false });
     });
@@ -93,6 +100,7 @@ describe('WorkFilterBar', () => {
     await user.click(screen.getByRole('menuitemcheckbox', { name: 'todo' }));
     await user.click(screen.getByRole('menuitemcheckbox', { name: 'doing' }));
     await user.keyboard('{Escape}');
+    await waitForMenuToClose();
     await waitFor(() => {
       expect(replace).toHaveBeenCalledWith('/app/tasks?status=todo%2Cdoing', { scroll: false });
     });
@@ -169,6 +177,7 @@ describe('WorkFilterBar', () => {
     expect(screen.queryByRole('menuitemcheckbox', { name: 'canceled' })).toBeNull();
 
     await user.keyboard('{Escape}');
+    await waitForMenuToClose();
   });
 
   it('keeps date range controls collapsed until toggled, unless a range is active', async () => {

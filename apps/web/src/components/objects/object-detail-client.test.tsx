@@ -148,6 +148,34 @@ describe('ObjectDetailClient', () => {
     expect(html).toContain('Archive object');
   });
 
+  it('formats string-backed due-date changes in the workspace timezone', () => {
+    render(
+      objectDetailElement({
+        detail: {
+          ...detail,
+          recentChanges: [
+            {
+              id: 'change-due-at',
+              field: 'dueAt',
+              previousValue: null,
+              newValue: '2026-07-01T00:00:00.000Z',
+              actorKind: 'user',
+              actorUserId: 'user-1',
+              status: 'applied',
+              note: null,
+              changedAt: new Date('2026-06-30T12:00:00.000Z'),
+            },
+          ],
+        },
+        userId: 'user-1',
+        suggestions: [],
+      }),
+    );
+
+    expect(document.body.textContent).toContain('Jul 1, 2026');
+    expect(document.body.textContent).not.toContain('2026-07-01T00:00:00.000Z');
+  });
+
   it('renders task category snapshots as readable recent changes', () => {
     const html = renderObjectDetail({
       detail: {
@@ -269,6 +297,24 @@ describe('ObjectDetailClient', () => {
       screen.getByRole('heading', { level: 1, name: 'the-timeline-ai: Add cursor pagination' }),
     ).toBeTruthy();
     expect(screen.getByDisplayValue('the-timeline-ai: Add cursor pagination')).toBeTruthy();
+  });
+
+  it('never renders a UUID-only object name as the detail heading', () => {
+    const internalId = '11111111-1111-4111-8111-111111111111';
+    render(
+      objectDetailElement({
+        detail: {
+          ...detail,
+          canonicalName: internalId,
+        },
+        userId: 'user-1',
+        suggestions: [],
+      }),
+    );
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Untitled object' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Objects' }).getAttribute('aria-current')).toBe('page');
+    expect(document.body.textContent).not.toContain(internalId);
   });
 
   it('does not rename integration objects when the display title field is focused and blurred unchanged', async () => {

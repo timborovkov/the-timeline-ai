@@ -17,7 +17,7 @@ export default async function SupportPage() {
   return (
     <article className="space-y-10">
       <header className="max-w-3xl space-y-4">
-        <p className="font-mono text-xs uppercase tracking-[0.16em] text-fg-dim">Support</p>
+        <p className="text-xs font-medium text-fg-dim">Support</p>
         <h1 className="text-4xl font-semibold tracking-normal text-fg sm:text-5xl">
           Tell us what broke, what you need, or what you want to buy.
         </h1>

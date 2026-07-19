@@ -1,7 +1,6 @@
 'use client';
 
-import { ErrorState } from '@/components/error-state';
-import { IndexStrip } from '@/components/index-strip';
+import { RouteError } from '@/components/route-error';
 
 export default function ChatError({
   error,
@@ -10,18 +9,5 @@ export default function ChatError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  return (
-    <div className="space-y-8">
-      <IndexStrip
-        srLabel="Chat · error"
-        segments={[{ value: 'CHAT' }, { label: 'status', value: 'ERROR', danger: true }]}
-      />
-      <ErrorState
-        title="Couldn't open chat"
-        description="The chat surface failed to load. This is usually transient."
-        error={error}
-        reset={reset}
-      />
-    </div>
-  );
+  return <RouteError title="Ask" error={error} reset={reset} />;
 }

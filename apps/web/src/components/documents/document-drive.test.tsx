@@ -134,6 +134,8 @@ describe('DocumentDrive', () => {
     expect(html).toContain('Event');
     expect(html).toContain('New item visibility');
     expect(html).toContain('Ada');
+    expect(html).not.toMatch(/<h2[^>]*uppercase[^>]*>Folders<\/h2>/);
+    expect(html).not.toMatch(/<h2[^>]*uppercase[^>]*>Documents<\/h2>/);
   });
 
   it('opens document provenance with the full timeline event id', async () => {

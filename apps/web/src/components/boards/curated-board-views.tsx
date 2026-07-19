@@ -8,9 +8,11 @@ import type * as boards from '@timeline/shared/boards';
 import type { Dispatch, SetStateAction } from 'react';
 
 import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
+import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { boardViewHref, type BoardLayout } from '@/lib/board-links';
 import { displayText, formatDisplayDate } from '@/lib/display-dates';
 import { displayObjectTitle } from '@/lib/object-title';
+import { statusLabel } from '@/lib/status-labels';
 
 export interface BoardMemberOption {
   id: string;
@@ -157,7 +159,7 @@ export function CuratedBoardTable({
       ) : null}
       <div className="overflow-x-auto rounded-sm border border-border bg-surface">
         <table className="w-full text-sm">
-          <thead className="border-b border-border bg-bg text-left font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+          <thead className="border-b border-border bg-bg text-left text-xs text-fg-dim">
             <tr>
               {onUpdateItem ? (
                 <th className="w-10 px-3 py-2 font-normal">
@@ -214,9 +216,9 @@ export function CuratedBoardTable({
                       </Link>
                     )}
                   </td>
-                  <td className="px-3 py-2 font-mono text-xs text-fg-muted">
+                  <td className="px-3 py-2 text-xs text-fg-muted">
                     <span className="flex flex-wrap items-center gap-1.5">
-                      {item.object.type}
+                      {statusLabel(item.object.type)}
                       {item.object.type === 'task' ? (
                         <LiveTaskCategoryBadge
                           taskId={item.object.id}
@@ -310,7 +312,7 @@ export function CuratedBoardTable({
                       }}
                     />
                     {saving[item.id] ? (
-                      <span className="mt-1 block font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
+                      <span className="mt-1 block text-[11px] text-fg-dim">
                         Saving {saving[item.id]}...
                       </span>
                     ) : null}
@@ -386,10 +388,7 @@ function BoardBulkToolbar({
 
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-sm border border-border bg-surface px-3 py-2">
-      <output
-        className="mr-auto font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
-        aria-live="polite"
-      >
+      <output className="mr-auto text-xs text-fg-dim" aria-live="polite">
         {selectedCount === 0
           ? 'Select board items to edit'
           : `${selectedCount} ${selectedCount === 1 ? 'item' : 'items'} selected`}
@@ -488,11 +487,7 @@ function BoardBulkToolbar({
           Clear
         </button>
       ) : null}
-      {bulk.message ? (
-        <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-          {bulk.message}
-        </span>
-      ) : null}
+      {bulk.message ? <span className="text-xs text-fg-dim">{bulk.message}</span> : null}
     </div>
   );
 }
@@ -567,6 +562,7 @@ export function CuratedBoardList({
     patch: BoardItemOptimisticPatch,
   ) => Promise<{ ok?: boolean; error?: string; id?: string }>;
 }) {
+  const timezone = useWorkspaceTimezone();
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const selectableItems = useMemo(() => items.filter((item) => !isOptimisticItem(item)), [items]);
   const visibleSelectedIds = useMemo(() => {
@@ -618,9 +614,9 @@ export function CuratedBoardList({
               <span className="min-w-0 flex-1 whitespace-normal break-words font-medium leading-snug text-fg">
                 {displayText(objectTitle)}
               </span>
-              <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-                {item.object.type}
-                {item.dueAt ? ` · ${formatDisplayDate(item.dueAt)}` : ''}
+              <span className="text-xs text-fg-dim">
+                {statusLabel(item.object.type)}
+                {item.dueAt ? ` · ${formatDisplayDate(item.dueAt, { timezone })}` : ''}
               </span>
               {item.object.type === 'task' ? (
                 <LiveTaskCategoryBadge
@@ -671,9 +667,5 @@ function isOptimisticItem(item: boards.BoardItemRow): boolean {
 }
 
 function EmptyBoardItems() {
-  return (
-    <p className="py-10 text-center font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">
-      NO BOARD ITEMS YET
-    </p>
-  );
+  return <p className="py-10 text-center text-sm text-fg-dim">No board items yet</p>;
 }

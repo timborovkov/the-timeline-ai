@@ -160,6 +160,7 @@ describe('ApprovalsClient', () => {
     expect(html).not.toContain('outputs 99999999');
     expect(html).not.toContain('Cluster 22222222');
     expect(html).not.toContain('Proposal · pending');
+    expect(html).toContain('99999999-9999-4999-8999-999999999999');
     expect(html).toContain(
       'href="/app/team/reconciliation/clusters/22222222-2222-4222-8222-222222222222"',
     );

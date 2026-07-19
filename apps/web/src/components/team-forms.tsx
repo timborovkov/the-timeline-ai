@@ -22,6 +22,7 @@ import {
   type InviteState,
   type RenameTeamState,
 } from '@/app/actions/teams';
+import { TechnicalDetails } from '@/components/technical-details';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -202,8 +203,8 @@ export function InviteMemberForm({ canInviteAdmin }: { canInviteAdmin: boolean }
   const [state, action] = useActionState<InviteState, FormData>(inviteMemberAction, {});
   return (
     <form action={action} className="space-y-3">
-      <div className="flex items-end gap-3">
-        <div className="flex-1 space-y-2">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <div className="min-w-0 flex-1 space-y-2">
           <Label htmlFor="invite-email">Email</Label>
           <Input
             id="invite-email"
@@ -213,13 +214,13 @@ export function InviteMemberForm({ canInviteAdmin }: { canInviteAdmin: boolean }
             required
           />
         </div>
-        <div className="space-y-2">
+        <div className="space-y-2 sm:w-36">
           <Label htmlFor="invite-role">Role</Label>
           <select
             id="invite-role"
             name="role"
             defaultValue="member"
-            className="h-10 rounded-md border border-input bg-background px-2 text-sm"
+            className="h-10 w-full rounded-md border border-input bg-background px-2 text-sm"
           >
             <option value="member">Member</option>
             {canInviteAdmin ? <option value="admin">Admin</option> : null}
@@ -255,15 +256,43 @@ interface TeamExportRow {
   error: string | null;
 }
 
-export function TeamExportPanel({ exports }: { exports: TeamExportRow[] }) {
+function teamExportDownloadErrorMessage(value: string | undefined): string | undefined {
+  switch (value) {
+    case 'invalid':
+      return 'That export link is invalid. Refresh and try again.';
+    case 'forbidden':
+      return 'You no longer have permission to download team exports.';
+    case 'unavailable':
+      return 'This export is not ready or is no longer available. Refresh or start a new export.';
+    default:
+      return undefined;
+  }
+}
+
+export function TeamExportPanel({
+  exports,
+  downloadError,
+}: {
+  exports: TeamExportRow[];
+  downloadError?: string;
+}) {
   const [state, action] = useActionState<CreateTeamExportState, FormData>(
     createTeamExportAction,
     {},
   );
+  const downloadErrorMessage = teamExportDownloadErrorMessage(downloadError);
   return (
     <div className="space-y-4">
-      <form action={action} className="flex items-center justify-between gap-3">
-        <div className="space-y-1">
+      {downloadErrorMessage ? (
+        <p role="alert" className="text-sm text-destructive">
+          {downloadErrorMessage}
+        </p>
+      ) : null}
+      <form
+        action={action}
+        className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+      >
+        <div className="min-w-0 space-y-1">
           <p className="text-sm text-muted-foreground">
             Builds a 24-hour archive of team data you are already allowed to see.
           </p>
@@ -283,7 +312,22 @@ export function TeamExportPanel({ exports }: { exports: TeamExportRow[] }) {
                   Created {row.createdAt.toLocaleString()}
                   {row.expiresAt ? ` · expires ${row.expiresAt.toLocaleString()}` : ''}
                 </p>
-                {row.error ? <p className="text-xs text-destructive">{row.error}</p> : null}
+                {row.error ? (
+                  <div className="mt-2 space-y-2">
+                    <p className="text-xs text-destructive">
+                      This export could not be completed. Start a new export or try again later.
+                    </p>
+                    <TechnicalDetails
+                      items={[
+                        {
+                          label: 'Export error',
+                          value: row.error,
+                          copyValue: row.error,
+                        },
+                      ]}
+                    />
+                  </div>
+                ) : null}
               </div>
               {row.status === 'ready' ? (
                 <form action={downloadTeamExportAction}>

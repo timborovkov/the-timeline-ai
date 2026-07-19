@@ -83,9 +83,7 @@ export function FilterMultiSelect({
 
   return (
     <label className={cn('min-w-36', className)}>
-      <span className="mb-1 block font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
-        {label}
-      </span>
+      <span className="mb-1 block text-xs font-medium text-fg-muted">{label}</span>
       {name ? <input ref={inputRef} type="hidden" name={name} value={selected} /> : null}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -107,7 +105,7 @@ export function FilterMultiSelect({
             onSelect={() => {
               applySelected({ type: 'clear' });
             }}
-            className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted"
+            className="text-sm text-fg-muted"
           >
             {placeholder}
           </DropdownMenuItem>

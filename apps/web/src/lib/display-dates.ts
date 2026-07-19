@@ -1,13 +1,14 @@
 const ISO_INSTANT_PATTERN = /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z\b/g;
 
 interface DisplayDateOptions {
+  timezone: string;
+}
+
+interface DisplayTextOptions {
   timezone?: string;
 }
 
-export function formatDisplayDateTime(
-  value: Date | string,
-  options: DisplayDateOptions = {},
-): string {
+export function formatDisplayDateTime(value: Date | string, options: DisplayDateOptions): string {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
   return date.toLocaleString(undefined, {
@@ -17,7 +18,7 @@ export function formatDisplayDateTime(
   });
 }
 
-export function formatDisplayDate(value: Date | string, options: DisplayDateOptions = {}): string {
+export function formatDisplayDate(value: Date | string, options: DisplayDateOptions): string {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
   return date.toLocaleDateString(undefined, {
@@ -30,6 +31,7 @@ function formatEmbeddedIsoInstants(text: string, options: DisplayDateOptions): s
   return text.replace(ISO_INSTANT_PATTERN, (match) => formatDisplayDateTime(match, options));
 }
 
-export function displayText(value: string, options: DisplayDateOptions = {}): string {
-  return formatEmbeddedIsoInstants(value, options);
+export function displayText(value: string, options: DisplayTextOptions = {}): string {
+  if (!options.timezone) return value;
+  return formatEmbeddedIsoInstants(value, { timezone: options.timezone });
 }

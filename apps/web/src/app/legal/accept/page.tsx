@@ -2,8 +2,8 @@ import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
+import { AuthShell } from '@/components/auth-shell';
 import { LegalAcceptanceForm } from '@/components/legal-acceptance-form';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { auth } from '@/lib/auth';
 import { getUserLegalAcceptance, hasCurrentLegalAcceptance } from '@/lib/legal';
 import { safeSameOriginPath } from '@/lib/safe-redirect';
@@ -35,19 +35,12 @@ export default async function LegalAcceptPage({ searchParams }: Props) {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-xl flex-col justify-center px-6 py-16">
-      <Card>
-        <CardHeader>
-          <CardTitle>Review The Timeline terms</CardTitle>
-          <CardDescription>
-            Before entering the signed-in product, accept the current Terms of Use and acknowledge
-            the Privacy Policy.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <LegalAcceptanceForm returnTo={safeReturnTo} />
-        </CardContent>
-      </Card>
-    </main>
+    <AuthShell
+      maxWidth="lg"
+      title="Review The Timeline terms"
+      subtitle="Before entering the signed-in product, accept the current Terms of Use and acknowledge the Privacy Policy."
+    >
+      <LegalAcceptanceForm returnTo={safeReturnTo} />
+    </AuthShell>
   );
 }

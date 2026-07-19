@@ -227,17 +227,16 @@ describe('BoardDetailClient', () => {
       ]),
     );
 
-    const header = screen.getByLabelText('Board · Pilot board');
-    expect(header.textContent).toContain('BOARD');
-    expect(header.textContent).toContain('Pilot board');
-    expect(header.textContent).not.toContain('kind');
-    expect(header.textContent).not.toContain('items');
+    const heading = screen.getByRole('heading', { level: 1, name: 'Pilot board' });
+    expect(heading.className).not.toContain('uppercase');
+    expect(heading.parentElement?.textContent).toContain('Track pilots');
+    expect(screen.getByRole('link', { name: 'Boards' }).getAttribute('aria-current')).toBe('page');
 
     await user.click(screen.getByRole('button', { name: 'Fake optimistic add' }));
 
     await waitFor(() => {
       expect(screen.getByText('Beta')).toBeTruthy();
-      expect(screen.getByLabelText('Board · Pilot board').textContent).not.toContain('items');
+      expect(screen.getByRole('heading', { level: 1, name: 'Pilot board' })).toBeTruthy();
     });
   });
 

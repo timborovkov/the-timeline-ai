@@ -18,6 +18,7 @@ import type { Metadata } from 'next';
 import { bindSlackConversationAction, unbindSlackConversationAction } from '@/app/actions/slack';
 import { HistoryBackLink } from '@/components/history-back-link';
 import { PageHeader } from '@/components/page-header';
+import { TechnicalDetails } from '@/components/technical-details';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -68,6 +69,18 @@ interface SlackSettingsViewModel {
   bindings: SlackSettingsBinding[];
   linkedSlackUsers: SlackSettingsLinkedUser[];
   unboundConversations: SlackSettingsConversation[];
+}
+
+function sentenceCaseEnum(value: string): string {
+  const label = value.replaceAll('_', ' ').trim().toLowerCase();
+  return label ? `${label[0]?.toUpperCase() ?? ''}${label.slice(1)}` : 'Unknown';
+}
+
+function visibilityLabel(value: string): string {
+  if (value === 'team') return 'Team visibility';
+  if (value === 'private') return 'Private visibility';
+  if (value === 'specific_users') return 'Selected people';
+  return 'Custom visibility';
 }
 
 export default async function SlackSettingsPage() {
@@ -188,14 +201,20 @@ export function SlackSettingsPageView({ model }: { model: SlackSettingsViewModel
         <CardContent className="space-y-3">
           {model.install ? (
             <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium">
-                  {model.install.name ?? model.install.slackTeamId}
-                </p>
+              <div className="min-w-0 flex-1 space-y-2">
+                <p className="text-sm font-medium">{model.install.name ?? 'Slack workspace'}</p>
                 <p className="text-xs text-muted-foreground">
-                  workspace {model.install.slackTeamId} ·{' '}
-                  {model.install.enabled ? 'enabled' : 'disabled'}
+                  {model.install.enabled ? 'Enabled' : 'Disabled'}
                 </p>
+                <TechnicalDetails
+                  items={[
+                    {
+                      label: 'Slack workspace ID',
+                      value: model.install.slackTeamId,
+                      copyValue: model.install.slackTeamId,
+                    },
+                  ]}
+                />
               </div>
               {model.isAdmin ? (
                 <Button asChild variant="outline" size="sm">
@@ -249,7 +268,7 @@ export function SlackSettingsPageView({ model }: { model: SlackSettingsViewModel
                 </option>
                 {model.unboundConversations.map((c) => (
                   <option key={c.id} value={c.id}>
-                    #{c.name ?? c.id}
+                    #{c.name ?? 'Unnamed channel'}
                     {c.is_member === false ? ' (invite bot first)' : ''}
                   </option>
                 ))}
@@ -275,11 +294,23 @@ export function SlackSettingsPageView({ model }: { model: SlackSettingsViewModel
             <ul className="divide-y">
               {model.bindings.map((b) => (
                 <li key={b.id} className="flex items-center justify-between py-3">
-                  <div>
-                    <p className="text-sm font-medium">{b.title ?? b.slackConversationId}</p>
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <p className="text-sm font-medium">{b.title ?? 'Unnamed channel'}</p>
                     <p className="text-xs text-muted-foreground">
-                      {b.conversationType} · default visibility {b.visibilityDefault}
+                      {sentenceCaseEnum(b.conversationType)} ·{' '}
+                      {visibilityLabel(b.visibilityDefault)}
                     </p>
+                    <TechnicalDetails
+                      items={[
+                        {
+                          label: 'Slack conversation ID',
+                          value: b.slackConversationId,
+                          copyValue: b.slackConversationId,
+                        },
+                        { label: 'Conversation type', value: b.conversationType },
+                        { label: 'Default visibility', value: b.visibilityDefault },
+                      ]}
+                    />
                   </div>
                   {model.isAdmin ? (
                     <form action={unbindSlackConversationAction}>
@@ -313,7 +344,7 @@ export function SlackSettingsPageView({ model }: { model: SlackSettingsViewModel
                         {u.appUser?.name ?? u.appUser?.email ?? 'Timeline user'}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        Slack {u.realName ?? u.name ?? u.slackUserId}
+                        Slack {u.realName ?? u.name ?? 'member'}
                         {u.email ? ` · ${u.email}` : ''}
                       </p>
                     </div>

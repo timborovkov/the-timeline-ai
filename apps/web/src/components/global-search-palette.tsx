@@ -181,10 +181,7 @@ export function GlobalSearchPalette({ hint, className }: Props) {
           'transition-colors',
         )}
       >
-        <span
-          aria-hidden="true"
-          className="font-mono text-[11px] uppercase tracking-[0.12em] text-signal"
-        >
+        <span aria-hidden="true" className="text-xs text-signal">
           ⌘K
         </span>
         <Search aria-hidden="true" className="size-3.5 text-fg-dim" />
@@ -242,10 +239,7 @@ export function GlobalSearchPalette({ hint, className }: Props) {
           <Loader2 aria-hidden="true" className="size-3.5 animate-spin text-fg-dim" />
         ) : null}
         {hint ? (
-          <span
-            aria-hidden="true"
-            className="hidden font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim lg:inline"
-          >
+          <span aria-hidden="true" className="hidden text-xs text-fg-dim lg:inline">
             {hint}
           </span>
         ) : null}
@@ -261,9 +255,7 @@ export function GlobalSearchPalette({ hint, className }: Props) {
             <div className="py-2">
               {grouped.map(([group, items]) => (
                 <div key={group} className="py-1">
-                  <p className="px-3 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
-                    {group}
-                  </p>
+                  <p className="px-3 py-1 text-[11px] text-fg-dim">{group}</p>
                   {items.map((result) => {
                     const index = selectableResults.indexOf(result);
                     const IconComponent = resultIcon(result.kind);
@@ -293,7 +285,7 @@ export function GlobalSearchPalette({ hint, className }: Props) {
                             {result.snippet}
                           </span>
                         </span>
-                        <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+                        <span className="shrink-0 text-[11px] text-fg-dim">
                           {result.externalHref ? 'new tab' : resultKindLabel(result.kind)}
                         </span>
                       </button>

@@ -15,9 +15,11 @@ import type * as objects from '@timeline/shared/objects/types';
 import type { ReactNode } from 'react';
 
 import { RemoveBoardItemButton } from '@/components/boards/remove-board-item-button';
+import { ContextualAskLink } from '@/components/chat/contextual-ask-link';
 import { ObjectRelatedContext } from '@/components/objects/object-related-context';
 import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { TaskCategorySelect } from '@/components/tasks/task-category-select';
+import { TechnicalDetails } from '@/components/technical-details';
 import {
   Dialog,
   DialogContent,
@@ -26,13 +28,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { boardViewHref } from '@/lib/board-links';
 import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/display-dates';
 import { objectDetailHref } from '@/lib/object-links';
 import { displayObjectTitle } from '@/lib/object-title';
+import { statusLabel } from '@/lib/status-labels';
 import { cn } from '@/lib/utils';
 
 interface Props {
+  teamId?: string;
   boardId: string;
   view: BoardLayout;
   item: boards.BoardItemRow | null;
@@ -91,6 +96,7 @@ function reconcileDraftState(state: DraftState, item: boards.BoardItemRow | null
 }
 
 export function BoardCardDetail({
+  teamId,
   boardId,
   view,
   item,
@@ -187,6 +193,7 @@ export function BoardCardDetail({
       />
       <BoardActions
         boardId={boardId}
+        teamId={teamId}
         view={view}
         item={item}
         filterParams={filterParams}
@@ -224,9 +231,7 @@ function BoardCardHeader({
           <h2 className="whitespace-normal break-words text-lg font-semibold leading-snug text-fg">
             {displayText(title)}
           </h2>
-          <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-            {item.object.type} · board item
-          </p>
+          <p className="mt-1 text-xs text-fg-dim">{statusLabel(item.object.type)} · board item</p>
           {item.object.type === 'task' ? (
             <LiveTaskCategoryBadge
               taskId={item.object.id}
@@ -239,13 +244,13 @@ function BoardCardHeader({
         </div>
         <Link
           href={boardViewHref(boardId, view, null, filterParams)}
-          className="shrink-0 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:text-fg"
+          className="shrink-0 text-xs text-fg-muted hover:text-fg"
         >
           Close
         </Link>
       </div>
       {blocked && lane ? (
-        <p className="mt-3 inline-flex rounded-sm border border-danger/40 px-2 py-1 font-mono text-[11px] uppercase tracking-[0.12em] text-danger">
+        <p className="mt-3 inline-flex rounded-sm border border-danger/40 px-2 py-1 text-xs text-danger">
           Blocked · {displayText(lane.name)}
         </p>
       ) : null}
@@ -346,9 +351,7 @@ function NextStepSection({
   return (
     <section className="border-b border-border p-4">
       <label>
-        <span className="mb-2 block font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-          Next step
-        </span>
+        <span className="mb-2 block text-xs text-fg-dim">Next step</span>
         <input
           aria-label="Next step"
           value={value}
@@ -374,11 +377,15 @@ function BoardObjectDetails({
   lane: boards.BoardLaneRow | null;
   blocked: boolean;
 }) {
+  const timezone = useWorkspaceTimezone();
   return (
     <dl className="grid grid-cols-2 gap-px border-b border-border bg-border text-sm">
       <Detail label="Board lane" value={lane?.name ?? 'Unset'} danger={blocked} />
-      <Detail label="Object status" value={item.object.status} />
-      <Detail label="Object due" value={item.object.dueAt ? dateLabel(item.object.dueAt) : '-'} />
+      <Detail label="Object status" value={statusLabel(item.object.status)} />
+      <Detail
+        label="Object due"
+        value={item.object.dueAt ? dateLabel(item.object.dueAt, timezone) : '-'}
+      />
       <Detail
         label="Object priority"
         value={item.object.priority ? `P${item.object.priority}` : '-'}
@@ -405,12 +412,11 @@ function BoardNotesSection({
   onEdit: () => void;
   onSave: () => void;
 }) {
+  const timezone = useWorkspaceTimezone();
   return (
     <section className="border-b border-border p-4">
       <div className="mb-2 flex items-center justify-between gap-3">
-        <h3 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-          Board notes
-        </h3>
+        <h3 className="text-xs text-fg-dim">Board notes</h3>
         <button
           type="button"
           disabled={disabled}
@@ -438,7 +444,7 @@ function BoardNotesSection({
             item.notes ? 'text-fg-muted' : 'text-fg-dim',
           )}
         >
-          {item.notes ? displayText(item.notes) : 'No notes yet.'}
+          {item.notes ? displayText(item.notes, { timezone }) : 'No notes yet.'}
         </p>
       )}
     </section>
@@ -447,12 +453,14 @@ function BoardNotesSection({
 
 function BoardActions({
   boardId,
+  teamId,
   view,
   item,
   filterParams,
   onItemRemoved,
 }: {
   boardId: string;
+  teamId?: string;
   view: BoardLayout;
   item: boards.BoardItemRow;
   filterParams: Record<string, string>;
@@ -462,12 +470,22 @@ function BoardActions({
   return (
     <div className="flex flex-wrap gap-2 border-b border-border p-4">
       <ObjectPreviewDialog item={item} view={view} filterParams={filterParams} />
-      <Link
-        href={`/app/chat?object=${item.entityId}`}
-        className="rounded-sm border border-border px-2 py-1 text-xs font-medium hover:bg-surface"
-      >
-        Ask about object
-      </Link>
+      {teamId ? (
+        <ContextualAskLink
+          teamId={teamId}
+          context={{
+            pathname: `/app/boards/${boardId}`,
+            routeKind: 'board-item',
+            boardId,
+            boardItemId: item.id,
+            objectId: item.entityId,
+          }}
+          pinnedEntityId={item.entityId}
+          pinnedEntityName={item.object.canonicalName}
+          label="Ask about object"
+          className="h-7 px-2 text-xs"
+        />
+      ) : null}
       <Link
         href={timelineHref}
         className="rounded-sm border border-border px-2 py-1 text-xs font-medium hover:bg-bg"
@@ -497,11 +515,10 @@ function BoardEvidence({
   lanes: boards.BoardLaneRow[];
   members: BoardMemberOption[];
 }) {
+  const timezone = useWorkspaceTimezone();
   return (
     <section className="p-4">
-      <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-        Board provenance
-      </h3>
+      <h3 className="mb-2 text-xs text-fg-dim">Board provenance</h3>
       {changes.length === 0 ? (
         <p className="text-sm text-fg-muted">No source evidence linked to board changes yet.</p>
       ) : (
@@ -510,11 +527,12 @@ function BoardEvidence({
             return (
               <li key={change.id} className="rounded-sm border border-border bg-surface p-3">
                 <p className="text-xs font-medium text-fg">
-                  {fieldLabel(change.field)} · {formatProvenanceChangeValue(change, lanes, members)}
+                  {fieldLabel(change.field)} ·{' '}
+                  {formatProvenanceChangeValue(change, lanes, members, timezone)}
                 </p>
                 {change.note ? (
                   <p className="mt-1 line-clamp-2 text-xs text-fg-muted">
-                    {displayText(change.note)}
+                    {displayText(change.note, { timezone })}
                   </p>
                 ) : null}
                 <div className="mt-2 space-y-1">
@@ -524,7 +542,8 @@ function BoardEvidence({
                       href={`/app/timeline?event=${source.rawEventId}#ev-${source.rawEventId}`}
                       className="block text-xs text-fg-muted underline-offset-2 hover:text-fg hover:underline"
                     >
-                      {displayText(source.source)} · {formatDisplayDateTime(source.occurredAt)}
+                      {displayText(source.source, { timezone })} ·{' '}
+                      {formatDisplayDateTime(source.occurredAt, { timezone })}
                     </Link>
                   ))}
                 </div>
@@ -546,11 +565,10 @@ function BoardActivity({
   lanes: boards.BoardLaneRow[];
   members: BoardMemberOption[];
 }) {
+  const timezone = useWorkspaceTimezone();
   return (
     <section className="border-t border-border p-4">
-      <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-        Activity
-      </h3>
+      <h3 className="mb-2 text-xs text-fg-dim">Activity</h3>
       {history.length === 0 ? (
         <p className="text-sm text-fg-muted">No board history yet.</p>
       ) : (
@@ -559,19 +577,42 @@ function BoardActivity({
             <li key={change.id} className="rounded-sm border border-border p-3 text-xs">
               <div className="flex items-start justify-between gap-3">
                 <span className="font-medium text-fg">{fieldLabel(change.field)}</span>
-                <span className="shrink-0 font-mono uppercase tracking-[0.1em] text-fg-dim">
-                  {change.actorKind} · {change.status}
+                <span className="shrink-0 text-fg-dim">
+                  {statusLabel(change.actorKind)} · {statusLabel(change.status)}
                 </span>
               </div>
               <p className="mt-1 text-fg-muted">
-                {formatChangeValue(change.field, change.previousValue, lanes, members)}
+                {formatChangeValue(change.field, change.previousValue, lanes, members, timezone)}
                 <span className="px-1 text-fg-dim">→</span>
-                {formatChangeValue(change.field, change.newValue, lanes, members)}
+                {formatChangeValue(change.field, change.newValue, lanes, members, timezone)}
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-fg-dim">
-                <span>{formatDisplayDateTime(change.changedAt)}</span>
+                <span>{formatDisplayDateTime(change.changedAt, { timezone })}</span>
               </div>
-              {change.note ? <p className="mt-2 text-fg">{displayText(change.note)}</p> : null}
+              {change.note ? (
+                <p className="mt-2 text-fg">{displayText(change.note, { timezone })}</p>
+              ) : null}
+              {change.field === 'customFields' ||
+              change.field === '__add__' ||
+              change.field === '__remove__' ? (
+                <TechnicalDetails
+                  className="mt-3"
+                  items={[
+                    {
+                      label:
+                        change.field === 'customFields'
+                          ? 'Previous custom fields'
+                          : 'Previous board payload',
+                      ...technicalJsonValue(change.previousValue),
+                    },
+                    {
+                      label:
+                        change.field === 'customFields' ? 'New custom fields' : 'New board payload',
+                      ...technicalJsonValue(change.newValue),
+                    },
+                  ]}
+                />
+              ) : null}
             </li>
           ))}
         </ol>
@@ -589,6 +630,7 @@ function ObjectPreviewDialog({
   view: BoardLayout;
   filterParams: Record<string, string>;
 }) {
+  const timezone = useWorkspaceTimezone();
   const title = displayObjectTitle(item.object);
   return (
     <Dialog>
@@ -603,18 +645,21 @@ function ObjectPreviewDialog({
       <DialogContent className="border-border bg-bg sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{displayText(title)}</DialogTitle>
-          <DialogDescription className="font-mono text-[11px] uppercase tracking-[0.12em]">
-            {item.object.type} · object preview
+          <DialogDescription className="text-xs">
+            {statusLabel(item.object.type)} · object preview
           </DialogDescription>
         </DialogHeader>
         <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-sm border border-border bg-border text-sm">
-          <Detail label="Status" value={item.object.status} />
+          <Detail label="Status" value={statusLabel(item.object.status)} />
           <Detail label="Stage" value={item.object.stage ?? '-'} />
           <Detail
             label="Priority"
             value={item.object.priority ? `P${item.object.priority}` : '-'}
           />
-          <Detail label="Due" value={item.object.dueAt ? dateLabel(item.object.dueAt) : '-'} />
+          <Detail
+            label="Due"
+            value={item.object.dueAt ? dateLabel(item.object.dueAt, timezone) : '-'}
+          />
         </dl>
         {item.object.type === 'task' ? (
           <section>
@@ -632,9 +677,7 @@ function ObjectPreviewDialog({
         ) : null}
         {item.object.aliases.length > 0 ? (
           <section>
-            <h3 className="mb-1 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-              Aliases
-            </h3>
+            <h3 className="mb-1 text-xs text-fg-dim">Aliases</h3>
             <p className="text-sm text-fg-muted">
               {item.object.aliases.map((alias) => displayText(alias)).join(', ')}
             </p>
@@ -672,9 +715,7 @@ function FieldSelect({
 }) {
   return (
     <label className="block bg-bg p-3">
-      <span className="mb-1 block font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
-        {label}
-      </span>
+      <span className="mb-1 block text-[11px] text-fg-dim">{label}</span>
       <select
         value={value}
         disabled={disabled}
@@ -706,9 +747,7 @@ function FieldInput({
 }) {
   return (
     <label className="block bg-bg p-3">
-      <span className="mb-1 block font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
-        {label}
-      </span>
+      <span className="mb-1 block text-[11px] text-fg-dim">{label}</span>
       <input
         type={type}
         value={value}
@@ -734,7 +773,7 @@ function Detail({
 }) {
   return (
     <div className="bg-bg p-2">
-      <dt className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">{label}</dt>
+      <dt className="text-[11px] text-fg-dim">{label}</dt>
       <dd className={cn('mt-1 truncate text-sm text-fg', danger && 'text-danger')}>{value}</dd>
     </div>
   );
@@ -744,8 +783,8 @@ function dateInputValue(value: Date): string {
   return new Date(value).toISOString().slice(0, 10);
 }
 
-function dateLabel(value: Date): string {
-  return formatDisplayDate(value);
+function dateLabel(value: Date, timezone: string): string {
+  return formatDisplayDate(value, { timezone });
 }
 
 function fieldLabel(field: boards.BoardItemField): string {
@@ -778,8 +817,18 @@ function formatChangeValue(
   value: unknown,
   lanes: boards.BoardLaneRow[],
   members: BoardMemberOption[],
+  timezone: string,
 ): string {
+  if (field === '__add__' || field === '__remove__') {
+    if (value === null || value === undefined || value === '') return 'Not on board';
+    if (typeof value !== 'object' || Array.isArray(value)) return 'Board membership';
+    const laneId = 'laneId' in value && typeof value.laneId === 'string' ? value.laneId : null;
+    return laneId
+      ? displayText(lanes.find((lane) => lane.id === laneId)?.name ?? 'Board membership')
+      : 'Board membership';
+  }
   if (value === null || value === undefined || value === '') return 'empty';
+  if (field === 'customFields') return customFieldsSummary(value);
   if (field === 'laneId' && typeof value === 'string') {
     return displayText(lanes.find((lane) => lane.id === value)?.name ?? 'Unknown lane');
   }
@@ -788,7 +837,7 @@ function formatChangeValue(
   }
   if (field === 'dueAt' && typeof value === 'string') {
     const date = new Date(value);
-    return Number.isFinite(date.getTime()) ? dateLabel(date) : displayText(value);
+    return Number.isFinite(date.getTime()) ? dateLabel(date, timezone) : displayText(value);
   }
   if (field === 'priority' && typeof value === 'number') return `P${value}`;
   if (typeof value === 'string') return displayText(value);
@@ -796,10 +845,24 @@ function formatChangeValue(
   return displayText(JSON.stringify(value));
 }
 
+function customFieldsSummary(value: unknown): string {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return 'No custom fields';
+  const count = Object.keys(value).length;
+  return count === 0
+    ? 'No custom fields'
+    : `${String(count)} custom field${count === 1 ? '' : 's'}`;
+}
+
+function technicalJsonValue(value: unknown): { value: string; copyValue: string } {
+  const serialized = JSON.stringify(value ?? null, null, 2);
+  return { value: serialized.slice(0, 2_000), copyValue: serialized };
+}
+
 function formatProvenanceChangeValue(
   change: boards.BoardItemChangeRow,
   lanes: boards.BoardLaneRow[],
   members: BoardMemberOption[],
+  timezone: string,
 ): string {
   if (change.field === '__add__' || change.field === '__remove__') {
     const value = change.field === '__remove__' ? change.previousValue : change.newValue;
@@ -814,5 +877,5 @@ function formatProvenanceChangeValue(
       ? displayText(lanes.find((lane) => lane.id === laneId)?.name ?? 'Board membership')
       : 'Board membership';
   }
-  return formatChangeValue(change.field, change.newValue, lanes, members);
+  return formatChangeValue(change.field, change.newValue, lanes, members, timezone);
 }

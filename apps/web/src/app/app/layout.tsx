@@ -18,6 +18,7 @@ import { getNavAttentionSummary } from '@/lib/hub-status';
 import { getUserLegalAcceptance, hasCurrentLegalAcceptance } from '@/lib/legal';
 import { reportCaughtError } from '@/lib/sentry-report';
 import { SIDEBAR_COOKIE_KEY, sidebarExpandedFromCookie } from '@/lib/sidebar-preference';
+import { DEFAULT_TIMEZONE } from '@/lib/timezones';
 
 export async function generateMetadata(): Promise<Metadata> {
   const session = await auth();
@@ -92,7 +93,8 @@ export default async function AppLayout({
     );
   }
 
-  const [badges, inbox] = await Promise.all([
+  const scope = withTeam(db, active.teamId, session.user.id);
+  const [badges, inbox, workspaceTimezone] = await Promise.all([
     getNavAttentionSummary(active.teamId, session.user.id).catch((err: unknown) => {
       console.error('[app-shell] failed to load navigation attention badges', err);
       reportCaughtError(err, { surface: 'layout', operation: 'nav_attention_summary' });
@@ -100,7 +102,6 @@ export default async function AppLayout({
     }),
     (async () => {
       try {
-        const scope = withTeam(db, active.teamId, session.user.id);
         const [unreadCount, notifications] = await Promise.all([
           scope.objects.unreadNotificationCount(),
           scope.objects.listNotifications({ limit: 5 }),
@@ -123,6 +124,14 @@ export default async function AppLayout({
         return { unreadCount: 0, notifications: [] };
       }
     })(),
+    scope.calendar
+      .getCalendarSettings()
+      .then((settings) => settings.defaultTimezone)
+      .catch((err: unknown) => {
+        console.error('[app-shell] failed to load calendar settings', err);
+        reportCaughtError(err, { surface: 'layout', operation: 'calendar_settings' });
+        return DEFAULT_TIMEZONE;
+      }),
   ]);
 
   const sidebarInitiallyExpanded = sidebarExpandedFromCookie(
@@ -149,6 +158,7 @@ export default async function AppLayout({
           }}
           badges={badges}
           inbox={inbox}
+          workspaceTimezone={workspaceTimezone}
           sidebarInitiallyExpanded={sidebarInitiallyExpanded}
         >
           {children}

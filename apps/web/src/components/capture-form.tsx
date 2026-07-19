@@ -71,7 +71,7 @@ function AttachmentPicker({
   onRemoveFile,
 }: AttachmentPickerProps) {
   return (
-    <div className="rounded-sm border border-dashed border-border/70 p-3">
+    <div className="rounded-sm border border-border bg-surface p-3">
       <div className="flex flex-wrap items-center gap-2">
         <Button
           type="button"
@@ -450,7 +450,7 @@ export function CaptureForm({
       data-capture-ready="true"
       className="space-y-4 sm:space-y-5"
     >
-      <div className="flex items-baseline gap-x-3 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
+      <div className="flex items-baseline gap-x-3 text-xs text-fg-dim">
         <span className="text-fg">CAPTURE</span>
         <span className="text-fg-dim">·</span>
         <span>quick note · meeting takeaway · decision · follow-up</span>

@@ -1,3 +1,5 @@
+import { RouteLoading } from '@/components/route-states';
+
 export default function Loading() {
-  return <div className="py-8 text-sm text-muted-foreground">Loading Slack…</div>;
+  return <RouteLoading rows={2} />;
 }

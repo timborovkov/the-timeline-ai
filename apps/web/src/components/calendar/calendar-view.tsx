@@ -58,6 +58,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { statusLabel } from '@/lib/status-labels';
 import { errorMessage } from '@/lib/utils';
 
 type CalendarViewMode = 'month' | 'week' | 'day';
@@ -817,9 +818,7 @@ function CalendarEventList({
     <section className="border-t border-border pt-4">
       <div className="flex flex-wrap items-end gap-3">
         <div className="min-w-0 flex-1">
-          <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
-            Calendar events
-          </h2>
+          <h2 className="text-xs text-fg">Calendar events</h2>
           <p className="mt-1 text-sm text-fg-muted">
             {total} {scope === 'future' ? 'upcoming' : scope} event
             {total === 1 ? '' : 's'}
@@ -870,20 +869,18 @@ function CalendarEventList({
                 onEdit(event);
               }}
             >
-              <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-                {formatEventRange(event, timezone)}
-              </span>
+              <span className="text-xs text-fg-dim">{formatEventRange(event, timezone)}</span>
               <span className="min-w-0">
                 <span className="block truncate text-sm font-medium text-fg">
                   {event.redacted ? 'Busy' : event.title}
                 </span>
                 <span className="mt-1 block truncate text-xs text-fg-muted">
                   {[event.location, event.description].filter(Boolean).join(' · ') ||
-                    (event.allDay ? 'All day' : event.showAs)}
+                    (event.allDay ? 'All day' : statusLabel(event.showAs))}
                 </span>
               </span>
-              <span className="self-center justify-self-start rounded-sm border border-border px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim md:justify-self-end">
-                {event.visibility}
+              <span className="self-center justify-self-start rounded-sm border border-border px-2 py-1 text-[11px] text-fg-dim md:justify-self-end">
+                {statusLabel(event.visibility)}
               </span>
             </button>
           ))
@@ -894,7 +891,7 @@ function CalendarEventList({
 
       {total > EVENT_LIST_PAGE_SIZE ? (
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-          <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+          <p className="text-xs text-fg-dim">
             {pageStart + 1}-{Math.min(pageStart + events.length, total)} of {total}
           </p>
           <div className="flex items-center gap-2">
@@ -910,7 +907,7 @@ function CalendarEventList({
             >
               <ChevronLeft className="size-4" />
             </Button>
-            <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+            <p className="text-xs text-fg-dim">
               Page {effectivePage + 1} / {pageCount}
             </p>
             <Button
@@ -1023,9 +1020,7 @@ function CalendarSaveStatus({
     <div
       role={surfaceError ? 'alert' : 'status'}
       aria-live="polite"
-      className={`font-mono text-[11px] uppercase tracking-[0.12em] ${
-        surfaceError ? 'text-danger' : 'text-fg-dim'
-      }`}
+      className={`text-xs ${surfaceError ? 'text-danger' : 'text-fg-dim'}`}
     >
       {surfaceError ?? (saveState === 'saving' ? 'Saving…' : 'Saved')}
     </div>
@@ -1481,9 +1476,7 @@ function DayCell({
           >
             <span className="inline-flex items-center gap-1">
               {event.allDay ? null : <Clock className="size-3" />}
-              {event.showAs === 'tentative' ? (
-                <span className="font-mono text-[10px] uppercase">Tentative</span>
-              ) : null}
+              {event.showAs === 'tentative' ? <span className="text-[11px]">Tentative</span> : null}
               {event.rrule || event.recurringParentId ? (
                 <span className="font-mono text-[10px]" aria-label="Recurring">
                   R

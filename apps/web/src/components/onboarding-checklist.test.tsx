@@ -15,6 +15,7 @@ const { OnboardingChecklist } = await import('./onboarding-checklist.js');
 
 beforeEach(() => {
   vi.clearAllMocks();
+  window.history.replaceState({}, '', '/app');
 });
 
 afterEach(() => {
@@ -43,11 +44,11 @@ function renderChecklist(
 describe('OnboardingChecklist', () => {
   it('renders nothing while loading or without data', () => {
     renderChecklist(null, { isPending: true });
-    expect(screen.queryByText('Setup checklist')).toBeNull();
+    expect(screen.queryByText('Next setup step')).toBeNull();
 
     cleanup();
     renderChecklist(null);
-    expect(screen.queryByText('Setup checklist')).toBeNull();
+    expect(screen.queryByText('Next setup step')).toBeNull();
   });
 
   it('reopens dismissed checklists', () => {
@@ -58,7 +59,7 @@ describe('OnboardingChecklist', () => {
     expect(mutateChecklist).toHaveBeenCalledWith({ action: 'reopen' });
   });
 
-  it('renders checklist progress, step links, and manual completion actions', () => {
+  it('renders progress and only the next incomplete step', () => {
     const { mutateChecklist } = renderChecklist({
       dismissed: false,
       items: [
@@ -68,21 +69,28 @@ describe('OnboardingChecklist', () => {
       ],
     });
 
-    expect(screen.getByText('Setup checklist')).toBeTruthy();
-    expect(screen.getByText('1/3 complete')).toBeTruthy();
-    expect(screen.getByText('Capture one timeline event')).toBeTruthy();
+    expect(screen.getByText('Next setup step')).toBeTruthy();
+    expect(screen.getByText('1/3')).toBeTruthy();
     expect(screen.getByText('Upload a document')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Upload' }).getAttribute('href')).toBe(
       '/app/documents',
     );
-    expect(screen.getByRole('link', { name: 'Connect' }).getAttribute('href')).toBe(
-      '/app/team/integrations',
-    );
-    expect(screen.getAllByText('Done')).toHaveLength(1);
+    expect(screen.queryByText('Connect an integration')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Mark Upload a document complete' }));
 
     expect(mutateChecklist).toHaveBeenCalledWith({ action: 'complete', key: 'first_document' });
+  });
+
+  it('opens the capture dialog hash directly for the first note step', () => {
+    renderChecklist({
+      dismissed: false,
+      items: [{ key: 'first_note', label: 'Capture one timeline event', completed: false }],
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Capture' }));
+
+    expect(window.location.hash).toBe('#capture');
   });
 
   it('dismisses the checklist and disables mutation controls while pending', () => {

@@ -4,8 +4,10 @@ import {
   attentionCount,
   countDismissibleMeetingFailures,
   countMeetingFailuresForSources,
+  displayInboundEmail,
   getNavWorkAttention,
   getWorkAttentionSummary,
+  homeWorkNeedingAttentionCount,
   workAttentionCount,
 } from '@/lib/hub-status';
 
@@ -21,6 +23,16 @@ describe('hub status helpers', () => {
         overdueTasks: 2,
       }),
     ).toBe(5);
+  });
+
+  it('counts only overdue tasks for Home work needing attention', () => {
+    expect(
+      homeWorkNeedingAttentionCount({
+        attention: 5,
+        pendingApprovals: 3,
+        overdueTasks: 2,
+      }),
+    ).toBe(2);
   });
 
   it('ignores negative work attention inputs', () => {
@@ -100,5 +112,26 @@ describe('hub status helpers', () => {
         >[0]['recoverableJobs'],
       }),
     ).toBe(1);
+  });
+
+  it('never exposes an inbound.invalid placeholder as a usable address', () => {
+    expect(
+      displayInboundEmail(
+        { slug: 'acme', inboundEmail: 'acme@inbound.invalid' },
+        'mailbox@inbound.postmarkapp.com',
+      ),
+    ).toBe('mailbox+acme@inbound.postmarkapp.com');
+    expect(
+      displayInboundEmail({ slug: 'acme', inboundEmail: 'acme@inbound.invalid' }, undefined),
+    ).toBeNull();
+  });
+
+  it('prefers a configured team inbound domain', () => {
+    expect(
+      displayInboundEmail(
+        { slug: 'acme', inboundEmail: 'acme@inbound.timeline.test' },
+        'mailbox@inbound.postmarkapp.com',
+      ),
+    ).toBe('acme@inbound.timeline.test');
   });
 });

@@ -1,5 +1,8 @@
+// @vitest-environment happy-dom
+
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const CLUSTER_ID = '33333333-3333-4333-8333-333333333333';
 
@@ -41,21 +44,26 @@ beforeEach(() => {
   fakes.getClusterDetail.mockResolvedValue(sampleDetail());
 });
 
+afterEach(() => {
+  cleanup();
+});
+
 describe('ReconciliationClusterPage', () => {
   it('renders visible evidence, outputs, and scoped reconcile controls for one cluster', async () => {
     const html = renderToStaticMarkup(
       await ReconciliationClusterPage({ params: Promise.resolve({ id: CLUSTER_ID }) }),
     );
 
+    expect(html.match(/<h1/g)).toHaveLength(1);
     expect(fakes.getClusterDetail).toHaveBeenCalledWith({ clusterId: CLUSTER_ID });
     expect(html).toContain('Lumen onboarding pilot');
     expect(html).toContain('Reconciliation dashboard');
-    expect(html).toContain('customer_project');
+    expect(html).toContain('customer project');
     expect(html).toContain('decision');
     expect(html).toContain('monday');
     expect(html).toContain('Launch pilot in July');
-    expect(html).toContain('agent_suggestion_projection');
-    expect(html).toContain('output output-1');
+    expect(html).toContain('agent suggestion projection');
+    expect(html).toContain('Output ID');
     expect(html).toContain('raw-event-1');
     expect(html).toContain('evidence-1');
     expect(html).toContain('inline://monday/pulse-123');
@@ -69,6 +77,30 @@ describe('ReconciliationClusterPage', () => {
     );
 
     expect(html).not.toContain('Private founder note');
+  });
+
+  it('copies complete output JSON while keeping the rendered preview bounded', async () => {
+    const writeText = vi.fn<(value: string) => Promise<void>>().mockResolvedValue();
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    const detail = sampleDetail();
+    const payload = { body: 'x'.repeat(2_500) };
+    fakes.getClusterDetail.mockResolvedValueOnce({
+      ...detail,
+      outputs: [{ ...detail.outputs[0], payload }],
+    });
+
+    render(await ReconciliationClusterPage({ params: Promise.resolve({ id: CLUSTER_ID }) }));
+    fireEvent.click(screen.getByRole('button', { name: /^Copy Payload$/ }));
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledOnce();
+    });
+    const copied = writeText.mock.calls[0]?.[0] ?? '';
+    expect(copied.length).toBeGreaterThan(2_000);
+    expect(JSON.parse(copied)).toEqual(payload);
   });
 
   it('redirects unauthenticated users before loading cluster detail', async () => {

@@ -12,6 +12,7 @@ import { TaskCategoryFilterRefresh } from '@/components/tasks/task-category-filt
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { displayMemberLabel } from '@/lib/display-labels';
 import { OBJECT_TYPE_LABELS } from '@/lib/object-type-labels';
 import { loadProjectFilterRows } from '@/lib/project-filter-options';
 import {
@@ -100,7 +101,7 @@ export default async function BoardDetailPage({
     const user = memberMap.get(member.userId);
     return {
       id: member.userId,
-      label: user?.name ?? user?.email ?? member.userId,
+      label: displayMemberLabel(user),
     };
   });
   const firstLaneId = board.lanes.find((lane) => !lane.archivedAt)?.id ?? null;
@@ -121,7 +122,7 @@ export default async function BoardDetailPage({
       data-app-layout={isKanban ? 'full-bleed' : undefined}
       className={
         isKanban
-          ? '-mx-4 -my-6 flex h-[calc(100dvh-3.5rem)] min-w-0 flex-col md:-mx-8 md:-my-8'
+          ? '-mx-4 -my-6 flex h-[calc(100dvh-3rem)] min-w-0 flex-col md:-mx-8 md:-my-8'
           : undefined
       }
     >
@@ -134,6 +135,7 @@ export default async function BoardDetailPage({
         />
       ) : null}
       <BoardDetailClient
+        teamId={active.teamId}
         boardId={board.id}
         boardName={board.name}
         purpose={board.purpose}

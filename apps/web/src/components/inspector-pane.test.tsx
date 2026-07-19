@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -36,6 +36,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
 });
 
 describe('InspectorPane', () => {
@@ -115,5 +116,130 @@ describe('InspectorPane', () => {
     });
 
     opener.remove();
+  });
+
+  it('keeps keyboard focus inside the mobile inspector', async () => {
+    vi.spyOn(window, 'matchMedia').mockImplementation(
+      (query) =>
+        ({
+          matches: false,
+          media: query,
+          onchange: null,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          addListener: vi.fn(),
+          removeListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        }) as MediaQueryList,
+    );
+    const user = userEvent.setup();
+    fakes.inspector.open = true;
+    fakes.inspector.content = {
+      id: 'moment-1',
+      kind: 'Moment',
+      title: 'CI passed',
+      render: () => createElement('button', { type: 'button' }, 'Open evidence'),
+    };
+    const outside = document.createElement('button');
+    outside.type = 'button';
+    outside.textContent = 'Outside action';
+    document.body.append(outside);
+
+    render(<InspectorPane />);
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close inspector' }));
+    });
+
+    await user.tab();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Open evidence' }));
+    await user.tab();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close inspector' }));
+
+    outside.remove();
+  });
+
+  it('includes native technical-detail summaries in the mobile focus order', async () => {
+    vi.spyOn(window, 'matchMedia').mockImplementation(
+      (query) =>
+        ({
+          matches: false,
+          media: query,
+          onchange: null,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          addListener: vi.fn(),
+          removeListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        }) as MediaQueryList,
+    );
+    fakes.inspector.open = true;
+    fakes.inspector.content = {
+      id: 'moment-1',
+      kind: 'Moment',
+      title: 'CI passed',
+      render: () =>
+        createElement(
+          'details',
+          null,
+          createElement('summary', null, 'Technical details'),
+          createElement('button', { type: 'button' }, 'Copy Event ID'),
+        ),
+    };
+
+    render(<InspectorPane />);
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close inspector' }));
+    });
+
+    const summary = screen.getByText('Technical details');
+    summary.focus();
+    expect(document.activeElement).toBe(summary);
+    fireEvent.keyDown(summary, { key: 'Tab' });
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close inspector' }));
+  });
+
+  it('leaves keyboard handling to a portaled dialog opened from the inspector', async () => {
+    vi.spyOn(window, 'matchMedia').mockImplementation(
+      (query) =>
+        ({
+          matches: false,
+          media: query,
+          onchange: null,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          addListener: vi.fn(),
+          removeListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        }) as MediaQueryList,
+    );
+    fakes.inspector.open = true;
+    fakes.inspector.content = {
+      id: 'moment-1',
+      kind: 'Moment',
+      title: 'CI passed',
+      render: () => createElement('button', { type: 'button' }, 'Open evidence'),
+    };
+
+    render(<InspectorPane />);
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close inspector' }));
+    });
+
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    const dialogAction = document.createElement('button');
+    dialogAction.type = 'button';
+    dialogAction.textContent = 'Download evidence';
+    dialog.append(dialogAction);
+    document.body.append(dialog);
+    dialogAction.focus();
+
+    dialogAction.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Tab' }));
+    expect(document.activeElement).toBe(dialogAction);
+    dialogAction.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }));
+    expect(fakes.inspector.hide).not.toHaveBeenCalled();
+
+    dialog.remove();
   });
 });

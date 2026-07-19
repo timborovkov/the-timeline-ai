@@ -57,7 +57,7 @@ export function TeamSwitcher({
             'rounded-sm border border-border bg-surface text-left transition-colors hover:border-border-strong',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg',
             variant === 'rail'
-              ? 'grid size-9 place-items-center font-mono text-[11px] font-semibold uppercase tracking-wider text-fg'
+              ? 'grid size-9 place-items-center text-xs font-semibold text-fg'
               : 'flex w-full items-center gap-3 px-3 py-2 text-sm hover:bg-surface-2',
           )}
           title={variant === 'rail' ? `Team · ${active.teamName}` : undefined}
@@ -71,9 +71,7 @@ export function TeamSwitcher({
               </span>
               <span className="flex min-w-0 flex-1 flex-col leading-tight">
                 <span className="truncate text-sm font-medium text-fg">{active.teamName}</span>
-                <span className="truncate font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-                  Active team
-                </span>
+                <span className="truncate text-xs text-fg-dim">Active team</span>
               </span>
               <ChevronsUpDown aria-hidden="true" className="size-3.5 shrink-0 text-fg-dim" />
             </>
@@ -93,9 +91,7 @@ export function TeamSwitcher({
         <div className="grid gap-6 px-6 py-5">
           <section className="space-y-3">
             <div className="flex items-center justify-between">
-              <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-                Your teams
-              </h2>
+              <h2 className="text-base font-semibold text-fg">Your teams</h2>
               <span className="font-mono text-[11px] text-fg-dim">{memberships.length}</span>
             </div>
             <div className="grid gap-2">
@@ -114,18 +110,16 @@ export function TeamSwitcher({
                       )}
                     >
                       <span className="flex min-w-0 items-center gap-3">
-                        <span className="grid size-9 shrink-0 place-items-center rounded-sm border border-border bg-bg font-mono text-[11px] font-semibold uppercase text-fg">
+                        <span className="grid size-9 shrink-0 place-items-center rounded-sm border border-border bg-bg text-xs font-semibold text-fg">
                           {initials(m.teamName)}
                         </span>
                         <span className="min-w-0">
                           <span className="block truncate text-sm font-medium">{m.teamName}</span>
-                          <span className="block font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-                            {m.role}
-                          </span>
+                          <span className="block text-xs capitalize text-fg-dim">{m.role}</span>
                         </span>
                       </span>
                       {isActive ? (
-                        <span className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em] text-signal">
+                        <span className="flex items-center gap-2 text-xs font-medium text-signal">
                           Active <Check className="size-4" />
                         </span>
                       ) : (
@@ -140,9 +134,7 @@ export function TeamSwitcher({
 
           <section className="space-y-3">
             <div className="flex items-center justify-between">
-              <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-                Invites sent to you
-              </h2>
+              <h2 className="text-base font-semibold text-fg">Invites sent to you</h2>
               {hasInvites ? (
                 <span className="rounded-sm bg-signal-soft px-2 py-0.5 font-mono text-[11px] text-signal">
                   {recipientInvites.length} pending
@@ -162,7 +154,7 @@ export function TeamSwitcher({
                           <Mail className="size-4 shrink-0 text-signal" />
                           <p className="truncate text-sm font-medium">{invite.teamName}</p>
                         </div>
-                        <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+                        <p className="mt-1 text-xs text-fg-dim">
                           {invite.role} · invited by {invite.invitedBy} · expires{' '}
                           {new Date(invite.expiresAt).toLocaleDateString()}
                         </p>
@@ -194,7 +186,7 @@ export function TeamSwitcher({
                 ))}
               </div>
             ) : (
-              <div className="rounded-md border border-dashed border-border bg-surface/60 px-4 py-5 text-sm text-fg-dim">
+              <div className="rounded-lg border border-border bg-surface/60 px-4 py-5 text-sm text-fg-dim">
                 No pending invites for your account.
               </div>
             )}
@@ -203,9 +195,7 @@ export function TeamSwitcher({
           <section className="space-y-3 rounded-md border border-border bg-surface p-4">
             <div className="flex items-center gap-2">
               <Plus className="size-4 text-fg-dim" />
-              <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-                Create team
-              </h2>
+              <h2 className="text-base font-semibold text-fg">Create team</h2>
             </div>
             <CreateTeamForm id={`new-team-name-${variant}`} />
           </section>

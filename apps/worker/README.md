@@ -1,6 +1,6 @@
 # @timeline/worker
 
-BullMQ workers for the async processing pipeline: transcribe, extract, embed, document-extract, meeting-finalize, overdue-scan, integrations, maintenance, and exports. One Node entry point starts the queue workers from the same codebase.
+BullMQ workers for the async processing pipeline: transcribe, extract, embed, document-extract, meeting-finalize, task-category classification, overdue-scan, integrations, maintenance, and exports. One Node entry point starts the queue workers from the same codebase.
 
 ## Why it exists
 
@@ -20,6 +20,7 @@ pnpm --filter @timeline/worker dedupe-approvals -- --team=<teamId> [--limit=N] [
 pnpm --filter @timeline/worker dedupe-calendar-events -- --team=<teamId> [--limit=N] [--from=2026-06-01] [--to=2026-07-01] [--apply] [--no-ai]
 pnpm --filter @timeline/worker redocument-extract -- --team=<teamId> [--status=failed,pending] [--force]
 pnpm --filter @timeline/worker redocument-embed   -- --team=<teamId> [--target-collection=docs_v2]
+TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker task-category-backfill -- --team-id=<teamId> --limit=500 [--enqueue --max-cost-usd=0.10]
 ```
 
 `resuggest` scans the requested window before applying `--limit`; conversational sources recover
@@ -40,6 +41,10 @@ across the scan window that can catch translated, differently titled, reschedule
 all-day-normalized versions of the same meeting. Pass `--no-ai` to run only the deterministic
 matcher. Recurring series masters are skipped as deletion candidates because those need manual
 review. When a duplicate cluster is approved, the event with the newest evidence timestamp is kept.
+
+`task-category-backfill` is dry-run by default and reports a bounded candidate count and projected
+cost. Enqueueing requires both `--enqueue` and `--max-cost-usd`; repeated bounded runs resume the
+backfill while skipping archived, manual, pending, and already categorized tasks.
 
 Production starts the combined worker entry point (see [docs/railway.html](../../docs/railway.html)):
 

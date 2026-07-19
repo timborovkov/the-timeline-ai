@@ -11,14 +11,19 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 
+import type { ChatHandoff, ChatHandoffContext } from '@/lib/chat-handoff';
+
 import { unpinChatSessionAction } from '@/app/actions/chat';
 import { CitationText } from '@/components/chat/citation';
 import { ToolStep } from '@/components/chat/tool-step';
 import { InlineSpinner } from '@/components/loading-states';
+import { consumeChatHandoffEntry } from '@/lib/chat-handoff';
+import { displayObjectLabel } from '@/lib/display-labels';
 import { cn } from '@/lib/utils';
 import { chatErrorMessage } from '@/lib/ux-errors';
 
 interface Props {
+  teamId: string;
   teamName: string;
   sessionId: string | null;
   initialMessages: UIMessage[];
@@ -26,19 +31,7 @@ interface Props {
   pinnedEntityName: string | null;
 }
 
-export interface DashboardChatContext {
-  pathname: string;
-  routeKind: string;
-  search?: Record<string, string>;
-  objectId?: string;
-  boardId?: string;
-  boardItemId?: string;
-  calendarDate?: string;
-  calendarView?: string;
-  calendarEventId?: string;
-  documentId?: string;
-  taskId?: string;
-}
+export type DashboardChatContext = ChatHandoffContext;
 
 const SUGGESTIONS = [
   'What did the team work on yesterday?',
@@ -71,6 +64,7 @@ export function ChatSurface(
 }
 
 function ChatSurfaceContent({
+  teamId,
   teamName,
   sessionId: initialSessionId,
   initialMessages,
@@ -88,8 +82,11 @@ function ChatSurfaceContent({
 }) {
   const router = useRouter();
   const search = useSearchParams();
+  const chatHandoffRef = useRef<ChatHandoff | null>(null);
   const { sessionId, transport } = useChatSessionTransport({
     initialSessionId,
+    initialPinnedEntityId: pinnedEntityId,
+    chatHandoffRef,
     search,
     dashboardContext,
     onSessionIdChange,
@@ -102,9 +99,33 @@ function ChatSurfaceContent({
   });
 
   const [input, setInput] = useState('');
+  const [consumedHandoff, setConsumedHandoff] = useState<ChatHandoff | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const handoffConsumedRef = useRef(false);
 
   const isStreaming = status === 'streaming' || status === 'submitted';
+  const handoffPin = initialSessionId === null ? consumedHandoff : null;
+  const visiblePinnedEntity = handoffPin?.pinnedEntityId
+    ? { id: handoffPin.pinnedEntityId, name: handoffPin.pinnedEntityName ?? null }
+    : pinnedEntityId
+      ? { id: pinnedEntityId, name: pinnedEntityName }
+      : null;
+
+  useEffect(() => {
+    if (handoffConsumedRef.current || initialSessionId || initialMessages.length > 0) return;
+    handoffConsumedRef.current = true;
+    let handoff: ChatHandoff | null = null;
+    try {
+      handoff = consumeChatHandoffEntry(window.sessionStorage, teamId);
+    } catch {
+      return;
+    }
+    if (!handoff) return;
+    chatHandoffRef.current = handoff;
+    // react-doctor-disable-next-line react-doctor/no-adjust-state-on-prop-change, react-doctor/no-chain-state-updates -- This hydrates a consumed one-time sessionStorage message after SSR; it does not mirror a prop or chain derived state.
+    setConsumedHandoff(handoff);
+    if (handoff.prompt) void sendMessage({ text: handoff.prompt });
+  }, [initialMessages.length, initialSessionId, sendMessage, teamId]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -129,10 +150,11 @@ function ChatSurfaceContent({
   return (
     <div className={cn('flex h-full min-h-0 flex-col', compact ? 'gap-3' : 'gap-4')}>
       <PinnedEntityBanner
-        pinnedEntityId={pinnedEntityId}
-        pinnedEntityName={pinnedEntityName}
+        pinnedEntityId={visiblePinnedEntity?.id ?? null}
+        pinnedEntityName={visiblePinnedEntity?.name ?? null}
         sessionId={sessionId}
         onUnpinned={() => {
+          setConsumedHandoff(null);
           router.refresh();
         }}
       />
@@ -153,12 +175,16 @@ function ChatSurfaceContent({
 
 function useChatSessionTransport({
   initialSessionId,
+  initialPinnedEntityId,
+  chatHandoffRef,
   search,
   dashboardContext,
   onSessionIdChange,
   updateUrlOnSessionCreate,
 }: {
   initialSessionId: string | null;
+  initialPinnedEntityId: string | null;
+  chatHandoffRef: RefObject<ChatHandoff | null>;
   search: URLSearchParams;
   dashboardContext?: DashboardChatContext | null;
   onSessionIdChange?: (sessionId: string) => void;
@@ -168,8 +194,10 @@ function useChatSessionTransport({
   const sessionIdRef = useRef<string | null>(initialSessionId);
   const searchRef = useRef(search);
   const dashboardContextRef = useRef<DashboardChatContext | null | undefined>(dashboardContext);
+  const pinnedEntityIdRef = useRef<string | null>(initialPinnedEntityId);
   const onSessionIdChangeRef = useRef(onSessionIdChange);
   const sessionCreateAttempted = useRef(initialSessionId !== null);
+  const requestAskedForNewSession = useRef(false);
 
   useEffect(() => {
     sessionIdRef.current = sessionId;
@@ -182,6 +210,10 @@ function useChatSessionTransport({
   useEffect(() => {
     dashboardContextRef.current = dashboardContext;
   }, [dashboardContext]);
+
+  useEffect(() => {
+    pinnedEntityIdRef.current = initialPinnedEntityId;
+  }, [initialPinnedEntityId]);
 
   useEffect(() => {
     onSessionIdChangeRef.current = onSessionIdChange;
@@ -207,36 +239,57 @@ function useChatSessionTransport({
         body: () => {
           const askForNew = sessionIdRef.current === null && !sessionCreateAttempted.current;
           if (askForNew) sessionCreateAttempted.current = true;
+          requestAskedForNewSession.current = askForNew;
+          const handoff = askForNew ? chatHandoffRef.current : null;
           return {
             sessionId: sessionIdRef.current ?? undefined,
             startNewSession: askForNew,
-            dashboardContext: dashboardContextRef.current ?? undefined,
+            pinnedEntityId: askForNew
+              ? (handoff?.pinnedEntityId ?? pinnedEntityIdRef.current ?? undefined)
+              : undefined,
+            dashboardContext: handoff?.context ?? dashboardContextRef.current ?? undefined,
           };
         },
         fetch: async (url, init) => {
-          const res = await fetch(url, init);
-          if (!res.ok) {
-            const data = (await res
-              .clone()
-              .json()
-              .catch(() => null)) as { error?: string } | null;
-            throw new Error(chatErrorMessage(data?.error, res.status));
-          }
-          const id = res.headers.get('x-tl-session-id');
-          if (id && id !== sessionIdRef.current) {
-            sessionIdRef.current = id;
-            setSessionId(id);
-            onSessionIdChangeRef.current?.(id);
-            if (updateUrlOnSessionCreate && typeof window !== 'undefined') {
-              const params = new URLSearchParams(searchRef.current.toString());
-              params.set('session', id);
-              window.history.replaceState(null, '', `/app/chat?${params.toString()}`);
+          try {
+            const res = await fetch(url, init);
+            if (!res.ok) {
+              const data = (await res
+                .clone()
+                .json()
+                .catch(() => null)) as { error?: string } | null;
+              throw new Error(chatErrorMessage(data?.error, res.status));
             }
+            const id = res.headers.get('x-tl-session-id');
+            if (id) {
+              if (requestAskedForNewSession.current) chatHandoffRef.current = null;
+              if (id !== sessionIdRef.current) {
+                sessionIdRef.current = id;
+                setSessionId(id);
+                onSessionIdChangeRef.current?.(id);
+                if (updateUrlOnSessionCreate && typeof window !== 'undefined') {
+                  window.history.replaceState(
+                    null,
+                    '',
+                    `/app/chat?session=${encodeURIComponent(id)}`,
+                  );
+                }
+              }
+            } else if (requestAskedForNewSession.current && sessionIdRef.current === null) {
+              sessionCreateAttempted.current = false;
+            }
+            requestAskedForNewSession.current = false;
+            return res;
+          } catch (error) {
+            if (requestAskedForNewSession.current && sessionIdRef.current === null) {
+              sessionCreateAttempted.current = false;
+            }
+            requestAskedForNewSession.current = false;
+            throw error;
           }
-          return res;
         },
       }),
-    [updateUrlOnSessionCreate],
+    [chatHandoffRef, updateUrlOnSessionCreate],
   );
 
   return { sessionId, transport };
@@ -254,10 +307,14 @@ function PinnedEntityBanner({
   onUnpinned: () => void;
 }) {
   if (!pinnedEntityId) return null;
+  const displayLabel = displayObjectLabel(
+    pinnedEntityName ? { canonicalName: pinnedEntityName } : null,
+  );
+  const label = displayLabel === 'Untitled object' ? 'Unavailable object' : displayLabel;
   return (
     <div className="flex shrink-0 items-center gap-2 self-start rounded-full border border-primary/30 bg-primary/5 py-1 pl-3 pr-1 text-xs">
       <Link href={`/app/objects/${pinnedEntityId}`} className="text-primary hover:underline">
-        pinned · {pinnedEntityName ?? pinnedEntityId}
+        Pinned · {label}
       </Link>
       {sessionId && (
         <button
@@ -320,7 +377,7 @@ function ChatEmptyState({
   return (
     <div className={cn('flex flex-col gap-6', compact ? 'pt-2' : 'pt-8')}>
       <div>
-        <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">TRY ASKING</p>
+        <p className="text-xs font-medium text-fg-muted">Try asking</p>
         <h2
           className={cn(
             'mt-2 font-medium tracking-tight text-fg',
@@ -387,9 +444,7 @@ function ChatMessage({
   const isUser = message.role === 'user';
   return (
     <li className={cn('flex flex-col gap-1.5', isUser ? 'items-end' : 'items-start')}>
-      <span className="px-1 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-        {isUser ? 'You' : 'Agent'}
-      </span>
+      <span className="px-1 text-xs text-fg-dim">{isUser ? 'You' : 'Agent'}</span>
       <div
         className={cn(
           'max-w-[90%] text-sm leading-relaxed',
@@ -447,9 +502,7 @@ function ChatError({ error }: { error: Error | undefined }) {
   if (!error) return null;
   return (
     <div role="alert" className="shrink-0 rounded-sm border border-danger/30 bg-danger/5 px-3 py-2">
-      <p className="font-mono text-xs uppercase tracking-[0.12em] text-danger">
-        {error.message || 'Chat is unavailable right now.'}
-      </p>
+      <p className="text-sm text-danger">{error.message || 'Chat is unavailable right now.'}</p>
       <p className="mt-1 text-xs text-fg-muted">
         Saved timeline events are still available from Home and Timeline.
       </p>
@@ -477,6 +530,7 @@ function ChatComposer({
         <input
           id="chat-composer"
           type="text"
+          maxLength={4000}
           value={input}
           onChange={(e) => {
             onChange(e.target.value);
@@ -484,9 +538,9 @@ function ChatComposer({
           onKeyDown={(e) => {
             if (e.key === 'Enter') onSubmit(input);
           }}
-          placeholder="Ask anything about your team's timeline…"
+          placeholder="Ask the timeline…"
           disabled={isStreaming}
-          className="h-12 w-full rounded-sm bg-transparent pl-4 pr-12 text-sm focus:outline-none"
+          className="h-10 w-full truncate rounded-sm bg-transparent pl-3 pr-12 text-sm focus:outline-none"
         />
         <button
           type="button"
@@ -495,7 +549,7 @@ function ChatComposer({
           }}
           disabled={isStreaming || !input.trim()}
           aria-label="Send"
-          className="absolute right-1.5 top-1/2 grid size-9 -translate-y-1/2 place-items-center rounded-sm bg-signal text-signal-fg transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 disabled:opacity-30"
+          className="absolute right-1 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-sm bg-signal text-signal-fg transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 disabled:opacity-30"
         >
           <Send className="size-4" />
         </button>

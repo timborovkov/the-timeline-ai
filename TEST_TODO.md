@@ -6,25 +6,36 @@ contracts, not private implementation structure.
 
 ## Test Status Overview
 
-Last checked in this branch: on 2026-07-18, `pnpm validate`,
-`pnpm run doctor`, root `pnpm test`, `pnpm test:eval`,
-`pnpm test:dist-imports`, and the full strict local Playwright suite pass.
-React Doctor reported 100/100 with no issues, and all 52 browser tests passed.
-Approval regressions now prove item-level Pending and Failed counts, failed-only
-isolation from Work attention, mixed-bundle filtering, and partial bulk-failure
-movement to the Failed filter while keeping the failure alert visible. Calendar
-toolbar coverage also derives Today from the workspace timezone at date
-boundaries.
+Last checked in this branch: on 2026-07-19, `pnpm validate`,
+`pnpm run doctor`, `pnpm test`, `pnpm test:e2e-env`, `pnpm test:eval`,
+`pnpm test:reconciliation-eval`, `pnpm test:dist-imports`,
+`pnpm test:task-category-eval:live`, and the
+full strict local Playwright suite pass. React Doctor reported
+"No issues found!" with a 100/100 score. The Playwright suite passed 63 tests,
+including curated Quiet Archive Linux visual baselines (not a full surface matrix),
+Home-to-Ask private prompt handoff, capture dialog, UUID suppression, one-heading
+route sweep, 320px no-overflow checks, and distinct task-category/primary-project
+editing and filtering. Approval regressions prove item-level
+Pending and Failed counts, failed-only isolation from Work attention,
+mixed-bundle filtering, and partial bulk-failure movement to the Failed filter
+while keeping the failure alert visible. Calendar toolbar coverage derives Today
+from the workspace timezone at date boundaries. The live task-category gate
+passed 120 cases at 96.7% single-prediction accuracy, 97.5% batch accuracy, and
+100% prompt-injection accuracy.
+
+On 2026-07-08, `pnpm validate`, `pnpm run doctor`,
+`pnpm test:eval`, `pnpm test:reconciliation-eval`, `pnpm test:dist-imports`, and
+the full strict local Playwright suite also passed.
+
 The 2026-07-02 verification also passed
 `pnpm test:eval`, `pnpm test:reconciliation-eval`, `pnpm test:dist-imports`,
 root `pnpm test`, `pnpm test:agent-eval:live`,
 `pnpm test:suggestions-eval:live`, `pnpm test:transcribe-eval:live`, and
 `pnpm e2e:prod-smoke` against the production build and standalone server.
-React Doctor reported "No issues found" with a 100/100 score. The full local
-Playwright suite passed 50 tests against the isolated Docker stack, including
-Slack settings member/admin bind-unbind, Telegram settings admin token/unbind,
-support/team-export, onboarding checklist, global search, reconciliation
-dashboard drilldown/mobile layout, and document flows. The targeted
+The full local Playwright suite then passed 50 tests against the isolated Docker
+stack, including Slack settings member/admin bind-unbind, Telegram settings
+admin token/unbind, support/team-export, onboarding checklist, global search,
+reconciliation dashboard drilldown/mobile layout, and document flows. The targeted
 reconciliation browser suite now passes 10 tests, including failed output
 visibility, worker-backed manual repair side effects, source audit and dry-run
 backfill queue submissions, team and cluster manual-reconcile queue submissions,

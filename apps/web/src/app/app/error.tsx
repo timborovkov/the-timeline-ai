@@ -1,6 +1,6 @@
 'use client';
 
-import { ErrorState } from '@/components/error-state';
+import { RouteError } from '@/components/route-error';
 
 export default function AppError({
   error,
@@ -9,12 +9,5 @@ export default function AppError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  return (
-    <ErrorState
-      title="Something went wrong"
-      description="An unexpected error occurred. Reload to try again."
-      error={error}
-      reset={reset}
-    />
-  );
+  return <RouteError title="The Timeline" error={error} reset={reset} />;
 }

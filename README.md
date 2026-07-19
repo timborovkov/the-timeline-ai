@@ -337,5 +337,7 @@ operable. Before opening a change, please:
 - Fence external MCP and integration content before it reaches the agent.
 - Run `pnpm validate` before handing work back.
 
-For UI work, follow [`design.md`](./design.md). For setup or operational changes,
-update the relevant docs in the same change.
+For UI work, follow the Quiet Archive v3 contract in [`design.md`](./design.md):
+human meaning leads, while internal identifiers and raw payloads stay inside
+explicit technical disclosures. For setup or operational changes, update the
+relevant docs in the same change.

@@ -36,7 +36,7 @@ export function DocumentSearch() {
             setQuery(draft.trim());
           }}
           disabled={!draft.trim() || search.isFetching}
-          className="absolute right-2 top-1/2 h-7 -translate-y-1/2 rounded-sm px-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:bg-surface-2 disabled:opacity-40"
+          className="absolute right-2 top-1/2 h-7 -translate-y-1/2 rounded-sm px-2 text-xs text-fg-muted hover:bg-surface-2 disabled:opacity-40"
         >
           {search.isFetching ? 'Searching' : 'Search'}
         </button>
@@ -49,15 +49,9 @@ export function DocumentSearch() {
               href={`/app/documents/${hit.documentId}?version=${String(hit.version)}#chunk-${hit.documentChunkId}`}
               className="block rounded-sm border border-border bg-surface px-4 py-3 text-sm hover:border-border-strong"
             >
-              <div className="flex items-center justify-between gap-3">
-                <span className="font-medium">{hit.documentDisplayTitle}</span>
-                <span className="font-mono text-[11px] text-fg-dim">
-                  score {hit.score.toFixed(3)}
-                </span>
-              </div>
-              <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
-                v{String(hit.version)} · {hit.fileKind} ·{' '}
-                {hit.representationKind.replace(/_/g, ' ')}
+              <span className="font-medium">{hit.documentDisplayTitle}</span>
+              <p className="mt-1 text-[11px] text-fg-dim">
+                v{String(hit.version)} · {hit.fileKind}
                 {hit.pageNumber !== null ? ` · page ${String(hit.pageNumber)}` : ''}
               </p>
               <p className="mt-1 line-clamp-3 text-fg-muted">{hit.summary ?? hit.text}</p>
@@ -70,7 +64,7 @@ export function DocumentSearch() {
               onClick={() => {
                 void search.fetchNextPage();
               }}
-              className="rounded-sm border border-border px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:bg-surface disabled:opacity-40"
+              className="rounded-sm border border-border px-3 py-1.5 text-xs text-fg-muted hover:bg-surface disabled:opacity-40"
             >
               {search.isFetchingNextPage ? 'Loading…' : 'Load more'}
             </button>

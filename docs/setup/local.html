@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Local development</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-08</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-18</span></div>
       <p class="tldr">
         Bring up the full Timeline stack on your machine with Docker Compose for infra and
         <code>pnpm dev</code> for app + worker hot reload.
@@ -59,7 +59,10 @@ docker compose ps           # all services should be "healthy"
 
       <p>
         This brings up Postgres (5432), Redis (6379), Qdrant (6333/6334), RustFS (9000 S3 API, 9001
-        console). The <code>rustfs-init</code> container runs once to create the required buckets.
+        console). The <code>rustfs-init</code> container runs once to create the required buckets,
+        enable versioning, and allow direct browser document uploads from any local
+        <code>localhost</code> or <code>127.0.0.1</code> port, including isolated worktree and E2E
+        servers.
       </p>
 
       <p>Install deps, run migrations, and optionally seed demo data:</p>

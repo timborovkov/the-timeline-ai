@@ -15,6 +15,7 @@ import type { Metadata } from 'next';
 import { revokeLinkTokenAction, unbindChatAction } from '@/app/actions/telegram';
 import { HistoryBackLink } from '@/components/history-back-link';
 import { PageHeader } from '@/components/page-header';
+import { TechnicalDetails } from '@/components/technical-details';
 import { GenerateGroupTokenForm, GeneratePersonalTokenForm } from '@/components/telegram-forms';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,6 +23,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { formatDisplayDateTime } from '@/lib/display-dates';
 
 export const metadata: Metadata = {
   title: 'Telegram',
@@ -60,7 +62,7 @@ export default async function TelegramSettingsPage() {
         isNull(telegramLinkTokens.consumedAt),
         gt(telegramLinkTokens.expiresAt, now),
       );
-  const [activeTokens, bindings, linkedTgUsers] = await Promise.all([
+  const [activeTokens, bindings, linkedTgUsers, calendarSettings] = await Promise.all([
     db
       .select({
         id: telegramLinkTokens.id,
@@ -89,7 +91,9 @@ export default async function TelegramSettingsPage() {
       .from(telegramUserTeams)
       .innerJoin(telegramUsers, eq(telegramUserTeams.telegramUserId, telegramUsers.id))
       .where(eq(telegramUserTeams.teamId, active.teamId)),
+    scope.calendar.getCalendarSettings(),
   ]);
+  const timezone = calendarSettings.defaultTimezone;
 
   const userIds = linkedTgUsers.map((u) => u.userId).filter((id): id is string => Boolean(id));
   const userRows =
@@ -176,7 +180,7 @@ export default async function TelegramSettingsPage() {
                       {t.scope === 'group' ? 'Group binding' : 'Personal link'}
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      expires {t.expiresAt.toISOString()}
+                      Expires {formatDisplayDateTime(t.expiresAt, { timezone })}
                       {isAdmin && t.issuedByUserId !== session.user.id
                         ? ` · issued by another teammate`
                         : ''}
@@ -208,11 +212,25 @@ export default async function TelegramSettingsPage() {
             <ul className="divide-y">
               {bindings.map((b) => (
                 <li key={b.id} className="flex items-center justify-between py-3">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium">{b.title ?? `Chat ${b.tgChatId}`}</span>
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <span className="text-sm font-medium">{b.title ?? 'Unnamed chat'}</span>
                     <span className="text-xs text-muted-foreground">
-                      chat_id {b.tgChatId} · bound {b.createdAt.toISOString()}
+                      Bound {formatDisplayDateTime(b.createdAt, { timezone })}
                     </span>
+                    <TechnicalDetails
+                      items={[
+                        {
+                          label: 'Telegram chat ID',
+                          value: String(b.tgChatId),
+                          copyValue: String(b.tgChatId),
+                        },
+                        {
+                          label: 'Bound at',
+                          value: b.createdAt.toISOString(),
+                          copyValue: b.createdAt.toISOString(),
+                        },
+                      ]}
+                    />
                   </div>
                   {isAdmin ? (
                     <form action={unbindChatAction}>
@@ -241,7 +259,7 @@ export default async function TelegramSettingsPage() {
               {linkedTgUsers.map((u) => {
                 const appUser = u.userId ? userMap.get(u.userId) : undefined;
                 const fullName = [u.firstName, u.lastName].filter(Boolean).join(' ');
-                const tgName = u.username ?? (fullName || `tg:${u.tgUserId}`);
+                const tgName = u.username ?? (fullName || 'Telegram member');
                 return (
                   <li
                     key={`${u.id}-${u.userId ?? 'unverified'}`}

@@ -11,12 +11,16 @@ import type { Metadata } from 'next';
 
 import { queueReconciliationJobFormAction } from '@/app/actions/reconciliation';
 import { Breadcrumb } from '@/components/breadcrumb';
-import { IndexStrip } from '@/components/index-strip';
+import { PageHeader } from '@/components/page-header';
+import { SectionHeading } from '@/components/section-heading';
+import { StatusBadge } from '@/components/status-badge';
+import { TechnicalDetails } from '@/components/technical-details';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { displayArtifactLabel, displaySourceLabel } from '@/lib/display-labels';
 
 export const metadata: Metadata = {
   title: 'Reconciliation Cluster',
@@ -49,14 +53,13 @@ export default async function ReconciliationClusterPage({
           { label: cluster.canonicalName },
         ]}
       />
-      <IndexStrip
-        srLabel={`Reconciliation cluster ${cluster.canonicalName} · ${cluster.artifactClusterKind} · ${cluster.status}`}
-        segments={[
-          { value: 'CLUSTER' },
-          { label: 'kind', value: cluster.artifactClusterKind, signal: true },
-          { label: 'status', value: cluster.status },
-          { label: 'evidence', value: detail.evidence.length },
-          { label: 'outputs', value: detail.outputs.length },
+      <PageHeader
+        title={displayArtifactLabel(cluster)}
+        subtitle={`${cluster.artifactType.replaceAll('_', ' ')} · updated ${cluster.updatedAt.toLocaleString()}`}
+        metadata={[
+          { value: <StatusBadge status={cluster.status} /> },
+          { label: 'Evidence', value: detail.evidence.length, mono: true },
+          { label: 'Outputs', value: detail.outputs.length, mono: true },
         ]}
       />
 
@@ -69,18 +72,9 @@ export default async function ReconciliationClusterPage({
             <ArrowLeft className="size-4" />
             Reconciliation dashboard
           </Link>
-          <div>
-            <h1 className="text-2xl font-semibold text-fg">{cluster.canonicalName}</h1>
-            <p className="mt-1 text-sm text-fg-muted">
-              {cluster.artifactType} · updated {cluster.updatedAt.toLocaleString()}
-            </p>
-          </div>
           <div className="flex flex-wrap gap-2">
             <Badge variant="outline" className="rounded-sm">
-              {cluster.status}
-            </Badge>
-            <Badge variant="outline" className="rounded-sm">
-              {cluster.artifactClusterKind}
+              {cluster.artifactClusterKind.replaceAll('_', ' ')}
             </Badge>
             {cluster.canonicalEntityId ? (
               <Link href={`/app/objects/${cluster.canonicalEntityId}`}>
@@ -88,12 +82,24 @@ export default async function ReconciliationClusterPage({
               </Link>
             ) : null}
           </div>
+          <TechnicalDetails
+            items={[
+              { label: 'Cluster ID', value: cluster.id, copyValue: cluster.id },
+              ...(cluster.canonicalEntityId
+                ? [
+                    {
+                      label: 'Object ID',
+                      value: cluster.canonicalEntityId,
+                      copyValue: cluster.canonicalEntityId,
+                    },
+                  ]
+                : []),
+            ]}
+          />
         </div>
 
         <section className="space-y-3 rounded-sm border border-border bg-surface p-4">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-fg-muted">
-            Manual reconcile
-          </h2>
+          <SectionHeading>Manual reconcile</SectionHeading>
           <form action={queueReconciliationJobFormAction} className="space-y-3">
             <input type="hidden" name="mode" value="scope" />
             <input type="hidden" name="scope" value="cluster" />
@@ -129,21 +135,35 @@ function EvidenceList({ rows }: { rows: ReconciliationClusterDetailEvidence[] })
             >
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant={row.authoritative ? 'default' : 'outline'} className="rounded-sm">
-                  {row.role}
+                  {row.role.replaceAll('_', ' ')}
                 </Badge>
                 <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-                  {row.strength}
+                  {row.strength.replaceAll('_', ' ')}
                 </span>
                 {row.provider ? (
-                  <span className="text-xs text-fg-muted">{row.provider}</span>
+                  <span className="text-xs text-fg-muted">{displaySourceLabel(row.provider)}</span>
                 ) : null}
               </div>
               <div className="mt-2 line-clamp-3 text-fg">
-                {row.objectName ?? row.contentText ?? row.externalObjectId ?? row.rawEventId}
+                {row.objectName ?? row.contentText ?? 'Unavailable evidence'}
               </div>
-              {row.rawEventId ? (
-                <div className="mt-2 font-mono text-xs text-fg-dim">{row.rawEventId}</div>
-              ) : null}
+              <TechnicalDetails
+                className="mt-3"
+                items={[
+                  ...(row.rawEventId
+                    ? [{ label: 'Raw event ID', value: row.rawEventId, copyValue: row.rawEventId }]
+                    : []),
+                  ...(row.externalObjectId
+                    ? [
+                        {
+                          label: 'External object ID',
+                          value: row.externalObjectId,
+                          copyValue: row.externalObjectId,
+                        },
+                      ]
+                    : []),
+                ]}
+              />
             </li>
           ))
         )}
@@ -169,27 +189,36 @@ function OutputList({ rows }: { rows: ReconciliationClusterDetailOutput[] }) {
                   variant={row.status === 'failed' ? 'destructive' : 'outline'}
                   className="rounded-sm"
                 >
-                  {row.status}
+                  {row.status.replaceAll('_', ' ')}
                 </Badge>
                 {row.requiresApproval ? <Badge className="rounded-sm">approval</Badge> : null}
                 <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-                  {row.outputKind}
+                  {row.outputKind.replaceAll('_', ' ')}
                 </span>
               </div>
               <div className="font-medium">
-                {row.targetKind} · {row.operation}
+                {row.operation.replaceAll('_', ' ')} {row.targetKind.replaceAll('_', ' ')}
               </div>
               <div className="text-xs text-fg-muted">
                 {row.confidence} confidence · {row.createdAt.toLocaleString()}
               </div>
-              <div className="space-y-1 rounded-sm border border-border bg-background p-2 font-mono text-[11px] text-fg-dim">
-                <div>output {row.id}</div>
-                <div>source refs {jsonPreview(row.sourceRefs)}</div>
-                <div>payload refs {jsonPreview(row.sourcePayloadRefs)}</div>
-              </div>
-              <pre className="max-h-44 overflow-auto rounded-sm border border-border bg-background p-2 text-xs text-fg-muted">
-                {jsonPreview(row.payload)}
-              </pre>
+              <TechnicalDetails
+                items={[
+                  { label: 'Output ID', value: row.id, copyValue: row.id },
+                  {
+                    label: 'Source refs',
+                    ...jsonDetail(row.sourceRefs),
+                  },
+                  {
+                    label: 'Payload refs',
+                    ...jsonDetail(row.sourcePayloadRefs),
+                  },
+                  {
+                    label: 'Payload',
+                    ...jsonDetail(row.payload),
+                  },
+                ]}
+              />
             </li>
           ))
         )}
@@ -199,11 +228,10 @@ function OutputList({ rows }: { rows: ReconciliationClusterDetailOutput[] }) {
 }
 
 function SectionTitle({ label }: { label: string }) {
-  return (
-    <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-fg-muted">{label}</h2>
-  );
+  return <SectionHeading>{label}</SectionHeading>;
 }
 
-function jsonPreview(value: unknown): string {
-  return JSON.stringify(value ?? {}, null, 2).slice(0, 2_000);
+function jsonDetail(value: unknown): { value: string; copyValue: string } {
+  const serialized = JSON.stringify(value ?? {}, null, 2);
+  return { value: serialized.slice(0, 2_000), copyValue: serialized };
 }

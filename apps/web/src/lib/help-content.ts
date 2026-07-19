@@ -174,7 +174,7 @@ export const HELP_PAGES: HelpPage[] = [
           'Slack, Telegram, email, and meeting bots are capture surfaces for conversations and calls.',
           'Custom MCP servers expose approved live tools and context to the agent; successful tool results are captured as private evidence for later reconciliation while passive provider activity still needs native sync or custom ingestion.',
         ],
-        appLink: { href: '/app/team/integrations', label: 'Open integrations' },
+        appLink: { href: '/app/sources', label: 'Open connections' },
       },
       {
         title: 'Security model',

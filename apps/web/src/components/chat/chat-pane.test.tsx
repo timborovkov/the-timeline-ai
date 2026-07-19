@@ -1,19 +1,31 @@
 // @vitest-environment happy-dom
 
-import { render } from '@testing-library/react';
-import { createElement } from 'react';
+import { render, screen, waitFor } from '@testing-library/react';
+import { createElement, StrictMode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { chatHandoffKey } from '@/lib/chat-handoff';
+
 const fakes = vi.hoisted(() => ({
   useChat: vi.fn(),
-  transports: [] as { options: { body?: () => unknown } }[],
+  transports: [] as {
+    options: {
+      body?: () => unknown;
+      fetch?: (url: string, init?: RequestInit) => Promise<Response>;
+    };
+  }[],
 }));
 
 vi.mock('@ai-sdk/react', () => ({ useChat: fakes.useChat }));
 vi.mock('ai', () => ({
   DefaultChatTransport: class DefaultChatTransport {
-    constructor(public options: { body?: () => unknown }) {
+    constructor(
+      public options: {
+        body?: () => unknown;
+        fetch?: (url: string, init?: RequestInit) => Promise<Response>;
+      },
+    ) {
       fakes.transports.push({ options });
     }
   },
@@ -32,7 +44,9 @@ const { ChatPane } = await import('./chat-pane.js');
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
   fakes.transports.length = 0;
+  window.sessionStorage.clear();
 });
 
 describe('ChatPane', () => {
@@ -46,6 +60,7 @@ describe('ChatPane', () => {
 
     const html = renderToStaticMarkup(
       createElement(ChatPane, {
+        teamId: 'team-1',
         teamName: 'Acme',
         sessionId: null,
         initialMessages: [],
@@ -72,6 +87,7 @@ describe('ChatPane', () => {
 
     const html = renderToStaticMarkup(
       createElement(ChatPane, {
+        teamId: 'team-1',
         teamName: 'Acme',
         sessionId: 'session-1',
         initialMessages: [],
@@ -80,12 +96,209 @@ describe('ChatPane', () => {
       }),
     );
 
-    expect(html).toContain('pinned');
+    expect(html).toContain('Pinned');
     expect(html).toContain('Proposal');
     expect(html).toContain('What is due?');
     expect(html).toContain('Send proposal');
     expect(html).toContain('Agent');
     expect(html).not.toContain('>Acme</span>');
+  });
+
+  it('never renders a raw pinned object id as its fallback label', () => {
+    fakes.useChat.mockReturnValue({
+      messages: [],
+      sendMessage: vi.fn(),
+      status: 'ready',
+      error: null,
+    });
+    const uuid = '8e5b28ae-4ba1-4a52-9d8f-7e9fb57be7a4';
+    const { container } = render(
+      createElement(ChatPane, {
+        teamId: 'team-1',
+        teamName: 'Acme',
+        sessionId: 'session-1',
+        initialMessages: [],
+        pinnedEntityId: uuid,
+        pinnedEntityName: null,
+      }),
+    );
+    expect(container.textContent).toContain('Unavailable object');
+    expect(container.textContent).not.toContain(uuid);
+  });
+
+  it('consumes a Home handoff and sends it exactly once', async () => {
+    const sendMessage = vi.fn();
+    fakes.useChat.mockReturnValue({
+      messages: [],
+      sendMessage,
+      status: 'ready',
+      error: null,
+    });
+    window.sessionStorage.setItem(
+      chatHandoffKey('team-1'),
+      JSON.stringify({ prompt: 'What changed?', createdAt: Date.now() }),
+    );
+
+    render(
+      createElement(
+        StrictMode,
+        null,
+        createElement(ChatPane, {
+          teamId: 'team-1',
+          teamName: 'Acme',
+          sessionId: null,
+          initialMessages: [],
+          pinnedEntityId: null,
+          pinnedEntityName: null,
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(sendMessage).toHaveBeenCalledTimes(1);
+    });
+    expect(sendMessage).toHaveBeenCalledWith({ text: 'What changed?' });
+    expect(window.sessionStorage.getItem(chatHandoffKey('team-1'))).toBeNull();
+  });
+
+  it('applies contextual Ask handoff to the first persisted session', async () => {
+    fakes.useChat.mockReturnValue({
+      messages: [],
+      sendMessage: vi.fn(),
+      status: 'ready',
+      error: null,
+    });
+    window.sessionStorage.setItem(
+      chatHandoffKey('team-1'),
+      JSON.stringify({
+        createdAt: Date.now(),
+        context: {
+          pathname: '/app/objects/018f22e2-7a9b-7cc3-98c4-3a2b1c0d9e8f',
+          routeKind: 'object-detail',
+          objectId: '018f22e2-7a9b-7cc3-98c4-3a2b1c0d9e8f',
+        },
+        pinnedEntityId: '018f22e2-7a9b-7cc3-98c4-3a2b1c0d9e8f',
+        pinnedEntityName: 'Launch plan',
+      }),
+    );
+
+    render(
+      createElement(ChatPane, {
+        teamId: 'team-1',
+        teamName: 'Acme',
+        sessionId: null,
+        initialMessages: [],
+        pinnedEntityId: null,
+        pinnedEntityName: null,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(fakes.transports.at(-1)?.options.body?.()).toMatchObject({
+        startNewSession: true,
+        pinnedEntityId: '018f22e2-7a9b-7cc3-98c4-3a2b1c0d9e8f',
+        dashboardContext: {
+          routeKind: 'object-detail',
+          objectId: '018f22e2-7a9b-7cc3-98c4-3a2b1c0d9e8f',
+        },
+      });
+    });
+    expect(screen.getByRole('link', { name: 'Pinned · Launch plan' })).toBeTruthy();
+    expect(window.sessionStorage.getItem(chatHandoffKey('team-1'))).toBeNull();
+  });
+
+  it('retries session creation with its handoff after the first request fails', async () => {
+    fakes.useChat.mockReturnValue({
+      messages: [],
+      sendMessage: vi.fn(),
+      status: 'ready',
+      error: null,
+    });
+    window.sessionStorage.setItem(
+      chatHandoffKey('team-1'),
+      JSON.stringify({
+        createdAt: Date.now(),
+        context: { pathname: '/app/objects/object-1', routeKind: 'object-detail' },
+        pinnedEntityId: 'object-1',
+      }),
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: 'rate_limited' }), {
+          status: 429,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+
+    render(
+      createElement(ChatPane, {
+        teamId: 'team-1',
+        teamName: 'Acme',
+        sessionId: null,
+        initialMessages: [],
+        pinnedEntityId: null,
+        pinnedEntityName: null,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(fakes.transports.at(-1)?.options.body?.()).toMatchObject({
+        startNewSession: true,
+        pinnedEntityId: 'object-1',
+      });
+    });
+    await expect(fakes.transports.at(-1)?.options.fetch?.('/api/chat')).rejects.toThrow();
+    expect(fakes.transports.at(-1)?.options.body?.()).toMatchObject({
+      startNewSession: true,
+      pinnedEntityId: 'object-1',
+      dashboardContext: { routeKind: 'object-detail' },
+    });
+  });
+
+  it('retries session creation when a successful stream has no persisted session id', async () => {
+    fakes.useChat.mockReturnValue({
+      messages: [],
+      sendMessage: vi.fn(),
+      status: 'ready',
+      error: null,
+    });
+    window.sessionStorage.setItem(
+      chatHandoffKey('team-1'),
+      JSON.stringify({
+        createdAt: Date.now(),
+        context: { pathname: '/app/boards/board-1', routeKind: 'board-detail' },
+        pinnedEntityId: 'board-1',
+      }),
+    );
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('streamed answer')));
+
+    render(
+      createElement(ChatPane, {
+        teamId: 'team-1',
+        teamName: 'Acme',
+        sessionId: null,
+        initialMessages: [],
+        pinnedEntityId: null,
+        pinnedEntityName: null,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(fakes.transports.at(-1)?.options.body?.()).toMatchObject({
+        startNewSession: true,
+        pinnedEntityId: 'board-1',
+      });
+    });
+    await expect(fakes.transports.at(-1)?.options.fetch?.('/api/chat')).resolves.toBeInstanceOf(
+      Response,
+    );
+    expect(fakes.transports.at(-1)?.options.body?.()).toMatchObject({
+      startNewSession: true,
+      pinnedEntityId: 'board-1',
+      dashboardContext: { routeKind: 'board-detail' },
+    });
   });
 
   it('renders assistant markdown text parts with citation chips', () => {
@@ -110,6 +323,7 @@ describe('ChatPane', () => {
 
     const html = renderToStaticMarkup(
       createElement(ChatPane, {
+        teamId: 'team-1',
         teamName: 'Acme',
         sessionId: null,
         initialMessages: [],
@@ -150,6 +364,7 @@ describe('ChatPane', () => {
 
     const html = renderToStaticMarkup(
       createElement(ChatPane, {
+        teamId: 'team-1',
         teamName: 'Acme',
         sessionId: null,
         initialMessages: [],
@@ -180,6 +395,7 @@ describe('ChatPane', () => {
 
     const html = renderToStaticMarkup(
       createElement(ChatPane, {
+        teamId: 'team-1',
         teamName: 'Acme',
         sessionId: null,
         initialMessages: [],
@@ -221,6 +437,7 @@ describe('ChatPane', () => {
 
     const html = renderToStaticMarkup(
       createElement(ChatPane, {
+        teamId: 'team-1',
         teamName: 'Acme',
         sessionId: null,
         initialMessages: [],
@@ -261,6 +478,7 @@ describe('ChatPane', () => {
 
     const html = renderToStaticMarkup(
       createElement(ChatPane, {
+        teamId: 'team-1',
         teamName: 'Acme',
         sessionId: null,
         initialMessages: [],
@@ -285,6 +503,7 @@ describe('ChatPane', () => {
 
     const { rerender } = render(
       createElement(ChatPane, {
+        teamId: 'team-1',
         teamName: 'Acme',
         sessionId: 'stale-session',
         initialMessages: [],
@@ -299,6 +518,7 @@ describe('ChatPane', () => {
 
     rerender(
       createElement(ChatPane, {
+        teamId: 'team-1',
         teamName: 'Acme',
         sessionId: null,
         initialMessages: [],

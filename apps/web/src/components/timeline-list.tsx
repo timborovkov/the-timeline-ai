@@ -27,6 +27,7 @@ import { DocumentPreview } from '@/components/documents/document-preview';
 import { EmptyAction } from '@/components/empty-action';
 import { EventVisibilityForm } from '@/components/event-visibility-form';
 import { useInspector } from '@/components/inspector-context';
+import { TechnicalDetails } from '@/components/technical-details';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -35,7 +36,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
+import { statusLabel } from '@/lib/status-labels';
 import {
   buildTimelineMoments,
   actorLabelsByTelegramUserId,
@@ -112,11 +115,11 @@ function eventDate(input: Date | string): Date {
   return new Date(input);
 }
 
-function formatTimestamp(input: string, timezone?: string): string {
+function formatTimestamp(input: string, timezone: string): string {
   return formatDisplayDateTime(eventDate(input), { timezone });
 }
 
-function formatMetadataValue(value: unknown, timezone?: string): string {
+function formatMetadataValue(value: unknown, timezone: string): string {
   if (value === null || value === undefined) return '';
   if (typeof value === 'string') return displayText(value, { timezone });
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
@@ -141,11 +144,7 @@ function positiveIntegerMeta(meta: Record<string, unknown>, key: string): number
   return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null;
 }
 
-function friendlyMeta(
-  meta: Record<string, unknown>,
-  key: string,
-  timezone?: string,
-): string | null {
+function friendlyMeta(meta: Record<string, unknown>, key: string, timezone: string): string | null {
   const value = formatMetadataValue(meta[key], timezone).trim();
   return value.length > 0 ? value : null;
 }
@@ -173,6 +172,61 @@ function titleCase(value: string): string {
     .trim();
 }
 
+function normalizedText(value: string | null | undefined): string {
+  return (value ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function isRepeatedContext(value: string, ...primary: (string | null | undefined)[]): boolean {
+  const normalized = normalizedText(value);
+  if (!normalized) return true;
+  return primary.some((item) => {
+    const candidate = normalizedText(item);
+    return ` ${candidate} `.includes(` ${normalized} `);
+  });
+}
+
+function displayMomentTitle(moment: TimelineMoment): string {
+  const audioNote = moment.rawEvents
+    .map((event) => stringMeta(metaObject(event.sourceMetadata), 'audio_note_text'))
+    .find(Boolean);
+  return audioNote ?? moment.title;
+}
+
+function supportingText(moment: TimelineMoment, fallback: string): string {
+  const preview = moment.preview?.trim();
+  const title = displayMomentTitle(moment);
+  if (!preview) return fallback;
+  if (normalizedText(preview) === normalizedText(title)) return fallback;
+  if (preview.toLowerCase().startsWith(title.toLowerCase())) {
+    const remainder = preview
+      .slice(title.length)
+      .replace(/^[\s.:;—–-]+/, '')
+      .trim();
+    if (remainder) return remainder;
+  }
+  return preview;
+}
+
+function humanizeImpact(item: ImpactItem): string {
+  const parts = item.label.split('·').flatMap((part) => {
+    const trimmed = part.trim();
+    return trimmed ? [trimmed] : [];
+  });
+  const operation = parts.at(-1)?.toLowerCase();
+  if (operation === 'create' || operation === 'created') {
+    const target = (parts.at(-2) ?? item.kind).replaceAll('_', ' ').toLowerCase();
+    return `Created ${target}`;
+  }
+  if (operation === 'update' || operation === 'updated') {
+    const target = (parts.at(-2) ?? item.kind).replaceAll('_', ' ').toLowerCase();
+    return `Updated ${target}`;
+  }
+  return `${IMPACT_LABEL[item.kind]} · ${item.label}`;
+}
+
 function evidenceSourceLabel(evidence: TimelineArtifactCluster['relatedEvidence'][number]): string {
   return evidence.provider ?? evidence.source ?? 'source';
 }
@@ -198,7 +252,7 @@ function uniqueLabels(labels: (string | null | undefined)[]): string[] {
 }
 
 function inspectorTitle(moment: TimelineMoment): string {
-  return moment.title;
+  return displayMomentTitle(moment);
 }
 
 function sourceTruthSummary(moment: TimelineMoment): { title: string; body: string | null } {
@@ -223,12 +277,12 @@ function sourceTruthSummary(moment: TimelineMoment): { title: string; body: stri
         : null,
   ].filter((part): part is string => Boolean(part));
   return {
-    title: moment.title,
+    title: displayMomentTitle(moment),
     body: parts.length > 0 ? parts.join(' · ') : null,
   };
 }
 
-function rawEventBody(event: TimelineEvent, timezone?: string): string {
+function rawEventBody(event: TimelineEvent, timezone: string): string {
   const meta = metaObject(event.sourceMetadata);
   const content = event.contentText?.trim();
   if (content) return displayText(formatTimelineAttachmentText(content), { timezone });
@@ -250,7 +304,7 @@ function addDetail(
   seen: Set<string>,
   label: string,
   value: string | null,
-  timezone?: string,
+  timezone: string,
 ) {
   if (!value || seen.has(label)) return;
   seen.add(label);
@@ -259,7 +313,7 @@ function addDetail(
 
 function inspectorSourceDetailEntries(
   moment: TimelineMoment,
-  timezone?: string,
+  timezone: string,
 ): [string, string][] {
   const entries: [string, string][] = [];
   const seen = new Set<string>();
@@ -385,8 +439,8 @@ function rawEventContextLabel(event: TimelineEvent): string | null {
     return label ? displayText(label) : null;
   }
   if (event.source === 'slack') {
-    const label = stringMeta(meta, 'slack_channel_name') ?? stringMeta(meta, 'slack_channel_id');
-    return label ? displayText(label) : null;
+    const label = stringMeta(meta, 'slack_channel_name');
+    return label ? displayText(label) : 'Unnamed channel';
   }
   if (event.source === 'document') {
     const label = stringMeta(meta, 'document_name') ?? stringMeta(meta, 'name');
@@ -441,7 +495,7 @@ function InspectorBody({
 }: {
   moment: TimelineMoment;
   capturedFilesByEventId: Record<string, TimelineCapturedFile[]>;
-  timezone?: string;
+  timezone: string;
 }) {
   const summary = sourceTruthSummary(moment);
   const visibleRawEvents = moment.rawEvents.slice(0, INSPECTOR_RAW_EVENT_LIMIT);
@@ -451,8 +505,10 @@ function InspectorBody({
   return (
     <div className="space-y-5">
       <section>
-        <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg">Moment</h3>
-        <p className="break-words text-sm font-medium leading-6 text-fg">{moment.title}</p>
+        <h3 className="mb-2 text-sm font-semibold text-fg">Moment</h3>
+        <p className="break-words text-sm font-medium leading-6 text-fg">
+          {displayMomentTitle(moment)}
+        </p>
         {moment.preview ? (
           <p className="mt-1 break-words text-sm leading-6 text-fg-muted">{moment.preview}</p>
         ) : null}
@@ -461,13 +517,10 @@ function InspectorBody({
             Evidence summary · {summary.body}
           </p>
         ) : null}
-        <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-          Visibility · {formatVisibilitySummary(moment.rawEvents)}
-        </p>
       </section>
       {moment.impactItems.length > 0 ? (
         <section>
-          <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg">Impact</h3>
+          <h3 className="mb-2 text-sm font-semibold text-fg">Impact</h3>
           <ul className="space-y-1.5">
             {moment.impactItems.map((item, index) => (
               <li
@@ -479,26 +532,20 @@ function InspectorBody({
                     href={item.href}
                     className="inline-flex max-w-full items-center gap-1 break-words text-fg underline decoration-border underline-offset-4 transition-colors hover:text-signal hover:decoration-signal"
                   >
-                    <span className="min-w-0 break-words">
-                      {IMPACT_LABEL[item.kind]} · {item.label}
-                    </span>
+                    <span className="min-w-0 break-words">{humanizeImpact(item)}</span>
                     <ExternalLink aria-hidden="true" className="size-3 shrink-0" />
                   </Link>
                 ) : (
-                  <span className="break-words">
-                    {IMPACT_LABEL[item.kind]} · {item.label}
-                  </span>
+                  <span className="break-words">{humanizeImpact(item)}</span>
                 )}
-                {item.status ? <span> · {item.status}</span> : null}
+                {item.status ? <span> · {statusLabel(item.status)}</span> : null}
               </li>
             ))}
           </ul>
         </section>
       ) : null}
       <section>
-        <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
-          Source evidence
-        </h3>
+        <h3 className="mb-2 text-sm font-semibold text-fg">Source evidence</h3>
         <ol className="space-y-2">
           {visibleRawEvents.map((event) => (
             <SourceEvidenceCard
@@ -519,9 +566,7 @@ function InspectorBody({
       </section>
       {moment.artifactClusters.length > 0 ? (
         <section>
-          <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
-            Related evidence
-          </h3>
+          <h3 className="mb-2 text-sm font-semibold text-fg">Related evidence</h3>
           <div className="space-y-3">
             {moment.artifactClusters.map((cluster) => (
               <ArtifactEvidenceBundle key={cluster.id} cluster={cluster} timezone={timezone} />
@@ -538,28 +583,19 @@ function InspectorTechnicalDetails({
   timezone,
 }: {
   moment: TimelineMoment;
-  timezone?: string;
+  timezone: string;
 }) {
   const metadata = inspectorSourceDetailEntries(moment, timezone);
-  if (metadata.length === 0) return null;
+  const evidenceIds = moment.rawEvents.map((event) => event.id).join(', ');
   return (
-    <section>
-      <details className="group" open={false}>
-        <summary className="mb-2 cursor-pointer list-none font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
-          Technical details
-        </summary>
-        <dl className="space-y-1.5">
-          {metadata.map(([key, value]) => (
-            <div key={key} className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-2">
-              <dt className="truncate text-fg-dim">{key}</dt>
-              <dd className="min-w-0 truncate text-fg-muted" title={value}>
-                {value}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      </details>
-    </section>
+    <TechnicalDetails
+      items={[
+        { label: 'Moment ID', value: moment.id, copyValue: moment.id },
+        { label: 'Evidence IDs', value: evidenceIds, copyValue: evidenceIds },
+        { label: 'Visibility', value: formatVisibilitySummary(moment.rawEvents) },
+        ...metadata.map(([label, value]) => ({ label, value, copyValue: value })),
+      ]}
+    />
   );
 }
 
@@ -568,7 +604,7 @@ function ArtifactEvidenceBundle({
   timezone,
 }: {
   cluster: TimelineArtifactCluster;
-  timezone?: string;
+  timezone: string;
 }) {
   const statusSources = cluster.relatedEvidence.filter((evidence) => evidence.authoritative).length;
   return (
@@ -613,7 +649,7 @@ function ArtifactEvidenceBundle({
                 )}
                 <span>{evidenceStrengthLabel(evidence)}</span>
                 {evidence.occurredAt ? (
-                  <time dateTime={evidence.occurredAt}>
+                  <time data-visual-dynamic="timeline-timestamp" dateTime={evidence.occurredAt}>
                     {formatTimestamp(evidence.occurredAt, timezone)}
                   </time>
                 ) : null}
@@ -659,7 +695,7 @@ function SourceEvidenceCard({
   event: TimelineEvent;
   actorLabel: string;
   capturedFiles: TimelineCapturedFile[];
-  timezone?: string;
+  timezone: string;
 }) {
   const [quickViewOpen, setQuickViewOpen] = useState(false);
   const documentLink = rawEventDocumentLink(event);
@@ -681,7 +717,13 @@ function SourceEvidenceCard({
         <span className="text-fg-muted">{actorLabel}</span>
         <span>{formatSourceLabel(event.source)}</span>
         {context ? <span>{context}</span> : null}
-        <time dateTime={event.occurredAt}>{formatTimestamp(event.occurredAt, timezone)}</time>
+        <time
+          data-visual-dynamic="timeline-timestamp"
+          dateTime={event.occurredAt}
+          className="inline-block min-w-[28ch] whitespace-nowrap"
+        >
+          {formatTimestamp(event.occurredAt, timezone)}
+        </time>
         {event.visibility === 'private' ? <span>Private</span> : null}
       </div>
       {documentLink ? (
@@ -689,7 +731,7 @@ function SourceEvidenceCard({
           <Link
             href={documentLink.href}
             title={documentLink.title}
-            className="inline-flex min-h-7 max-w-full min-w-0 items-center rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-muted transition-colors hover:text-signal"
+            className="inline-flex min-h-7 max-w-full min-w-0 items-center rounded-sm border border-border bg-surface px-2 py-1 text-xs text-fg-muted transition-colors hover:text-signal"
           >
             <span className="min-w-0 truncate">Attachment · {documentLink.label}</span>
           </Link>
@@ -729,7 +771,7 @@ function SourceEvidenceCard({
             onClick={() => {
               setQuickViewOpen(true);
             }}
-            className="mt-2 inline-flex min-h-7 items-center rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-muted transition-colors hover:border-border-strong hover:text-signal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/30"
+            className="mt-2 inline-flex min-h-7 items-center rounded-sm border border-border bg-surface px-2 py-1 text-xs text-fg-muted transition-colors hover:border-border-strong hover:text-signal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/30"
           >
             View full evidence
           </button>
@@ -773,7 +815,7 @@ function CapturedFileEvidence({ file }: { file: TimelineCapturedFile }) {
         <Link
           href={`/app/documents/${file.id}`}
           title={file.name}
-          className="inline-flex min-h-7 max-w-full min-w-0 items-center rounded-sm border border-border bg-bg px-2 py-1 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-muted transition-colors hover:text-signal"
+          className="inline-flex min-h-7 max-w-full min-w-0 items-center rounded-sm border border-border bg-bg px-2 py-1 text-xs text-fg-muted transition-colors hover:text-signal"
         >
           <span className="min-w-0 truncate">Attachment · {displayTitle}</span>
         </Link>
@@ -808,7 +850,7 @@ function InspectorActions({
   currentUserId: string;
   isAdmin: boolean;
   members: { id: string; label: string }[];
-  timezone?: string;
+  timezone: string;
 }) {
   const editableEvents = moment.rawEvents.filter((event) =>
     canEditVisibility(event, currentUserId),
@@ -822,7 +864,7 @@ function InspectorActions({
   }
   return (
     <section>
-      <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg">Controls</h3>
+      <h3 className="mb-2 text-sm font-semibold text-fg">Controls</h3>
       <div className="space-y-3">
         {audioEvents.map((event) =>
           audioUrlMap?.get(event.id) ? (
@@ -848,7 +890,13 @@ function InspectorActions({
         {editableEvents.map((event) => (
           <details key={event.id} className="text-xs">
             <summary className="cursor-pointer font-mono uppercase tracking-[0.1em] text-fg-dim">
-              Visibility · {formatTimestamp(event.occurredAt, timezone)}
+              Visibility ·{' '}
+              <span
+                data-visual-dynamic="timeline-timestamp"
+                className="inline-block min-w-[28ch] whitespace-nowrap"
+              >
+                {formatTimestamp(event.occurredAt, timezone)}
+              </span>
             </summary>
             <EventVisibilityForm
               eventId={event.id}
@@ -878,7 +926,7 @@ function InspectorActions({
   );
 }
 
-function ImpactStrip({ items, timezone }: { items: ImpactItem[]; timezone?: string }) {
+function ImpactStrip({ items, timezone }: { items: ImpactItem[]; timezone: string }) {
   if (items.length === 0) return null;
   return (
     <div
@@ -887,12 +935,12 @@ function ImpactStrip({ items, timezone }: { items: ImpactItem[]; timezone?: stri
     >
       {items.slice(0, 2).map((item, index) => {
         const count = item.count && item.count > 1 ? ` ×${item.count}` : '';
-        const status = item.status ? ` · ${item.status}` : '';
-        const label = displayText(`${IMPACT_LABEL[item.kind]} · ${item.label}${count}${status}`, {
+        const status = item.status ? ` · ${statusLabel(item.status)}` : '';
+        const label = displayText(`${humanizeImpact(item)}${count}${status}`, {
           timezone,
         });
         const className =
-          'inline-flex min-h-6 max-w-full min-w-0 items-center font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim transition-colors hover:text-fg';
+          'inline-flex min-h-6 max-w-full min-w-0 items-center text-xs text-fg-dim transition-colors hover:text-fg';
         return item.href ? (
           <Link key={`${item.kind}:${item.label}:${index}`} href={item.href} className={className}>
             <span className="min-w-0 truncate">{label}</span>
@@ -930,7 +978,7 @@ function momentInspectorContent({
   isAdmin: boolean;
   members: { id: string; label: string }[];
   capturedFilesByEventId: Record<string, TimelineCapturedFile[]>;
-  timezone?: string;
+  timezone: string;
 }) {
   return {
     id: moment.id,
@@ -976,7 +1024,7 @@ function TimelineMomentRow({
   capturedFilesByEventId: Record<string, TimelineCapturedFile[]>;
   focused: boolean;
   compact: boolean;
-  timezone?: string;
+  timezone: string;
 }) {
   const inspector = useInspector();
   const selected = focused || (inspector.open && inspector.content?.id === moment.id);
@@ -984,7 +1032,8 @@ function TimelineMomentRow({
   const transcriptionStatus = momentTranscriptionStatus(moment);
   const KindIcon = MOMENT_KIND_ICON[moment.kind];
   const sourceTruth = sourceTruthSummary(moment);
-  const previewText = moment.preview ?? sourceTruth.body ?? 'Evidence available';
+  const title = displayMomentTitle(moment);
+  const previewText = supportingText(moment, sourceTruth.body ?? 'Evidence available');
   const sourceCountLabel =
     moment.rawEvents.length === 1 ? '1 signal' : `${moment.rawEvents.length} signals`;
   const hasSupportingContext =
@@ -1010,7 +1059,7 @@ function TimelineMomentRow({
         />
       ))}
       <div className="relative px-0 pt-4 font-mono text-xs text-fg-dim md:px-0 md:py-4 md:pr-4">
-        <span>{moment.timeLabel}</span>
+        <span data-visual-dynamic="timeline-time">{moment.timeLabel}</span>
         <span
           aria-hidden="true"
           className="absolute right-1 top-0 hidden h-full w-px bg-border md:block"
@@ -1028,7 +1077,7 @@ function TimelineMomentRow({
       <div className="min-w-0 py-3 md:py-4 md:pl-4 md:pr-2">
         <button
           type="button"
-          aria-label={[moment.title, previewText, moment.timeLabel].filter(Boolean).join(' · ')}
+          aria-label={[title, previewText, moment.timeLabel].filter(Boolean).join(' · ')}
           onClick={() => {
             inspector.show(
               momentInspectorContent({
@@ -1049,14 +1098,21 @@ function TimelineMomentRow({
               <KindIcon aria-hidden="true" className="size-3.5" />
               {moment.sourceLabel}
             </span>
-            <span>{moment.actorLabel}</span>
-            {moment.contextLabel !== moment.sourceLabel ? <span>{moment.contextLabel}</span> : null}
-            <span className="font-mono text-[10px] uppercase tracking-[0.12em]">
-              {sourceCountLabel}
-            </span>
+            {!isRepeatedContext(moment.actorLabel, moment.sourceLabel, title) ? (
+              <span>{moment.actorLabel}</span>
+            ) : null}
+            {!isRepeatedContext(
+              moment.contextLabel,
+              moment.sourceLabel,
+              title,
+              moment.actorLabel,
+            ) ? (
+              <span>{moment.contextLabel}</span>
+            ) : null}
+            <span className="font-mono text-[10px]">{sourceCountLabel}</span>
           </div>
           <p className="mt-1.5 line-clamp-2 break-words text-base font-medium leading-6 text-fg md:max-w-[88ch] md:text-[15px]">
-            {moment.title}
+            {title}
           </p>
           <p
             className={cn(
@@ -1081,7 +1137,7 @@ function TimelineMomentRow({
         {meetingHref ? (
           <Link
             href={meetingHref}
-            className="mt-3 inline-flex items-center gap-1.5 rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-muted transition-colors hover:text-signal"
+            className="mt-3 inline-flex items-center gap-1.5 rounded-sm border border-border bg-surface px-2 py-1 text-xs text-fg-muted transition-colors hover:text-signal"
           >
             <ExternalLink aria-hidden="true" className="size-3" />
             Open transcript
@@ -1102,7 +1158,7 @@ export function TimelineList({
   compact = false,
   maxMoments,
   serverMoments,
-  emptyLabel = 'NO EVENTS YET',
+  emptyLabel = 'No events yet',
   emptyAction,
   impactFilter = 'all',
   impactItemsByEventId,
@@ -1113,6 +1169,8 @@ export function TimelineList({
   timezone,
   mode = 'moments',
 }: Props) {
+  const workspaceTimezone = useWorkspaceTimezone();
+  const resolvedTimezone = timezone ?? workspaceTimezone;
   const inspector = useInspector();
   const autoOpenedFocusRef = useRef<string | null>(null);
   const localMoments = useMemo(
@@ -1121,10 +1179,15 @@ export function TimelineList({
         events,
         authorMap,
         impactItemsByEventId === undefined
-          ? { artifactClustersByEventId, timezone, groupingMode: mode }
-          : { impactItemsByEventId, artifactClustersByEventId, timezone, groupingMode: mode },
+          ? { artifactClustersByEventId, timezone: resolvedTimezone, groupingMode: mode }
+          : {
+              impactItemsByEventId,
+              artifactClustersByEventId,
+              timezone: resolvedTimezone,
+              groupingMode: mode,
+            },
       ),
-    [events, authorMap, impactItemsByEventId, artifactClustersByEventId, timezone, mode],
+    [events, authorMap, impactItemsByEventId, artifactClustersByEventId, resolvedTimezone, mode],
   );
   const moments = serverMoments ?? localMoments;
   const focusedMoments =
@@ -1165,7 +1228,7 @@ export function TimelineList({
         isAdmin,
         members,
         capturedFilesByEventId,
-        timezone,
+        timezone: resolvedTimezone,
       }),
     );
   }, [
@@ -1177,7 +1240,7 @@ export function TimelineList({
     inspector,
     isAdmin,
     members,
-    timezone,
+    resolvedTimezone,
   ]);
 
   if (visibleMoments.length === 0) {
@@ -1194,7 +1257,7 @@ export function TimelineList({
 
     return (
       <div className="border-y border-border py-10 text-center">
-        <p className="font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">{emptyLabel}</p>
+        <p className="text-sm text-fg-dim">{emptyLabel}</p>
       </div>
     );
   }
@@ -1224,7 +1287,7 @@ export function TimelineList({
                   moment.rawEvents.some((event) => event.id === focusEventId)
                 }
                 compact={compact}
-                timezone={timezone}
+                timezone={resolvedTimezone}
               />
             ))}
           </ol>

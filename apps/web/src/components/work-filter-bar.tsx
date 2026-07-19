@@ -104,9 +104,7 @@ export function WorkFilterBar({
       <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
         <div className="flex min-w-0 flex-wrap items-end gap-2">
           <label className="relative min-w-[15rem] flex-1 sm:max-w-xs">
-            <span className="mb-1 block font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
-              Search
-            </span>
+            <span className="mb-1 block text-[11px] text-fg-dim">Search</span>
             <Search
               className="pointer-events-none absolute bottom-2.5 left-2.5 size-3.5 text-fg-dim"
               aria-hidden
@@ -250,7 +248,7 @@ export function WorkFilterBar({
               );
             }}
             className={cn(
-              'inline-flex h-9 items-center gap-2 rounded-sm border border-border bg-surface px-3 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted transition-colors hover:border-border-strong hover:text-fg focus-visible:border-signal/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
+              'inline-flex h-9 items-center gap-2 rounded-sm border border-border bg-surface px-3 text-xs text-fg-muted transition-colors hover:border-border-strong hover:text-fg focus-visible:border-signal/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
               (showDateRanges || hasRangeFilters) && 'border-border-strong text-fg',
             )}
           >
@@ -304,10 +302,7 @@ export function WorkFilterBar({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 xl:justify-end xl:pt-[1.125rem]">
-          <output
-            className="mr-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
-            aria-live="polite"
-          >
+          <output className="mr-1 text-xs text-fg-dim" aria-live="polite">
             {active ? `${resultCount} / ${totalCount}` : `${totalCount} visible`}
           </output>
           {active ? (
@@ -472,9 +467,7 @@ function FilterSelect({
 }) {
   return (
     <label className="min-w-32">
-      <span className="mb-1 block font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
-        {label}
-      </span>
+      <span className="mb-1 block text-[11px] text-fg-dim">{label}</span>
       <select
         name={name}
         defaultValue={defaultValue}
@@ -502,9 +495,7 @@ function FilterInput({
 }) {
   return (
     <label className={type === 'date' ? 'min-w-36' : 'min-w-32'}>
-      <span className="mb-1 block font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
-        {label}
-      </span>
+      <span className="mb-1 block text-[11px] text-fg-dim">{label}</span>
       <input
         name={name}
         type={type}

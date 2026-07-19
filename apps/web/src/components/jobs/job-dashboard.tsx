@@ -11,7 +11,7 @@ export function JobDashboard() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+        <p className="text-xs text-fg-dim">
           Updated {new Date(query.data.updatedAt).toLocaleTimeString()}
         </p>
         <button
@@ -28,9 +28,7 @@ export function JobDashboard() {
       <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {query.data.summaries.map((summary) => (
           <li key={summary.kind} className="rounded-sm border border-border bg-surface px-4 py-3">
-            <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-              {summary.label}
-            </div>
+            <div className="text-xs text-fg-dim">{summary.label}</div>
             <div className="mt-2 text-2xl font-semibold">{summary.needsAttention}</div>
           </li>
         ))}

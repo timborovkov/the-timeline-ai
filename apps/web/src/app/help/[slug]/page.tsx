@@ -37,11 +37,11 @@ export default async function HelpTopicPage({ params }: HelpPageProps) {
 
   return (
     <article className="space-y-10">
-      <header className="max-w-3xl space-y-4">
-        <p className="font-mono text-xs uppercase tracking-[0.16em] text-fg-dim">Guide</p>
+      <header className="max-w-[70ch] space-y-4">
+        <p className="text-xs font-medium text-fg-muted">Guide</p>
         <div className="flex items-center gap-3">
           <page.icon className="size-8 text-signal" />
-          <h1 className="text-4xl font-semibold tracking-normal text-fg sm:text-5xl">
+          <h1 className="text-3xl font-semibold tracking-tight text-fg sm:text-4xl">
             {page.title}
           </h1>
         </div>
@@ -81,9 +81,7 @@ export default async function HelpTopicPage({ params }: HelpPageProps) {
       </div>
 
       <section className="border-t border-border pt-8">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-[0.12em] text-fg-dim">
-          Related
-        </h2>
+        <h2 className="mb-3 text-base font-semibold text-fg">Related</h2>
         <div className="flex flex-wrap gap-2">
           {page.related.map((relatedSlug) => {
             const related = findHelpPage(relatedSlug);
