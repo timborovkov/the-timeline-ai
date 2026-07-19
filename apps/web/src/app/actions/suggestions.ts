@@ -1,5 +1,6 @@
 'use server';
 
+import { taskCategorySchema } from '@timeline/shared/task-categories/types';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
@@ -12,7 +13,7 @@ const MAX_VISIBLE_ACCEPT_ITEMS = 500;
 const MAX_VISIBLE_REJECT_ITEMS = 500;
 
 function revalidateSuggestionSurfaces() {
-  revalidatePath('/app');
+  revalidatePath('/app', 'layout');
   revalidatePath('/app/approvals');
   revalidatePath('/app/timeline');
   revalidatePath('/app/objects', 'layout');
@@ -52,6 +53,13 @@ export async function acceptSuggestionItemAction(input: unknown): Promise<Action
       revalidateSuggestionSurfaces();
       return { ok: true };
     } catch (err) {
+      const failedSuggestions = await r.scope.suggestions
+        .listSuggestions({ status: 'failed' })
+        .catch(() => []);
+      const itemIsFailed = failedSuggestions.some((suggestion) =>
+        suggestion.items.some((item) => item.id === parsed.data.itemId && item.status === 'failed'),
+      );
+      revalidateSuggestionSurfaces();
       return {
         error: isExpectedSuggestionApplyFailure(err)
           ? errorMessage(err, 'Failed to accept suggestion')
@@ -59,6 +67,7 @@ export async function acceptSuggestionItemAction(input: unknown): Promise<Action
               operation: 'accept_suggestion_item',
               fallback: 'Failed to accept suggestion.',
             }),
+        ...(itemIsFailed ? { failedItemIds: [parsed.data.itemId] } : {}),
       };
     }
   });
@@ -76,10 +85,46 @@ export async function rejectSuggestionItemAction(input: unknown): Promise<Action
       revalidateSuggestionSurfaces();
       return { ok: true };
     } catch (err) {
+      revalidateSuggestionSurfaces();
       return {
         error: publicActionError(err, {
           operation: 'reject_suggestion_item',
           fallback: 'Failed to reject suggestion.',
+        }),
+      };
+    }
+  });
+}
+
+export async function reviseTaskSuggestionItemAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('revise_task_suggestion_item', async () => {
+    const parsed = z
+      .object({
+        itemId: uuidSchema,
+        category: z.union([taskCategorySchema, z.literal('automatic')]).optional(),
+        project: z
+          .discriminatedUnion('kind', [
+            z.object({ kind: z.literal('none') }),
+            z.object({ kind: z.literal('existing'), projectId: uuidSchema }),
+            z.object({ kind: z.literal('create'), projectName: z.string().trim().min(1).max(200) }),
+          ])
+          .optional(),
+      })
+      .refine((value) => value.category !== undefined || value.project !== undefined)
+      .safeParse(input);
+    if (!parsed.success) return { error: 'Invalid task proposal update' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const ok = await r.scope.suggestions.reviseTaskSuggestionItem(parsed.data);
+      if (!ok) return { error: 'Task proposal is no longer editable' };
+      revalidateSuggestionSurfaces();
+      return { ok: true };
+    } catch (err) {
+      return {
+        error: publicActionError(err, {
+          operation: 'revise_task_suggestion_item',
+          fallback: 'Failed to update task proposal.',
         }),
       };
     }
@@ -126,11 +171,12 @@ export async function rejectVisibleSuggestionsAction(input: unknown): Promise<Ac
       );
       const failedItemIds = itemIds.filter((_, index) => results[index] === false);
       const failed = failedItemIds.length;
-      if (failed === 0) revalidateSuggestionSurfaces();
+      revalidateSuggestionSurfaces();
       return failed > 0
         ? { error: `${failed} item(s) failed to reject`, failedItemIds }
         : { ok: true };
     } catch (err) {
+      revalidateSuggestionSurfaces();
       return {
         error: publicActionError(err, {
           operation: 'reject_visible_suggestions',
@@ -159,11 +205,12 @@ export async function acceptAllSuggestionAction(input: unknown): Promise<ActionS
             itemIds: parsed.data.itemIds,
           })
         : await r.scope.suggestions.acceptAll(parsed.data.suggestionId);
-      if (result.failed === 0) revalidateSuggestionSurfaces();
+      revalidateSuggestionSurfaces();
       return result.failed > 0
         ? { error: `${result.failed} item(s) failed to apply`, failedItemIds: result.failedItemIds }
         : { ok: true };
     } catch (err) {
+      revalidateSuggestionSurfaces();
       return {
         error: publicActionError(err, {
           operation: 'accept_all_suggestions',
@@ -211,11 +258,12 @@ export async function acceptVisibleSuggestionsAction(input: unknown): Promise<Ac
       );
       const failed = results.reduce((sum, result) => sum + result.failed, 0);
       const failedItemIds = [...new Set(results.flatMap((result) => result.failedItemIds ?? []))];
-      if (failed === 0) revalidateSuggestionSurfaces();
+      revalidateSuggestionSurfaces();
       return failed > 0
         ? { error: `${failed} item(s) failed to apply`, failedItemIds }
         : { ok: true };
     } catch (err) {
+      revalidateSuggestionSurfaces();
       return {
         error: publicActionError(err, {
           operation: 'accept_visible_suggestions',

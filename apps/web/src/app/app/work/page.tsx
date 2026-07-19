@@ -7,11 +7,16 @@ import type { Metadata } from 'next';
 import { EmptyAction } from '@/components/empty-action';
 import { PageHeader } from '@/components/page-header';
 import { SectionHeading } from '@/components/section-heading';
+import {
+  LiveTaskCategoryBadge,
+  TaskCategoryPollingProvider,
+} from '@/components/tasks/task-category-badge';
 import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { displayText, formatDisplayDate } from '@/lib/display-dates';
+import { getWorkAttentionSummary } from '@/lib/hub-status';
 import { statusLabel } from '@/lib/status-labels';
 import {
   approvalQueueItem,
@@ -42,9 +47,9 @@ export default async function WorkPage() {
   const scope = withTeam(db, active.teamId, session.user.id);
   const now = new Date();
   const dueSoon = new Date(now.getTime() + DUE_SOON_DAYS * 24 * 60 * 60 * 1000);
-  const [pendingApprovals, boardItems, queueObjects, pinnedBoards, boards, calendarSettings] =
+  const [attention, boardItems, queueObjects, pinnedBoards, boards, calendarSettings] =
     await Promise.all([
-      scope.suggestions.countPendingSuggestions(),
+      getWorkAttentionSummary(scope, now),
       scope.boards.listWorkQueueItems({ dueBefore: dueSoon, limit: 100 }),
       listWorkQueueObjects(scope.objects, session.user.id, dueSoon),
       scope.boards.listPinnedBoards(),
@@ -53,7 +58,7 @@ export default async function WorkPage() {
     ]);
   const timezone = calendarSettings.defaultTimezone;
 
-  const approvalsItem = approvalQueueItem(pendingApprovals, now);
+  const approvalsItem = approvalQueueItem(attention.pendingApprovals, now);
   const queue = dedupeWorkQueueItems(
     sortWorkQueueItems([
       ...(approvalsItem ? [approvalsItem] : []),
@@ -64,16 +69,19 @@ export default async function WorkPage() {
       }),
     ]),
   ).slice(0, QUEUE_LIMIT);
-  const attentionCount = queue.filter((item) =>
-    item.reasons.some(
-      (reason) =>
-        reason === 'pending_approval' ||
-        reason === 'overdue' ||
-        reason === 'team_due' ||
-        reason === 'blocked',
-    ),
-  ).length;
+  const attentionCount = attention.attention;
   const boardModules = uniqueBoards([...pinnedBoards, ...boards]).slice(0, 6);
+  const categoryPollingTasks = queue.flatMap((item) =>
+    item.objectType === 'task'
+      ? [
+          {
+            id: item.entityId ?? item.id,
+            status: item.taskCategoryStatus ?? null,
+            updatedAt: item.updatedAt,
+          },
+        ]
+      : [],
+  );
 
   return (
     <div className="space-y-6">
@@ -100,11 +108,13 @@ export default async function WorkPage() {
               action="Open boards"
             />
           ) : (
-            <div className="overflow-hidden border border-border">
-              {queue.map((item) => (
-                <WorkQueueRow key={item.id} item={item} timezone={timezone} />
-              ))}
-            </div>
+            <TaskCategoryPollingProvider tasks={categoryPollingTasks}>
+              <div className="overflow-hidden border border-border">
+                {queue.map((item) => (
+                  <WorkQueueRow key={item.id} item={item} timezone={timezone} />
+                ))}
+              </div>
+            </TaskCategoryPollingProvider>
           )}
         </section>
 
@@ -168,6 +178,14 @@ function WorkQueueRow({ item, timezone }: { item: WorkQueueItem; timezone: strin
         ) : null}
         {item.priority ? <MetaPill label={`P${item.priority}`} /> : null}
         {item.objectType ? <MetaPill label={statusLabel(item.objectType)} /> : null}
+        {item.objectType === 'task' ? (
+          <LiveTaskCategoryBadge
+            taskId={item.entityId ?? item.id}
+            category={item.taskCategory ?? null}
+            status={item.taskCategoryStatus ?? null}
+            updatedAt={item.updatedAt}
+          />
+        ) : null}
       </span>
     </Link>
   );

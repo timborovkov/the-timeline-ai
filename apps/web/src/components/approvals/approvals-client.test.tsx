@@ -13,6 +13,8 @@ const fakes = vi.hoisted(() => ({
   acceptVisibleSuggestionsAction: vi.fn(),
   rejectSuggestionItemAction: vi.fn(),
   rejectVisibleSuggestionsAction: vi.fn(),
+  reviseTaskSuggestionItemAction: vi.fn(),
+  searchObjectsAction: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => fakes }));
@@ -22,7 +24,9 @@ vi.mock('@/app/actions/suggestions', () => ({
   acceptVisibleSuggestionsAction: fakes.acceptVisibleSuggestionsAction,
   rejectSuggestionItemAction: fakes.rejectSuggestionItemAction,
   rejectVisibleSuggestionsAction: fakes.rejectVisibleSuggestionsAction,
+  reviseTaskSuggestionItemAction: fakes.reviseTaskSuggestionItemAction,
 }));
+vi.mock('@/app/actions/objects', () => ({ searchObjectsAction: fakes.searchObjectsAction }));
 
 const { ApprovalsClient } = await import('./approvals-client.js');
 
@@ -36,6 +40,8 @@ beforeEach(() => {
   fakes.acceptVisibleSuggestionsAction.mockResolvedValue({ ok: true });
   fakes.rejectSuggestionItemAction.mockResolvedValue({ ok: true });
   fakes.rejectVisibleSuggestionsAction.mockResolvedValue({ ok: true });
+  fakes.reviseTaskSuggestionItemAction.mockResolvedValue({ ok: true });
+  fakes.searchObjectsAction.mockResolvedValue({ results: [] });
 });
 
 afterEach(() => {
@@ -49,6 +55,22 @@ describe('ApprovalsClient', () => {
 
     expect(html).toContain('No pending approvals');
     expect(html).toContain('Back to home');
+  });
+
+  it('renders filter-specific empty approval copy', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [],
+        emptyState: {
+          title: 'No failed approvals',
+          body: 'Approvals that need a retry or rejection will appear here.',
+        },
+      }),
+    );
+
+    expect(html).toContain('No failed approvals');
+    expect(html).toContain('Approvals that need a retry or rejection will appear here.');
+    expect(html).not.toContain('No pending approvals');
   });
 
   it('renders actionable pending suggestions with evidence and accept controls', () => {
@@ -88,6 +110,8 @@ describe('ApprovalsClient', () => {
                 description: 'Send Acme the proposal.',
                 proposedPayload: {
                   canonicalName: 'Send proposal',
+                  taskCategory: 'sales',
+                  taskCategoryMode: 'automatic',
                   dueAt: '2026-07-19T00:00:00.000Z',
                   status: 'todo',
                   parentObjectId: PARENT_ID,
@@ -124,7 +148,9 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('I will send the proposal');
     expect(html).toContain('Evidence from Slack');
     expect(html).toContain('create task');
-    expect(html).toContain('Due Jul 19, 2026 · Status To do · Parent Acme renewal');
+    expect(html).toContain('Category · Sales');
+    expect(html).toContain('Project · Acme renewal');
+    expect(html).toContain('Due Jul 19, 2026 · Status To do');
     expect(html).not.toContain('Due Jul 18, 2026');
     expect(html).not.toContain(PARENT_ID);
     expect(html).toContain('Why this was suggested · 1 source');
@@ -770,6 +796,106 @@ describe('ApprovalsClient', () => {
     });
     const fullPage = await screen.findByRole('link', { name: /Open full page/ });
     expect(fullPage.getAttribute('href')).toBe(`/app/timeline?event=${EVENT_ID}#ev-${EVENT_ID}`);
+  });
+
+  it('lets a reviewer change a proposed task category before acceptance', async () => {
+    render(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-edit',
+            source: 'background',
+            status: 'pending',
+            title: 'Prepare Faba wireframes',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-edit',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Prepare homepage wireframes',
+                description: null,
+                proposedPayload: {
+                  canonicalName: 'Prepare homepage wireframes',
+                  taskCategory: 'design',
+                  taskCategoryMode: 'automatic',
+                  projectName: 'Faba website redesign',
+                  createProjectName: 'Faba website redesign',
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(screen.getByText('Project · Create or reuse Faba website redesign')).toBeTruthy();
+    await userEvent.click(screen.getByText('Edit proposal'));
+    await userEvent.selectOptions(
+      screen.getByRole('combobox', { name: 'Category for Prepare homepage wireframes' }),
+      'product',
+    );
+
+    await waitFor(() => {
+      expect(fakes.reviseTaskSuggestionItemAction).toHaveBeenCalledWith({
+        itemId: 'item-edit',
+        category: 'product',
+      });
+      expect(fakes.refresh).toHaveBeenCalled();
+    });
+  });
+
+  it('hides proposal category controls while keeping project editing available', async () => {
+    render(
+      createElement(ApprovalsClient, {
+        taskCategoriesEnabled: false,
+        suggestions: [
+          {
+            id: 'bundle-category-disabled',
+            source: 'background',
+            status: 'pending',
+            title: 'Prepare Faba wireframes',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-category-disabled',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Prepare homepage wireframes',
+                description: null,
+                proposedPayload: {
+                  canonicalName: 'Prepare homepage wireframes',
+                  taskCategory: 'design',
+                  taskCategoryMode: 'automatic',
+                  projectName: 'Faba website redesign',
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(screen.queryByText(/Category · Design/)).toBeNull();
+    await userEvent.click(screen.getByText('Edit proposal'));
+    expect(
+      screen.queryByRole('combobox', { name: 'Category for Prepare homepage wireframes' }),
+    ).toBeNull();
+    expect(screen.getByRole('searchbox', { name: 'Find or name a project' })).toBeTruthy();
   });
 
   it('can hide bulk accept while keeping bulk reject for filtered approval surfaces', () => {
@@ -1545,7 +1671,7 @@ describe('ApprovalsClient', () => {
     });
   });
 
-  it('restores only failed rows after a partial visible bulk accept failure', async () => {
+  it('restores failed bulk rows before refreshing their final server status', async () => {
     const user = userEvent.setup();
     fakes.acceptVisibleSuggestionsAction.mockResolvedValue({
       error: '1 item(s) failed to apply',
@@ -1600,17 +1726,11 @@ describe('ApprovalsClient', () => {
       expect(screen.queryByText('Send renewal packet')).toBeNull();
       expect(screen.getByText('Book renewal call')).toBeTruthy();
       expect(screen.getByText('1 item(s) failed to apply')).toBeTruthy();
-      expect(screen.getByText(/Calendar proposal is missing a start or end time/)).toBeTruthy();
-      expect(
-        screen.getByText(
-          'Calendar proposal is missing a start or end time. Reject it or revise the source details before accepting.',
-        ),
-      ).toBeTruthy();
     });
-    expect(fakes.refresh).not.toHaveBeenCalled();
+    expect(fakes.refresh).toHaveBeenCalledTimes(1);
   });
 
-  it('restores only failed rows after a stale bundle-level accept-all failure', async () => {
+  it('restores failed bundle rows before refreshing their final server status', async () => {
     const user = userEvent.setup();
     fakes.acceptAllSuggestionAction.mockResolvedValue({
       error: '1 item(s) failed to apply',
@@ -1669,9 +1789,55 @@ describe('ApprovalsClient', () => {
       expect(screen.queryByText('Send renewal packet')).toBeNull();
       expect(screen.getByText('Book renewal call')).toBeTruthy();
       expect(screen.getByText('1 item(s) failed to apply')).toBeTruthy();
-      expect(screen.getByText(/Calendar proposal is missing a start or end time/)).toBeTruthy();
     });
-    expect(fakes.refresh).not.toHaveBeenCalled();
+    expect(fakes.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a failed row visible when its retry fails on the Failed surface', async () => {
+    const user = userEvent.setup();
+    fakes.acceptSuggestionItemAction.mockResolvedValue({
+      error: 'Calendar write failed again',
+      failedItemIds: ['item-calendar'],
+    });
+
+    render(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-actions',
+            source: 'background',
+            status: 'pending',
+            title: 'Customer actions',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-calendar',
+                status: 'failed',
+                operation: 'create',
+                targetKind: 'calendar_event',
+                targetId: null,
+                title: 'Book renewal call',
+                description: null,
+                proposedPayload: { title: 'Book renewal call' },
+                failureReason: 'Calendar write failed',
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Accept' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Book renewal call')).toBeTruthy();
+      expect(screen.getByText('Calendar write failed again')).toBeTruthy();
+    });
+    expect(fakes.refresh).toHaveBeenCalledTimes(1);
   });
 
   it('labels mixed bundle accept as partial when a merge row must be reviewed separately', () => {

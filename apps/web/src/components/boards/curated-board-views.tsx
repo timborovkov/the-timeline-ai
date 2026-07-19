@@ -7,6 +7,7 @@ import type { BoardItemOptimisticPatch } from '@/components/boards/board-detail-
 import type * as boards from '@timeline/shared/boards';
 import type { Dispatch, SetStateAction } from 'react';
 
+import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { boardViewHref, type BoardLayout } from '@/lib/board-links';
 import { displayText, formatDisplayDate } from '@/lib/display-dates';
@@ -216,7 +217,17 @@ export function CuratedBoardTable({
                     )}
                   </td>
                   <td className="px-3 py-2 text-xs text-fg-muted">
-                    {statusLabel(item.object.type)}
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      {statusLabel(item.object.type)}
+                      {item.object.type === 'task' ? (
+                        <LiveTaskCategoryBadge
+                          taskId={item.object.id}
+                          category={item.object.taskCategory}
+                          status={item.object.taskCategoryStatus}
+                          updatedAt={item.object.taskCategoryUpdatedAt}
+                        />
+                      ) : null}
+                    </span>
                   </td>
                   <td className="min-w-40 px-3 py-2">
                     <select
@@ -607,6 +618,14 @@ export function CuratedBoardList({
                 {statusLabel(item.object.type)}
                 {item.dueAt ? ` · ${formatDisplayDate(item.dueAt, { timezone })}` : ''}
               </span>
+              {item.object.type === 'task' ? (
+                <LiveTaskCategoryBadge
+                  taskId={item.object.id}
+                  category={item.object.taskCategory}
+                  status={item.object.taskCategoryStatus}
+                  updatedAt={item.object.taskCategoryUpdatedAt}
+                />
+              ) : null}
             </>
           );
           return (

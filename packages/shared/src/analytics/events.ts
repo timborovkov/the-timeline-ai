@@ -1,3 +1,5 @@
+import type { TaskCategory } from '#src/task-categories/types.js';
+
 interface EventMetadata {
   owner: 'product';
   trigger: string;
@@ -90,6 +92,19 @@ export interface ProductEventPayloads {
     objectId: string;
     objectType: string;
     hasParent: boolean;
+  };
+  task_category_changed: {
+    teamId: string;
+    userId: string;
+    taskId: string;
+    mode: 'automatic' | 'manual';
+    category?: TaskCategory;
+  };
+  task_project_changed: {
+    teamId: string;
+    userId: string;
+    taskId: string;
+    hasProject: boolean;
   };
   onboarding_step_completed: {
     teamId: string;
@@ -199,6 +214,18 @@ export const PRODUCT_EVENT_METADATA: Record<ProductEventName, EventMetadata> = {
   object_created: {
     owner: 'product',
     trigger: 'A user manually creates a workspace object.',
+    pii: 'none',
+    retention: 'PostHog project default retention.',
+  },
+  task_category_changed: {
+    owner: 'product',
+    trigger: 'A teammate manually changes a task category or returns it to automatic mode.',
+    pii: 'none',
+    retention: 'PostHog project default retention.',
+  },
+  task_project_changed: {
+    owner: 'product',
+    trigger: 'A teammate sets, replaces, or removes a task primary project.',
     pii: 'none',
     retention: 'PostHog project default retention.',
   },

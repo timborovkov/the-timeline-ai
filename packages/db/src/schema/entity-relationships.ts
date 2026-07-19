@@ -1,4 +1,13 @@
-import { index, pgEnum, pgTable, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  foreignKey,
+  index,
+  pgEnum,
+  pgTable,
+  primaryKey,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
 import { entities } from '#src/schema/entities.js';
 import { teams } from '#src/schema/teams.js';
@@ -58,5 +67,21 @@ export const entityRelationships = pgTable(
       table.createdAt,
       table.id,
     ),
+  ],
+);
+
+export const taskProjectSourceLocks = pgTable(
+  'task_project_source_locks',
+  {
+    teamId: uuid('team_id').notNull(),
+    sourceEntityId: uuid('source_entity_id').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.teamId, table.sourceEntityId] }),
+    foreignKey({
+      name: 'task_project_source_locks_team_source_fk',
+      columns: [table.teamId, table.sourceEntityId],
+      foreignColumns: [entities.teamId, entities.id],
+    }).onDelete('cascade'),
   ],
 );

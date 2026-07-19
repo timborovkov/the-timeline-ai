@@ -10,6 +10,10 @@ const fakes = vi.hoisted(() => ({
   updateItem: vi.fn(),
 }));
 
+vi.mock('@/app/actions/objects', () => ({
+  loadTaskCategoryStatesAction: vi.fn(),
+}));
+
 const { CuratedBoardList, CuratedBoardTable } = await import('./curated-board-views.js');
 
 function boardItem(
@@ -45,6 +49,11 @@ function boardItem(
       dueAt: null,
       metadata: {},
       agentSuggested: false,
+      taskCategory: null,
+      taskCategoryMode: null,
+      taskCategorySource: null,
+      taskCategoryStatus: null,
+      taskCategoryUpdatedAt: null,
       archivedAt: null,
       createdAt: new Date('2026-01-01T00:00:00.000Z'),
       updatedAt: new Date('2026-01-01T00:00:00.000Z'),

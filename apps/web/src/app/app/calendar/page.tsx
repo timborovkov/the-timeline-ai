@@ -1,4 +1,5 @@
 import { teamCalendarSubscriptions, users } from '@timeline/db';
+import { getEnv } from '@timeline/shared/env';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, eq, inArray } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
@@ -16,7 +17,6 @@ import { auth } from '@/lib/auth';
 import { calendarEventListWindow } from '@/lib/calendar-event-list-range';
 import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
-import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
 
 export const metadata: Metadata = {
@@ -194,7 +194,7 @@ export default async function CalendarPage({ searchParams }: PageProps) {
   const serializedEventList = eventList.events.map(serializeCalendarEvent);
   const calendarSuggestions = pendingSuggestions.flatMap((bundle) => {
     const items = bundle.items.filter(
-      (item) => item.targetKind === 'calendar_event' && isActionableSuggestionStatus(item.status),
+      (item) => item.targetKind === 'calendar_event' && item.status === 'pending',
     );
     return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];
   });
@@ -236,6 +236,7 @@ export default async function CalendarPage({ searchParams }: PageProps) {
         <ApprovalsClient
           suggestions={calendarSuggestions}
           allowBulkAccept={false}
+          taskCategoriesEnabled={getEnv().TASK_CATEGORY_UI_ENABLED}
           timezone={settings.defaultTimezone}
           folded={{
             title: 'Calendar approvals',

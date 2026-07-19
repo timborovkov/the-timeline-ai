@@ -506,6 +506,8 @@ export interface TeamScopeDeps {
   /** Inject structured chat for suggestion adjudication in tests. Production
    *  falls back to the shared OpenRouter-backed llm wrapper. */
   chatStructured?: typeof chatStructured;
+  /** Test/instrumentation seam for pausing a claimed suggestion before application. */
+  beforeSuggestionApply?: (itemId: string) => Promise<void>;
   /**
    * Skip the team-membership check on first query. Set only by trusted
    * callers that have already authenticated the team boundary via some
@@ -2436,6 +2438,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     boards: boardScope,
     calendar: calendarScope,
     ...(deps.chatStructured ? { chatStructured: deps.chatStructured } : {}),
+    ...(deps.beforeSuggestionApply ? { beforeApplyItem: deps.beforeSuggestionApply } : {}),
   });
 
   return {

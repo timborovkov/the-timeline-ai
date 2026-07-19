@@ -37,6 +37,12 @@ transition-aware trigger. Historical entity rows therefore remain editable for
 unrelated fields and can clear legacy values, while inserts and updates still
 cannot introduce new legacy provenance.
 
+Migration `0060_task_categories.sql` adds the indexed current task-category
+state, append-only assignment history, category revision rows, and durable
+project-invalidation cursors. Primary project ownership remains a canonical
+task-to-project `child` relationship in `entity_relationships`, with database
+guards preventing a task from acquiring a second primary project.
+
 ## Connection guardrails
 
 Runtime Postgres clients should come from `createPgClient()` or `getDb()`, not a

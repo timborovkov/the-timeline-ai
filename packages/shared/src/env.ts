@@ -75,6 +75,11 @@ const baseSchema = z.object({
   // OpenRouter (Phase 3+)
   OPENROUTER_API_KEY: z.string().optional(),
   OPENROUTER_BASE_URL: z.url().optional(),
+  TASK_CATEGORY_CLASSIFICATION_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
+  TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
+  TASK_CATEGORY_WORKER_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
+  TASK_CATEGORY_BACKFILL_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
+  TASK_CATEGORY_UI_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
   E2E_DETERMINISTIC_EMBEDDINGS: z.preprocess(booleanString, z.boolean().default(false)),
 
   // LangSmith LLM observability (optional)

@@ -31,6 +31,9 @@ After **any** code, configuration, or documentation change:
      compiled output, or Node runtime loader boundaries.
    - Run `pnpm test:eval` when a change touches agent tools, retrieval,
      visibility filters, MCP tool handling, or answer synthesis.
+   - Run `pnpm test:task-category-eval:live` with
+     `TASK_CATEGORY_LIVE_ENV_FILE=/path/to/.env` when the task-category
+     taxonomy, classifier packet, prompt, schema, or pinned model changes.
    - Run `pnpm test:reconciliation-eval` when a change touches reconciliation
      schema, source refs, evidence associations, visibility floors, authority
      policy, or reconciliation output planning. Run
@@ -95,7 +98,6 @@ tool. When in doubt, invoke the skill.
 - Bugs / unexpected behavior → `/investigate` (root-cause discipline).
 - Visual polish or design questions → `/design-review` (or
   `/plan-design-review` in plan mode).
-- Pre-merge code review → `/review`.
 - QA / "does this actually work?" → `/qa`.
 - Save / resume working context → `/context-save` and `/context-restore`.
 
@@ -196,6 +198,7 @@ apps/
   worker/   BullMQ workers (transcribe, extract, suggestions, embed,
             overdue-scan, calendar-recurrence, document-extract,
             meeting-finalize, meeting-scheduler, object-summary, janitor,
+            task-category,
             webhook-delivery, integration-sync, mcp-health, team-export,
             daily-digest, timeline-moment-presentation, reconciliation)
 packages/

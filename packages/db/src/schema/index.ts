@@ -36,3 +36,4 @@ export * from '#src/schema/conversation-reviews.js';
 export * from '#src/schema/support.js';
 export * from '#src/schema/messaging.js';
 export * from '#src/schema/timeline-moment-presentations.js';
+export * from '#src/schema/task-category-assignments.js';

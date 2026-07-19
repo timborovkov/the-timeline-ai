@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { TaskCategoryBatchItem } from '#src/task-categories/classifier.js';
+
 import { buildAgentTools } from '#src/agent/tools.js';
 import { type TeamScope } from '#src/team-scope.js';
 
@@ -61,11 +63,13 @@ interface FakeScope {
     searchObjects: ReturnType<typeof vi.fn>;
     listObjects: ReturnType<typeof vi.fn>;
     getObject: ReturnType<typeof vi.fn>;
+    findActiveProjectsByNameOrAlias: ReturnType<typeof vi.fn>;
     createObject: ReturnType<typeof vi.fn>;
     updateObject: ReturnType<typeof vi.fn>;
     archiveObject: ReturnType<typeof vi.fn>;
     getObjectMergePreview: ReturnType<typeof vi.fn>;
     mergeObjects: ReturnType<typeof vi.fn>;
+    listPrimaryProjectsForTasks: ReturnType<typeof vi.fn>;
   };
   boards: {
     listBoards: ReturnType<typeof vi.fn>;
@@ -119,11 +123,13 @@ function makeFakeScope(): FakeScope {
       searchObjects: vi.fn(),
       listObjects: vi.fn(),
       getObject: vi.fn(),
+      findActiveProjectsByNameOrAlias: vi.fn().mockResolvedValue([]),
       createObject: vi.fn(),
       updateObject: vi.fn(),
       archiveObject: vi.fn(),
       getObjectMergePreview: vi.fn(),
       mergeObjects: vi.fn(),
+      listPrimaryProjectsForTasks: vi.fn().mockResolvedValue([]),
     },
     boards: {
       listBoards: vi.fn(),
@@ -404,6 +410,28 @@ describe('buildAgentTools — team isolation', () => {
         type: 'project',
       },
     });
+  });
+
+  it('rejects parentObjectId for non-task object creation before writing', async () => {
+    const scope = makeFakeScope();
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.execute_object_create?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    await expect(
+      exec(
+        {
+          type: 'project',
+          canonicalName: 'Nested project',
+          parentObjectId: OBJECT_ID,
+          reason: 'User requested a nested project.',
+        },
+        {},
+      ),
+    ).resolves.toEqual({ error: 'tool_failed' });
+    expect(scope.objects.createObject).not.toHaveBeenCalled();
   });
 
   it('get_object does not expose legacy agentSuggested provenance', async () => {
@@ -1061,7 +1089,7 @@ describe('buildAgentTools — team isolation', () => {
     scope.objects.searchObjects.mockResolvedValue([
       {
         id: OBJECT_ID,
-        type: 'person',
+        type: 'task',
         canonicalName: 'Otto Silventola',
         status: 'active',
         stage: null,
@@ -1069,6 +1097,11 @@ describe('buildAgentTools — team isolation', () => {
         ownerUserId: null,
         assigneeUserId: null,
         dueAt: null,
+        taskCategory: 'sales',
+        taskCategoryMode: 'manual',
+        taskCategorySource: 'user',
+        taskCategoryStatus: 'ready',
+        taskCategoryUpdatedAt: new Date('2026-06-14T08:00:00.000Z'),
         agentSuggested: false,
         archivedAt: null,
         aliases: ['Otto'],
@@ -1077,16 +1110,24 @@ describe('buildAgentTools — team isolation', () => {
         createdAt: new Date('2026-06-01T09:00:00.000Z'),
       },
     ]);
+    scope.objects.listPrimaryProjectsForTasks.mockResolvedValue([
+      {
+        taskId: OBJECT_ID,
+        projectId: BOARD_ID,
+        projectName: 'Faba redesign',
+        archivedAt: new Date('2026-06-13T09:00:00.000Z'),
+      },
+    ]);
     const tools = buildAgentTools(scope as unknown as TeamScope);
     const exec = tools.search_objects?.execute as (
       input: unknown,
       opts: unknown,
     ) => Promise<unknown>;
 
-    const result = await exec({ query: 'otto', type: 'person', archived: false }, {});
+    const result = await exec({ query: 'otto', type: 'task', archived: false }, {});
 
     expect(scope.objects.searchObjects).toHaveBeenCalledWith(
-      expect.objectContaining({ query: 'otto', type: 'person', archived: false, limit: 20 }),
+      expect.objectContaining({ query: 'otto', type: 'task', archived: false, limit: 20 }),
     );
     expect(result).toMatchObject({
       count: 1,
@@ -1094,8 +1135,17 @@ describe('buildAgentTools — team isolation', () => {
       objects: [
         expect.objectContaining({
           id: OBJECT_ID,
-          citation: `[ent:${OBJECT_ID}]`,
+          citation: `[task:${OBJECT_ID}]`,
           name: 'Otto Silventola',
+          task_category: 'sales',
+          task_category_mode: 'manual',
+          task_category_status: 'ready',
+          archived: false,
+          primary_project: {
+            id: BOARD_ID,
+            name: 'Faba redesign',
+            archived: true,
+          },
         }),
       ],
     });
@@ -1944,6 +1994,38 @@ describe('buildAgentTools — team isolation', () => {
             },
             failureReason: null,
           },
+          {
+            id: 'item-2',
+            status: 'pending',
+            operation: 'create',
+            targetKind: 'identity_facet',
+            targetId: TEAM_B_ENTITY_ID,
+            resultId: null,
+            title: 'Add second telegram identity',
+            description: null,
+            proposedPayload: {
+              entityId: TEAM_B_ENTITY_ID,
+              kind: 'telegram',
+              value: '@mikael-secondary',
+            },
+            failureReason: null,
+          },
+          {
+            id: 'item-failed',
+            status: 'failed',
+            operation: 'create',
+            targetKind: 'identity_facet',
+            targetId: TEAM_B_ENTITY_ID,
+            resultId: null,
+            title: 'Retry telegram identity',
+            description: null,
+            proposedPayload: {
+              entityId: TEAM_B_ENTITY_ID,
+              kind: 'telegram',
+              value: '@stale-handle',
+            },
+            failureReason: 'Needs retry',
+          },
         ],
       },
     ]);
@@ -1960,7 +2042,7 @@ describe('buildAgentTools — team isolation', () => {
       limit: 5,
     });
     expect(result).toMatchObject({
-      count: 1,
+      count: 2,
       canonical: false,
       approvals: [
         {
@@ -1974,10 +2056,23 @@ describe('buildAgentTools — team isolation', () => {
                 value: '@mikaelrintala',
               },
             },
+            {
+              item_id: 'item-2',
+              target_kind: 'identity_facet',
+              proposed_payload: {
+                value: '@mikael-secondary',
+              },
+            },
           ],
         },
       ],
     });
+    expect(
+      (result as { approvals: { items: { item_id: string }[] }[] }).approvals[0]?.items,
+    ).toEqual([
+      expect.objectContaining({ item_id: 'item-1' }),
+      expect.objectContaining({ item_id: 'item-2' }),
+    ]);
   });
 
   it('list_pending_approvals rejects all-status queries', async () => {
@@ -2195,10 +2290,72 @@ describe('buildAgentTools — team isolation', () => {
     });
   });
 
+  it('suggest_object_memory enriches task proposals with project and category previews', async () => {
+    const scope = makeFakeScope();
+    scope.objects.getObject.mockResolvedValue(null);
+    scope.suggestions.createOrMergeSuggestionBundle.mockResolvedValue({ id: 'suggestion-1' });
+    const classifyTaskCategories = vi.fn((_items: readonly TaskCategoryBatchItem[]) =>
+      Promise.resolve([
+        {
+          key: '0',
+          category: 'design' as const,
+          confidence: 0.93,
+          model: 'task-category-batch-test',
+        },
+      ]),
+    );
+    const tools = buildAgentTools(scope as unknown as TeamScope, {
+      classifyTaskCategories,
+      taskCategoryClassificationEnabled: true,
+    });
+    const exec = tools.suggest_object_memory?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    await exec(
+      {
+        title: 'Remember Faba work',
+        items: [
+          {
+            kind: 'create_object',
+            type: 'task',
+            canonicalName: 'Prepare homepage wireframes',
+            createProjectName: 'Faba website redesign',
+          },
+        ],
+      },
+      {},
+    );
+
+    const input = scope.suggestions.createOrMergeSuggestionBundle.mock.calls[0]?.[0] as {
+      items: { proposedPayload: Record<string, unknown> }[];
+    };
+    expect(input.items[0]?.proposedPayload).toMatchObject({
+      createProjectName: 'Faba website redesign',
+      projectName: 'Faba website redesign',
+      taskCategory: 'design',
+      taskCategoryMode: 'automatic',
+    });
+    expect(classifyTaskCategories).toHaveBeenCalledTimes(1);
+    expect(classifyTaskCategories.mock.calls[0]?.[0]?.[0]?.key).toBe('0');
+    expect(classifyTaskCategories.mock.calls[0]?.[0]?.[0]?.packet.primaryProjectName).toBe(
+      'Faba website redesign',
+    );
+  });
+
   it('suggest_task can propose assignee and priority', async () => {
     const scope = makeFakeScope();
     scope.suggestions.createOrMergeSuggestionBundle.mockResolvedValue({ id: 'suggestion-1' });
-    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const classifyTaskCategory = vi.fn().mockResolvedValue({
+      category: 'sales',
+      confidence: 0.94,
+      model: 'task-category-test',
+    });
+    const tools = buildAgentTools(scope as unknown as TeamScope, {
+      classifyTaskCategory,
+      taskCategoryClassificationEnabled: true,
+    });
     const exec = tools.suggest_task?.execute as (input: unknown, opts: unknown) => Promise<unknown>;
 
     await exec(
@@ -2229,9 +2386,131 @@ describe('buildAgentTools — team isolation', () => {
         ownerUserId: '11111111-1111-4111-8111-111111111111',
         assigneeUserId: '22222222-2222-4222-8222-222222222222',
         priority: 1,
+        taskCategory: 'sales',
+        taskCategoryConfidence: 0.94,
+        taskCategoryMode: 'automatic',
       },
     });
+    expect(input.items[0]?.proposedPayload.taskCategoryInputHash).toEqual(
+      expect.stringMatching(/^[a-f0-9]{64}$/),
+    );
     expect(input.items[0]?.proposedPayload).not.toHaveProperty('sourceEventId');
+  });
+
+  it('previews only an active project as the task parent and includes its readable name', async () => {
+    const scope = makeFakeScope();
+    const projectId = '44444444-4444-4444-8444-444444444444';
+    scope.objects.getObject.mockResolvedValue({
+      id: projectId,
+      type: 'project',
+      canonicalName: 'Faba website redesign',
+      archivedAt: null,
+    });
+    scope.suggestions.createOrMergeSuggestionBundle.mockResolvedValue({ id: 'suggestion-1' });
+    const classifyTaskCategory = vi.fn().mockResolvedValue({
+      category: 'design',
+      confidence: 0.97,
+      model: 'task-category-test',
+    });
+    const tools = buildAgentTools(scope as unknown as TeamScope, {
+      classifyTaskCategory,
+      taskCategoryClassificationEnabled: true,
+    });
+    const exec = tools.suggest_task?.execute as (input: unknown, opts: unknown) => Promise<unknown>;
+
+    await exec({ title: 'Prepare wireframes', parentObjectId: projectId }, {});
+    const suggestionInput = scope.suggestions.createOrMergeSuggestionBundle.mock.calls[0]?.[0] as {
+      items: { proposedPayload: Record<string, unknown> }[];
+    };
+    expect(suggestionInput.items[0]?.proposedPayload).toMatchObject({
+      parentObjectId: projectId,
+      projectName: 'Faba website redesign',
+      taskCategory: 'design',
+    });
+
+    scope.objects.getObject.mockResolvedValue({
+      id: projectId,
+      type: 'company',
+      canonicalName: 'Faba',
+      archivedAt: null,
+    });
+    await expect(
+      exec({ title: 'Prepare wireframes', parentObjectId: projectId }, {}),
+    ).resolves.toEqual({ error: 'tool_failed' });
+  });
+
+  it('suggest_task can propose creating a project and categorizes against that context', async () => {
+    const scope = makeFakeScope();
+    scope.objects.getObject.mockResolvedValue(null);
+    scope.suggestions.createOrMergeSuggestionBundle.mockResolvedValue({ id: 'suggestion-1' });
+    const classifyTaskCategory = vi.fn().mockResolvedValue({
+      category: 'design',
+      confidence: 0.91,
+      model: 'task-category-test',
+    });
+    const tools = buildAgentTools(scope as unknown as TeamScope, {
+      classifyTaskCategory,
+      taskCategoryClassificationEnabled: true,
+    });
+    const exec = tools.suggest_task?.execute as (input: unknown, opts: unknown) => Promise<unknown>;
+
+    await exec(
+      {
+        title: 'Prepare homepage wireframes',
+        createProjectName: 'Faba website redesign',
+      },
+      {},
+    );
+
+    const suggestionInput = scope.suggestions.createOrMergeSuggestionBundle.mock.calls[0]?.[0] as {
+      items: { proposedPayload: Record<string, unknown> }[];
+    };
+    expect(suggestionInput.items[0]?.proposedPayload).toMatchObject({
+      createProjectName: 'Faba website redesign',
+      projectName: 'Faba website redesign',
+      taskCategory: 'design',
+      taskCategoryMode: 'automatic',
+    });
+    expect(classifyTaskCategory).toHaveBeenCalledWith(
+      expect.objectContaining({ primaryProjectName: 'Faba website redesign' }),
+    );
+  });
+
+  it('reuses an active project matched by alias when proposing a task', async () => {
+    const scope = makeFakeScope();
+    const projectId = '44444444-4444-4444-8444-444444444444';
+    scope.objects.findActiveProjectsByNameOrAlias.mockResolvedValue([
+      { id: projectId, canonicalName: 'Faba website redesign' },
+    ]);
+    scope.suggestions.createOrMergeSuggestionBundle.mockResolvedValue({ id: 'suggestion-1' });
+    const tools = buildAgentTools(scope as unknown as TeamScope, {
+      classifyTaskCategory: vi.fn().mockResolvedValue({
+        category: 'design',
+        confidence: 0.91,
+        model: 'task-category-test',
+      }),
+      taskCategoryClassificationEnabled: true,
+    });
+    const exec = tools.suggest_task?.execute as (input: unknown, opts: unknown) => Promise<unknown>;
+
+    await exec(
+      {
+        title: 'Prepare homepage wireframes',
+        createProjectName: 'Faba redesign',
+      },
+      {},
+    );
+
+    const suggestionInput = scope.suggestions.createOrMergeSuggestionBundle.mock.calls[0]?.[0] as {
+      items: { proposedPayload: Record<string, unknown> }[];
+    };
+    expect(scope.objects.findActiveProjectsByNameOrAlias).toHaveBeenCalledWith('Faba redesign');
+    expect(suggestionInput.items[0]?.proposedPayload).toMatchObject({
+      parentObjectId: projectId,
+      projectName: 'Faba website redesign',
+      taskCategory: 'design',
+    });
+    expect(suggestionInput.items[0]?.proposedPayload).not.toHaveProperty('createProjectName');
   });
 
   it('suggest_object_memory targets relationship proposals at the source object', async () => {

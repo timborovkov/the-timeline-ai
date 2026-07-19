@@ -1,4 +1,4 @@
-import { type Db, facts as factsTable, factEntities, rawEvents } from '@timeline/db';
+import { type Db, entities, facts as factsTable, factEntities, rawEvents } from '@timeline/db';
 import { childLogger, embedding, extract, getEnv, llm, queue } from '@timeline/shared';
 import { reconcileLinkArtifactsForRawEvent } from '@timeline/shared/conversational/link-artifacts';
 import {
@@ -8,7 +8,7 @@ import {
 import { fireAndForgetObjectSummaryRefresh } from '@timeline/shared/objects';
 import { withTeam } from '@timeline/shared/team-scope';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
-import { and, desc, eq, lt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
 
@@ -242,6 +242,49 @@ export async function processExtractJobForTests(
     ) {
       return;
     }
+    const referencedEntityIds = Array.from(
+      new Set(
+        resolvedFacts.flatMap((fact) =>
+          fact.entityIds.filter((entityId): entityId is string => Boolean(entityId)),
+        ),
+      ),
+    );
+    const activeReferencedEntities =
+      referencedEntityIds.length > 0
+        ? await tx
+            .select({
+              id: entities.id,
+              archivedAt: entities.archivedAt,
+              metadata: entities.metadata,
+            })
+            .from(entities)
+            .where(
+              and(
+                eq(entities.teamId, teamId),
+                inArray(entities.id, referencedEntityIds),
+                isNull(entities.mergedIntoId),
+              ),
+            )
+            .orderBy(
+              sql`CASE WHEN ${entities.type} = 'project' THEN 0 WHEN ${entities.type} = 'task' THEN 1 ELSE 2 END`,
+              asc(entities.id),
+            )
+            .for('update')
+        : [];
+    const activeReferencedEntityIds = new Set(
+      activeReferencedEntities
+        .filter((entity) => {
+          const metadata =
+            entity.metadata && typeof entity.metadata === 'object'
+              ? (entity.metadata as Record<string, unknown>)
+              : {};
+          return !(
+            entity.archivedAt !== null &&
+            typeof metadata.agent_suggestion_project_for_item_id === 'string'
+          );
+        })
+        .map((entity) => entity.id),
+    );
     for (const fact of resolvedFacts) {
       const insertedFacts = await tx
         .insert(factsTable)
@@ -262,7 +305,7 @@ export async function processExtractJobForTests(
       for (let i = 0; i < fact.mentions.length; i += 1) {
         const m = fact.mentions[i];
         const entityId = fact.entityIds[i];
-        if (!m || !entityId) continue;
+        if (!m || !entityId || !activeReferencedEntityIds.has(entityId)) continue;
         const key = `${entityId}:${m.role}`;
         if (seen.has(key)) continue;
         seen.add(key);

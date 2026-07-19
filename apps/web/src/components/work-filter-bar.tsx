@@ -1,5 +1,6 @@
 'use client';
 
+import { TASK_CATEGORY_OPTIONS } from '@timeline/shared/task-categories/types';
 import { ChevronDown, Search, X } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 
@@ -9,6 +10,7 @@ import type { ReactNode } from 'react';
 
 import { DebouncedFilterForm } from '@/components/debounced-filter-form';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
+import { useProjectSearch } from '@/hooks/use-project-search';
 import { displayText } from '@/lib/display-dates';
 import { cn } from '@/lib/utils';
 import { NONE_FILTER_VALUE, UNASSIGNED_FILTER_VALUE } from '@/lib/work-filters';
@@ -22,6 +24,7 @@ interface Props {
   totalCount: number;
   hiddenParams?: Record<string, string>;
   members?: MemberFilterOption[];
+  projects?: MemberFilterOption[];
   lanes?: boards.BoardLaneRow[];
   typeLabels?: Record<string, string>;
   statusOptions?: readonly string[];
@@ -63,6 +66,7 @@ export function WorkFilterBar({
   totalCount,
   hiddenParams = EMPTY_PARAMS,
   members = EMPTY_MEMBERS,
+  projects = EMPTY_MEMBERS,
   lanes = EMPTY_LANES,
   typeLabels = EMPTY_LABELS,
   statusOptions = EMPTY_STATUS_OPTIONS,
@@ -144,6 +148,26 @@ export function WorkFilterBar({
           ) : null}
 
           <StatusControl defaultValue={filters.status} mode={mode} statusOptions={statusOptions} />
+
+          <div className="task-category-ui">
+            <FilterMultiSelect
+              key={`category:${filters.category}`}
+              name="category"
+              label="Category"
+              defaultValue={filters.category}
+              placeholder="Any category"
+              options={[
+                ...TASK_CATEGORY_OPTIONS,
+                { value: 'uncategorized', label: 'Uncategorized' },
+              ]}
+            />
+          </div>
+
+          <ProjectFilterControl
+            key={`project:${filters.project}`}
+            defaultValue={filters.project}
+            projects={projects}
+          />
 
           {mode === 'objects' ? (
             <FilterInput
@@ -293,6 +317,47 @@ export function WorkFilterBar({
         </div>
       </div>
     </DebouncedFilterForm>
+  );
+}
+
+function ProjectFilterControl({
+  defaultValue,
+  projects,
+}: {
+  defaultValue: string;
+  projects: MemberFilterOption[];
+}) {
+  const { query, setQuery, projects: searchResults } = useProjectSearch();
+  const options = useMemo(() => {
+    const byId = new Map(projects.map((project) => [project.id, project] as const));
+    for (const project of searchResults) byId.set(project.id, project);
+    return [...byId.values()].map((project) => ({ value: project.id, label: project.label }));
+  }, [projects, searchResults]);
+
+  return (
+    <div className="min-w-44 space-y-1">
+      <input
+        type="search"
+        value={query}
+        onChange={(event) => {
+          event.stopPropagation();
+          setQuery(event.currentTarget.value);
+        }}
+        onInput={(event) => {
+          event.stopPropagation();
+        }}
+        placeholder="Search projects…"
+        aria-label="Search project filters"
+        className="h-7 w-full rounded-sm border border-border bg-surface px-2 text-xs text-fg outline-none placeholder:text-fg-dim focus-visible:border-signal/60 focus-visible:ring-2 focus-visible:ring-signal/40"
+      />
+      <FilterMultiSelect
+        name="project"
+        label="Project"
+        defaultValue={defaultValue}
+        placeholder="Any project"
+        options={options}
+      />
+    </div>
   );
 }
 
@@ -452,6 +517,8 @@ function workFilterStateKey(filters: WorkFilterState): string {
     filters.q,
     filters.type,
     filters.status,
+    filters.category,
+    filters.project,
     filters.stage,
     filters.owner,
     filters.assignee,

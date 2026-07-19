@@ -1,7 +1,7 @@
 import { type Db, meetings, meetingUsage, savedMeetings, teamMeetingSettings } from '@timeline/db';
 import { childLogger, meetingBots, queue, withTeam } from '@timeline/shared';
 import { Worker, type Job } from 'bullmq';
-import { and, asc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, exists, gt, gte, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
 
 import { captureWorkerException } from '#src/monitoring.js';
 
@@ -70,24 +70,53 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
   joined: number;
   failed: number;
 }> {
-  const activeSaved = await deps.db
-    .select({ id: savedMeetings.id, teamId: savedMeetings.teamId })
-    .from(savedMeetings)
+  const now = new Date();
+  const expiredRetry = deps.db
+    .select({ id: meetings.id })
+    .from(meetings)
     .where(
       and(
-        eq(savedMeetings.autoJoinEnabled, true),
-        isNull(savedMeetings.autoJoinPausedAt),
-        isNull(savedMeetings.archivedAt),
+        eq(meetings.savedMeetingId, savedMeetings.id),
+        eq(meetings.status, 'scheduled'),
+        isNotNull(meetings.scheduledEndAt),
+        lte(meetings.scheduledEndAt, now),
+        sql`(${meetings.metadata} ->> 'no_show_retry_count') = '1'`,
+      ),
+    );
+  const schedulerSaved = await deps.db
+    .select({
+      id: savedMeetings.id,
+      teamId: savedMeetings.teamId,
+      autoJoinEnabled: savedMeetings.autoJoinEnabled,
+      autoJoinPausedAt: savedMeetings.autoJoinPausedAt,
+      archivedAt: savedMeetings.archivedAt,
+    })
+    .from(savedMeetings)
+    .where(
+      or(
+        and(
+          eq(savedMeetings.autoJoinEnabled, true),
+          isNull(savedMeetings.autoJoinPausedAt),
+          isNull(savedMeetings.archivedAt),
+        ),
+        exists(expiredRetry),
       ),
     );
 
   let materialized = 0;
-  for (const saved of activeSaved) {
+  let failed = 0;
+  const expiredRetryTeams = new Set<string>();
+  for (const saved of schedulerSaved) {
     const scope = withTeam(deps.db, saved.teamId, PSEUDO_USER, { skipMembershipCheck: true });
-    materialized += await scope.meetings.materializeSavedMeetingOccurrences(saved.id);
+    if (!expiredRetryTeams.has(saved.teamId)) {
+      failed += await scope.meetings.expireSavedMeetingNoShowRetries(now);
+      expiredRetryTeams.add(saved.teamId);
+    }
+    if (saved.autoJoinEnabled && !saved.autoJoinPausedAt && !saved.archivedAt) {
+      materialized += await scope.meetings.materializeSavedMeetingOccurrences(saved.id);
+    }
   }
 
-  const now = new Date();
   const startWindowEnd = new Date(now.getTime() + MAX_JOIN_OFFSET_MS);
   const due = await deps.db
     .select({ meeting: meetings, scheduleConfig: savedMeetings.scheduleConfig })
@@ -99,7 +128,13 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
         eq(savedMeetings.autoJoinEnabled, true),
         isNull(savedMeetings.autoJoinPausedAt),
         isNull(savedMeetings.archivedAt),
-        gte(meetings.scheduledStartAt, new Date(now.getTime() - SCHEDULED_JOIN_LOOKBACK_MS)),
+        or(
+          gte(meetings.scheduledStartAt, new Date(now.getTime() - SCHEDULED_JOIN_LOOKBACK_MS)),
+          and(
+            sql`(${meetings.metadata} ->> 'no_show_retry_count') = '1'`,
+            or(isNull(meetings.scheduledEndAt), gt(meetings.scheduledEndAt, now)),
+          ),
+        ),
         lte(meetings.scheduledStartAt, startWindowEnd),
       ),
     )
@@ -107,7 +142,6 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
     .limit(100);
 
   let joined = 0;
-  let failed = 0;
   for (const dueRow of due) {
     const meeting = dueRow.meeting;
     if (!meeting.savedMeetingId) continue;
@@ -140,6 +174,11 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
             eq(meetings.id, meeting.id),
             eq(meetings.teamId, meeting.teamId),
             eq(meetings.status, 'scheduled'),
+            sql`(
+              COALESCE(${meetings.metadata} ->> 'no_show_retry_count', '0') <> '1'
+              OR ${meetings.scheduledEndAt} IS NULL
+              OR ${meetings.scheduledEndAt} > now()
+            )`,
             sql`NOT EXISTS (
               SELECT 1 FROM meetings active
               WHERE active.team_id = ${meetings.teamId}
@@ -150,7 +189,10 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
           ),
         )
         .returning({ id: meetings.id });
-      if (!claimed[0]) continue;
+      if (!claimed[0]) {
+        failed += await scope.meetings.expireSavedMeetingNoShowRetries(new Date());
+        continue;
+      }
 
       const team = await scope.timeline.team();
       const provider = meetingBots.getMeetingBotProvider(meeting.provider);

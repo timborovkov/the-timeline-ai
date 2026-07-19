@@ -17,6 +17,8 @@ import type { ReactNode } from 'react';
 import { RemoveBoardItemButton } from '@/components/boards/remove-board-item-button';
 import { ContextualAskLink } from '@/components/chat/contextual-ask-link';
 import { ObjectRelatedContext } from '@/components/objects/object-related-context';
+import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
+import { TaskCategorySelect } from '@/components/tasks/task-category-select';
 import { TechnicalDetails } from '@/components/technical-details';
 import {
   Dialog,
@@ -230,6 +232,15 @@ function BoardCardHeader({
             {displayText(title)}
           </h2>
           <p className="mt-1 text-xs text-fg-dim">{statusLabel(item.object.type)} · board item</p>
+          {item.object.type === 'task' ? (
+            <LiveTaskCategoryBadge
+              taskId={item.object.id}
+              category={item.object.taskCategory}
+              status={item.object.taskCategoryStatus}
+              updatedAt={item.object.taskCategoryUpdatedAt}
+              className="mt-2"
+            />
+          ) : null}
         </div>
         <Link
           href={boardViewHref(boardId, view, null, filterParams)}
@@ -647,6 +658,20 @@ function ObjectPreviewDialog({
             value={item.object.dueAt ? dateLabel(item.object.dueAt, timezone) : '-'}
           />
         </dl>
+        {item.object.type === 'task' ? (
+          <section>
+            <h3 className="mb-1 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
+              Category
+            </h3>
+            <TaskCategorySelect
+              taskId={item.object.id}
+              category={item.object.taskCategory}
+              mode={item.object.taskCategoryMode}
+              status={item.object.taskCategoryStatus}
+              updatedAt={item.object.taskCategoryUpdatedAt}
+            />
+          </section>
+        ) : null}
         {item.object.aliases.length > 0 ? (
           <section>
             <h3 className="mb-1 text-xs text-fg-dim">Aliases</h3>

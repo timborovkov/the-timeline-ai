@@ -1,4 +1,5 @@
 import { users } from '@timeline/db';
+import { getEnv } from '@timeline/shared/env';
 import { OBJECT_TYPES } from '@timeline/shared/objects/types';
 import { decodeCursor, encodeCursor } from '@timeline/shared/pagination';
 import { withTeam } from '@timeline/shared/team-scope';
@@ -13,6 +14,7 @@ import { EmptyAction } from '@/components/empty-action';
 import { ObjectCleanupList } from '@/components/objects/object-cleanup-list';
 import { ObjectCleanupSuggestions } from '@/components/objects/object-cleanup-suggestions';
 import { PageHeader } from '@/components/page-header';
+import { TaskCategoryFilterRefresh } from '@/components/tasks/task-category-filter-refresh';
 import { Button } from '@/components/ui/button';
 import { WorkFilterBar } from '@/components/work-filter-bar';
 import { WorkSubnav } from '@/components/work-subnav';
@@ -21,13 +23,14 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
 import { OBJECT_TYPE_LABELS } from '@/lib/object-type-labels';
-import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
+import { loadProjectFilterRows } from '@/lib/project-filter-options';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
 import {
   WORK_FILTER_PARAM_KEYS,
   hasActiveWorkFilters,
   objectListFilterFromWorkFilters,
   parseWorkFilters,
+  taskCategoryFilterKeys,
   workFilterHiddenParams,
 } from '@/lib/work-filters';
 
@@ -69,21 +72,46 @@ export default async function ObjectsIndexPage({
 
   const scope = withTeam(db, active.teamId, session.user.id);
   const params = await searchParams;
-  const filters = parseWorkFilters(params);
+  const filters = parseWorkFilters(params, {
+    taskCategoriesEnabled: getEnv().TASK_CATEGORY_UI_ENABLED,
+  });
+  const categoryKeys = taskCategoryFilterKeys(filters);
+  const categoryFilterBaseline =
+    categoryKeys.length > 0
+      ? await scope.objects.getTaskCategoryFilterRefreshState(
+          {
+            ...objectListFilterFromWorkFilters({ ...filters, category: '' }),
+            type: 'task',
+            archived: false,
+          },
+          categoryKeys,
+        )
+      : null;
   const filterParams = workFilterHiddenParams(params, WORK_FILTER_PARAM_KEYS);
+  const contextualTaskFilter = Boolean(filters.category || filters.project);
   const objectFilter = {
     ...objectListFilterFromWorkFilters(filters),
+    ...(contextualTaskFilter && !filters.type ? { type: 'task' as const } : {}),
     archived: false,
   } satisfies objects.ObjectListFilter;
 
-  const selectedTypes = filters.type.split(',').filter(Boolean);
+  const selectedTypes = filters.type
+    ? filters.type.split(',').filter(Boolean)
+    : contextualTaskFilter
+      ? ['task']
+      : [];
   const singleType = selectedTypes.length === 1 ? selectedTypes[0] : undefined;
   const hasTypeFilter = selectedTypes.length > 0;
   const filterBarHiddenParams = filters.type ? { type: filters.type } : undefined;
   const cursor = parseCursorParam(firstParam(params.cursor));
   const activeFilters = hasActiveWorkFilters(filters);
 
-  const [objectWindow, suggestionBundles, members] = await Promise.all([
+  const [projects, objectWindow, suggestionBundles, members] = await Promise.all([
+    loadProjectFilterRows({
+      listObjects: (filter) => scope.objects.listObjects(filter),
+      selected: filters.project,
+      includeArchivedSelected: true,
+    }),
     hasTypeFilter
       ? loadTypedObjectPage(scope.objects, { filter: objectFilter, cursor })
       : loadObjectSectionPreviews(scope.objects, { filter: objectFilter, filterParams }),
@@ -125,12 +153,12 @@ export default async function ObjectsIndexPage({
     if (bundle.metadata.kind !== 'object_cleanup') continue;
     const items = bundle.items.filter(
       (item) =>
-        isActionableSuggestionStatus(item.status) &&
+        item.status === 'pending' &&
         (item.targetKind === 'object_merge' ||
           (item.targetKind === 'object' && item.operation === 'archive_or_cancel')),
     );
     for (const item of items) {
-      if (item.targetKind === 'object_merge' && isActionableSuggestionStatus(item.status)) {
+      if (item.targetKind === 'object_merge' && item.status === 'pending') {
         mergeSuggestionItems.push(item);
       }
     }
@@ -201,8 +229,16 @@ export default async function ObjectsIndexPage({
         totalCount={objectWindow.totalCount}
         hiddenParams={filterBarHiddenParams}
         members={memberOptions}
+        projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}
         typeLabels={OBJECT_TYPE_LABELS}
       />
+      {categoryFilterBaseline ? (
+        <TaskCategoryFilterRefresh
+          surface="objects"
+          filters={filters}
+          baselineToken={categoryFilterBaseline.token}
+        />
+      ) : null}
 
       <ObjectCleanupSuggestions
         suggestions={cleanupSuggestions}

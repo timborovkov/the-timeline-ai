@@ -42,11 +42,15 @@ import {
   visibleObjectSearchResultsForQuery,
 } from '@/components/objects/object-search-results';
 import { ObjectSectionFeed } from '@/components/objects/object-section-feed';
+import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
+import { TaskCategorySelect } from '@/components/tasks/task-category-select';
+import { TaskProjectSelect } from '@/components/tasks/task-project-select';
 import { TechnicalDetails } from '@/components/technical-details';
 import { WorkSubnav } from '@/components/work-subnav';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { isInternalIdentifier } from '@/lib/display-labels';
+import { formatTaskCategoryChangeValue } from '@/lib/object-change-format';
 import { displayObjectTitle } from '@/lib/object-title';
 import { readJson } from '@/lib/paginated-api';
 import { queryKeys } from '@/lib/query-keys';
@@ -73,6 +77,9 @@ interface Props {
   teamId?: string;
   userId: string;
   suggestions: LocalSuggestion[];
+  projects?: { id: string; label: string }[];
+  primaryProject?: objects.TaskPrimaryProjectRow | null;
+  taskCategoriesEnabled?: boolean;
 }
 
 interface ObjectDetailUiState {
@@ -121,6 +128,7 @@ const STATUS_BY_TYPE: Record<string, string[]> = {
   hiring_loop: ['sourcing', 'interviewing', 'offer', 'hired', 'closed'],
   decision: ['draft', 'proposed', 'accepted', 'rejected'],
 };
+const EMPTY_PROJECT_OPTIONS: { id: string; label: string }[] = [];
 
 function statusOptions(type: string): string[] {
   return STATUS_BY_TYPE[type] ?? ['open', 'active', 'archived'];
@@ -255,10 +263,8 @@ function applyObjectDetailLocalState(
   return { ...detail, notes, relationships, recentChanges, archivedAt };
 }
 
-export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
-  return (
-    <ObjectDetailView key={detail.id} detail={detail} userId={userId} suggestions={suggestions} />
-  );
+export function ObjectDetailClient(props: Props) {
+  return <ObjectDetailView key={props.detail.id} {...props} />;
 }
 
 function useObjectDetailController({ detail, userId, suggestions }: Props) {
@@ -781,6 +787,7 @@ function ObjectDetailView(props: Props) {
             <ApprovalsClient
               suggestions={view.suggestions}
               allowBulkAccept={false}
+              taskCategoriesEnabled={props.taskCategoriesEnabled}
               folded={{
                 title: 'Pending approvals',
                 summary: {
@@ -846,11 +853,15 @@ function ObjectDetailView(props: Props) {
               focusedDraftsRef={view.focusedDraftsRef}
               patch={view.patch}
               dispatchObjectUi={view.dispatchObjectUi}
+              projects={props.projects}
+              primaryProject={props.primaryProject}
+              taskCategoriesEnabled={props.taskCategoriesEnabled}
               className="grid-cols-1 gap-4"
             />
           </ObjectPanel>
 
           <ObjectRelationshipsSection
+            sourceType={view.viewDetail.type}
             relationships={view.viewDetail.relationships}
             pending={view.pending}
             linkQuery={view.linkQuery}
@@ -1339,6 +1350,15 @@ function ObjectDetailHeader({
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-dim">
             <span className="text-fg-muted">{statusLabel(detail.type)}</span>
           </div>
+          {detail.type === 'task' ? (
+            <LiveTaskCategoryBadge
+              taskId={detail.id}
+              category={detail.taskCategory}
+              status={detail.taskCategoryStatus}
+              updatedAt={detail.taskCategoryUpdatedAt}
+              className="mt-2"
+            />
+          ) : null}
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-fg">
             {displayText(displayObjectTitle(detail))}
           </h1>
@@ -1362,6 +1382,14 @@ function ObjectDetailHeader({
               pinnedEntityName={displayObjectTitle(detail)}
               label="Ask about object"
             />
+          ) : null}
+          {detail.type === 'project' && detail.archivedAt === null ? (
+            <Link
+              href={`/app/objects/new?project=${encodeURIComponent(detail.id)}&returnTo=${encodeURIComponent(`/app/objects/${detail.id}`)}`}
+              className="rounded-sm border border-signal/40 bg-signal-soft px-3 py-2 text-xs font-medium text-signal hover:bg-signal/20"
+            >
+              Add task
+            </Link>
           ) : null}
           <button
             type="button"
@@ -1399,6 +1427,9 @@ function ObjectEditableFields({
   focusedDraftsRef,
   patch,
   dispatchObjectUi,
+  projects = EMPTY_PROJECT_OPTIONS,
+  primaryProject = null,
+  taskCategoriesEnabled = true,
   className = 'grid-cols-1 gap-6 sm:grid-cols-2',
 }: {
   detail: ObjectDetail;
@@ -1409,11 +1440,42 @@ function ObjectEditableFields({
   focusedDraftsRef: RefObject<Record<DraftField, boolean>>;
   patch: (field: EditableField, value: EditableValue) => void;
   dispatchObjectUi: Dispatch<ObjectDetailUiAction>;
+  projects?: { id: string; label: string }[];
+  primaryProject?: objects.TaskPrimaryProjectRow | null;
+  taskCategoriesEnabled?: boolean;
   className?: string;
 }) {
   const options = statusOptions(detail.type);
   return (
     <section className={cn('grid', className)}>
+      {detail.type === 'task' && detail.archivedAt ? (
+        <p className="text-sm text-muted-foreground sm:col-span-2">
+          Unarchive this task to change its project or category.
+        </p>
+      ) : detail.type === 'task' ? (
+        <>
+          <Field label="Project">
+            <TaskProjectSelect
+              taskId={detail.id}
+              projectId={primaryProject?.projectId ?? null}
+              currentProjectLabel={primaryProject?.projectName}
+              projectArchived={Boolean(primaryProject?.archivedAt)}
+              projects={projects}
+            />
+          </Field>
+          {taskCategoriesEnabled ? (
+            <Field label="Category">
+              <TaskCategorySelect
+                taskId={detail.id}
+                category={detail.taskCategory}
+                mode={detail.taskCategoryMode}
+                status={detail.taskCategoryStatus}
+                updatedAt={detail.taskCategoryUpdatedAt}
+              />
+            </Field>
+          ) : null}
+        </>
+      ) : null}
       <Field label="Name">
         <input
           aria-label="Name"
@@ -2010,6 +2072,7 @@ function ConnectedCapturedFileList({
 }
 
 function ObjectRelationshipsSection({
+  sourceType,
   relationships,
   pending,
   linkQuery,
@@ -2022,6 +2085,7 @@ function ObjectRelationshipsSection({
   onAddRelationship,
   onRemoveRelationship,
 }: {
+  sourceType: objects.ObjectType;
   relationships: ObjectDetail['relationships'];
   pending: boolean;
   linkQuery: string;
@@ -2034,6 +2098,10 @@ function ObjectRelationshipsSection({
   onAddRelationship: () => void;
   onRemoveRelationship: (id: string, otherEntityId: string) => void;
 }) {
+  const projectFieldOwnsLink = sourceType === 'task' && selectedLink?.type === 'project';
+  const availableKinds = projectFieldOwnsLink
+    ? RELATIONSHIP_KINDS.filter((kind) => kind !== 'child')
+    : RELATIONSHIP_KINDS;
   return (
     <ObjectPanel title="Related" eyebrow={String(relationships.length)}>
       <div className="mb-4 grid gap-2">
@@ -2064,7 +2132,7 @@ function ObjectRelationshipsSection({
               }}
               className="w-full rounded-md border bg-surface px-3 py-2 text-sm"
             >
-              {RELATIONSHIP_KINDS.map((kind) => (
+              {availableKinds.map((kind) => (
                 <option key={kind} value={kind}>
                   {kind}
                 </option>
@@ -2073,7 +2141,7 @@ function ObjectRelationshipsSection({
           </label>
           <button
             type="button"
-            disabled={pending || !selectedLink}
+            disabled={pending || !selectedLink || (projectFieldOwnsLink && linkKind === 'child')}
             onClick={onAddRelationship}
             className="rounded-md border border-signal/40 bg-signal-soft px-3 py-2 text-sm text-signal hover:bg-signal/25 disabled:opacity-50"
           >
@@ -2084,6 +2152,7 @@ function ObjectRelationshipsSection({
       {selectedLink ? (
         <p className="mb-3 text-xs text-muted-foreground">
           Selected {displayText(selectedLink.canonicalName)} · {selectedLink.type}
+          {projectFieldOwnsLink ? ' · use the Project field for primary membership' : ''}
         </p>
       ) : linkResults.length > 0 ? (
         <ul className="mb-3 grid gap-1">
@@ -2128,7 +2197,13 @@ function ObjectRelationshipsSection({
                       : `← ${relationship.kind}`}{' '}
                   · {relationship.otherType}
                 </span>
-                {relationship.direction === 'out' || relationship.kind === 'related' ? (
+                {(relationship.direction === 'out' || relationship.kind === 'related') &&
+                !(
+                  sourceType === 'task' &&
+                  relationship.direction === 'out' &&
+                  relationship.kind === 'child' &&
+                  relationship.otherType === 'project'
+                ) ? (
                   <button
                     type="button"
                     disabled={pending || isOptimisticRelationship(relationship)}
@@ -2206,7 +2281,8 @@ function ObjectRecentChangeItem({
         </span>
       </div>
       <div className="mt-1 break-words text-xs text-muted-foreground">
-        {formatValue(change.previousValue, timezone)} → {formatValue(change.newValue, timezone)}
+        {formatValue(change.previousValue, timezone, change.field)} →{' '}
+        {formatValue(change.newValue, timezone, change.field)}
       </div>
       <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
         <span>{formatDisplayDateTime(change.changedAt, { timezone })}</span>
@@ -2299,10 +2375,12 @@ function toLocalInput(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function formatValue(v: unknown, timezone: string): string {
+function formatValue(v: unknown, timezone: string, field = ''): string {
+  const category = formatTaskCategoryChangeValue(field, v);
+  if (category !== null) return category;
   if (v === null || v === undefined) return '∅';
   if (typeof v === 'string') return displayText(v, { timezone });
-  if (Array.isArray(v)) return v.map((item) => formatValue(item, timezone)).join(', ');
+  if (Array.isArray(v)) return v.map((item) => formatValue(item, timezone, field)).join(', ');
   if (v instanceof Date) return formatDisplayDateTime(v, { timezone });
   if (typeof v === 'object') return summarizeObjectValue(v as Record<string, unknown>);
   if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'bigint') return String(v);
@@ -2316,6 +2394,7 @@ function changeFieldLabel(field: string): string {
     canonicalName: 'Name',
     aliases: 'Aliases',
     dueAt: 'Due date',
+    taskCategory: 'Category',
     ownerUserId: 'Owner',
     assigneeUserId: 'Assignee',
   };

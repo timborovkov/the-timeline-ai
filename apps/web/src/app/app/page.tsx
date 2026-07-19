@@ -79,7 +79,7 @@ export default async function HomeDashboardPage() {
     urgentObjectWork,
     connectionAttention,
   ] = await Promise.all([
-    scope.suggestions.countPendingSuggestions(),
+    scope.suggestions.getApprovalItemCounts().then((counts) => counts.pending),
     scope.timeline.listEventsPage({ limit: 3 }),
     scope.timeline.listMembers(),
     scope.timeline.resolveVisibilityDefault('web'),

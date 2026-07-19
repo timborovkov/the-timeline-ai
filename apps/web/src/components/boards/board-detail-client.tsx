@@ -18,6 +18,7 @@ import { CuratedKanbanBoard } from '@/components/boards/curated-kanban-board';
 import { ContextualAskLink } from '@/components/chat/contextual-ask-link';
 import { HistoryBackLink } from '@/components/history-back-link';
 import { PageHeader } from '@/components/page-header';
+import { TaskCategoryPollingProvider } from '@/components/tasks/task-category-badge';
 import { WorkFilterBar } from '@/components/work-filter-bar';
 import { WorkSubnav } from '@/components/work-subnav';
 import { visibleBoardDescription } from '@/lib/board-description';
@@ -51,6 +52,7 @@ interface Props {
   lanes: boards.BoardLaneRow[];
   initialItems: boards.BoardItemRow[];
   initialCandidates: objects.ObjectRow[];
+  projectOptions?: { id: string; label: string }[];
   recommendedTypes: objects.ObjectType[];
   defaultLaneId: string | null;
   selectedItemId: string | null;
@@ -67,6 +69,8 @@ const EMPTY_FILTERS: WorkFilterState = {
   q: '',
   type: '',
   status: '',
+  category: '',
+  project: '',
   stage: '',
   owner: '',
   assignee: '',
@@ -95,6 +99,7 @@ export function BoardDetailClient({
   lanes,
   initialItems,
   initialCandidates,
+  projectOptions: providedProjectOptions,
   recommendedTypes,
   defaultLaneId,
   selectedItemId,
@@ -142,6 +147,21 @@ export function BoardDetailClient({
     const itemEntityIds = new Set(items.map((item) => item.entityId));
     return candidates.filter((candidate) => !itemEntityIds.has(candidate.id));
   }, [candidates, items]);
+  const categoryPollingTasks = useMemo(
+    () =>
+      items.flatMap((item) =>
+        item.object.type === 'task'
+          ? [
+              {
+                id: item.object.id,
+                status: item.object.taskCategoryStatus,
+                updatedAt: item.object.taskCategoryUpdatedAt,
+              },
+            ]
+          : [],
+      ),
+    [items],
+  );
 
   function addOptimisticItem(item: boards.BoardItemRow): void {
     setLocalItems((current) => [...current, item]);
@@ -216,6 +236,16 @@ export function BoardDetailClient({
   );
 
   const description = visibleBoardDescription(purpose);
+  const derivedProjectOptions = useMemo(() => {
+    const options: { id: string; label: string }[] = [];
+    for (const candidate of initialCandidates) {
+      if (candidate.type === 'project') {
+        options.push({ id: candidate.id, label: candidate.canonicalName });
+      }
+    }
+    return options;
+  }, [initialCandidates]);
+  const projectOptions = providedProjectOptions ?? derivedProjectOptions;
 
   const boardHeaderLeading = useMemo(
     () => <HistoryBackLink fallbackHref="/app/boards" label="Back" />,
@@ -244,7 +274,7 @@ export function BoardDetailClient({
   );
 
   return (
-    <>
+    <TaskCategoryPollingProvider tasks={categoryPollingTasks}>
       <PageHeader
         title={boardName}
         subtitle={description ?? undefined}
@@ -257,27 +287,12 @@ export function BoardDetailClient({
         className={view === 'kanban' ? 'shrink-0 px-4 md:px-8' : 'mb-4 shrink-0'}
       />
 
-      <div
-        className={
-          view === 'kanban'
-            ? 'flex w-full shrink-0 justify-end px-4 py-4 md:px-8'
-            : 'mb-4 flex shrink-0 justify-end'
-        }
-      >
-        <nav className="inline-flex overflow-hidden rounded-sm border border-border">
-          {(['kanban', 'table', 'list'] as const).map((nextView) => (
-            <Link
-              key={nextView}
-              href={boardViewHref(boardId, nextView, selectedItemId, filterParams)}
-              className={`px-3 py-1.5 text-xs ${
-                view === nextView ? 'bg-signal text-signal-fg' : 'bg-bg text-fg-muted hover:text-fg'
-              }`}
-            >
-              {nextView}
-            </Link>
-          ))}
-        </nav>
-      </div>
+      <BoardViewNavigation
+        boardId={boardId}
+        view={view}
+        selectedItemId={selectedItemId}
+        filterParams={filterParams}
+      />
 
       <WorkFilterBar
         mode="board"
@@ -288,6 +303,7 @@ export function BoardDetailClient({
         totalCount={itemCount ?? items.length}
         hiddenParams={{ view }}
         members={members}
+        projects={projectOptions}
         lanes={lanes}
         typeLabels={typeLabels}
         className={view === 'kanban' ? 'shrink-0' : 'mb-4'}
@@ -363,7 +379,43 @@ export function BoardDetailClient({
           />
         ) : null}
       </div>
-    </>
+    </TaskCategoryPollingProvider>
+  );
+}
+
+function BoardViewNavigation({
+  boardId,
+  view,
+  selectedItemId,
+  filterParams,
+}: {
+  boardId: string;
+  view: BoardLayout;
+  selectedItemId: string | null;
+  filterParams: Record<string, string>;
+}) {
+  return (
+    <div
+      className={
+        view === 'kanban'
+          ? 'flex w-full shrink-0 justify-end px-4 py-4 md:px-8'
+          : 'mb-4 flex shrink-0 justify-end'
+      }
+    >
+      <nav className="inline-flex overflow-hidden rounded-sm border border-border">
+        {(['kanban', 'table', 'list'] as const).map((nextView) => (
+          <Link
+            key={nextView}
+            href={boardViewHref(boardId, nextView, selectedItemId, filterParams)}
+            className={`px-3 py-1.5 text-xs ${
+              view === nextView ? 'bg-signal text-signal-fg' : 'bg-bg text-fg-muted hover:text-fg'
+            }`}
+          >
+            {nextView}
+          </Link>
+        ))}
+      </nav>
+    </div>
   );
 }
 

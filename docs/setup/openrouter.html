@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>OpenRouter setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-03</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-12</span></div>
       <blockquote>
         <p>Used from <strong>Phase 3</strong> (transcription) and onwards.</p>
       </blockquote>
@@ -106,6 +106,36 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
         The normal test suite mocks OpenRouter. To run the optional live structured-extraction smoke
         test, export <code>OPENROUTER_API_KEY</code> and <code>OPENROUTER_LIVE_TESTS=1</code>, then
         run <code>pnpm --filter @timeline/shared test -- src/llm/chat.test.ts</code>.
+      </p>
+
+      <h2 id="task-categories">Task-category classifier</h2>
+      <p>
+        Canonical tasks are categorized asynchronously through the pinned
+        <code>TIMELINE_MODELS.taskCategorization</code> model. Run the live 120-case release gate
+        against the same environment with
+        <code>TASK_CATEGORY_LIVE_ENV_FILE=/path/to/.env pnpm test:task-category-eval:live</code>.
+        The report includes exact accuracy, macro recall, prompt-injection safety, and a confusion
+        matrix; it does not write task content to product analytics.
+      </p>
+      <p>
+        Historical work defaults to a dry run:
+        <code
+          >TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker task-category-backfill --
+          --team-id=&lt;uuid&gt; --limit=500</code
+        >. Enqueueing requires both <code>--enqueue</code> and a projected-cost guard such as
+        <code>--max-cost-usd=0.10</code>. The guard compares a fixed per-task estimate, not actual
+        provider spend; retries and provider pricing can differ. Each execution is bounded; rerun it
+        to resume. Already pending, manual, archived, and ready tasks are skipped.
+      </p>
+      <p>
+        <code>TASK_CATEGORY_CLASSIFICATION_ENABLED=false</code> is the master emergency stop.
+        Independent controls are <code>TASK_CATEGORY_AUTO_ENQUEUE_ENABLED</code>,
+        <code>TASK_CATEGORY_WORKER_ENABLED</code>, <code>TASK_CATEGORY_BACKFILL_ENABLED</code>, and
+        <code>TASK_CATEGORY_UI_ENABLED</code>. Disabling any control preserves stored categories and
+        manual history. A disabled classification or worker control does not register the BullMQ
+        consumer, so queued jobs remain available. Re-enable worker and enqueue controls together
+        after an outage; the janitor repairs eligible pending rows and durable project fan-out
+        cursors.
       </p>
 
       <h2 id="phase-3">Phase 3 verification (transcription)</h2>

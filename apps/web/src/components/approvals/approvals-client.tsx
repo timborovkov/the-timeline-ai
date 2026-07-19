@@ -1,6 +1,11 @@
 'use client';
 
 import {
+  TASK_CATEGORY_OPTIONS,
+  taskCategoryLabel,
+  type TaskCategory,
+} from '@timeline/shared/task-categories/types';
+import {
   AlertTriangle,
   CalendarClock,
   CalendarPlus,
@@ -10,6 +15,7 @@ import {
   ExternalLink,
   GitMerge,
   MoveRight,
+  Pencil,
   X,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -22,12 +28,14 @@ import {
   acceptVisibleSuggestionsAction,
   rejectSuggestionItemAction,
   rejectVisibleSuggestionsAction,
+  reviseTaskSuggestionItemAction,
 } from '@/app/actions/suggestions';
 import { EmptyAction } from '@/components/empty-action';
 import { EvidenceLink } from '@/components/evidence-link';
 import { TechnicalDetails } from '@/components/technical-details';
 import { Button } from '@/components/ui/button';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { useProjectSearch } from '@/hooks/use-project-search';
 import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/display-dates';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 
@@ -109,9 +117,14 @@ type ApprovalAction = (
 
 interface Props {
   suggestions: SuggestionBundle[];
+  taskCategoriesEnabled?: boolean;
   allowBulkAccept?: boolean;
   allowBulkReject?: boolean;
   timezone?: string;
+  emptyState?: {
+    title: string;
+    body: string;
+  };
   folded?: {
     title: string;
     summary: {
@@ -614,9 +627,11 @@ function foldedSummaryText(
 
 export function ApprovalsClient({
   suggestions,
+  taskCategoriesEnabled = true,
   allowBulkAccept = true,
   allowBulkReject = true,
   timezone,
+  emptyState,
   folded,
 }: Props) {
   const workspaceTimezone = useWorkspaceTimezone();
@@ -755,11 +770,9 @@ export function ApprovalsClient({
     resolveItems(optimisticItemIds);
     markBusy(optimisticItemIds);
     startTransition(async () => {
-      let shouldRefresh = true;
       try {
         const result = await action();
         if (result.error) {
-          shouldRefresh = false;
           const failedItemIds =
             result.failedItemIds?.filter((id) => optimisticItemIds.includes(id)) ?? [];
           const restoreItemIds = failedItemIds.length > 0 ? failedItemIds : optimisticItemIds;
@@ -768,14 +781,13 @@ export function ApprovalsClient({
           setError(result.error);
         }
       } catch (err) {
-        shouldRefresh = false;
         restoreItems(optimisticItemIds);
         markActionFailures(optimisticItemIds);
         setError(err instanceof Error ? err.message : 'Approval action failed');
       } finally {
         for (const id of optimisticItemIds) inFlightItemIdsRef.current?.delete(id);
         clearBusy(optimisticItemIds);
-        if (shouldRefresh) router.refresh();
+        router.refresh();
       }
     });
   }
@@ -783,8 +795,11 @@ export function ApprovalsClient({
   if (suggestions.length === 0) {
     return (
       <EmptyAction
-        title="No pending approvals"
-        body="When the agent proposes tasks, objects, calendar items, or document changes, they will queue here before becoming canonical."
+        title={emptyState?.title ?? 'No pending approvals'}
+        body={
+          emptyState?.body ??
+          'When the agent proposes tasks, objects, calendar items, or document changes, they will queue here before becoming canonical.'
+        }
         href="/app"
         action="Back to home"
       />
@@ -806,6 +821,7 @@ export function ApprovalsClient({
       pending={pending}
       run={run}
       timezone={resolvedTimezone}
+      taskCategoriesEnabled={taskCategoriesEnabled}
       visibleSuggestions={visibleSuggestions}
     />
   );
@@ -844,6 +860,7 @@ function ApprovalListBody({
   pending,
   run,
   timezone,
+  taskCategoriesEnabled,
   visibleSuggestions,
 }: {
   allowBulkAccept: boolean;
@@ -859,6 +876,7 @@ function ApprovalListBody({
   pending: boolean;
   run: ApprovalAction;
   timezone: string;
+  taskCategoriesEnabled: boolean;
   visibleSuggestions: SuggestionBundle[];
 }) {
   return (
@@ -887,6 +905,7 @@ function ApprovalListBody({
           pending={pending}
           run={run}
           timezone={timezone}
+          taskCategoriesEnabled={taskCategoriesEnabled}
         />
       ))}
     </div>
@@ -989,6 +1008,7 @@ function ApprovalBundleRow({
   pending,
   run,
   timezone,
+  taskCategoriesEnabled,
 }: {
   allowBulkAccept: boolean;
   actionFailedItemIds: Set<string>;
@@ -997,6 +1017,7 @@ function ApprovalBundleRow({
   pending: boolean;
   run: ApprovalAction;
   timezone: string;
+  taskCategoriesEnabled: boolean;
 }) {
   const pendingItems = bundle.items.filter((item) => isActionableSuggestionStatus(item.status));
   const bulkAcceptItems = pendingItems.filter((item) => item.targetKind !== 'object_merge');
@@ -1037,6 +1058,7 @@ function ApprovalBundleRow({
             pending={pending}
             run={run}
             timezone={timezone}
+            taskCategoriesEnabled={taskCategoriesEnabled}
           />
         ))}
       </ul>
@@ -1088,6 +1110,7 @@ function ApprovalItemRow({
   pending,
   run,
   timezone,
+  taskCategoriesEnabled,
 }: {
   actionFailed: boolean;
   bundle: SuggestionBundle;
@@ -1096,11 +1119,17 @@ function ApprovalItemRow({
   pending: boolean;
   run: ApprovalAction;
   timezone: string;
+  taskCategoriesEnabled: boolean;
 }) {
   return (
     <li className="grid gap-3 p-3 md:grid-cols-[minmax(0,1.3fr)_minmax(10rem,0.8fr)_minmax(9rem,auto)]">
       <ApprovalItemMain actionFailed={actionFailed} item={item} />
-      <ApprovalItemPayload bundle={bundle} item={item} timezone={timezone} />
+      <ApprovalItemPayload
+        bundle={bundle}
+        item={item}
+        timezone={timezone}
+        taskCategoriesEnabled={taskCategoriesEnabled}
+      />
       {isActionableSuggestionStatus(item.status) ? (
         <ApprovalItemActions busy={busy} item={item} pending={pending} run={run} />
       ) : null}
@@ -1136,13 +1165,25 @@ function ApprovalItemPayload({
   bundle,
   item,
   timezone,
+  taskCategoriesEnabled,
 }: {
   bundle: SuggestionBundle;
   item: SuggestionItem;
   timezone: string;
+  taskCategoriesEnabled: boolean;
 }) {
   if (item.targetKind === 'calendar_event') {
     return <CalendarApprovalPayload item={item} timezone={timezone} />;
+  }
+  if (item.targetKind === 'task' && item.operation === 'create') {
+    return (
+      <TaskApprovalPayload
+        bundle={bundle}
+        item={item}
+        taskCategoriesEnabled={taskCategoriesEnabled}
+        timezone={timezone}
+      />
+    );
   }
   const relationshipSummary = relationshipPayloadSummary(item, bundle);
   const fields = relationshipSummary
@@ -1158,6 +1199,176 @@ function ApprovalItemPayload({
       )}
       {item.failureReason ? (
         <p className="mt-1 text-xs text-danger">{displayText(item.failureReason)}</p>
+      ) : null}
+      <ApprovalItemDependency item={item} bundle={bundle} />
+    </div>
+  );
+}
+
+function TaskApprovalPayload({
+  bundle,
+  item,
+  taskCategoriesEnabled,
+  timezone,
+}: {
+  bundle: SuggestionBundle;
+  item: SuggestionItem;
+  taskCategoriesEnabled: boolean;
+  timezone?: string;
+}) {
+  const router = useRouter();
+  const [saving, startSaving] = useTransition();
+  const { query, setQuery, projects } = useProjectSearch();
+  const [error, setError] = useState<string | null>(null);
+  const category = payloadString(item.proposedPayload, 'taskCategory') as TaskCategory | null;
+  const categoryMode = payloadString(item.proposedPayload, 'taskCategoryMode');
+  const projectName =
+    payloadString(item.proposedPayload, 'parentName') ??
+    payloadString(item.proposedPayload, 'projectName') ??
+    payloadString(item.proposedPayload, 'createProjectName');
+  const createsProject = Boolean(payloadString(item.proposedPayload, 'createProjectName'));
+  const payloadFields = formatPayloadFields(
+    item.proposedPayload,
+    timezone,
+    item.title,
+    item.operation,
+  ).filter(
+    (field) =>
+      !field.key.startsWith('taskCategory') &&
+      field.key !== 'parentName' &&
+      field.key !== 'projectName' &&
+      field.key !== 'createProjectName',
+  );
+
+  function revise(input: {
+    category?: TaskCategory | 'automatic';
+    project?:
+      | { kind: 'none' }
+      | { kind: 'existing'; projectId: string }
+      | { kind: 'create'; projectName: string };
+  }): void {
+    setError(null);
+    startSaving(async () => {
+      const result = await reviseTaskSuggestionItemAction({ itemId: item.id, ...input });
+      if (result.error) setError(result.error);
+      else router.refresh();
+    });
+  }
+
+  return (
+    <div className="min-w-0 self-center space-y-2">
+      <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+        {itemActionLabel(item)}
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {taskCategoriesEnabled ? (
+          <span className="rounded-sm border border-border bg-muted/30 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-fg">
+            Category · {category ? taskCategoryLabel(category) : 'Automatic after accept'}
+          </span>
+        ) : null}
+        <span className="rounded-sm border border-border bg-muted/30 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-fg">
+          Project ·{' '}
+          {projectName ? `${createsProject ? 'Create or reuse ' : ''}${projectName}` : 'None'}
+        </span>
+      </div>
+      <ApprovalPayloadSummary fields={payloadFields} />
+      {taskCategoriesEnabled && category && categoryMode !== 'manual' ? (
+        <p className="text-xs text-fg-dim">
+          AI-proposed category; accepting applies it only if context still matches.
+        </p>
+      ) : null}
+      <details className="group border-l border-border pl-2">
+        <summary className="inline-flex cursor-pointer items-center gap-1 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim hover:text-fg">
+          <Pencil className="size-3" /> Edit proposal
+        </summary>
+        <div className="mt-2 grid gap-2">
+          {taskCategoriesEnabled ? (
+            <label className="grid gap-1 text-xs text-fg-muted">
+              Category
+              <select
+                aria-label={`Category for ${item.title}`}
+                value={
+                  categoryMode === 'manual' && category
+                    ? category
+                    : category
+                      ? 'suggested'
+                      : 'automatic'
+                }
+                disabled={saving}
+                onChange={(event) => {
+                  revise({ category: event.currentTarget.value as TaskCategory | 'automatic' });
+                }}
+                className="h-8 rounded-sm border border-border bg-bg px-2 text-xs text-fg"
+              >
+                {category && categoryMode !== 'manual' ? (
+                  <option value="suggested" disabled>
+                    AI suggestion — {taskCategoryLabel(category)}
+                  </option>
+                ) : null}
+                <option value="automatic">Automatic after accept</option>
+                {TASK_CATEGORY_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          <label className="grid gap-1 text-xs text-fg-muted">
+            Find or name a project
+            <input
+              type="search"
+              value={query}
+              disabled={saving}
+              onChange={(event) => {
+                setQuery(event.currentTarget.value);
+              }}
+              placeholder="Search projects or type a new name"
+              className="h-8 rounded-sm border border-border bg-bg px-2 text-xs text-fg"
+            />
+          </label>
+          {query.trim() ? (
+            <div className="flex flex-wrap gap-1">
+              {projects.map((project) => (
+                <button
+                  key={project.id}
+                  type="button"
+                  disabled={saving}
+                  onClick={() => {
+                    revise({ project: { kind: 'existing', projectId: project.id } });
+                  }}
+                  className="rounded-sm border border-border px-2 py-1 text-xs text-fg hover:border-signal"
+                >
+                  Use {displayText(project.label)}
+                </button>
+              ))}
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => {
+                  revise({ project: { kind: 'create', projectName: query.trim() } });
+                }}
+                className="rounded-sm border border-border px-2 py-1 text-xs text-fg hover:border-signal"
+              >
+                Create “{displayText(query.trim())}”
+              </button>
+            </div>
+          ) : null}
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => {
+              revise({ project: { kind: 'none' } });
+            }}
+            className="w-fit font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim hover:text-danger"
+          >
+            No project
+          </button>
+        </div>
+      </details>
+      {error ? <p className="text-xs text-danger">{error}</p> : null}
+      {item.failureReason ? (
+        <p className="text-xs text-danger">{displayText(item.failureReason)}</p>
       ) : null}
       <ApprovalItemDependency item={item} bundle={bundle} />
     </div>

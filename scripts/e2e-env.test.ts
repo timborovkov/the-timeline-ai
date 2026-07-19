@@ -33,6 +33,10 @@ function lookupPort(container: string, port: number): string | null {
       'AUTH_SECRET',
       'OPENROUTER_API_KEY',
       'E2E_DETERMINISTIC_EMBEDDINGS',
+      'TASK_CATEGORY_CLASSIFICATION_ENABLED',
+      'TASK_CATEGORY_AUTO_ENQUEUE_ENABLED',
+      'TASK_CATEGORY_WORKER_ENABLED',
+      'TASK_CATEGORY_UI_ENABLED',
     ]),
     {
       DATABASE_URL: 'postgres://timeline:timeline_dev@localhost:55432/timeline',
@@ -44,6 +48,10 @@ function lookupPort(container: string, port: number): string | null {
       AUTH_SECRET: 'e2e-auth-secret-at-least-sixteen-characters',
       OPENROUTER_API_KEY: 'e2e-deterministic-chat',
       E2E_DETERMINISTIC_EMBEDDINGS: 'true',
+      TASK_CATEGORY_CLASSIFICATION_ENABLED: 'true',
+      TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: 'true',
+      TASK_CATEGORY_WORKER_ENABLED: 'true',
+      TASK_CATEGORY_UI_ENABLED: 'true',
     },
   );
   assert.equal(env.NO_COLOR, undefined);

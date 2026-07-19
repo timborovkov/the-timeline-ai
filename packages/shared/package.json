@@ -237,6 +237,18 @@
       "import": "./dist/objects/types.js",
       "default": "./dist/objects/types.js"
     },
+    "./task-categories": {
+      "types": "./src/task-categories/index.ts",
+      "development": "./src/task-categories/index.ts",
+      "import": "./dist/task-categories/index.js",
+      "default": "./dist/task-categories/index.js"
+    },
+    "./task-categories/types": {
+      "types": "./src/task-categories/types.ts",
+      "development": "./src/task-categories/types.ts",
+      "import": "./dist/task-categories/types.js",
+      "default": "./dist/task-categories/types.js"
+    },
     "./boards": {
       "types": "./src/boards/index.ts",
       "development": "./src/boards/index.ts",

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { handleMcpRequest } from '#src/mcp-server/handler.js';
 import { hashKey } from '#src/mcp-server/keys.js';
+import { TASK_CATEGORIES } from '#src/task-categories/types.js';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
@@ -24,6 +25,13 @@ interface ToolDescriptor {
     properties?: {
       source?: {
         enum?: string[];
+      };
+      category?: {
+        enum?: string[];
+        oneOf?: {
+          enum?: string[];
+          items?: { enum?: string[] };
+        }[];
       };
     };
   };
@@ -140,6 +148,15 @@ describe('handleMcpRequest', () => {
     expect(listEvents?.inputSchema.properties?.source?.enum).toEqual(
       expect.arrayContaining(['calendar', 'slack', 'ingest_webhook']),
     );
+    const categories = [...TASK_CATEGORIES];
+    const searchObjects = tools.find((tool) => tool.name === 'timeline.search_objects');
+    const searchCategorySchemas = searchObjects?.inputSchema.properties?.category?.oneOf ?? [];
+    expect(searchCategorySchemas[0]?.enum).toEqual(categories);
+    expect(searchCategorySchemas[1]?.items?.enum).toEqual(categories);
+    for (const toolName of ['timeline.list_objects', 'timeline.list_tasks']) {
+      const tool = tools.find((candidate) => candidate.name === toolName);
+      expect(tool?.inputSchema.properties?.category?.enum).toEqual(categories);
+    }
     expect(tools.map((tool) => tool.name)).toEqual(
       expect.arrayContaining([
         'timeline.retrieve_workspace_context',
@@ -559,12 +576,23 @@ describe('handleMcpRequest', () => {
 
   it('exposes team-level object and task retrieval through bearer auth', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Faba redesign',
+      actor: { kind: 'user', userId: USER_ID },
+    });
     const task = await scope.objects.createObject({
       type: 'task',
       canonicalName: 'Ship expanded outbound MCP',
       status: 'doing',
+      parentObjectId: project.id,
       actor: { kind: 'user', userId: USER_ID },
     });
+    await scope.objects.setTaskCategory(task.id, 'engineering', {
+      kind: 'user',
+      userId: USER_ID,
+    });
+    await scope.objects.archiveObject(project.id, { kind: 'user', userId: USER_ID });
     await scope.objects.createObject({
       type: 'company',
       canonicalName: 'Acme Corp',
@@ -574,7 +602,22 @@ describe('handleMcpRequest', () => {
 
     await expect(callTool(db, 'timeline.list_tasks', {})).resolves.toMatchObject({
       count: 1,
-      tasks: [expect.objectContaining({ id: task.id, name: 'Ship expanded outbound MCP' })],
+      tasks: [
+        expect.objectContaining({
+          id: task.id,
+          citation: `[task:${task.id}]`,
+          name: 'Ship expanded outbound MCP',
+          task_category: 'engineering',
+          task_category_mode: 'manual',
+          task_category_status: 'ready',
+          archived: false,
+          primary_project: {
+            id: project.id,
+            name: 'Faba redesign',
+            archived: true,
+          },
+        }),
+      ],
     });
     const objectResult = await callTool(db, 'timeline.get_object', { idOrName: 'Acme Corp' });
     expect(objectResult).toMatchObject({

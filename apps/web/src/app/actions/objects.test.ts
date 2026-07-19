@@ -9,6 +9,7 @@ import {
   createObjectAction,
   deleteNoteAction,
   generateObjectSummaryAction,
+  loadTaskCategoryFilterStateAction,
   loadTaskRowsAction,
   markAllNotificationsReadAction,
   markNotificationReadAction,
@@ -16,7 +17,12 @@ import {
   rejectObjectChangeAction,
   removeRelationshipAction,
   repairObjectMemoryAction,
+  resetTaskCategoryAction,
+  retryTaskCategoryAction,
   searchObjectsAction,
+  setTaskCategoryAction,
+  undoTaskCategoryChangeAction,
+  setTaskProjectAction,
   updateNoteAction,
   updateObjectAction,
 } from '@/app/actions/objects';
@@ -37,6 +43,7 @@ const fakes = vi.hoisted(() => ({
   fakeTx: { kind: 'tx' },
   fakeWithTeam: vi.fn(),
   fakeCheckRateLimit: vi.fn(),
+  fakeGetEnv: vi.fn(),
   fakeObjects: {
     createObject: vi.fn(),
     getObject: vi.fn(),
@@ -45,12 +52,18 @@ const fakes = vi.hoisted(() => ({
     mergeObjects: vi.fn(),
     addRelationship: vi.fn(),
     removeRelationship: vi.fn(),
+    setTaskCategory: vi.fn(),
+    undoTaskCategoryChange: vi.fn(),
+    resetTaskCategoryToAutomatic: vi.fn(),
+    retryTaskCategory: vi.fn(),
+    setTaskProject: vi.fn(),
     createNote: vi.fn(),
     updateNote: vi.fn(),
     deleteNote: vi.fn(),
     enqueueObjectSummaryRefresh: vi.fn(),
     listObjects: vi.fn(),
     countObjects: vi.fn(),
+    getTaskCategoryFilterRefreshState: vi.fn(),
     searchObjects: vi.fn(),
     markNotificationRead: vi.fn(),
     markAllNotificationsRead: vi.fn(),
@@ -61,6 +74,9 @@ const fakes = vi.hoisted(() => ({
     acceptObjectMergeSuggestionItem: vi.fn(),
     reconcileCanonicalChange: vi.fn(),
     reconcileObjectMerge: vi.fn(),
+  },
+  fakeBoards: {
+    getTaskCategoryFilterRefreshState: vi.fn(),
   },
   fakeTransactionObjects: {
     archiveObject: vi.fn(),
@@ -87,12 +103,37 @@ vi.mock('@timeline/shared/rate-limit', () => ({
   checkRateLimit: fakes.fakeCheckRateLimit,
   rateLimitKey: (...parts: string[]) => parts.join(':'),
 }));
+vi.mock('@timeline/shared/env', () => ({ getEnv: fakes.fakeGetEnv }));
 
 const USER_ID = '22222222-2222-4222-8222-222222222222';
 const OBJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const OTHER_OBJECT_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const NOTE_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const CHANGE_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+
+function workFilters(overrides: Record<string, string> = {}) {
+  return {
+    q: '',
+    type: '',
+    status: '',
+    category: '',
+    project: '',
+    stage: '',
+    owner: '',
+    assignee: '',
+    responsible: '',
+    lane: '',
+    priority: '',
+    due: '',
+    dueFrom: '',
+    dueTo: '',
+    createdFrom: '',
+    createdTo: '',
+    updatedFrom: '',
+    updatedTo: '',
+    ...overrides,
+  };
+}
 
 function expectCanonicalReconciliation(input: Record<string, unknown>): void {
   expect(fakes.fakeSuggestions.reconcileCanonicalChange).toHaveBeenCalledWith(input);
@@ -108,6 +149,7 @@ function expectWorkRevalidated(): void {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fakes.fakeGetEnv.mockReturnValue({ TASK_CATEGORY_UI_ENABLED: true });
   fakes.fakeTransaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) =>
     callback(fakes.fakeTx),
   );
@@ -116,7 +158,11 @@ beforeEach(() => {
   });
   fakes.fakeResolveScope.mockResolvedValue({
     ok: true,
-    scope: { objects: fakes.fakeObjects, suggestions: fakes.fakeSuggestions },
+    scope: {
+      objects: fakes.fakeObjects,
+      suggestions: fakes.fakeSuggestions,
+      boards: fakes.fakeBoards,
+    },
     userId: USER_ID,
     teamId: '11111111-1111-4111-8111-111111111111',
   });
@@ -130,6 +176,19 @@ beforeEach(() => {
     id: OBJECT_ID,
     type: 'task',
     changedFields: ['archivedAt'],
+  });
+  fakes.fakeObjects.setTaskProject.mockResolvedValue({
+    changed: true,
+    project: null,
+    touchedIds: [OBJECT_ID],
+  });
+  fakes.fakeObjects.setTaskCategory.mockResolvedValue({
+    object: { id: OBJECT_ID },
+    changeId: CHANGE_ID,
+  });
+  fakes.fakeObjects.undoTaskCategoryChange.mockResolvedValue({
+    id: OBJECT_ID,
+    taskCategoryMode: 'automatic',
   });
   fakes.fakeObjects.mergeObjects.mockResolvedValue({
     survivor: { id: OBJECT_ID },
@@ -160,6 +219,11 @@ beforeEach(() => {
       assigneeUserId: null,
       dueAt: null,
       agentSuggested: false,
+      taskCategory: null,
+      taskCategoryMode: null,
+      taskCategorySource: null,
+      taskCategoryStatus: null,
+      taskCategoryUpdatedAt: null,
       archivedAt: null,
       aliases: [],
       metadata: {},
@@ -177,6 +241,11 @@ beforeEach(() => {
       assigneeUserId: null,
       dueAt: null,
       agentSuggested: false,
+      taskCategory: null,
+      taskCategoryMode: null,
+      taskCategorySource: null,
+      taskCategoryStatus: null,
+      taskCategoryUpdatedAt: null,
       archivedAt: null,
       aliases: [],
       metadata: {},
@@ -185,6 +254,16 @@ beforeEach(() => {
     },
   ]);
   fakes.fakeObjects.countObjects.mockResolvedValue(2);
+  fakes.fakeObjects.getTaskCategoryFilterRefreshState.mockResolvedValue({
+    token: 'engineering:4',
+    changed: false,
+    pending: true,
+  });
+  fakes.fakeBoards.getTaskCategoryFilterRefreshState.mockResolvedValue({
+    token: 'design:9',
+    changed: true,
+    pending: false,
+  });
   fakes.fakeObjects.searchObjects.mockResolvedValue([
     { id: OBJECT_ID, canonicalName: 'Current Object', type: 'project' },
     { id: OTHER_OBJECT_ID, canonicalName: 'Acme Corporation', type: 'company' },
@@ -276,6 +355,94 @@ describe('loadTaskRowsAction', () => {
     });
 
     expect(fakes.fakeObjects.listObjects).not.toHaveBeenCalled();
+  });
+
+  it('ignores category filters while the category UI rollout is disabled', async () => {
+    fakes.fakeGetEnv.mockReturnValue({ TASK_CATEGORY_UI_ENABLED: false });
+
+    await loadTaskRowsAction({
+      cursor: 'older',
+      filters: { category: 'engineering', status: 'todo' },
+    });
+
+    expect(fakes.fakeObjects.listObjects).toHaveBeenCalledWith({
+      type: 'task',
+      status: ['todo'],
+      archived: false,
+      limit: 501,
+      cursor: 'older',
+    });
+  });
+});
+
+describe('loadTaskCategoryFilterStateAction', () => {
+  it('checks all matching tasks without applying the selected category', async () => {
+    const baselineToken = 'engineering:3';
+
+    await expect(
+      loadTaskCategoryFilterStateAction({
+        surface: 'objects',
+        baselineToken,
+        filters: workFilters({
+          category: 'engineering',
+          project: OBJECT_ID,
+          status: 'open',
+        }),
+      }),
+    ).resolves.toEqual({
+      state: { token: 'engineering:4', changed: false, pending: true },
+    });
+
+    expect(fakes.fakeObjects.getTaskCategoryFilterRefreshState).toHaveBeenCalledWith(
+      {
+        type: 'task',
+        status: ['open'],
+        primaryProjectId: [OBJECT_ID],
+        archived: false,
+      },
+      ['engineering'],
+      baselineToken,
+    );
+  });
+
+  it('preserves board filters while checking category changes', async () => {
+    const baselineToken = 'design:8';
+
+    await expect(
+      loadTaskCategoryFilterStateAction({
+        surface: 'board',
+        boardId: OBJECT_ID,
+        baselineToken,
+        filters: workFilters({
+          category: 'design',
+          lane: OTHER_OBJECT_ID,
+          responsible: USER_ID,
+        }),
+      }),
+    ).resolves.toEqual({ state: { token: 'design:9', changed: true, pending: false } });
+
+    expect(fakes.fakeBoards.getTaskCategoryFilterRefreshState).toHaveBeenCalledWith(
+      OBJECT_ID,
+      {
+        laneId: OTHER_OBJECT_ID,
+        responsibleUserId: USER_ID,
+        object: { archived: false },
+      },
+      ['design'],
+      baselineToken,
+    );
+  });
+
+  it('rejects a board request without a board id before resolving scope', async () => {
+    await expect(
+      loadTaskCategoryFilterStateAction({
+        surface: 'board',
+        baselineToken: 'design:8',
+        filters: workFilters({ category: 'design' }),
+      }),
+    ).resolves.toEqual({ error: 'Invalid task category filter state' });
+
+    expect(fakes.fakeResolveScope).not.toHaveBeenCalled();
   });
 });
 
@@ -859,5 +1026,49 @@ describe('object relationship, note, notification, and suggestion actions', () =
       userId: USER_ID,
     });
     expect(fakes.fakeObjects.rejectObjectChange).toHaveBeenCalledWith(CHANGE_ID);
+  });
+
+  it('validates and routes category authority and primary project mutations', async () => {
+    await expect(
+      setTaskCategoryAction({ id: OBJECT_ID, category: 'engineering' }),
+    ).resolves.toEqual({ ok: true, id: OBJECT_ID, undoChangeId: CHANGE_ID });
+    await expect(
+      undoTaskCategoryChangeAction({ id: OBJECT_ID, changeId: CHANGE_ID }),
+    ).resolves.toEqual({ ok: true, id: OBJECT_ID });
+    await expect(resetTaskCategoryAction({ id: OBJECT_ID })).resolves.toEqual({
+      ok: true,
+      id: OBJECT_ID,
+    });
+    await expect(retryTaskCategoryAction({ id: OBJECT_ID })).resolves.toEqual({
+      ok: true,
+      id: OBJECT_ID,
+    });
+    await expect(
+      setTaskProjectAction({ id: OBJECT_ID, projectId: OTHER_OBJECT_ID }),
+    ).resolves.toEqual({ ok: true, id: OBJECT_ID });
+
+    expect(fakes.fakeObjects.setTaskCategory).toHaveBeenCalledWith(OBJECT_ID, 'engineering', {
+      kind: 'user',
+      userId: USER_ID,
+    });
+    expect(fakes.fakeObjects.undoTaskCategoryChange).toHaveBeenCalledWith(OBJECT_ID, CHANGE_ID, {
+      kind: 'user',
+      userId: USER_ID,
+    });
+    expect(fakes.fakeObjects.resetTaskCategoryToAutomatic).toHaveBeenCalledWith(OBJECT_ID, {
+      kind: 'user',
+      userId: USER_ID,
+    });
+    expect(fakes.fakeObjects.retryTaskCategory).toHaveBeenCalledWith(OBJECT_ID, {
+      kind: 'user',
+      userId: USER_ID,
+    });
+    expect(fakes.fakeObjects.setTaskProject).toHaveBeenCalledWith(OBJECT_ID, OTHER_OBJECT_ID, {
+      kind: 'user',
+      userId: USER_ID,
+    });
+    await expect(setTaskCategoryAction({ id: OBJECT_ID, category: 'not-real' })).resolves.toEqual({
+      error: 'Invalid task category',
+    });
   });
 });

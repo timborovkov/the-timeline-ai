@@ -1,7 +1,9 @@
 'use server';
+import { getEnv } from '@timeline/shared/env';
 import * as objects from '@timeline/shared/objects';
 import { enqueueSuggestionJob } from '@timeline/shared/queue';
 import * as rateLimit from '@timeline/shared/rate-limit';
+import { taskCategorySchema } from '@timeline/shared/task-categories/types';
 import { withTeam } from '@timeline/shared/team-scope';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
@@ -13,7 +15,13 @@ import { publicActionError } from '@/lib/public-error';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
 import { loadTaskRowsPage } from '@/lib/task-page';
-import { parseWorkFilters, taskObjectFilterFromWorkFilters } from '@/lib/work-filters';
+import {
+  boardItemFilterFromWorkFilters,
+  objectListFilterFromWorkFilters,
+  parseWorkFilters,
+  taskCategoryFilterKeys,
+  taskObjectFilterFromWorkFilters,
+} from '@/lib/work-filters';
 
 // Derived from the Postgres enum so adding a new object type doesn't
 // require synchronizing this schema with the drizzle enum by hand.
@@ -21,6 +29,7 @@ const objectTypeSchema = z.enum(objects.OBJECT_TYPES);
 const searchObjectsSchema = z.object({
   query: z.string().max(200).default(''),
   exclude: uuidSchema.optional(),
+  type: objectTypeSchema.optional(),
 });
 
 type ObjectSuggestionTargetKind = 'object' | 'task';
@@ -118,6 +127,31 @@ const loadTaskRowsSchema = z.object({
     .record(z.string(), z.union([z.string(), z.array(z.string()), z.undefined()]))
     .optional(),
 });
+const taskCategoryFilterStateSchema = z.object({
+  surface: z.enum(['tasks', 'objects', 'board']),
+  boardId: uuidSchema.optional(),
+  baselineToken: z.string().max(1000),
+  filters: z.strictObject({
+    q: z.string().max(200),
+    type: z.string().max(500),
+    status: z.string().max(500),
+    category: z.string().max(500),
+    project: z.string().max(500),
+    stage: z.string().max(500),
+    owner: z.string().max(500),
+    assignee: z.string().max(500),
+    responsible: z.string().max(500),
+    lane: z.string().max(100),
+    priority: z.string().max(20),
+    due: z.string().max(20),
+    dueFrom: z.string().max(40),
+    dueTo: z.string().max(40),
+    createdFrom: z.string().max(40),
+    createdTo: z.string().max(40),
+    updatedFrom: z.string().max(40),
+    updatedTo: z.string().max(40),
+  }),
+});
 
 async function checkUserSearchRateLimit(userId: string): Promise<boolean> {
   const rl = await rateLimit.checkRateLimit({
@@ -140,6 +174,7 @@ export async function searchObjectsAction(input: unknown): Promise<{
     const rows = query
       ? await r.scope.objects.searchObjects({
           query,
+          ...(parsed.data.type ? { type: parsed.data.type } : {}),
           archived: false,
           limit: OBJECT_SEARCH_RESULT_LIMIT + 1,
         })
@@ -174,7 +209,11 @@ export async function loadTaskRowsAction(input: unknown): Promise<{
     if (!(await checkUserSearchRateLimit(r.userId))) {
       return { rows: [], nextCursor: null, error: 'Too many task loads. Try again shortly.' };
     }
-    const filters = taskObjectFilterFromWorkFilters(parseWorkFilters(parsed.data.filters ?? {}));
+    const filters = taskObjectFilterFromWorkFilters(
+      parseWorkFilters(parsed.data.filters ?? {}, {
+        taskCategoriesEnabled: getEnv().TASK_CATEGORY_UI_ENABLED,
+      }),
+    );
     const page = await loadTaskRowsPage(r.scope.objects, parsed.data.cursor ?? null, filters);
     return {
       rows: page.rows,
@@ -292,6 +331,239 @@ export async function updateObjectAction(input: unknown): Promise<ActionState> {
       return { ok: true, id };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to update object') };
+    }
+  });
+}
+
+const taskCategoryMutationSchema = z.object({ id: uuidSchema, category: taskCategorySchema });
+
+export async function setTaskCategoryAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('set_task_category', async () => {
+    const parsed = taskCategoryMutationSchema.safeParse(input);
+    if (!parsed.success) return { error: 'Invalid task category' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const result = await r.scope.objects.setTaskCategory(parsed.data.id, parsed.data.category, {
+        kind: 'user',
+        userId: r.userId,
+      });
+      trackProductEventBestEffort(r.userId, 'task_category_changed', {
+        teamId: r.teamId,
+        userId: r.userId,
+        taskId: parsed.data.id,
+        category: parsed.data.category,
+        mode: 'manual',
+      });
+      revalidateObjectMutationSurfaces(parsed.data.id);
+      return { ok: true, id: parsed.data.id, undoChangeId: result.changeId };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to update category') };
+    }
+  });
+}
+
+export async function undoTaskCategoryChangeAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('undo_task_category_change', async () => {
+    const parsed = z.object({ id: uuidSchema, changeId: uuidSchema }).safeParse(input);
+    if (!parsed.success) return { error: 'Invalid category change' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const result = await r.scope.objects.undoTaskCategoryChange(
+        parsed.data.id,
+        parsed.data.changeId,
+        {
+          kind: 'user',
+          userId: r.userId,
+        },
+      );
+      trackProductEventBestEffort(r.userId, 'task_category_changed', {
+        teamId: r.teamId,
+        userId: r.userId,
+        taskId: parsed.data.id,
+        mode: result.taskCategoryMode === 'manual' ? 'manual' : 'automatic',
+      });
+      revalidateObjectMutationSurfaces(parsed.data.id);
+      return { ok: true, id: parsed.data.id };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to undo category change') };
+    }
+  });
+}
+
+export async function resetTaskCategoryAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('reset_task_category', async () => {
+    const parsed = z.object({ id: uuidSchema }).safeParse(input);
+    if (!parsed.success) return { error: 'Invalid task id' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      await r.scope.objects.resetTaskCategoryToAutomatic(parsed.data.id, {
+        kind: 'user',
+        userId: r.userId,
+      });
+      trackProductEventBestEffort(r.userId, 'task_category_changed', {
+        teamId: r.teamId,
+        userId: r.userId,
+        taskId: parsed.data.id,
+        mode: 'automatic',
+      });
+      revalidateObjectMutationSurfaces(parsed.data.id);
+      return { ok: true, id: parsed.data.id };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to enable automatic category') };
+    }
+  });
+}
+
+export async function retryTaskCategoryAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('retry_task_category', async () => {
+    const parsed = z.object({ id: uuidSchema }).safeParse(input);
+    if (!parsed.success) return { error: 'Invalid task id' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      await r.scope.objects.retryTaskCategory(parsed.data.id, {
+        kind: 'user',
+        userId: r.userId,
+      });
+      revalidateObjectMutationSurfaces(parsed.data.id);
+      return { ok: true, id: parsed.data.id };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to retry category') };
+    }
+  });
+}
+
+export async function setTaskProjectAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('set_task_project', async () => {
+    const parsed = z.object({ id: uuidSchema, projectId: uuidSchema.nullable() }).safeParse(input);
+    if (!parsed.success) return { error: 'Invalid task project' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const result = await r.scope.objects.setTaskProject(parsed.data.id, parsed.data.projectId, {
+        kind: 'user',
+        userId: r.userId,
+      });
+      trackProductEventBestEffort(r.userId, 'task_project_changed', {
+        teamId: r.teamId,
+        userId: r.userId,
+        taskId: parsed.data.id,
+        hasProject: parsed.data.projectId !== null,
+      });
+      revalidateObjectMutationSurfaces(
+        [
+          parsed.data.id,
+          parsed.data.projectId,
+          result.project?.projectId,
+          ...result.touchedIds,
+        ].filter((id): id is string => Boolean(id)),
+      );
+      return { ok: true, id: parsed.data.id };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to update project') };
+    }
+  });
+}
+
+export async function loadTaskCategoryStatesAction(input: unknown): Promise<{
+  rows?: Pick<
+    objects.ObjectRow,
+    | 'id'
+    | 'taskCategory'
+    | 'taskCategoryMode'
+    | 'taskCategorySource'
+    | 'taskCategoryStatus'
+    | 'taskCategoryUpdatedAt'
+  >[];
+  error?: string;
+}> {
+  return runSentryServerAction('load_task_category_states', async () => {
+    const parsed = z.object({ ids: z.array(uuidSchema).min(1).max(200) }).safeParse(input);
+    if (!parsed.success) return { error: 'Invalid task ids' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const rows = await r.scope.objects.listObjects({
+        id: parsed.data.ids,
+        type: 'task',
+        limit: 200,
+      });
+      return {
+        rows: rows.map((row) => ({
+          id: row.id,
+          taskCategory: row.taskCategory,
+          taskCategoryMode: row.taskCategoryMode,
+          taskCategorySource: row.taskCategorySource,
+          taskCategoryStatus: row.taskCategoryStatus,
+          taskCategoryUpdatedAt: row.taskCategoryUpdatedAt,
+        })),
+      };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to refresh categories') };
+    }
+  });
+}
+
+export async function loadTaskCategoryFilterStateAction(input: unknown): Promise<{
+  state?: { token: string; changed: boolean; pending: boolean };
+  error?: string;
+}> {
+  return runSentryServerAction('load_task_category_filter_state', async () => {
+    const parsed = taskCategoryFilterStateSchema.safeParse(input);
+    if (!parsed.success || (parsed.data.surface === 'board' && !parsed.data.boardId)) {
+      return { error: 'Invalid task category filter state' };
+    }
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const filters = parseWorkFilters(parsed.data.filters, { taskCategoriesEnabled: true });
+      const categoryKeys = taskCategoryFilterKeys(filters);
+      if (categoryKeys.length === 0) {
+        return { state: { token: '', changed: false, pending: false } };
+      }
+      const withoutCategory = { ...filters, category: '' };
+      const state =
+        parsed.data.surface === 'board'
+          ? await r.scope.boards.getTaskCategoryFilterRefreshState(
+              parsed.data.boardId ?? '',
+              boardItemFilterFromWorkFilters(withoutCategory),
+              categoryKeys,
+              parsed.data.baselineToken,
+            )
+          : await r.scope.objects.getTaskCategoryFilterRefreshState(
+              parsed.data.surface === 'tasks'
+                ? taskObjectFilterFromWorkFilters(withoutCategory)
+                : {
+                    ...objectListFilterFromWorkFilters(withoutCategory),
+                    type: 'task',
+                    archived: false,
+                  },
+              categoryKeys,
+              parsed.data.baselineToken,
+            );
+      return { state };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to refresh category filter') };
+    }
+  });
+}
+
+export async function loadTaskPrimaryProjectsAction(input: unknown): Promise<{
+  rows?: objects.TaskPrimaryProjectRow[];
+  error?: string;
+}> {
+  return runSentryServerAction('load_task_primary_projects', async () => {
+    const parsed = z.object({ ids: z.array(uuidSchema).min(1).max(200) }).safeParse(input);
+    if (!parsed.success) return { error: 'Invalid task ids' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      return { rows: await r.scope.objects.listPrimaryProjectsForTasks(parsed.data.ids) };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to load task projects') };
     }
   });
 }

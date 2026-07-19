@@ -48,9 +48,10 @@ records:
       before heavy PDF/image dogfooding.
 - [ ] Add dogfood document content: contracts, deal docs, internal guides,
       policies, office rules, onboarding docs, and customer notes.
-- [ ] Surface meeting bot failed states in the operations/job dashboard with a
-      useful retry or rejoin path. Failed meetings are already captured as
-      `meetings.status='failed'`.
+- [ ] Surface terminal meeting bot failed states in the operations/job dashboard
+      with a manual retry or rejoin path. Scheduled Saved Meetings already retry
+      one in-window no-show automatically; final failures are captured as
+      `meetings.status='failed'` or `meetings.status='no_show'`.
 
 ## UX Overhaul
 
@@ -159,6 +160,21 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       should cite evidence, distinguish accepted board state from pending
       suggestions, and expand direct board commands beyond the first
       approval-required add/update/remove card actions.
+
+## Task Categories
+
+- [x] Add LLM-assigned, user-overridable functional categories to task objects,
+      plus an optional durable primary-project relation with project-page quick
+      add, manual/AI linking, and project filtering. Include shared
+      Tasks/Objects/Boards filters, category badges across work surfaces,
+      guarded background classification, resumable backfill, deterministic tests,
+      and an opt-in live eval harness.
+- [ ] Complete task-category launch verification before enabling the production
+      flags: rerun the agent eval, compiled-import, focused Playwright, and live
+      120-case classifier gates; execute a staging dry-run/backfill and query-plan
+      check; then measure the two-week dogfood and pilot thresholds for assignment
+      latency, stale backlog, corrections, `other` rate, filter use, and incorrect
+      project links.
 
 ## Agent Reliability
 

@@ -194,6 +194,13 @@ links. Team settings render one URL-selected section at a time. Save state stays
 local to the edited form. Member, object, source, and artifact labels never
 fall back to UUIDs.
 
+Task category is a compact secondary label in the task/type line, subordinate
+to title, status, assignee, due date, and priority. Pending and failed states
+use readable text, never color alone. Project is a distinct named relation:
+show it in task context lines and editable detail fields, not as another colored
+tag or a fourth dense card metadata cell. Archived tasks replace project and
+category controls with a short instruction to unarchive the task first.
+
 Approval rows lead with the proposed change and use human labels and localized
 values, such as `Due <localized date>` and `Status To do`, rather than payload
 keys or JSON. Free-form names and notes stay literal. Reference-valued changes
@@ -203,6 +210,12 @@ inline and keep additional changes in a collapsed disclosure. Calendar match
 warnings include the proposed schedule. Evidence uses plain-language source
 labels, while every distinct reconciliation record remains reachable through
 one closed `TechnicalDetails` disclosure.
+
+Approval counts use individual review items, not proposal bundles. “Pending”
+means the item status is literally pending. Failed items remain retryable or
+rejectable only under the Failed filter and do not contribute to Home, Work,
+digest, or navigation attention. Work attention combines pending approval items
+with overdue open tasks.
 
 ### Marketing and public pages
 

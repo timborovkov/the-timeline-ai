@@ -1,3 +1,4 @@
+import { getEnv } from '@timeline/shared/env';
 import { withTeam } from '@timeline/shared/team-scope';
 import { notFound, redirect } from 'next/navigation';
 
@@ -12,7 +13,6 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { safeSameOriginPath } from '@/lib/safe-redirect';
-import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
 
 export const metadata: Metadata = {
@@ -44,7 +44,7 @@ function objectPageSuggestionItems(
   const localRefs = new Set<string>();
   for (const item of bundle.items) {
     if (
-      isActionableSuggestionStatus(item.status) &&
+      item.status === 'pending' &&
       suggestionTargetsObject(item, objectId, { boardItemIds, siblingItems: bundle.items })
     ) {
       includedIds.add(item.id);
@@ -60,7 +60,7 @@ function objectPageSuggestionItems(
   }
   if (localRefs.size > 0) {
     for (const item of bundle.items) {
-      if (!isActionableSuggestionStatus(item.status)) continue;
+      if (item.status !== 'pending') continue;
       const ref =
         typeof item.proposedPayload.localRef === 'string'
           ? item.proposedPayload.localRef.toLowerCase()
@@ -101,9 +101,15 @@ export default async function ObjectDetailPage({ params, searchParams }: PagePro
   }
 
   await scope.objects.markVisited(detail.id);
-  const [boardContext, pendingBundles] = await Promise.all([
+  const [boardContext, pendingBundles, projects, primaryProjects] = await Promise.all([
     scope.boards.listObjectBoardContext(detail.id),
     scope.suggestions.listPendingSuggestions(),
+    detail.type === 'task'
+      ? scope.objects.listObjects({ type: 'project', archived: false, limit: 200 })
+      : Promise.resolve([]),
+    detail.type === 'task'
+      ? scope.objects.listPrimaryProjectsForTasks([detail.id])
+      : Promise.resolve([]),
   ]);
   const boardItemIds = new Set(boardContext.map((row) => row.itemId));
   const suggestions = pendingBundles.flatMap((bundle) => {
@@ -123,6 +129,9 @@ export default async function ObjectDetailPage({ params, searchParams }: PagePro
         teamId={active.teamId}
         userId={session.user.id}
         suggestions={suggestions}
+        projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}
+        primaryProject={primaryProjects[0] ?? null}
+        taskCategoriesEnabled={getEnv().TASK_CATEGORY_UI_ENABLED}
       />
     </div>
   );

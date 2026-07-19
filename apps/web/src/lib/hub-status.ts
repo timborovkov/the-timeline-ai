@@ -1,20 +1,18 @@
 import {
-  boards,
-  calendarEvents,
   documents,
   documentVersions,
-  entities,
   type integrations,
   type meetingStatus,
   type mcpServers,
 } from '@timeline/db';
 import { composePostmarkHashAddress } from '@timeline/shared/slug';
 import { withTeam } from '@timeline/shared/team-scope';
-import { and, eq, isNull, lt, ne, or, sql } from 'drizzle-orm';
+import { and, eq, isNull, lt, or, sql } from 'drizzle-orm';
 
 import type * as jobRecovery from '@timeline/shared/job-recovery';
 
 import { db } from '@/lib/db';
+import { OPEN_WORK_STATUS_EXCLUDED } from '@/lib/work-queue';
 
 type TeamScope = ReturnType<typeof withTeam>;
 type IntegrationRow = typeof integrations.$inferSelect;
@@ -22,13 +20,9 @@ type McpServerRow = typeof mcpServers.$inferSelect;
 type MeetingStatus = (typeof meetingStatus.enumValues)[number];
 type JobRecoveryItem = jobRecovery.JobRecoveryItem;
 
-interface WorkStatusSummary {
+export interface WorkAttentionSummary {
   attention: number;
-  objectsTotal: number;
-  tasksOpen: number;
-  tasksOverdue: number;
-  boardsTotal: number;
-  upcomingCalendarEvents: number;
+  overdueTasks: number;
   pendingApprovals: number;
 }
 
@@ -180,87 +174,31 @@ async function countVisibleDocuments(teamId: string, userId: string): Promise<nu
   return rows[0]?.total ?? 0;
 }
 
-async function countTeamRows(conditions: Parameters<typeof and>): Promise<number> {
-  const rows = await db
-    .select({ total: sql<number>`COUNT(*)::int` })
-    .from(entities)
-    .where(and(...conditions));
-  return rows[0]?.total ?? 0;
-}
-
-async function getWorkInventoryCounts(teamId: string, userId: string, now: Date, inTwoWeeks: Date) {
-  const nowIso = now.toISOString();
-  const inTwoWeeksIso = inTwoWeeks.toISOString();
-  const activeObjectConditions = [
-    eq(entities.teamId, teamId),
-    isNull(entities.mergedIntoId),
-    isNull(entities.archivedAt),
-  ];
-  const openTaskConditions = [
-    ...activeObjectConditions,
-    eq(entities.type, 'task'),
-    ne(entities.status, 'done'),
-    ne(entities.status, 'cancelled'),
-  ];
-  const calendarReadVisibility = sql`(
-    ${calendarEvents.visibility} = 'team'
-    OR ${calendarEvents.visibility} = 'private'
-    OR ${calendarEvents.createdByUserId} = ${userId}::uuid
-    OR (${calendarEvents.visibility} = 'specific_users' AND ${userId}::uuid = ANY(${calendarEvents.visibilityUserIds}))
-  )`;
-
-  const [objectsTotal, tasksOpen, tasksOverdue, boardsTotal, upcomingRows] = await Promise.all([
-    countTeamRows(activeObjectConditions),
-    countTeamRows(openTaskConditions),
-    countTeamRows([...openTaskConditions, lt(entities.dueAt, now)]),
-    db
-      .select({ total: sql<number>`COUNT(*)::int` })
-      .from(boards)
-      .where(and(eq(boards.teamId, teamId), isNull(boards.archivedAt))),
-    db
-      .select({ total: sql<number>`COUNT(*)::int` })
-      .from(calendarEvents)
-      .where(
-        and(
-          eq(calendarEvents.teamId, teamId),
-          calendarReadVisibility,
-          isNull(calendarEvents.deletedAt),
-          sql`${calendarEvents.endAt} >= ${nowIso}::timestamptz`,
-          sql`${calendarEvents.startAt} < ${inTwoWeeksIso}::timestamptz`,
-        ),
-      ),
+export async function getWorkAttentionSummary(
+  scope: TeamScope,
+  now = new Date(),
+): Promise<WorkAttentionSummary> {
+  const [approvalCounts, overdueTasks] = await Promise.all([
+    scope.suggestions.getApprovalItemCounts(),
+    scope.objects.countObjects({
+      type: 'task',
+      archived: false,
+      statusNotCaseInsensitive: [...OPEN_WORK_STATUS_EXCLUDED],
+      dueBefore: now,
+    }),
   ]);
-
-  return {
-    objectsTotal,
-    tasksOpen,
-    tasksOverdue,
-    boardsTotal: boardsTotal[0]?.total ?? 0,
-    upcomingCalendarEvents: upcomingRows[0]?.total ?? 0,
-  };
-}
-
-async function getWorkStatusSummary(scope: TeamScope): Promise<WorkStatusSummary> {
-  const now = new Date();
-  const inTwoWeeks = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
-  await scope.requireMembership();
-  const [inventory, pendingApprovals] = await Promise.all([
-    getWorkInventoryCounts(scope.teamId, scope.userId, now, inTwoWeeks),
-    scope.suggestions.countPendingSuggestions(),
-  ]);
-
   return {
     attention: workAttentionCount({
-      pendingApprovals,
-      overdueTasks: inventory.tasksOverdue,
+      pendingApprovals: approvalCounts.pending,
+      overdueTasks,
     }),
-    objectsTotal: inventory.objectsTotal,
-    tasksOpen: inventory.tasksOpen,
-    tasksOverdue: inventory.tasksOverdue,
-    boardsTotal: inventory.boardsTotal,
-    upcomingCalendarEvents: inventory.upcomingCalendarEvents,
-    pendingApprovals,
+    overdueTasks,
+    pendingApprovals: approvalCounts.pending,
   };
+}
+
+export async function getNavWorkAttention(scope: TeamScope, now = new Date()): Promise<number> {
+  return (await getWorkAttentionSummary(scope, now)).attention;
 }
 
 export async function getSourcesStatusSummary(
@@ -349,8 +287,8 @@ export async function getNavAttentionSummary(
 ): Promise<NavAttentionSummary> {
   const scope = withTeam(db, teamId, userId);
   const [work, sources] = await Promise.all([
-    getWorkStatusSummary(scope),
+    getNavWorkAttention(scope),
     getSourcesStatusSummary(scope, { includeRecoverableJobs: false }),
   ]);
-  return { work: work.attention, connections: sources.attention };
+  return { work, connections: sources.attention };
 }

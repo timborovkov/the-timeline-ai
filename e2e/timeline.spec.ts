@@ -918,6 +918,121 @@ test('seeded owner can sign in, switch teams, and sign out', async ({ page }) =>
   await expect(page).toHaveURL(/\/sign-in/);
 });
 
+test('task categories and primary project stay distinct and filter together', async ({
+  browser,
+}) => {
+  const ownerPage = await newSignedInPage(browser, 'owner');
+  const sql = getDbClient();
+  const stamp = Date.now();
+  const projectName = `Faba website redesign ${stamp}`;
+  const taskName = `Prepare homepage wireframes ${stamp}`;
+  let projectId: string | null = null;
+  let taskId: string | null = null;
+  try {
+    await ownerPage.goto('/app/objects/new');
+    await ownerPage.getByLabel('Type').selectOption('project');
+    await ownerPage.getByLabel('Name').fill(projectName);
+    await ownerPage.getByRole('button', { name: 'Create object' }).click();
+    await expect(ownerPage).toHaveURL(/\/app\/objects\/[0-9a-f-]+/);
+    projectId = ownerPage.url().match(/\/app\/objects\/([0-9a-f-]+)/)?.[1] ?? null;
+    if (!projectId) throw new Error('created project id missing');
+
+    await ownerPage.getByRole('link', { name: 'Add task' }).click();
+    await expect(ownerPage.getByLabel('Task project', { exact: true })).toHaveValue(projectId);
+    await ownerPage.getByLabel('Name').fill(taskName);
+    await ownerPage.getByRole('button', { name: 'Create object' }).click();
+    await expect(ownerPage).toHaveURL(new RegExp(`/app/objects/${projectId}$`));
+    await expect(ownerPage.getByText(taskName).first()).toBeVisible();
+
+    const rows = await sql<{ id: string }[]>`
+      SELECT id
+      FROM entities
+      WHERE team_id = ${e2eTeam.id}
+        AND type = 'task'
+        AND canonical_name = ${taskName}
+      LIMIT 1
+    `;
+    taskId = rows[0]?.id ?? null;
+    if (!taskId) throw new Error('created task id missing');
+    const relations = await sql<{ projectId: string }[]>`
+      SELECT to_entity_id AS "projectId"
+      FROM entity_relationships
+      WHERE team_id = ${e2eTeam.id}
+        AND from_entity_id = ${taskId}
+        AND kind = 'child'
+    `;
+    expect(relations).toEqual([{ projectId }]);
+
+    await ownerPage.goto(`/app/objects/${taskId}`);
+    await expect(ownerPage.getByText('Categorizing…').first()).toBeVisible();
+    await ownerPage.getByLabel('Task category').selectOption('design');
+    await expect(ownerPage.getByLabel('Task category')).toHaveValue('design');
+    await expect(ownerPage.getByLabel('Task project', { exact: true })).toHaveValue(projectId);
+
+    await ownerPage.goto(`/app/tasks?category=design&project=${projectId}&view=list`);
+    await expect(ownerPage.getByText(taskName).first()).toBeVisible();
+    await expect(ownerPage.getByText('Design').first()).toBeVisible();
+
+    await ownerPage.goto(`/app/objects/${taskId}`);
+    await ownerPage.getByLabel('Task project', { exact: true }).selectOption('');
+    await expect(ownerPage.getByLabel('Task project', { exact: true })).toHaveValue('');
+    await expect(ownerPage.getByLabel('Task category')).toHaveValue('design');
+    await expect(
+      sql`SELECT 1 FROM entity_relationships WHERE from_entity_id = ${taskId}`,
+    ).resolves.toHaveLength(0);
+
+    await ownerPage.getByLabel('Task category').selectOption('__automatic__');
+    const firstPendingHash = await expect
+      .poll(async () => {
+        const [row] = await sql<{ requestedHash: string | null }[]>`
+          SELECT task_category_requested_input_hash AS "requestedHash"
+          FROM entities WHERE id = ${taskId}
+        `;
+        return row?.requestedHash ?? null;
+      })
+      .not.toBeNull()
+      .then(async () => {
+        const [row] = await sql<{ requestedHash: string }[]>`
+          SELECT task_category_requested_input_hash AS "requestedHash"
+          FROM entities WHERE id = ${taskId}
+        `;
+        return row?.requestedHash;
+      });
+    await ownerPage.getByLabel('Task project', { exact: true }).selectOption(projectId);
+    await expect
+      .poll(async () => {
+        const [row] = await sql<{ requestedHash: string | null }[]>`
+          SELECT task_category_requested_input_hash AS "requestedHash"
+          FROM entities WHERE id = ${taskId}
+        `;
+        return row?.requestedHash ?? null;
+      })
+      .not.toBe(firstPendingHash);
+
+    await sql`
+      UPDATE entities
+      SET task_category_status = 'failed', task_category_requested_input_hash = NULL
+      WHERE id = ${taskId}
+    `;
+    await ownerPage.reload();
+    await ownerPage.getByRole('button', { name: 'Retry automatic category' }).click();
+    await expect
+      .poll(async () => {
+        const [row] = await sql<{ status: string }[]>`
+          SELECT task_category_status AS status FROM entities WHERE id = ${taskId}
+        `;
+        return row?.status;
+      })
+      .toBe('pending');
+  } finally {
+    await ownerPage.goto('about:blank');
+    if (taskId) await sql`DELETE FROM entities WHERE team_id = ${e2eTeam.id} AND id = ${taskId}`;
+    if (projectId)
+      await sql`DELETE FROM entities WHERE team_id = ${e2eTeam.id} AND id = ${projectId}`;
+    await ownerPage.context().close();
+  }
+});
+
 test('onboarding checklist supports manual completion, dismissal, and reopening', async ({
   browser,
 }) => {
@@ -1441,11 +1556,9 @@ test('approvals failed filter shows retryable browser state', async ({ browser }
   const sql = getDbClient();
   const stamp = Date.now();
   const taskTitle = `${E2E_PREFIX} retry failed approval ${stamp}`;
-  const bundle = await withTeam(
-    db,
-    e2eTeam.id,
-    e2eUsers.owner.id,
-  ).suggestions.createOrMergeSuggestionBundle({
+  const scope = withTeam(db, e2eTeam.id, e2eUsers.owner.id);
+  const countsBefore = await scope.suggestions.getApprovalItemCounts();
+  const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
     source: 'background',
     title: `${E2E_PREFIX} failed approval bundle ${stamp}`,
     summary: 'A failed approval should stay reviewable from the failed filter.',
@@ -1473,18 +1586,37 @@ test('approvals failed filter shows retryable browser state', async ({ browser }
     WHERE id = ${itemId}
   `;
 
-  await ownerPage.goto('/app/approvals?status=failed');
-  const failedApproval = ownerPage.locator('article').filter({ hasText: taskTitle });
-  await expect(failedApproval).toBeVisible();
-  await expect(failedApproval.getByText('needs retry', { exact: true })).toBeVisible();
-  await expect(failedApproval.getByText('E2E approval retry failed')).toBeVisible();
-  await expect(failedApproval.getByRole('button', { name: 'Accept' })).toBeVisible();
-  await expect(failedApproval.getByRole('button', { name: 'Reject' })).toBeVisible();
+  try {
+    await ownerPage.goto('/app/approvals?status=failed');
+    const failedApproval = ownerPage.locator('article').filter({ hasText: taskTitle });
+    await expect(failedApproval).toBeVisible();
+    await expect(failedApproval.getByText('needs retry', { exact: true })).toBeVisible();
+    await expect(failedApproval.getByText('E2E approval retry failed')).toBeVisible();
+    await expect(failedApproval.getByRole('button', { name: 'Accept' })).toBeVisible();
+    await expect(failedApproval.getByRole('button', { name: 'Reject' })).toBeVisible();
+    await expect(
+      ownerPage.getByRole('link', { name: `pending ${countsBefore.pending}` }),
+    ).toBeVisible();
+    await expect(
+      ownerPage.getByRole('link', { name: `failed ${countsBefore.failed + 1}` }),
+    ).toBeVisible();
 
-  await ownerPage.goto('/app/approvals?status=pending');
-  await expect(ownerPage.locator('article').filter({ hasText: taskTitle })).toHaveCount(0);
+    await ownerPage.goto('/app/approvals?status=pending');
+    await expect(ownerPage.locator('article').filter({ hasText: taskTitle })).toHaveCount(0);
 
-  await ownerPage.context().close();
+    await ownerPage.goto('/app/work');
+    const pendingApprovalRow = ownerPage.locator('a[href="/app/approvals?status=pending"]');
+    if (countsBefore.pending === 0) {
+      await expect(pendingApprovalRow).toHaveCount(0);
+    } else {
+      await expect(pendingApprovalRow).toContainText(
+        `${countsBefore.pending} pending ${countsBefore.pending === 1 ? 'approval' : 'approvals'}`,
+      );
+    }
+  } finally {
+    await sql`DELETE FROM agent_suggestions WHERE id = ${bundle.id}`;
+    await ownerPage.context().close();
+  }
 });
 
 test('approvals page bulk accept leaves merge proposals for review', async ({ browser }) => {
@@ -1632,6 +1764,9 @@ test('approvals page bulk accept recovers failed proposal rows', async ({ browse
     );
 
     await expect(ownerPage.getByText('1 item(s) failed to apply')).toBeVisible();
+    await expect(ownerPage.locator('li').filter({ hasText: calendarTitle })).toHaveCount(0);
+
+    await ownerPage.goto('/app/approvals?status=failed');
     const failedApproval = ownerPage.locator('li').filter({ hasText: calendarTitle });
     await expect(failedApproval).toBeVisible();
     await expect(
@@ -2241,6 +2376,7 @@ test('owner can create a board and see matching objects on the board', async ({ 
     page.getByRole('button', { name: 'Add to board' }).click(),
   );
   await expect(page.getByRole('link', { name: objectName })).toBeVisible();
+  await page.waitForLoadState('networkidle');
   await page.context().close();
 });
 
@@ -2283,12 +2419,16 @@ test('owner can link and unlink related objects from the object detail page', as
   await expect(page.getByText('related · task')).toBeVisible();
 
   await page.goto(`/app/objects/${primaryId}`);
-  await waitForPost(page, `/app/objects/${primaryId}`, () =>
-    page
-      .locator('li')
-      .filter({ hasText: secondaryName })
-      .getByRole('button', { name: 'Unlink' })
-      .click(),
+  await waitForPost(
+    page,
+    `/app/objects/${primaryId}`,
+    () =>
+      page
+        .locator('li')
+        .filter({ hasText: secondaryName })
+        .getByRole('button', { name: 'Unlink' })
+        .click(),
+    (response) => response.request().postData()?.includes(secondaryId) ?? false,
   );
   await expect(page.getByRole('link', { name: secondaryName })).toHaveCount(0);
   await expect(page.getByText('No relationships yet.')).toBeVisible();
@@ -2296,6 +2436,7 @@ test('owner can link and unlink related objects from the object detail page', as
   await page.goto(`/app/objects/${secondaryId}`);
   await expect(page.getByRole('link', { name: primaryName })).toHaveCount(0);
   await expect(page.getByText('No relationships yet.')).toBeVisible();
+  await page.waitForLoadState('networkidle');
 
   await page.context().close();
 });
@@ -2323,9 +2464,23 @@ test('calendar events can be created, edited, deleted, and visibility-scoped', a
   await expect(ownerPage).toHaveURL(/view=week&date=2026-06-02/);
   await ownerPage.getByRole('button', { name: 'month', exact: true }).click();
   await expect(ownerPage).toHaveURL(/view=month&date=2026-06-02/);
+  const calendarTimezone = (await ownerPage.getByText(/ · ISO weeks$/).textContent())?.split(
+    ' · ',
+  )[0];
+  expect(calendarTimezone).toBeTruthy();
   await ownerPage.getByRole('button', { name: 'Today', exact: true }).click();
-  await expect(ownerPage).toHaveURL(/view=month&date=\d{4}-\d{2}-\d{2}/);
-  await expect(ownerPage).not.toHaveURL(/date=2026-06-02/);
+  const workspaceToday = await ownerPage.evaluate((timezone) => {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date());
+    const part = (type: Intl.DateTimeFormatPartTypes) =>
+      parts.find((value) => value.type === type)?.value;
+    return `${part('year')}-${part('month')}-${part('day')}`;
+  }, calendarTimezone!);
+  await expect(ownerPage).toHaveURL(new RegExp(`view=month&date=${workspaceToday}`));
   await ownerPage.goto('/app/calendar?view=day&date=2026-06-02');
 
   await ownerPage.getByRole('button', { name: 'New' }).click();

@@ -24,6 +24,8 @@ const MEETING_ID = '99999999-0000-0000-0000-000000000001';
 const PRIVATE_MEETING_ID = '99999999-0000-0000-0000-000000000002';
 const CALENDAR_EVENT_ID = 'aaaaaaaa-0000-0000-0000-000000000001';
 const PRIVATE_CALENDAR_EVENT_ID = 'aaaaaaaa-0000-0000-0000-000000000002';
+const PROJECT_ID = 'cccccccc-0000-4000-8000-000000000001';
+const TASK_ID = 'cccccccc-0000-4000-8000-000000000002';
 
 async function seed(pg: PGlite): Promise<void> {
   await pg.exec(`
@@ -34,6 +36,11 @@ async function seed(pg: PGlite): Promise<void> {
     INSERT INTO team_members (team_id, user_id, role) VALUES
       ('${TEAM_ID}', '${OWNER_ID}', 'owner'),
       ('${TEAM_ID}', '${OTHER_ID}', 'member');
+    INSERT INTO entities (id, team_id, type, canonical_name, status) VALUES
+      ('${PROJECT_ID}', '${TEAM_ID}', 'project', 'Export project', 'active'),
+      ('${TASK_ID}', '${TEAM_ID}', 'task', 'Export task', 'todo');
+    INSERT INTO entity_relationships (team_id, from_entity_id, to_entity_id, kind)
+      VALUES ('${TEAM_ID}', '${TASK_ID}', '${PROJECT_ID}', 'child');
 
     INSERT INTO raw_events (
       id, team_id, author_user_id, visibility_owner_user_id, source, content_text,
@@ -196,6 +203,16 @@ describe('team export archive', () => {
 
     const calendarEvents = parseJsonl(await zipText(zip, 'calendar_events.jsonl'));
     expect(calendarEvents.map((row) => row.id)).toEqual([CALENDAR_EVENT_ID]);
+
+    const relationships = parseJsonl(await zipText(zip, 'entity_relationships.jsonl'));
+    expect(relationships).toEqual([
+      expect.objectContaining({
+        teamId: TEAM_ID,
+        fromEntityId: TASK_ID,
+        toEntityId: PROJECT_ID,
+        kind: 'child',
+      }),
+    ]);
 
     const fileRows = parseJsonl(await zipText(zip, 'files.jsonl'));
     expect(fileRows.map((row) => row.kind)).toEqual([

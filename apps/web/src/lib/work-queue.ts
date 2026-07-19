@@ -23,6 +23,8 @@ export interface WorkQueueItem {
   source: 'approval' | 'board' | 'object';
   sourceLabel: string;
   objectType?: string;
+  taskCategory?: objects.ObjectRow['taskCategory'];
+  taskCategoryStatus?: objects.ObjectRow['taskCategoryStatus'];
   dueAt: Date | null;
   priority: number | null;
   updatedAt: Date;
@@ -32,9 +34,8 @@ export interface WorkQueueItem {
 const OBJECT_QUEUE_SOURCE_LIMIT = 60;
 const OBJECT_QUEUE_PRIORITY_LIMIT = 20;
 const WORK_OBJECT_TYPES: objects.ObjectType[] = ['task', 'follow_up', 'project', 'deal'];
-const OPEN_WORK_STATUS_EXCLUDED = ['done', 'cancelled', 'canceled', 'shipped'] as const;
-
-const DONE_STATUSES = new Set(['done', 'cancelled', 'canceled', 'shipped']);
+export const OPEN_WORK_STATUS_EXCLUDED = ['done', 'cancelled', 'canceled', 'shipped'] as const;
+const DONE_STATUSES = new Set<string>(OPEN_WORK_STATUS_EXCLUDED);
 
 function isOpenWorkObject(row: objects.ObjectRow): boolean {
   return !row.archivedAt && !DONE_STATUSES.has(row.status.toLowerCase());
@@ -94,7 +95,7 @@ export function approvalQueueItem(count: number, now: Date): WorkQueueItem | nul
   if (count <= 0) return null;
   return {
     id: 'approvals',
-    href: '/app/approvals',
+    href: '/app/approvals?status=pending',
     title: `${count} pending ${count === 1 ? 'approval' : 'approvals'}`,
     subtitle: 'Agent proposals waiting for review',
     source: 'approval',
@@ -121,6 +122,8 @@ export function boardQueueItem(
     source: 'board',
     sourceLabel: 'Board item',
     objectType: row.object.type,
+    taskCategory: row.object.taskCategory,
+    taskCategoryStatus: row.object.taskCategoryStatus,
     dueAt: row.dueAt,
     priority: row.priority,
     updatedAt: row.updatedAt,
@@ -157,6 +160,8 @@ export function objectQueueItem(
     source: 'object',
     sourceLabel: row.type === 'task' ? 'Task' : 'Object',
     objectType: row.type,
+    taskCategory: row.taskCategory,
+    taskCategoryStatus: row.taskCategoryStatus,
     dueAt: row.dueAt,
     priority: row.priority,
     updatedAt: row.updatedAt,

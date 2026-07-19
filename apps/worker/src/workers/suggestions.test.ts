@@ -16,6 +16,7 @@ import {
   type Db,
 } from '@timeline/db';
 import { suggestions } from '@timeline/shared';
+import { resetEnvForTests } from '@timeline/shared/env';
 import { RECONCILIATION_PLANNER_PROMPT_VERSION } from '@timeline/shared/reconciliation/planner';
 import { withTeam } from '@timeline/shared/team-scope';
 import { eq, sql } from 'drizzle-orm';
@@ -40,6 +41,8 @@ const MEMBER_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const INACTIVE_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 const OBJECT_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 const MODEL_ID = 'test-suggestion-model';
+const ORIGINAL_TASK_CATEGORY_CLASSIFICATION_ENABLED =
+  process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED;
 
 async function seed(pg: PGlite): Promise<void> {
   await pg.exec(`
@@ -88,7 +91,10 @@ async function seedRawEvent(
 }
 
 function env() {
-  return { OPENROUTER_API_KEY: 'test-key' } as never;
+  return {
+    OPENROUTER_API_KEY: 'test-key',
+    TASK_CATEGORY_CLASSIFICATION_ENABLED: true,
+  } as never;
 }
 
 function emptyModel() {
@@ -278,6 +284,8 @@ describe('processSuggestionJobForTests', () => {
   let db: ReturnType<typeof drizzle>;
 
   beforeEach(async () => {
+    process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED = 'true';
+    resetEnvForTests();
     pg = new PGlite();
     await applyDbMigrations(pg);
     await seed(pg);
@@ -286,6 +294,13 @@ describe('processSuggestionJobForTests', () => {
 
   afterEach(async () => {
     await pg.close();
+    if (ORIGINAL_TASK_CATEGORY_CLASSIFICATION_ENABLED === undefined) {
+      delete process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED;
+    } else {
+      process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED =
+        ORIGINAL_TASK_CATEGORY_CLASSIFICATION_ENABLED;
+    }
+    resetEnvForTests();
   });
 
   it('skips queued ingest webhook proposals when the source setting is disabled before processing', async () => {
@@ -329,7 +344,7 @@ describe('processSuggestionJobForTests', () => {
       .limit(1);
     expect(row?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'ingest_webhook_proposals_disabled',
-      suggestion_model_version: `${MODEL_ID}@2026-06-a`,
+      suggestion_model_version: `${MODEL_ID}@2026-07-a`,
     });
     expect(row?.sourceMetadata).toHaveProperty('suggestions_skipped_at');
   });
@@ -372,7 +387,7 @@ describe('processSuggestionJobForTests', () => {
       .limit(1);
     expect(row?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'ingest_webhook_proposals_disabled',
-      suggestion_model_version: `${MODEL_ID}@2026-06-a`,
+      suggestion_model_version: `${MODEL_ID}@2026-07-a`,
     });
   });
 
@@ -2046,7 +2061,7 @@ describe('processSuggestionJobForTests', () => {
 
     const event = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
     expect(event?.sourceMetadata).toMatchObject({
-      suggestion_pre_extract_model_version: `${MODEL_ID}@2026-06-a`,
+      suggestion_pre_extract_model_version: `${MODEL_ID}@2026-07-a`,
     });
     expect(event?.sourceMetadata).toHaveProperty('suggestions_pre_extracted_at');
   });
@@ -3051,6 +3066,224 @@ describe('processSuggestionJobForTests', () => {
     });
   });
 
+  it('enriches a proposed task with a validated category and existing project relation', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000c1';
+    const project = await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({
+      type: 'project',
+      canonicalName: 'Faba website redesign',
+      actor: { kind: 'user', userId: OWNER_ID },
+    });
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'For the Faba website redesign, prepare the homepage wireframes.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Prepare Faba wireframes',
+            confidence: 'high',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'task',
+                title: 'Prepare homepage wireframes',
+                proposedPayload: {
+                  canonicalName: 'Prepare homepage wireframes',
+                  parentObjectId: project.id,
+                  createProjectName: 'Conflicting new project',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const classifyTaskCategory = vi.fn().mockResolvedValue({
+      category: 'design',
+      confidence: 0.96,
+      model: 'task-category-model',
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, classifyTaskCategory, modelId: MODEL_ID },
+    );
+
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundle?.items[0]?.proposedPayload).toMatchObject({
+      parentObjectId: project.id,
+      projectName: 'Faba website redesign',
+      taskCategory: 'design',
+      taskCategoryConfidence: 0.96,
+      taskCategoryModel: 'task-category-model',
+      taskCategoryMode: 'automatic',
+      taskCategoryTaxonomyVersion: 'task-categories-v1',
+    });
+    expect(bundle?.items[0]?.proposedPayload.taskCategoryInputHash).toEqual(
+      expect.stringMatching(/^[a-f0-9]{64}$/),
+    );
+    expect(bundle?.items[0]?.proposedPayload).not.toHaveProperty('createProjectName');
+    expect(classifyTaskCategory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Prepare homepage wireframes',
+        primaryProjectName: 'Faba website redesign',
+      }),
+    );
+    const extractionCall = chat.mock.calls[0]?.[0] as unknown as { prompt: string } | undefined;
+    expect(extractionCall?.prompt).toContain(`${project.id}: project "Faba website redesign"`);
+
+    await withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.acceptSuggestionItem(
+      bundle?.items[0]?.id ?? '',
+    );
+    const [task] = await db
+      .select()
+      .from(entities)
+      .where(eq(entities.canonicalName, 'Prepare homepage wireframes'));
+    expect(task).toMatchObject({
+      taskCategory: 'design',
+      taskCategoryMode: 'automatic',
+      taskCategoryStatus: 'ready',
+    });
+    const [relation] = await db
+      .select()
+      .from(entityRelationships)
+      .where(eq(entityRelationships.fromEntityId, task?.id ?? ''));
+    expect(relation).toMatchObject({ toEntityId: project.id, kind: 'child' });
+  });
+
+  it('canonicalizes and enriches an object-shaped task proposal', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000c3';
+    const project = await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({
+      type: 'project',
+      canonicalName: 'Faba website redesign',
+      actor: { kind: 'user', userId: OWNER_ID },
+    });
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'For the Faba website redesign, prepare the mobile wireframes.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Prepare Faba mobile wireframes',
+            confidence: 'high',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'Prepare mobile wireframes',
+                proposedPayload: {
+                  type: 'task',
+                  canonicalName: 'Prepare mobile wireframes',
+                  parentObjectId: project.id,
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const classifyTaskCategory = vi.fn().mockResolvedValue({
+      category: 'design',
+      confidence: 0.94,
+      model: 'task-category-model',
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, classifyTaskCategory, modelId: MODEL_ID },
+    );
+
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundle?.items[0]).toMatchObject({
+      targetKind: 'task',
+      proposedPayload: {
+        type: 'task',
+        parentObjectId: project.id,
+        projectName: 'Faba website redesign',
+        taskCategory: 'design',
+        taskCategoryMode: 'automatic',
+      },
+    });
+    expect(classifyTaskCategory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Prepare mobile wireframes',
+        primaryProjectName: 'Faba website redesign',
+      }),
+    );
+  });
+
+  it('classifies the maximum proposal shape in one bounded batch call', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000c2';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'Prepare wireframes, write launch copy, and implement the API.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const taskNames = Array.from({ length: 25 }, (_unused, index) => `Task ${String(index + 1)}`);
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: Array.from({ length: 5 }, (_unused, bundleIndex) => ({
+          title: `Launch work ${String(bundleIndex + 1)}`,
+          confidence: 'high',
+          items: taskNames.slice(bundleIndex * 5, bundleIndex * 5 + 5).map((canonicalName) => ({
+            operation: 'create',
+            targetKind: 'task',
+            title: canonicalName,
+            proposedPayload: { canonicalName },
+          })),
+        })),
+      },
+    });
+    const classifyTaskCategories = vi
+      .fn()
+      .mockImplementation((packets: readonly { key: string }[]) =>
+        Promise.resolve(
+          packets.map(({ key }) => ({
+            key,
+            category: 'design' as const,
+            confidence: 0.9,
+            model: 'task-category-model',
+          })),
+        ),
+      );
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, classifyTaskCategories, modelId: MODEL_ID },
+    );
+
+    expect(classifyTaskCategories).toHaveBeenCalledTimes(1);
+    expect(classifyTaskCategories.mock.calls[0]?.[0]).toHaveLength(25);
+  });
+
   it('rewrites duplicate creates using objects outside the prompt context window', async () => {
     const rawEventId = '10000000-0000-0000-0000-000000000031';
     const [oldObject] = await db
@@ -3596,7 +3829,7 @@ describe('processSuggestionJobForTests', () => {
     const [event] = await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId));
     expect(event?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'visibility=private',
-      suggestion_model_version: `${MODEL_ID}@2026-06-a`,
+      suggestion_model_version: `${MODEL_ID}@2026-07-a`,
     });
   });
 
@@ -5708,11 +5941,11 @@ describe('processSuggestionJobForTests', () => {
       .from(rawEvents);
     expect(skipped.find((row) => row.id === privateEventId)?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'visibility=private',
-      suggestion_model_version: `${MODEL_ID}@2026-06-a`,
+      suggestion_model_version: `${MODEL_ID}@2026-07-a`,
     });
     expect(skipped.find((row) => row.id === specificEventId)?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'visibility=specific_users',
-      suggestion_model_version: `${MODEL_ID}@2026-06-a`,
+      suggestion_model_version: `${MODEL_ID}@2026-07-a`,
     });
   });
 
@@ -5748,11 +5981,11 @@ describe('processSuggestionJobForTests', () => {
       .from(rawEvents);
     expect(skipped.find((row) => row.id === inactivePrivateId)?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'visibility=private',
-      suggestion_model_version: `${MODEL_ID}@2026-06-a`,
+      suggestion_model_version: `${MODEL_ID}@2026-07-a`,
     });
     expect(skipped.find((row) => row.id === emptySpecificId)?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'visibility=specific_users',
-      suggestion_model_version: `${MODEL_ID}@2026-06-a`,
+      suggestion_model_version: `${MODEL_ID}@2026-07-a`,
     });
     expect(await suggestionCounts(pg)).toEqual({ suggestions: 0, items: 0 });
   });
@@ -5781,7 +6014,7 @@ describe('processSuggestionJobForTests', () => {
       .update(rawEvents)
       .set({
         sourceMetadata: {
-          suggestion_pre_extract_model_version: `${MODEL_ID}@2026-06-a`,
+          suggestion_pre_extract_model_version: `${MODEL_ID}@2026-07-a`,
           suggestions_pre_extracted_at: '2026-05-27T10:00:00.000Z',
           extracted_at: '2026-05-27T10:01:00.000Z',
           extraction_model_version: 'test-extract@1',
@@ -5801,8 +6034,8 @@ describe('processSuggestionJobForTests', () => {
     );
     const event = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
     expect(event?.sourceMetadata).toMatchObject({
-      suggestion_pre_extract_model_version: `${MODEL_ID}@2026-06-a`,
-      suggestion_model_version: `${MODEL_ID}@2026-06-a`,
+      suggestion_pre_extract_model_version: `${MODEL_ID}@2026-07-a`,
+      suggestion_model_version: `${MODEL_ID}@2026-07-a`,
     });
     expect(await suggestionCounts(pg)).toEqual({ suggestions: 1, items: 2 });
   });

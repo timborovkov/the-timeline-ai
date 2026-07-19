@@ -17,6 +17,7 @@ async function stabilize(page: Page) {
   await page.evaluate(
     async ({ namespace, runId }) => {
       await document.fonts.ready;
+      window.scrollTo(0, 0);
       document.querySelector('nextjs-portal')?.remove();
       const text = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
       for (let node = text.nextNode(); node; node = text.nextNode()) {

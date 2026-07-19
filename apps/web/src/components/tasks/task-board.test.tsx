@@ -1,21 +1,39 @@
 // @vitest-environment happy-dom
 
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, cleanup, render as testingRender, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as objects from '@timeline/shared/objects/types';
+import type { PropsWithChildren, ReactElement } from 'react';
 
-const fakes = vi.hoisted(() => ({
-  refresh: vi.fn(),
-  updateObjectAction: vi.fn(),
-  loadTaskRowsAction: vi.fn(),
-}));
+const fakes = vi.hoisted(() => {
+  const refresh = vi.fn();
+  return {
+    refresh,
+    router: { refresh },
+    updateObjectAction: vi.fn(),
+    loadTaskRowsAction: vi.fn(),
+    loadTaskPrimaryProjectsAction: vi.fn(),
+    loadTaskCategoryStatesAction: vi.fn(),
+    setTaskCategoryAction: vi.fn(),
+    resetTaskCategoryAction: vi.fn(),
+    searchObjectsAction: vi.fn(),
+    setTaskProjectAction: vi.fn(),
+  };
+});
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
+vi.mock('next/navigation', () => ({ useRouter: () => fakes.router }));
 vi.mock('@/app/actions/objects', () => ({
   updateObjectAction: fakes.updateObjectAction,
   loadTaskRowsAction: fakes.loadTaskRowsAction,
+  loadTaskPrimaryProjectsAction: fakes.loadTaskPrimaryProjectsAction,
+  loadTaskCategoryStatesAction: fakes.loadTaskCategoryStatesAction,
+  setTaskCategoryAction: fakes.setTaskCategoryAction,
+  resetTaskCategoryAction: fakes.resetTaskCategoryAction,
+  searchObjectsAction: fakes.searchObjectsAction,
+  setTaskProjectAction: fakes.setTaskProjectAction,
 }));
 vi.mock('@/lib/task-board-config', () => ({
   TASK_BOARD_COLUMN_RENDER_LIMIT: 3,
@@ -26,6 +44,17 @@ vi.mock('@/lib/task-board-config', () => ({
 }));
 
 const { TaskBoard } = await import('./task-board.js');
+
+function render(ui: ReactElement) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { gcTime: Number.POSITIVE_INFINITY, retry: 1, retryDelay: 0 } },
+  });
+  return testingRender(ui, {
+    wrapper: ({ children }: PropsWithChildren) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    ),
+  });
+}
 
 function task(input: Partial<objects.ObjectRow> = {}): objects.ObjectRow {
   return {
@@ -39,6 +68,11 @@ function task(input: Partial<objects.ObjectRow> = {}): objects.ObjectRow {
     assigneeUserId: 'user-1',
     dueAt: new Date('2099-07-04T00:00:00.000Z'),
     agentSuggested: false,
+    taskCategory: null,
+    taskCategoryMode: null,
+    taskCategorySource: null,
+    taskCategoryStatus: null,
+    taskCategoryUpdatedAt: null,
     archivedAt: null,
     aliases: [],
     metadata: {},
@@ -123,11 +157,24 @@ function renderBoard(
 describe('TaskBoard', () => {
   beforeEach(() => {
     cleanup();
+    delete document.body.dataset.taskCategoriesEnabled;
     fakes.refresh.mockReset();
     fakes.updateObjectAction.mockReset();
     fakes.loadTaskRowsAction.mockReset();
+    fakes.loadTaskPrimaryProjectsAction.mockReset();
+    fakes.loadTaskCategoryStatesAction.mockReset();
+    fakes.setTaskCategoryAction.mockReset();
+    fakes.resetTaskCategoryAction.mockReset();
+    fakes.searchObjectsAction.mockReset();
+    fakes.setTaskProjectAction.mockReset();
     fakes.updateObjectAction.mockResolvedValue({ ok: true });
     fakes.loadTaskRowsAction.mockResolvedValue({ rows: [], nextCursor: null });
+    fakes.loadTaskPrimaryProjectsAction.mockResolvedValue({ rows: [] });
+    fakes.loadTaskCategoryStatesAction.mockResolvedValue({ rows: [] });
+    fakes.setTaskCategoryAction.mockResolvedValue({ ok: true });
+    fakes.resetTaskCategoryAction.mockResolvedValue({ ok: true });
+    fakes.searchObjectsAction.mockResolvedValue({ results: [] });
+    fakes.setTaskProjectAction.mockResolvedValue({ ok: true });
   });
 
   it('opens a task side panel route from the card instead of object detail', () => {
@@ -139,6 +186,395 @@ describe('TaskBoard', () => {
     expect(screen.getByText('Ada Lovelace')).toBeTruthy();
     expect(screen.getByText('Due 2099-07-04')).toBeTruthy();
     expect(screen.getByText('P2')).toBeTruthy();
+  });
+
+  it('starts a fresh category polling window when the pending task set changes', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-13T10:00:00.000Z'));
+    try {
+      const first = task({ id: 'task-1', taskCategoryStatus: 'pending' });
+      const view = renderBoard(null, [first]);
+      act(() => {
+        vi.advanceTimersByTime(62_500);
+      });
+      fakes.loadTaskCategoryStatesAction.mockClear();
+
+      const second = task({
+        id: 'task-2',
+        canonicalName: 'Newly pending task',
+        taskCategoryStatus: 'pending',
+      });
+      view.rerender(
+        <TaskBoard
+          rows={[first, second]}
+          columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+          selectedTaskId={null}
+          view="kanban"
+          members={[
+            { id: 'user-1', label: 'Ada Lovelace' },
+            { id: 'user-2', label: 'Grace Hopper' },
+          ]}
+          totalCount={2}
+          nextCursor={null}
+          filterParams={{}}
+        />,
+      );
+      act(() => {
+        vi.advanceTimersByTime(2_500);
+      });
+
+      expect(fakes.loadTaskCategoryStatesAction).toHaveBeenCalledWith({
+        ids: ['task-1', 'task-2'],
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('continues polling pending cards after the fast freshness window', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-13T10:00:00.000Z'));
+    fakes.loadTaskCategoryStatesAction.mockResolvedValue({
+      rows: [{ id: 'task-1', taskCategoryStatus: 'pending' }],
+    });
+    try {
+      renderBoard(null, [task({ taskCategoryStatus: 'pending' })]);
+
+      await act(async () => vi.advanceTimersByTimeAsync(60_000));
+      fakes.loadTaskCategoryStatesAction.mockClear();
+      await act(async () => vi.advanceTimersByTimeAsync(14_999));
+      expect(fakes.loadTaskCategoryStatesAction).not.toHaveBeenCalled();
+      await act(async () => vi.advanceTimersByTimeAsync(1));
+
+      expect(fakes.loadTaskCategoryStatesAction).toHaveBeenCalledWith({ ids: ['task-1'] });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops polling a category that remains pending beyond the bounded window', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-13T10:00:00.000Z'));
+    fakes.loadTaskCategoryStatesAction.mockResolvedValue({
+      rows: [{ id: 'task-1', taskCategoryStatus: 'pending' }],
+    });
+    try {
+      renderBoard(null, [task({ taskCategoryStatus: 'pending' })]);
+
+      await act(async () => vi.advanceTimersByTimeAsync(10 * 60_000));
+      fakes.loadTaskCategoryStatesAction.mockClear();
+      await act(async () => vi.advanceTimersByTimeAsync(60_000));
+
+      expect(fakes.loadTaskCategoryStatesAction).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('polls every pending task in bounded chunks', async () => {
+    const rows = Array.from({ length: 201 }, (_, index) =>
+      task({
+        id: `task-${index + 1}`,
+        canonicalName: `Pending task ${index + 1}`,
+        taskCategoryStatus: 'pending',
+      }),
+    );
+    fakes.loadTaskCategoryStatesAction.mockImplementation(({ ids }: { ids: string[] }) => ({
+      rows: ids.map((id) => ({ id, taskCategoryStatus: 'pending' })),
+    }));
+
+    renderBoard(null, rows);
+
+    await waitFor(() => {
+      expect(fakes.loadTaskCategoryStatesAction).toHaveBeenCalledTimes(2);
+    });
+    expect(fakes.loadTaskCategoryStatesAction).toHaveBeenCalledWith({
+      ids: rows.slice(0, 200).map((row) => row.id),
+    });
+    expect(fakes.loadTaskCategoryStatesAction).toHaveBeenCalledWith({ ids: ['task-201'] });
+  });
+
+  it('applies polled category state to a previously loaded older task', async () => {
+    const user = userEvent.setup();
+    fakes.loadTaskRowsAction.mockResolvedValue({
+      rows: [
+        task({
+          id: 'task-2',
+          canonicalName: 'Older pending task',
+          taskCategoryStatus: 'pending',
+        }),
+      ],
+      nextCursor: null,
+    });
+    fakes.loadTaskCategoryStatesAction.mockResolvedValue({
+      rows: [
+        {
+          id: 'task-2',
+          taskCategory: 'design',
+          taskCategoryMode: 'automatic',
+          taskCategorySource: 'llm',
+          taskCategoryStatus: 'ready',
+          taskCategoryUpdatedAt: new Date('2026-07-13T10:00:00.000Z'),
+        },
+      ],
+    });
+    render(
+      <TaskBoard
+        rows={[task()]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="kanban"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+        totalCount={2}
+        nextCursor="older-cursor"
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Load older tasks' }));
+    expect(screen.getByRole('link', { name: 'Older pending task' })).toBeTruthy();
+    expect(screen.getByText('Categorizing…')).toBeTruthy();
+
+    await waitFor(
+      () => {
+        expect(screen.getByText('Design')).toBeTruthy();
+        expect(screen.queryByText('Categorizing…')).toBeNull();
+      },
+      { timeout: 4_000 },
+    );
+  }, 7_000);
+
+  it('does not poll pending categories while the category UI is disabled', () => {
+    vi.useFakeTimers();
+    document.body.dataset.taskCategoriesEnabled = 'false';
+    try {
+      renderBoard(null, [task({ taskCategoryStatus: 'pending' })]);
+      act(() => {
+        vi.advanceTimersByTime(60_000);
+      });
+
+      expect(fakes.loadTaskCategoryStatesAction).not.toHaveBeenCalled();
+    } finally {
+      delete document.body.dataset.taskCategoriesEnabled;
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not expose the category column or bulk editing while the category UI is disabled', () => {
+    render(
+      <TaskBoard
+        rows={[task()]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="list"
+        members={[]}
+        totalCount={1}
+        nextCursor={null}
+        taskCategoriesEnabled={false}
+      />,
+    );
+
+    expect(screen.queryByRole('option', { name: 'Category' })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Bulk category' })).toBeNull();
+    expect(screen.queryByRole('columnheader', { name: 'Category' })).toBeNull();
+    expect(screen.queryByText('Needs category')).toBeNull();
+  });
+
+  it('does not render the category field in the selected-task panel while disabled', () => {
+    render(
+      <TaskBoard
+        rows={[task()]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId="task-1"
+        view="kanban"
+        members={[]}
+        totalCount={1}
+        nextCursor={null}
+        taskCategoriesEnabled={false}
+      />,
+    );
+
+    expect(screen.queryByText('Category')).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Task category' })).toBeNull();
+  });
+
+  it('removes an asynchronously-hydrated project from the task card after clearing it', async () => {
+    fakes.loadTaskPrimaryProjectsAction.mockResolvedValue({
+      rows: [
+        {
+          taskId: 'task-1',
+          projectId: 'project-1',
+          projectName: 'Faba redesign',
+          archivedAt: null,
+        },
+      ],
+    });
+    renderBoard('task-1');
+    await screen.findAllByText(/Faba redesign/);
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Task project' }), '');
+
+    await waitFor(() => {
+      expect(fakes.setTaskProjectAction).toHaveBeenCalledWith({ id: 'task-1', projectId: null });
+      expect(screen.queryByText('Faba redesign')).toBeNull();
+    });
+  });
+
+  it('reconciles an optimistic project assignment with refreshed server project data', async () => {
+    const rows = [task()];
+    const renderProps = {
+      rows,
+      columns: ['todo', 'doing', 'done', 'blocked', 'cancelled'],
+      selectedTaskId: 'task-1',
+      view: 'kanban' as const,
+      members: [],
+      totalCount: 1,
+      nextCursor: null,
+      initialProjectsHydrated: true,
+    };
+    const view = render(
+      <TaskBoard
+        {...renderProps}
+        projects={[
+          { id: 'project-old', label: 'Old project' },
+          { id: 'project-new', label: 'Faba redesign' },
+        ]}
+        primaryProjects={[
+          {
+            taskId: 'task-1',
+            projectId: 'project-old',
+            projectName: 'Old project',
+            archivedAt: null,
+          },
+        ]}
+      />,
+    );
+
+    await userEvent.selectOptions(
+      screen.getByRole('combobox', { name: 'Task project' }),
+      'project-new',
+    );
+    await waitFor(() => {
+      expect(fakes.refresh).toHaveBeenCalled();
+    });
+
+    view.rerender(
+      <TaskBoard
+        {...renderProps}
+        projects={[
+          { id: 'project-old', label: 'Old project' },
+          { id: 'project-new', label: 'Faba website redesign' },
+        ]}
+        primaryProjects={[
+          {
+            taskId: 'task-1',
+            projectId: 'project-new',
+            projectName: 'Faba website redesign',
+            archivedAt: null,
+          },
+        ]}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Faba website redesign').length).toBeGreaterThan(0);
+      expect(screen.queryByText('Faba redesign')).toBeNull();
+    });
+  });
+
+  it('does not refetch initial tasks whose no-project state was hydrated by the server', async () => {
+    render(
+      <TaskBoard
+        rows={[task()]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="kanban"
+        members={[]}
+        primaryProjects={[]}
+        initialProjectsHydrated
+        totalCount={1}
+        nextCursor={null}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Send proposal')).toBeTruthy();
+    });
+    expect(fakes.loadTaskPrimaryProjectsAction).not.toHaveBeenCalled();
+  });
+
+  it('retries project hydration after a transient action failure', async () => {
+    fakes.loadTaskPrimaryProjectsAction
+      .mockResolvedValueOnce({ error: 'Temporary project lookup failure' })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            taskId: 'task-1',
+            projectId: 'project-1',
+            projectName: 'Recovered project',
+            archivedAt: null,
+          },
+        ],
+      });
+
+    renderBoard();
+
+    expect(await screen.findByText('Recovered project')).toBeTruthy();
+    expect(fakes.loadTaskPrimaryProjectsAction).toHaveBeenCalledTimes(2);
+  });
+
+  it('finds and assigns a remote project from the task project selector', async () => {
+    fakes.searchObjectsAction.mockResolvedValue({
+      results: [
+        {
+          id: 'project-remote',
+          type: 'project',
+          canonicalName: 'Faba website redesign',
+        },
+      ],
+    });
+    renderBoard('task-1');
+
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search task projects' }), 'Faba');
+    await screen.findByRole('option', { name: 'Faba website redesign' }, { timeout: 1_000 });
+    await userEvent.selectOptions(
+      screen.getByRole('combobox', { name: 'Task project' }),
+      'project-remote',
+    );
+
+    await waitFor(() => {
+      expect(fakes.setTaskProjectAction).toHaveBeenCalledWith({
+        id: 'task-1',
+        projectId: 'project-remote',
+      });
+    });
+  });
+
+  it('does not label an active hydrated project as archived when it was not preloaded', () => {
+    render(
+      <TaskBoard
+        rows={[task()]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId="task-1"
+        view="kanban"
+        members={[]}
+        projects={[]}
+        primaryProjects={[
+          {
+            taskId: 'task-1',
+            projectId: 'project-outside-window',
+            projectName: 'Long-running active project',
+            archivedAt: null,
+          },
+        ]}
+        totalCount={1}
+        nextCursor={null}
+      />,
+    );
+
+    expect(screen.getByRole('option', { name: 'Long-running active project' })).toBeTruthy();
+    expect(
+      screen.queryByRole('option', { name: /Long-running active project · Archived/ }),
+    ).toBeNull();
   });
 
   it('does not render legacy agentSuggested badges on task rows', () => {
@@ -399,6 +835,131 @@ describe('TaskBoard', () => {
     expect(screen.queryByRole('button', { name: 'Load older tasks' })).toBeNull();
   });
 
+  it('drops loaded pages and uses the refreshed cursor when category membership changes', async () => {
+    const user = userEvent.setup();
+    fakes.loadTaskRowsAction
+      .mockResolvedValueOnce({
+        rows: [task({ id: 'task-2', canonicalName: 'Stale category match' })],
+        nextCursor: null,
+      })
+      .mockResolvedValueOnce({
+        rows: [task({ id: 'task-4', canonicalName: 'New older category match' })],
+        nextCursor: null,
+      });
+    const { rerender } = render(
+      <TaskBoard
+        rows={[task({ id: 'task-1', canonicalName: 'Current category match' })]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="kanban"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+        totalCount={2}
+        nextCursor="older-cursor"
+        filterParams={{ category: 'design' }}
+        categoryFilterRefreshToken="category-version-1"
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Load older tasks' }));
+    await screen.findByRole('link', { name: 'Stale category match' });
+
+    rerender(
+      <TaskBoard
+        rows={[task({ id: 'task-3', canonicalName: 'Refreshed category match' })]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="kanban"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+        totalCount={2}
+        nextCursor="refreshed-cursor"
+        filterParams={{ category: 'design' }}
+        categoryFilterRefreshToken="category-version-2"
+      />,
+    );
+
+    expect(screen.queryByRole('link', { name: 'Stale category match' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Refreshed category match' })).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: 'Load older tasks' }));
+    await screen.findByRole('link', { name: 'New older category match' });
+    expect(fakes.loadTaskRowsAction).toHaveBeenNthCalledWith(1, {
+      cursor: 'older-cursor',
+      filters: { category: 'design' },
+    });
+    expect(fakes.loadTaskRowsAction).toHaveBeenNthCalledWith(2, {
+      cursor: 'refreshed-cursor',
+      filters: { category: 'design' },
+    });
+  });
+
+  it('drops loaded project-filter pages after a task project changes', async () => {
+    const user = userEvent.setup();
+    fakes.loadTaskRowsAction
+      .mockResolvedValueOnce({
+        rows: [task({ id: 'task-2', canonicalName: 'Stale project match' })],
+        nextCursor: null,
+      })
+      .mockResolvedValueOnce({
+        rows: [task({ id: 'task-4', canonicalName: 'New older project match' })],
+        nextCursor: null,
+      });
+    fakes.loadTaskPrimaryProjectsAction.mockResolvedValue({
+      rows: [
+        {
+          taskId: 'task-2',
+          projectId: 'project-a',
+          projectName: 'Project A',
+          archivedAt: null,
+        },
+      ],
+    });
+    const props = {
+      columns: ['todo', 'doing', 'done', 'blocked', 'cancelled'],
+      selectedTaskId: 'task-2',
+      view: 'kanban' as const,
+      members: [{ id: 'user-1', label: 'Ada Lovelace' }],
+      projects: [
+        { id: 'project-a', label: 'Project A' },
+        { id: 'project-b', label: 'Project B' },
+      ],
+      totalCount: 2,
+      filterParams: { project: 'project-a' },
+    };
+    const view = render(
+      <TaskBoard
+        {...props}
+        rows={[task({ id: 'task-1', canonicalName: 'Current project match' })]}
+        nextCursor="older-cursor"
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Load older tasks' }));
+    await screen.findByRole('link', { name: 'Stale project match' });
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Task project' }), 'project-b');
+
+    await waitFor(() => {
+      expect(fakes.setTaskProjectAction).toHaveBeenCalledWith({
+        id: 'task-2',
+        projectId: 'project-b',
+      });
+      expect(screen.queryByRole('link', { name: 'Stale project match' })).toBeNull();
+    });
+
+    view.rerender(
+      <TaskBoard
+        {...props}
+        rows={[task({ id: 'task-3', canonicalName: 'Refreshed project match' })]}
+        nextCursor="refreshed-cursor"
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Load older tasks' }));
+    await screen.findByRole('link', { name: 'New older project match' });
+    expect(fakes.loadTaskRowsAction).toHaveBeenNthCalledWith(2, {
+      cursor: 'refreshed-cursor',
+      filters: { project: 'project-a' },
+    });
+  });
+
   it('drops previously loaded tasks when server filters change', () => {
     const { rerender } = render(
       <TaskBoard
@@ -537,6 +1098,58 @@ describe('TaskBoard', () => {
         assigneeUserId: 'user-2',
       });
     });
+  });
+
+  it('bounds concurrent bulk category updates', async () => {
+    const user = userEvent.setup();
+    let active = 0;
+    let maxActive = 0;
+    let releaseImmediately = false;
+    const releases: (() => void)[] = [];
+    fakes.setTaskCategoryAction.mockImplementation(() => {
+      if (releaseImmediately) return Promise.resolve({ ok: true });
+      return new Promise((resolve) => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        releases.push(() => {
+          active -= 1;
+          resolve({ ok: true });
+        });
+      });
+    });
+    const rows = Array.from({ length: 5 }, (_, index) =>
+      task({ id: `task-${index + 1}`, canonicalName: `Task ${index + 1}` }),
+    );
+    renderBoard(null, rows, 'list');
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select all visible tasks' }));
+    await user.selectOptions(screen.getByLabelText('Bulk field'), 'category');
+    await user.selectOptions(screen.getByLabelText('Bulk category'), 'engineering');
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
+
+    try {
+      await waitFor(() => {
+        expect(fakes.setTaskCategoryAction).toHaveBeenCalledTimes(4);
+      });
+      expect(maxActive).toBe(4);
+
+      await act(async () => {
+        releases.shift()?.();
+        await Promise.resolve();
+      });
+      await waitFor(() => {
+        expect(fakes.setTaskCategoryAction).toHaveBeenCalledTimes(5);
+      });
+    } finally {
+      releaseImmediately = true;
+      await act(async () => {
+        for (const release of releases.splice(0)) release();
+        await Promise.resolve();
+      });
+      await waitFor(() => {
+        expect(screen.getByText('Updated 5 tasks.')).toBeTruthy();
+      });
+    }
   });
 
   it('keeps saved status patches visible until refreshed rows catch up', async () => {

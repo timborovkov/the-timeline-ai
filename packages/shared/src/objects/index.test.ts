@@ -66,6 +66,7 @@ vi.mock('#src/queue/queues.js', () => ({
   enqueueObjectChangeEmbedJob: vi.fn().mockResolvedValue(undefined),
   enqueueCalendarEventEmbedJob: vi.fn().mockResolvedValue(undefined),
   enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
+  enqueueTaskCategoryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'category-job' }),
 }));
 vi.mock('#src/qdrant/client.js', () => ({
   getQdrantClient: qdrantFakes.getQdrantClient,
@@ -831,6 +832,35 @@ describe('object scope — team ownership and audit behavior', () => {
         dueNull: true,
       }),
     ).resolves.toEqual([]);
+  });
+
+  it('counts terminal statuses case-insensitively when requested', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const dueAt = new Date('2026-07-15T09:00:00.000Z');
+    await Promise.all([
+      scope.createObject({
+        type: 'task',
+        canonicalName: 'Completed mixed-case task',
+        status: 'Done',
+        dueAt,
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+      scope.createObject({
+        type: 'task',
+        canonicalName: 'Open overdue task',
+        status: 'todo',
+        dueAt,
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+    ]);
+
+    await expect(
+      scope.countObjects({
+        type: 'task',
+        dueBefore: new Date('2026-07-16T09:00:00.000Z'),
+        statusNotCaseInsensitive: ['done', 'cancelled', 'canceled', 'shipped'],
+      }),
+    ).resolves.toBe(1);
   });
 
   it('does not mirror legacy suggested task due dates before human acceptance', async () => {
@@ -2730,6 +2760,24 @@ describe('object scope — archive visibility', () => {
     expect(found.map((row) => row.canonicalName)).toEqual(['Acme Corporation']);
   });
 
+  it('finds tasks without a category when searching for Uncategorized', async () => {
+    await pg.query(
+      `INSERT INTO entities (team_id, type, canonical_name, status, aliases, metadata, task_category)
+       VALUES ($1, 'task', 'Prepare launch notes', 'todo', '[]'::jsonb, '{}'::jsonb, NULL)`,
+      [TEAM_A],
+    );
+    const ownerScope = withTeam(db, TEAM_A, USER_OWNER).objects;
+
+    const found = await ownerScope.searchObjects({
+      query: 'Uncategorized',
+      type: 'task',
+      archived: false,
+      limit: 10,
+    });
+
+    expect(found.map((row) => row.canonicalName)).toEqual(['Prepare launch notes']);
+  });
+
   it('matches object search tokens against aliases case-insensitively', async () => {
     await pg.query(
       `INSERT INTO entities (team_id, type, canonical_name, status, aliases, metadata, updated_at)
@@ -3282,8 +3330,17 @@ describe('object scope — merge cleanup', () => {
     const task = await scope.createObject({
       type: 'task',
       canonicalName: 'Follow up with PwC',
-      parentObjectId: typo.id,
       actor: { kind: 'user', userId: USER_OWNER },
+    });
+    // Historical data can contain task → non-project child edges. The rollout
+    // preserves and retargets those legacy edges, while new parentObjectId
+    // writes are reserved for the dedicated primary Project field.
+    await db.insert(entityRelationships).values({
+      teamId: TEAM_A,
+      fromEntityId: task.id,
+      toEntityId: typo.id,
+      kind: 'child',
+      createdBy: USER_OWNER,
     });
     const board = await workspace.boards.createBoard({
       name: 'Pilot pipeline',
@@ -3881,8 +3938,8 @@ describe('object scope — merge cleanup', () => {
   it('refreshes parent object summaries when a linked task changes', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
     const parent = await scope.createObject({
-      type: 'company',
-      canonicalName: 'DFK',
+      type: 'project',
+      canonicalName: 'DFK rollout',
       actor: { kind: 'user', userId: USER_OWNER },
     });
     const task = await scope.createObject({
