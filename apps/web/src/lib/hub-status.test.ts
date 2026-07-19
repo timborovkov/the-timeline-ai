@@ -7,6 +7,7 @@ import {
   displayInboundEmail,
   getNavWorkAttention,
   getWorkAttentionSummary,
+  homeWorkNeedingAttentionCount,
   workAttentionCount,
 } from '@/lib/hub-status';
 
@@ -22,6 +23,16 @@ describe('hub status helpers', () => {
         overdueTasks: 2,
       }),
     ).toBe(5);
+  });
+
+  it('counts only overdue tasks for Home work needing attention', () => {
+    expect(
+      homeWorkNeedingAttentionCount({
+        attention: 5,
+        pendingApprovals: 3,
+        overdueTasks: 2,
+      }),
+    ).toBe(2);
   });
 
   it('ignores negative work attention inputs', () => {

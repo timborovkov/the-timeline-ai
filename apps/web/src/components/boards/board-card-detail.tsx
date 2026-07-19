@@ -412,6 +412,7 @@ function BoardNotesSection({
   onEdit: () => void;
   onSave: () => void;
 }) {
+  const timezone = useWorkspaceTimezone();
   return (
     <section className="border-b border-border p-4">
       <div className="mb-2 flex items-center justify-between gap-3">
@@ -443,7 +444,7 @@ function BoardNotesSection({
             item.notes ? 'text-fg-muted' : 'text-fg-dim',
           )}
         >
-          {item.notes ? displayText(item.notes) : 'No notes yet.'}
+          {item.notes ? displayText(item.notes, { timezone }) : 'No notes yet.'}
         </p>
       )}
     </section>
@@ -531,7 +532,7 @@ function BoardEvidence({
                 </p>
                 {change.note ? (
                   <p className="mt-1 line-clamp-2 text-xs text-fg-muted">
-                    {displayText(change.note)}
+                    {displayText(change.note, { timezone })}
                   </p>
                 ) : null}
                 <div className="mt-2 space-y-1">
@@ -541,7 +542,7 @@ function BoardEvidence({
                       href={`/app/timeline?event=${source.rawEventId}#ev-${source.rawEventId}`}
                       className="block text-xs text-fg-muted underline-offset-2 hover:text-fg hover:underline"
                     >
-                      {displayText(source.source)} ·{' '}
+                      {displayText(source.source, { timezone })} ·{' '}
                       {formatDisplayDateTime(source.occurredAt, { timezone })}
                     </Link>
                   ))}
@@ -588,7 +589,9 @@ function BoardActivity({
               <div className="mt-2 flex flex-wrap items-center gap-2 text-fg-dim">
                 <span>{formatDisplayDateTime(change.changedAt, { timezone })}</span>
               </div>
-              {change.note ? <p className="mt-2 text-fg">{displayText(change.note)}</p> : null}
+              {change.note ? (
+                <p className="mt-2 text-fg">{displayText(change.note, { timezone })}</p>
+              ) : null}
               {change.field === 'customFields' ||
               change.field === '__add__' ||
               change.field === '__remove__' ? (

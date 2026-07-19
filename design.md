@@ -54,7 +54,9 @@ next before seeing how the system represented it.
   use shadows. Shadows are reserved for menus, dialogs, sheets, and overlays.
 - Dashed borders are prohibited.
 - Dense rows are welcome, but metadata is subordinate to the human title.
-- No gradients, emoji as interface symbols, or extra chromatic accents.
+- No gradients, emoji as interface symbols, or extra chromatic accents in the
+  authenticated product. The public landing concept diagram may use a single
+  signal-colored sweep gradient for the capture → memory motion.
 
 ## Color
 
@@ -223,8 +225,9 @@ The public landing page keeps the earlier archive marketing structure: sticky
 landing nav, large hero with proof mock, problem before/after, concept diagram,
 surfaces, integrations, cited receipts, principles, FAQ, and final CTA. Mono
 index strips and uppercase section labels remain appropriate on that marketing
-surface. Help and legal content use the shared public shell with 65–70ch reading
-width.
+surface. Legal pages use the shared public shell at reading width (65–70ch).
+Help uses the same public shell at wide width with a sidebar nav; article bodies
+may optionally constrain to a reading measure without forcing the shell narrow.
 
 ### Administrator dashboards
 

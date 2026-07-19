@@ -77,6 +77,11 @@ export function workAttentionCount({
   return attentionCount(pendingApprovals, overdueTasks);
 }
 
+/** Home shows approvals separately, so work attention is overdue tasks only. */
+export function homeWorkNeedingAttentionCount(summary: WorkAttentionSummary): number {
+  return Math.max(0, summary.overdueTasks);
+}
+
 function countIntegrationErrors(rows: IntegrationRow[]): number {
   return rows.filter((row) => row.lastError).length;
 }

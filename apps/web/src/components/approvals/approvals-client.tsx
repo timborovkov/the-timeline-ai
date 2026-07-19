@@ -1062,7 +1062,7 @@ function ApprovalBundleRow({
           />
         ))}
       </ul>
-      <ApprovalEvidence bundle={bundle} />
+      <ApprovalEvidence bundle={bundle} timezone={timezone} />
       <ApprovalProcessingDetails bundle={bundle} />
     </article>
   );
@@ -1085,10 +1085,10 @@ function ApprovalBundleHeader({
         </span>
       </div>
       <h2 className="mt-1 text-base font-semibold tracking-tight text-fg">
-        {displayText(bundle.title)}
+        {displayText(bundle.title, { timezone })}
       </h2>
       {bundle.summary ? (
-        <p className="mt-1 text-sm text-fg-muted">{displayText(bundle.summary)}</p>
+        <p className="mt-1 text-sm text-fg-muted">{displayText(bundle.summary, { timezone })}</p>
       ) : null}
     </div>
   );
@@ -1123,7 +1123,7 @@ function ApprovalItemRow({
 }) {
   return (
     <li className="grid gap-3 p-3 md:grid-cols-[minmax(0,1.3fr)_minmax(10rem,0.8fr)_minmax(9rem,auto)]">
-      <ApprovalItemMain actionFailed={actionFailed} item={item} />
+      <ApprovalItemMain actionFailed={actionFailed} item={item} timezone={timezone} />
       <ApprovalItemPayload
         bundle={bundle}
         item={item}
@@ -1137,7 +1137,15 @@ function ApprovalItemRow({
   );
 }
 
-function ApprovalItemMain({ actionFailed, item }: { actionFailed: boolean; item: SuggestionItem }) {
+function ApprovalItemMain({
+  actionFailed,
+  item,
+  timezone,
+}: {
+  actionFailed: boolean;
+  item: SuggestionItem;
+  timezone: string;
+}) {
   const actionFailureReason = actionFailed ? localActionFailureReason(item) : null;
   return (
     <div className="min-w-0 self-center">
@@ -1147,10 +1155,10 @@ function ApprovalItemMain({ actionFailed, item }: { actionFailed: boolean; item:
       <div
         className={item.status === 'pending' ? 'font-medium text-fg' : 'mt-1 font-medium text-fg'}
       >
-        {displayText(item.title)}
+        {displayText(item.title, { timezone })}
       </div>
       {item.description ? (
-        <p className="mt-1 text-sm text-fg-muted">{displayText(item.description)}</p>
+        <p className="mt-1 text-sm text-fg-muted">{displayText(item.description, { timezone })}</p>
       ) : null}
       {actionFailureReason ? (
         <p className="mt-1 text-xs text-danger">{actionFailureReason}</p>
@@ -1591,7 +1599,7 @@ function ApprovalItemActions({
   );
 }
 
-function ApprovalEvidence({ bundle }: { bundle: SuggestionBundle }) {
+function ApprovalEvidence({ bundle, timezone }: { bundle: SuggestionBundle; timezone: string }) {
   if (bundle.evidence.length === 0 && !bundle.reason) return null;
   return (
     <details className="mt-2 border-l border-border pl-3">
@@ -1603,7 +1611,7 @@ function ApprovalEvidence({ bundle }: { bundle: SuggestionBundle }) {
       </summary>
       {bundle.reason ? (
         <p className="max-w-3xl py-2 text-xs leading-5 text-fg-muted">
-          {displayText(bundle.reason)}
+          {displayText(bundle.reason, { timezone })}
         </p>
       ) : null}
       {bundle.evidence.map((ev) => (
@@ -1620,7 +1628,9 @@ function ApprovalEvidence({ bundle }: { bundle: SuggestionBundle }) {
             Evidence from {evidenceSourceLabel(ev.source)}
           </span>
           <span className="line-clamp-2 text-fg-muted group-hover:text-fg">
-            {ev.quote ? displayText(ev.quote) : 'Open the source event on the timeline.'}
+            {ev.quote
+              ? displayText(ev.quote, { timezone })
+              : 'Open the source event on the timeline.'}
           </span>
         </EvidenceLink>
       ))}

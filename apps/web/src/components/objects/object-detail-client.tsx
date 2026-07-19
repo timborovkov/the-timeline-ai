@@ -1720,7 +1720,7 @@ function ObjectNoteItem({
           </div>
         </div>
       ) : (
-        <div className="whitespace-pre-wrap">{displayText(note.body)}</div>
+        <div className="whitespace-pre-wrap">{displayText(note.body, { timezone })}</div>
       )}
       <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
         <span>{formatDisplayDateTime(note.createdAt, { timezone })}</span>
