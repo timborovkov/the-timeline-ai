@@ -266,7 +266,9 @@ For every changed surface:
 4. Check 320px, tablet, desktop, 200% zoom, light, and dark.
 5. Check reduced motion and stable font loading.
 6. Test loading, failure, empty, and populated states.
-7. Keep deterministic visual coverage for high-value seeded routes.
+7. Keep a **small** deterministic visual set for high-value seeded routes
+   (Linux Chromium only). Do not expand the matrix for every surface/theme;
+   prefer layout/behavior assertions for the rest.
 
 ## Adding a shadcn component
 

@@ -11,7 +11,10 @@ function Card({ className, ref, ...props }: DivProps) {
   return (
     <div
       ref={ref}
-      className={cn('rounded-lg border border-border bg-card text-card-foreground', className)}
+      className={cn(
+        'min-w-0 rounded-lg border border-border bg-card text-card-foreground',
+        className,
+      )}
       {...props}
     />
   );
@@ -46,7 +49,7 @@ function CardDescription({ className, ref, ...props }: DivProps) {
 CardDescription.displayName = 'CardDescription';
 
 function CardContent({ className, ref, ...props }: DivProps) {
-  return <div ref={ref} className={cn('p-4 pt-0', className)} {...props} />;
+  return <div ref={ref} className={cn('min-w-0 p-4 pt-0', className)} {...props} />;
 }
 CardContent.displayName = 'CardContent';
 

@@ -538,9 +538,9 @@ function ChatComposer({
           onKeyDown={(e) => {
             if (e.key === 'Enter') onSubmit(input);
           }}
-          placeholder="Ask anything about your team's timeline…"
+          placeholder="Ask the timeline…"
           disabled={isStreaming}
-          className="h-10 w-full rounded-sm bg-transparent pl-3 pr-11 text-sm focus:outline-none"
+          className="h-10 w-full truncate rounded-sm bg-transparent pl-3 pr-12 text-sm focus:outline-none"
         />
         <button
           type="button"

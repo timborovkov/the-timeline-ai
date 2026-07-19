@@ -412,20 +412,23 @@ function MemberListItem({
 }) {
   const memberLabel = displayMemberLabel(user);
   return (
-    <li className="flex items-center justify-between py-3">
-      <div className="flex flex-col">
+    <li className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0 flex flex-col">
         <span className="text-sm font-medium">{memberLabel}</span>
-        <span className="text-xs text-muted-foreground">{user?.email}</span>
+        <span className="truncate text-xs text-muted-foreground">{user?.email}</span>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
         {isOwner && member.userId !== currentUserId ? (
-          <form action={changeMemberRoleAction} className="flex items-center gap-2">
+          <form
+            action={changeMemberRoleAction}
+            className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-2 sm:flex sm:w-auto sm:items-center"
+          >
             <input type="hidden" name="userId" value={member.userId} />
             <select
               aria-label={`Role for ${memberLabel}`}
               name="role"
               defaultValue={member.role}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+              className="h-9 min-w-0 rounded-md border border-input bg-background px-2 text-sm"
             >
               <option value="member">Member</option>
               <option value="admin">Admin</option>
@@ -439,9 +442,15 @@ function MemberListItem({
           <Badge variant="outline">{member.role}</Badge>
         )}
         {isAdmin && member.userId !== currentUserId && (isOwner || member.role === 'member') ? (
-          <form action={removeMemberAction}>
+          <form action={removeMemberAction} className="sm:contents">
             <input type="hidden" name="userId" value={member.userId} />
-            <Button type="submit" variant="ghost" size="sm" aria-label={`Remove ${memberLabel}`}>
+            <Button
+              type="submit"
+              variant="ghost"
+              size="sm"
+              className="self-start"
+              aria-label={`Remove ${memberLabel}`}
+            >
               Remove
             </Button>
           </form>

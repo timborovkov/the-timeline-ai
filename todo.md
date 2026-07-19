@@ -138,9 +138,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 - [x] U5 — IA consolidation: merge Sources + Team integrations into one
       Connections area; admin-only Admin group; 8 top-level destinations
       (down from 13+); redirects + keymap updates.
-- [x] U6 — Quiet Archive polish and verification: deterministic light/dark and
-      mobile screenshot coverage, full browser QA, `pnpm validate`, and React
-      Doctor 100.
+- [x] U6 — Quiet Archive polish and verification: curated Linux visual baselines
+      for a few high-value routes (not a full surface×theme matrix), full
+      browser QA, `pnpm validate`, and React Doctor 100.
 
 ## Workspace Reconciliation
 

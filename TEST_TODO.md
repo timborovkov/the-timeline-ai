@@ -12,7 +12,7 @@ Last checked in this branch: on 2026-07-19, `pnpm validate`,
 `pnpm test:task-category-eval:live`, and the
 full strict local Playwright suite pass. React Doctor reported
 "No issues found!" with a 100/100 score. The Playwright suite passed 63 tests,
-including the deterministic Quiet Archive light/dark and mobile visual matrix,
+including curated Quiet Archive Linux visual baselines (not a full surface matrix),
 Home-to-Ask private prompt handoff, capture dialog, UUID suppression, one-heading
 route sweep, 320px no-overflow checks, and distinct task-category/primary-project
 editing and filtering. Approval regressions prove item-level
