@@ -133,6 +133,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <Script id="sidebar-preference" strategy="beforeInteractive">
           {SIDEBAR_PREFERENCE_BOOTSTRAP}
         </Script>
+        <Script
+          src="https://aromatic-caribou-889.convex.site/api/a/am_7eCe5quSdP7W1Kx7"
+          strategy="afterInteractive"
+        />
         <ThemeProvider>
           {children}
           <Toaster richColors />
