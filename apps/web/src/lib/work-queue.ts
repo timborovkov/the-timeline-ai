@@ -1,3 +1,5 @@
+import { presentDueDate, workspaceDueDateBoundaries } from '@timeline/shared/time';
+
 import type * as boards from '@timeline/shared/boards';
 import type * as objects from '@timeline/shared/objects/types';
 
@@ -34,7 +36,7 @@ export interface WorkQueueItem {
 const OBJECT_QUEUE_SOURCE_LIMIT = 60;
 const OBJECT_QUEUE_PRIORITY_LIMIT = 20;
 const WORK_OBJECT_TYPES: objects.ObjectType[] = ['task', 'follow_up', 'project', 'deal'];
-export const OPEN_WORK_STATUS_EXCLUDED = ['done', 'cancelled', 'canceled', 'shipped'] as const;
+const OPEN_WORK_STATUS_EXCLUDED = ['done', 'cancelled', 'canceled', 'shipped'] as const;
 const DONE_STATUSES = new Set<string>(OPEN_WORK_STATUS_EXCLUDED);
 
 function isOpenWorkObject(row: objects.ObjectRow): boolean {
@@ -75,10 +77,10 @@ export function reasonTone(reason: WorkQueueReason): 'danger' | 'signal' | 'neut
   return 'neutral';
 }
 
-function dueReasons(dueAt: Date | null, now: Date, dueSoon: Date): WorkQueueReason[] {
-  if (!dueAt) return [];
-  if (dueAt < now) return ['overdue'];
-  if (dueAt <= dueSoon) return ['due_soon'];
+function dueReasons(dueAt: Date | null, now: Date, timezone: string): WorkQueueReason[] {
+  const status = presentDueDate(dueAt, { timezone, now }).status;
+  if (status === 'overdue') return ['overdue'];
+  if (status === 'today' || status === 'due_soon') return ['due_soon'];
   return [];
 }
 
@@ -111,7 +113,7 @@ export function boardQueueItem(
   row: boards.BoardWorkQueueItemRow,
   userId: string,
   now: Date,
-  dueSoon: Date,
+  timezone: string,
 ): WorkQueueItem {
   return {
     id: `board:${row.id}`,
@@ -130,7 +132,7 @@ export function boardQueueItem(
     reasons: uniqueReasons([
       ...(row.responsibleUserId === userId ? (['responsible_to_you'] as const) : []),
       ...(row.dueAt && !row.responsibleUserId ? (['team_due'] as const) : []),
-      ...dueReasons(row.dueAt, now, dueSoon),
+      ...dueReasons(row.dueAt, now, timezone),
       ...blockedReason(row.object.status, row.laneKind),
     ]),
   };
@@ -140,14 +142,14 @@ export function objectQueueItem(
   row: objects.ObjectRow,
   userId: string,
   now: Date,
-  dueSoon: Date,
+  timezone: string,
 ): WorkQueueItem | null {
   if (!isOpenWorkObject(row)) return null;
   const reasons = uniqueReasons([
     ...(row.ownerUserId === userId ? (['owned_by_you'] as const) : []),
     ...(row.assigneeUserId === userId ? (['assigned_to_you'] as const) : []),
     ...(row.dueAt && !row.ownerUserId && !row.assigneeUserId ? (['team_due'] as const) : []),
-    ...dueReasons(row.dueAt, now, dueSoon),
+    ...dueReasons(row.dueAt, now, timezone),
     ...blockedReason(row.status),
   ]);
   if (reasons.length === 0) return null;
@@ -171,16 +173,17 @@ export function objectQueueItem(
 
 export async function listWorkQueueObjects(
   objectScope: { listObjects(filter: objects.ObjectListFilter): Promise<objects.ObjectRow[]> },
-  userId: string,
-  dueBefore: Date,
+  input: { userId: string; now: Date; timezone: string },
 ): Promise<objects.ObjectRow[]> {
+  const { userId, now, timezone } = input;
+  const boundaries = workspaceDueDateBoundaries(timezone, now);
   const baseFilter = {
     type: WORK_OBJECT_TYPES,
     archived: false,
     statusNot: [...OPEN_WORK_STATUS_EXCLUDED],
   } satisfies objects.ObjectListFilter;
-  const dueBeforeCutoff = new Date(dueBefore.getTime() + 1);
   const [
+    visibleOverdueTasks,
     ownedDue,
     assignedDue,
     teamDue,
@@ -191,15 +194,22 @@ export async function listWorkQueueObjects(
   ] = await Promise.all([
     objectScope.listObjects({
       ...baseFilter,
+      type: 'task',
+      dueDateRange: { timezone, to: boundaries.today },
+      order: 'due',
+      limit: OBJECT_QUEUE_SOURCE_LIMIT,
+    }),
+    objectScope.listObjects({
+      ...baseFilter,
       ownerUserId: userId,
-      dueBefore: dueBeforeCutoff,
+      dueDateRange: { timezone, to: boundaries.dueSoonEnd },
       order: 'due',
       limit: OBJECT_QUEUE_PRIORITY_LIMIT,
     }),
     objectScope.listObjects({
       ...baseFilter,
       assigneeUserId: userId,
-      dueBefore: dueBeforeCutoff,
+      dueDateRange: { timezone, to: boundaries.dueSoonEnd },
       order: 'due',
       limit: OBJECT_QUEUE_PRIORITY_LIMIT,
     }),
@@ -207,7 +217,7 @@ export async function listWorkQueueObjects(
       ...baseFilter,
       ownerUserId: null,
       assigneeUserId: null,
-      dueBefore: dueBeforeCutoff,
+      dueDateRange: { timezone, to: boundaries.dueSoonEnd },
       order: 'due',
       limit: OBJECT_QUEUE_PRIORITY_LIMIT,
     }),
@@ -235,6 +245,7 @@ export async function listWorkQueueObjects(
     }),
   ]);
   return [
+    ...visibleOverdueTasks,
     ...ownedDue,
     ...assignedDue,
     ...teamDue,

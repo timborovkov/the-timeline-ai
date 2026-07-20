@@ -32,6 +32,7 @@ import { childLogger } from '#src/logger.js';
 import { getQdrantClient } from '#src/qdrant/client.js';
 import { buildPointId } from '#src/qdrant/point-id.js';
 import { enqueueCalendarEventEmbedJob } from '#src/queue/queues.js';
+import { assertValidTimezone } from '#src/time/index.js';
 import { validateVisibilityUserIds } from '#src/visibility.js';
 
 type Visibility = 'private' | 'team' | 'specific_users';
@@ -1728,6 +1729,9 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
         insertValues.defaultVisibility = patch.defaultVisibility;
       }
       if (patch.defaultTimezone !== undefined) {
+        if (assertValidTimezone(patch.defaultTimezone) !== patch.defaultTimezone) {
+          throw new Error(`Invalid calendar timezone: ${patch.defaultTimezone}`);
+        }
         insertValues.defaultTimezone = patch.defaultTimezone;
       }
       const setClause: Record<string, unknown> = { updatedAt: new Date() };

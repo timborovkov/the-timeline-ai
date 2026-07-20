@@ -6,6 +6,7 @@ import {
   calendarEvents,
   type entities,
   notifications,
+  teamCalendarSettings,
   users,
 } from '@timeline/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
@@ -20,11 +21,13 @@ import { childLogger } from '#src/logger.js';
 import { getQdrantClient } from '#src/qdrant/client.js';
 import { buildPointId } from '#src/qdrant/point-id.js';
 import { enqueueCalendarEventEmbedJob } from '#src/queue/queues.js';
+import { assertValidTimezone, dateOnlyEventRange, presentDueDate } from '#src/time/index.js';
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
 
 const log = childLogger('calendar:due-dates');
+const DEFAULT_WORKSPACE_TIMEZONE = 'Europe/Helsinki';
 
 interface DueDateTarget {
   source: 'object' | 'board_item';
@@ -64,8 +67,37 @@ export function mergeDueDateCalendarSyncResults(
   };
 }
 
-function eventEnd(dueAt: Date): Date {
-  return new Date(dueAt.getTime() + 30 * 60 * 1000);
+interface DueDateCalendarSchedule {
+  startAt: Date;
+  endAt: Date;
+  timezone: string;
+  allDay: true;
+}
+
+async function workspaceTimezone(db: DbOrTx, teamId: string): Promise<string> {
+  const [settings] = await db
+    .select({ timezone: teamCalendarSettings.defaultTimezone })
+    .from(teamCalendarSettings)
+    .where(eq(teamCalendarSettings.teamId, teamId))
+    .limit(1);
+  return assertValidTimezone(settings?.timezone ?? DEFAULT_WORKSPACE_TIMEZONE);
+}
+
+async function dueDateSchedule(
+  db: DbOrTx,
+  teamId: string,
+  dueAt: Date,
+): Promise<DueDateCalendarSchedule> {
+  const timezone = await workspaceTimezone(db, teamId);
+  const due = presentDueDate(dueAt, { timezone });
+  if (!due.dateKey) throw new Error('Cannot create a calendar mirror for an invalid due date');
+  return dateOnlyEventRange(due.dateKey, timezone);
+}
+
+async function dueDateNotificationText(db: DbOrTx, teamId: string, dueAt: Date): Promise<string> {
+  const timezone = await workspaceTimezone(db, teamId);
+  const due = presentDueDate(dueAt, { timezone, locale: 'en-US' });
+  return due.dateLabel ? `Due · ${due.dateLabel}` : due.compactText;
 }
 
 function sourcePredicate(target: DueDateTarget) {
@@ -167,6 +199,7 @@ async function syncDueDateCalendarEvent(
   const activeTarget = { ...target, dueAt: target.dueAt };
 
   const responsible = await displayName(db, target.responsibleUserId);
+  const schedule = await dueDateSchedule(db, target.teamId, activeTarget.dueAt);
   const title = titleFor(target, responsible);
   const description = descriptionFor(target, responsible);
   const metadata = {
@@ -185,10 +218,10 @@ async function syncDueDateCalendarEvent(
       .set({
         title,
         description: description || null,
-        startAt: activeTarget.dueAt,
-        endAt: eventEnd(activeTarget.dueAt),
-        timezone: 'UTC',
-        allDay: false,
+        startAt: schedule.startAt,
+        endAt: schedule.endAt,
+        timezone: schedule.timezone,
+        allDay: schedule.allDay,
         showAs: 'free',
         visibility: 'team',
         visibilityUserIds: null,
@@ -203,7 +236,7 @@ async function syncDueDateCalendarEvent(
         startAtRawEventId: calendarEvents.startAtRawEventId,
       });
     if (updated) {
-      await ensureDueDateRawEvents(db, activeTarget, updated, title, description);
+      await ensureDueDateRawEvents(db, activeTarget, schedule, updated, title, description);
       await ensureDueDateEntityLink(db, target, updated.id);
       return { embedEventIds: [updated.id], deleteEventIds: [] };
     }
@@ -217,10 +250,10 @@ async function syncDueDateCalendarEvent(
       createdByUserId: target.responsibleUserId,
       title,
       description: description || null,
-      startAt: activeTarget.dueAt,
-      endAt: eventEnd(activeTarget.dueAt),
-      timezone: 'UTC',
-      allDay: false,
+      startAt: schedule.startAt,
+      endAt: schedule.endAt,
+      timezone: schedule.timezone,
+      allDay: schedule.allDay,
       showAs: 'free',
       visibility: 'team',
       metadata,
@@ -232,7 +265,7 @@ async function syncDueDateCalendarEvent(
     });
 
   if (created) {
-    await ensureDueDateRawEvents(db, activeTarget, created, title, description);
+    await ensureDueDateRawEvents(db, activeTarget, schedule, created, title, description);
     await ensureDueDateEntityLink(db, target, created.id);
     return { embedEventIds: [created.id], deleteEventIds: [] };
   }
@@ -258,6 +291,7 @@ async function ensureDueDateEntityLink(
 async function ensureDueDateRawEvents(
   db: DbOrTx,
   target: DueDateTarget & { dueAt: Date },
+  schedule: DueDateCalendarSchedule,
   event: {
     id: string;
     scheduledRawEventId: string | null;
@@ -272,9 +306,9 @@ async function ensureDueDateRawEvents(
     calendarEventId: event.id,
     title,
     description: description || null,
-    startAt: target.dueAt,
-    endAt: eventEnd(target.dueAt),
-    timezone: 'UTC',
+    startAt: schedule.startAt,
+    endAt: schedule.endAt,
+    timezone: schedule.timezone,
     location: null,
     visibility: 'team' as const,
     visibilityUserIds: null,
@@ -288,9 +322,9 @@ async function ensureDueDateRawEvents(
       calendarEventId: event.id,
       title,
       description: description || null,
-      startAt: target.dueAt,
-      endAt: eventEnd(target.dueAt),
-      timezone: 'UTC',
+      startAt: schedule.startAt,
+      endAt: schedule.endAt,
+      timezone: schedule.timezone,
       location: null,
       visibility: 'team',
       visibilityUserIds: null,
@@ -489,12 +523,13 @@ export async function notifyObjectDueDate(
     responsibleUserId: userId,
   });
   if (!userId) return;
+  const dueText = await dueDateNotificationText(db, object.teamId, object.dueAt);
   await db.insert(notifications).values({
     teamId: object.teamId,
     userId,
     kind: 'task_due',
     entityId: object.id,
-    summary: `${object.canonicalName} is due ${object.dueAt.toISOString().slice(0, 10)}`,
+    summary: `${object.canonicalName} — ${dueText}`,
     payload: {
       entity_id: object.id,
       type: object.type,
@@ -530,12 +565,13 @@ export async function notifyBoardItemDueDate(
     boardItemId: item.id,
   });
   if (!item.responsibleUserId) return;
+  const dueText = await dueDateNotificationText(db, item.teamId, item.dueAt);
   await db.insert(notifications).values({
     teamId: item.teamId,
     userId: item.responsibleUserId,
     kind: 'board_item_due',
     entityId: item.entityId,
-    summary: `${object.canonicalName} on ${board.name} is due ${item.dueAt.toISOString().slice(0, 10)}`,
+    summary: `${object.canonicalName} on ${board.name} — ${dueText}`,
     payload: {
       entity_id: item.entityId,
       board_id: item.boardId,

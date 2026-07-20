@@ -6,7 +6,9 @@ import { type ReactNode, useState, useTransition } from 'react';
 
 import { acceptSuggestionItemAction, rejectSuggestionItemAction } from '@/app/actions/suggestions';
 import { ArtifactReferenceChip } from '@/components/artifact-reference-chip';
+import { DueDateDisplay } from '@/components/due-date-display';
 import { EvidenceLink } from '@/components/evidence-link';
+import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 
 interface Props {
   name: string;
@@ -514,6 +516,7 @@ function ToolApprovalCard({
   input: unknown;
   onApprovalResponse: NonNullable<Props['onApprovalResponse']>;
 }) {
+  const timezone = useWorkspaceTimezone();
   const record = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
   const objectIds = Array.isArray(record.objectIds)
     ? record.objectIds.filter((id): id is string => typeof id === 'string')
@@ -544,7 +547,13 @@ function ToolApprovalCard({
             <ApprovalRow label="Priority">{formatApprovalValue(record.priority)}</ApprovalRow>
           ) : null}
           {record.dueAt !== undefined ? (
-            <ApprovalRow label="Due">{formatApprovalValue(record.dueAt)}</ApprovalRow>
+            <ApprovalRow label="Due">
+              <DueDateDisplay
+                value={record.dueAt as string | null}
+                timezone={timezone}
+                variant="inline"
+              />
+            </ApprovalRow>
           ) : null}
           {Array.isArray(record.aliases) && record.aliases.length > 0 ? (
             <ApprovalRow label="Aliases">{record.aliases.join(', ')}</ApprovalRow>
@@ -665,9 +674,27 @@ function ToolApprovalCard({
         <dl className="mt-2 grid gap-1 text-[11px] text-fg-muted">
           <ApprovalRow label="Field">{field}</ApprovalRow>
           <ApprovalRow label="Current">
-            {formatApprovalValue(record.expectedCurrentValue)}
+            {field === 'dueAt' ? (
+              <DueDateDisplay
+                value={record.expectedCurrentValue as string | null}
+                timezone={timezone}
+                variant="inline"
+              />
+            ) : (
+              formatApprovalValue(record.expectedCurrentValue)
+            )}
           </ApprovalRow>
-          <ApprovalRow label="Proposed">{formatApprovalValue(record.newValue)}</ApprovalRow>
+          <ApprovalRow label="Proposed">
+            {field === 'dueAt' ? (
+              <DueDateDisplay
+                value={record.newValue as string | null}
+                timezone={timezone}
+                variant="inline"
+              />
+            ) : (
+              formatApprovalValue(record.newValue)
+            )}
+          </ApprovalRow>
           {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
         </dl>
       )}

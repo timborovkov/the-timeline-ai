@@ -1,5 +1,7 @@
 import type { DailyDigestPayload } from '#src/messaging/types.js';
 
+import { presentDueDate } from '#src/time/index.js';
+
 const SENTENCE_BOUNDARY = /(?<=[.!?])\s+(?=[A-Z0-9])/;
 const SECTION_ORDER = new Map<string, number>([
   ['Highlights', 0],
@@ -70,9 +72,16 @@ export function formatDigestTaskStatus(status: string): string {
 export function formatDigestTask(
   task: DailyDigestPayload['tasks'][number],
   timezone?: string,
+  now?: Date,
 ): string {
-  const due = task.dueAt ? `, due ${formatDigestDate(task.dueAt, timezone)}` : '';
-  return `${task.title} (${formatDigestTaskStatus(task.status)}${due})`;
+  const due = presentDueDate(task.dueAt, { timezone: timezone ?? 'UTC', ...(now ? { now } : {}) });
+  const dueText =
+    due.status === 'invalid'
+      ? due.compactText
+      : due.dateLabel
+        ? `${due.label} · ${due.dateLabel}`
+        : due.compactText;
+  return `${task.title} (${formatDigestTaskStatus(task.status)}, ${dueText})`;
 }
 
 export function formatDigestCalendarEvent(

@@ -946,7 +946,7 @@ test.describe.serial('reconciliation dashboard', () => {
     await expect(
       approval.getByText(fixtures.approvalBulkPartial.calendarTitle, { exact: true }),
     ).toHaveCount(0);
-    await expect(page.getByText('1 item(s) failed to apply')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'failed 1' })).toBeVisible();
 
     await page.goto('/app/approvals?status=failed');
     const failedApproval = page

@@ -54,12 +54,13 @@ describe('hub status helpers', () => {
         },
       } as never,
       new Date('2026-07-16T12:00:00.000Z'),
+      'America/Los_Angeles',
     );
 
     expect(summary).toEqual({ attention: 1, overdueTasks: 1, pendingApprovals: 0 });
     expect(countObjects).toHaveBeenCalledWith({
       archived: false,
-      dueBefore: new Date('2026-07-16T12:00:00.000Z'),
+      dueDateRange: { timezone: 'America/Los_Angeles', to: '2026-07-16' },
       statusNotCaseInsensitive: ['done', 'cancelled', 'canceled', 'shipped'],
       type: 'task',
     });
@@ -71,10 +72,13 @@ describe('hub status helpers', () => {
       suggestions: {
         getApprovalItemCounts: vi.fn().mockResolvedValue({ failed: 4, pending: 3 }),
       },
+      calendar: {
+        getCalendarSettings: vi.fn().mockResolvedValue({ defaultTimezone: 'Europe/Madrid' }),
+      },
     } as never;
     const now = new Date('2026-07-16T12:00:00.000Z');
 
-    const work = await getWorkAttentionSummary(scope, now);
+    const work = await getWorkAttentionSummary(scope, now, 'Europe/Madrid');
     const navWork = await getNavWorkAttention(scope, now);
 
     expect(work).toEqual({ attention: 5, overdueTasks: 2, pendingApprovals: 3 });

@@ -88,6 +88,17 @@ describe('calendar scope', () => {
     });
   });
 
+  it('rejects invalid workspace timezones at the shared write boundary', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+
+    await expect(
+      scope.calendar.upsertCalendarSettings({ defaultTimezone: 'Not/A_Timezone' }),
+    ).rejects.toThrow('Invalid calendar timezone: Not/A_Timezone');
+    await expect(scope.calendar.getCalendarSettings()).resolves.toMatchObject({
+      defaultTimezone: 'Europe/Helsinki',
+    });
+  });
+
   it('keeps the occurrence timeline row rich enough for search hydration', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
 

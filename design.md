@@ -151,6 +151,33 @@ Badges use sentence-case sans text. `StatusBadge` converts raw enums into human
 labels and maps only failure, destruction, blocking, or overdue work to danger.
 Mono is allowed only for citations, counts, or public keys.
 
+### Due dates
+
+Due dates are workspace calendar dates even though persistence and machine
+contracts remain ISO timestamps. A due date becomes overdue only after its
+workspace-local day ends. Canonical midnight-UTC values preserve their encoded
+`YYYY-MM-DD`; non-midnight legacy or provider timestamps resolve to a calendar
+date in the workspace timezone. “Due soon” includes the next 14 calendar days.
+
+Every user-facing due date uses one of these readable states and always keeps
+the exact localized date visible:
+
+- `Overdue · Jul 19, 2026` — danger
+- `Due today · Jul 20, 2026` — signal
+- `Due soon · Jul 28, 2026` — signal
+- `Due · Aug 20, 2026` — neutral
+- `No due date` — dimmed
+
+Compact cards may omit the separator but not the state or exact date. Date
+numerals use tabular styling. Color is supporting information only. Native date
+inputs show the same readable state as a hint below the control.
+
+Show `No due date` for tasks, follow-ups, projects, deals, and every board item.
+Do not add it to people, companies, vendors, calendar events, or generic
+approval queue rows. Search, previews, approval cards, daily digests, and
+overdue notifications use the same vocabulary. REST, MCP, export, retrieval,
+embedding, and evidence payloads retain their raw ISO values.
+
 ### TechnicalDetails
 
 A native `<details>` with the summary “Technical details,” closed by default.
@@ -204,7 +231,7 @@ tag or a fourth dense card metadata cell. Archived tasks replace project and
 category controls with a short instruction to unarchive the task first.
 
 Approval rows lead with the proposed change and use human labels and localized
-values, such as `Due <localized date>` and `Status To do`, rather than payload
+values, such as `Due soon · <localized date>` and `Status To do`, rather than payload
 keys or JSON. Free-form names and notes stay literal. Reference-valued changes
 resolve current member, object, board, lane, and visibility labels at review
 time instead of trusting stored display text. Show up to four meaningful fields
@@ -217,7 +244,11 @@ Approval counts use individual review items, not proposal bundles. “Pending”
 means the item status is literally pending. Failed items remain retryable or
 rejectable only under the Failed filter and do not contribute to Home, Work,
 digest, or navigation attention. Work attention combines pending approval items
-with overdue open tasks.
+with overdue open tasks. The Work header breaks that aggregate into linked
+Overdue and Approvals counts so every attention item has an obvious destination.
+Visible overdue tasks are eligible for the queue regardless of teammate assignment.
+Queue rows give due state a consistent right-aligned position and follow the
+shared due-date vocabulary above.
 
 ### Marketing and public pages
 

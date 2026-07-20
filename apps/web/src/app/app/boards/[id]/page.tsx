@@ -52,6 +52,9 @@ export default async function BoardDetailPage({
   if (!active) redirect('/sign-in');
 
   const scope = withTeam(db, active.teamId, session.user.id);
+  const now = new Date();
+  const calendarSettings = await scope.calendar.getCalendarSettings();
+  const filterTime = { now, timezone: calendarSettings.defaultTimezone };
   const filters = parseWorkFilters(query, {
     taskCategoriesEnabled: getEnv().TASK_CATEGORY_UI_ENABLED,
   });
@@ -60,13 +63,13 @@ export default async function BoardDetailPage({
     categoryKeys.length > 0
       ? await scope.boards.getTaskCategoryFilterRefreshState(
           id,
-          boardItemFilterFromWorkFilters({ ...filters, category: '' }),
+          boardItemFilterFromWorkFilters({ ...filters, category: '' }, filterTime),
           categoryKeys,
         )
       : null;
   const board = await scope.boards.getBoard(id, {
     itemLimit: 'all',
-    itemFilter: boardItemFilterFromWorkFilters(filters),
+    itemFilter: boardItemFilterFromWorkFilters(filters, filterTime),
   });
   if (!board) notFound();
   const view = viewParam(query.view);

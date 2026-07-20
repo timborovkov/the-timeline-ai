@@ -58,4 +58,16 @@ describe('NewObjectForm', () => {
     expect((selector as HTMLSelectElement).value).toBe('project-remote');
     expect(screen.getByRole('option', { name: 'Legacy client migration' })).toBeTruthy();
   });
+
+  it('shows due status only for schedulable object types', () => {
+    render(<NewObjectForm />);
+
+    expect(screen.getByText('No due date')).toBeTruthy();
+    expect(screen.getByLabelText('Due date')).toBeTruthy();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Object type' }), {
+      target: { value: 'person' },
+    });
+    expect(screen.queryByText('No due date')).toBeNull();
+    expect(screen.queryByLabelText('Due date')).toBeNull();
+  });
 });

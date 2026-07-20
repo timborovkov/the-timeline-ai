@@ -71,6 +71,9 @@ export default async function ObjectsIndexPage({
   if (!active) redirect('/sign-in');
 
   const scope = withTeam(db, active.teamId, session.user.id);
+  const now = new Date();
+  const calendarSettings = await scope.calendar.getCalendarSettings();
+  const filterTime = { now, timezone: calendarSettings.defaultTimezone };
   const params = await searchParams;
   const filters = parseWorkFilters(params, {
     taskCategoriesEnabled: getEnv().TASK_CATEGORY_UI_ENABLED,
@@ -80,7 +83,7 @@ export default async function ObjectsIndexPage({
     categoryKeys.length > 0
       ? await scope.objects.getTaskCategoryFilterRefreshState(
           {
-            ...objectListFilterFromWorkFilters({ ...filters, category: '' }),
+            ...objectListFilterFromWorkFilters({ ...filters, category: '' }, filterTime),
             type: 'task',
             archived: false,
           },
@@ -90,7 +93,7 @@ export default async function ObjectsIndexPage({
   const filterParams = workFilterHiddenParams(params, WORK_FILTER_PARAM_KEYS);
   const contextualTaskFilter = Boolean(filters.category || filters.project);
   const objectFilter = {
-    ...objectListFilterFromWorkFilters(filters),
+    ...objectListFilterFromWorkFilters(filters, filterTime),
     ...(contextualTaskFilter && !filters.type ? { type: 'task' as const } : {}),
     archived: false,
   } satisfies objects.ObjectListFilter;

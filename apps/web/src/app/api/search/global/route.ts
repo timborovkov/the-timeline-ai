@@ -100,14 +100,7 @@ function searchObjectsAndTasks(
         snippet: summary?.plainText
           ? summary.plainText.slice(0, 240)
           : kind === 'task'
-            ? [
-                row.status,
-                row.stage,
-                categoryLabel,
-                row.dueAt ? `due ${row.dueAt.toISOString().slice(0, 10)}` : null,
-              ]
-                .filter(Boolean)
-                .join(' · ') || 'Task'
+            ? [row.status, row.stage, categoryLabel].filter(Boolean).join(' · ') || 'Task'
             : [row.type, row.status, row.stage].filter(Boolean).join(' · '),
         href: `/app/objects/${row.id}`,
         updatedAt: row.updatedAt.toISOString(),

@@ -7,12 +7,13 @@ import {
 } from '@timeline/db';
 import { composePostmarkHashAddress } from '@timeline/shared/slug';
 import { withTeam } from '@timeline/shared/team-scope';
+import { workspaceDueDateBoundaries } from '@timeline/shared/time';
 import { and, eq, isNull, lt, or, sql } from 'drizzle-orm';
 
 import type * as jobRecovery from '@timeline/shared/job-recovery';
 
 import { db } from '@/lib/db';
-import { OPEN_WORK_STATUS_EXCLUDED } from '@/lib/work-queue';
+import { TASK_OPEN_STATUSES_EXCLUDED } from '@/lib/task-board-config';
 
 type TeamScope = ReturnType<typeof withTeam>;
 type IntegrationRow = typeof integrations.$inferSelect;
@@ -182,14 +183,17 @@ async function countVisibleDocuments(teamId: string, userId: string): Promise<nu
 export async function getWorkAttentionSummary(
   scope: TeamScope,
   now = new Date(),
+  timezone?: string,
 ): Promise<WorkAttentionSummary> {
+  const resolvedTimezone = timezone ?? (await scope.calendar.getCalendarSettings()).defaultTimezone;
+  const boundaries = workspaceDueDateBoundaries(resolvedTimezone, now);
   const [approvalCounts, overdueTasks] = await Promise.all([
     scope.suggestions.getApprovalItemCounts(),
     scope.objects.countObjects({
       type: 'task',
       archived: false,
-      statusNotCaseInsensitive: [...OPEN_WORK_STATUS_EXCLUDED],
-      dueBefore: now,
+      statusNotCaseInsensitive: [...TASK_OPEN_STATUSES_EXCLUDED],
+      dueDateRange: { timezone: resolvedTimezone, to: boundaries.today },
     }),
   ]);
   return {

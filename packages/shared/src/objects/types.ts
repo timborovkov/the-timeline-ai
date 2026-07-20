@@ -4,6 +4,7 @@ import type {
   TaskCategorySource,
   TaskCategoryStatus,
 } from '#src/task-categories/types.js';
+import type { DueDateRangeFilter } from '#src/time/index.js';
 
 export const OBJECT_TYPES = [
   'person',
@@ -44,6 +45,7 @@ export interface ObjectListFilter {
   primaryProjectId?: string | string[];
   dueBefore?: Date;
   dueAfter?: Date;
+  dueDateRange?: DueDateRangeFilter;
   dueNull?: boolean;
   createdBefore?: Date;
   createdAfter?: Date;
