@@ -129,12 +129,18 @@ describe('WorkFilterBar', () => {
       />,
     );
 
-    await user.type(screen.getByLabelText('Search project filters'), 'Overflow');
+    const projectTrigger = screen.getByRole('button', { name: 'Project' });
+    projectTrigger.focus();
+    await user.keyboard('{Enter}');
+    const projectSearch = screen.getByLabelText('Search project filters');
+    await waitFor(() => {
+      expect(document.activeElement).toBe(projectSearch);
+    });
+    await user.type(projectSearch, 'Overflow');
     await waitFor(() => {
       expect(searchObjectsAction).toHaveBeenCalledWith({ query: 'Overflow', type: 'project' });
     });
-    await user.click(screen.getByRole('button', { name: 'Project' }));
-    expect(screen.getByRole('menuitemcheckbox', { name: 'Overflow project' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Overflow project' })).toBeTruthy();
   });
 
   it('does not submit work filters while typing a project lookup', async () => {
@@ -151,6 +157,7 @@ describe('WorkFilterBar', () => {
       />,
     );
 
+    await user.click(screen.getByRole('button', { name: 'Project' }));
     await user.type(screen.getByLabelText('Search project filters'), 'Overflow');
     await new Promise((resolve) => setTimeout(resolve, 400));
 

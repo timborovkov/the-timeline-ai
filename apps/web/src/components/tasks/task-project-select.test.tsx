@@ -43,10 +43,11 @@ describe('TaskProjectSelect', () => {
       />,
     );
 
-    const selector = screen.getByRole('combobox', { name: 'Task project' });
-    await userEvent.selectOptions(selector, 'project-1');
+    const selector = screen.getByRole('button', { name: 'Task project: No project' });
+    await userEvent.click(selector);
+    await userEvent.click(screen.getByRole('button', { name: 'Faba website redesign' }));
 
-    expect((selector as HTMLSelectElement).disabled).toBe(true);
+    expect((selector as HTMLButtonElement).disabled).toBe(true);
     expect(fakes.setTaskProjectAction).toHaveBeenCalledWith({
       id: 'task-1',
       projectId: 'project-1',
@@ -56,8 +57,28 @@ describe('TaskProjectSelect', () => {
       resolveMutation({ ok: true });
     });
     await waitFor(() => {
-      expect((selector as HTMLSelectElement).disabled).toBe(false);
+      expect((selector as HTMLButtonElement).disabled).toBe(false);
     });
     expect(fakes.refresh).toHaveBeenCalledOnce();
+  });
+
+  it('exposes the selected project through the trigger and option semantics', async () => {
+    render(
+      <TaskProjectSelect
+        taskId="task-1"
+        projectId="project-1"
+        currentProjectLabel="Faba website redesign"
+        projects={[{ id: 'project-1', label: 'Faba website redesign' }]}
+      />,
+    );
+
+    const selector = screen.getByRole('button', {
+      name: 'Task project: Faba website redesign',
+    });
+    await userEvent.click(selector);
+
+    expect(
+      screen.getByRole('button', { name: 'Faba website redesign' }).getAttribute('aria-pressed'),
+    ).toBe('true');
   });
 });
