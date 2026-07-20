@@ -48,6 +48,9 @@ export default async function DocumentsPage({ searchParams }: Props) {
     scope.timeline.resolveVisibilityDefault('document'),
     scope.timeline.listMembers(),
   ]);
+  const documentPinState = await scope.pins.isPinnedMany(
+    documentPage.items.map((document) => ({ kind: 'document' as const, key: document.id })),
+  );
   const memberIds = members.map((m) => m.userId);
   const memberUsers =
     memberIds.length > 0
@@ -92,6 +95,7 @@ export default async function DocumentsPage({ searchParams }: Props) {
           visibility: d.visibility,
           updatedAt: d.updatedAt.toISOString(),
           ownerUserId: d.ownerUserId,
+          pinned: documentPinState[`document:${d.id}`] ?? false,
           currentVersion: d.currentVersion
             ? {
                 ...d.currentVersion,

@@ -650,6 +650,7 @@ describe('POST /api/chat', () => {
         'calendar',
         'approvals',
         'integrations',
+        'pins',
       ],
       selectedNativeToolCount: 11,
       mcpDiscoverySkipped: true,

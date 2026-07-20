@@ -29,6 +29,9 @@ back to the source material instead of hiding behind black-box summaries.
   team already did.
 - Global search across app pages, timeline events, documents, objects, tasks,
   boards, calendar events, and integration setup surfaces.
+- Personal, ordered pins across objects and tasks, boards, documents and
+  captured files, meetings, calendar series, and grouped timeline moments,
+  with a compact Home preview and complete Work manager.
 - A chat interface that can answer questions across events, documents,
   meetings, calendar rows, and connected tools.
 - Lightweight CRM, project, task, and decision tracking derived from everyday
@@ -81,7 +84,7 @@ This is a pnpm/Turborepo monorepo.
 | `apps/web` | Next.js app, public docs, auth, server actions, UI, API routes, and inbound webhooks. |
 | `apps/worker` | BullMQ workers for transcription, extraction, embeddings, documents, meetings, integrations, reconciliation, MCP health, object summaries, daily digest, team export, and maintenance jobs. |
 | `packages/db` | Drizzle schema, migrations, and database package exports. |
-| `packages/shared` | Team-scoped data access, LLM wrapper, Qdrant/S3 wrappers, queues, integrations, artifact/workspace reconciliation, calendar, documents, meetings, objects, MCP, and other shared domain modules. |
+| `packages/shared` | Team-scoped data access, personal pins, LLM wrapper, Qdrant/S3 wrappers, queues, integrations, artifact/workspace reconciliation, calendar, documents, meetings, objects, MCP, and other shared domain modules. |
 | `docs` | Product, setup, architecture, and deployment documentation. |
 
 The two most important boundaries are:

@@ -19,6 +19,10 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/app/actions/documents', () => ({
   promoteCapturedFileAction: fakes.promoteCapturedFileAction,
 }));
+vi.mock('@/app/actions/pins', () => ({
+  pinTargetAction: vi.fn(),
+  unpinTargetAction: vi.fn(),
+}));
 vi.mock('@/components/documents/document-preview', () => ({
   DocumentPreview: () => createElement('button', { type: 'button' }, 'Preview'),
 }));
@@ -38,6 +42,7 @@ function capturedFile(overrides: Partial<CapturedFile> = {}): CapturedFile {
     metadata: { suggested_title: 'Whiteboard planning photo' },
     visibility: 'team' as const,
     visibilityUserIds: null,
+    pinned: false,
     updatedAt: '2026-06-11T10:00:00.000Z',
     sourceRawEventId: 'event-1',
     currentVersion: {

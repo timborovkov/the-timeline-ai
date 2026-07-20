@@ -24,13 +24,19 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
   {
     id: 'home',
     title: 'Home',
-    description: 'Dashboard overview, capture entry points, and current team activity.',
+    description: 'Ask, capture, pinned work, attention, and current team activity.',
     href: '/app',
     group: 'dashboard',
     minRole: 'member',
-    intents: ['dashboard overview', 'home', 'what is happening', 'capture quick note'],
+    intents: [
+      'dashboard overview',
+      'home',
+      'what is happening',
+      'capture quick note',
+      'pinned work',
+    ],
     guide:
-      'Use Home for the highest-level dashboard overview, quick capture entry points, and current team activity.',
+      'Use Home to ask the timeline, capture a quick note, revisit pinned boards or objects, and review current team activity.',
     relatedRouteIds: ['timeline', 'chat'],
   },
   {

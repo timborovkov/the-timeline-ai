@@ -30,11 +30,17 @@ vi.mock('@/app/actions/objects', () => ({
   deleteNoteAction: vi.fn(),
   generateObjectSummaryAction: vi.fn(),
   loadTaskCategoryStatesAction: fakes.loadTaskCategoryStatesAction,
+  pinObjectAction: vi.fn(),
   rejectObjectChangeAction: vi.fn(),
   removeRelationshipAction: vi.fn(),
   repairObjectMemoryAction: vi.fn(),
   updateNoteAction: vi.fn(),
   updateObjectAction: vi.fn(),
+  unpinObjectAction: vi.fn(),
+}));
+vi.mock('@/app/actions/pins', () => ({
+  pinTargetAction: vi.fn(),
+  unpinTargetAction: vi.fn(),
 }));
 vi.mock('@/app/actions/suggestions', () => ({
   acceptAllSuggestionAction: vi.fn(),

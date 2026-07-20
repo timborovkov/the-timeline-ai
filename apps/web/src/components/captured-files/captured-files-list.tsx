@@ -12,6 +12,7 @@ import { promoteCapturedFileAction } from '@/app/actions/documents';
 import { DocumentPreview } from '@/components/documents/document-preview';
 import { EvidenceLink } from '@/components/evidence-link';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
+import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { selectedValues } from '@/lib/filter-values';
@@ -23,6 +24,7 @@ interface CapturedFileItem {
   visibility: 'team' | 'private' | 'specific_users';
   visibilityUserIds: string[] | null;
   updatedAt: string;
+  pinned: boolean;
   sourceRawEventId: string | null;
   currentVersion: {
     id: string;
@@ -449,6 +451,11 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
         ) : null}
       </div>
       <div className="flex flex-wrap items-center justify-end gap-2">
+        <PinOverflowMenu
+          target={{ kind: 'document', key: file.id }}
+          title={presentation.displayTitle}
+          initialPinned={file.pinned}
+        />
         {file.currentVersion?.id && ['image', 'pdf', 'audio'].includes(fileKind(contentType)) ? (
           <DocumentPreview
             target={{ versionId: file.currentVersion.id }}

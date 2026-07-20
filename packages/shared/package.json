@@ -255,6 +255,12 @@
       "import": "./dist/boards/index.js",
       "default": "./dist/boards/index.js"
     },
+    "./pins": {
+      "types": "./src/pins/index.ts",
+      "development": "./src/pins/index.ts",
+      "import": "./dist/pins/index.js",
+      "default": "./dist/pins/index.js"
+    },
     "./onboarding": {
       "types": "./src/onboarding/index.ts",
       "development": "./src/onboarding/index.ts",

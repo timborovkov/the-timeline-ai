@@ -219,6 +219,7 @@ const nativeToolGroups = {
     'propose_calendar_update',
   ],
   integrations: ['list_integrations', 'search_integration_events', 'get_integration_resource'],
+  pins: ['list_pins', 'pin_item', 'unpin_item', 'move_pin'],
 } as const;
 
 type NativeToolGroup = keyof typeof nativeToolGroups;
@@ -331,11 +332,22 @@ function selectAgentToolGroups(input: {
     groups.add('integrations');
   }
 
+  if (matchesAny(text, [/\b(pin|pinned|unpin|pinned work)\b/])) groups.add('pins');
+
   const includeMcp = matchesAny(text, [
     /\b(external tool|connected tool|mcp|github|linear|drive|jira|notion|slack|telegram|source)\b/,
   ]);
 
   return { groups: [...groups], includeMcp };
+}
+
+function hasExplicitPinMutationIntent(question: string): boolean {
+  return matchesAny(question.toLowerCase(), [
+    /\b(pin|unpin)\s+(this|that|the|my|an?\s+)?\b/,
+    /\b(add|save)\b.{0,40}\b(to|as)\s+(my\s+)?pins?\b/,
+    /\b(remove|delete)\b.{0,40}\bfrom\s+(my\s+)?pins?\b/,
+    /\b(move|reorder)\b.{0,40}\bpins?\b/,
+  ]);
 }
 
 function filterToolSet(tools: ToolSet, names: readonly string[]): ToolSet {
@@ -816,7 +828,10 @@ export async function POST(req: Request): Promise<Response> {
     question: latestQuestion,
     dashboardContext: parsed.data.dashboardContext,
   });
-  const nativeTools = agent.buildAgentTools(scope, { onToolError: reportChatAgentToolError });
+  const nativeTools = agent.buildAgentTools(scope, {
+    onToolError: reportChatAgentToolError,
+    allowPinMutations: hasExplicitPinMutationIntent(latestQuestion),
+  });
   const nativeToolNames = selectedNativeToolNames(toolSelection.groups);
   const selectedNativeTools = filterToolSet(nativeTools, nativeToolNames);
   const omittedNativeToolCount = Math.max(

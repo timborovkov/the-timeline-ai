@@ -4,6 +4,7 @@ import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 
 import { DocumentDetail } from '@/components/documents/document-detail';
+import { PinButton } from '@/components/pins/pin-button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -37,7 +38,7 @@ export default async function DocumentDetailPage({ params, searchParams }: Props
   const document = await scope.documents.getDocument(id);
   if (!document) notFound();
 
-  const [versions, folderPath, provenancePage] = await Promise.all([
+  const [versions, folderPath, provenancePage, initialPinned] = await Promise.all([
     scope.documents.listDocumentVersions(document.id),
     scope.documents.folderPath(document.folderId),
     scope.documents.listDocumentsWithProvenancePage({
@@ -45,6 +46,7 @@ export default async function DocumentDetailPage({ params, searchParams }: Props
       fileKind: document.fileKind,
       limit: 1,
     }),
+    scope.pins.isPinned({ kind: 'document', key: document.id }),
   ]);
   const listEntry = provenancePage.items[0] ?? null;
   const provenance = documentDetailProvenance(document, listEntry);
@@ -64,6 +66,9 @@ export default async function DocumentDetailPage({ params, searchParams }: Props
 
   return (
     <div className="space-y-6">
+      <div className="flex justify-end">
+        <PinButton target={{ kind: 'document', key: document.id }} initialPinned={initialPinned} />
+      </div>
       <DocumentDetail
         teamId={active.teamId}
         document={{

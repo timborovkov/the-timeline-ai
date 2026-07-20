@@ -27,6 +27,7 @@ import { DocumentPreview } from '@/components/documents/document-preview';
 import { EmptyAction } from '@/components/empty-action';
 import { EventVisibilityForm } from '@/components/event-visibility-form';
 import { useInspector } from '@/components/inspector-context';
+import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { TechnicalDetails } from '@/components/technical-details';
 import { Button } from '@/components/ui/button';
 import {
@@ -65,6 +66,7 @@ interface Props {
   compact?: boolean;
   maxMoments?: number;
   serverMoments?: TimelineMoment[];
+  pinnedMomentIds?: ReadonlySet<string>;
   emptyLabel?: string;
   emptyAction?: { href: string; label: string; body: string };
   impactFilter?: TimelineImpactFilter;
@@ -1014,6 +1016,7 @@ function TimelineMomentRow({
   capturedFilesByEventId,
   focused,
   compact,
+  pinned,
   timezone,
 }: {
   moment: TimelineMoment;
@@ -1024,6 +1027,7 @@ function TimelineMomentRow({
   capturedFilesByEventId: Record<string, TimelineCapturedFile[]>;
   focused: boolean;
   compact: boolean;
+  pinned: boolean;
   timezone: string;
 }) {
   const inspector = useInspector();
@@ -1144,6 +1148,13 @@ function TimelineMomentRow({
           </Link>
         ) : null}
       </div>
+      <div className="absolute right-2 top-3 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+        <PinOverflowMenu
+          target={{ kind: 'timeline_moment', key: moment.id }}
+          title={title}
+          initialPinned={pinned}
+        />
+      </div>
     </li>
   );
 }
@@ -1158,6 +1169,7 @@ export function TimelineList({
   compact = false,
   maxMoments,
   serverMoments,
+  pinnedMomentIds = new Set<string>(),
   emptyLabel = 'No events yet',
   emptyAction,
   impactFilter = 'all',
@@ -1287,6 +1299,7 @@ export function TimelineList({
                   moment.rawEvents.some((event) => event.id === focusEventId)
                 }
                 compact={compact}
+                pinned={pinnedMomentIds.has(moment.id)}
                 timezone={resolvedTimezone}
               />
             ))}

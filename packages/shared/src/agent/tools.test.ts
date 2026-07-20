@@ -80,6 +80,14 @@ interface FakeScope {
     removeBoardItem: ReturnType<typeof vi.fn>;
     listObjectBoardContext: ReturnType<typeof vi.fn>;
   };
+  pins: {
+    list: ReturnType<typeof vi.fn>;
+    pin: ReturnType<typeof vi.fn>;
+    unpin: ReturnType<typeof vi.fn>;
+    move: ReturnType<typeof vi.fn>;
+    resolveTarget: ReturnType<typeof vi.fn>;
+    resolvePin: ReturnType<typeof vi.fn>;
+  };
 }
 
 function makeFakeScope(): FakeScope {
@@ -139,6 +147,14 @@ function makeFakeScope(): FakeScope {
       updateBoardItem: vi.fn(),
       removeBoardItem: vi.fn(),
       listObjectBoardContext: vi.fn(),
+    },
+    pins: {
+      list: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
+      pin: vi.fn(),
+      unpin: vi.fn(),
+      move: vi.fn(),
+      resolveTarget: vi.fn(),
+      resolvePin: vi.fn(),
     },
   };
 }
@@ -240,7 +256,7 @@ interface SearchToolResult {
 describe('buildAgentTools — team isolation', () => {
   it('tool input schemas do not accept teamId or userId', () => {
     const scope = makeFakeScope();
-    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const tools = buildAgentTools(scope as unknown as TeamScope, { allowPinMutations: true });
     // Each input schema explicitly rejects extra fields when used with
     // .parse(), but the structural guarantee is that the schemas don't
     // declare teamId in their shape. Verify by Zod's `.shape` introspection.
@@ -283,7 +299,7 @@ describe('buildAgentTools — team isolation', () => {
         createdAt: new Date('2026-01-01T00:00:00.000Z'),
       },
     ]);
-    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const tools = buildAgentTools(scope as unknown as TeamScope, { allowPinMutations: true });
     const exec = tools.list_team_members?.execute as (
       input: Record<string, never>,
       opts: unknown,
@@ -303,6 +319,72 @@ describe('buildAgentTools — team isolation', () => {
         },
       ],
     });
+  });
+
+  it('lists and mutates only pins exposed by the bound personal scope', async () => {
+    const scope = makeFakeScope();
+    const pinId = 'abababab-abab-4bab-8bab-abababababab';
+    const item = {
+      pinId,
+      target: { kind: 'object' as const, key: OBJECT_ID },
+      title: 'AuditAI pilot',
+      href: `/app/objects/${OBJECT_ID}`,
+      iconKind: 'deal',
+      sortKey: '0',
+      pinnedAt: '2026-06-14T09:00:00.000Z',
+    };
+    scope.pins.list.mockResolvedValue({ items: [item], nextCursor: 'next' });
+    scope.pins.pin.mockResolvedValue(item);
+    scope.pins.resolveTarget.mockResolvedValue(item);
+    scope.pins.resolvePin.mockResolvedValue(item);
+    scope.pins.unpin.mockResolvedValue(true);
+    scope.pins.move.mockResolvedValue(true);
+    const tools = buildAgentTools(scope as unknown as TeamScope, { allowPinMutations: true });
+
+    const list = tools.list_pins?.execute as (input: unknown, opts: unknown) => Promise<unknown>;
+    const pin = tools.pin_item?.execute as (input: unknown, opts: unknown) => Promise<unknown>;
+    const unpin = tools.unpin_item?.execute as (input: unknown, opts: unknown) => Promise<unknown>;
+    const move = tools.move_pin?.execute as (input: unknown, opts: unknown) => Promise<unknown>;
+
+    await expect(list({ kinds: ['object'], limit: 1 }, {})).resolves.toMatchObject({
+      count: 1,
+      next_cursor: 'next',
+      items: [{ pin_id: pinId, title: 'AuditAI pilot' }],
+    });
+    await expect(pin({ kind: 'object', key: OBJECT_ID }, {})).resolves.toMatchObject({
+      ok: true,
+      message: 'Pinned AuditAI pilot.',
+    });
+    await expect(unpin({ kind: 'object', key: OBJECT_ID }, {})).resolves.toMatchObject({
+      ok: true,
+      message: 'Unpinned AuditAI pilot.',
+    });
+    await expect(move({ pinId, placement: 'top' }, {})).resolves.toMatchObject({
+      ok: true,
+      message: 'Moved AuditAI pilot.',
+    });
+
+    expect(scope.pins.list).toHaveBeenCalledWith({ kinds: ['object'], limit: 1 });
+    expect(scope.pins.pin).toHaveBeenCalledWith({ kind: 'object', key: OBJECT_ID });
+    expect(scope.pins.unpin).toHaveBeenCalledWith({ kind: 'object', key: OBJECT_ID });
+    expect(scope.pins.move).toHaveBeenCalledWith({ pinId, edge: 'top' });
+    expect(scope.pins.resolvePin).toHaveBeenCalledWith(pinId);
+  });
+
+  it('keeps pin reads but removes pin mutations from read-only tool sets', () => {
+    const tools = buildAgentTools(makeFakeScope() as unknown as TeamScope, { readOnly: true });
+    expect(tools.list_pins).toBeDefined();
+    expect(tools.pin_item).toBeUndefined();
+    expect(tools.unpin_item).toBeUndefined();
+    expect(tools.move_pin).toBeUndefined();
+  });
+
+  it('does not expose pin mutations without explicit current-turn authorization', () => {
+    const tools = buildAgentTools(makeFakeScope() as unknown as TeamScope);
+    expect(tools.list_pins).toBeDefined();
+    expect(tools.pin_item).toBeUndefined();
+    expect(tools.unpin_item).toBeUndefined();
+    expect(tools.move_pin).toBeUndefined();
   });
 
   it('search_app_guide returns route citations for navigation questions without scope calls', async () => {

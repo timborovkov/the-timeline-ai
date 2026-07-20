@@ -100,7 +100,8 @@ describe('database schema contracts', () => {
           'reconciliation_projection_outbox',
           'task_category_filter_versions',
           'task_category_project_invalidations',
-          'task_project_source_locks'
+          'task_project_source_locks',
+          'user_pins'
         )
       ORDER BY tablename
     `);
@@ -117,7 +118,61 @@ describe('database schema contracts', () => {
       'task_category_project_invalidations',
       'task_project_source_locks',
       'teams',
+      'user_pins',
     ]);
+  });
+
+  it('backfills legacy board and object pins into one ordered personal collection', async () => {
+    const migrationPg = new PGlite();
+    try {
+      await applyMigrations(migrationPg, { throughFile: '0061_object_pins.sql' });
+      await seedBase(migrationPg);
+      const firstBoard = '11111111-1111-4111-8111-111111111131';
+      const secondBoard = '11111111-1111-4111-8111-111111111132';
+      const objectId = '11111111-1111-4111-8111-111111111133';
+      await migrationPg.exec(`
+        INSERT INTO boards (id, team_id, created_by, name)
+        VALUES
+          ('${firstBoard}', '${TEAM_ID}', '${OWNER_ID}', 'First board'),
+          ('${secondBoard}', '${TEAM_ID}', '${OWNER_ID}', 'Second board');
+        INSERT INTO entities (id, team_id, type, canonical_name)
+        VALUES ('${objectId}', '${TEAM_ID}', 'project', 'Pinned project');
+        INSERT INTO board_pins (team_id, user_id, board_id, position, created_at)
+        VALUES
+          ('${TEAM_ID}', '${OWNER_ID}', '${secondBoard}', 20, '2026-07-20T10:02:00Z'),
+          ('${TEAM_ID}', '${OWNER_ID}', '${firstBoard}', 10, '2026-07-20T10:01:00Z');
+        INSERT INTO object_pins (team_id, user_id, entity_id, position, created_at)
+        VALUES ('${TEAM_ID}', '${OWNER_ID}', '${objectId}', 0, '2026-07-20T10:03:00Z');
+      `);
+
+      await applyMigrationFile(migrationPg, '0062_universal_personal_pins.sql');
+
+      const rows = await migrationPg.query<{
+        target_kind: string;
+        target_key: string;
+        sort_key: string;
+      }>(`
+        SELECT target_kind::text, target_key, sort_key::text
+        FROM user_pins
+        WHERE team_id = '${TEAM_ID}' AND user_id = '${OWNER_ID}'
+        ORDER BY sort_key, id
+      `);
+      expect(rows.rows).toEqual([
+        { target_kind: 'board', target_key: firstBoard, sort_key: '0' },
+        { target_kind: 'board', target_key: secondBoard, sort_key: '1024' },
+        { target_kind: 'object', target_key: objectId, sort_key: '2048' },
+      ]);
+
+      await migrationPg.exec(`DELETE FROM entities WHERE id = '${objectId}'`);
+      const remainingObjectPins = await migrationPg.query<{ count: string }>(`
+        SELECT count(*)::text AS count
+        FROM user_pins
+        WHERE target_kind = 'object' AND target_key = '${objectId}'
+      `);
+      expect(remainingObjectPins.rows[0]?.count).toBe('0');
+    } finally {
+      await migrationPg.close();
+    }
   });
 
   it('indexes the global pending task-category recovery sweep', async () => {

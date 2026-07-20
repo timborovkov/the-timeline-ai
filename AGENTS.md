@@ -120,7 +120,7 @@ Treat this file as an operating contract for agents, not a loose README.
 - **Team isolation is sacred.** Every Postgres query goes through
   `withTeam(db, teamId, userId)` in `packages/shared`. Use the returned
   named modules (`scope.timeline`, `scope.documents`, `scope.meetings`,
-  `scope.objects`, `scope.boards`, `scope.suggestions`, `scope.calendar`,
+  `scope.objects`, `scope.boards`, `scope.pins`, `scope.suggestions`, `scope.calendar`,
   `scope.integrations`, `scope.mcp`, `scope.onboarding`, `scope.jobRecovery`,
   `scope.reconciliation`, `scope.audit`) rather than flat scope methods or
   manually passing `db` into object helpers. Every Qdrant query filters on
@@ -205,7 +205,8 @@ packages/
   db/       Drizzle schema + migrations
   shared/   Cross-package code: withTeam workspace port, llm wrapper, Qdrant
             wrapper, S3 wrapper, Telegram dispatcher, queue names, shared
-            embedding source planner, objects module,
+            embedding source planner, objects module, personal pins module
+            (ordered cross-type pins with visibility-safe target adapters),
             documents module (Phase 9 — folders/documents/versions/chunks
             scope, RustFS object-key builder, text chunker), meeting-bots
             module (Phase 10 — Recall.ai provider, Svix verifier) +

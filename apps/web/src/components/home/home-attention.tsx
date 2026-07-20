@@ -25,20 +25,23 @@ export function HomeAttention({ groups }: { groups: AttentionGroup[] }) {
           You’re caught up
         </div>
       ) : (
-        <div className="grid gap-2 md:grid-cols-2">
+        <div className="divide-y divide-border border-y border-border">
           {visible.map((group) => (
             <Link
               key={group.href}
               href={group.href}
-              className="group flex items-center gap-3 rounded-lg border border-border bg-surface p-3 transition-colors hover:bg-surface-2"
+              className="group flex items-center gap-3 py-3 transition-colors hover:bg-surface sm:px-3"
             >
-              <span className={group.danger ? 'text-danger' : 'text-signal'}>{group.icon}</span>
+              <span className={`[&>svg]:size-4 ${group.danger ? 'text-danger' : 'text-signal'}`}>
+                {group.icon}
+              </span>
               <span className="min-w-0 flex-1">
                 <span className="block text-sm font-medium text-fg">
                   <span className="font-mono">{group.count}</span> {group.label.toLowerCase()}
                 </span>
-                <span className="block text-xs text-fg-muted">{group.action}</span>
+                <span className="block text-xs text-fg-muted sm:hidden">{group.action}</span>
               </span>
+              <span className="hidden text-xs text-fg-muted sm:block">{group.action}</span>
               <ArrowRight
                 aria-hidden="true"
                 className="size-4 text-fg-dim transition-transform group-hover:translate-x-0.5"

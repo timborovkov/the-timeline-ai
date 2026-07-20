@@ -15,6 +15,7 @@ import {
   SkipScheduledMeetingButton,
 } from '@/components/meeting-forms';
 import { PageHeader } from '@/components/page-header';
+import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { SectionHeading } from '@/components/section-heading';
 import { StatusBadge } from '@/components/status-badge';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -55,6 +56,10 @@ export default async function MeetingsPage({
       scope.timeline.listMembers(),
     ]);
   const memberIds = members.map((m) => m.userId);
+  const pinState = await scope.pins.isPinnedMany([
+    ...list.map((meeting) => ({ kind: 'meeting' as const, key: meeting.id })),
+    ...savedMeetings.map((meeting) => ({ kind: 'saved_meeting' as const, key: meeting.id })),
+  ]);
   const memberUsers =
     memberIds.length > 0
       ? await db
@@ -118,7 +123,11 @@ export default async function MeetingsPage({
           ) : (
             <ul className="divide-y rounded-lg border">
               {savedMeetings.map((saved) => (
-                <li key={saved.id} className="space-y-2 p-3">
+                <li
+                  id={`saved-meeting-${saved.id}`}
+                  key={saved.id}
+                  className="scroll-mt-24 space-y-2 p-3"
+                >
                   <div className="flex items-start justify-between gap-3">
                     <span className="flex flex-col">
                       <span className="font-medium">{displayMeetingLabel(saved)}</span>
@@ -130,6 +139,11 @@ export default async function MeetingsPage({
                     </span>
                     <span className="flex gap-2">
                       <JoinSavedMeetingButton query={saved.aliases[0] ?? saved.title} />
+                      <PinOverflowMenu
+                        target={{ kind: 'saved_meeting', key: saved.id }}
+                        title={displayMeetingLabel(saved)}
+                        initialPinned={pinState[`saved_meeting:${saved.id}`] ?? false}
+                      />
                       <ArchiveSavedMeetingButton savedMeetingId={saved.id} />
                     </span>
                   </div>
@@ -171,11 +185,16 @@ export default async function MeetingsPage({
                       </time>
                     </span>
                   </Link>
-                  {m.status === 'scheduled' ? (
-                    <SkipScheduledMeetingButton meetingId={m.id} />
-                  ) : (
-                    <span className="text-xs text-muted-foreground">→</span>
-                  )}
+                  <span className="flex items-center gap-1">
+                    {m.status === 'scheduled' ? (
+                      <SkipScheduledMeetingButton meetingId={m.id} />
+                    ) : null}
+                    <PinOverflowMenu
+                      target={{ kind: 'meeting', key: m.id }}
+                      title={displayMeetingLabel(m)}
+                      initialPinned={pinState[`meeting:${m.id}`] ?? false}
+                    />
+                  </span>
                 </div>
               </li>
             ))}

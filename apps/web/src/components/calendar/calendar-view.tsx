@@ -46,6 +46,8 @@ import {
   calendarOverlayReducer,
   mergeCalendarEvents,
 } from '@/components/calendar/calendar-overlay';
+import { PinButton } from '@/components/pins/pin-button';
+import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -74,6 +76,7 @@ interface CalendarViewProps {
   defaultVisibility?: 'team' | 'private' | 'specific_users';
   defaultVisibilityUserIds?: string[] | null;
   members?: { id: string; label: string }[];
+  focusEventId?: string | null;
 }
 
 const EMPTY_MEMBERS: NonNullable<CalendarViewProps['members']> = [];
@@ -351,6 +354,7 @@ function useCalendarViewModel({
   defaultVisibility = 'team',
   defaultVisibilityUserIds = null,
   members = EMPTY_MEMBERS,
+  focusEventId = null,
 }: CalendarViewProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -380,6 +384,7 @@ function useCalendarViewModel({
   const [pending, startTransition] = useTransition();
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dialogContextRef = useRef(0);
+  const openedFocusRef = useRef<string | null>(null);
   const eventListParamsRef = useRef<EventListParams | null>(null);
   const serverEventsSnapshotRef = useRef<{
     signature: string;
@@ -454,6 +459,23 @@ function useCalendarViewModel({
     () => applyCalendarPageOverlay(eventListEvents, eventOverlay),
     [eventListEvents, eventOverlay],
   );
+
+  useEffect(() => {
+    if (!focusEventId || openedFocusRef.current === focusEventId) return;
+    const focused = [...displayEvents, ...displayEventListEvents].find(
+      (event) => event.id === focusEventId,
+    );
+    if (!focused || focused.redacted) return;
+    openedFocusRef.current = focusEventId;
+    dialogContextRef.current += 1;
+    dispatchCalendarUi({
+      editing: focused,
+      draft: draftFromEvent(focused, timezone),
+      error: null,
+      surfaceError: null,
+      open: true,
+    });
+  }, [displayEventListEvents, displayEvents, focusEventId, timezone]);
 
   const eventsByDay = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>();
@@ -596,6 +618,7 @@ function useCalendarViewModel({
         : null;
       const optimisticEvent: CalendarEvent = {
         id: optimisticId,
+        pinned: editing?.pinned ?? false,
         title,
         description: draft.description.trim() || null,
         startAt: times.start,
@@ -861,28 +884,39 @@ function CalendarEventList({
       <div className="mt-3 divide-y divide-border border border-border bg-bg">
         {events.length > 0 ? (
           events.map((event) => (
-            <button
+            <div
               key={event.id}
-              type="button"
-              className="grid w-full gap-3 p-3 text-left transition-colors hover:bg-muted/30 md:grid-cols-[minmax(10rem,0.45fr)_minmax(0,1fr)_8rem]"
-              onClick={() => {
-                onEdit(event);
-              }}
+              className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 p-3 transition-colors hover:bg-muted/30"
             >
-              <span className="text-xs text-fg-dim">{formatEventRange(event, timezone)}</span>
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-medium text-fg">
-                  {event.redacted ? 'Busy' : event.title}
+              <button
+                type="button"
+                className="grid min-w-0 gap-3 text-left md:grid-cols-[minmax(10rem,0.45fr)_minmax(0,1fr)_8rem]"
+                onClick={() => {
+                  onEdit(event);
+                }}
+              >
+                <span className="text-xs text-fg-dim">{formatEventRange(event, timezone)}</span>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium text-fg">
+                    {event.redacted ? 'Busy' : event.title}
+                  </span>
+                  <span className="mt-1 block truncate text-xs text-fg-muted">
+                    {[event.location, event.description].filter(Boolean).join(' · ') ||
+                      (event.allDay ? 'All day' : statusLabel(event.showAs))}
+                  </span>
                 </span>
-                <span className="mt-1 block truncate text-xs text-fg-muted">
-                  {[event.location, event.description].filter(Boolean).join(' · ') ||
-                    (event.allDay ? 'All day' : statusLabel(event.showAs))}
+                <span className="self-center justify-self-start rounded-sm border border-border px-2 py-1 text-[11px] text-fg-dim md:justify-self-end">
+                  {statusLabel(event.visibility)}
                 </span>
-              </span>
-              <span className="self-center justify-self-start rounded-sm border border-border px-2 py-1 text-[11px] text-fg-dim md:justify-self-end">
-                {statusLabel(event.visibility)}
-              </span>
-            </button>
+              </button>
+              {!event.redacted ? (
+                <PinOverflowMenu
+                  target={{ kind: 'calendar_event', key: event.id }}
+                  title={event.title}
+                  initialPinned={event.pinned}
+                />
+              ) : null}
+            </div>
           ))
         ) : (
           <p className="p-4 text-sm text-fg-muted">No calendar events match these filters.</p>
@@ -1139,6 +1173,15 @@ function CalendarEventDialog({
             Times are saved in {timezone}. All-day events use an exclusive end date.
           </DialogDescription>
         </DialogHeader>
+        {editing && !editing.redacted ? (
+          <div className="flex justify-end">
+            <PinButton
+              target={{ kind: 'calendar_event', key: editing.id }}
+              initialPinned={editing.pinned}
+              compact
+            />
+          </div>
+        ) : null}
         <div className="grid gap-4">
           <CalendarDraftFields draft={draft} members={members} onDraftChange={onDraftChange} />
           {error ? <p className="text-sm text-destructive">{error}</p> : null}

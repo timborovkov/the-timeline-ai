@@ -29,6 +29,7 @@ export interface TimelinePage {
   groupingVersion?: TimelineGroupingVersion;
   mode?: 'moments' | 'events';
   moments?: WebTimelineMomentDto[];
+  pinnedMomentIds?: string[];
   rawEventsById?: Record<string, TimelineEvent>;
   diagnostics?: {
     mode: 'moments' | 'events';
@@ -63,6 +64,7 @@ export interface DocumentListPage {
     visibility: string;
     updatedAt: string;
     ownerUserId: string | null;
+    pinned: boolean;
     currentVersion: {
       id: string;
       version: number;
@@ -186,6 +188,7 @@ export function useTimelineInfiniteQuery(
         groupingVersion?: TimelineGroupingVersion;
         mode?: 'moments' | 'events';
         moments?: WebTimelineMomentDto[];
+        pinnedMomentIds?: string[];
         rawEventsById?: Record<string, TimelineEvent>;
         diagnostics?: TimelinePage['diagnostics'];
         items: TimelineEvent[];
@@ -265,6 +268,7 @@ export function useDocumentListQuery(folderId: string | null, initialPage: Docum
           visibility: string;
           updatedAt: string;
           ownerUserId: string | null;
+          pinned: boolean;
           currentVersion: {
             id: string;
             version: number;

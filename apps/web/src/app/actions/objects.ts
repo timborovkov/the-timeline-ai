@@ -197,7 +197,7 @@ export async function searchObjectsAction(input: unknown): Promise<{
 }
 
 export async function loadTaskRowsAction(input: unknown): Promise<{
-  rows: objects.ObjectRow[];
+  rows: (objects.ObjectRow & { pinned: boolean })[];
   nextCursor: string | null;
   error?: string;
 }> {
@@ -207,7 +207,11 @@ export async function loadTaskRowsAction(input: unknown): Promise<{
     const r = await resolveScope();
     if (!r.ok) return { rows: [], nextCursor: null, error: r.error };
     if (!(await checkUserSearchRateLimit(r.userId))) {
-      return { rows: [], nextCursor: null, error: 'Too many task loads. Try again shortly.' };
+      return {
+        rows: [],
+        nextCursor: null,
+        error: 'Too many task loads. Try again shortly.',
+      };
     }
     const settings = await r.scope.calendar.getCalendarSettings();
     const filters = taskObjectFilterFromWorkFilters(
@@ -217,8 +221,14 @@ export async function loadTaskRowsAction(input: unknown): Promise<{
       { timezone: settings.defaultTimezone },
     );
     const page = await loadTaskRowsPage(r.scope.objects, parsed.data.cursor ?? null, filters);
+    const pinState = await r.scope.pins.isPinnedMany(
+      page.rows.map((row) => ({ kind: 'object' as const, key: row.id })),
+    );
     return {
-      rows: page.rows,
+      rows: page.rows.map((row) => ({
+        ...row,
+        pinned: pinState[`object:${row.id}`] ?? false,
+      })),
       nextCursor: page.nextCursor,
     };
   });
@@ -590,6 +600,40 @@ export async function archiveObjectAction(input: unknown): Promise<ActionState> 
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to archive') };
+    }
+  });
+}
+
+export async function pinObjectAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('pin_object', async () => {
+    const parsed = z.object({ id: uuidSchema }).safeParse(input);
+    if (!parsed.success) return { error: 'Invalid id' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      await r.scope.pins.pin({ kind: 'object', key: parsed.data.id });
+      bestEffortRevalidatePath('/app', 'revalidate_object_pin');
+      bestEffortRevalidatePath(`/app/objects/${parsed.data.id}`, 'revalidate_object_pin');
+      return { ok: true };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to pin object') };
+    }
+  });
+}
+
+export async function unpinObjectAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('unpin_object', async () => {
+    const parsed = z.object({ id: uuidSchema }).safeParse(input);
+    if (!parsed.success) return { error: 'Invalid id' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      await r.scope.pins.unpin({ kind: 'object', key: parsed.data.id });
+      bestEffortRevalidatePath('/app', 'revalidate_object_unpin');
+      bestEffortRevalidatePath(`/app/objects/${parsed.data.id}`, 'revalidate_object_unpin');
+      return { ok: true };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to unpin object') };
     }
   });
 }

@@ -21,7 +21,7 @@ export function DailyDigestBlock({ digest }: { digest: DailyDigestPayload | unde
   return (
     <section
       aria-labelledby="latest-digest-heading"
-      className="space-y-3 rounded-lg border border-border bg-surface p-4"
+      className="space-y-3 border-y border-border py-4"
     >
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <SectionHeading id="latest-digest-heading">Latest digest</SectionHeading>

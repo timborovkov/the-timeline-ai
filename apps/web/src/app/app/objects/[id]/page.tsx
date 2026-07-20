@@ -101,16 +101,18 @@ export default async function ObjectDetailPage({ params, searchParams }: PagePro
   }
 
   await scope.objects.markVisited(detail.id);
-  const [boardContext, pendingBundles, projects, primaryProjects] = await Promise.all([
-    scope.boards.listObjectBoardContext(detail.id),
-    scope.suggestions.listPendingSuggestions(),
-    detail.type === 'task'
-      ? scope.objects.listObjects({ type: 'project', archived: false, limit: 200 })
-      : Promise.resolve([]),
-    detail.type === 'task'
-      ? scope.objects.listPrimaryProjectsForTasks([detail.id])
-      : Promise.resolve([]),
-  ]);
+  const [boardContext, pendingBundles, projects, primaryProjects, initialPinned] =
+    await Promise.all([
+      scope.boards.listObjectBoardContext(detail.id),
+      scope.suggestions.listPendingSuggestions(),
+      detail.type === 'task'
+        ? scope.objects.listObjects({ type: 'project', archived: false, limit: 200 })
+        : Promise.resolve([]),
+      detail.type === 'task'
+        ? scope.objects.listPrimaryProjectsForTasks([detail.id])
+        : Promise.resolve([]),
+      scope.pins.isPinned({ kind: 'object', key: detail.id }),
+    ]);
   const boardItemIds = new Set(boardContext.map((row) => row.itemId));
   const suggestions = pendingBundles.flatMap((bundle) => {
     const items = objectPageSuggestionItems(bundle, detail.id, boardItemIds);
@@ -128,6 +130,7 @@ export default async function ObjectDetailPage({ params, searchParams }: PagePro
         detail={detail}
         teamId={active.teamId}
         userId={session.user.id}
+        initialPinned={initialPinned}
         suggestions={suggestions}
         projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}
         primaryProject={primaryProjects[0] ?? null}

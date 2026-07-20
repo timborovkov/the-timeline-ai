@@ -15,6 +15,7 @@ import {
   serializeObjectRow,
   serializeObjectRowsWithProjects,
 } from '#src/objects/tool-serialization.js';
+import { PIN_TARGET_KINDS } from '#src/pins/index.js';
 import { recordMcpToolResultEvidence } from '#src/reconciliation/mcp-capture.js';
 import { suggestionDedupeKey, type CreateSuggestionInput } from '#src/suggestions/index.js';
 import {
@@ -54,6 +55,7 @@ interface AgentToolOptions {
   classifyTaskCategories?: TaskProposalBatchClassifier | undefined;
   classifyTaskCategory?: TaskProposalClassifier | undefined;
   taskCategoryClassificationEnabled?: boolean | undefined;
+  allowPinMutations?: boolean | undefined;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -87,6 +89,26 @@ const eventSourceSchema = z.enum([
 const objectTypeSchema = z.enum(
   objects.OBJECT_TYPES as [objects.ObjectType, ...objects.ObjectType[]],
 );
+const pinTargetRefSchema = z.object({
+  kind: z.enum(PIN_TARGET_KINDS),
+  key: z.string().trim().min(1).max(500),
+});
+const listPinsInputSchema = z.object({
+  kinds: z.array(z.enum(PIN_TARGET_KINDS)).max(PIN_TARGET_KINDS.length).optional(),
+  limit: z.number().int().min(1).max(50).optional(),
+  cursor: z.string().max(1000).optional(),
+});
+const movePinInputSchema = z
+  .object({
+    pinId: z.string().regex(UUID_RE),
+    placement: z.enum(['top', 'bottom', 'before', 'after']),
+    relativePinId: z.string().regex(UUID_RE).optional(),
+  })
+  .refine(
+    (input) =>
+      (input.placement === 'top' || input.placement === 'bottom') !== Boolean(input.relativePinId),
+    { message: 'before/after require relativePinId; top/bottom do not accept it' },
+  );
 
 const searchTimelineInput = z.object({
   query: z.string().trim().min(1).max(500),
@@ -683,6 +705,7 @@ async function buildAgentTimelineMoments(
       ];
       return {
         moment_id: moment.id,
+        pin_target: { kind: 'timeline_moment' as const, key: moment.id },
         version: moment.version,
         anchor_id: moment.anchorId,
         kind: moment.kind,
@@ -733,6 +756,7 @@ function serializeBoardRow(row: boards.BoardRow): Record<string, unknown> {
     due_soon_count: row.dueSoonCount,
     overdue_count: row.overdueCount,
     pinned: row.pinned,
+    pin_target: { kind: 'board', key: row.id },
     updated_at: row.updatedAt.toISOString(),
   };
 }
@@ -749,6 +773,7 @@ function serializeBoardItemRow(row: boards.BoardItemRow): Record<string, unknown
     }),
     object_name: row.object.canonicalName,
     object_type: row.object.type,
+    pin_target: { kind: 'object', key: row.object.id },
     lane_id: row.laneId,
     responsible_user_id: row.responsibleUserId,
     due_at: row.dueAt?.toISOString() ?? null,
@@ -1165,6 +1190,98 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
   const runSafe = <T>(label: string, fn: () => Promise<T>): Promise<T | { error: string }> =>
     safe(label, fn, options.onToolError);
   const tools: ToolSet = {
+    list_pins: tool({
+      description:
+        "List the current user's visible personal pinned workspace items in their saved order. Use this when the user asks what they have pinned or wants to refer to their pinned workspace.",
+      inputSchema: listPinsInputSchema,
+      execute: async (raw) =>
+        runSafe('list_pins', async () => {
+          const input = listPinsInputSchema.parse(raw);
+          const page = await scope.pins.list({
+            ...(input.kinds ? { kinds: input.kinds } : {}),
+            ...(input.limit ? { limit: input.limit } : {}),
+            ...(input.cursor ? { cursor: input.cursor } : {}),
+          });
+          return {
+            count: page.items.length,
+            next_cursor: page.nextCursor,
+            items: page.items.map((item) => ({
+              pin_id: item.pinId,
+              target: item.target,
+              title: item.title,
+              subtitle: item.subtitle ?? null,
+              href: item.href,
+              status: item.status ?? null,
+              pinned_at: item.pinnedAt,
+            })),
+          };
+        }),
+    }),
+
+    pin_item: tool({
+      description:
+        'Pin one personal workspace item. Use only when the user explicitly asks to pin or save that exact item. Resolve the item first; never invent a target key. This reversible personal preference does not require approval.',
+      inputSchema: pinTargetRefSchema,
+      execute: async (raw) =>
+        runSafe('pin_item', async () => {
+          const input = pinTargetRefSchema.parse(raw);
+          const item = await scope.pins.pin(input);
+          return {
+            ok: true,
+            pin_id: item.pinId,
+            target: item.target,
+            href: item.href,
+            message: `Pinned ${item.title}.`,
+          };
+        }),
+    }),
+
+    unpin_item: tool({
+      description:
+        'Unpin one personal workspace item. Use only when the user explicitly asks to unpin that exact item. Prefer a target returned by list_pins. This reversible personal preference does not require approval.',
+      inputSchema: pinTargetRefSchema,
+      execute: async (raw) =>
+        runSafe('unpin_item', async () => {
+          const input = pinTargetRefSchema.parse(raw);
+          const current = await scope.pins.resolveTarget(input);
+          const removed = await scope.pins.unpin(input);
+          return {
+            ok: true,
+            removed,
+            message: current ? `Unpinned ${current.title}.` : 'Item unpinned.',
+          };
+        }),
+    }),
+
+    move_pin: tool({
+      description:
+        'Reorder one personal pin after the user explicitly asks. Use pin IDs returned by list_pins. For before/after, relativePinId is required.',
+      inputSchema: movePinInputSchema,
+      execute: async (raw) =>
+        runSafe('move_pin', async () => {
+          const input = movePinInputSchema.parse(raw);
+          const current = await scope.pins.resolvePin(input.pinId);
+          if (!current) {
+            return { ok: false, message: 'Pinned item or position was not found.' };
+          }
+          const moveInput = {
+            pinId: input.pinId,
+            ...(input.placement === 'top' || input.placement === 'bottom'
+              ? { edge: input.placement }
+              : input.placement === 'before'
+                ? { beforePinId: input.relativePinId }
+                : { afterPinId: input.relativePinId }),
+          } as Parameters<typeof scope.pins.move>[0];
+          const moved = await scope.pins.move(moveInput);
+          return {
+            ok: moved,
+            message: moved
+              ? `Moved ${current.title}.`
+              : `Could not move ${current.title}; the requested position was not found.`,
+          };
+        }),
+    }),
+
     list_team_members: tool({
       description:
         'List active team members and their user IDs. Use before assigning ownerUserId, assigneeUserId, responsibleUserId, visibilityUserIds, or filtering work by a teammate name.',
@@ -1867,10 +1984,14 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           if (input.dueBefore) filter.dueBefore = new Date(input.dueBefore);
           if (input.archived !== undefined) filter.archived = input.archived;
           const rows = await scope.objects.searchObjects(filter);
+          const serialized = await serializeObjectRowsWithProjects(scope, rows);
           return {
             count: rows.length,
             mode: 'structured',
-            objects: await serializeObjectRowsWithProjects(scope, rows),
+            objects: rows.map((row, index) => ({
+              ...serialized[index],
+              pin_target: { kind: 'object' as const, key: row.id },
+            })),
           };
         }),
     }),
@@ -2595,6 +2716,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             mode: 'structured',
             documents: filtered.map((document) => ({
               document_id: document.id,
+              pin_target: { kind: 'document' as const, key: document.id },
               href: `/app/documents/${document.id}`,
               name: document.name,
               file_kind: document.fileKind,
@@ -2630,6 +2752,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           // is unique per piece of returned content.
           const fenced = hits.map((h) => ({
             document_id: h.documentId,
+            pin_target: { kind: 'document' as const, key: h.documentId },
             document_version_id: h.documentVersionId,
             document_chunk_id: h.documentChunkId,
             citation: artifactRefCitation({
@@ -2949,6 +3072,14 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             count: events.length,
             events: events.map((e) => ({
               id: e.id,
+              ...(e.redacted
+                ? {}
+                : {
+                    pin_target: {
+                      kind: 'calendar_event' as const,
+                      key: e.recurringParentId ?? e.id,
+                    },
+                  }),
               citation: artifactRefCitation({ kind: 'calendar_event', id: e.id }),
               title: e.title,
               start_at: e.startAt.toISOString(),
@@ -3428,10 +3559,19 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
       'execute_calendar_create',
       'execute_calendar_update',
       'execute_calendar_cancel',
+      'pin_item',
+      'unpin_item',
+      'move_pin',
       'suggest_calendar_event',
       'propose_calendar_update',
     ]);
     return Object.fromEntries(Object.entries(tools).filter(([name]) => !writeToolNames.has(name)));
+  }
+  if (!options.allowPinMutations) {
+    const pinMutationNames = new Set(['pin_item', 'unpin_item', 'move_pin']);
+    return Object.fromEntries(
+      Object.entries(tools).filter(([name]) => !pinMutationNames.has(name)),
+    );
   }
   return tools;
 }

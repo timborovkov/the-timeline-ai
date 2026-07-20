@@ -7,6 +7,7 @@ import { HistoryBackLink } from '@/components/history-back-link';
 import { MeetingExportButtons } from '@/components/meeting-export-buttons';
 import { CancelMeetingButton } from '@/components/meeting-forms';
 import { PageHeader } from '@/components/page-header';
+import { PinButton } from '@/components/pins/pin-button';
 import { SectionHeading } from '@/components/section-heading';
 import { TechnicalDetails } from '@/components/technical-details';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -42,9 +43,10 @@ export default async function MeetingDetailPage({ params }: Props) {
 
   const meeting = await scope.meetings.getMeeting(id);
   if (!meeting) notFound();
-  const [chunks, calendarSettings] = await Promise.all([
+  const [chunks, calendarSettings, initialPinned] = await Promise.all([
     scope.meetings.listChunks(id),
     scope.calendar.getCalendarSettings(),
+    scope.pins.isPinned({ kind: 'meeting', key: meeting.id }),
   ]);
 
   const summary = typeof meeting.metadata.summary === 'string' ? meeting.metadata.summary : null;
@@ -78,6 +80,7 @@ export default async function MeetingDetailPage({ params }: Props) {
         ]}
       />
       <div className="flex flex-wrap gap-2">
+        <PinButton target={{ kind: 'meeting', key: meeting.id }} initialPinned={initialPinned} />
         <MeetingExportButtons title={title} transcriptText={transcriptExport} />
         {cancellable ? <CancelMeetingButton meetingId={meeting.id} /> : null}
       </div>

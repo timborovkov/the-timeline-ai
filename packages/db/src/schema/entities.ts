@@ -3,7 +3,9 @@ import {
   type AnyPgColumn,
   boolean,
   check,
+  foreignKey,
   index,
+  integer,
   jsonb,
   pgEnum,
   pgTable,
@@ -220,5 +222,31 @@ export const entities = pgTable(
         sql`((${table.metadata} ->> 'integration_external_id'))`,
       )
       .where(sql`${table.metadata} ? 'integration_external_id'`),
+  ],
+);
+
+export const objectPins = pgTable(
+  'object_pins',
+  {
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    entityId: uuid('entity_id')
+      .notNull()
+      .references(() => entities.id, { onDelete: 'cascade' }),
+    position: integer('position').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.teamId, table.entityId],
+      foreignColumns: [entities.teamId, entities.id],
+      name: 'object_pins_team_entity_fk',
+    }).onDelete('cascade'),
+    uniqueIndex('object_pins_team_user_entity_unq').on(table.teamId, table.userId, table.entityId),
+    index('object_pins_team_user_position_idx').on(table.teamId, table.userId, table.position),
   ],
 );

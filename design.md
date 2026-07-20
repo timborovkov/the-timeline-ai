@@ -112,8 +112,8 @@ Ask, Work, Documents, Meetings, Connections, and Team.
 - Full-canvas chat and boards may opt into full bleed.
 - Inspector: hidden until content exists. Desktop uses the right pane; mobile
   uses a focus-managed bottom sheet.
-- Work routes share `WorkSubnav`: Overview, Objects, Tasks, Boards, Calendar,
-  Approvals.
+- Work routes share `WorkSubnav`: Overview, Pinned, Objects, Tasks, Boards,
+  Calendar, Approvals.
 - Team settings use URL-backed `SettingsNav`: Members, General, Preferences,
   Visibility, Email, Exports, and admin-only Advanced.
 
@@ -196,11 +196,26 @@ provider data sit inside the inspector’s `TechnicalDetails`.
 
 ### Home
 
-Home starts with a plain `PageHeader`, then a concise Ask composer with the only
-lime action in the initial viewport. Attention shows only non-zero actionable
-groups. “You’re caught up” replaces empty dashboard grids. Digest, pinned work,
-recent moments, and one next setup step follow without duplicating Timeline or
-Connections.
+Home does not repeat its navigation label as a visible page title. It starts
+with a quiet Capture action and the same compact, icon-only-send Ask composer
+used in chat. Attention shows only non-zero actionable groups. “You’re caught
+up” replaces empty dashboard grids. Pinned work, digest, recent moments, and one
+next setup step follow as full-width sections without duplicating Timeline or
+Connections. These sections prefer horizontal rules and rows over bordered
+dashboard cards.
+
+Pinned work is one personal, mixed collection. It may contain canonical
+objects (including tasks, projects, deals, people, and object-type documents),
+boards, library documents and captured files, meetings and saved meetings,
+calendar events, and displayed timeline moments. Recurring calendar events pin
+the series; timeline pins preserve the grouped moment rather than an individual
+raw event.
+
+Home previews at most six currently available pins as lightweight, full-width
+rows with a type icon, title, one context line, and overflow menu. Hidden,
+archived, or temporarily inaccessible targets do not become placeholders and
+do not consume a preview slot. Home never offers reordering; its Manage action
+opens Work → Pinned.
 
 ### Timeline
 
@@ -222,6 +237,19 @@ Work pages share one subnavigation and lead with the task at hand, not a grid of
 links. Team settings render one URL-selected section at a time. Save state stays
 local to the edited form. Member, object, source, and artifact labels never
 fall back to UUIDs.
+
+Work → Pinned is the complete pin-management surface. It is a single
+side-to-side list with cursor pagination and All, Objects, Boards, Documents,
+Meetings, Calendar, and Timeline filters. Reordering is available only under
+All so filtered adjacency never changes the mixed global order implicitly.
+Drag reorder has equivalent keyboard actions for move up, down, top, and
+bottom; keyboard moves announce their result through a polite live region.
+
+Detail pages use a visible Pin/Unpin button with `aria-pressed`. Dense rows,
+cards, calendar entries, timeline moments, and global-search results keep the
+same action inside their overflow menu, whose accessible label includes the
+target title. Controls update optimistically, retain focus, and restore the
+prior state with a concise error when a mutation fails.
 
 Task category is a compact secondary label in the task/type line, subordinate
 to title, status, assignee, due date, and priority. Pending and failed states
@@ -317,3 +345,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-07-14 | Switzer dominates ordinary UI | Removes terminal fatigue while retaining mono for recognizable data. |
 | 2026-07-14 | Internal identifiers behind `TechnicalDetails` | Keeps auditability without leaking implementation detail into product copy. |
 | 2026-07-14 | Attention + Ask Home | Makes the first screen action-oriented instead of duplicating navigation. |
+| 2026-07-20 | Quiet, full-width Home with universal work pins | Removes redundant headings and card weight while letting people keep any important work item close. |

@@ -327,6 +327,12 @@ export default async function TimelinePage({ searchParams }: Props) {
           )
         ).map(toTimelineMomentDto)
       : [];
+  const momentPinState = await scope.pins.isPinnedMany(
+    initialMoments.map((moment) => ({ kind: 'timeline_moment' as const, key: moment.id })),
+  );
+  const pinnedMomentIds = initialMoments.flatMap((moment) =>
+    momentPinState[`timeline_moment:${moment.id}`] ? [moment.id] : [],
+  );
   trackTimelineMomentsViewed({
     teamId: active.teamId,
     userId: session.user.id,
@@ -407,6 +413,7 @@ export default async function TimelinePage({ searchParams }: Props) {
         authorFilterValue={authorFilterValue}
         events={events}
         moments={initialMoments}
+        pinnedMomentIds={pinnedMomentIds}
         nextCursor={timelinePage.nextCursor}
         userRows={userRows}
         audioUrlMap={audioUrlMap}
@@ -440,6 +447,7 @@ function TimelineBrowserSection({
   authorFilterValue,
   events,
   moments,
+  pinnedMomentIds,
   nextCursor,
   userRows,
   audioUrlMap,
@@ -468,6 +476,7 @@ function TimelineBrowserSection({
   authorFilterValue: string;
   events: TimelineFeedProps['initialPage']['items'];
   moments: TimelineFeedProps['initialPage']['moments'];
+  pinnedMomentIds: string[];
   nextCursor: TimelineFeedProps['initialPage']['nextCursor'];
   userRows: { id: string; name: string | null; email: string }[];
   audioUrlMap: Map<string, string>;
@@ -510,6 +519,7 @@ function TimelineBrowserSection({
           groupingVersion: 'timeline_grouping.v1',
           mode,
           moments,
+          pinnedMomentIds,
           rawEventsById:
             mode === 'moments'
               ? Object.fromEntries(events.map((eventItem) => [eventItem.id, eventItem]))

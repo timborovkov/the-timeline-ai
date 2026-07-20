@@ -11,6 +11,7 @@ const fakes = vi.hoisted(() => ({
   listMembers: vi.fn(),
   getCalendarSettings: vi.fn(),
   getObjectMergePreview: vi.fn(),
+  isPinnedMany: vi.fn(),
   userRows: [] as { id: string; name: string | null; email: string }[],
   categoryRefresh: null as {
     surface: string;
@@ -36,6 +37,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
     },
     suggestions: { listPendingSuggestions: fakes.listPendingSuggestions },
     timeline: { listMembers: fakes.listMembers },
+    pins: { isPinnedMany: fakes.isPinnedMany },
     calendar: { getCalendarSettings: fakes.getCalendarSettings },
   }),
 }));
@@ -119,6 +121,7 @@ beforeEach(() => {
   });
   fakes.listPendingSuggestions.mockResolvedValue([]);
   fakes.listMembers.mockResolvedValue([]);
+  fakes.isPinnedMany.mockResolvedValue({});
   fakes.getCalendarSettings.mockResolvedValue({ defaultTimezone: 'UTC' });
   fakes.userRows = [];
   fakes.categoryRefresh = null;

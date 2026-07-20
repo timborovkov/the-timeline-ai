@@ -23,6 +23,10 @@ vi.mock('@/app/actions/documents', () => ({
   finalizeDocumentVersionAction: vi.fn(),
   requestDocumentUploadAction: vi.fn(),
 }));
+vi.mock('@/app/actions/pins', () => ({
+  pinTargetAction: vi.fn(),
+  unpinTargetAction: vi.fn(),
+}));
 
 const { DocumentDrive } = await import('./document-drive.js');
 
@@ -93,6 +97,7 @@ describe('DocumentDrive', () => {
           visibility: 'private',
           updatedAt: '2026-06-01T10:00:00.000Z',
           ownerUserId: 'user-1',
+          pinned: false,
           currentVersion: {
             id: 'version-1',
             version: 1,
@@ -165,6 +170,7 @@ describe('DocumentDrive', () => {
             visibility: 'private',
             updatedAt: '2026-06-01T10:00:00.000Z',
             ownerUserId: 'user-1',
+            pinned: false,
             currentVersion: {
               id: 'version-1',
               version: 1,
@@ -223,6 +229,7 @@ describe('DocumentDrive', () => {
           visibility: 'team',
           updatedAt: '2026-06-01T10:00:00.000Z',
           ownerUserId: 'user-1',
+          pinned: false,
           currentVersion: {
             id: 'version-generated',
             version: 1,

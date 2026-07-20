@@ -14,6 +14,7 @@ import {
   markAllNotificationsReadAction,
   markNotificationReadAction,
   mergeObjectsAction,
+  pinObjectAction,
   rejectObjectChangeAction,
   removeRelationshipAction,
   repairObjectMemoryAction,
@@ -25,6 +26,7 @@ import {
   setTaskProjectAction,
   updateNoteAction,
   updateObjectAction,
+  unpinObjectAction,
 } from '@/app/actions/objects';
 import { expectPublicActionErrorReport } from '@/test/public-error';
 
@@ -49,6 +51,8 @@ const fakes = vi.hoisted(() => ({
     getObject: vi.fn(),
     updateObject: vi.fn(),
     archiveObject: vi.fn(),
+    pinObject: vi.fn(),
+    unpinObject: vi.fn(),
     mergeObjects: vi.fn(),
     addRelationship: vi.fn(),
     removeRelationship: vi.fn(),
@@ -77,6 +81,11 @@ const fakes = vi.hoisted(() => ({
   },
   fakeBoards: {
     getTaskCategoryFilterRefreshState: vi.fn(),
+  },
+  fakePins: {
+    pin: vi.fn(),
+    unpin: vi.fn(),
+    isPinnedMany: vi.fn(),
   },
   fakeCalendar: {
     getCalendarSettings: vi.fn(),
@@ -165,6 +174,7 @@ beforeEach(() => {
       objects: fakes.fakeObjects,
       suggestions: fakes.fakeSuggestions,
       boards: fakes.fakeBoards,
+      pins: fakes.fakePins,
       calendar: fakes.fakeCalendar,
     },
     userId: USER_ID,
@@ -182,6 +192,9 @@ beforeEach(() => {
     type: 'task',
     changedFields: ['archivedAt'],
   });
+  fakes.fakePins.pin.mockResolvedValue({ pinId: 'pin-1', title: 'Current Object' });
+  fakes.fakePins.unpin.mockResolvedValue(true);
+  fakes.fakePins.isPinnedMany.mockResolvedValue({});
   fakes.fakeObjects.setTaskProject.mockResolvedValue({
     changed: true,
     project: null,
@@ -611,6 +624,24 @@ describe('object CRUD actions', () => {
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/boards', 'layout');
     expectWorkRevalidated();
     expectApprovalsRevalidated();
+  });
+
+  it('pins and unpins objects and refreshes Home plus object detail', async () => {
+    await expect(pinObjectAction({ id: OBJECT_ID })).resolves.toEqual({ ok: true });
+    await expect(unpinObjectAction({ id: OBJECT_ID })).resolves.toEqual({ ok: true });
+
+    expect(fakes.fakePins.pin).toHaveBeenCalledWith({ kind: 'object', key: OBJECT_ID });
+    expect(fakes.fakePins.unpin).toHaveBeenCalledWith({ kind: 'object', key: OBJECT_ID });
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app');
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/objects/${OBJECT_ID}`);
+  });
+
+  it('does not report a missing object as pinned', async () => {
+    fakes.fakePins.pin.mockRejectedValueOnce(new Error('Object not found'));
+
+    const result = await pinObjectAction({ id: OBJECT_ID });
+    expect(result.error).toContain('Failed to pin object');
+    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
   });
 
   it('returns success when post-archive reconciliation fails after the object was archived', async () => {

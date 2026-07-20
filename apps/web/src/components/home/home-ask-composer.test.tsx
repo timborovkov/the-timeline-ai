@@ -23,7 +23,7 @@ describe('HomeAskComposer', () => {
 
   it('validates an empty question without navigating', () => {
     render(<HomeAskComposer teamId="team-1" />);
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: /^Ask/ }).disabled).toBe(true);
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Send' }).disabled).toBe(true);
     expect(fakes.push).not.toHaveBeenCalled();
   });
 
@@ -32,7 +32,7 @@ describe('HomeAskComposer', () => {
     fireEvent.change(screen.getByLabelText('Question for Ask'), {
       target: { value: '  What is blocked?  ' },
     });
-    fireEvent.click(screen.getByRole('button', { name: /^Ask/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
 
     expect(fakes.push).toHaveBeenCalledWith('/app/chat');
     expect(window.sessionStorage.getItem(chatHandoffKey('team-1'))).toContain('What is blocked?');
@@ -55,7 +55,7 @@ describe('HomeAskComposer', () => {
     fireEvent.change(screen.getByLabelText('Question for Ask'), {
       target: { value: 'What changed?' },
     });
-    fireEvent.click(screen.getByRole('button', { name: /^Ask/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
 
     expect(screen.getByRole('alert').textContent).toContain('temporary browser storage');
     expect(fakes.push).not.toHaveBeenCalled();

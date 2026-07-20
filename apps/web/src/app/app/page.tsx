@@ -9,14 +9,13 @@ import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
-import { PinnedBoards } from '@/components/boards/pinned-boards';
 import { CaptureForm } from '@/components/capture-form';
 import { CaptureDialog } from '@/components/home/capture-dialog';
 import { DailyDigestBlock } from '@/components/home/daily-digest-block';
 import { HomeAskComposer } from '@/components/home/home-ask-composer';
 import { HomeAttention } from '@/components/home/home-attention';
 import { OnboardingChecklist } from '@/components/onboarding-checklist';
-import { PageHeader } from '@/components/page-header';
+import { PinnedWorkspacePreview } from '@/components/pins/pinned-workspace-preview';
 import { SectionHeading } from '@/components/section-heading';
 import { TimelineFeed } from '@/components/timeline-feed';
 import { Button } from '@/components/ui/button';
@@ -26,6 +25,7 @@ import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
 import { getWorkAttentionSummary, homeWorkNeedingAttentionCount } from '@/lib/hub-status';
 import { listTimelineCapturedFilesByEventId } from '@/lib/timeline-captured-files';
+import { buildTimelineMoments } from '@/lib/timeline-moments';
 
 export const metadata: Metadata = {
   title: 'Home',
@@ -75,7 +75,7 @@ export default async function HomeDashboardPage() {
     eventPage,
     members,
     webDefault,
-    pinnedBoards,
+    pinnedPage,
     latestDigest,
     connectionAttention,
   ] = await Promise.all([
@@ -83,7 +83,7 @@ export default async function HomeDashboardPage() {
     scope.timeline.listEventsPage({ limit: 3 }),
     scope.timeline.listMembers(),
     scope.timeline.resolveVisibilityDefault('web'),
-    scope.boards.listPinnedBoards({ timezone: calendarSettings.defaultTimezone, now }),
+    scope.pins.list({ limit: 6 }),
     latestDailyDigest({ db, teamId: active.teamId, userId: session.user.id }),
     scope.integrations.listConnectionAttention(),
   ]);
@@ -118,13 +118,22 @@ export default async function HomeDashboardPage() {
           .where(inArray(users.id, userIds))
       : [];
   const userMap = new Map(userRows.map((row) => [row.id, row] as const));
+  const homeMoments = buildTimelineMoments(events, userMap, {
+    impactItemsByEventId: impactItems,
+    artifactClustersByEventId: artifactClusters,
+    timezone: calendarSettings.defaultTimezone,
+  });
+  const homeMomentPinState = await scope.pins.isPinnedMany(
+    homeMoments.map((moment) => ({ kind: 'timeline_moment' as const, key: moment.id })),
+  );
   const quickCaptureVisibility = webDefault.visibility === 'private' ? 'private' : 'team';
 
   return (
-    <div className="space-y-7">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <PageHeader title="Home" />
-        <div className="shrink-0">
+    <div className="space-y-8">
+      <h1 className="sr-only">Home</h1>
+      <HomeAskComposer
+        teamId={active.teamId}
+        actions={
           <CaptureDialog>
             <CaptureForm
               initialVisibility={quickCaptureVisibility}
@@ -136,10 +145,8 @@ export default async function HomeDashboardPage() {
               filters={{}}
             />
           </CaptureDialog>
-        </div>
-      </div>
-
-      <HomeAskComposer teamId={active.teamId} />
+        }
+      />
 
       <HomeAttention
         groups={[
@@ -177,49 +184,51 @@ export default async function HomeDashboardPage() {
         ]}
       />
 
+      <PinnedWorkspacePreview initialItems={pinnedPage.items} />
+
       <DailyDigestBlock digest={latestDigest?.payload as DailyDigestPayload | undefined} />
 
-      <div className="grid items-start gap-7 lg:grid-cols-2">
-        <PinnedBoards boards={pinnedBoards} />
-        <section className="space-y-3">
-          <SectionHeading
-            actions={
-              <Button asChild variant="ghost" size="sm">
-                <Link href="/app/timeline">Open timeline</Link>
-              </Button>
-            }
-          >
-            Recent moments
-          </SectionHeading>
-          <TimelineFeed
-            initialPage={{
-              items: events.map((event) => ({
-                ...event,
-                occurredAt: event.occurredAt.toISOString(),
-                createdAt: event.createdAt.toISOString(),
-              })),
-              nextCursor: null,
-              authors: Object.fromEntries(userRows.map((row) => [row.id, row])),
-              audioUrls: Object.fromEntries(audioUrlMap),
-              impactItems,
-              artifactClusters,
-              capturedFiles,
-            }}
-            filters={{}}
-            currentUserId={session.user.id}
-            isAdmin={isAdmin}
-            members={members.map((member) => ({
-              id: member.userId,
-              label: displayMemberLabel(userMap.get(member.userId)),
-            }))}
-            compact
-            maxMoments={3}
-            live={false}
-            timezone={calendarSettings.defaultTimezone}
-            emptyLabel="No recent moments yet"
-          />
-        </section>
-      </div>
+      <section className="space-y-3">
+        <SectionHeading
+          actions={
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/app/timeline">Open timeline</Link>
+            </Button>
+          }
+        >
+          Recent moments
+        </SectionHeading>
+        <TimelineFeed
+          initialPage={{
+            items: events.map((event) => ({
+              ...event,
+              occurredAt: event.occurredAt.toISOString(),
+              createdAt: event.createdAt.toISOString(),
+            })),
+            nextCursor: null,
+            pinnedMomentIds: homeMoments.flatMap((moment) =>
+              homeMomentPinState[`timeline_moment:${moment.id}`] ? [moment.id] : [],
+            ),
+            authors: Object.fromEntries(userRows.map((row) => [row.id, row])),
+            audioUrls: Object.fromEntries(audioUrlMap),
+            impactItems,
+            artifactClusters,
+            capturedFiles,
+          }}
+          filters={{}}
+          currentUserId={session.user.id}
+          isAdmin={isAdmin}
+          members={members.map((member) => ({
+            id: member.userId,
+            label: displayMemberLabel(userMap.get(member.userId)),
+          }))}
+          compact
+          maxMoments={3}
+          live={false}
+          timezone={calendarSettings.defaultTimezone}
+          emptyLabel="No recent moments yet"
+        />
+      </section>
 
       <OnboardingChecklist />
     </div>

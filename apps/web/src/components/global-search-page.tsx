@@ -18,6 +18,7 @@ import type { ComponentType, SVGProps, SyntheticEvent } from 'react';
 
 import { DueDateDisplay } from '@/components/due-date-display';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
+import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { isSchedulableObjectType } from '@/lib/due-dates';
 import { selectedValues } from '@/lib/filter-values';
 import { fetchGlobalSearch } from '@/lib/global-search';
@@ -284,12 +285,20 @@ function SearchResultRow({ result }: { result: GlobalSearchResult }) {
   }
 
   return (
-    <Link
-      href={result.href}
-      className="block border-b border-border transition-colors hover:bg-surface"
-    >
-      {content}
-    </Link>
+    <div className="flex items-center border-b border-border transition-colors hover:bg-surface">
+      <Link href={result.href} className="min-w-0 flex-1">
+        {content}
+      </Link>
+      {result.pinTarget ? (
+        <div className="mr-2 shrink-0">
+          <PinOverflowMenu
+            target={result.pinTarget}
+            title={result.title}
+            initialPinned={result.pinned ?? false}
+          />
+        </div>
+      ) : null}
+    </div>
   );
 }
 

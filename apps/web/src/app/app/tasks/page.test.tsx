@@ -7,6 +7,9 @@ const fakes = vi.hoisted(() => ({
   listObjects: vi.fn(),
   countObjects: vi.fn(),
   getObject: vi.fn(),
+  isObjectPinned: vi.fn(),
+  isPinned: vi.fn(),
+  isPinnedMany: vi.fn(),
   listPrimaryProjectsForTasks: vi.fn(),
   getTaskCategoryFilterRefreshState: vi.fn(),
   listPendingSuggestions: vi.fn(),
@@ -33,11 +36,13 @@ vi.mock('@timeline/shared/team-scope', () => ({
       listObjects: fakes.listObjects,
       countObjects: fakes.countObjects,
       getObject: fakes.getObject,
+      isObjectPinned: fakes.isObjectPinned,
       listPrimaryProjectsForTasks: fakes.listPrimaryProjectsForTasks,
       getTaskCategoryFilterRefreshState: fakes.getTaskCategoryFilterRefreshState,
     },
     suggestions: { listPendingSuggestions: fakes.listPendingSuggestions },
     timeline: { listMembers: fakes.listMembers },
+    pins: { isPinned: fakes.isPinned, isPinnedMany: fakes.isPinnedMany },
     calendar: { getCalendarSettings: fakes.getCalendarSettings },
   }),
 }));
@@ -125,6 +130,9 @@ beforeEach(() => {
   fakes.listObjects.mockResolvedValue([]);
   fakes.countObjects.mockResolvedValue(0);
   fakes.getObject.mockResolvedValue(null);
+  fakes.isObjectPinned.mockResolvedValue(false);
+  fakes.isPinned.mockResolvedValue(false);
+  fakes.isPinnedMany.mockResolvedValue({});
   fakes.listPrimaryProjectsForTasks.mockResolvedValue([]);
   fakes.getTaskCategoryFilterRefreshState.mockResolvedValue({
     token: 'design:0',

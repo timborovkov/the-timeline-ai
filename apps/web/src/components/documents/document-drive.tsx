@@ -39,6 +39,7 @@ import {
   requestDocumentUploadAction,
 } from '@/app/actions/documents';
 import { EvidenceLink } from '@/components/evidence-link';
+import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { SectionHeading } from '@/components/section-heading';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Badge } from '@/components/ui/badge';
@@ -64,6 +65,7 @@ interface DocumentItem {
   visibility: string;
   updatedAt: string;
   ownerUserId: string | null;
+  pinned: boolean;
   currentVersion: {
     id: string;
     version: number;
@@ -231,7 +233,7 @@ export function DocumentDrive({
     [documents, documentsNextCursor],
   );
   const documentQuery = useDocumentListQuery(currentFolderId, initialDocumentPage);
-  const visibleDocuments = documentQuery.data.pages.flatMap((page) => page.items);
+  const visibleDocuments: DocumentItem[] = documentQuery.data.pages.flatMap((page) => page.items);
   const visibleFolders = useMemo(() => {
     const serverFolderIds = new Set(folders.map((folder) => folder.id));
     const activeOptimisticFolders = optimisticFolders.filter(
@@ -337,6 +339,7 @@ export function DocumentDrive({
           visibility,
           updatedAt: new Date().toISOString(),
           ownerUserId: null,
+          pinned: false,
           currentVersion: null,
           provenance: {
             source: 'manual',
@@ -851,6 +854,13 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
             </EvidenceLink>
           ) : null}
           <span className="hidden text-xs text-fg-dim sm:inline">{updatedAt}</span>
+          {!document.optimistic ? (
+            <PinOverflowMenu
+              target={{ kind: 'document', key: document.id }}
+              title={title}
+              initialPinned={document.pinned}
+            />
+          ) : null}
         </div>
       </div>
     </li>

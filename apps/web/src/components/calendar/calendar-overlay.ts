@@ -16,6 +16,7 @@ export interface CalendarEvent {
   redacted: boolean;
   visibility: string;
   visibilityUserIds: string[] | null;
+  pinned: boolean;
 }
 
 export interface CalendarOverlayState {

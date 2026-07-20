@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 
 const WORK_LINKS = [
   { label: 'Overview', href: '/app/work' },
+  { label: 'Pinned', href: '/app/work?view=pinned' },
   { label: 'Objects', href: '/app/objects' },
   { label: 'Tasks', href: '/app/tasks' },
   { label: 'Boards', href: '/app/boards' },
@@ -16,8 +17,9 @@ export function WorkSubnav({ current, className }: { current: string; className?
     <nav aria-label="Work" className={cn('overflow-x-auto border-b border-border', className)}>
       <div className="flex min-w-max gap-1">
         {WORK_LINKS.map((item) => {
-          const active =
-            item.href === '/app/work'
+          const active = item.href.includes('?')
+            ? current === item.href
+            : item.href === '/app/work'
               ? current === item.href
               : current === item.href || current.startsWith(`${item.href}/`);
           return (

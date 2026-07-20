@@ -26,7 +26,6 @@ export default async function CapturedFilesPage() {
   if (!active) redirect('/sign-in');
 
   const scope = withTeam(db, active.teamId, session.user.id);
-  await scope.requireMembership();
   const [page, folders, members] = await Promise.all([
     scope.documents.listCapturedFilesPage({ limit: 50 }),
     scope.documents.listFolders({ parentFolderId: null }),
@@ -38,13 +37,17 @@ export default async function CapturedFilesPage() {
     ),
   ];
   const memberIds = [...new Set([...ownerIds, ...members.map((member) => member.userId)])];
-  const ownerRows =
+  const [pinState, ownerRows] = await Promise.all([
+    scope.pins.isPinnedMany(
+      page.items.map((file) => ({ kind: 'document' as const, key: file.id })),
+    ),
     memberIds.length > 0
-      ? await db
+      ? db
           .select({ id: users.id, name: users.name, email: users.email })
           .from(users)
           .where(inArray(users.id, memberIds))
-      : [];
+      : Promise.resolve([]),
+  ]);
   const ownerMap = new Map(ownerRows.map((owner) => [owner.id, owner] as const));
 
   return (
@@ -73,6 +76,7 @@ export default async function CapturedFilesPage() {
             visibility: file.visibility,
             visibilityUserIds: file.visibilityUserIds,
             updatedAt: file.updatedAt.toISOString(),
+            pinned: pinState[`document:${file.id}`] ?? false,
             ownerUserId: file.ownerUserId,
             ownerLabel: owner?.name ?? owner?.email ?? null,
             sourceRawEventId: file.sourceRawEventId,

@@ -1,11 +1,9 @@
 'use client';
 
-import { ArrowRight } from 'lucide-react';
+import { Send } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import {
   CHAT_HANDOFF_MAX_PROMPT_LENGTH,
   storeChatHandoff,
@@ -14,7 +12,7 @@ import {
 
 const SUGGESTIONS = ['What changed today?', 'What is blocked?', 'What needs attention?'] as const;
 
-export function HomeAskComposer({ teamId }: { teamId: string }) {
+export function HomeAskComposer({ teamId, actions }: { teamId: string; actions?: ReactNode }) {
   const router = useRouter();
   const [prompt, setPrompt] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -36,28 +34,30 @@ export function HomeAskComposer({ teamId }: { teamId: string }) {
   }
 
   return (
-    <section
-      aria-labelledby="home-ask-title"
-      className="rounded-lg border border-border bg-surface p-4"
-    >
-      <div className="mb-3 flex items-baseline justify-between gap-3">
-        <h2 id="home-ask-title" className="text-base font-semibold text-fg">
-          Ask the timeline
-        </h2>
-        <span className="font-mono text-xs text-fg-dim">{prompt.length}/4,000</span>
+    <section aria-labelledby="home-ask-title" className="space-y-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 id="home-ask-title" className="text-base font-semibold text-fg">
+            Ask the timeline
+          </h2>
+          <p className="mt-1 text-sm text-fg-muted">
+            Ask what changed, what is blocked, or what needs attention.
+          </p>
+        </div>
+        {actions ? <div className="shrink-0">{actions}</div> : null}
       </div>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-        <div className="min-w-0 flex-1">
+      <div>
+        <div className="relative rounded-sm border border-border bg-surface focus-within:border-border-strong focus-within:ring-2 focus-within:ring-signal/40 focus-within:ring-offset-2 focus-within:ring-offset-bg">
           <label htmlFor="home-ask-prompt" className="sr-only">
             Question for Ask
           </label>
-          <Textarea
+          <input
             id="home-ask-prompt"
+            type="text"
             value={prompt}
             maxLength={CHAT_HANDOFF_MAX_PROMPT_LENGTH}
-            rows={2}
-            className="min-h-20 resize-none bg-bg"
-            placeholder="Ask what changed, what is blocked, or what needs attention…"
+            className="h-10 w-full truncate rounded-sm bg-transparent pl-3 pr-12 text-sm focus:outline-none"
+            placeholder="Ask the timeline…"
             aria-describedby={error ? 'home-ask-error' : undefined}
             aria-invalid={Boolean(error)}
             onChange={(event) => {
@@ -65,21 +65,21 @@ export function HomeAskComposer({ teamId }: { teamId: string }) {
               if (error) setError(null);
             }}
             onKeyDown={(event) => {
-              if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') submit();
+              if (event.key === 'Enter') submit();
             }}
           />
+          <button
+            type="button"
+            aria-label="Send"
+            disabled={!prompt.trim()}
+            onClick={() => {
+              submit();
+            }}
+            className="absolute right-1 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-sm bg-signal text-signal-fg transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 disabled:opacity-30"
+          >
+            <Send aria-hidden="true" className="size-4" />
+          </button>
         </div>
-        <Button
-          type="button"
-          className="shrink-0"
-          onClick={() => {
-            submit();
-          }}
-          disabled={!prompt.trim()}
-        >
-          Ask
-          <ArrowRight aria-hidden="true" />
-        </Button>
       </div>
       {error ? (
         <p id="home-ask-error" role="alert" className="mt-2 text-xs text-danger">
@@ -91,10 +91,9 @@ export function HomeAskComposer({ teamId }: { teamId: string }) {
           <button
             key={suggestion}
             type="button"
-            className="rounded-sm border border-border bg-bg px-2.5 py-1.5 text-xs text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="rounded-sm border border-border bg-surface px-3 py-1.5 text-left text-sm text-fg-muted transition-colors hover:border-border-strong hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={() => {
-              setPrompt(suggestion);
-              setError(null);
+              submit(suggestion);
             }}
           >
             {suggestion}

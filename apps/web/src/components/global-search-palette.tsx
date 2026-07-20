@@ -16,6 +16,7 @@ import type { GlobalSearchResult } from '@timeline/shared/search';
 import type { ComponentType, SVGProps } from 'react';
 
 import { DueDateDisplay } from '@/components/due-date-display';
+import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { isSchedulableObjectType } from '@/lib/due-dates';
 import { fetchGlobalSearch } from '@/lib/global-search';
 import { cn } from '@/lib/utils';
@@ -266,42 +267,57 @@ export function GlobalSearchPalette({ hint, className }: Props) {
                     const dueAt =
                       typeof result.metadata?.dueAt === 'string' ? result.metadata.dueAt : null;
                     return (
-                      <button
+                      <div
                         key={result.id}
-                        type="button"
                         className={cn(
-                          'flex w-full items-center gap-3 px-3 py-2 text-left transition-colors',
+                          'flex items-center transition-colors',
                           view.activeIndex === index ? 'bg-surface-2' : 'hover:bg-surface',
                         )}
                         onMouseEnter={() => {
                           dispatchView({ type: 'active', value: index });
                         }}
-                        onClick={() => {
-                          setOpen(false);
-                          openResult(result, router);
-                        }}
                       >
-                        <IconComponent
-                          aria-hidden="true"
-                          className="size-4 shrink-0 text-fg-muted"
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-medium">{result.title}</span>
-                          <span className="block truncate text-xs text-fg-muted">
-                            {result.snippet}
+                        <button
+                          type="button"
+                          className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2 text-left"
+                          onClick={() => {
+                            setOpen(false);
+                            openResult(result, router);
+                          }}
+                        >
+                          <IconComponent
+                            aria-hidden="true"
+                            className="size-4 shrink-0 text-fg-muted"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-medium">
+                              {result.title}
+                            </span>
+                            <span className="block truncate text-xs text-fg-muted">
+                              {result.snippet}
+                            </span>
+                            {isSchedulableObjectType(objectType) ? (
+                              <DueDateDisplay
+                                value={dueAt}
+                                variant="compact"
+                                className="mt-0.5 block truncate"
+                              />
+                            ) : null}
                           </span>
-                          {isSchedulableObjectType(objectType) ? (
-                            <DueDateDisplay
-                              value={dueAt}
-                              variant="compact"
-                              className="mt-0.5 block truncate"
+                          <span className="shrink-0 text-[11px] text-fg-dim">
+                            {result.externalHref ? 'new tab' : resultKindLabel(result.kind)}
+                          </span>
+                        </button>
+                        {result.pinTarget ? (
+                          <div className="mr-2 shrink-0">
+                            <PinOverflowMenu
+                              target={result.pinTarget}
+                              title={result.title}
+                              initialPinned={result.pinned ?? false}
                             />
-                          ) : null}
-                        </span>
-                        <span className="shrink-0 text-[11px] text-fg-dim">
-                          {result.externalHref ? 'new tab' : resultKindLabel(result.kind)}
-                        </span>
-                      </button>
+                          </div>
+                        ) : null}
+                      </div>
                     );
                   })}
                 </div>

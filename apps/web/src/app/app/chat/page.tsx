@@ -109,7 +109,6 @@ export default async function ChatPage({
           aria-label={`Chat with ${team?.name ?? active.teamName}'s timeline`}
         >
           <h1 className="text-base font-semibold text-fg">Ask</h1>
-          <span aria-hidden="true">Ask the timeline</span>
           <span
             className="ml-auto w-20 text-right font-mono text-xs text-fg-dim"
             data-visual-dynamic="chat-session-count"

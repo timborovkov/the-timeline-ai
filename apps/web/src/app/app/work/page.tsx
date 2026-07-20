@@ -8,6 +8,7 @@ import type { Metadata } from 'next';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { EmptyAction } from '@/components/empty-action';
 import { PageHeader } from '@/components/page-header';
+import { PinnedWorkspaceManager } from '@/components/pins/pinned-workspace-manager';
 import { SectionHeading } from '@/components/section-heading';
 import {
   LiveTaskCategoryBadge,
@@ -39,13 +40,43 @@ export const metadata: Metadata = {
 
 const QUEUE_LIMIT = 20;
 
-export default async function WorkPage() {
+interface WorkPageProps {
+  searchParams?: Promise<{ view?: string; kind?: string }>;
+}
+
+const PIN_FILTER_KINDS = {
+  objects: ['object'],
+  boards: ['board'],
+  documents: ['document'],
+  meetings: ['meeting', 'saved_meeting'],
+  calendar: ['calendar_event'],
+  timeline: ['timeline_moment'],
+} as const;
+
+export default async function WorkPage({ searchParams }: WorkPageProps = {}) {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) redirect('/sign-in');
 
   const scope = withTeam(db, active.teamId, session.user.id);
+  const query: { view?: string; kind?: string } = searchParams ? await searchParams : {};
+  if (query.view === 'pinned') {
+    const filter = query.kind && query.kind in PIN_FILTER_KINDS ? query.kind : 'all';
+    const kinds =
+      filter === 'all' ? undefined : [...PIN_FILTER_KINDS[filter as keyof typeof PIN_FILTER_KINDS]];
+    const page = await scope.pins.list({ limit: 50, kinds });
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Work"
+          subtitle="Personal shortcuts to the work and context you return to."
+        />
+        <WorkSubnav current="/app/work?view=pinned" />
+        <PinnedWorkspaceManager initialPage={page} filter={filter} />
+      </div>
+    );
+  }
   const now = new Date();
   const calendarSettings = await scope.calendar.getCalendarSettings();
   const timezone = calendarSettings.defaultTimezone;
@@ -138,7 +169,7 @@ export default async function WorkPage() {
           {boardModules.length === 0 ? (
             <EmptyPanel label="No boards yet" body="Create a board to give team work a surface." />
           ) : (
-            <div className="grid gap-px overflow-hidden border border-border sm:grid-cols-2">
+            <div className="grid gap-px overflow-hidden border border-border">
               {boardModules.map((board) => (
                 <Link
                   key={board.id}

@@ -44,6 +44,7 @@ import {
   reconciliationRuns,
   taskCategoryAssignments,
   taskCategoryProjectInvalidations,
+  userPins,
 } from '@timeline/db';
 import {
   type SQL,
@@ -5189,6 +5190,39 @@ export async function mergeObjects(
       .set({ pinnedEntityId: survivor.id })
       .where(
         and(eq(chatSessions.teamId, scope.teamId), inArray(chatSessions.pinnedEntityId, loserIds)),
+      );
+    await tx.execute(sql`
+      INSERT INTO ${userPins} ("team_id", "user_id", "target_kind", "target_key", "sort_key", "created_at", "updated_at")
+      SELECT
+        "team_id",
+        "user_id",
+        'object',
+        ${survivor.id},
+        MIN("sort_key"),
+        MIN("created_at"),
+        MIN("updated_at")
+      FROM ${userPins}
+      WHERE "team_id" = ${scope.teamId}
+        AND "target_kind" = 'object'
+        AND "target_key" IN (${sql.join(
+          loserIds.map((id) => sql`${id}`),
+          sql`, `,
+        )})
+      GROUP BY "team_id", "user_id"
+      ON CONFLICT ("team_id", "user_id", "target_kind", "target_key") DO UPDATE
+      SET
+        "sort_key" = LEAST(${userPins}."sort_key", EXCLUDED."sort_key"),
+        "created_at" = LEAST(${userPins}."created_at", EXCLUDED."created_at"),
+        "updated_at" = LEAST(${userPins}."updated_at", EXCLUDED."updated_at")
+    `);
+    await tx
+      .delete(userPins)
+      .where(
+        and(
+          eq(userPins.teamId, scope.teamId),
+          eq(userPins.targetKind, 'object'),
+          inArray(userPins.targetKey, loserIds),
+        ),
       );
     await tx.execute(sql`
       DELETE FROM ${calendarEventEntities} AS loser
