@@ -35,6 +35,7 @@ import {
   objectChanges,
   objectIdentityFacets,
   objectNotes,
+  objectPins,
   objectSummaries,
   objectViews,
   rawEvents,
@@ -1566,6 +1567,97 @@ export async function listObjects(
     .limit(limit)
     .offset(offset);
   return rows.map(toObjectRow);
+}
+
+export async function listPinnedObjects(db: Db, scope: TeamScopeCore): Promise<ObjectRow[]> {
+  await scope.requireMembership();
+  const rows = await db
+    .select({ object: entities })
+    .from(objectPins)
+    .innerJoin(
+      entities,
+      and(eq(objectPins.entityId, entities.id), eq(objectPins.teamId, entities.teamId)),
+    )
+    .where(
+      and(
+        eq(objectPins.teamId, scope.teamId),
+        eq(objectPins.userId, scope.userId),
+        isNull(entities.archivedAt),
+        isNull(entities.mergedIntoId),
+      ),
+    )
+    .orderBy(asc(objectPins.position), desc(entities.updatedAt));
+  return rows.map((row) => toObjectRow(row.object));
+}
+
+export async function isObjectPinned(
+  db: Db,
+  scope: TeamScopeCore,
+  entityId: string,
+): Promise<boolean> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(entityId)) return false;
+  const [row] = await db
+    .select({ entityId: objectPins.entityId })
+    .from(objectPins)
+    .innerJoin(
+      entities,
+      and(eq(objectPins.entityId, entities.id), eq(objectPins.teamId, entities.teamId)),
+    )
+    .where(
+      and(
+        eq(objectPins.teamId, scope.teamId),
+        eq(objectPins.userId, scope.userId),
+        eq(objectPins.entityId, entityId),
+        isNull(entities.archivedAt),
+        isNull(entities.mergedIntoId),
+      ),
+    )
+    .limit(1);
+  return Boolean(row);
+}
+
+export async function pinObject(db: Db, scope: TeamScopeCore, entityId: string): Promise<boolean> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(entityId)) return false;
+  const [object] = await db
+    .select({ id: entities.id })
+    .from(entities)
+    .where(
+      and(
+        eq(entities.teamId, scope.teamId),
+        eq(entities.id, entityId),
+        isNull(entities.archivedAt),
+        isNull(entities.mergedIntoId),
+      ),
+    )
+    .limit(1);
+  if (!object) return false;
+  await db
+    .insert(objectPins)
+    .values({ teamId: scope.teamId, userId: scope.userId, entityId })
+    .onConflictDoNothing();
+  return true;
+}
+
+export async function unpinObject(
+  db: Db,
+  scope: TeamScopeCore,
+  entityId: string,
+): Promise<boolean> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(entityId)) return false;
+  const rows = await db
+    .delete(objectPins)
+    .where(
+      and(
+        eq(objectPins.teamId, scope.teamId),
+        eq(objectPins.userId, scope.userId),
+        eq(objectPins.entityId, entityId),
+      ),
+    )
+    .returning({ entityId: objectPins.entityId });
+  return rows.length > 0;
 }
 
 export async function searchObjects(
@@ -5188,6 +5280,29 @@ export async function mergeObjects(
       .where(
         and(eq(chatSessions.teamId, scope.teamId), inArray(chatSessions.pinnedEntityId, loserIds)),
       );
+    await tx.execute(sql`
+      INSERT INTO ${objectPins} ("team_id", "user_id", "entity_id", "position", "created_at")
+      SELECT
+        "team_id",
+        "user_id",
+        ${survivor.id},
+        MIN("position"),
+        MIN("created_at")
+      FROM ${objectPins}
+      WHERE "team_id" = ${scope.teamId}
+        AND "entity_id" IN (${sql.join(
+          loserIds.map((id) => sql`${id}`),
+          sql`, `,
+        )})
+      GROUP BY "team_id", "user_id"
+      ON CONFLICT ("team_id", "user_id", "entity_id") DO UPDATE
+      SET
+        "position" = LEAST(${objectPins}."position", EXCLUDED."position"),
+        "created_at" = LEAST(${objectPins}."created_at", EXCLUDED."created_at")
+    `);
+    await tx
+      .delete(objectPins)
+      .where(and(eq(objectPins.teamId, scope.teamId), inArray(objectPins.entityId, loserIds)));
     await tx.execute(sql`
       DELETE FROM ${calendarEventEntities} AS loser
       USING ${calendarEventEntities} AS keeper
@@ -8827,6 +8942,10 @@ export async function rejectObjectChange(
 export function createObjectScope(db: Db, scope: TeamScopeCore) {
   return {
     listObjects: (filter?: ObjectListFilter) => listObjects(db, scope, filter),
+    listPinnedObjects: () => listPinnedObjects(db, scope),
+    isObjectPinned: (entityId: string) => isObjectPinned(db, scope, entityId),
+    pinObject: (entityId: string) => pinObject(db, scope, entityId),
+    unpinObject: (entityId: string) => unpinObject(db, scope, entityId),
     countObjects: (filter?: ObjectCountFilter) => countObjects(db, scope, filter),
     getTaskCategoryFilterRefreshState: (
       filter: ObjectCountFilter,

@@ -14,6 +14,7 @@ import {
   markAllNotificationsReadAction,
   markNotificationReadAction,
   mergeObjectsAction,
+  pinObjectAction,
   rejectObjectChangeAction,
   removeRelationshipAction,
   repairObjectMemoryAction,
@@ -25,6 +26,7 @@ import {
   setTaskProjectAction,
   updateNoteAction,
   updateObjectAction,
+  unpinObjectAction,
 } from '@/app/actions/objects';
 import { expectPublicActionErrorReport } from '@/test/public-error';
 
@@ -49,6 +51,8 @@ const fakes = vi.hoisted(() => ({
     getObject: vi.fn(),
     updateObject: vi.fn(),
     archiveObject: vi.fn(),
+    pinObject: vi.fn(),
+    unpinObject: vi.fn(),
     mergeObjects: vi.fn(),
     addRelationship: vi.fn(),
     removeRelationship: vi.fn(),
@@ -177,6 +181,8 @@ beforeEach(() => {
     type: 'task',
     changedFields: ['archivedAt'],
   });
+  fakes.fakeObjects.pinObject.mockResolvedValue(true);
+  fakes.fakeObjects.unpinObject.mockResolvedValue(true);
   fakes.fakeObjects.setTaskProject.mockResolvedValue({
     changed: true,
     project: null,
@@ -606,6 +612,25 @@ describe('object CRUD actions', () => {
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/boards', 'layout');
     expectWorkRevalidated();
     expectApprovalsRevalidated();
+  });
+
+  it('pins and unpins objects and refreshes Home plus object detail', async () => {
+    await expect(pinObjectAction({ id: OBJECT_ID })).resolves.toEqual({ ok: true });
+    await expect(unpinObjectAction({ id: OBJECT_ID })).resolves.toEqual({ ok: true });
+
+    expect(fakes.fakeObjects.pinObject).toHaveBeenCalledWith(OBJECT_ID);
+    expect(fakes.fakeObjects.unpinObject).toHaveBeenCalledWith(OBJECT_ID);
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app');
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/objects/${OBJECT_ID}`);
+  });
+
+  it('does not report a missing object as pinned', async () => {
+    fakes.fakeObjects.pinObject.mockResolvedValueOnce(false);
+
+    await expect(pinObjectAction({ id: OBJECT_ID })).resolves.toEqual({
+      error: 'Object not found',
+    });
+    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
   });
 
   it('returns success when post-archive reconciliation fails after the object was archived', async () => {

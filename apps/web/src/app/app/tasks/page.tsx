@@ -102,9 +102,12 @@ export default async function TasksPage({
       selectedVisibleTaskId = selectedTask.id;
     }
   }
-  const selectedTaskDetail = selectedVisibleTaskId
-    ? await scope.objects.getObject(selectedVisibleTaskId)
-    : null;
+  const [selectedTaskDetail, selectedTaskPinned] = selectedVisibleTaskId
+    ? await Promise.all([
+        scope.objects.getObject(selectedVisibleTaskId),
+        scope.objects.isObjectPinned(selectedVisibleTaskId),
+      ])
+    : [null, false];
   const primaryProjects = await scope.objects.listPrimaryProjectsForTasks(
     rows.map((row) => row.id),
   );
@@ -212,6 +215,7 @@ export default async function TasksPage({
             columns={[...TASK_STATUS_COLUMNS]}
             selectedTaskId={selectedVisibleTaskId}
             selectedTaskContext={selectedTaskDetail?.connectedWork ?? null}
+            selectedTaskPinned={selectedTaskPinned}
             view={view}
             members={memberOptions}
             projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}

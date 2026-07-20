@@ -38,6 +38,7 @@ import {
   updateObjectAction,
 } from '@/app/actions/objects';
 import { ObjectTextFilter } from '@/components/boards/object-text-filter';
+import { ObjectPinButton } from '@/components/objects/object-pin-button';
 import { ObjectRelatedContext } from '@/components/objects/object-related-context';
 import { TaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { useTaskCategoryPolling } from '@/components/tasks/task-category-polling';
@@ -67,6 +68,7 @@ interface Props {
   columns: string[];
   selectedTaskId: string | null;
   selectedTaskContext?: objects.ObjectDetail['connectedWork'] | null;
+  selectedTaskPinned?: boolean;
   view: TaskView;
   members: TaskMemberOption[];
   projects?: TaskMemberOption[];
@@ -870,6 +872,7 @@ function TaskBoardView({
   selectedTask,
   selectedTaskContext,
   selectedTaskId,
+  selectedTaskPinned = false,
   selectedVisibleIds,
   sensors,
   setFilterQuery,
@@ -1002,6 +1005,7 @@ function TaskBoardView({
         <TaskDetailPanel
           task={selectedTask}
           connectedWork={selectedTaskContext}
+          initialPinned={selectedTaskPinned}
           columns={allColumns}
           members={members}
           projects={projects}
@@ -1684,6 +1688,7 @@ function TaskCard({
 function TaskDetailPanel({
   task,
   connectedWork,
+  initialPinned,
   columns,
   members,
   projects,
@@ -1698,6 +1703,7 @@ function TaskDetailPanel({
 }: {
   task: objects.ObjectRow;
   connectedWork?: objects.ObjectDetail['connectedWork'] | null;
+  initialPinned: boolean;
   columns: string[];
   members: TaskMemberOption[];
   projects: TaskMemberOption[];
@@ -1742,12 +1748,17 @@ function TaskDetailPanel({
             </h2>
             <p className="mt-1 text-xs text-fg-dim">Task · side panel</p>
           </div>
-          <Link
-            href={closeHref}
-            className="shrink-0 text-xs text-fg-muted hover:text-fg hover:underline"
-          >
-            Close
-          </Link>
+          <div className="flex shrink-0 items-center gap-2">
+            <ObjectPinButton
+              key={task.id}
+              objectId={task.id}
+              initialPinned={initialPinned}
+              compact
+            />
+            <Link href={closeHref} className="text-xs text-fg-muted hover:text-fg hover:underline">
+              Close
+            </Link>
+          </div>
         </div>
       </div>
       <div className="grid border-b border-border sm:grid-cols-2">

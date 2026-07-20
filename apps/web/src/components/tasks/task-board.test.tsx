@@ -19,6 +19,8 @@ const fakes = vi.hoisted(() => {
     loadTaskCategoryStatesAction: vi.fn(),
     setTaskCategoryAction: vi.fn(),
     resetTaskCategoryAction: vi.fn(),
+    pinObjectAction: vi.fn(),
+    unpinObjectAction: vi.fn(),
     searchObjectsAction: vi.fn(),
     setTaskProjectAction: vi.fn(),
   };
@@ -32,6 +34,8 @@ vi.mock('@/app/actions/objects', () => ({
   loadTaskCategoryStatesAction: fakes.loadTaskCategoryStatesAction,
   setTaskCategoryAction: fakes.setTaskCategoryAction,
   resetTaskCategoryAction: fakes.resetTaskCategoryAction,
+  pinObjectAction: fakes.pinObjectAction,
+  unpinObjectAction: fakes.unpinObjectAction,
   searchObjectsAction: fakes.searchObjectsAction,
   setTaskProjectAction: fakes.setTaskProjectAction,
 }));

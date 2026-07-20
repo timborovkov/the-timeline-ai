@@ -169,11 +169,17 @@ provider data sit inside the inspector’s `TechnicalDetails`.
 
 ### Home
 
-Home starts with a plain `PageHeader`, then a concise Ask composer with the only
-lime action in the initial viewport. Attention shows only non-zero actionable
-groups. “You’re caught up” replaces empty dashboard grids. Digest, pinned work,
-recent moments, and one next setup step follow without duplicating Timeline or
-Connections.
+Home does not repeat its navigation label as a visible page title. It starts
+with a quiet Capture action and the same compact, icon-only-send Ask composer
+used in chat. Attention shows only non-zero actionable groups. “You’re caught
+up” replaces empty dashboard grids. Pinned work, digest, recent moments, and one
+next setup step follow as full-width sections without duplicating Timeline or
+Connections. These sections prefer horizontal rules and rows over bordered
+dashboard cards.
+
+Pinned work is personal and may contain boards or any active workspace object,
+including tasks, projects, deals, people, and follow-ups. The Home list is one
+full-width column; pin controls live on each item’s own surface.
 
 ### Timeline
 
@@ -286,3 +292,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-07-14 | Switzer dominates ordinary UI | Removes terminal fatigue while retaining mono for recognizable data. |
 | 2026-07-14 | Internal identifiers behind `TechnicalDetails` | Keeps auditability without leaking implementation detail into product copy. |
 | 2026-07-14 | Attention + Ask Home | Makes the first screen action-oriented instead of duplicating navigation. |
+| 2026-07-20 | Quiet, full-width Home with universal work pins | Removes redundant headings and card weight while letting people keep any important work item close. |

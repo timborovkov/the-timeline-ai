@@ -428,6 +428,13 @@
       "when": 1795653960000,
       "tag": "0060_task_categories",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1795654020000,
+      "tag": "0061_object_pins",
+      "breakpoints": true
     }
   ]
 }

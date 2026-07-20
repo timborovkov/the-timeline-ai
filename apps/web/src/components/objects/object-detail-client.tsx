@@ -36,6 +36,7 @@ import {
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { ArtifactReferenceChip } from '@/components/artifact-reference-chip';
 import { ContextualAskLink } from '@/components/chat/contextual-ask-link';
+import { ObjectPinButton } from '@/components/objects/object-pin-button';
 import {
   type ObjectSearchResponse,
   type ObjectSearchResult,
@@ -76,6 +77,7 @@ interface Props {
   detail: ObjectDetail;
   teamId?: string;
   userId: string;
+  initialPinned?: boolean;
   suggestions: LocalSuggestion[];
   projects?: { id: string; label: string }[];
   primaryProject?: objects.TaskPrimaryProjectRow | null;
@@ -772,6 +774,7 @@ function ObjectDetailView(props: Props) {
       <ObjectDetailHeader
         detail={view.viewDetail}
         teamId={props.teamId}
+        initialPinned={props.initialPinned ?? false}
         error={view.error}
         pending={view.pending}
         repairPending={view.repairPending}
@@ -1295,6 +1298,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 function ObjectDetailHeader({
   detail,
   teamId,
+  initialPinned,
   error,
   pending,
   repairPending,
@@ -1304,6 +1308,7 @@ function ObjectDetailHeader({
 }: {
   detail: ObjectDetail;
   teamId?: string;
+  initialPinned: boolean;
   error: string | null;
   pending: boolean;
   repairPending: boolean;
@@ -1370,6 +1375,7 @@ function ObjectDetailHeader({
         </div>
         <div className="flex flex-col items-start gap-2 lg:max-w-sm lg:items-end">
           {alerts}
+          <ObjectPinButton objectId={detail.id} initialPinned={initialPinned} />
           {teamId ? (
             <ContextualAskLink
               teamId={teamId}

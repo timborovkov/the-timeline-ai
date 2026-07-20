@@ -590,6 +590,41 @@ export async function archiveObjectAction(input: unknown): Promise<ActionState> 
   });
 }
 
+export async function pinObjectAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('pin_object', async () => {
+    const parsed = z.object({ id: uuidSchema }).safeParse(input);
+    if (!parsed.success) return { error: 'Invalid id' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const pinned = await r.scope.objects.pinObject(parsed.data.id);
+      if (!pinned) return { error: 'Object not found' };
+      bestEffortRevalidatePath('/app', 'revalidate_object_pin');
+      bestEffortRevalidatePath(`/app/objects/${parsed.data.id}`, 'revalidate_object_pin');
+      return { ok: true };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to pin object') };
+    }
+  });
+}
+
+export async function unpinObjectAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('unpin_object', async () => {
+    const parsed = z.object({ id: uuidSchema }).safeParse(input);
+    if (!parsed.success) return { error: 'Invalid id' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      await r.scope.objects.unpinObject(parsed.data.id);
+      bestEffortRevalidatePath('/app', 'revalidate_object_unpin');
+      bestEffortRevalidatePath(`/app/objects/${parsed.data.id}`, 'revalidate_object_unpin');
+      return { ok: true };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to unpin object') };
+    }
+  });
+}
+
 const bulkObjectIdsSchema = z.object({
   ids: z.array(uuidSchema).min(1).max(50),
 });

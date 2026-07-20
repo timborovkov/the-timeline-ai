@@ -20,6 +20,7 @@ import {
   objectChanges,
   objectIdentityFacets,
   objectNotes,
+  objectPins,
   objectSummaries,
   notifications,
   rawEvents,
@@ -158,6 +159,31 @@ async function withHistoricalLegacyObjectProvenance<T>(fn: () => Promise<T>): Pr
 }
 
 describe('object scope — team ownership and audit behavior', () => {
+  it('keeps object pins per user and supports every workspace object type', async () => {
+    const owner = withTeam(db, TEAM_A, USER_OWNER);
+    const member = withTeam(db, TEAM_A, USER_MEMBER);
+    const otherTeam = withTeam(db, TEAM_B, USER_OTHER_TEAM);
+    const task = await owner.objects.createObject({
+      type: 'task',
+      canonicalName: 'Pinned follow-up',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await expect(owner.objects.pinObject(task.id)).resolves.toBe(true);
+    await expect(owner.objects.isObjectPinned(task.id)).resolves.toBe(true);
+    await expect(owner.objects.listPinnedObjects()).resolves.toEqual([
+      expect.objectContaining({ id: task.id, type: 'task', canonicalName: 'Pinned follow-up' }),
+    ]);
+    await expect(member.objects.isObjectPinned(task.id)).resolves.toBe(false);
+    await expect(member.objects.listPinnedObjects()).resolves.toEqual([]);
+    await expect(otherTeam.objects.pinObject(task.id)).resolves.toBe(false);
+
+    await owner.objects.archiveObject(task.id, { kind: 'user', userId: USER_OWNER });
+    await expect(owner.objects.listPinnedObjects()).resolves.toEqual([]);
+    await expect(owner.objects.unpinObject(task.id)).resolves.toBe(true);
+    await expect(owner.objects.isObjectPinned(task.id)).resolves.toBe(false);
+  });
+
   it('builds direct-write source context from private evidence visibility', async () => {
     const [raw] = await db
       .insert(rawEvents)
@@ -3302,6 +3328,41 @@ describe('object scope — section feeds', () => {
 });
 
 describe('object scope — merge cleanup', () => {
+  it('transfers personal pins to the survivor and dedupes users who pinned both objects', async () => {
+    const workspace = withTeam(db, TEAM_A, USER_OWNER);
+    const memberWorkspace = withTeam(db, TEAM_A, USER_MEMBER);
+    const survivor = await workspace.objects.createObject({
+      type: 'company',
+      canonicalName: 'Acme',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const duplicate = await workspace.objects.createObject({
+      type: 'company',
+      canonicalName: 'Acme Incorporated',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await workspace.objects.pinObject(duplicate.id);
+    await memberWorkspace.objects.pinObject(survivor.id);
+    await memberWorkspace.objects.pinObject(duplicate.id);
+
+    await workspace.objects.mergeObjects({
+      survivorId: survivor.id,
+      mergedIds: [duplicate.id],
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await expect(workspace.objects.listPinnedObjects()).resolves.toEqual([
+      expect.objectContaining({ id: survivor.id }),
+    ]);
+    await expect(memberWorkspace.objects.listPinnedObjects()).resolves.toEqual([
+      expect.objectContaining({ id: survivor.id }),
+    ]);
+    const pinRows = await db.select().from(objectPins).where(eq(objectPins.teamId, TEAM_A));
+    expect(pinRows).toHaveLength(2);
+    expect(pinRows.every((pin) => pin.entityId === survivor.id)).toBe(true);
+  });
+
   it('merges compatible objects, moves derived rows, dedupes edges, and hides merged rows', async () => {
     const workspace = withTeam(db, TEAM_A, USER_OWNER);
     const scope = workspace.objects;
