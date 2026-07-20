@@ -56,6 +56,11 @@ function render(ui: ReactElement) {
   });
 }
 
+async function chooseTaskProject(name: string): Promise<void> {
+  await userEvent.click(screen.getByRole('button', { name: /^Task project:/ }));
+  await userEvent.click(screen.getByRole('button', { name }));
+}
+
 function task(input: Partial<objects.ObjectRow> = {}): objects.ObjectRow {
   return {
     id: 'task-1',
@@ -411,7 +416,7 @@ describe('TaskBoard', () => {
     renderBoard('task-1');
     await screen.findAllByText(/Faba redesign/);
 
-    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Task project' }), '');
+    await chooseTaskProject('No project');
 
     await waitFor(() => {
       expect(fakes.setTaskProjectAction).toHaveBeenCalledWith({ id: 'task-1', projectId: null });
@@ -449,10 +454,7 @@ describe('TaskBoard', () => {
       />,
     );
 
-    await userEvent.selectOptions(
-      screen.getByRole('combobox', { name: 'Task project' }),
-      'project-new',
-    );
+    await chooseTaskProject('Faba redesign');
     await waitFor(() => {
       expect(fakes.refresh).toHaveBeenCalled();
     });
@@ -534,12 +536,16 @@ describe('TaskBoard', () => {
     });
     renderBoard('task-1');
 
-    await userEvent.type(screen.getByRole('searchbox', { name: 'Search task projects' }), 'Faba');
-    await screen.findByRole('option', { name: 'Faba website redesign' }, { timeout: 1_000 });
-    await userEvent.selectOptions(
-      screen.getByRole('combobox', { name: 'Task project' }),
-      'project-remote',
-    );
+    const projectTrigger = screen.getByRole('button', { name: /^Task project:/ });
+    projectTrigger.focus();
+    await userEvent.keyboard('{Enter}');
+    const projectSearch = screen.getByRole('searchbox', { name: 'Search task projects' });
+    await waitFor(() => {
+      expect(document.activeElement).toBe(projectSearch);
+    });
+    await userEvent.type(projectSearch, 'Faba');
+    await screen.findByRole('button', { name: 'Faba website redesign' }, { timeout: 1_000 });
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}{Enter}');
 
     await waitFor(() => {
       expect(fakes.setTaskProjectAction).toHaveBeenCalledWith({
@@ -549,7 +555,7 @@ describe('TaskBoard', () => {
     });
   });
 
-  it('does not label an active hydrated project as archived when it was not preloaded', () => {
+  it('does not label an active hydrated project as archived when it was not preloaded', async () => {
     render(
       <TaskBoard
         rows={[task()]}
@@ -571,10 +577,11 @@ describe('TaskBoard', () => {
       />,
     );
 
-    expect(screen.getByRole('option', { name: 'Long-running active project' })).toBeTruthy();
-    expect(
-      screen.queryByRole('option', { name: /Long-running active project · Archived/ }),
-    ).toBeNull();
+    const trigger = screen.getByRole('button', { name: /^Task project:/ });
+    expect(trigger.textContent).toContain('Long-running active project');
+    expect(trigger.textContent).not.toContain('Archived');
+    await userEvent.click(trigger);
+    expect(screen.getByRole('button', { name: 'Long-running active project' })).toBeTruthy();
   });
 
   it('does not render legacy agentSuggested badges on task rows', () => {
@@ -935,7 +942,8 @@ describe('TaskBoard', () => {
 
     await user.click(screen.getByRole('button', { name: 'Load older tasks' }));
     await screen.findByRole('link', { name: 'Stale project match' });
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Task project' }), 'project-b');
+    await user.click(screen.getByRole('button', { name: /^Task project:/ }));
+    await user.click(screen.getByRole('button', { name: 'Project B' }));
 
     await waitFor(() => {
       expect(fakes.setTaskProjectAction).toHaveBeenCalledWith({

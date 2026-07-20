@@ -106,13 +106,13 @@ describe('WorkFilterBar', () => {
     });
   });
 
-  it('searches projects beyond the preloaded filter options', async () => {
+  it('keeps server-matched projects whose canonical label does not contain the query', async () => {
     const user = userEvent.setup();
     searchObjectsAction.mockResolvedValue({
       results: [
         {
           id: '00000000-0000-4000-8000-000000000999',
-          canonicalName: 'Overflow project',
+          canonicalName: 'Legacy client migration',
           type: 'project',
         },
       ],
@@ -129,12 +129,18 @@ describe('WorkFilterBar', () => {
       />,
     );
 
-    await user.type(screen.getByLabelText('Search project filters'), 'Overflow');
+    const projectTrigger = screen.getByRole('button', { name: 'Project' });
+    projectTrigger.focus();
+    await user.keyboard('{Enter}');
+    const projectSearch = screen.getByLabelText('Search project filters');
     await waitFor(() => {
-      expect(searchObjectsAction).toHaveBeenCalledWith({ query: 'Overflow', type: 'project' });
+      expect(document.activeElement).toBe(projectSearch);
     });
-    await user.click(screen.getByRole('button', { name: 'Project' }));
-    expect(screen.getByRole('menuitemcheckbox', { name: 'Overflow project' })).toBeTruthy();
+    await user.type(projectSearch, 'Apollo alias');
+    await waitFor(() => {
+      expect(searchObjectsAction).toHaveBeenCalledWith({ query: 'Apollo alias', type: 'project' });
+    });
+    expect(screen.getByRole('button', { name: 'Legacy client migration' })).toBeTruthy();
   });
 
   it('does not submit work filters while typing a project lookup', async () => {
@@ -151,6 +157,7 @@ describe('WorkFilterBar', () => {
       />,
     );
 
+    await user.click(screen.getByRole('button', { name: 'Project' }));
     await user.type(screen.getByLabelText('Search project filters'), 'Overflow');
     await new Promise((resolve) => setTimeout(resolve, 400));
 
