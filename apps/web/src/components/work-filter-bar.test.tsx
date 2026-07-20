@@ -106,13 +106,13 @@ describe('WorkFilterBar', () => {
     });
   });
 
-  it('searches projects beyond the preloaded filter options', async () => {
+  it('keeps server-matched projects whose canonical label does not contain the query', async () => {
     const user = userEvent.setup();
     searchObjectsAction.mockResolvedValue({
       results: [
         {
           id: '00000000-0000-4000-8000-000000000999',
-          canonicalName: 'Overflow project',
+          canonicalName: 'Legacy client migration',
           type: 'project',
         },
       ],
@@ -136,11 +136,11 @@ describe('WorkFilterBar', () => {
     await waitFor(() => {
       expect(document.activeElement).toBe(projectSearch);
     });
-    await user.type(projectSearch, 'Overflow');
+    await user.type(projectSearch, 'Apollo alias');
     await waitFor(() => {
-      expect(searchObjectsAction).toHaveBeenCalledWith({ query: 'Overflow', type: 'project' });
+      expect(searchObjectsAction).toHaveBeenCalledWith({ query: 'Apollo alias', type: 'project' });
     });
-    expect(screen.getByRole('button', { name: 'Overflow project' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Legacy client migration' })).toBeTruthy();
   });
 
   it('does not submit work filters while typing a project lookup', async () => {

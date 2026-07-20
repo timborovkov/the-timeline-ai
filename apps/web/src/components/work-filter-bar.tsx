@@ -330,11 +330,9 @@ function ProjectFilterControl({
   const { query, setQuery, projects: searchResults } = useProjectSearch();
   const options = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    const byId = new Map(projects.map((project) => [project.id, project] as const));
-    for (const project of searchResults) byId.set(project.id, project);
     const selectedIds = new Set(defaultValue.split(','));
-    const options: { value: string; label: string }[] = [];
-    for (const project of byId.values()) {
+    const byId = new Map<string, MemberFilterOption>();
+    for (const project of projects) {
       if (
         normalized &&
         !selectedIds.has(project.id) &&
@@ -342,9 +340,10 @@ function ProjectFilterControl({
       ) {
         continue;
       }
-      options.push({ value: project.id, label: project.label });
+      byId.set(project.id, project);
     }
-    return options;
+    for (const project of searchResults) byId.set(project.id, project);
+    return [...byId.values()].map((project) => ({ value: project.id, label: project.label }));
   }, [defaultValue, projects, query, searchResults]);
 
   return (
