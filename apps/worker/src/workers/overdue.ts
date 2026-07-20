@@ -1,7 +1,8 @@
-import { type Db, entities, notifications } from '@timeline/db';
+import { type Db, entities, notifications, teamCalendarSettings } from '@timeline/db';
 import { childLogger, queue } from '@timeline/shared';
+import { presentDueDate } from '@timeline/shared/time';
 import { Worker, type Job } from 'bullmq';
-import { and, asc, gt, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 
@@ -15,6 +16,7 @@ const PAGE_SIZE = 500;
 // page is just delayed by one hour. Better to bound worst-case work per
 // tick than to lock up a worker for hours on a degenerate workspace.
 const MAX_ENTITIES_PER_TICK = 50_000;
+const DEFAULT_WORKSPACE_TIMEZONE = 'Europe/Helsinki';
 
 const log = childLogger('worker:overdue');
 
@@ -42,6 +44,14 @@ export async function processOverdueScanTick(
   deps: OverdueWorkerDeps,
   jobId: string | undefined = 'manual',
 ): Promise<OverdueScanResult> {
+  const safeTimezone = sql<string>`CASE
+    WHEN EXISTS (
+      SELECT 1
+      FROM pg_timezone_names
+      WHERE name = ${teamCalendarSettings.defaultTimezone}
+    ) THEN ${teamCalendarSettings.defaultTimezone}
+    ELSE ${DEFAULT_WORKSPACE_TIMEZONE}
+  END`;
   let cursor: string | null = null;
   let totalScanned = 0;
   let totalInserted = 0;
@@ -55,6 +65,7 @@ export async function processOverdueScanTick(
       ownerUserId: string | null;
       assigneeUserId: string | null;
       dueAt: Date | null;
+      timezone: string;
     }[] = await deps.db
       .select({
         id: entities.id,
@@ -64,26 +75,33 @@ export async function processOverdueScanTick(
         ownerUserId: entities.ownerUserId,
         assigneeUserId: entities.assigneeUserId,
         dueAt: entities.dueAt,
+        timezone: safeTimezone,
       })
       .from(entities)
+      .leftJoin(teamCalendarSettings, eq(teamCalendarSettings.teamId, entities.teamId))
       .where(
         and(
           inArray(entities.type, ['task', 'follow_up']),
           isNotNull(entities.dueAt),
-          // SQL `now()` rather than `lt(entities.dueAt, new Date())` so the
-          // overdue predicate and the dedup index (which keys on the
-          // DB-side `created_at::date`) both run against the database
-          // clock. Mixing app-server time with DB-side dates can
-          // double-emit notifications around midnight under clock skew.
-          sql`${entities.dueAt} < now()`,
-          ne(entities.status, 'done'),
-          ne(entities.status, 'cancelled'),
+          // Canonical UTC-midnight values encode a calendar date directly.
+          // Legacy/non-midnight instants resolve to a date in the workspace
+          // timezone. In both cases the item becomes overdue only after that
+          // local calendar day has ended.
+          sql`(
+            CASE
+              WHEN EXTRACT(HOUR FROM ${entities.dueAt} AT TIME ZONE 'UTC') = 0
+                AND EXTRACT(MINUTE FROM ${entities.dueAt} AT TIME ZONE 'UTC') = 0
+                AND EXTRACT(SECOND FROM ${entities.dueAt} AT TIME ZONE 'UTC') = 0
+              THEN (${entities.dueAt} AT TIME ZONE 'UTC')::date
+              ELSE (${entities.dueAt} AT TIME ZONE ${safeTimezone})::date
+            END
+          ) < (now() AT TIME ZONE ${safeTimezone})::date`,
+          sql`lower(${entities.status}) NOT IN ('done', 'cancelled', 'canceled', 'shipped', 'suggested')`,
           // Don't badger users about agent-suggested tasks they haven't
           // accepted yet. The suggestion already produces an
           // `agent_suggestion` notification via `createObject`; piling
           // `task_overdue` on top would be noise. Once accepted the
           // status flips to 'todo' and the overdue clock starts.
-          ne(entities.status, 'suggested'),
           isNull(entities.archivedAt),
           isNull(entities.mergedIntoId),
           // Keyset pagination by id. NULL on the first iteration → no
@@ -111,13 +129,15 @@ export async function processOverdueScanTick(
       if (r.assigneeUserId) recipients.add(r.assigneeUserId);
       if (recipients.size === 0) continue;
       const kind = r.type === 'task' ? 'task_overdue' : 'follow_up_overdue';
+      const due = presentDueDate(r.dueAt, { timezone: r.timezone });
+      const dueText = due.dateLabel ? `${due.label} · ${due.dateLabel}` : due.compactText;
       for (const userId of recipients) {
         values.push({
           teamId: r.teamId,
           userId,
           kind,
           entityId: r.id,
-          summary: `${r.canonicalName} is overdue (due ${r.dueAt?.toISOString().slice(0, 10) ?? 'unknown'})`,
+          summary: `${r.canonicalName} is overdue (${dueText})`,
           payload: {
             entity_id: r.id,
             type: r.type,
@@ -127,6 +147,7 @@ export async function processOverdueScanTick(
       }
     }
 
+    let pageInserted = 0;
     if (values.length > 0) {
       // Per-day dedup index swallows repeats. `onConflictDoNothing()`
       // without an explicit target intentionally — drizzle's typed
@@ -144,8 +165,20 @@ export async function processOverdueScanTick(
         .values(values)
         .onConflictDoNothing()
         .returning({ id: notifications.id });
-      totalInserted += inserted.length;
+      pageInserted = inserted.length;
+      totalInserted += pageInserted;
     }
+
+    log.info(
+      {
+        jobId,
+        pageScanned: overdueRows.length,
+        pageInserted,
+        scanned: totalScanned,
+        inserted: totalInserted,
+      },
+      'overdue scan page complete',
+    );
 
     // Last page when the result was smaller than the page size; saves
     // a wasted round-trip for an empty follow-up SELECT.

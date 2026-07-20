@@ -8,7 +8,7 @@ import {
 } from '@timeline/db';
 import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
 import { withTeam } from '@timeline/shared/team-scope';
-import { localDateFromInstant } from '@timeline/shared/time';
+import { localDateFromInstant, presentDueDate } from '@timeline/shared/time';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
@@ -107,6 +107,16 @@ function items(entries: [string, unknown][]): { label: string; value: string }[]
     .filter((entry): entry is { label: string; value: string } => entry !== null);
 }
 
+function dueLabel(value: Date | string | null | undefined, timezone: string): string {
+  const due = presentDueDate(value, { timezone });
+  if (due.status === 'invalid') return due.compactText;
+  return due.dateLabel ? `${due.label} · ${due.dateLabel}` : due.compactText;
+}
+
+function schedulableObjectType(type: string): boolean {
+  return type === 'task' || type === 'follow_up' || type === 'project' || type === 'deal';
+}
+
 async function signedAudioUrl(key: string | null): Promise<string | null> {
   if (!key) return null;
   try {
@@ -148,7 +158,11 @@ async function timelineEventPreview(
   };
 }
 
-async function objectPreview(scope: TeamScope, ref: ArtifactRef): Promise<ArtifactPreview | null> {
+async function objectPreview(
+  scope: TeamScope,
+  ref: ArtifactRef,
+  timezone: string,
+): Promise<ArtifactPreview | null> {
   if (ref.kind !== 'object' && ref.kind !== 'task') return null;
   const object = await scope.objects.getObject(ref.id);
   if (!object) return null;
@@ -161,7 +175,9 @@ async function objectPreview(scope: TeamScope, ref: ArtifactRef): Promise<Artifa
         ['Status', object.status],
         ['Stage', object.stage],
         ['Priority', object.priority],
-        ['Due', object.dueAt],
+        ...(schedulableObjectType(object.type)
+          ? ([['Due', dueLabel(object.dueAt, timezone)]] as [string, unknown][])
+          : []),
         ['Aliases', object.aliases.join(', ')],
       ]),
     },
@@ -180,7 +196,7 @@ async function objectPreview(scope: TeamScope, ref: ArtifactRef): Promise<Artifa
       title: 'Open Tasks',
       items: object.openTasks.slice(0, 6).map((task) => ({
         label: task.status,
-        value: task.canonicalName,
+        value: `${task.canonicalName} · ${dueLabel(task.dueAt, timezone)}`,
       })),
     });
   }
@@ -477,7 +493,11 @@ async function calendarEventPreview(
   };
 }
 
-async function boardPreview(scope: TeamScope, ref: ArtifactRef): Promise<ArtifactPreview | null> {
+async function boardPreview(
+  scope: TeamScope,
+  ref: ArtifactRef,
+  timezone: string,
+): Promise<ArtifactPreview | null> {
   if (ref.kind !== 'board') return null;
   const board = await scope.boards.getBoard(ref.id, { itemLimit: 12 });
   if (!board) return null;
@@ -504,7 +524,7 @@ async function boardPreview(scope: TeamScope, ref: ArtifactRef): Promise<Artifac
         title: 'Items',
         items: board.items.slice(0, 8).map((item) => ({
           label: item.object.type,
-          value: item.object.canonicalName,
+          value: `${item.object.canonicalName} · ${dueLabel(item.dueAt, timezone)}`,
         })),
       },
     ],
@@ -514,6 +534,7 @@ async function boardPreview(scope: TeamScope, ref: ArtifactRef): Promise<Artifac
 async function boardItemPreview(
   scope: TeamScope,
   ref: ArtifactRef,
+  timezone: string,
 ): Promise<ArtifactPreview | null> {
   if (ref.kind !== 'board_item') return null;
   const item = await scope.boards.getBoardItem(ref.id);
@@ -539,7 +560,7 @@ async function boardItemPreview(
           ['Board', board.name],
           ['Lane', lane?.name],
           ['Next step', item.nextStep],
-          ['Due', item.dueAt],
+          ['Due', dueLabel(item.dueAt, timezone)],
           ['Responsible', item.responsibleUserId],
         ]),
       },
@@ -565,13 +586,14 @@ async function hydratePreview(
   scope: TeamScope,
   teamId: string,
   ref: ArtifactRef,
+  timezone: string,
 ): Promise<ArtifactPreview | null> {
   switch (ref.kind) {
     case 'timeline_event':
       return timelineEventPreview(scope, ref);
     case 'object':
     case 'task':
-      return objectPreview(scope, ref);
+      return objectPreview(scope, ref, timezone);
     case 'object_note':
       return notePreview(scope, ref);
     case 'fact':
@@ -585,9 +607,9 @@ async function hydratePreview(
     case 'calendar_event':
       return calendarEventPreview(scope, ref);
     case 'board':
-      return boardPreview(scope, ref);
+      return boardPreview(scope, ref, timezone);
     case 'board_item':
-      return boardItemPreview(scope, ref);
+      return boardItemPreview(scope, ref, timezone);
     case 'route':
       return routePreview(ref);
   }
@@ -605,7 +627,8 @@ export async function POST(req: Request): Promise<Response> {
   const scope = withTeam(db, active.teamId, session.user.id);
   let preview: ArtifactPreview | null = null;
   try {
-    preview = await hydratePreview(scope, active.teamId, parsed.data.ref);
+    const timezone = (await scope.calendar.getCalendarSettings()).defaultTimezone;
+    preview = await hydratePreview(scope, active.teamId, parsed.data.ref, timezone);
   } catch {
     preview = null;
   }

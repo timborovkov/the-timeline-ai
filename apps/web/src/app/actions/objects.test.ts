@@ -78,6 +78,9 @@ const fakes = vi.hoisted(() => ({
   fakeBoards: {
     getTaskCategoryFilterRefreshState: vi.fn(),
   },
+  fakeCalendar: {
+    getCalendarSettings: vi.fn(),
+  },
   fakeTransactionObjects: {
     archiveObject: vi.fn(),
   },
@@ -162,11 +165,13 @@ beforeEach(() => {
       objects: fakes.fakeObjects,
       suggestions: fakes.fakeSuggestions,
       boards: fakes.fakeBoards,
+      calendar: fakes.fakeCalendar,
     },
     userId: USER_ID,
     teamId: '11111111-1111-4111-8111-111111111111',
   });
   fakes.fakeObjects.createObject.mockResolvedValue({ id: OBJECT_ID });
+  fakes.fakeCalendar.getCalendarSettings.mockResolvedValue({ defaultTimezone: 'UTC' });
   fakes.fakeObjects.getObject.mockResolvedValue({ id: OBJECT_ID, archivedAt: null });
   fakes.fakeObjects.updateObject.mockResolvedValue({
     object: { id: OBJECT_ID, type: 'task' },

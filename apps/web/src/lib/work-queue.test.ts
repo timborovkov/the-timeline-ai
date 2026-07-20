@@ -37,12 +37,7 @@ function task(input: Partial<objects.ObjectRow> = {}): objects.ObjectRow {
 
 describe('objectQueueItem', () => {
   it('uses source-tracked display titles for integration-derived task queue titles', () => {
-    const item = objectQueueItem(
-      task(),
-      'user-1',
-      new Date('2026-06-01T00:00:00.000Z'),
-      new Date('2026-06-08T00:00:00.000Z'),
-    );
+    const item = objectQueueItem(task(), 'user-1', new Date('2026-06-01T00:00:00.000Z'), 'UTC');
 
     expect(item?.title).toBe('the-timeline-ai: Add cursor pagination');
   });
@@ -52,7 +47,7 @@ describe('objectQueueItem', () => {
       task({ type: 'follow_up', status: 'in_progress' }),
       'user-1',
       new Date('2026-06-01T00:00:00.000Z'),
-      new Date('2026-06-08T00:00:00.000Z'),
+      'UTC',
     );
 
     expect(item?.subtitle).toBe('Follow up · In progress');
@@ -63,15 +58,47 @@ describe('objectQueueItem', () => {
     const assigned = task({ id: 'assigned-standalone', dueAt: null });
     const listObjects = (filter: objects.ObjectListFilter) =>
       Promise.resolve(
-        filter.assigneeUserId === 'user-1' && filter.dueBefore === undefined ? [assigned] : [],
+        filter.assigneeUserId === 'user-1' && filter.dueDateRange === undefined ? [assigned] : [],
       );
 
     const rows = await listWorkQueueObjects(
       { listObjects },
-      'user-1',
-      new Date('2026-07-01T00:00:00.000Z'),
+      {
+        userId: 'user-1',
+        now: new Date('2026-06-01T00:00:00.000Z'),
+        timezone: 'UTC',
+      },
     );
 
     expect(rows).toContain(assigned);
+  });
+
+  it('loads visible overdue tasks even when they are assigned to another user', async () => {
+    const now = new Date('2026-07-20T00:00:00.000Z');
+    const overdue = task({
+      id: 'team-overdue',
+      assigneeUserId: 'user-2',
+      dueAt: new Date('2026-07-19T00:00:00.000Z'),
+    });
+    const listObjects = (filter: objects.ObjectListFilter) =>
+      Promise.resolve(
+        filter.type === 'task' &&
+          filter.dueDateRange?.to === '2026-07-20' &&
+          filter.ownerUserId === undefined &&
+          filter.assigneeUserId === undefined
+          ? [overdue]
+          : [],
+      );
+
+    const rows = await listWorkQueueObjects(
+      { listObjects },
+      {
+        userId: 'user-1',
+        now,
+        timezone: 'UTC',
+      },
+    );
+
+    expect(rows).toContain(overdue);
   });
 });

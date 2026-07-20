@@ -16,7 +16,9 @@ import { useEffect, useMemo, useReducer } from 'react';
 import type { GlobalSearchKind, GlobalSearchResult } from '@timeline/shared/search';
 import type { ComponentType, SVGProps, SyntheticEvent } from 'react';
 
+import { DueDateDisplay } from '@/components/due-date-display';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
+import { isSchedulableObjectType } from '@/lib/due-dates';
 import { selectedValues } from '@/lib/filter-values';
 import { fetchGlobalSearch } from '@/lib/global-search';
 import { GLOBAL_SEARCH_SOURCE_OPTIONS } from '@/lib/global-search-sources';
@@ -235,6 +237,8 @@ function SearchResultRow({ result }: { result: GlobalSearchResult }) {
   const Icon = iconFor(result.kind);
   const date = resultDate(result);
   const relatedEvidence = relatedEvidenceLabel(result);
+  const objectType = typeof result.metadata?.type === 'string' ? result.metadata.type : '';
+  const dueAt = typeof result.metadata?.dueAt === 'string' ? result.metadata.dueAt : null;
   const content = (
     <span className="flex min-w-0 items-start gap-3 p-3">
       <Icon aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-fg-muted" />
@@ -250,6 +254,9 @@ function SearchResultRow({ result }: { result: GlobalSearchResult }) {
           {date ? <span>{date}</span> : null}
           {result.metadata?.source ? <span>{result.metadata.source}</span> : null}
           {result.metadata?.type ? <span>{result.metadata.type}</span> : null}
+          {isSchedulableObjectType(objectType) ? (
+            <DueDateDisplay value={dueAt} variant="compact" />
+          ) : null}
         </span>
         {relatedEvidence ? (
           <span className="mt-2 inline-flex max-w-full rounded-sm border border-border bg-surface px-1.5 py-0.5 text-[11px] text-fg-dim">

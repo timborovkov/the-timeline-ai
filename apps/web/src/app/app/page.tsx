@@ -63,7 +63,10 @@ export default async function HomeDashboardPage() {
   if (!active) redirect('/sign-in');
 
   const scope = withTeam(db, active.teamId, session.user.id);
-  const role = await scope.requireMembership();
+  const [role, calendarSettings] = await Promise.all([
+    scope.requireMembership(),
+    scope.calendar.getCalendarSettings(),
+  ]);
   const isAdmin = role === 'owner' || role === 'admin';
   const now = new Date();
 
@@ -74,16 +77,14 @@ export default async function HomeDashboardPage() {
     webDefault,
     pinnedBoards,
     latestDigest,
-    calendarSettings,
     connectionAttention,
   ] = await Promise.all([
-    getWorkAttentionSummary(scope, now),
+    getWorkAttentionSummary(scope, now, calendarSettings.defaultTimezone),
     scope.timeline.listEventsPage({ limit: 3 }),
     scope.timeline.listMembers(),
     scope.timeline.resolveVisibilityDefault('web'),
-    scope.boards.listPinnedBoards(),
+    scope.boards.listPinnedBoards({ timezone: calendarSettings.defaultTimezone, now }),
     latestDailyDigest({ db, teamId: active.teamId, userId: session.user.id }),
-    scope.calendar.getCalendarSettings(),
     scope.integrations.listConnectionAttention(),
   ]);
   const recoverableJobs = isAdmin ? await scope.jobRecovery.listRecoverableJobs() : [];

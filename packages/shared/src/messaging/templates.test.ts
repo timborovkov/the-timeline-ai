@@ -98,7 +98,7 @@ describe('messaging templates', () => {
     );
     expect(message.textBody).toContain('In progress\n- Automated testing agent is being created.');
     expect(message.textBody).toContain('Decisions\n- Launch timing still needs a decision.');
-    expect(message.textBody).toContain('Send pilot recap (todo, due Jun 17, 2026)');
+    expect(message.textBody).toContain('Send pilot recap (todo, Due soon · Jun 17, 2026)');
     expect(message.textBody.indexOf('Product status')).toBeLessThan(
       message.textBody.indexOf('Completed'),
     );
@@ -109,7 +109,7 @@ describe('messaging templates', () => {
     expect(message.textBody).not.toContain('2026-06-17T14:00:00.000Z');
     expect(message.htmlBody).toContain('Highlights');
     expect(message.htmlBody).toContain('Send pilot recap.');
-    expect(message.htmlBody).toContain('Send pilot recap (todo, due Jun 17, 2026)');
+    expect(message.htmlBody).toContain('Send pilot recap (todo, Due soon · Jun 17, 2026)');
     expect(message.htmlBody).toContain('Digest date: Jun 14, 2026');
     expect(message.htmlBody).toContain('5 work moments from 12 source events');
     expect(message.htmlBody).toContain('The team should keep the pilot recap moving.');

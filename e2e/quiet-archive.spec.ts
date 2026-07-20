@@ -99,14 +99,44 @@ test('AuthShell covers sign-up, invite, and email verification layouts', async (
 });
 
 test('normal seeded product views hide UUIDs and do not overflow at 320px', async ({ browser }) => {
+  test.slow();
   const page = await newSignedInPage(browser, 'owner');
   await page.setViewportSize({ width: 320, height: 780 });
 
-  for (const path of ['/app', '/app/timeline', '/app/work', '/app/meetings', '/app/sources']) {
+  for (const path of [
+    '/app',
+    '/app/timeline',
+    '/app/work',
+    '/app/tasks?view=list',
+    '/app/objects',
+    '/app/boards',
+    '/app/meetings',
+    '/app/sources',
+  ]) {
     await page.goto(path);
     await expect(page.locator('h1')).toHaveCount(1);
     const visibleText = await page.locator('body').innerText();
     expect(visibleText).not.toMatch(UUID_PATTERN);
+    const dimensions = await page.evaluate(() => ({
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    }));
+    expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
+  }
+
+  for (const indexPath of ['/app/objects', '/app/boards']) {
+    await page.goto(indexPath);
+    const detailHref = (
+      await page
+        .locator(`a[href^="${indexPath}/"]`)
+        .evaluateAll((links) =>
+          links
+            .map((link) => link.getAttribute('href'))
+            .filter((href): href is string => href !== null),
+        )
+    ).find((href) => new RegExp(`^${indexPath}/${UUID_PATTERN.source}$`, 'i').test(href));
+    if (!detailHref) continue;
+    await page.goto(detailHref);
     const dimensions = await page.evaluate(() => ({
       clientWidth: document.documentElement.clientWidth,
       scrollWidth: document.documentElement.scrollWidth,
@@ -123,7 +153,7 @@ test('Ask gives the conversation the full mobile viewport', async ({ browser }) 
   await page.goto('/app/chat');
 
   await expect(page.getByRole('complementary')).toBeHidden();
-  const composer = page.getByPlaceholder("Ask anything about your team's timeline…");
+  const composer = page.getByPlaceholder('Ask the timeline…');
   await expect(composer).toBeVisible();
   expect((await composer.boundingBox())?.width).toBeGreaterThan(240);
 
@@ -131,6 +161,7 @@ test('Ask gives the conversation the full mobile viewport', async ({ browser }) 
 });
 
 test('authenticated routes expose one page heading', async ({ browser }) => {
+  test.slow();
   const page = await newSignedInPage(browser, 'owner');
   const routes = [
     '/app',

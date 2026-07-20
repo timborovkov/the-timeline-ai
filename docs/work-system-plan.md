@@ -187,14 +187,36 @@ Users should understand a board or task list in a few seconds.
 Cards and rows should show the core scan layer:
 
 - owner or "Unassigned"
-- due date or "No due"
+- due date or "No due date"
 - priority or "No priority"
 - comment count
 - checklist progress
 - blocked/attention state
 
 Missing values should be visible when they are operationally important. A board
-full of "Unassigned" and "No due" should make the absence obvious.
+full of "Unassigned" and "No due date" should make the absence obvious.
+
+### One Due-Date Contract Across Surfaces
+
+Due dates are stored and exchanged as timestamps but presented and filtered as
+workspace calendar dates. Canonical midnight-UTC values keep their encoded
+date; other timestamps resolve in the workspace timezone. Work is overdue only
+after its local due day has ended. The shared states are Overdue, Due today,
+Due soon (the next 14 calendar days), Due, and No due date, always paired with
+an exact localized date when one exists.
+
+This contract applies to Work, task and board views, schedulable object rows and
+details, search and command results, artifact previews, approval and Ask cards,
+daily digests, and overdue notifications. Editable fields keep native date
+inputs and add a readable status hint. Missing dates are explicit for tasks,
+follow-ups, projects, deals, and board items, but not for identity records,
+calendar events, or generic approval rows. Machine-facing REST, MCP, export,
+retrieval, embedding, and evidence formats retain raw ISO timestamps.
+
+The Work rail badge remains the aggregate of overdue open tasks and pending
+approval items. The Work header exposes separate keyboard-focusable Overdue and
+Approvals links, and the overdue task link uses the same workspace-date filter
+and open-status rules as its count.
 
 ### Detail Panels Should Be Command Centers
 
@@ -256,10 +278,11 @@ Work hub should become the daily landing page for operational work.
 Add sections:
 
 - Work queue: one scannable list of work that matters now, including items
-  responsible to me and team-level items with due dates but no owner
+  responsible to me, team-level items with due dates but no owner, and visible
+  overdue tasks even when another teammate owns them
 - Team boards: recently active and pinned boards
-- Attention signals: overdue, due soon, unassigned, blocked, pending approval,
-  or otherwise needing review
+- Attention signals: linked Overdue and Approvals counts in the Work header,
+  plus readable due state and dates on queue rows
 - Recent changes: comments, stage changes, mentions, AI-found updates
 - Pinned: boards, projects, deals, vendors, decisions, or tasks I care about
 
@@ -651,9 +674,10 @@ Recommended wedge: a team pipeline or task board where users can:
   due date, priority, next step, and abandoned-looking work updates
 - ask the agent what changed and why
 
-The current branch covers the Work Queue, board scan layer, and core board item
-editing parts of this milestone. The main missing pieces are comments/mentions,
-checklists, collaborators/watchers, stronger Timeline evidence inside item
-detail, and suggestion-worker improvements.
+The current branch covers the Work Queue, board scan layer, core board item
+editing, and product-wide calendar-date-aware due presentation and overdue
+delivery. The main missing pieces are comments/mentions, checklists,
+collaborators/watchers, stronger Timeline evidence inside item detail, and
+suggestion-worker improvements.
 
 If this loop feels excellent, the broader platform can expand from it.

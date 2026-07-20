@@ -9,6 +9,7 @@ const fakes = vi.hoisted(() => ({
   getTaskCategoryFilterRefreshState: vi.fn(),
   listPendingSuggestions: vi.fn(),
   listMembers: vi.fn(),
+  getCalendarSettings: vi.fn(),
   getObjectMergePreview: vi.fn(),
   userRows: [] as { id: string; name: string | null; email: string }[],
   categoryRefresh: null as {
@@ -35,6 +36,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
     },
     suggestions: { listPendingSuggestions: fakes.listPendingSuggestions },
     timeline: { listMembers: fakes.listMembers },
+    calendar: { getCalendarSettings: fakes.getCalendarSettings },
   }),
 }));
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
@@ -117,6 +119,7 @@ beforeEach(() => {
   });
   fakes.listPendingSuggestions.mockResolvedValue([]);
   fakes.listMembers.mockResolvedValue([]);
+  fakes.getCalendarSettings.mockResolvedValue({ defaultTimezone: 'UTC' });
   fakes.userRows = [];
   fakes.categoryRefresh = null;
   fakes.getObjectMergePreview.mockResolvedValue({

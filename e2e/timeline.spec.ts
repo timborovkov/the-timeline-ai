@@ -1605,14 +1605,10 @@ test('approvals failed filter shows retryable browser state', async ({ browser }
     await expect(ownerPage.locator('article').filter({ hasText: taskTitle })).toHaveCount(0);
 
     await ownerPage.goto('/app/work');
-    const pendingApprovalRow = ownerPage.locator('a[href="/app/approvals?status=pending"]');
-    if (countsBefore.pending === 0) {
-      await expect(pendingApprovalRow).toHaveCount(0);
-    } else {
-      await expect(pendingApprovalRow).toContainText(
-        `${countsBefore.pending} pending ${countsBefore.pending === 1 ? 'approval' : 'approvals'}`,
-      );
-    }
+    await expect(
+      ownerPage.getByRole('link', { name: `${countsBefore.pending} pending approvals` }),
+    ).toBeVisible();
+    await expect(ownerPage.getByText(taskTitle)).toHaveCount(0);
   } finally {
     await sql`DELETE FROM agent_suggestions WHERE id = ${bundle.id}`;
     await ownerPage.context().close();
@@ -1866,7 +1862,7 @@ test('chat answers timeline questions with citations and reloadable tool history
 
   await ownerPage.goto('/app/chat');
   const question = `What does the timeline say about ${chatFact}?`;
-  await ownerPage.getByPlaceholder("Ask anything about your team's timeline…").fill(question);
+  await ownerPage.getByPlaceholder('Ask the timeline…').fill(question);
   await ownerPage.getByRole('button', { name: 'Send' }).click();
   await expect(ownerPage.getByText(`Searched timeline for "${question}" — 1 result`)).toBeVisible();
   await expect(ownerPage.getByText(chatFact).last()).toBeVisible();
@@ -1889,9 +1885,7 @@ test('chat answers timeline questions with citations and reloadable tool history
     }),
   ).toBeVisible();
 
-  await ownerPage
-    .getByPlaceholder("Ask anything about your team's timeline…")
-    .fill('degraded chat check');
+  await ownerPage.getByPlaceholder('Ask the timeline…').fill('degraded chat check');
   await ownerPage.getByRole('button', { name: 'Send' }).click();
   await expect(
     ownerPage.getByText("I couldn't verify that from the accessible timeline."),
@@ -1909,9 +1903,7 @@ test('chat respects private and specific-user timeline visibility', async ({ bro
 
   await memberPage.goto('/app/chat');
   const privateQuestion = `What does the timeline say about ${e2eSeedEvents.privateForOwner}?`;
-  await memberPage
-    .getByPlaceholder("Ask anything about your team's timeline…")
-    .fill(privateQuestion);
+  await memberPage.getByPlaceholder('Ask the timeline…').fill(privateQuestion);
   await memberPage.getByRole('button', { name: 'Send' }).click();
   await expect(
     memberPage.getByText("I couldn't verify that from the accessible timeline."),
@@ -1921,9 +1913,7 @@ test('chat respects private and specific-user timeline visibility', async ({ bro
   );
 
   const specificQuestion = `What does the timeline say about ${e2eSeedEvents.specificForMember}?`;
-  await memberPage
-    .getByPlaceholder("Ask anything about your team's timeline…")
-    .fill(specificQuestion);
+  await memberPage.getByPlaceholder('Ask the timeline…').fill(specificQuestion);
   await memberPage.getByRole('button', { name: 'Send' }).click();
   await expect(memberPage.getByText(e2eSeedEvents.specificForMember).last()).toBeVisible();
   await expect(
@@ -1931,9 +1921,7 @@ test('chat respects private and specific-user timeline visibility', async ({ bro
   ).toBeVisible();
 
   await ownerPage.goto('/app/chat');
-  await ownerPage
-    .getByPlaceholder("Ask anything about your team's timeline…")
-    .fill(specificQuestion);
+  await ownerPage.getByPlaceholder('Ask the timeline…').fill(specificQuestion);
   await ownerPage.getByRole('button', { name: 'Send' }).click();
   await expect(
     ownerPage.getByText("I couldn't verify that from the accessible timeline."),
@@ -1996,7 +1984,7 @@ test('chat answers from accepted durable task calendar and object state', async 
 
   await ownerPage.goto('/app/chat');
   const question = `What durable task, calendar, and object state exists for ${stamp}?`;
-  await ownerPage.getByPlaceholder("Ask anything about your team's timeline…").fill(question);
+  await ownerPage.getByPlaceholder('Ask the timeline…').fill(question);
   await ownerPage.getByRole('button', { name: 'Send' }).click();
   await expect(ownerPage.getByText(/Listed workspace state/)).toBeVisible();
   await expect(ownerPage.getByText(expectedTask).last()).toBeVisible();
@@ -2016,7 +2004,7 @@ test('chat answers from accepted durable task calendar and object state', async 
   await expect(ownerPage.getByText(objectName).last()).toBeVisible();
 
   await memberPage.goto('/app/chat');
-  await memberPage.getByPlaceholder("Ask anything about your team's timeline…").fill(question);
+  await memberPage.getByPlaceholder('Ask the timeline…').fill(question);
   await memberPage.getByRole('button', { name: 'Send' }).click();
   await expect(memberPage.getByText(/Listed workspace state/)).toBeVisible();
   await expect(memberPage.getByText(expectedTask).last()).toBeVisible();

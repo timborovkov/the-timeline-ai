@@ -1,5 +1,6 @@
 'use client';
 
+import { presentDueDate } from '@timeline/shared/time';
 import { ExternalLink, Save } from 'lucide-react';
 import Link from 'next/link';
 import { useState, useTransition } from 'react';
@@ -16,6 +17,7 @@ import type { ReactNode } from 'react';
 
 import { RemoveBoardItemButton } from '@/components/boards/remove-board-item-button';
 import { ContextualAskLink } from '@/components/chat/contextual-ask-link';
+import { DueDateDisplay } from '@/components/due-date-display';
 import { ObjectRelatedContext } from '@/components/objects/object-related-context';
 import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { TaskCategorySelect } from '@/components/tasks/task-category-select';
@@ -31,6 +33,7 @@ import {
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { boardViewHref } from '@/lib/board-links';
 import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/display-dates';
+import { isSchedulableObjectType } from '@/lib/due-dates';
 import { objectDetailHref } from '@/lib/object-links';
 import { displayObjectTitle } from '@/lib/object-title';
 import { statusLabel } from '@/lib/status-labels';
@@ -276,6 +279,7 @@ function BoardCommandFields({
   disabled: boolean;
   onPatch: (patch: BoardItemOptimisticPatch) => void;
 }) {
+  const timezone = useWorkspaceTimezone();
   return (
     <div className="grid gap-px border-b border-border bg-border sm:grid-cols-2">
       <FieldSelect
@@ -312,12 +316,13 @@ function BoardCommandFields({
       <FieldInput
         label="Due"
         type="date"
-        value={item.dueAt ? dateInputValue(item.dueAt) : ''}
+        value={item.dueAt ? dateInputValue(item.dueAt, timezone) : ''}
         placeholder="No due date"
         disabled={disabled}
         onChange={(value) => {
           onPatch({ dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null });
         }}
+        hint={<DueDateDisplay value={item.dueAt} variant="field-hint" />}
       />
       <FieldSelect
         label="Priority"
@@ -382,10 +387,12 @@ function BoardObjectDetails({
     <dl className="grid grid-cols-2 gap-px border-b border-border bg-border text-sm">
       <Detail label="Board lane" value={lane?.name ?? 'Unset'} danger={blocked} />
       <Detail label="Object status" value={statusLabel(item.object.status)} />
-      <Detail
-        label="Object due"
-        value={item.object.dueAt ? dateLabel(item.object.dueAt, timezone) : '-'}
-      />
+      {isSchedulableObjectType(item.object.type) ? (
+        <Detail
+          label="Object due"
+          value={<DueDateDisplay value={item.object.dueAt} timezone={timezone} variant="inline" />}
+        />
+      ) : null}
       <Detail
         label="Object priority"
         value={item.object.priority ? `P${item.object.priority}` : '-'}
@@ -656,10 +663,14 @@ function ObjectPreviewDialog({
             label="Priority"
             value={item.object.priority ? `P${item.object.priority}` : '-'}
           />
-          <Detail
-            label="Due"
-            value={item.object.dueAt ? dateLabel(item.object.dueAt, timezone) : '-'}
-          />
+          {isSchedulableObjectType(item.object.type) ? (
+            <Detail
+              label="Due"
+              value={
+                <DueDateDisplay value={item.object.dueAt} timezone={timezone} variant="inline" />
+              }
+            />
+          ) : null}
         </dl>
         {item.object.type === 'task' ? (
           <section>
@@ -737,6 +748,7 @@ function FieldInput({
   placeholder,
   disabled,
   onChange,
+  hint,
 }: {
   label: string;
   type: string;
@@ -744,11 +756,13 @@ function FieldInput({
   placeholder: string;
   disabled: boolean;
   onChange: (value: string) => void;
+  hint?: ReactNode;
 }) {
   return (
     <label className="block bg-bg p-3">
       <span className="mb-1 block text-[11px] text-fg-dim">{label}</span>
       <input
+        aria-label={label}
         type={type}
         value={value}
         placeholder={placeholder}
@@ -758,6 +772,7 @@ function FieldInput({
         }}
         className="h-8 w-full rounded-sm border border-border bg-bg px-2 text-sm text-fg focus-visible:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-50"
       />
+      {hint ? <span className="mt-1 block">{hint}</span> : null}
     </label>
   );
 }
@@ -768,7 +783,7 @@ function Detail({
   danger = false,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   danger?: boolean;
 }) {
   return (
@@ -779,8 +794,8 @@ function Detail({
   );
 }
 
-function dateInputValue(value: Date): string {
-  return new Date(value).toISOString().slice(0, 10);
+function dateInputValue(value: Date, timezone: string): string {
+  return presentDueDate(value, { timezone }).dateKey ?? '';
 }
 
 function dateLabel(value: Date, timezone: string): string {

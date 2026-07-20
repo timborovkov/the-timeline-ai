@@ -1,5 +1,6 @@
 'use client';
 
+import { presentDueDate } from '@timeline/shared/time';
 import { ExternalLink } from 'lucide-react';
 
 import { EvidenceLink } from '@/components/evidence-link';
@@ -139,8 +140,8 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
         </span>
       </div>
       <p className="mt-1 break-words text-xs text-muted-foreground">
-        {formatChangeValue(text(row.field), row.previousValue)} →{' '}
-        {formatChangeValue(text(row.field), row.newValue)}
+        {formatChangeValue(text(row.field), row.previousValue, timezone)} →{' '}
+        {formatChangeValue(text(row.field), row.newValue, timezone)}
       </p>
     </div>
   );
@@ -173,19 +174,20 @@ function changeFieldLabel(field: string): string {
   return labels[field] ?? field.replace(/([a-z])([A-Z])/g, '$1 $2');
 }
 
-function formatChangeValue(field: string, value: unknown): string {
+function formatChangeValue(field: string, value: unknown, timezone: string): string {
   const category = formatTaskCategoryChangeValue(field, value);
   if (category !== null) return category;
-  if (value === null || value === undefined || value === '') return 'empty';
   if (field === 'dueAt') {
-    const date = value instanceof Date ? value : typeof value === 'string' ? new Date(value) : null;
-    if (date && !Number.isNaN(date.getTime())) return date.toLocaleString();
+    const due = presentDueDate(value as Date | string | null | undefined, { timezone });
+    if (due.status === 'invalid') return due.compactText;
+    return due.dateLabel ? `${due.label} · ${due.dateLabel}` : due.compactText;
   }
+  if (value === null || value === undefined || value === '') return 'empty';
   if (Array.isArray(value)) {
     return (
       value
         .flatMap((item) => {
-          const formatted = formatChangeValue('', item);
+          const formatted = formatChangeValue('', item, timezone);
           return formatted ? [formatted] : [];
         })
         .join(', ') || 'empty'

@@ -1,5 +1,6 @@
 'use client';
 
+import { presentDueDate } from '@timeline/shared/time';
 import Link from 'next/link';
 import { useMemo, useReducer, useState, useTransition } from 'react';
 
@@ -7,10 +8,11 @@ import type { BoardItemOptimisticPatch } from '@/components/boards/board-detail-
 import type * as boards from '@timeline/shared/boards';
 import type { Dispatch, SetStateAction } from 'react';
 
+import { DueDateDisplay } from '@/components/due-date-display';
 import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { boardViewHref, type BoardLayout } from '@/lib/board-links';
-import { displayText, formatDisplayDate } from '@/lib/display-dates';
+import { displayText } from '@/lib/display-dates';
 import { displayObjectTitle } from '@/lib/object-title';
 import { statusLabel } from '@/lib/status-labels';
 
@@ -62,6 +64,7 @@ export function CuratedBoardTable({
     patch: BoardItemOptimisticPatch,
   ) => Promise<{ ok?: boolean; error?: string; id?: string }>;
 }) {
+  const timezone = useWorkspaceTimezone();
   const [, startTransition] = useTransition();
   const [saving, setSaving] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -250,7 +253,9 @@ export function CuratedBoardTable({
                   <td className="min-w-36 px-3 py-2">
                     <input
                       type="date"
-                      value={item.dueAt ? new Date(item.dueAt).toISOString().slice(0, 10) : ''}
+                      value={
+                        item.dueAt ? (presentDueDate(item.dueAt, { timezone }).dateKey ?? '') : ''
+                      }
                       disabled={optimistic || !onUpdateItem}
                       onChange={(event) => {
                         void updateItem(item.id, {
@@ -261,6 +266,11 @@ export function CuratedBoardTable({
                       }}
                       className="h-8 w-full rounded-sm border border-border bg-bg px-2 text-xs disabled:opacity-60"
                       aria-label={`Due date for ${displayText(objectTitle)}`}
+                    />
+                    <DueDateDisplay
+                      value={item.dueAt}
+                      variant="field-hint"
+                      className="mt-1 block"
                     />
                   </td>
                   <td className="min-w-28 px-3 py-2">
@@ -614,9 +624,9 @@ export function CuratedBoardList({
               <span className="min-w-0 flex-1 whitespace-normal break-words font-medium leading-snug text-fg">
                 {displayText(objectTitle)}
               </span>
-              <span className="text-xs text-fg-dim">
-                {statusLabel(item.object.type)}
-                {item.dueAt ? ` · ${formatDisplayDate(item.dueAt, { timezone })}` : ''}
+              <span className="flex flex-wrap items-center gap-1.5 text-xs text-fg-dim">
+                <span>{statusLabel(item.object.type)}</span>
+                <DueDateDisplay value={item.dueAt} timezone={timezone} variant="compact" />
               </span>
               {item.object.type === 'task' ? (
                 <LiveTaskCategoryBadge

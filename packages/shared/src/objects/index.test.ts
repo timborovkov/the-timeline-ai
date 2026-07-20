@@ -658,8 +658,10 @@ describe('object scope — team ownership and audit behavior', () => {
   });
 
   it('notifies the responsible user and mirrors task due dates to the team calendar', async () => {
-    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
-    const dueAt = new Date('2026-07-02T15:00:00.000Z');
+    const teamScope = withTeam(db, TEAM_A, USER_OWNER);
+    await teamScope.calendar.upsertCalendarSettings({ defaultTimezone: 'Europe/Madrid' });
+    const scope = teamScope.objects;
+    const dueAt = new Date('2026-07-20T23:00:00.000Z');
 
     const task = await scope.createObject({
       type: 'task',
@@ -677,7 +679,7 @@ describe('object scope — team ownership and audit behavior', () => {
       expect.objectContaining({
         userId: USER_MEMBER,
         kind: 'task_due',
-        summary: 'Send renewal brief is due 2026-07-02',
+        summary: 'Send renewal brief — Due · Jul 21, 2026',
       }),
     ]);
 
@@ -685,7 +687,10 @@ describe('object scope — team ownership and audit behavior', () => {
     expect(eventRows).toEqual([
       expect.objectContaining({
         title: 'Due: Send renewal brief - member@test.local',
-        startAt: dueAt,
+        startAt: new Date('2026-07-20T22:00:00.000Z'),
+        endAt: new Date('2026-07-21T22:00:00.000Z'),
+        timezone: 'Europe/Madrid',
+        allDay: true,
         showAs: 'free',
         visibility: 'team',
       }),
@@ -739,7 +744,8 @@ describe('object scope — team ownership and audit behavior', () => {
     expect(eventRows).toEqual([
       expect.objectContaining({
         title: 'Due: Unassigned renewal checklist',
-        startAt: dueAt,
+        startAt: new Date('2026-07-09T21:00:00.000Z'),
+        allDay: true,
         showAs: 'free',
         visibility: 'team',
       }),
@@ -834,6 +840,47 @@ describe('object scope — team ownership and audit behavior', () => {
     ).resolves.toEqual([]);
   });
 
+  it('filters mixed due timestamps by workspace calendar date', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const rows = await Promise.all([
+      scope.createObject({
+        type: 'task',
+        canonicalName: 'Yesterday canonical',
+        dueAt: new Date('2026-07-19T00:00:00.000Z'),
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+      scope.createObject({
+        type: 'task',
+        canonicalName: 'Today canonical',
+        dueAt: new Date('2026-07-20T00:00:00.000Z'),
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+      scope.createObject({
+        type: 'task',
+        canonicalName: 'Today workspace-local',
+        dueAt: new Date('2026-07-19T22:00:00.000Z'),
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+    ]);
+
+    await expect(
+      scope.listObjects({
+        type: 'task',
+        dueDateRange: { timezone: 'Europe/Madrid', to: '2026-07-20' },
+      }),
+    ).resolves.toEqual([expect.objectContaining({ id: rows[0].id })]);
+    await expect(
+      scope.countObjects({
+        type: 'task',
+        dueDateRange: {
+          timezone: 'Europe/Madrid',
+          from: '2026-07-20',
+          to: '2026-07-21',
+        },
+      }),
+    ).resolves.toBe(2);
+  });
+
   it('counts terminal statuses case-insensitively when requested', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
     const dueAt = new Date('2026-07-15T09:00:00.000Z');
@@ -910,7 +957,7 @@ describe('object scope — team ownership and audit behavior', () => {
         expect.objectContaining({
           userId: USER_MEMBER,
           kind: 'task_due',
-          summary: 'Review agent-suggested deadline is due 2026-07-11',
+          summary: 'Review agent-suggested deadline — Due · Jul 11, 2026',
         }),
       ]),
     );
@@ -946,7 +993,7 @@ describe('object scope — team ownership and audit behavior', () => {
     expect(inboxRows.filter((row) => row.kind === 'task_due' && row.readAt === null)).toEqual([
       expect.objectContaining({
         userId: USER_MEMBER,
-        summary: 'Restart archived launch task is due 2026-07-13',
+        summary: 'Restart archived launch task — Due · Jul 13, 2026',
       }),
     ]);
     await expect(
@@ -983,7 +1030,7 @@ describe('object scope — team ownership and audit behavior', () => {
         expect.objectContaining({
           userId: USER_MEMBER,
           kind: 'task_due',
-          summary: 'Assign owner for launch note is due 2026-07-12',
+          summary: 'Assign owner for launch note — Due · Jul 12, 2026',
         }),
       ]),
     );
@@ -1011,7 +1058,7 @@ describe('object scope — team ownership and audit behavior', () => {
     ).toEqual([
       expect.objectContaining({
         userId: USER_OWNER,
-        summary: 'Assign owner for launch note is due 2026-07-12',
+        summary: 'Assign owner for launch note — Due · Jul 12, 2026',
       }),
     ]);
 
@@ -1059,7 +1106,7 @@ describe('object scope — team ownership and audit behavior', () => {
       .where(eq(notifications.entityId, task.id));
     expect(
       inboxRows.find(
-        (row) => row.kind === 'task_due' && row.summary === 'Old launch name is due 2026-07-14',
+        (row) => row.kind === 'task_due' && row.summary === 'Old launch name — Due · Jul 14, 2026',
       )?.readAt,
     ).toBeInstanceOf(Date);
     expect(
@@ -1069,13 +1116,13 @@ describe('object scope — team ownership and audit behavior', () => {
     ).toBeInstanceOf(Date);
     expect(inboxRows.filter((row) => row.kind === 'task_due' && row.readAt === null)).toEqual([
       expect.objectContaining({
-        summary: 'New launch name is due 2026-07-14',
+        summary: 'New launch name — Due · Jul 14, 2026',
       }),
     ]);
     expect(inboxRows.filter((row) => row.kind === 'board_item_due' && row.readAt === null)).toEqual(
       [
         expect.objectContaining({
-          summary: 'New launch name on Rename board is due 2026-07-15',
+          summary: 'New launch name on Rename board — Due · Jul 15, 2026',
         }),
       ],
     );
@@ -1132,7 +1179,7 @@ describe('object scope — team ownership and audit behavior', () => {
     ).toEqual([
       expect.objectContaining({
         userId: USER_MEMBER,
-        summary: 'Soft Archive LLC on Renewal pipeline is due 2026-10-01',
+        summary: 'Soft Archive LLC on Renewal pipeline — Due · Oct 1, 2026',
       }),
     ]);
     eventRows = await db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_A));
@@ -3369,7 +3416,8 @@ describe('object scope — merge cleanup', () => {
       .where(eq(calendarEvents.teamId, TEAM_A));
     expect(typoDueEventBeforeMerge).toEqual(
       expect.objectContaining({
-        startAt: typoCardDueAt,
+        startAt: new Date('2026-11-04T22:00:00.000Z'),
+        allDay: true,
         deletedAt: null,
       }),
     );
