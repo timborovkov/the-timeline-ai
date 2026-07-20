@@ -7,13 +7,13 @@ import {
   boardItemChanges,
   boardItems,
   boardLanes,
-  boardPins,
   boards,
   entities,
   rawEvents,
   reconciliationEvidence,
   reconciliationOutputs,
   reconciliationRuns,
+  userPins,
 } from '@timeline/db';
 import {
   type SQL,
@@ -1363,9 +1363,15 @@ export function createBoardScope({
           .where(and(eq(boardItems.teamId, scope.teamId), isNull(boardItems.archivedAt)))
           .groupBy(boardItems.boardId),
         db
-          .select({ boardId: boardPins.boardId })
-          .from(boardPins)
-          .where(and(eq(boardPins.teamId, scope.teamId), eq(boardPins.userId, scope.userId))),
+          .select({ boardId: userPins.targetKey })
+          .from(userPins)
+          .where(
+            and(
+              eq(userPins.teamId, scope.teamId),
+              eq(userPins.userId, scope.userId),
+              eq(userPins.targetKind, 'board'),
+            ),
+          ),
       ]);
       const counts = new Map(countRows.map((row) => [row.boardId, row.count]));
       const pins = new Set(pinRows.map((row) => row.boardId));
@@ -1430,13 +1436,14 @@ export function createBoardScope({
             ),
           ),
         db
-          .select({ boardId: boardPins.boardId })
-          .from(boardPins)
+          .select({ boardId: userPins.targetKey })
+          .from(userPins)
           .where(
             and(
-              eq(boardPins.teamId, scope.teamId),
-              eq(boardPins.userId, scope.userId),
-              eq(boardPins.boardId, boardId),
+              eq(userPins.teamId, scope.teamId),
+              eq(userPins.userId, scope.userId),
+              eq(userPins.targetKind, 'board'),
+              eq(userPins.targetKey, boardId),
             ),
           ),
       ]);
@@ -2129,17 +2136,19 @@ export function createBoardScope({
     async listPinnedBoards(): Promise<BoardRow[]> {
       await scope.requireMembership();
       const rows = await db
-        .select({ board: boards, pin: boardPins })
-        .from(boardPins)
-        .innerJoin(boards, eq(boardPins.boardId, boards.id))
+        .select({ board: boards, pin: userPins })
+        .from(userPins)
+        .innerJoin(boards, sql`${userPins.targetKey} = ${boards.id}::text`)
         .where(
           and(
-            eq(boardPins.teamId, scope.teamId),
-            eq(boardPins.userId, scope.userId),
+            eq(userPins.teamId, scope.teamId),
+            eq(userPins.userId, scope.userId),
+            eq(userPins.targetKind, 'board'),
+            eq(boards.teamId, scope.teamId),
             isNull(boards.archivedAt),
           ),
         )
-        .orderBy(asc(boardPins.position), desc(boards.updatedAt));
+        .orderBy(asc(userPins.sortKey), asc(userPins.id));
       if (rows.length === 0) return [];
       const boardIds = rows.map((row) => row.board.id);
       const now = new Date();
@@ -2226,30 +2235,6 @@ export function createBoardScope({
         stats.set(row.boardId, current);
       }
       return rows.map((row) => toBoardRow(row.board, counts, new Set([row.board.id]), stats));
-    },
-
-    async pinBoard(boardId: string): Promise<boolean> {
-      await requireBoard(boardId);
-      await db
-        .insert(boardPins)
-        .values({ teamId: scope.teamId, userId: scope.userId, boardId })
-        .onConflictDoNothing();
-      return true;
-    },
-
-    async unpinBoard(boardId: string): Promise<boolean> {
-      await scope.requireMembership();
-      const rows = await db
-        .delete(boardPins)
-        .where(
-          and(
-            eq(boardPins.teamId, scope.teamId),
-            eq(boardPins.userId, scope.userId),
-            eq(boardPins.boardId, boardId),
-          ),
-        )
-        .returning({ boardId: boardPins.boardId });
-      return rows.length > 0;
     },
 
     async proposeBoardMembership(input: {

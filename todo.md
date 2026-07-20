@@ -9,7 +9,8 @@ The product baseline through Phase 13 is largely shipped: foundations, capture
 surfaces, workers, extraction, embeddings, agent chat, objects, curated boards,
 tasks, documents, meeting bots, calendar basics/subscriptions,
 integrations/custom MCPs, Slack, onboarding, visibility controls, exports, job
-recovery, public help/legal, and approval-backed object and board memory.
+recovery, public help/legal, approval-backed object and board memory, and
+personal universal pinning across durable workspace content.
 
 This file now tracks only remaining work and recurring operating obligations.
 Use the repository history, release notes, and phase PRs for shipped
@@ -141,6 +142,11 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 - [x] U6 — Quiet Archive polish and verification: curated Linux visual baselines
       for a few high-value routes (not a full surface×theme matrix), full
       browser QA, `pnpm validate`, and React Doctor 100.
+- [x] U7 — Universal personal pinning: replace separate board/object pins with
+      one ordered mixed collection for objects, boards, documents, meetings,
+      calendar series, and timeline moments; add Home preview, Work management,
+      detail/list/search controls, accessible reordering, visibility-safe
+      restoration, merge/deletion handling, and explicit-intent Ask tools.
 
 ## Workspace Reconciliation
 

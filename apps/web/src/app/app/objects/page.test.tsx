@@ -10,6 +10,7 @@ const fakes = vi.hoisted(() => ({
   listPendingSuggestions: vi.fn(),
   listMembers: vi.fn(),
   getObjectMergePreview: vi.fn(),
+  isPinnedMany: vi.fn(),
   userRows: [] as { id: string; name: string | null; email: string }[],
   categoryRefresh: null as {
     surface: string;
@@ -35,6 +36,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
     },
     suggestions: { listPendingSuggestions: fakes.listPendingSuggestions },
     timeline: { listMembers: fakes.listMembers },
+    pins: { isPinnedMany: fakes.isPinnedMany },
   }),
 }));
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
@@ -117,6 +119,7 @@ beforeEach(() => {
   });
   fakes.listPendingSuggestions.mockResolvedValue([]);
   fakes.listMembers.mockResolvedValue([]);
+  fakes.isPinnedMany.mockResolvedValue({});
   fakes.userRows = [];
   fakes.categoryRefresh = null;
   fakes.getObjectMergePreview.mockResolvedValue({

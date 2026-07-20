@@ -11,6 +11,7 @@ const fakes = vi.hoisted(() => ({
   fakeResolveActiveTeam: vi.fn(),
   fakeRequireMembership: vi.fn(),
   fakeListDocumentsWithProvenancePage: vi.fn(),
+  fakeIsPinnedMany: vi.fn(),
   fakeCacheKey: vi.fn((parts: unknown[]) => `cache:${parts.map((p) => String(p)).join('|')}`),
   fakeCachedJson: vi.fn((_key: string, _ttl: number, load: () => unknown) => load()),
 }));
@@ -26,6 +27,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
     requireMembership: fakes.fakeRequireMembership,
     documents: { listDocumentsWithProvenancePage: fakes.fakeListDocumentsWithProvenancePage },
+    pins: { isPinnedMany: fakes.fakeIsPinnedMany },
   }),
 }));
 
@@ -46,6 +48,7 @@ beforeEach(() => {
     active: { teamId: TEAM_ID, teamName: 'Timeline E2E' },
   });
   fakes.fakeRequireMembership.mockResolvedValue('member');
+  fakes.fakeIsPinnedMany.mockResolvedValue({});
   fakes.fakeListDocumentsWithProvenancePage.mockResolvedValue({
     items: [
       {
@@ -127,6 +130,7 @@ describe('GET /api/documents/list', () => {
           visibility: 'team',
           updatedAt: '2026-06-01T10:00:00.000Z',
           ownerUserId: USER_ID,
+          pinned: false,
           currentVersion: {
             id: 'version-1',
             version: 1,

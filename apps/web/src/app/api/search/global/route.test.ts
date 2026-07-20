@@ -13,6 +13,7 @@ const fakes = vi.hoisted(() => ({
   fakeResolveActiveTeam: vi.fn(),
   fakeRequireMembership: vi.fn(),
   fakeSearchEvents: vi.fn(),
+  fakeGetEventsByIds: vi.fn(),
   fakeSearchDocumentChunksPage: vi.fn(),
   fakeSearchObjectNotes: vi.fn(),
   fakeSearchObjects: vi.fn(),
@@ -21,6 +22,8 @@ const fakes = vi.hoisted(() => ({
   fakeListObjects: vi.fn(),
   fakeListBoards: vi.fn(),
   fakeListCalendarEvents: vi.fn(),
+  fakeGetCalendarSettings: vi.fn(),
+  fakeIsPinnedMany: vi.fn(),
   fakeCheckRateLimit: vi.fn(),
   fakeGetEnv: vi.fn(),
 }));
@@ -35,6 +38,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
     timeline: {
       searchEvents: fakes.fakeSearchEvents,
       searchObjectNotes: fakes.fakeSearchObjectNotes,
+      getEventsByIds: fakes.fakeGetEventsByIds,
     },
     documents: { searchDocumentChunksPage: fakes.fakeSearchDocumentChunksPage },
     objects: {
@@ -44,7 +48,11 @@ vi.mock('@timeline/shared/team-scope', () => ({
       listReadyObjectSummaries: fakes.fakeListReadyObjectSummaries,
     },
     boards: { listBoards: fakes.fakeListBoards },
-    calendar: { listCalendarEvents: fakes.fakeListCalendarEvents },
+    calendar: {
+      listCalendarEvents: fakes.fakeListCalendarEvents,
+      getCalendarSettings: fakes.fakeGetCalendarSettings,
+    },
+    pins: { isPinnedMany: fakes.fakeIsPinnedMany },
   }),
 }));
 vi.mock('@timeline/shared/rate-limit', () => ({
@@ -83,6 +91,9 @@ beforeEach(() => {
   fakes.fakeAuth.mockResolvedValue({ user: { id: USER_ID } });
   fakes.fakeResolveActiveTeam.mockResolvedValue({ active: { teamId: TEAM_ID } });
   fakes.fakeRequireMembership.mockResolvedValue('admin');
+  fakes.fakeGetCalendarSettings.mockResolvedValue({ defaultTimezone: 'UTC' });
+  fakes.fakeIsPinnedMany.mockResolvedValue({});
+  fakes.fakeGetEventsByIds.mockResolvedValue([]);
   fakes.fakeCheckRateLimit.mockResolvedValue({ ok: true, remaining: 9, retryAfterMs: 0 });
   fakes.fakeSearchEvents.mockResolvedValue([
     {

@@ -1661,7 +1661,7 @@ describe('board scope', () => {
       laneId: board.lanes[0]?.id ?? null,
       actor: { kind: 'user', userId: USER_OWNER },
     });
-    await owner.boards.pinBoard(board.id);
+    await owner.pins.pin({ kind: 'board', key: board.id });
 
     await expect(owner.boards.listPinnedBoards()).resolves.toHaveLength(1);
     await expect(member.boards.listPinnedBoards()).resolves.toHaveLength(0);
@@ -1702,7 +1702,7 @@ describe('board scope', () => {
     });
     await owner.objects.archiveObject(overdueTask.id, { kind: 'user', userId: USER_OWNER });
     await owner.objects.archiveObject(dueSoonTask.id, { kind: 'user', userId: USER_OWNER });
-    await owner.boards.pinBoard(board.id);
+    await owner.pins.pin({ kind: 'board', key: board.id });
 
     await expect(owner.boards.listPinnedBoards()).resolves.toEqual([
       expect.objectContaining({
@@ -1741,7 +1741,7 @@ describe('board scope', () => {
       dueAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       actor: { kind: 'user', userId: USER_OWNER },
     });
-    await owner.boards.pinBoard(board.id);
+    await owner.pins.pin({ kind: 'board', key: board.id });
 
     await expect(owner.boards.listPinnedBoards()).resolves.toEqual([
       expect.objectContaining({

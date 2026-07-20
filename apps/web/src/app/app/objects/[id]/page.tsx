@@ -111,7 +111,7 @@ export default async function ObjectDetailPage({ params, searchParams }: PagePro
       detail.type === 'task'
         ? scope.objects.listPrimaryProjectsForTasks([detail.id])
         : Promise.resolve([]),
-      scope.objects.isObjectPinned(detail.id),
+      scope.pins.isPinned({ kind: 'object', key: detail.id }),
     ]);
   const boardItemIds = new Set(boardContext.map((row) => row.itemId));
   const suggestions = pendingBundles.flatMap((bundle) => {

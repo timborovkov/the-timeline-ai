@@ -197,7 +197,7 @@ export async function searchObjectsAction(input: unknown): Promise<{
 }
 
 export async function loadTaskRowsAction(input: unknown): Promise<{
-  rows: objects.ObjectRow[];
+  rows: (objects.ObjectRow & { pinned: boolean })[];
   nextCursor: string | null;
   error?: string;
 }> {
@@ -207,7 +207,11 @@ export async function loadTaskRowsAction(input: unknown): Promise<{
     const r = await resolveScope();
     if (!r.ok) return { rows: [], nextCursor: null, error: r.error };
     if (!(await checkUserSearchRateLimit(r.userId))) {
-      return { rows: [], nextCursor: null, error: 'Too many task loads. Try again shortly.' };
+      return {
+        rows: [],
+        nextCursor: null,
+        error: 'Too many task loads. Try again shortly.',
+      };
     }
     const filters = taskObjectFilterFromWorkFilters(
       parseWorkFilters(parsed.data.filters ?? {}, {
@@ -215,8 +219,14 @@ export async function loadTaskRowsAction(input: unknown): Promise<{
       }),
     );
     const page = await loadTaskRowsPage(r.scope.objects, parsed.data.cursor ?? null, filters);
+    const pinState = await r.scope.pins.isPinnedMany(
+      page.rows.map((row) => ({ kind: 'object' as const, key: row.id })),
+    );
     return {
-      rows: page.rows,
+      rows: page.rows.map((row) => ({
+        ...row,
+        pinned: pinState[`object:${row.id}`] ?? false,
+      })),
       nextCursor: page.nextCursor,
     };
   });
@@ -597,8 +607,7 @@ export async function pinObjectAction(input: unknown): Promise<ActionState> {
     const r = await resolveScope();
     if (!r.ok) return { error: r.error };
     try {
-      const pinned = await r.scope.objects.pinObject(parsed.data.id);
-      if (!pinned) return { error: 'Object not found' };
+      await r.scope.pins.pin({ kind: 'object', key: parsed.data.id });
       bestEffortRevalidatePath('/app', 'revalidate_object_pin');
       bestEffortRevalidatePath(`/app/objects/${parsed.data.id}`, 'revalidate_object_pin');
       return { ok: true };
@@ -615,7 +624,7 @@ export async function unpinObjectAction(input: unknown): Promise<ActionState> {
     const r = await resolveScope();
     if (!r.ok) return { error: r.error };
     try {
-      await r.scope.objects.unpinObject(parsed.data.id);
+      await r.scope.pins.unpin({ kind: 'object', key: parsed.data.id });
       bestEffortRevalidatePath('/app', 'revalidate_object_unpin');
       bestEffortRevalidatePath(`/app/objects/${parsed.data.id}`, 'revalidate_object_unpin');
       return { ok: true };

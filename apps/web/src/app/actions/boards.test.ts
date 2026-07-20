@@ -27,6 +27,7 @@ const fakes = vi.hoisted(() => ({
     removeBoardItem: vi.fn(),
     pinBoard: vi.fn(),
   },
+  fakePins: { pin: vi.fn() },
 }));
 
 vi.mock('@/lib/action-scope', async () => {
@@ -48,7 +49,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   fakes.fakeResolveScope.mockResolvedValue({
     ok: true,
-    scope: { boards: fakes.fakeBoards },
+    scope: { boards: fakes.fakeBoards, pins: fakes.fakePins },
     userId: USER_ID,
   });
   fakes.fakeBoards.createBoard.mockResolvedValue({ id: BOARD_ID });
@@ -77,7 +78,7 @@ beforeEach(() => {
     boardId: BOARD_ID,
     entityId: ENTITY_ID,
   });
-  fakes.fakeBoards.pinBoard.mockResolvedValue(true);
+  fakes.fakePins.pin.mockResolvedValue({ pinId: 'pin-1', title: 'Board' });
 });
 
 describe('createBoardAction', () => {
@@ -293,7 +294,7 @@ describe('pinBoardAction', () => {
   it('pins a board for the current user', async () => {
     await expect(pinBoardAction({ id: BOARD_ID })).resolves.toEqual({ ok: true });
 
-    expect(fakes.fakeBoards.pinBoard).toHaveBeenCalledWith(BOARD_ID);
+    expect(fakes.fakePins.pin).toHaveBeenCalledWith({ kind: 'board', key: BOARD_ID });
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app');
   });
 });

@@ -34,6 +34,8 @@ export interface GlobalSearchResult {
   updatedAt?: string;
   startAt?: string;
   metadata?: Record<string, string | number | boolean | null>;
+  pinTarget?: PinTargetRef;
+  pinned?: boolean;
 }
 
 export interface GlobalSearchWarning {
@@ -506,3 +508,4 @@ export function searchQuickLinks(input: {
   }
   return rankGlobalSearchResults(matches).slice(0, input.limit ?? 12);
 }
+import type { PinTargetRef } from '#src/pins/scope.js';

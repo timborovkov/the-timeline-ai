@@ -8,6 +8,7 @@ const fakes = vi.hoisted(() => ({
   getMeeting: vi.fn(),
   listChunks: vi.fn(),
   getCalendarSettings: vi.fn(),
+  isPinned: vi.fn(),
   notFound: vi.fn(() => {
     throw new Error('notFound');
   }),
@@ -31,6 +32,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
     calendar: {
       getCalendarSettings: fakes.getCalendarSettings,
     },
+    pins: { isPinned: fakes.isPinned },
   }),
 }));
 vi.mock('@/components/meeting-export-buttons', () => ({
@@ -58,6 +60,7 @@ beforeEach(() => {
   fakes.requireMembership.mockResolvedValue(undefined);
   fakes.getMeeting.mockResolvedValue(meetingRow());
   fakes.getCalendarSettings.mockResolvedValue({ defaultTimezone: 'America/New_York' });
+  fakes.isPinned.mockResolvedValue(false);
   fakes.listChunks.mockResolvedValue([
     {
       id: 'chunk-1',

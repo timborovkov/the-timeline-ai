@@ -5,9 +5,9 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 
 import { BoardCreateDialog } from '@/components/boards/board-create-form';
-import { BoardPinButton } from '@/components/boards/board-pin-button';
 import { EmptyAction } from '@/components/empty-action';
 import { PageHeader } from '@/components/page-header';
+import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -77,7 +77,11 @@ export default async function BoardsIndexPage() {
                   </Link>
                   <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-start">
                     <span className="font-mono text-xs text-fg-dim">{b.itemCount} items</span>
-                    <BoardPinButton id={b.id} pinned={b.pinned} />
+                    <PinOverflowMenu
+                      target={{ kind: 'board', key: b.id }}
+                      title={b.name}
+                      initialPinned={b.pinned}
+                    />
                   </div>
                 </div>
               </li>

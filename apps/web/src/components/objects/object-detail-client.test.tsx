@@ -38,6 +38,10 @@ vi.mock('@/app/actions/objects', () => ({
   updateObjectAction: vi.fn(),
   unpinObjectAction: vi.fn(),
 }));
+vi.mock('@/app/actions/pins', () => ({
+  pinTargetAction: vi.fn(),
+  unpinTargetAction: vi.fn(),
+}));
 vi.mock('@/app/actions/suggestions', () => ({
   acceptAllSuggestionAction: vi.fn(),
   acceptSuggestionItemAction: vi.fn(),

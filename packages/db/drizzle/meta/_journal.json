@@ -435,6 +435,13 @@
       "when": 1795654020000,
       "tag": "0061_object_pins",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1795654080000,
+      "tag": "0062_universal_personal_pins",
+      "breakpoints": true
     }
   ]
 }

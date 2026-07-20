@@ -8,6 +8,8 @@ const fakes = vi.hoisted(() => ({
   countObjects: vi.fn(),
   getObject: vi.fn(),
   isObjectPinned: vi.fn(),
+  isPinned: vi.fn(),
+  isPinnedMany: vi.fn(),
   listPrimaryProjectsForTasks: vi.fn(),
   getTaskCategoryFilterRefreshState: vi.fn(),
   listPendingSuggestions: vi.fn(),
@@ -39,6 +41,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
     },
     suggestions: { listPendingSuggestions: fakes.listPendingSuggestions },
     timeline: { listMembers: fakes.listMembers },
+    pins: { isPinned: fakes.isPinned, isPinnedMany: fakes.isPinnedMany },
   }),
 }));
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
@@ -126,6 +129,8 @@ beforeEach(() => {
   fakes.countObjects.mockResolvedValue(0);
   fakes.getObject.mockResolvedValue(null);
   fakes.isObjectPinned.mockResolvedValue(false);
+  fakes.isPinned.mockResolvedValue(false);
+  fakes.isPinnedMany.mockResolvedValue({});
   fakes.listPrimaryProjectsForTasks.mockResolvedValue([]);
   fakes.getTaskCategoryFilterRefreshState.mockResolvedValue({
     token: 'design:0',

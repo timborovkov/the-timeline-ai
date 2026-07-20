@@ -272,7 +272,7 @@ export async function pinBoardAction(input: unknown): Promise<ActionState> {
     const r = await resolveScope();
     if (!r.ok) return { error: r.error };
     try {
-      await r.scope.boards.pinBoard(parsed.data.id);
+      await r.scope.pins.pin({ kind: 'board', key: parsed.data.id });
       revalidateBoardSurfaces(parsed.data.id);
       return { ok: true };
     } catch (err) {
@@ -288,7 +288,7 @@ export async function unpinBoardAction(input: unknown): Promise<ActionState> {
     const r = await resolveScope();
     if (!r.ok) return { error: r.error };
     try {
-      await r.scope.boards.unpinBoard(parsed.data.id);
+      await r.scope.pins.unpin({ kind: 'board', key: parsed.data.id });
       revalidateBoardSurfaces(parsed.data.id);
       return { ok: true };
     } catch (err) {

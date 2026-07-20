@@ -8,6 +8,7 @@ const fakes = vi.hoisted(() => ({
   listCalendarEvents: vi.fn(),
   listMembers: vi.fn(),
   listPendingSuggestions: vi.fn(),
+  isPinnedMany: vi.fn(),
   requireMembership: vi.fn(),
   resolveActiveTeam: vi.fn(),
   resolveVisibilityDefault: vi.fn(),
@@ -34,6 +35,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
       listMembers: fakes.listMembers,
       resolveVisibilityDefault: fakes.resolveVisibilityDefault,
     },
+    pins: { isPinnedMany: fakes.isPinnedMany },
   }),
 }));
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
@@ -77,6 +79,7 @@ beforeEach(() => {
     visibilityUserIds: null,
   });
   fakes.listPendingSuggestions.mockResolvedValue([]);
+  fakes.isPinnedMany.mockResolvedValue({});
   fakes.withCalendarResolutionHints.mockImplementation((suggestions) =>
     Promise.resolve(suggestions),
   );

@@ -253,11 +253,17 @@ export async function GET(req: Request): Promise<Response> {
             )
           ).map(toTimelineMomentDto)
         : [];
+    const momentPinState = await scope.pins.isPinnedMany(
+      moments.map((moment) => ({ kind: 'timeline_moment' as const, key: moment.id })),
+    );
     return {
       version: 'timeline_moments_page.v1' as const,
       groupingVersion: 'timeline_grouping.v1' as const,
       mode,
       moments,
+      pinnedMomentIds: moments.flatMap((moment) =>
+        momentPinState[`timeline_moment:${moment.id}`] ? [moment.id] : [],
+      ),
       rawEventsById:
         mode === 'moments'
           ? Object.fromEntries(result.items.map((eventItem) => [eventItem.id, eventItem]))

@@ -20,7 +20,6 @@ import {
   objectChanges,
   objectIdentityFacets,
   objectNotes,
-  objectPins,
   objectSummaries,
   notifications,
   rawEvents,
@@ -28,6 +27,7 @@ import {
   reconciliationEvidenceAnchors,
   reconciliationOutputs,
   reconciliationRuns,
+  userPins,
 } from '@timeline/db';
 import { eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -169,19 +169,105 @@ describe('object scope — team ownership and audit behavior', () => {
       actor: { kind: 'user', userId: USER_OWNER },
     });
 
-    await expect(owner.objects.pinObject(task.id)).resolves.toBe(true);
-    await expect(owner.objects.isObjectPinned(task.id)).resolves.toBe(true);
-    await expect(owner.objects.listPinnedObjects()).resolves.toEqual([
-      expect.objectContaining({ id: task.id, type: 'task', canonicalName: 'Pinned follow-up' }),
-    ]);
-    await expect(member.objects.isObjectPinned(task.id)).resolves.toBe(false);
-    await expect(member.objects.listPinnedObjects()).resolves.toEqual([]);
-    await expect(otherTeam.objects.pinObject(task.id)).resolves.toBe(false);
+    await expect(owner.pins.pin({ kind: 'object', key: task.id })).resolves.toEqual(
+      expect.objectContaining({ title: 'Pinned follow-up' }),
+    );
+    await expect(owner.pins.isPinned({ kind: 'object', key: task.id })).resolves.toBe(true);
+    await expect(owner.pins.list()).resolves.toMatchObject({
+      items: [
+        expect.objectContaining({
+          target: { kind: 'object', key: task.id },
+          title: 'Pinned follow-up',
+        }),
+      ],
+    });
+    await expect(member.pins.isPinned({ kind: 'object', key: task.id })).resolves.toBe(false);
+    await expect(member.pins.list()).resolves.toMatchObject({ items: [] });
+    await expect(otherTeam.pins.pin({ kind: 'object', key: task.id })).rejects.toThrow(
+      'Pinned item not available',
+    );
 
     await owner.objects.archiveObject(task.id, { kind: 'user', userId: USER_OWNER });
-    await expect(owner.objects.listPinnedObjects()).resolves.toEqual([]);
-    await expect(owner.objects.unpinObject(task.id)).resolves.toBe(true);
-    await expect(owner.objects.isObjectPinned(task.id)).resolves.toBe(false);
+    await expect(owner.pins.list()).resolves.toMatchObject({ items: [] });
+    await db.update(entities).set({ archivedAt: null }).where(eq(entities.id, task.id));
+    await expect(owner.pins.list()).resolves.toMatchObject({
+      items: [expect.objectContaining({ target: { kind: 'object', key: task.id } })],
+    });
+    await expect(owner.pins.unpin({ kind: 'object', key: task.id })).resolves.toBe(true);
+    await expect(owner.pins.isPinned({ kind: 'object', key: task.id })).resolves.toBe(false);
+  });
+
+  it('orders one mixed personal collection, paginates deterministically, and cleans hard deletes', async () => {
+    const workspace = withTeam(db, TEAM_A, USER_OWNER);
+    const rows = await Promise.all(
+      ['Alpha', 'Beta', 'Gamma'].map((canonicalName) =>
+        workspace.objects.createObject({
+          type: 'project',
+          canonicalName,
+          actor: { kind: 'user', userId: USER_OWNER },
+        }),
+      ),
+    );
+    const [alpha, beta, gamma] = rows;
+    if (!alpha || !beta || !gamma) throw new Error('expected objects');
+
+    const alphaPin = await workspace.pins.pin({ kind: 'object', key: alpha.id });
+    await workspace.pins.pin({ kind: 'object', key: beta.id });
+    await workspace.pins.pin({ kind: 'object', key: gamma.id });
+    await workspace.pins.pin({ kind: 'object', key: gamma.id });
+    await expect(workspace.pins.list()).resolves.toMatchObject({
+      items: [{ title: 'Gamma' }, { title: 'Beta' }, { title: 'Alpha' }],
+    });
+
+    const firstPage = await workspace.pins.list({ limit: 2 });
+    expect(firstPage.items.map((item) => item.title)).toEqual(['Gamma', 'Beta']);
+    expect(firstPage.nextCursor).toEqual(expect.any(String));
+    const secondPage = await workspace.pins.list({ limit: 2, cursor: firstPage.nextCursor });
+    expect(secondPage.items.map((item) => item.title)).toEqual(['Alpha']);
+    expect(secondPage.nextCursor).toBeNull();
+
+    const gammaPin = firstPage.items[0];
+    if (!gammaPin) throw new Error('expected gamma pin');
+    await expect(
+      workspace.pins.move({ pinId: alphaPin.pinId, beforePinId: gammaPin.pinId }),
+    ).resolves.toBe(true);
+    await expect(workspace.pins.list()).resolves.toMatchObject({
+      items: [{ title: 'Alpha' }, { title: 'Gamma' }, { title: 'Beta' }],
+    });
+
+    await db.update(entities).set({ archivedAt: new Date() }).where(eq(entities.id, gamma.id));
+    const visiblePage = await workspace.pins.list({ limit: 2 });
+    expect(visiblePage.items.map((item) => item.title)).toEqual(['Alpha', 'Beta']);
+    expect(visiblePage.nextCursor).toBeNull();
+
+    await db.delete(entities).where(eq(entities.id, alpha.id));
+    const remainingPins = await db.select().from(userPins).where(eq(userPins.userId, USER_OWNER));
+    expect(remainingPins.some((pin) => pin.targetKey === alpha.id)).toBe(false);
+  });
+
+  it('scans every timeline pin page when pruning moments whose source evidence is gone', async () => {
+    const workspace = withTeam(db, TEAM_A, USER_OWNER);
+    await db.insert(userPins).values([
+      {
+        teamId: TEAM_A,
+        userId: USER_OWNER,
+        targetKind: 'timeline_moment',
+        targetKey: 'moment:telegram:chat-a:2026-06-27:18:00',
+        sortKey: 0n,
+      },
+      {
+        teamId: TEAM_A,
+        userId: USER_OWNER,
+        targetKind: 'timeline_moment',
+        targetKey: 'moment:telegram:chat-b:2026-06-27:18:00',
+        sortKey: 1024n,
+      },
+    ]);
+
+    await expect(workspace.pins.pruneDeletedTimelineMomentPins(1)).resolves.toBe(2);
+    await expect(
+      db.select().from(userPins).where(eq(userPins.targetKind, 'timeline_moment')),
+    ).resolves.toEqual([]);
   });
 
   it('builds direct-write source context from private evidence visibility', async () => {
@@ -3342,9 +3428,9 @@ describe('object scope — merge cleanup', () => {
       actor: { kind: 'user', userId: USER_OWNER },
     });
 
-    await workspace.objects.pinObject(duplicate.id);
-    await memberWorkspace.objects.pinObject(survivor.id);
-    await memberWorkspace.objects.pinObject(duplicate.id);
+    await workspace.pins.pin({ kind: 'object', key: duplicate.id });
+    await memberWorkspace.pins.pin({ kind: 'object', key: survivor.id });
+    await memberWorkspace.pins.pin({ kind: 'object', key: duplicate.id });
 
     await workspace.objects.mergeObjects({
       survivorId: survivor.id,
@@ -3352,15 +3438,15 @@ describe('object scope — merge cleanup', () => {
       actor: { kind: 'user', userId: USER_OWNER },
     });
 
-    await expect(workspace.objects.listPinnedObjects()).resolves.toEqual([
-      expect.objectContaining({ id: survivor.id }),
-    ]);
-    await expect(memberWorkspace.objects.listPinnedObjects()).resolves.toEqual([
-      expect.objectContaining({ id: survivor.id }),
-    ]);
-    const pinRows = await db.select().from(objectPins).where(eq(objectPins.teamId, TEAM_A));
+    await expect(workspace.pins.list()).resolves.toMatchObject({
+      items: [expect.objectContaining({ target: { kind: 'object', key: survivor.id } })],
+    });
+    await expect(memberWorkspace.pins.list()).resolves.toMatchObject({
+      items: [expect.objectContaining({ target: { kind: 'object', key: survivor.id } })],
+    });
+    const pinRows = await db.select().from(userPins).where(eq(userPins.teamId, TEAM_A));
     expect(pinRows).toHaveLength(2);
-    expect(pinRows.every((pin) => pin.entityId === survivor.id)).toBe(true);
+    expect(pinRows.every((pin) => pin.targetKey === survivor.id)).toBe(true);
   });
 
   it('merges compatible objects, moves derived rows, dedupes edges, and hides merged rows', async () => {

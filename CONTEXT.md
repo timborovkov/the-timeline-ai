@@ -428,11 +428,13 @@ including each board's purpose and the object's board-local state. Object board
 context helps the object page show where durable memory is currently being used.
 _Avoid_: Duplicated object status
 
-**Pinned Board**:
-A board promoted to a primary workspace shortcut, especially on the Home
-Dashboard. Pinned boards give a team member fast access to active shared work
-surfaces without turning Home into the full board editor.
-_Avoid_: Embedded board, CRM module
+**Personal Pin**:
+A current team member's ordered shortcut to durable workspace content. Personal
+pins can target objects (including tasks), boards, documents and captured files,
+meetings, calendar series, or grouped timeline moments. Home previews the mixed
+collection; Work → Pinned owns filtering and reordering. Visibility loss hides a
+pin without deleting it.
+_Avoid_: Pinned board, shared pin, embedded object
 
 **Board Preset**:
 A board creation starting point that explains a board's intended use through a

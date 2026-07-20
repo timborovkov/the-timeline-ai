@@ -135,6 +135,9 @@ export default async function ObjectsIndexPage({
     };
   });
   const rows = objectWindow.rows;
+  const objectPinState = await scope.pins.isPinnedMany(
+    rows.map((row) => ({ kind: 'object' as const, key: row.id })),
+  );
   const nextHref =
     hasTypeFilter && objectWindow.nextCursor
       ? objectsPageHref({
@@ -276,7 +279,10 @@ export default async function ObjectsIndexPage({
         />
       ) : (
         <ObjectCleanupList
-          rows={rows}
+          rows={rows.map((row) => ({
+            ...row,
+            pinned: objectPinState[`object:${row.id}`] ?? false,
+          }))}
           typeLabels={OBJECT_TYPE_LABELS}
           pageInfo={
             hasTypeFilter

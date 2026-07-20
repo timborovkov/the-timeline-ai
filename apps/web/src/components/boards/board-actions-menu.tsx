@@ -1,19 +1,15 @@
 'use client';
 
-import { MoreHorizontal, Pencil, Pin, PinOff, Save, Trash2 } from 'lucide-react';
+import { MoreHorizontal, Pencil, Save, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMemo, useReducer, useState, useTransition } from 'react';
 import { toast } from 'sonner';
 
 import type * as boards from '@timeline/shared/boards';
 
-import {
-  deleteBoardAction,
-  pinBoardAction,
-  unpinBoardAction,
-  updateBoardSettingsAction,
-} from '@/app/actions/boards';
+import { deleteBoardAction, updateBoardSettingsAction } from '@/app/actions/boards';
 import { BoardStageEditor, type EditableBoardStage } from '@/components/boards/board-stage-editor';
+import { PinMenuItem } from '@/components/pins/pin-menu-item';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import {
   Dialog,
@@ -48,19 +44,6 @@ export function BoardActionsMenu({
   const [pending, startTransition] = useTransition();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const activeLanes = useMemo(() => lanes.filter((lane) => !lane.archivedAt), [lanes]);
-  const PinIcon = pinned ? PinOff : Pin;
-
-  function togglePin(): void {
-    startTransition(async () => {
-      const result = pinned ? await unpinBoardAction({ id }) : await pinBoardAction({ id });
-      if ('error' in result && result.error) {
-        toast.error(result.error);
-        return;
-      }
-      router.refresh();
-    });
-  }
-
   async function deleteBoard(): Promise<void> {
     const confirmed = await dialog.confirm({
       title: 'Delete board?',
@@ -104,15 +87,7 @@ export function BoardActionsMenu({
             <Pencil className="size-3.5 text-fg-dim" aria-hidden="true" />
             Board settings
           </DropdownMenuItem>
-          <DropdownMenuItem
-            onSelect={() => {
-              togglePin();
-            }}
-            disabled={pending}
-          >
-            <PinIcon className="size-3.5 text-fg-dim" aria-hidden="true" />
-            {pinned ? 'Unpin board' : 'Pin board'}
-          </DropdownMenuItem>
+          <PinMenuItem target={{ kind: 'board', key: id }} title={name} initialPinned={pinned} />
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onSelect={() => {

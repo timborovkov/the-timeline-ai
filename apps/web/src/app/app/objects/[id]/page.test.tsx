@@ -10,6 +10,7 @@ const fakes = vi.hoisted(() => ({
   getMergedObjectTarget: vi.fn(),
   markVisited: vi.fn(),
   isObjectPinned: vi.fn(),
+  isPinned: vi.fn(),
   listObjects: vi.fn(),
   listPrimaryProjectsForTasks: vi.fn(),
   listObjectBoardContext: vi.fn(),
@@ -40,6 +41,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
     },
     boards: { listObjectBoardContext: fakes.listObjectBoardContext },
     suggestions: { listPendingSuggestions: fakes.listPendingSuggestions },
+    pins: { isPinned: fakes.isPinned },
   }),
 }));
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
@@ -65,6 +67,7 @@ beforeEach(() => {
   fakes.listObjects.mockResolvedValue([]);
   fakes.listPrimaryProjectsForTasks.mockResolvedValue([]);
   fakes.isObjectPinned.mockResolvedValue(false);
+  fakes.isPinned.mockResolvedValue(false);
   fakes.getObject.mockResolvedValue({
     id: OBJECT_ID,
     type: 'task',

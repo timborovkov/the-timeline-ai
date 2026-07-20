@@ -18,6 +18,7 @@ import { CuratedKanbanBoard } from '@/components/boards/curated-kanban-board';
 import { ContextualAskLink } from '@/components/chat/contextual-ask-link';
 import { HistoryBackLink } from '@/components/history-back-link';
 import { PageHeader } from '@/components/page-header';
+import { PinButton } from '@/components/pins/pin-button';
 import { TaskCategoryPollingProvider } from '@/components/tasks/task-category-badge';
 import { WorkFilterBar } from '@/components/work-filter-bar';
 import { WorkSubnav } from '@/components/work-subnav';
@@ -261,6 +262,7 @@ export function BoardDetailClient({
             label="Ask about board"
           />
         ) : null}
+        <PinButton target={{ kind: 'board', key: boardId }} initialPinned={pinned} compact />
         <BoardActionsMenu
           id={boardId}
           name={boardName}

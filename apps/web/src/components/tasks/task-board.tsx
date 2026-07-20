@@ -40,6 +40,7 @@ import {
 import { ObjectTextFilter } from '@/components/boards/object-text-filter';
 import { ObjectPinButton } from '@/components/objects/object-pin-button';
 import { ObjectRelatedContext } from '@/components/objects/object-related-context';
+import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { TaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { useTaskCategoryPolling } from '@/components/tasks/task-category-polling';
 import { TaskCategorySelect } from '@/components/tasks/task-category-select';
@@ -63,8 +64,10 @@ interface TaskMemberOption {
   label: string;
 }
 
+type TaskObjectRow = objects.ObjectRow & { pinned?: boolean };
+
 interface Props {
-  rows: objects.ObjectRow[];
+  rows: TaskObjectRow[];
   columns: string[];
   selectedTaskId: string | null;
   selectedTaskContext?: objects.ObjectDetail['connectedWork'] | null;
@@ -123,7 +126,7 @@ interface MoveUiState {
 
 interface TaskPaginationState {
   filterKey: string | null;
-  appendedRows: objects.ObjectRow[];
+  appendedRows: TaskObjectRow[];
   cursor: string | null;
 }
 
@@ -173,7 +176,7 @@ type TaskBoardAction =
   | { type: 'load-error'; message: string | null; filterKey: string }
   | {
       type: 'append-page';
-      rows: objects.ObjectRow[];
+      rows: TaskObjectRow[];
       nextCursor: string | null;
       filterKey: string;
     }
@@ -199,7 +202,7 @@ const INITIAL_TASK_BOARD_STATE: TaskBoardState = {
 };
 const EMPTY_FILTER_PARAMS: Record<string, string> = {};
 const EMPTY_PRIMARY_PROJECTS: objects.TaskPrimaryProjectRow[] = [];
-const EMPTY_TASK_ROWS: objects.ObjectRow[] = [];
+const EMPTY_TASK_ROWS: TaskObjectRow[] = [];
 const EMPTY_SELECTED_IDS: ReadonlySet<string> = new Set();
 const BULK_UPDATE_CONCURRENCY = 4;
 
@@ -847,6 +850,7 @@ function useTaskBoardController({
     revertPrimaryProject,
     visibleRows,
     hydratedPrimaryProjects,
+    pinnedObjectIdSet: new Set(loadedRows.flatMap((row) => (row.pinned ? [row.id] : []))),
   };
 }
 
@@ -889,6 +893,7 @@ function TaskBoardView({
   view,
   visibleRows,
   hydratedPrimaryProjects,
+  pinnedObjectIdSet,
 }: Props & ReturnType<typeof useTaskBoardController>) {
   return (
     <div
@@ -960,6 +965,7 @@ function TaskBoardView({
                   members={members}
                   primaryProjects={hydratedPrimaryProjects}
                   taskHref={(taskId) => taskHref(taskId, filterParams)}
+                  pinnedObjectIds={pinnedObjectIdSet}
                 />
               ))}
             </div>
@@ -977,6 +983,7 @@ function TaskBoardView({
               onUpdateTaskCategories={updateTaskCategories}
               taskCategoriesEnabled={taskCategoriesEnabled}
               filterParams={filterParams}
+              pinnedObjectIds={pinnedObjectIdSet}
             />
           )}
           <div className="flex shrink-0 flex-wrap items-center gap-3 px-4 pb-4 pt-3 md:px-8">
@@ -1050,6 +1057,7 @@ function TaskListView({
   onUpdateTaskCategories,
   taskCategoriesEnabled,
   filterParams,
+  pinnedObjectIds,
 }: {
   rows: objects.ObjectRow[];
   columns: string[];
@@ -1066,6 +1074,7 @@ function TaskListView({
   ) => Promise<{ failed: number }>;
   taskCategoriesEnabled: boolean;
   filterParams: Record<string, string>;
+  pinnedObjectIds: ReadonlySet<string>;
 }) {
   if (rows.length === 0) {
     return (
@@ -1136,6 +1145,9 @@ function TaskListView({
               <th className="px-3 py-2 font-normal">Assignee</th>
               <th className="px-3 py-2 font-normal">Due</th>
               <th className="px-3 py-2 font-normal">Priority</th>
+              <th className="w-10 px-2 py-2 font-normal">
+                <span className="sr-only">Actions</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -1156,12 +1168,13 @@ function TaskListView({
                 onUpdateTask={onUpdateTask}
                 taskCategoriesEnabled={taskCategoriesEnabled}
                 filterParams={filterParams}
+                pinned={pinnedObjectIds.has(row.id)}
               />
             ))}
             {hiddenRows > 0 ? (
               <tr>
                 <td
-                  colSpan={taskCategoriesEnabled ? 7 : 6}
+                  colSpan={taskCategoriesEnabled ? 8 : 7}
                   className="bg-bg px-3 py-3 text-center text-xs text-fg-dim"
                 >
                   {hiddenRows} loaded tasks hidden. Narrow the filter to inspect them.
@@ -1187,6 +1200,7 @@ function TaskListRow({
   onUpdateTask,
   taskCategoriesEnabled,
   filterParams,
+  pinned,
 }: {
   row: objects.ObjectRow;
   columns: string[];
@@ -1198,6 +1212,7 @@ function TaskListRow({
   onUpdateTask: (id: string, patch: TaskPatch) => Promise<{ ok?: boolean; error?: string }>;
   taskCategoriesEnabled: boolean;
   filterParams: Record<string, string>;
+  pinned: boolean;
 }) {
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1326,6 +1341,13 @@ function TaskListRow({
             </option>
           ))}
         </select>
+      </td>
+      <td className="px-2 py-1.5 align-top">
+        <PinOverflowMenu
+          target={{ kind: 'object', key: row.id }}
+          title={displayText(title)}
+          initialPinned={pinned}
+        />
       </td>
     </tr>
   );
@@ -1566,6 +1588,7 @@ function TaskColumn({
   members,
   primaryProjects,
   taskHref,
+  pinnedObjectIds,
 }: {
   id: string;
   rows: objects.ObjectRow[];
@@ -1575,6 +1598,7 @@ function TaskColumn({
   members: TaskMemberOption[];
   primaryProjects: objects.TaskPrimaryProjectRow[];
   taskHref: (taskId: string) => string;
+  pinnedObjectIds: ReadonlySet<string>;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id });
   const renderedRows = rows.slice(0, TASK_BOARD_COLUMN_RENDER_LIMIT);
@@ -1602,6 +1626,7 @@ function TaskColumn({
             error={cardErrors[row.id]}
             members={members}
             primaryProject={primaryProjects.find((project) => project.taskId === row.id) ?? null}
+            pinned={pinnedObjectIds.has(row.id)}
           />
         ))}
         {hiddenRows > 0 ? (
@@ -1623,6 +1648,7 @@ function TaskCard({
   error,
   members,
   primaryProject,
+  pinned,
 }: {
   row: objects.ObjectRow;
   href: string;
@@ -1631,6 +1657,7 @@ function TaskCard({
   error?: string;
   members: TaskMemberOption[];
   primaryProject: objects.TaskPrimaryProjectRow | null;
+  pinned: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: row.id,
@@ -1655,12 +1682,19 @@ function TaskCard({
         error && 'border-danger/50',
       )}
     >
-      <Link
-        href={href}
-        className="block min-w-0 whitespace-normal break-words font-medium leading-snug hover:underline"
-      >
-        {displayText(title)}
-      </Link>
+      <div className="flex min-w-0 items-start gap-1">
+        <Link
+          href={href}
+          className="min-w-0 flex-1 whitespace-normal break-words font-medium leading-snug hover:underline"
+        >
+          {displayText(title)}
+        </Link>
+        <PinOverflowMenu
+          target={{ kind: 'object', key: row.id }}
+          title={displayText(title)}
+          initialPinned={pinned}
+        />
+      </div>
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-fg-dim">
         <span>Task</span>
         <TaskCategoryBadge category={row.taskCategory} status={row.taskCategoryStatus} />

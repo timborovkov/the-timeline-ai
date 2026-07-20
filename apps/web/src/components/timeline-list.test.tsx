@@ -213,13 +213,13 @@ describe('TimelineList document attachments', () => {
       }),
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /Uploaded AgACAgQ/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Uploaded AgACAgQ/i }));
     const uploadInspector = renderLastInspector();
     expect(uploadInspector).toContain('Attachment · AgACAgQ…wADPAQ.jpg');
     expect(uploadInspector).toContain(`title="${generatedName}"`);
     expect(uploadInspector).toContain('Preview');
 
-    fireEvent.click(screen.getByRole('button', { name: /Renamed notes\.txt/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Renamed notes\.txt/i }));
     const renameInspector = renderLastInspector();
     expect(renameInspector).toContain('Attachment · notes.txt');
     expect(renameInspector).not.toContain('Preview');
@@ -272,7 +272,7 @@ describe('TimelineList document attachments', () => {
       'Attached image AgACAgQAAyEFAATcv6dYAAIBuWo4jeyMZiYwKT1k92NCNuPTCoTcAALpDWsbBCfJUUAcqaMvf4JYAQADAgADdwADPAQ.jpg',
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /Attached image AgACAgQ/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Attached image AgACAgQ/i }));
     const inspector = renderLastInspector();
     expect(inspector).toContain('Attached image AgACAgQ…wADPAQ.jpg');
     expect(inspector).toContain('Attachment · Image attachment');
@@ -315,7 +315,7 @@ describe('TimelineList document attachments', () => {
       'AgACAgQAAyEFAATcv6dYAAP3aimENrbqY6kNAAEqxvEv6YGMrdExAAK5DmsbjOI.jpg',
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /Attached image AgACAgQ/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Attached image AgACAgQ/i }));
     const inspector = renderLastInspector();
     expect(inspector).toContain('Attached image AgACAgQ…msbjOI.jpg');
     expect(inspector).not.toContain(
@@ -400,7 +400,7 @@ describe('TimelineList moment presentation', () => {
 
     expect(screen.getByText('1 signal')).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: /Done \/ 16\.20/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Done \/ 16\.20/i }));
     const inspector = renderLastInspector();
     expect(inspector).toContain('Moment');
     expect(inspector).toContain('Evidence summary');
@@ -532,7 +532,7 @@ describe('TimelineList inspector source caps', () => {
       }),
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /Short source note/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Short source note/i }));
     renderLastInspectorContent();
 
     expect(screen.queryByRole('button', { name: 'View full evidence' })).toBeNull();
@@ -594,7 +594,7 @@ describe('TimelineList related evidence bundles', () => {
 
     expect(screen.getByText(/Related · Apple Pay checkout crash · 2 signals/i)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: /Checkout crashes on Apple Pay/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Checkout crashes on Apple Pay/i }));
     const inspector = renderLastInspector();
     expectTextOrder(inspector, 'Source evidence', 'Related evidence');
     expect(inspector).toContain('Related evidence');

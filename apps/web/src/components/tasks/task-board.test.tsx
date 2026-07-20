@@ -39,6 +39,10 @@ vi.mock('@/app/actions/objects', () => ({
   searchObjectsAction: fakes.searchObjectsAction,
   setTaskProjectAction: fakes.setTaskProjectAction,
 }));
+vi.mock('@/app/actions/pins', () => ({
+  pinTargetAction: fakes.pinObjectAction,
+  unpinTargetAction: fakes.unpinObjectAction,
+}));
 vi.mock('@/lib/task-board-config', () => ({
   TASK_BOARD_COLUMN_RENDER_LIMIT: 3,
   TASK_BOARD_LIST_RENDER_LIMIT: 5,
@@ -341,7 +345,6 @@ describe('TaskBoard', () => {
 
     await user.click(screen.getByRole('button', { name: 'Load older tasks' }));
     expect(screen.getByRole('link', { name: 'Older pending task' })).toBeTruthy();
-    expect(screen.getByText('Categorizing…')).toBeTruthy();
 
     await waitFor(
       () => {

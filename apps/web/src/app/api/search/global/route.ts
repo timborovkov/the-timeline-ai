@@ -14,6 +14,7 @@ import {
 } from '@timeline/shared/search';
 import { taskCategoryLabel } from '@timeline/shared/task-categories/types';
 import { withTeam } from '@timeline/shared/team-scope';
+import { buildTimelineMoments, timelineMomentAnchorId } from '@timeline/shared/timeline-moments';
 import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -129,6 +130,7 @@ function searchObjectsAndTasks(
               }
             : {}),
         },
+        pinTarget: { kind: 'object', key: row.id },
       }),
     );
   }
@@ -180,6 +182,7 @@ async function searchObjectNotes(
             intent: scoreIntent(input.query, kind, [note.objectType, kind]),
           },
           metadata: { type: note.objectType, note: true },
+          pinTarget: { kind: 'object', key: note.objectId },
         }),
       );
     }
@@ -195,6 +198,7 @@ async function searchTimeline(
   scope: Scope,
   warnings: GlobalSearchWarning[],
 ): Promise<GlobalSearchResult[]> {
+  const timezone = (await scope.calendar.getCalendarSettings()).defaultTimezone;
   async function searchTimelineSource(
     source: GlobalSearchSource | undefined,
   ): Promise<GlobalSearchResult[]> {
@@ -206,30 +210,41 @@ async function searchTimeline(
     if (input.to) args.to = new Date(input.to);
     if (source) args.source = source;
     const hits = await scope.timeline.searchEvents(args);
+    const eventRows = await scope.timeline.getEventsByIds(hits.map((hit) => hit.eventId));
+    const eventsById = new Map(eventRows.map((event) => [event.id, event]));
     return hits.map((hit) =>
-      finalizeGlobalSearchResult({
-        id: `timeline:${hit.eventId}`,
-        kind: 'timeline_event',
-        title: hit.snippet || `${hit.source} event`,
-        snippet: hit.snippet,
-        href: `/app/timeline?event=${hit.eventId}`,
-        occurredAt: hit.occurredAt,
-        scoreParts: {
-          semantic: hit.score,
-          intent: scoreIntent(input.query, 'timeline_event', [hit.source]),
-          recency: scoreRecency(hit.occurredAt),
-        },
-        metadata: {
-          source: hit.source,
-          entities: hit.entityIds.length,
-          facts: hit.factIds.length,
-          relatedEvidence: hit.artifactCluster?.canonicalName ?? null,
-          relatedEvidenceSignals: hit.artifactCluster?.relatedEvidence.length ?? null,
-          relatedEvidenceStatusSources:
-            hit.artifactCluster?.relatedEvidence.filter((evidence) => evidence.authoritative)
-              .length ?? null,
-        },
-      }),
+      (() => {
+        const event = eventsById.get(hit.eventId);
+        const moment = event
+          ? buildTimelineMoments([event], new Map(), { timezone })[0]
+          : undefined;
+        return finalizeGlobalSearchResult({
+          id: `timeline:${hit.eventId}`,
+          kind: 'timeline_event',
+          title: hit.snippet || `${hit.source} event`,
+          snippet: hit.snippet,
+          href: moment
+            ? `/app/timeline?moment=${encodeURIComponent(moment.id)}#${timelineMomentAnchorId(moment.id)}`
+            : `/app/timeline?event=${hit.eventId}`,
+          occurredAt: hit.occurredAt,
+          scoreParts: {
+            semantic: hit.score,
+            intent: scoreIntent(input.query, 'timeline_event', [hit.source]),
+            recency: scoreRecency(hit.occurredAt),
+          },
+          metadata: {
+            source: hit.source,
+            entities: hit.entityIds.length,
+            facts: hit.factIds.length,
+            relatedEvidence: hit.artifactCluster?.canonicalName ?? null,
+            relatedEvidenceSignals: hit.artifactCluster?.relatedEvidence.length ?? null,
+            relatedEvidenceStatusSources:
+              hit.artifactCluster?.relatedEvidence.filter((evidence) => evidence.authoritative)
+                .length ?? null,
+          },
+          ...(moment ? { pinTarget: { kind: 'timeline_moment' as const, key: moment.id } } : {}),
+        });
+      })(),
     );
   }
 
@@ -303,6 +318,7 @@ async function searchDocuments(
           fileKind: hit.fileKind,
           page: hit.pageNumber,
         },
+        pinTarget: { kind: 'document', key: hit.documentId },
       }),
     );
   } catch {
@@ -348,6 +364,7 @@ function searchBoards(
           items: row.itemCount,
           pinned: row.pinned,
         },
+        pinTarget: { kind: 'board', key: row.id },
       }),
     );
   }
@@ -398,7 +415,7 @@ async function searchCalendar(input: Parsed, scope: Scope): Promise<GlobalSearch
         snippet: row.redacted
           ? `${date} · private busy block`
           : [date, row.location, row.description].filter(Boolean).join(' · '),
-        href: `/app/calendar?date=${date}&view=day`,
+        href: `/app/calendar?date=${date}&view=day&event=${row.id}`,
         startAt: row.startAt.toISOString(),
         updatedAt: row.updatedAt.toISOString(),
         scoreParts: {
@@ -411,6 +428,14 @@ async function searchCalendar(input: Parsed, scope: Scope): Promise<GlobalSearch
           allDay: row.allDay,
           redacted: row.redacted,
         },
+        ...(row.redacted
+          ? {}
+          : {
+              pinTarget: {
+                kind: 'calendar_event' as const,
+                key: row.recurringParentId ?? row.id,
+              },
+            }),
       }),
     );
   }
@@ -554,12 +579,23 @@ export async function POST(req: Request): Promise<Response> {
     ...timelineRows,
     ...documentRows,
   ]).slice(0, limit);
+  const pinState = await scope.pins.isPinnedMany(
+    results.flatMap((result) => (result.pinTarget ? [result.pinTarget] : [])),
+  );
+  const normalizedResults = results.map((result) =>
+    result.pinTarget
+      ? {
+          ...result,
+          pinned: pinState[`${result.pinTarget.kind}:${result.pinTarget.key}`] ?? false,
+        }
+      : result,
+  );
 
   return Response.json({
     ok: true,
     query,
     mode: input.mode,
-    results,
+    results: normalizedResults,
     warnings,
   });
 }

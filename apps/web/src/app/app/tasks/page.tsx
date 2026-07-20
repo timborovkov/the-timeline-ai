@@ -102,14 +102,17 @@ export default async function TasksPage({
       selectedVisibleTaskId = selectedTask.id;
     }
   }
-  const [selectedTaskDetail, selectedTaskPinned] = selectedVisibleTaskId
-    ? await Promise.all([
-        scope.objects.getObject(selectedVisibleTaskId),
-        scope.objects.isObjectPinned(selectedVisibleTaskId),
-      ])
-    : [null, false];
-  const primaryProjects = await scope.objects.listPrimaryProjectsForTasks(
-    rows.map((row) => row.id),
+  const [selectedTaskDetail, selectedTaskPinned, primaryProjects, taskPinState] = await Promise.all(
+    [
+      selectedVisibleTaskId
+        ? scope.objects.getObject(selectedVisibleTaskId)
+        : Promise.resolve(null),
+      selectedVisibleTaskId
+        ? scope.pins.isPinned({ kind: 'object', key: selectedVisibleTaskId })
+        : Promise.resolve(false),
+      scope.objects.listPrimaryProjectsForTasks(rows.map((row) => row.id)),
+      scope.pins.isPinnedMany(rows.map((row) => ({ kind: 'object' as const, key: row.id }))),
+    ],
   );
   const memberIds = members.map((member) => member.userId);
   const memberRows =
@@ -211,7 +214,10 @@ export default async function TasksPage({
       ) : (
         <div className="min-h-0 flex-1">
           <TaskBoard
-            rows={rows}
+            rows={rows.map((row) => ({
+              ...row,
+              pinned: taskPinState[`object:${row.id}`] ?? false,
+            }))}
             columns={[...TASK_STATUS_COLUMNS]}
             selectedTaskId={selectedVisibleTaskId}
             selectedTaskContext={selectedTaskDetail?.connectedWork ?? null}

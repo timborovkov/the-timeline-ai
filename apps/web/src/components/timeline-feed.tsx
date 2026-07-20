@@ -159,6 +159,10 @@ export function TimelineFeed({
     [pages],
   );
   const serverMoments = useMemo(() => hydrateServerMoments(pages, mode), [pages, mode]);
+  const pinnedMomentIds = useMemo(
+    () => new Set(pages.flatMap((page) => page.pinnedMomentIds ?? [])),
+    [pages],
+  );
   const queryErrorDetails = query.error instanceof Error ? query.error.message : undefined;
 
   return (
@@ -173,6 +177,7 @@ export function TimelineFeed({
         compact={compact}
         maxMoments={maxMoments}
         serverMoments={serverMoments}
+        pinnedMomentIds={pinnedMomentIds}
         emptyLabel={emptyLabel}
         emptyAction={emptyAction}
         impactFilter={impactFilter}

@@ -31,6 +31,7 @@ interface PageProps {
     eventScope?: string;
     eventQ?: string;
     eventPage?: string;
+    event?: string;
   }>;
 }
 
@@ -38,25 +39,28 @@ function calendarShowAs(showAs: string): CalendarEvent['showAs'] {
   return showAs === 'free' || showAs === 'tentative' ? showAs : 'busy';
 }
 
-function serializeCalendarEvent(e: {
-  id: string;
-  title: string;
-  description: string | null;
-  startAt: Date;
-  endAt: Date;
-  timezone: string;
-  allDay: boolean;
-  location: string | null;
-  showAs: string;
-  rrule: string | null;
-  recurringParentId: string | null;
-  originalStartAt: Date | null;
-  isException: boolean;
-  metadata: Record<string, unknown>;
-  redacted: boolean;
-  visibility: CalendarEvent['visibility'];
-  visibilityUserIds: string[] | null;
-}): CalendarEvent {
+function serializeCalendarEvent(
+  e: {
+    id: string;
+    title: string;
+    description: string | null;
+    startAt: Date;
+    endAt: Date;
+    timezone: string;
+    allDay: boolean;
+    location: string | null;
+    showAs: string;
+    rrule: string | null;
+    recurringParentId: string | null;
+    originalStartAt: Date | null;
+    isException: boolean;
+    metadata: Record<string, unknown>;
+    redacted: boolean;
+    visibility: CalendarEvent['visibility'];
+    visibilityUserIds: string[] | null;
+  },
+  pinned: boolean,
+): CalendarEvent {
   return {
     id: e.id,
     title: e.title,
@@ -75,6 +79,7 @@ function serializeCalendarEvent(e: {
     redacted: e.redacted,
     visibility: e.visibility,
     visibilityUserIds: e.visibilityUserIds,
+    pinned,
   };
 }
 
@@ -175,6 +180,12 @@ export default async function CalendarPage({ searchParams }: PageProps) {
       )
       .limit(1),
   ]);
+  const allEvents = [...events, ...initialEventList.events];
+  const pinState = await scope.pins.isPinnedMany(
+    allEvents.flatMap((event) =>
+      event.redacted ? [] : [{ kind: 'calendar_event' as const, key: event.id }],
+    ),
+  );
   const eventList = initialEventList;
   const eventPageCount = Math.max(1, Math.ceil(eventList.total / EVENT_LIST_PAGE_SIZE));
   if (eventPage > eventPageCount) {
@@ -190,8 +201,12 @@ export default async function CalendarPage({ searchParams }: PageProps) {
       : [];
   const memberUserMap = new Map(memberUsers.map((u) => [u.id, u] as const));
 
-  const serialized = events.map(serializeCalendarEvent);
-  const serializedEventList = eventList.events.map(serializeCalendarEvent);
+  const serialized = events.map((event) =>
+    serializeCalendarEvent(event, pinState[`calendar_event:${event.id}`] ?? false),
+  );
+  const serializedEventList = eventList.events.map((event) =>
+    serializeCalendarEvent(event, pinState[`calendar_event:${event.id}`] ?? false),
+  );
   const calendarSuggestions = pendingSuggestions.flatMap((bundle) => {
     const items = bundle.items.filter(
       (item) => item.targetKind === 'calendar_event' && item.status === 'pending',
@@ -217,6 +232,7 @@ export default async function CalendarPage({ searchParams }: PageProps) {
           const u = memberUserMap.get(m.userId);
           return { id: m.userId, label: displayMemberLabel(u) };
         })}
+        focusEventId={params.event ?? null}
       />
 
       <CalendarSubscriptionPanel

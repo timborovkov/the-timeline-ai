@@ -51,5 +51,14 @@ export async function GET(req: Request): Promise<Response> {
       nextCursor: result.nextCursor,
     };
   });
-  return Response.json(page);
+  const pinState = await scope.pins.isPinnedMany(
+    page.items.map((file) => ({ kind: 'document' as const, key: file.id })),
+  );
+  return Response.json({
+    ...page,
+    items: page.items.map((file) => ({
+      ...file,
+      pinned: pinState[`document:${file.id}`] ?? false,
+    })),
+  });
 }

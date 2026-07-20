@@ -15,6 +15,7 @@ import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { GlobalSearchResult } from '@timeline/shared/search';
 import type { ComponentType, SVGProps } from 'react';
 
+import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { fetchGlobalSearch } from '@/lib/global-search';
 import { cn } from '@/lib/utils';
 import { searchErrorMessage } from '@/lib/ux-errors';
@@ -260,35 +261,50 @@ export function GlobalSearchPalette({ hint, className }: Props) {
                     const index = selectableResults.indexOf(result);
                     const IconComponent = resultIcon(result.kind);
                     return (
-                      <button
+                      <div
                         key={result.id}
-                        type="button"
                         className={cn(
-                          'flex w-full items-center gap-3 px-3 py-2 text-left transition-colors',
+                          'flex items-center transition-colors',
                           view.activeIndex === index ? 'bg-surface-2' : 'hover:bg-surface',
                         )}
                         onMouseEnter={() => {
                           dispatchView({ type: 'active', value: index });
                         }}
-                        onClick={() => {
-                          setOpen(false);
-                          openResult(result, router);
-                        }}
                       >
-                        <IconComponent
-                          aria-hidden="true"
-                          className="size-4 shrink-0 text-fg-muted"
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-medium">{result.title}</span>
-                          <span className="block truncate text-xs text-fg-muted">
-                            {result.snippet}
+                        <button
+                          type="button"
+                          className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2 text-left"
+                          onClick={() => {
+                            setOpen(false);
+                            openResult(result, router);
+                          }}
+                        >
+                          <IconComponent
+                            aria-hidden="true"
+                            className="size-4 shrink-0 text-fg-muted"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-medium">
+                              {result.title}
+                            </span>
+                            <span className="block truncate text-xs text-fg-muted">
+                              {result.snippet}
+                            </span>
                           </span>
-                        </span>
-                        <span className="shrink-0 text-[11px] text-fg-dim">
-                          {result.externalHref ? 'new tab' : resultKindLabel(result.kind)}
-                        </span>
-                      </button>
+                          <span className="shrink-0 text-[11px] text-fg-dim">
+                            {result.externalHref ? 'new tab' : resultKindLabel(result.kind)}
+                          </span>
+                        </button>
+                        {result.pinTarget ? (
+                          <div className="mr-2 shrink-0">
+                            <PinOverflowMenu
+                              target={result.pinTarget}
+                              title={result.title}
+                              initialPinned={result.pinned ?? false}
+                            />
+                          </div>
+                        ) : null}
+                      </div>
                     );
                   })}
                 </div>

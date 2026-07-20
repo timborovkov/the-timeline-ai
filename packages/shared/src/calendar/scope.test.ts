@@ -300,6 +300,41 @@ describe('calendar scope', () => {
     }
   });
 
+  it('canonicalizes recurring occurrence pins to one series and rejects busy placeholders', async () => {
+    const ownerScope = withTeam(db as never, TEAM_ID, USER_ID);
+    const teammateScope = withTeam(db as never, TEAM_ID, USER_B_ID);
+    const parent = await ownerScope.calendar.createCalendarEvent({
+      title: 'Weekly planning',
+      startAt: new Date('2026-07-01T16:00:00Z'),
+      endAt: new Date('2026-07-01T16:30:00Z'),
+      timezone: 'UTC',
+      visibility: 'private',
+      rrule: 'FREQ=WEEKLY;BYDAY=WE',
+    });
+    const occurrences = await ownerScope.calendar.listCalendarEvents({
+      from: new Date('2026-07-02T00:00:00Z'),
+      to: new Date('2026-08-01T00:00:00Z'),
+      limit: 20,
+    });
+    const occurrence = occurrences.find((event) => event.recurringParentId === parent.id);
+    if (!occurrence) throw new Error('expected recurring occurrence');
+
+    const pin = await ownerScope.pins.pin({ kind: 'calendar_event', key: occurrence.id });
+    expect(pin.target).toEqual({ kind: 'calendar_event', key: parent.id });
+    await ownerScope.pins.pin({ kind: 'calendar_event', key: parent.id });
+    await expect(ownerScope.pins.list()).resolves.toMatchObject({
+      items: [
+        expect.objectContaining({
+          target: { kind: 'calendar_event', key: parent.id },
+          title: 'Weekly planning',
+        }),
+      ],
+    });
+    await expect(
+      teammateScope.pins.pin({ kind: 'calendar_event', key: occurrence.id }),
+    ).rejects.toThrow('Pinned item not available');
+  });
+
   it('lists paged calendar events with search without exposing redacted private details', async () => {
     const ownerScope = withTeam(db as never, TEAM_ID, USER_ID);
     const teammateScope = withTeam(db as never, TEAM_ID, USER_B_ID);

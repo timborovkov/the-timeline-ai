@@ -4,9 +4,11 @@ import {
   entities,
   meetings,
   taskCategoryProjectInvalidations,
+  userPins,
 } from '@timeline/db';
 import { childLogger, queue } from '@timeline/shared';
 import { getEnv } from '@timeline/shared/env';
+import { withTeam } from '@timeline/shared/team-scope';
 import { Worker, type Job } from 'bullmq';
 import { and, asc, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
@@ -39,6 +41,7 @@ const PROCESSING_MEETING_MIN_AGE_MS = 30 * 60 * 1000;
 const PENDING_TASK_CATEGORY_MIN_AGE_MS = 5 * 60 * 1000;
 
 const log = childLogger('worker:janitor');
+const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 
 interface JanitorDeps {
   db: Db;
@@ -56,6 +59,7 @@ interface JanitorTickResult {
   meetingsRequeued: number;
   taskCategoriesRequeued: number;
   taskCategoryFanoutsRequeued: number;
+  timelineMomentPinsDeleted: number;
 }
 
 /**
@@ -94,13 +98,30 @@ export async function processJanitorTick(deps: JanitorDeps): Promise<JanitorTick
   const taskCategoryFanoutsRequeued = taskCategoryEnabled
     ? await sweepTaskCategoryProjectInvalidations(deps.db, enqueueTaskCategory)
     : 0;
+  const timelineMomentPinsDeleted = await sweepDeletedTimelineMomentPins(deps.db);
 
   return {
     documentVersionsRequeued,
     meetingsRequeued,
     taskCategoriesRequeued,
     taskCategoryFanoutsRequeued,
+    timelineMomentPinsDeleted,
   };
+}
+
+async function sweepDeletedTimelineMomentPins(db: Db): Promise<number> {
+  const teamsWithPins = await db
+    .select({ teamId: userPins.teamId })
+    .from(userPins)
+    .where(eq(userPins.targetKind, 'timeline_moment'))
+    .groupBy(userPins.teamId)
+    .orderBy(asc(userPins.teamId));
+  let deleted = 0;
+  for (const row of teamsWithPins) {
+    const scope = withTeam(db, row.teamId, ZERO_UUID, { skipMembershipCheck: true });
+    deleted += await scope.pins.pruneDeletedTimelineMomentPins(PAGE_SIZE);
+  }
+  return deleted;
 }
 
 async function sweepTaskCategoryProjectInvalidations(
@@ -360,7 +381,8 @@ export function startJanitorWorker(deps: { db: Db }): Worker<queue.JanitorJobDat
         result.documentVersionsRequeued === 0 &&
         result.meetingsRequeued === 0 &&
         result.taskCategoriesRequeued === 0 &&
-        result.taskCategoryFanoutsRequeued === 0
+        result.taskCategoryFanoutsRequeued === 0 &&
+        result.timelineMomentPinsDeleted === 0
       ) {
         log.info({ jobId: job.id, durationMs }, 'janitor: nothing stuck');
       } else {

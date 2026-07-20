@@ -82,6 +82,11 @@ const fakes = vi.hoisted(() => ({
   fakeBoards: {
     getTaskCategoryFilterRefreshState: vi.fn(),
   },
+  fakePins: {
+    pin: vi.fn(),
+    unpin: vi.fn(),
+    isPinnedMany: vi.fn(),
+  },
   fakeTransactionObjects: {
     archiveObject: vi.fn(),
   },
@@ -166,6 +171,7 @@ beforeEach(() => {
       objects: fakes.fakeObjects,
       suggestions: fakes.fakeSuggestions,
       boards: fakes.fakeBoards,
+      pins: fakes.fakePins,
     },
     userId: USER_ID,
     teamId: '11111111-1111-4111-8111-111111111111',
@@ -181,8 +187,9 @@ beforeEach(() => {
     type: 'task',
     changedFields: ['archivedAt'],
   });
-  fakes.fakeObjects.pinObject.mockResolvedValue(true);
-  fakes.fakeObjects.unpinObject.mockResolvedValue(true);
+  fakes.fakePins.pin.mockResolvedValue({ pinId: 'pin-1', title: 'Current Object' });
+  fakes.fakePins.unpin.mockResolvedValue(true);
+  fakes.fakePins.isPinnedMany.mockResolvedValue({});
   fakes.fakeObjects.setTaskProject.mockResolvedValue({
     changed: true,
     project: null,
@@ -618,18 +625,17 @@ describe('object CRUD actions', () => {
     await expect(pinObjectAction({ id: OBJECT_ID })).resolves.toEqual({ ok: true });
     await expect(unpinObjectAction({ id: OBJECT_ID })).resolves.toEqual({ ok: true });
 
-    expect(fakes.fakeObjects.pinObject).toHaveBeenCalledWith(OBJECT_ID);
-    expect(fakes.fakeObjects.unpinObject).toHaveBeenCalledWith(OBJECT_ID);
+    expect(fakes.fakePins.pin).toHaveBeenCalledWith({ kind: 'object', key: OBJECT_ID });
+    expect(fakes.fakePins.unpin).toHaveBeenCalledWith({ kind: 'object', key: OBJECT_ID });
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/objects/${OBJECT_ID}`);
   });
 
   it('does not report a missing object as pinned', async () => {
-    fakes.fakeObjects.pinObject.mockResolvedValueOnce(false);
+    fakes.fakePins.pin.mockRejectedValueOnce(new Error('Object not found'));
 
-    await expect(pinObjectAction({ id: OBJECT_ID })).resolves.toEqual({
-      error: 'Object not found',
-    });
+    const result = await pinObjectAction({ id: OBJECT_ID });
+    expect(result.error).toContain('Failed to pin object');
     expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
   });
 

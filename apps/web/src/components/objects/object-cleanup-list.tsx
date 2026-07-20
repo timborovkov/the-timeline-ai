@@ -8,6 +8,7 @@ import { useMemo, useReducer, useTransition } from 'react';
 import type * as objects from '@timeline/shared/objects/types';
 
 import { bulkArchiveObjectsAction } from '@/app/actions/objects';
+import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import {
   LiveTaskCategoryBadge,
   TaskCategoryPollingProvider,
@@ -18,8 +19,10 @@ import { displayText, formatDisplayDate } from '@/lib/display-dates';
 import { MAX_OBJECT_MERGE_SELECTION, objectMergeHref } from '@/lib/object-merge';
 import { statusLabel } from '@/lib/status-labels';
 
+type PinnableObjectRow = objects.ObjectRow & { pinned?: boolean };
+
 interface Props {
-  rows: objects.ObjectRow[];
+  rows: PinnableObjectRow[];
   typeLabels: Record<string, string>;
   pageInfo?: {
     shownCount: number;
@@ -99,7 +102,7 @@ export function ObjectCleanupList({ rows, typeLabels, pageInfo, sectionMoreHrefs
   const canMergeSelected =
     selectedCount >= 2 && selectedCount <= MAX_OBJECT_MERGE_SELECTION && !isPending;
   const grouped = useMemo(() => {
-    const map = new Map<string, objects.ObjectRow[]>();
+    const map = new Map<string, PinnableObjectRow[]>();
     for (const row of visibleRows) {
       const list = map.get(row.type) ?? [];
       list.push(row);
@@ -292,6 +295,11 @@ export function ObjectCleanupList({ rows, typeLabels, pageInfo, sectionMoreHrefs
                                 </span>
                               ) : null}
                             </span>
+                            <PinOverflowMenu
+                              target={{ kind: 'object', key: object.id }}
+                              title={displayText(object.canonicalName)}
+                              initialPinned={object.pinned ?? false}
+                            />
                           </div>
                         </li>
                       );

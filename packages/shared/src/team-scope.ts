@@ -59,6 +59,7 @@ import { createObjectScope, normalizeIdentityFacet } from '#src/objects/index.js
 import { invalidateObjectSummariesForRawEvent } from '#src/objects/summaries.js';
 import { createOnboardingScope } from '#src/onboarding/index.js';
 import { decodeCursor, encodeCursor, pageWindow } from '#src/pagination.js';
+import { createPinScope } from '#src/pins/scope.js';
 import {
   getQdrantClient,
   type SearchHit,
@@ -1957,16 +1958,16 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     }
   }
 
-  async function listEventsForMomentLookup(
+  async function listEventsForMomentLookupBase(
     plan: TimelineMomentLookupPlan,
+    includeUserVisibility: boolean,
   ): Promise<(typeof rawEvents.$inferSelect)[]> {
-    await ensureMember();
     const conditions = [
       eq(rawEvents.teamId, teamId),
-      visibilityFilter,
       activeRawEventFilter,
       eq(rawEvents.source, plan.source),
     ];
+    if (includeUserVisibility && visibilityFilter) conditions.push(visibilityFilter);
     if (plan.from) conditions.push(gte(rawEvents.occurredAt, plan.from));
     if (plan.to) conditions.push(lt(rawEvents.occurredAt, plan.to));
     for (const predicate of plan.metadataPredicates ?? []) {
@@ -1975,9 +1976,11 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     for (const group of plan.metadataPredicateGroups ?? []) {
       const groupConditions = group.map(metadataPredicateCondition);
       if (groupConditions.length === 1) {
-        conditions.push(groupConditions[0]);
+        const condition = groupConditions[0];
+        if (condition) conditions.push(condition);
       } else if (groupConditions.length > 1) {
-        conditions.push(or(...groupConditions));
+        const condition = or(...groupConditions);
+        if (condition) conditions.push(condition);
       }
     }
     return db
@@ -1986,6 +1989,67 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       .where(and(...conditions))
       .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
       .limit(plan.limit);
+  }
+
+  async function listEventsForMomentLookups(
+    plans: TimelineMomentLookupPlan[],
+  ): Promise<(typeof rawEvents.$inferSelect)[]> {
+    await ensureMember();
+    if (plans.length === 0) return [];
+    const planConditions = plans.map((plan) => {
+      const conditions = [eq(rawEvents.source, plan.source)];
+      if (plan.from) conditions.push(gte(rawEvents.occurredAt, plan.from));
+      if (plan.to) conditions.push(lt(rawEvents.occurredAt, plan.to));
+      for (const predicate of plan.metadataPredicates ?? []) {
+        conditions.push(metadataPredicateCondition(predicate));
+      }
+      for (const group of plan.metadataPredicateGroups ?? []) {
+        const groupConditions = group.map(metadataPredicateCondition);
+        if (groupConditions.length === 1) {
+          const condition = groupConditions[0];
+          if (condition) conditions.push(condition);
+        } else if (groupConditions.length > 1) {
+          const condition = or(...groupConditions);
+          if (condition) conditions.push(condition);
+        }
+      }
+      return and(...conditions);
+    });
+    const combinedPlanCondition = or(
+      ...planConditions.filter((condition) => condition !== undefined),
+    );
+    if (!combinedPlanCondition) return [];
+    return db
+      .select()
+      .from(rawEvents)
+      .where(
+        and(
+          eq(rawEvents.teamId, teamId),
+          visibilityFilter,
+          activeRawEventFilter,
+          combinedPlanCondition,
+        ),
+      )
+      .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
+      .limit(
+        Math.min(
+          plans.reduce((sum, plan) => sum + plan.limit, 0),
+          5_000,
+        ),
+      );
+  }
+
+  async function listEventsForMomentLookup(
+    plan: TimelineMomentLookupPlan,
+  ): Promise<(typeof rawEvents.$inferSelect)[]> {
+    await ensureMember();
+    return listEventsForMomentLookupBase(plan, true);
+  }
+
+  async function listTeamEventsForMomentLookup(
+    plan: TimelineMomentLookupPlan,
+  ): Promise<(typeof rawEvents.$inferSelect)[]> {
+    return listEventsForMomentLookupBase(plan, false);
   }
 
   function timelineMomentPresentationCacheKeyFromRow(
@@ -2439,6 +2503,14 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     calendar: calendarScope,
     ...(deps.chatStructured ? { chatStructured: deps.chatStructured } : {}),
     ...(deps.beforeSuggestionApply ? { beforeApplyItem: deps.beforeSuggestionApply } : {}),
+  });
+  const pinScope = createPinScope({
+    db,
+    scope: core,
+    calendar: calendarScope,
+    listEventsForMomentLookups,
+    listTeamEventsForMomentLookup,
+    getTimezone: async () => (await calendarScope.getCalendarSettings()).defaultTimezone,
   });
 
   return {
@@ -3799,6 +3871,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     meetings: meetingScope,
     objects: objectScope,
     boards: boardScope,
+    pins: pinScope,
     suggestions: suggestionScope,
     reconciliation: createReconciliationScope({ db, scope: core }),
     integrations: integrationScope,

@@ -35,6 +35,9 @@ The current branch completes the first two slices of this plan:
 - **Adjacent object-page cleanup.** Object detail pages now expose editable name
   and aliases, hide internal pagination terminators, and render recent changes
   as readable summaries instead of raw JSON.
+- **Universal personal pins.** Home now previews one mixed collection of
+  objects, boards, documents, meetings, calendar series, and timeline moments;
+  Work → Pinned owns filtering, pagination, and accessible reordering.
 
 The next product gap is no longer "where do I see my work?" It is "how does a
 team discuss, follow, and get notified about work where the work already lives?"
@@ -257,11 +260,12 @@ Add sections:
 
 - Work queue: one scannable list of work that matters now, including items
   responsible to me and team-level items with due dates but no owner
-- Team boards: recently active and pinned boards
+- Team boards: recently active boards
 - Attention signals: overdue, due soon, unassigned, blocked, pending approval,
   or otherwise needing review
 - Recent changes: comments, stage changes, mentions, AI-found updates
-- Pinned: boards, projects, deals, vendors, decisions, or tasks I care about
+- Pinned: one mixed ordered list of boards, objects, documents, meetings,
+  calendar series, and timeline moments I care about
 
 Cleanup:
 

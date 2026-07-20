@@ -8,9 +8,9 @@ const fakes = vi.hoisted(() => ({
   unpin: vi.fn(),
 }));
 
-vi.mock('@/app/actions/objects', () => ({
-  pinObjectAction: fakes.pin,
-  unpinObjectAction: fakes.unpin,
+vi.mock('@/app/actions/pins', () => ({
+  pinTargetAction: fakes.pin,
+  unpinTargetAction: fakes.unpin,
 }));
 
 const { ObjectPinButton } = await import('@/components/objects/object-pin-button');
@@ -30,14 +30,14 @@ describe('ObjectPinButton', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Pin' }));
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Pinned' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Unpin' })).toBeTruthy();
     });
-    expect(fakes.pin).toHaveBeenCalledWith({ id: 'object-1' });
+    expect(fakes.pin).toHaveBeenCalledWith({ kind: 'object', key: 'object-1' });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Pinned' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Unpin' }));
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Pin' })).toBeTruthy();
     });
-    expect(fakes.unpin).toHaveBeenCalledWith({ id: 'object-1' });
+    expect(fakes.unpin).toHaveBeenCalledWith({ kind: 'object', key: 'object-1' });
   });
 });

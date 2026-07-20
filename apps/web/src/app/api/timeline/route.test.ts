@@ -28,6 +28,7 @@ const fakes = vi.hoisted(() => ({
   fakeGetSignedGetObjectUrl: vi.fn(),
   fakeListTimelineCapturedFilesByEventId: vi.fn(),
   fakeTrackTimelineMomentsViewed: vi.fn(),
+  fakeIsPinnedMany: vi.fn(),
   fakeDbSelect: vi.fn(),
 }));
 
@@ -56,6 +57,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
     calendar: {
       getCalendarSettings: fakes.fakeGetCalendarSettings,
     },
+    pins: { isPinnedMany: fakes.fakeIsPinnedMany },
     timeline: {
       listEvents: fakes.fakeListEvents,
       listEventsForMomentLookup: fakes.fakeListEventsForMomentLookup,
@@ -112,6 +114,7 @@ beforeEach(() => {
   });
   fakes.fakeRequireMembership.mockResolvedValue('member');
   fakes.fakeGetCalendarSettings.mockResolvedValue({ defaultTimezone: 'Europe/Helsinki' });
+  fakes.fakeIsPinnedMany.mockResolvedValue({});
   fakes.fakeListEvents.mockResolvedValue([]);
   fakes.fakeListEventsForMomentLookup.mockResolvedValue([]);
   fakes.fakeListEventsPage.mockResolvedValue({ items: [event()], nextCursor: 'next-page' });
@@ -186,6 +189,7 @@ describe('GET /api/timeline', () => {
           rawEventIds: ['event-1'],
         }),
       ],
+      pinnedMomentIds: [],
       rawEventsById: {
         'event-1': {
           id: 'event-1',
