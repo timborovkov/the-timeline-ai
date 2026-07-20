@@ -8,6 +8,7 @@ import { useMemo, useReducer, useTransition } from 'react';
 import type * as objects from '@timeline/shared/objects/types';
 
 import { bulkArchiveObjectsAction } from '@/app/actions/objects';
+import { DueDateDisplay } from '@/components/due-date-display';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import {
   LiveTaskCategoryBadge,
@@ -15,7 +16,8 @@ import {
 } from '@/components/tasks/task-category-badge';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
-import { displayText, formatDisplayDate } from '@/lib/display-dates';
+import { displayText } from '@/lib/display-dates';
+import { isSchedulableObjectType } from '@/lib/due-dates';
 import { MAX_OBJECT_MERGE_SELECTION, objectMergeHref } from '@/lib/object-merge';
 import { statusLabel } from '@/lib/status-labels';
 
@@ -289,10 +291,12 @@ export function ObjectCleanupList({ rows, typeLabels, pageInfo, sectionMoreHrefs
                                 />
                               ) : null}
                               <span>{statusLabel(object.status)}</span>
-                              {object.dueAt ? (
-                                <span title={object.dueAt.toISOString()}>
-                                  · {formatDisplayDate(object.dueAt, { timezone })}
-                                </span>
+                              {isSchedulableObjectType(object.type) ? (
+                                <DueDateDisplay
+                                  value={object.dueAt}
+                                  timezone={timezone}
+                                  variant="compact"
+                                />
                               ) : null}
                             </span>
                             <PinOverflowMenu

@@ -77,4 +77,26 @@ describe('PageHeader', () => {
     expect(headerText.indexOf('Back to Work')).toBeLessThan(headerText.indexOf('Calendar'));
     expect(headerText.indexOf('New event')).toBeGreaterThan(headerText.indexOf('Calendar'));
   });
+
+  it('makes linked metadata a named 40px target', () => {
+    const { container } = render(
+      <PageHeader
+        title="Work"
+        metadata={[
+          {
+            label: 'Overdue',
+            value: 2,
+            href: '/app/tasks?due=overdue',
+            ariaLabel: '2 overdue tasks',
+          },
+        ]}
+      />,
+    );
+
+    const link = screen.getByRole('link', { name: '2 overdue tasks' });
+    expect(link.getAttribute('href')).toBe('/app/tasks?due=overdue');
+    expect(link.parentElement?.className).toContain('min-h-10');
+    expect(link.parentElement?.className).toContain('min-w-10');
+    expect(container.textContent).toContain('Overdue2');
+  });
 });

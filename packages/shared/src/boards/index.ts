@@ -49,6 +49,7 @@ import {
   syncBoardItemDueDateCalendarEvent,
   type DueDateCalendarSyncResult,
 } from '#src/calendar/due-dates.js';
+import { dueDateRangeConditions } from '#src/due-date-filter.js';
 import { childLogger } from '#src/logger.js';
 import { AUTHORITY_POLICY_VERSION } from '#src/reconciliation/authority.js';
 import { buildOutputDedupeKey, reconciliationDedupeKey } from '#src/reconciliation/index.js';
@@ -60,6 +61,7 @@ import {
   readTaskCategoryFilterRefreshState,
   type TaskCategoryFilterRefreshState,
 } from '#src/task-categories/filter-refresh.js';
+import { type DueDateRangeFilter, workspaceDueDateBoundaries } from '#src/time/index.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
@@ -287,6 +289,7 @@ export interface BoardItemFilter {
   priorityNull?: boolean;
   dueBefore?: Date;
   dueAfter?: Date;
+  dueDateRange?: DueDateRangeFilter;
   dueNull?: boolean;
   createdBefore?: Date;
   createdAfter?: Date;
@@ -296,8 +299,14 @@ export interface BoardItemFilter {
 }
 
 export interface BoardWorkQueueOptions {
-  dueBefore: Date;
+  dueBefore?: Date;
+  dueDateRange?: DueDateRangeFilter;
   limit?: number;
+}
+
+export interface PinnedBoardOptions {
+  timezone?: string;
+  now?: Date;
 }
 
 type BoardSelect = typeof boards.$inferSelect;
@@ -1277,6 +1286,7 @@ export function createBoardScope({
     if (filter.dueNull) conds.push(isNull(entities.dueAt));
     if (filter.dueBefore) conds.push(lt(entities.dueAt, filter.dueBefore));
     if (filter.dueAfter) conds.push(gte(entities.dueAt, filter.dueAfter));
+    conds.push(...dueDateRangeConditions(entities.dueAt, filter.dueDateRange));
     if (filter.createdBefore) conds.push(lt(entities.createdAt, filter.createdBefore));
     if (filter.createdAfter) conds.push(gte(entities.createdAt, filter.createdAfter));
     if (filter.updatedBefore) conds.push(lt(entities.updatedAt, filter.updatedBefore));
@@ -1312,6 +1322,7 @@ export function createBoardScope({
     if (filter.dueNull) conds.push(isNull(boardItems.dueAt));
     if (filter.dueBefore) conds.push(lt(boardItems.dueAt, filter.dueBefore));
     if (filter.dueAfter) conds.push(gte(boardItems.dueAt, filter.dueAfter));
+    conds.push(...dueDateRangeConditions(boardItems.dueAt, filter.dueDateRange));
     if (filter.createdBefore) conds.push(lt(boardItems.createdAt, filter.createdBefore));
     if (filter.createdAfter) conds.push(gte(boardItems.createdAt, filter.createdAfter));
     if (filter.updatedBefore) conds.push(lt(boardItems.updatedAt, filter.updatedBefore));
@@ -2083,6 +2094,14 @@ export function createBoardScope({
     async listWorkQueueItems(options: BoardWorkQueueOptions): Promise<BoardWorkQueueItemRow[]> {
       await scope.requireMembership();
       const limit = Math.min(Math.max(options.limit ?? 100, 1), BOARD_ITEM_QUERY_LIMIT_MAX);
+      const unownedDueCondition = options.dueDateRange
+        ? and(
+            isNotNull(boardItems.dueAt),
+            ...dueDateRangeConditions(boardItems.dueAt, options.dueDateRange),
+          )
+        : options.dueBefore
+          ? and(isNotNull(boardItems.dueAt), lt(boardItems.dueAt, options.dueBefore))
+          : sql`false`;
       const rows = await db
         .select({ board: boards, item: boardItems, lane: boardLanes, object: entities })
         .from(boardItems)
@@ -2101,11 +2120,7 @@ export function createBoardScope({
             sql`lower(${entities.status}) not in ('done', 'cancelled', 'canceled', 'shipped')`,
             or(
               eq(boardItems.responsibleUserId, scope.userId),
-              and(
-                isNull(boardItems.responsibleUserId),
-                sql`${boardItems.dueAt} IS NOT NULL`,
-                sql`${boardItems.dueAt} <= ${options.dueBefore.toISOString()}::timestamptz`,
-              ),
+              and(isNull(boardItems.responsibleUserId), unownedDueCondition),
             ),
           ),
         )
@@ -2133,7 +2148,7 @@ export function createBoardScope({
       }));
     },
 
-    async listPinnedBoards(): Promise<BoardRow[]> {
+    async listPinnedBoards(options: PinnedBoardOptions = {}): Promise<BoardRow[]> {
       await scope.requireMembership();
       const rows = await db
         .select({ board: boards, pin: userPins })
@@ -2151,10 +2166,17 @@ export function createBoardScope({
         .orderBy(asc(userPins.sortKey), asc(userPins.id));
       if (rows.length === 0) return [];
       const boardIds = rows.map((row) => row.board.id);
-      const now = new Date();
-      const soon = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-      const nowIso = now.toISOString();
-      const soonIso = soon.toISOString();
+      const timezone = options.timezone ?? 'UTC';
+      const boundaries = workspaceDueDateBoundaries(timezone, options.now);
+      const overdueConditions = dueDateRangeConditions(boardItems.dueAt, {
+        timezone,
+        to: boundaries.today,
+      });
+      const dueSoonConditions = dueDateRangeConditions(boardItems.dueAt, {
+        timezone,
+        from: boundaries.today,
+        to: boundaries.dueSoonEnd,
+      });
       const [countRows, laneRows, dueRows] = await Promise.all([
         db
           .select({ boardId: boardItems.boardId, count: sql<number>`count(*)::int` })
@@ -2191,8 +2213,8 @@ export function createBoardScope({
         db
           .select({
             boardId: boardItems.boardId,
-            overdueCount: sql<number>`count(*) filter (where ${boardItems.dueAt} < ${nowIso}::timestamptz)::int`,
-            dueSoonCount: sql<number>`count(*) filter (where ${boardItems.dueAt} >= ${nowIso}::timestamptz and ${boardItems.dueAt} <= ${soonIso}::timestamptz)::int`,
+            overdueCount: sql<number>`count(*) filter (where ${and(...overdueConditions)})::int`,
+            dueSoonCount: sql<number>`count(*) filter (where ${and(...dueSoonConditions)})::int`,
           })
           .from(boardItems)
           .innerJoin(entities, eq(boardItems.entityId, entities.id))

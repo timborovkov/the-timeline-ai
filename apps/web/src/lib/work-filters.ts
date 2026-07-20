@@ -5,10 +5,12 @@ import {
   type TaskCategory,
   type TaskCategoryFilterKey,
 } from '@timeline/shared/task-categories/types';
+import { workspaceDueDateBoundaries } from '@timeline/shared/time';
 
 import type { BoardItemFilter } from '@timeline/shared/boards';
 import type { ObjectListFilter, ObjectType } from '@timeline/shared/objects/types';
 
+import { TASK_OPEN_STATUSES_EXCLUDED } from '@/lib/task-board-config';
 import { taskStatusFilterValues } from '@/lib/task-statuses';
 
 export const UNASSIGNED_FILTER_VALUE = 'unassigned';
@@ -67,6 +69,13 @@ export interface WorkFilterState {
   updatedTo: string;
 }
 
+interface WorkFilterTimeContext {
+  now?: Date;
+  timezone?: string;
+}
+
+type WorkFilterTimeInput = Date | WorkFilterTimeContext;
+
 const OBJECT_TYPE_SET = new Set<string>(OBJECT_TYPES);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -109,9 +118,9 @@ export function parseWorkFilters(
 
 export function objectListFilterFromWorkFilters(
   filters: WorkFilterState,
-  now = new Date(),
+  time: WorkFilterTimeInput = {},
 ): ObjectListFilter {
-  const due = dueFilter(filters, now);
+  const due = dueFilter(filters, timeContext(time));
   return {
     ...(filters.q.trim() ? { query: filters.q.trim() } : {}),
     ...(filters.type ? { type: objectTypeFilter(filters.type) } : {}),
@@ -139,13 +148,16 @@ export function taskCategoryFilterKeys(filters: WorkFilterState): TaskCategoryFi
 
 export function taskObjectFilterFromWorkFilters(
   filters: WorkFilterState,
-  now = new Date(),
+  time: WorkFilterTimeInput = {},
 ): ObjectListFilter {
-  const base = objectListFilterFromWorkFilters({ ...filters, type: 'task' }, now);
+  const base = objectListFilterFromWorkFilters({ ...filters, type: 'task' }, time);
   const statuses = filters.status ? taskStatusFilterValues(csvValues(filters.status)) : [];
   return {
     ...base,
     ...(statuses.length > 0 ? { status: statuses } : {}),
+    ...(filters.due === 'overdue' && statuses.length === 0
+      ? { statusNotCaseInsensitive: [...TASK_OPEN_STATUSES_EXCLUDED] }
+      : {}),
     type: 'task',
     archived: false,
   };
@@ -153,7 +165,7 @@ export function taskObjectFilterFromWorkFilters(
 
 export function boardItemFilterFromWorkFilters(
   filters: WorkFilterState,
-  now = new Date(),
+  time: WorkFilterTimeInput = {},
 ): BoardItemFilter {
   return {
     ...(filters.q.trim() ? { query: filters.q.trim() } : {}),
@@ -164,7 +176,7 @@ export function boardItemFilterFromWorkFilters(
         : {}),
     ...boardResponsibleFilter(filters.responsible),
     ...priorityFilter(filters.priority),
-    ...dueFilter(filters, now),
+    ...dueFilter(filters, timeContext(time)),
     ...dateRangeFilter('created', filters.createdFrom, filters.createdTo),
     ...dateRangeFilter('updated', filters.updatedFrom, filters.updatedTo),
     object: {
@@ -333,23 +345,46 @@ function priorityFilter(value: string): Pick<ObjectListFilter, 'priority' | 'pri
 
 function dueFilter(
   filters: Pick<WorkFilterState, 'due' | 'dueFrom' | 'dueTo'>,
-  now: Date,
-): Pick<ObjectListFilter, 'dueAfter' | 'dueBefore' | 'dueNull'> {
+  context: Required<WorkFilterTimeContext>,
+): Pick<ObjectListFilter, 'dueDateRange' | 'dueNull'> {
   if (filters.due === 'none') return { dueNull: true };
-  if (filters.due === 'overdue') return { dueBefore: now };
-  if (filters.due === 'today') {
-    const start = startOfUtcDay(now);
-    return { dueAfter: start, dueBefore: addUtcDays(start, 1) };
+  const boundaries = workspaceDueDateBoundaries(context.timezone, context.now);
+  if (filters.due === 'overdue') {
+    return { dueDateRange: { timezone: context.timezone, to: boundaries.today } };
   }
-  if (filters.due === 'next7')
-    return { dueAfter: startOfUtcDay(now), dueBefore: addUtcDays(now, 7) };
+  if (filters.due === 'today') {
+    return {
+      dueDateRange: {
+        timezone: context.timezone,
+        from: boundaries.today,
+        to: boundaries.tomorrow,
+      },
+    };
+  }
+  if (filters.due === 'next7') {
+    return {
+      dueDateRange: {
+        timezone: context.timezone,
+        from: boundaries.today,
+        to: boundaries.next7,
+      },
+    };
+  }
   if (filters.due === 'range' || filters.dueFrom || filters.dueTo) {
     return {
-      ...(filters.dueFrom ? { dueAfter: dateValueToUtc(filters.dueFrom) } : {}),
-      ...(filters.dueTo ? { dueBefore: addUtcDays(dateValueToUtc(filters.dueTo), 1) } : {}),
+      dueDateRange: {
+        timezone: context.timezone,
+        ...(filters.dueFrom ? { from: filters.dueFrom } : {}),
+        ...(filters.dueTo ? { to: dateValueAfter(filters.dueTo) } : {}),
+      },
     };
   }
   return {};
+}
+
+function timeContext(input: WorkFilterTimeInput): Required<WorkFilterTimeContext> {
+  if (input instanceof Date) return { now: input, timezone: 'UTC' };
+  return { now: input.now ?? new Date(), timezone: input.timezone ?? 'UTC' };
 }
 
 function dateRangeFilter(
@@ -378,8 +413,8 @@ function dateValueToUtc(value: string): Date {
   return new Date(`${value}T00:00:00.000Z`);
 }
 
-function startOfUtcDay(value: Date): Date {
-  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
+function dateValueAfter(value: string): string {
+  return addUtcDays(dateValueToUtc(value), 1).toISOString().slice(0, 10);
 }
 
 function addUtcDays(value: Date, days: number): Date {

@@ -82,6 +82,7 @@ import {
   type DueDateCalendarSyncResult,
 } from '#src/calendar/due-dates.js';
 import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
+import { dueDateRangeConditions } from '#src/due-date-filter.js';
 import { getEnv } from '#src/env.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
@@ -1488,6 +1489,7 @@ function objectListConditions(scope: TeamScopeCore, filter: ObjectCountFilter = 
   if (filter.dueNull) conds.push(isNull(entities.dueAt));
   if (filter.dueBefore) conds.push(lt(entities.dueAt, filter.dueBefore));
   if (filter.dueAfter) conds.push(gte(entities.dueAt, filter.dueAfter));
+  conds.push(...dueDateRangeConditions(entities.dueAt, filter.dueDateRange));
   if (filter.createdBefore) conds.push(lt(entities.createdAt, filter.createdBefore));
   if (filter.createdAfter) conds.push(gte(entities.createdAt, filter.createdAfter));
   if (filter.updatedBefore) conds.push(lt(entities.updatedAt, filter.updatedBefore));

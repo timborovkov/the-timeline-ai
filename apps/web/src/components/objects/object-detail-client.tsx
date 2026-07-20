@@ -1,6 +1,7 @@
 'use client';
 import { useQuery } from '@tanstack/react-query';
 import { truncateFilenameMiddle } from '@timeline/shared/documents/presentation';
+import { presentDueDate } from '@timeline/shared/time';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -36,6 +37,7 @@ import {
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { ArtifactReferenceChip } from '@/components/artifact-reference-chip';
 import { ContextualAskLink } from '@/components/chat/contextual-ask-link';
+import { DueDateDisplay } from '@/components/due-date-display';
 import { ObjectPinButton } from '@/components/objects/object-pin-button';
 import {
   type ObjectSearchResponse,
@@ -51,6 +53,7 @@ import { WorkSubnav } from '@/components/work-subnav';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { isInternalIdentifier } from '@/lib/display-labels';
+import { isSchedulableObjectType } from '@/lib/due-dates';
 import { formatTaskCategoryChangeValue } from '@/lib/object-change-format';
 import { displayObjectTitle } from '@/lib/object-title';
 import { readJson } from '@/lib/paginated-api';
@@ -175,13 +178,13 @@ function isOptimisticRelationship(relationship: ObjectDetail['relationships'][nu
   return relationship.id.startsWith('optimistic-relationship-');
 }
 
-function initObjectDetailUiState(detail: ObjectDetail): ObjectDetailUiState {
+function initObjectDetailUiState(detail: ObjectDetail, timezone: string): ObjectDetailUiState {
   return {
     overrides: {},
     nameDraft: editableObjectName(detail),
     aliasesDraft: detail.aliases.join(', '),
     stageDraft: detail.stage ?? '',
-    dueDraft: toLocalInputValue(detail.dueAt),
+    dueDraft: toLocalInputValue(detail.dueAt, timezone),
     saveState: 'idle',
     savingCount: 0,
     error: null,
@@ -271,6 +274,7 @@ export function ObjectDetailClient(props: Props) {
 
 function useObjectDetailController({ detail, userId, suggestions }: Props) {
   const router = useRouter();
+  const timezone = useWorkspaceTimezone();
   const [pending, startTransition] = useTransition();
   const [repairPending, setRepairPending] = useState(false);
   const [
@@ -289,7 +293,9 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
       linkKind,
     },
     dispatchObjectUi,
-  ] = useReducer(objectDetailUiReducer, detail, initObjectDetailUiState);
+  ] = useReducer(objectDetailUiReducer, { detail, timezone }, (input) =>
+    initObjectDetailUiState(input.detail, input.timezone),
+  );
   const [localDetailState, dispatchLocalDetail] = useReducer(
     objectDetailLocalReducer,
     detail,
@@ -448,7 +454,7 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
         dispatchObjectUi({ stageDraft: rollbackValue === null ? '' : String(rollbackValue) });
       }
       if (field === 'dueAt') {
-        dispatchObjectUi({ dueDraft: toLocalInputValue(rollbackValue) });
+        dispatchObjectUi({ dueDraft: toLocalInputValue(rollbackValue, timezone) });
       }
     }
   }
@@ -666,7 +672,7 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
         dispatchObjectUi({ aliasesDraft: normalizeAliases(localValue).join(', ') });
       }
       if (change.field === 'dueAt') {
-        dispatchObjectUi({ dueDraft: toLocalInputValue(localValue) });
+        dispatchObjectUi({ dueDraft: toLocalInputValue(localValue, timezone) });
       }
     }
     startTransition(async () => {
@@ -678,7 +684,7 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
           nameDraft: editableObjectName(previousDetail),
           aliasesDraft: previousDetail.aliases.join(', '),
           stageDraft: previousDetail.stage ?? '',
-          dueDraft: toLocalInputValue(previousDetail.dueAt),
+          dueDraft: toLocalInputValue(previousDetail.dueAt, timezone),
         });
         dispatchObjectUi({ error: result.error });
       } else router.refresh();
@@ -1579,25 +1585,28 @@ function ObjectEditableFields({
           <option value="4">4 (low)</option>
         </select>
       </Field>
-      <Field label="Due date">
-        <input
-          aria-label="Due date"
-          type="datetime-local"
-          value={dueDraft}
-          onFocus={() => {
-            focusedDraftsRef.current.dueAt = true;
-          }}
-          onChange={(e) => {
-            dispatchObjectUi({ dueDraft: e.target.value });
-          }}
-          onBlur={(e) => {
-            focusedDraftsRef.current.dueAt = false;
-            const v = e.target.value;
-            patch('dueAt', v === '' ? null : new Date(v));
-          }}
-          className="w-full rounded-md border bg-surface px-3 py-2 text-sm"
-        />
-      </Field>
+      {isSchedulableObjectType(detail.type) ? (
+        <Field label="Due date">
+          <input
+            aria-label="Due date"
+            type="date"
+            value={dueDraft}
+            onFocus={() => {
+              focusedDraftsRef.current.dueAt = true;
+            }}
+            onChange={(e) => {
+              dispatchObjectUi({ dueDraft: e.target.value });
+            }}
+            onBlur={(e) => {
+              focusedDraftsRef.current.dueAt = false;
+              const v = e.target.value;
+              patch('dueAt', v === '' ? null : new Date(`${v}T00:00:00.000Z`));
+            }}
+            className="w-full rounded-md border bg-surface px-3 py-2 text-sm"
+          />
+          <DueDateDisplay value={detail.dueAt} variant="field-hint" className="mt-1 block" />
+        </Field>
+      ) : null}
     </section>
   );
 }
@@ -1784,7 +1793,6 @@ function ObjectConnectedWorkSection({
             title="Open tasks"
             empty="No open tasks found."
             tasks={connectedWork.openTasks}
-            showDueDate
           />
           <ConnectedCalendarList events={connectedWork.calendarEvents} />
           <ConnectedObjectList objects={connectedWork.objects} />
@@ -1817,12 +1825,10 @@ function ConnectedTaskList({
   title,
   empty,
   tasks,
-  showDueDate = false,
 }: {
   title: string;
   empty: string;
   tasks: ObjectDetail['connectedWork']['openTasks'];
-  showDueDate?: boolean;
 }) {
   return (
     <ConnectedWorkSection title={title}>
@@ -1838,11 +1844,9 @@ function ConnectedTaskList({
               <a href={`/app/objects/${task.id}`} className="font-medium hover:underline">
                 {displayText(displayObjectTitle(task))}
               </a>
-              <span className="text-[11px] text-fg-dim">
-                {statusLabel(task.status)}
-                {showDueDate && task.dueAt
-                  ? ` · due ${new Date(task.dueAt).toLocaleDateString()}`
-                  : ''}
+              <span className="flex flex-wrap items-center gap-1.5 text-[11px] text-fg-dim">
+                <span>{statusLabel(task.status)}</span>
+                <DueDateDisplay value={task.dueAt} variant="compact" />
               </span>
             </li>
           ))}
@@ -1926,10 +1930,10 @@ function ConnectedBoardList({ boards }: { boards: ObjectDetail['connectedWork'][
               >
                 {displayText(board.boardName)}
               </a>
-              <span className="text-[11px] text-fg-dim">
-                {board.laneName ?? 'no lane'}
-                {board.dueAt ? ` · due ${new Date(board.dueAt).toLocaleDateString()}` : ''}
-                {board.priority !== null ? ` · P${board.priority}` : ''}
+              <span className="flex flex-wrap items-center gap-1.5 text-[11px] text-fg-dim">
+                <span>{board.laneName ?? 'no lane'}</span>
+                <DueDateDisplay value={board.dueAt} variant="compact" />
+                {board.priority !== null ? <span>· P{board.priority}</span> : null}
               </span>
               {board.nextStep ? (
                 <span className="text-xs text-muted-foreground">{displayText(board.nextStep)}</span>
@@ -2367,18 +2371,9 @@ function toDateOrNull(value: unknown): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-function toLocalInputValue(value: unknown): string {
+function toLocalInputValue(value: unknown, timezone: string): string {
   const d = toDateOrNull(value);
-  return d ? toLocalInput(d) : '';
-}
-
-function toLocalInput(d: Date): string {
-  // <input type="datetime-local"> expects YYYY-MM-DDTHH:mm in *local* time
-  // (no Z). Convert manually rather than slicing toISOString — that returns
-  // UTC and the picker would show the wrong wall-clock time for any user
-  // not on UTC.
-  const pad = (n: number): string => n.toString().padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return d ? (presentDueDate(d, { timezone }).dateKey ?? '') : '';
 }
 
 function formatValue(v: unknown, timezone: string, field = ''): string {

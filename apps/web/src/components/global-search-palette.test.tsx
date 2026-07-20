@@ -103,6 +103,40 @@ describe('GlobalSearchPalette', () => {
     expect(fakes.push).toHaveBeenCalledWith('/app/boards');
   });
 
+  it('shows exact due metadata on compact task results', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          ok: true,
+          query: 'review',
+          mode: 'preview',
+          warnings: [],
+          results: [
+            {
+              id: 'task:1',
+              kind: 'task',
+              title: 'Review launch',
+              snippet: 'todo · launch',
+              href: '/app/objects/1',
+              score: 2,
+              scoreParts: { lexical: 1 },
+              metadata: { type: 'task', status: 'todo', dueAt: '2099-07-04T00:00:00.000Z' },
+            },
+          ],
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<GlobalSearchPalette />);
+
+    await user.click(screen.getByRole('searchbox', { name: 'Search or jump' }));
+    await user.keyboard('review');
+
+    expect(await screen.findByText('Due Jul 4, 2099')).toBeTruthy();
+    expect(screen.getByText('todo · launch')).toBeTruthy();
+  });
+
   it('navigates keyboard selection in the same order results are rendered', async () => {
     vi.stubGlobal(
       'fetch',

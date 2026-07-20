@@ -613,6 +613,22 @@ describe('board scope', () => {
       itemCount: 1,
       items: [expect.objectContaining({ id: matchingItem.id })],
     });
+
+    await expect(
+      scope.boards.getBoard(board.id, {
+        itemLimit: 'all',
+        itemFilter: {
+          dueDateRange: {
+            timezone: 'America/Los_Angeles',
+            from: '2026-08-04',
+            to: '2026-08-05',
+          },
+        },
+      }),
+    ).resolves.toMatchObject({
+      itemCount: 1,
+      items: [expect.objectContaining({ id: matchingItem.id })],
+    });
   });
 
   it('notifies the responsible user and mirrors board item due dates to the team calendar', async () => {
@@ -645,7 +661,7 @@ describe('board scope', () => {
       expect.objectContaining({
         userId: USER_MEMBER,
         kind: 'board_item_due',
-        summary: 'Northstar Labs on Partnership pipeline is due 2026-08-12',
+        summary: 'Northstar Labs on Partnership pipeline — Due · Aug 12, 2026',
       }),
     ]);
 
@@ -655,7 +671,9 @@ describe('board scope', () => {
         title: 'Due: Northstar Labs - member@test.local',
         description:
           'Board: Partnership pipeline\nResponsible: member@test.local\nObject type: company',
-        startAt: dueAt,
+        startAt: new Date('2026-08-11T21:00:00.000Z'),
+        allDay: true,
+        timezone: 'Europe/Helsinki',
         showAs: 'free',
       }),
     ]);
@@ -678,7 +696,7 @@ describe('board scope', () => {
     );
     eventRows = await db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_A));
     expect(eventRows).toHaveLength(1);
-    expect(eventRows[0]?.startAt).toEqual(movedDueAt);
+    expect(eventRows[0]?.startAt).toEqual(new Date('2026-08-12T21:00:00.000Z'));
     const afterMoveInboxRows = await db
       .select()
       .from(notifications)
@@ -687,7 +705,7 @@ describe('board scope', () => {
       afterMoveInboxRows.filter((row) => row.kind === 'board_item_due' && row.readAt === null),
     ).toEqual([
       expect.objectContaining({
-        summary: 'Northstar Labs on Partnership pipeline is due 2026-08-13',
+        summary: 'Northstar Labs on Partnership pipeline — Due · Aug 13, 2026',
       }),
     ]);
 
@@ -710,10 +728,10 @@ describe('board scope', () => {
       .where(eq(rawEvents.id, eventRows[0]?.startAtRawEventId ?? ''));
     expect(startRawRows[0]).toEqual(
       expect.objectContaining({
-        occurredAt: movedDueAt,
+        occurredAt: new Date('2026-08-12T21:00:00.000Z'),
       }),
     );
-    expect(startRawRows[0]?.contentText).toContain(movedDueAt.toISOString());
+    expect(startRawRows[0]?.contentText).toContain('2026-08-12T21:00:00.000Z');
   });
 
   it('mirrors board item due dates without responsible-person inbox notifications', async () => {
@@ -750,7 +768,8 @@ describe('board scope', () => {
       expect.objectContaining({
         title: 'Due: No Owner LLC',
         description: 'Board: Unassigned deadlines\nObject type: company',
-        startAt: dueAt,
+        startAt: new Date('2026-08-19T21:00:00.000Z'),
+        allDay: true,
         showAs: 'free',
       }),
     ]);
@@ -934,12 +953,12 @@ describe('board scope', () => {
     const oldNameNotification = dueNotifications.find(
       (notification) =>
         notification.summary ===
-        'Refresh renamed board metadata on Original board is due 2026-10-01',
+        'Refresh renamed board metadata on Original board — Due · Oct 1, 2026',
     );
     const newNameNotification = dueNotifications.find(
       (notification) =>
         notification.summary ===
-        'Refresh renamed board metadata on Renamed board is due 2026-10-01',
+        'Refresh renamed board metadata on Renamed board — Due · Oct 1, 2026',
     );
     expect(oldNameNotification?.readAt).toBeInstanceOf(Date);
     expect(newNameNotification?.readAt).toBeNull();
@@ -1715,6 +1734,8 @@ describe('board scope', () => {
   });
 
   it('counts active pinned board items by due window', async () => {
+    const now = new Date('2026-07-20T16:00:00.000Z');
+    const timezone = 'America/Los_Angeles';
     const owner = withTeam(db, TEAM_A, USER_OWNER);
     const board = await owner.boards.createBoard({
       name: 'Active due counts',
@@ -1728,26 +1749,56 @@ describe('board scope', () => {
     });
     const dueSoonTask = await owner.objects.createObject({
       type: 'task',
-      canonicalName: 'Due soon active task',
+      canonicalName: 'Due today active task',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const fourteenthDayTask = await owner.objects.createObject({
+      type: 'task',
+      canonicalName: 'Fourteenth day active task',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const fifteenthDayTask = await owner.objects.createObject({
+      type: 'task',
+      canonicalName: 'Fifteenth day active task',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const legacyOverdueTask = await owner.objects.createObject({
+      type: 'task',
+      canonicalName: 'Legacy local-date overdue task',
       actor: { kind: 'user', userId: USER_OWNER },
     });
     await owner.boards.addBoardItem(board.id, {
       entityId: overdueTask.id,
-      dueAt: new Date('2020-01-01T00:00:00.000Z'),
+      dueAt: new Date('2026-07-19T00:00:00.000Z'),
       actor: { kind: 'user', userId: USER_OWNER },
     });
     await owner.boards.addBoardItem(board.id, {
       entityId: dueSoonTask.id,
-      dueAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      dueAt: new Date('2026-07-20T00:00:00.000Z'),
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await owner.boards.addBoardItem(board.id, {
+      entityId: fourteenthDayTask.id,
+      dueAt: new Date('2026-08-03T00:00:00.000Z'),
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await owner.boards.addBoardItem(board.id, {
+      entityId: fifteenthDayTask.id,
+      dueAt: new Date('2026-08-04T00:00:00.000Z'),
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await owner.boards.addBoardItem(board.id, {
+      entityId: legacyOverdueTask.id,
+      dueAt: new Date('2026-07-20T06:00:00.000Z'),
       actor: { kind: 'user', userId: USER_OWNER },
     });
     await owner.pins.pin({ kind: 'board', key: board.id });
 
-    await expect(owner.boards.listPinnedBoards()).resolves.toEqual([
+    await expect(owner.boards.listPinnedBoards({ timezone, now })).resolves.toEqual([
       expect.objectContaining({
-        itemCount: 2,
-        dueSoonCount: 1,
-        overdueCount: 1,
+        itemCount: 5,
+        dueSoonCount: 2,
+        overdueCount: 2,
       }),
     ]);
   });

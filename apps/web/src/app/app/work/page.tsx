@@ -1,9 +1,11 @@
 import { withTeam } from '@timeline/shared/team-scope';
+import { workspaceDueDateBoundaries } from '@timeline/shared/time';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
+import { DueDateDisplay } from '@/components/due-date-display';
 import { EmptyAction } from '@/components/empty-action';
 import { PageHeader } from '@/components/page-header';
 import { PinnedWorkspaceManager } from '@/components/pins/pinned-workspace-manager';
@@ -36,7 +38,6 @@ export const metadata: Metadata = {
   description: 'Daily queue for team work, boards, approvals, and operational context.',
 };
 
-const DUE_SOON_DAYS = 14;
 const QUEUE_LIMIT = 20;
 
 interface WorkPageProps {
@@ -77,30 +78,31 @@ export default async function WorkPage({ searchParams }: WorkPageProps = {}) {
     );
   }
   const now = new Date();
-  const dueSoon = new Date(now.getTime() + DUE_SOON_DAYS * 24 * 60 * 60 * 1000);
-  const [attention, boardItems, queueObjects, pinnedBoards, boards, calendarSettings] =
-    await Promise.all([
-      getWorkAttentionSummary(scope, now),
-      scope.boards.listWorkQueueItems({ dueBefore: dueSoon, limit: 100 }),
-      listWorkQueueObjects(scope.objects, session.user.id, dueSoon),
-      scope.boards.listPinnedBoards(),
-      scope.boards.listBoards(),
-      scope.calendar.getCalendarSettings(),
-    ]);
+  const calendarSettings = await scope.calendar.getCalendarSettings();
   const timezone = calendarSettings.defaultTimezone;
+  const dueBoundaries = workspaceDueDateBoundaries(timezone, now);
+  const [attention, boardItems, queueObjects, pinnedBoards, boards] = await Promise.all([
+    getWorkAttentionSummary(scope, now, timezone),
+    scope.boards.listWorkQueueItems({
+      dueDateRange: { timezone, to: dueBoundaries.dueSoonEnd },
+      limit: 100,
+    }),
+    listWorkQueueObjects(scope.objects, { userId: session.user.id, now, timezone }),
+    scope.boards.listPinnedBoards({ timezone, now }),
+    scope.boards.listBoards(),
+  ]);
 
   const approvalsItem = approvalQueueItem(attention.pendingApprovals, now);
   const queue = dedupeWorkQueueItems(
     sortWorkQueueItems([
       ...(approvalsItem ? [approvalsItem] : []),
-      ...boardItems.map((item) => boardQueueItem(item, session.user.id, now, dueSoon)),
+      ...boardItems.map((item) => boardQueueItem(item, session.user.id, now, timezone)),
       ...queueObjects.flatMap((item) => {
-        const queued = objectQueueItem(item, session.user.id, now, dueSoon);
+        const queued = objectQueueItem(item, session.user.id, now, timezone);
         return queued ? [queued] : [];
       }),
     ]),
   ).slice(0, QUEUE_LIMIT);
-  const attentionCount = attention.attention;
   const boardModules = uniqueBoards([...pinnedBoards, ...boards]).slice(0, 6);
   const categoryPollingTasks = queue.flatMap((item) =>
     item.objectType === 'task'
@@ -121,9 +123,22 @@ export default async function WorkPage({ searchParams }: WorkPageProps = {}) {
         subtitle="Prioritized work that needs a decision, owner, or next action."
         metadata={[
           { label: 'Queue', value: queue.length, mono: true },
-          ...(attentionCount > 0
-            ? [{ label: 'Attention', value: attentionCount, mono: true, danger: true }]
-            : []),
+          {
+            label: 'Overdue',
+            value: attention.overdueTasks,
+            mono: true,
+            danger: attention.overdueTasks > 0,
+            href: '/app/tasks?due=overdue',
+            ariaLabel: `${attention.overdueTasks} overdue tasks`,
+          },
+          {
+            label: 'Approvals',
+            value: attention.pendingApprovals,
+            mono: true,
+            danger: attention.pendingApprovals > 0,
+            href: '/app/approvals?status=pending',
+            ariaLabel: `${attention.pendingApprovals} pending approvals`,
+          },
         ]}
       />
       <WorkSubnav current="/app/work" />
@@ -181,6 +196,9 @@ export default async function WorkPage({ searchParams }: WorkPageProps = {}) {
 }
 
 function WorkQueueRow({ item, timezone }: { item: WorkQueueItem; timezone: string }) {
+  const contextReasons = item.reasons.filter(
+    (reason) => reason !== 'overdue' && reason !== 'due_soon',
+  );
   return (
     <Link
       href={item.href}
@@ -194,17 +212,21 @@ function WorkQueueRow({ item, timezone }: { item: WorkQueueItem; timezone: strin
         <span className="mt-1 block truncate text-sm text-fg-muted">
           {displayText(item.subtitle)}
         </span>
-        <span className="mt-2 flex flex-wrap gap-1.5">
-          {item.reasons.map((reason) => (
-            <ReasonBadge key={reason} reason={reason} />
-          ))}
-        </span>
+        {contextReasons.length > 0 ? (
+          <span className="mt-2 flex flex-wrap gap-1.5">
+            {contextReasons.map((reason) => (
+              <ReasonBadge key={reason} reason={reason} />
+            ))}
+          </span>
+        ) : null}
       </span>
       <span className="flex flex-wrap items-center gap-2 md:justify-end">
-        {item.dueAt ? (
-          <MetaPill
-            label={`Due ${dateLabel(item.dueAt, timezone)}`}
-            danger={item.reasons.includes('overdue')}
+        {item.source !== 'approval' ? (
+          <DueDateDisplay
+            value={item.dueAt}
+            timezone={timezone}
+            variant="stacked"
+            className="min-w-28 md:text-right"
           />
         ) : null}
         {item.priority ? <MetaPill label={`P${item.priority}`} /> : null}

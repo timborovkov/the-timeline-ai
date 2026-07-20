@@ -4,7 +4,9 @@ import { useRouter } from 'next/navigation';
 import { useReducer, useTransition } from 'react';
 
 import { createObjectAction } from '@/app/actions/objects';
+import { DueDateDisplay } from '@/components/due-date-display';
 import { ProjectPicker } from '@/components/tasks/project-picker';
+import { isSchedulableObjectType } from '@/lib/due-dates';
 import { OBJECT_TYPES as TYPES } from '@/lib/object-types';
 
 const EMPTY_PROJECTS: { id: string; label: string }[] = [];
@@ -51,7 +53,9 @@ export function NewObjectForm({
       const result = await createObjectAction({
         type,
         canonicalName: name.trim(),
-        ...(dueAt ? { dueAt: new Date(dueAt).toISOString() } : {}),
+        ...(isSchedulableObjectType(type) && dueAt
+          ? { dueAt: new Date(`${dueAt}T00:00:00.000Z`).toISOString() }
+          : {}),
         ...(type === 'task' && projectId ? { parentObjectId: projectId } : {}),
       });
       if ('error' in result && result.error) {
@@ -69,6 +73,7 @@ export function NewObjectForm({
           Type
         </span>
         <select
+          aria-label="Object type"
           value={type}
           onChange={(e) => {
             updateForm({ type: e.target.value as (typeof TYPES)[number] });
@@ -113,19 +118,23 @@ export function NewObjectForm({
           placeholder="e.g. Acme deal, Q2 OKRs, post-mortem 2026-05-15"
         />
       </label>
-      <label className="block">
-        <span className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
-          Due (optional)
-        </span>
-        <input
-          type="datetime-local"
-          value={dueAt}
-          onChange={(e) => {
-            updateForm({ dueAt: e.target.value });
-          }}
-          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-        />
-      </label>
+      {isSchedulableObjectType(type) ? (
+        <label className="block">
+          <span className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
+            Due (optional)
+          </span>
+          <input
+            aria-label="Due date"
+            type="date"
+            value={dueAt}
+            onChange={(e) => {
+              updateForm({ dueAt: e.target.value });
+            }}
+            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+          />
+          <DueDateDisplay value={dueAt || null} variant="field-hint" className="mt-1 block" />
+        </label>
+      ) : null}
       {error && (
         <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-2 text-sm text-destructive">
           {error}

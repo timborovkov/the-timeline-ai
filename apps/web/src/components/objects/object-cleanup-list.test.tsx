@@ -62,4 +62,18 @@ describe('ObjectCleanupList', () => {
     expect(screen.getByText('Suggested')).toBeTruthy();
     expect(screen.queryByText('Suggested', { selector: '.text-signal' })).toBeNull();
   });
+
+  it('shows missing due state only for schedulable objects', () => {
+    render(
+      <ObjectCleanupList
+        rows={[
+          object({ id: 'task-1', canonicalName: 'Task without date' }),
+          object({ id: 'person-1', type: 'person', canonicalName: 'Person record' }),
+        ]}
+        typeLabels={{ task: 'Task', person: 'People' }}
+      />,
+    );
+
+    expect(screen.getAllByText('No due date')).toHaveLength(1);
+  });
 });

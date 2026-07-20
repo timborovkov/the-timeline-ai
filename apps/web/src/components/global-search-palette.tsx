@@ -15,7 +15,9 @@ import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { GlobalSearchResult } from '@timeline/shared/search';
 import type { ComponentType, SVGProps } from 'react';
 
+import { DueDateDisplay } from '@/components/due-date-display';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
+import { isSchedulableObjectType } from '@/lib/due-dates';
 import { fetchGlobalSearch } from '@/lib/global-search';
 import { cn } from '@/lib/utils';
 import { searchErrorMessage } from '@/lib/ux-errors';
@@ -260,6 +262,10 @@ export function GlobalSearchPalette({ hint, className }: Props) {
                   {items.map((result) => {
                     const index = selectableResults.indexOf(result);
                     const IconComponent = resultIcon(result.kind);
+                    const objectType =
+                      typeof result.metadata?.type === 'string' ? result.metadata.type : '';
+                    const dueAt =
+                      typeof result.metadata?.dueAt === 'string' ? result.metadata.dueAt : null;
                     return (
                       <div
                         key={result.id}
@@ -290,6 +296,13 @@ export function GlobalSearchPalette({ hint, className }: Props) {
                             <span className="block truncate text-xs text-fg-muted">
                               {result.snippet}
                             </span>
+                            {isSchedulableObjectType(objectType) ? (
+                              <DueDateDisplay
+                                value={dueAt}
+                                variant="compact"
+                                className="mt-0.5 block truncate"
+                              />
+                            ) : null}
                           </span>
                           <span className="shrink-0 text-[11px] text-fg-dim">
                             {result.externalHref ? 'new tab' : resultKindLabel(result.kind)}

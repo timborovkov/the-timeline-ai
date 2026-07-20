@@ -5,6 +5,7 @@ import {
   taskCategoryLabel,
   type TaskCategory,
 } from '@timeline/shared/task-categories/types';
+import { presentDueDate } from '@timeline/shared/time';
 import {
   AlertTriangle,
   CalendarClock,
@@ -165,8 +166,6 @@ interface FormattedPayloadField {
 
 const MAX_INLINE_PAYLOAD_FIELDS = 4;
 const MAX_INLINE_PAYLOAD_VALUE_LENGTH = 120;
-const LOCAL_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const UTC_DATE_ONLY_INSTANT_RE = /^\d{4}-\d{2}-\d{2}T00:00:00(?:\.0{1,9})?Z$/;
 const TOKEN_PAYLOAD_FIELDS = new Set([
   'field',
   'kind',
@@ -273,7 +272,7 @@ function payloadFieldText(field: FormattedPayloadField, compact = false): string
     compact && field.value.length > MAX_INLINE_PAYLOAD_VALUE_LENGTH
       ? `${field.value.slice(0, MAX_INLINE_PAYLOAD_VALUE_LENGTH - 1).trimEnd()}…`
       : field.value;
-  return `${field.label} ${value}`;
+  return field.key === 'dueAt' ? value : `${field.label} ${value}`;
 }
 
 function payloadFieldLabel(key: string): string {
@@ -350,7 +349,7 @@ function itemStatusLabel(status: string): string {
 }
 
 function formatPayloadValue(key: string, value: unknown, timezone?: string): string {
-  if (key === 'dueAt' && typeof value === 'string') {
+  if (key === 'dueAt' && (typeof value === 'string' || value === null)) {
     return formatDueDateValue(value, timezone);
   }
   if ((key === 'startAt' || key === 'endAt') && typeof value === 'string') {
@@ -388,29 +387,21 @@ function formatPayloadValue(key: string, value: unknown, timezone?: string): str
 }
 
 function clearedPayloadValue(key: string): string {
+  if (key === 'dueAt') return 'No due date';
   return key === 'ownerUserId' || key === 'assigneeUserId' ? 'Unassigned' : 'None';
 }
 
 function formatBoardUpdateValue(field: string, value: unknown, timezone?: string): string {
   if (field === 'responsibleUserId') return value === null ? 'Unassigned' : 'Selected team member';
   if (field === 'laneId') return value === null ? 'No lane' : 'Selected lane';
-  if (value === null) return 'None';
+  if (value === null) return field === 'dueAt' ? 'No due date' : 'None';
   return formatPayloadValue(field, value, timezone);
 }
 
-function formatDueDateValue(value: string, timezone?: string): string {
-  const localDate = LOCAL_DATE_RE.test(value);
-  const utcDateOnlyInstant = UTC_DATE_ONLY_INSTANT_RE.test(value);
-  if ((localDate || utcDateOnlyInstant) && !hasExactUtcDate(value)) return value;
-  return formatDisplayDate(value, {
-    timezone: localDate || utcDateOnlyInstant ? 'UTC' : (timezone ?? 'UTC'),
-  });
-}
-
-function hasExactUtcDate(value: string): boolean {
-  const expectedDate = value.slice(0, 10);
-  const instant = new Date(LOCAL_DATE_RE.test(value) ? `${value}T00:00:00.000Z` : value);
-  return !Number.isNaN(instant.getTime()) && instant.toISOString().slice(0, 10) === expectedDate;
+function formatDueDateValue(value: string | null, timezone?: string): string {
+  const due = presentDueDate(value, { timezone: timezone ?? 'UTC' });
+  if (due.status === 'invalid') return due.compactText;
+  return due.dateLabel ? `${due.label} · ${due.dateLabel}` : due.compactText;
 }
 
 function payloadString(payload: Record<string, unknown>, key: string): string | null {

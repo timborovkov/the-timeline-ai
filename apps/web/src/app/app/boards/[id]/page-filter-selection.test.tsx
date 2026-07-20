@@ -9,6 +9,7 @@ const fakes = vi.hoisted(() => ({
   listObjects: vi.fn(),
   getObject: vi.fn(),
   listMembers: vi.fn(),
+  getCalendarSettings: vi.fn(),
   candidateIds: [] as string[],
   projectOptionIds: [] as string[],
   notFound: vi.fn(() => {
@@ -36,6 +37,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
     timeline: {
       listMembers: fakes.listMembers,
     },
+    calendar: { getCalendarSettings: fakes.getCalendarSettings },
   }),
 }));
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
@@ -72,6 +74,7 @@ beforeEach(() => {
   fakes.listObjects.mockResolvedValue([]);
   fakes.getObject.mockResolvedValue({ connectedWork: [] });
   fakes.listMembers.mockResolvedValue([]);
+  fakes.getCalendarSettings.mockResolvedValue({ defaultTimezone: 'UTC' });
   fakes.listBoardItemHistory.mockResolvedValue([{ id: 'history-1' }]);
   fakes.candidateIds = [];
   fakes.projectOptionIds = [];

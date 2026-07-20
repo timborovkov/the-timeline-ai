@@ -64,6 +64,9 @@ export default async function TasksPage({
   if (!active) redirect('/sign-in');
 
   const scope = withTeam(db, active.teamId, session.user.id);
+  const now = new Date();
+  const calendarSettings = await scope.calendar.getCalendarSettings();
+  const filterTime = { now, timezone: calendarSettings.defaultTimezone };
   const taskCategoriesEnabled = getEnv().TASK_CATEGORY_UI_ENABLED;
   const selectedTaskId = taskParam(query.task);
   const filters = parseWorkFilters(query, {
@@ -73,11 +76,11 @@ export default async function TasksPage({
   const categoryFilterBaseline =
     categoryKeys.length > 0
       ? await scope.objects.getTaskCategoryFilterRefreshState(
-          taskObjectFilterFromWorkFilters({ ...filters, category: '' }),
+          taskObjectFilterFromWorkFilters({ ...filters, category: '' }, filterTime),
           categoryKeys,
         )
       : null;
-  const taskFilter = taskObjectFilterFromWorkFilters(filters);
+  const taskFilter = taskObjectFilterFromWorkFilters(filters, filterTime);
   const [projects, taskPage, counts, pendingSuggestions, members] = await Promise.all([
     loadProjectFilterRows({
       listObjects: (filter) => scope.objects.listObjects(filter),
@@ -85,7 +88,7 @@ export default async function TasksPage({
       includeArchivedSelected: true,
     }),
     loadTaskRowsPage(scope.objects, null, taskFilter),
-    countTaskRows(scope.objects, new Date(), taskFilter),
+    countTaskRows(scope.objects, now, taskFilter, calendarSettings.defaultTimezone),
     scope.suggestions.listPendingSuggestions(),
     scope.timeline.listMembers(),
   ]);
@@ -158,10 +161,28 @@ export default async function TasksPage({
           { label: 'Total', value: counts.total, mono: true },
           { label: 'Open', value: counts.open, mono: true },
           ...(pendingTaskItems > 0
-            ? [{ label: 'Approvals', value: pendingTaskItems, mono: true, signal: true }]
+            ? [
+                {
+                  label: 'Approvals',
+                  value: pendingTaskItems,
+                  mono: true,
+                  signal: true,
+                  href: '/app/approvals?status=pending',
+                  ariaLabel: `${pendingTaskItems} pending task approvals`,
+                },
+              ]
             : []),
           ...(counts.overdue > 0
-            ? [{ label: 'Overdue', value: counts.overdue, mono: true, danger: true }]
+            ? [
+                {
+                  label: 'Overdue',
+                  value: counts.overdue,
+                  mono: true,
+                  danger: true,
+                  href: '/app/tasks?due=overdue',
+                  ariaLabel: `${counts.overdue} overdue tasks`,
+                },
+              ]
             : []),
         ]}
         className={rows.length > 0 ? 'w-full shrink-0 px-4 pt-5 md:px-8' : 'shrink-0'}

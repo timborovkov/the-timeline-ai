@@ -1,8 +1,10 @@
+import Link from 'next/link';
+
 import type { ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
 
-interface PageHeaderMetadata {
+interface PageHeaderMetadataBase {
   /** Optional dim label (e.g. "team", "members"). */
   label?: ReactNode;
   /** The main value (e.g. "acme", 12). */
@@ -15,6 +17,17 @@ interface PageHeaderMetadata {
   mono?: boolean;
 }
 
+export type PageHeaderMetadata = PageHeaderMetadataBase &
+  (
+    | {
+        /** Destination that makes the whole metadata segment actionable. */
+        href: string;
+        /** Accessible purpose required for linked metadata. */
+        ariaLabel: string;
+      }
+    | { href?: never; ariaLabel?: never }
+  );
+
 function metadataKey(seg: PageHeaderMetadata, index: number): string {
   return [
     index,
@@ -23,6 +36,7 @@ function metadataKey(seg: PageHeaderMetadata, index: number): string {
     seg.signal ? 'signal' : '',
     seg.danger ? 'danger' : '',
     seg.mono ? 'mono' : '',
+    seg.href ?? '',
   ]
     .map((part) => (typeof part === 'string' || typeof part === 'number' ? String(part) : 'node'))
     .join(':');
@@ -85,7 +99,13 @@ export function PageHeader({
           className="m-0 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs text-fg-muted"
         >
           {metadataList.map((seg, index) => (
-            <div key={metadataKey(seg, index)} className="inline-flex items-baseline gap-1.5">
+            <div
+              key={metadataKey(seg, index)}
+              className={cn(
+                'relative inline-flex items-baseline gap-1.5',
+                seg.href && 'min-h-10 min-w-10 items-center px-2 -mx-2',
+              )}
+            >
               {seg.label ? <dt className="m-0 text-fg-dim">{seg.label}</dt> : null}
               <dd
                 className={cn(
@@ -97,6 +117,13 @@ export function PageHeader({
               >
                 {seg.value}
               </dd>
+              {seg.href ? (
+                <Link
+                  href={seg.href}
+                  aria-label={seg.ariaLabel}
+                  className="absolute inset-0 rounded-sm outline-none hover:bg-surface/50 focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2"
+                />
+              ) : null}
             </div>
           ))}
         </dl>

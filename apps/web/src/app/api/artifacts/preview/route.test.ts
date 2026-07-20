@@ -26,6 +26,7 @@ const fakes = vi.hoisted(() => ({
   getDocumentChunk: vi.fn(),
   listDocumentVersions: vi.fn(),
   getCalendarEvent: vi.fn(),
+  getCalendarSettings: vi.fn(),
   getBoard: vi.fn(),
   getBoardItem: vi.fn(),
   getS3PresignClient: vi.fn(),
@@ -54,7 +55,10 @@ vi.mock('@timeline/shared/team-scope', () => ({
       getDocumentChunk: fakes.getDocumentChunk,
       listDocumentVersions: fakes.listDocumentVersions,
     },
-    calendar: { getCalendarEvent: fakes.getCalendarEvent },
+    calendar: {
+      getCalendarEvent: fakes.getCalendarEvent,
+      getCalendarSettings: fakes.getCalendarSettings,
+    },
     boards: {
       getBoard: fakes.getBoard,
       getBoardItem: fakes.getBoardItem,
@@ -112,6 +116,7 @@ beforeEach(() => {
   fakes.getS3PresignClient.mockReturnValue({});
   fakes.getAudioBucket.mockReturnValue('audio');
   fakes.getSignedGetObjectUrl.mockResolvedValue('https://signed-audio.test/file.mp3');
+  fakes.getCalendarSettings.mockResolvedValue({ defaultTimezone: 'UTC' });
   fakes.getEventsByIds.mockResolvedValue([
     {
       id: IDS.event,

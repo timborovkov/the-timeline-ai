@@ -12,6 +12,7 @@ import {
 } from '@dnd-kit/core';
 import { useQueries } from '@tanstack/react-query';
 import { TASK_CATEGORY_OPTIONS, type TaskCategory } from '@timeline/shared/task-categories/types';
+import { presentDueDate } from '@timeline/shared/time';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -38,6 +39,7 @@ import {
   updateObjectAction,
 } from '@/app/actions/objects';
 import { ObjectTextFilter } from '@/components/boards/object-text-filter';
+import { DueDateDisplay } from '@/components/due-date-display';
 import { ObjectPinButton } from '@/components/objects/object-pin-button';
 import { ObjectRelatedContext } from '@/components/objects/object-related-context';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
@@ -46,6 +48,7 @@ import { useTaskCategoryPolling } from '@/components/tasks/task-category-polling
 import { TaskCategorySelect } from '@/components/tasks/task-category-select';
 import { TaskProjectSelect } from '@/components/tasks/task-project-select';
 import { useAppDialog } from '@/components/ui/app-dialog';
+import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText } from '@/lib/display-dates';
 import { filterObjectsByText } from '@/lib/object-filter';
 import { objectDetailHref } from '@/lib/object-links';
@@ -1217,6 +1220,7 @@ function TaskListRow({
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
+  const timezone = useWorkspaceTimezone();
   const title = displayObjectTitle(row);
 
   function save(field: string, patch: TaskPatch): void {
@@ -1314,7 +1318,7 @@ function TaskListRow({
       <td className="min-w-36 px-3 py-2 align-top">
         <input
           type="date"
-          value={row.dueAt ? dateInputValue(row.dueAt) : ''}
+          value={row.dueAt ? dateInputValue(row.dueAt, timezone) : ''}
           onChange={(event) => {
             const value = event.currentTarget.value;
             save('due date', { dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null });
@@ -1322,6 +1326,7 @@ function TaskListRow({
           className="h-8 w-full rounded-sm border border-border bg-bg px-2 text-xs"
           aria-label={`Due date for ${displayText(title)}`}
         />
+        <DueDateDisplay value={row.dueAt} variant="field-hint" className="mt-1 block" />
       </td>
       <td className="min-w-28 px-3 py-2 align-top">
         <select
@@ -1666,7 +1671,6 @@ function TaskCard({
   const style = transform
     ? { transform: `translate3d(${String(transform.x)}px,${String(transform.y)}px,0)` }
     : undefined;
-  const due = dueState(row.dueAt);
   const title = displayObjectTitle(row);
   return (
     <li
@@ -1707,7 +1711,7 @@ function TaskCard({
       </div>
       <div className="mt-2 grid grid-cols-3 gap-px overflow-hidden rounded-sm border border-border bg-border text-[11px]">
         <CardMeta value={memberLabel(row.assigneeUserId, members)} missing={!row.assigneeUserId} />
-        <CardMeta value={due.label} missing={!row.dueAt} danger={due.tone === 'danger'} />
+        <CardMeta value={<DueDateDisplay value={row.dueAt} variant="compact" />} />
         <CardMeta
           value={row.priority ? `P${row.priority}` : 'No priority'}
           missing={!row.priority}
@@ -1752,6 +1756,7 @@ function TaskDetailPanel({
 }) {
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const timezone = useWorkspaceTimezone();
   const title = displayObjectTitle(task);
 
   function save(field: string, patch: TaskPatch): void {
@@ -1857,7 +1862,7 @@ function TaskDetailPanel({
         <TaskField label="Due">
           <input
             type="date"
-            value={task.dueAt ? dateInputValue(task.dueAt) : ''}
+            value={task.dueAt ? dateInputValue(task.dueAt, timezone) : ''}
             onChange={(event) => {
               const value = event.currentTarget.value;
               save('due date', { dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null });
@@ -1865,6 +1870,7 @@ function TaskDetailPanel({
             className="h-9 w-full rounded-sm border border-border bg-bg px-2 text-sm"
             aria-label="Task due date"
           />
+          <DueDateDisplay value={task.dueAt} variant="field-hint" className="mt-1 block" />
         </TaskField>
         <TaskField label="Priority">
           <select
@@ -1888,7 +1894,10 @@ function TaskDetailPanel({
       </div>
       <div className="grid border-b border-border sm:grid-cols-2">
         <Detail label="Current assignee" value={memberLabel(task.assigneeUserId, members)} />
-        <Detail label="Current due" value={task.dueAt ? dateLabel(task.dueAt) : '-'} />
+        <Detail
+          label="Current due"
+          value={<DueDateDisplay value={task.dueAt} variant="inline" />}
+        />
         <Detail label="Current priority" value={task.priority ? `P${task.priority}` : '-'} />
         <Detail label="Updated" value={dateLabel(task.updatedAt)} />
       </div>
@@ -1922,11 +1931,13 @@ function TaskField({ label, children }: { label: string; children: ReactNode }) 
 }
 
 // react-doctor-disable-next-line react-doctor/no-multi-comp -- Tiny local read-only field wrapper for the task detail panel.
-function Detail({ label, value }: { label: string; value: string }) {
+function Detail({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="border-b border-r border-border p-4">
       <div className="text-xs text-fg-dim">{label}</div>
-      <div className="mt-2 text-sm text-fg">{displayText(value)}</div>
+      <div className="mt-2 text-sm text-fg">
+        {typeof value === 'string' ? displayText(value) : value}
+      </div>
     </div>
   );
 }
@@ -1937,8 +1948,8 @@ function CardMeta({
   missing,
   danger = false,
 }: {
-  value: string;
-  missing: boolean;
+  value: ReactNode;
+  missing?: boolean;
   danger?: boolean;
 }) {
   return (
@@ -1949,7 +1960,7 @@ function CardMeta({
         danger && 'text-danger',
       )}
     >
-      {displayText(value)}
+      {typeof value === 'string' ? displayText(value) : value}
     </span>
   );
 }
@@ -1959,17 +1970,10 @@ function memberLabel(userId: string | null, members: TaskMemberOption[]): string
   return members.find((member) => member.id === userId)?.label ?? 'Assigned';
 }
 
-function dateInputValue(value: Date): string {
-  return new Date(value).toISOString().slice(0, 10);
+function dateInputValue(value: Date, timezone: string): string {
+  return presentDueDate(value, { timezone }).dateKey ?? '';
 }
 
 function dateLabel(value: Date): string {
   return new Date(value).toISOString().slice(0, 10);
-}
-
-function dueState(value: Date | null): { label: string; tone: 'danger' | 'neutral' } {
-  if (!value) return { label: 'No due', tone: 'neutral' };
-  const due = new Date(value);
-  if (due.getTime() < Date.now()) return { label: `Overdue ${dateLabel(due)}`, tone: 'danger' };
-  return { label: `Due ${dateLabel(due)}`, tone: 'neutral' };
 }

@@ -1,5 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
-import { type Db, entities, notifications } from '@timeline/db';
+import { type Db, entities, notifications, teamCalendarSettings } from '@timeline/db';
+import { workspaceDueDateBoundaries } from '@timeline/shared/time';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -69,6 +70,14 @@ async function insertObject(input: {
   });
 }
 
+async function setTimezone(teamId: string, timezone: string): Promise<void> {
+  await db.insert(teamCalendarSettings).values({ teamId, defaultTimezone: timezone });
+}
+
+function canonicalDate(dateKey: string, hour = 0): Date {
+  return new Date(`${dateKey}T${String(hour).padStart(2, '0')}:00:00.000Z`);
+}
+
 beforeEach(async () => {
   pg = new PGlite();
   await applyDbMigrations(pg);
@@ -131,13 +140,25 @@ describe('processOverdueScanTick', () => {
     await insertObject({
       id: '00000000-0000-0000-0000-000000000201',
       name: 'Done task',
-      status: 'done',
+      status: 'Done',
       ownerUserId: OWNER_A,
     });
     await insertObject({
       id: '00000000-0000-0000-0000-000000000202',
       name: 'Cancelled task',
       status: 'cancelled',
+      ownerUserId: OWNER_A,
+    });
+    await insertObject({
+      id: '00000000-0000-0000-0000-000000000208',
+      name: 'American canceled task',
+      status: 'canceled',
+      ownerUserId: OWNER_A,
+    });
+    await insertObject({
+      id: '00000000-0000-0000-0000-000000000209',
+      name: 'Shipped task',
+      status: 'shipped',
       ownerUserId: OWNER_A,
     });
     await insertObject({
@@ -209,5 +230,103 @@ describe('processOverdueScanTick', () => {
         kind: 'follow_up_overdue',
       }),
     ]);
+  });
+
+  it('does not notify during the workspace-local due day', async () => {
+    await setTimezone(TEAM_A, 'America/Los_Angeles');
+    const { today } = workspaceDueDateBoundaries('America/Los_Angeles');
+    await insertObject({
+      id: '00000000-0000-0000-0000-000000000401',
+      name: 'Due today locally',
+      ownerUserId: OWNER_A,
+      dueAt: canonicalDate(today),
+    });
+
+    await expect(processOverdueScanTick({ db }, 'local-due-day')).resolves.toEqual({
+      scanned: 0,
+      inserted: 0,
+    });
+  });
+
+  it('notifies after local midnight for canonical and legacy timestamp dates', async () => {
+    await setTimezone(TEAM_A, 'UTC');
+    const { today } = workspaceDueDateBoundaries('UTC');
+    const yesterday = new Date(`${today}T12:00:00.000Z`);
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    const dateKey = yesterday.toISOString().slice(0, 10);
+    await insertObject({
+      id: '00000000-0000-0000-0000-000000000402',
+      name: 'Canonical overdue',
+      ownerUserId: OWNER_A,
+      dueAt: canonicalDate(dateKey),
+    });
+    await insertObject({
+      id: '00000000-0000-0000-0000-000000000403',
+      name: 'Legacy overdue',
+      ownerUserId: MEMBER_A,
+      dueAt: canonicalDate(dateKey, 12),
+    });
+
+    await expect(processOverdueScanTick({ db }, 'after-midnight')).resolves.toEqual({
+      scanned: 2,
+      inserted: 2,
+    });
+    const rows = await db.select().from(notifications).orderBy(notifications.entityId);
+    expect(rows.map((row) => row.summary)).toEqual([
+      `Canonical overdue is overdue (Overdue · ${new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeZone: 'UTC' }).format(canonicalDate(dateKey, 12))})`,
+      `Legacy overdue is overdue (Overdue · ${new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeZone: 'UTC' }).format(canonicalDate(dateKey, 12))})`,
+    ]);
+  });
+
+  it('evaluates each team against its own workspace date in one scan', async () => {
+    await setTimezone(TEAM_A, 'Pacific/Kiritimati');
+    await setTimezone(TEAM_B, 'America/Adak');
+    const teamAToday = workspaceDueDateBoundaries('Pacific/Kiritimati').today;
+    const teamBToday = workspaceDueDateBoundaries('America/Adak').today;
+    const teamAYesterday = new Date(`${teamAToday}T12:00:00.000Z`);
+    teamAYesterday.setUTCDate(teamAYesterday.getUTCDate() - 1);
+    await insertObject({
+      id: '00000000-0000-0000-0000-000000000404',
+      name: 'Team A overdue',
+      ownerUserId: OWNER_A,
+      dueAt: canonicalDate(teamAYesterday.toISOString().slice(0, 10)),
+    });
+    await insertObject({
+      id: '00000000-0000-0000-0000-000000000405',
+      teamId: TEAM_B,
+      name: 'Team B due today',
+      ownerUserId: OWNER_B,
+      dueAt: canonicalDate(teamBToday),
+    });
+
+    await expect(processOverdueScanTick({ db }, 'independent-timezones')).resolves.toEqual({
+      scanned: 1,
+      inserted: 1,
+    });
+    const rows = await db.select().from(notifications);
+    expect(rows).toEqual([expect.objectContaining({ teamId: TEAM_A, userId: OWNER_A })]);
+  });
+
+  it('falls back safely for legacy invalid timezones without aborting other teams', async () => {
+    await setTimezone(TEAM_A, 'Not/A_Timezone');
+    await setTimezone(TEAM_B, 'UTC');
+    await insertObject({
+      id: '00000000-0000-0000-0000-000000000406',
+      name: 'Invalid timezone team task',
+      ownerUserId: OWNER_A,
+    });
+    await insertObject({
+      id: '00000000-0000-0000-0000-000000000407',
+      teamId: TEAM_B,
+      name: 'Valid timezone team task',
+      ownerUserId: OWNER_B,
+    });
+
+    await expect(processOverdueScanTick({ db }, 'invalid-timezone')).resolves.toEqual({
+      scanned: 2,
+      inserted: 2,
+    });
+    const rows = await db.select().from(notifications).orderBy(notifications.teamId);
+    expect(rows.map((row) => row.teamId)).toEqual([TEAM_A, TEAM_B]);
   });
 });

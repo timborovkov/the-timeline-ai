@@ -4,7 +4,9 @@ import {
   dateOnlyEventRange,
   localDateFromInstant,
   localDateSpanToUtcRange,
+  presentDueDate,
   resolveTimePhrase,
+  workspaceDueDateBoundaries,
   workspaceTimeContext,
 } from '#src/time/index.js';
 
@@ -65,5 +67,87 @@ describe('local date spans', () => {
     expect(range.allDay).toBe(true);
     expect(range.startAt.toISOString()).toBe('2026-06-02T00:00:00.000Z');
     expect(range.endAt.toISOString()).toBe('2026-06-03T00:00:00.000Z');
+  });
+});
+
+describe('presentDueDate', () => {
+  const now = new Date('2026-07-20T10:00:00.000Z');
+
+  it('covers missing, overdue, today, due-soon, and scheduled states', () => {
+    const options = { timezone: 'Europe/Madrid', now, locale: 'en' };
+    expect(presentDueDate(null, options)).toMatchObject({
+      status: 'missing',
+      compactText: 'No due date',
+      tone: 'muted',
+    });
+    expect(presentDueDate('2026-07-19', options)).toMatchObject({
+      status: 'overdue',
+      compactText: 'Overdue Jul 19, 2026',
+      tone: 'danger',
+    });
+    expect(presentDueDate('2026-07-20', options)).toMatchObject({
+      status: 'today',
+      compactText: 'Due today Jul 20, 2026',
+      tone: 'signal',
+    });
+    expect(presentDueDate('2026-08-03', options)).toMatchObject({ status: 'due_soon' });
+    expect(presentDueDate('2026-08-04', options)).toMatchObject({ status: 'scheduled' });
+  });
+
+  it('preserves canonical midnight UTC calendar dates across timezones', () => {
+    for (const timezone of ['America/Los_Angeles', 'Asia/Tokyo']) {
+      expect(
+        presentDueDate('2026-07-20T00:00:00.000Z', { timezone, now, locale: 'en' }),
+      ).toMatchObject({ dateKey: '2026-07-20', dateLabel: 'Jul 20, 2026' });
+    }
+  });
+
+  it('converts non-midnight instants into the workspace calendar date', () => {
+    expect(
+      presentDueDate('2026-07-20T22:30:00.000Z', {
+        timezone: 'Europe/Madrid',
+        now,
+        locale: 'en',
+      }),
+    ).toMatchObject({ dateKey: '2026-07-21', dateLabel: 'Jul 21, 2026' });
+  });
+
+  it('changes from today to overdue at workspace-local midnight across DST', () => {
+    const value = '2026-03-29T00:00:00.000Z';
+    expect(
+      presentDueDate(value, {
+        timezone: 'Europe/Madrid',
+        now: new Date('2026-03-29T21:59:59.000Z'),
+      }).status,
+    ).toBe('today');
+    expect(
+      presentDueDate(value, {
+        timezone: 'Europe/Madrid',
+        now: new Date('2026-03-29T22:00:00.000Z'),
+      }).status,
+    ).toBe('overdue');
+  });
+
+  it('falls back to UTC for invalid timezones and preserves invalid values', () => {
+    expect(
+      presentDueDate('2026-07-20', { timezone: 'Not/A_Timezone', now, locale: 'en' }),
+    ).toMatchObject({ dateKey: '2026-07-20', status: 'today' });
+    expect(presentDueDate('not-a-date', { timezone: 'UTC', now })).toMatchObject({
+      status: 'invalid',
+      compactText: 'Due not-a-date',
+    });
+    expect(presentDueDate(new Date('invalid'), { timezone: 'UTC', now })).toMatchObject({
+      status: 'invalid',
+      compactText: 'Due Invalid Date',
+    });
+  });
+
+  it('derives stable workspace-local filter boundaries', () => {
+    expect(workspaceDueDateBoundaries('America/Los_Angeles', now)).toEqual({
+      today: '2026-07-20',
+      tomorrow: '2026-07-21',
+      next7: '2026-07-27',
+      dueSoonEnd: '2026-08-04',
+    });
   });
 });

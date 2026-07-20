@@ -1,4 +1,5 @@
 import { encodeCursor } from '@timeline/shared/pagination';
+import { workspaceDueDateBoundaries } from '@timeline/shared/time';
 
 import type * as objects from '@timeline/shared/objects';
 
@@ -47,7 +48,9 @@ export async function countTaskRows(
   objectScope: Pick<TaskObjectScope, 'countObjects'>,
   now = new Date(),
   filter: objects.ObjectCountFilter = {},
+  timezone = 'UTC',
 ): Promise<TaskCounts> {
+  const boundaries = workspaceDueDateBoundaries(timezone, now);
   const base = {
     ...filter,
     type: 'task' as const,
@@ -57,12 +60,12 @@ export async function countTaskRows(
     objectScope.countObjects(base),
     objectScope.countObjects({
       ...base,
-      statusNot: [...TASK_OPEN_STATUSES_EXCLUDED],
+      statusNotCaseInsensitive: [...TASK_OPEN_STATUSES_EXCLUDED],
     }),
     objectScope.countObjects({
       ...base,
-      dueBefore: now,
-      statusNot: [...TASK_OPEN_STATUSES_EXCLUDED],
+      dueDateRange: { timezone, to: boundaries.today },
+      statusNotCaseInsensitive: [...TASK_OPEN_STATUSES_EXCLUDED],
     }),
   ]);
   return { total, open, overdue };

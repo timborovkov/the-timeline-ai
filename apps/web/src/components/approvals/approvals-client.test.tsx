@@ -150,7 +150,7 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('create task');
     expect(html).toContain('Category · Sales');
     expect(html).toContain('Project · Acme renewal');
-    expect(html).toContain('Due Jul 19, 2026 · Status To do');
+    expect(html).toContain('Overdue · Jul 19, 2026 · Status To do');
     expect(html).not.toContain('Due Jul 18, 2026');
     expect(html).not.toContain(PARENT_ID);
     expect(html).toContain('Why this was suggested · 1 source');
@@ -286,7 +286,7 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('>Priority</dt>');
     expect(html).toContain('>Jane-Doe</dd>');
     expect(html).toContain('>Sam_Taylor</dd>');
-    expect(html).toContain('>Jul 19, 2026</dd>');
+    expect(html).toContain('>Overdue · Jul 19, 2026</dd>');
   });
 
   it('shows the named audience for specific-user visibility changes', () => {
@@ -486,7 +486,7 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    expect(html).toContain('Due Jul 19, 2026');
+    expect(html).toContain('Overdue · Jul 19, 2026');
     expect(html).not.toContain('2026-07-19T00:00:00.000Z');
     expect(html).toContain('Responsible Reviewer');
     expect(html).not.toContain(responsibleUserId);
@@ -620,7 +620,7 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    expect(html).toContain('Due None · Stage None · Owner Unassigned');
+    expect(html).toContain('No due date · Stage None · Owner Unassigned');
   });
 
   it('keeps the rationale available when a bundle has no evidence rows', () => {

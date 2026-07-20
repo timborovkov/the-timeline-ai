@@ -43,8 +43,7 @@ describe('work filters', () => {
       status: ['todo', 'doing'],
       assigneeUserId: null,
       priorityNull: true,
-      dueAfter: new Date('2026-08-01T00:00:00.000Z'),
-      dueBefore: new Date('2026-08-06T00:00:00.000Z'),
+      dueDateRange: { timezone: 'UTC', from: '2026-08-01', to: '2026-08-06' },
       createdAfter: new Date('2026-07-01T00:00:00.000Z'),
       createdBefore: new Date('2026-08-01T00:00:00.000Z'),
       updatedAfter: new Date('2026-07-15T00:00:00.000Z'),
@@ -161,6 +160,35 @@ describe('work filters', () => {
       status: ['backlog', 'suggested', 'proposed', 'open', 'todo'],
       taskCategory: ['engineering'],
       primaryProjectId: [PROJECT_ID],
+    });
+  });
+
+  it('maps due presets to workspace-local calendar date ranges', () => {
+    const now = new Date('2026-07-20T01:00:00.000Z');
+    const context = { now, timezone: 'America/Los_Angeles' };
+
+    expect(objectListFilterFromWorkFilters(parseWorkFilters({ due: 'overdue' }), context)).toEqual({
+      dueDateRange: { timezone: 'America/Los_Angeles', to: '2026-07-19' },
+    });
+    expect(taskObjectFilterFromWorkFilters(parseWorkFilters({ due: 'overdue' }), context)).toEqual({
+      archived: false,
+      dueDateRange: { timezone: 'America/Los_Angeles', to: '2026-07-19' },
+      statusNotCaseInsensitive: ['done', 'cancelled', 'canceled', 'shipped'],
+      type: 'task',
+    });
+    expect(objectListFilterFromWorkFilters(parseWorkFilters({ due: 'today' }), context)).toEqual({
+      dueDateRange: {
+        timezone: 'America/Los_Angeles',
+        from: '2026-07-19',
+        to: '2026-07-20',
+      },
+    });
+    expect(objectListFilterFromWorkFilters(parseWorkFilters({ due: 'next7' }), context)).toEqual({
+      dueDateRange: {
+        timezone: 'America/Los_Angeles',
+        from: '2026-07-19',
+        to: '2026-07-26',
+      },
     });
   });
 });

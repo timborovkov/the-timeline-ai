@@ -266,6 +266,48 @@ describe('GlobalSearchPage', () => {
     expect(external.getAttribute('target')).toBe('_blank');
   });
 
+  it('renders due metadata for schedulable results without adding it to snippets', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          ok: true,
+          query: 'review',
+          mode: 'full',
+          warnings: [],
+          results: [
+            {
+              id: 'task:1',
+              kind: 'task',
+              title: 'Review launch',
+              snippet: 'todo · launch',
+              href: '/app/objects/1',
+              score: 2,
+              scoreParts: { lexical: 1 },
+              metadata: { type: 'task', status: 'todo', dueAt: null },
+            },
+            {
+              id: 'object:2',
+              kind: 'object',
+              title: 'Ada',
+              snippet: 'person · active',
+              href: '/app/objects/2',
+              score: 1,
+              scoreParts: { lexical: 1 },
+              metadata: { type: 'person', status: 'active', dueAt: null },
+            },
+          ],
+        }),
+      ),
+    );
+
+    render(<GlobalSearchPage initialQuery="review" />);
+
+    expect(await screen.findByText('No due date')).toBeTruthy();
+    expect(screen.getByText('todo · launch')).toBeTruthy();
+    expect(screen.getAllByText('No due date')).toHaveLength(1);
+  });
+
   it('renders API errors as user-visible empty states', async () => {
     vi.stubGlobal(
       'fetch',

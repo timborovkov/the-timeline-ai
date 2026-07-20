@@ -213,10 +213,12 @@ export async function loadTaskRowsAction(input: unknown): Promise<{
         error: 'Too many task loads. Try again shortly.',
       };
     }
+    const settings = await r.scope.calendar.getCalendarSettings();
     const filters = taskObjectFilterFromWorkFilters(
       parseWorkFilters(parsed.data.filters ?? {}, {
         taskCategoriesEnabled: getEnv().TASK_CATEGORY_UI_ENABLED,
       }),
+      { timezone: settings.defaultTimezone },
     );
     const page = await loadTaskRowsPage(r.scope.objects, parsed.data.cursor ?? null, filters);
     const pinState = await r.scope.pins.isPinnedMany(
@@ -530,6 +532,8 @@ export async function loadTaskCategoryFilterStateAction(input: unknown): Promise
     if (!r.ok) return { error: r.error };
     try {
       const filters = parseWorkFilters(parsed.data.filters, { taskCategoriesEnabled: true });
+      const settings = await r.scope.calendar.getCalendarSettings();
+      const filterTime = { timezone: settings.defaultTimezone };
       const categoryKeys = taskCategoryFilterKeys(filters);
       if (categoryKeys.length === 0) {
         return { state: { token: '', changed: false, pending: false } };
@@ -539,15 +543,15 @@ export async function loadTaskCategoryFilterStateAction(input: unknown): Promise
         parsed.data.surface === 'board'
           ? await r.scope.boards.getTaskCategoryFilterRefreshState(
               parsed.data.boardId ?? '',
-              boardItemFilterFromWorkFilters(withoutCategory),
+              boardItemFilterFromWorkFilters(withoutCategory, filterTime),
               categoryKeys,
               parsed.data.baselineToken,
             )
           : await r.scope.objects.getTaskCategoryFilterRefreshState(
               parsed.data.surface === 'tasks'
-                ? taskObjectFilterFromWorkFilters(withoutCategory)
+                ? taskObjectFilterFromWorkFilters(withoutCategory, filterTime)
                 : {
-                    ...objectListFilterFromWorkFilters(withoutCategory),
+                    ...objectListFilterFromWorkFilters(withoutCategory, filterTime),
                     type: 'task',
                     archived: false,
                   },

@@ -121,15 +121,61 @@ describe('WorkPage', () => {
     const navWorkAttention = await getNavWorkAttention({
       objects: { countObjects: fakes.countObjects },
       suggestions: { getApprovalItemCounts: fakes.getApprovalItemCounts },
+      calendar: { getCalendarSettings: fakes.getCalendarSettings },
     } as never);
 
     expect(html).toContain('Work queue');
     expect(html).toContain('3 pending approvals');
     expect(html).toContain('Pending approval');
     expect(html).toContain('/app/approvals?status=pending');
-    expect(html).toContain('>Attention</dt>');
-    expect(html).toContain('>5</dd>');
+    expect(html).toContain('>Overdue</dt>');
+    expect(html).toContain('aria-label="2 overdue tasks"');
+    expect(html).toContain('/app/tasks?due=overdue');
+    expect(html).toContain('>Approvals</dt>');
+    expect(html).toContain('aria-label="3 pending approvals"');
     expect(navWorkAttention).toBe(5);
+  });
+
+  it('surfaces visible overdue tasks assigned to another teammate with a prominent due date', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-20T12:00:00.000Z'));
+    fakes.countObjects.mockResolvedValue(1);
+    fakes.listObjects.mockImplementation((filter: Record<string, unknown>) => {
+      if (
+        filter.type === 'task' &&
+        filter.ownerUserId === undefined &&
+        filter.assigneeUserId === undefined &&
+        filter.order === 'due'
+      ) {
+        return [
+          objectRow({
+            id: 'team-overdue-task',
+            canonicalName: 'Team overdue task',
+            assigneeUserId: 'user-2',
+            dueAt: new Date('2026-07-19T12:00:00.000Z'),
+          }),
+        ];
+      }
+      return [];
+    });
+
+    const html = renderToStaticMarkup(await WorkPage());
+
+    expect(html).toContain('Team overdue task');
+    expect(html).toContain('>Overdue</span>');
+    expect(html).toContain('Jul 19, 2026');
+  });
+
+  it('makes missing due dates explicit for work queue items', async () => {
+    fakes.listObjects.mockImplementation((filter: Record<string, unknown>) =>
+      filter.ownerUserId === USER_ID && filter.dueBefore === undefined
+        ? [objectRow({ id: 'unscheduled-task', ownerUserId: USER_ID })]
+        : [],
+    );
+
+    const html = renderToStaticMarkup(await WorkPage());
+
+    expect(html).toContain('No due date');
   });
 
   it('renders responsible board items and unowned team due board items', async () => {
@@ -221,14 +267,17 @@ describe('WorkPage', () => {
 
   it('includes unassigned objects due exactly at the due-soon boundary', async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-06-15T00:00:00.000Z'));
+    vi.setSystemTime(new Date('2026-06-15T12:00:00.000Z'));
     const dueSoonBoundary = new Date('2026-06-29T00:00:00.000Z');
 
     fakes.listObjects.mockImplementation((filter: Record<string, unknown>) => {
       if (filter.ownerUserId !== null || filter.assigneeUserId !== null || filter.order !== 'due') {
         return [];
       }
-      expect(filter.dueBefore).toEqual(new Date(dueSoonBoundary.getTime() + 1));
+      expect(filter.dueDateRange).toEqual({
+        timezone: 'America/Los_Angeles',
+        to: '2026-06-30',
+      });
       return [
         objectRow({
           id: 'boundary-due-deal',
@@ -283,7 +332,7 @@ describe('WorkPage', () => {
 
     expect(html).toContain('Stale overdue owned task');
     expect(html).not.toContain('Recent task 100');
-    expect(fakes.listObjects).toHaveBeenCalledTimes(7);
+    expect(fakes.listObjects).toHaveBeenCalledTimes(8);
     expect(fakes.listObjects).not.toHaveBeenCalledWith(expect.objectContaining({ offset: 5_000 }));
   });
 

@@ -197,7 +197,7 @@ describe('TaskBoard', () => {
 
     expect(link.getAttribute('href')).toBe('/app/tasks?task=task-1');
     expect(screen.getByText('Ada Lovelace')).toBeTruthy();
-    expect(screen.getByText('Due 2099-07-04')).toBeTruthy();
+    expect(screen.getByText('Due Jul 4, 2099')).toBeTruthy();
     expect(screen.getByText('P2')).toBeTruthy();
   });
 

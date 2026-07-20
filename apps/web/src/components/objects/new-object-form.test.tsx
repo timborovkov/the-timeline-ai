@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 /** Business intent: task creation can find any active project, not only the server preload. */
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -60,5 +60,17 @@ describe('NewObjectForm', () => {
     expect(screen.getByRole('button', { name: /^Task project:/ }).textContent).toContain(
       'Legacy client migration',
     );
+  });
+
+  it('shows due status only for schedulable object types', () => {
+    render(<NewObjectForm />);
+
+    expect(screen.getByText('No due date')).toBeTruthy();
+    expect(screen.getByLabelText('Due date')).toBeTruthy();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Object type' }), {
+      target: { value: 'person' },
+    });
+    expect(screen.queryByText('No due date')).toBeNull();
+    expect(screen.queryByLabelText('Due date')).toBeNull();
   });
 });

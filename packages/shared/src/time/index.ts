@@ -1,5 +1,41 @@
 import { Temporal } from '@js-temporal/polyfill';
 
+const LOCAL_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const UTC_MIDNIGHT_PATTERN = /^\d{4}-\d{2}-\d{2}T00:00:00(?:\.0+)?Z$/;
+
+export const DEFAULT_DUE_SOON_DAYS = 14;
+
+export type DueDateStatus = 'missing' | 'overdue' | 'today' | 'due_soon' | 'scheduled' | 'invalid';
+
+export interface DueDatePresentation {
+  status: DueDateStatus;
+  dateKey: string | null;
+  dateLabel: string | null;
+  label: string;
+  compactText: string;
+  tone: 'danger' | 'signal' | 'neutral' | 'muted';
+}
+
+export interface PresentDueDateOptions {
+  timezone: string;
+  now?: Date;
+  locale?: string;
+  dueSoonDays?: number;
+}
+
+export interface DueDateRangeFilter {
+  timezone: string;
+  from?: string;
+  to?: string;
+}
+
+export interface WorkspaceDueDateBoundaries {
+  today: string;
+  tomorrow: string;
+  next7: string;
+  dueSoonEnd: string;
+}
+
 const WEEKDAYS: Record<string, number> = {
   monday: 1,
   mon: 1,
@@ -76,6 +112,118 @@ export function workspaceTimeContext(
     today: date.toString(),
     isoWeek: date.weekOfYear ?? 1,
     isoWeekYear: isoWeekYear(date),
+  };
+}
+
+function validPlainDate(value: string): Temporal.PlainDate | null {
+  try {
+    const date = Temporal.PlainDate.from(value);
+    return date.toString() === value ? date : null;
+  } catch {
+    return null;
+  }
+}
+
+function dueDateKey(value: Date | string, timezone: string): string | null {
+  let source: string;
+  try {
+    source = value instanceof Date ? value.toISOString() : value.trim();
+  } catch {
+    return null;
+  }
+  if (LOCAL_DATE_PATTERN.test(source)) return validPlainDate(source)?.toString() ?? null;
+  if (UTC_MIDNIGHT_PATTERN.test(source)) {
+    const date = source.slice(0, 10);
+    return validPlainDate(date)?.toString() ?? null;
+  }
+  try {
+    return localDateFromInstant(new Date(source).toISOString(), timezone);
+  } catch {
+    return null;
+  }
+}
+
+function localizedDueDate(dateKey: string, locale?: string): string {
+  const value = new Date(`${dateKey}T12:00:00.000Z`);
+  return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeZone: 'UTC' }).format(value);
+}
+
+export function presentDueDate(
+  value: Date | string | null | undefined,
+  options: PresentDueDateOptions,
+): DueDatePresentation {
+  if (value === null || value === undefined || value === '') {
+    return {
+      status: 'missing',
+      dateKey: null,
+      dateLabel: null,
+      label: 'No due date',
+      compactText: 'No due date',
+      tone: 'muted',
+    };
+  }
+
+  const timezone = assertValidTimezone(options.timezone);
+  const dateKey = dueDateKey(value, timezone);
+  if (!dateKey) {
+    const raw = value instanceof Date ? value.toString() : value;
+    return {
+      status: 'invalid',
+      dateKey: null,
+      dateLabel: raw,
+      label: 'Due',
+      compactText: `Due ${raw}`,
+      tone: 'neutral',
+    };
+  }
+
+  const dueDate = Temporal.PlainDate.from(dateKey);
+  const today = zonedDateTimeFromDate(options.now ?? new Date(), timezone).toPlainDate();
+  const dueSoonDays = Math.max(0, options.dueSoonDays ?? DEFAULT_DUE_SOON_DAYS);
+  const comparison = Temporal.PlainDate.compare(dueDate, today);
+  const status: DueDateStatus =
+    comparison < 0
+      ? 'overdue'
+      : comparison === 0
+        ? 'today'
+        : Temporal.PlainDate.compare(dueDate, today.add({ days: dueSoonDays })) <= 0
+          ? 'due_soon'
+          : 'scheduled';
+  const label =
+    status === 'overdue'
+      ? 'Overdue'
+      : status === 'today'
+        ? 'Due today'
+        : status === 'due_soon'
+          ? 'Due soon'
+          : 'Due';
+  const tone =
+    status === 'overdue'
+      ? 'danger'
+      : status === 'today' || status === 'due_soon'
+        ? 'signal'
+        : 'neutral';
+  const dateLabel = localizedDueDate(dateKey, options.locale);
+  return {
+    status,
+    dateKey,
+    dateLabel,
+    label,
+    compactText: `${label} ${dateLabel}`,
+    tone,
+  };
+}
+
+export function workspaceDueDateBoundaries(
+  timezone: string,
+  now: Date = new Date(),
+): WorkspaceDueDateBoundaries {
+  const today = zonedDateTimeFromDate(now, assertValidTimezone(timezone)).toPlainDate();
+  return {
+    today: today.toString(),
+    tomorrow: today.add({ days: 1 }).toString(),
+    next7: today.add({ days: 7 }).toString(),
+    dueSoonEnd: today.add({ days: DEFAULT_DUE_SOON_DAYS + 1 }).toString(),
   };
 }
 
