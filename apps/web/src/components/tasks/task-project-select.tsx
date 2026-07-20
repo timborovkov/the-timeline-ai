@@ -1,10 +1,10 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useMemo, useState, useTransition } from 'react';
+import { useState, useTransition } from 'react';
 
 import { setTaskProjectAction } from '@/app/actions/objects';
-import { useProjectSearch } from '@/hooks/use-project-search';
+import { ProjectPicker } from '@/components/tasks/project-picker';
 import { errorMessage } from '@/lib/utils';
 
 export function TaskProjectSelect({
@@ -29,44 +29,16 @@ export function TaskProjectSelect({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const { query, setQuery, projects: remoteProjects } = useProjectSearch();
-  const visibleProjects = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    const candidates = normalized
-      ? [
-          ...projects.filter(
-            (project) =>
-              project.id === projectId || project.label.toLowerCase().includes(normalized),
-          ),
-          ...remoteProjects,
-        ]
-      : projects;
-    return [...new Map(candidates.map((project) => [project.id, project])).values()];
-  }, [projectId, projects, query, remoteProjects]);
   return (
-    <div className="space-y-2">
-      <input
-        type="search"
-        value={query}
-        onChange={(event) => {
-          setQuery(event.currentTarget.value);
-        }}
-        placeholder="Search projects…"
-        aria-label="Search task projects"
-        className="h-8 w-full rounded-sm border border-border bg-bg px-2 text-xs text-fg"
-      />
-      <select
-        aria-label="Task project"
-        value={projectId ?? ''}
+    <div>
+      <ProjectPicker
+        value={projectId}
+        selectedLabel={currentProjectLabel}
+        selectedArchived={projectArchived}
+        projects={projects}
         disabled={pending}
-        onChange={(event) => {
-          const nextProjectId = event.currentTarget.value || null;
-          const nextProject = nextProjectId
-            ? (visibleProjects.find((project) => project.id === nextProjectId) ?? {
-                id: nextProjectId,
-                label: nextProjectId,
-              })
-            : null;
+        onValueChange={(nextProject) => {
+          const nextProjectId = nextProject?.id ?? null;
           setError(null);
           onProjectChange?.(nextProject);
           startTransition(async () => {
@@ -85,22 +57,8 @@ export function TaskProjectSelect({
             }
           });
         }}
-        className="h-9 w-full rounded-sm border border-border bg-bg px-2 text-sm text-fg disabled:cursor-progress disabled:opacity-60"
-      >
-        <option value="">No project</option>
-        {projectId && !projects.some((project) => project.id === projectId) ? (
-          <option value={projectId}>
-            {currentProjectLabel ?? projectId}
-            {projectArchived ? ' · Archived' : ''}
-          </option>
-        ) : null}
-        {visibleProjects.map((project) => (
-          <option key={project.id} value={project.id}>
-            {project.label}
-          </option>
-        ))}
-      </select>
-      {error ? <p className="text-xs text-danger">{error}</p> : null}
+      />
+      {error ? <p className="mt-2 text-xs text-danger">{error}</p> : null}
     </div>
   );
 }

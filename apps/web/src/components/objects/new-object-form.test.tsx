@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 
 /** Business intent: task creation can find any active project, not only the server preload. */
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fakes = vi.hoisted(() => ({
@@ -35,19 +36,20 @@ afterEach(() => {
 });
 
 describe('NewObjectForm', () => {
-  it('includes remotely searched projects outside the preload', () => {
+  it('includes remotely searched projects outside the preload', async () => {
     render(<NewObjectForm projects={[{ id: 'project-preloaded', label: 'Recent project' }]} />);
 
+    await userEvent.click(screen.getByRole('button', { name: /^Task project:/ }));
     expect(screen.getByRole('searchbox', { name: 'Search task projects' })).toBeTruthy();
-    expect(screen.getByRole('option', { name: 'Legacy client migration' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Legacy client migration' })).toBeTruthy();
   });
 
-  it('keeps a remotely selected project visible after search is cleared', () => {
+  it('keeps a remotely selected project visible after search is cleared', async () => {
     const view = render(
       <NewObjectForm projects={[{ id: 'project-preloaded', label: 'Recent project' }]} />,
     );
-    const selector = screen.getByRole('combobox', { name: 'Task project' });
-    fireEvent.change(selector, { target: { value: 'project-remote' } });
+    await userEvent.click(screen.getByRole('button', { name: /^Task project:/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Legacy client migration' }));
 
     fakes.query = '';
     fakes.projects = [];
@@ -55,7 +57,8 @@ describe('NewObjectForm', () => {
       <NewObjectForm projects={[{ id: 'project-preloaded', label: 'Recent project' }]} />,
     );
 
-    expect((selector as HTMLSelectElement).value).toBe('project-remote');
-    expect(screen.getByRole('option', { name: 'Legacy client migration' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Task project:/ }).textContent).toContain(
+      'Legacy client migration',
+    );
   });
 });

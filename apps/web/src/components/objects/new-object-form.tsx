@@ -1,10 +1,10 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useMemo, useReducer, useTransition } from 'react';
+import { useReducer, useTransition } from 'react';
 
 import { createObjectAction } from '@/app/actions/objects';
-import { useProjectSearch } from '@/hooks/use-project-search';
+import { ProjectPicker } from '@/components/tasks/project-picker';
 import { OBJECT_TYPES as TYPES } from '@/lib/object-types';
 
 const EMPTY_PROJECTS: { id: string; label: string }[] = [];
@@ -41,27 +41,6 @@ export function NewObjectForm({
     },
   );
   const { error, type, name, dueAt, projectId, projectLabel } = form;
-  const {
-    query: projectQuery,
-    setQuery: setProjectQuery,
-    projects: remoteProjects,
-  } = useProjectSearch();
-  const visibleProjects = useMemo(() => {
-    const normalized = projectQuery.trim().toLowerCase();
-    const matches = normalized
-      ? [
-          ...projects.filter(
-            (project) =>
-              project.id === projectId || project.label.toLowerCase().includes(normalized),
-          ),
-          ...remoteProjects,
-        ]
-      : projects;
-    const candidates =
-      projectId && projectLabel ? [...matches, { id: projectId, label: projectLabel }] : matches;
-    return [...new Map(candidates.map((project) => [project.id, project])).values()];
-  }, [projectId, projectLabel, projectQuery, projects, remoteProjects]);
-
   function submit(): void {
     if (!name.trim()) {
       updateForm({ error: 'Name required' });
@@ -104,40 +83,21 @@ export function NewObjectForm({
         </select>
       </label>
       {type === 'task' ? (
-        <div className="space-y-2">
+        <div>
           <span className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
             Project (optional)
           </span>
-          <input
-            type="search"
-            value={projectQuery}
-            onChange={(event) => {
-              setProjectQuery(event.currentTarget.value);
-            }}
-            placeholder="Search projects…"
-            aria-label="Search task projects"
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-          />
-          <select
-            aria-label="Task project"
-            value={projectId}
-            onChange={(event) => {
-              const nextProjectId = event.currentTarget.value;
+          <ProjectPicker
+            value={projectId || null}
+            selectedLabel={projectLabel}
+            projects={projects}
+            onValueChange={(project) => {
               updateForm({
-                projectId: nextProjectId,
-                projectLabel:
-                  visibleProjects.find((project) => project.id === nextProjectId)?.label ?? '',
+                projectId: project?.id ?? '',
+                projectLabel: project?.label ?? '',
               });
             }}
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-          >
-            <option value="">No project</option>
-            {visibleProjects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.label}
-              </option>
-            ))}
-          </select>
+          />
         </div>
       ) : null}
       <label className="block">

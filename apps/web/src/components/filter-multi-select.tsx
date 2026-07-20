@@ -1,7 +1,9 @@
 'use client';
 
-import { ChevronDown } from 'lucide-react';
+import { Check, ChevronDown, Search } from 'lucide-react';
 import { useMemo, useReducer, useRef } from 'react';
+
+import type { KeyboardEvent, ReactNode } from 'react';
 
 import {
   DropdownMenu,
@@ -11,6 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { selectedValues } from '@/lib/filter-values';
 import { cn } from '@/lib/utils';
 
@@ -31,6 +34,12 @@ interface FilterMultiSelectProps {
   className?: string;
   triggerClassName?: string;
   onValueChange?: (value: string) => void;
+  search?: {
+    value: string;
+    onValueChange: (value: string) => void;
+    placeholder: string;
+    ariaLabel: string;
+  };
 }
 
 export function FilterMultiSelect({
@@ -43,6 +52,7 @@ export function FilterMultiSelect({
   className,
   triggerClassName,
   onValueChange,
+  search,
 }: FilterMultiSelectProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const selectedSource = value ?? defaultValue;
@@ -81,53 +91,211 @@ export function FilterMultiSelect({
     inputRef.current?.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
+  const trigger = (
+    <button
+      type="button"
+      aria-label={label}
+      className={cn(
+        'flex h-9 w-full items-center justify-between gap-2 rounded-sm border border-border bg-surface px-2 text-left text-xs text-fg outline-none transition-colors hover:border-border-strong focus-visible:border-signal/60 focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
+        selectedList.length === 0 && 'text-fg-muted',
+        triggerClassName,
+      )}
+    >
+      <span className="truncate">{buttonText}</span>
+      <ChevronDown className="size-3.5 shrink-0 text-fg-dim" aria-hidden />
+    </button>
+  );
+
   return (
     <label className={cn('min-w-36', className)}>
       <span className="mb-1 block text-xs font-medium text-fg-muted">{label}</span>
       {name ? <input ref={inputRef} type="hidden" name={name} value={selected} /> : null}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            aria-label={label}
-            className={cn(
-              'flex h-9 w-full items-center justify-between gap-2 rounded-sm border border-border bg-surface px-2 text-left text-xs text-fg outline-none transition-colors hover:border-border-strong focus-visible:border-signal/60 focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
-              selectedList.length === 0 && 'text-fg-muted',
-              triggerClassName,
-            )}
-          >
-            <span className="truncate">{buttonText}</span>
-            <ChevronDown className="size-3.5 shrink-0 text-fg-dim" aria-hidden />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="max-h-80 min-w-56 overflow-y-auto">
-          <DropdownMenuItem
-            onSelect={() => {
-              applySelected({ type: 'clear' });
-            }}
-            className="text-sm text-fg-muted"
-          >
-            {placeholder}
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          {normalizedOptions.map((option) => (
-            <DropdownMenuCheckboxItem
-              key={option.value}
-              checked={selectedSet.has(option.value)}
-              onCheckedChange={(checked) => {
-                applySelected({ type: 'checked', value: option.value, checked });
+      {search ? (
+        <SearchableMultiSelect
+          trigger={trigger}
+          label={label}
+          placeholder={placeholder}
+          options={normalizedOptions}
+          selected={selectedSet}
+          search={search}
+          onSelect={applySelected}
+        />
+      ) : (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="max-h-80 min-w-56 overflow-y-auto">
+            <DropdownMenuItem
+              onSelect={() => {
+                applySelected({ type: 'clear' });
               }}
-              onSelect={(event) => {
-                event.preventDefault();
-              }}
+              className="text-sm text-fg-muted"
             >
-              <span className="truncate">{option.label}</span>
-            </DropdownMenuCheckboxItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
+              {placeholder}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            {normalizedOptions.map((option) => (
+              <DropdownMenuCheckboxItem
+                key={option.value}
+                checked={selectedSet.has(option.value)}
+                onCheckedChange={(checked) => {
+                  applySelected({ type: 'checked', value: option.value, checked });
+                }}
+                onSelect={(event) => {
+                  event.preventDefault();
+                }}
+              >
+                <span className="truncate">{option.label}</span>
+              </DropdownMenuCheckboxItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </label>
   );
+}
+
+function SearchableMultiSelect({
+  trigger,
+  label,
+  placeholder,
+  options,
+  selected,
+  search,
+  onSelect,
+}: {
+  trigger: ReactNode;
+  label: string;
+  placeholder: string;
+  options: readonly FilterMultiSelectOption[];
+  selected: ReadonlySet<string>;
+  search: NonNullable<FilterMultiSelectProps['search']>;
+  onSelect: (action: SelectedAction) => void;
+}) {
+  const searchRef = useRef<HTMLInputElement>(null);
+  const optionListRef = useRef<HTMLUListElement>(null);
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+      <PopoverContent
+        role="dialog"
+        aria-label={`${label} filter`}
+        className="min-w-56"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          searchRef.current?.focus();
+        }}
+      >
+        <div className="relative p-1">
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-fg-dim"
+            aria-hidden
+          />
+          <input
+            ref={searchRef}
+            type="search"
+            value={search.value}
+            onChange={(event) => {
+              event.stopPropagation();
+              search.onValueChange(event.currentTarget.value);
+            }}
+            onInput={(event) => {
+              event.stopPropagation();
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== 'ArrowDown') return;
+              event.preventDefault();
+              focusPickerOption(optionListRef.current, 'first');
+            }}
+            placeholder={search.placeholder}
+            aria-label={search.ariaLabel}
+            className="h-8 w-full rounded-sm border border-border bg-bg py-1 pl-8 pr-2 text-xs text-fg outline-none placeholder:text-fg-dim focus-visible:border-signal/60 focus-visible:ring-2 focus-visible:ring-signal/40"
+          />
+        </div>
+        <div className="-mx-1 my-1 h-px bg-muted" />
+        <ul
+          ref={optionListRef}
+          data-picker-list
+          aria-label={`${label} options`}
+          className="max-h-72 overflow-y-auto"
+        >
+          <li className="mb-1 border-b border-muted pb-1">
+            <button
+              type="button"
+              data-picker-option
+              aria-pressed={selected.size === 0}
+              onClick={() => {
+                onSelect({ type: 'clear' });
+              }}
+              onKeyDown={handlePickerOptionKeyDown}
+              className="flex w-full items-center rounded-sm px-2 py-1.5 text-left text-sm text-fg-muted outline-none transition-colors hover:bg-accent focus:bg-accent focus:text-accent-foreground"
+            >
+              {placeholder}
+            </button>
+          </li>
+          {options.map((option) => (
+            <li key={option.value}>
+              <button
+                type="button"
+                data-picker-option
+                aria-pressed={selected.has(option.value)}
+                onClick={() => {
+                  onSelect({
+                    type: 'checked',
+                    value: option.value,
+                    checked: !selected.has(option.value),
+                  });
+                }}
+                onKeyDown={handlePickerOptionKeyDown}
+                className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus:bg-accent focus:text-accent-foreground"
+              >
+                <Check
+                  className={cn(
+                    'size-4 shrink-0',
+                    selected.has(option.value) ? 'visible' : 'invisible',
+                  )}
+                  aria-hidden
+                />
+                <span className="truncate">{option.label}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function handlePickerOptionKeyDown(event: KeyboardEvent<HTMLButtonElement>): void {
+  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+  event.preventDefault();
+  const optionList = event.currentTarget.closest<HTMLElement>('[data-picker-list]');
+  if (!optionList) return;
+  if (event.key === 'Home') focusPickerOption(optionList, 'first');
+  else if (event.key === 'End') focusPickerOption(optionList, 'last');
+  else
+    focusPickerOption(
+      optionList,
+      event.key === 'ArrowDown' ? 'next' : 'previous',
+      event.currentTarget,
+    );
+}
+
+function focusPickerOption(
+  optionList: HTMLElement | null,
+  direction: 'first' | 'last' | 'next' | 'previous',
+  current?: HTMLElement,
+): void {
+  if (!optionList) return;
+  const options = Array.from(optionList.querySelectorAll<HTMLElement>('[data-picker-option]'));
+  if (options.length === 0) return;
+  if (direction === 'first') options[0]?.focus();
+  else if (direction === 'last') options.at(-1)?.focus();
+  else {
+    const index = current ? options.indexOf(current) : -1;
+    const offset = direction === 'next' ? 1 : -1;
+    options[(index + offset + options.length) % options.length]?.focus();
+  }
 }
 
 function selectedReducer(current: string, action: SelectedAction): string {
