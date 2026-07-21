@@ -3,7 +3,7 @@
 import { BookOpen, ExternalLink, Menu, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { RecipientInvite } from '@/components/team-switcher';
 import type { TeamMembership } from '@/lib/active-team';
@@ -30,8 +30,14 @@ export function MobileNav({ active, memberships, recipientInvites, badges = EMPT
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const [dialogElement, setDialogElement] = useState<HTMLDialogElement | null>(null);
   const openerRef = useRef<HTMLButtonElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+
+  const setDialogRef = useCallback((element: HTMLDialogElement | null) => {
+    dialogRef.current = element;
+    setDialogElement(element);
+  }, []);
 
   function closeNavigation() {
     const dialog = dialogRef.current;
@@ -102,7 +108,7 @@ export function MobileNav({ active, memberships, recipientInvites, badges = EMPT
 
       {open ? (
         <dialog
-          ref={dialogRef}
+          ref={setDialogRef}
           className="fixed inset-0 z-50 m-0 h-dvh max-h-none w-screen max-w-none overscroll-contain bg-transparent p-0 md:hidden"
           aria-label="Navigation"
           onCancel={(event) => {
@@ -194,6 +200,7 @@ export function MobileNav({ active, memberships, recipientInvites, badges = EMPT
                 active={active}
                 memberships={memberships}
                 recipientInvites={recipientInvites}
+                portalContainer={dialogElement}
               />
             </div>
           </aside>

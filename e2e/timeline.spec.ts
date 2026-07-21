@@ -918,6 +918,38 @@ test('seeded owner can sign in, switch teams, and sign out', async ({ page }) =>
   await expect(page).toHaveURL(/\/sign-in/);
 });
 
+test('mobile navigation keeps the team switcher visible, closable, and actionable', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signIn(page, e2eUsers.owner.email);
+  await page.goto('/app');
+
+  await page.getByRole('button', { name: 'Open navigation' }).click();
+  const navigationDialog = page.getByRole('dialog', { name: 'Navigation' });
+  await expect(navigationDialog).toBeVisible();
+
+  const teamSwitcher = page.getByRole('button', {
+    name: new RegExp(`Switch team.*${e2eTeam.name}`),
+  });
+  await teamSwitcher.click();
+  const teamsDialog = page.getByRole('dialog', { name: 'Teams' });
+  await expect(teamsDialog).toBeVisible();
+  await expect(
+    teamsDialog.getByRole('button', { name: new RegExp(e2eOtherTeam.name) }),
+  ).toBeVisible();
+
+  await teamsDialog.getByRole('button', { name: 'Close' }).click();
+  await expect(teamsDialog).toBeHidden();
+  await expect(navigationDialog).toBeVisible();
+
+  await teamSwitcher.click();
+  await expect(teamsDialog).toBeVisible();
+  await waitForPost(page, `/app/team/switch/${e2eOtherTeam.id}`, () =>
+    teamsDialog.getByRole('button', { name: new RegExp(e2eOtherTeam.name) }).click(),
+  );
+});
+
 test('task categories and primary project stay distinct and filter together', async ({
   browser,
 }) => {

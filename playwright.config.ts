@@ -74,5 +74,10 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
     },
+    {
+      name: 'webkit-mobile-team-switcher',
+      grep: /mobile navigation keeps the team switcher visible, closable, and actionable/,
+      use: { ...devices['iPhone 13'] },
+    },
   ],
 });
