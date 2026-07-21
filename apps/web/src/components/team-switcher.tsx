@@ -34,6 +34,11 @@ interface Props {
    * - `rail`: 36px square trigger for the 56px desktop rail.
    */
   variant?: 'full' | 'rail';
+  /**
+   * Keeps the modal in a native dialog's top-layer subtree when the trigger
+   * lives inside one (the mobile navigation sheet).
+   */
+  portalContainer?: HTMLElement | null;
 }
 
 const EMPTY_RECIPIENT_INVITES: RecipientInvite[] = [];
@@ -43,6 +48,7 @@ export function TeamSwitcher({
   memberships,
   recipientInvites = EMPTY_RECIPIENT_INVITES,
   variant = 'full',
+  portalContainer,
 }: Props) {
   const monogram = initials(active.teamName);
   const hasInvites = recipientInvites.length > 0;
@@ -78,7 +84,10 @@ export function TeamSwitcher({
           )}
         </button>
       </DialogTrigger>
-      <DialogContent className="max-h-[min(720px,calc(100vh-2rem))] overflow-y-auto border-border bg-bg p-0 sm:max-w-2xl">
+      <DialogContent
+        portalContainer={portalContainer}
+        className="max-h-[min(720px,calc(100vh-2rem))] overflow-y-auto border-border bg-bg p-0 sm:max-w-2xl"
+      >
         <div className="border-b border-border px-6 py-5">
           <DialogHeader>
             <DialogTitle className="text-xl tracking-tight">Teams</DialogTitle>
