@@ -73,8 +73,17 @@ const MEETING_ID = '44444444-4444-4444-8444-444444444407';
 const MEETING_CHUNK_ID = '44444444-4444-4444-8444-444444444408';
 const MCP_SERVER_ID = '55555555-5555-4555-8555-555555555555';
 const MCP_TOOL_NAME = 'mcp__55555555555545558555555555555555__get_customer_health';
+const LIVE_EVAL_CURRENT_DATE = new Date('2026-07-01T12:00:00.000Z');
+const MONDAY_INTEGRATION_ID = '66666666-6666-4666-8666-666666666666';
 
 type Db = ReturnType<typeof drizzle>;
+
+function askLiveAgent(
+  input: Parameters<typeof askAgent>[0],
+  deps: Parameters<typeof askAgent>[1] = {},
+) {
+  return askAgent(input, { currentDate: LIVE_EVAL_CURRENT_DATE, ...deps });
+}
 
 async function seed(pg: PGlite): Promise<void> {
   await pg.exec(`
@@ -86,6 +95,16 @@ async function seed(pg: PGlite): Promise<void> {
 
     INSERT INTO team_members (team_id, user_id, role)
     VALUES ('${TEAM_ID}', '${USER_ID}', 'owner');
+
+    INSERT INTO integrations
+      (id, team_id, connected_by_user_id, provider, display_name, external_account_id, enabled)
+    VALUES
+      ('${MONDAY_INTEGRATION_ID}', '${TEAM_ID}', '${USER_ID}', 'monday', 'Monday live eval', 'monday-live-eval', true);
+
+    INSERT INTO integration_selections
+      (integration_id, selection_kind, external_id, external_label)
+    VALUES
+      ('${MONDAY_INTEGRATION_ID}', 'monday.board', 'board-1', 'Acme rollout');
 
     INSERT INTO raw_events
       (id, team_id, author_user_id, visibility_owner_user_id, source, content_text, occurred_at, visibility, visibility_user_ids, source_metadata)
@@ -349,7 +368,7 @@ maybeDescribe('live agent chat evals', () => {
 
   it('answers from durable task and calendar tools through the real model', async () => {
     const toolErrors: string[] = [];
-    const result = await askAgent(
+    const result = await askLiveAgent(
       {
         db: db as never,
         teamId: TEAM_ID,
@@ -377,7 +396,7 @@ maybeDescribe('live agent chat evals', () => {
   it('answers provider-backed integration retrieval through the real model', async () => {
     const toolErrors: string[] = [];
     const searchOpts: unknown[] = [];
-    const result = await askAgent(
+    const result = await askLiveAgent(
       {
         db: db as never,
         teamId: TEAM_ID,
@@ -412,7 +431,7 @@ maybeDescribe('live agent chat evals', () => {
 
   it('drills into a named Sentry integration resource through the real model', async () => {
     const toolErrors: string[] = [];
-    const result = await askAgent(
+    const result = await askLiveAgent(
       {
         db: db as never,
         teamId: TEAM_ID,
@@ -432,7 +451,7 @@ maybeDescribe('live agent chat evals', () => {
     expect(toolErrors).toEqual([]);
     expect(result).toMatchObject({ ok: true, truncated: false });
     if (!result.ok) return;
-    expect(result.answer).toMatch(/TIMELINE-AI-100/i);
+    expect(result.answer).toMatch(/sentry-issue-100/i);
     expect(result.answer).toMatch(/unresolved/i);
     expect(result.answer).toMatch(/error/i);
     expect(result.answer).toMatch(/\b42\b/);
@@ -444,7 +463,7 @@ maybeDescribe('live agent chat evals', () => {
   it('answers document search retrieval through the real model', async () => {
     const toolErrors: string[] = [];
     const searchOpts: unknown[] = [];
-    const result = await askAgent(
+    const result = await askLiveAgent(
       {
         db: db as never,
         teamId: TEAM_ID,
@@ -480,7 +499,7 @@ maybeDescribe('live agent chat evals', () => {
   it('answers meeting transcript retrieval through the real model', async () => {
     const toolErrors: string[] = [];
     const searchOpts: unknown[] = [];
-    const result = await askAgent(
+    const result = await askLiveAgent(
       {
         db: db as never,
         teamId: TEAM_ID,
@@ -520,7 +539,7 @@ maybeDescribe('live agent chat evals', () => {
   it('synthesizes customer launch status across durable and provider-backed surfaces', async () => {
     const toolErrors: string[] = [];
     const searchOpts: unknown[] = [];
-    const result = await askAgent(
+    const result = await askLiveAgent(
       {
         db: db as never,
         teamId: TEAM_ID,
@@ -565,7 +584,7 @@ maybeDescribe('live agent chat evals', () => {
   it('synthesizes renewal risk across email, project, incident, and document evidence', async () => {
     const toolErrors: string[] = [];
     const searchOpts: unknown[] = [];
-    const result = await askAgent(
+    const result = await askLiveAgent(
       {
         db: db as never,
         teamId: TEAM_ID,
@@ -648,7 +667,7 @@ maybeDescribe('live agent chat evals', () => {
     });
 
     const toolErrors: string[] = [];
-    const result = await askAgent(
+    const result = await askLiveAgent(
       {
         db: db as never,
         teamId: TEAM_ID,
