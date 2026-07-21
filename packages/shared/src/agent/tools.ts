@@ -48,7 +48,7 @@ const log = childLogger('agent:tools');
 
 export type AgentToolErrorReporter = (err: unknown, context: { tool: string }) => void;
 
-interface AgentToolOptions {
+export interface AgentToolOptions {
   onToolError?: AgentToolErrorReporter | undefined;
   readOnly?: boolean | undefined;
   db?: Db | undefined;
@@ -56,6 +56,8 @@ interface AgentToolOptions {
   classifyTaskCategory?: TaskProposalClassifier | undefined;
   taskCategoryClassificationEnabled?: boolean | undefined;
   allowPinMutations?: boolean | undefined;
+  /** Trusted request clock used by relative calendar/time reads. */
+  currentDate?: Date | undefined;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -3065,7 +3067,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           const opts: Parameters<typeof scope.calendar.listCalendarEvents>[0] = {};
           if (input.from) opts.from = new Date(input.from);
           if (input.to) opts.to = new Date(input.to);
-          if (!input.from && !input.to) opts.from = new Date();
+          if (!input.from && !input.to) opts.from = options.currentDate ?? new Date();
           if (input.limit) opts.limit = input.limit;
           const events = await scope.calendar.listCalendarEvents(opts);
           return {
@@ -3117,7 +3119,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             })
             .parse(raw);
           const settings = await scope.calendar.getCalendarSettings();
-          const referenceDate = input.referenceDate ? new Date(input.referenceDate) : new Date();
+          const referenceDate = input.referenceDate
+            ? new Date(input.referenceDate)
+            : (options.currentDate ?? new Date());
           const context = workspaceTimeContext(settings.defaultTimezone, referenceDate);
           const resolved = input.phrase
             ? resolveTimePhrase(input.phrase, {

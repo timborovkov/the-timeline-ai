@@ -2169,24 +2169,31 @@ describe('buildAgentTools — team isolation', () => {
     expect(scope.suggestions.listSuggestions).not.toHaveBeenCalled();
   });
 
-  it('list_calendar_events defaults to upcoming events when no range is provided', async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-05-26T12:00:00Z'));
-    try {
-      const scope = makeFakeScope();
-      scope.calendar.listCalendarEvents.mockResolvedValue([]);
-      const tools = buildAgentTools(scope as unknown as TeamScope);
-      const exec = tools.list_calendar_events?.execute as (
-        input: unknown,
-        opts: unknown,
-      ) => Promise<unknown>;
-      await exec({}, {});
-      expect(scope.calendar.listCalendarEvents).toHaveBeenCalledWith({
-        from: new Date('2026-05-26T12:00:00Z'),
-      });
-    } finally {
-      vi.useRealTimers();
-    }
+  it('uses the trusted clock for fixture-relative calendar and time defaults', async () => {
+    const scope = makeFakeScope();
+    scope.calendar.listCalendarEvents.mockResolvedValue([]);
+    scope.calendar.getCalendarSettings.mockResolvedValue({ defaultTimezone: 'UTC' });
+    const currentDate = new Date('2026-07-01T12:00:00Z');
+    const tools = buildAgentTools(scope as unknown as TeamScope, { currentDate });
+    const listCalendarEvents = tools.list_calendar_events?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+    const resolveTimeContext = tools.resolve_time_context?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    await listCalendarEvents({}, {});
+    await resolveTimeContext({ phrase: 'next week' }, {});
+
+    expect(scope.calendar.listCalendarEvents).toHaveBeenCalledWith({ from: currentDate });
+    expect(await resolveTimeContext({ phrase: 'next week' }, {})).toMatchObject({
+      resolved: {
+        from: '2026-07-06T00:00:00.000Z',
+        to: '2026-07-13T00:00:00.000Z',
+      },
+    });
   });
 
   it('suggest_calendar_event derives all-day fallback dates in the event timezone', async () => {
