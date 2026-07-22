@@ -64,8 +64,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 - [ ] Timeline moments redesign: turn `/app/timeline` from a raw activity log
       into bundled, evidence-backed work moments with deterministic grouping,
       source-specific adapters, AI-assisted titles/summaries, and an advanced
-      raw source event mode. Full plan:
-      [docs/timeline-moments-redesign-plan.md](docs/timeline-moments-redesign-plan.md).
+      raw source event mode.
       First slice shipped the Moments/Audit trail mode split, clearer rows and
       inspector copy, GitHub workflow bundling, and the
       `search_timeline_moments`/`get_timeline_moment` agent tools, and the
@@ -150,10 +149,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 
 ## Workspace Reconciliation
 
-- [x] Build the replacement reconciliation engine architecture in
-      [docs/reconciliation-engine-plan.md](docs/reconciliation-engine-plan.md):
-      normalized evidence, artifact resolution, authority policy,
-      output-backed approvals, and deterministic/live reconciliation evals.
+- [x] Build the replacement reconciliation engine architecture: normalized
+      evidence, artifact resolution, authority policy, output-backed approvals,
+      and deterministic/live reconciliation evals.
 - [ ] Wire workspace reconciliation into future authoritative external sync
       paths when calendar/provider imports directly update artifacts they own.
 - [ ] Design cross-source evidence reviews for generic ingest webhook events so

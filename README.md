@@ -287,29 +287,10 @@ server/client import boundaries.
 
 - [`docs/product-brief.html`](./docs/product-brief.html) — product vision,
   principles, and architecture overview.
-- [`docs/prospect-brief.md`](./docs/prospect-brief.md) — pilot brief for early
-  prospects, including ingest surfaces and integration breadth.
-- [`docs/prospect-deck.html`](./docs/prospect-deck.html) — self-contained
-  prospect deck with the integration story and Work surface framing.
-- [`docs/demo-script.md`](./docs/demo-script.md) — crisp Acme demo narrative:
-  stakeholder question → cited answer from Slack, meeting, docs, and tasks.
-- [`docs/market-thesis.md`](./docs/market-thesis.md) — market transition from
-  manual systems of record to event-derived systems of record.
+
 - [`docs/captured-files.md`](./docs/captured-files.md) — captured-file vs.
   document semantics, processing rules, and follow-up implementation bar.
-- [`docs/work-system-plan.md`](./docs/work-system-plan.md) — priority plan for
-  turning Work into the daily operating surface.
-- [`docs/reconciliation-engine-plan.md`](./docs/reconciliation-engine-plan.md) —
-  replacement architecture for unifying source evidence, artifact clustering,
-  approval-backed memory, provider authority, and live reconciliation evals.
-- [`docs/integration-ingest-plan.md`](./docs/integration-ingest-plan.md) —
-  first-party ingestion implementation plan for work systems, including native
-  provider posture, generic ingest webhook semantics, webhook/budget behavior,
-  implemented providers, and future waves.
-- [`docs/timeline-moments-redesign-plan.md`](./docs/timeline-moments-redesign-plan.md) —
-  full plan for turning the timeline from a raw activity log into bundled,
-  evidence-backed work moments shared by the UI, chat agents, and outbound MCP
-  tools.
+
 - [`docs/native-provider-template.md`](./docs/native-provider-template.md) —
   implementation checklist and skeleton for adding native providers on the
   shared policy, webhook, budget, and reconciliation path.
