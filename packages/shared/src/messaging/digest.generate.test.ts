@@ -216,4 +216,43 @@ describe('generateDailyDigest conflict handling', () => {
     expect(db.insert).not.toHaveBeenCalled();
     expect(db.update).not.toHaveBeenCalled();
   });
+
+  it('skips generation when the digest window is already past the current cycle', async () => {
+    const summarize = vi.fn().mockResolvedValue('Should not be used.');
+    const db = {
+      select: vi
+        .fn()
+        .mockReturnValueOnce(
+          chainResult([{ dailyDigestEnabled: true, dailyDigestHour: 12, timezone: 'UTC' }]),
+        )
+        .mockReturnValueOnce(chainResult([])),
+      insert: vi.fn(() => ({
+        values: vi.fn(() => ({
+          onConflictDoNothing: vi.fn(() => ({
+            returning: vi.fn().mockResolvedValue([{ id: 'digest-expired' }]),
+          })),
+        })),
+      })),
+      update: vi.fn(),
+    };
+
+    await expect(
+      generateDailyDigest({
+        db: db as never,
+        teamId: 'team-1',
+        userId: 'user-1',
+        windowStart: new Date('2026-06-13T12:00:00Z'),
+        windowEnd: new Date('2026-06-14T12:00:00Z'),
+        now: new Date('2026-06-16T15:00:00Z'),
+        summarize,
+      }),
+    ).resolves.toMatchObject({
+      digestId: 'digest-expired',
+      skipped: true,
+      payload: { summary: 'Daily digest window expired.' },
+    });
+
+    expect(summarize).not.toHaveBeenCalled();
+    expect(fakes.withTeam).not.toHaveBeenCalled();
+  });
 });

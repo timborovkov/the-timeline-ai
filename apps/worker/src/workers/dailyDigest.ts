@@ -19,7 +19,13 @@ function siteUrl(): string {
 export async function processDailyDigestJob(
   deps: { db: Db },
   job: queue.DailyDigestJobData,
-): Promise<{ recipients?: number; digestId?: string; sent?: boolean; skipped?: boolean }> {
+): Promise<{
+  recipients?: number;
+  digestId?: string;
+  sent?: boolean;
+  skipped?: boolean;
+  permanentFailure?: boolean;
+}> {
   if (job.kind === 'tick') {
     const explicitWindow =
       job.reason !== 'catchup' && job.windowStart && job.windowEnd
@@ -75,13 +81,16 @@ export async function processDailyDigestJob(
     to: job.email,
     digestUrl: `${siteUrl()}/app`,
   });
-  if (!result.ok && !result.skipped) {
+  // Permanent provider failures (e.g. Postmark inactive recipient) are already
+  // recorded on the digest/delivery rows — retrying only burns attempts + Sentry.
+  if (!result.ok && !result.skipped && result.retryable !== false) {
     throw new Error(result.error ?? 'Daily digest send failed');
   }
   return {
     digestId: job.digestId,
     sent: result.ok,
     ...(result.skipped ? { skipped: result.skipped } : {}),
+    ...(!result.ok && result.retryable === false ? { permanentFailure: true } : {}),
   };
 }
 
