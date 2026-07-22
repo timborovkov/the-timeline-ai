@@ -203,4 +203,20 @@ describe('daily digest worker', () => {
       ),
     ).rejects.toThrow('Postmark timeout');
   });
+
+  it('completes without throwing when Postmark marks the recipient inactive', async () => {
+    fakes.sendDailyDigest.mockResolvedValue({
+      ok: false,
+      error:
+        'You tried to send to recipient(s) that have been marked as inactive. Found inactive addresses: a@example.test.',
+      retryable: false,
+    });
+
+    await expect(
+      processDailyDigestJob(
+        { db: {} as never },
+        { kind: 'send', digestId: 'digest-1', email: 'a@example.test' },
+      ),
+    ).resolves.toEqual({ digestId: 'digest-1', sent: false, permanentFailure: true });
+  });
 });

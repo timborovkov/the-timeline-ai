@@ -310,6 +310,16 @@ function disabledDigestPayload(
   };
 }
 
+function expiredDigestPayload(
+  input: GenerateDailyDigestInput,
+  timezone: string,
+): DailyDigestPayload {
+  return {
+    ...disabledDigestPayload(input, timezone),
+    summary: 'Daily digest window expired.',
+  };
+}
+
 export interface GenerateDailyDigestInput {
   db: Db;
   teamId: string;
@@ -478,6 +488,7 @@ export async function generateDailyDigest(
   input: GenerateDailyDigestInput,
 ): Promise<GenerateDailyDigestResult> {
   const preference = await getDigestPreference(input);
+  const now = input.now ?? new Date();
   if (!preference.enabled) {
     const payload = disabledDigestPayload(input, preference.timezone);
     const [row] = await input.db
@@ -519,6 +530,54 @@ export async function generateDailyDigest(
     };
   }
 
+  if (isDigestWindowExpired(input.windowEnd, now, preference.timezone, preference.hour)) {
+    const payload = expiredDigestPayload(input, preference.timezone);
+    const [row] = await input.db
+      .insert(dailyDigests)
+      .values({
+        teamId: input.teamId,
+        userId: input.userId,
+        windowStart: input.windowStart,
+        windowEnd: input.windowEnd,
+        summary: 'Daily digest window expired.',
+        status: 'skipped',
+        error: 'Digest window expired before generate.',
+        payload,
+      })
+      .onConflictDoNothing()
+      .returning({ id: dailyDigests.id });
+    if (row?.id) {
+      return { digestId: row.id, payload, skipped: true };
+    }
+    const existing = await input.db
+      .select({ id: dailyDigests.id, payload: dailyDigests.payload, status: dailyDigests.status })
+      .from(dailyDigests)
+      .where(
+        and(
+          eq(dailyDigests.teamId, input.teamId),
+          eq(dailyDigests.userId, input.userId),
+          eq(dailyDigests.windowStart, input.windowStart),
+          eq(dailyDigests.windowEnd, input.windowEnd),
+        ),
+      )
+      .limit(1);
+    const existingDigest = existing[0];
+    if (existingDigest && existingDigest.status !== 'sent') {
+      await input.db
+        .update(dailyDigests)
+        .set({
+          status: 'skipped',
+          error: 'Digest window expired before generate.',
+        })
+        .where(eq(dailyDigests.id, existingDigest.id));
+    }
+    return {
+      digestId: existingDigest?.id ?? '',
+      payload: (existingDigest?.payload as DailyDigestPayload | undefined) ?? payload,
+      skipped: true,
+    };
+  }
+
   const scope = withTeam(input.db, input.teamId, input.userId);
   await scope.requireMembership();
   const existingRows = await input.db
@@ -541,7 +600,6 @@ export async function generateDailyDigest(
       skipped: false,
     };
   }
-  const now = input.now ?? new Date();
   const upcomingTo = addDays(now, 7);
   const [team, userRows, events, pendingApprovals, currentTasks, upcomingCalendar, newMembers] =
     await Promise.all([
@@ -768,4 +826,18 @@ export function defaultDigestWindow(
   const end = dateFromInstant(endInTimezone.toInstant());
   const start = new Date(end.getTime() - 25 * 60 * 60 * 1000);
   return { start, end };
+}
+
+/**
+ * A digest is expired once the recipient's next digest cycle has started.
+ * Queued recipient/send jobs from earlier cycles must not email after that.
+ */
+export function isDigestWindowExpired(
+  windowEnd: Date,
+  now: Date = new Date(),
+  timezone = 'UTC',
+  hour = DEFAULT_DIGEST_HOUR,
+): boolean {
+  const current = defaultDigestWindow(now, timezone, hour);
+  return windowEnd.getTime() < current.end.getTime();
 }

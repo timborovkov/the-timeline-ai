@@ -18,15 +18,55 @@ import type {
 } from '#src/messaging/types.js';
 
 import { getEnv } from '#src/env.js';
+import { getDigestPreference, isDigestWindowExpired } from '#src/messaging/digest.js';
 import { renderMessage } from '#src/messaging/templates.js';
 
 interface PostmarkResult {
   ok: boolean;
   providerMessageId?: string;
   error?: string;
+  retryable?: boolean;
 }
 
 const PENDING_DELIVERY_RETRY_AFTER_MS = 30_000;
+
+/** Postmark 406 + matching copy: hard bounce / spam complaint / manual suppression. */
+function isInactiveRecipientFailure(errorCode: number | undefined, message: string): boolean {
+  if (errorCode === 406) return true;
+  return /marked as inactive|inactive (addresses|recipients)/i.test(message);
+}
+
+/** Terminal send-input failures; retries cannot help until config/content changes. */
+const PERMANENT_POSTMARK_ERROR_CODES = new Set([
+  300, // Invalid email request
+  400, // Sender Signature not found
+  401, // Sender signature not confirmed
+  402, // Invalid JSON
+  403, // Invalid request field(s)
+  406, // Inactive recipient
+  409, // JSON required
+  411, // Forbidden attachment type
+  412, // Account pending approval
+  413, // Account may not send
+]);
+
+/**
+ * Classify Postmark send failures for BullMQ retry policy.
+ * Permanent: inactive recipients and other terminal input/config ErrorCodes.
+ * Retryable: credits (405), rate limits (429), 5xx, network, and unknown 422s.
+ */
+function isRetryablePostmarkFailure(input: {
+  status: number;
+  errorCode?: number;
+  message: string;
+}): boolean {
+  if (isInactiveRecipientFailure(input.errorCode, input.message)) return false;
+  if (typeof input.errorCode === 'number' && PERMANENT_POSTMARK_ERROR_CODES.has(input.errorCode)) {
+    return false;
+  }
+  if (input.status === 401 || input.status === 403 || input.status === 404) return false;
+  return true;
+}
 
 export interface SendMessageOptions {
   db?: Db;
@@ -55,7 +95,7 @@ async function sendPostmarkEmail(
   const env = getEnv();
   const from = configuredSender();
   if (!env.POSTMARK_SERVER_TOKEN || !from) {
-    return { ok: false, error: 'Outbound email is not configured' };
+    return { ok: false, error: 'Outbound email is not configured', retryable: false };
   }
 
   try {
@@ -85,14 +125,23 @@ async function sendPostmarkEmail(
     } | null;
     if (!res.ok) {
       const detail = body?.Message ?? `${res.status} ${res.statusText}`.trim();
-      return { ok: false, error: detail.slice(0, 500) };
+      const error = detail.slice(0, 500);
+      return {
+        ok: false,
+        error,
+        retryable: isRetryablePostmarkFailure({
+          status: res.status,
+          ...(typeof body?.ErrorCode === 'number' ? { errorCode: body.ErrorCode } : {}),
+          message: error,
+        }),
+      };
     }
     return {
       ok: true,
       ...(body?.MessageID ? { providerMessageId: body.MessageID } : {}),
     };
   } catch (err) {
-    return { ok: false, error: shortError(err, 'Failed to send email') };
+    return { ok: false, error: shortError(err, 'Failed to send email'), retryable: true };
   }
 }
 
@@ -294,6 +343,7 @@ export async function sendMessage<TIntent extends MessageIntent>(
     ...(deliveryId ? { deliveryId } : {}),
     ...(result.providerMessageId ? { providerMessageId: result.providerMessageId } : {}),
     ...(result.error ? { error: result.error } : {}),
+    ...(result.ok ? {} : { retryable: result.retryable ?? true }),
   };
 }
 
@@ -303,6 +353,7 @@ export async function sendDailyDigest(input: {
   to: string;
   digestUrl: string;
   fetch?: typeof globalThis.fetch;
+  now?: Date;
 }): Promise<SendMessageResult> {
   const rows = await input.db
     .select()
@@ -310,7 +361,7 @@ export async function sendDailyDigest(input: {
     .where(eq(dailyDigests.id, input.digestId))
     .limit(1);
   const digest = rows[0];
-  if (!digest) return { ok: false, error: 'Digest not found' };
+  if (!digest) return { ok: false, error: 'Digest not found', retryable: false };
   const recipientRows = await input.db
     .select({
       email: users.email,
@@ -341,6 +392,28 @@ export async function sendDailyDigest(input: {
       .set({
         status: 'skipped',
         error: recipient ? 'Daily digest is disabled.' : 'Recipient is no longer a team member.',
+      })
+      .where(eq(dailyDigests.id, input.digestId));
+    return { ok: true, skipped: true, skippedStatus: 'skipped' };
+  }
+  const preference = await getDigestPreference({
+    db: input.db,
+    teamId: digest.teamId,
+    userId: digest.userId,
+  });
+  if (
+    isDigestWindowExpired(
+      digest.windowEnd,
+      input.now ?? new Date(),
+      preference.timezone,
+      preference.hour,
+    )
+  ) {
+    await input.db
+      .update(dailyDigests)
+      .set({
+        status: 'skipped',
+        error: 'Digest window expired before send.',
       })
       .where(eq(dailyDigests.id, input.digestId));
     return { ok: true, skipped: true, skippedStatus: 'skipped' };

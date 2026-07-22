@@ -98,10 +98,13 @@ function fakeDailyDigestDbWithPendingDelivery() {
                         id: 'digest-1',
                         teamId: 'team-1',
                         userId: 'user-1',
+                        windowEnd: new Date('2026-06-14T12:00:00.000Z'),
                         payload,
                       },
                     ]
-                  : [{ id: 'delivery-1', status: 'pending' }],
+                  : selectCount === 3
+                    ? [{ dailyDigestEnabled: true, dailyDigestHour: 12, timezone: 'UTC' }]
+                    : [{ id: 'delivery-1', status: 'pending' }],
               ),
             })),
           })),
@@ -157,6 +160,7 @@ describe('Postmark messaging adapter', () => {
     await expect(messagingInternals.sendPostmarkEmail(message)).resolves.toEqual({
       ok: false,
       error: 'Outbound email is not configured',
+      retryable: false,
     });
   });
 
@@ -240,6 +244,93 @@ describe('Postmark messaging adapter', () => {
     await expect(messagingInternals.sendPostmarkEmail(message, fetchMock)).resolves.toEqual({
       ok: false,
       error: 'Bad recipient',
+      retryable: true,
+    });
+  });
+
+  it('marks inactive Postmark recipients as non-retryable', async () => {
+    process.env.POSTMARK_SERVER_TOKEN = 'server-token';
+    process.env.TRANSACTIONAL_EMAIL_FROM = 'Timeline <hello@example.test>';
+    const inactiveMessage =
+      'You tried to send to recipient(s) that have been marked as inactive. Found inactive addresses: tim@example.test. Inactive recipients are ones that have generated a hard bounce, a spam complaint, or a manual suppression.';
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ ErrorCode: 406, Message: inactiveMessage }), {
+          status: 422,
+          statusText: 'Unprocessable Entity',
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+    const message = renderMessage('welcome', {
+      to: 'tim@example.test',
+      name: 'Tim',
+      teamName: 'Timeline',
+      dashboardUrl: 'https://timeline.test/app',
+    });
+
+    await expect(messagingInternals.sendPostmarkEmail(message, fetchMock)).resolves.toEqual({
+      ok: false,
+      error: inactiveMessage,
+      retryable: false,
+    });
+  });
+
+  it('keeps Postmark credit exhaustion retryable', async () => {
+    process.env.POSTMARK_SERVER_TOKEN = 'server-token';
+    process.env.TRANSACTIONAL_EMAIL_FROM = 'Timeline <hello@example.test>';
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            ErrorCode: 405,
+            Message: 'Not allowed to send. Your account has run out of credits.',
+          }),
+          {
+            status: 422,
+            statusText: 'Unprocessable Entity',
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      ),
+    );
+    const message = renderMessage('welcome', {
+      to: 'tim@example.test',
+      name: 'Tim',
+      teamName: 'Timeline',
+      dashboardUrl: 'https://timeline.test/app',
+    });
+
+    await expect(messagingInternals.sendPostmarkEmail(message, fetchMock)).resolves.toEqual({
+      ok: false,
+      error: 'Not allowed to send. Your account has run out of credits.',
+      retryable: true,
+    });
+  });
+
+  it('keeps Postmark 5xx failures retryable', async () => {
+    process.env.POSTMARK_SERVER_TOKEN = 'server-token';
+    process.env.TRANSACTIONAL_EMAIL_FROM = 'Timeline <hello@example.test>';
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ Message: 'Temporary upstream failure' }), {
+          status: 503,
+          statusText: 'Service Unavailable',
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+    const message = renderMessage('welcome', {
+      to: 'tim@example.test',
+      name: 'Tim',
+      teamName: 'Timeline',
+      dashboardUrl: 'https://timeline.test/app',
+    });
+
+    await expect(messagingInternals.sendPostmarkEmail(message, fetchMock)).resolves.toEqual({
+      ok: false,
+      error: 'Temporary upstream failure',
+      retryable: true,
     });
   });
 
@@ -442,6 +533,7 @@ describe('Postmark messaging adapter', () => {
         to: 'tim@example.test',
         digestUrl: 'https://timeline.test/app',
         fetch: fetchMock,
+        now: new Date('2026-06-14T12:05:00Z'),
       }),
     ).resolves.toEqual({
       ok: false,
@@ -522,6 +614,79 @@ describe('Postmark messaging adapter', () => {
       expect.objectContaining({
         status: 'skipped',
         error: 'Recipient is no longer a team member.',
+      }),
+    );
+  });
+
+  it('skips email when the digest window has already rolled to the next cycle', async () => {
+    process.env.POSTMARK_SERVER_TOKEN = 'server-token';
+    process.env.TRANSACTIONAL_EMAIL_FROM = 'Timeline <hello@example.test>';
+    const fetchMock = vi.fn();
+    const updates: unknown[] = [];
+    let selectCount = 0;
+    const db = {
+      select: vi.fn(() => {
+        selectCount += 1;
+        if (selectCount === 2) {
+          const chain = {
+            innerJoin: vi.fn(() => chain),
+            leftJoin: vi.fn(() => chain),
+            where: vi.fn(() => ({
+              limit: vi.fn().mockResolvedValue([
+                {
+                  email: 'tim@example.test',
+                  removedAt: null,
+                  dailyDigestEnabled: true,
+                },
+              ]),
+            })),
+          };
+          return { from: vi.fn(() => chain) };
+        }
+        return {
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              limit: vi.fn().mockResolvedValue(
+                selectCount === 1
+                  ? [
+                      {
+                        id: 'digest-1',
+                        teamId: 'team-1',
+                        userId: 'user-1',
+                        windowEnd: new Date('2026-06-14T12:00:00.000Z'),
+                        payload: {},
+                      },
+                    ]
+                  : [{ dailyDigestEnabled: true, dailyDigestHour: 12, timezone: 'UTC' }],
+              ),
+            })),
+          })),
+        };
+      }),
+      update: vi.fn(() => ({
+        set: vi.fn((values: unknown) => {
+          updates.push(values);
+          return { where: vi.fn().mockResolvedValue(undefined) };
+        }),
+      })),
+    };
+
+    await expect(
+      sendDailyDigest({
+        db: db as never,
+        digestId: 'digest-1',
+        to: 'tim@example.test',
+        digestUrl: 'https://timeline.test/app',
+        fetch: fetchMock,
+        now: new Date('2026-06-15T13:00:00Z'),
+      }),
+    ).resolves.toMatchObject({ ok: true, skipped: true, skippedStatus: 'skipped' });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(updates).toContainEqual(
+      expect.objectContaining({
+        status: 'skipped',
+        error: 'Digest window expired before send.',
       }),
     );
   });
