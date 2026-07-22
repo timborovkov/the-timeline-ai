@@ -14,7 +14,11 @@ import type { TelegramApi } from '#src/telegram/api.js';
 
 import { resetEnvForTests } from '#src/env.js';
 import { resetMeetingBotProviderForTests } from '#src/meeting-bots/index.js';
-import { handleUpdate, parseCommand } from '#src/telegram/dispatcher.js';
+import {
+  handleUpdate,
+  parseCommand,
+  startTelegramTypingHeartbeat,
+} from '#src/telegram/dispatcher.js';
 import { verifyWebhookSecret } from '#src/telegram/secret.js';
 import { tgUpdateSchema } from '#src/telegram/types.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
@@ -223,6 +227,70 @@ describe('parseCommand', () => {
   });
 });
 
+describe('startTelegramTypingHeartbeat', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('refreshes Telegram typing every four seconds and stops cleanly after the answer is ready', async () => {
+    vi.useFakeTimers();
+    const sendChatAction = vi.fn().mockResolvedValue(undefined);
+    const stop = startTelegramTypingHeartbeat({ ...fakeTg, sendChatAction }, 42);
+
+    expect(sendChatAction).toHaveBeenCalledTimes(1);
+    expect(sendChatAction).toHaveBeenLastCalledWith({ chat_id: 42, action: 'typing' });
+
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(sendChatAction).toHaveBeenCalledTimes(3);
+
+    stop();
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(sendChatAction).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not overlap typing requests when Telegram is slow', async () => {
+    vi.useFakeTimers();
+    let resolveRequest: (() => void) | undefined;
+    const sendChatAction = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveRequest = resolve;
+        }),
+    );
+    const stop = startTelegramTypingHeartbeat({ ...fakeTg, sendChatAction }, 42);
+
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(sendChatAction).toHaveBeenCalledOnce();
+
+    resolveRequest?.();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(sendChatAction).toHaveBeenCalledTimes(2);
+
+    stop();
+  });
+
+  it('does not send a queued refresh after /ask finishes', async () => {
+    vi.useFakeTimers();
+    let resolveRequest: (() => void) | undefined;
+    const sendChatAction = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveRequest = resolve;
+        }),
+    );
+    const stop = startTelegramTypingHeartbeat({ ...fakeTg, sendChatAction }, 42);
+
+    await vi.advanceTimersByTimeAsync(4_000);
+    stop();
+    resolveRequest?.();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(sendChatAction).toHaveBeenCalledOnce();
+  });
+});
+
 describe('tgUpdateSchema', () => {
   it('rejects payloads missing update_id', () => {
     expect(tgUpdateSchema.safeParse({}).success).toBe(false);
@@ -307,14 +375,28 @@ describe('handleUpdate (fake-token guard)', () => {
 describe('handleUpdate telegram edit visibility', () => {
   let pg: PGlite;
   let db: ReturnType<typeof drizzle>;
+  let askEnvBeforeEach: Record<
+    'OPENROUTER_API_KEY' | 'QDRANT_URL' | 'REDIS_URL',
+    string | undefined
+  >;
 
   beforeEach(async () => {
+    askEnvBeforeEach = {
+      OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+      QDRANT_URL: process.env.QDRANT_URL,
+      REDIS_URL: process.env.REDIS_URL,
+    };
     process.env.AUTH_SECRET = 'a'.repeat(32);
     process.env.DATABASE_URL = 'postgres://user:pass@localhost:5432/test';
     process.env.AUTH_URL = 'https://timeline.test';
     process.env.RECALL_API_KEY = 'recall-test-key';
     process.env.RECALL_BASE_URL = 'https://recall.test/api/v1';
     process.env.RECALL_STATUS_WEBHOOK_SECRET = `whsec_${Buffer.from('telegram-status').toString('base64')}`;
+    // Dispatcher tests must not inherit a developer's live LLM configuration:
+    // the /ask group-routing case intentionally exercises the unconfigured reply.
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.QDRANT_URL;
+    delete process.env.REDIS_URL;
     resetEnvForTests();
     resetMeetingBotProviderForTests();
     installRecallFetchMock();
@@ -328,6 +410,14 @@ describe('handleUpdate telegram edit visibility', () => {
     vi.unstubAllGlobals();
     resetMeetingBotProviderForTests();
     await pg.close();
+    const { OPENROUTER_API_KEY, QDRANT_URL, REDIS_URL } = askEnvBeforeEach;
+    if (OPENROUTER_API_KEY === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = OPENROUTER_API_KEY;
+    if (QDRANT_URL === undefined) delete process.env.QDRANT_URL;
+    else process.env.QDRANT_URL = QDRANT_URL;
+    if (REDIS_URL === undefined) delete process.env.REDIS_URL;
+    else process.env.REDIS_URL = REDIS_URL;
+    resetEnvForTests();
   });
 
   it('keeps only the latest visible row for a Telegram message after edits', async () => {
