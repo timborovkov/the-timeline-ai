@@ -97,9 +97,13 @@ async function postForm(
 
 async function sentryRequest(tokens: SentryTokens, pathOrUrl: string): Promise<Response> {
   const url = pathOrUrl.startsWith('http') ? pathOrUrl : `${API_BASE}${pathOrUrl}`;
-  return fetch(url, {
-    headers: { authorization: `Bearer ${tokens.access_token}` },
-  });
+  return fetch(
+    url,
+    {
+      headers: { authorization: `Bearer ${tokens.access_token}` },
+    },
+    { retries: 1 },
+  );
 }
 
 async function sentryGetPage(

@@ -1,7 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const externalFetchCalls = vi.hoisted(() => vi.fn());
+
 vi.mock('#src/http/external-fetch.js', () => ({
-  externalFetch: (input: string | URL, init?: RequestInit) => globalThis.fetch(input, init),
+  externalFetch: async (
+    input: string | URL,
+    init: RequestInit = {},
+    options: { retries?: number } = {},
+  ) => {
+    externalFetchCalls(input, init, options);
+    const method = (init.method ?? 'GET').toUpperCase();
+    const retries = method === 'GET' || method === 'HEAD' ? (options.retries ?? 0) : 0;
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await globalThis.fetch(input, init);
+      } catch (error) {
+        const code =
+          typeof error === 'object' && error !== null && 'code' in error
+            ? (error as { code?: unknown }).code
+            : undefined;
+        if (attempt >= retries || (code !== 'timeout' && code !== 'network_failure')) throw error;
+      }
+    }
+  },
 }));
 
 import type { IntegrationEvent } from '#src/integrations/types.js';
@@ -20,6 +41,7 @@ function jsonResponse(body: unknown, headers?: Record<string, string>): Response
 
 describe('sentryProvider', () => {
   beforeEach(() => {
+    externalFetchCalls.mockClear();
     process.env.SENTRY_INTEGRATION_CLIENT_ID = 'sentry-client';
     process.env.SENTRY_INTEGRATION_CLIENT_SECRET = 'sentry-secret';
     resetEnvForTests();
@@ -427,6 +449,59 @@ describe('sentryProvider', () => {
       'sentry.project:acme/web',
       expect.objectContaining({ issues_since: '2026-06-20T10:00:00.000Z' }),
     );
+  });
+
+  it('retries a transient timeout while expanding selected organizations without duplicating events', async () => {
+    const timeout = Object.assign(new Error('External request timed out after 30000ms'), {
+      code: 'timeout',
+    });
+    let projectAttempts = 0;
+    const fetch = vi.fn<typeof globalThis.fetch>((input) => {
+      const url = requestUrl(input);
+      if (url.endsWith('/organizations/acme/projects/')) {
+        projectAttempts += 1;
+        if (projectAttempts === 1) return Promise.reject(timeout);
+        return Promise.resolve(jsonResponse([{ id: 'project-1', slug: 'web', name: 'Web' }]));
+      }
+      if (url.includes('/issues/')) {
+        return Promise.resolve(
+          jsonResponse([
+            {
+              id: 'issue-1',
+              shortId: 'WEB-1',
+              title: 'Checkout failed',
+              lastSeen: '2026-06-20T10:00:00Z',
+            },
+          ]),
+        );
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await sentryProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'sentry.org', externalId: 'acme' }],
+      ctx,
+    });
+
+    expect(projectAttempts).toBe(2);
+    expect(externalFetchCalls).toHaveBeenCalledWith(
+      'https://sentry.io/api/0/organizations/acme/projects/',
+      expect.objectContaining({ headers: { authorization: 'Bearer token' } }),
+      expect.objectContaining({ retries: 1 }),
+    );
+    expect(ctx.writeEvents).toHaveBeenCalledTimes(1);
+    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    expect(events.map((event) => event.externalObjectId)).toEqual(['issue-1']);
   });
 
   it('normalizes issue alert webhooks', async () => {
