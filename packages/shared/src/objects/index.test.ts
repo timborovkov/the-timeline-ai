@@ -32,11 +32,15 @@ import {
 import { eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 
 import type { ChatStructuredInput, ChatStructuredResult } from '#src/llm/chat.js';
 import type { PGlite } from '@electric-sql/pglite';
-import type { z } from 'zod';
 
+import { resetEnvForTests } from '#src/env.js';
+import { chatStructured } from '#src/llm/chat.js';
+import { TimelineAiError } from '#src/llm/errors.js';
+import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { buildObjectDirectWriteSourceContext } from '#src/objects/index.js';
 import {
   generateAndStoreObjectSummary,
@@ -80,6 +84,8 @@ const TEAM_B = '22222222-2222-2222-2222-222222222222';
 const USER_OWNER = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const USER_MEMBER = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const USER_OTHER_TEAM = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+const OPENROUTER_API_KEY_BACKUP = process.env.OPENROUTER_API_KEY;
+const OPENROUTER_BASE_URL_BACKUP = process.env.OPENROUTER_BASE_URL;
 
 let pg: PGlite;
 let db: AnyDb;
@@ -126,6 +132,11 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  if (OPENROUTER_API_KEY_BACKUP === undefined) delete process.env.OPENROUTER_API_KEY;
+  else process.env.OPENROUTER_API_KEY = OPENROUTER_API_KEY_BACKUP;
+  if (OPENROUTER_BASE_URL_BACKUP === undefined) delete process.env.OPENROUTER_BASE_URL;
+  else process.env.OPENROUTER_BASE_URL = OPENROUTER_BASE_URL_BACKUP;
+  resetEnvForTests();
   await flushBackgroundWork();
 });
 
@@ -4771,6 +4782,171 @@ describe('object scope — merge cleanup', () => {
       'invalid_source_ref:timeline_event:99999999-9999-4999-8999-999999999999',
     );
     expect(enqueueObjectEmbedJob).not.toHaveBeenCalled();
+  });
+
+  it('does not retry a structured-output validation error whose constraint contains 500', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const object = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Schema Limit Co',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await scope.objects.createNote({
+      entityId: object.id,
+      authorUserId: USER_OWNER,
+      body: 'Schema Limit Co has enough human-authored context to generate an object summary.',
+    });
+    let validationError: unknown;
+    try {
+      z.string().max(500).parse('x'.repeat(501));
+    } catch (err) {
+      validationError = err;
+    }
+
+    await expect(
+      generateAndStoreObjectSummary(
+        db,
+        scope,
+        object.id,
+        { trigger: 'manual' },
+        {
+          chatStructured: () =>
+            Promise.reject(
+              new TimelineAiError(
+                { operation: 'llm.chatStructured', model: 'test-summary-model' },
+                validationError,
+              ),
+            ),
+          enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
+        },
+      ),
+    ).resolves.toEqual({
+      status: 'failed',
+      reason: 'llm.chatStructured failed',
+      retryable: false,
+    });
+  });
+
+  it('persists HTTP-200 malformed structured outputs without requesting a BullMQ retry', async () => {
+    process.env.OPENROUTER_API_KEY = 'sk-test-key';
+    process.env.OPENROUTER_BASE_URL = 'https://example.test/v1';
+    resetEnvForTests();
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const object = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Schema Limit Co',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await scope.objects.createNote({
+      entityId: object.id,
+      authorUserId: USER_OWNER,
+      body: 'Schema Limit Co has enough human-authored context to generate an object summary.',
+    });
+    const requests: unknown[] = [];
+    const fetchStub: typeof fetch = (_url, init) => {
+      if (typeof init?.body !== 'string') throw new Error('expected request body');
+      requests.push(JSON.parse(init.body));
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            id: `chatcmpl-malformed-summary-${requests.length}`,
+            object: 'chat.completion',
+            created: 0,
+            model: TIMELINE_MODELS.structuredFallback.id,
+            choices: [
+              {
+                index: 0,
+                message: {
+                  role: 'assistant',
+                  content: JSON.stringify({ overview: 'x'.repeat(501) }),
+                },
+                finish_reason: 'stop',
+              },
+            ],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+    };
+    vi.mocked(queue.enqueueObjectSummaryJob).mockClear();
+
+    await expect(
+      generateAndStoreObjectSummary(
+        db,
+        scope,
+        object.id,
+        { trigger: 'manual' },
+        {
+          chatStructured: (input) =>
+            chatStructured(
+              { ...input, model: TIMELINE_MODELS.structuredFallback.id },
+              { fetch: fetchStub },
+            ),
+          enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
+        },
+      ),
+    ).resolves.toEqual({
+      status: 'failed',
+      reason: 'llm.chatStructured failed',
+      retryable: false,
+    });
+    expect(requests).toHaveLength(2);
+    expect(
+      requests.map(
+        (request) =>
+          z.object({ response_format: z.object({ type: z.string() }) }).parse(request)
+            .response_format.type,
+      ),
+    ).toEqual(['json_schema', 'json_object']);
+    const [summary] = await db
+      .select()
+      .from(objectSummaries)
+      .where(eq(objectSummaries.entityId, object.id));
+    expect(summary).toMatchObject({
+      status: 'failed',
+      lastErrorCode: 'llm.chatStructured failed',
+    });
+    expect(queue.enqueueObjectSummaryJob).not.toHaveBeenCalled();
+  });
+
+  it('retries text-only ECONNRESET errors nested below the LLM wrapper', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const object = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Transient Network Co',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await scope.objects.createNote({
+      entityId: object.id,
+      authorUserId: USER_OWNER,
+      body: 'Transient Network Co has enough human-authored context to generate a summary.',
+    });
+    const networkError = new Error('socket hang up: ECONNRESET');
+    const providerError = new Error('provider request failed', { cause: networkError });
+
+    await expect(
+      generateAndStoreObjectSummary(
+        db,
+        scope,
+        object.id,
+        { trigger: 'manual' },
+        {
+          chatStructured: () =>
+            Promise.reject(
+              new TimelineAiError(
+                { operation: 'llm.chatStructured', model: 'test-summary-model' },
+                new AggregateError([providerError], 'all provider requests failed'),
+              ),
+            ),
+          enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
+        },
+      ),
+    ).resolves.toEqual({
+      status: 'failed',
+      reason: 'llm.chatStructured failed',
+      retryable: true,
+    });
   });
 
   it('lets generated summaries cite reconciliation association evidence', async () => {
