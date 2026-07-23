@@ -198,8 +198,6 @@ Update:
 
 - `.env.example` and `docs/railway.html` for required env vars.
 - `docs/setup/integrations.html` for operator setup and webhook URLs.
-- `docs/integration-ingest-plan.md` for provider posture, rollout state, and
-  shared adapter expectations.
 - `TEST_TODO.md` for coverage state and remaining E2E gaps.
 - `scripts/check-live-integrations.ts` when a live secret-safe probe is possible.
 

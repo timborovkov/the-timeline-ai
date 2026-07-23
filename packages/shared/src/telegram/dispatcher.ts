@@ -866,56 +866,90 @@ async function runAskInner(input: RunAskInput): Promise<void> {
     });
     return;
   }
-  // Best-effort typing indicator while the agent runs. Don't await the
-  // promise's failure path — a chat-action error must not block the answer.
-  void input.tg.sendChatAction({ chat_id: input.chatId, action: 'typing' }).catch(() => {
-    /* ignore */
-  });
-  const result = await askAgent(
-    {
-      db: input.db,
-      teamId: input.teamId,
-      userId: input.userId ?? TEAM_BOT_ACTOR_USER_ID,
-      userName: input.userName,
-      trustedTeamActor: input.trustedTeamActor,
-      question,
-    },
-    {
-      ...input.agentDeps,
-      onToolError: input.onAgentToolError,
-      onAgentError: input.onAgentError,
-    },
-  );
-  if (!result.ok) {
-    const text =
-      result.error === 'unconfigured'
-        ? 'Chat is not configured on this server (missing OPENROUTER_API_KEY or QDRANT_URL).'
-        : result.error === 'not_a_member'
-          ? 'Your linked workspace user is no longer a member of this team. Ask a teammate to re-invite you.'
-          : result.error === 'no_team'
-            ? 'Could not load that team. Try /whereami and /team to confirm the active team.'
-            : "Couldn't answer that — try again.";
-    await sendWithRetry(input.tg, { chat_id: input.chatId, text });
-    return;
-  }
-  const delivered = await sendWithRetry(input.tg, {
-    chat_id: input.chatId,
-    text: result.answer,
-  });
-  if (!delivered) {
-    // Stash the paid answer ONLY after every send attempt failed. Caching
-    // before the send opens a race: a Telegram redelivery arriving while
-    // the first attempt is still inside sendWithRetry would hit dedup,
-    // read the cache, and send the same answer a second time. The crash
-    // window between a successful agent run and the first sendMessage
-    // attempt is much smaller than the redelivery race, and a missed
-    // reply is preferable to a duplicate.
-    await cachePendingAnswer(input.updateId, result.answer).catch(() => undefined);
-    log.error(
-      { updateId: input.updateId, chatId: input.chatId, tgUserId: input.tgUserId },
-      'ask_answer_undelivered',
+  const stopTypingHeartbeat = startTelegramTypingHeartbeat(input.tg, input.chatId);
+  try {
+    const result = await askAgent(
+      {
+        db: input.db,
+        teamId: input.teamId,
+        userId: input.userId ?? TEAM_BOT_ACTOR_USER_ID,
+        userName: input.userName,
+        trustedTeamActor: input.trustedTeamActor,
+        question,
+      },
+      {
+        ...input.agentDeps,
+        onToolError: input.onAgentToolError,
+        onAgentError: input.onAgentError,
+      },
     );
+    if (!result.ok) {
+      const text =
+        result.error === 'unconfigured'
+          ? 'Chat is not configured on this server (missing OPENROUTER_API_KEY or QDRANT_URL).'
+          : result.error === 'not_a_member'
+            ? 'Your linked workspace user is no longer a member of this team. Ask a teammate to re-invite you.'
+            : result.error === 'no_team'
+              ? 'Could not load that team. Try /whereami and /team to confirm the active team.'
+              : "Couldn't answer that — try again.";
+      await sendWithRetry(input.tg, { chat_id: input.chatId, text });
+      return;
+    }
+    const delivered = await sendWithRetry(input.tg, {
+      chat_id: input.chatId,
+      text: result.answer,
+    });
+    if (!delivered) {
+      // Stash the paid answer ONLY after every send attempt failed. Caching
+      // before the send opens a race: a Telegram redelivery arriving while
+      // the first attempt is still inside sendWithRetry would hit dedup,
+      // read the cache, and send the same answer a second time. The crash
+      // window between a successful agent run and the first sendMessage
+      // attempt is much smaller than the redelivery race, and a missed
+      // reply is preferable to a duplicate.
+      await cachePendingAnswer(input.updateId, result.answer).catch(() => undefined);
+      log.error(
+        { updateId: input.updateId, chatId: input.chatId, tgUserId: input.tgUserId },
+        'ask_answer_undelivered',
+      );
+    }
+  } finally {
+    stopTypingHeartbeat();
   }
+}
+
+/**
+ * Telegram clears the typing indicator after about five seconds. Refresh it
+ * while an agent answer is being produced, and return a stopper so callers
+ * reliably clear the heartbeat when the answer path exits.
+ */
+export function startTelegramTypingHeartbeat(tg: TelegramApi, chatId: number): () => void {
+  let active = true;
+  let sending = false;
+  let refreshQueued = false;
+  const sendTyping = () => {
+    if (!active) return;
+    if (sending) {
+      refreshQueued = true;
+      return;
+    }
+    sending = true;
+    refreshQueued = false;
+    void tg
+      .sendChatAction({ chat_id: chatId, action: 'typing' })
+      .catch(() => undefined)
+      .finally(() => {
+        sending = false;
+        if (active && refreshQueued) sendTyping();
+      });
+  };
+  sendTyping();
+  const timer = setInterval(sendTyping, 4_000);
+  if (typeof timer.unref === 'function') timer.unref();
+  return () => {
+    active = false;
+    clearInterval(timer);
+  };
 }
 
 /**
