@@ -612,19 +612,14 @@ function objectSummaryFailureMessages(err: unknown): string[] {
   ) {
     messages.push(err.causeMessage);
   }
-  if (err instanceof AggregateError) {
-    for (const nested of err.errors) {
-      messages.push(...objectSummaryFailureMessages(nested));
-    }
-  }
   return messages.map((message) => message.toLowerCase());
 }
 
 function retryableObjectSummaryMessage(message: string): boolean {
   return (
-    message.includes('429') ||
-    message.includes('5xx') ||
-    /\b5\d\d\b/.test(message) ||
+    /\b(?:http(?: status)?|status(?: code)?|response status)\s*[:=]?\s*(?:429|5\d\d)\b/.test(
+      message,
+    ) ||
     message.includes('rate limit') ||
     message.includes('timeout') ||
     message.includes('temporar') ||
@@ -634,19 +629,37 @@ function retryableObjectSummaryMessage(message: string): boolean {
   );
 }
 
+function objectSummaryFailureCauses(err: unknown): unknown[] {
+  const nestedCause =
+    err instanceof Error && 'cause' in err && err.cause !== undefined
+      ? objectSummaryFailureCauses(err.cause)
+      : [];
+  if (err instanceof AggregateError) {
+    return [err, ...err.errors.flatMap(objectSummaryFailureCauses), ...nestedCause];
+  }
+  return [err, ...nestedCause];
+}
+
 function isRetryableObjectSummaryError(err: unknown): boolean {
-  const causeName =
-    err && typeof err === 'object' && 'causeName' in err && typeof err.causeName === 'string'
-      ? err.causeName
-      : err instanceof Error
-        ? err.name
-        : '';
-  return (
-    causeName === 'AI_APICallError' ||
-    causeName === 'AbortError' ||
-    causeName === 'TimeoutError' ||
-    objectSummaryFailureMessages(err).some((message) => retryableObjectSummaryMessage(message))
-  );
+  const causes = objectSummaryFailureCauses(err);
+  return causes.some((cause) => {
+    if (objectSummaryFailureMessages(cause).some(retryableObjectSummaryMessage)) return true;
+    if (!cause || typeof cause !== 'object') return false;
+    const row = cause as {
+      isRetryable?: unknown;
+      name?: unknown;
+      responseStatus?: unknown;
+      status?: unknown;
+      statusCode?: unknown;
+    };
+    const status = row.statusCode ?? row.status ?? row.responseStatus;
+    return (
+      row.isRetryable === true ||
+      (typeof status === 'number' && (status === 408 || status === 429 || status >= 500)) ||
+      row.name === 'AbortError' ||
+      row.name === 'TimeoutError'
+    );
+  });
 }
 
 async function upsertPendingSummary(db: Db, scope: TeamScopeCore, entityId: string): Promise<void> {
