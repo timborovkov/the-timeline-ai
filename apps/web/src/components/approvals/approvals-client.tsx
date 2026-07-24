@@ -31,6 +31,7 @@ import {
   rejectVisibleSuggestionsAction,
   reviseTaskSuggestionItemAction,
 } from '@/app/actions/suggestions';
+import { SuggestionChangeDialog } from '@/components/approvals/suggestion-change-dialog';
 import { EmptyAction } from '@/components/empty-action';
 import { EvidenceLink } from '@/components/evidence-link';
 import { TechnicalDetails } from '@/components/technical-details';
@@ -107,6 +108,10 @@ interface SuggestionBundle {
     quote: string | null;
     occurredAt: string | null;
     source: string | null;
+    senderName?: string | null;
+    senderHandle?: string | null;
+    senderTimelineName?: string | null;
+    conversationName?: string | null;
     metadata?: Record<string, unknown>;
   }[];
 }
@@ -1561,18 +1566,25 @@ function ApprovalItemActions({
           </Link>
         </Button>
       ) : (
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={busy}
-          onClick={() => {
-            run(() => acceptSuggestionItemAction({ itemId: item.id }), [item.id]);
-          }}
-        >
-          <Check className="size-4" />
-          {busy ? 'Working…' : 'Accept'}
-        </Button>
+        <>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() => {
+              run(() => acceptSuggestionItemAction({ itemId: item.id }), [item.id]);
+            }}
+          >
+            <Check className="size-4" />
+            {busy ? 'Working…' : 'Accept'}
+          </Button>
+          <SuggestionChangeDialog
+            itemId={item.id}
+            title={displayText(item.title)}
+            disabled={busy}
+          />
+        </>
       )}
       <Button
         type="button"
@@ -1616,7 +1628,7 @@ function ApprovalEvidence({ bundle, timezone }: { bundle: SuggestionBundle; time
         >
           <span className="inline-flex items-center gap-1.5 text-xs">
             <ExternalLink className="size-3" />
-            Evidence from {evidenceSourceLabel(ev.source)}
+            Evidence from {evidenceSourceContextLabel(ev)}
           </span>
           <span className="line-clamp-2 text-fg-muted group-hover:text-fg">
             {ev.quote
@@ -1641,6 +1653,27 @@ function evidenceSourceLabel(source: string | null): string {
     web: 'web capture',
   };
   return labels[source.toLowerCase()] ?? humanizeToken(source);
+}
+
+function evidenceSourceContextLabel(evidence: SuggestionBundle['evidence'][number]): string {
+  const source = evidenceSourceLabel(evidence.source);
+  const sourceSenderParts = [evidence.senderName, evidence.senderHandle].filter(
+    (part, index, parts): part is string => Boolean(part) && parts.indexOf(part) === index,
+  );
+  const sender =
+    evidence.senderTimelineName &&
+    evidence.senderTimelineName !== evidence.senderName &&
+    sourceSenderParts.length > 0
+      ? `${evidence.senderTimelineName} (${sourceSenderParts.join(', ')})`
+      : sourceSenderParts.length > 1
+        ? `${sourceSenderParts[0]} (${sourceSenderParts.slice(1).join(', ')})`
+        : (evidence.senderTimelineName ?? sourceSenderParts[0] ?? null);
+  if (sender && evidence.conversationName) {
+    return `${sender} in ${evidence.conversationName} on ${source}`;
+  }
+  if (sender) return `${sender} on ${source}`;
+  if (evidence.conversationName) return `${evidence.conversationName} on ${source}`;
+  return source;
 }
 
 function ApprovalProcessingDetails({ bundle }: { bundle: SuggestionBundle }) {

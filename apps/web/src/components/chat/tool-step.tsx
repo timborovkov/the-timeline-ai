@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { type ReactNode, useState, useTransition } from 'react';
 
 import { acceptSuggestionItemAction, rejectSuggestionItemAction } from '@/app/actions/suggestions';
+import { SuggestionChangeDialog } from '@/components/approvals/suggestion-change-dialog';
 import { ArtifactReferenceChip } from '@/components/artifact-reference-chip';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { EvidenceLink } from '@/components/evidence-link';
@@ -274,6 +275,7 @@ function summarize(name: string, input: unknown, output: unknown, state: string)
 interface SuggestionItem {
   id: string;
   status: string;
+  targetKind?: string;
   title: string;
   description?: string | null;
 }
@@ -308,6 +310,7 @@ function suggestionFromOutput(output: unknown): SuggestionBundle | null {
       items.push({
         id,
         status: typeof itemRecord.status === 'string' ? itemRecord.status : 'pending',
+        targetKind: typeof itemRecord.targetKind === 'string' ? itemRecord.targetKind : undefined,
         title: typeof itemRecord.title === 'string' ? itemRecord.title : 'Approval item',
         description: typeof itemRecord.description === 'string' ? itemRecord.description : null,
       });
@@ -410,6 +413,14 @@ function InlineApprovalCard({ suggestion }: { suggestion: SuggestionBundle }) {
                   >
                     <Check className="size-3.5" />
                   </button>
+                  {item.targetKind !== 'object_merge' ? (
+                    <SuggestionChangeDialog
+                      itemId={item.id}
+                      title={item.title}
+                      disabled={pending}
+                      compact
+                    />
+                  ) : null}
                   <button
                     type="button"
                     disabled={pending}

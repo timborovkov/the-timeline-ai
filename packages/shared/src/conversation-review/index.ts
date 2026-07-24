@@ -29,6 +29,7 @@ export interface ConversationRawEvent {
 export interface ConversationEvidenceEvent {
   id: string;
   occurredAt: Date;
+  authorUserId: string | null;
   contentText: string;
   sourceMetadata: unknown;
 }
@@ -160,6 +161,7 @@ export async function buildConversationEvidenceWindow(
     .select({
       id: rawEvents.id,
       occurredAt: rawEvents.occurredAt,
+      authorUserId: rawEvents.authorUserId,
       contentText: rawEvents.contentText,
       sourceMetadata: rawEvents.sourceMetadata,
     })
@@ -211,6 +213,7 @@ export async function buildLinkedContextWindow(
     .select({
       id: rawEvents.id,
       occurredAt: rawEvents.occurredAt,
+      authorUserId: rawEvents.authorUserId,
       source: rawEvents.source,
       contentText: rawEvents.contentText,
       sourceMetadata: rawEvents.sourceMetadata,
@@ -255,6 +258,7 @@ export async function buildLinkedContextWindow(
     byEvent.set(row.id, {
       id: row.id,
       occurredAt: row.occurredAt,
+      authorUserId: row.authorUserId,
       source: row.source,
       contentText,
       sourceMetadata: row.sourceMetadata,

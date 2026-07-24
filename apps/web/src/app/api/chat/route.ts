@@ -184,9 +184,10 @@ const nativeToolGroups = {
   ],
   guide: ['search_app_guide', 'get_app_route'],
   objects: ['search_objects', 'get_object', 'list_objects', 'list_tasks', 'recent_changes'],
-  objectMemory: ['list_pending_approvals', 'suggest_object_memory'],
+  objectMemory: ['list_pending_approvals', 'revise_suggestion', 'suggest_object_memory'],
   suggestions: [
     'list_pending_approvals',
+    'revise_suggestion',
     'suggest_task',
     'suggest_object_memory',
     'suggest_calendar_event',
@@ -201,8 +202,9 @@ const nativeToolGroups = {
     'list_recent_document_changes',
   ],
   calendar: ['list_calendar_events', 'get_calendar_event'],
-  approvals: ['list_pending_approvals'],
+  approvals: ['list_pending_approvals', 'revise_suggestion'],
   actions: [
+    'revise_suggestion',
     'execute_object_create',
     'execute_object_update',
     'execute_object_archive',
@@ -249,6 +251,7 @@ function selectAgentToolGroups(input: {
   const hasObjectMemoryIntent = matchesAny(text, [
     /\b(remember|memory|note|alias|aka|also known as|typo|rename|relationship|related|owner|owns|assignee|responsible|status|stage|priority|due)\b/,
     /\b(calls? this|known as|same as|belongs to|works? with|reports? to)\b/,
+    /\b(promises?|promised|commits?|committed|commitment|responsibility)\b/,
   ]);
 
   if (
@@ -291,13 +294,20 @@ function selectAgentToolGroups(input: {
     groups.add('calendar');
   }
 
-  if (matchesAny(text, [/\b(approval|pending|proposal|suggestion|queued|review)\b/])) {
+  if (
+    matchesAny(text, [
+      /\b(approval|pending|proposal|suggestion|queued|review)\b/,
+      /\b(wrong|incorrect|correct this|fix this|actually|instead)\b/,
+      /\bit(?:'s| is)\s+not\b/,
+    ])
+  ) {
     groups.add('approvals');
   }
 
   if (
     matchesAny(text, [
-      /\b(create|add|update|change|edit|set|move|cancel|delete|remove|archive|merge|schedule|reschedule|approve|do it|mark|done|complete|finish|close)\b/,
+      /\b(create|add|update|change|edit|set|move|cancel|delete|remove|archive|merge|schedule|reschedule|approve|correct|fix|wrong|incorrect|actually|instead|do it|mark|done|complete|finish|close)\b/,
+      /\bit(?:'s| is)\s+not\b/,
     ])
   ) {
     groups.add('actions');

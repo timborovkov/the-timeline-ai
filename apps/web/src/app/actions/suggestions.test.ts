@@ -7,6 +7,7 @@ import {
   acceptVisibleSuggestionsAction,
   rejectSuggestionItemAction,
   rejectVisibleSuggestionsAction,
+  reviseSuggestionItemAction,
   reviseTaskSuggestionItemAction,
 } from '@/app/actions/suggestions';
 
@@ -25,6 +26,7 @@ const fakes = vi.hoisted(() => ({
     rejectSuggestionItem: vi.fn(),
     acceptAll: vi.fn(),
     acceptSelected: vi.fn(),
+    reviseSuggestionItem: vi.fn(),
     reviseTaskSuggestionItem: vi.fn(),
     listSuggestions: vi.fn(),
   },
@@ -64,6 +66,7 @@ beforeEach(() => {
   fakes.fakeSuggestions.rejectSuggestionItem.mockResolvedValue(true);
   fakes.fakeSuggestions.acceptAll.mockResolvedValue({ accepted: 2, failed: 0 });
   fakes.fakeSuggestions.acceptSelected.mockResolvedValue({ accepted: 2, failed: 0 });
+  fakes.fakeSuggestions.reviseSuggestionItem.mockResolvedValue(true);
   fakes.fakeSuggestions.reviseTaskSuggestionItem.mockResolvedValue(true);
   fakes.fakeSuggestions.listSuggestions.mockResolvedValue([
     { items: [{ id: ITEM_ID, status: 'failed' }] },
@@ -84,6 +87,11 @@ describe('suggestion action validation and scope', () => {
     await expect(rejectSuggestionItemAction({ itemId: 'bad' })).resolves.toEqual({
       error: 'Invalid suggestion item id',
     });
+    await expect(reviseSuggestionItemAction({ itemId: ITEM_ID, feedback: '   ' })).resolves.toEqual(
+      {
+        error: 'Tell Timeline what should change',
+      },
+    );
     await expect(acceptAllSuggestionAction({ suggestionId: 'bad' })).resolves.toEqual({
       error: 'Invalid suggestion id',
     });
@@ -159,6 +167,21 @@ describe('suggestion item actions', () => {
     await expect(rejectSuggestionItemAction({ itemId: ITEM_ID })).resolves.toEqual({ ok: true });
 
     expect(fakes.fakeSuggestions.rejectSuggestionItem).toHaveBeenCalledWith(ITEM_ID);
+    expectSuggestionSurfacesRevalidated();
+  });
+
+  it('rewrites an unresolved proposal from reviewer feedback', async () => {
+    await expect(
+      reviseSuggestionItemAction({
+        itemId: ITEM_ID,
+        feedback: 'Miku made this promise, not Tim.',
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(fakes.fakeSuggestions.reviseSuggestionItem).toHaveBeenCalledWith({
+      itemId: ITEM_ID,
+      feedback: 'Miku made this promise, not Tim.',
+    });
     expectSuggestionSurfacesRevalidated();
   });
 

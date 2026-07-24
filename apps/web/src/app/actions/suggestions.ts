@@ -96,6 +96,33 @@ export async function rejectSuggestionItemAction(input: unknown): Promise<Action
   });
 }
 
+export async function reviseSuggestionItemAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('revise_suggestion_item', async () => {
+    const parsed = z
+      .object({
+        itemId: uuidSchema,
+        feedback: z.string().trim().min(1).max(2000),
+      })
+      .safeParse(input);
+    if (!parsed.success) return { error: 'Tell Timeline what should change' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const ok = await r.scope.suggestions.reviseSuggestionItem(parsed.data);
+      if (!ok) return { error: 'Proposal is no longer editable' };
+      revalidateSuggestionSurfaces();
+      return { ok: true };
+    } catch (err) {
+      return {
+        error: publicActionError(err, {
+          operation: 'revise_suggestion_item',
+          fallback: 'Failed to update proposal.',
+        }),
+      };
+    }
+  });
+}
+
 export async function reviseTaskSuggestionItemAction(input: unknown): Promise<ActionState> {
   return runSentryServerAction('revise_task_suggestion_item', async () => {
     const parsed = z

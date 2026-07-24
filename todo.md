@@ -182,6 +182,11 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 
 ## Agent Reliability
 
+- [x] Let reviewers revise unresolved approval proposals with plain-language
+      feedback while preserving their operation, target, evidence, source
+      records, and bounded revision history. Route chat corrections between
+      pending proposal revision and approval-backed canonical object, board, or
+      calendar edits.
 - [x] Add richer per-tool observability for chat/retrieval turns: selected tool
       groups, omitted groups, retrieval recipe, result counts, top artifact refs,
       tool latency, and tool errors. Web chat now persists `tool_observability`

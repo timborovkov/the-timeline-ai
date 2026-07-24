@@ -45,6 +45,10 @@ describe('serializeSuggestionBundle', () => {
           quote: 'Nora approved creating the task.',
           source: 'telegram',
           occurredAt: new Date('2026-06-20T09:55:00.000Z'),
+          senderName: 'Nora',
+          senderHandle: '@nora',
+          senderTimelineName: 'Nora Example',
+          conversationName: 'Delivery',
           metadata: {
             reconciliation_source_ref: {
               source: 'telegram',
@@ -64,6 +68,10 @@ describe('serializeSuggestionBundle', () => {
         quote: 'Nora approved creating the task.',
         source: 'telegram',
         occurredAt: '2026-06-20T09:55:00.000Z',
+        senderName: 'Nora',
+        senderHandle: '@nora',
+        senderTimelineName: 'Nora Example',
+        conversationName: 'Delivery',
         metadata: {
           reconciliation_source_ref: {
             source: 'telegram',

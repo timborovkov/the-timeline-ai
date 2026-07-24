@@ -520,6 +520,68 @@ describe('POST /api/chat', () => {
     expect(streamCall?.[0].tools).not.toHaveProperty('execute_object_update');
   });
 
+  it('adds proposal revision and canonical action tools for natural correction turns', async () => {
+    const correctionMessage = {
+      id: 'm-correction',
+      role: 'user',
+      parts: [{ type: 'text', text: "It's not Otto who is in Italy, it's Miku." }],
+    };
+    fakes.fakeSafeValidateUIMessages.mockResolvedValue({
+      success: true,
+      data: [correctionMessage],
+    });
+    fakes.fakeBuildAgentTools.mockReturnValue({
+      retrieve_workspace_context: { type: 'native' },
+      list_pending_approvals: { type: 'native' },
+      revise_suggestion: { type: 'native' },
+      search_objects: { type: 'native' },
+      execute_object_update: { type: 'native' },
+    });
+
+    const response = await POST(request(validBody({ messages: [correctionMessage] })));
+
+    expect(response.status).toBe(200);
+    const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
+      | [{ tools?: Record<string, unknown> }]
+      | undefined;
+    expect(streamCall?.[0].tools).toMatchObject({
+      list_pending_approvals: { type: 'native' },
+      revise_suggestion: { type: 'native' },
+      search_objects: { type: 'native' },
+      execute_object_update: { type: 'native' },
+    });
+  });
+
+  it('keeps proposal revision available when a follow-up only corrects who promised', async () => {
+    const correctionMessage = {
+      id: 'm-promise-correction',
+      role: 'user',
+      parts: [{ type: 'text', text: 'Miku promised it, not Tim.' }],
+    };
+    fakes.fakeSafeValidateUIMessages.mockResolvedValue({
+      success: true,
+      data: [correctionMessage],
+    });
+    fakes.fakeBuildAgentTools.mockReturnValue({
+      retrieve_workspace_context: { type: 'native' },
+      list_pending_approvals: { type: 'native' },
+      revise_suggestion: { type: 'native' },
+      suggest_object_memory: { type: 'native' },
+    });
+
+    const response = await POST(request(validBody({ messages: [correctionMessage] })));
+
+    expect(response.status).toBe(200);
+    const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
+      | [{ tools?: Record<string, unknown> }]
+      | undefined;
+    expect(streamCall?.[0].tools).toMatchObject({
+      list_pending_approvals: { type: 'native' },
+      revise_suggestion: { type: 'native' },
+      suggest_object_memory: { type: 'native' },
+    });
+  });
+
   it('adds action tools for completion-style commands on object context', async () => {
     const completionMessage = {
       id: 'm-complete',

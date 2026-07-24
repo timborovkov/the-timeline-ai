@@ -8,6 +8,7 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/app/actions/suggestions', () => ({
   acceptSuggestionItemAction: vi.fn(),
   rejectSuggestionItemAction: vi.fn(),
+  reviseSuggestionItemAction: vi.fn(),
 }));
 
 const { ToolStep } = await import('./tool-step.js');

@@ -4857,6 +4857,101 @@ describe('processSuggestionJobForTests', () => {
     expect(await db.select().from(reconciliationOutputs)).toHaveLength(1);
   });
 
+  it('preserves Telegram sender identity and cites the sender commitment instead of a mention', async () => {
+    const promiseId = '10000000-0000-0000-0000-0000000000e7';
+    const errorId = '10000000-0000-0000-0000-0000000000e8';
+    const reviewId = '20000000-0000-0000-0000-0000000000e7';
+    const conversationKey = `telegram:${TEAM_ID}:chat:prh`;
+    await pg.query(`UPDATE users SET name = 'Mikael' WHERE id = '${MEMBER_ID}'`);
+    await seedRawEvent(db as never, {
+      id: promiseId,
+      source: 'telegram',
+      text: '@timbo0 lupaan hoitaa PRH-rekisteröinnin 17. elokuuta.',
+      authorUserId: MEMBER_ID,
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+      sourceMetadata: {
+        tg_chat_id: 'prh',
+        tg_chat_title: 'Founders',
+        tg_message_id: '1',
+        tg_sender_name: 'Miku',
+        tg_username: 'mikael',
+      },
+    });
+    await seedRawEvent(db as never, {
+      id: errorId,
+      source: 'telegram',
+      text: 'The string context variable "name" was not provided.',
+      authorUserId: MEMBER_ID,
+      occurredAt: new Date('2026-05-27T10:02:00.000Z'),
+      sourceMetadata: {
+        tg_chat_id: 'prh',
+        tg_chat_title: 'Founders',
+        tg_message_id: '2',
+        tg_sender_name: 'Miku',
+        tg_username: 'mikael',
+      },
+    });
+    await seedConversationReview(db as never, {
+      id: reviewId,
+      conversationKey,
+      lastRawEventId: errorId,
+      quietUntil: new Date('2026-05-27T09:00:00.000Z'),
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'PRH company registration',
+            summary: 'Miku plans to submit the company registration to PRH.',
+            reason: 'Miku made a dated commitment.',
+            confidence: 'high',
+            quote: 'PRH',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'task',
+                title: 'Submit company registration to PRH',
+                proposedPayload: {
+                  canonicalName: 'Submit company registration to PRH',
+                  ownerName: 'Miku',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const call = chat.mock.calls[0]?.[0] as { prompt: string; system: string };
+    expect(call.prompt).toContain('sender=Miku (@mikael)');
+    expect(call.prompt).toContain(`verified_timeline_member=${MEMBER_ID} Mikael`);
+    expect(call.prompt).toContain('conversation=Founders');
+    expect(call.system).toContain(
+      'A mention or tag identifies an addressee, not the sender or task owner.',
+    );
+
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundle?.evidence).toHaveLength(1);
+    expect(bundle?.evidence[0]).toMatchObject({
+      rawEventId: promiseId,
+      senderName: 'Miku',
+      senderHandle: '@mikael',
+      senderTimelineName: 'Mikael',
+      conversationName: 'Founders',
+    });
+  });
+
   it('revises a pending conversation proposal when a follow-up changes the owner', async () => {
     const firstId = '10000000-0000-0000-0000-0000000000b1';
     const secondId = '10000000-0000-0000-0000-0000000000b2';
