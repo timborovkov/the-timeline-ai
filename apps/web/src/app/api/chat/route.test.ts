@@ -567,6 +567,7 @@ describe('POST /api/chat', () => {
       list_pending_approvals: { type: 'native' },
       revise_suggestion: { type: 'native' },
       suggest_object_memory: { type: 'native' },
+      execute_object_update: { type: 'native' },
     });
 
     const response = await POST(request(validBody({ messages: [correctionMessage] })));
@@ -579,6 +580,7 @@ describe('POST /api/chat', () => {
       list_pending_approvals: { type: 'native' },
       revise_suggestion: { type: 'native' },
       suggest_object_memory: { type: 'native' },
+      execute_object_update: { type: 'native' },
     });
   });
 

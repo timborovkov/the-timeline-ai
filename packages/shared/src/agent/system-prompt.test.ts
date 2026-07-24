@@ -10,8 +10,9 @@ describe('buildSystemPrompt', () => {
       currentDate: new Date('2026-07-24T12:00:00.000Z'),
     });
 
-    expect(AGENT_PROMPT_VERSION).toBe('agent-v18-2026-07');
+    expect(AGENT_PROMPT_VERSION).toBe('agent-v19-2026-07');
     expect(prompt).toContain("the event's sender is the speaker");
+    expect(prompt).toContain('For a forwarded email, the original forwarded sender is the speaker');
     expect(prompt).toContain('A mention/tag identifies an addressee, not the speaker.');
     expect(prompt).toContain(
       "Never transfer a sender's commitment, travel, availability, opinion, or status to another participant.",

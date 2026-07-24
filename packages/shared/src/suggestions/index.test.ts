@@ -5067,7 +5067,31 @@ describe('suggestion scope', () => {
         itemId,
         feedback: 'Miku made this promise, not Tim. Keep the date unchanged.',
       }),
-    ).resolves.toBe(true);
+    ).resolves.toMatchObject({
+      id: itemId,
+      status: 'pending',
+      title: 'Miku to register the company with PRH',
+    });
+
+    await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'PRH company registration',
+      dedupeKey: 'prh-registration-wrong-owner',
+      evidence: [{ rawEventId, quote: '@timbo0 I will register the company with PRH.' }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Tim to register the company with PRH',
+          dedupeKey: 'prh-registration-wrong-owner:item',
+          proposedPayload: {
+            canonicalName: 'Register the company with PRH',
+            ownerUserId: USER_ID,
+            dueAt: '2026-08-17T00:00:00.000Z',
+          },
+        },
+      ],
+    });
 
     const [item] = await db
       .select()
@@ -5103,6 +5127,129 @@ describe('suggestion scope', () => {
       .from(rawEvents)
       .where(eq(rawEvents.id, rawEventId));
     expect(source?.contentText).toBe('@timbo0 I will register the company with PRH on August 17.');
+  });
+
+  it('keeps payload-encoded proposal targets fixed during reviewer revisions', async () => {
+    const chatStructured = vi.fn(() =>
+      Promise.resolve({
+        object: {
+          title: 'Miku owns the AuditAI relationship',
+          description: 'Corrected the relationship wording.',
+          proposedPayload: {
+            fromEntityId: REVIEWER_ID,
+            toEntityId: USER_ID,
+            kind: 'related',
+          },
+          explanation: 'Reworded the proposal while attempting to swap the endpoints.',
+        },
+        model: 'test-fixed-proposal-target',
+      }),
+    );
+    const scope = withTeam(db as never, TEAM_ID, USER_ID, {
+      chatStructured: chatStructured as never,
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'AuditAI ownership',
+      dedupeKey: 'fixed-relationship-target',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_relationship',
+          title: 'Tim owns AuditAI',
+          dedupeKey: 'fixed-relationship-target:item',
+          proposedPayload: {
+            fromEntityId: USER_ID,
+            toEntityId: REVIEWER_ID,
+            kind: 'related',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+
+    const revised = await scope.suggestions.reviseSuggestionItem({
+      itemId,
+      feedback: 'Clarify who owns what without changing the relationship target.',
+    });
+
+    expect(revised).toMatchObject({
+      id: itemId,
+      title: 'Miku owns the AuditAI relationship',
+      proposedPayload: {
+        fromEntityId: USER_ID,
+        toEntityId: REVIEWER_ID,
+        kind: 'related',
+      },
+    });
+  });
+
+  it('uses nested and forwarded email provenance for suggestion evidence', async () => {
+    const directId = 'abababab-abab-4bab-8bab-abababababac';
+    const forwardedId = 'cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd';
+    await db.insert(rawEvents).values([
+      {
+        id: directId,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'email',
+        contentText: 'I will send the direct update.',
+        sourceMetadata: {
+          from: { name: 'Ada Lovelace', email: 'ada@example.com' },
+          subject: 'Direct update',
+        },
+        occurredAt: new Date('2026-07-23T08:00:00.000Z'),
+        visibility: 'team',
+      },
+      {
+        id: forwardedId,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'email',
+        contentText: 'I will send the forwarded update.',
+        sourceMetadata: {
+          from: { name: 'Tim', email: 'tim@example.com' },
+          forwarded_from: { name: 'Mikael', email: 'miku@example.com' },
+          subject: 'Fwd: Forwarded update',
+        },
+        occurredAt: new Date('2026-07-23T08:05:00.000Z'),
+        visibility: 'team',
+      },
+    ]);
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Email provenance',
+      dedupeKey: 'email-provenance',
+      evidence: [{ rawEventId: directId }, { rawEventId: forwardedId }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Send update',
+          dedupeKey: 'email-provenance:item',
+          proposedPayload: { canonicalName: 'Send update' },
+        },
+      ],
+    });
+
+    expect(bundle.evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          rawEventId: directId,
+          senderName: 'Ada Lovelace',
+          senderHandle: 'ada@example.com',
+          conversationName: 'Direct update',
+        }),
+        expect.objectContaining({
+          rawEventId: forwardedId,
+          senderName: 'Mikael',
+          senderHandle: 'miku@example.com',
+          conversationName: 'Fwd: Forwarded update',
+        }),
+      ]),
+    );
   });
 
   it('leaves a proposal unchanged when an LLM revision is not acceptable', async () => {

@@ -42,7 +42,7 @@ import { z } from 'zod';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
-const SUGGESTION_CODE_VERSION = '2026-07-a';
+const SUGGESTION_CODE_VERSION = '2026-07-b';
 const CONVERSATION_NO_ACTION_RECONCILIATION_VERSION = 'conversation-no-action-2026-06';
 const RECENT_CONTEXT_LIMIT = 5;
 const OBJECT_PROMPT_LIMIT = 40;
@@ -259,11 +259,19 @@ function metadataText(metadata: unknown, key: string): string | null {
   return text.length > 0 ? text : null;
 }
 
-function sourceContextLabel(
+function metadataPerson(value: unknown): { name: string | null; email: string | null } {
+  const record = recordFromUnknown(value);
+  const name = typeof record.name === 'string' ? record.name.trim() || null : null;
+  const email = typeof record.email === 'string' ? record.email.trim() || null : null;
+  return { name, email };
+}
+
+function sourceContextForPrompt(
   source: string,
   sourceMetadata: unknown,
   authorUserId: string | null,
   members: { userId: string; name: string | null; email: string | null }[],
+  eventId: string,
 ): string {
   const metadata = recordFromUnknown(sourceMetadata);
   let senderName: string | null = null;
@@ -281,32 +289,40 @@ function sourceContextLabel(
     conversationName =
       metadataText(metadata, 'slack_channel_name') ?? metadataText(metadata, 'slack_channel_id');
   } else if (source === 'email') {
+    const forwarded = recordFromUnknown(metadata.forwarded_from);
+    const forwardedPerson = metadataPerson(forwarded.from ?? metadata.forwarded_from);
+    const directPerson = metadataPerson(metadata.from);
     senderName =
+      forwardedPerson.name ??
+      forwardedPerson.email ??
+      directPerson.name ??
+      directPerson.email ??
       metadataText(metadata, 'from_name') ??
+      metadataText(metadata, 'from_email') ??
+      metadataText(metadata, 'sender_email');
+    senderHandle =
+      forwardedPerson.email ??
+      directPerson.email ??
       metadataText(metadata, 'from_email') ??
       metadataText(metadata, 'sender_email');
     conversationName = metadataText(metadata, 'subject');
   }
 
-  const sender =
-    senderName && senderHandle && senderName !== senderHandle
-      ? `${senderName} (${senderHandle})`
-      : (senderName ?? senderHandle);
   const member = authorUserId
     ? members.find((candidate) => candidate.userId === authorUserId)
     : undefined;
-  return [
-    `source=${source}`,
-    sender ? `sender=${sender}` : null,
-    member
-      ? `verified_timeline_member=${member.userId} ${member.name ?? 'Unnamed'} <${
-          member.email ?? 'no-email'
-        }>`
-      : null,
-    conversationName ? `conversation=${conversationName}` : null,
-  ]
-    .filter((part): part is string => Boolean(part))
-    .join(' ');
+  return fenceExternalContent(
+    JSON.stringify({
+      source,
+      senderName,
+      senderHandle,
+      conversationName,
+      verifiedTimelineMemberId: member?.userId ?? null,
+      verifiedTimelineMemberName: member?.name ?? null,
+      verifiedTimelineMemberEmail: member?.email ?? null,
+    }),
+    { source: 'raw-event-source-context', eventId },
+  );
 }
 
 function localRefSlug(value: unknown): string | null {
@@ -2536,6 +2552,7 @@ async function runSuggestionExtraction(
   const prompt = llm.truncateTextToTokenBudget(
     buildPrompt({
       text,
+      sourceEventId: row.id,
       occurredAt: row.occurredAt,
       workspaceTime,
       facts: factRows.map((f) => f.statement),
@@ -3380,6 +3397,7 @@ function recordFromUnknown(value: unknown): Record<string, unknown> {
 
 function buildPrompt(args: {
   text: string;
+  sourceEventId: string;
   occurredAt: Date;
   workspaceTime: time.WorkspaceTimeContext;
   facts: string[];
@@ -3537,11 +3555,12 @@ function buildPrompt(args: {
     ...(args.conversationWindow
       ? args.conversationWindow.map(
           (r) =>
-            `- [${r.id} ${r.occurredAt.toISOString()} ${sourceContextLabel(
+            `- [${r.id} ${r.occurredAt.toISOString()} ${sourceContextForPrompt(
               args.source,
               r.sourceMetadata,
               r.authorUserId,
               args.members,
+              r.id,
             )}] ${fenceExternalContent(truncate(r.contentText, 700), {
               source: 'raw-event-conversation-window',
               eventId: r.id,
@@ -3549,11 +3568,12 @@ function buildPrompt(args: {
         )
       : args.recent.map((r) => {
           const occurredAt = r.occurredAt.toISOString();
-          return `- [${r.id} ${occurredAt} ${sourceContextLabel(
+          return `- [${r.id} ${occurredAt} ${sourceContextForPrompt(
             r.source,
             r.sourceMetadata,
             r.authorUserId,
             args.members,
+            r.id,
           )}] ${fenceExternalContent(truncate(r.text ?? '', 500), {
             source: 'raw-event-context',
             eventId: r.id,
@@ -3566,11 +3586,12 @@ function buildPrompt(args: {
           'Use only for disambiguating object-backed references. Do not create or update proposals from this section unless the conversation evidence window itself supports the proposal.',
           ...args.linkedContext.map(
             (r) =>
-              `- [${r.id} ${r.occurredAt.toISOString()} ${sourceContextLabel(
+              `- [${r.id} ${r.occurredAt.toISOString()} ${sourceContextForPrompt(
                 r.source,
                 r.sourceMetadata,
                 r.authorUserId,
                 args.members,
+                r.id,
               )} objects=${r.linkedObjects
                 .map((object) => `${object.type}:${object.name}`)
                 .join(', ')}] ${fenceExternalContent(truncate(r.contentText, 500), {
@@ -3582,14 +3603,15 @@ function buildPrompt(args: {
       : []),
     '',
     args.conversationWindow ? '# Anchor raw event' : '# Current raw event',
-    `[${sourceContextLabel(
+    `[${sourceContextForPrompt(
       args.source,
       args.sourceMetadata,
       args.authorUserId,
       args.members,
+      args.sourceEventId,
     )}] ${fenceExternalContent(args.text, {
       source: args.conversationWindow ? 'raw-event-anchor' : 'raw-event-current',
-      eventId: args.occurredAt.toISOString(),
+      eventId: args.sourceEventId,
     })}`,
   ].join('\n');
 }

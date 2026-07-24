@@ -952,7 +952,26 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     return targetId ? `/app/objects/${targetId}` : '/app/objects';
   }
 
+  function emailPersonFromMetadata(meta: Record<string, unknown>): {
+    name: string | null;
+    email: string | null;
+  } {
+    const forwarded = metadataObject(meta.forwarded_from);
+    const candidate =
+      Object.keys(forwarded).length > 0
+        ? metadataObject(forwarded.from ?? meta.forwarded_from)
+        : metadataObject(meta.from);
+    const name = candidate.name;
+    const email = candidate.email;
+    return {
+      name: typeof name === 'string' && name.trim() ? name.trim() : null,
+      email: typeof email === 'string' && email.trim() ? email.trim() : null,
+    };
+  }
+
   function emailFromMetadata(meta: Record<string, unknown>): string | null {
+    const person = emailPersonFromMetadata(meta);
+    if (person.email) return person.email;
     const from = meta.from;
     if (from && typeof from === 'object' && !Array.isArray(from)) {
       const email = (from as Record<string, unknown>).email;
@@ -962,7 +981,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
   }
 
   function emailMetadataSql() {
-    return sql`lower(coalesce(${rawEvents.sourceMetadata} #>> '{from,email}', ${rawEvents.sourceMetadata} ->> 'from_email', ${rawEvents.sourceMetadata} ->> 'sender_email'))`;
+    return sql`lower(coalesce(${rawEvents.sourceMetadata} #>> '{forwarded_from,from,email}', ${rawEvents.sourceMetadata} #>> '{forwarded_from,email}', ${rawEvents.sourceMetadata} #>> '{from,email}', ${rawEvents.sourceMetadata} ->> 'from_email', ${rawEvents.sourceMetadata} ->> 'sender_email'))`;
   }
 
   function senderContextForEvent(event: {
@@ -990,10 +1009,11 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       };
     }
     if (event.source === 'email') {
+      const person = emailPersonFromMetadata(meta);
       const email = emailFromMetadata(meta);
       return {
         source: event.source,
-        displayName: metadataString(meta, 'from_name') ?? email,
+        displayName: person.name ?? metadataString(meta, 'from_name') ?? email,
         handle: email,
         externalId: email,
         provider: 'email',

@@ -2287,6 +2287,10 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
                 quote: ev.quote,
                 occurred_at: ev.occurredAt?.toISOString() ?? null,
                 source: ev.source,
+                sender_name: ev.senderName,
+                sender_handle: ev.senderHandle,
+                sender_timeline_name: ev.senderTimelineName,
+                conversation_name: ev.conversationName,
               })),
               items: suggestion.items.map((item) => ({
                 item_id: item.id,

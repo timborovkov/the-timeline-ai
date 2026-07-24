@@ -28,10 +28,22 @@ afterEach(cleanup);
 describe('SuggestionChangeDialog', () => {
   it('sends reviewer feedback and leaves the revised proposal pending', async () => {
     const user = userEvent.setup({ pointerEventsCheck: PointerEventsCheckLevel.Never });
+    const onRevised = vi.fn();
+    fakes.reviseSuggestionItemAction.mockResolvedValue({
+      ok: true,
+      revisedItem: {
+        id: '11111111-1111-4111-8111-111111111111',
+        status: 'pending',
+        title: 'Miku to register with PRH',
+        description: 'Miku made the promise.',
+        proposedPayload: { ownerName: 'Miku' },
+      },
+    });
     render(
       <SuggestionChangeDialog
         itemId="11111111-1111-4111-8111-111111111111"
         title="PRH company registration"
+        onRevised={onRevised}
       />,
     );
 
@@ -51,6 +63,13 @@ describe('SuggestionChangeDialog', () => {
         itemId: '11111111-1111-4111-8111-111111111111',
         feedback: 'Miku made this promise, not Tim.',
       });
+    });
+    expect(onRevised).toHaveBeenCalledWith({
+      id: '11111111-1111-4111-8111-111111111111',
+      status: 'pending',
+      title: 'Miku to register with PRH',
+      description: 'Miku made the promise.',
+      proposedPayload: { ownerName: 'Miku' },
     });
     expect(fakes.toastSuccess).toHaveBeenCalledWith('Proposal updated');
     expect(fakes.refresh).toHaveBeenCalled();

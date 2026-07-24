@@ -24,11 +24,19 @@ export function SuggestionChangeDialog({
   title,
   disabled = false,
   compact = false,
+  onRevised,
 }: {
   itemId: string;
   title: string;
   disabled?: boolean;
   compact?: boolean;
+  onRevised?: (item: {
+    id: string;
+    status: string;
+    title: string;
+    description: string | null;
+    proposedPayload: Record<string, unknown>;
+  }) => void;
 }) {
   const router = useRouter();
   const feedbackId = useId();
@@ -59,6 +67,7 @@ export function SuggestionChangeDialog({
         setError(result.error);
         return;
       }
+      if (result.revisedItem) onRevised?.(result.revisedItem);
       toast.success('Proposal updated');
       setOpen(false);
       setFeedback('');

@@ -443,6 +443,11 @@ export interface SuggestionItem {
   calendarResolutionHint?: CalendarResolutionHint | null;
 }
 
+export type RevisedSuggestionItem = Pick<
+  SuggestionItem,
+  'id' | 'status' | 'title' | 'description' | 'proposedPayload'
+>;
+
 export interface CalendarResolutionEventSummary {
   id: string;
   title: string;
@@ -2039,9 +2044,28 @@ function suggestionEvidenceSourceContext(
     };
   }
   if (source === 'email') {
+    const person = (value: unknown): { name: string | null; email: string | null } => {
+      const record = recordFromUnknown(value);
+      const name = typeof record.name === 'string' ? record.name.trim() || null : null;
+      const email = typeof record.email === 'string' ? record.email.trim() || null : null;
+      return { name, email };
+    };
+    const forwarded = recordFromUnknown(metadata.forwarded_from);
+    const forwardedPerson = person(forwarded.from ?? metadata.forwarded_from);
+    const directPerson = person(metadata.from);
+    const name =
+      forwardedPerson.name ??
+      forwardedPerson.email ??
+      directPerson.name ??
+      directPerson.email ??
+      text('from_name') ??
+      text('from_email') ??
+      text('sender_email');
+    const email =
+      forwardedPerson.email ?? directPerson.email ?? text('from_email') ?? text('sender_email');
     return {
-      senderName: text('from_name') ?? text('from_email') ?? text('sender_email'),
-      senderHandle: text('from_email') ?? text('sender_email'),
+      senderName: name,
+      senderHandle: email,
       conversationName: text('subject'),
     };
   }
@@ -2897,6 +2921,29 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return rows.map((row) =>
       toBundle(row, itemsBySuggestion.get(row.id) ?? [], evidenceBySuggestion.get(row.id) ?? []),
     );
+  }
+
+  function preserveProposalTargetPayload(
+    targetKind: TargetKind,
+    currentPayload: Record<string, unknown>,
+    revisedPayload: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const targetKeys: Partial<Record<TargetKind, readonly string[]>> = {
+      identity_facet: ['entityId'],
+      object_note: ['entityId', 'entityName', 'entityType', 'noteId'],
+      object_relationship: ['fromEntityId', 'fromRef', 'fromName', 'toEntityId', 'toRef', 'toName'],
+      board_membership: ['boardId', 'entityId'],
+      board_item_update: ['boardItemId'],
+    };
+    const keys = targetKeys[targetKind];
+    if (!keys) return revisedPayload;
+    const preserved = Object.fromEntries(
+      Object.entries(revisedPayload).filter(([key]) => !keys.includes(key)),
+    );
+    for (const key of keys) {
+      if (Object.hasOwn(currentPayload, key)) preserved[key] = currentPayload[key];
+    }
+    return preserved;
   }
 
   async function refreshBundleStatus(
@@ -5669,11 +5716,11 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .onConflictDoUpdate({
         target: [agentSuggestionItems.suggestionId, agentSuggestionItems.dedupeKey],
         set: {
-          title: sql`CASE WHEN ${agentSuggestionItems.status} IN ('pending', 'failed') THEN excluded.title ELSE ${agentSuggestionItems.title} END`,
-          description: sql`CASE WHEN ${agentSuggestionItems.status} IN ('pending', 'failed') THEN excluded.description ELSE ${agentSuggestionItems.description} END`,
-          targetId: sql`CASE WHEN ${agentSuggestionItems.status} IN ('pending', 'failed') THEN excluded.target_id ELSE ${agentSuggestionItems.targetId} END`,
-          proposedPayload: sql`CASE WHEN ${agentSuggestionItems.status} IN ('pending', 'failed') THEN excluded.proposed_payload ELSE ${agentSuggestionItems.proposedPayload} END`,
-          failureReason: sql`CASE WHEN ${agentSuggestionItems.status} = 'failed' THEN excluded.failure_reason ELSE ${agentSuggestionItems.failureReason} END`,
+          title: sql`CASE WHEN ${agentSuggestionItems.status} IN ('pending', 'failed') AND NOT (${agentSuggestionItems.metadata} ? 'proposal_edited_by_user_id') THEN excluded.title ELSE ${agentSuggestionItems.title} END`,
+          description: sql`CASE WHEN ${agentSuggestionItems.status} IN ('pending', 'failed') AND NOT (${agentSuggestionItems.metadata} ? 'proposal_edited_by_user_id') THEN excluded.description ELSE ${agentSuggestionItems.description} END`,
+          targetId: sql`CASE WHEN ${agentSuggestionItems.status} IN ('pending', 'failed') AND NOT (${agentSuggestionItems.metadata} ? 'proposal_edited_by_user_id') THEN excluded.target_id ELSE ${agentSuggestionItems.targetId} END`,
+          proposedPayload: sql`CASE WHEN ${agentSuggestionItems.status} IN ('pending', 'failed') AND NOT (${agentSuggestionItems.metadata} ? 'proposal_edited_by_user_id') THEN excluded.proposed_payload ELSE ${agentSuggestionItems.proposedPayload} END`,
+          failureReason: sql`CASE WHEN ${agentSuggestionItems.status} = 'failed' AND NOT (${agentSuggestionItems.metadata} ? 'proposal_edited_by_user_id') THEN excluded.failure_reason ELSE ${agentSuggestionItems.failureReason} END`,
           metadata: sql`${agentSuggestionItems.metadata} || excluded.metadata`,
           updatedAt: input.now,
         },
@@ -6456,10 +6503,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           .onConflictDoUpdate({
             target: [agentSuggestionItems.suggestionId, agentSuggestionItems.dedupeKey],
             set: {
-              title: sql`CASE WHEN ${agentSuggestionItems.status} = 'pending' THEN excluded.title ELSE ${agentSuggestionItems.title} END`,
-              description: sql`CASE WHEN ${agentSuggestionItems.status} = 'pending' THEN excluded.description ELSE ${agentSuggestionItems.description} END`,
-              targetId: sql`CASE WHEN ${agentSuggestionItems.status} = 'pending' THEN excluded.target_id ELSE ${agentSuggestionItems.targetId} END`,
-              proposedPayload: sql`CASE WHEN ${agentSuggestionItems.status} = 'pending' THEN excluded.proposed_payload ELSE ${agentSuggestionItems.proposedPayload} END`,
+              title: sql`CASE WHEN ${agentSuggestionItems.status} = 'pending' AND NOT (${agentSuggestionItems.metadata} ? 'proposal_edited_by_user_id') THEN excluded.title ELSE ${agentSuggestionItems.title} END`,
+              description: sql`CASE WHEN ${agentSuggestionItems.status} = 'pending' AND NOT (${agentSuggestionItems.metadata} ? 'proposal_edited_by_user_id') THEN excluded.description ELSE ${agentSuggestionItems.description} END`,
+              targetId: sql`CASE WHEN ${agentSuggestionItems.status} = 'pending' AND NOT (${agentSuggestionItems.metadata} ? 'proposal_edited_by_user_id') THEN excluded.target_id ELSE ${agentSuggestionItems.targetId} END`,
+              proposedPayload: sql`CASE WHEN ${agentSuggestionItems.status} = 'pending' AND NOT (${agentSuggestionItems.metadata} ? 'proposal_edited_by_user_id') THEN excluded.proposed_payload ELSE ${agentSuggestionItems.proposedPayload} END`,
               metadata: sql`CASE WHEN ${agentSuggestionItems.status} = 'pending' THEN ${agentSuggestionItems.metadata} || excluded.metadata ELSE ${agentSuggestionItems.metadata} END`,
               updatedAt: new Date(),
             },
@@ -6679,7 +6726,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       return { accepted, failed: failedItemIds.length, failedItemIds };
     },
 
-    async reviseSuggestionItem(input: { itemId: string; feedback: string }): Promise<boolean> {
+    async reviseSuggestionItem(input: {
+      itemId: string;
+      feedback: string;
+    }): Promise<RevisedSuggestionItem | null> {
       await ensureMember();
       const feedback = input.feedback.replace(/\s+/g, ' ').trim();
       if (!feedback || feedback.length > 2000) throw new Error('Invalid proposal feedback');
@@ -6697,7 +6747,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           ),
         )
         .limit(1);
-      if (!row || row.item.targetKind === 'object_merge') return false;
+      if (!row || row.item.targetKind === 'object_merge') return null;
 
       const bundle = await loadBundle(row.suggestion.id);
       const evidence = (bundle?.evidence ?? []).slice(0, 10).map((entry) => ({
@@ -6763,7 +6813,11 @@ ${JSON.stringify(evidence)}`,
           title: result.object.title,
           description: result.object.description,
           dedupeKey: row.item.dedupeKey,
-          proposedPayload: result.object.proposedPayload,
+          proposedPayload: preserveProposalTargetPayload(
+            row.item.targetKind,
+            row.item.proposedPayload as Record<string, unknown>,
+            result.object.proposedPayload,
+          ),
         },
         objectTypeByTargetId,
       );
@@ -6815,9 +6869,18 @@ ${JSON.stringify(evidence)}`,
             isNull(agentSuggestionItems.resolvedAt),
           ),
         )
-        .returning({ id: agentSuggestionItems.id });
+        .returning({
+          id: agentSuggestionItems.id,
+          status: agentSuggestionItems.status,
+          title: agentSuggestionItems.title,
+          description: agentSuggestionItems.description,
+          proposedPayload: agentSuggestionItems.proposedPayload,
+        });
       if (!updated) throw new Error('Proposal changed while it was being revised. Try again.');
-      return true;
+      return {
+        ...updated,
+        proposedPayload: updated.proposedPayload as Record<string, unknown>,
+      };
     },
 
     async reviseTaskSuggestionItem(input: {

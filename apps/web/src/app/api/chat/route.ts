@@ -253,6 +253,7 @@ function selectAgentToolGroups(input: {
     /\b(calls? this|known as|same as|belongs to|works? with|reports? to)\b/,
     /\b(promises?|promised|commits?|committed|commitment|responsibility)\b/,
   ]);
+  const hasContrastiveCorrection = hasObjectMemoryIntent && /\bnot\b/.test(text);
 
   if (
     input.dashboardContext?.objectId ||
@@ -295,6 +296,7 @@ function selectAgentToolGroups(input: {
   }
 
   if (
+    hasContrastiveCorrection ||
     matchesAny(text, [
       /\b(approval|pending|proposal|suggestion|queued|review)\b/,
       /\b(wrong|incorrect|correct this|fix this|actually|instead)\b/,
@@ -305,6 +307,7 @@ function selectAgentToolGroups(input: {
   }
 
   if (
+    hasContrastiveCorrection ||
     matchesAny(text, [
       /\b(create|add|update|change|edit|set|move|cancel|delete|remove|archive|merge|schedule|reschedule|approve|correct|fix|wrong|incorrect|actually|instead|do it|mark|done|complete|finish|close)\b/,
       /\bit(?:'s| is)\s+not\b/,

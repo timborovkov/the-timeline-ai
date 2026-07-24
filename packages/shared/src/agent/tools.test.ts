@@ -2118,6 +2118,10 @@ describe('buildAgentTools — team isolation', () => {
             quote: 'Miku is Mikael',
             occurredAt: new Date('2026-06-02T11:59:00Z'),
             source: 'telegram',
+            senderName: 'Mikael',
+            senderHandle: '@miku',
+            senderTimelineName: 'Mikael Rintala',
+            conversationName: 'AuditAI founders',
           },
         ],
         items: [
@@ -2191,6 +2195,15 @@ describe('buildAgentTools — team isolation', () => {
         {
           suggestion_id: 'suggestion-1',
           status: 'pending',
+          evidence: [
+            {
+              raw_event_id: TEAM_B_EVENT_ID,
+              sender_name: 'Mikael',
+              sender_handle: '@miku',
+              sender_timeline_name: 'Mikael Rintala',
+              conversation_name: 'AuditAI founders',
+            },
+          ],
           items: [
             {
               item_id: 'item-1',

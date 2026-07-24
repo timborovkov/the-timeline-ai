@@ -108,10 +108,10 @@ export async function reviseSuggestionItemAction(input: unknown): Promise<Action
     const r = await resolveScope();
     if (!r.ok) return { error: r.error };
     try {
-      const ok = await r.scope.suggestions.reviseSuggestionItem(parsed.data);
-      if (!ok) return { error: 'Proposal is no longer editable' };
+      const revisedItem = await r.scope.suggestions.reviseSuggestionItem(parsed.data);
+      if (!revisedItem) return { error: 'Proposal is no longer editable' };
       revalidateSuggestionSurfaces();
-      return { ok: true };
+      return { ok: true, revisedItem };
     } catch (err) {
       return {
         error: publicActionError(err, {

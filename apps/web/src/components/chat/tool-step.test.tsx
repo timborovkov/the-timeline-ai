@@ -1,19 +1,99 @@
+// @vitest-environment happy-dom
+
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent, { PointerEventsCheckLevel } from '@testing-library/user-event';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ refresh: vi.fn() }),
-}));
-vi.mock('@/app/actions/suggestions', () => ({
+const fakes = vi.hoisted(() => ({
+  refresh: vi.fn(),
   acceptSuggestionItemAction: vi.fn(),
   rejectSuggestionItemAction: vi.fn(),
   reviseSuggestionItemAction: vi.fn(),
 }));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ refresh: fakes.refresh }),
+}));
+vi.mock('@/app/actions/suggestions', () => ({
+  acceptSuggestionItemAction: fakes.acceptSuggestionItemAction,
+  rejectSuggestionItemAction: fakes.rejectSuggestionItemAction,
+  reviseSuggestionItemAction: fakes.reviseSuggestionItemAction,
+}));
+vi.mock('sonner', () => ({ toast: { success: vi.fn() } }));
 
 const { ToolStep } = await import('./tool-step.js');
 
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+afterEach(cleanup);
+
 describe('ToolStep', () => {
+  it('renders source names and immediately updates a revised inline proposal', async () => {
+    const itemId = '11111111-1111-4111-8111-111111111111';
+    const user = userEvent.setup({ pointerEventsCheck: PointerEventsCheckLevel.Never });
+    fakes.reviseSuggestionItemAction.mockResolvedValue({
+      ok: true,
+      revisedItem: {
+        id: itemId,
+        status: 'pending',
+        title: 'Miku to register with PRH',
+        description: 'Miku made the promise.',
+        proposedPayload: { ownerName: 'Miku' },
+      },
+    });
+    render(
+      <ToolStep
+        name="suggest_object_memory"
+        state="output-available"
+        output={{
+          suggestion: {
+            id: '22222222-2222-4222-8222-222222222222',
+            title: 'PRH company registration',
+            evidence: [
+              {
+                rawEventId: '33333333-3333-4333-8333-333333333333',
+                quote: '@timbo0 I will register the company with PRH.',
+                source: 'telegram',
+                senderName: 'Miku',
+                senderHandle: '@mikael',
+                senderTimelineName: 'Mikael Rintala',
+                conversationName: 'AuditAI founders',
+              },
+            ],
+            items: [
+              {
+                id: itemId,
+                status: 'pending',
+                targetKind: 'task',
+                title: 'Tim to register with PRH',
+                description: 'Tim made the promise.',
+              },
+            ],
+          },
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByText('Mikael Rintala (Miku, @mikael) in AuditAI founders on Telegram'),
+    ).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Change Tim to register with PRH' }));
+    const dialog = screen.getByRole('dialog');
+    await user.type(
+      within(dialog).getByLabelText('What should change?'),
+      'Miku made this promise, not Tim.',
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Update proposal' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Miku to register with PRH')).toBeTruthy();
+    });
+    expect(screen.queryByText('Tim to register with PRH')).toBeNull();
+  });
+
   it('renders in-chat approval controls for approval-requested tools', () => {
     const html = renderToStaticMarkup(
       createElement(ToolStep, {

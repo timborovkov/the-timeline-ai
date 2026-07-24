@@ -221,7 +221,17 @@ describe('suggestion reconciliation projection', () => {
     await db.delete(reconciliationProjectionOutbox);
     await db
       .update(agentSuggestionItems)
-      .set({ metadata: {} })
+      .set({
+        title: 'Human-revised Acme implementation follow-up',
+        proposedPayload: {
+          canonicalName: 'Human-revised Acme implementation follow-up',
+          ownerName: 'Miku',
+        },
+        metadata: {
+          proposal_edited_by_user_id: USER_ID,
+          proposal_edited_at: '2026-07-24T09:00:00.000Z',
+        },
+      })
       .where(eq(agentSuggestionItems.id, bundle.items[0]?.id ?? ''));
 
     const repaired = await scope.suggestions.repairApprovalProjectionForOutput(outputId);
@@ -231,6 +241,14 @@ describe('suggestion reconciliation projection', () => {
     expect(repaired?.items[0]?.metadata).toMatchObject({
       reconciliation_output_id: outputId,
       reconciliation_projection_version: 'approval-projection-2026-06',
+      proposal_edited_by_user_id: USER_ID,
+    });
+    expect(repaired?.items[0]).toMatchObject({
+      title: 'Human-revised Acme implementation follow-up',
+      proposedPayload: {
+        canonicalName: 'Human-revised Acme implementation follow-up',
+        ownerName: 'Miku',
+      },
     });
     const outboxRows = await db.select().from(reconciliationProjectionOutbox);
     expect(outboxRows).toHaveLength(1);

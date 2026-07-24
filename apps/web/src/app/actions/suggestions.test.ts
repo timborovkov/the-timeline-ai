@@ -66,7 +66,13 @@ beforeEach(() => {
   fakes.fakeSuggestions.rejectSuggestionItem.mockResolvedValue(true);
   fakes.fakeSuggestions.acceptAll.mockResolvedValue({ accepted: 2, failed: 0 });
   fakes.fakeSuggestions.acceptSelected.mockResolvedValue({ accepted: 2, failed: 0 });
-  fakes.fakeSuggestions.reviseSuggestionItem.mockResolvedValue(true);
+  fakes.fakeSuggestions.reviseSuggestionItem.mockResolvedValue({
+    id: ITEM_ID,
+    status: 'pending',
+    title: 'Miku to register with PRH',
+    description: 'Miku made the promise.',
+    proposedPayload: { ownerName: 'Miku' },
+  });
   fakes.fakeSuggestions.reviseTaskSuggestionItem.mockResolvedValue(true);
   fakes.fakeSuggestions.listSuggestions.mockResolvedValue([
     { items: [{ id: ITEM_ID, status: 'failed' }] },
@@ -176,7 +182,16 @@ describe('suggestion item actions', () => {
         itemId: ITEM_ID,
         feedback: 'Miku made this promise, not Tim.',
       }),
-    ).resolves.toEqual({ ok: true });
+    ).resolves.toEqual({
+      ok: true,
+      revisedItem: {
+        id: ITEM_ID,
+        status: 'pending',
+        title: 'Miku to register with PRH',
+        description: 'Miku made the promise.',
+        proposedPayload: { ownerName: 'Miku' },
+      },
+    });
 
     expect(fakes.fakeSuggestions.reviseSuggestionItem).toHaveBeenCalledWith({
       itemId: ITEM_ID,
