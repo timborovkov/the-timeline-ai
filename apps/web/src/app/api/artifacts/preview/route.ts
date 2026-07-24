@@ -94,6 +94,60 @@ function stringValue(value: unknown): string | null {
   return null;
 }
 
+function metadataObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function metadataText(metadata: Record<string, unknown>, key: string): string | null {
+  const value = metadata[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function sourceLabel(source: string): string {
+  const labels: Record<string, string> = {
+    email: 'Email',
+    ingest_webhook: 'Webhook',
+    slack: 'Slack',
+    telegram: 'Telegram',
+  };
+  return (
+    labels[source] ??
+    source
+      .split('_')
+      .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+      .join(' ')
+  );
+}
+
+function conversationLabel(source: string, sourceMetadata: unknown): string | null {
+  const metadata = metadataObject(sourceMetadata);
+  if (source === 'telegram') return metadataText(metadata, 'tg_chat_title');
+  if (source === 'slack') {
+    return (
+      metadataText(metadata, 'slack_channel_name') ?? metadataText(metadata, 'slack_channel_id')
+    );
+  }
+  if (source === 'email') return metadataText(metadata, 'subject');
+  return null;
+}
+
+function senderLabel(
+  sender: { displayName: string | null; handle: string | null } | null | undefined,
+  resolved: { canonicalName: string } | null | undefined,
+): string | null {
+  const externalParts = [sender?.displayName, sender?.handle].filter(
+    (value, index, values): value is string =>
+      Boolean(value) && values.findIndex((candidate) => candidate === value) === index,
+  );
+  const external = externalParts.join(', ');
+  if (resolved?.canonicalName && external && resolved.canonicalName !== sender?.displayName) {
+    return `${resolved.canonicalName} (${external})`;
+  }
+  return resolved?.canonicalName ?? (external || null);
+}
+
 function badges(values: (string | null | undefined | false)[]): string[] {
   return values.filter((value): value is string => typeof value === 'string' && value.length > 0);
 }
@@ -136,20 +190,29 @@ async function timelineEventPreview(
   if (ref.kind !== 'timeline_event') return null;
   const event = (await scope.timeline.getEventsByIds([ref.id]))[0];
   if (!event) return null;
-  const audioUrl = await signedAudioUrl(event.contentAudioUrl);
+  const [audioUrl, senderMap] = await Promise.all([
+    signedAudioUrl(event.contentAudioUrl),
+    scope.timeline.resolveEventSenders([event]),
+  ]);
+  const senderInfo = senderMap.get(event.id);
+  const sender = senderLabel(senderInfo?.sender, senderInfo?.resolvedSenderObject);
+  const conversation = conversationLabel(event.source, event.sourceMetadata);
+  const source = sourceLabel(event.source);
   return {
     ref,
-    title: 'Timeline Event',
-    subtitle: [event.source, dateLabel(event.occurredAt)].filter(Boolean).join(' · '),
+    title: sender ? `${source} from ${sender}` : `${source} event`,
+    subtitle: [conversation, dateLabel(event.occurredAt)].filter(Boolean).join(' · '),
     body: compact(event.contentText),
-    badges: [event.source],
+    badges: [source],
     href: `/app/timeline?event=${event.id}#ev-${event.id}`,
     media: audioUrl ? { kind: 'audio', url: audioUrl, label: 'Event audio' } : null,
     sections: [
       {
         title: 'Metadata',
         items: items([
-          ['Source', event.source],
+          ['Source', source],
+          ['Sender', sender],
+          ['Conversation', conversation],
           ['Occurred', event.occurredAt],
           ['Visibility', event.visibility],
         ]),

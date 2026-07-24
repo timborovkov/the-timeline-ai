@@ -47,6 +47,10 @@ interface SerializableSuggestionBundle {
     quote: string | null;
     source: string | null;
     occurredAt: string | null;
+    senderName: string | null;
+    senderHandle: string | null;
+    senderTimelineName: string | null;
+    conversationName: string | null;
     metadata: Record<string, unknown>;
   }[];
 }
@@ -71,6 +75,10 @@ export function serializeSuggestionBundle(bundle: SuggestionBundle): Serializabl
       quote: ev.quote,
       source: ev.source,
       occurredAt: ev.occurredAt?.toISOString() ?? null,
+      senderName: ev.senderName,
+      senderHandle: ev.senderHandle,
+      senderTimelineName: ev.senderTimelineName,
+      conversationName: ev.conversationName,
       metadata: ev.metadata,
     })),
   };

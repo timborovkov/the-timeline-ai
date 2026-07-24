@@ -31,6 +31,7 @@ import {
   rejectVisibleSuggestionsAction,
   reviseTaskSuggestionItemAction,
 } from '@/app/actions/suggestions';
+import { SuggestionChangeDialog } from '@/components/approvals/suggestion-change-dialog';
 import { EmptyAction } from '@/components/empty-action';
 import { EvidenceLink } from '@/components/evidence-link';
 import { TechnicalDetails } from '@/components/technical-details';
@@ -38,6 +39,7 @@ import { Button } from '@/components/ui/button';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { useProjectSearch } from '@/hooks/use-project-search';
 import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/display-dates';
+import { evidenceSourceContextLabel, evidenceSourceLabel } from '@/lib/evidence-source-label';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 
 function stableJson(value: unknown): string {
@@ -107,6 +109,10 @@ interface SuggestionBundle {
     quote: string | null;
     occurredAt: string | null;
     source: string | null;
+    senderName?: string | null;
+    senderHandle?: string | null;
+    senderTimelineName?: string | null;
+    conversationName?: string | null;
     metadata?: Record<string, unknown>;
   }[];
 }
@@ -1561,18 +1567,25 @@ function ApprovalItemActions({
           </Link>
         </Button>
       ) : (
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={busy}
-          onClick={() => {
-            run(() => acceptSuggestionItemAction({ itemId: item.id }), [item.id]);
-          }}
-        >
-          <Check className="size-4" />
-          {busy ? 'Working…' : 'Accept'}
-        </Button>
+        <>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() => {
+              run(() => acceptSuggestionItemAction({ itemId: item.id }), [item.id]);
+            }}
+          >
+            <Check className="size-4" />
+            {busy ? 'Working…' : 'Accept'}
+          </Button>
+          <SuggestionChangeDialog
+            itemId={item.id}
+            title={displayText(item.title)}
+            disabled={busy}
+          />
+        </>
       )}
       <Button
         type="button"
@@ -1616,7 +1629,7 @@ function ApprovalEvidence({ bundle, timezone }: { bundle: SuggestionBundle; time
         >
           <span className="inline-flex items-center gap-1.5 text-xs">
             <ExternalLink className="size-3" />
-            Evidence from {evidenceSourceLabel(ev.source)}
+            Evidence from {evidenceSourceContextLabel(ev)}
           </span>
           <span className="line-clamp-2 text-fg-muted group-hover:text-fg">
             {ev.quote
@@ -1627,20 +1640,6 @@ function ApprovalEvidence({ bundle, timezone }: { bundle: SuggestionBundle; time
       ))}
     </details>
   );
-}
-
-function evidenceSourceLabel(source: string | null): string {
-  if (!source) return 'captured work';
-  const labels: Record<string, string> = {
-    calendar: 'Calendar',
-    email: 'Email',
-    github: 'GitHub',
-    meeting: 'meeting transcript',
-    slack: 'Slack',
-    telegram: 'Telegram',
-    web: 'web capture',
-  };
-  return labels[source.toLowerCase()] ?? humanizeToken(source);
 }
 
 function ApprovalProcessingDetails({ bundle }: { bundle: SuggestionBundle }) {

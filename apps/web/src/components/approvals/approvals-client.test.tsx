@@ -13,6 +13,7 @@ const fakes = vi.hoisted(() => ({
   acceptVisibleSuggestionsAction: vi.fn(),
   rejectSuggestionItemAction: vi.fn(),
   rejectVisibleSuggestionsAction: vi.fn(),
+  reviseSuggestionItemAction: vi.fn(),
   reviseTaskSuggestionItemAction: vi.fn(),
   searchObjectsAction: vi.fn(),
 }));
@@ -24,6 +25,7 @@ vi.mock('@/app/actions/suggestions', () => ({
   acceptVisibleSuggestionsAction: fakes.acceptVisibleSuggestionsAction,
   rejectSuggestionItemAction: fakes.rejectSuggestionItemAction,
   rejectVisibleSuggestionsAction: fakes.rejectVisibleSuggestionsAction,
+  reviseSuggestionItemAction: fakes.reviseSuggestionItemAction,
   reviseTaskSuggestionItemAction: fakes.reviseTaskSuggestionItemAction,
 }));
 vi.mock('@/app/actions/objects', () => ({ searchObjectsAction: fakes.searchObjectsAction }));
@@ -40,6 +42,7 @@ beforeEach(() => {
   fakes.acceptVisibleSuggestionsAction.mockResolvedValue({ ok: true });
   fakes.rejectSuggestionItemAction.mockResolvedValue({ ok: true });
   fakes.rejectVisibleSuggestionsAction.mockResolvedValue({ ok: true });
+  fakes.reviseSuggestionItemAction.mockResolvedValue({ ok: true });
   fakes.reviseTaskSuggestionItemAction.mockResolvedValue({ ok: true });
   fakes.searchObjectsAction.mockResolvedValue({ results: [] });
 });
@@ -164,6 +167,52 @@ describe('ApprovalsClient', () => {
     expect(html).toContain(
       'href="/app/team/reconciliation/clusters/22222222-2222-4222-8222-222222222222"',
     );
+  });
+
+  it('identifies the source sender and conversation on approval evidence', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-sender',
+            source: 'background',
+            status: 'pending',
+            title: 'PRH company registration',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-07-23T10:00:00.000Z',
+            evidence: [
+              {
+                rawEventId: EVENT_ID,
+                quote: '@timbo0 lupaan hoitaa PRH-rekisteröinnin.',
+                occurredAt: '2026-07-23T10:00:00.000Z',
+                source: 'telegram',
+                senderName: 'Miku',
+                senderHandle: '@mikael',
+                senderTimelineName: 'Mikael',
+                conversationName: 'Founders',
+              },
+            ],
+            items: [
+              {
+                id: 'item-sender',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Submit company registration to PRH',
+                description: null,
+                proposedPayload: { ownerName: 'Miku' },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Evidence from Mikael (Miku, @mikael) in Founders on Telegram');
   });
 
   it('keeps every processing record reachable for multi-cluster bundles', () => {

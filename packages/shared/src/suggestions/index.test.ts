@@ -5007,6 +5007,312 @@ describe('suggestion scope', () => {
     ]);
   });
 
+  it('rewrites a pending proposal from reviewer feedback while preserving source evidence', async () => {
+    const rawEventId = 'abababab-abab-4bab-8bab-abababababab';
+    await db.insert(rawEvents).values({
+      id: rawEventId,
+      teamId: TEAM_ID,
+      authorUserId: REVIEWER_ID,
+      source: 'telegram',
+      contentText: '@timbo0 I will register the company with PRH on August 17.',
+      sourceMetadata: {
+        tg_sender_name: 'Mikael (Miku)',
+        tg_username: 'miku',
+        tg_chat_title: 'AuditAI founders',
+      },
+      occurredAt: new Date('2026-07-23T07:24:00.000Z'),
+      visibility: 'team',
+    });
+    const chatStructured = vi.fn((_input: { prompt: string }) =>
+      Promise.resolve({
+        object: {
+          title: 'Miku to register the company with PRH',
+          description: 'Miku plans to submit the company registration on August 17.',
+          proposedPayload: {
+            canonicalName: 'Register the company with PRH',
+            ownerUserId: REVIEWER_ID,
+            dueAt: '2026-08-17T00:00:00.000Z',
+          },
+          explanation: 'Changed the owner from Tim to Miku as directed by the reviewer.',
+        },
+        model: 'test-proposal-revision',
+      }),
+    );
+    const scope = withTeam(db as never, TEAM_ID, USER_ID, {
+      chatStructured: chatStructured as never,
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'PRH company registration',
+      dedupeKey: 'prh-registration-wrong-owner',
+      evidence: [{ rawEventId, quote: '@timbo0 I will register the company with PRH.' }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Tim to register the company with PRH',
+          dedupeKey: 'prh-registration-wrong-owner:item',
+          proposedPayload: {
+            canonicalName: 'Register the company with PRH',
+            ownerUserId: USER_ID,
+            dueAt: '2026-08-17T00:00:00.000Z',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+
+    await expect(
+      scope.suggestions.reviseSuggestionItem({
+        itemId,
+        feedback: 'Miku made this promise, not Tim. Keep the date unchanged.',
+      }),
+    ).resolves.toMatchObject({
+      id: itemId,
+      status: 'pending',
+      title: 'Miku to register the company with PRH',
+    });
+
+    await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'PRH company registration',
+      dedupeKey: 'prh-registration-wrong-owner',
+      evidence: [{ rawEventId, quote: '@timbo0 I will register the company with PRH.' }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Tim to register the company with PRH',
+          dedupeKey: 'prh-registration-wrong-owner:item',
+          proposedPayload: {
+            canonicalName: 'Register the company with PRH',
+            ownerUserId: USER_ID,
+            dueAt: '2026-08-17T00:00:00.000Z',
+          },
+        },
+      ],
+    });
+
+    const [item] = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, itemId));
+    expect(item).toMatchObject({
+      status: 'pending',
+      title: 'Miku to register the company with PRH',
+      description: 'Miku plans to submit the company registration on August 17.',
+      proposedPayload: {
+        canonicalName: 'Register the company with PRH',
+        ownerUserId: REVIEWER_ID,
+        dueAt: '2026-08-17T00:00:00.000Z',
+      },
+    });
+    const metadata = item?.metadata as Record<string, unknown>;
+    expect(metadata.proposal_edited_by_user_id).toBe(USER_ID);
+    const history = metadata.proposal_revision_history as unknown[];
+    expect(history).toHaveLength(1);
+    const revision = history[0] as Record<string, unknown>;
+    expect(revision.feedback).toBe('Miku made this promise, not Tim. Keep the date unchanged.');
+    expect(revision.model).toBe('test-proposal-revision');
+    const previous = revision.previous as Record<string, unknown>;
+    expect(previous.title).toBe('Tim to register the company with PRH');
+    const previousPayload = previous.proposed_payload as Record<string, unknown>;
+    expect(previousPayload.ownerUserId).toBe(USER_ID);
+    const prompt = chatStructured.mock.calls[0]?.[0]?.prompt ?? '';
+    expect(prompt).toContain('"senderName":"Mikael (Miku)"');
+    expect(prompt).toContain('"senderHandle":"@miku"');
+    expect(prompt).toContain('"conversationName":"AuditAI founders"');
+    const [source] = await db
+      .select({ contentText: rawEvents.contentText })
+      .from(rawEvents)
+      .where(eq(rawEvents.id, rawEventId));
+    expect(source?.contentText).toBe('@timbo0 I will register the company with PRH on August 17.');
+  });
+
+  it('keeps payload-encoded proposal targets fixed during reviewer revisions', async () => {
+    const chatStructured = vi.fn(() =>
+      Promise.resolve({
+        object: {
+          title: 'Miku owns the AuditAI relationship',
+          description: 'Corrected the relationship wording.',
+          proposedPayload: {
+            fromEntityId: REVIEWER_ID,
+            toEntityId: USER_ID,
+            kind: 'related',
+          },
+          explanation: 'Reworded the proposal while attempting to swap the endpoints.',
+        },
+        model: 'test-fixed-proposal-target',
+      }),
+    );
+    const scope = withTeam(db as never, TEAM_ID, USER_ID, {
+      chatStructured: chatStructured as never,
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'AuditAI ownership',
+      dedupeKey: 'fixed-relationship-target',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_relationship',
+          title: 'Tim owns AuditAI',
+          dedupeKey: 'fixed-relationship-target:item',
+          proposedPayload: {
+            fromEntityId: USER_ID,
+            toEntityId: REVIEWER_ID,
+            kind: 'related',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+
+    const revised = await scope.suggestions.reviseSuggestionItem({
+      itemId,
+      feedback: 'Clarify who owns what without changing the relationship target.',
+    });
+
+    expect(revised).toMatchObject({
+      id: itemId,
+      title: 'Miku owns the AuditAI relationship',
+      proposedPayload: {
+        fromEntityId: USER_ID,
+        toEntityId: REVIEWER_ID,
+        kind: 'related',
+      },
+    });
+  });
+
+  it('uses nested and forwarded email provenance for suggestion evidence', async () => {
+    const directId = 'abababab-abab-4bab-8bab-abababababac';
+    const forwardedId = 'cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd';
+    await db.insert(rawEvents).values([
+      {
+        id: directId,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'email',
+        contentText: 'I will send the direct update.',
+        sourceMetadata: {
+          from: { name: 'Ada Lovelace', email: 'ada@example.com' },
+          subject: 'Direct update',
+        },
+        occurredAt: new Date('2026-07-23T08:00:00.000Z'),
+        visibility: 'team',
+      },
+      {
+        id: forwardedId,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'email',
+        contentText: 'I will send the forwarded update.',
+        sourceMetadata: {
+          from: { name: 'Tim', email: 'tim@example.com' },
+          forwarded_from: { name: 'Mikael', email: 'miku@example.com' },
+          subject: 'Fwd: Forwarded update',
+        },
+        occurredAt: new Date('2026-07-23T08:05:00.000Z'),
+        visibility: 'team',
+      },
+    ]);
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Email provenance',
+      dedupeKey: 'email-provenance',
+      evidence: [{ rawEventId: directId }, { rawEventId: forwardedId }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Send update',
+          dedupeKey: 'email-provenance:item',
+          proposedPayload: { canonicalName: 'Send update' },
+        },
+      ],
+    });
+
+    expect(bundle.evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          rawEventId: directId,
+          senderName: 'Ada Lovelace',
+          senderHandle: 'ada@example.com',
+          conversationName: 'Direct update',
+        }),
+        expect.objectContaining({
+          rawEventId: forwardedId,
+          senderName: 'Mikael',
+          senderHandle: 'miku@example.com',
+          conversationName: 'Fwd: Forwarded update',
+        }),
+      ]),
+    );
+  });
+
+  it('leaves a proposal unchanged when an LLM revision is not acceptable', async () => {
+    const chatStructured = vi.fn((_input: { prompt: string }) =>
+      Promise.resolve({
+        object: {
+          title: 'Broken calendar proposal',
+          description: null,
+          proposedPayload: { title: 'Missing dates' },
+          explanation: 'Removed required fields.',
+        },
+        model: 'test-invalid-proposal-revision',
+      }),
+    );
+    const scope = withTeam(db as never, TEAM_ID, USER_ID, {
+      chatStructured: chatStructured as never,
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Calendar proposal',
+      dedupeKey: 'invalid-calendar-revision',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Original calendar proposal',
+          dedupeKey: 'invalid-calendar-revision:item',
+          proposedPayload: {
+            title: 'Original calendar proposal',
+            startAt: '2026-08-17T10:00:00.000Z',
+            endAt: '2026-08-17T11:00:00.000Z',
+            timezone: 'Europe/Helsinki',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+
+    await expect(
+      scope.suggestions.reviseSuggestionItem({
+        itemId,
+        feedback: 'Change the event.',
+      }),
+    ).rejects.toThrow();
+
+    const [item] = await db
+      .select({
+        title: agentSuggestionItems.title,
+        proposedPayload: agentSuggestionItems.proposedPayload,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, itemId));
+    expect(item).toEqual({
+      title: 'Original calendar proposal',
+      proposedPayload: {
+        title: 'Original calendar proposal',
+        startAt: '2026-08-17T10:00:00.000Z',
+        endAt: '2026-08-17T11:00:00.000Z',
+        timezone: 'Europe/Helsinki',
+      },
+    });
+  });
+
   it('preserves concurrent category and project revisions to the same task proposal', async () => {
     const ownerScope = withTeam(db as never, TEAM_ID, USER_ID);
     const reviewerScope = withTeam(db as never, TEAM_ID, REVIEWER_ID);

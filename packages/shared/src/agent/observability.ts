@@ -142,6 +142,7 @@ export function summarizeAgentToolObservations(input: {
 export function agentToolGroup(toolName: string): AgentToolGroup {
   if (toolName.startsWith('mcp__')) return 'mcp';
   if (toolName.startsWith('execute_')) return 'mutation';
+  if (toolName === 'revise_suggestion') return 'approval';
   if (toolName.includes('timeline_moment')) return 'timeline_moment';
   if (toolName.includes('timeline') || toolName.includes('event')) return 'timeline';
   if (toolName.includes('object') || toolName.includes('entity')) return 'object';

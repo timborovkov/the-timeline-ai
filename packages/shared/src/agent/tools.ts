@@ -169,6 +169,11 @@ const listPendingApprovalsInput = z.object({
   limit: z.number().int().min(1).max(50).optional(),
 });
 
+const reviseSuggestionInput = z.object({
+  itemId: z.string().regex(UUID_RE),
+  feedback: z.string().trim().min(1).max(2000),
+});
+
 const suggestTaskInput = z
   .object({
     title: z.string().trim().min(1).max(200),
@@ -681,6 +686,7 @@ async function buildAgentTimelineMoments(
   events: TimelineMomentEvent[],
 ) {
   const hitByEventId = new Map(hits.map((hit) => [hit.eventId, hit]));
+  const senderMap = await scope.timeline.resolveEventSenders(events);
   const builtMoments = buildTimelineMoments(events, new Map(), { groupingMode: 'moments' });
   const cacheKeys = builtMoments.map((moment) =>
     buildTimelineMomentPresentationCacheKey({ teamId: scope.teamId, moment }),
@@ -727,18 +733,24 @@ async function buildAgentTimelineMoments(
         score: topScore,
         entity_ids: entityIds,
         fact_ids: factIds,
-        evidence: sorted.map((event) => ({
-          event_id: event.id,
-          citation: artifactRefCitation({ kind: 'timeline_event', id: event.id }),
-          source: event.source,
-          occurred_at:
-            event.occurredAt instanceof Date ? event.occurredAt.toISOString() : event.occurredAt,
-          snippet:
-            fenceExternalContent(hitByEventId.get(event.id)?.snippet ?? event.contentText, {
-              source: event.source,
-              eventId: event.id,
-            }) ?? '',
-        })),
+        evidence: sorted.map((event) => {
+          const senderInfo = senderMap.get(event.id);
+          return {
+            event_id: event.id,
+            citation: artifactRefCitation({ kind: 'timeline_event', id: event.id }),
+            source: event.source,
+            sender: senderInfo?.sender ?? null,
+            resolved_sender_object: senderInfo?.resolvedSenderObject ?? null,
+            sender_resolution_status: senderInfo?.senderResolutionStatus ?? 'unresolved',
+            occurred_at:
+              event.occurredAt instanceof Date ? event.occurredAt.toISOString() : event.occurredAt,
+            snippet:
+              fenceExternalContent(hitByEventId.get(event.id)?.snippet ?? event.contentText, {
+                source: event.source,
+                eventId: event.id,
+              }) ?? '',
+          };
+        }),
       };
     })
     .sort(
@@ -1709,7 +1721,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
 
     search_timeline_moments: tool({
       description:
-        "Semantic search across the team's timeline, returned as bundled moments with raw event citations. Use this first for normal 'what happened', integration-heavy, meeting/chat recap, and timeline-summary questions; use search_timeline or get_event only when you need raw event-level detail.",
+        "Semantic search across the team's timeline, returned as bundled moments with raw event citations and sender identity on each evidence item. Use this first for normal 'what happened', integration-heavy, meeting/chat recap, and timeline-summary questions; use search_timeline or get_event only when you need raw event-level detail.",
       inputSchema: searchTimelineInput,
       execute: async (raw) =>
         runSafe('search_timeline_moments', async () => {
@@ -1728,7 +1740,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
 
     get_timeline_moment: tool({
       description:
-        'Expand a timeline moment returned by search_timeline_moments. Prefer passing raw_event_ids from that result; supported deterministic moment_id values can also be expanded directly through a bounded visible-event lookup. Returns moment metadata plus fenced source evidence.',
+        'Expand a timeline moment returned by search_timeline_moments. Prefer passing raw_event_ids from that result; supported deterministic moment_id values can also be expanded directly through a bounded visible-event lookup. Returns moment metadata plus fenced source evidence with sender identity on each item.',
       inputSchema: getTimelineMomentInput,
       execute: async (raw) =>
         runSafe('get_timeline_moment', async () => {
@@ -2275,6 +2287,10 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
                 quote: ev.quote,
                 occurred_at: ev.occurredAt?.toISOString() ?? null,
                 source: ev.source,
+                sender_name: ev.senderName,
+                sender_handle: ev.senderHandle,
+                sender_timeline_name: ev.senderTimelineName,
+                conversation_name: ev.conversationName,
               })),
               items: suggestion.items.map((item) => ({
                 item_id: item.id,
@@ -2290,6 +2306,29 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
               })),
             })),
           };
+        }),
+    }),
+
+    revise_suggestion: tool({
+      description:
+        'Rewrite one visible pending or failed approval proposal from the user’s correction. Call list_pending_approvals first to resolve the exact item_id. This changes only the unresolved proposal; it does not mutate canonical workspace state or source evidence.',
+      inputSchema: reviseSuggestionInput,
+      execute: async (raw) =>
+        runSafe('revise_suggestion', async () => {
+          const input = reviseSuggestionInput.parse(raw);
+          const updated = await scope.suggestions.reviseSuggestionItem(input);
+          return updated
+            ? {
+                ok: true,
+                item_id: input.itemId,
+                canonical: false,
+                message: 'Proposal updated. It still requires human acceptance.',
+              }
+            : {
+                ok: false,
+                item_id: input.itemId,
+                message: 'Proposal is no longer editable or is not visible.',
+              };
         }),
     }),
 
@@ -3558,6 +3597,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
       'execute_board_update_item',
       'execute_board_remove_item',
       'suggest_task',
+      'revise_suggestion',
       'propose_object_change',
       'suggest_object_memory',
       'execute_calendar_create',

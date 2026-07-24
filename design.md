@@ -268,6 +268,14 @@ warnings include the proposed schedule. Evidence uses plain-language source
 labels, while every distinct reconciliation record remains reachable through
 one closed `TechnicalDetails` disclosure.
 
+Actionable approval rows end with `Accept`, `Change`, and `Reject`. `Change`
+opens a compact feedback dialog instead of exposing payload fields: the
+reviewer explains what is wrong, Timeline rewrites the same unresolved
+proposal, and the refreshed row remains pending. The dialog states that no
+canonical change has been applied and that attached source evidence is
+preserved. Merge proposals keep their dedicated `Review merge` flow because
+their survivor and field choices require a structured preview.
+
 Approval counts use individual review items, not proposal bundles. “Pending”
 means the item status is literally pending. Failed items remain retryable or
 rejectable only under the Failed filter and do not contribute to Home, Work,

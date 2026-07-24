@@ -395,8 +395,10 @@
       "default": "./dist/citation.js"
     },
     "./time": {
+      "types": "./src/time/index.ts",
+      "development": "./src/time/index.ts",
       "import": "./dist/time/index.js",
-      "types": "./dist/time/index.d.ts"
+      "default": "./dist/time/index.js"
     }
   },
   "main": "./dist/index.js",

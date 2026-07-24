@@ -5,10 +5,12 @@ import { useRouter } from 'next/navigation';
 import { type ReactNode, useState, useTransition } from 'react';
 
 import { acceptSuggestionItemAction, rejectSuggestionItemAction } from '@/app/actions/suggestions';
+import { SuggestionChangeDialog } from '@/components/approvals/suggestion-change-dialog';
 import { ArtifactReferenceChip } from '@/components/artifact-reference-chip';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { EvidenceLink } from '@/components/evidence-link';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { evidenceSourceContextLabel } from '@/lib/evidence-source-label';
 
 interface Props {
   name: string;
@@ -274,6 +276,7 @@ function summarize(name: string, input: unknown, output: unknown, state: string)
 interface SuggestionItem {
   id: string;
   status: string;
+  targetKind?: string;
   title: string;
   description?: string | null;
 }
@@ -282,6 +285,10 @@ interface SuggestionEvidence {
   rawEventId: string;
   quote?: string | null;
   source?: string | null;
+  senderName?: string | null;
+  senderHandle?: string | null;
+  senderTimelineName?: string | null;
+  conversationName?: string | null;
 }
 
 interface SuggestionBundle {
@@ -308,6 +315,7 @@ function suggestionFromOutput(output: unknown): SuggestionBundle | null {
       items.push({
         id,
         status: typeof itemRecord.status === 'string' ? itemRecord.status : 'pending',
+        targetKind: typeof itemRecord.targetKind === 'string' ? itemRecord.targetKind : undefined,
         title: typeof itemRecord.title === 'string' ? itemRecord.title : 'Approval item',
         description: typeof itemRecord.description === 'string' ? itemRecord.description : null,
       });
@@ -324,6 +332,12 @@ function suggestionFromOutput(output: unknown): SuggestionBundle | null {
         rawEventId,
         quote: typeof itemRecord.quote === 'string' ? itemRecord.quote : null,
         source: typeof itemRecord.source === 'string' ? itemRecord.source : null,
+        senderName: typeof itemRecord.senderName === 'string' ? itemRecord.senderName : null,
+        senderHandle: typeof itemRecord.senderHandle === 'string' ? itemRecord.senderHandle : null,
+        senderTimelineName:
+          typeof itemRecord.senderTimelineName === 'string' ? itemRecord.senderTimelineName : null,
+        conversationName:
+          typeof itemRecord.conversationName === 'string' ? itemRecord.conversationName : null,
       });
     }
   }
@@ -341,6 +355,7 @@ function InlineApprovalCard({ suggestion }: { suggestion: SuggestionBundle }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [localStatuses, setLocalStatuses] = useState<Record<string, string>>({});
+  const [localItems, setLocalItems] = useState<Record<string, Partial<SuggestionItem>>>({});
 
   function run(
     itemId: string,
@@ -377,7 +392,7 @@ function InlineApprovalCard({ suggestion }: { suggestion: SuggestionBundle }) {
                 source={evidence.source}
                 title="Approval evidence"
               >
-                Timeline evidence · {evidence.source ?? 'Unavailable source'}
+                {evidenceSourceContextLabel(evidence)}
               </EvidenceLink>
             </div>
           ))}
@@ -386,11 +401,12 @@ function InlineApprovalCard({ suggestion }: { suggestion: SuggestionBundle }) {
       {error ? <p className="mt-2 text-xs text-danger">{error}</p> : null}
       <ul className="mt-2 space-y-2">
         {suggestion.items.map((item) => {
-          const status = localStatuses[item.id] ?? item.status;
+          const displayedItem = { ...item, ...localItems[item.id] };
+          const status = localStatuses[item.id] ?? displayedItem.status;
           return (
             <li key={item.id} className="flex items-start justify-between gap-2 border-t pt-2">
               <div className="min-w-0">
-                <div className="truncate text-xs font-medium">{item.title}</div>
+                <div className="truncate text-xs font-medium">{displayedItem.title}</div>
                 <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
                   {status}
                 </div>
@@ -406,10 +422,24 @@ function InlineApprovalCard({ suggestion }: { suggestion: SuggestionBundle }) {
                         acceptSuggestionItemAction({ itemId: item.id }),
                       );
                     }}
-                    aria-label={`Accept ${item.title}`}
+                    aria-label={`Accept ${displayedItem.title}`}
                   >
                     <Check className="size-3.5" />
                   </button>
+                  {displayedItem.targetKind !== 'object_merge' ? (
+                    <SuggestionChangeDialog
+                      itemId={item.id}
+                      title={displayedItem.title}
+                      disabled={pending}
+                      compact
+                      onRevised={(revisedItem) => {
+                        setLocalItems((current) => ({
+                          ...current,
+                          [item.id]: revisedItem,
+                        }));
+                      }}
+                    />
+                  ) : null}
                   <button
                     type="button"
                     disabled={pending}
@@ -419,7 +449,7 @@ function InlineApprovalCard({ suggestion }: { suggestion: SuggestionBundle }) {
                         rejectSuggestionItemAction({ itemId: item.id }),
                       );
                     }}
-                    aria-label={`Reject ${item.title}`}
+                    aria-label={`Reject ${displayedItem.title}`}
                   >
                     <X className="size-3.5" />
                   </button>

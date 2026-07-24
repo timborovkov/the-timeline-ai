@@ -33,6 +33,7 @@ interface FakeScope {
     listEvents: ReturnType<typeof vi.fn>;
     listEventsForMomentLookup: ReturnType<typeof vi.fn>;
     listMomentPresentations: ReturnType<typeof vi.fn>;
+    resolveEventSenders: ReturnType<typeof vi.fn>;
     getEventWithFacts: ReturnType<typeof vi.fn>;
     listMembers: ReturnType<typeof vi.fn>;
   };
@@ -56,6 +57,7 @@ interface FakeScope {
   suggestions: {
     createOrMergeSuggestionBundle: ReturnType<typeof vi.fn>;
     listSuggestions: ReturnType<typeof vi.fn>;
+    reviseSuggestionItem: ReturnType<typeof vi.fn>;
     reconcileCanonicalChange: ReturnType<typeof vi.fn>;
     reconcileObjectMerge: ReturnType<typeof vi.fn>;
   };
@@ -101,6 +103,7 @@ function makeFakeScope(): FakeScope {
       listEvents: vi.fn(),
       listEventsForMomentLookup: vi.fn().mockResolvedValue([]),
       listMomentPresentations: vi.fn().mockResolvedValue({}),
+      resolveEventSenders: vi.fn().mockResolvedValue(new Map()),
       getEventWithFacts: vi.fn(),
       listMembers: vi.fn().mockResolvedValue([]),
     },
@@ -124,6 +127,7 @@ function makeFakeScope(): FakeScope {
     suggestions: {
       createOrMergeSuggestionBundle: vi.fn(),
       listSuggestions: vi.fn(),
+      reviseSuggestionItem: vi.fn(),
       reconcileCanonicalChange: vi.fn().mockResolvedValue(0),
       reconcileObjectMerge: vi.fn().mockResolvedValue(0),
     },
@@ -374,6 +378,7 @@ describe('buildAgentTools — team isolation', () => {
   it('keeps pin reads but removes pin mutations from read-only tool sets', () => {
     const tools = buildAgentTools(makeFakeScope() as unknown as TeamScope, { readOnly: true });
     expect(tools.list_pins).toBeDefined();
+    expect(tools.revise_suggestion).toBeUndefined();
     expect(tools.pin_item).toBeUndefined();
     expect(tools.unpin_item).toBeUndefined();
     expect(tools.move_pin).toBeUndefined();
@@ -1668,7 +1673,7 @@ describe('buildAgentTools — team isolation', () => {
         teamId: 'team-a',
         source: 'telegram',
         authorUserId: null,
-        contentText: 'Done / 16.20-16.30 asti vapaa',
+        contentText: 'Mökki käy 17.8. alkaen',
         contentAudioUrl: null,
         occurredAt: new Date('2026-06-27T16:06:00.000Z'),
         createdAt: new Date('2026-06-27T16:06:01.000Z'),
@@ -1678,7 +1683,8 @@ describe('buildAgentTools — team isolation', () => {
         sourceMetadata: {
           tg_chat_id: 'chat-a',
           tg_chat_title: 'AuditAI',
-          tg_sender_name: 'Tim',
+          tg_sender_name: 'Otto',
+          tg_username: 'otto',
         },
       },
       {
@@ -1686,7 +1692,7 @@ describe('buildAgentTools — team isolation', () => {
         teamId: 'team-a',
         source: 'telegram',
         authorUserId: null,
-        contentText: 'Sanokaa ku tuun meettii',
+        contentText: 'oon italiassa 9.8.-14.8.',
         contentAudioUrl: null,
         occurredAt: new Date('2026-06-27T16:07:00.000Z'),
         createdAt: new Date('2026-06-27T16:07:01.000Z'),
@@ -1696,10 +1702,53 @@ describe('buildAgentTools — team isolation', () => {
         sourceMetadata: {
           tg_chat_id: 'chat-a',
           tg_chat_title: 'AuditAI',
-          tg_sender_name: 'Mikael',
+          tg_sender_name: 'Miku',
+          tg_username: 'miku',
         },
       },
     ]);
+    scope.timeline.resolveEventSenders.mockResolvedValue(
+      new Map([
+        [
+          eventA,
+          {
+            sender: {
+              source: 'telegram',
+              displayName: 'Otto',
+              handle: '@otto',
+              externalId: null,
+              provider: 'telegram',
+            },
+            resolvedSenderObject: {
+              id: '00000000-0000-4000-8000-0000000000aa',
+              canonicalName: 'Otto',
+              aliases: [],
+              linkedUserId: null,
+            },
+            senderResolutionStatus: 'resolved',
+          },
+        ],
+        [
+          eventB,
+          {
+            sender: {
+              source: 'telegram',
+              displayName: 'Miku',
+              handle: '@miku',
+              externalId: null,
+              provider: 'telegram',
+            },
+            resolvedSenderObject: {
+              id: '00000000-0000-4000-8000-0000000000bb',
+              canonicalName: 'Mikael',
+              aliases: ['Miku'],
+              linkedUserId: null,
+            },
+            senderResolutionStatus: 'resolved',
+          },
+        ],
+      ]),
+    );
     const tools = buildAgentTools(scope as unknown as TeamScope);
     const exec = tools.get_timeline_moment?.execute as (
       input: unknown,
@@ -1714,7 +1763,13 @@ describe('buildAgentTools — team isolation', () => {
         title: string;
         evidence_count: number;
         raw_event_ids: string[];
-        evidence: { snippet: string }[];
+        evidence: {
+          event_id: string;
+          sender: { displayName: string; handle: string };
+          resolved_sender_object: { canonicalName: string };
+          sender_resolution_status: string;
+          snippet: string;
+        }[];
       };
     };
 
@@ -1730,7 +1785,13 @@ describe('buildAgentTools — team isolation', () => {
       /^<external_content source="timeline_moment" event_id="tm-moment_3Atelegram_3Achat-a/,
     );
     expect(result.moment.anchor_id).toMatch(/^tm-moment_3Atelegram_3Achat-a/);
-    expect(result.moment.evidence[0]?.snippet).toContain('<external_content source="telegram"');
+    expect(result.moment.evidence[0]).toMatchObject({
+      event_id: eventB,
+      sender: { displayName: 'Miku', handle: '@miku' },
+      resolved_sender_object: { canonicalName: 'Mikael' },
+      sender_resolution_status: 'resolved',
+    });
+    expect(result.moment.evidence[0]?.snippet).toContain('oon italiassa 9.8.-14.8.');
   });
 
   it('get_timeline_moment can expand supported deterministic moment ids without raw event ids', async () => {
@@ -2057,6 +2118,10 @@ describe('buildAgentTools — team isolation', () => {
             quote: 'Miku is Mikael',
             occurredAt: new Date('2026-06-02T11:59:00Z'),
             source: 'telegram',
+            senderName: 'Mikael',
+            senderHandle: '@miku',
+            senderTimelineName: 'Mikael Rintala',
+            conversationName: 'AuditAI founders',
           },
         ],
         items: [
@@ -2130,6 +2195,15 @@ describe('buildAgentTools — team isolation', () => {
         {
           suggestion_id: 'suggestion-1',
           status: 'pending',
+          evidence: [
+            {
+              raw_event_id: TEAM_B_EVENT_ID,
+              sender_name: 'Mikael',
+              sender_handle: '@miku',
+              sender_timeline_name: 'Mikael Rintala',
+              conversation_name: 'AuditAI founders',
+            },
+          ],
           items: [
             {
               item_id: 'item-1',
@@ -2167,6 +2241,35 @@ describe('buildAgentTools — team isolation', () => {
 
     await expect(exec({ status: 'all' }, {})).resolves.toEqual({ error: 'tool_failed' });
     expect(scope.suggestions.listSuggestions).not.toHaveBeenCalled();
+  });
+
+  it('revises a visible unresolved proposal without claiming canonical mutation', async () => {
+    const scope = makeFakeScope();
+    scope.suggestions.reviseSuggestionItem.mockResolvedValue(true);
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.revise_suggestion?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    await expect(
+      exec(
+        {
+          itemId: '11111111-1111-4111-8111-111111111111',
+          feedback: 'Miku made this promise, not Tim.',
+        },
+        {},
+      ),
+    ).resolves.toEqual({
+      ok: true,
+      item_id: '11111111-1111-4111-8111-111111111111',
+      canonical: false,
+      message: 'Proposal updated. It still requires human acceptance.',
+    });
+    expect(scope.suggestions.reviseSuggestionItem).toHaveBeenCalledWith({
+      itemId: '11111111-1111-4111-8111-111111111111',
+      feedback: 'Miku made this promise, not Tim.',
+    });
   });
 
   it('uses the trusted clock for fixture-relative calendar and time defaults', async () => {

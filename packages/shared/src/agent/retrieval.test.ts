@@ -92,6 +92,20 @@ function makeScope() {
         {
           eventId: EVENT_ID,
           source: 'slack',
+          sender: {
+            source: 'slack',
+            displayName: 'Miku',
+            handle: 'U-MIKU',
+            externalId: 'U-MIKU',
+            provider: 'auditai',
+          },
+          resolvedSenderObject: {
+            id: '12121212-1212-4121-8121-121212121212',
+            canonicalName: 'Mikael',
+            aliases: ['Miku'],
+            linkedUserId: null,
+          },
+          senderResolutionStatus: 'resolved',
           occurredAt: '2026-06-14T09:00:00.000Z',
           score: 0.7,
           snippet: 'Discussed Otto follow-up',
@@ -163,6 +177,19 @@ describe('retrieveWorkspaceContext', () => {
     expect(result.notes[0]).toMatchObject({
       citation: `[note:${NOTE_ID}]`,
       object_citation: `[ent:${OBJECT_ID}]`,
+    });
+    const retrievedEvent = result.events.find(
+      (event): event is Record<string, unknown> =>
+        typeof event === 'object' &&
+        event !== null &&
+        'event_id' in event &&
+        event.event_id === EVENT_ID,
+    );
+    expect(retrievedEvent).toMatchObject({
+      citation: `[ev:${EVENT_ID}]`,
+      sender: { displayName: 'Miku' },
+      resolved_sender_object: { canonicalName: 'Mikael' },
+      sender_resolution_status: 'resolved',
     });
     expect(result.events).toEqual(
       expect.arrayContaining([

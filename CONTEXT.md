@@ -464,6 +464,15 @@ does not rewrite the earlier decision by itself; it asks the team to approve
 the replacement, cancellation, archive, or field update.
 _Avoid_: Automatic fix, silent update
 
+**Proposal Revision**:
+A reviewer-authored rewrite of an unresolved approval item. The reviewer gives
+plain-language feedback, the inference layer updates the proposal title,
+description, and payload, and the item remains pending or retryable. The
+operation, target, attached evidence, and immutable source records stay fixed;
+the prior proposal and feedback remain in bounded audit metadata. Revising a
+proposal never changes canonical workspace state by itself.
+_Avoid_: Accepted correction, source edit, automatic fix
+
 **Superseded Approval**:
 A pending approval that is no longer actionable because newer evidence or a
 newer proposal has replaced it before the team accepted or rejected it.

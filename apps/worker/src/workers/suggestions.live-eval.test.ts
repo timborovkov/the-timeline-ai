@@ -140,7 +140,7 @@ maybeDescribe('live suggestion worker evals', () => {
     const sourceMetadata = rawEvent?.sourceMetadata;
     expect(isRecord(sourceMetadata)).toBe(true);
     if (!isRecord(sourceMetadata)) throw new Error('expected raw event source metadata');
-    expect(sourceMetadata.suggestion_pre_extract_model_version).toMatch(/@2026-07-a$/);
+    expect(sourceMetadata.suggestion_pre_extract_model_version).toMatch(/@2026-07-b$/);
     expect(typeof sourceMetadata.suggestions_pre_extracted_at).toBe('string');
   }, 240_000);
 });

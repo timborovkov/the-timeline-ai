@@ -25,6 +25,13 @@ export interface ActionState {
   id?: string;
   undoChangeId?: string;
   message?: string;
+  revisedItem?: {
+    id: string;
+    status: string;
+    title: string;
+    description: string | null;
+    proposedPayload: Record<string, unknown>;
+  };
 }
 
 type ResolvedScope =

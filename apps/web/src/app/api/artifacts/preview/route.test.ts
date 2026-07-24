@@ -20,6 +20,7 @@ const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveActiveTeam: vi.fn(),
   getEventsByIds: vi.fn(),
+  resolveEventSenders: vi.fn(),
   getObject: vi.fn(),
   getObjectNotePreview: vi.fn(),
   getDocument: vi.fn(),
@@ -45,7 +46,10 @@ vi.mock('@timeline/shared/s3', () => ({
 }));
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
-    timeline: { getEventsByIds: fakes.getEventsByIds },
+    timeline: {
+      getEventsByIds: fakes.getEventsByIds,
+      resolveEventSenders: fakes.resolveEventSenders,
+    },
     objects: {
       getObject: fakes.getObject,
       getObjectNotePreview: fakes.getObjectNotePreview,
@@ -125,8 +129,37 @@ beforeEach(() => {
       contentAudioUrl: 'team/event.mp3',
       occurredAt: new Date('2026-06-14T12:00:00.000Z'),
       visibility: 'team',
+      authorUserId: null,
+      sourceMetadata: {
+        tg_chat_title: 'AuditAI Founders',
+        tg_sender_name: 'Miku',
+        tg_username: 'miku',
+      },
     },
   ]);
+  fakes.resolveEventSenders.mockResolvedValue(
+    new Map([
+      [
+        IDS.event,
+        {
+          sender: {
+            source: 'telegram',
+            displayName: 'Miku',
+            handle: '@miku',
+            externalId: null,
+            provider: 'telegram',
+          },
+          resolvedSenderObject: {
+            id: IDS.object,
+            canonicalName: 'Mikael',
+            aliases: ['Miku'],
+            linkedUserId: null,
+          },
+          senderResolutionStatus: 'resolved',
+        },
+      ],
+    ]),
+  );
   fakes.getObject.mockResolvedValue(object());
   fakes.getObjectNotePreview.mockResolvedValue({
     id: IDS.note,
@@ -218,7 +251,7 @@ describe('POST /api/artifacts/preview', () => {
 
   it('hydrates every supported preview shape', async () => {
     const cases = [
-      [{ kind: 'timeline_event', id: IDS.event }, 'Timeline Event'],
+      [{ kind: 'timeline_event', id: IDS.event }, 'Telegram from Mikael (Miku, @miku)'],
       [{ kind: 'object', id: IDS.object }, 'Otto Silventola'],
       [{ kind: 'object_note', id: IDS.note }, 'Note on Otto Silventola'],
       [
@@ -248,6 +281,19 @@ describe('POST /api/artifacts/preview', () => {
       expect(response.status).toBe(200);
       await expect(response.json()).resolves.toMatchObject({ preview: { title } });
     }
+  });
+
+  it('shows the resolved sender and conversation for a timeline event', async () => {
+    const response = await POST(request({ ref: { kind: 'timeline_event', id: IDS.event } }));
+
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toContain('"title":"Telegram from Mikael (Miku, @miku)"');
+    expect(body).toContain('"subtitle":"AuditAI Founders');
+    expect(body).toContain('"badges":["Telegram"]');
+    expect(body).toContain('"label":"Source","value":"Telegram"');
+    expect(body).toContain('"label":"Sender","value":"Mikael (Miku, @miku)"');
+    expect(body).toContain('"label":"Conversation","value":"AuditAI Founders"');
   });
 
   it('returns generic not-found for invalid, missing, or mismatched refs', async () => {
