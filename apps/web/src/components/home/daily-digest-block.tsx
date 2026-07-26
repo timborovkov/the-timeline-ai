@@ -60,8 +60,9 @@ export function DailyDigestBlock({ digest }: { digest: DailyDigestPayload | unde
           <div className="md:col-span-2">
             <h3 className="font-semibold text-fg">Activity</h3>
             <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-fg-muted">
-              <DigestStat count={digest.eventCount} label="event" />
-              {digest.momentCount === undefined ? null : (
+              {digest.momentCount === undefined ? (
+                <DigestStat count={digest.eventCount} label="event" />
+              ) : (
                 <DigestStat count={digest.momentCount} label="moment" />
               )}
               <DigestStat count={digest.pendingApprovals} label="approval" />

@@ -288,7 +288,7 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
   const sections = digestContentSections(p);
   const activityCountLine =
     typeof p.momentCount === 'number'
-      ? `${p.momentCount} work moment${p.momentCount === 1 ? '' : 's'} from ${p.eventCount} source event${p.eventCount === 1 ? '' : 's'}`
+      ? `${p.momentCount} work moment${p.momentCount === 1 ? '' : 's'}`
       : `${p.eventCount} new timeline events`;
   const sourceLines = Object.entries(p.sourceDistribution).map(
     ([source, count]) => `${source}: ${count}`,

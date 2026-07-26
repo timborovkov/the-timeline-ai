@@ -87,7 +87,8 @@ describe('messaging templates', () => {
 
     expect(message.subject).toBe('Daily digest for AuditAI');
     expect(message.textBody).toContain('4 pending approvals');
-    expect(message.textBody).toContain('5 work moments from 12 source events');
+    expect(message.textBody).toContain('5 work moments');
+    expect(message.textBody).not.toContain('from 12 source events');
     expect(message.textBody).toContain('slack: 8');
     expect(message.textBody).toContain(
       'Highlights\n- The team should keep the pilot recap moving.',
@@ -111,7 +112,8 @@ describe('messaging templates', () => {
     expect(message.htmlBody).toContain('Send pilot recap.');
     expect(message.htmlBody).toContain('Send pilot recap (todo, Due soon · Jun 17, 2026)');
     expect(message.htmlBody).toContain('Digest date: Jun 14, 2026');
-    expect(message.htmlBody).toContain('5 work moments from 12 source events');
+    expect(message.htmlBody).toContain('5 work moments');
+    expect(message.htmlBody).not.toContain('from 12 source events');
     expect(message.htmlBody).toContain('The team should keep the pilot recap moving.');
     expect(message.htmlBody).toContain('Open digest');
   });
