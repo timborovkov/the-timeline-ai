@@ -109,7 +109,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       by the worker after rebuilding the same visible cache key. Daily digest
       generation now summarizes bundled moment briefs, applies matching cached
       AI presentations, and renders moment counts while preserving raw
-      source-event counts. The
+      source-event counts. It durably skips quiet windows before summarization
+      and email delivery unless the recipient has fresh 24-hour activity,
+      pending approvals, or upcoming calendar context. The
       `timeline-moment-presentations` worker script now provides bounded,
       dry-run-first production prewarming for missing AI presentation cache jobs.
       Timeline page/API reads now emit privacy-safe `timeline_moments_viewed`
@@ -313,8 +315,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       per-event `calendar_events.reminder_minutes`.
 - [x] Add daily event digest per user. Delivery uses the shared messaging
       module, stores a dashboard-readable digest payload, sends email only for
-      the digest, supports per-user opt-out in Team settings, and keeps
-      individual in-app notifications inbox-only.
+      useful activity or actionable context, durably skips quiet windows,
+      supports per-user opt-out in Team settings, and keeps individual in-app
+      notifications inbox-only.
 - [ ] Extend overdue/missed alerts to calendar events past `start_at` with no
       attendance or completion signal.
 

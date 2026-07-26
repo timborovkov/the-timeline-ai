@@ -156,7 +156,7 @@ describe('daily digest worker', () => {
     });
   });
 
-  it('does not enqueue email when preferences skip the digest', async () => {
+  it('does not enqueue email when digest generation skips the window', async () => {
     fakes.generateDailyDigest.mockResolvedValue({ digestId: 'digest-1', skipped: true });
 
     await processDailyDigestJob(
