@@ -353,14 +353,13 @@ function addDays(date: Date, days: number): Date {
 }
 
 function fallbackSummary(input: {
-  eventCount: number;
   momentCount: number;
   pendingApprovals: number;
   taskCount: number;
   calendarCount: number;
 }): string {
   const parts = [
-    `${input.momentCount} work moment${input.momentCount === 1 ? '' : 's'} from ${input.eventCount} source event${input.eventCount === 1 ? '' : 's'}`,
+    `${input.momentCount} work moment${input.momentCount === 1 ? '' : 's'}`,
     `${input.pendingApprovals} approval${input.pendingApprovals === 1 ? '' : 's'} pending`,
     `${input.taskCount} active task${input.taskCount === 1 ? '' : 's'}`,
     `${input.calendarCount} upcoming calendar item${input.calendarCount === 1 ? '' : 's'}`,
@@ -690,7 +689,6 @@ export async function generateDailyDigest(
     listMomentPresentations: scope.timeline.listMomentPresentations,
   });
   const fallback = fallbackSummary({
-    eventCount: events.length,
     momentCount: moments.length,
     pendingApprovals,
     taskCount: taskRows.length,

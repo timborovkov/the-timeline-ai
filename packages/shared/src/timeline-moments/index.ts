@@ -1201,11 +1201,11 @@ function subtitleForGroup(
   }
   if (displayLead.source === 'document' || displayLead.source === 'calendar') {
     return count > 1
-      ? plural(count, 'source event')
+      ? plural(count, 'signal')
       : humanList(actors, SOURCE_LABEL[displayLead.source]);
   }
   return count > 1
-    ? plural(count, 'source event')
+    ? plural(count, 'signal')
     : humanList(contexts, SOURCE_LABEL[displayLead.source]);
 }
 

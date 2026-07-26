@@ -38,7 +38,10 @@ individual source evidence. The timeline is date-first, with source clusters
 inside each date and impact shown as attached context. Timeline lists should
 show compact signals for extracted file representations; full transcripts,
 OCR text, and visual descriptions belong in event detail, citations, and agent
-tools.
+tools. User-facing Moments chrome and digests count moments; Audit trail,
+filters, and technical disclosures count source events. Row chips use signals;
+inspectors use evidence items — do not pair moment and raw-event totals in the
+same chrome.
 _Avoid_: Raw Event when referring to the grouped browsing unit
 
 **Impact Context**:

@@ -28,6 +28,11 @@ database implementation details in ordinary product views.
   work while keeping evidence association separate from source authority.
 - **Approval-backed state** is durable work state that passed human review.
 
+Count chrome: Moments mode and digest headlines count **moments**; Audit trail,
+source filters, and technical disclosures count **source events**. Moment rows
+use **signals** for bundled evidence size; the inspector uses **evidence
+items**. Do not show competing moment and raw-event totals in the same chrome.
+
 Prefer concrete customer language over internal architecture terms. A user
 should understand what happened, what needs attention, and what they can do
 next before seeing how the system represented it.
