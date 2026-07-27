@@ -110,7 +110,7 @@ export default async function ChatPage({
         >
           <h1 className="text-base font-semibold text-fg">Ask</h1>
           <span
-            className="ml-auto w-20 text-right font-mono text-xs text-fg-dim"
+            className="ml-auto hidden w-20 text-right font-mono text-xs text-fg-dim md:block"
             data-visual-dynamic="chat-session-count"
           >
             <span aria-hidden="true">
