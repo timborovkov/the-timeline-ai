@@ -1,9 +1,15 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const fakes = vi.hoisted(() => ({ auth: vi.fn() }));
+const fakes = vi.hoisted(() => ({
+  auth: vi.fn(),
+  redirect: vi.fn((url: string) => {
+    throw new Error(`REDIRECT:${url}`);
+  }),
+}));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
+vi.mock('next/navigation', () => ({ redirect: fakes.redirect }));
 
 const { default: LandingPage } = await import('@/app/page');
 
@@ -28,5 +34,12 @@ describe('LandingPage', () => {
     expect(html).toContain('WITH TIMELINE');
     expect(html).toContain('linear-gradient');
     expect(html).not.toContain('aria-label="Public"');
+  });
+
+  it('sends signed-in users straight to the workspace', async () => {
+    fakes.auth.mockResolvedValue({ user: { id: 'user-1' } });
+
+    await expect(LandingPage()).rejects.toThrow('REDIRECT:/app');
+    expect(fakes.redirect).toHaveBeenCalledWith('/app');
   });
 });

@@ -11,6 +11,7 @@ import {
   Wrench,
 } from 'lucide-react';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
@@ -99,14 +100,14 @@ const WORK_SURFACES = [
 
 export default async function LandingPage() {
   const session = await auth();
-  const isSignedIn = Boolean(session?.user);
+  if (session?.user) redirect('/app');
 
   return (
     <div className="min-h-screen bg-bg text-fg">
       <StructuredData />
-      <TopNav isSignedIn={isSignedIn} />
+      <TopNav />
       <main id="main">
-        <Hero isSignedIn={isSignedIn} />
+        <Hero />
         <Problem />
         <Solution />
         <Surfaces />
@@ -114,9 +115,9 @@ export default async function LandingPage() {
         <Receipts />
         <Principles />
         <Faq />
-        <FinalCTA isSignedIn={isSignedIn} />
+        <FinalCTA />
       </main>
-      <Footer isSignedIn={isSignedIn} />
+      <Footer />
     </div>
   );
 }
@@ -310,7 +311,7 @@ function Section({
 /*  Sections                                                                   */
 /* ────────────────────────────────────────────────────────────────────────── */
 
-function TopNav({ isSignedIn }: { isSignedIn: boolean }) {
+function TopNav() {
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-bg/80 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
@@ -330,19 +331,15 @@ function TopNav({ isSignedIn }: { isSignedIn: boolean }) {
           >
             Contact
           </Link>
-          {isSignedIn ? null : (
-            <Link
-              href="/sign-in"
-              className="whitespace-nowrap px-3 py-2 text-fg-muted transition-colors hover:text-fg"
-            >
-              Sign in
-            </Link>
-          )}
+          <Link
+            href="/sign-in"
+            className="whitespace-nowrap px-3 py-2 text-fg-muted transition-colors hover:text-fg"
+          >
+            Sign in
+          </Link>
           <ThemeToggle className="text-fg-muted hover:text-fg" />
           <Button asChild size="sm">
-            <Link href={isSignedIn ? '/app' : '/sign-up'}>
-              {isSignedIn ? 'Go to dashboard' : 'Create team'}
-            </Link>
+            <Link href="/sign-up">Create team</Link>
           </Button>
         </nav>
       </div>
@@ -350,7 +347,7 @@ function TopNav({ isSignedIn }: { isSignedIn: boolean }) {
   );
 }
 
-function Hero({ isSignedIn }: { isSignedIn: boolean }) {
+function Hero() {
   return (
     <section className="px-6 pb-24 pt-16 sm:pt-24">
       <div className="mx-auto max-w-6xl">
@@ -370,21 +367,17 @@ function Hero({ isSignedIn }: { isSignedIn: boolean }) {
             </p>
             <div className="mt-10 flex flex-wrap items-center gap-3">
               <Button asChild size="lg">
-                <Link href={isSignedIn ? '/app' : '/sign-up'}>
-                  {isSignedIn ? 'Go to dashboard →' : 'Try on one project →'}
-                </Link>
+                <Link href="/sign-up">Try on one project →</Link>
               </Button>
               <Button asChild size="lg" variant="outline">
                 <a href="#receipts">See how it works</a>
               </Button>
-              {isSignedIn ? null : (
-                <Link
-                  href="/sign-in"
-                  className="px-3 py-2 text-sm text-fg-muted underline-offset-4 hover:text-fg hover:underline"
-                >
-                  Sign in
-                </Link>
-              )}
+              <Link
+                href="/sign-in"
+                className="px-3 py-2 text-sm text-fg-muted underline-offset-4 hover:text-fg hover:underline"
+              >
+                Sign in
+              </Link>
             </div>
             <p className="mt-10 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
               CAPTURE ONCE · ANSWER OFTEN · CITE EVERYTHING
@@ -1022,7 +1015,7 @@ function Faq() {
   );
 }
 
-function FinalCTA({ isSignedIn }: { isSignedIn: boolean }) {
+function FinalCTA() {
   return (
     <Section id="cta" className="bg-surface" contentClassName="max-w-7xl">
       <div className="grid gap-10 lg:grid-cols-[0.9fr_1.25fr] lg:items-start">
@@ -1037,9 +1030,7 @@ function FinalCTA({ isSignedIn }: { isSignedIn: boolean }) {
           </p>
           <div className="mt-10 flex flex-wrap items-center gap-3">
             <Button asChild size="lg">
-              <Link href={isSignedIn ? '/app' : '/sign-up'}>
-                {isSignedIn ? 'Go to dashboard →' : 'Try on one project →'}
-              </Link>
+              <Link href="/sign-up">Try on one project →</Link>
             </Button>
             <Button asChild size="lg" variant="outline">
               <a href={CONTACT_HREF}>Book a walkthrough</a>
@@ -1098,7 +1089,7 @@ const TRUST_DEFAULTS = [
   'Custom MCP servers provide live reach while keeping captured tool results private by default.',
 ] as const;
 
-function Footer({ isSignedIn }: { isSignedIn: boolean }) {
+function Footer() {
   return (
     <footer className="border-t border-border px-6 py-10">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
@@ -1119,8 +1110,8 @@ function Footer({ isSignedIn }: { isSignedIn: boolean }) {
           <Link href={CONTACT_HREF} className="hover:text-fg">
             Contact
           </Link>
-          <Link href={isSignedIn ? '/app' : '/sign-in'} className="hover:text-fg">
-            {isSignedIn ? 'Dashboard' : 'Sign in'}
+          <Link href="/sign-in" className="hover:text-fg">
+            Sign in
           </Link>
         </nav>
       </div>
