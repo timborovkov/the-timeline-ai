@@ -29,6 +29,8 @@ import {
 const log = childLogger('digest');
 const DEFAULT_WORKSPACE_TIMEZONE = 'Europe/Helsinki';
 const DEFAULT_DIGEST_HOUR = 12;
+const QUIET_DIGEST_SUMMARY = 'No useful activity for this digest window.';
+const QUIET_DIGEST_REASON = 'No useful digest content in this window.';
 
 const digestSectionTitleSchema = z.enum([
   'Highlights',
@@ -85,6 +87,11 @@ interface DigestPromptContext {
   tasks: { title: string; status: string; dueAt: string | null }[];
   upcomingCalendar: { title: string; startAt: string; endAt: string }[];
   newTeamMembers: { label: string; createdAt: string }[];
+}
+
+interface DigestActivityEvent {
+  occurredAt: Date;
+  createdAt: Date;
 }
 
 const SUMMARIZE_BATCH_SIZE = 50;
@@ -352,6 +359,35 @@ function addDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
 }
 
+function freshDigestCutoff(windowEnd: Date, timezone: string, hour: number): Date {
+  const tz = assertValidTimezone(timezone);
+  const digestHour = Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : DEFAULT_DIGEST_HOUR;
+  const previousDate = zonedDateTimeFromDate(windowEnd, tz).toPlainDate().subtract({ days: 1 });
+  return dateFromInstant(
+    previousDate.toZonedDateTime({ timeZone: tz, plainTime: { hour: digestHour } }).toInstant(),
+  );
+}
+
+function hasUsefulDigestContent(input: {
+  events: DigestActivityEvent[];
+  freshCutoff: Date;
+  objectChangesByType: Record<string, number>;
+  newMemberCount: number;
+  pendingApprovals: number;
+  upcomingCalendarCount: number;
+}): boolean {
+  const cutoff = input.freshCutoff.getTime();
+  return (
+    input.events.some(
+      (event) => event.occurredAt.getTime() >= cutoff || event.createdAt.getTime() >= cutoff,
+    ) ||
+    Object.values(input.objectChangesByType).some((total) => total > 0) ||
+    input.newMemberCount > 0 ||
+    input.pendingApprovals > 0 ||
+    input.upcomingCalendarCount > 0
+  );
+}
+
 function fallbackSummary(input: {
   momentCount: number;
   pendingApprovals: number;
@@ -483,6 +519,95 @@ export async function latestDailyDigest(input: {
   return rows[0] ?? null;
 }
 
+async function persistQuietDailyDigest(input: {
+  request: GenerateDailyDigestInput;
+  payload: DailyDigestPayload;
+  existingDigest: Pick<typeof dailyDigests.$inferSelect, 'id' | 'payload' | 'status'> | undefined;
+}): Promise<GenerateDailyDigestResult> {
+  const [inserted] = await input.request.db
+    .insert(dailyDigests)
+    .values({
+      teamId: input.request.teamId,
+      userId: input.request.userId,
+      windowStart: input.request.windowStart,
+      windowEnd: input.request.windowEnd,
+      summary: QUIET_DIGEST_SUMMARY,
+      payload: input.payload,
+      status: 'skipped',
+      error: QUIET_DIGEST_REASON,
+    })
+    .onConflictDoNothing()
+    .returning({ id: dailyDigests.id });
+  if (inserted?.id) {
+    return { digestId: inserted.id, payload: input.payload, skipped: true };
+  }
+
+  const stored =
+    input.existingDigest ??
+    (
+      await input.request.db
+        .select({ id: dailyDigests.id, payload: dailyDigests.payload, status: dailyDigests.status })
+        .from(dailyDigests)
+        .where(
+          and(
+            eq(dailyDigests.teamId, input.request.teamId),
+            eq(dailyDigests.userId, input.request.userId),
+            eq(dailyDigests.windowStart, input.request.windowStart),
+            eq(dailyDigests.windowEnd, input.request.windowEnd),
+          ),
+        )
+        .limit(1)
+    )[0];
+  if (stored?.status === 'generated' || stored?.status === 'sent') {
+    return {
+      digestId: stored.id,
+      payload: stored.payload as DailyDigestPayload,
+      skipped: false,
+    };
+  }
+  if (stored) {
+    const [updated] = await input.request.db
+      .update(dailyDigests)
+      .set({
+        summary: QUIET_DIGEST_SUMMARY,
+        payload: input.payload,
+        status: 'skipped',
+        error: QUIET_DIGEST_REASON,
+      })
+      .where(
+        and(eq(dailyDigests.id, stored.id), inArray(dailyDigests.status, ['skipped', 'failed'])),
+      )
+      .returning({ id: dailyDigests.id });
+    if (updated?.id) {
+      return { digestId: updated.id, payload: input.payload, skipped: true };
+    }
+    const [winner] = await input.request.db
+      .select({ id: dailyDigests.id, payload: dailyDigests.payload, status: dailyDigests.status })
+      .from(dailyDigests)
+      .where(
+        and(
+          eq(dailyDigests.teamId, input.request.teamId),
+          eq(dailyDigests.userId, input.request.userId),
+          eq(dailyDigests.windowStart, input.request.windowStart),
+          eq(dailyDigests.windowEnd, input.request.windowEnd),
+        ),
+      )
+      .limit(1);
+    if (winner?.status === 'generated' || winner?.status === 'sent') {
+      return {
+        digestId: winner.id,
+        payload: winner.payload as DailyDigestPayload,
+        skipped: false,
+      };
+    }
+  }
+  return {
+    digestId: stored?.id ?? '',
+    payload: input.payload,
+    skipped: true,
+  };
+}
+
 export async function generateDailyDigest(
   input: GenerateDailyDigestInput,
 ): Promise<GenerateDailyDigestResult> {
@@ -599,41 +724,52 @@ export async function generateDailyDigest(
       skipped: false,
     };
   }
+  const freshCutoff = freshDigestCutoff(input.windowEnd, preference.timezone, preference.hour);
   const upcomingTo = addDays(now, 7);
-  const [team, userRows, events, pendingApprovals, currentTasks, upcomingCalendar, newMembers] =
-    await Promise.all([
-      scope.timeline.team(),
-      input.db
-        .select({ name: users.name, email: users.email })
-        .from(users)
-        .where(eq(users.id, input.userId))
-        .limit(1),
-      scope.timeline.listAllEventsInWindow({ from: input.windowStart, to: input.windowEnd }),
-      scope.suggestions.getApprovalItemCounts().then((counts) => counts.pending),
-      scope.objects.listObjects({
-        type: ['task', 'follow_up'],
-        archived: false,
-        limit: 20,
-      }),
-      scope.calendar.listCalendarEvents({ from: now, to: upcomingTo, limit: 10 }),
-      input.db
-        .select({
-          userId: teamMembers.userId,
-          name: users.name,
-          email: users.email,
-          createdAt: teamMembers.createdAt,
-        })
-        .from(teamMembers)
-        .innerJoin(users, eq(users.id, teamMembers.userId))
-        .where(
-          and(
-            eq(teamMembers.teamId, input.teamId),
-            isNull(teamMembers.removedAt),
-            gte(teamMembers.createdAt, input.windowStart),
-            lt(teamMembers.createdAt, input.windowEnd),
-          ),
+  const [
+    team,
+    userRows,
+    eventsInEvidenceWindow,
+    pendingApprovals,
+    currentTasks,
+    upcomingCalendar,
+    newMembers,
+  ] = await Promise.all([
+    scope.timeline.team(),
+    input.db
+      .select({ name: users.name, email: users.email })
+      .from(users)
+      .where(eq(users.id, input.userId))
+      .limit(1),
+    scope.timeline.listAllEventsInWindow({ from: input.windowStart, to: input.windowEnd }),
+    scope.suggestions.getApprovalItemCounts().then((counts) => counts.pending),
+    scope.objects.listObjects({
+      type: ['task', 'follow_up'],
+      archived: false,
+      limit: 20,
+    }),
+    scope.calendar.listCalendarEvents({ from: now, to: upcomingTo, limit: 10 }),
+    input.db
+      .select({
+        userId: teamMembers.userId,
+        name: users.name,
+        email: users.email,
+        createdAt: teamMembers.createdAt,
+      })
+      .from(teamMembers)
+      .innerJoin(users, eq(users.id, teamMembers.userId))
+      .where(
+        and(
+          eq(teamMembers.teamId, input.teamId),
+          isNull(teamMembers.removedAt),
+          gte(teamMembers.createdAt, freshCutoff),
+          lt(teamMembers.createdAt, input.windowEnd),
         ),
-    ]);
+      ),
+  ]);
+  const events = eventsInEvidenceWindow.filter(
+    (event) => event.createdAt.getTime() < input.windowEnd.getTime(),
+  );
 
   const sourceDistribution: Record<string, number> = {};
   for (const event of events) {
@@ -646,9 +782,7 @@ export async function generateDailyDigest(
     .where(
       and(
         eq(entities.teamId, input.teamId),
-        isNull(entities.mergedIntoId),
-        isNull(entities.archivedAt),
-        gte(entities.updatedAt, input.windowStart),
+        gte(entities.updatedAt, freshCutoff),
         lt(entities.updatedAt, input.windowEnd),
       ),
     )
@@ -683,6 +817,54 @@ export async function generateDailyDigest(
     timezone: preference.timezone,
     groupingMode: 'moments',
   });
+  const payloadBase: Omit<DailyDigestPayload, 'summary' | 'sections'> = {
+    teamName,
+    userName: user?.name ?? null,
+    timezone: preference.timezone,
+    windowStart: iso(input.windowStart),
+    windowEnd: iso(input.windowEnd),
+    pendingApprovals,
+    eventCount: events.length,
+    momentCount: builtMoments.length,
+    sourceDistribution,
+    objectChangesByType,
+    newTeamMembers: newMembers.map((member) => ({
+      userId: member.userId,
+      label: member.name ?? member.email,
+      createdAt: iso(member.createdAt),
+    })),
+    tasks: taskRows,
+    upcomingCalendar: calendarRows,
+    links: [
+      { label: 'Dashboard', href: '/app' },
+      { label: 'Approvals', href: '/app/approvals' },
+      { label: 'Timeline', href: '/app/timeline' },
+      { label: 'Tasks', href: '/app/tasks' },
+      { label: 'Calendar', href: '/app/calendar' },
+      { label: 'Objects', href: '/app/objects' },
+      { label: 'Boards', href: '/app/boards' },
+    ],
+  };
+  if (
+    !hasUsefulDigestContent({
+      events,
+      freshCutoff,
+      objectChangesByType,
+      newMemberCount: newMembers.length,
+      pendingApprovals,
+      upcomingCalendarCount: calendarRows.length,
+    })
+  ) {
+    return persistQuietDailyDigest({
+      request: input,
+      existingDigest,
+      payload: {
+        ...payloadBase,
+        summary: QUIET_DIGEST_SUMMARY,
+        sections: [],
+      },
+    });
+  }
   const moments = await applyCachedDigestMomentPresentations({
     teamId: input.teamId,
     moments: builtMoments,
@@ -727,34 +909,10 @@ export async function generateDailyDigest(
   const digestText = await summarizeMomentBriefs(ctx, momentBriefs, fallback, input.summarize);
 
   const payload: DailyDigestPayload = {
-    teamName,
-    userName: user?.name ?? null,
-    timezone: preference.timezone,
-    windowStart: iso(input.windowStart),
-    windowEnd: iso(input.windowEnd),
+    ...payloadBase,
     summary: digestText.summary,
     sections: digestText.sections,
-    pendingApprovals,
-    eventCount: events.length,
     momentCount: moments.length,
-    sourceDistribution,
-    objectChangesByType,
-    newTeamMembers: newMembers.map((member) => ({
-      userId: member.userId,
-      label: member.name ?? member.email,
-      createdAt: iso(member.createdAt),
-    })),
-    tasks: taskRows,
-    upcomingCalendar: calendarRows,
-    links: [
-      { label: 'Dashboard', href: '/app' },
-      { label: 'Approvals', href: '/app/approvals' },
-      { label: 'Timeline', href: '/app/timeline' },
-      { label: 'Tasks', href: '/app/tasks' },
-      { label: 'Calendar', href: '/app/calendar' },
-      { label: 'Objects', href: '/app/objects' },
-      { label: 'Boards', href: '/app/boards' },
-    ],
   };
 
   const [inserted] = await input.db
@@ -788,7 +946,7 @@ export async function generateDailyDigest(
         )
         .limit(1);
   if (existing[0]?.status === 'skipped' || existing[0]?.status === 'failed') {
-    await input.db
+    const [updated] = await input.db
       .update(dailyDigests)
       .set({
         summary: digestText.summary,
@@ -796,8 +954,31 @@ export async function generateDailyDigest(
         status: 'generated',
         error: null,
       })
-      .where(eq(dailyDigests.id, existing[0].id));
-    return { digestId: existing[0].id, payload, skipped: false };
+      .where(
+        and(
+          eq(dailyDigests.id, existing[0].id),
+          inArray(dailyDigests.status, ['skipped', 'failed']),
+        ),
+      )
+      .returning({ id: dailyDigests.id });
+    if (updated?.id) return { digestId: updated.id, payload, skipped: false };
+    const [winner] = await input.db
+      .select({ id: dailyDigests.id, payload: dailyDigests.payload })
+      .from(dailyDigests)
+      .where(
+        and(
+          eq(dailyDigests.teamId, input.teamId),
+          eq(dailyDigests.userId, input.userId),
+          eq(dailyDigests.windowStart, input.windowStart),
+          eq(dailyDigests.windowEnd, input.windowEnd),
+        ),
+      )
+      .limit(1);
+    return {
+      digestId: winner?.id ?? '',
+      payload: (winner?.payload as DailyDigestPayload | undefined) ?? payload,
+      skipped: false,
+    };
   }
   return {
     digestId: existing[0]?.id ?? '',

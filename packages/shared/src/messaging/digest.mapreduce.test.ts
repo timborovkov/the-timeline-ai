@@ -540,8 +540,10 @@ describe('digest map-reduce summarization', () => {
     expect(reducePrompt).not.toContain('"batch"');
   });
 
-  it('handles zero events with a single LLM call', async () => {
-    fakes.withTeam.mockReturnValue(makeScope([]));
+  it('handles actionable context with zero events in a single LLM call', async () => {
+    const scope = makeScope([]);
+    scope.suggestions.getApprovalItemCounts.mockResolvedValue({ failed: 0, pending: 1 });
+    fakes.withTeam.mockReturnValue(scope);
     fakes.chatStructured.mockResolvedValue(makeDigestResult('No activity today.', []));
 
     const db = makeDb([

@@ -31,6 +31,7 @@ const pgliteTests = [
   'src/mcp-server/handler.test.ts',
   'src/meetings/quick-capture.test.ts',
   'src/meetings/scope.test.ts',
+  'src/messaging/digest.integration.test.ts',
   'src/onboarding/index.test.ts',
   'src/objects/index.test.ts',
   'src/task-categories/state.test.ts',
