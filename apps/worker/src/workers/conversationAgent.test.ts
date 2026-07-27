@@ -135,6 +135,41 @@ describe('conversation agent worker', () => {
     expect(deliverAnswer).toHaveBeenCalledTimes(2);
   });
 
+  it('does not deliver a cached answer after the provider session is reset', async () => {
+    const turnId = await createTurn('event-reset-after-answer');
+    const deliverAnswer = vi.fn().mockRejectedValueOnce(new Error('provider unavailable'));
+    const delivery = adapter({ deliverAnswer });
+    const askAgent = vi.fn().mockResolvedValue({
+      ok: true,
+      answer: 'Do not deliver after reset',
+      truncated: false,
+    }) as typeof agent.askAgent;
+    const deps = {
+      db,
+      askAgent,
+      createDeliveryAdapter: () => Promise.resolve(delivery),
+    };
+
+    await expect(processConversationAgentJob(deps, { turnId })).rejects.toThrow(
+      'provider unavailable',
+    );
+    await withTeam(db, TEAM_ID, USER_ID).conversations.resetSession({
+      surface: 'telegram',
+      externalConversationKey: 'dm:7',
+      externalUserKey: '7',
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      userName: 'Owner',
+    });
+    await expect(processConversationAgentJob(deps, { turnId })).resolves.toEqual({
+      turnId,
+      status: 'cancelled',
+    });
+
+    expect(askAgent).toHaveBeenCalledOnce();
+    expect(deliverAnswer).toHaveBeenCalledOnce();
+  });
+
   it('aborts at the deadline, caches the timeout response, and stops progress', async () => {
     const turnId = await createTurn('event-3');
     const stopProgress = vi.fn();

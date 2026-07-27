@@ -569,9 +569,11 @@ _Avoid_: Linked teams when describing routing rows, all memberships for Slack
 
 **Progress Capability**:
 A provider adapter's best available signal that an accepted agent turn is
-still running. Telegram refreshes typing; classic Slack keeps the thinking
-reaction, and Slack Assistant status may be added when that context and scope
-are available. Progress ends on answer, timeout, failure, or cancellation.
+still queued or running. Telegram keeps the request-side typing heartbeat until
+the worker claims the turn and then refreshes it from the worker; classic Slack
+keeps the thinking reaction, and Slack Assistant status may be added when that
+context and scope are available. Progress ends on answer, timeout, failure, or
+cancellation.
 _Avoid_: Delivery guarantee, runtime-specific typing implementation
 
 **Ingest Webhook**:

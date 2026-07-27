@@ -16,7 +16,7 @@ deadline includes progress startup, history loading, and model execution;
 retained failed queue jobs can be replaced for cached or still-queued recovery
 without repeating a paid answer. Set `TELEGRAM_BOT_TOKEN` on the worker for
 Telegram typing and replies; Slack tokens are decrypted from installed
-workspace records.
+workspace records with the same `SECRETS_ENCRYPTION_KEY` configured on web.
 
 ## How to use
 

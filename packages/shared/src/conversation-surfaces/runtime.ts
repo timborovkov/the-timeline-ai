@@ -12,6 +12,8 @@ import { enqueueConversationAgentJob } from '#src/queue/queues.js';
 import { withTeam } from '#src/team-scope.js';
 
 const log = childLogger('conversation-surfaces:runtime');
+type ConversationScope = ReturnType<typeof withTeam>['conversations'];
+const QUEUED_PROGRESS_POLL_MS = 1_000;
 
 export type AcceptDirectAgentTurnResult =
   | { status: 'queued' | 'duplicate'; turnId: string; sessionId: string }
@@ -24,22 +26,58 @@ interface AcceptDirectAgentTurnOptions {
 async function runProviderAcknowledgement(
   adapter: ConversationDeliveryAdapter,
   options: AcceptDirectAgentTurnOptions,
-): Promise<void> {
-  const acknowledge = async (): Promise<void> => {
+): Promise<(() => void) | null> {
+  const acknowledge = async (): Promise<() => void> => {
     await adapter.acknowledgeAgentRequest();
-    const stopInitialProgress = await adapter.startProgress();
-    stopInitialProgress();
+    return adapter.startProgress();
   };
   if (options.providerAcknowledgement !== 'background') {
-    await acknowledge();
-    return;
+    return acknowledge();
   }
-  void acknowledge().catch((err: unknown) => {
-    log.warn(
-      { err: redactConversationError(err) },
-      'direct conversation provider acknowledgement failed',
-    );
+  void acknowledge()
+    .then((stopProgress) => {
+      stopProgress();
+    })
+    .catch((err: unknown) => {
+      log.warn(
+        { err: redactConversationError(err) },
+        'direct conversation provider acknowledgement failed',
+      );
+    });
+  return null;
+}
+
+function waitForProgressPoll(): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, QUEUED_PROGRESS_POLL_MS);
+    timer.unref();
   });
+}
+
+async function stopProgressAfterQueue(
+  scope: ConversationScope,
+  turnId: string,
+  stopProgress: () => void,
+): Promise<void> {
+  try {
+    while ((await scope.getTurn(turnId))?.status === 'queued') {
+      await waitForProgressPoll();
+    }
+  } catch (err) {
+    log.warn(
+      { turnId, err: redactConversationError(err) },
+      'direct conversation initial progress monitor failed',
+    );
+  } finally {
+    try {
+      stopProgress();
+    } catch (err) {
+      log.warn(
+        { turnId, err: redactConversationError(err) },
+        'direct conversation initial progress cleanup failed',
+      );
+    }
+  }
 }
 
 async function deliverAcceptanceFailure(
@@ -116,9 +154,24 @@ export async function acceptDirectAgentTurn(
       sessionId: result.turn.chatSessionId,
     };
   }
+  if (
+    result.status === 'duplicate' &&
+    (result.turn.teamId !== request.teamId ||
+      result.turn.userId !== request.userId ||
+      result.turn.status === 'cancelled')
+  ) {
+    return {
+      status: 'duplicate',
+      turnId: result.turn.id,
+      sessionId: result.turn.chatSessionId,
+    };
+  }
   try {
     await enqueueConversationAgentJob({ turnId: result.turn.id });
-    await runProviderAcknowledgement(adapter, options);
+    const stopInitialProgress = await runProviderAcknowledgement(adapter, options);
+    if (stopInitialProgress) {
+      void stopProgressAfterQueue(scope.conversations, result.turn.id, stopInitialProgress);
+    }
     log.info(
       {
         event: 'conversation_agent_queued',
@@ -139,9 +192,10 @@ export async function acceptDirectAgentTurn(
     };
   } catch (err) {
     await scope.conversations
-      .updateTurn(result.turn.id, {
+      .cacheFailure(result.turn.id, {
         status: 'failed',
         errorCode: 'enqueue_failed',
+        answerText: CONVERSATION_AGENT_FAILURE_MESSAGE,
       })
       .catch(() => undefined);
     log.warn(

@@ -107,7 +107,7 @@ TELEGRAM_CAPTURE_CANARY_FIRST_NAME=Timeline
 TELEGRAM_CAPTURE_CANARY_ALLOWED_ORIGIN=https://thetimeline.cc
 </code></pre>
       <p>
-        The canary posts a synthetic private-message update to
+        The canary posts a synthetic private-message <code>/note</code> update to
         <code>AUTH_URL/api/telegram/webhook</code> with
         <code>X-Telegram-Bot-Api-Secret-Token</code>, then polls <code>DATABASE_URL</code> for a
         matching <code>raw_events.source='telegram'</code> row. The Telegram user id must already be

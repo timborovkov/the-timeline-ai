@@ -13,6 +13,7 @@ import { Worker, type Job } from 'bullmq';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 
 const log = childLogger('worker:conversation-agent');
+type ConversationScope = ReturnType<typeof withTeam>['conversations'];
 
 interface ConversationAgentWorkerDeps {
   db: Db;
@@ -48,11 +49,23 @@ async function deliveryAdapter(
   throw new Error(`Unsupported conversation surface: ${turn.surface}`);
 }
 
+function turnLogContext(turn: conversationSurfaces.SurfaceTurnRow) {
+  return {
+    surface: turn.surface,
+    teamId: turn.teamId,
+    userId: turn.userId,
+    turnId: turn.id,
+    sessionId: turn.chatSessionId,
+    externalEventId: turn.externalEventId,
+  };
+}
+
 async function deliverCached(
-  scope: ReturnType<typeof withTeam>['conversations'],
+  scope: ConversationScope,
   turn: conversationSurfaces.SurfaceTurnRow,
   adapter: conversationSurfaces.ConversationDeliveryAdapter,
 ): Promise<void> {
+  if (turn.status === 'cancelled') return;
   if (!turn.answerText) throw new Error('Cached conversation turn has no answer');
   try {
     if (turn.status === 'failed' || turn.status === 'timed_out') {
@@ -65,12 +78,7 @@ async function deliverCached(
     log.warn(
       {
         event: 'conversation_agent_delivery_failed',
-        surface: turn.surface,
-        teamId: turn.teamId,
-        userId: turn.userId,
-        turnId: turn.id,
-        sessionId: turn.chatSessionId,
-        externalEventId: turn.externalEventId,
+        ...turnLogContext(turn),
         status: turn.status,
         err: conversationSurfaces.redactConversationError(err),
       },
@@ -78,6 +86,23 @@ async function deliverCached(
     );
     throw err;
   }
+}
+
+async function cacheAndDeliverFailure(
+  scope: ConversationScope,
+  turn: conversationSurfaces.SurfaceTurnRow,
+  adapter: conversationSurfaces.ConversationDeliveryAdapter,
+  failure: {
+    status: 'timed_out' | 'failed';
+    errorCode: string;
+    answerText: string;
+  },
+  onCached: () => void = () => undefined,
+): Promise<void> {
+  await scope.cacheFailure(turn.id, failure);
+  onCached();
+  const cached = await scope.getTurn(turn.id);
+  if (cached && !cached.deliveredAt) await deliverCached(scope, cached, adapter);
 }
 
 export async function processConversationAgentJob(
@@ -108,12 +133,7 @@ export async function processConversationAgentJob(
     log.warn(
       {
         event: 'conversation_agent_delivery_failed',
-        surface: turn.surface,
-        teamId: turn.teamId,
-        userId: turn.userId,
-        turnId: turn.id,
-        sessionId: turn.chatSessionId,
-        externalEventId: turn.externalEventId,
+        ...turnLogContext(turn),
         status: turn.status,
         err: conversationSurfaces.redactConversationError(err),
       },
@@ -126,22 +146,15 @@ export async function processConversationAgentJob(
     return { turnId: turn.id, status: 'delivered_cached' };
   }
   if (claim.status === 'stale_processing') {
-    await scope.cacheFailure(turn.id, {
+    await cacheAndDeliverFailure(scope, turn, adapter, {
       status: 'failed',
       errorCode: 'stale_processing',
       answerText: conversationSurfaces.CONVERSATION_AGENT_FAILURE_MESSAGE,
     });
-    const failed = await scope.getTurn(turn.id);
-    if (failed) await deliverCached(scope, failed, adapter);
     log.warn(
       {
         event: 'conversation_agent_failed',
-        surface: turn.surface,
-        teamId: turn.teamId,
-        userId: turn.userId,
-        turnId: turn.id,
-        sessionId: turn.chatSessionId,
-        externalEventId: turn.externalEventId,
+        ...turnLogContext(turn),
         status: 'failed',
         durationMs: Date.now() - startedAt,
       },
@@ -152,12 +165,7 @@ export async function processConversationAgentJob(
   log.info(
     {
       event: 'conversation_agent_started',
-      surface: turn.surface,
-      teamId: turn.teamId,
-      userId: turn.userId,
-      turnId: turn.id,
-      sessionId: turn.chatSessionId,
-      externalEventId: turn.externalEventId,
+      ...turnLogContext(turn),
       status: 'processing',
     },
     'conversation agent turn started',
@@ -206,23 +214,23 @@ export async function processConversationAgentJob(
     const result = await Promise.race([prepareAgentResult(), deadline]);
 
     if (!result.ok) {
-      await scope.cacheFailure(turn.id, {
-        status: 'failed',
-        errorCode: `agent_${result.error}`,
-        answerText: conversationSurfaces.CONVERSATION_AGENT_FAILURE_MESSAGE,
-      });
-      responseCached = true;
-      const cached = await scope.getTurn(turn.id);
-      if (cached) await deliverCached(scope, cached, adapter);
+      await cacheAndDeliverFailure(
+        scope,
+        turn,
+        adapter,
+        {
+          status: 'failed',
+          errorCode: `agent_${result.error}`,
+          answerText: conversationSurfaces.CONVERSATION_AGENT_FAILURE_MESSAGE,
+        },
+        () => {
+          responseCached = true;
+        },
+      );
       log.warn(
         {
           event: 'conversation_agent_failed',
-          surface: turn.surface,
-          teamId: turn.teamId,
-          userId: turn.userId,
-          turnId: turn.id,
-          sessionId: turn.chatSessionId,
-          externalEventId: turn.externalEventId,
+          ...turnLogContext(turn),
           status: 'failed',
           durationMs: Date.now() - startedAt,
         },
@@ -242,16 +250,12 @@ export async function processConversationAgentJob(
     responseCached = true;
     const answered = await scope.getTurn(turn.id);
     if (!answered) return { turnId: turn.id, status: 'missing_after_answer' };
+    if (answered.status === 'cancelled') return { turnId: turn.id, status: 'cancelled' };
     await deliverCached(scope, answered, adapter);
     log.info(
       {
         event: 'conversation_agent_completed',
-        surface: turn.surface,
-        teamId: turn.teamId,
-        userId: turn.userId,
-        turnId: turn.id,
-        sessionId: turn.chatSessionId,
-        externalEventId: turn.externalEventId,
+        ...turnLogContext(turn),
         status: 'delivered',
         requestedModelId: result.requestedModelId,
         responseModelId: result.responseModelId,
@@ -263,23 +267,23 @@ export async function processConversationAgentJob(
   } catch (err) {
     if (responseCached) throw err;
     if (err === timeoutError || abortController.signal.reason === timeoutError) {
-      await scope.cacheFailure(turn.id, {
-        status: 'timed_out',
-        errorCode: 'agent_timeout',
-        answerText: conversationSurfaces.CONVERSATION_AGENT_TIMEOUT_MESSAGE,
-      });
-      responseCached = true;
-      const cached = await scope.getTurn(turn.id);
-      if (cached) await deliverCached(scope, cached, adapter);
+      await cacheAndDeliverFailure(
+        scope,
+        turn,
+        adapter,
+        {
+          status: 'timed_out',
+          errorCode: 'agent_timeout',
+          answerText: conversationSurfaces.CONVERSATION_AGENT_TIMEOUT_MESSAGE,
+        },
+        () => {
+          responseCached = true;
+        },
+      );
       log.warn(
         {
           event: 'conversation_agent_timeout',
-          surface: turn.surface,
-          teamId: turn.teamId,
-          userId: turn.userId,
-          turnId: turn.id,
-          sessionId: turn.chatSessionId,
-          externalEventId: turn.externalEventId,
+          ...turnLogContext(turn),
           status: 'timed_out',
           durationMs: Date.now() - startedAt,
         },
@@ -287,22 +291,15 @@ export async function processConversationAgentJob(
       );
       return { turnId: turn.id, status: 'timed_out' };
     }
-    await scope.cacheFailure(turn.id, {
+    await cacheAndDeliverFailure(scope, turn, adapter, {
       status: 'failed',
       errorCode: 'agent_exception',
       answerText: conversationSurfaces.CONVERSATION_AGENT_FAILURE_MESSAGE,
     });
-    const cached = await scope.getTurn(turn.id);
-    if (cached && !cached.deliveredAt) await deliverCached(scope, cached, adapter);
     log.warn(
       {
         event: 'conversation_agent_failed',
-        surface: turn.surface,
-        teamId: turn.teamId,
-        userId: turn.userId,
-        turnId: turn.id,
-        sessionId: turn.chatSessionId,
-        externalEventId: turn.externalEventId,
+        ...turnLogContext(turn),
         status: 'failed',
         durationMs: Date.now() - startedAt,
         err: conversationSurfaces.redactConversationError(err),

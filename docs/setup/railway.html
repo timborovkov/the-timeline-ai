@@ -93,10 +93,11 @@
       </p>
       <p>
         <code>TELEGRAM_BOT_TOKEN</code> must be available to both app services. The web service owns
-        webhook authentication and immediate acknowledgement; the worker owns the durable
-        <code>conversation-agent</code> job, four-second typing refresh, and final Telegram reply.
-        Slack delivery reconstructs its worker adapter from encrypted installed-workspace tokens, so
-        do not add a separate Slack bot token variable.
+        webhook authentication and keeps the initial typing heartbeat active until the worker claims
+        the durable <code>conversation-agent</code> job. The worker then owns the four-second typing
+        refresh and final Telegram reply. Slack delivery reconstructs its worker adapter from
+        encrypted installed-workspace tokens using <code>SECRETS_ENCRYPTION_KEY</code>, so do not
+        add a separate Slack bot token variable.
       </p>
       <p>
         Keep <code>NODE_ENV</code> as <code>production</code> for both Railway environments. Use the

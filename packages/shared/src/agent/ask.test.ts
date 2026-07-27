@@ -604,4 +604,52 @@ describe('askAgent', () => {
       }),
     ]);
   });
+
+  it('sanitizes MCP tool failures without exposing provider errors to the model', async () => {
+    const privateError = new Error('private direct-message query in provider failure');
+    const safeError = new Error('Conversation operation failed');
+    const sanitizeError = vi.fn(() => safeError);
+    const onToolError = vi.fn();
+    const calls: unknown[] = [];
+    fakes.connectForTeam.mockResolvedValueOnce({
+      tools: [
+        {
+          name: 'get_issue',
+          description: 'Fetch a provider issue by external id.',
+          serverId: MCP_SERVER_ID,
+          serverName: 'Ops MCP',
+          namespacedName: MCP_TOOL_NAME,
+          inputSchema: { type: 'object', properties: {} },
+        },
+      ],
+    });
+    fakes.callTool.mockRejectedValueOnce(privateError);
+
+    const result = await askAgent(
+      {
+        db: db as never,
+        teamId: TEAM_ID,
+        userId: USER_ID,
+        question: 'Use the provider tool.',
+        maxSteps: 3,
+      },
+      {
+        includeMcpTools: true,
+        sanitizeError,
+        onToolError,
+        model: makeAskAgentToolRoundModel({
+          toolName: MCP_TOOL_NAME,
+          toolInput: {},
+          answer: 'The provider tool failed.',
+          capture: (opts) => calls.push(opts),
+        }),
+      },
+    );
+
+    expect(result).toMatchObject({ ok: true, answer: 'The provider tool failed.' });
+    expect(sanitizeError).toHaveBeenCalledWith(privateError);
+    expect(onToolError).toHaveBeenCalledWith(safeError, { tool: MCP_TOOL_NAME });
+    expect(JSON.stringify(calls)).toContain('mcp_call_failed');
+    expect(JSON.stringify(calls)).not.toContain(privateError.message);
+  });
 });

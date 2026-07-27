@@ -195,10 +195,11 @@ LOG_LEVEL=info
 </code></pre>
       <p>
         Copy <code>TELEGRAM_BOT_TOKEN</code> to both <code>web</code> and <code>worker</code>. The
-        web service authenticates the webhook and sends the initial typing action; the
-        <code>conversation-agent</code> queue worker refreshes typing and delivers durable Telegram
-        answers after the request has returned. Slack worker delivery needs no plaintext bot-token
-        variable because it decrypts the installed workspace token from Postgres.
+        web service authenticates the webhook and keeps initial typing active until the
+        <code>conversation-agent</code> queue worker claims the turn. The worker then refreshes
+        typing and delivers durable Telegram answers after the request has returned. Slack worker
+        delivery needs no plaintext bot-token variable because it decrypts the installed workspace
+        token from Postgres with <code>SECRETS_ENCRYPTION_KEY</code>.
       </p>
       <p>
         <code>AUTH_URL</code> is also the canonical public origin. Requests that arrive through

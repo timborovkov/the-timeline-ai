@@ -7,7 +7,7 @@ import {
   type chatSurfaceTurnStatus,
 } from '@timeline/db';
 import { type ModelMessage } from 'ai';
-import { and, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 
 import {
   DIRECT_CONVERSATION_HISTORY_CHARACTER_LIMIT,
@@ -72,6 +72,14 @@ function dedupeTitle(title: string, existing: string[]): string {
 
 export function directConversationTitle(question: string): string {
   return normalizeTitle(question);
+}
+
+function scopedTurnWhere(scope: TeamScopeCore, turnId: string) {
+  return and(
+    eq(chatSurfaceTurns.id, turnId),
+    eq(chatSurfaceTurns.teamId, scope.teamId),
+    eq(chatSurfaceTurns.userId, scope.userId),
+  );
 }
 
 function textFromContent(role: 'user' | 'assistant', content: unknown): string | null {
@@ -154,7 +162,13 @@ async function resetSurfaceLink(
         eq(chatSurfaceTurns.teamId, link.teamId),
         eq(chatSurfaceTurns.userId, link.userId),
         eq(chatSurfaceTurns.chatSessionId, link.sessionId),
-        inArray(chatSurfaceTurns.status, ['queued', 'processing']),
+        inArray(chatSurfaceTurns.status, [
+          'queued',
+          'processing',
+          'answered',
+          'failed',
+          'timed_out',
+        ]),
       ),
     );
   await tx
@@ -178,11 +192,25 @@ async function resetSurfaceLink(
     );
 }
 
+function conversationLockKey(surface: string, externalConversationKey: string): string {
+  return `surface-conversation:${surface}:${externalConversationKey}`;
+}
+
+async function lockConversation(
+  tx: ConversationDbTransaction,
+  surface: string,
+  externalConversationKey: string,
+): Promise<void> {
+  const lockKey = conversationLockKey(surface, externalConversationKey);
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`);
+}
+
 export async function resetSurfaceSessionInTransaction(
   tx: ConversationDbTransaction,
   identity: DirectConversationIdentity,
   errorCode = 'session_reset',
 ): Promise<string | null> {
+  await lockConversation(tx, identity.surface, identity.externalConversationKey);
   const links = await tx
     .select({
       id: chatSurfaceSessionLinks.id,
@@ -206,10 +234,27 @@ export async function resetSurfaceSessionInTransaction(
   return link.sessionId;
 }
 
-export async function resetSurfaceSessionsForTeamUserInTransaction(
+export async function resetSurfaceSessionByIdInTransaction(
   tx: ConversationDbTransaction,
-  input: { teamId: string; userId: string; errorCode?: string },
-): Promise<number> {
+  input: { sessionId: string; teamId: string; userId: string; errorCode?: string },
+): Promise<boolean> {
+  const candidates = await tx
+    .select({
+      surface: chatSurfaceSessionLinks.surface,
+      externalConversationKey: chatSurfaceSessionLinks.externalConversationKey,
+    })
+    .from(chatSurfaceSessionLinks)
+    .where(
+      and(
+        eq(chatSurfaceSessionLinks.chatSessionId, input.sessionId),
+        eq(chatSurfaceSessionLinks.teamId, input.teamId),
+        eq(chatSurfaceSessionLinks.userId, input.userId),
+      ),
+    )
+    .limit(1);
+  const candidate = candidates[0];
+  if (!candidate) return false;
+  await lockConversation(tx, candidate.surface, candidate.externalConversationKey);
   const links = await tx
     .select({
       id: chatSurfaceSessionLinks.id,
@@ -220,105 +265,187 @@ export async function resetSurfaceSessionsForTeamUserInTransaction(
     .from(chatSurfaceSessionLinks)
     .where(
       and(
+        eq(chatSurfaceSessionLinks.chatSessionId, input.sessionId),
         eq(chatSurfaceSessionLinks.teamId, input.teamId),
         eq(chatSurfaceSessionLinks.userId, input.userId),
       ),
+    )
+    .limit(1);
+  const link = links[0];
+  if (!link) return false;
+  await resetSurfaceLink(tx, link, input.errorCode ?? 'session_archived');
+  return true;
+}
+
+export async function resetSurfaceSessionsForTeamUserInTransaction(
+  tx: ConversationDbTransaction,
+  input: { teamId: string; userId: string; errorCode?: string },
+): Promise<number> {
+  const userLockKey = `surface-rate:${input.userId}`;
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${userLockKey}, 0))`);
+  const links = await tx
+    .select({
+      id: chatSurfaceSessionLinks.id,
+      sessionId: chatSurfaceSessionLinks.chatSessionId,
+      teamId: chatSurfaceSessionLinks.teamId,
+      userId: chatSurfaceSessionLinks.userId,
+      surface: chatSurfaceSessionLinks.surface,
+      externalConversationKey: chatSurfaceSessionLinks.externalConversationKey,
+    })
+    .from(chatSurfaceSessionLinks)
+    .where(
+      and(
+        eq(chatSurfaceSessionLinks.teamId, input.teamId),
+        eq(chatSurfaceSessionLinks.userId, input.userId),
+      ),
+    )
+    .orderBy(
+      asc(chatSurfaceSessionLinks.surface),
+      asc(chatSurfaceSessionLinks.externalConversationKey),
     );
   for (const link of links) {
+    await lockConversation(tx, link.surface, link.externalConversationKey);
     await resetSurfaceLink(tx, link, input.errorCode ?? 'membership_removed');
   }
   return links.length;
 }
 
+async function persistTurnTranscript(
+  tx: ConversationDbTransaction,
+  scope: TeamScopeCore,
+  turn: SurfaceTurnRow,
+  answer: string,
+  toolObservability?: unknown,
+): Promise<void> {
+  await tx.insert(chatMessages).values([
+    {
+      teamId: scope.teamId,
+      sessionId: turn.chatSessionId,
+      role: 'user',
+      authorUserId: scope.userId,
+      content: {
+        ui_message: {
+          id: `surface-turn:${turn.id}:user`,
+          role: 'user',
+          parts: [{ type: 'text', text: turn.questionText }],
+        },
+      },
+    },
+    {
+      teamId: scope.teamId,
+      sessionId: turn.chatSessionId,
+      role: 'assistant',
+      authorUserId: null,
+      content: {
+        text: answer,
+        tool_calls: [],
+        conversation_surface: turn.surface,
+        surface_turn_id: turn.id,
+        tool_observability: toolObservability ?? null,
+      },
+    },
+  ]);
+  await tx
+    .update(chatSessions)
+    .set({ updatedAt: new Date() })
+    .where(
+      and(
+        eq(chatSessions.id, turn.chatSessionId),
+        eq(chatSessions.teamId, scope.teamId),
+        eq(chatSessions.createdBy, scope.userId),
+      ),
+    );
+}
+
 export function createConversationSurfaceScope(db: Db, scope: TeamScopeCore) {
-  async function getOrCreateSession(
-    identity: DirectConversationIdentity,
-    firstQuestion: string,
-  ): Promise<{ id: string; created: boolean }> {
-    await scope.requireMembership();
+  function assertIdentity(identity: DirectConversationIdentity): void {
     if (identity.teamId !== scope.teamId || identity.userId !== scope.userId) {
       throw new Error('Conversation identity is outside the active team scope');
     }
-    return db.transaction(async (tx) => {
-      const lockKey = `surface-session:${identity.surface}:${identity.externalConversationKey}`;
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`);
-      const links = await tx
-        .select({
-          id: chatSurfaceSessionLinks.id,
-          sessionId: chatSurfaceSessionLinks.chatSessionId,
-          teamId: chatSurfaceSessionLinks.teamId,
-          userId: chatSurfaceSessionLinks.userId,
-          archivedAt: chatSessions.archivedAt,
-        })
-        .from(chatSurfaceSessionLinks)
-        .innerJoin(chatSessions, eq(chatSessions.id, chatSurfaceSessionLinks.chatSessionId))
-        .where(
-          and(
-            eq(chatSurfaceSessionLinks.surface, identity.surface),
-            eq(chatSurfaceSessionLinks.externalConversationKey, identity.externalConversationKey),
-          ),
-        )
-        .limit(1);
-      const existing = links[0];
-      if (
-        existing?.teamId === scope.teamId &&
-        existing.userId === scope.userId &&
-        existing.archivedAt === null
-      ) {
-        return { id: existing.sessionId, created: false };
-      }
-      if (existing) {
-        if (existing.userId === scope.userId) {
-          await resetSurfaceLink(tx, existing, 'team_changed');
-        } else {
-          await tx
-            .delete(chatSurfaceSessionLinks)
-            .where(eq(chatSurfaceSessionLinks.id, existing.id));
-        }
-      }
+  }
 
-      const title = dedupeTitle(
-        directConversationTitle(firstQuestion),
-        await existingSessionTitles(tx, scope),
-      );
-      const sessions = await tx
-        .insert(chatSessions)
-        .values({
-          teamId: scope.teamId,
-          createdBy: scope.userId,
-          surface: identity.surface,
-          title,
-        })
-        .returning({ id: chatSessions.id });
-      const session = sessions[0];
-      if (!session) throw new Error('Failed to create direct conversation session');
-      await tx.insert(chatSurfaceSessionLinks).values({
+  async function getOrCreateSessionInTransaction(
+    tx: ConversationDbTransaction,
+    identity: DirectConversationIdentity,
+    firstQuestion: string,
+  ): Promise<{ id: string; created: boolean }> {
+    const links = await tx
+      .select({
+        id: chatSurfaceSessionLinks.id,
+        sessionId: chatSurfaceSessionLinks.chatSessionId,
+        teamId: chatSurfaceSessionLinks.teamId,
+        userId: chatSurfaceSessionLinks.userId,
+        archivedAt: chatSessions.archivedAt,
+      })
+      .from(chatSurfaceSessionLinks)
+      .innerJoin(chatSessions, eq(chatSessions.id, chatSurfaceSessionLinks.chatSessionId))
+      .where(
+        and(
+          eq(chatSurfaceSessionLinks.surface, identity.surface),
+          eq(chatSurfaceSessionLinks.externalConversationKey, identity.externalConversationKey),
+        ),
+      )
+      .limit(1);
+    const existing = links[0];
+    if (
+      existing?.teamId === scope.teamId &&
+      existing.userId === scope.userId &&
+      existing.archivedAt === null
+    ) {
+      return { id: existing.sessionId, created: false };
+    }
+    if (existing) {
+      if (existing.userId === scope.userId) {
+        await resetSurfaceLink(tx, existing, 'team_changed');
+      } else {
+        await tx.delete(chatSurfaceSessionLinks).where(eq(chatSurfaceSessionLinks.id, existing.id));
+      }
+    }
+
+    const title = dedupeTitle(
+      directConversationTitle(firstQuestion),
+      await existingSessionTitles(tx, scope),
+    );
+    const sessions = await tx
+      .insert(chatSessions)
+      .values({
+        teamId: scope.teamId,
+        createdBy: scope.userId,
         surface: identity.surface,
-        externalConversationKey: identity.externalConversationKey,
+        title,
+      })
+      .returning({ id: chatSessions.id });
+    const session = sessions[0];
+    if (!session) throw new Error('Failed to create direct conversation session');
+    await tx.insert(chatSurfaceSessionLinks).values({
+      surface: identity.surface,
+      externalConversationKey: identity.externalConversationKey,
+      teamId: scope.teamId,
+      userId: scope.userId,
+      chatSessionId: session.id,
+    });
+    log.info(
+      {
+        event: 'conversation_session_created',
+        surface: identity.surface,
         teamId: scope.teamId,
         userId: scope.userId,
-        chatSessionId: session.id,
-      });
-      log.info(
-        {
-          event: 'conversation_session_created',
-          surface: identity.surface,
-          teamId: scope.teamId,
-          userId: scope.userId,
-          sessionId: session.id,
-          status: 'active',
-        },
-        'direct conversation session created',
-      );
-      return { id: session.id, created: true };
-    });
+        sessionId: session.id,
+        status: 'active',
+      },
+      'direct conversation session created',
+    );
+    return { id: session.id, created: true };
   }
 
   async function createTurn(request: DirectAgentTurnRequest): Promise<CreateSurfaceTurnResult> {
-    const session = await getOrCreateSession(request, request.question);
+    await scope.requireMembership();
+    assertIdentity(request);
     return db.transaction(async (tx) => {
-      const lockKey = `surface-turn:${request.surface}:${request.externalConversationKey}`;
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`);
+      const userLockKey = `surface-rate:${scope.userId}`;
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${userLockKey}, 0))`);
+      await scope.requireMembership();
+      await lockConversation(tx, request.surface, request.externalConversationKey);
       const duplicate = await tx
         .select()
         .from(chatSurfaceTurns)
@@ -326,8 +453,6 @@ export function createConversationSurfaceScope(db: Db, scope: TeamScopeCore) {
           and(
             eq(chatSurfaceTurns.surface, request.surface),
             eq(chatSurfaceTurns.externalEventId, request.externalEventId),
-            eq(chatSurfaceTurns.teamId, scope.teamId),
-            eq(chatSurfaceTurns.userId, scope.userId),
           ),
         )
         .limit(1);
@@ -358,6 +483,7 @@ export function createConversationSurfaceScope(db: Db, scope: TeamScopeCore) {
         .limit(1);
       if (active[0]) return { status: 'busy' };
 
+      const session = await getOrCreateSessionInTransaction(tx, request, request.question);
       const rows = await tx
         .insert(chatSurfaceTurns)
         .values({
@@ -383,13 +509,7 @@ export function createConversationSurfaceScope(db: Db, scope: TeamScopeCore) {
     const rows = await db
       .select()
       .from(chatSurfaceTurns)
-      .where(
-        and(
-          eq(chatSurfaceTurns.id, turnId),
-          eq(chatSurfaceTurns.teamId, scope.teamId),
-          eq(chatSurfaceTurns.userId, scope.userId),
-        ),
-      )
+      .where(scopedTurnWhere(scope, turnId))
       .limit(1);
     return rows[0] ?? null;
   }
@@ -407,18 +527,13 @@ export function createConversationSurfaceScope(db: Db, scope: TeamScopeCore) {
       const rows = await tx
         .select()
         .from(chatSurfaceTurns)
-        .where(
-          and(
-            eq(chatSurfaceTurns.id, turnId),
-            eq(chatSurfaceTurns.teamId, scope.teamId),
-            eq(chatSurfaceTurns.userId, scope.userId),
-          ),
-        )
+        .where(scopedTurnWhere(scope, turnId))
         .for('update')
         .limit(1);
       const turn = rows[0];
       if (!turn) return { status: 'missing' };
       if (turn.status === 'delivered' || turn.deliveredAt) return { status: 'delivered', turn };
+      if (turn.status === 'cancelled') return { status: 'terminal', turn };
       if (turn.answerText) return { status: 'cached', turn };
       if (turn.status === 'processing') {
         const failed = await tx
@@ -490,72 +605,13 @@ export function createConversationSurfaceScope(db: Db, scope: TeamScopeCore) {
           answeredAt: new Date(),
           updatedAt: new Date(),
         })
-        .where(
-          and(
-            eq(chatSurfaceTurns.id, input.turnId),
-            eq(chatSurfaceTurns.teamId, scope.teamId),
-            eq(chatSurfaceTurns.userId, scope.userId),
-            eq(chatSurfaceTurns.status, 'processing'),
-          ),
-        )
+        .where(and(scopedTurnWhere(scope, input.turnId), eq(chatSurfaceTurns.status, 'processing')))
         .returning();
       const turn = rows[0];
       if (!turn) return false;
-      await tx.insert(chatMessages).values([
-        {
-          teamId: scope.teamId,
-          sessionId: turn.chatSessionId,
-          role: 'user',
-          authorUserId: scope.userId,
-          content: {
-            ui_message: {
-              id: `surface-turn:${turn.id}:user`,
-              role: 'user',
-              parts: [{ type: 'text', text: turn.questionText }],
-            },
-          },
-        },
-        {
-          teamId: scope.teamId,
-          sessionId: turn.chatSessionId,
-          role: 'assistant',
-          authorUserId: null,
-          content: {
-            text: input.answer,
-            tool_calls: [],
-            conversation_surface: turn.surface,
-            surface_turn_id: turn.id,
-            tool_observability: input.toolObservability ?? null,
-          },
-        },
-      ]);
-      await tx
-        .update(chatSessions)
-        .set({ updatedAt: new Date() })
-        .where(eq(chatSessions.id, turn.chatSessionId));
+      await persistTurnTranscript(tx, scope, turn, input.answer, input.toolObservability);
       return true;
     });
-  }
-
-  async function updateTurn(
-    turnId: string,
-    values: {
-      status: ConversationTurnStatus;
-      errorCode?: string | null;
-      deliveredAt?: Date | null;
-    },
-  ): Promise<void> {
-    await scope.requireMembership();
-    await db
-      .update(chatSurfaceTurns)
-      .set({ ...values, updatedAt: new Date() })
-      .where(
-        and(
-          eq(chatSurfaceTurns.id, turnId),
-          eq(chatSurfaceTurns.teamId, scope.teamId),
-          eq(chatSurfaceTurns.userId, scope.userId),
-        ),
-      );
   }
 
   async function cacheFailure(
@@ -567,23 +623,27 @@ export function createConversationSurfaceScope(db: Db, scope: TeamScopeCore) {
     },
   ): Promise<void> {
     await scope.requireMembership();
-    await db
-      .update(chatSurfaceTurns)
-      .set({
-        status: input.status,
-        errorCode: input.errorCode,
-        answerText: input.answerText,
-        answeredAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(chatSurfaceTurns.id, turnId),
-          eq(chatSurfaceTurns.teamId, scope.teamId),
-          eq(chatSurfaceTurns.userId, scope.userId),
-          inArray(chatSurfaceTurns.status, ['queued', 'processing', 'failed', 'timed_out']),
-        ),
-      );
+    await db.transaction(async (tx) => {
+      const rows = await tx
+        .update(chatSurfaceTurns)
+        .set({
+          status: input.status,
+          errorCode: input.errorCode,
+          answerText: input.answerText,
+          answeredAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            scopedTurnWhere(scope, turnId),
+            inArray(chatSurfaceTurns.status, ['queued', 'processing', 'failed', 'timed_out']),
+            isNull(chatSurfaceTurns.answerText),
+          ),
+        )
+        .returning();
+      const turn = rows[0];
+      if (turn) await persistTurnTranscript(tx, scope, turn, input.answerText);
+    });
   }
 
   async function markDelivered(turnId: string): Promise<void> {
@@ -591,13 +651,7 @@ export function createConversationSurfaceScope(db: Db, scope: TeamScopeCore) {
     const rows = await db
       .select({ status: chatSurfaceTurns.status })
       .from(chatSurfaceTurns)
-      .where(
-        and(
-          eq(chatSurfaceTurns.id, turnId),
-          eq(chatSurfaceTurns.teamId, scope.teamId),
-          eq(chatSurfaceTurns.userId, scope.userId),
-        ),
-      )
+      .where(scopedTurnWhere(scope, turnId))
       .limit(1);
     const status = rows[0]?.status;
     if (!status) return;
@@ -608,17 +662,12 @@ export function createConversationSurfaceScope(db: Db, scope: TeamScopeCore) {
         deliveredAt: new Date(),
         updatedAt: new Date(),
       })
-      .where(
-        and(
-          eq(chatSurfaceTurns.id, turnId),
-          eq(chatSurfaceTurns.teamId, scope.teamId),
-          eq(chatSurfaceTurns.userId, scope.userId),
-        ),
-      );
+      .where(scopedTurnWhere(scope, turnId));
   }
 
   async function resetSession(identity: DirectConversationIdentity): Promise<boolean> {
     await scope.requireMembership();
+    assertIdentity(identity);
     return db.transaction(async (tx) => {
       const sessionId = await resetSurfaceSessionInTransaction(tx, identity);
       if (!sessionId) return false;
@@ -638,13 +687,11 @@ export function createConversationSurfaceScope(db: Db, scope: TeamScopeCore) {
   }
 
   return {
-    getOrCreateSession,
     createTurn,
     getTurn,
     claimTurn,
     recentHistory,
     storeAnswer,
-    updateTurn,
     cacheFailure,
     markDelivered,
     resetSession,

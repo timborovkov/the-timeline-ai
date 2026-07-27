@@ -24,7 +24,6 @@ import {
   calendarEvents,
   chatMessages,
   chatSessions,
-  chatSurfaceSessionLinks,
   documentChunks,
   documentVersions,
   documents,
@@ -82,6 +81,7 @@ import {
   tombstoneObjectDueDateCalendarEventsForEntities,
   type DueDateCalendarSyncResult,
 } from '#src/calendar/due-dates.js';
+import { resetSurfaceSessionByIdInTransaction } from '#src/conversation-surfaces/scope.js';
 import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
 import { dueDateRangeConditions } from '#src/due-date-filter.js';
 import { getEnv } from '#src/env.js';
@@ -8514,15 +8514,11 @@ export async function archiveChatSession(
       )
       .returning({ id: chatSessions.id });
     if (!archived[0]) return;
-    await tx
-      .delete(chatSurfaceSessionLinks)
-      .where(
-        and(
-          eq(chatSurfaceSessionLinks.chatSessionId, sessionId),
-          eq(chatSurfaceSessionLinks.teamId, scope.teamId),
-          eq(chatSurfaceSessionLinks.userId, scope.userId),
-        ),
-      );
+    await resetSurfaceSessionByIdInTransaction(tx, {
+      sessionId,
+      teamId: scope.teamId,
+      userId: scope.userId,
+    });
   });
 }
 

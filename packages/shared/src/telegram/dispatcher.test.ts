@@ -1446,7 +1446,7 @@ describe('handleUpdate telegram edit visibility', () => {
     );
 
     expect(messages).toEqual([
-      `Active team: Team A (${TEAM_ID}). Messages you send here land in that team's timeline.`,
+      `Active team: Team A (${TEAM_ID}). Text messages ask the agent; use /note <text> or send media to capture something in this team's timeline.`,
     ]);
   });
 

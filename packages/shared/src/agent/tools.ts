@@ -50,6 +50,7 @@ export type AgentToolErrorReporter = (err: unknown, context: { tool: string }) =
 
 export interface AgentToolOptions {
   onToolError?: AgentToolErrorReporter | undefined;
+  sanitizeError?: ((err: unknown) => unknown) | undefined;
   readOnly?: boolean | undefined;
   db?: Db | undefined;
   classifyTaskCategories?: TaskProposalBatchClassifier | undefined;
@@ -823,12 +824,14 @@ async function safe<T>(
   label: string,
   fn: () => Promise<T>,
   onToolError?: AgentToolErrorReporter,
+  sanitizeError?: (err: unknown) => unknown,
 ): Promise<T | { error: string }> {
   try {
     return await fn();
   } catch (err) {
-    log.error({ err, tool: label }, 'tool failed');
-    onToolError?.(err, { tool: label });
+    const safeError = sanitizeError?.(err) ?? err;
+    log.error({ err: safeError, tool: label }, 'tool failed');
+    onToolError?.(safeError, { tool: label });
     return { error: 'tool_failed' };
   }
 }
@@ -860,7 +863,9 @@ export async function buildMcpTools(
   const discovery = await getMcpManager()
     .connectForTeam(db, scope.teamId, scope.userId)
     .catch((err: unknown) => {
-      log.warn({ err }, 'mcp discovery failed during tool build');
+      const safeError = options.sanitizeError?.(err) ?? err;
+      log.warn({ err: safeError }, 'mcp discovery failed during tool build');
+      options.onToolError?.(safeError, { tool: 'mcp_discovery' });
       return null;
     });
   if (!discovery) return {};
@@ -896,8 +901,12 @@ export async function buildMcpTools(
             args: (args ?? {}) as Record<string, unknown>,
             result,
           }).catch((err: unknown) => {
-            log.warn({ err, tool: namespaced }, 'mcp tool result evidence capture failed');
-            options.onToolError?.(err, { tool: namespaced });
+            const safeError = options.sanitizeError?.(err) ?? err;
+            log.warn(
+              { err: safeError, tool: namespaced },
+              'mcp tool result evidence capture failed',
+            );
+            options.onToolError?.(safeError, { tool: namespaced });
           });
           const asText = JSON.stringify(result).slice(0, 8000);
           return {
@@ -908,8 +917,9 @@ export async function buildMcpTools(
             }),
           };
         } catch (err) {
-          log.warn({ err, tool: namespaced }, 'mcp tool call failed');
-          options.onToolError?.(err, { tool: namespaced });
+          const safeError = options.sanitizeError?.(err) ?? err;
+          log.warn({ err: safeError, tool: namespaced }, 'mcp tool call failed');
+          options.onToolError?.(safeError, { tool: namespaced });
           // Surface needs_reauth in a structured shape the chat UI can
           // recognize and render as an inline "Reconnect <server>" CTA.
           // McpNeedsReauthError is thrown by the client when refresh fails.
@@ -924,7 +934,13 @@ export async function buildMcpTools(
               };
             }
           }
-          return { ok: false, error: err instanceof Error ? err.message : 'mcp_call_failed' };
+          return {
+            ok: false,
+            error:
+              options.sanitizeError || !(safeError instanceof Error)
+                ? 'mcp_call_failed'
+                : safeError.message,
+          };
         }
       },
     });
@@ -1202,7 +1218,7 @@ async function resolveTaskProposalProject(
 
 export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}): ToolSet {
   const runSafe = <T>(label: string, fn: () => Promise<T>): Promise<T | { error: string }> =>
-    safe(label, fn, options.onToolError);
+    safe(label, fn, options.onToolError, options.sanitizeError);
   const tools: ToolSet = {
     list_pins: tool({
       description:
@@ -1427,8 +1443,14 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
                   reason: 'The chat agent archived this object after explicit in-chat approval.',
                 })
                 .catch((err: unknown) => {
-                  log.warn({ err, objectId: archived.id }, 'object archive reconcile failed');
-                  options.onToolError?.(err, { tool: 'execute_object_archive:reconcile' });
+                  const safeError = options.sanitizeError?.(err) ?? err;
+                  log.warn(
+                    { err: safeError, objectId: archived.id },
+                    'object archive reconcile failed',
+                  );
+                  options.onToolError?.(safeError, {
+                    tool: 'execute_object_archive:reconcile',
+                  });
                   return 0;
                 })
             : 0;
@@ -1488,8 +1510,12 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
               reason: 'The chat agent merged these objects after explicit in-chat approval.',
             })
             .catch((err: unknown) => {
-              log.warn({ err, survivorId: result.survivor.id }, 'object merge reconcile failed');
-              options.onToolError?.(err, { tool: 'execute_object_merge:reconcile' });
+              const safeError = options.sanitizeError?.(err) ?? err;
+              log.warn(
+                { err: safeError, survivorId: result.survivor.id },
+                'object merge reconcile failed',
+              );
+              options.onToolError?.(safeError, { tool: 'execute_object_merge:reconcile' });
               return 0;
             });
           return {
@@ -3298,11 +3324,14 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
                       'The chat agent updated this calendar event after explicit in-chat approval.',
                   })
                   .catch((err: unknown) => {
+                    const safeError = options.sanitizeError?.(err) ?? err;
                     log.warn(
-                      { err, calendarEventId: input.id },
+                      { err: safeError, calendarEventId: input.id },
                       'calendar update reconcile failed',
                     );
-                    options.onToolError?.(err, { tool: 'execute_calendar_update:reconcile' });
+                    options.onToolError?.(safeError, {
+                      tool: 'execute_calendar_update:reconcile',
+                    });
                     return 0;
                   })
               : 0;
@@ -3362,8 +3391,12 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
                 'The chat agent cancelled this calendar event after explicit in-chat approval.',
             })
             .catch((err: unknown) => {
-              log.warn({ err, calendarEventId: input.id }, 'calendar cancel reconcile failed');
-              options.onToolError?.(err, { tool: 'execute_calendar_cancel:reconcile' });
+              const safeError = options.sanitizeError?.(err) ?? err;
+              log.warn(
+                { err: safeError, calendarEventId: input.id },
+                'calendar cancel reconcile failed',
+              );
+              options.onToolError?.(safeError, { tool: 'execute_calendar_cancel:reconcile' });
               return 0;
             });
           return {

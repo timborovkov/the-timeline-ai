@@ -304,7 +304,7 @@ export function buildTelegramCaptureCanaryPayload(
       date: input.date,
       chat: { id: input.userId, type: 'private' },
       from,
-      text: input.text,
+      text: `/note ${input.text}`,
     },
   };
 }

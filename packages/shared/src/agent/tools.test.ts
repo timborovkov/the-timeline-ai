@@ -325,6 +325,27 @@ describe('buildAgentTools — team isolation', () => {
     });
   });
 
+  it('sanitizes native tool failures before reporting them', async () => {
+    const scope = makeFakeScope();
+    const privateError = new Error('query params: private direct-message question');
+    const safeError = new Error('Conversation operation failed');
+    const sanitizeError = vi.fn(() => safeError);
+    const onToolError = vi.fn();
+    scope.timeline.listMembers.mockRejectedValue(privateError);
+    const tools = buildAgentTools(scope as unknown as TeamScope, {
+      sanitizeError,
+      onToolError,
+    });
+    const exec = tools.list_team_members?.execute as (
+      input: Record<string, never>,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    await expect(exec({}, {})).resolves.toEqual({ error: 'tool_failed' });
+    expect(sanitizeError).toHaveBeenCalledWith(privateError);
+    expect(onToolError).toHaveBeenCalledWith(safeError, { tool: 'list_team_members' });
+  });
+
   it('lists and mutates only pins exposed by the bound personal scope', async () => {
     const scope = makeFakeScope();
     const pinId = 'abababab-abab-4bab-8bab-abababababab';

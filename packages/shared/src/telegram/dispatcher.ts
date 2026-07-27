@@ -289,6 +289,10 @@ async function routeMessage(
 
 // ---------- DM ----------
 
+function replyToTelegramDm(ctx: DmContext, text: string): Promise<void> {
+  return ctx.tg.sendMessage({ chat_id: ctx.message.chat.id, text });
+}
+
 async function handleDm(ctx: DmContext, isEdit: boolean): Promise<void> {
   const text = ctx.message.text ?? ctx.message.caption ?? '';
   const command = parseCommand(text);
@@ -322,10 +326,10 @@ async function handleDm(ctx: DmContext, isEdit: boolean): Promise<void> {
   const audio = ctx.message.voice ?? ctx.message.audio;
   if (audio && !isEdit) {
     if (!ctx.activeTeamId) {
-      await ctx.tg.sendMessage({
-        chat_id: ctx.message.chat.id,
-        text: 'No active team. Run /link <token> first. Your voice memo was not recorded.',
-      });
+      await replyToTelegramDm(
+        ctx,
+        'No active team. Run /link <token> first. Your voice memo was not recorded.',
+      );
       return;
     }
     const insertedAudio = await ingestAudio(
@@ -350,10 +354,10 @@ async function handleDm(ctx: DmContext, isEdit: boolean): Promise<void> {
   const fileAttachment = pickTelegramDocumentAttachment(ctx.message);
   if (fileAttachment && !isEdit) {
     if (!ctx.activeTeamId) {
-      await ctx.tg.sendMessage({
-        chat_id: ctx.message.chat.id,
-        text: 'No active team. Run /link <token> first. Your file was not recorded.',
-      });
+      await replyToTelegramDm(
+        ctx,
+        'No active team. Run /link <token> first. Your file was not recorded.',
+      );
       return;
     }
     const inserted = await insertEvent(ctx.db, {
@@ -411,7 +415,7 @@ async function dispatchCommand(
       await cmdHelpDm(ctx);
       return;
     case '/ask':
-      await cmdAskDm(ctx, command.arg);
+      await queueDmAgentTurn(ctx, command.arg);
       return;
     case '/note':
       await cmdNoteDm(ctx, command.arg);
@@ -423,19 +427,13 @@ async function dispatchCommand(
       await cmdJoinDm(ctx, command.arg);
       return;
     default:
-      await ctx.tg.sendMessage({
-        chat_id: ctx.message.chat.id,
-        text: `Unknown command. Try /help.`,
-      });
+      await replyToTelegramDm(ctx, `Unknown command. Try /help.`);
   }
 }
 
 async function cmdJoinDm(ctx: DmContext, arg: string): Promise<void> {
   if (!ctx.activeTeamId || !ctx.tgUserRow.userId) {
-    await ctx.tg.sendMessage({
-      chat_id: ctx.message.chat.id,
-      text: 'Link your Telegram identity to Timeline before using /join.',
-    });
+    await replyToTelegramDm(ctx, 'Link your Telegram identity to Timeline before using /join.');
     return;
   }
   await runTelegramJoinCommand({
@@ -456,23 +454,19 @@ async function cmdStartDm(ctx: DmContext, arg: string): Promise<void> {
     await cmdLinkDm(ctx, arg);
     return;
   }
-  await ctx.tg.sendMessage({
-    chat_id: ctx.message.chat.id,
-    text:
-      `Welcome to The Timeline.\n\n` +
+  await replyToTelegramDm(
+    ctx,
+    `Welcome to The Timeline.\n\n` +
       `To connect this chat to a team, generate a link token in the web app ` +
       `(Team → Telegram) and reply with /link <token>.\n\n` +
       `Already linked? Run /whereami to see the active team, /team to switch, or /help.`,
-  });
+  );
 }
 
 async function cmdLinkDm(ctx: DmContext, arg: string): Promise<void> {
   const token = arg.trim();
   if (!token) {
-    await ctx.tg.sendMessage({
-      chat_id: ctx.message.chat.id,
-      text: 'Usage: /link <token>. Generate one in the team settings page.',
-    });
+    await replyToTelegramDm(ctx, 'Usage: /link <token>. Generate one in the team settings page.');
     return;
   }
   try {
@@ -584,10 +578,10 @@ async function cmdLinkDm(ctx: DmContext, arg: string): Promise<void> {
         directTelegramIdentity(ctx, ctx.activeTeamId, ctx.tgUserRow.userId),
       );
     }
-    await ctx.tg.sendMessage({
-      chat_id: ctx.message.chat.id,
-      text: `Linked. This chat is now attributed to team ${formatTeamLabel(team)}. Run /team to switch active team later.`,
-    });
+    await replyToTelegramDm(
+      ctx,
+      `Linked. This chat is now attributed to team ${formatTeamLabel(team)}. Run /team to switch active team later.`,
+    );
   } catch (e) {
     const reason = e instanceof Error ? e.message : 'failed';
     const text =
@@ -606,7 +600,7 @@ async function cmdLinkDm(ctx: DmContext, arg: string): Promise<void> {
                   : reason === 'legacy_no_username'
                     ? 'This token predates the identity check. Generate a new one in the web app.'
                     : 'Could not link. Try again.';
-    await ctx.tg.sendMessage({ chat_id: ctx.message.chat.id, text });
+    await replyToTelegramDm(ctx, text);
   }
 }
 
@@ -615,10 +609,10 @@ async function cmdTeamDm(ctx: DmContext, arg: string): Promise<void> {
   // otherwise "/team 2" could switch to a different team than the one the
   // user just saw at position 2.
   if (!ctx.tgUserRow.userId) {
-    await ctx.tg.sendMessage({
-      chat_id: ctx.message.chat.id,
-      text: 'No teams yet. Generate a personal link token in the web app and run /link <token>.',
-    });
+    await replyToTelegramDm(
+      ctx,
+      'No teams yet. Generate a personal link token in the web app and run /link <token>.',
+    );
     return;
   }
   const memberships = await ctx.db
@@ -641,10 +635,10 @@ async function cmdTeamDm(ctx: DmContext, arg: string): Promise<void> {
     .orderBy(asc(teamMembers.createdAt), asc(teamMembers.teamId));
 
   if (memberships.length === 0) {
-    await ctx.tg.sendMessage({
-      chat_id: ctx.message.chat.id,
-      text: 'No teams yet. Ask to be invited to a team or link this Telegram account again.',
-    });
+    await replyToTelegramDm(
+      ctx,
+      'No teams yet. Ask to be invited to a team or link this Telegram account again.',
+    );
     return;
   }
   const first = memberships[0];
@@ -653,10 +647,7 @@ async function cmdTeamDm(ctx: DmContext, arg: string): Promise<void> {
     // different team that was later /unlinked), self-heal by activating it
     // so /whereami and DM ingest start working again.
     if (!first.isActive) await activateTelegramTeam(ctx, first.teamId);
-    await ctx.tg.sendMessage({
-      chat_id: ctx.message.chat.id,
-      text: `Only one team: ${formatTeamLabel(first)}. It's now active.`,
-    });
+    await replyToTelegramDm(ctx, `Only one team: ${formatTeamLabel(first)}. It's now active.`);
     return;
   }
 
@@ -665,38 +656,30 @@ async function cmdTeamDm(ctx: DmContext, arg: string): Promise<void> {
     const target = Number.isInteger(n) ? memberships[n - 1] : undefined;
     if (target) {
       const changed = await activateTelegramTeam(ctx, target.teamId);
-      await ctx.tg.sendMessage({
-        chat_id: ctx.message.chat.id,
-        text: changed
+      await replyToTelegramDm(
+        ctx,
+        changed
           ? `Active team is now ${formatTeamLabel(target)}. I started a new conversation.`
           : `${formatTeamLabel(target)} is already active.`,
-      });
+      );
       return;
     }
-    await ctx.tg.sendMessage({
-      chat_id: ctx.message.chat.id,
-      text: `Invalid team number. Pick one of 1..${memberships.length}.`,
-    });
+    await replyToTelegramDm(ctx, `Invalid team number. Pick one of 1..${memberships.length}.`);
     return;
   }
 
   const lines = memberships.map(
     (m, i) => `${i + 1}. ${formatTeamLabel(m)}${m.isActive ? '  ← active' : ''}`,
   );
-  await ctx.tg.sendMessage({
-    chat_id: ctx.message.chat.id,
-    text:
-      `Your teams:\n${lines.join('\n')}\n\n` +
-      `To switch, reply with /team <number> (e.g. /team 2).`,
-  });
+  await replyToTelegramDm(
+    ctx,
+    `Your teams:\n${lines.join('\n')}\n\n` + `To switch, reply with /team <number> (e.g. /team 2).`,
+  );
 }
 
 async function cmdWhereamiDm(ctx: DmContext): Promise<void> {
   if (!ctx.activeTeamId) {
-    await ctx.tg.sendMessage({
-      chat_id: ctx.message.chat.id,
-      text: 'No active team. Run /link <token> to connect.',
-    });
+    await replyToTelegramDm(ctx, 'No active team. Run /link <token> to connect.');
     return;
   }
   const rows = await ctx.db
@@ -705,10 +688,10 @@ async function cmdWhereamiDm(ctx: DmContext): Promise<void> {
     .where(eq(teams.id, ctx.activeTeamId))
     .limit(1);
   const label = rows[0] ? formatTeamLabel(rows[0]) : ctx.activeTeamId;
-  await ctx.tg.sendMessage({
-    chat_id: ctx.message.chat.id,
-    text: `Active team: ${label}. Messages you send here land in that team's timeline.`,
-  });
+  await replyToTelegramDm(
+    ctx,
+    `Active team: ${label}. Text messages ask the agent; use /note <text> or send media to capture something in this team's timeline.`,
+  );
 }
 
 async function cmdUnlinkDm(ctx: DmContext, _arg: string): Promise<void> {
@@ -732,29 +715,19 @@ async function cmdUnlinkDm(ctx: DmContext, _arg: string): Promise<void> {
       .where(eq(telegramUsers.id, ctx.tgUserRow.id));
     return rows;
   });
-  await ctx.tg.sendMessage({
-    chat_id: ctx.message.chat.id,
-    text: `Unlinked ${deleted.length} team(s). New messages here will not be recorded until you /link again.`,
-  });
+  await replyToTelegramDm(
+    ctx,
+    `Unlinked ${deleted.length} team(s). New messages here will not be recorded until you /link again.`,
+  );
 }
 
 async function cmdHelpDm(ctx: DmContext): Promise<void> {
-  await ctx.tg.sendMessage({
-    chat_id: ctx.message.chat.id,
-    text: TELEGRAM_DM_HELP,
-  });
-}
-
-async function cmdAskDm(ctx: DmContext, arg: string): Promise<void> {
-  await queueDmAgentTurn(ctx, arg);
+  await replyToTelegramDm(ctx, TELEGRAM_DM_HELP);
 }
 
 async function cmdNoteDm(ctx: DmContext, arg: string): Promise<void> {
   if (!arg.trim()) {
-    await ctx.tg.sendMessage({
-      chat_id: ctx.message.chat.id,
-      text: 'Usage: /note <text>.',
-    });
+    await replyToTelegramDm(ctx, 'Usage: /note <text>.');
     return;
   }
   await ingestDmText(ctx, arg, false);
@@ -762,19 +735,13 @@ async function cmdNoteDm(ctx: DmContext, arg: string): Promise<void> {
 
 async function cmdNewDm(ctx: DmContext): Promise<void> {
   if (!ctx.activeTeamId || !ctx.tgUserRow.userId) {
-    await ctx.tg.sendMessage({
-      chat_id: ctx.message.chat.id,
-      text: 'No active team. Run /link <token> first.',
-    });
+    await replyToTelegramDm(ctx, 'No active team. Run /link <token> first.');
     return;
   }
   await withTeam(ctx.db, ctx.activeTeamId, ctx.tgUserRow.userId).conversations.resetSession(
     directTelegramIdentity(ctx, ctx.activeTeamId, ctx.tgUserRow.userId),
   );
-  await ctx.tg.sendMessage({
-    chat_id: ctx.message.chat.id,
-    text: 'Started a new conversation.',
-  });
+  await replyToTelegramDm(ctx, 'Started a new conversation.');
 }
 
 function directTelegramIdentity(
@@ -795,17 +762,14 @@ function directTelegramIdentity(
 async function queueDmAgentTurn(ctx: DmContext, question: string): Promise<void> {
   const trimmed = question.trim();
   if (!trimmed) {
-    await ctx.tg.sendMessage({
-      chat_id: ctx.message.chat.id,
-      text: 'Send a question, or use /note <text> to save a note.',
-    });
+    await replyToTelegramDm(ctx, 'Send a question, or use /note <text> to save a note.');
     return;
   }
   if (!ctx.activeTeamId || !ctx.tgUserRow.userId) {
-    await ctx.tg.sendMessage({
-      chat_id: ctx.message.chat.id,
-      text: 'Link your Telegram identity to Timeline before asking the agent.',
-    });
+    await replyToTelegramDm(
+      ctx,
+      'Link your Telegram identity to Timeline before asking the agent.',
+    );
     return;
   }
   const identity = directTelegramIdentity(ctx, ctx.activeTeamId, ctx.tgUserRow.userId);
@@ -895,13 +859,7 @@ function telegramSenderName(u: TgUser): string | null {
   return null;
 }
 
-/**
- * Shared `/ask` runner used by both DM and group dispatchers. Validates that
- * the chat has a team to answer against. Linked senders run as themselves;
- * bound groups may also ask through a trusted team-scoped actor so unlinked
- * participants can query team-visible history without seeing private events.
- * Per-user rate-limited tighter than ingest because each call hits OpenRouter.
- */
+/** Stateless Telegram group `/ask` runner. */
 interface RunAskInput {
   tg: TelegramApi;
   db: Db;

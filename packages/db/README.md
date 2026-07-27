@@ -50,9 +50,11 @@ conversation keys stay opaque so future providers do not need
 provider-specific session columns.
 
 Migration `0064_chat_message_sequence.sql` gives every persisted chat message a
-monotonic sequence and indexes sessions by that sequence. Conversation replay
-and web hydration therefore preserve user/assistant insertion order even when
-one transaction gives both messages the same timestamp.
+monotonic sequence and indexes sessions by that sequence. Existing rows are
+backfilled deterministically by session, creation time, and id before the
+insert default is enabled. Conversation replay and web hydration therefore
+preserve user/assistant insertion order even when one transaction gives both
+messages the same timestamp.
 
 ## Connection guardrails
 

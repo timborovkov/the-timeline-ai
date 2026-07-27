@@ -174,6 +174,7 @@ function makeTx(selectRows: unknown[][]) {
   let selectIndex = 0;
   return {
     tx: {
+      execute: vi.fn(() => Promise.resolve()),
       select: vi.fn(() => selectChain(selectRows[selectIndex++] ?? [])),
       update: vi.fn(() => mutationChain(updates)),
       insert: vi.fn(() => mutationChain(inserts)),
@@ -823,6 +824,8 @@ describe('removeMemberAction', () => {
       [
         {
           id: 'surface-link-id',
+          surface: 'telegram',
+          externalConversationKey: 'dm:42',
           sessionId: 'surface-session-id',
           teamId: TEAM_ID,
           userId: MEMBER_ID,

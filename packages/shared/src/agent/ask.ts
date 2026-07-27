@@ -321,6 +321,7 @@ export async function askAgent(
   });
   const nativeTools = buildAgentTools(scope, {
     onToolError: deps.onToolError,
+    sanitizeError: deps.sanitizeError,
     readOnly: input.trustedTeamActor,
     currentDate,
   });
@@ -357,14 +358,16 @@ export async function askAgent(
   }
   const includeMcpTools = deps.includeMcpTools ?? shouldIncludeMcpTools(input.question);
   const mcpTools = includeMcpTools
-    ? await buildMcpTools(scope, { db: input.db, onToolError: deps.onToolError }).catch(
-        (err: unknown) => {
-          const safeError = deps.sanitizeError?.(err) ?? err;
-          log.warn({ err: safeError, teamId: input.teamId }, 'askAgent MCP tool discovery failed');
-          deps.onToolError?.(safeError, { tool: 'mcp_discovery' });
-          return {};
-        },
-      )
+    ? await buildMcpTools(scope, {
+        db: input.db,
+        onToolError: deps.onToolError,
+        sanitizeError: deps.sanitizeError,
+      }).catch((err: unknown) => {
+        const safeError = deps.sanitizeError?.(err) ?? err;
+        log.warn({ err: safeError, teamId: input.teamId }, 'askAgent MCP tool discovery failed');
+        deps.onToolError?.(safeError, { tool: 'mcp_discovery' });
+        return {};
+      })
     : {};
   const toolObservations: AgentToolObservation[] = [];
   const tools = instrumentAgentTools({ ...plannedNativeTools, ...mcpTools }, (observation) => {
@@ -391,9 +394,7 @@ export async function askAgent(
       },
       deps,
     );
-    // `.text` resolves to the final assistant text after all tool rounds; we
-    // intentionally do NOT need the streamed chunks because Telegram can't
-    // render them progressively.
+    // Direct-chat providers consume the final text after all tool rounds.
     const text = await result.text;
     const observability = summarizeAgentToolObservations({ observations: toolObservations });
     deps.onTurnObservability?.(observability);
@@ -420,29 +421,27 @@ export async function askAgent(
     if (plainAnswer.length === 0) {
       return { ok: false, error: 'failed' };
     }
-    if (plainAnswer.length > TELEGRAM_MAX) {
-      return {
-        ok: true,
-        answer: plainAnswer.slice(0, TELEGRAM_MAX - 1) + '…',
-        truncated: true,
-        ...(modelAttribution.requestedModelId
-          ? { requestedModelId: modelAttribution.requestedModelId }
-          : {}),
-        ...(modelAttribution.responseModelId
-          ? { responseModelId: modelAttribution.responseModelId }
-          : {}),
-      };
-    }
-    return {
-      ok: true,
-      answer: plainAnswer,
-      truncated: false,
+    const attribution = {
       ...(modelAttribution.requestedModelId
         ? { requestedModelId: modelAttribution.requestedModelId }
         : {}),
       ...(modelAttribution.responseModelId
         ? { responseModelId: modelAttribution.responseModelId }
         : {}),
+    };
+    if (plainAnswer.length > TELEGRAM_MAX) {
+      return {
+        ok: true,
+        answer: plainAnswer.slice(0, TELEGRAM_MAX - 1) + '…',
+        truncated: true,
+        ...attribution,
+      };
+    }
+    return {
+      ok: true,
+      answer: plainAnswer,
+      truncated: false,
+      ...attribution,
     };
   } catch (err) {
     const safeError = deps.sanitizeError?.(err) ?? err;

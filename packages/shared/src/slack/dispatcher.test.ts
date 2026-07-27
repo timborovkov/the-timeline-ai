@@ -803,6 +803,60 @@ describe('Slack dispatcher routing', () => {
     expect(JSON.stringify(responseBodies(fetchMock))).toContain('Team B');
   });
 
+  it('lets a verified Slack user recover when the previously active team is no longer eligible', async () => {
+    await seedWorkspace(db, TEAM_A);
+    await db.insert(slackWorkspaceTeams).values({
+      workspaceId: WORKSPACE_ID,
+      teamId: TEAM_B,
+      installedByUserId: USER_A,
+      enabled: true,
+    });
+    await pg.exec(`
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${TEAM_B}', '${USER_A}', 'member');
+    `);
+    await db.insert(slackUsers).values({
+      id: SLACK_USER_ROW_ID,
+      workspaceId: WORKSPACE_ID,
+      slackUserId: 'U_SLACK',
+      realName: 'Alice Slack',
+    });
+    await db.insert(slackUserTeams).values({
+      slackUserId: SLACK_USER_ROW_ID,
+      teamId: TEAM_A,
+      userId: USER_A,
+      linkedByUserId: USER_A,
+      isActive: true,
+    });
+    await db
+      .update(slackWorkspaceTeams)
+      .set({ enabled: false })
+      .where(eq(slackWorkspaceTeams.teamId, TEAM_A));
+    const fetchMock = installFetchMock();
+    const input = {
+      command: '/timeline',
+      text: 'team',
+      user_id: 'U_SLACK',
+      team_id: 'T_SLACK',
+      channel_id: 'D_SLACK',
+      response_url: 'https://hooks.slack.test/response',
+      trigger_id: 'trigger-team-recovery',
+    };
+
+    await handleSlackSlashCommand({ db: db as never }, input);
+    expect(JSON.stringify(responseBodies(fetchMock))).toContain('Team B');
+    expect(JSON.stringify(responseBodies(fetchMock))).not.toContain('Link your Slack identity');
+
+    fetchMock.mockClear();
+    await handleSlackSlashCommand({ db: db as never }, { ...input, text: 'team 1' });
+    expect(JSON.stringify(responseBodies(fetchMock))).toContain('Active team is now Team B');
+    expect(await db.select().from(slackUserTeams)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ teamId: TEAM_B, userId: USER_A, isActive: true }),
+      ]),
+    );
+  });
+
   it('captures explicit /timeline note text instead of invoking the agent', async () => {
     await seedWorkspace(db, TEAM_A);
     await db.insert(slackUsers).values({

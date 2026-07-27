@@ -48,22 +48,29 @@ authenticates, resolves identity/team, inserts a queued turn idempotently,
 enqueues its UUID as the deterministic job id, acknowledges progress, and
 returns. Slack does not wait for profile refreshes or reaction delivery after
 the durable enqueue, so slow Slack API calls cannot consume its webhook
-acknowledgement budget. The worker's 90-second deadline includes provider
-progress startup, history loading, and model execution. It persists answer text
-and the web-visible transcript before provider delivery. A delivery retry uses
-the cached answer, and retained failed BullMQ jobs are replaced on provider
-redelivery without bypassing the turn ledger. A turn found in an ambiguous
-stale `processing` state fails closed rather than repeating a potentially paid
-model call.
+acknowledgement budget. Telegram's request-side typing heartbeat remains active
+while the turn is queued, then hands progress ownership to the worker when it
+claims the turn. The worker's 90-second deadline includes provider progress
+startup, history loading, and model execution.
+
+Duplicate detection, per-user rate enforcement, session selection, and turn
+insertion use coordinated transaction locks. Provider redelivery is checked
+before session mutation, while reset, team-switch, membership-removal, and web
+archive paths use the same conversation lock and cancel undelivered work. The
+worker persists successful or canonical failure answer text and the web-visible
+transcript before provider delivery. A delivery retry uses the cached answer,
+and retained failed BullMQ jobs are replaced on provider redelivery without
+bypassing the turn ledger. A turn found in an ambiguous stale `processing`
+state fails closed rather than repeating a potentially paid model call.
 
 History is private to the session creator and team, limited to 20 text messages
 and 30,000 characters, excludes tool payloads, and replays through a durable
-message sequence rather than timestamp ties. Switching teams archives and
-unlinks the active provider session in the same transaction as the routing
-change. Membership removal performs the same cleanup, while session creation
-can repair a stale cross-team link left by an interrupted or older flow.
-Archiving a provider session on the web has the same effect for the provider's
-next DM.
+message sequence rather than timestamp ties. The sequence migration explicitly
+backfills existing messages by session, creation time, and id before enabling
+the insert default. Switching teams archives and unlinks the active provider
+session in the same transaction as the routing change. Membership removal and
+web archival perform the same cancellation and cleanup, so a provider's next
+DM starts cleanly rather than remaining busy on stale work.
 
 Conversation failures cross logging and Sentry boundaries only after error
 redaction. Database errors can contain bound parameters, so raw exceptions
@@ -73,7 +80,9 @@ operational telemetry.
 Telegram eligible teams are all current Timeline memberships for the verified
 Timeline user. Slack eligible teams are current memberships intersected with
 teams enabled for that Slack workspace. Provider routing rows record the
-selection; they do not define eligibility.
+selection; they do not define eligibility. Slack team discovery uses the
+verified identity even when its old active route has become ineligible, so the
+user can recover by choosing another eligible team.
 
 ## Adding another provider
 

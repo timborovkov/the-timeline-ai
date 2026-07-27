@@ -10,10 +10,22 @@ import {
 } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type * as QueueModule from '#src/queue/queues.js';
+
+import { acceptDirectAgentTurn } from '#src/conversation-surfaces/runtime.js';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
+
+const queueFakes = vi.hoisted(() => ({
+  enqueueConversationAgentJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'turn' }),
+}));
+
+vi.mock('#src/queue/queues.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof QueueModule>()),
+  enqueueConversationAgentJob: queueFakes.enqueueConversationAgentJob,
+}));
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const OTHER_TEAM_ID = '22222222-2222-2222-2222-222222222222';
@@ -30,6 +42,8 @@ beforeAll(async () => {
 }, 240_000);
 
 beforeEach(async () => {
+  queueFakes.enqueueConversationAgentJob.mockReset();
+  queueFakes.enqueueConversationAgentJob.mockResolvedValue({ enqueued: true, jobId: 'turn' });
   await pg.exec(`
     TRUNCATE TABLE chat_surface_turns, chat_surface_session_links, chat_messages,
       chat_sessions, team_members, teams, users CASCADE;
@@ -161,6 +175,66 @@ describe('conversation surface scope', () => {
       .from(chatSurfaceTurns)
       .where(eq(chatSurfaceTurns.id, created.turn.id));
     expect(turns[0]).toMatchObject({ status: 'cancelled', errorCode: 'session_reset' });
+
+    const duplicate = await scope.createTurn(request('event-1'));
+    expect(duplicate).toMatchObject({
+      status: 'duplicate',
+      turn: { id: created.turn.id },
+    });
+    expect(await db.select().from(chatSessions)).toHaveLength(1);
+    expect(await db.select().from(chatSurfaceSessionLinks)).toHaveLength(0);
+  });
+
+  it('persists failure transcripts once for web history and conversational replay', async () => {
+    const scope = withTeam(db, TEAM_ID, USER_ID).conversations;
+    const created = await scope.createTurn(request('event-failure'));
+    if (created.status !== 'accepted') throw new Error('expected accepted turn');
+    await expect(scope.claimTurn(created.turn.id)).resolves.toMatchObject({ status: 'claimed' });
+
+    const failure = {
+      status: 'timed_out' as const,
+      errorCode: 'agent_timeout',
+      answerText: 'I could not finish that request.',
+    };
+    await scope.cacheFailure(created.turn.id, failure);
+    await scope.cacheFailure(created.turn.id, failure);
+
+    expect(await db.select().from(chatMessages)).toHaveLength(2);
+    await expect(scope.recentHistory(created.turn.chatSessionId)).resolves.toEqual([
+      { role: 'user', content: 'What changed this week?' },
+      { role: 'assistant', content: failure.answerText },
+    ]);
+    const turns = await db
+      .select()
+      .from(chatSurfaceTurns)
+      .where(eq(chatSurfaceTurns.id, created.turn.id));
+    expect(turns[0]).toMatchObject({
+      status: 'timed_out',
+      errorCode: 'agent_timeout',
+      answerText: failure.answerText,
+    });
+  });
+
+  it('never leaves an active turn attached to an archived session during a reset race', async () => {
+    const scope = withTeam(db, TEAM_ID, USER_ID).conversations;
+    const first = await scope.createTurn(request('event-before-reset'));
+    if (first.status !== 'accepted') throw new Error('expected accepted turn');
+
+    await Promise.all([
+      scope.resetSession(request('reset')),
+      scope.createTurn(request('event-during-reset')),
+    ]);
+
+    const activeTurns = await db
+      .select({
+        turnId: chatSurfaceTurns.id,
+        archivedAt: chatSessions.archivedAt,
+      })
+      .from(chatSurfaceTurns)
+      .innerJoin(chatSessions, eq(chatSessions.id, chatSurfaceTurns.chatSessionId));
+    expect(
+      activeTurns.filter((row) => row.archivedAt && row.turnId !== first.turn.id),
+    ).toHaveLength(0);
   });
 
   it('replaces a stale surface link after membership moves to another team', async () => {
@@ -221,5 +295,86 @@ describe('conversation surface scope', () => {
         externalConversationKey: 'account:one:dm:over-limit',
       }),
     ).resolves.toEqual({ status: 'rate_limited' });
+  });
+
+  it('serializes the per-user rate limit across provider conversations', async () => {
+    const scope = withTeam(db, TEAM_ID, USER_ID).conversations;
+    for (let index = 0; index < 9; index += 1) {
+      const created = await scope.createTurn({
+        ...request(`existing-${String(index)}`),
+        externalConversationKey: `account:existing:dm:${String(index)}`,
+      });
+      if (created.status !== 'accepted') throw new Error('expected accepted setup turn');
+      await db
+        .update(chatSurfaceTurns)
+        .set({ status: 'delivered', deliveredAt: new Date() })
+        .where(eq(chatSurfaceTurns.id, created.turn.id));
+    }
+
+    const results = await Promise.all([
+      scope.createTurn({
+        ...request('telegram-race'),
+        surface: 'telegram',
+        externalConversationKey: 'dm:telegram',
+      }),
+      scope.createTurn({
+        ...request('slack-race'),
+        surface: 'slack',
+        externalConversationKey: 'workspace:one:dm:slack',
+      }),
+    ]);
+
+    expect(results.map((result) => result.status).sort()).toEqual(['accepted', 'rate_limited']);
+  });
+
+  it('keeps initial provider progress active until the worker claims the queued turn', async () => {
+    const stopProgress = vi.fn();
+    const adapter = {
+      acknowledgeAgentRequest: vi.fn().mockResolvedValue(undefined),
+      acknowledgeCapture: vi.fn().mockResolvedValue(undefined),
+      startProgress: vi.fn().mockResolvedValue(stopProgress),
+      deliverAnswer: vi.fn().mockResolvedValue(undefined),
+      deliverFailure: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const accepted = await acceptDirectAgentTurn(db, request('progress-event'), adapter);
+    expect(accepted.status).toBe('queued');
+    expect(stopProgress).not.toHaveBeenCalled();
+    if (accepted.status !== 'queued') throw new Error('expected queued turn');
+
+    await db
+      .update(chatSurfaceTurns)
+      .set({ status: 'processing' })
+      .where(eq(chatSurfaceTurns.id, accepted.turnId));
+    await vi.waitFor(
+      () => {
+        expect(stopProgress).toHaveBeenCalledOnce();
+      },
+      { timeout: 2_000 },
+    );
+  });
+
+  it('persists an enqueue failure before delivering the provider failure response', async () => {
+    queueFakes.enqueueConversationAgentJob.mockRejectedValueOnce(new Error('redis offline'));
+    const adapter = {
+      acknowledgeAgentRequest: vi.fn().mockResolvedValue(undefined),
+      acknowledgeCapture: vi.fn().mockResolvedValue(undefined),
+      startProgress: vi.fn().mockResolvedValue(vi.fn()),
+      deliverAnswer: vi.fn().mockResolvedValue(undefined),
+      deliverFailure: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await expect(acceptDirectAgentTurn(db, request('enqueue-failure'), adapter)).resolves.toEqual({
+      status: 'failed',
+    });
+    expect(adapter.deliverFailure).toHaveBeenCalledOnce();
+    expect(await db.select().from(chatMessages)).toHaveLength(2);
+    expect(await db.select().from(chatSurfaceTurns)).toMatchObject([
+      {
+        status: 'failed',
+        errorCode: 'enqueue_failed',
+        answerText: 'I hit an error before I could answer. Please try again.',
+      },
+    ]);
   });
 });

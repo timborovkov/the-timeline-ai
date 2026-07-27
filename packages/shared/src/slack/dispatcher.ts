@@ -155,9 +155,22 @@ export interface SlackSlashCommandInput {
   trigger_id?: string;
 }
 
+function replyToSlackCommand(
+  api: SlackApi,
+  input: Pick<SlackSlashCommandInput, 'channel_id' | 'response_url'>,
+  text: string,
+): Promise<void> {
+  return api.postMessage({
+    channel: input.channel_id,
+    response_url: input.response_url,
+    text,
+  });
+}
+
 export async function handleSlackSlashCommand(
   deps: SlackIngestDeps,
   input: SlackSlashCommandInput,
+  options: { deferStatelessAsk?: boolean } = {},
 ): Promise<void> {
   if (input.command !== '/ask' && input.command !== '/timeline') return;
   const workspace = await findWorkspaceBySlackTeamId(deps.db, input.team_id);
@@ -183,26 +196,48 @@ export async function handleSlackSlashCommand(
         question: input.text,
       });
     } else {
-      await handleSlackAskCommand(deps, api, workspace.id, input);
+      const answer = handleSlackAskCommand(deps, api, workspace.id, input);
+      if (options.deferStatelessAsk) {
+        void answer.catch((err: unknown) => {
+          const safeError = redactConversationError(err);
+          log.error({ err: safeError }, 'slack slash command background answer failed');
+          deps.onAgentError?.(safeError);
+        });
+      } else {
+        await answer;
+      }
     }
     return;
   }
   const timelineText = input.text.trim().toLowerCase();
   if (!timelineText || timelineText === 'help') {
-    await api.postMessage({
-      channel: input.channel_id,
-      response_url: input.response_url,
-      text: SLACK_HELP_TEXT,
-    });
+    await replyToSlackCommand(api, input, SLACK_HELP_TEXT);
     return;
   }
+  const subcommand = timelineText.split(/\s+/, 1)[0];
   const linked = await findActiveSlackLink(deps.db, workspace.id, input.user_id);
   if (!linked) {
-    await api.postMessage({
-      channel: input.channel_id,
-      response_url: input.response_url,
-      text: `Link your Slack identity to Timeline before using ${input.command}.`,
-    });
+    if (subcommand === 'team') {
+      const identity = await findVerifiedSlackIdentity(deps.db, workspace.id, input.user_id);
+      if (identity) {
+        const conversation = await api.conversationsInfo(input.channel_id).catch(() => null);
+        await handleSlackTeamCommand(
+          deps,
+          api,
+          workspace,
+          input,
+          identity,
+          null,
+          Boolean(conversation?.is_im),
+        );
+        return;
+      }
+    }
+    await replyToSlackCommand(
+      api,
+      input,
+      `Link your Slack identity to Timeline before using ${input.command}.`,
+    );
     return;
   }
   const conversation = await api.conversationsInfo(input.channel_id).catch(() => null);
@@ -250,20 +285,16 @@ async function handleSlackAskCommand(
         }
       : null;
   if (!route) {
-    await api.postMessage({
-      channel: input.channel_id,
-      response_url: input.response_url,
-      text: `Link your Slack identity to Timeline before using ${input.command}.`,
-    });
+    await replyToSlackCommand(
+      api,
+      input,
+      `Link your Slack identity to Timeline before using ${input.command}.`,
+    );
     return;
   }
   const question = input.text.trim();
   if (!question) {
-    await api.postMessage({
-      channel: input.channel_id,
-      response_url: input.response_url,
-      text: 'Usage: /ask what changed with Acme this week?',
-    });
+    await replyToSlackCommand(api, input, 'Usage: /ask what changed with Acme this week?');
     return;
   }
   const claim = await claimSlackAsk(
@@ -287,22 +318,18 @@ async function handleSlackAskCommand(
         sanitizeError: redactConversationError,
       },
     );
-    await api.postMessage({
-      channel: input.channel_id,
-      response_url: input.response_url,
-      text: result.ok ? result.answer : 'Timeline could not answer that right now.',
-    });
+    await replyToSlackCommand(
+      api,
+      input,
+      result.ok ? result.answer : 'Timeline could not answer that right now.',
+    );
   } catch (err) {
     log.error({ err: redactConversationError(err) }, 'slack slash command answer failed');
-    await api
-      .postMessage({
-        channel: input.channel_id,
-        response_url: input.response_url,
-        text: 'Timeline could not answer that right now.',
-      })
-      .catch((postErr: unknown) => {
+    await replyToSlackCommand(api, input, 'Timeline could not answer that right now.').catch(
+      (postErr: unknown) => {
         log.error({ err: postErr }, 'slack slash command failure response failed');
-      });
+      },
+    );
   }
 }
 
@@ -323,22 +350,20 @@ async function handleSlackTimelineCommand(
       .where(eq(teams.id, linked.teamId))
       .limit(1);
     const team = rows[0];
-    await api.postMessage({
-      channel: input.channel_id,
-      response_url: input.response_url,
-      text: team
-        ? `Active team: ${team.teamName} (${team.teamId}).`
-        : `Active team: ${linked.teamId}.`,
-    });
+    await replyToSlackCommand(
+      api,
+      input,
+      team ? `Active team: ${team.teamName} (${team.teamId}).` : `Active team: ${linked.teamId}.`,
+    );
     return;
   }
   if (subcommand === 'new') {
     if (!isDm) {
-      await api.postMessage({
-        channel: input.channel_id,
-        response_url: input.response_url,
-        text: 'Start a direct message with Timeline to reset a private agent conversation.',
-      });
+      await replyToSlackCommand(
+        api,
+        input,
+        'Start a direct message with Timeline to reset a private agent conversation.',
+      );
       return;
     }
     await withTeam(deps.db, linked.teamId, linked.userId).conversations.resetSession(
@@ -351,77 +376,17 @@ async function handleSlackTimelineCommand(
         userName: linked.displayName ?? 'a teammate',
       }),
     );
-    await api.postMessage({
-      channel: input.channel_id,
-      response_url: input.response_url,
-      text: 'Started a new conversation.',
-    });
+    await replyToSlackCommand(api, input, 'Started a new conversation.');
     return;
   }
   if (subcommand === 'team') {
-    if (!isDm) {
-      await api.postMessage({
-        channel: input.channel_id,
-        response_url: input.response_url,
-        text: 'Use /timeline team in a direct message with Timeline.',
-      });
-      return;
-    }
-    const eligible = await listEligibleSlackTeams(
-      deps.db,
-      workspace.id,
-      input.user_id,
-      linked.userId,
-    );
-    if (targetRaw) {
-      const number = Number.parseInt(targetRaw, 10);
-      const target = Number.isInteger(number) ? eligible[number - 1] : undefined;
-      if (!target) {
-        await api.postMessage({
-          channel: input.channel_id,
-          response_url: input.response_url,
-          text: `Invalid team number. Pick one of 1..${eligible.length}.`,
-        });
-        return;
-      }
-      const changed = await activateSlackTeam({
-        db: deps.db,
-        workspaceId: workspace.id,
-        channelId: input.channel_id,
-        slackUserId: input.user_id,
-        userId: linked.userId,
-        userName: linked.displayName ?? 'a teammate',
-        previousTeamId: linked.teamId,
-        teamId: target.teamId,
-      });
-      await api.postMessage({
-        channel: input.channel_id,
-        response_url: input.response_url,
-        text: changed
-          ? `Active team is now ${target.teamName} (${target.teamId}). I started a new conversation.`
-          : `${target.teamName} (${target.teamId}) is already active.`,
-      });
-      return;
-    }
-    const lines = eligible.map(
-      (team, index) =>
-        `${index + 1}. ${team.teamName} (${team.teamId})${team.isActive ? '  ← active' : ''}`,
-    );
-    await api.postMessage({
-      channel: input.channel_id,
-      response_url: input.response_url,
-      text: `Your teams:\n${lines.join('\n')}\n\n` + 'To switch, use /timeline team <number>.',
-    });
+    await handleSlackTeamCommand(deps, api, workspace, input, linked, linked.teamId, isDm);
     return;
   }
   if (subcommand === 'note') {
     const note = [targetRaw, ...titleParts].join(' ').trim();
     if (!note) {
-      await api.postMessage({
-        channel: input.channel_id,
-        response_url: input.response_url,
-        text: 'Usage: /timeline note <text>.',
-      });
+      await replyToSlackCommand(api, input, 'Usage: /timeline note <text>.');
       return;
     }
     const commandId =
@@ -450,19 +415,11 @@ async function handleSlackTimelineCommand(
       messageTs: commandId,
     });
     if (inserted) await enqueueTextPipelines(deps, inserted);
-    await api.postMessage({
-      channel: input.channel_id,
-      response_url: input.response_url,
-      text: 'Saved that note to the active team.',
-    });
+    await replyToSlackCommand(api, input, 'Saved that note to the active team.');
     return;
   }
   if (subcommand !== 'join' || !targetRaw) {
-    await api.postMessage({
-      channel: input.channel_id,
-      response_url: input.response_url,
-      text: SLACK_HELP_TEXT,
-    });
+    await replyToSlackCommand(api, input, SLACK_HELP_TEXT);
     return;
   }
 
@@ -482,11 +439,11 @@ async function handleSlackTimelineCommand(
       },
     });
     if (!confirmation.needsConfirmation || !confirmation.confirmationId) {
-      await api.postMessage({
-        channel: input.channel_id,
-        response_url: input.response_url,
-        text: confirmation.error ?? 'Could not prepare meeting capture confirmation.',
-      });
+      await replyToSlackCommand(
+        api,
+        input,
+        confirmation.error ?? 'Could not prepare meeting capture confirmation.',
+      );
       return;
     }
     await api.postMessage({
@@ -538,6 +495,67 @@ async function handleSlackTimelineCommand(
       ? `Joining as ${joined.botName ?? 'Timeline bot'}.`
       : (joined.error ?? 'Could not join saved meeting.'),
   });
+}
+
+async function handleSlackTeamCommand(
+  deps: SlackIngestDeps,
+  api: SlackApi,
+  workspace: SlackWorkspaceRecord,
+  input: SlackSlashCommandInput,
+  identity: { userId: string; displayName: string | null },
+  activeTeamId: string | null,
+  isDm: boolean,
+): Promise<void> {
+  if (!isDm) {
+    await replyToSlackCommand(api, input, 'Use /timeline team in a direct message with Timeline.');
+    return;
+  }
+  const [, targetRaw = ''] = input.text.trim().split(/\s+/, 2);
+  const eligible = await listEligibleSlackTeams(
+    deps.db,
+    workspace.id,
+    input.user_id,
+    identity.userId,
+  );
+  if (targetRaw) {
+    const number = Number.parseInt(targetRaw, 10);
+    const target = Number.isInteger(number) ? eligible[number - 1] : undefined;
+    if (!target) {
+      await replyToSlackCommand(
+        api,
+        input,
+        `Invalid team number. Pick one of 1..${eligible.length}.`,
+      );
+      return;
+    }
+    const changed = await activateSlackTeam({
+      db: deps.db,
+      workspaceId: workspace.id,
+      channelId: input.channel_id,
+      slackUserId: input.user_id,
+      userId: identity.userId,
+      userName: identity.displayName ?? 'a teammate',
+      previousTeamId: activeTeamId,
+      teamId: target.teamId,
+    });
+    await replyToSlackCommand(
+      api,
+      input,
+      changed
+        ? `Active team is now ${target.teamName} (${target.teamId}). I started a new conversation.`
+        : `${target.teamName} (${target.teamId}) is already active.`,
+    );
+    return;
+  }
+  const lines = eligible.map(
+    (team, index) =>
+      `${index + 1}. ${team.teamName} (${team.teamId})${team.isActive ? '  ← active' : ''}`,
+  );
+  await replyToSlackCommand(
+    api,
+    input,
+    `Your teams:\n${lines.join('\n')}\n\n` + 'To switch, use /timeline team <number>.',
+  );
 }
 
 function directSlackIdentity(input: {
@@ -606,7 +624,7 @@ async function activateSlackTeam(input: {
   slackUserId: string;
   userId: string;
   userName: string;
-  previousTeamId: string;
+  previousTeamId: string | null;
   teamId: string;
 }): Promise<boolean> {
   if (input.previousTeamId === input.teamId) return false;
@@ -631,18 +649,20 @@ async function activateSlackTeam(input: {
       )
       .limit(1);
     if (!eligible[0]) throw new Error('Slack team is no longer eligible');
-    await resetSurfaceSessionInTransaction(
-      tx,
-      directSlackIdentity({
-        workspaceId: input.workspaceId,
-        channelId: input.channelId,
-        slackUserId: input.slackUserId,
-        teamId: input.previousTeamId,
-        userId: input.userId,
-        userName: input.userName,
-      }),
-      'team_changed',
-    );
+    if (input.previousTeamId) {
+      await resetSurfaceSessionInTransaction(
+        tx,
+        directSlackIdentity({
+          workspaceId: input.workspaceId,
+          channelId: input.channelId,
+          slackUserId: input.slackUserId,
+          teamId: input.previousTeamId,
+          userId: input.userId,
+          userName: input.userName,
+        }),
+        'team_changed',
+      );
+    }
     await upsertSlackUserLink(tx, {
       workspaceId: input.workspaceId,
       slackUserId: input.slackUserId,
@@ -1819,6 +1839,24 @@ async function findCachedSlackUserProfile(
     .select({ name: slackUsers.name, realName: slackUsers.realName })
     .from(slackUsers)
     .where(and(eq(slackUsers.workspaceId, workspaceId), eq(slackUsers.slackUserId, slackUserId)))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+async function findVerifiedSlackIdentity(
+  db: Db,
+  workspaceId: string,
+  slackUserId: string,
+): Promise<{ userId: string; displayName: string | null } | null> {
+  const rows = await db
+    .select({
+      userId: slackUserTeams.userId,
+      displayName: slackUsers.realName,
+    })
+    .from(slackUsers)
+    .innerJoin(slackUserTeams, eq(slackUserTeams.slackUserId, slackUsers.id))
+    .where(and(eq(slackUsers.workspaceId, workspaceId), eq(slackUsers.slackUserId, slackUserId)))
+    .orderBy(desc(slackUserTeams.isActive), desc(slackUserTeams.updatedAt))
     .limit(1);
   return rows[0] ?? null;
 }
