@@ -359,11 +359,12 @@ function addDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
 }
 
-function freshDigestCutoff(windowEnd: Date, timezone: string): Date {
+function freshDigestCutoff(windowEnd: Date, timezone: string, hour: number): Date {
+  const tz = assertValidTimezone(timezone);
+  const digestHour = Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : DEFAULT_DIGEST_HOUR;
+  const previousDate = zonedDateTimeFromDate(windowEnd, tz).toPlainDate().subtract({ days: 1 });
   return dateFromInstant(
-    zonedDateTimeFromDate(windowEnd, assertValidTimezone(timezone))
-      .subtract({ days: 1 })
-      .toInstant(),
+    previousDate.toZonedDateTime({ timeZone: tz, plainTime: { hour: digestHour } }).toInstant(),
   );
 }
 
@@ -723,42 +724,52 @@ export async function generateDailyDigest(
       skipped: false,
     };
   }
-  const freshCutoff = freshDigestCutoff(input.windowEnd, preference.timezone);
+  const freshCutoff = freshDigestCutoff(input.windowEnd, preference.timezone, preference.hour);
   const upcomingTo = addDays(now, 7);
-  const [team, userRows, events, pendingApprovals, currentTasks, upcomingCalendar, newMembers] =
-    await Promise.all([
-      scope.timeline.team(),
-      input.db
-        .select({ name: users.name, email: users.email })
-        .from(users)
-        .where(eq(users.id, input.userId))
-        .limit(1),
-      scope.timeline.listAllEventsInWindow({ from: input.windowStart, to: input.windowEnd }),
-      scope.suggestions.getApprovalItemCounts().then((counts) => counts.pending),
-      scope.objects.listObjects({
-        type: ['task', 'follow_up'],
-        archived: false,
-        limit: 20,
-      }),
-      scope.calendar.listCalendarEvents({ from: now, to: upcomingTo, limit: 10 }),
-      input.db
-        .select({
-          userId: teamMembers.userId,
-          name: users.name,
-          email: users.email,
-          createdAt: teamMembers.createdAt,
-        })
-        .from(teamMembers)
-        .innerJoin(users, eq(users.id, teamMembers.userId))
-        .where(
-          and(
-            eq(teamMembers.teamId, input.teamId),
-            isNull(teamMembers.removedAt),
-            gte(teamMembers.createdAt, freshCutoff),
-            lt(teamMembers.createdAt, input.windowEnd),
-          ),
+  const [
+    team,
+    userRows,
+    eventsInEvidenceWindow,
+    pendingApprovals,
+    currentTasks,
+    upcomingCalendar,
+    newMembers,
+  ] = await Promise.all([
+    scope.timeline.team(),
+    input.db
+      .select({ name: users.name, email: users.email })
+      .from(users)
+      .where(eq(users.id, input.userId))
+      .limit(1),
+    scope.timeline.listAllEventsInWindow({ from: input.windowStart, to: input.windowEnd }),
+    scope.suggestions.getApprovalItemCounts().then((counts) => counts.pending),
+    scope.objects.listObjects({
+      type: ['task', 'follow_up'],
+      archived: false,
+      limit: 20,
+    }),
+    scope.calendar.listCalendarEvents({ from: now, to: upcomingTo, limit: 10 }),
+    input.db
+      .select({
+        userId: teamMembers.userId,
+        name: users.name,
+        email: users.email,
+        createdAt: teamMembers.createdAt,
+      })
+      .from(teamMembers)
+      .innerJoin(users, eq(users.id, teamMembers.userId))
+      .where(
+        and(
+          eq(teamMembers.teamId, input.teamId),
+          isNull(teamMembers.removedAt),
+          gte(teamMembers.createdAt, freshCutoff),
+          lt(teamMembers.createdAt, input.windowEnd),
         ),
-    ]);
+      ),
+  ]);
+  const events = eventsInEvidenceWindow.filter(
+    (event) => event.createdAt.getTime() < input.windowEnd.getTime(),
+  );
 
   const sourceDistribution: Record<string, number> = {};
   for (const event of events) {

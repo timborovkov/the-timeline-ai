@@ -279,6 +279,42 @@ describe('daily digest useful-content suppression', () => {
     expect(summarize).not.toHaveBeenCalled();
   });
 
+  it('uses the configured hour for the previous boundary across a spring DST gap', async () => {
+    const windowStart = new Date('2026-03-28T00:00:00Z');
+    const windowEnd = new Date('2026-03-29T01:00:00Z');
+    fakes.withTeam.mockReturnValue(
+      makeScope({
+        events: [
+          makeEvent({
+            id: 'spring-gap-cycle-event',
+            occurredAt: new Date('2026-03-28T01:30:00Z'),
+            createdAt: new Date('2026-03-28T01:31:00Z'),
+          }),
+        ],
+      }),
+    );
+    const db = makeDb({
+      preference: {
+        dailyDigestEnabled: true,
+        dailyDigestHour: 3,
+        timezone: 'Europe/Helsinki',
+      },
+    });
+
+    await expect(
+      generate({
+        db,
+        windowStart,
+        windowEnd,
+        now: new Date('2026-03-29T01:05:00Z'),
+        summarize: vi.fn().mockResolvedValue('Spring gap activity.'),
+      }),
+    ).resolves.toMatchObject({
+      skipped: false,
+      payload: { summary: 'Spring gap activity.' },
+    });
+  });
+
   it.each([
     {
       label: 'pending approvals',
@@ -371,6 +407,34 @@ describe('daily digest useful-content suppression', () => {
       payload: { summary: 'Late evidence arrived.' },
     });
     expect(summarize).toHaveBeenCalledOnce();
+  });
+
+  it('defers post-boundary ingests even when another trigger generates the digest', async () => {
+    fakes.withTeam.mockReturnValue(
+      makeScope({
+        events: [
+          makeEvent({
+            id: 'post-boundary-ingest',
+            occurredAt: new Date('2026-06-14T11:30:00Z'),
+            createdAt: new Date('2026-06-14T12:01:00Z'),
+          }),
+        ],
+        pendingApprovals: 1,
+      }),
+    );
+    const db = makeDb({});
+    const summarize = vi.fn().mockResolvedValue('Approval needs attention.');
+
+    await expect(generate({ db, summarize })).resolves.toMatchObject({
+      skipped: false,
+      payload: {
+        summary: 'Approval needs attention.',
+        eventCount: 0,
+        momentCount: 0,
+      },
+    });
+    expect(summarize).toHaveBeenCalledOnce();
+    expect(summarize.mock.calls[0]?.[0]).not.toContain('Activity from post-boundary-ingest.');
   });
 
   it('generates for an event that occurred in the fresh window', async () => {
