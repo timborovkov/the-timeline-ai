@@ -1,4 +1,4 @@
-import { index, jsonb, pgEnum, pgTable, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { bigserial, index, jsonb, pgEnum, pgTable, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 import { chatSessions } from '#src/schema/chat-sessions.js';
 import { teams } from '#src/schema/teams.js';
@@ -22,7 +22,8 @@ export const chatMessages = pgTable(
     role: chatMessageRole('role').notNull(),
     authorUserId: uuid('author_user_id').references(() => users.id, { onDelete: 'set null' }),
     content: jsonb('content').notNull(),
+    sequence: bigserial('sequence', { mode: 'number' }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [index('chat_messages_session_created_idx').on(table.sessionId, table.createdAt)],
+  (table) => [index('chat_messages_session_sequence_idx').on(table.sessionId, table.sequence)],
 );

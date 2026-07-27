@@ -122,7 +122,7 @@ Treat this file as an operating contract for agents, not a loose README.
   named modules (`scope.timeline`, `scope.documents`, `scope.meetings`,
   `scope.objects`, `scope.boards`, `scope.pins`, `scope.suggestions`, `scope.calendar`,
   `scope.integrations`, `scope.mcp`, `scope.onboarding`, `scope.jobRecovery`,
-  `scope.reconciliation`, `scope.audit`) rather than flat scope methods or
+  `scope.reconciliation`, `scope.audit`, `scope.conversations`) rather than flat scope methods or
   manually passing `db` into object helpers. Every Qdrant query filters on
   `team_id` via the wrapper. Do not bypass these — even in "internal" tools.
 - **Captured raw event content is immutable.** Never `UPDATE` a source-ingested
@@ -195,7 +195,8 @@ Treat this file as an operating contract for agents, not a loose README.
 ```
 apps/
   web/      Next.js 16 app (App Router, RSC, server actions, Auth.js)
-  worker/   BullMQ workers (transcribe, extract, suggestions, embed,
+  worker/   BullMQ workers (conversation-agent, transcribe, extract,
+            suggestions, embed,
             overdue-scan, calendar-recurrence, document-extract,
             meeting-finalize, meeting-scheduler, object-summary, janitor,
             task-category,
@@ -226,6 +227,9 @@ packages/
             embedding enqueue/delete),
             conversation-review module (bounded Slack/Telegram evidence
             windows for proposal generation),
+            conversation-surfaces module (provider-neutral direct-chat
+            sessions, durable turn ledger, bounded history, Telegram/Slack
+            delivery adapters, and conversation-agent queue),
             onboarding module (Phase 13 — team-level tutorial completion +
             per-user dismissal), job-recovery module (Phase 13 — team-scoped
             retry/dismiss for failed product jobs), slack module (Phase 12 —

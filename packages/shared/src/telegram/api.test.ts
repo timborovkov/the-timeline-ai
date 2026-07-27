@@ -28,4 +28,22 @@ describe('HttpTelegramApi file downloads', () => {
       'file_oversize',
     );
   });
+
+  it('bounds Telegram API calls with an abortable request timeout', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url: string | URL | Request, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => {
+              reject(new Error('request aborted', { cause: init.signal?.reason }));
+            });
+          }),
+      ),
+    );
+
+    await expect(
+      new HttpTelegramApi('token', 5).sendChatAction({ chat_id: 42, action: 'typing' }),
+    ).rejects.toThrow();
+  });
 });

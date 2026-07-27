@@ -18,6 +18,7 @@ export * from '#src/schema/boards.js';
 export * from '#src/schema/notifications.js';
 export * from '#src/schema/chat-sessions.js';
 export * from '#src/schema/chat-messages.js';
+export * from '#src/schema/chat-surface-conversations.js';
 export * from '#src/schema/documents.js';
 export * from '#src/schema/meetings.js';
 export * from '#src/schema/integrations.js';

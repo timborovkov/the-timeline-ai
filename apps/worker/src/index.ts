@@ -5,6 +5,7 @@ import { shutdownPostHogNodeClients } from '@timeline/shared/analytics/posthog-n
 
 import { captureWorkerException, flushWorkerSentry, initWorkerSentry } from '#src/monitoring.js';
 import { startCalendarRecurrenceWorker } from '#src/workers/calendarRecurrence.js';
+import { startConversationAgentWorker } from '#src/workers/conversationAgent.js';
 import { startDailyDigestWorker } from '#src/workers/dailyDigest.js';
 import { startDocumentExtractWorker } from '#src/workers/documentExtract.js';
 import { startEmbedWorker } from '#src/workers/embed.js';
@@ -44,6 +45,7 @@ async function main(): Promise<void> {
   const embedWorker = startEmbedWorker({ db });
   const overdueWorker = startOverdueWorker({ db });
   const calendarRecurrenceWorker = startCalendarRecurrenceWorker({ db });
+  const conversationAgentWorker = startConversationAgentWorker({ db });
   const documentExtractWorker = startDocumentExtractWorker({ db });
   const meetingFinalizeWorker = startMeetingFinalizeWorker({ db });
   const meetingSchedulerWorker = startMeetingSchedulerWorker({ db });
@@ -72,7 +74,7 @@ async function main(): Promise<void> {
   await queue.scheduleDailyDigest();
   log.info(
     { taskCategoryWorkerEnabled: taskCategoryWorker !== null },
-    'transcribe + extract + suggestions + embed + overdue + calendar-recurrence + document-extract + meeting-finalize + meeting-scheduler + object-summary + janitor + webhook-delivery + integration-sync + mcp-health + team-export + timeline-moment-presentation + daily-digest + reconciliation workers started',
+    'transcribe + extract + suggestions + embed + overdue + calendar-recurrence + conversation-agent + document-extract + meeting-finalize + meeting-scheduler + object-summary + janitor + webhook-delivery + integration-sync + mcp-health + team-export + timeline-moment-presentation + daily-digest + reconciliation workers started',
   );
 
   const shutdown = async (signal: string): Promise<void> => {
@@ -85,6 +87,7 @@ async function main(): Promise<void> {
         embedWorker.close(),
         overdueWorker.close(),
         calendarRecurrenceWorker.close(),
+        conversationAgentWorker.close(),
         documentExtractWorker.close(),
         meetingFinalizeWorker.close(),
         meetingSchedulerWorker.close(),
@@ -105,6 +108,7 @@ async function main(): Promise<void> {
       await queue.closeEmbedQueue();
       await queue.closeOverdueScanQueue();
       await queue.closeCalendarRecurrenceQueue();
+      await queue.closeConversationAgentQueue();
       await queue.closeDocumentExtractQueue();
       await queue.closeMeetingFinalizeQueue();
       await queue.closeMeetingSchedulerQueue();

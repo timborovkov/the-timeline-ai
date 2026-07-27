@@ -85,6 +85,7 @@ export default async function ChatPage({
 
   const sessionEntries = sessions.map((chatSession) => ({
     id: chatSession.id,
+    surface: chatSession.surface,
     title: chatSession.title,
     pinnedEntityId: chatSession.pinnedEntityId,
     pinnedEntityName: chatSession.pinnedEntityId

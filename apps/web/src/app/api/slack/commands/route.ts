@@ -4,6 +4,7 @@ import { childLogger } from '@timeline/shared/logger';
 import * as rateLimit from '@timeline/shared/rate-limit';
 import * as slack from '@timeline/shared/slack';
 
+import { slackIngestDeps } from '@/app/api/slack/_shared';
 import { db } from '@/lib/db';
 import {
   payloadTooLargeResponse,
@@ -78,6 +79,7 @@ export async function POST(req: Request): Promise<Response> {
     .handleSlackSlashCommand(
       {
         db,
+        ...slackIngestDeps(),
         onAgentToolError(err, context) {
           reportCaughtError(err, {
             surface: 'background',

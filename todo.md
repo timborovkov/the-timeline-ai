@@ -10,7 +10,9 @@ surfaces, workers, extraction, embeddings, agent chat, objects, curated boards,
 tasks, documents, meeting bots, calendar basics/subscriptions,
 integrations/custom MCPs, Slack, onboarding, visibility controls, exports, job
 recovery, public help/legal, approval-backed object and board memory, and
-personal universal pinning across durable workspace content.
+personal universal pinning across durable workspace content. Telegram and Slack
+direct text now share the durable agent runtime and web-visible private chat
+history; groups and channels remain ingestion-first.
 
 This file now tracks only remaining work and recurring operating obligations.
 Use the repository history, release notes, and phase PRs for shipped

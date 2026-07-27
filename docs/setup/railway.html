@@ -92,6 +92,13 @@
         secrets, but keep them environment-specific.
       </p>
       <p>
+        <code>TELEGRAM_BOT_TOKEN</code> must be available to both app services. The web service owns
+        webhook authentication and immediate acknowledgement; the worker owns the durable
+        <code>conversation-agent</code> job, four-second typing refresh, and final Telegram reply.
+        Slack delivery reconstructs its worker adapter from encrypted installed-workspace tokens, so
+        do not add a separate Slack bot token variable.
+      </p>
+      <p>
         Keep <code>NODE_ENV</code> as <code>production</code> for both Railway environments. Use the
         Railway environment name and <code>SENTRY_ENVIRONMENT</code> for labels like
         <code>staging</code>; the app rejects <code>NODE_ENV=staging</code>.

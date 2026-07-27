@@ -2,7 +2,8 @@
 
 Cross-package code: the `withTeam` team workspace port, the single `llm`
 inference layer, Qdrant + S3 wrappers, Telegram dispatch, shared messaging and
-email templates, BullMQ queue names, the shared embedding source planner, the
+email templates, the provider-neutral direct-conversation runtime, BullMQ queue
+names, the shared embedding source planner, the
 integrations module (Drive/Linear/GitHub/Monday.com/Slack/Sentry providers,
 person-owned provider connections, team resource shares, active source paths, connection attention),
 the objects module, the reversible task-category classifier and state machine,
@@ -16,7 +17,7 @@ parsing.
 
 Two hard rules in this repo route through this package:
 
-1. **Team isolation.** Every Postgres read goes through `withTeam(db, teamId, userId)` so row-level filtering can't be forgotten in a route or worker. Callers use named modules on the returned scope (`timeline`, `documents`, `meetings`, `objects`, `calendar`, `integrations`, `mcp`) instead of passing `db` and team identifiers around.
+1. **Team isolation.** Every Postgres read goes through `withTeam(db, teamId, userId)` so row-level filtering can't be forgotten in a route or worker. Callers use named modules on the returned scope (`timeline`, `documents`, `meetings`, `objects`, `calendar`, `integrations`, `mcp`, `conversations`) instead of passing `db` and team identifiers around.
 2. **One inference layer.** App and worker code call `llm.chatStructured()`, `llm.streamChat()`, `llm.embed()`, `llm.embedMany()`, `llm.transcribeAudio()`, and `llm.extractTextFromMedia()` — never the OpenAI or OpenRouter SDK directly. Swapping providers or pinning a model happens here, once.
 
 Putting both behind a single package keeps the rules enforceable.

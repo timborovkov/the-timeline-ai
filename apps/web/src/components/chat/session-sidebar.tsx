@@ -11,9 +11,30 @@ import { cn } from '@/lib/utils';
 
 interface SessionEntry {
   id: string;
+  surface: string;
   title: string | null;
   pinnedEntityId: string | null;
   pinnedEntityName: string | null;
+}
+
+function SurfaceBadge({ surface }: { surface: string }) {
+  if (surface === 'web') return null;
+  const label = surface === 'telegram' ? 'TG' : surface === 'slack' ? 'SL' : 'EXT';
+  const title =
+    surface === 'telegram'
+      ? 'Telegram conversation'
+      : surface === 'slack'
+        ? 'Slack conversation'
+        : 'External conversation';
+  return (
+    <span
+      title={title}
+      aria-label={title}
+      className="inline-flex shrink-0 rounded border border-border px-1 font-mono text-[9px] leading-4 text-muted-foreground"
+    >
+      {label}
+    </span>
+  );
 }
 
 function sessionLabel(session: SessionEntry): string {
@@ -82,7 +103,10 @@ function SessionSidebarContent({
                         : 'text-foreground/80 hover:bg-accent/60',
                     )}
                   >
-                    <span className="block truncate">{label}</span>
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <SurfaceBadge surface={s.surface} />
+                      <span className="truncate">{label}</span>
+                    </span>
                     {s.pinnedEntityName && !s.title && (
                       <span className="block truncate text-[10px] text-muted-foreground">
                         Pinned · {s.pinnedEntityName}
@@ -194,7 +218,10 @@ function MobileSessionNavContent({
                           : 'text-foreground/80 hover:bg-accent/60',
                       )}
                     >
-                      {sessionLabel(session)}
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <SurfaceBadge surface={session.surface} />
+                        <span className="truncate">{sessionLabel(session)}</span>
+                      </span>
                     </Link>
                     <button
                       type="button"

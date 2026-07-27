@@ -1,5 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
+  chatSurfaceTurns,
   meetingCaptureConfirmations,
   meetings,
   reconciliationEvidence,
@@ -10,6 +11,7 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type * as QueueModule from '#src/queue/queues.js';
 import type { TelegramApi } from '#src/telegram/api.js';
 
 import { resetEnvForTests } from '#src/env.js';
@@ -22,6 +24,11 @@ import {
 import { verifyWebhookSecret } from '#src/telegram/secret.js';
 import { tgUpdateSchema } from '#src/telegram/types.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
+
+vi.mock('#src/queue/queues.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof QueueModule>()),
+  enqueueConversationAgentJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'turn' }),
+}));
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const OTHER_TEAM_ID = '22222222-2222-2222-2222-222222222222';
@@ -420,7 +427,7 @@ describe('handleUpdate telegram edit visibility', () => {
     resetEnvForTests();
   });
 
-  it('keeps only the latest visible row for a Telegram message after edits', async () => {
+  it('keeps only the latest visible row for an explicit Telegram note after edits', async () => {
     await handleUpdate(
       { db: db as never, tg: fakeTg },
       {
@@ -430,7 +437,7 @@ describe('handleUpdate telegram edit visibility', () => {
           date: 1700000000,
           chat: { id: 42, type: 'private' },
           from: { id: TG_USER_ID, username: 'alice' },
-          text: 'hello',
+          text: '/note hello',
         },
       },
     );
@@ -452,7 +459,7 @@ describe('handleUpdate telegram edit visibility', () => {
           provider: 'telegram',
           sender_id: TG_USER_ID,
           sender_name: '@alice',
-          text: 'hello',
+          text: '/note hello',
           username: 'alice',
           audio: null,
           caption: null,
@@ -495,7 +502,7 @@ describe('handleUpdate telegram edit visibility', () => {
           edit_date: 1700000100,
           chat: { id: 42, type: 'private' },
           from: { id: TG_USER_ID, username: 'alice' },
-          text: 'hello edited',
+          text: '/note hello edited',
         },
       },
     );
@@ -511,7 +518,7 @@ describe('handleUpdate telegram edit visibility', () => {
           edit_date: 1700000200,
           chat: { id: 42, type: 'private' },
           from: { id: TG_USER_ID, username: 'alice' },
-          text: 'hello edited again',
+          text: '/note hello edited again',
         },
       },
     );
@@ -543,7 +550,7 @@ describe('handleUpdate telegram edit visibility', () => {
         date: 1700000000,
         chat: { id: 42, type: 'private' },
         from: { id: TG_USER_ID, username: 'alice' },
-        text: 'one delivery',
+        text: '/note one delivery',
       },
     };
 
@@ -565,7 +572,7 @@ describe('handleUpdate telegram edit visibility', () => {
           date: 1700000000,
           chat: { id: 42, type: 'private' },
           from: { id: TG_USER_ID, username: 'alice' },
-          text: 'Review https://example.com/deck?utm_source=tg&token=secret&a=1. Call +1 213-373-4253.',
+          text: '/note Review https://example.com/deck?utm_source=tg&token=secret&a=1. Call +1 213-373-4253.',
         },
       },
     );
@@ -638,7 +645,7 @@ describe('handleUpdate telegram edit visibility', () => {
           date: 1700000000,
           chat: { id: 42, type: 'private' },
           from: { id: TG_USER_ID, username: 'alice' },
-          text: 'Deck https://example.com/deck?a=1',
+          text: '/note Deck https://example.com/deck?a=1',
         },
       },
     );
@@ -651,7 +658,7 @@ describe('handleUpdate telegram edit visibility', () => {
           date: 1700000060,
           chat: { id: 42, type: 'private' },
           from: { id: TG_USER_ID, username: 'alice' },
-          text: 'Deck https://example.com/deck?a=2',
+          text: '/note Deck https://example.com/deck?a=2',
         },
       },
     );
@@ -673,7 +680,7 @@ describe('handleUpdate telegram edit visibility', () => {
         date: 1700000000,
         chat: { id: 42, type: 'private' },
         from: { id: TG_USER_ID, username: 'alice' },
-        text: 'Spec https://example.com/spec',
+        text: '/note Spec https://example.com/spec',
       },
     };
 
@@ -716,7 +723,7 @@ describe('handleUpdate telegram edit visibility', () => {
           date: 1700000000,
           chat: { id: 42, type: 'private' },
           from: { id: TG_USER_ID, username: 'alice' },
-          text: "Let's meet on Monday and follow up with Acme and Globex.",
+          text: "/note Let's meet on Monday and follow up with Acme and Globex.",
         },
       },
     );
@@ -768,6 +775,8 @@ describe('handleUpdate telegram edit visibility', () => {
     for (const command of [
       '/start',
       '/ask',
+      '/note',
+      '/new',
       '/join',
       '/link',
       '/team',
@@ -920,7 +929,7 @@ describe('handleUpdate telegram edit visibility', () => {
     });
   });
 
-  it('does not treat passive Telegram text as a join request', async () => {
+  it('routes passive Telegram text to the agent instead of treating it as a join request', async () => {
     const payloads: Parameters<TelegramApi['sendMessage']>[0][] = [];
 
     await handleUpdate(
@@ -940,8 +949,13 @@ describe('handleUpdate telegram edit visibility', () => {
     expect(payloads).toHaveLength(0);
     expect(await db.select().from(meetings)).toHaveLength(0);
     expect(await db.select().from(meetingCaptureConfirmations)).toHaveLength(0);
-    expect(await activeTelegramRows(pg)).toMatchObject([
-      { content_text: 'everyone join daily meeting in the conference room now' },
+    expect(await activeTelegramRows(pg)).toHaveLength(0);
+    expect(await db.select().from(chatSurfaceTurns)).toMatchObject([
+      {
+        surface: 'telegram',
+        questionText: 'everyone join daily meeting in the conference room now',
+        status: 'queued',
+      },
     ]);
   });
 
@@ -1371,20 +1385,14 @@ describe('handleUpdate telegram edit visibility', () => {
       },
     );
 
-    expect(messages).toEqual([`Only one linked team: Team A (${TEAM_ID}). It's now active.`]);
+    expect(messages).toEqual([`Only one team: Team A (${TEAM_ID}). It's now active.`]);
   });
 
   it('shows team names with uuids when listing and switching Telegram teams', async () => {
     const messages: string[] = [];
     await pg.exec(`
-      INSERT INTO telegram_user_teams (telegram_user_id, team_id, linked_by_user_id, is_active, created_at)
-      VALUES (
-        '33333333-3333-3333-3333-333333333333',
-        '${OTHER_TEAM_ID}',
-        '${USER_A}',
-        false,
-        now() + interval '1 second'
-      );
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${OTHER_TEAM_ID}', '${USER_A}', 'member');
     `);
 
     await handleUpdate(
@@ -1415,8 +1423,8 @@ describe('handleUpdate telegram edit visibility', () => {
     );
 
     expect(messages).toEqual([
-      `Your linked teams:\n1. Team A (${TEAM_ID})  ← active\n2. Team B (${OTHER_TEAM_ID})\n\nTo switch, reply with /team <number> (e.g. /team 2).`,
-      `Active team is now Team B (${OTHER_TEAM_ID}).`,
+      `Your teams:\n1. Team A (${TEAM_ID})  ← active\n2. Team B (${OTHER_TEAM_ID})\n\nTo switch, reply with /team <number> (e.g. /team 2).`,
+      `Active team is now Team B (${OTHER_TEAM_ID}). I started a new conversation.`,
     ]);
   });
 
@@ -1461,7 +1469,7 @@ describe('handleUpdate telegram edit visibility', () => {
           date: 1700000000,
           chat: { id: 42, type: 'private' },
           from: { id: TG_USER_ID, username: 'alice' },
-          text: 'dm capture',
+          text: '/note dm capture',
         },
       },
     );
@@ -1779,7 +1787,7 @@ describe('handleUpdate telegram edit visibility', () => {
           date: 1700000000,
           chat: { id: 42, type: 'private' },
           from: { id: TG_USER_ID, username: 'alice' },
-          text: 'original',
+          text: '/note original',
         },
       },
     );
@@ -1793,7 +1801,7 @@ describe('handleUpdate telegram edit visibility', () => {
           edit_date: 1700000100,
           chat: { id: 42, type: 'private' },
           from: { id: TG_USER_ID, username: 'alice' },
-          text: 'newer edit',
+          text: '/note newer edit',
         },
       },
     );
@@ -1807,7 +1815,7 @@ describe('handleUpdate telegram edit visibility', () => {
           edit_date: 1700000100,
           chat: { id: 42, type: 'private' },
           from: { id: TG_USER_ID, username: 'alice' },
-          text: 'older edit delivered late',
+          text: '/note older edit delivered late',
         },
       },
     );

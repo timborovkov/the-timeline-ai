@@ -24,6 +24,7 @@ import {
   calendarEvents,
   chatMessages,
   chatSessions,
+  chatSurfaceSessionLinks,
   documentChunks,
   documentVersions,
   documents,
@@ -8111,6 +8112,7 @@ export async function markAllNotificationsRead(db: Db, scope: TeamScopeCore): Pr
 
 export interface ChatSessionRow {
   id: string;
+  surface: string;
   title: string | null;
   pinnedEntityId: string | null;
   createdAt: Date;
@@ -8172,6 +8174,7 @@ export async function listChatSessions(
     .limit(Math.min(Math.max(filter.limit ?? 50, 1), 200));
   return rows.map((r) => ({
     id: r.id,
+    surface: r.surface,
     title: r.title,
     pinnedEntityId: r.pinnedEntityId,
     createdAt: r.createdAt,
@@ -8182,7 +8185,7 @@ export async function listChatSessions(
 export async function createChatSession(
   db: Db,
   scope: TeamScopeCore,
-  input: { title?: string | null; pinnedEntityId?: string | null } = {},
+  input: { title?: string | null; pinnedEntityId?: string | null; surface?: string } = {},
 ): Promise<ChatSessionRow> {
   await scope.requireMembership();
   // If pinnedEntityId is given, verify team membership of that object.
@@ -8200,6 +8203,7 @@ export async function createChatSession(
     .values({
       teamId: scope.teamId,
       createdBy: scope.userId,
+      surface: input.surface ?? 'web',
       title: input.title ?? null,
       pinnedEntityId: input.pinnedEntityId ?? null,
     })
@@ -8208,6 +8212,7 @@ export async function createChatSession(
   if (!r) throw new Error('Failed to create chat session');
   return {
     id: r.id,
+    surface: r.surface,
     title: r.title,
     pinnedEntityId: r.pinnedEntityId,
     createdAt: r.createdAt,
@@ -8304,10 +8309,11 @@ export async function getChatSession(
     .select()
     .from(chatMessages)
     .where(and(eq(chatMessages.sessionId, sessionId), eq(chatMessages.teamId, scope.teamId)))
-    .orderBy(chatMessages.createdAt);
+    .orderBy(chatMessages.sequence);
   return {
     session: {
       id: s.id,
+      surface: s.surface,
       title: s.title,
       pinnedEntityId: s.pinnedEntityId,
       createdAt: s.createdAt,
@@ -8494,17 +8500,30 @@ export async function archiveChatSession(
 ): Promise<void> {
   await scope.requireMembership();
   if (!UUID_RE.test(sessionId)) return;
-  await db
-    .update(chatSessions)
-    .set({ archivedAt: new Date(), updatedAt: new Date() })
-    .where(
-      and(
-        eq(chatSessions.id, sessionId),
-        eq(chatSessions.teamId, scope.teamId),
-        // See listChatSessions — sessions are per-user within a team.
-        eq(chatSessions.createdBy, scope.userId),
-      ),
-    );
+  await db.transaction(async (tx) => {
+    const archived = await tx
+      .update(chatSessions)
+      .set({ archivedAt: new Date(), updatedAt: new Date() })
+      .where(
+        and(
+          eq(chatSessions.id, sessionId),
+          eq(chatSessions.teamId, scope.teamId),
+          // See listChatSessions — sessions are per-user within a team.
+          eq(chatSessions.createdBy, scope.userId),
+        ),
+      )
+      .returning({ id: chatSessions.id });
+    if (!archived[0]) return;
+    await tx
+      .delete(chatSurfaceSessionLinks)
+      .where(
+        and(
+          eq(chatSurfaceSessionLinks.chatSessionId, sessionId),
+          eq(chatSurfaceSessionLinks.teamId, scope.teamId),
+          eq(chatSurfaceSessionLinks.userId, scope.userId),
+        ),
+      );
+  });
 }
 
 // ---------- Object changes (queries + agent suggestions + review) ----------

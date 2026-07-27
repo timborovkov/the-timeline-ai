@@ -21,7 +21,7 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams('session=session-1'),
 }));
 
-const { MobileSessionNav } = await import('./session-sidebar.js');
+const { MobileSessionNav, SessionSidebar } = await import('./session-sidebar.js');
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -42,6 +42,7 @@ describe('MobileSessionNav', () => {
         sessions={[
           {
             id: 'session-1',
+            surface: 'web',
             title: 'Launch review',
             pinnedEntityId: null,
             pinnedEntityName: null,
@@ -57,5 +58,41 @@ describe('MobileSessionNav', () => {
       expect(fakes.push).toHaveBeenCalledWith('/app/chat');
       expect(fakes.refresh).toHaveBeenCalled();
     });
+  });
+
+  it('labels Telegram, Slack, and future-provider sessions on mobile and desktop', () => {
+    const sessions = [
+      {
+        id: 'telegram-session',
+        surface: 'telegram',
+        title: 'Telegram answer',
+        pinnedEntityId: null,
+        pinnedEntityName: null,
+      },
+      {
+        id: 'slack-session',
+        surface: 'slack',
+        title: 'Slack answer',
+        pinnedEntityId: null,
+        pinnedEntityName: null,
+      },
+      {
+        id: 'future-session',
+        surface: 'discord',
+        title: 'Future answer',
+        pinnedEntityId: null,
+        pinnedEntityName: null,
+      },
+    ];
+    render(
+      <>
+        <SessionSidebar activeSessionId={null} sessions={sessions} />
+        <MobileSessionNav activeSessionId={null} sessions={sessions} />
+      </>,
+    );
+
+    expect(screen.getAllByLabelText('Telegram conversation')).toHaveLength(2);
+    expect(screen.getAllByLabelText('Slack conversation')).toHaveLength(2);
+    expect(screen.getAllByLabelText('External conversation')).toHaveLength(2);
   });
 });

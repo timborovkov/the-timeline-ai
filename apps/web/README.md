@@ -2,7 +2,13 @@
 
 The Next.js 16 app — public help docs, support/contact, the Home surface,
 grouped timeline browser, capture surfaces, entity pages, agent chat, auth,
-server actions, and the inbound webhook routes for Telegram and Postmark.
+server actions, and the inbound webhook routes for Telegram, Slack, and
+Postmark.
+
+Web chat history also lists private sessions created by Telegram and Slack with
+compact provider badges. Opening one hydrates its persisted transcript,
+continuing it from web appends to the same session, and archiving it causes the
+provider's next direct message to create a new session.
 
 ## Why it exists
 

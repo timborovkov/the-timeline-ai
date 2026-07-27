@@ -45,5 +45,6 @@ export * as artifacts from '#src/artifacts/index.js';
 export * as reconciliation from '#src/reconciliation/index.js';
 export * as pins from '#src/pins/index.js';
 export * as conversationReview from '#src/conversation-review/index.js';
+export * as conversationSurfaces from '#src/conversation-surfaces/index.js';
 export * as analytics from '#src/analytics/events.js';
 export * as messaging from '#src/messaging/index.js';

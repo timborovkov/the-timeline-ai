@@ -442,6 +442,20 @@
       "when": 1795654080000,
       "tag": "0062_universal_personal_pins",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1795654140000,
+      "tag": "0063_conversation_surfaces",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1795654200000,
+      "tag": "0064_chat_message_sequence",
+      "breakpoints": true
     }
   ]
 }

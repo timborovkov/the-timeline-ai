@@ -10,11 +10,12 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Telegram bot setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-18</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-27</span></div>
       <blockquote>
         <p>
-          Telegram is a first-party conversational Capture Surface. Text, voice/audio, and supported
-          document/image attachments feed the same extraction and embedding pipeline as Slack.
+          Telegram is a first-party conversational surface. Direct text talks to the agent; explicit
+          notes, group messages, voice/audio, and supported document/image attachments feed the
+          evidence pipeline shared with Slack.
         </p>
       </blockquote>
       <p class="tldr">
@@ -150,28 +151,31 @@ curl -F "url=https://&lt;ngrok-id&gt;.ngrok-free.app/api/telegram/webhook" \
         </li>
         <li>DM your bot on Telegram, paste the snippet. The bot replies with the linked team.</li>
         <li>
-          Send any text message. Open <code>/app/timeline</code> — it should appear, attributed to
-          your user under the linked team.
+          Send any ordinary text message. The bot should react with <code>🤔</code>, keep typing
+          while the durable worker runs, and reply to that message. Open <code>/app/chat</code> to
+          find the same private Telegram conversation and transcript.
         </li>
         <li>
-          Edit that Telegram message. The timeline should keep only the latest revision visible; the
-          older raw event stays tombstoned for audit/history.
+          Run <code>/note &lt;text&gt;</code>. The bot reacts with <code>👀</code>, and the note
+          appears on <code>/app/timeline</code>, attributed to your user under the active team.
+          Editing an ordinary agent prompt does not rerun it; editing a captured note replaces the
+          visible source revision while preserving the immutable prior raw event.
         </li>
         <li>
           Use the trash icon on the Telegram timeline row. Authors and team admins can remove it
           from the active timeline; the raw event remains tombstoned rather than physically deleted.
         </li>
         <li>
-          <code>/whereami</code> confirms attribution; <code>/team</code> lists linked teams;
-          <code>/team 2</code> switches to the second; the next DM message lands on the new team.
+          <code>/whereami</code> confirms routing; <code>/team</code> lists every current Timeline
+          membership, including teams never previously selected in Telegram; <code>/team 2</code>
+          switches to the second. A real switch archives the prior private conversation.
         </li>
         <li>
-          <code>/ask &lt;question&gt;</code> queries the team's timeline through the same agent
-          pipeline as <code>/app/chat</code>, then replies with plain text so Telegram does not show
-          raw citation ids or Markdown markers. Plain (non-command) messages are still captured as
-          notes. DM captures are acknowledged with a <code>👀</code> reaction so it's obvious they
-          landed; group captures stay quiet to avoid channel noise. Rate-limited per Telegram user
-          (10/min) because each <code>/ask</code> runs the agent against OpenRouter.
+          <code>/ask &lt;question&gt;</code> remains an alias for an ordinary DM agent turn.
+          <code>/new</code> archives the active Telegram chat session and starts cleanly on the next
+          question. Agent turns are limited to 10 per user per minute, one at a time per DM, and 90
+          seconds. Answers are persisted before Telegram delivery, so a delivery retry does not pay
+          for a second model run.
         </li>
         <li>
           Shared URLs in captured text are normalized into non-authoritative artifact evidence. The
@@ -209,14 +213,15 @@ curl -F "url=https://&lt;ngrok-id&gt;.ngrok-free.app/api/telegram/webhook" \
       </p>
 
       <h2 id="schema">Schema reference</h2>
-      <p>Phase 2 adds four tables:</p>
+      <p>Telegram routing still uses four provider tables:</p>
       <ul>
         <li>
           <code>telegram_users</code> — one row per Telegram user the bot has seen; optional link to
           an app <code>users.id</code> once the user <code>/link</code>s a personal token.
         </li>
         <li>
-          <code>telegram_user_teams</code> — DM-time team memberships. Partial unique index
+          <code>telegram_user_teams</code> — the selected DM route. It is not an eligibility list;
+          <code>team_members</code> supplies every currently available team. A partial unique index
           guarantees exactly one <code>is_active=true</code> row per Telegram user.
         </li>
         <li>
@@ -228,6 +233,13 @@ curl -F "url=https://&lt;ngrok-id&gt;.ngrok-free.app/api/telegram/webhook" \
           <code>personal</code> (DM link) or <code>group</code> (group binding).
         </li>
       </ul>
+      <p>
+        Private agent state is provider-neutral:
+        <code>chat_sessions.surface='telegram'</code>, <code>chat_surface_session_links</code> maps
+        the opaque Telegram DM key to the active session, and <code>chat_surface_turns</code> is the
+        durable idempotency, model, and delivery ledger consumed by the
+        <code>conversation-agent</code> worker queue.
+      </p>
     </main>
   </body>
 </html>

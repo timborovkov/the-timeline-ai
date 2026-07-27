@@ -354,7 +354,7 @@ describe('askAgent', () => {
       },
     );
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ok: true,
       answer: 'Acme has a renewal due Friday.',
       truncated: false,
@@ -449,6 +449,31 @@ describe('askAgent', () => {
     ).resolves.toEqual({ ok: false, error: 'failed' });
   });
 
+  it('sanitizes model failures before logging callbacks receive them', async () => {
+    const safeError = new Error('Conversation operation failed');
+    const sanitizeError = vi.fn(() => safeError);
+    const onAgentError = vi.fn();
+
+    await expect(
+      askAgent(
+        {
+          db: db as never,
+          teamId: TEAM_ID,
+          userId: USER_ID,
+          question: 'private question',
+        },
+        {
+          model: makeFailingAskAgentModel(),
+          sanitizeError,
+          onAgentError,
+        },
+      ),
+    ).resolves.toEqual({ ok: false, error: 'failed' });
+
+    expect(sanitizeError).toHaveBeenCalledOnce();
+    expect(onAgentError).toHaveBeenCalledWith(safeError);
+  });
+
   it('truncates long answers to the Telegram delivery limit', async () => {
     const result = await askAgent(
       {
@@ -482,7 +507,7 @@ describe('askAgent', () => {
       },
     );
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ok: true,
       answer: 'You have a meeting with DFK:n at 10 on Monday.',
       truncated: false,
@@ -543,7 +568,7 @@ describe('askAgent', () => {
       },
     );
 
-    expect(evalRun.result).toEqual({
+    expect(evalRun.result).toMatchObject({
       ok: true,
       answer: 'TIMELINE-AI-100 is unresolved at error level and affects 42 users.',
       truncated: false,

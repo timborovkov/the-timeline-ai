@@ -15,6 +15,10 @@ import { and, asc, desc, eq, isNull, ne, sql } from 'drizzle-orm';
 
 import { askAgent, TEAM_BOT_ACTOR_USER_ID, type AskAgentDeps } from '#src/agent/ask.js';
 import { type AgentToolErrorReporter } from '#src/agent/tools.js';
+import { redactConversationError } from '#src/conversation-surfaces/privacy.js';
+import { acceptDirectAgentTurn } from '#src/conversation-surfaces/runtime.js';
+import { resetSurfaceSessionInTransaction } from '#src/conversation-surfaces/scope.js';
+import { type DirectConversationIdentity } from '#src/conversation-surfaces/types.js';
 import {
   classifyConversationalAttachment,
   CONVERSATIONAL_ATTACHMENT_LIMITS,
@@ -40,6 +44,7 @@ import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.
 import { inlineSourceSnapshotMetadata } from '#src/reconciliation/source-snapshot.js';
 import { withTeam } from '#src/team-scope.js';
 import { type TelegramApi } from '#src/telegram/api.js';
+import { createTelegramConversationDeliveryAdapter } from '#src/telegram/conversation-adapter.js';
 import {
   tgUpdateSchema,
   type TgAudioPayload,
@@ -54,14 +59,16 @@ const log = childLogger('telegram');
 const TELEGRAM_SOURCE_SNAPSHOT_VERSION = 'telegram-source-snapshot-2026-07';
 
 const TELEGRAM_DM_HELP =
-  `Plain messages here are saved to your team's timeline (👀 = received).\n` +
-  `Use /ask to query the timeline.\n\n` +
+  `Plain text here is a private agent conversation (🤔 = answering).\n` +
+  `Voice, images, and files are saved to your team's timeline (👀 = received).\n\n` +
   `Commands (DM):\n` +
   `/start           show connection guidance\n` +
-  `/ask <question>  ask the timeline (e.g. /ask what did we ship this week?)\n` +
+  `/ask <question>  backward-compatible agent alias\n` +
+  `/note <text>     explicitly save a text note\n` +
+  `/new             start a new agent conversation\n` +
   `/join <alias-or-url> [title]  capture a meeting now\n` +
   `/link <token>    connect this DM to a team\n` +
-  `/team            list linked teams; /team N switches\n` +
+  `/team            list teams; /team N switches\n` +
   `/whereami        show current active team\n` +
   `/unlink          disconnect all teams\n` +
   `/help            this message`;
@@ -186,7 +193,7 @@ export async function handleUpdate(
       await routeCallbackQuery(deps, update.callback_query);
     }
   } catch (err) {
-    log.error({ err }, 'dispatch failed');
+    log.error({ err: redactConversationError(err) }, 'dispatch failed');
     return { ok: false };
   }
   return { ok: true };
@@ -289,9 +296,14 @@ async function handleDm(ctx: DmContext, isEdit: boolean): Promise<void> {
     await dispatchCommand(ctx, command);
     return;
   }
-  // Edits of commands are ignored — Telegram lets users edit /commands but
-  // re-running them on edit would be confusing.
-  if (isEdit && command) return;
+  // Explicit notes remain editable capture records. Other edited commands
+  // (including /ask) are ignored so agent prompts never run twice.
+  if (isEdit && command) {
+    if (command.name === '/note' && command.arg) {
+      await ingestDmText(ctx, command.arg, true);
+    }
+    return;
+  }
 
   if (
     !isEdit &&
@@ -367,8 +379,11 @@ async function handleDm(ctx: DmContext, isEdit: boolean): Promise<void> {
     return;
   }
 
+  // Direct text edits do not re-run the agent. Commands and media edits are
+  // already ignored above; this closes the ordinary-prompt edit path too.
+  if (isEdit) return;
   if (text) {
-    await ingestDmText(ctx, text, isEdit);
+    await queueDmAgentTurn(ctx, text);
   }
 }
 
@@ -397,6 +412,12 @@ async function dispatchCommand(
       return;
     case '/ask':
       await cmdAskDm(ctx, command.arg);
+      return;
+    case '/note':
+      await cmdNoteDm(ctx, command.arg);
+      return;
+    case '/new':
+      await cmdNewDm(ctx);
       return;
     case '/join':
       await cmdJoinDm(ctx, command.arg);
@@ -556,6 +577,13 @@ async function cmdLinkDm(ctx: DmContext, arg: string): Promise<void> {
       if (!team) throw new Error('team_not_found');
       return team;
     });
+    if (ctx.activeTeamId && ctx.activeTeamId !== team.teamId && ctx.tgUserRow.userId) {
+      await withTeam(ctx.db, ctx.activeTeamId, ctx.tgUserRow.userId, {
+        skipMembershipCheck: true,
+      }).conversations.resetSession(
+        directTelegramIdentity(ctx, ctx.activeTeamId, ctx.tgUserRow.userId),
+      );
+    }
     await ctx.tg.sendMessage({
       chat_id: ctx.message.chat.id,
       text: `Linked. This chat is now attributed to team ${formatTeamLabel(team)}. Run /team to switch active team later.`,
@@ -586,22 +614,36 @@ async function cmdTeamDm(ctx: DmContext, arg: string): Promise<void> {
   // Order by createdAt so the numbered list is stable across messages —
   // otherwise "/team 2" could switch to a different team than the one the
   // user just saw at position 2.
+  if (!ctx.tgUserRow.userId) {
+    await ctx.tg.sendMessage({
+      chat_id: ctx.message.chat.id,
+      text: 'No teams yet. Generate a personal link token in the web app and run /link <token>.',
+    });
+    return;
+  }
   const memberships = await ctx.db
     .select({
       id: telegramUserTeams.id,
-      teamId: telegramUserTeams.teamId,
+      teamId: teamMembers.teamId,
       teamName: teams.name,
       isActive: telegramUserTeams.isActive,
     })
-    .from(telegramUserTeams)
-    .innerJoin(teams, eq(teams.id, telegramUserTeams.teamId))
-    .where(eq(telegramUserTeams.telegramUserId, ctx.tgUserRow.id))
-    .orderBy(asc(telegramUserTeams.createdAt), asc(telegramUserTeams.id));
+    .from(teamMembers)
+    .innerJoin(teams, eq(teams.id, teamMembers.teamId))
+    .leftJoin(
+      telegramUserTeams,
+      and(
+        eq(telegramUserTeams.telegramUserId, ctx.tgUserRow.id),
+        eq(telegramUserTeams.teamId, teamMembers.teamId),
+      ),
+    )
+    .where(and(eq(teamMembers.userId, ctx.tgUserRow.userId), isNull(teamMembers.removedAt)))
+    .orderBy(asc(teamMembers.createdAt), asc(teamMembers.teamId));
 
   if (memberships.length === 0) {
     await ctx.tg.sendMessage({
       chat_id: ctx.message.chat.id,
-      text: 'No linked teams yet. Generate a personal link token in the web app and run /link <token>.',
+      text: 'No teams yet. Ask to be invited to a team or link this Telegram account again.',
     });
     return;
   }
@@ -610,15 +652,10 @@ async function cmdTeamDm(ctx: DmContext, arg: string): Promise<void> {
     // If the sole row is inactive (rare desync — e.g. a prior /link to a
     // different team that was later /unlinked), self-heal by activating it
     // so /whereami and DM ingest start working again.
-    if (!first.isActive) {
-      await ctx.db
-        .update(telegramUserTeams)
-        .set({ isActive: true })
-        .where(eq(telegramUserTeams.id, first.id));
-    }
+    if (!first.isActive) await activateTelegramTeam(ctx, first.teamId);
     await ctx.tg.sendMessage({
       chat_id: ctx.message.chat.id,
-      text: `Only one linked team: ${formatTeamLabel(first)}. It's now active.`,
+      text: `Only one team: ${formatTeamLabel(first)}. It's now active.`,
     });
     return;
   }
@@ -627,24 +664,12 @@ async function cmdTeamDm(ctx: DmContext, arg: string): Promise<void> {
     const n = Number.parseInt(arg, 10);
     const target = Number.isInteger(n) ? memberships[n - 1] : undefined;
     if (target) {
-      await ctx.db.transaction(async (tx) => {
-        await tx
-          .update(telegramUserTeams)
-          .set({ isActive: false })
-          .where(
-            and(
-              eq(telegramUserTeams.telegramUserId, ctx.tgUserRow.id),
-              eq(telegramUserTeams.isActive, true),
-            ),
-          );
-        await tx
-          .update(telegramUserTeams)
-          .set({ isActive: true })
-          .where(eq(telegramUserTeams.id, target.id));
-      });
+      const changed = await activateTelegramTeam(ctx, target.teamId);
       await ctx.tg.sendMessage({
         chat_id: ctx.message.chat.id,
-        text: `Active team is now ${formatTeamLabel(target)}.`,
+        text: changed
+          ? `Active team is now ${formatTeamLabel(target)}. I started a new conversation.`
+          : `${formatTeamLabel(target)} is already active.`,
       });
       return;
     }
@@ -661,7 +686,7 @@ async function cmdTeamDm(ctx: DmContext, arg: string): Promise<void> {
   await ctx.tg.sendMessage({
     chat_id: ctx.message.chat.id,
     text:
-      `Your linked teams:\n${lines.join('\n')}\n\n` +
+      `Your teams:\n${lines.join('\n')}\n\n` +
       `To switch, reply with /team <number> (e.g. /team 2).`,
   });
 }
@@ -689,10 +714,24 @@ async function cmdWhereamiDm(ctx: DmContext): Promise<void> {
 async function cmdUnlinkDm(ctx: DmContext, _arg: string): Promise<void> {
   // Phase 2: simple unlink-all-from-this-TG-user with single confirmation step.
   // No "are you sure" round trip; product-brief doesn't require it for DMs.
-  const deleted = await ctx.db
-    .delete(telegramUserTeams)
-    .where(eq(telegramUserTeams.telegramUserId, ctx.tgUserRow.id))
-    .returning({ id: telegramUserTeams.id });
+  if (ctx.activeTeamId && ctx.tgUserRow.userId) {
+    await withTeam(ctx.db, ctx.activeTeamId, ctx.tgUserRow.userId, {
+      skipMembershipCheck: true,
+    }).conversations.resetSession(
+      directTelegramIdentity(ctx, ctx.activeTeamId, ctx.tgUserRow.userId),
+    );
+  }
+  const deleted = await ctx.db.transaction(async (tx) => {
+    const rows = await tx
+      .delete(telegramUserTeams)
+      .where(eq(telegramUserTeams.telegramUserId, ctx.tgUserRow.id))
+      .returning({ id: telegramUserTeams.id });
+    await tx
+      .update(telegramUsers)
+      .set({ userId: null, updatedAt: new Date() })
+      .where(eq(telegramUsers.id, ctx.tgUserRow.id));
+    return rows;
+  });
   await ctx.tg.sendMessage({
     chat_id: ctx.message.chat.id,
     text: `Unlinked ${deleted.length} team(s). New messages here will not be recorded until you /link again.`,
@@ -707,20 +746,142 @@ async function cmdHelpDm(ctx: DmContext): Promise<void> {
 }
 
 async function cmdAskDm(ctx: DmContext, arg: string): Promise<void> {
-  await runAsk({
-    tg: ctx.tg,
-    db: ctx.db,
-    chatId: ctx.message.chat.id,
-    tgUserId: ctx.tgUser.id,
-    updateId: ctx.updateId,
-    teamId: ctx.activeTeamId,
-    userId: ctx.tgUserRow.userId,
-    userName: tgDisplayName(ctx.tgUser),
-    question: arg,
-    onAgentToolError: ctx.onAgentToolError,
-    onAgentError: ctx.onAgentError,
-    agentDeps: ctx.agentDeps,
+  await queueDmAgentTurn(ctx, arg);
+}
+
+async function cmdNoteDm(ctx: DmContext, arg: string): Promise<void> {
+  if (!arg.trim()) {
+    await ctx.tg.sendMessage({
+      chat_id: ctx.message.chat.id,
+      text: 'Usage: /note <text>.',
+    });
+    return;
+  }
+  await ingestDmText(ctx, arg, false);
+}
+
+async function cmdNewDm(ctx: DmContext): Promise<void> {
+  if (!ctx.activeTeamId || !ctx.tgUserRow.userId) {
+    await ctx.tg.sendMessage({
+      chat_id: ctx.message.chat.id,
+      text: 'No active team. Run /link <token> first.',
+    });
+    return;
+  }
+  await withTeam(ctx.db, ctx.activeTeamId, ctx.tgUserRow.userId).conversations.resetSession(
+    directTelegramIdentity(ctx, ctx.activeTeamId, ctx.tgUserRow.userId),
+  );
+  await ctx.tg.sendMessage({
+    chat_id: ctx.message.chat.id,
+    text: 'Started a new conversation.',
   });
+}
+
+function directTelegramIdentity(
+  ctx: Pick<DmContext, 'message' | 'tgUser'>,
+  teamId: string,
+  userId: string,
+): DirectConversationIdentity {
+  return {
+    surface: 'telegram',
+    externalConversationKey: `dm:${ctx.message.chat.id}`,
+    externalUserKey: String(ctx.tgUser.id),
+    teamId,
+    userId,
+    userName: tgDisplayName(ctx.tgUser),
+  };
+}
+
+async function queueDmAgentTurn(ctx: DmContext, question: string): Promise<void> {
+  const trimmed = question.trim();
+  if (!trimmed) {
+    await ctx.tg.sendMessage({
+      chat_id: ctx.message.chat.id,
+      text: 'Send a question, or use /note <text> to save a note.',
+    });
+    return;
+  }
+  if (!ctx.activeTeamId || !ctx.tgUserRow.userId) {
+    await ctx.tg.sendMessage({
+      chat_id: ctx.message.chat.id,
+      text: 'Link your Telegram identity to Timeline before asking the agent.',
+    });
+    return;
+  }
+  const identity = directTelegramIdentity(ctx, ctx.activeTeamId, ctx.tgUserRow.userId);
+  await acceptDirectAgentTurn(
+    ctx.db,
+    {
+      ...identity,
+      externalEventId: String(ctx.updateId),
+      externalMessageId: String(ctx.message.message_id),
+      question: trimmed,
+    },
+    createTelegramConversationDeliveryAdapter({
+      api: ctx.tg,
+      externalConversationKey: identity.externalConversationKey,
+      externalMessageId: String(ctx.message.message_id),
+    }),
+  );
+}
+
+async function activateTelegramTeam(ctx: DmContext, teamId: string): Promise<boolean> {
+  const userId = ctx.tgUserRow.userId;
+  if (!userId) throw new Error('Telegram identity is not linked');
+  if (ctx.activeTeamId === teamId) return false;
+  await ctx.db.transaction(async (tx) => {
+    const membership = await tx
+      .select({ teamId: teamMembers.teamId })
+      .from(teamMembers)
+      .where(
+        and(
+          eq(teamMembers.teamId, teamId),
+          eq(teamMembers.userId, userId),
+          isNull(teamMembers.removedAt),
+        ),
+      )
+      .limit(1);
+    if (!membership[0]) throw new Error('Team membership is no longer active');
+    if (ctx.activeTeamId) {
+      await resetSurfaceSessionInTransaction(
+        tx,
+        directTelegramIdentity(ctx, ctx.activeTeamId, userId),
+        'team_changed',
+      );
+    }
+    await tx
+      .update(telegramUserTeams)
+      .set({ isActive: false })
+      .where(
+        and(
+          eq(telegramUserTeams.telegramUserId, ctx.tgUserRow.id),
+          eq(telegramUserTeams.isActive, true),
+        ),
+      );
+    await tx
+      .insert(telegramUserTeams)
+      .values({
+        telegramUserId: ctx.tgUserRow.id,
+        teamId,
+        linkedByUserId: userId,
+        isActive: true,
+      })
+      .onConflictDoUpdate({
+        target: [telegramUserTeams.telegramUserId, telegramUserTeams.teamId],
+        set: { isActive: true, linkedByUserId: userId },
+      });
+  });
+  log.info(
+    {
+      event: 'conversation_team_switched',
+      surface: 'telegram',
+      teamId,
+      userId,
+      status: 'active',
+    },
+    'Telegram direct conversation team switched',
+  );
+  return true;
 }
 
 function tgDisplayName(u: TgUser): string {
@@ -793,7 +954,12 @@ async function runAsk(input: RunAskInput): Promise<void> {
     await runAskInner(input);
   } catch (err) {
     log.error(
-      { err, updateId: input.updateId, tgUserId: input.tgUserId, chatId: input.chatId },
+      {
+        err: redactConversationError(err),
+        updateId: input.updateId,
+        tgUserId: input.tgUserId,
+        chatId: input.chatId,
+      },
       'ask_failed',
     );
   } finally {
@@ -881,6 +1047,7 @@ async function runAskInner(input: RunAskInput): Promise<void> {
         ...input.agentDeps,
         onToolError: input.onAgentToolError,
         onAgentError: input.onAgentError,
+        sanitizeError: redactConversationError,
       },
     );
     if (!result.ok) {
@@ -1681,6 +1848,15 @@ async function getActiveTeamId(db: Db, telegramUserId: string): Promise<string |
   const rows = await db
     .select({ teamId: telegramUserTeams.teamId })
     .from(telegramUserTeams)
+    .innerJoin(telegramUsers, eq(telegramUsers.id, telegramUserTeams.telegramUserId))
+    .innerJoin(
+      teamMembers,
+      and(
+        eq(teamMembers.teamId, telegramUserTeams.teamId),
+        eq(teamMembers.userId, telegramUsers.userId),
+        isNull(teamMembers.removedAt),
+      ),
+    )
     .where(
       and(
         eq(telegramUserTeams.telegramUserId, telegramUserId),

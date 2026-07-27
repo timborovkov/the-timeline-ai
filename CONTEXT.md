@@ -542,6 +542,38 @@ A way information enters the timeline, such as web capture, Telegram, Slack,
 email, documents, meetings, integrations, or calendar import.
 _Avoid_: Connector when the surface is first-party
 
+**Direct Agent Conversation**:
+A private, provider-backed conversation between one verified Timeline user and
+the agent. Plain text is an agent turn, history is private to that user and
+team, and the insertion-ordered persisted transcript is available in web chat
+history. Voice, files, images, and other attachments remain source capture
+rather than agent prompts. Switching the active team or losing membership
+archives the old provider session and starts a new conversation without leaving
+the provider route blocked on stale state.
+_Avoid_: DM Capture when the user sent ordinary text to the agent
+
+**Explicit Chat Note**:
+Text that a person deliberately sends to the evidence pipeline from a direct
+agent conversation without asking the agent to answer. Telegram uses
+`/note`; Slack uses `/timeline note`. Attachments do not need a note command
+because media is always captured.
+_Avoid_: Agent prompt, passive DM capture
+
+**Eligible External Teams**:
+The teams a verified external identity may select for a provider conversation.
+Eligibility is recomputed from current product membership and provider
+boundaries rather than inferred from old routing rows. Telegram includes every
+active Timeline membership. Slack includes only active memberships also
+enabled for the current Slack workspace.
+_Avoid_: Linked teams when describing routing rows, all memberships for Slack
+
+**Progress Capability**:
+A provider adapter's best available signal that an accepted agent turn is
+still running. Telegram refreshes typing; classic Slack keeps the thinking
+reaction, and Slack Assistant status may be added when that context and scope
+are available. Progress ends on answer, timeout, failure, or cancellation.
+_Avoid_: Delivery guarantee, runtime-specific typing implementation
+
 **Ingest Webhook**:
 A team-managed capture surface that accepts arbitrary external payloads as raw
 source evidence. Ingest webhooks capture textual request bodies first; direct
@@ -677,12 +709,12 @@ Timeline team member. Slack user links provide attribution; they do not decide
 which team a bound Slack conversation routes to.
 _Avoid_: Link token, username proof
 
-**Slack DM Capture**:
-A direct message from a linked Slack user to the Timeline Slack app that lands
-in the user's selected Timeline team. Slack DM capture mirrors Telegram DM
-capture: plain messages are source evidence, while ask commands produce agent
-answers.
-_Avoid_: Support inbox, chat-only command surface
+**Slack Direct Agent Conversation**:
+A direct message conversation from a verified Slack user to Timeline. Ordinary
+text invokes the shared agent runtime; `/ask` is a compatible alias,
+`/timeline note` captures text, and messages with files remain ingestion.
+Eligible teams are restricted to memberships enabled for that Slack workspace.
+_Avoid_: Slack DM Capture, support inbox
 
 **Capture Acknowledgement**:
 A lightweight reaction or reply that confirms a direct-message capture landed.
@@ -809,8 +841,8 @@ _Avoid_: Failed processing, unsupported file
 
 **Active External Team**:
 The Timeline team selected for a linked external user when a direct-message
-capture surface can route to more than one team. Telegram and Slack DMs share
-this mental model.
+conversation can route to more than one team. Telegram and Slack DMs share this
+mental model, but their eligible-team sets differ.
 _Avoid_: Default workspace, primary team
 
 **Slack App Installation**:
@@ -1156,8 +1188,9 @@ Bob has a verified Timeline user link."
 Developer: "Should every captured Slack or Telegram group message get a
 reaction so people know it landed?"
 
-Domain expert: "No. Capture acknowledgements are for DMs. Group chats and
-channels should stay quiet."
+Domain expert: "No. Explicit notes and media may get capture acknowledgements
+in DMs. Agent DMs use a progress acknowledgement. Group chats and channels
+should stay quiet."
 
 Developer: "When the agent hears 'what happened last week', should it use UTC?"
 

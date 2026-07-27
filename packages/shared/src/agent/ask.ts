@@ -40,15 +40,25 @@ export interface AskAgentInput {
   trustedTeamActor?: boolean | undefined;
   /** Cap on agent tool-call rounds. Defaults to `DEFAULT_AGENT_MAX_STEPS`. */
   maxSteps?: number;
+  /** Bounded prior direct-conversation messages, ordered oldest to newest. */
+  priorMessages?: ModelMessage[];
 }
 
 export type AskAgentResult =
-  | { ok: true; answer: string; truncated: boolean }
+  | {
+      ok: true;
+      answer: string;
+      truncated: boolean;
+      requestedModelId?: string;
+      responseModelId?: string;
+    }
   | { ok: false; error: 'unconfigured' | 'not_a_member' | 'no_team' | 'failed' };
 
 export interface AskAgentDeps extends ChatDeps {
   onToolError?: AgentToolErrorReporter | undefined;
   onAgentError?: ((err: unknown) => void) | undefined;
+  /** Redacts private request/provider details before logs or error callbacks. */
+  sanitizeError?: ((err: unknown) => unknown) | undefined;
   onTurnObservability?: ((observability: AgentTurnObservability) => void) | undefined;
   /** Test/eval seam for retrieval dependencies; production uses live services. */
   teamScopeDeps?: Pick<TeamScopeDeps, 'embed' | 'qdrantSearch'> | undefined;
@@ -56,6 +66,8 @@ export interface AskAgentDeps extends ChatDeps {
   includeMcpTools?: boolean | undefined;
   /** Trusted clock override for deterministic tests and live evaluation fixtures. */
   currentDate?: Date | undefined;
+  /** Worker/request lifecycle cancellation propagated to the model provider. */
+  abortSignal?: AbortSignal | undefined;
 }
 
 type IntegrationProvider = 'google_drive' | 'linear' | 'github' | 'monday' | 'slack' | 'sentry';
@@ -302,7 +314,7 @@ export async function askAgent(
 
   let system = buildSystemPrompt({
     teamName: team.name,
-    userName: input.userName ?? 'a teammate',
+    userName: input.userName ?? currentUser.name ?? 'a teammate',
     currentUser,
     currentDate,
     workspaceTime: workspaceTimeContext(calendarSettings.defaultTimezone, currentDate),
@@ -328,8 +340,12 @@ export async function askAgent(
           // answer.
           return { tool, input: toolInput, evidence: await execute(toolInput) };
         } catch (err) {
-          log.warn({ err, teamId: input.teamId, tool }, 'required retrieval preflight failed');
-          deps.onToolError?.(err, { tool: `${tool}:preflight` });
+          const safeError = deps.sanitizeError?.(err) ?? err;
+          log.warn(
+            { err: safeError, teamId: input.teamId, tool },
+            'required retrieval preflight failed',
+          );
+          deps.onToolError?.(safeError, { tool: `${tool}:preflight` });
           return { tool, error: 'retrieval failed' };
         }
       }),
@@ -343,8 +359,9 @@ export async function askAgent(
   const mcpTools = includeMcpTools
     ? await buildMcpTools(scope, { db: input.db, onToolError: deps.onToolError }).catch(
         (err: unknown) => {
-          log.warn({ err, teamId: input.teamId }, 'askAgent MCP tool discovery failed');
-          deps.onToolError?.(err, { tool: 'mcp_discovery' });
+          const safeError = deps.sanitizeError?.(err) ?? err;
+          log.warn({ err: safeError, teamId: input.teamId }, 'askAgent MCP tool discovery failed');
+          deps.onToolError?.(safeError, { tool: 'mcp_discovery' });
           return {};
         },
       )
@@ -354,7 +371,10 @@ export async function askAgent(
     toolObservations.push(observation);
   });
 
-  const messages: ModelMessage[] = [{ role: 'user', content: input.question }];
+  const messages: ModelMessage[] = [
+    ...(input.priorMessages ?? []),
+    { role: 'user', content: input.question },
+  ];
   const modelAttribution: Partial<StreamChatModelAttribution> = {};
 
   try {
@@ -364,6 +384,7 @@ export async function askAgent(
         messages,
         tools,
         maxSteps: input.maxSteps ?? DEFAULT_AGENT_MAX_STEPS,
+        ...(deps.abortSignal ? { abortSignal: deps.abortSignal } : {}),
         onFinish: (event) => {
           Object.assign(modelAttribution, streamChatModelAttribution(event));
         },
@@ -404,12 +425,29 @@ export async function askAgent(
         ok: true,
         answer: plainAnswer.slice(0, TELEGRAM_MAX - 1) + '…',
         truncated: true,
+        ...(modelAttribution.requestedModelId
+          ? { requestedModelId: modelAttribution.requestedModelId }
+          : {}),
+        ...(modelAttribution.responseModelId
+          ? { responseModelId: modelAttribution.responseModelId }
+          : {}),
       };
     }
-    return { ok: true, answer: plainAnswer, truncated: false };
+    return {
+      ok: true,
+      answer: plainAnswer,
+      truncated: false,
+      ...(modelAttribution.requestedModelId
+        ? { requestedModelId: modelAttribution.requestedModelId }
+        : {}),
+      ...(modelAttribution.responseModelId
+        ? { responseModelId: modelAttribution.responseModelId }
+        : {}),
+    };
   } catch (err) {
-    log.error({ err, teamId: input.teamId }, 'askAgent failed');
-    deps.onAgentError?.(err);
+    const safeError = deps.sanitizeError?.(err) ?? err;
+    log.error({ err: safeError, teamId: input.teamId }, 'askAgent failed');
+    deps.onAgentError?.(safeError);
     return { ok: false, error: 'failed' };
   }
 }

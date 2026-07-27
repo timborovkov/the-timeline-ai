@@ -125,13 +125,39 @@ export async function POST(req: Request): Promise<Response> {
       reportCaughtError(err, { surface: 'background', operation: 'slack_agent_run' });
     },
   };
-  void Promise.resolve()
-    .then(() => slack.handleSlackEnvelope(deps, payload))
-    .catch((err: unknown) => {
+  if (isDirectTextSlackEvent(payload)) {
+    try {
+      await slack.handleSlackEnvelope(deps, payload);
+    } catch (err) {
       log.error({ err }, 'slack event handler failed');
       reportCaughtError(err, { surface: 'background', operation: 'slack_event_handler' });
-    });
+    }
+  } else {
+    void Promise.resolve()
+      .then(() => slack.handleSlackEnvelope(deps, payload))
+      .catch((err: unknown) => {
+        log.error({ err }, 'slack event handler failed');
+        reportCaughtError(err, { surface: 'background', operation: 'slack_event_handler' });
+      });
+  }
   return Response.json({ ok: true }, { status: 200 });
+}
+
+function isDirectTextSlackEvent(payload: unknown): boolean {
+  if (!payload || typeof payload !== 'object') return false;
+  const event = (payload as Record<string, unknown>).event;
+  if (!event || typeof event !== 'object') return false;
+  const message = event as Record<string, unknown>;
+  const files = message.files;
+  return (
+    message.type === 'message' &&
+    message.channel_type === 'im' &&
+    message.subtype !== 'message_changed' &&
+    message.subtype !== 'message_deleted' &&
+    (!Array.isArray(files) || files.length === 0) &&
+    typeof message.text === 'string' &&
+    message.text.trim().length > 0
+  );
 }
 
 function isSlackUrlVerification(payload: unknown): boolean {

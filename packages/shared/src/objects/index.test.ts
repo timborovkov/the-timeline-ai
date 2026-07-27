@@ -13,6 +13,7 @@ import {
   documentVersions,
   chatMessages,
   chatSessions,
+  chatSurfaceSessionLinks,
   entities,
   entityRelationships,
   factEntities,
@@ -2663,7 +2664,15 @@ describe('object scope — chat session isolation', () => {
       canonicalName: 'Internal AI thread',
       actor: { kind: 'user', userId: USER_OWNER },
     });
-    const session = await ownerScope.createChatSession();
+    const session = await ownerScope.createChatSession({ surface: 'future-provider' });
+    expect(session.surface).toBe('future-provider');
+    await db.insert(chatSurfaceSessionLinks).values({
+      surface: 'future-provider',
+      externalConversationKey: 'tenant:one:dm:one',
+      teamId: TEAM_A,
+      userId: USER_OWNER,
+      chatSessionId: session.id,
+    });
     await expect(ownerScope.chatSessionTitleStatus(session.id)).resolves.toEqual({
       exists: true,
       needsTitle: true,
@@ -2703,6 +2712,7 @@ describe('object scope — chat session isolation', () => {
     });
     expect(rows[0]?.updatedAt.getTime()).toBe(afterAppend[0]?.updatedAt.getTime());
     expect(rows[0]?.archivedAt).toBeNull();
+    expect(await db.select().from(chatSurfaceSessionLinks)).toHaveLength(1);
 
     await ownerScope.linkChatSessionToObject(session.id, object.id);
     await ownerScope.archiveChatSession(session.id);
@@ -2713,6 +2723,7 @@ describe('object scope — chat session isolation', () => {
       needsTitle: false,
     });
     await expect(ownerScope.getChatSession(session.id)).resolves.toBeNull();
+    expect(await db.select().from(chatSurfaceSessionLinks)).toHaveLength(0);
 
     const messages = await db
       .select()
