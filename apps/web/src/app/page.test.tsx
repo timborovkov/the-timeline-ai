@@ -29,4 +29,15 @@ describe('LandingPage', () => {
     expect(html).toContain('linear-gradient');
     expect(html).not.toContain('aria-label="Public"');
   });
+
+  it('keeps the marketing page browsable for signed-in users with dashboard CTAs', async () => {
+    fakes.auth.mockResolvedValue({ user: { id: 'user-1' } });
+
+    const html = renderToStaticMarkup(await LandingPage());
+
+    expect(html).toContain('Go to dashboard');
+    expect(html).toContain('href="/app"');
+    expect(html).not.toContain('Create team');
+    expect(html).not.toContain('href="/sign-in"');
+  });
 });

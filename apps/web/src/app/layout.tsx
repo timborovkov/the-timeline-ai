@@ -78,8 +78,17 @@ export const metadata: Metadata = {
   alternates: { canonical: '/' },
   manifest: '/manifest.webmanifest',
   icons: {
-    icon: '/icon.svg',
-    apple: '/apple-icon',
+    icon: [
+      { url: '/icon.svg', type: 'image/svg+xml' },
+      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+    ],
+    apple: [{ url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
+  },
+  appleWebApp: {
+    capable: true,
+    title: 'The Timeline',
+    // Non-overlaying: black-translucent draws under the status bar without safe-area padding.
+    statusBarStyle: 'black',
   },
   openGraph: {
     title: 'The Timeline — The operations log your team can talk to',
