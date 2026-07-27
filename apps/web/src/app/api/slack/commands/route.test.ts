@@ -141,7 +141,36 @@ describe('POST /api/slack/commands', () => {
         response_url: 'https://hooks.slack.test/response',
         trigger_id: 'trigger-1',
       },
+      { deferStatelessAsk: true },
     );
+  });
+
+  it('does not acknowledge /ask until direct-message persistence and enqueue finish', async () => {
+    let releaseDispatch: (() => void) | undefined;
+    fakes.handleSlackSlashCommand.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseDispatch = resolve;
+        }),
+    );
+    let settled = false;
+    const responsePromise = POST(
+      slackCommandRequest(commandInput({ command: '/ask', text: 'What changed?' })),
+    ).then((response) => {
+      settled = true;
+      return response;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+    releaseDispatch?.();
+
+    const response = await responsePromise;
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      response_type: 'ephemeral',
+      text: 'Asking Timeline…',
+    });
   });
 
   it('does not dispatch commands when the per-user command limiter trips', async () => {

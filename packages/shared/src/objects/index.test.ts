@@ -13,6 +13,8 @@ import {
   documentVersions,
   chatMessages,
   chatSessions,
+  chatSurfaceSessionLinks,
+  chatSurfaceTurns,
   entities,
   entityRelationships,
   factEntities,
@@ -2663,7 +2665,31 @@ describe('object scope — chat session isolation', () => {
       canonicalName: 'Internal AI thread',
       actor: { kind: 'user', userId: USER_OWNER },
     });
-    const session = await ownerScope.createChatSession();
+    const session = await ownerScope.createChatSession({ surface: 'future-provider' });
+    expect(session.surface).toBe('future-provider');
+    await db.insert(chatSurfaceSessionLinks).values({
+      surface: 'future-provider',
+      externalConversationKey: 'tenant:one:dm:one',
+      teamId: TEAM_A,
+      userId: USER_OWNER,
+      chatSessionId: session.id,
+    });
+    const surfaceTurns = await db
+      .insert(chatSurfaceTurns)
+      .values({
+        surface: 'future-provider',
+        externalEventId: 'archive-event',
+        externalMessageId: 'archive-message',
+        externalConversationKey: 'tenant:one:dm:one',
+        externalUserKey: 'tenant:one:user:owner',
+        teamId: TEAM_A,
+        userId: USER_OWNER,
+        chatSessionId: session.id,
+        questionText: 'Will this turn be cancelled?',
+      })
+      .returning({ id: chatSurfaceTurns.id });
+    const surfaceTurnId = surfaceTurns[0]?.id;
+    if (!surfaceTurnId) throw new Error('expected surface turn');
     await expect(ownerScope.chatSessionTitleStatus(session.id)).resolves.toEqual({
       exists: true,
       needsTitle: true,
@@ -2703,6 +2729,15 @@ describe('object scope — chat session isolation', () => {
     });
     expect(rows[0]?.updatedAt.getTime()).toBe(afterAppend[0]?.updatedAt.getTime());
     expect(rows[0]?.archivedAt).toBeNull();
+    expect(await db.select().from(chatSurfaceSessionLinks)).toHaveLength(1);
+    expect(
+      (
+        await db
+          .select({ status: chatSurfaceTurns.status })
+          .from(chatSurfaceTurns)
+          .where(eq(chatSurfaceTurns.id, surfaceTurnId))
+      )[0]?.status,
+    ).toBe('queued');
 
     await ownerScope.linkChatSessionToObject(session.id, object.id);
     await ownerScope.archiveChatSession(session.id);
@@ -2713,6 +2748,7 @@ describe('object scope — chat session isolation', () => {
       needsTitle: false,
     });
     await expect(ownerScope.getChatSession(session.id)).resolves.toBeNull();
+    expect(await db.select().from(chatSurfaceSessionLinks)).toHaveLength(0);
 
     const messages = await db
       .select()
@@ -2723,6 +2759,14 @@ describe('object scope — chat session isolation', () => {
     const archived = await db.select().from(chatSessions).where(eq(chatSessions.id, session.id));
     expect(archived[0]?.pinnedEntityId).toBe(object.id);
     expect(archived[0]?.archivedAt).toBeInstanceOf(Date);
+    expect(
+      (
+        await db
+          .select({ status: chatSurfaceTurns.status })
+          .from(chatSurfaceTurns)
+          .where(eq(chatSurfaceTurns.id, surfaceTurnId))
+      )[0]?.status,
+    ).toBe('cancelled');
   });
 
   it('assigns unique chat titles within the creator sidebar', async () => {

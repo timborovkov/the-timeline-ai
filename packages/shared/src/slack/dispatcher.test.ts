@@ -2,6 +2,8 @@ import { randomBytes } from 'node:crypto';
 
 import { PGlite } from '@electric-sql/pglite';
 import {
+  chatSessions,
+  chatSurfaceTurns,
   meetingCaptureConfirmations,
   meetings,
   rawEvents,
@@ -18,6 +20,8 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type * as QueueModule from '#src/queue/queues.js';
+
 import { encryptJson, resetSecretsKeyCacheForTests } from '#src/crypto/secrets.js';
 import { resetEnvForTests } from '#src/env.js';
 import { resetMeetingBotProviderForTests } from '#src/meeting-bots/index.js';
@@ -30,6 +34,11 @@ import {
 } from '#src/slack/dispatcher.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { textQueueDeps } from '#src/test/queue-deps.js';
+
+vi.mock('#src/queue/queues.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof QueueModule>()),
+  enqueueConversationAgentJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'turn' }),
+}));
 
 const askAgentMock = vi.hoisted(() => vi.fn());
 
@@ -107,6 +116,19 @@ function installFetchMock(): ReturnType<typeof vi.fn> {
             real_name: 'Alice Slack',
             profile: { display_name: 'Alice Slack', real_name: 'Alice Slack' },
           },
+        }),
+      );
+    }
+    if (href.includes('conversations.info')) {
+      const params =
+        _init?.body instanceof URLSearchParams
+          ? _init.body
+          : new URLSearchParams(typeof _init?.body === 'string' ? _init.body : '');
+      const channel = params.get('channel') ?? '';
+      return Promise.resolve(
+        Response.json({
+          ok: true,
+          channel: { id: channel, is_im: channel.startsWith('D') },
         }),
       );
     }
@@ -629,7 +651,213 @@ describe('Slack dispatcher routing', () => {
     expect(artifacts.rows[0]?.count).toBe('1');
   });
 
-  it('captures linked Slack DM text and enqueues text work', async () => {
+  it('queues linked Slack DM text as a durable agent conversation', async () => {
+    await seedWorkspace(db, TEAM_A);
+    await db.insert(slackUsers).values({
+      id: SLACK_USER_ROW_ID,
+      workspaceId: WORKSPACE_ID,
+      slackUserId: 'U_SLACK',
+      realName: 'Alice Slack',
+    });
+    await db.insert(slackUserTeams).values({
+      slackUserId: SLACK_USER_ROW_ID,
+      teamId: TEAM_A,
+      userId: USER_A,
+      linkedByUserId: USER_A,
+      isActive: true,
+    });
+    const fetchMock = installFetchMock();
+
+    await handleSlackEnvelope(
+      { db: db as never },
+      slackEnvelope('EvDmText', {
+        type: 'message',
+        channel: 'D_SLACK',
+        channel_type: 'im',
+        user: 'U_SLACK',
+        text: 'DM follow up with Ada next week',
+        ts: '1700000000.000600',
+      }),
+    );
+
+    expect(await db.select().from(rawEvents).where(eq(rawEvents.source, 'slack'))).toHaveLength(0);
+    expect(await db.select().from(chatSurfaceTurns)).toMatchObject([
+      {
+        surface: 'slack',
+        externalEventId: 'EvDmText',
+        externalMessageId: '1700000000.000600',
+        externalConversationKey: `workspace:${WORKSPACE_ID}:dm:D_SLACK`,
+        teamId: TEAM_A,
+        userId: USER_A,
+        questionText: 'DM follow up with Ada next week',
+        status: 'queued',
+      },
+    ]);
+    expect(await db.select().from(chatSessions)).toMatchObject([
+      {
+        surface: 'slack',
+        title: 'DM follow up with Ada next week',
+        createdBy: USER_A,
+      },
+    ]);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('reactions.add'))).toBe(true);
+  });
+
+  it('queues a Slack DM without waiting for a slow profile lookup or reaction', async () => {
+    await seedWorkspace(db, TEAM_A);
+    await db.insert(slackUsers).values({
+      id: SLACK_USER_ROW_ID,
+      workspaceId: WORKSPACE_ID,
+      slackUserId: 'U_SLACK',
+      realName: 'Cached Alice',
+    });
+    await db.insert(slackUserTeams).values({
+      slackUserId: SLACK_USER_ROW_ID,
+      teamId: TEAM_A,
+      userId: USER_A,
+      linkedByUserId: USER_A,
+      isActive: true,
+    });
+    let releaseSlackApi: (() => void) | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            releaseSlackApi = () => {
+              resolve(Response.json({ ok: true }));
+            };
+          }),
+      ),
+    );
+
+    const handled = handleSlackEnvelope(
+      { db: db as never },
+      slackEnvelope('EvSlowDmText', {
+        type: 'message',
+        channel: 'D_SLACK',
+        channel_type: 'im',
+        user: 'U_SLACK',
+        text: 'Answer without blocking the webhook',
+        ts: '1700000000.000601',
+      }),
+    );
+    const result = await Promise.race([
+      handled,
+      new Promise<'still-pending'>((resolve) => {
+        setTimeout(() => {
+          resolve('still-pending');
+        }, 50);
+      }),
+    ]);
+    releaseSlackApi?.();
+
+    expect(result).toEqual({ ok: true });
+    expect(await db.select().from(chatSurfaceTurns)).toMatchObject([
+      { externalEventId: 'EvSlowDmText', status: 'queued' },
+    ]);
+  });
+
+  it('lists only active memberships enabled for the current Slack workspace', async () => {
+    await seedWorkspace(db, TEAM_A);
+    await db.insert(slackUsers).values({
+      id: SLACK_USER_ROW_ID,
+      workspaceId: WORKSPACE_ID,
+      slackUserId: 'U_SLACK',
+      realName: 'Alice Slack',
+    });
+    await db.insert(slackUserTeams).values({
+      slackUserId: SLACK_USER_ROW_ID,
+      teamId: TEAM_A,
+      userId: USER_A,
+      linkedByUserId: USER_A,
+      isActive: true,
+    });
+    await pg.exec(`
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${TEAM_B}', '${USER_A}', 'member');
+    `);
+    const fetchMock = installFetchMock();
+    const input = {
+      command: '/timeline',
+      text: 'team',
+      user_id: 'U_SLACK',
+      team_id: 'T_SLACK',
+      channel_id: 'D_SLACK',
+      response_url: 'https://hooks.slack.test/response',
+      trigger_id: 'trigger-team-list',
+    };
+
+    await handleSlackSlashCommand({ db: db as never }, input);
+    expect(JSON.stringify(responseBodies(fetchMock))).toContain('Team A');
+    expect(JSON.stringify(responseBodies(fetchMock))).not.toContain('Team B');
+
+    await db.insert(slackWorkspaceTeams).values({
+      workspaceId: WORKSPACE_ID,
+      teamId: TEAM_B,
+      installedByUserId: USER_A,
+      enabled: true,
+    });
+    fetchMock.mockClear();
+    await handleSlackSlashCommand({ db: db as never }, input);
+    expect(JSON.stringify(responseBodies(fetchMock))).toContain('Team B');
+  });
+
+  it('lets a verified Slack user recover when the previously active team is no longer eligible', async () => {
+    await seedWorkspace(db, TEAM_A);
+    await db.insert(slackWorkspaceTeams).values({
+      workspaceId: WORKSPACE_ID,
+      teamId: TEAM_B,
+      installedByUserId: USER_A,
+      enabled: true,
+    });
+    await pg.exec(`
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${TEAM_B}', '${USER_A}', 'member');
+    `);
+    await db.insert(slackUsers).values({
+      id: SLACK_USER_ROW_ID,
+      workspaceId: WORKSPACE_ID,
+      slackUserId: 'U_SLACK',
+      realName: 'Alice Slack',
+    });
+    await db.insert(slackUserTeams).values({
+      slackUserId: SLACK_USER_ROW_ID,
+      teamId: TEAM_A,
+      userId: USER_A,
+      linkedByUserId: USER_A,
+      isActive: true,
+    });
+    await db
+      .update(slackWorkspaceTeams)
+      .set({ enabled: false })
+      .where(eq(slackWorkspaceTeams.teamId, TEAM_A));
+    const fetchMock = installFetchMock();
+    const input = {
+      command: '/timeline',
+      text: 'team',
+      user_id: 'U_SLACK',
+      team_id: 'T_SLACK',
+      channel_id: 'D_SLACK',
+      response_url: 'https://hooks.slack.test/response',
+      trigger_id: 'trigger-team-recovery',
+    };
+
+    await handleSlackSlashCommand({ db: db as never }, input);
+    expect(JSON.stringify(responseBodies(fetchMock))).toContain('Team B');
+    expect(JSON.stringify(responseBodies(fetchMock))).not.toContain('Link your Slack identity');
+
+    fetchMock.mockClear();
+    await handleSlackSlashCommand({ db: db as never }, { ...input, text: 'team 1' });
+    expect(JSON.stringify(responseBodies(fetchMock))).toContain('Active team is now Team B');
+    expect(await db.select().from(slackUserTeams)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ teamId: TEAM_B, userId: USER_A, isActive: true }),
+      ]),
+    );
+  });
+
+  it('captures explicit /timeline note text instead of invoking the agent', async () => {
     await seedWorkspace(db, TEAM_A);
     await db.insert(slackUsers).values({
       id: SLACK_USER_ROW_ID,
@@ -646,27 +874,28 @@ describe('Slack dispatcher routing', () => {
     });
     const queues = textQueueDeps();
 
-    await handleSlackEnvelope(
+    await handleSlackSlashCommand(
       { db: db as never, ...queues },
-      slackEnvelope('EvDmText', {
-        type: 'message',
-        channel: 'D_SLACK',
-        channel_type: 'im',
-        user: 'U_SLACK',
-        text: 'DM follow up with Ada next week',
-        ts: '1700000000.000600',
-      }),
+      {
+        command: '/timeline',
+        text: 'note Follow up with Ada on Friday',
+        user_id: 'U_SLACK',
+        team_id: 'T_SLACK',
+        channel_id: 'D_SLACK',
+        response_url: 'https://hooks.slack.test/response',
+        trigger_id: 'trigger-note',
+      },
     );
 
+    expect(await db.select().from(chatSurfaceTurns)).toHaveLength(0);
     const rows = await db.select().from(rawEvents).where(eq(rawEvents.source, 'slack'));
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ teamId: TEAM_A, authorUserId: USER_A, visibility: 'team' });
-    expect(rows[0]?.sourceMetadata).toMatchObject({
-      slack_channel_id: 'D_SLACK',
-      slack_channel_type: 'im',
-      source_owner_user_id: USER_A,
-      source_unverified: false,
-    });
+    expect(rows).toMatchObject([
+      {
+        teamId: TEAM_A,
+        authorUserId: USER_A,
+        contentText: 'Follow up with Ada on Friday',
+      },
+    ]);
     expect(queues.extract.enqueueExtract).toHaveBeenCalledOnce();
     expect(queues.embed.enqueueEmbed).toHaveBeenCalledOnce();
     expect(queues.suggestions.enqueueSuggestion).toHaveBeenCalledOnce();

@@ -44,6 +44,7 @@ import type { TimelineMomentLookupPlan } from '#src/timeline-moments/index.js';
 import { createAuditScope } from '#src/audit/scope.js';
 import { createBoardScope } from '#src/boards/index.js';
 import { createCalendarScope } from '#src/calendar/scope.js';
+import { createConversationSurfaceScope } from '#src/conversation-surfaces/scope.js';
 import { sourceMetadataWithConversationArtifacts } from '#src/conversational/contact-artifacts.js';
 import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
 import { documentPresentation } from '#src/documents/presentation.js';
@@ -2511,6 +2512,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
   }
 
   const objectScope = createObjectScope(db, core);
+  const conversationSurfaceScope = createConversationSurfaceScope(db, core);
   const boardScope = createBoardScope({ db, scope: core, objects: objectScope });
   const suggestionScope = createSuggestionScope({
     db,
@@ -3890,6 +3892,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     documents: documentScope,
     meetings: meetingScope,
     objects: objectScope,
+    conversations: conversationSurfaceScope,
     boards: boardScope,
     pins: pinScope,
     suggestions: suggestionScope,

@@ -217,7 +217,7 @@ describe('buildTelegramCaptureCanaryPayload', () => {
           first_name: 'Timeline',
           username: 'timeline_canary',
         },
-        text: 'Timeline Telegram capture canary',
+        text: '/note Timeline Telegram capture canary',
       },
     });
   });

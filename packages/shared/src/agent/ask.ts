@@ -40,15 +40,25 @@ export interface AskAgentInput {
   trustedTeamActor?: boolean | undefined;
   /** Cap on agent tool-call rounds. Defaults to `DEFAULT_AGENT_MAX_STEPS`. */
   maxSteps?: number;
+  /** Bounded prior direct-conversation messages, ordered oldest to newest. */
+  priorMessages?: ModelMessage[];
 }
 
 export type AskAgentResult =
-  | { ok: true; answer: string; truncated: boolean }
+  | {
+      ok: true;
+      answer: string;
+      truncated: boolean;
+      requestedModelId?: string;
+      responseModelId?: string;
+    }
   | { ok: false; error: 'unconfigured' | 'not_a_member' | 'no_team' | 'failed' };
 
 export interface AskAgentDeps extends ChatDeps {
   onToolError?: AgentToolErrorReporter | undefined;
   onAgentError?: ((err: unknown) => void) | undefined;
+  /** Redacts private request/provider details before logs or error callbacks. */
+  sanitizeError?: ((err: unknown) => unknown) | undefined;
   onTurnObservability?: ((observability: AgentTurnObservability) => void) | undefined;
   /** Test/eval seam for retrieval dependencies; production uses live services. */
   teamScopeDeps?: Pick<TeamScopeDeps, 'embed' | 'qdrantSearch'> | undefined;
@@ -56,6 +66,8 @@ export interface AskAgentDeps extends ChatDeps {
   includeMcpTools?: boolean | undefined;
   /** Trusted clock override for deterministic tests and live evaluation fixtures. */
   currentDate?: Date | undefined;
+  /** Worker/request lifecycle cancellation propagated to the model provider. */
+  abortSignal?: AbortSignal | undefined;
 }
 
 type IntegrationProvider = 'google_drive' | 'linear' | 'github' | 'monday' | 'slack' | 'sentry';
@@ -302,13 +314,14 @@ export async function askAgent(
 
   let system = buildSystemPrompt({
     teamName: team.name,
-    userName: input.userName ?? 'a teammate',
+    userName: input.userName ?? currentUser.name ?? 'a teammate',
     currentUser,
     currentDate,
     workspaceTime: workspaceTimeContext(calendarSettings.defaultTimezone, currentDate),
   });
   const nativeTools = buildAgentTools(scope, {
     onToolError: deps.onToolError,
+    sanitizeError: deps.sanitizeError,
     readOnly: input.trustedTeamActor,
     currentDate,
   });
@@ -328,8 +341,12 @@ export async function askAgent(
           // answer.
           return { tool, input: toolInput, evidence: await execute(toolInput) };
         } catch (err) {
-          log.warn({ err, teamId: input.teamId, tool }, 'required retrieval preflight failed');
-          deps.onToolError?.(err, { tool: `${tool}:preflight` });
+          const safeError = deps.sanitizeError?.(err) ?? err;
+          log.warn(
+            { err: safeError, teamId: input.teamId, tool },
+            'required retrieval preflight failed',
+          );
+          deps.onToolError?.(safeError, { tool: `${tool}:preflight` });
           return { tool, error: 'retrieval failed' };
         }
       }),
@@ -341,20 +358,26 @@ export async function askAgent(
   }
   const includeMcpTools = deps.includeMcpTools ?? shouldIncludeMcpTools(input.question);
   const mcpTools = includeMcpTools
-    ? await buildMcpTools(scope, { db: input.db, onToolError: deps.onToolError }).catch(
-        (err: unknown) => {
-          log.warn({ err, teamId: input.teamId }, 'askAgent MCP tool discovery failed');
-          deps.onToolError?.(err, { tool: 'mcp_discovery' });
-          return {};
-        },
-      )
+    ? await buildMcpTools(scope, {
+        db: input.db,
+        onToolError: deps.onToolError,
+        sanitizeError: deps.sanitizeError,
+      }).catch((err: unknown) => {
+        const safeError = deps.sanitizeError?.(err) ?? err;
+        log.warn({ err: safeError, teamId: input.teamId }, 'askAgent MCP tool discovery failed');
+        deps.onToolError?.(safeError, { tool: 'mcp_discovery' });
+        return {};
+      })
     : {};
   const toolObservations: AgentToolObservation[] = [];
   const tools = instrumentAgentTools({ ...plannedNativeTools, ...mcpTools }, (observation) => {
     toolObservations.push(observation);
   });
 
-  const messages: ModelMessage[] = [{ role: 'user', content: input.question }];
+  const messages: ModelMessage[] = [
+    ...(input.priorMessages ?? []),
+    { role: 'user', content: input.question },
+  ];
   const modelAttribution: Partial<StreamChatModelAttribution> = {};
 
   try {
@@ -364,15 +387,14 @@ export async function askAgent(
         messages,
         tools,
         maxSteps: input.maxSteps ?? DEFAULT_AGENT_MAX_STEPS,
+        ...(deps.abortSignal ? { abortSignal: deps.abortSignal } : {}),
         onFinish: (event) => {
           Object.assign(modelAttribution, streamChatModelAttribution(event));
         },
       },
       deps,
     );
-    // `.text` resolves to the final assistant text after all tool rounds; we
-    // intentionally do NOT need the streamed chunks because Telegram can't
-    // render them progressively.
+    // Direct-chat providers consume the final text after all tool rounds.
     const text = await result.text;
     const observability = summarizeAgentToolObservations({ observations: toolObservations });
     deps.onTurnObservability?.(observability);
@@ -399,17 +421,32 @@ export async function askAgent(
     if (plainAnswer.length === 0) {
       return { ok: false, error: 'failed' };
     }
+    const attribution = {
+      ...(modelAttribution.requestedModelId
+        ? { requestedModelId: modelAttribution.requestedModelId }
+        : {}),
+      ...(modelAttribution.responseModelId
+        ? { responseModelId: modelAttribution.responseModelId }
+        : {}),
+    };
     if (plainAnswer.length > TELEGRAM_MAX) {
       return {
         ok: true,
         answer: plainAnswer.slice(0, TELEGRAM_MAX - 1) + '…',
         truncated: true,
+        ...attribution,
       };
     }
-    return { ok: true, answer: plainAnswer, truncated: false };
+    return {
+      ok: true,
+      answer: plainAnswer,
+      truncated: false,
+      ...attribution,
+    };
   } catch (err) {
-    log.error({ err, teamId: input.teamId }, 'askAgent failed');
-    deps.onAgentError?.(err);
+    const safeError = deps.sanitizeError?.(err) ?? err;
+    log.error({ err: safeError, teamId: input.teamId }, 'askAgent failed');
+    deps.onAgentError?.(safeError);
     return { ok: false, error: 'failed' };
   }
 }

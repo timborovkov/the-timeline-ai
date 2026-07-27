@@ -1,10 +1,24 @@
 # @timeline/worker
 
-BullMQ workers for the async processing pipeline: transcribe, extract, embed, document-extract, meeting-finalize, task-category classification, overdue-scan, integrations, maintenance, and exports. One Node entry point starts the queue workers from the same codebase.
+BullMQ workers for the async processing pipeline: durable direct conversation
+agents, transcribe, extract, embed, document-extract, meeting-finalize,
+task-category classification, overdue-scan, integrations, maintenance, and
+exports. One Node entry point starts the queue workers from the same codebase.
 
 ## Why it exists
 
 Long-running, retry-prone work (audio transcription, LLM extraction, vector embedding) belongs off the request path. Railway runs the worker service separately from web so backlogs do not block requests.
+
+The `conversation-agent` worker also keeps Telegram/Slack webhook lifetimes
+short. It runs one paid model execution per durable turn, persists the answer
+before external delivery, and retries delivery from cache. Each job carries the
+turn UUID plus its team/user scope, and the worker claims it only through that
+`withTeam` conversation scope. Its 90-second deadline includes progress
+startup, history loading, and model execution; retained failed queue jobs can
+be replaced for cached or still-queued recovery without repeating a paid
+answer. Set `TELEGRAM_BOT_TOKEN` on the worker for Telegram typing and replies;
+Slack tokens are decrypted from installed workspace records with the same
+`SECRETS_ENCRYPTION_KEY` configured on web.
 
 ## How to use
 

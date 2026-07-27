@@ -3,19 +3,19 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Slack conversational capture setup</title>
+    <title>Slack conversations and capture setup</title>
     <link rel="stylesheet" href="../styles.css" />
   </head>
   <body>
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
-      <h1>Slack conversational capture setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-18</span></div>
+      <h1>Slack conversations and capture setup</h1>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-27</span></div>
       <p class="tldr">
-        Slack is a first-party Capture Surface like Telegram: install the app with OAuth, link Slack
-        users with OAuth, bind channels from Timeline, and let DMs route through the user's active
-        external team. The same app credentials can also power native Slack workspace ingestion for
-        selected channels from <code>/app/sources</code>.
+        Slack is a first-party conversational surface like Telegram: direct text talks to the agent,
+        files and explicit notes are captured, and channels stay ingestion-first unless someone
+        invokes <code>/ask</code> or <code>@Timeline</code>. OAuth-proven identities can select only
+        Timeline memberships enabled for that Slack workspace.
       </p>
 
       <nav class="toc" aria-label="On this page">
@@ -80,7 +80,10 @@ SLACK_SIGNING_SECRET=
             <li>Command: <code>/timeline</code></li>
             <li>Request URL: <code>https://thetimeline.cc/api/slack/commands</code></li>
             <li>Short description: <code>Control Timeline capture</code></li>
-            <li>Usage hint: <code>join &lt;saved-meeting-alias-or-url&gt; [title]</code></li>
+            <li>
+              Usage hint:
+              <code>note|new|team|whereami|help|join</code>
+            </li>
             <li>
               Saved Meeting aliases join immediately. Raw URLs send an ephemeral confirmation with
               <strong>Confirm and join</strong> and <strong>Cancel</strong> buttons before any bot
@@ -132,6 +135,24 @@ app_mention
       <p>
         The bot must be present in a private channel before Slack will deliver history/events for
         it. DMs need no channel binding; they route through the linked Slack user's active team.
+      </p>
+      <p>
+        In a DM, ordinary text and <code>/ask &lt;question&gt;</code> create durable agent turns.
+        <code>/timeline note &lt;text&gt;</code> captures evidence,
+        <code>/timeline new</code> resets private history, <code>/timeline team</code> lists
+        eligible teams, <code>/timeline team &lt;number&gt;</code> switches and resets history,
+        <code>/timeline whereami</code> shows the route, and <code>/timeline help</code> prints the
+        command guide. Messages with files always ingest, including their captions.
+      </p>
+      <p>
+        Direct turns react with <code>:thinking_face:</code> while the
+        <code>conversation-agent</code> worker runs. Notes and file captures react with
+        <code>:eyes:</code>. The webhook persists and enqueues the turn before returning; the worker
+        has a 90-second deadline and posts the final answer as a normal DM. Profile refreshes and
+        reaction delivery do not delay the webhook response after that durable enqueue. Installed
+        workspace tokens remain encrypted in Postgres and are decrypted only when the worker
+        reconstructs the delivery adapter. Slack AI Assistant status is optional and is not required
+        for classic DMs or the scope list above.
       </p>
 
       <h2 id="live-canary">5. Live canary</h2>
@@ -209,8 +230,14 @@ SLACK_CAPTURE_CANARY_ALLOWED_ORIGIN=https://thetimeline.cc
           approval suggestions before text or transcripts exist.
         </li>
         <li>
-          Slack DMs get a best-effort <code>:eyes:</code> reaction after capture. Channels never get
+          Slack direct agent turns get a best-effort <code>:thinking_face:</code> reaction. Explicit
+          notes and file captures get <code>:eyes:</code>. Channels never get capture
           acknowledgement reactions.
+        </li>
+        <li>
+          An eligible Slack DM team must be both an active Timeline membership and enabled for the
+          current Slack workspace. Old <code>slack_user_teams</code> routing rows never expand that
+          boundary.
         </li>
         <li>
           <code>/timeline join</code> is the only Slack text path that starts meeting capture.

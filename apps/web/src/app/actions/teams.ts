@@ -20,6 +20,7 @@ import {
   telegramUserTeams,
   users,
 } from '@timeline/db';
+import { resetSurfaceSessionsForTeamUserInTransaction } from '@timeline/shared/conversation-surfaces';
 import * as integrationsLib from '@timeline/shared/integrations';
 import { sendMessage } from '@timeline/shared/messaging';
 import { buildInboundEmail, randomSlugSuffix, randomToken, slugify } from '@timeline/shared/slug';
@@ -808,6 +809,10 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
         if (targetRole === 'owner') {
           await assertNotLastOwner(tx, active.teamId, memberUserId);
         }
+        await resetSurfaceSessionsForTeamUserInTransaction(tx, {
+          teamId: active.teamId,
+          userId: memberUserId,
+        });
         await tx
           .update(teamMembers)
           .set({ removedAt: new Date(), removedByUserId: session.user.id })

@@ -82,10 +82,16 @@ This is a pnpm/Turborepo monorepo.
 | Path | Purpose |
 | --- | --- |
 | `apps/web` | Next.js app, public docs, auth, server actions, UI, API routes, and inbound webhooks. |
-| `apps/worker` | BullMQ workers for transcription, extraction, embeddings, documents, meetings, integrations, reconciliation, MCP health, object summaries, daily digest, team export, and maintenance jobs. |
+| `apps/worker` | BullMQ workers for direct conversation agents, transcription, extraction, embeddings, documents, meetings, integrations, reconciliation, MCP health, object summaries, daily digest, team export, and maintenance jobs. |
 | `packages/db` | Drizzle schema, migrations, and database package exports. |
 | `packages/shared` | Team-scoped data access, personal pins, LLM wrapper, Qdrant/S3 wrappers, queues, integrations, artifact/workspace reconciliation, calendar, documents, meetings, objects, MCP, and other shared domain modules. |
 | `docs` | Product, setup, architecture, and deployment documentation. |
+
+Telegram and Slack direct text share one durable agent runtime: private,
+bounded sessions are visible in web chat history, while explicit notes and all
+attachments remain capture. Groups and channels stay ingestion-first unless
+someone uses `/ask` or mentions Timeline. See
+[ADR 0012](docs/adr/0012-direct-chat-surfaces-share-one-agent-runtime.md).
 
 The two most important boundaries are:
 
@@ -254,6 +260,10 @@ TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-pr
 # /app/team/reconciliation in the web app, and can repair scoped
 # team/object/cluster evidence, association graph rows, observed association outputs,
 # and approval projections from the same dashboard.
+# The worker also consumes durable `conversation-agent` turns for Telegram and
+# Slack DMs. TELEGRAM_BOT_TOKEN must be present on worker as well as web; Slack
+# tokens remain encrypted per installed workspace and require the shared
+# SECRETS_ENCRYPTION_KEY on both processes.
 pnpm e2e                  # Playwright core journey tests
 pnpm run doctor           # React Doctor scan for React/Next health regressions
 pnpm canary:integrations  # secret-safe live provider OAuth/LLM+transcription/Postmark/Telegram/Slack/Recall + optional signed capture canaries

@@ -174,6 +174,7 @@ function makeTx(selectRows: unknown[][]) {
   let selectIndex = 0;
   return {
     tx: {
+      execute: vi.fn(() => Promise.resolve()),
       select: vi.fn(() => selectChain(selectRows[selectIndex++] ?? [])),
       update: vi.fn(() => mutationChain(updates)),
       insert: vi.fn(() => mutationChain(inserts)),
@@ -789,7 +790,7 @@ describe('removeMemberAction', () => {
 
   it('lets admins remove members but not admins or owners', async () => {
     fakes.fakeRequireMembership.mockResolvedValue('admin');
-    const memberRemoval = makeTx([[{ role: 'member' }], [], [], [], [], [], [], [], []]);
+    const memberRemoval = makeTx([[{ role: 'member' }], [], [], [], [], [], [], [], [], []]);
     mockTransactionWithTx(memberRemoval.tx);
     await expect(removeMemberAction(form({ userId: MEMBER_ID }))).resolves.toBeUndefined();
     expect(memberRemoval.updates).toContainEqual(
@@ -820,6 +821,16 @@ describe('removeMemberAction', () => {
   it('removes a member, cleans visibility/integration/provider routing, writes audit, and revalidates', async () => {
     const { tx, deletes, inserts, updates } = makeTx([
       [{ role: 'owner' }],
+      [
+        {
+          id: 'surface-link-id',
+          surface: 'telegram',
+          externalConversationKey: 'dm:42',
+          sessionId: 'surface-session-id',
+          teamId: TEAM_ID,
+          userId: MEMBER_ID,
+        },
+      ],
       [{ source: 'web', visibility: 'specific_users', visibilityUserIds: [MEMBER_ID] }],
       [
         {
@@ -847,6 +858,14 @@ describe('removeMemberAction', () => {
       MEMBER_ID,
     );
     expect(updates).toContainEqual(expect.objectContaining({ removedByUserId: USER_ID }));
+    expect(updates).toContainEqual(
+      expect.objectContaining({ status: 'cancelled', errorCode: 'membership_removed' }),
+    );
+    const archivedSessionUpdate = updates.find(
+      (update): update is { archivedAt: unknown } =>
+        typeof update === 'object' && update !== null && 'archivedAt' in update,
+    );
+    expect(archivedSessionUpdate?.archivedAt).toBeInstanceOf(Date);
     expect(updates).toContainEqual(
       expect.objectContaining({
         visibility: 'team',

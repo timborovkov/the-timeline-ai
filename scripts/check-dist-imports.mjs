@@ -1,5 +1,17 @@
 const checks = [
   {
+    name: '@timeline/shared conversation surfaces',
+    run: async () => {
+      const conversations = await import('@timeline/shared/conversation-surfaces');
+      if (conversations.DIRECT_CONVERSATION_TIMEOUT_MS !== 90_000) {
+        throw new Error('Direct-conversation timeout export is missing or incorrect');
+      }
+      if (conversations.directConversationTitle('  Weekly   update  ') !== 'Weekly update') {
+        throw new Error('Direct-conversation title export did not normalize whitespace');
+      }
+    },
+  },
+  {
     name: '@timeline/shared calendar recurrence',
     run: async () => {
       const recurrence = await import('../packages/shared/dist/calendar/recurrence.js');

@@ -43,6 +43,19 @@ project-invalidation cursors. Primary project ownership remains a canonical
 task-to-project `child` relationship in `entity_relationships`, with database
 guards preventing a task from acquiring a second primary project.
 
+Migration `0063_conversation_surfaces.sql` adds the text
+`chat_sessions.surface` discriminator, the provider-neutral active-session
+link, and the durable direct-agent turn ledger. Surface identifiers and external
+conversation keys stay opaque so future providers do not need
+provider-specific session columns.
+
+Migration `0064_chat_message_sequence.sql` gives every persisted chat message a
+monotonic sequence and indexes sessions by that sequence. Existing rows are
+backfilled deterministically by session, creation time, and id before the
+insert default is enabled. Conversation replay and web hydration therefore
+preserve user/assistant insertion order even when one transaction gives both
+messages the same timestamp.
+
 ## Connection guardrails
 
 Runtime Postgres clients should come from `createPgClient()` or `getDb()`, not a

@@ -19,6 +19,10 @@ export interface TelegramApi {
     text: string;
     parse_mode?: 'HTML' | 'MarkdownV2';
     reply_to_message_id?: number;
+    reply_parameters?: {
+      message_id: number;
+      allow_sending_without_reply?: boolean;
+    };
     reply_markup?: unknown;
   }): Promise<void>;
   getChatAdministrators(input: { chat_id: number }): Promise<TelegramAdminListEntry[]>;
@@ -50,7 +54,10 @@ export interface TelegramApi {
 }
 
 export class HttpTelegramApi implements TelegramApi {
-  constructor(private readonly token: string) {
+  constructor(
+    private readonly token: string,
+    private readonly requestTimeoutMs = 10_000,
+  ) {
     if (!token) throw new Error('TELEGRAM_BOT_TOKEN is required');
   }
 
@@ -59,6 +66,7 @@ export class HttpTelegramApi implements TelegramApi {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(this.requestTimeoutMs),
     });
     if (!res.ok) {
       const text = await res.text().catch(() => '');
@@ -108,7 +116,9 @@ export class HttpTelegramApi implements TelegramApi {
   }
 
   async downloadFile(filePath: string, maxBytes?: number): Promise<Buffer> {
-    const res = await fetch(`https://api.telegram.org/file/bot${this.token}/${filePath}`);
+    const res = await fetch(`https://api.telegram.org/file/bot${this.token}/${filePath}`, {
+      signal: AbortSignal.timeout(this.requestTimeoutMs),
+    });
     if (!res.ok) {
       throw new Error(`Telegram file download failed: ${res.status}`);
     }

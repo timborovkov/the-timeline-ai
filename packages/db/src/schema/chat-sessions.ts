@@ -15,6 +15,7 @@ export const chatSessions = pgTable(
       .notNull()
       .references(() => teams.id, { onDelete: 'cascade' }),
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    surface: text('surface').notNull().default('web'),
     title: text('title'),
     pinnedEntityId: uuid('pinned_entity_id').references(() => entities.id, {
       onDelete: 'set null',

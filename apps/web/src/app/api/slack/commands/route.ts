@@ -1,9 +1,11 @@
+import { redactConversationError } from '@timeline/shared/conversation-surfaces';
 import * as email from '@timeline/shared/email';
 import { getEnv } from '@timeline/shared/env';
 import { childLogger } from '@timeline/shared/logger';
 import * as rateLimit from '@timeline/shared/rate-limit';
 import * as slack from '@timeline/shared/slack';
 
+import { slackIngestDeps } from '@/app/api/slack/_shared';
 import { db } from '@/lib/db';
 import {
   payloadTooLargeResponse,
@@ -16,6 +18,15 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const log = childLogger('web:api:slack:commands');
+
+function reportDispatchFailure(err: unknown): void {
+  const safeError = redactConversationError(err);
+  log.error({ err: safeError }, 'slack slash command failed');
+  reportCaughtError(safeError, {
+    surface: 'background',
+    operation: 'slack_slash_command',
+  });
+}
 
 export async function POST(req: Request): Promise<Response> {
   const env = getEnv();
@@ -74,27 +85,29 @@ export async function POST(req: Request): Promise<Response> {
     });
   }
 
-  void slack
-    .handleSlackSlashCommand(
-      {
-        db,
-        onAgentToolError(err, context) {
-          reportCaughtError(err, {
-            surface: 'background',
-            operation: 'slack_agent_tool_call',
-            tags: { tool: context.tool },
-          });
-        },
-        onAgentError(err) {
-          reportCaughtError(err, { surface: 'background', operation: 'slack_agent_run' });
-        },
+  const dispatch = slack.handleSlackSlashCommand(
+    {
+      db,
+      ...slackIngestDeps(),
+      onAgentToolError(err, context) {
+        reportCaughtError(err, {
+          surface: 'background',
+          operation: 'slack_agent_tool_call',
+          tags: { tool: context.tool },
+        });
       },
-      input,
-    )
-    .catch((err: unknown) => {
-      log.error({ err }, 'slack slash command failed');
-      reportCaughtError(err, { surface: 'background', operation: 'slack_slash_command' });
-    });
+      onAgentError(err) {
+        reportCaughtError(err, { surface: 'background', operation: 'slack_agent_run' });
+      },
+    },
+    input,
+    { deferStatelessAsk: true },
+  );
+  if (input.command === '/ask') {
+    await dispatch.catch(reportDispatchFailure);
+  } else {
+    void dispatch.catch(reportDispatchFailure);
+  }
   return Response.json(
     {
       response_type: 'ephemeral',

@@ -19,6 +19,7 @@ const pgliteTests = [
   'src/boards/index.test.ts',
   'src/calendar/raw-events.test.ts',
   'src/calendar/scope.test.ts',
+  'src/conversation-surfaces/scope.test.ts',
   'src/documents/scope.test.ts',
   'src/email/dispatcher.test.ts',
   'src/embedding/sources.test.ts',

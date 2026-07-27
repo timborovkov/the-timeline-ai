@@ -16,6 +16,7 @@ const env = {
 };
 
 const integrationTests = [
+  'src/workers/conversationAgent.test.ts',
   'src/workers/documentExtract.test.ts',
   'src/workers/embed.test.ts',
   'src/workers/extract.test.ts',

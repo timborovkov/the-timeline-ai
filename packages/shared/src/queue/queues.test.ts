@@ -209,6 +209,60 @@ describe('queue wrappers', () => {
     });
   });
 
+  it('uses the durable conversation turn UUID as the retryable agent job id', async () => {
+    const queues = await importQueues();
+    const turnId = '11111111-1111-4111-8111-111111111111';
+    const data = {
+      turnId,
+      teamId: '22222222-2222-4222-8222-222222222222',
+      userId: '33333333-3333-4333-8333-333333333333',
+    };
+
+    const first = await queues.enqueueConversationAgentJob(data);
+    const duplicate = await queues.enqueueConversationAgentJob(data);
+
+    expect(fakes.queues[0]?.name).toBe('conversation-agent');
+    expect(fakes.queues[0]?.options).toMatchObject({
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 2000 },
+        removeOnComplete: { age: 3600, count: 1000 },
+        removeOnFail: { age: 86400 },
+      },
+    });
+    expect(fakes.queues[0]?.addCalls).toEqual([
+      {
+        name: 'conversation-agent',
+        data,
+        opts: { jobId: turnId },
+      },
+    ]);
+    expect(first).toEqual({ enqueued: true, jobId: turnId });
+    expect(duplicate).toEqual({ enqueued: false, jobId: turnId });
+
+    await queues.closeConversationAgentQueue();
+    expect(fakes.queues[0]?.close).toHaveBeenCalledOnce();
+  });
+
+  it('replaces a retained failed conversation-agent job on provider redelivery', async () => {
+    const queues = await importQueues();
+    const turnId = '11111111-1111-4111-8111-111111111111';
+    const data = {
+      turnId,
+      teamId: '22222222-2222-4222-8222-222222222222',
+      userId: '33333333-3333-4333-8333-333333333333',
+    };
+    await queues.enqueueConversationAgentJob(data);
+    const conversationQueue = fakes.queues[0];
+    conversationQueue?.jobStates.set(turnId, 'failed');
+
+    await expect(queues.enqueueConversationAgentJob(data)).resolves.toEqual({
+      enqueued: true,
+      jobId: turnId,
+    });
+    expect(conversationQueue?.addCalls).toHaveLength(2);
+  });
+
   it('coalesces targeted integration sync bursts by resource while leaving broad syncs undeduped', async () => {
     const queues = await importQueues();
     const targeted = {

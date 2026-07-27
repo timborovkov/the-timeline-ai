@@ -142,17 +142,16 @@
         <li><strong>Web/PWA</strong>: typed notes, uploaded audio, drag-and-drop documents.</li>
         <li>
           <strong>Telegram bot</strong>: voice memos, text, forwarded messages. Personal DMs and
-          team group chats both supported. Plain messages land as timeline notes (DM captures are
-          acknowledged with a <code>👀</code> reaction so capture is visible without adding group
-          noise); <code>/ask &lt;question&gt;</code>
-          runs the same agent as the web chat and replies in-thread, including for unlinked senders
-          in bound group chats.
+          team group chats both supported. Plain DMs are private, durable agent conversations;
+          <code>/note</code> captures text, and media always ingests. Groups remain capture-first
+          and require <code>/ask</code> for a stateless answer.
         </li>
         <li>
           <strong>Slack bot</strong>: OAuth install, OAuth user linking, DMs, bound channels/private
-          channels, <code>/ask</code> private answers, and <code>@Timeline</code> threaded answers.
-          Bound-channel asks can answer for unlinked senders using team-visible history, and sender
-          context is preserved even when the sender is not linked to a Timeline user.
+          channels, direct agent conversations, <code>/ask</code> compatibility, explicit
+          <code>/timeline note</code> capture, and <code>@Timeline</code> threaded answers.
+          Bound-channel asks can answer for unlinked senders using team-visible history, while DM
+          team choices remain inside the installed Slack workspace boundary.
         </li>
         <li>
           <strong>Email ingest</strong>: forward, CC, or BCC to a per-team address. Postmark handles
@@ -272,9 +271,10 @@
           <strong>Agent chat.</strong> Natural-language queries over the timeline and document base.
           Tool-use pattern: agent queries Qdrant for semantic context, queries Postgres for
           structured filters and document versions, synthesizes an answer with event/document
-          citations. Available with citation UI in the web app at <code>/app/chat</code>; Telegram
-          and Slack bot asks share the same system prompt, tool set, and team scope, then deliver
-          plain-text replies for chat readability.
+          citations. Available with citation UI in the web app at <code>/app/chat</code>. Telegram
+          and Slack direct text share one durable worker-backed runtime, bounded private history, a
+          90-second deadline, and cached delivery; their sessions also appear in web chat history.
+          Group/channel invocations remain stateless and deliver plain text for chat readability.
         </li>
       </ul>
 
@@ -418,9 +418,11 @@
           against team-visible history without completing a personal link first.
         </li>
         <li>
-          <strong>DMs</strong> have a per-user active-team pointer. Users link multiple teams and
-          switch via <code>/team</code>. <code>/whereami</code> confirms current attribution before
-          sending sensitive content.
+          <strong>DMs</strong> have a per-user active-team pointer. After one verified personal
+          link, <code>/team</code> discovers every current Timeline membership automatically;
+          routing rows remember the selection rather than define eligibility.
+          <code>/whereami</code> confirms the current team, and a real switch archives the prior
+          private agent session.
         </li>
         <li>
           <strong>Link tokens</strong> are scoped (<code>personal</code> or <code>group</code>),
@@ -482,8 +484,8 @@
         </li>
         <li>
           <strong><code>worker</code></strong> — BullMQ workers for transcription, extraction,
-          embeddings, meetings, integrations, maintenance, and exports. Runs from
-          <code>apps/worker/railway.json</code>.
+          embeddings, direct conversation agents, meetings, integrations, maintenance, and exports.
+          Runs from <code>apps/worker/railway.json</code>.
         </li>
         <li><strong>Postgres</strong> — Railway managed plugin.</li>
         <li><strong>Redis</strong> — Railway managed plugin.</li>

@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 const vitestBin = process.platform === 'win32' ? 'vitest.cmd' : 'vitest';
 
 const integrationTests = [
+  'src/workers/conversationAgent.test.ts',
   'src/workers/documentExtract.test.ts',
   'src/workers/embed.test.ts',
   'src/workers/extract.test.ts',

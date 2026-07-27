@@ -115,6 +115,9 @@ Ask, Work, Documents, Meetings, Connections, and Team.
 - Main page container: one shell-owned `max-w-6xl`; routes must not create a
   competing outer page width.
 - Full-canvas chat and boards may opt into full bleed.
+- Provider-created chat sessions use a compact `TG`, `SL`, or neutral `EXT`
+  badge in desktop and mobile history. Web-created sessions remain unbadged;
+  provider identity must not replace the human-readable session title.
 - Inspector: hidden until content exists. Desktop uses the right pane; mobile
   uses a focus-managed bottom sheet.
 - Work routes share `WorkSubnav`: Overview, Pinned, Objects, Tasks, Boards,
@@ -359,3 +362,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-07-14 | Internal identifiers behind `TechnicalDetails` | Keeps auditability without leaking implementation detail into product copy. |
 | 2026-07-14 | Attention + Ask Home | Makes the first screen action-oriented instead of duplicating navigation. |
 | 2026-07-20 | Quiet, full-width Home with universal work pins | Removes redundant headings and card weight while letting people keep any important work item close. |
+| 2026-07-27 | Cross-surface chat history badges | Makes Telegram and Slack transcripts recognizable without changing ordinary web sessions. |

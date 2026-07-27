@@ -73,6 +73,9 @@ export const QUEUE_NAMES = {
   // when an eligible moment has no matching presentation cache; consumed by
   // the timeline-moment-presentation worker.
   timelineMomentPresentation: 'timeline-moment-presentation',
+  // Durable direct-message agent work shared by Telegram, Slack, and future
+  // conversational providers. The UUID job id matches the persisted turn.
+  conversationAgent: 'conversation-agent',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -1389,5 +1392,53 @@ export async function enqueueTimelineMomentPresentationJob(
 export async function closeTimelineMomentPresentationQueue(): Promise<void> {
   await closeQueue(_timelineMomentPresentationQueue, () => {
     _timelineMomentPresentationQueue = undefined;
+  });
+}
+
+export interface ConversationAgentJobData {
+  turnId: string;
+  teamId: string;
+  userId: string;
+}
+
+let _conversationAgentQueue: TimelineQueue<ConversationAgentJobData> | undefined;
+
+export function getConversationAgentQueue(): TimelineQueue<ConversationAgentJobData> {
+  if (_conversationAgentQueue) return _conversationAgentQueue;
+  _conversationAgentQueue = createTimelineQueue<ConversationAgentJobData>(
+    QUEUE_NAMES.conversationAgent,
+    {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 2000 },
+      removeOnComplete: { age: 3600, count: 1000 },
+      removeOnFail: { age: 24 * 3600 },
+    },
+  );
+  return _conversationAgentQueue;
+}
+
+export async function enqueueConversationAgentJob(
+  data: ConversationAgentJobData,
+): Promise<{ enqueued: boolean; jobId: string }> {
+  const queue = getConversationAgentQueue();
+  const existing = (await queue.getJob(data.turnId)) as ExistingJobLike | null;
+  if (existing) {
+    const state = await existing.getState?.().catch(() => null);
+    if (state !== 'failed' || !existing.remove) {
+      return { enqueued: false, jobId: data.turnId };
+    }
+    const removed = await existing.remove().then(
+      () => true,
+      () => false,
+    );
+    if (!removed) return { enqueued: false, jobId: data.turnId };
+  }
+  await queue.add('conversation-agent', data, { jobId: data.turnId });
+  return { enqueued: true, jobId: data.turnId };
+}
+
+export async function closeConversationAgentQueue(): Promise<void> {
+  await closeQueue(_conversationAgentQueue, () => {
+    _conversationAgentQueue = undefined;
   });
 }
