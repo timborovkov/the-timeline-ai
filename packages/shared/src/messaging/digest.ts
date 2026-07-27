@@ -29,7 +29,6 @@ import {
 const log = childLogger('digest');
 const DEFAULT_WORKSPACE_TIMEZONE = 'Europe/Helsinki';
 const DEFAULT_DIGEST_HOUR = 12;
-const FRESH_DIGEST_WINDOW_MS = 24 * 60 * 60 * 1000;
 const QUIET_DIGEST_SUMMARY = 'No useful activity for this digest window.';
 const QUIET_DIGEST_REASON = 'No useful digest content in this window.';
 
@@ -360,8 +359,12 @@ function addDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
 }
 
-function freshDigestCutoff(windowEnd: Date): Date {
-  return new Date(windowEnd.getTime() - FRESH_DIGEST_WINDOW_MS);
+function freshDigestCutoff(windowEnd: Date, timezone: string): Date {
+  return dateFromInstant(
+    zonedDateTimeFromDate(windowEnd, assertValidTimezone(timezone))
+      .subtract({ days: 1 })
+      .toInstant(),
+  );
 }
 
 function hasUsefulDigestContent(input: {
@@ -563,7 +566,7 @@ async function persistQuietDailyDigest(input: {
     };
   }
   if (stored) {
-    await input.request.db
+    const [updated] = await input.request.db
       .update(dailyDigests)
       .set({
         summary: QUIET_DIGEST_SUMMARY,
@@ -571,7 +574,32 @@ async function persistQuietDailyDigest(input: {
         status: 'skipped',
         error: QUIET_DIGEST_REASON,
       })
-      .where(eq(dailyDigests.id, stored.id));
+      .where(
+        and(eq(dailyDigests.id, stored.id), inArray(dailyDigests.status, ['skipped', 'failed'])),
+      )
+      .returning({ id: dailyDigests.id });
+    if (updated?.id) {
+      return { digestId: updated.id, payload: input.payload, skipped: true };
+    }
+    const [winner] = await input.request.db
+      .select({ id: dailyDigests.id, payload: dailyDigests.payload, status: dailyDigests.status })
+      .from(dailyDigests)
+      .where(
+        and(
+          eq(dailyDigests.teamId, input.request.teamId),
+          eq(dailyDigests.userId, input.request.userId),
+          eq(dailyDigests.windowStart, input.request.windowStart),
+          eq(dailyDigests.windowEnd, input.request.windowEnd),
+        ),
+      )
+      .limit(1);
+    if (winner?.status === 'generated' || winner?.status === 'sent') {
+      return {
+        digestId: winner.id,
+        payload: winner.payload as DailyDigestPayload,
+        skipped: false,
+      };
+    }
   }
   return {
     digestId: stored?.id ?? '',
@@ -696,7 +724,7 @@ export async function generateDailyDigest(
       skipped: false,
     };
   }
-  const freshCutoff = freshDigestCutoff(input.windowEnd);
+  const freshCutoff = freshDigestCutoff(input.windowEnd, preference.timezone);
   const upcomingTo = addDays(now, 7);
   const [team, userRows, events, pendingApprovals, currentTasks, upcomingCalendar, newMembers] =
     await Promise.all([
@@ -911,7 +939,7 @@ export async function generateDailyDigest(
         )
         .limit(1);
   if (existing[0]?.status === 'skipped' || existing[0]?.status === 'failed') {
-    await input.db
+    const [updated] = await input.db
       .update(dailyDigests)
       .set({
         summary: digestText.summary,
@@ -919,8 +947,31 @@ export async function generateDailyDigest(
         status: 'generated',
         error: null,
       })
-      .where(eq(dailyDigests.id, existing[0].id));
-    return { digestId: existing[0].id, payload, skipped: false };
+      .where(
+        and(
+          eq(dailyDigests.id, existing[0].id),
+          inArray(dailyDigests.status, ['skipped', 'failed']),
+        ),
+      )
+      .returning({ id: dailyDigests.id });
+    if (updated?.id) return { digestId: updated.id, payload, skipped: false };
+    const [winner] = await input.db
+      .select({ id: dailyDigests.id, payload: dailyDigests.payload })
+      .from(dailyDigests)
+      .where(
+        and(
+          eq(dailyDigests.teamId, input.teamId),
+          eq(dailyDigests.userId, input.userId),
+          eq(dailyDigests.windowStart, input.windowStart),
+          eq(dailyDigests.windowEnd, input.windowEnd),
+        ),
+      )
+      .limit(1);
+    return {
+      digestId: winner?.id ?? '',
+      payload: (winner?.payload as DailyDigestPayload | undefined) ?? payload,
+      skipped: false,
+    };
   }
   return {
     digestId: existing[0]?.id ?? '',

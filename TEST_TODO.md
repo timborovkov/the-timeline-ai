@@ -282,7 +282,9 @@ Legend:
   daily digest tests now prove digest prompts consume bundled moments instead
   of raw event rows while preserving source-event counts, and prove quiet
   windows skip summarization and delivery unless fresh activity, actionable
-  approvals, or upcoming calendar context makes the digest useful;
+  approvals, or upcoming calendar context makes the digest useful; retry-race
+  coverage preserves concurrently generated/sent rows, while fall-back and
+  spring-forward cases pin daylight-saving-safe fresh-cycle boundaries;
   timeline observability tests now pin privacy-safe page/API dogfooding counters
   for row-count reduction, scan pressure, missing grouping metadata, AI
   presentation cache status, and visibility cache partitioning;

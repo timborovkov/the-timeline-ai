@@ -78,7 +78,11 @@ describe('generateDailyDigest conflict handling', () => {
       update: vi.fn(() => ({
         set: vi.fn((values: unknown) => {
           updates.push(values);
-          return { where: vi.fn().mockResolvedValue(undefined) };
+          return {
+            where: vi.fn(() => ({
+              returning: vi.fn().mockResolvedValue([{ id: 'digest-1' }]),
+            })),
+          };
         }),
       })),
     };
@@ -137,7 +141,11 @@ describe('generateDailyDigest conflict handling', () => {
       update: vi.fn(() => ({
         set: vi.fn((values: unknown) => {
           updates.push(values);
-          return { where: vi.fn().mockResolvedValue(undefined) };
+          return {
+            where: vi.fn(() => ({
+              returning: vi.fn().mockResolvedValue([{ id: 'digest-1' }]),
+            })),
+          };
         }),
       })),
     };
