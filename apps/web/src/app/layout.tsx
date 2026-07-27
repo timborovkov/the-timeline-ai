@@ -87,7 +87,8 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     title: 'The Timeline',
-    statusBarStyle: 'black-translucent',
+    // Non-overlaying: black-translucent draws under the status bar without safe-area padding.
+    statusBarStyle: 'black',
   },
   openGraph: {
     title: 'The Timeline — The operations log your team can talk to',

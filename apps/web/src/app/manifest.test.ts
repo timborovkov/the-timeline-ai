@@ -7,6 +7,7 @@ describe('web app manifest', () => {
     const result = manifest();
 
     expect(result.name).toBe('The Timeline');
+    expect(result.id).toBe('/');
     expect(result.start_url).toBe('/app');
     expect(result.display).toBe('standalone');
     expect(result.icons).toEqual(

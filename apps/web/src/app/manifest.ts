@@ -6,6 +6,8 @@ export default function manifest(): MetadataRoute.Manifest {
     short_name: 'Timeline',
     description:
       'The operations log your team can talk to: capture work as it happens and query a cited team history.',
+    // Stable identity for existing installs; browsers fall back to start_url when id is absent.
+    id: '/',
     start_url: '/app',
     scope: '/',
     display: 'standalone',
