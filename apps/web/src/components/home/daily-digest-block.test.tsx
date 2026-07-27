@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import type { DailyDigestPayload } from '@timeline/shared/messaging';
 
@@ -29,12 +29,16 @@ const DIGEST: DailyDigestPayload = {
 };
 
 describe('DailyDigestBlock', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   it('keeps the complete digest payload inside the disclosure', () => {
     render(<DailyDigestBlock digest={DIGEST} />);
 
     const details = screen.getByText('Complete digest').closest('details');
     expect(details).toBeTruthy();
-    expect(details?.textContent).toContain('12 events');
+    expect(details?.textContent).not.toContain('12 events');
     expect(details?.textContent).toContain('7 moments');
     expect(details?.textContent).toContain('2 approvals');
     expect(details?.textContent).toContain('GitHub · 5');
@@ -42,5 +46,15 @@ describe('DailyDigestBlock', () => {
     expect(details?.textContent).toContain('Project · 3');
     expect(details?.textContent).toContain('Action item · 2');
     expect(details?.textContent).toContain('Grace Hopper');
+  });
+
+  it('falls back to event counts for legacy digests without momentCount', () => {
+    const { momentCount: _momentCount, ...legacyDigest } = DIGEST;
+    render(<DailyDigestBlock digest={legacyDigest} />);
+
+    const details = screen.getByText('Complete digest').closest('details');
+    expect(details?.textContent).toContain('12 events');
+    expect(details?.textContent).not.toContain('7 moments');
+    expect(details?.textContent).toContain('2 approvals');
   });
 });

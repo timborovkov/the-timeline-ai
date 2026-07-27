@@ -680,6 +680,55 @@ describe('shared timeline moments projection', () => {
     expect(moments.map((moment) => moment.rawEvents[0]?.id)).toEqual(['message-a', 'message-b']);
   });
 
+  it('labels multi-signal document and calendar moments with signals, not source events', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'doc-a',
+          source: 'document',
+          contentText: 'Uploaded notes',
+          occurredAt: '2026-06-27T18:00:00.000Z',
+          sourceMetadata: {
+            document_id: '00000000-0000-0000-0000-000000000123',
+            action: 'uploaded',
+          },
+        }),
+        event({
+          id: 'doc-b',
+          source: 'document',
+          contentText: 'Uploaded notes revision',
+          occurredAt: '2026-06-27T18:05:00.000Z',
+          sourceMetadata: {
+            document_id: '00000000-0000-0000-0000-000000000123',
+            action: 'uploaded',
+          },
+        }),
+        event({
+          id: 'cal-a',
+          source: 'calendar',
+          contentText: 'Standup',
+          occurredAt: '2026-06-27T19:00:00.000Z',
+          sourceMetadata: { calendar_event_id: 'cal-standup' },
+        }),
+        event({
+          id: 'cal-b',
+          source: 'calendar',
+          contentText: 'Standup update',
+          occurredAt: '2026-06-27T19:05:00.000Z',
+          sourceMetadata: { calendar_event_id: 'cal-standup' },
+        }),
+      ],
+      new Map(),
+    );
+
+    const documentMoment = moments.find((moment) => moment.rawEvents[0]?.source === 'document');
+    const calendarMoment = moments.find((moment) => moment.rawEvents[0]?.source === 'calendar');
+    expect(documentMoment?.subtitle).toBe('2 signals');
+    expect(documentMoment?.subtitle).not.toContain('source event');
+    expect(calendarMoment?.subtitle).toBe('2 signals');
+    expect(calendarMoment?.subtitle).not.toContain('source event');
+  });
+
   it('diagnoses integration events that would fall back to weak grouping metadata', () => {
     const diagnostics = timelineMomentDiagnostics([
       event({

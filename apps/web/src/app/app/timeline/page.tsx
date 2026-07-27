@@ -30,8 +30,11 @@ import {
   parseTimelineOrigins,
   parseTimelineSources,
   timelineHref,
+  timelineLoadedCount,
+  timelineLoadedSrLabel,
   timelineOriginOptions,
   timelineOriginValue,
+  timelinePresetCountLabel,
   timelineSourceValues,
 } from '@/lib/timeline-controls';
 import {
@@ -327,6 +330,8 @@ export default async function TimelinePage({ searchParams }: Props) {
           )
         ).map(toTimelineMomentDto)
       : [];
+  const momentCount = initialMoments.length;
+  const loadedCount = timelineLoadedCount(mode, momentCount, eventCount);
   const momentPinState = await scope.pins.isPinnedMany(
     initialMoments.map((moment) => ({ kind: 'timeline_moment' as const, key: moment.id })),
   );
@@ -363,11 +368,11 @@ export default async function TimelinePage({ searchParams }: Props) {
   return (
     <div className="space-y-6">
       <IndexStrip
-        srLabel={`Timeline · ${active.teamName} · ${eventCount} event${eventCount === 1 ? '' : 's'} loaded${hasFilters ? ' · filters on' : ''}`}
+        srLabel={`Timeline · ${active.teamName} · ${timelineLoadedSrLabel(mode, loadedCount)}${hasFilters ? ' · filters on' : ''}`}
         segments={[
           { value: 'TIMELINE' },
           { label: 'team', value: active.teamName },
-          { label: 'loaded', value: eventCount },
+          { label: 'loaded', value: loadedCount },
           ...(sourceLabel
             ? ([{ label: 'source', value: sourceLabel, signal: true }] as const)
             : []),
@@ -725,9 +730,7 @@ function TimelinePresetControls({
         })}
       </nav>
       <p className="min-w-0 flex-1 text-xs leading-5 text-fg-dim md:text-right">
-        {mode === 'moments'
-          ? `${momentCount} ${momentCount === 1 ? 'moment' : 'moments'} · ${eventCount} source ${eventCount === 1 ? 'event' : 'events'}`
-          : `${eventCount} source ${eventCount === 1 ? 'event' : 'events'}`}
+        {timelinePresetCountLabel(mode, momentCount, eventCount)}
       </p>
       <nav
         aria-label="Timeline mode"

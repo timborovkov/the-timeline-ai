@@ -268,7 +268,8 @@ describe('digest map-reduce summarization', () => {
       now: new Date('2026-06-14T12:05:00Z'),
     });
 
-    expect(result.payload.summary).toMatch(/work moments from 60 source events/);
+    expect(result.payload.summary).toMatch(/60 work moments/);
+    expect(result.payload.summary).not.toMatch(/from 60 source events/);
     expect(result.payload.eventCount).toBe(60);
     expect(result.payload.sections).toEqual([]);
   });
@@ -353,7 +354,8 @@ describe('digest map-reduce summarization', () => {
     });
 
     expect(fakes.chatStructured).toHaveBeenCalledTimes(1);
-    expect(result.payload.summary).toMatch(/work moments from 5 source events/);
+    expect(result.payload.summary).toMatch(/5 work moments/);
+    expect(result.payload.summary).not.toMatch(/from 5 source events/);
     expect(result.payload.eventCount).toBe(5);
     expect(result.payload.sections).toEqual([]);
   });

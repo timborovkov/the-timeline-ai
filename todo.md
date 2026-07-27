@@ -108,10 +108,13 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       reads without blocking the page/API response, then filled asynchronously
       by the worker after rebuilding the same visible cache key. Daily digest
       generation now summarizes bundled moment briefs, applies matching cached
-      AI presentations, and renders moment counts while preserving raw
-      source-event counts. It durably skips quiet windows before summarization
+      AI presentations, and leads user-facing digest copy with moment counts
+      while retaining raw eventCount / sourceDistribution for internal metrics
+      and per-source detail. It durably skips quiet windows before summarization
       and email delivery unless the recipient has fresh local-cycle activity,
-      pending approvals, or upcoming calendar context. The
+      pending approvals, or upcoming calendar context. Timeline Moments chrome
+      and IndexStrip loaded counts also lead with moments (Audit trail keeps
+      source-event counts). The
       `timeline-moment-presentations` worker script now provides bounded,
       dry-run-first production prewarming for missing AI presentation cache jobs.
       Timeline page/API reads now emit privacy-safe `timeline_moments_viewed`
