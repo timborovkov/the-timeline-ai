@@ -78,7 +78,9 @@ export const chatSurfaceTurns = pgTable(
     uniqueIndex('chat_surface_turns_surface_event_unq').on(table.surface, table.externalEventId),
     uniqueIndex('chat_surface_turns_active_conversation_unq')
       .on(table.surface, table.externalConversationKey)
-      .where(sql`${table.status} in ('queued', 'processing')`),
+      .where(
+        sql`${table.deliveredAt} is null and ${table.status} in ('queued', 'processing', 'answered', 'failed', 'timed_out')`,
+      ),
     index('chat_surface_turns_team_idx').on(table.teamId),
     index('chat_surface_turns_user_idx').on(table.userId),
     index('chat_surface_turns_session_idx').on(table.chatSessionId),

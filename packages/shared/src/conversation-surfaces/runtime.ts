@@ -1,6 +1,7 @@
 import { type Db } from '@timeline/db';
 
 import { redactConversationError } from '#src/conversation-surfaces/privacy.js';
+import { type ConversationDbTransaction } from '#src/conversation-surfaces/scope.js';
 import {
   CONVERSATION_AGENT_BUSY_MESSAGE,
   CONVERSATION_AGENT_FAILURE_MESSAGE,
@@ -19,8 +20,10 @@ export type AcceptDirectAgentTurnResult =
   | { status: 'queued' | 'duplicate'; turnId: string; sessionId: string }
   | { status: 'busy' | 'rate_limited' | 'failed' };
 
-interface AcceptDirectAgentTurnOptions {
+export interface AcceptDirectAgentTurnOptions {
   providerAcknowledgement?: 'wait' | 'background';
+  validateRoute?: (tx: ConversationDbTransaction) => Promise<boolean>;
+  routeInactiveMessage?: string;
 }
 
 async function runProviderAcknowledgement(
@@ -107,7 +110,9 @@ export async function acceptDirectAgentTurn(
   const scope = withTeam(db, request.teamId, request.userId);
   let result;
   try {
-    result = await scope.conversations.createTurn(request);
+    result = await scope.conversations.createTurn(request, {
+      ...(options.validateRoute ? { validateRoute: options.validateRoute } : {}),
+    });
   } catch (err) {
     log.warn(
       {
@@ -147,6 +152,14 @@ export async function acceptDirectAgentTurn(
     );
     return { status: 'rate_limited' };
   }
+  if (result.status === 'route_inactive') {
+    await deliverAcceptanceFailure(
+      adapter,
+      options.routeInactiveMessage ?? CONVERSATION_AGENT_FAILURE_MESSAGE,
+      options,
+    );
+    return { status: 'failed' };
+  }
   if (result.turn.status === 'delivered' || result.turn.deliveredAt) {
     return {
       status: 'duplicate',
@@ -167,7 +180,11 @@ export async function acceptDirectAgentTurn(
     };
   }
   try {
-    await enqueueConversationAgentJob({ turnId: result.turn.id });
+    await enqueueConversationAgentJob({
+      turnId: result.turn.id,
+      teamId: request.teamId,
+      userId: request.userId,
+    });
     const stopInitialProgress = await runProviderAcknowledgement(adapter, options);
     if (stopInitialProgress) {
       void stopProgressAfterQueue(scope.conversations, result.turn.id, stopInitialProgress);

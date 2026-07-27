@@ -697,14 +697,14 @@ async function cmdWhereamiDm(ctx: DmContext): Promise<void> {
 async function cmdUnlinkDm(ctx: DmContext, _arg: string): Promise<void> {
   // Phase 2: simple unlink-all-from-this-TG-user with single confirmation step.
   // No "are you sure" round trip; product-brief doesn't require it for DMs.
-  if (ctx.activeTeamId && ctx.tgUserRow.userId) {
-    await withTeam(ctx.db, ctx.activeTeamId, ctx.tgUserRow.userId, {
-      skipMembershipCheck: true,
-    }).conversations.resetSession(
-      directTelegramIdentity(ctx, ctx.activeTeamId, ctx.tgUserRow.userId),
-    );
-  }
   const deleted = await ctx.db.transaction(async (tx) => {
+    if (ctx.activeTeamId && ctx.tgUserRow.userId) {
+      await resetSurfaceSessionInTransaction(
+        tx,
+        directTelegramIdentity(ctx, ctx.activeTeamId, ctx.tgUserRow.userId),
+        'unlinked',
+      );
+    }
     const rows = await tx
       .delete(telegramUserTeams)
       .where(eq(telegramUserTeams.telegramUserId, ctx.tgUserRow.id))
@@ -786,6 +786,34 @@ async function queueDmAgentTurn(ctx: DmContext, question: string): Promise<void>
       externalConversationKey: identity.externalConversationKey,
       externalMessageId: String(ctx.message.message_id),
     }),
+    {
+      validateRoute: async (tx) => {
+        const rows = await tx
+          .select({ id: telegramUserTeams.id })
+          .from(telegramUserTeams)
+          .innerJoin(telegramUsers, eq(telegramUsers.id, telegramUserTeams.telegramUserId))
+          .innerJoin(
+            teamMembers,
+            and(
+              eq(teamMembers.teamId, telegramUserTeams.teamId),
+              eq(teamMembers.userId, telegramUsers.userId),
+              isNull(teamMembers.removedAt),
+            ),
+          )
+          .where(
+            and(
+              eq(telegramUserTeams.telegramUserId, ctx.tgUserRow.id),
+              eq(telegramUserTeams.teamId, identity.teamId),
+              eq(telegramUserTeams.isActive, true),
+              eq(telegramUsers.userId, identity.userId),
+            ),
+          )
+          .limit(1);
+        return Boolean(rows[0]);
+      },
+      routeInactiveMessage:
+        'This Telegram chat is no longer linked. Link it again before asking the agent.',
+    },
   );
 }
 

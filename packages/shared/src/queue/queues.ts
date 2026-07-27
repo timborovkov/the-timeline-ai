@@ -1397,6 +1397,8 @@ export async function closeTimelineMomentPresentationQueue(): Promise<void> {
 
 export interface ConversationAgentJobData {
   turnId: string;
+  teamId: string;
+  userId: string;
 }
 
 let _conversationAgentQueue: TimelineQueue<ConversationAgentJobData> | undefined;

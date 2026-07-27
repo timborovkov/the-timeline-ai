@@ -19,6 +19,10 @@ export interface TelegramApi {
     text: string;
     parse_mode?: 'HTML' | 'MarkdownV2';
     reply_to_message_id?: number;
+    reply_parameters?: {
+      message_id: number;
+      allow_sending_without_reply?: boolean;
+    };
     reply_markup?: unknown;
   }): Promise<void>;
   getChatAdministrators(input: { chat_id: number }): Promise<TelegramAdminListEntry[]>;

@@ -1,11 +1,14 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
+  chatSurfaceSessionLinks,
   chatSurfaceTurns,
   meetingCaptureConfirmations,
   meetings,
   reconciliationEvidence,
   savedMeetingAliases,
   savedMeetings,
+  telegramUsers,
+  telegramUserTeams,
 } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -16,6 +19,7 @@ import type { TelegramApi } from '#src/telegram/api.js';
 
 import { resetEnvForTests } from '#src/env.js';
 import { resetMeetingBotProviderForTests } from '#src/meeting-bots/index.js';
+import { createTelegramConversationDeliveryAdapter } from '#src/telegram/conversation-adapter.js';
 import {
   handleUpdate,
   parseCommand,
@@ -295,6 +299,28 @@ describe('startTelegramTypingHeartbeat', () => {
     await Promise.resolve();
 
     expect(sendChatAction).toHaveBeenCalledOnce();
+  });
+});
+
+describe('Telegram conversation delivery', () => {
+  it('still sends the answer if the original prompt was deleted', async () => {
+    const sendMessage = vi.fn().mockResolvedValue(undefined);
+    const delivery = createTelegramConversationDeliveryAdapter({
+      api: { ...fakeTg, sendMessage },
+      externalConversationKey: 'dm:42',
+      externalMessageId: '123',
+    });
+
+    await delivery.deliverAnswer('Durable answer');
+
+    expect(sendMessage).toHaveBeenCalledWith({
+      chat_id: 42,
+      text: 'Durable answer',
+      reply_parameters: {
+        message_id: 123,
+        allow_sending_without_reply: true,
+      },
+    });
   });
 });
 
@@ -822,6 +848,44 @@ describe('handleUpdate telegram edit visibility', () => {
     ]) {
       expect(messages[0]).toContain(command);
     }
+  });
+
+  it('cancels the active session and revokes Telegram routing together on /unlink', async () => {
+    await handleUpdate(
+      { db: db as never, tg: fakeTg },
+      {
+        update_id: 2161,
+        message: {
+          message_id: 361,
+          date: 1700000000,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          text: 'What changed?',
+        },
+      },
+    );
+    expect(await db.select().from(chatSurfaceSessionLinks)).toHaveLength(1);
+
+    await handleUpdate(
+      { db: db as never, tg: fakeTg },
+      {
+        update_id: 2162,
+        message: {
+          message_id: 362,
+          date: 1700000001,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          text: '/unlink',
+        },
+      },
+    );
+
+    expect(await db.select().from(chatSurfaceSessionLinks)).toHaveLength(0);
+    expect(await db.select().from(telegramUserTeams)).toHaveLength(0);
+    expect(await db.select().from(telegramUsers)).toMatchObject([{ userId: null }]);
+    expect(await db.select().from(chatSurfaceTurns)).toMatchObject([
+      { status: 'cancelled', errorCode: 'unlinked' },
+    ]);
   });
 
   it('joins a Saved Meeting alias immediately from /join', async () => {

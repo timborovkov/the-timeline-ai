@@ -212,9 +212,14 @@ describe('queue wrappers', () => {
   it('uses the durable conversation turn UUID as the retryable agent job id', async () => {
     const queues = await importQueues();
     const turnId = '11111111-1111-4111-8111-111111111111';
+    const data = {
+      turnId,
+      teamId: '22222222-2222-4222-8222-222222222222',
+      userId: '33333333-3333-4333-8333-333333333333',
+    };
 
-    const first = await queues.enqueueConversationAgentJob({ turnId });
-    const duplicate = await queues.enqueueConversationAgentJob({ turnId });
+    const first = await queues.enqueueConversationAgentJob(data);
+    const duplicate = await queues.enqueueConversationAgentJob(data);
 
     expect(fakes.queues[0]?.name).toBe('conversation-agent');
     expect(fakes.queues[0]?.options).toMatchObject({
@@ -228,7 +233,7 @@ describe('queue wrappers', () => {
     expect(fakes.queues[0]?.addCalls).toEqual([
       {
         name: 'conversation-agent',
-        data: { turnId },
+        data,
         opts: { jobId: turnId },
       },
     ]);
@@ -242,11 +247,16 @@ describe('queue wrappers', () => {
   it('replaces a retained failed conversation-agent job on provider redelivery', async () => {
     const queues = await importQueues();
     const turnId = '11111111-1111-4111-8111-111111111111';
-    await queues.enqueueConversationAgentJob({ turnId });
+    const data = {
+      turnId,
+      teamId: '22222222-2222-4222-8222-222222222222',
+      userId: '33333333-3333-4333-8333-333333333333',
+    };
+    await queues.enqueueConversationAgentJob(data);
     const conversationQueue = fakes.queues[0];
     conversationQueue?.jobStates.set(turnId, 'failed');
 
-    await expect(queues.enqueueConversationAgentJob({ turnId })).resolves.toEqual({
+    await expect(queues.enqueueConversationAgentJob(data)).resolves.toEqual({
       enqueued: true,
       jobId: turnId,
     });

@@ -50,7 +50,12 @@ export type CreateSurfaceTurnResult =
   | { status: 'accepted'; turn: SurfaceTurnRow }
   | { status: 'duplicate'; turn: SurfaceTurnRow }
   | { status: 'busy' }
-  | { status: 'rate_limited' };
+  | { status: 'rate_limited' }
+  | { status: 'route_inactive' };
+
+export interface CreateSurfaceTurnOptions {
+  validateRoute?: (tx: ConversationDbTransaction) => Promise<boolean>;
+}
 
 const CHAT_TITLE_MAX_LENGTH = 48;
 
@@ -438,7 +443,10 @@ export function createConversationSurfaceScope(db: Db, scope: TeamScopeCore) {
     return { id: session.id, created: true };
   }
 
-  async function createTurn(request: DirectAgentTurnRequest): Promise<CreateSurfaceTurnResult> {
+  async function createTurn(
+    request: DirectAgentTurnRequest,
+    options: CreateSurfaceTurnOptions = {},
+  ): Promise<CreateSurfaceTurnResult> {
     await scope.requireMembership();
     assertIdentity(request);
     return db.transaction(async (tx) => {
@@ -446,6 +454,9 @@ export function createConversationSurfaceScope(db: Db, scope: TeamScopeCore) {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${userLockKey}, 0))`);
       await scope.requireMembership();
       await lockConversation(tx, request.surface, request.externalConversationKey);
+      if (options.validateRoute && !(await options.validateRoute(tx))) {
+        return { status: 'route_inactive' };
+      }
       const duplicate = await tx
         .select()
         .from(chatSurfaceTurns)
@@ -453,6 +464,8 @@ export function createConversationSurfaceScope(db: Db, scope: TeamScopeCore) {
           and(
             eq(chatSurfaceTurns.surface, request.surface),
             eq(chatSurfaceTurns.externalEventId, request.externalEventId),
+            eq(chatSurfaceTurns.teamId, scope.teamId),
+            eq(chatSurfaceTurns.userId, scope.userId),
           ),
         )
         .limit(1);
@@ -477,7 +490,16 @@ export function createConversationSurfaceScope(db: Db, scope: TeamScopeCore) {
           and(
             eq(chatSurfaceTurns.surface, request.surface),
             eq(chatSurfaceTurns.externalConversationKey, request.externalConversationKey),
-            inArray(chatSurfaceTurns.status, ['queued', 'processing']),
+            eq(chatSurfaceTurns.teamId, scope.teamId),
+            eq(chatSurfaceTurns.userId, scope.userId),
+            isNull(chatSurfaceTurns.deliveredAt),
+            inArray(chatSurfaceTurns.status, [
+              'queued',
+              'processing',
+              'answered',
+              'failed',
+              'timed_out',
+            ]),
           ),
         )
         .limit(1);
@@ -648,21 +670,24 @@ export function createConversationSurfaceScope(db: Db, scope: TeamScopeCore) {
 
   async function markDelivered(turnId: string): Promise<void> {
     await scope.requireMembership();
-    const rows = await db
-      .select({ status: chatSurfaceTurns.status })
-      .from(chatSurfaceTurns)
-      .where(scopedTurnWhere(scope, turnId))
-      .limit(1);
-    const status = rows[0]?.status;
-    if (!status) return;
-    await db
-      .update(chatSurfaceTurns)
-      .set({
-        status: status === 'answered' ? 'delivered' : status,
-        deliveredAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(scopedTurnWhere(scope, turnId));
+    await db.transaction(async (tx) => {
+      const rows = await tx
+        .select({ status: chatSurfaceTurns.status })
+        .from(chatSurfaceTurns)
+        .where(scopedTurnWhere(scope, turnId))
+        .for('update')
+        .limit(1);
+      const status = rows[0]?.status;
+      if (!status || !['answered', 'failed', 'timed_out'].includes(status)) return;
+      await tx
+        .update(chatSurfaceTurns)
+        .set({
+          status: status === 'answered' ? 'delivered' : status,
+          deliveredAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(scopedTurnWhere(scope, turnId));
+    });
   }
 
   async function resetSession(identity: DirectConversationIdentity): Promise<boolean> {
@@ -696,16 +721,4 @@ export function createConversationSurfaceScope(db: Db, scope: TeamScopeCore) {
     markDelivered,
     resetSession,
   };
-}
-
-export async function resolveSurfaceTurnScope(
-  db: Db,
-  turnId: string,
-): Promise<{ teamId: string; userId: string } | null> {
-  const rows = await db
-    .select({ teamId: chatSurfaceTurns.teamId, userId: chatSurfaceTurns.userId })
-    .from(chatSurfaceTurns)
-    .where(eq(chatSurfaceTurns.id, turnId))
-    .limit(1);
-  return rows[0] ?? null;
 }

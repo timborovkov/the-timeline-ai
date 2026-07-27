@@ -30,7 +30,10 @@ export function createTelegramConversationDeliveryAdapter(input: {
   const send = (text: string): Promise<void> =>
     input.api.sendMessage({
       chat_id: chatId,
-      reply_to_message_id: messageId,
+      reply_parameters: {
+        message_id: messageId,
+        allow_sending_without_reply: true,
+      },
       text,
     });
   return {

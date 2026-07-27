@@ -158,6 +158,46 @@ describe('conversation surface scope', () => {
     expect(JSON.stringify(history)).not.toContain('must not enter');
   });
 
+  it.each(['answered', 'failed', 'timed_out'] as const)(
+    'keeps an undelivered %s turn serialized until provider delivery completes',
+    async (status) => {
+      const scope = withTeam(db, TEAM_ID, USER_ID).conversations;
+      const created = await scope.createTurn(request(`event-${status}`));
+      if (created.status !== 'accepted') throw new Error('expected accepted turn');
+      await scope.claimTurn(created.turn.id);
+      if (status === 'answered') {
+        await scope.storeAnswer({ turnId: created.turn.id, answer: 'Cached answer' });
+      } else {
+        await scope.cacheFailure(created.turn.id, {
+          status,
+          errorCode: `agent_${status}`,
+          answerText: 'Cached failure',
+        });
+      }
+
+      await expect(scope.createTurn(request(`follow-up-${status}`))).resolves.toEqual({
+        status: 'busy',
+      });
+
+      await scope.markDelivered(created.turn.id);
+      await expect(scope.createTurn(request(`follow-up-${status}`))).resolves.toMatchObject({
+        status: 'accepted',
+      });
+    },
+  );
+
+  it('rejects a stale provider route while holding the conversation creation lock', async () => {
+    const scope = withTeam(db, TEAM_ID, USER_ID).conversations;
+    const validateRoute = vi.fn().mockResolvedValue(false);
+
+    await expect(scope.createTurn(request('stale-route'), { validateRoute })).resolves.toEqual({
+      status: 'route_inactive',
+    });
+    expect(validateRoute).toHaveBeenCalledOnce();
+    expect(await db.select().from(chatSurfaceTurns)).toHaveLength(0);
+    expect(await db.select().from(chatSurfaceSessionLinks)).toHaveLength(0);
+  });
+
   it('archives and unlinks a surface session on reset', async () => {
     const scope = withTeam(db, TEAM_ID, USER_ID).conversations;
     const created = await scope.createTurn(request('event-1'));
@@ -183,6 +223,23 @@ describe('conversation surface scope', () => {
     });
     expect(await db.select().from(chatSessions)).toHaveLength(1);
     expect(await db.select().from(chatSurfaceSessionLinks)).toHaveLength(0);
+  });
+
+  it('does not mark a cached answer delivered after its session was cancelled', async () => {
+    const scope = withTeam(db, TEAM_ID, USER_ID).conversations;
+    const created = await scope.createTurn(request('answer-before-reset'));
+    if (created.status !== 'accepted') throw new Error('expected accepted turn');
+    await scope.claimTurn(created.turn.id);
+    await scope.storeAnswer({ turnId: created.turn.id, answer: 'Cached answer' });
+
+    await scope.resetSession(request('reset'));
+    await scope.markDelivered(created.turn.id);
+
+    const turns = await db
+      .select()
+      .from(chatSurfaceTurns)
+      .where(eq(chatSurfaceTurns.id, created.turn.id));
+    expect(turns[0]).toMatchObject({ status: 'cancelled', deliveredAt: null });
   });
 
   it('persists failure transcripts once for web history and conversational replay', async () => {
@@ -341,6 +398,11 @@ describe('conversation surface scope', () => {
     expect(accepted.status).toBe('queued');
     expect(stopProgress).not.toHaveBeenCalled();
     if (accepted.status !== 'queued') throw new Error('expected queued turn');
+    expect(queueFakes.enqueueConversationAgentJob).toHaveBeenCalledWith({
+      turnId: accepted.turnId,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+    });
 
     await db
       .update(chatSurfaceTurns)
@@ -376,5 +438,26 @@ describe('conversation surface scope', () => {
         answerText: 'I hit an error before I could answer. Please try again.',
       },
     ]);
+  });
+
+  it('reports an inactive route without creating or enqueueing a turn', async () => {
+    const adapter = {
+      acknowledgeAgentRequest: vi.fn().mockResolvedValue(undefined),
+      acknowledgeCapture: vi.fn().mockResolvedValue(undefined),
+      startProgress: vi.fn().mockResolvedValue(vi.fn()),
+      deliverAnswer: vi.fn().mockResolvedValue(undefined),
+      deliverFailure: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await expect(
+      acceptDirectAgentTurn(db, request('inactive-route'), adapter, {
+        validateRoute: () => Promise.resolve(false),
+        routeInactiveMessage: 'Route inactive',
+      }),
+    ).resolves.toEqual({ status: 'failed' });
+
+    expect(adapter.deliverFailure).toHaveBeenCalledWith('Route inactive');
+    expect(queueFakes.enqueueConversationAgentJob).not.toHaveBeenCalled();
+    expect(await db.select().from(chatSurfaceTurns)).toHaveLength(0);
   });
 });

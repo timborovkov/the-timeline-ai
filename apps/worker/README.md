@@ -11,12 +11,14 @@ Long-running, retry-prone work (audio transcription, LLM extraction, vector embe
 
 The `conversation-agent` worker also keeps Telegram/Slack webhook lifetimes
 short. It runs one paid model execution per durable turn, persists the answer
-before external delivery, and retries delivery from cache. Its 90-second
-deadline includes progress startup, history loading, and model execution;
-retained failed queue jobs can be replaced for cached or still-queued recovery
-without repeating a paid answer. Set `TELEGRAM_BOT_TOKEN` on the worker for
-Telegram typing and replies; Slack tokens are decrypted from installed
-workspace records with the same `SECRETS_ENCRYPTION_KEY` configured on web.
+before external delivery, and retries delivery from cache. Each job carries the
+turn UUID plus its team/user scope, and the worker claims it only through that
+`withTeam` conversation scope. Its 90-second deadline includes progress
+startup, history loading, and model execution; retained failed queue jobs can
+be replaced for cached or still-queued recovery without repeating a paid
+answer. Set `TELEGRAM_BOT_TOKEN` on the worker for Telegram typing and replies;
+Slack tokens are decrypted from installed workspace records with the same
+`SECRETS_ENCRYPTION_KEY` configured on web.
 
 ## How to use
 

@@ -110,9 +110,7 @@ export async function processConversationAgentJob(
   data: queue.ConversationAgentJobData,
 ): Promise<{ turnId: string; status: string }> {
   const startedAt = Date.now();
-  const identity = await conversationSurfaces.resolveSurfaceTurnScope(deps.db, data.turnId);
-  if (!identity) return { turnId: data.turnId, status: 'missing' };
-  const scope = withTeam(deps.db, identity.teamId, identity.userId).conversations;
+  const scope = withTeam(deps.db, data.teamId, data.userId).conversations;
   const claim = await scope.claimTurn(data.turnId);
   if (claim.status === 'missing') return { turnId: data.turnId, status: 'missing' };
   if (claim.status === 'delivered') return { turnId: data.turnId, status: 'delivered' };

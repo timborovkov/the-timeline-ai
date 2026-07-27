@@ -86,7 +86,8 @@ ON "chat_surface_turns" USING btree ("surface", "external_event_id");
 --> statement-breakpoint
 CREATE UNIQUE INDEX "chat_surface_turns_active_conversation_unq"
 ON "chat_surface_turns" USING btree ("surface", "external_conversation_key")
-WHERE "status" IN ('queued', 'processing');
+WHERE "delivered_at" IS NULL
+AND "status" IN ('queued', 'processing', 'answered', 'failed', 'timed_out');
 --> statement-breakpoint
 CREATE INDEX "chat_surface_turns_team_idx"
 ON "chat_surface_turns" USING btree ("team_id");

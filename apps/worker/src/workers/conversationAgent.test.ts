@@ -12,6 +12,7 @@ import { processConversationAgentJob } from '#src/workers/conversationAgent.js';
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+const OTHER_USER_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 
 let pg: PGlite;
 let db: Db;
@@ -27,9 +28,13 @@ beforeEach(async () => {
     TRUNCATE TABLE chat_surface_turns, chat_surface_session_links, chat_messages,
       chat_sessions, team_members, teams, users CASCADE;
     INSERT INTO teams (id, slug, name) VALUES ('${TEAM_ID}', 'team', 'Team');
-    INSERT INTO users (id, email, name) VALUES ('${USER_ID}', 'owner@example.com', 'Owner');
+    INSERT INTO users (id, email, name) VALUES
+      ('${USER_ID}', 'owner@example.com', 'Owner'),
+      ('${OTHER_USER_ID}', 'other@example.com', 'Other');
     INSERT INTO team_members (team_id, user_id, role)
-    VALUES ('${TEAM_ID}', '${USER_ID}', 'owner');
+    VALUES
+      ('${TEAM_ID}', '${USER_ID}', 'owner'),
+      ('${TEAM_ID}', '${OTHER_USER_ID}', 'member');
   `);
 });
 
@@ -51,6 +56,10 @@ async function createTurn(eventId: string): Promise<string> {
   });
   if (created.status !== 'accepted') throw new Error('expected accepted turn');
   return created.turn.id;
+}
+
+function jobData(turnId: string, userId = USER_ID) {
+  return { turnId, teamId: TEAM_ID, userId };
 }
 
 function adapter(overrides: Partial<conversationSurfaces.ConversationDeliveryAdapter> = {}) {
@@ -86,7 +95,7 @@ describe('conversation agent worker', () => {
           askAgent,
           createDeliveryAdapter: () => Promise.resolve(delivery),
         },
-        { turnId },
+        jobData(turnId),
       ),
     ).resolves.toEqual({ turnId, status: 'delivered' });
 
@@ -123,10 +132,10 @@ describe('conversation agent worker', () => {
       createDeliveryAdapter: () => Promise.resolve(delivery),
     };
 
-    await expect(processConversationAgentJob(deps, { turnId })).rejects.toThrow(
+    await expect(processConversationAgentJob(deps, jobData(turnId))).rejects.toThrow(
       'provider unavailable',
     );
-    await expect(processConversationAgentJob(deps, { turnId })).resolves.toEqual({
+    await expect(processConversationAgentJob(deps, jobData(turnId))).resolves.toEqual({
       turnId,
       status: 'delivered_cached',
     });
@@ -150,7 +159,7 @@ describe('conversation agent worker', () => {
       createDeliveryAdapter: () => Promise.resolve(delivery),
     };
 
-    await expect(processConversationAgentJob(deps, { turnId })).rejects.toThrow(
+    await expect(processConversationAgentJob(deps, jobData(turnId))).rejects.toThrow(
       'provider unavailable',
     );
     await withTeam(db, TEAM_ID, USER_ID).conversations.resetSession({
@@ -161,7 +170,7 @@ describe('conversation agent worker', () => {
       userId: USER_ID,
       userName: 'Owner',
     });
-    await expect(processConversationAgentJob(deps, { turnId })).resolves.toEqual({
+    await expect(processConversationAgentJob(deps, jobData(turnId))).resolves.toEqual({
       turnId,
       status: 'cancelled',
     });
@@ -190,7 +199,7 @@ describe('conversation agent worker', () => {
           timeoutMs: 5,
           createDeliveryAdapter: () => Promise.resolve(delivery),
         },
-        { turnId },
+        jobData(turnId),
       ),
     ).resolves.toEqual({ turnId, status: 'timed_out' });
 
@@ -222,7 +231,7 @@ describe('conversation agent worker', () => {
           timeoutMs: 5,
           createDeliveryAdapter: () => Promise.resolve(delivery),
         },
-        { turnId },
+        jobData(turnId),
       ),
     ).resolves.toEqual({ turnId, status: 'timed_out' });
 
@@ -245,7 +254,7 @@ describe('conversation agent worker', () => {
           askAgent,
           createDeliveryAdapter: () => Promise.resolve(delivery),
         },
-        { turnId },
+        jobData(turnId),
       ),
     ).resolves.toEqual({ turnId, status: 'stale_processing' });
 
@@ -271,10 +280,10 @@ describe('conversation agent worker', () => {
       .mockResolvedValue(delivery);
     const deps = { db, askAgent, createDeliveryAdapter };
 
-    await expect(processConversationAgentJob(deps, { turnId })).rejects.toThrow(
+    await expect(processConversationAgentJob(deps, jobData(turnId))).rejects.toThrow(
       'workspace token unavailable',
     );
-    await expect(processConversationAgentJob(deps, { turnId })).resolves.toEqual({
+    await expect(processConversationAgentJob(deps, jobData(turnId))).resolves.toEqual({
       turnId,
       status: 'delivered_cached',
     });
@@ -289,5 +298,21 @@ describe('conversation agent worker', () => {
       errorCode: 'delivery_adapter_unavailable',
     });
     expect(turns[0]?.deliveredAt).toBeInstanceOf(Date);
+  });
+
+  it('refuses a queue turn id outside the supplied team/user scope', async () => {
+    const turnId = await createTurn('event-wrong-worker-scope');
+    const askAgent = vi.fn() as unknown as typeof agent.askAgent;
+    const createDeliveryAdapter = vi.fn();
+
+    await expect(
+      processConversationAgentJob(
+        { db, askAgent, createDeliveryAdapter },
+        jobData(turnId, OTHER_USER_ID),
+      ),
+    ).resolves.toEqual({ turnId, status: 'missing' });
+
+    expect(askAgent).not.toHaveBeenCalled();
+    expect(createDeliveryAdapter).not.toHaveBeenCalled();
   });
 });

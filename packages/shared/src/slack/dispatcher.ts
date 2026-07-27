@@ -1182,7 +1182,44 @@ async function queueSlackDmAgentTurn(input: {
       externalMessageId: input.messageTs,
       api: input.api,
     }),
-    { providerAcknowledgement: 'background' },
+    {
+      providerAcknowledgement: 'background',
+      validateRoute: async (tx) => {
+        const rows = await tx
+          .select({ id: slackUserTeams.id })
+          .from(slackUsers)
+          .innerJoin(slackUserTeams, eq(slackUserTeams.slackUserId, slackUsers.id))
+          .innerJoin(
+            slackWorkspaceTeams,
+            and(
+              eq(slackWorkspaceTeams.workspaceId, input.workspace.id),
+              eq(slackWorkspaceTeams.teamId, slackUserTeams.teamId),
+              eq(slackWorkspaceTeams.enabled, true),
+            ),
+          )
+          .innerJoin(
+            teamMembers,
+            and(
+              eq(teamMembers.teamId, slackUserTeams.teamId),
+              eq(teamMembers.userId, slackUserTeams.userId),
+              isNull(teamMembers.removedAt),
+            ),
+          )
+          .where(
+            and(
+              eq(slackUsers.workspaceId, input.workspace.id),
+              eq(slackUsers.slackUserId, input.slackUserId),
+              eq(slackUserTeams.teamId, identity.teamId),
+              eq(slackUserTeams.userId, identity.userId),
+              eq(slackUserTeams.isActive, true),
+            ),
+          )
+          .limit(1);
+        return Boolean(rows[0]);
+      },
+      routeInactiveMessage:
+        'This Slack conversation no longer has an active Timeline team. Choose a team before asking the agent.',
+    },
   );
 }
 

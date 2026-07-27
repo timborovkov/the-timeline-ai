@@ -45,23 +45,31 @@ uses `dm:<chat-id>`; Slack uses
 
 Agent turns execute on the `conversation-agent` BullMQ queue. The webhook
 authenticates, resolves identity/team, inserts a queued turn idempotently,
-enqueues its UUID as the deterministic job id, acknowledges progress, and
-returns. Slack does not wait for profile refreshes or reaction delivery after
-the durable enqueue, so slow Slack API calls cannot consume its webhook
-acknowledgement budget. Telegram's request-side typing heartbeat remains active
-while the turn is queued, then hands progress ownership to the worker when it
-claims the turn. The worker's 90-second deadline includes provider progress
-startup, history loading, and model execution.
+enqueues its UUID as the deterministic job id together with the resolved team
+and user scope, acknowledges progress, and returns. The worker establishes
+`withTeam` from that scoped job identity before it can claim the turn; a bare
+queue-supplied turn UUID is never an unscoped lookup key. Slack does not wait
+for profile refreshes or reaction delivery after the durable enqueue, so slow
+Slack API calls cannot consume its webhook acknowledgement budget. Telegram's
+request-side typing heartbeat remains active while the turn is queued, then
+hands progress ownership to the worker when it claims the turn. The worker's
+90-second deadline includes provider progress startup, history loading, and
+model execution.
 
 Duplicate detection, per-user rate enforcement, session selection, and turn
-insertion use coordinated transaction locks. Provider redelivery is checked
-before session mutation, while reset, team-switch, membership-removal, and web
-archive paths use the same conversation lock and cancel undelivered work. The
-worker persists successful or canonical failure answer text and the web-visible
-transcript before provider delivery. A delivery retry uses the cached answer,
-and retained failed BullMQ jobs are replaced on provider redelivery without
-bypassing the turn ledger. A turn found in an ambiguous stale `processing`
-state fails closed rather than repeating a potentially paid model call.
+insertion use coordinated transaction locks. The active provider route is
+revalidated under the conversation lock before insertion, so an unlink or team
+switch cannot release the lock while a stale request still creates work for
+the old route. Provider redelivery is checked before session mutation, while
+reset, team-switch, membership-removal, and web archive paths use the same
+conversation lock and cancel undelivered work. The worker persists successful
+or canonical failure answer text and the web-visible transcript before
+provider delivery. Cached answers and failures remain the conversation's
+active turn until they are delivered or cancelled, preserving reply order. A
+delivery retry uses the cached answer, and retained failed BullMQ jobs are
+replaced on provider redelivery without bypassing the turn ledger. A turn
+found in an ambiguous stale `processing` state fails closed rather than
+repeating a potentially paid model call.
 
 History is private to the session creator and team, limited to 20 text messages
 and 30,000 characters, excludes tool payloads, and replays through a durable
