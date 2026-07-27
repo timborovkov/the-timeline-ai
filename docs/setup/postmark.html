@@ -75,15 +75,15 @@ SUPPORT_EMAIL=contact@thetimeline.cc
         explicit messaging preference row, the digest timezone comes from the team's workspace
         timezone. Quiet windows are stored as skipped and do not call the summarizer or enqueue an
         email. A digest is useful when the recipient has a visible event created or occurring since
-        the previous configured local digest boundary, an object change, a new team member, a
-        pending approval, or a calendar item in the next seven days. That fresh local cycle is
-        normally 24 hours and follows daylight-saving changes without dropping or replaying
-        activity. Unchanged active tasks remain supporting context and do not trigger delivery by
-        themselves. The 25-hour evidence span preserves overlap on ordinary and spring-forward
-        cycles and covers the complete 25-hour fall-back cycle; an already-seen event does not
-        trigger another digest unless it arrived during the current fresh cycle. Events ingested
-        after a cycle's boundary are deferred to the next cycle. Each generated digest covers
-        <em>all</em> timeline events in its window (paginated, not capped), with every event
+        the previous configured local digest boundary, an object change (including an archive or
+        merge), a new team member, a pending approval, or a calendar item in the next seven days.
+        That fresh local cycle is normally 24 hours and follows daylight-saving changes without
+        dropping or replaying activity. Unchanged active tasks remain supporting context and do not
+        trigger delivery by themselves. The 25-hour evidence span preserves overlap on ordinary and
+        spring-forward cycles and covers the complete 25-hour fall-back cycle; an already-seen event
+        does not trigger another digest unless it arrived during the current fresh cycle. Events
+        ingested after a cycle's boundary are deferred to the next cycle. Each generated digest
+        covers <em>all</em> timeline events in its window (paginated, not capped), with every event
         surfaced to the summarizer and the true totals reflected in the email metrics. The worker
         registers the noon UTC scheduler on boot and also queues one idempotent catch-up tick, so a
         deploy or missed scheduler state still creates the current expected digest rows. In-app

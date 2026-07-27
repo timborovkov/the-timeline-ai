@@ -782,8 +782,6 @@ export async function generateDailyDigest(
     .where(
       and(
         eq(entities.teamId, input.teamId),
-        isNull(entities.mergedIntoId),
-        isNull(entities.archivedAt),
         gte(entities.updatedAt, freshCutoff),
         lt(entities.updatedAt, input.windowEnd),
       ),

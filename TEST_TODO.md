@@ -285,7 +285,8 @@ Legend:
   approvals, or upcoming calendar context makes the digest useful; retry-race
   coverage preserves concurrently generated/sent rows, configured-hour
   spring-gap and fall-back cases pin daylight-saving-safe fresh-cycle
-  boundaries, and post-boundary ingests are deferred to the next cycle;
+  boundaries, post-boundary ingests are deferred to the next cycle, and
+  PGlite coverage proves fresh archive and merge transitions remain useful;
   timeline observability tests now pin privacy-safe page/API dogfooding counters
   for row-count reduction, scan pressure, missing grouping metadata, AI
   presentation cache status, and visibility cache partitioning;
