@@ -31,7 +31,17 @@ type GenerateObjectProviderOptions = NonNullable<
 >;
 
 export const DEFAULT_AGENT_MAX_STEPS = 20;
-export const DEFAULT_STRUCTURED_MAX_OUTPUT_TOKENS = 32_768;
+/**
+ * Default OpenRouter completion reservation for `chatStructured`. Keep this a
+ * practical structured-JSON ceiling — not the model’s max completion size.
+ * OpenRouter reserves credits against `max_tokens` before the call runs; the
+ * prior 32_768 default caused production 402s ("requested up to 32768 tokens,
+ * but can only afford …") even when the account still had headroom for real
+ * extraction output. Aligns with vision’s cost bound (`llm/vision.ts` default
+ * 8000). Bulk callers that may emit larger JSON should pass `maxOutputTokens`
+ * and/or batch their prompts rather than raising this default.
+ */
+export const DEFAULT_STRUCTURED_MAX_OUTPUT_TOKENS = 8_000;
 
 export interface ChatStructuredInput<TSchema extends z.ZodType> {
   schema: TSchema;
@@ -39,6 +49,12 @@ export interface ChatStructuredInput<TSchema extends z.ZodType> {
   system?: string;
   /** Override the configured extraction model for this call. */
   model?: string;
+  /**
+   * Override the default completion-token reservation. Prefer batching bulk
+   * prompts; raise this only when a single structured response legitimately
+   * needs more headroom than `DEFAULT_STRUCTURED_MAX_OUTPUT_TOKENS`.
+   */
+  maxOutputTokens?: number;
   /** AbortSignal wired to the request lifecycle for bounded evals/workers. */
   abortSignal?: AbortSignal;
 }
@@ -283,6 +299,7 @@ async function generateStructuredObject<TSchema extends z.ZodType>({
   model,
   modelId,
   operation,
+  maxOutputTokens,
   abortSignal,
 }: {
   schema: TSchema;
@@ -291,6 +308,7 @@ async function generateStructuredObject<TSchema extends z.ZodType>({
   model: LanguageModel;
   modelId: string;
   operation: 'chat_structured' | 'chat_structured_json_object_fallback';
+  maxOutputTokens: number;
   abortSignal?: AbortSignal;
 }) {
   // generateObject is the right primitive for structured-output extraction;
@@ -302,7 +320,7 @@ async function generateStructuredObject<TSchema extends z.ZodType>({
     schema,
     prompt,
     system,
-    maxOutputTokens: DEFAULT_STRUCTURED_MAX_OUTPUT_TOKENS,
+    maxOutputTokens,
     maxRetries: 0,
     ...(abortSignal ? { abortSignal } : {}),
     experimental_repairText: repairKnownStructuredOutput(schema),
@@ -322,6 +340,7 @@ async function generateJsonObjectFallback<TSchema extends z.ZodType>({
   system,
   model,
   modelId,
+  maxOutputTokens,
   abortSignal,
 }: {
   schema: TSchema;
@@ -329,13 +348,14 @@ async function generateJsonObjectFallback<TSchema extends z.ZodType>({
   system: string;
   model: LanguageModel;
   modelId: string;
+  maxOutputTokens: number;
   abortSignal?: AbortSignal;
 }) {
   const result = await generateText({
     model,
     prompt,
     system,
-    maxOutputTokens: DEFAULT_STRUCTURED_MAX_OUTPUT_TOKENS,
+    maxOutputTokens,
     maxRetries: 0,
     ...(abortSignal ? { abortSignal } : {}),
     providerOptions: withLangSmithProviderOptions(openRouterJsonObjectOptions(), {
@@ -376,6 +396,7 @@ export async function chatStructured<TSchema extends z.ZodType>(
   deps: ChatDeps = {},
 ): Promise<ChatStructuredResult<TSchema>> {
   const modelId = input.model ?? resolveDefaultModelId();
+  const maxOutputTokens = input.maxOutputTokens ?? DEFAULT_STRUCTURED_MAX_OUTPUT_TOKENS;
   return wrapAiFailure({ operation: 'llm.chatStructured', model: modelId }, async () => {
     const runModel = async (candidateModelId: string): Promise<ChatStructuredResult<TSchema>> => {
       const model = deps.model ?? buildOpenRouterLanguageModel(candidateModelId, deps);
@@ -387,6 +408,7 @@ export async function chatStructured<TSchema extends z.ZodType>(
           model,
           modelId: candidateModelId,
           operation: 'chat_structured',
+          maxOutputTokens,
           ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
         });
         const object: z.infer<TSchema> = input.schema.parse(result.object);
@@ -402,6 +424,7 @@ export async function chatStructured<TSchema extends z.ZodType>(
           system: structuredOutputFallbackSystem(input.schema, input.system),
           model: fallbackModel,
           modelId: candidateModelId,
+          maxOutputTokens,
           ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
         }).catch((fallbackErr: unknown) => {
           throw new AggregateError(

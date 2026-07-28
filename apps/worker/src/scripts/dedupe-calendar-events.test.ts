@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   chooseSurvivor,
@@ -7,6 +7,12 @@ import {
   duplicateTextTokens,
   type EventRow,
 } from '#src/scripts/dedupe-calendar-events-core.js';
+import {
+  AI_DUPLICATE_EVENT_BATCH_SIZE,
+  AI_DUPLICATE_TIME_WINDOW_MS,
+  aiDuplicateClusters,
+  buildAiDuplicateBatches,
+} from '#src/scripts/dedupe-calendar-events.js';
 
 const START = new Date('2026-06-17T11:00:00.000Z');
 const END = new Date('2026-06-17T12:00:00.000Z');
@@ -209,5 +215,105 @@ describe('dedupe-calendar-events script', () => {
     ]);
 
     expect(survivor.id).toBe('google');
+  });
+
+  it('batches AI duplicate adjudication with time windows and keeps prior clusters on batch failure', async () => {
+    expect(AI_DUPLICATE_EVENT_BATCH_SIZE).toBe(100);
+    expect(AI_DUPLICATE_TIME_WINDOW_MS).toBe(14 * 24 * 60 * 60 * 1000);
+
+    let calls = 0;
+    const chatStructured = vi.fn((_input: { prompt: string }) => {
+      calls += 1;
+      if (calls === 2) return Promise.reject(new Error('rate limited'));
+      const parsed = JSON.parse(_input.prompt) as { events: { id: string }[] };
+      return Promise.resolve({
+        object: {
+          duplicate_groups: [
+            {
+              event_ids: parsed.events.slice(0, 2).map((row) => row.id),
+              confidence: 'high' as const,
+              reason: 'same meeting',
+            },
+          ],
+        },
+        model: 'test',
+      });
+    });
+
+    const events = Array.from({ length: 6 }, (_, index) =>
+      event({
+        id: `event-${String(index)}`,
+        title: `Unique Meeting ${String(index)}`,
+        startAt: new Date(START.getTime() + index * 60_000),
+        endAt: new Date(END.getTime() + index * 60_000),
+      }),
+    );
+
+    const clusters = await aiDuplicateClusters({
+      events,
+      chatStructured: chatStructured as never,
+      batchSize: 3,
+      timeWindowMs: 10 * 60_000,
+    });
+
+    expect(chatStructured.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(clusters.length).toBeGreaterThanOrEqual(1);
+    expect(clusters[0]?.length).toBe(2);
+  });
+
+  it('pairs rescheduled same-name events across a large chronological gap via token batches', () => {
+    const early = event({
+      id: 'early',
+      title: 'Nexia Oy kickoff',
+      startAt: new Date('2026-06-01T11:00:00.000Z'),
+      endAt: new Date('2026-06-01T12:00:00.000Z'),
+    });
+    const fillers = Array.from({ length: 40 }, (_, index) =>
+      event({
+        id: `filler-${String(index)}`,
+        title: `Unrelated standup ${String(index)}`,
+        startAt: new Date(
+          `2026-06-${String(2 + Math.floor(index / 2)).padStart(2, '0')}T10:00:00.000Z`,
+        ),
+        endAt: new Date(
+          `2026-06-${String(2 + Math.floor(index / 2)).padStart(2, '0')}T10:30:00.000Z`,
+        ),
+      }),
+    );
+    const late = event({
+      id: 'late',
+      title: 'Nexia Oy kickoff',
+      startAt: new Date('2026-06-25T11:00:00.000Z'),
+      endAt: new Date('2026-06-25T12:00:00.000Z'),
+    });
+
+    const batches = buildAiDuplicateBatches([early, ...fillers, late], 10, 3 * 24 * 60 * 60 * 1000);
+    expect(
+      batches.some(
+        (batch) =>
+          batch.some((row) => row.id === 'early') && batch.some((row) => row.id === 'late'),
+      ),
+    ).toBe(true);
+  });
+
+  it('builds overlapping time-window batches for nearby events', () => {
+    const events = Array.from({ length: 7 }, (_, index) =>
+      event({
+        id: `event-${String(index)}`,
+        title: `Meeting ${String(index)}`,
+        startAt: new Date(START.getTime() + index * 60_000),
+        endAt: new Date(END.getTime() + index * 60_000),
+      }),
+    );
+
+    const batches = buildAiDuplicateBatches(events, 3, 10 * 60_000).map((batch) =>
+      batch.map((row) => row.id),
+    );
+
+    expect(batches.length).toBeGreaterThanOrEqual(2);
+    expect(batches.every((batch) => batch.length >= 2 && batch.length <= 3)).toBe(true);
+    expect(batches.some((batch) => batch.includes('event-2') && batch.includes('event-3'))).toBe(
+      true,
+    );
   });
 });
