@@ -14,6 +14,7 @@ import { z } from 'zod';
 
 import {
   duplicateGroups,
+  duplicateTextTokens,
   type DuplicateGroup,
   type EventRow,
 } from '#src/scripts/dedupe-calendar-events-core.js';
@@ -25,31 +26,98 @@ const DEFAULT_LOOKBACK_MS = 90 * 24 * 60 * 60 * 1000;
 /** Keep AI batches small enough that duplicate-group JSON fits the default 8k cap. */
 export const AI_DUPLICATE_EVENT_BATCH_SIZE = 100;
 /**
- * Overlap consecutive AI batches so chronologically adjacent events near a
- * batch edge (e.g. indices 99 and 100) are still presented together. Without
- * this, translated/time-shifted duplicates can fall on opposite sides of a
- * hard cut and never reach the model.
+ * Prefer comparing events that start within this window. Dense calendars are
+ * still capped by `AI_DUPLICATE_EVENT_BATCH_SIZE`; sparse calendars expand to
+ * chronological neighbors so lone events still get comparison material.
  */
-export const AI_DUPLICATE_EVENT_BATCH_OVERLAP = 20;
+export const AI_DUPLICATE_TIME_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 
+function batchKey(events: EventRow[]): string {
+  return events
+    .map((event) => event.id)
+    .sort()
+    .join(',');
+}
+
+function chunkEventList(events: EventRow[], batchSize: number): EventRow[][] {
+  if (events.length < 2) return [];
+  const chunks: EventRow[][] = [];
+  for (let offset = 0; offset < events.length; offset += batchSize) {
+    const chunk = events.slice(offset, offset + batchSize);
+    if (chunk.length >= 2) {
+      chunks.push(chunk);
+      continue;
+    }
+    const previous = chunks.at(-1);
+    const lone = chunk[0];
+    if (!previous || !lone) continue;
+    if (previous.length < batchSize) {
+      previous.push(lone);
+      continue;
+    }
+    const boundary = previous.at(-1);
+    if (boundary) chunks.push([boundary, lone]);
+  }
+  return chunks;
+}
+
+/**
+ * Build AI comparison batches from time proximity plus shared title/description
+ * tokens. Row-count overlap alone misses rescheduled duplicates when enough
+ * unrelated events fall between them; token-linked batches recover those pairs.
+ */
 export function buildAiDuplicateBatches(
   events: EventRow[],
   batchSize = AI_DUPLICATE_EVENT_BATCH_SIZE,
-  overlap = AI_DUPLICATE_EVENT_BATCH_OVERLAP,
+  timeWindowMs = AI_DUPLICATE_TIME_WINDOW_MS,
 ): EventRow[][] {
-  if (events.length < 2) return [];
-  if (events.length <= batchSize) return [events];
+  const sorted = [...events].sort(
+    (left, right) => left.startAt.getTime() - right.startAt.getTime(),
+  );
+  if (sorted.length < 2) return [];
+  if (sorted.length <= batchSize) return [sorted];
 
-  const safeOverlap = Math.max(0, Math.min(overlap, batchSize - 1));
-  const step = Math.max(1, batchSize - safeOverlap);
-  const batches: EventRow[][] = [];
-  for (let offset = 0; offset < events.length; offset += step) {
-    const batch = events.slice(offset, offset + batchSize);
-    if (batch.length < 2) break;
-    batches.push(batch);
-    if (offset + batchSize >= events.length) break;
+  const batchesByKey = new Map<string, EventRow[]>();
+  const addBatch = (batch: EventRow[]) => {
+    if (batch.length < 2) return;
+    const key = batchKey(batch);
+    if (!batchesByKey.has(key)) batchesByKey.set(key, batch);
+  };
+
+  let startIndex = 0;
+  while (startIndex < sorted.length - 1) {
+    const anchor = sorted[startIndex];
+    if (!anchor) break;
+    const windowEnd = anchor.startAt.getTime() + timeWindowMs;
+    const batch: EventRow[] = [];
+    for (let index = startIndex; index < sorted.length && batch.length < batchSize; index += 1) {
+      const candidate = sorted[index];
+      if (!candidate) break;
+      if (candidate.startAt.getTime() > windowEnd && batch.length >= 2) break;
+      batch.push(candidate);
+    }
+    addBatch(batch);
+    startIndex += Math.max(1, Math.floor(batch.length / 2));
   }
-  return batches;
+
+  const byToken = new Map<string, EventRow[]>();
+  for (const event of sorted) {
+    for (const token of duplicateTextTokens(event)) {
+      if (token.length < 5) continue;
+      const linked = byToken.get(token) ?? [];
+      linked.push(event);
+      byToken.set(token, linked);
+    }
+  }
+  for (const linked of byToken.values()) {
+    if (linked.length < 2) continue;
+    const unique = [...new Map(linked.map((event) => [event.id, event])).values()].sort(
+      (left, right) => left.startAt.getTime() - right.startAt.getTime(),
+    );
+    for (const chunk of chunkEventList(unique, batchSize)) addBatch(chunk);
+  }
+
+  return [...batchesByKey.values()];
 }
 
 interface Args {
@@ -150,31 +218,42 @@ export async function aiDuplicateClusters(input: {
   events: EventRow[];
   chatStructured?: typeof llm.chatStructured;
   batchSize?: number;
-  batchOverlap?: number;
+  timeWindowMs?: number;
 }): Promise<string[][]> {
   const chatStructured = input.chatStructured ?? llm.chatStructured;
   const batchSize = input.batchSize ?? AI_DUPLICATE_EVENT_BATCH_SIZE;
-  const batchOverlap = input.batchOverlap ?? AI_DUPLICATE_EVENT_BATCH_OVERLAP;
-  const candidateEvents = [...input.events]
-    .filter((event) => !event.redacted)
-    .sort((left, right) => left.startAt.getTime() - right.startAt.getTime());
+  const timeWindowMs = input.timeWindowMs ?? AI_DUPLICATE_TIME_WINDOW_MS;
+  const candidateEvents = input.events.filter((event) => !event.redacted);
   if (candidateEvents.length < 2) return [];
 
   const clusters: string[][] = [];
-  for (const batch of buildAiDuplicateBatches(candidateEvents, batchSize, batchOverlap)) {
-    const result = await chatStructured({
-      schema: aiDuplicateGroupSchema,
-      model: llm.TIMELINE_MODELS.summarization.id,
-      system:
-        'You identify duplicate calendar events. Group events only when they refer to the same real-world meeting. Titles, times, dates, duration, timezone, and all-day state may differ because calendars can import, translate, normalize, or reschedule the same meeting differently. Use titles, descriptions, locations, meeting links, attendee/client names, language translations, agenda wording, and time proximity as evidence. Do not group different meetings just because they overlap or mention the same company/person. If uncertain, omit the group. Return JSON only.',
-      prompt: JSON.stringify({
-        events: batch.map(formatEventForAi),
-      }),
-    });
-    for (const group of result.object.duplicate_groups) {
-      if (group.confidence === 'low') continue;
-      clusters.push(group.event_ids);
+  let failedBatches = 0;
+  for (const batch of buildAiDuplicateBatches(candidateEvents, batchSize, timeWindowMs)) {
+    try {
+      const result = await chatStructured({
+        schema: aiDuplicateGroupSchema,
+        model: llm.TIMELINE_MODELS.summarization.id,
+        system:
+          'You identify duplicate calendar events. Group events only when they refer to the same real-world meeting. Titles, times, dates, duration, timezone, and all-day state may differ because calendars can import, translate, normalize, or reschedule the same meeting differently. Use titles, descriptions, locations, meeting links, attendee/client names, language translations, agenda wording, and time proximity as evidence. Do not group different meetings just because they overlap or mention the same company/person. If uncertain, omit the group. Return JSON only.',
+        prompt: JSON.stringify({
+          events: batch.map(formatEventForAi),
+        }),
+      });
+      for (const group of result.object.duplicate_groups) {
+        if (group.confidence === 'low') continue;
+        clusters.push(group.event_ids);
+      }
+    } catch (err) {
+      failedBatches += 1;
+      console.warn(
+        `[dedupe-calendar-events] ai batch failed; retaining ${clusters.length} cluster(s) from earlier batches`,
+        err,
+      );
     }
+  }
+
+  if (failedBatches > 0 && clusters.length === 0) {
+    throw new Error(`ai duplicate adjudication failed for all ${String(failedBatches)} batch(es)`);
   }
 
   return clusters;

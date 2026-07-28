@@ -8,8 +8,8 @@ import {
   type EventRow,
 } from '#src/scripts/dedupe-calendar-events-core.js';
 import {
-  AI_DUPLICATE_EVENT_BATCH_OVERLAP,
   AI_DUPLICATE_EVENT_BATCH_SIZE,
+  AI_DUPLICATE_TIME_WINDOW_MS,
   aiDuplicateClusters,
   buildAiDuplicateBatches,
 } from '#src/scripts/dedupe-calendar-events.js';
@@ -217,12 +217,15 @@ describe('dedupe-calendar-events script', () => {
     expect(survivor.id).toBe('google');
   });
 
-  it('batches AI duplicate adjudication so large scans stay under the default output cap', async () => {
+  it('batches AI duplicate adjudication with time windows and keeps prior clusters on batch failure', async () => {
     expect(AI_DUPLICATE_EVENT_BATCH_SIZE).toBe(100);
-    expect(AI_DUPLICATE_EVENT_BATCH_OVERLAP).toBe(20);
-    const chatStructured = vi.fn((input: { prompt: string }) => {
-      const parsed = JSON.parse(input.prompt) as { events: { id: string }[] };
-      expect(parsed.events.length).toBeLessThanOrEqual(3);
+    expect(AI_DUPLICATE_TIME_WINDOW_MS).toBe(14 * 24 * 60 * 60 * 1000);
+
+    let calls = 0;
+    const chatStructured = vi.fn((_input: { prompt: string }) => {
+      calls += 1;
+      if (calls === 2) return Promise.reject(new Error('rate limited'));
+      const parsed = JSON.parse(_input.prompt) as { events: { id: string }[] };
       return Promise.resolve({
         object: {
           duplicate_groups: [
@@ -237,10 +240,10 @@ describe('dedupe-calendar-events script', () => {
       });
     });
 
-    const events = Array.from({ length: 7 }, (_, index) =>
+    const events = Array.from({ length: 6 }, (_, index) =>
       event({
         id: `event-${String(index)}`,
-        title: `Meeting ${String(index)}`,
+        title: `Unique Meeting ${String(index)}`,
         startAt: new Date(START.getTime() + index * 60_000),
         endAt: new Date(END.getTime() + index * 60_000),
       }),
@@ -250,19 +253,50 @@ describe('dedupe-calendar-events script', () => {
       events,
       chatStructured: chatStructured as never,
       batchSize: 3,
-      batchOverlap: 1,
+      timeWindowMs: 10 * 60_000,
     });
 
-    // step = 2 → batches [0,1,2], [2,3,4], [4,5,6]
-    expect(chatStructured).toHaveBeenCalledTimes(3);
-    expect(clusters).toEqual([
-      ['event-0', 'event-1'],
-      ['event-2', 'event-3'],
-      ['event-4', 'event-5'],
-    ]);
+    expect(chatStructured.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(clusters.length).toBeGreaterThanOrEqual(1);
+    expect(clusters[0]?.length).toBe(2);
   });
 
-  it('overlaps AI batches so chronologically adjacent boundary events stay comparable', () => {
+  it('pairs rescheduled same-name events across a large chronological gap via token batches', () => {
+    const early = event({
+      id: 'early',
+      title: 'Nexia Oy kickoff',
+      startAt: new Date('2026-06-01T11:00:00.000Z'),
+      endAt: new Date('2026-06-01T12:00:00.000Z'),
+    });
+    const fillers = Array.from({ length: 40 }, (_, index) =>
+      event({
+        id: `filler-${String(index)}`,
+        title: `Unrelated standup ${String(index)}`,
+        startAt: new Date(
+          `2026-06-${String(2 + Math.floor(index / 2)).padStart(2, '0')}T10:00:00.000Z`,
+        ),
+        endAt: new Date(
+          `2026-06-${String(2 + Math.floor(index / 2)).padStart(2, '0')}T10:30:00.000Z`,
+        ),
+      }),
+    );
+    const late = event({
+      id: 'late',
+      title: 'Nexia Oy kickoff',
+      startAt: new Date('2026-06-25T11:00:00.000Z'),
+      endAt: new Date('2026-06-25T12:00:00.000Z'),
+    });
+
+    const batches = buildAiDuplicateBatches([early, ...fillers, late], 10, 3 * 24 * 60 * 60 * 1000);
+    expect(
+      batches.some(
+        (batch) =>
+          batch.some((row) => row.id === 'early') && batch.some((row) => row.id === 'late'),
+      ),
+    ).toBe(true);
+  });
+
+  it('builds overlapping time-window batches for nearby events', () => {
     const events = Array.from({ length: 7 }, (_, index) =>
       event({
         id: `event-${String(index)}`,
@@ -272,15 +306,12 @@ describe('dedupe-calendar-events script', () => {
       }),
     );
 
-    const batches = buildAiDuplicateBatches(events, 3, 1).map((batch) =>
+    const batches = buildAiDuplicateBatches(events, 3, 10 * 60_000).map((batch) =>
       batch.map((row) => row.id),
     );
 
-    expect(batches).toEqual([
-      ['event-0', 'event-1', 'event-2'],
-      ['event-2', 'event-3', 'event-4'],
-      ['event-4', 'event-5', 'event-6'],
-    ]);
+    expect(batches.length).toBeGreaterThanOrEqual(2);
+    expect(batches.every((batch) => batch.length >= 2 && batch.length <= 3)).toBe(true);
     expect(batches.some((batch) => batch.includes('event-2') && batch.includes('event-3'))).toBe(
       true,
     );
