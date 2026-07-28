@@ -24,6 +24,33 @@ const PAGE_SIZE = 500;
 const DEFAULT_LOOKBACK_MS = 90 * 24 * 60 * 60 * 1000;
 /** Keep AI batches small enough that duplicate-group JSON fits the default 8k cap. */
 export const AI_DUPLICATE_EVENT_BATCH_SIZE = 100;
+/**
+ * Overlap consecutive AI batches so chronologically adjacent events near a
+ * batch edge (e.g. indices 99 and 100) are still presented together. Without
+ * this, translated/time-shifted duplicates can fall on opposite sides of a
+ * hard cut and never reach the model.
+ */
+export const AI_DUPLICATE_EVENT_BATCH_OVERLAP = 20;
+
+export function buildAiDuplicateBatches(
+  events: EventRow[],
+  batchSize = AI_DUPLICATE_EVENT_BATCH_SIZE,
+  overlap = AI_DUPLICATE_EVENT_BATCH_OVERLAP,
+): EventRow[][] {
+  if (events.length < 2) return [];
+  if (events.length <= batchSize) return [events];
+
+  const safeOverlap = Math.max(0, Math.min(overlap, batchSize - 1));
+  const step = Math.max(1, batchSize - safeOverlap);
+  const batches: EventRow[][] = [];
+  for (let offset = 0; offset < events.length; offset += step) {
+    const batch = events.slice(offset, offset + batchSize);
+    if (batch.length < 2) break;
+    batches.push(batch);
+    if (offset + batchSize >= events.length) break;
+  }
+  return batches;
+}
 
 interface Args {
   teamId: string;
@@ -123,16 +150,18 @@ export async function aiDuplicateClusters(input: {
   events: EventRow[];
   chatStructured?: typeof llm.chatStructured;
   batchSize?: number;
+  batchOverlap?: number;
 }): Promise<string[][]> {
   const chatStructured = input.chatStructured ?? llm.chatStructured;
   const batchSize = input.batchSize ?? AI_DUPLICATE_EVENT_BATCH_SIZE;
-  const candidateEvents = input.events.filter((event) => !event.redacted);
+  const batchOverlap = input.batchOverlap ?? AI_DUPLICATE_EVENT_BATCH_OVERLAP;
+  const candidateEvents = [...input.events]
+    .filter((event) => !event.redacted)
+    .sort((left, right) => left.startAt.getTime() - right.startAt.getTime());
   if (candidateEvents.length < 2) return [];
 
   const clusters: string[][] = [];
-  for (let offset = 0; offset < candidateEvents.length; offset += batchSize) {
-    const batch = candidateEvents.slice(offset, offset + batchSize);
-    if (batch.length < 2) continue;
+  for (const batch of buildAiDuplicateBatches(candidateEvents, batchSize, batchOverlap)) {
     const result = await chatStructured({
       schema: aiDuplicateGroupSchema,
       model: llm.TIMELINE_MODELS.summarization.id,

@@ -8,8 +8,10 @@ import {
   type EventRow,
 } from '#src/scripts/dedupe-calendar-events-core.js';
 import {
+  AI_DUPLICATE_EVENT_BATCH_OVERLAP,
   AI_DUPLICATE_EVENT_BATCH_SIZE,
   aiDuplicateClusters,
+  buildAiDuplicateBatches,
 } from '#src/scripts/dedupe-calendar-events.js';
 
 const START = new Date('2026-06-17T11:00:00.000Z');
@@ -217,12 +219,10 @@ describe('dedupe-calendar-events script', () => {
 
   it('batches AI duplicate adjudication so large scans stay under the default output cap', async () => {
     expect(AI_DUPLICATE_EVENT_BATCH_SIZE).toBe(100);
+    expect(AI_DUPLICATE_EVENT_BATCH_OVERLAP).toBe(20);
     const chatStructured = vi.fn((input: { prompt: string }) => {
       const parsed = JSON.parse(input.prompt) as { events: { id: string }[] };
       expect(parsed.events.length).toBeLessThanOrEqual(3);
-      if (parsed.events.length < 2) {
-        return Promise.resolve({ object: { duplicate_groups: [] }, model: 'test' });
-      }
       return Promise.resolve({
         object: {
           duplicate_groups: [
@@ -250,12 +250,39 @@ describe('dedupe-calendar-events script', () => {
       events,
       chatStructured: chatStructured as never,
       batchSize: 3,
+      batchOverlap: 1,
     });
 
-    expect(chatStructured).toHaveBeenCalledTimes(2);
+    // step = 2 → batches [0,1,2], [2,3,4], [4,5,6]
+    expect(chatStructured).toHaveBeenCalledTimes(3);
     expect(clusters).toEqual([
       ['event-0', 'event-1'],
-      ['event-3', 'event-4'],
+      ['event-2', 'event-3'],
+      ['event-4', 'event-5'],
     ]);
+  });
+
+  it('overlaps AI batches so chronologically adjacent boundary events stay comparable', () => {
+    const events = Array.from({ length: 7 }, (_, index) =>
+      event({
+        id: `event-${String(index)}`,
+        title: `Meeting ${String(index)}`,
+        startAt: new Date(START.getTime() + index * 60_000),
+        endAt: new Date(END.getTime() + index * 60_000),
+      }),
+    );
+
+    const batches = buildAiDuplicateBatches(events, 3, 1).map((batch) =>
+      batch.map((row) => row.id),
+    );
+
+    expect(batches).toEqual([
+      ['event-0', 'event-1', 'event-2'],
+      ['event-2', 'event-3', 'event-4'],
+      ['event-4', 'event-5', 'event-6'],
+    ]);
+    expect(batches.some((batch) => batch.includes('event-2') && batch.includes('event-3'))).toBe(
+      true,
+    );
   });
 });
