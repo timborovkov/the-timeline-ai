@@ -84,6 +84,12 @@ afterEach(() => {
 });
 
 describe('chatStructured', () => {
+  it('caps structured maxOutputTokens so OpenRouter credit reservation stays affordable', () => {
+    // Do not raise toward the model max completion size; OpenRouter reserves
+    // credits against max_tokens and 32k caused production 402s.
+    expect(DEFAULT_STRUCTURED_MAX_OUTPUT_TOKENS).toBe(8_000);
+  });
+
   it('returns the parsed object and the resolved model id', async () => {
     const result = await chatStructured(
       {

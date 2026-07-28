@@ -31,7 +31,16 @@ type GenerateObjectProviderOptions = NonNullable<
 >;
 
 export const DEFAULT_AGENT_MAX_STEPS = 20;
-export const DEFAULT_STRUCTURED_MAX_OUTPUT_TOKENS = 32_768;
+/**
+ * OpenRouter reserves credits against `max_tokens` before the call runs, so
+ * this must stay a practical structured-JSON ceiling — not the model’s max
+ * completion size. PR #246 originally set 8_000 for that reason; a later
+ * “align with GLM limit” bump to 32_768 caused production 402s
+ * ("requested up to 32768 tokens, but can only afford …") even when the
+ * account still had headroom for real extraction output. Keep aligned with
+ * vision’s cost bound (`llm/vision.ts` default 8000).
+ */
+export const DEFAULT_STRUCTURED_MAX_OUTPUT_TOKENS = 8_000;
 
 export interface ChatStructuredInput<TSchema extends z.ZodType> {
   schema: TSchema;

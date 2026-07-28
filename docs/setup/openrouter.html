@@ -58,10 +58,10 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
         request but returns no schema-valid object, the wrapper retries the same model in JSON
         object mode before falling back to the <code>structuredFallback</code> model. Retryable
         OpenRouter/provider failures such as 429s, 5xx responses, and structured no-object outputs
-        can use the fallback model. Structured calls also set <code>maxOutputTokens=32768</code> so
-        long extraction and meeting-summary jobs keep quality headroom while avoiding accidental
-        reservation of a provider's entire completion-token budget. Authentication and request-shape
-        failures still fail fast so misconfiguration is not hidden.
+        can use the fallback model. Structured calls also set <code>maxOutputTokens=8000</code> so
+        extraction and meeting-summary jobs keep quality headroom without over-reserving OpenRouter
+        credits against unused completion tokens. Authentication and request-shape failures still
+        fail fast so misconfiguration is not hidden.
       </p>
       <p>
         Agent chat streams also include an OpenRouter <code>models</code> fallback list so transient
