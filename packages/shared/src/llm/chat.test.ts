@@ -85,9 +85,53 @@ afterEach(() => {
 
 describe('chatStructured', () => {
   it('caps structured maxOutputTokens so OpenRouter credit reservation stays affordable', () => {
-    // Do not raise toward the model max completion size; OpenRouter reserves
-    // credits against max_tokens and 32k caused production 402s.
+    // Do not raise the default toward the model max completion size; OpenRouter
+    // reserves credits against max_tokens and 32k caused production 402s.
     expect(DEFAULT_STRUCTURED_MAX_OUTPUT_TOKENS).toBe(8_000);
+  });
+
+  it('allows per-call maxOutputTokens overrides for bulk structured callers', async () => {
+    const requests: unknown[] = [];
+    const fetchStub: typeof fetch = (_url, init) => {
+      if (typeof init?.body !== 'string') throw new Error('expected request body');
+      requests.push(JSON.parse(init.body));
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            id: 'chatcmpl-test-max-output-override',
+            object: 'chat.completion',
+            created: 0,
+            model: TIMELINE_MODELS.extraction.id,
+            choices: [
+              {
+                index: 0,
+                message: { role: 'assistant', content: JSON.stringify({ ok: true }) },
+                finish_reason: 'stop',
+              },
+            ],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+    };
+
+    await chatStructured(
+      {
+        schema: z.object({ ok: z.boolean() }),
+        prompt: 'bulk',
+        maxOutputTokens: 12_000,
+      },
+      { fetch: fetchStub },
+    );
+
+    const body = z
+      .object({
+        max_completion_tokens: z.number().optional(),
+        max_tokens: z.number().optional(),
+      })
+      .parse(requests[0]);
+    expect(body.max_completion_tokens ?? body.max_tokens).toBe(12_000);
   });
 
   it('returns the parsed object and the resolved model id', async () => {

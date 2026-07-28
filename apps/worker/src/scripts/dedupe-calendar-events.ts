@@ -22,6 +22,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
 const PAGE_SIZE = 500;
 const DEFAULT_LOOKBACK_MS = 90 * 24 * 60 * 60 * 1000;
+/** Keep AI batches small enough that duplicate-group JSON fits the default 8k cap. */
+export const AI_DUPLICATE_EVENT_BATCH_SIZE = 100;
 
 interface Args {
   teamId: string;
@@ -117,28 +119,33 @@ function formatEventForAi(event: EventRow): Record<string, unknown> {
   };
 }
 
-async function aiDuplicateClusters(input: {
+export async function aiDuplicateClusters(input: {
   events: EventRow[];
   chatStructured?: typeof llm.chatStructured;
+  batchSize?: number;
 }): Promise<string[][]> {
   const chatStructured = input.chatStructured ?? llm.chatStructured;
+  const batchSize = input.batchSize ?? AI_DUPLICATE_EVENT_BATCH_SIZE;
   const candidateEvents = input.events.filter((event) => !event.redacted);
   if (candidateEvents.length < 2) return [];
 
-  const result = await chatStructured({
-    schema: aiDuplicateGroupSchema,
-    model: llm.TIMELINE_MODELS.summarization.id,
-    system:
-      'You identify duplicate calendar events. Group events only when they refer to the same real-world meeting. Titles, times, dates, duration, timezone, and all-day state may differ because calendars can import, translate, normalize, or reschedule the same meeting differently. Use titles, descriptions, locations, meeting links, attendee/client names, language translations, agenda wording, and time proximity as evidence. Do not group different meetings just because they overlap or mention the same company/person. If uncertain, omit the group. Return JSON only.',
-    prompt: JSON.stringify({
-      events: candidateEvents.map(formatEventForAi),
-    }),
-  });
-
   const clusters: string[][] = [];
-  for (const group of result.object.duplicate_groups) {
-    if (group.confidence === 'low') continue;
-    clusters.push(group.event_ids);
+  for (let offset = 0; offset < candidateEvents.length; offset += batchSize) {
+    const batch = candidateEvents.slice(offset, offset + batchSize);
+    if (batch.length < 2) continue;
+    const result = await chatStructured({
+      schema: aiDuplicateGroupSchema,
+      model: llm.TIMELINE_MODELS.summarization.id,
+      system:
+        'You identify duplicate calendar events. Group events only when they refer to the same real-world meeting. Titles, times, dates, duration, timezone, and all-day state may differ because calendars can import, translate, normalize, or reschedule the same meeting differently. Use titles, descriptions, locations, meeting links, attendee/client names, language translations, agenda wording, and time proximity as evidence. Do not group different meetings just because they overlap or mention the same company/person. If uncertain, omit the group. Return JSON only.',
+      prompt: JSON.stringify({
+        events: batch.map(formatEventForAi),
+      }),
+    });
+    for (const group of result.object.duplicate_groups) {
+      if (group.confidence === 'low') continue;
+      clusters.push(group.event_ids);
+    }
   }
 
   return clusters;

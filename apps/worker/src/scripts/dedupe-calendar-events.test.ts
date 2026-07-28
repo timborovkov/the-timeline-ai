@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   chooseSurvivor,
@@ -7,6 +7,10 @@ import {
   duplicateTextTokens,
   type EventRow,
 } from '#src/scripts/dedupe-calendar-events-core.js';
+import {
+  AI_DUPLICATE_EVENT_BATCH_SIZE,
+  aiDuplicateClusters,
+} from '#src/scripts/dedupe-calendar-events.js';
 
 const START = new Date('2026-06-17T11:00:00.000Z');
 const END = new Date('2026-06-17T12:00:00.000Z');
@@ -209,5 +213,49 @@ describe('dedupe-calendar-events script', () => {
     ]);
 
     expect(survivor.id).toBe('google');
+  });
+
+  it('batches AI duplicate adjudication so large scans stay under the default output cap', async () => {
+    expect(AI_DUPLICATE_EVENT_BATCH_SIZE).toBe(100);
+    const chatStructured = vi.fn((input: { prompt: string }) => {
+      const parsed = JSON.parse(input.prompt) as { events: { id: string }[] };
+      expect(parsed.events.length).toBeLessThanOrEqual(3);
+      if (parsed.events.length < 2) {
+        return Promise.resolve({ object: { duplicate_groups: [] }, model: 'test' });
+      }
+      return Promise.resolve({
+        object: {
+          duplicate_groups: [
+            {
+              event_ids: parsed.events.slice(0, 2).map((row) => row.id),
+              confidence: 'high' as const,
+              reason: 'same meeting',
+            },
+          ],
+        },
+        model: 'test',
+      });
+    });
+
+    const events = Array.from({ length: 7 }, (_, index) =>
+      event({
+        id: `event-${String(index)}`,
+        title: `Meeting ${String(index)}`,
+        startAt: new Date(START.getTime() + index * 60_000),
+        endAt: new Date(END.getTime() + index * 60_000),
+      }),
+    );
+
+    const clusters = await aiDuplicateClusters({
+      events,
+      chatStructured: chatStructured as never,
+      batchSize: 3,
+    });
+
+    expect(chatStructured).toHaveBeenCalledTimes(2);
+    expect(clusters).toEqual([
+      ['event-0', 'event-1'],
+      ['event-3', 'event-4'],
+    ]);
   });
 });
