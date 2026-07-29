@@ -12,7 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { type RefObject, type SyntheticEvent, useReducer, useRef } from 'react';
+import { type Dispatch, type RefObject, type SyntheticEvent, useReducer, useRef } from 'react';
 
 import {
   finalizeDocumentVersionAction,
@@ -96,20 +96,18 @@ function AttachmentPicker({
           }}
         />
         {files.length === 0 ? (
-          <span className="text-xs text-muted-foreground">
-            Audio, images, PDFs, docs, and notes
-          </span>
+          <span className="text-xs text-fg-muted">Audio, images, PDFs, docs, and notes</span>
         ) : (
           files.map((file, index) => (
             <span
               key={`${file.name}-${String(file.size)}-${String(index)}`}
-              className="inline-flex max-w-full items-center gap-2 rounded-full border border-border bg-background px-2.5 py-1 text-xs text-muted-foreground"
+              className="inline-flex max-w-full items-center gap-2 rounded-sm border border-border bg-bg px-2.5 py-1 text-xs text-fg-muted"
             >
               <SelectedFileIcon file={file} />
               <span className="max-w-48 truncate">{file.name}</span>
               <button
                 type="button"
-                className="text-muted-foreground transition-colors hover:text-foreground"
+                className="grid size-6 place-items-center rounded-sm text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
                 disabled={pending}
                 onClick={() => {
                   onRemoveFile(index);
@@ -242,30 +240,39 @@ async function uploadDocumentFile(file: File, visibility: 'private' | 'team'): P
   if (!finalized.ok) throw new Error(finalized.error ?? `Finalize failed for ${file.name}`);
 }
 
-export function CaptureForm({
-  initialVisibility = 'team',
+interface CaptureSubmissionOptions {
+  currentUser: Props['currentUser'];
+  filters: CaptureFilters;
+  isPrivate: boolean;
+  clip: RecordedClip | null;
+  files: File[];
+  formRef: RefObject<HTMLFormElement | null>;
+  textareaRef: RefObject<HTMLTextAreaElement | null>;
+  fileInputRef: RefObject<HTMLInputElement | null>;
+  setCaptureUi: Dispatch<CaptureUiAction>;
+}
+
+function useCaptureSubmission({
   currentUser,
-  filters = EMPTY_FILTERS,
-}: Props) {
+  filters,
+  isPrivate,
+  clip,
+  files,
+  formRef,
+  textareaRef,
+  fileInputRef,
+  setCaptureUi,
+}: CaptureSubmissionOptions) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const formRef = useRef<HTMLFormElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [{ isPrivate, clip, files, pending, error, notice, recorderKey }, setCaptureUi] =
-    useReducer(captureUiReducer, initialVisibility, initCaptureUiState);
-  // Bumped on successful post; passed as `key` to AudioRecorder so React
-  // remounts it with a fresh `phase: 'idle'` / `clip: null` state. The
-  // recorder owns its own clip state internally; without remount it would
-  // still show the post-recording audio player + Discard button.
-  // setPending is async; a quick double-click could enter submit twice before
-  // the button disables. Same in-flight latch the old AudioRecorder used.
+  // Prevent a fast double-submit before React applies the pending state.
   const inFlightRef = useRef(false);
+  const visibility = isPrivate ? 'private' : 'team';
 
   async function submitTextOnly(text: string): Promise<CreateEventState> {
     const fd = new FormData();
     fd.set('text', text);
-    fd.set('visibility', isPrivate ? 'private' : 'team');
+    fd.set('visibility', visibility);
     return createTextEventAction({}, fd);
   }
 
@@ -280,7 +287,7 @@ export function CaptureForm({
       contentAudioUrl: null,
       occurredAt: now,
       createdAt: now,
-      visibility: isPrivate ? 'private' : 'team',
+      visibility,
       visibilityUserIds: null,
       visibilityOwnerUserId: currentUser.id,
       sourceMetadata: { optimistic: true },
@@ -335,16 +342,17 @@ export function CaptureForm({
       mimeType: base,
       ...(noteText ? { noteText } : {}),
       durationSec: clip.durationSec,
-      visibility: isPrivate ? 'private' : 'team',
+      visibility,
     });
   }
 
-  async function handleSubmit(e: SyntheticEvent<HTMLFormElement>): Promise<void> {
-    e.preventDefault();
+  return async function handleSubmit(event: SyntheticEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
     if (inFlightRef.current) return;
     const text = (textareaRef.current?.value ?? '').trim();
     if (!clip && files.length === 0 && text.length === 0) {
       setCaptureUi({ error: 'Write something, record a voice note, or attach a file.' });
+      textareaRef.current?.focus();
       return;
     }
     inFlightRef.current = true;
@@ -357,9 +365,7 @@ export function CaptureForm({
       if (text.length > 0 && !clip) {
         optimisticTextId = addOptimisticTextEvent(text);
         const result = await submitTextOnly(text);
-        if (!result.ok) {
-          throw new Error(result.error ?? 'Post failed');
-        }
+        if (!result.ok) throw new Error(result.error ?? 'Post failed');
         if (result.warning) warnings.push(result.warning);
         textCommitted = true;
         serverStateChanged = true;
@@ -384,13 +390,9 @@ export function CaptureForm({
         files.map(async (file) => {
           const audioType = mimeTypeForAudioFile(file);
           if (audioType) {
-            return uploadAudioBlob({
-              blob: file,
-              mimeType: audioType,
-              visibility: isPrivate ? 'private' : 'team',
-            });
+            return uploadAudioBlob({ blob: file, mimeType: audioType, visibility });
           }
-          await uploadDocumentFile(file, isPrivate ? 'private' : 'team');
+          await uploadDocumentFile(file, visibility);
           return null;
         }),
       );
@@ -418,7 +420,6 @@ export function CaptureForm({
       formRef.current?.reset();
       if (fileInputRef.current) fileInputRef.current.value = '';
       setCaptureUi({ files: [] });
-      // Keep visibility pill sticky — it's a preference, not per-post.
       setCaptureUi({
         notice: {
           tone: warnings.length > 0 ? 'warning' : 'success',
@@ -430,18 +431,167 @@ export function CaptureForm({
       });
       await queryClient.invalidateQueries({ queryKey: queryKeys.onboarding() });
       router.refresh();
-    } catch (err) {
+    } catch (error) {
       if (!textCommitted && optimisticTextId) {
         removeOptimisticTextEvent(optimisticTextId);
       } else if (serverStateChanged) {
         router.refresh();
       }
-      setCaptureUi({ error: err instanceof Error ? err.message : 'Post failed', notice: null });
+      setCaptureUi({ error: error instanceof Error ? error.message : 'Post failed', notice: null });
     } finally {
       inFlightRef.current = false;
       setCaptureUi({ pending: false });
     }
-  }
+  };
+}
+
+interface CaptureFieldsProps {
+  textareaRef: RefObject<HTMLTextAreaElement | null>;
+  // A successful audio capture remounts the recorder to clear its owned clip state.
+  recorderKey: number;
+  pending: boolean;
+  files: File[];
+  fileInputRef: RefObject<HTMLInputElement | null>;
+  onClipChange: (clip: RecordedClip | null) => void;
+  onAddFiles: (files: File[]) => void;
+  onRemoveFile: (index: number) => void;
+}
+
+function CaptureFields({
+  textareaRef,
+  recorderKey,
+  pending,
+  files,
+  fileInputRef,
+  onClipChange,
+  onAddFiles,
+  onRemoveFile,
+}: CaptureFieldsProps) {
+  return (
+    <>
+      <div className="flex items-baseline gap-x-3 text-xs text-fg-dim">
+        <span className="text-fg">Capture</span>
+        <span aria-hidden="true">·</span>
+        <span>Quick note, meeting takeaway, decision, or follow-up</span>
+      </div>
+      <label htmlFor="capture-note" className="sr-only">
+        Note
+      </label>
+      <Textarea
+        ref={textareaRef}
+        id="capture-note"
+        name="text"
+        placeholder="What happened?"
+        rows={3}
+        autoFocus
+        className="resize-none rounded-sm border-0 bg-transparent p-0 text-base leading-7 shadow-none ring-0 ring-offset-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:text-sm"
+      />
+      <AudioRecorder key={recorderKey} onClipChange={onClipChange} disabled={pending} />
+      <AttachmentPicker
+        files={files}
+        pending={pending}
+        fileInputRef={fileInputRef}
+        onAddFiles={onAddFiles}
+        onRemoveFile={onRemoveFile}
+      />
+    </>
+  );
+}
+
+interface CaptureFooterProps {
+  isPrivate: boolean;
+  pending: boolean;
+  isUploading: boolean;
+  error: string | null;
+  onToggleVisibility: () => void;
+}
+
+function CaptureFooter({
+  isPrivate,
+  pending,
+  isUploading,
+  error,
+  onToggleVisibility,
+}: CaptureFooterProps) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
+      <button
+        type="button"
+        onClick={onToggleVisibility}
+        className={cn(
+          'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+          isPrivate
+            ? 'border-signal/30 bg-signal-soft text-fg'
+            : 'border-border bg-transparent text-fg-muted hover:text-fg',
+        )}
+        aria-pressed={isPrivate}
+      >
+        {isPrivate ? <Lock className="size-3" /> : <Users className="size-3" />}
+        {isPrivate ? 'Private (only me)' : 'Visible to team'}
+      </button>
+      <div className="flex items-center gap-3">
+        {error ? (
+          <p role="alert" className="text-xs text-danger">
+            {error}
+          </p>
+        ) : null}
+        <Button type="submit" disabled={pending} className="gap-2">
+          {pending ? (
+            isUploading ? (
+              'Uploading…'
+            ) : (
+              'Posting…'
+            )
+          ) : (
+            <>
+              <Send className="size-3.5" />
+              Post
+            </>
+          )}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function CaptureNotice({ notice }: { notice: CaptureUiState['notice'] }) {
+  if (!notice) return null;
+  return (
+    <p
+      role="status"
+      className={cn(
+        'rounded-sm border px-3 py-2 text-xs leading-5',
+        notice.tone === 'warning'
+          ? 'border-danger/30 bg-danger/5 text-danger'
+          : 'border-border bg-surface-2 text-fg',
+      )}
+    >
+      {notice.message}
+    </p>
+  );
+}
+
+export function CaptureForm({
+  initialVisibility = 'team',
+  currentUser,
+  filters = EMPTY_FILTERS,
+}: Props) {
+  const formRef = useRef<HTMLFormElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [{ isPrivate, clip, files, pending, error, notice, recorderKey }, setCaptureUi] =
+    useReducer(captureUiReducer, initialVisibility, initCaptureUiState);
+  const handleSubmit = useCaptureSubmission({
+    currentUser,
+    filters,
+    isPrivate,
+    clip,
+    files,
+    formRef,
+    textareaRef,
+    fileInputRef,
+    setCaptureUi,
+  });
 
   return (
     <form
@@ -450,29 +600,15 @@ export function CaptureForm({
       data-capture-ready="true"
       className="space-y-4 sm:space-y-5"
     >
-      <div className="flex items-baseline gap-x-3 text-xs text-fg-dim">
-        <span className="text-fg">CAPTURE</span>
-        <span className="text-fg-dim">·</span>
-        <span>quick note · meeting takeaway · decision · follow-up</span>
-      </div>
-      <Textarea
-        ref={textareaRef}
-        name="text"
-        placeholder="What happened?"
-        rows={3}
-        className="resize-none rounded-md border-0 bg-transparent p-0 text-[15px] leading-7 shadow-none ring-0 ring-offset-0 transition-colors focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:[outline:none]"
-      />
-      <AudioRecorder
-        key={recorderKey}
+      <CaptureFields
+        textareaRef={textareaRef}
+        recorderKey={recorderKey}
+        pending={pending}
+        files={files}
+        fileInputRef={fileInputRef}
         onClipChange={(nextClip) => {
           setCaptureUi({ clip: nextClip });
         }}
-        disabled={pending}
-      />
-      <AttachmentPicker
-        files={files}
-        pending={pending}
-        fileInputRef={fileInputRef}
         onAddFiles={(nextFiles) => {
           setCaptureUi((current) => ({ ...current, files: [...current.files, ...nextFiles] }));
         }}
@@ -483,54 +619,16 @@ export function CaptureForm({
           }));
         }}
       />
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
-        <button
-          type="button"
-          onClick={() => {
-            setCaptureUi((current) => ({ ...current, isPrivate: !current.isPrivate }));
-          }}
-          className={cn(
-            'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition-colors',
-            isPrivate
-              ? 'border-primary/30 bg-primary/10 text-primary'
-              : 'border-border bg-transparent text-muted-foreground hover:text-foreground',
-          )}
-          aria-pressed={isPrivate}
-        >
-          {isPrivate ? <Lock className="size-3" /> : <Users className="size-3" />}
-          {isPrivate ? 'Private (only me)' : 'Visible to team'}
-        </button>
-        <div className="flex items-center gap-3">
-          {error ? <span className="text-xs text-destructive">{error}</span> : null}
-          <Button type="submit" disabled={pending} className="gap-2">
-            {pending ? (
-              clip || files.length > 0 ? (
-                'Uploading…'
-              ) : (
-                'Posting…'
-              )
-            ) : (
-              <>
-                <Send className="size-3.5" />
-                Post
-              </>
-            )}
-          </Button>
-        </div>
-      </div>
-      {notice ? (
-        <p
-          role="status"
-          className={cn(
-            'rounded-sm border px-3 py-2 text-xs leading-5',
-            notice.tone === 'warning'
-              ? 'border-danger/30 bg-danger/5 text-danger'
-              : 'border-signal/30 bg-signal-soft text-fg',
-          )}
-        >
-          {notice.message}
-        </p>
-      ) : null}
+      <CaptureFooter
+        isPrivate={isPrivate}
+        pending={pending}
+        isUploading={Boolean(clip) || files.length > 0}
+        error={error}
+        onToggleVisibility={() => {
+          setCaptureUi((current) => ({ ...current, isPrivate: !current.isPrivate }));
+        }}
+      />
+      <CaptureNotice notice={notice} />
     </form>
   );
 }

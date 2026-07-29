@@ -11,11 +11,9 @@ test('Home hands a private prompt to Ask exactly once without putting it in the 
   const prompt = `What needs attention in the quiet archive ${String(Date.now())}?`;
 
   await page.goto('/app');
-  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
-  await page
-    .getByPlaceholder('Ask what changed, what is blocked, or what needs attention…')
-    .fill(prompt);
-  await page.getByRole('button', { name: 'Ask', exact: true }).click();
+  await expect(page.locator('h1')).toHaveCount(1);
+  await page.getByLabel('Question for Ask').fill(prompt);
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
 
   await expect(page).toHaveURL(/\/app\/chat\?session=[^&]+$/);
   expect(page.url()).not.toContain(encodeURIComponent(prompt));
@@ -34,9 +32,49 @@ test('Home capture is disclosed in a focused dialog', async ({ browser }) => {
   await page.getByRole('button', { name: 'Capture', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Capture a moment' });
   await expect(dialog.getByPlaceholder('What happened?')).toBeVisible();
+  await expect(dialog.getByLabel('Note')).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(dialog.getByRole('button', { name: 'Record', exact: true })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(dialog.getByRole('button', { name: 'Attach', exact: true })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(dialog.getByRole('button', { name: 'Visible to team', exact: true })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(dialog.getByRole('button', { name: 'Post', exact: true })).toBeFocused();
+
+  await dialog.getByRole('button', { name: 'Post', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toHaveText(
+    'Write something, record a voice note, or attach a file.',
+  );
+  await expect(dialog.getByLabel('Note')).toBeFocused();
 
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Capture', exact: true })).toBeFocused();
+  await page.context().close();
+});
+
+test('Home primary controls reflow at 320px', async ({ browser }) => {
+  const page = await newSignedInPage(browser, 'owner');
+  await page.setViewportSize({ width: 320, height: 780 });
+  await page.goto('/app');
+
+  await expect(page.locator('h1')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Capture', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Capture a moment' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel('Note')).toBeFocused();
+  await page.keyboard.press('Escape');
+
+  await page
+    .getByRole('heading', { name: 'Next setup step', exact: true })
+    .scrollIntoViewIfNeeded();
+  await expect(page.getByRole('heading', { name: 'Next setup step', exact: true })).toBeVisible();
+  const dimensions = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
   await page.context().close();
 });
 

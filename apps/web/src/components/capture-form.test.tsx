@@ -93,7 +93,6 @@ describe('CaptureForm', () => {
       }),
     );
 
-    expect(html).toContain('CAPTURE');
     expect(html).toContain('What happened?');
     expect(html).toContain('Visible to team');
     expect(html).toContain('Use recorded clip');
@@ -123,12 +122,23 @@ describe('CaptureForm', () => {
 
     await user.click(screen.getByRole('button', { name: 'Post' }));
 
-    expect(
-      screen.getByText('Write something, record a voice note, or attach a file.'),
-    ).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toBe(
+      'Write something, record a voice note, or attach a file.',
+    );
+    expect(document.activeElement).toBe(screen.getByLabelText('Note'));
     expect(fakes.createTextEventAction).not.toHaveBeenCalled();
     expect(fakes.createAudioEventAction).not.toHaveBeenCalled();
     expect(fakes.requestDocumentUploadAction).not.toHaveBeenCalled();
+  });
+
+  it('exposes the note field by its accessible label', () => {
+    render(
+      createElement(CaptureForm, {
+        currentUser: { id: 'user-1', name: 'Ada', email: 'ada@example.test' },
+      }),
+    );
+
+    expect(screen.getByRole('textbox', { name: 'Note' })).toBeTruthy();
   });
 
   it('surfaces durable queue warnings after text capture succeeds', async () => {

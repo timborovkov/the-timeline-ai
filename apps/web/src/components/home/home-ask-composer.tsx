@@ -2,7 +2,7 @@
 
 import { Send } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 
 import {
   CHAT_HANDOFF_MAX_PROMPT_LENGTH,
@@ -14,6 +14,7 @@ const SUGGESTIONS = ['What changed today?', 'What is blocked?', 'What needs atte
 
 export function HomeAskComposer({ teamId, actions }: { teamId: string; actions?: ReactNode }) {
   const router = useRouter();
+  const promptRef = useRef<HTMLInputElement>(null);
   const [prompt, setPrompt] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -21,6 +22,7 @@ export function HomeAskComposer({ teamId, actions }: { teamId: string; actions?:
     const validationError = validateChatHandoffPrompt(value);
     if (validationError) {
       setError(validationError);
+      promptRef.current?.focus();
       return;
     }
     try {
@@ -52,11 +54,12 @@ export function HomeAskComposer({ teamId, actions }: { teamId: string; actions?:
             Question for Ask
           </label>
           <input
+            ref={promptRef}
             id="home-ask-prompt"
             type="text"
             value={prompt}
             maxLength={CHAT_HANDOFF_MAX_PROMPT_LENGTH}
-            className="h-10 w-full truncate rounded-sm bg-transparent pl-3 pr-12 text-sm focus:outline-none"
+            className="h-10 w-full truncate rounded-sm bg-transparent pl-3 pr-12 text-base focus:outline-none sm:text-sm"
             placeholder="Ask the timeline…"
             aria-describedby={error ? 'home-ask-error' : undefined}
             aria-invalid={Boolean(error)}
@@ -71,11 +74,10 @@ export function HomeAskComposer({ teamId, actions }: { teamId: string; actions?:
           <button
             type="button"
             aria-label="Send"
-            disabled={!prompt.trim()}
             onClick={() => {
               submit();
             }}
-            className="absolute right-1 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-sm bg-signal text-signal-fg transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 disabled:opacity-30"
+            className="absolute right-1 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-sm bg-signal text-signal-fg transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2"
           >
             <Send aria-hidden="true" className="size-4" />
           </button>
