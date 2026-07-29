@@ -38,7 +38,11 @@ export function SignInForm({ callbackUrl }: { callbackUrl?: string }) {
           required
         />
       </div>
-      {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
+      {state.error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {state.error}
+        </p>
+      ) : null}
       <SubmitButton label="Sign in" />
     </form>
   );
@@ -98,9 +102,15 @@ export function SignUpForm({
       {turnstileSiteKey ? (
         <TurnstileWidget action="signup" siteKey={turnstileSiteKey} />
       ) : requiresTurnstile ? (
-        <p className="text-sm text-destructive">Account creation protection is not configured.</p>
+        <p role="alert" className="text-sm text-destructive">
+          Account creation protection is not configured.
+        </p>
       ) : null}
-      {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
+      {state.error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {state.error}
+        </p>
+      ) : null}
       <SubmitButton label="Create account" disabled={requiresTurnstile && !turnstileSiteKey} />
     </form>
   );

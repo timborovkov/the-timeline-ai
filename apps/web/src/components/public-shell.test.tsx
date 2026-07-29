@@ -15,5 +15,6 @@ describe('PublicShell', () => {
     expect(html.indexOf('href="#main"')).toBeGreaterThan(-1);
     expect(html.indexOf('href="#main"')).toBeLessThan(html.indexOf('href="/"'));
     expect(html).toContain('<main id="main">Public content</main>');
+    expect(html).toContain('min-h-dvh');
   });
 });

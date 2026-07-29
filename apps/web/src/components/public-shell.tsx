@@ -23,7 +23,7 @@ export function PublicShell({
 }: PublicShellProps) {
   const widthClass = width === 'reading' ? 'max-w-4xl' : 'max-w-6xl';
   return (
-    <div className="min-h-screen overflow-x-hidden bg-bg text-fg">
+    <div className="min-h-dvh overflow-x-hidden bg-bg text-fg">
       <SkipLink />
       <header className="sticky top-0 z-50 border-b border-border bg-bg/90 backdrop-blur">
         <div
@@ -36,10 +36,16 @@ export function PublicShell({
             <Wordmark compact />
           </Link>
           <nav aria-label="Public" className="flex items-center gap-1 text-sm">
-            <Link href="/help" className="hidden px-3 py-2 text-fg-muted hover:text-fg sm:block">
+            <Link
+              href="/help"
+              className="hidden rounded-sm px-3 py-2 text-fg-muted outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:block"
+            >
               Help
             </Link>
-            <Link href="/privacy" className="hidden px-3 py-2 text-fg-muted hover:text-fg md:block">
+            <Link
+              href="/privacy"
+              className="hidden rounded-sm px-3 py-2 text-fg-muted outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:block"
+            >
               Privacy
             </Link>
             <ThemeToggle className="text-fg-muted hover:text-fg" />
@@ -61,13 +67,22 @@ export function PublicShell({
         >
           <span>{footerLabel}</span>
           <div className="flex flex-wrap gap-4">
-            <Link href="/help/support" className="hover:text-fg">
+            <Link
+              href="/help/support"
+              className="rounded-sm outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
               Support
             </Link>
-            <Link href="/terms" className="hover:text-fg">
+            <Link
+              href="/terms"
+              className="rounded-sm outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
               Terms
             </Link>
-            <Link href="/privacy" className="hover:text-fg">
+            <Link
+              href="/privacy"
+              className="rounded-sm outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
               Privacy
             </Link>
           </div>
