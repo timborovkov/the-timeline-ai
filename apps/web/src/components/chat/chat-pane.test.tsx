@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { createElement, StrictMode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { chatHandoffKey } from '@/lib/chat-handoff';
 
@@ -47,6 +48,10 @@ beforeEach(() => {
   vi.unstubAllGlobals();
   fakes.transports.length = 0;
   window.sessionStorage.clear();
+});
+
+afterEach(() => {
+  cleanup();
 });
 
 describe('ChatPane', () => {
@@ -124,6 +129,35 @@ describe('ChatPane', () => {
     );
     expect(container.textContent).toContain('Unavailable object');
     expect(container.textContent).not.toContain(uuid);
+  });
+
+  it('submits the Ask composer with Enter', async () => {
+    const user = userEvent.setup();
+    const sendMessage = vi.fn();
+    fakes.useChat.mockReturnValue({
+      messages: [],
+      sendMessage,
+      status: 'ready',
+      error: null,
+    });
+
+    render(
+      createElement(ChatPane, {
+        teamId: 'team-1',
+        teamName: 'Acme',
+        sessionId: null,
+        initialMessages: [],
+        pinnedEntityId: null,
+        pinnedEntityName: null,
+      }),
+    );
+
+    await user.type(
+      screen.getByRole('textbox', { name: /Ask the timeline/ }),
+      'What changed?{Enter}',
+    );
+
+    expect(sendMessage).toHaveBeenCalledWith({ text: 'What changed?' });
   });
 
   it('consumes a Home handoff and sends it exactly once', async () => {

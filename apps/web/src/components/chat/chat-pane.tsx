@@ -312,20 +312,23 @@ function PinnedEntityBanner({
   );
   const label = displayLabel === 'Untitled object' ? 'Unavailable object' : displayLabel;
   return (
-    <div className="flex shrink-0 items-center gap-2 self-start rounded-full border border-primary/30 bg-primary/5 py-1 pl-3 pr-1 text-xs">
-      <Link href={`/app/objects/${pinnedEntityId}`} className="text-primary hover:underline">
+    <div className="flex shrink-0 items-center gap-2 self-start rounded-full border border-signal/30 bg-signal-soft py-1 pl-3 pr-1 text-xs">
+      <Link
+        href={`/app/objects/${pinnedEntityId}`}
+        className="text-signal underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+      >
         Pinned · {label}
       </Link>
       {sessionId && (
         <button
           type="button"
-          aria-label="Unpin"
+          aria-label={`Unpin ${label}`}
           onClick={() => {
             void unpinChatSessionAction({ sessionId }).then(onUnpinned);
           }}
-          className="flex size-5 items-center justify-center rounded-full text-muted-foreground hover:bg-primary/10 hover:text-primary"
+          className="flex size-6 items-center justify-center rounded-full text-fg-muted transition-colors hover:bg-signal-soft hover:text-signal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
         >
-          <X className="size-3" />
+          <X aria-hidden="true" className="size-3" />
         </button>
       )}
     </div>
@@ -502,9 +505,9 @@ function ChatError({ error }: { error: Error | undefined }) {
   if (!error) return null;
   return (
     <div role="alert" className="shrink-0 rounded-sm border border-danger/30 bg-danger/5 px-3 py-2">
-      <p className="text-sm text-danger">{error.message || 'Chat is unavailable right now.'}</p>
+      <p className="text-sm text-danger">{error.message || 'Unable to answer right now.'}</p>
       <p className="mt-1 text-xs text-fg-muted">
-        Saved timeline events are still available from Home and Timeline.
+        Check your connection and send your question again. Timeline history is still available.
       </p>
     </div>
   );
@@ -529,18 +532,19 @@ function ChatComposer({
         </label>
         <input
           id="chat-composer"
+          name="message"
           type="text"
           maxLength={4000}
           value={input}
           onChange={(e) => {
             onChange(e.target.value);
           }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') onSubmit(input);
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') onSubmit(input);
           }}
           placeholder="Ask the timeline…"
           disabled={isStreaming}
-          className="h-10 w-full truncate rounded-sm bg-transparent pl-3 pr-12 text-sm focus:outline-none"
+          className="h-10 w-full truncate rounded-sm bg-transparent pl-3 pr-12 text-base focus:outline-none sm:text-sm"
         />
         <button
           type="button"
@@ -549,9 +553,9 @@ function ChatComposer({
           }}
           disabled={isStreaming || !input.trim()}
           aria-label="Send"
-          className="absolute right-1 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-sm bg-signal text-signal-fg transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 disabled:opacity-30"
+          className="absolute right-1 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-sm bg-signal text-signal-fg transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-30"
         >
-          <Send className="size-4" />
+          <Send aria-hidden="true" className="size-4" />
         </button>
       </div>
     </div>

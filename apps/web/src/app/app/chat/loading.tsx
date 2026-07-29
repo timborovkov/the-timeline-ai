@@ -6,6 +6,7 @@ export default function ChatLoading() {
       data-app-layout="full-bleed"
       className="-mx-4 -my-6 flex h-[calc(100dvh-3rem)] md:-mx-8 md:-my-8"
       aria-busy="true"
+      aria-label="Loading Ask"
     >
       <aside className="hidden h-full w-60 shrink-0 flex-col border-r border-border bg-surface p-3 md:flex">
         <Skeleton className="mb-3 h-8 w-full rounded-sm" />

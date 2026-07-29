@@ -1,9 +1,15 @@
 import { PageHeaderSkeleton } from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
 
-export function RouteLoading({ rows = 4 }: { rows?: number }) {
+export function RouteLoading({
+  rows = 4,
+  label = 'Loading page',
+}: {
+  rows?: number;
+  label?: string;
+}) {
   return (
-    <div className="space-y-6" aria-busy="true" aria-label="Loading page">
+    <div className="space-y-6" aria-busy="true" aria-label={label}>
       <PageHeaderSkeleton />
       <div className="space-y-2">
         {Array.from({ length: rows }).map((_, index) => (
