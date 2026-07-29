@@ -3,6 +3,7 @@ import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@time
 import { withTeam } from '@timeline/shared/team-scope';
 import { localDateSpanToUtcRange } from '@timeline/shared/time';
 import { inArray } from 'drizzle-orm';
+import { ChevronDown } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -395,9 +396,7 @@ export default async function TimelinePage({ searchParams }: Props) {
       />
 
       <Coachmark storageKey="citation-inspector">
-        Every claim in the timeline is cited. Click any{' '}
-        <span className="font-mono text-signal">[c:...]</span> chip to see the raw source evidence.
-        That is the point of this product.
+        Select a timeline row to inspect its cited source evidence.
       </Coachmark>
 
       <TimelineBrowserSection
@@ -599,11 +598,15 @@ function TimelineFilterPanel({
   toValue: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3">
+    <div className="flex flex-wrap items-center gap-3">
       <h2 className="text-base font-semibold text-fg">Timeline</h2>
-      <details className="text-sm" open={hasFilters}>
-        <summary className="cursor-pointer list-none rounded-sm px-2 py-1 text-sm font-medium text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg">
-          Filters{hasFilters ? ' · On' : ''}
+      <details className="group ml-auto min-w-0 text-sm [&[open]]:basis-full" open={hasFilters}>
+        <summary className="ml-auto flex h-9 w-fit cursor-pointer list-none items-center gap-1.5 rounded-sm border border-border bg-surface px-3 text-sm font-medium text-fg-muted transition-colors hover:border-border-strong hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg">
+          <span>Filters{hasFilters ? ' · On' : ''}</span>
+          <ChevronDown
+            aria-hidden="true"
+            className="size-3.5 transition-transform group-open:rotate-180"
+          />
         </summary>
         <DebouncedFilterForm
           basePath="/app/timeline"

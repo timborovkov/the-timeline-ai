@@ -195,8 +195,9 @@ audit view.
 
 ### Evidence and citations
 
-Citation chips remain the primary evidence symbol: compact, mono, lime, and
-keyboard operable. Opening a citation shows a human source summary first.
+Timeline evidence cues use a compact, mono, lime “View evidence · N signals”
+label that makes the inspector affordance explicit and remains keyboard
+operable. Opening the evidence inspector shows a human source summary first.
 Exact timestamps, ownership/visibility internals, source IDs, payloads, and raw
 provider data sit inside the inspector’s `TechnicalDetails`.
 

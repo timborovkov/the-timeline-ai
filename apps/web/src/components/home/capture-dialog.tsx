@@ -59,7 +59,10 @@ export function CaptureDialog({ children }: { children: ReactNode }) {
       <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Capture a moment</DialogTitle>
-          <DialogDescription>Add a note or source file to your team timeline.</DialogDescription>
+          <DialogDescription>
+            Capture a note, voice recording, or file. Choose team or private visibility before
+            posting.
+          </DialogDescription>
         </DialogHeader>
         {children}
       </DialogContent>

@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fakes = vi.hoisted(() => ({
@@ -27,28 +28,65 @@ function renderChecklist(
     dismissed: boolean;
     items: { key: string; label: string; completed: boolean }[];
   } | null,
-  options: { checklistPending?: boolean; isPending?: boolean } = {},
+  options: {
+    checklistPending?: boolean;
+    isPending?: boolean;
+    checklistLoadFailed?: boolean;
+    checklistMutationFailed?: boolean;
+  } = {},
 ) {
   const mutateChecklist = vi.fn();
+  const retryChecklist = vi.fn();
+  const retryChecklistMutation = vi.fn();
   fakes.useOnboardingChecklistQuery.mockReturnValue({
     isPending: options.isPending ?? false,
+    checklistLoadFailed: options.checklistLoadFailed ?? false,
+    checklistMutationFailed: options.checklistMutationFailed ?? false,
     data,
     mutateChecklist,
+    retryChecklist,
+    retryChecklistMutation,
     checklistPending: options.checklistPending ?? false,
   });
 
   render(<OnboardingChecklist />);
-  return { mutateChecklist };
+  return { mutateChecklist, retryChecklist, retryChecklistMutation };
 }
 
 describe('OnboardingChecklist', () => {
-  it('renders nothing while loading or without data', () => {
+  it('renders a structure-matching busy state while loading and nothing without data', () => {
     renderChecklist(null, { isPending: true });
-    expect(screen.queryByText('Next setup step')).toBeNull();
+    expect(screen.getByLabelText('Loading next setup step').getAttribute('aria-busy')).toBe('true');
 
     cleanup();
     renderChecklist(null);
     expect(screen.queryByText('Next setup step')).toBeNull();
+  });
+
+  it('explains a loading failure and retries from the keyboard', async () => {
+    const user = userEvent.setup();
+    const { retryChecklist } = renderChecklist(null, { checklistLoadFailed: true });
+
+    expect(screen.getByRole('alert').textContent).toBe(
+      'Unable to load setup. Check your connection and try again.',
+    );
+    await user.tab();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Retry' }));
+    await user.keyboard('{Enter}');
+    expect(retryChecklist).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a stale setup step available when the next load fails', () => {
+    renderChecklist(
+      {
+        dismissed: false,
+        items: [{ key: 'telegram', label: 'Link Telegram', completed: false }],
+      },
+      { checklistLoadFailed: true },
+    );
+
+    expect(screen.getByText('Link Telegram')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('reopens dismissed checklists', () => {
@@ -57,6 +95,19 @@ describe('OnboardingChecklist', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reopen setup' }));
 
     expect(mutateChecklist).toHaveBeenCalledWith({ action: 'reopen' });
+  });
+
+  it('announces and retries a failed reopen from the dismissed state', () => {
+    const { retryChecklistMutation } = renderChecklist(
+      { dismissed: true, items: [] },
+      { checklistMutationFailed: true },
+    );
+
+    expect(screen.getByRole('alert').textContent).toBe(
+      'Unable to update setup. Your previous setup state was restored.',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Retry update' }));
+    expect(retryChecklistMutation).toHaveBeenCalledOnce();
   });
 
   it('renders progress and only the next incomplete step', () => {
@@ -122,5 +173,21 @@ describe('OnboardingChecklist', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss setup checklist' }));
     expect(active.mutateChecklist).toHaveBeenCalledWith({ action: 'dismiss' });
+  });
+
+  it('announces an update failure and retries the restored action', () => {
+    const { retryChecklistMutation } = renderChecklist(
+      {
+        dismissed: false,
+        items: [{ key: 'telegram', label: 'Link Telegram', completed: false }],
+      },
+      { checklistMutationFailed: true },
+    );
+
+    expect(screen.getByRole('alert').textContent).toBe(
+      'Unable to update setup. Your previous setup state was restored.',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Retry update' }));
+    expect(retryChecklistMutation).toHaveBeenCalledOnce();
   });
 });

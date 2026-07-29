@@ -23,7 +23,14 @@ describe('HomeAskComposer', () => {
 
   it('validates an empty question without navigating', () => {
     render(<HomeAskComposer teamId="team-1" />);
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Send' }).disabled).toBe(true);
+    const question = screen.getByLabelText('Question for Ask');
+    const send = screen.getByRole<HTMLButtonElement>('button', { name: 'Send' });
+
+    expect(send.disabled).toBe(false);
+    fireEvent.click(send);
+
+    expect(screen.getByRole('alert').textContent).toBe('Enter a question before opening Ask.');
+    expect(document.activeElement).toBe(question);
     expect(fakes.push).not.toHaveBeenCalled();
   });
 

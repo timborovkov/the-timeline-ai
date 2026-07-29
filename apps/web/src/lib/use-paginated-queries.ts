@@ -351,7 +351,7 @@ export function useFinishedJobsInfiniteQuery() {
 
 export function useOnboardingChecklistQuery() {
   const queryClient = useQueryClient();
-  const { data, isPending } = useQuery({
+  const { data, isPending, isError, refetch } = useQuery({
     queryKey: queryKeys.onboarding(),
     queryFn: async () =>
       readJson<{
@@ -403,8 +403,14 @@ export function useOnboardingChecklistQuery() {
   return {
     data,
     isPending,
+    checklistLoadFailed: isError && !data,
+    retryChecklist: refetch,
     mutateChecklist: mutation.mutate,
     checklistPending: mutation.isPending,
+    checklistMutationFailed: mutation.isError,
+    retryChecklistMutation: () => {
+      if (mutation.variables) mutation.mutate(mutation.variables);
+    },
   };
 }
 

@@ -1081,7 +1081,9 @@ function TimelineMomentRow({
       <div className="min-w-0 py-3 md:py-4 md:pl-4 md:pr-2">
         <button
           type="button"
-          aria-label={[title, previewText, moment.timeLabel].filter(Boolean).join(' · ')}
+          aria-label={[title, previewText, moment.timeLabel, 'View evidence']
+            .filter(Boolean)
+            .join(' · ')}
           onClick={() => {
             inspector.show(
               momentInspectorContent({
@@ -1113,7 +1115,9 @@ function TimelineMomentRow({
             ) ? (
               <span>{moment.contextLabel}</span>
             ) : null}
-            <span className="font-mono text-[10px]">{sourceCountLabel}</span>
+            <span className="inline-flex min-h-6 items-center rounded-sm border border-signal/30 bg-signal-soft px-1.5 py-0.5 font-mono text-[10px] text-signal">
+              View evidence · {sourceCountLabel}
+            </span>
           </div>
           <p className="mt-1.5 line-clamp-2 break-words text-base font-medium leading-6 text-fg md:max-w-[88ch] md:text-[15px]">
             {title}
