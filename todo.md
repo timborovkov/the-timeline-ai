@@ -55,6 +55,10 @@ records:
       with a manual retry or rejoin path. Scheduled Saved Meetings already retry
       one in-window no-show automatically; final failures are captured as
       `meetings.status='failed'` or `meetings.status='no_show'`.
+- [ ] Validate Meta Official Business Account/Groups API eligibility, then deliver
+      the guarded, forward-only WhatsApp group and direct-message capture pilot
+      described in `docs/whatsapp-groups-implementation-plan.md`. Do not present
+      it as arbitrary WhatsApp-group sync or historical import.
 
 ## UX Overhaul
 
