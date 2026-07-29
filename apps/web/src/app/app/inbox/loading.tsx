@@ -3,7 +3,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 export default function InboxLoading() {
   return (
-    <div className="space-y-6" aria-busy="true">
+    <div className="space-y-6" aria-busy="true" aria-label="Loading Inbox">
       <PageHeaderSkeleton />
       <nav className="flex gap-1.5" aria-label="Loading inbox filters">
         <Skeleton className="h-6 w-12 rounded-sm" />
@@ -13,7 +13,7 @@ export default function InboxLoading() {
         {Array.from({ length: 6 }).map((_, i) => (
           <li
             key={i}
-            className="grid grid-cols-[18ch_1fr] gap-x-4 gap-y-1 border-b border-border py-3"
+            className="grid grid-cols-1 gap-x-4 gap-y-2 border-b border-border py-3 sm:grid-cols-[18ch_1fr] sm:gap-y-1"
           >
             <Skeleton className="h-3 w-[16ch]" />
             <div className="space-y-1.5">

@@ -8,6 +8,7 @@ import { EmptyAction } from '@/components/empty-action';
 import { HistoryBackLink } from '@/components/history-back-link';
 import { MarkAllReadButton } from '@/components/inbox/mark-all-read-button';
 import { NotificationRow } from '@/components/inbox/notification-row';
+import { InboxPaginationLink } from '@/components/inbox/pagination-link';
 import { PageHeader } from '@/components/page-header';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -79,18 +80,18 @@ export default async function InboxPage({
         <MarkAllReadButton hasUnread={unreadCount > 0} />
       </div>
 
-      <nav aria-label="Filter notifications" className="flex gap-1.5 text-sm">
+      <nav aria-label="Filter notifications" className="flex flex-wrap gap-1.5 text-sm">
         <Link
           href="/app/inbox"
           aria-current={!unreadOnly ? 'page' : undefined}
-          className={`rounded-sm border px-2.5 py-1 transition-colors ${!unreadOnly ? 'border-signal/40 bg-signal-soft text-signal' : 'border-border text-fg-muted hover:bg-surface-2 hover:text-fg'}`}
+          className={`inline-flex min-h-9 items-center rounded-sm border px-2.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg ${!unreadOnly ? 'border-signal/40 bg-signal-soft text-signal' : 'border-border text-fg-muted hover:bg-surface-2 hover:text-fg'}`}
         >
           All
         </Link>
         <Link
           href="/app/inbox?unread=1"
           aria-current={unreadOnly ? 'page' : undefined}
-          className={`rounded-sm border px-2.5 py-1 transition-colors ${unreadOnly ? 'border-signal/40 bg-signal-soft text-signal' : 'border-border text-fg-muted hover:bg-surface-2 hover:text-fg'}`}
+          className={`inline-flex min-h-9 items-center rounded-sm border px-2.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg ${unreadOnly ? 'border-signal/40 bg-signal-soft text-signal' : 'border-border text-fg-muted hover:bg-surface-2 hover:text-fg'}`}
         >
           Unread
         </Link>
@@ -110,20 +111,12 @@ export default async function InboxPage({
               Showing {firstVisible}-{lastVisible} of {filteredTotal}
             </span>
             <div className="flex items-center gap-1.5">
-              <Link
-                href={pageHref(page - 1, unreadOnly)}
-                aria-disabled={!hasPrevious}
-                className={`rounded-sm border px-2.5 py-1 transition-colors ${hasPrevious ? 'border-border text-fg-muted hover:bg-surface-2 hover:text-fg' : 'pointer-events-none border-border text-fg-dim opacity-45'}`}
-              >
+              <InboxPaginationLink href={pageHref(page - 1, unreadOnly)} disabled={!hasPrevious}>
                 Previous
-              </Link>
-              <Link
-                href={pageHref(page + 1, unreadOnly)}
-                aria-disabled={!hasNext}
-                className={`rounded-sm border px-2.5 py-1 transition-colors ${hasNext ? 'border-border text-fg-muted hover:bg-surface-2 hover:text-fg' : 'pointer-events-none border-border text-fg-dim opacity-45'}`}
-              >
+              </InboxPaginationLink>
+              <InboxPaginationLink href={pageHref(page + 1, unreadOnly)} disabled={!hasNext}>
                 Next
-              </Link>
+              </InboxPaginationLink>
             </div>
           </div>
           <ul>
