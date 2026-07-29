@@ -396,7 +396,7 @@ export default async function TimelinePage({ searchParams }: Props) {
       />
 
       <Coachmark storageKey="citation-inspector">
-        Select a moment to inspect its cited source evidence.
+        Select a timeline row to inspect its cited source evidence.
       </Coachmark>
 
       <TimelineBrowserSection

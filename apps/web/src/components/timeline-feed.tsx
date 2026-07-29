@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 
 import type {
   ImpactKind,
@@ -112,6 +112,7 @@ export function TimelineFeed({
     enabled: live,
     timezone,
   });
+  const completionStatusRef = useRef<HTMLParagraphElement>(null);
   const pages = query.data.pages;
   const events = useMemo(() => {
     const seen = new Set<string>();
@@ -206,14 +207,21 @@ export function TimelineFeed({
             type="button"
             disabled={query.isFetchingNextPage}
             onClick={() => {
-              void query.fetchNextPage();
+              void query.fetchNextPage().finally(() => {
+                requestAnimationFrame(() => completionStatusRef.current?.focus());
+              });
             }}
             className="rounded-sm border border-border px-3 py-2 text-xs text-fg-muted transition-colors hover:bg-surface disabled:opacity-40"
           >
             {query.isFetchingNextPage ? 'Loading…' : 'Load more'}
           </button>
         ) : (
-          <p role="status" className="m-0 px-3 py-2 text-xs text-fg-dim">
+          <p
+            ref={completionStatusRef}
+            role="status"
+            tabIndex={-1}
+            className="m-0 px-3 py-2 text-xs text-fg-dim"
+          >
             You've reached the end of the timeline.
           </p>
         )}

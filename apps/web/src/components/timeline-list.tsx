@@ -1081,7 +1081,9 @@ function TimelineMomentRow({
       <div className="min-w-0 py-3 md:py-4 md:pl-4 md:pr-2">
         <button
           type="button"
-          aria-label={[title, previewText, moment.timeLabel].filter(Boolean).join(' · ')}
+          aria-label={[title, previewText, moment.timeLabel, 'View evidence']
+            .filter(Boolean)
+            .join(' · ')}
           onClick={() => {
             inspector.show(
               momentInspectorContent({

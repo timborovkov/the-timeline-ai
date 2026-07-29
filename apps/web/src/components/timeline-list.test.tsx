@@ -400,7 +400,7 @@ describe('TimelineList moment presentation', () => {
 
     expect(screen.getByText('View evidence · 1 signal')).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: /^Done \/ 16\.20/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Done \/ 16\.20.*View evidence$/i }));
     const inspector = renderLastInspector();
     expect(inspector).toContain('Moment');
     expect(inspector).toContain('Evidence summary');

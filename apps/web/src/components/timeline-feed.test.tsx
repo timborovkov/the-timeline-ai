@@ -302,7 +302,9 @@ describe('TimelineFeed', () => {
       }),
     );
 
-    expect(screen.getByRole('status').textContent).toBe("You've reached the end of the timeline.");
+    const completionStatus = screen.getByRole('status');
+    expect(completionStatus.textContent).toBe("You've reached the end of the timeline.");
+    expect(completionStatus.getAttribute('tabindex')).toBe('-1');
     expect(screen.queryByRole('button', { name: 'End of timeline' })).toBeNull();
   });
 });
