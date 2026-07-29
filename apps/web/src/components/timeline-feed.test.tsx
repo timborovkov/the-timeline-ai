@@ -287,4 +287,22 @@ describe('TimelineFeed', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry timeline' }));
     expect(refetch).toHaveBeenCalledTimes(1);
   });
+
+  it('announces that pagination is complete without leaving a disabled action', () => {
+    const initialPage = page([timelineEvent('event-1')]);
+    fakes.pages = [initialPage];
+
+    render(
+      createElement(TimelineFeed, {
+        initialPage,
+        filters: {},
+        currentUserId: 'user-1',
+        isAdmin: false,
+        members: [],
+      }),
+    );
+
+    expect(screen.getByRole('status').textContent).toBe("You've reached the end of the timeline.");
+    expect(screen.queryByRole('button', { name: 'End of timeline' })).toBeNull();
+  });
 });

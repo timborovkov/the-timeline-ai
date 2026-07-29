@@ -1192,7 +1192,7 @@ test('timeline filters source, author, and dates without leaving audit-trail mod
     await expect(ownerPage.getByText(targetText).first()).toBeVisible();
     await expect(ownerPage.getByText(sourceMismatchText)).toHaveCount(0);
     await expect(ownerPage.getByText(dateMismatchText)).toHaveCount(0);
-    await expect(ownerPage.getByText('Filters · ON')).toBeVisible();
+    await expect(ownerPage.getByText('Filters · On')).toBeVisible();
 
     await ownerPage.getByRole('link', { name: 'Clear' }).click();
     await expect(ownerPage).toHaveURL(/\/app\/timeline\?mode=events$/);

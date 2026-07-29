@@ -398,7 +398,7 @@ describe('TimelineList moment presentation', () => {
       }),
     );
 
-    expect(screen.getByText('1 signal')).toBeTruthy();
+    expect(screen.getByText('View evidence · 1 signal')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: /^Done \/ 16\.20/i }));
     const inspector = renderLastInspector();

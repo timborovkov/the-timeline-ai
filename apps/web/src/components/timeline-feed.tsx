@@ -201,20 +201,22 @@ export function TimelineFeed({
         />
       ) : null}
       <div className={compact ? 'hidden' : 'flex justify-center'}>
-        <button
-          type="button"
-          disabled={!query.hasNextPage || query.isFetchingNextPage}
-          onClick={() => {
-            void query.fetchNextPage();
-          }}
-          className="rounded-sm border border-border px-3 py-2 text-xs text-fg-muted transition-colors hover:bg-surface disabled:opacity-40"
-        >
-          {query.isFetchingNextPage
-            ? 'Loading…'
-            : query.hasNextPage
-              ? 'Load more'
-              : 'End of timeline'}
-        </button>
+        {query.hasNextPage || query.isFetchingNextPage ? (
+          <button
+            type="button"
+            disabled={query.isFetchingNextPage}
+            onClick={() => {
+              void query.fetchNextPage();
+            }}
+            className="rounded-sm border border-border px-3 py-2 text-xs text-fg-muted transition-colors hover:bg-surface disabled:opacity-40"
+          >
+            {query.isFetchingNextPage ? 'Loading…' : 'Load more'}
+          </button>
+        ) : (
+          <p role="status" className="m-0 px-3 py-2 text-xs text-fg-dim">
+            You've reached the end of the timeline.
+          </p>
+        )}
       </div>
     </div>
   );
