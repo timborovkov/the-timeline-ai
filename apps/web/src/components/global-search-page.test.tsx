@@ -318,6 +318,43 @@ describe('GlobalSearchPage', () => {
 
     render(<GlobalSearchPage initialQuery="launch" />);
 
-    expect(await screen.findByText(/Search is cooling down/)).toBeTruthy();
+    expect((await screen.findByRole('alert')).textContent).toMatch(/Search is cooling down/);
+    expect(screen.getByRole('button', { name: 'Try search again' })).toBeTruthy();
+  });
+
+  it('retries an in-page search error without changing the filters or URL', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('network failed'))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ok: true,
+          query: 'launch',
+          mode: 'full',
+          warnings: [],
+          results: [],
+        }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<GlobalSearchPage initialQuery="launch" />);
+
+    await screen.findByRole('alert');
+    await user.click(screen.getByRole('button', { name: 'Try search again' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+    expect(fakes.replace).not.toHaveBeenCalled();
+  });
+
+  it('guides an empty search page toward a first query', async () => {
+    render(<GlobalSearchPage initialQuery="" />);
+
+    expect(await screen.findByText('Start with a search')).toBeTruthy();
+    expect(
+      screen.getByText('Enter words, then narrow results by type, source, or date.'),
+    ).toBeTruthy();
   });
 });
