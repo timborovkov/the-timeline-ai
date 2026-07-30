@@ -36,7 +36,7 @@ afterEach(() => {
 });
 
 describe('McpShareUi', () => {
-  it('creates a team-visible bearer key and updates client setup snippets once', async () => {
+  it('creates a team-visible bearer key from the keyboard and updates client setup snippets once', async () => {
     const user = userEvent.setup();
     const fetchMock = vi.fn(() =>
       Promise.resolve(
@@ -62,7 +62,7 @@ describe('McpShareUi', () => {
 
     await user.click(screen.getByRole('button', { name: 'New key' }));
     await user.type(screen.getByPlaceholderText('Claude Desktop · personal mac'), 'Claude Desktop');
-    await user.click(screen.getByRole('button', { name: 'Create' }));
+    await user.keyboard('{Enter}');
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith('/api/team/mcp-keys', {
@@ -81,6 +81,91 @@ describe('McpShareUi', () => {
 
     await user.click(screen.getByRole('button', { name: "I've copied it, dismiss" }));
     expect(screen.queryByText('tl_mcp_live_secret_123')).toBeNull();
+  });
+
+  it('validates an empty key label, focuses the error, and submits after recovery', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({ name: 'Claude Desktop', plaintext: 'tl_mcp_live_secret_123' }),
+          { status: 200 },
+        ),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<McpShareUi keys={[]} mcpUrl={MCP_URL} />);
+
+    await user.click(screen.getByRole('button', { name: 'New key' }));
+    const label = screen.getByRole<HTMLInputElement>('textbox', { name: 'Label' });
+    const createButton = screen.getByRole<HTMLButtonElement>('button', { name: 'Create key' });
+
+    expect(createButton.type).toBe('submit');
+    expect(createButton.disabled).toBe(false);
+    expect(label.required).toBe(true);
+
+    await user.type(label, '   ');
+    await user.keyboard('{Enter}');
+
+    const error = await screen.findByText('Enter a label for this key.');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(label);
+    expect(label.getAttribute('aria-invalid')).toBe('true');
+    expect(label.getAttribute('aria-describedby')).toBe(error.id);
+    expect(error.getAttribute('role')).toBe('alert');
+
+    await user.type(label, 'Claude Desktop');
+    expect(label.getAttribute('aria-invalid')).toBeNull();
+    expect(screen.queryByText('Enter a label for this key.')).toBeNull();
+
+    await user.keyboard('{Enter}');
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith('/api/team/mcp-keys', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: '   Claude Desktop' }),
+      });
+    });
+    expect(await screen.findByText(/New key: copy now/)).toBeTruthy();
+  });
+
+  it('keeps a failed create form available for a keyboard retry', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('Unable to create key.', { status: 500 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ name: 'Claude Desktop', plaintext: 'tl_mcp_live_secret_123' }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<McpShareUi keys={[]} mcpUrl={MCP_URL} />);
+
+    await user.click(screen.getByRole('button', { name: 'New key' }));
+    const label = screen.getByRole<HTMLInputElement>('textbox', { name: 'Label' });
+    await user.type(label, 'Claude Desktop');
+    await user.keyboard('{Enter}');
+
+    const dialog = await screen.findByRole('dialog', { name: 'Create failed' });
+    expect(within(dialog).getByText('Unable to create key.')).toBeTruthy();
+    await user.click(within(dialog).getByRole('button', { name: 'OK' }));
+
+    const createButton = await screen.findByRole<HTMLButtonElement>('button', {
+      name: 'Create key',
+    });
+    expect(createButton.disabled).toBe(false);
+    expect(label.value).toBe('Claude Desktop');
+
+    await user.click(label);
+    await user.keyboard('{Enter}');
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+    expect(await screen.findByText(/New key: copy now/)).toBeTruthy();
   });
 
   it('revokes active keys only after destructive confirmation', async () => {
