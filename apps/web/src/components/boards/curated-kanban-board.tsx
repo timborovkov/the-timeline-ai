@@ -372,10 +372,11 @@ function KanbanCard({
   onMoveControlRef: (id: string, laneValue: string, node: HTMLSelectElement | null) => void;
 }) {
   const optimistic = item.id.startsWith('optimistic-');
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: item.id,
-    disabled: saving || optimistic,
-  });
+  const { attributes, listeners, setActivatorNodeRef, setNodeRef, transform, isDragging } =
+    useDraggable({
+      id: item.id,
+      disabled: saving || optimistic,
+    });
   const style = transform
     ? { transform: `translate3d(${String(transform.x)}px,${String(transform.y)}px,0)` }
     : undefined;
@@ -394,11 +395,8 @@ function KanbanCard({
     <li
       ref={setNodeRef}
       style={style}
-      {...attributes}
-      {...listeners}
       className={cn(
-        'cursor-grab rounded-sm border border-border bg-bg px-3 py-2 text-sm transition-colors hover:border-border-strong',
-        'focus-visible:border-signal/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
+        'rounded-sm border border-border bg-bg px-3 py-2 text-sm transition-colors hover:border-border-strong',
         selected && 'border-signal bg-signal-soft shadow-[inset_3px_0_0_var(--color-signal)]',
         blocked && 'border-danger/50',
         isDragging && 'opacity-50',
@@ -407,19 +405,32 @@ function KanbanCard({
         error && 'border-danger/50',
       )}
     >
-      {optimistic ? (
-        <span className="block min-w-0 whitespace-normal break-words font-medium leading-snug">
-          {displayText(title)}
-        </span>
-      ) : (
-        <Link
-          id={titleId}
-          href={boardViewHref(boardId, 'kanban', item.id, filterParams)}
-          className="block min-w-0 whitespace-normal break-words font-medium leading-snug hover:underline"
+      <div className="flex min-w-0 items-start gap-1">
+        {optimistic ? (
+          <span className="min-w-0 flex-1 whitespace-normal break-words font-medium leading-snug">
+            {displayText(title)}
+          </span>
+        ) : (
+          <Link
+            id={titleId}
+            href={boardViewHref(boardId, 'kanban', item.id, filterParams)}
+            className="min-w-0 flex-1 whitespace-normal break-words font-medium leading-snug hover:underline"
+          >
+            {displayText(title)}
+          </Link>
+        )}
+        <button
+          ref={setActivatorNodeRef}
+          type="button"
+          {...attributes}
+          {...listeners}
+          aria-label={`Drag ${displayText(title)}`}
+          disabled={saving || optimistic}
+          className="inline-flex size-8 shrink-0 touch-none cursor-grab items-center justify-center rounded-sm text-base leading-none text-fg-dim transition-colors hover:bg-surface-raised hover:text-fg active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-progress disabled:opacity-60"
         >
-          {displayText(title)}
-        </Link>
-      )}
+          <span aria-hidden="true">⠿</span>
+        </button>
+      </div>
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-fg-dim">
         <span>{statusLabel(item.object.type)}</span>
         {item.object.type === 'task' ? (

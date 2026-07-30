@@ -186,7 +186,59 @@ describe('CuratedKanbanBoard', () => {
     expect(within(unsetColumn).getByRole('link', { name: 'Unassigned card' })).toBeTruthy();
   });
 
-  it('moves a card through its keyboard-reachable lane menu and restores focus', async () => {
+  it('activates the card title link with Enter without starting a drag', async () => {
+    const user = userEvent.setup();
+    render(
+      <CuratedKanbanBoard
+        boardId="board-1"
+        lanes={[lane()]}
+        items={[boardItem('Keyboard link card')]}
+        selectedItemId={null}
+        members={[]}
+      />,
+    );
+
+    const title = screen.getByRole<HTMLAnchorElement>('link', { name: 'Keyboard link card' });
+    const titleClick = vi.fn((event: Event) => event.preventDefault());
+    title.addEventListener('click', titleClick);
+    title.focus();
+
+    await user.keyboard('{Enter}');
+
+    expect(titleClick).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/Picked up Keyboard link card/)).toBeNull();
+  });
+
+  it('keeps a keyboard-operable drag handle with live announcements', async () => {
+    const user = userEvent.setup();
+    render(
+      <CuratedKanbanBoard
+        boardId="board-1"
+        lanes={[lane()]}
+        items={[boardItem('Keyboard drag card')]}
+        selectedItemId={null}
+        members={[]}
+      />,
+    );
+
+    const dragHandle = screen.getByRole('button', { name: 'Drag Keyboard drag card' });
+    dragHandle.focus();
+
+    await user.keyboard('[Space]');
+    await waitFor(() => {
+      expect(dragHandle.getAttribute('aria-pressed')).toBe('true');
+      expect(screen.getByRole('status').textContent).toContain('Keyboard drag card is over Open.');
+    });
+
+    await user.keyboard('{Escape}');
+    await waitFor(() => {
+      expect(screen.getByRole('status').textContent).toContain(
+        'Cancelled moving Keyboard drag card.',
+      );
+    });
+  });
+
+  it('keeps Move to lane keyboard-reachable beside the drag handle and restores focus', async () => {
     const user = userEvent.setup();
     let resolveMove!: (value: { ok: true; id: string }) => void;
     fakes.updateBoardItemAction.mockImplementation(
@@ -206,8 +258,11 @@ describe('CuratedKanbanBoard', () => {
     );
 
     const moveControl = screen.getByRole<HTMLSelectElement>('combobox', { name: 'Move to lane' });
+    const title = screen.getByRole('link', { name: 'Keyboard card' });
+    const dragHandle = screen.getByRole('button', { name: 'Drag Keyboard card' });
+    title.focus();
     await user.tab();
-    await user.tab();
+    expect(document.activeElement).toBe(dragHandle);
     await user.tab();
     expect(document.activeElement).toBe(moveControl);
     expect(moveControl.className).toContain('w-full');
