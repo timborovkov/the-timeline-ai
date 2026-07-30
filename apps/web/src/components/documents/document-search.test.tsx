@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const fakes = vi.hoisted(() => ({
   useDocumentSearchQuery: vi.fn(),
   fetchNextPage: vi.fn(),
+  refetch: vi.fn(),
 }));
 
 vi.mock('@/lib/use-paginated-queries', () => ({
@@ -39,12 +40,14 @@ function documentHit(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   fakes.fetchNextPage.mockResolvedValue(undefined);
+  fakes.refetch.mockResolvedValue(undefined);
   fakes.useDocumentSearchQuery.mockReturnValue({
     data: undefined,
     isFetching: false,
     hasNextPage: false,
     isFetchingNextPage: false,
     fetchNextPage: fakes.fetchNextPage,
+    refetch: fakes.refetch,
   });
 });
 
@@ -113,6 +116,74 @@ describe('DocumentSearch', () => {
     expect((loadMore as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText('Full chunk text about Acme launch security signoff.')).toBeTruthy();
   });
+
+  it('distinguishes no matches from an empty document browser and clears the search', async () => {
+    const user = userEvent.setup();
+    fakes.useDocumentSearchQuery.mockImplementation((query: string) => ({
+      data: query === 'missing plan' ? { pages: [{ items: [], nextOffset: null }] } : undefined,
+      isFetching: false,
+      isSuccess: query === 'missing plan',
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: fakes.fetchNextPage,
+    }));
+
+    render(<DocumentSearch />);
+
+    const input = screen.getByRole('searchbox', { name: 'Search document chunks' });
+    await user.type(input, 'missing plan');
+    await user.click(screen.getByRole('button', { name: 'Search' }));
+
+    expect(await screen.findByText('No matches for “missing plan”')).toBeTruthy();
+    expect(screen.getByText(/Try a different phrase/)).toBeTruthy();
+    expect(screen.queryByText('No documents yet')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Clear search' }));
+
+    expect(input).toBeInstanceOf(HTMLInputElement);
+    const searchInput = input as HTMLInputElement;
+    expect(searchInput.value).toBe('');
+    expect(document.activeElement).toBe(searchInput);
+    await waitFor(() => {
+      expect(fakes.useDocumentSearchQuery).toHaveBeenLastCalledWith('');
+    });
+    expect(screen.queryByText('No matches for “missing plan”')).toBeNull();
+  });
+
+  it.each([
+    ['search_unconfigured', /Search is not configured yet/],
+    ['qdrant_failed', /Search is temporarily unavailable/],
+  ])(
+    'announces a failed initial search for %s and retries the submitted query',
+    async (errorCode, expectedMessage) => {
+      const user = userEvent.setup();
+      fakes.useDocumentSearchQuery.mockImplementation((query: string) => ({
+        data: undefined,
+        error: query === 'Acme security' ? new Error(errorCode) : null,
+        isError: query === 'Acme security',
+        isFetching: false,
+        hasNextPage: false,
+        isFetchingNextPage: false,
+        fetchNextPage: fakes.fetchNextPage,
+        refetch: fakes.refetch,
+      }));
+
+      render(<DocumentSearch />);
+
+      const input = screen.getByRole('searchbox', { name: 'Search document chunks' });
+      await user.type(input, '  Acme security  ');
+      await user.click(screen.getByRole('button', { name: 'Search' }));
+
+      expect((await screen.findByRole('alert')).textContent).toMatch(expectedMessage);
+      expect(screen.queryByText('No matches for “Acme security”')).toBeNull();
+
+      await user.click(screen.getByRole('button', { name: 'Retry search' }));
+
+      expect(fakes.refetch).toHaveBeenCalledOnce();
+      expect(fakes.useDocumentSearchQuery).toHaveBeenLastCalledWith('Acme security');
+      expect((input as HTMLInputElement).value).toBe('  Acme security  ');
+    },
+  );
 
   it('loads the next result page when more chunks are available', async () => {
     const user = userEvent.setup();

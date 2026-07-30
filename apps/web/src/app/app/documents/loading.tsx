@@ -1,19 +1,14 @@
 import { PageHeaderSkeleton } from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
 
-/**
- * Matches the DocumentDrive layout in Design v2: index strip header,
- * action row, and flat indexed rows for folders + documents. Mirrors
- * the loading shape PR #20 + PR #23 established for every other route
- * so navigation never flashes a blank screen.
- */
 export default function DocumentsLoading() {
   return (
-    <div className="space-y-6" aria-busy="true">
+    <div className="space-y-6" aria-busy="true" aria-label="Loading documents">
       <PageHeaderSkeleton />
-      <div className="flex items-center justify-between">
+      <Skeleton className="h-10 w-full" />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <Skeleton className="h-4 w-32" />
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap gap-2">
           <Skeleton className="h-7 w-28 rounded-sm" />
           <Skeleton className="h-7 w-24 rounded-sm" />
         </div>
@@ -31,7 +26,7 @@ export default function DocumentsLoading() {
                 className="flex items-center gap-3 rounded-sm border border-border bg-card px-3 py-2"
               >
                 <Skeleton className="size-4" />
-                <Skeleton className="h-4 w-48" />
+                <Skeleton className="h-4 w-full max-w-48" />
               </li>
             ))}
           </ul>
@@ -45,10 +40,10 @@ export default function DocumentsLoading() {
             {Array.from({ length: 5 }).map((_, i) => (
               <li
                 key={i}
-                className="flex items-center justify-between rounded-sm border border-border bg-card px-3 py-2"
+                className="grid gap-2 rounded-sm border border-border bg-card px-3 py-2 sm:grid-cols-[minmax(0,1fr)_4rem] sm:items-center"
               >
-                <Skeleton className="h-4 w-64" />
-                <Skeleton className="h-3 w-16" />
+                <Skeleton className="h-4 w-full max-w-64" />
+                <Skeleton className="h-3 w-16 sm:justify-self-end" />
               </li>
             ))}
           </ul>
