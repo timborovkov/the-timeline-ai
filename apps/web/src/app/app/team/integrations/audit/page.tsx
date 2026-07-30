@@ -9,6 +9,7 @@ import { TechnicalDetails } from '@/components/technical-details';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { formatDisplayDateTime } from '@/lib/display-dates';
 
 export const metadata: Metadata = {
   title: 'Integration audit',
@@ -16,6 +17,39 @@ export const metadata: Metadata = {
 };
 
 export const dynamic = 'force-dynamic';
+
+const INTEGRATION_AUDIT_SUMMARIES: Record<string, string> = {
+  backfill_enqueue_failed: 'Unable to queue sync',
+  backfill_requested: 'Sync requested',
+  'backfill_skipped:provider_budget': 'Sync paused for provider quota',
+  connect: 'Provider account connected',
+  disconnect: 'Provider disconnected',
+  disconnect_failed: 'Provider disconnect failed',
+  drive_page_cap_hit: 'Google Drive sync reached its page limit',
+  github_backfill_partial: 'GitHub historical sync completed with gaps',
+  github_commit_cursor_target_missing: 'GitHub commit cursor was reset',
+  github_commit_gap_checkpoint: 'GitHub commit sync checkpoint saved',
+  github_commit_history_truncated: 'GitHub commit history was limited',
+  github_incremental_partial: 'GitHub update sync completed with gaps',
+  harvest_failed: 'File content could not be read',
+  harvest_skipped: 'File content skipped',
+  monday_board_synced: 'Monday board synced',
+  targeted_item_board_mismatch: 'Selected item is on a different board',
+  targeted_item_missing: 'Selected item was not found',
+  webhook_provision_failed: 'Webhook setup failed',
+  webhook_provision_skipped_missing_scopes: 'Webhook setup needs more permissions',
+  webhooks_reconciled: 'Webhook subscriptions updated',
+};
+
+export function integrationAuditSummary(kind: string): string {
+  return (
+    INTEGRATION_AUDIT_SUMMARIES[kind] ??
+    kind
+      .replaceAll(/[_:.-]+/g, ' ')
+      .trim()
+      .replace(/^./, (first) => first.toUpperCase())
+  );
+}
 
 export default async function IntegrationAuditPage() {
   const session = await auth();
@@ -33,7 +67,12 @@ export default async function IntegrationAuditPage() {
     canViewAudit = false;
   }
   if (!canViewAudit) redirect('/app/team/integrations');
-  const rows = await scope.integrations.listAudit(null, 200);
+  const [rows, calendarSettings] = await Promise.all([
+    scope.integrations.listAudit(null, 200),
+    scope.calendar.getCalendarSettings(),
+  ]);
+  const timezone = calendarSettings.defaultTimezone;
+
   return (
     <div className="space-y-8">
       <Breadcrumb
@@ -44,11 +83,15 @@ export default async function IntegrationAuditPage() {
         ]}
       />
       <IndexStrip
-        srLabel={`Integration audit · ${String(rows.length)} rows`}
+        srLabel={`Integration audit · ${String(rows.length)} rows · times in ${timezone}`}
         segments={[
           { value: 'INTEGRATION AUDIT' },
           { label: 'team', value: active.teamName, signal: true },
           { label: 'rows', value: rows.length },
+          {
+            label: 'time zone',
+            value: <span className="normal-case tracking-normal">{timezone}</span>,
+          },
         ]}
       />
       <ul className="divide-y divide-border rounded-sm border border-border bg-surface text-sm">
@@ -56,26 +99,32 @@ export default async function IntegrationAuditPage() {
           <li className="px-3 py-2 text-fg-muted">No audit entries yet.</li>
         ) : (
           rows.map((r) => (
-            <li key={r.id} className="px-3 py-2">
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">
-                  {r.kind}
-                </span>
-                <time className="text-xs text-fg-muted">
-                  {new Date(r.createdAt).toLocaleString()}
-                </time>
+            <li key={r.id} className="p-3">
+              <div className="min-w-0 space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="font-medium leading-snug text-fg">
+                    {integrationAuditSummary(r.kind)}
+                  </div>
+                  <time
+                    dateTime={r.createdAt.toISOString()}
+                    className="font-mono text-xs tabular-nums text-fg-muted"
+                  >
+                    {formatDisplayDateTime(r.createdAt, { timezone })}
+                  </time>
+                </div>
+                <TechnicalDetails
+                  className="mt-3"
+                  items={[
+                    { label: 'Audit ID', value: r.id, copyValue: r.id },
+                    { label: 'Event code', value: r.kind, copyValue: r.kind },
+                    {
+                      label: 'Payload',
+                      value: JSON.stringify(r.payload, null, 2),
+                      copyValue: JSON.stringify(r.payload, null, 2),
+                    },
+                  ]}
+                />
               </div>
-              <TechnicalDetails
-                className="mt-2"
-                items={[
-                  { label: 'Audit ID', value: r.id, copyValue: r.id },
-                  {
-                    label: 'Payload',
-                    value: JSON.stringify(r.payload, null, 2),
-                    copyValue: JSON.stringify(r.payload, null, 2),
-                  },
-                ]}
-              />
             </li>
           ))
         )}
