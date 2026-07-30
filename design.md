@@ -110,6 +110,10 @@ for long-form prose. Article text is limited to 65–70ch.
 The authenticated product keeps eight primary destinations: Home, Timeline,
 Ask, Work, Documents, Meetings, Connections, and Team.
 
+- Desktop and mobile primary navigation keep that destination order in three
+  labeled groups: Overview (Home, Timeline, Ask), Workspace (Work, Documents,
+  Meetings), and Manage (Connections, Team). Collapsed rails retain the same
+  order and expose every destination through its icon label and tooltip.
 - Expanded sidebar: 240px. Collapsed rail: 56px.
 - Shell header: 48px.
 - Main page container: one shell-owned `max-w-6xl`; routes must not create a

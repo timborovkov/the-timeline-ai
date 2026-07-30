@@ -57,7 +57,7 @@ export function DesktopSidebar({
 
   return (
     <aside
-      aria-label="Sidebar"
+      aria-label="Application sidebar"
       data-expanded={expanded}
       className={cn(
         'sticky top-0 hidden h-full shrink-0 flex-col border-r border-border bg-surface py-3 transition-[width] duration-200 md:flex',
@@ -88,9 +88,8 @@ export function DesktopSidebar({
             <button
               type="button"
               aria-label={expanded ? 'Collapse sidebar' : 'Expand sidebar'}
-              aria-pressed={expanded}
               onClick={toggleExpanded}
-              className="grid size-8 shrink-0 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg"
+              className="grid size-9 shrink-0 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg"
             >
               {expanded ? (
                 <PanelLeftClose aria-hidden="true" className="size-4" />

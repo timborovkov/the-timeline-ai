@@ -51,7 +51,9 @@ describe('MobileNav', () => {
     expect(screen.getByRole('dialog', { name: 'Navigation' })).toBeTruthy();
     expect(document.body.style.overflow).toBe('hidden');
 
-    await user.click(screen.getByRole('link', { name: 'Open help docs in a new tab' }));
+    const helpLink = screen.getByRole('link', { name: 'Open help docs in a new tab' });
+    helpLink.addEventListener('click', (event) => event.preventDefault());
+    await user.click(helpLink);
 
     await waitFor(() => {
       expect(screen.queryByRole('dialog', { name: 'Navigation' })).toBeNull();
@@ -73,10 +75,13 @@ describe('MobileNav', () => {
     await user.click(opener);
     const dialog = screen.getByRole<HTMLDialogElement>('dialog', { name: 'Navigation' });
     expect(dialog.open).toBe(true);
-    const closeControls = screen.getAllByRole<HTMLButtonElement>('button', {
+    expect(opener.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(opener.getAttribute('aria-controls')).toBe('mobile-primary-navigation');
+    const [backdropClose, closeControl] = screen.getAllByRole<HTMLButtonElement>('button', {
       name: 'Close navigation',
     });
-    expect(document.activeElement).toBe(closeControls.at(-1));
+    expect(backdropClose?.getAttribute('tabindex')).toBe('-1');
+    expect(document.activeElement).toBe(closeControl);
 
     dialog.dispatchEvent(new Event('cancel', { bubbles: false, cancelable: true }));
     await waitFor(() => {
@@ -84,5 +89,30 @@ describe('MobileNav', () => {
     });
     expect(document.activeElement).toBe(opener);
     expect(document.body.style.overflow).toBe('');
+  });
+
+  it('groups routes and exposes the current destination without relying on its color', async () => {
+    const user = userEvent.setup();
+    fakes.pathname = '/app/tasks';
+    render(
+      createElement(MobileNav, {
+        active,
+        memberships: [active],
+        recipientInvites: [],
+        badges: { work: 1 },
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }));
+
+    expect(screen.getByRole('list', { name: 'Overview' })).toBeTruthy();
+    expect(screen.getByRole('list', { name: 'Workspace' })).toBeTruthy();
+    expect(screen.getByRole('list', { name: 'Manage' })).toBeTruthy();
+    expect(
+      screen
+        .getByRole('link', { name: 'Work, 1 item needs attention' })
+        .getAttribute('aria-current'),
+    ).toBe('page');
+    expect(screen.getByRole('link', { name: 'Team' }).getAttribute('aria-current')).toBeNull();
   });
 });
