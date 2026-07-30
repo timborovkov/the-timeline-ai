@@ -4,7 +4,7 @@ import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
   title: 'Team MCP servers',
-  description: 'Manage team MCP server connections.',
+  description: 'Team MCP server settings are managed in Integrations.',
 };
 
 // Phase 11 — the standalone MCP servers page was folded into
