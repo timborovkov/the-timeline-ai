@@ -381,7 +381,6 @@ describe('PersonalConnectionsUi', () => {
     expect(deleteAccount.getAttribute('aria-expanded')).toBe('false');
     expect(document.activeElement).toBe(deleteAccount);
   });
-
   it('lets keyboard users clear a search with no matching sources', async () => {
     const user = userEvent.setup();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
