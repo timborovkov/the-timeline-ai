@@ -136,7 +136,7 @@ export function CuratedKanbanBoard({
 
   const registerMoveControl = useCallback(
     (id: string, laneValue: string, node: HTMLSelectElement | null) => {
-      if (!node) return;
+      if (!node || node.disabled) return;
       const pendingFocus = pendingMoveControlFocusRef.current;
       if (pendingFocus?.id !== id || pendingFocus.laneValue !== laneValue) return;
       pendingMoveControlFocusRef.current = null;
@@ -212,9 +212,9 @@ export function CuratedKanbanBoard({
       const { [id]: _cleared, ...rest } = current;
       return rest;
     });
+    markSaving(id, true);
     startTransition(async () => {
       moveOptimistic({ id, laneId });
-      markSaving(id, true);
       let failed = false;
       try {
         const result = await updateBoardItemAction({ id, laneId });
@@ -387,9 +387,10 @@ function KanbanCard({
   const errorId = `board-card-${item.id}-move-error`;
   const registerMoveControl = useCallback(
     (node: HTMLSelectElement | null) => {
+      if (saving) return;
       onMoveControlRef(item.id, lane.id, node);
     },
-    [item.id, lane.id, onMoveControlRef],
+    [item.id, lane.id, onMoveControlRef, saving],
   );
   return (
     <li

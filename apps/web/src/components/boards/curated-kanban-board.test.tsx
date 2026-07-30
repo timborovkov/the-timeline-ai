@@ -279,8 +279,53 @@ describe('CuratedKanbanBoard', () => {
         name: 'Move to lane',
       });
       expect(movedControl.value).toBe('lane-2');
-      expect(document.activeElement).toBe(movedControl);
+      expect(movedControl.disabled).toBe(true);
+      expect(screen.getByText('Saving…')).toBeTruthy();
     });
+
+    resolveMove({ ok: true, id: 'item-1' });
+    await waitFor(() => {
+      expect(screen.getByText('Saved')).toBeTruthy();
+      const savedControl = screen.getByRole<HTMLSelectElement>('combobox', {
+        name: 'Move to lane',
+      });
+      expect(savedControl.disabled).toBe(false);
+      expect(document.activeElement).toBe(savedControl);
+    });
+  });
+
+  it('disables Move to lane and announces saving while its update is pending', async () => {
+    const user = userEvent.setup();
+    let resolveMove!: (value: { ok: true; id: string }) => void;
+    fakes.updateBoardItemAction.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveMove = resolve;
+        }),
+    );
+    render(
+      <CuratedKanbanBoard
+        boardId="board-1"
+        lanes={[lane(), lane('lane-2', 'Doing'), lane('lane-3', 'Done')]}
+        items={[boardItem('Pending move card')]}
+        selectedItemId={null}
+        members={[]}
+      />,
+    );
+
+    await user.selectOptions(
+      screen.getByRole<HTMLSelectElement>('combobox', { name: 'Move to lane' }),
+      'lane-2',
+    );
+
+    await waitFor(() => {
+      const pendingControl = screen.getByRole<HTMLSelectElement>('combobox', {
+        name: 'Move to lane',
+      });
+      expect(pendingControl.disabled).toBe(true);
+      expect(screen.getByText('Saving…')).toBeTruthy();
+    });
+    expect(fakes.updateBoardItemAction).toHaveBeenCalledOnce();
 
     resolveMove({ ok: true, id: 'item-1' });
     await waitFor(() => {
