@@ -60,8 +60,8 @@ export default async function JobRecoveryPage(props: { searchParams: Promise<{ k
           { label: 'needs attention', value: items.length },
         ]}
       />
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-fg-muted">
+      <section aria-labelledby="processing-summary-heading" className="space-y-3">
+        <h2 id="processing-summary-heading" className="text-base font-semibold text-fg">
           Processing summary
         </h2>
         <JobDashboard />
