@@ -40,11 +40,19 @@ function subscribeTimezone(): () => void {
 const browserTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_TIMEZONE;
 const serverTimezone = () => DEFAULT_TIMEZONE;
 
-function Submit({ label }: { label: string }) {
+function Submit({
+  label,
+  pendingLabel = 'Working…',
+  className,
+}: {
+  label: string;
+  pendingLabel?: string;
+  className?: string;
+}) {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" disabled={pending}>
-      {pending ? 'Working…' : label}
+    <Button type="submit" className={className} disabled={pending}>
+      {pending ? pendingLabel : label}
     </Button>
   );
 }
@@ -212,6 +220,8 @@ export function InviteMemberForm({ canInviteAdmin }: { canInviteAdmin: boolean }
             type="email"
             placeholder="teammate@example.com"
             required
+            aria-invalid={state.error ? true : undefined}
+            aria-describedby={state.error ? 'invite-error' : undefined}
           />
         </div>
         <div className="space-y-2 sm:w-36">
@@ -221,27 +231,40 @@ export function InviteMemberForm({ canInviteAdmin }: { canInviteAdmin: boolean }
             name="role"
             defaultValue="member"
             className="h-10 w-full rounded-md border border-input bg-background px-2 text-sm"
+            aria-invalid={state.error ? true : undefined}
+            aria-describedby={state.error ? 'invite-error' : undefined}
           >
             <option value="member">Member</option>
             {canInviteAdmin ? <option value="admin">Admin</option> : null}
           </select>
         </div>
-        <Submit label="Create invite" />
+        <Submit
+          label="Create invite"
+          pendingLabel="Creating invite…"
+          className="w-full sm:w-auto"
+        />
       </div>
-      {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
+      {state.error ? (
+        <p id="invite-error" role="alert" className="text-sm text-destructive">
+          {state.error}
+        </p>
+      ) : null}
       {state.inviteUrl ? (
-        <div className="rounded-md border bg-muted p-3 text-xs">
-          <p className="mb-1 font-medium">Invite link (copy and share):</p>
-          <code className="break-all font-mono text-[12px]">{state.inviteUrl}</code>
-          {state.sendStatus === 'sent' ? (
-            <p className="mt-2 text-muted-foreground">Invite email sent.</p>
-          ) : null}
-          {state.sendStatus === 'failed' ? (
-            <p className="mt-2 text-destructive">
-              Email was not sent: {state.sendError ?? 'unknown error'}. The link still works.
-            </p>
-          ) : null}
-        </div>
+        <>
+          <output className="sr-only">Invite created. The invite link is ready to share.</output>
+          <div className="rounded-md border bg-muted p-3 text-xs">
+            <p className="mb-1 font-medium">Invite link (copy and share):</p>
+            <code className="break-all font-mono text-[12px]">{state.inviteUrl}</code>
+            {state.sendStatus === 'sent' ? (
+              <p className="mt-2 text-muted-foreground">Invite email sent.</p>
+            ) : null}
+            {state.sendStatus === 'failed' ? (
+              <p className="mt-2 text-destructive">
+                Email was not sent: {state.sendError ?? 'unknown error'}. The link still works.
+              </p>
+            ) : null}
+          </div>
+        </>
       ) : null}
     </form>
   );

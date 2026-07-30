@@ -145,7 +145,22 @@ describe('InviteMemberForm', () => {
 
     render(<InviteMemberForm canInviteAdmin={false} />);
 
-    expect(screen.getByText('Only admins can invite members.')).toBeTruthy();
+    const error = screen.getByRole('alert');
+    expect(error.textContent).toBe('Only admins can invite members.');
+    expect(screen.getByLabelText('Email').getAttribute('aria-invalid')).toBe('true');
+    expect(screen.getByLabelText('Email').getAttribute('aria-describedby')).toBe('invite-error');
+    expect(screen.getByLabelText('Role').getAttribute('aria-describedby')).toBe('invite-error');
+  });
+
+  it('uses a specific pending label and lets the invite action reflow to the full mobile width', () => {
+    fakes.useFormStatus.mockReturnValue({ pending: true });
+
+    render(<InviteMemberForm canInviteAdmin />);
+
+    const submit = screen.getByRole<HTMLButtonElement>('button', { name: 'Creating invite…' });
+    expect(submit.disabled).toBe(true);
+    expect(submit.className).toContain('w-full');
+    expect(submit.className).toContain('sm:w-auto');
   });
 });
 

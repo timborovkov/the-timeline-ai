@@ -7,65 +7,29 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import type { ComponentProps } from 'react';
 
-import {
-  changeMemberRoleAction,
-  removeMemberAction,
-  resendInviteAction,
-  revokeInviteAction,
-} from '@/app/actions/teams';
 import { ActionChip } from '@/components/action-chip';
 import { PageHeader } from '@/components/page-header';
 import { SettingsNav } from '@/components/settings-nav';
 import {
   InboundEmailWhitelistForm,
   DigestPreferenceForm,
-  InviteMemberForm,
   RenameTeamForm,
   TeamTimezoneForm,
   TeamExportPanel,
 } from '@/components/team-forms';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { TeamMembersSettings } from '@/components/team-members-settings';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { VisibilityDefaultSettings } from '@/components/visibility-default-settings';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { displayMemberLabel, displayRemovedMemberLabel } from '@/lib/display-labels';
-import { getSiteUrl } from '@/lib/site-url';
+import { displayMemberLabel } from '@/lib/display-labels';
 
 export const metadata: Metadata = {
   title: 'Team settings',
   description: 'Manage team members, defaults, and access.',
 };
 
-interface UserInfo {
-  id: string;
-  name: string | null;
-  email: string | null;
-}
-type UserMap = Map<string, UserInfo>;
-interface MemberRow {
-  userId: string;
-  role: string;
-}
-interface InviteRow {
-  id: string;
-  email: string;
-  role: string;
-  token: string;
-  expiresAt: Date;
-  createdAt: Date;
-  lastSentAt: Date | null;
-  sendStatus: string;
-  sendError: string | null;
-  invitedByUserId: string;
-}
-interface RemovedMemberRow {
-  userId: string;
-  role: string;
-  removedAt: Date | null;
-}
 type InboundEmailWhitelistSettings = ComponentProps<typeof InboundEmailWhitelistForm>;
 type TeamTimezoneSettings = ComponentProps<typeof TeamTimezoneForm>;
 
@@ -231,19 +195,14 @@ export default async function TeamSettingsPage({
         <div className="min-w-0 flex-1 space-y-5">
           {section === 'members' ? (
             <>
-              <MembersCard
+              <TeamMembersSettings
                 members={memberRows}
                 userMap={userMap}
                 isAdmin={isAdmin}
                 isOwner={isOwner}
                 currentUserId={session.user.id}
-              />
-              <InviteCards
-                isAdmin={isAdmin}
-                isOwner={isOwner}
                 invites={inviteRows}
                 removedMembers={removedRows}
-                userMap={userMap}
               />
             </>
           ) : null}
@@ -358,252 +317,5 @@ function AdminShortcuts({ isAdmin }: { isAdmin: boolean }) {
       <ActionChip href="/app/team/audit" label="Audit" />
       <ActionChip href="/app/team/integrations/audit" label="Integration audit" />
     </div>
-  );
-}
-
-function MembersCard({
-  members,
-  userMap,
-  isAdmin,
-  isOwner,
-  currentUserId,
-}: {
-  members: MemberRow[];
-  userMap: UserMap;
-  isAdmin: boolean;
-  isOwner: boolean;
-  currentUserId: string;
-}) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle as="h2">Members</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ul className="divide-y">
-          {members.map((member) => (
-            <MemberListItem
-              key={member.userId}
-              member={member}
-              user={userMap.get(member.userId)}
-              isAdmin={isAdmin}
-              isOwner={isOwner}
-              currentUserId={currentUserId}
-            />
-          ))}
-        </ul>
-      </CardContent>
-    </Card>
-  );
-}
-
-function MemberListItem({
-  member,
-  user,
-  isAdmin,
-  isOwner,
-  currentUserId,
-}: {
-  member: MemberRow;
-  user: UserInfo | undefined;
-  isAdmin: boolean;
-  isOwner: boolean;
-  currentUserId: string;
-}) {
-  const memberLabel = displayMemberLabel(user);
-  return (
-    <li className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="min-w-0 flex flex-col">
-        <span className="text-sm font-medium">{memberLabel}</span>
-        <span className="truncate text-xs text-muted-foreground">{user?.email}</span>
-      </div>
-      <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
-        {isOwner && member.userId !== currentUserId ? (
-          <form
-            action={changeMemberRoleAction}
-            className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-2 sm:flex sm:w-auto sm:items-center"
-          >
-            <input type="hidden" name="userId" value={member.userId} />
-            <select
-              aria-label={`Role for ${memberLabel}`}
-              name="role"
-              defaultValue={member.role}
-              className="h-9 min-w-0 rounded-md border border-input bg-background px-2 text-sm"
-            >
-              <option value="member">Member</option>
-              <option value="admin">Admin</option>
-              <option value="owner">Owner</option>
-            </select>
-            <Button type="submit" variant="outline" size="sm">
-              Save
-            </Button>
-          </form>
-        ) : (
-          <Badge variant="outline">{member.role}</Badge>
-        )}
-        {isAdmin && member.userId !== currentUserId && (isOwner || member.role === 'member') ? (
-          <form action={removeMemberAction} className="sm:contents">
-            <input type="hidden" name="userId" value={member.userId} />
-            <Button
-              type="submit"
-              variant="ghost"
-              size="sm"
-              className="self-start"
-              aria-label={`Remove ${memberLabel}`}
-            >
-              Remove
-            </Button>
-          </form>
-        ) : null}
-      </div>
-    </li>
-  );
-}
-
-function InviteCards({
-  isAdmin,
-  isOwner,
-  invites,
-  removedMembers,
-  userMap,
-}: {
-  isAdmin: boolean;
-  isOwner: boolean;
-  invites: InviteRow[];
-  removedMembers: RemovedMemberRow[];
-  userMap: UserMap;
-}) {
-  if (!isAdmin) return null;
-  return (
-    <>
-      <Card id="invite" className="scroll-mt-24">
-        <CardHeader>
-          <CardTitle>Invite a teammate</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <InviteMemberForm canInviteAdmin={isOwner} />
-        </CardContent>
-      </Card>
-      <PendingInvitesCard invites={invites} userMap={userMap} />
-      <RemovedMembersCard removedMembers={removedMembers} userMap={userMap} />
-    </>
-  );
-}
-
-function PendingInvitesCard({ invites, userMap }: { invites: InviteRow[]; userMap: UserMap }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Pending invites</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {invites.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No pending invites.</p>
-        ) : (
-          <ul className="divide-y">
-            {invites.map((invite) => (
-              <PendingInviteItem
-                key={invite.id}
-                invite={invite}
-                inviter={userMap.get(invite.invitedByUserId)}
-              />
-            ))}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function PendingInviteItem({
-  invite,
-  inviter,
-}: {
-  invite: InviteRow;
-  inviter: UserInfo | undefined;
-}) {
-  const url = `${getSiteUrl()}/accept-invite/${invite.token}`;
-  return (
-    <li className="space-y-2 py-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium">{invite.email}</p>
-          <p className="text-xs text-muted-foreground">
-            {invite.role} · invited by {inviter?.name ?? inviter?.email ?? 'Unknown'} · expires{' '}
-            {invite.expiresAt.toLocaleDateString()}
-          </p>
-          {invite.sendStatus === 'failed' ? (
-            <p className="text-xs text-destructive">
-              Email failed: {invite.sendError ?? 'unknown error'}
-            </p>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              Email {invite.sendStatus}
-              {invite.lastSentAt ? ` · sent ${invite.lastSentAt.toLocaleDateString()}` : ''}
-            </p>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <form action={resendInviteAction}>
-            <input type="hidden" name="inviteId" value={invite.id} />
-            <Button
-              type="submit"
-              variant="outline"
-              size="sm"
-              aria-label={`Resend invite to ${invite.email}`}
-            >
-              Resend
-            </Button>
-          </form>
-          <form action={revokeInviteAction}>
-            <input type="hidden" name="inviteId" value={invite.id} />
-            <Button
-              type="submit"
-              variant="ghost"
-              size="sm"
-              aria-label={`Revoke invite to ${invite.email}`}
-            >
-              Revoke
-            </Button>
-          </form>
-        </div>
-      </div>
-      <code className="block break-all rounded-md bg-muted px-3 py-2 text-[12px]">{url}</code>
-    </li>
-  );
-}
-
-function RemovedMembersCard({
-  removedMembers,
-  userMap,
-}: {
-  removedMembers: RemovedMemberRow[];
-  userMap: UserMap;
-}) {
-  if (removedMembers.length === 0) return null;
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Removed members</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ul className="divide-y">
-          {removedMembers.map((member) => {
-            const user = userMap.get(member.userId);
-            return (
-              <li key={member.userId} className="flex items-center justify-between py-3">
-                <div className="flex flex-col">
-                  <span className="text-sm font-medium">{displayRemovedMemberLabel(user)}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {user?.email} · removed {member.removedAt?.toLocaleDateString()}
-                  </span>
-                </div>
-                <Badge variant="outline">{member.role}</Badge>
-              </li>
-            );
-          })}
-        </ul>
-      </CardContent>
-    </Card>
   );
 }
