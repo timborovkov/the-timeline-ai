@@ -29,6 +29,7 @@ import { Breadcrumb } from '@/components/breadcrumb';
 import { DebouncedFilterForm } from '@/components/debounced-filter-form';
 import { PageHeader } from '@/components/page-header';
 import { SectionHeading } from '@/components/section-heading';
+import { TechnicalDetails } from '@/components/technical-details';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -822,19 +823,28 @@ function RecentClusters({ rows }: { rows: ReconciliationDashboardCluster[] }) {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant="outline" className="rounded-sm">
-                      {row.status}
+                      {clusterStatusLabel(row.status)}
                     </Badge>
-                    <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-                      {row.artifactClusterKind}
+                    <span className="text-xs text-fg-muted">
+                      {artifactClusterKindLabel(row.artifactClusterKind)}
                     </span>
                   </div>
                   <div className="mt-1 truncate font-medium">{row.canonicalName}</div>
-                  <div className="font-mono text-xs text-fg-dim">{row.artifactType}</div>
+                  <div className="text-xs text-fg-dim">{artifactTypeLabel(row.artifactType)}</div>
                 </div>
                 <time className="text-xs text-fg-muted sm:text-right">
                   {row.updatedAt.toLocaleString()}
                 </time>
               </Link>
+              <TechnicalDetails
+                className="mt-3"
+                items={[
+                  { label: 'Cluster ID', value: row.id, copyValue: row.id },
+                  { label: 'Cluster kind', value: row.artifactClusterKind },
+                  { label: 'Artifact type', value: row.artifactType },
+                  { label: 'Status', value: row.status },
+                ]}
+              />
             </li>
           ))
         )}
@@ -859,12 +869,12 @@ function RecentOutputs({ rows }: { rows: ReconciliationDashboardOutput[] }) {
                     variant={row.status === 'failed' ? 'destructive' : 'outline'}
                     className="rounded-sm"
                   >
-                    {row.status}
+                    {outputStatusLabel(row.status)}
                   </Badge>
-                  {row.requiresApproval ? <Badge className="rounded-sm">approval</Badge> : null}
-                  <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-                    {row.outputKind}
-                  </span>
+                  {row.requiresApproval ? (
+                    <Badge className="rounded-sm">Needs approval</Badge>
+                  ) : null}
+                  <span className="text-xs text-fg-muted">{outputKindLabel(row.outputKind)}</span>
                 </div>
                 <div className="mt-1 truncate font-medium">
                   {row.clusterId ? (
@@ -872,19 +882,31 @@ function RecentOutputs({ rows }: { rows: ReconciliationDashboardOutput[] }) {
                       href={`/app/team/reconciliation/clusters/${row.clusterId}`}
                       className="hover:text-signal"
                     >
-                      {row.targetKind} · {row.operation}
+                      {outputActionLabel(row)}
                     </Link>
                   ) : (
-                    <>
-                      {row.targetKind} · {row.operation}
-                    </>
+                    outputActionLabel(row)
                   )}
                 </div>
-                <div className="font-mono text-xs text-fg-dim">{row.confidence}</div>
+                <div className="text-xs text-fg-dim">{confidenceLabel(row.confidence)}</div>
               </div>
               <time className="text-xs text-fg-muted sm:text-right">
                 {row.createdAt.toLocaleString()}
               </time>
+              <TechnicalDetails
+                className="sm:col-span-2"
+                items={[
+                  { label: 'Output ID', value: row.id, copyValue: row.id },
+                  ...(row.clusterId
+                    ? [{ label: 'Cluster ID', value: row.clusterId, copyValue: row.clusterId }]
+                    : []),
+                  { label: 'Output kind', value: row.outputKind },
+                  { label: 'Target kind', value: row.targetKind },
+                  { label: 'Operation', value: row.operation },
+                  { label: 'Confidence', value: row.confidence },
+                  { label: 'Status', value: row.status },
+                ]}
+              />
             </li>
           ))
         )}
@@ -908,6 +930,141 @@ function sourceLabel(source: string): string {
     .split('_')
     .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
     .join(' ');
+}
+
+const ARTIFACT_CLUSTER_KIND_LABELS: Record<string, string> = {
+  customer_project: 'Customer project',
+  account: 'Account',
+  incident: 'Incident',
+  deal: 'Deal',
+  document: 'Document',
+  decision: 'Decision',
+  task: 'Task',
+  meeting: 'Meeting',
+  calendar_event: 'Calendar event',
+  provider_record: 'Connected record',
+  topic: 'Topic',
+  person_context: 'Person context',
+  relationship_bundle: 'Relationship',
+  system_workflow: 'System workflow',
+  other: 'Other work',
+};
+
+const ARTIFACT_TYPE_LABELS: Record<string, string> = {
+  person: 'Person',
+  company: 'Company',
+  project: 'Project',
+  topic: 'Topic',
+  other: 'Other item',
+  deal: 'Deal',
+  vendor: 'Vendor',
+  incident: 'Incident',
+  document: 'Document',
+  decision: 'Decision',
+  hiring_loop: 'Hiring loop',
+  task: 'Task',
+  follow_up: 'Follow-up',
+  link: 'Link',
+  monday_board: 'Monday board',
+  sentry_project: 'Sentry project',
+};
+
+const OUTPUT_KIND_LABELS: Record<string, string> = {
+  direct_write: 'Provider update',
+  approval_bundle: 'Approval request',
+  observed_association: 'Related evidence',
+  no_action: 'No change',
+  conflict: 'Conflicting evidence',
+  eval_observation: 'Evaluation observation',
+  agent_suggestion_projection: 'Suggestion projection',
+};
+
+const TARGET_KIND_LABELS: Record<string, string> = {
+  object: 'Workspace memory',
+  task: 'Task',
+  calendar_event: 'Calendar event',
+  identity_facet: 'Identity detail',
+  object_note: 'Workspace note',
+  object_relationship: 'Relationship',
+  object_merge: 'Duplicate records',
+  board_membership: 'Board membership',
+  board_item_update: 'Board item',
+  cluster_identity: 'Work identity',
+  cluster_lifecycle: 'Work status',
+};
+
+const OPERATION_LABELS: Record<string, string> = {
+  create: 'Create',
+  update: 'Update',
+  archive_or_cancel: 'Archive or cancel',
+  merge: 'Merge',
+  link: 'Link',
+  unlink: 'Remove link',
+  supersede: 'Supersede',
+  noop: 'No change',
+};
+
+const CONFIDENCE_LABELS: Record<string, string> = {
+  high: 'High confidence',
+  medium: 'Medium confidence',
+  low: 'Low confidence',
+};
+
+const CLUSTER_STATUS_LABELS: Record<string, string> = {
+  open: 'Open',
+  active: 'Active',
+  blocked: 'Blocked',
+  resolved: 'Resolved',
+  cancelled: 'Cancelled',
+  archived: 'Archived',
+};
+
+const OUTPUT_STATUS_LABELS: Record<string, string> = {
+  pending: 'Pending',
+  applied: 'Applied',
+  approval_created: 'Approval created',
+  rejected: 'Rejected',
+  superseded: 'Superseded',
+  failed: 'Failed',
+};
+
+function artifactClusterKindLabel(value: string): string {
+  return ARTIFACT_CLUSTER_KIND_LABELS[value] ?? humanizeToken(value);
+}
+
+function artifactTypeLabel(value: string): string {
+  return ARTIFACT_TYPE_LABELS[value] ?? humanizeToken(value);
+}
+
+function outputKindLabel(value: string): string {
+  return OUTPUT_KIND_LABELS[value] ?? humanizeToken(value);
+}
+
+function outputActionLabel({
+  operation,
+  targetKind,
+}: Pick<ReconciliationDashboardOutput, 'operation' | 'targetKind'>): string {
+  return `${OPERATION_LABELS[operation] ?? humanizeToken(operation)} ${TARGET_KIND_LABELS[targetKind] ?? humanizeToken(targetKind)}`;
+}
+
+function confidenceLabel(value: string): string {
+  return CONFIDENCE_LABELS[value] ?? `${humanizeToken(value)} confidence`;
+}
+
+function clusterStatusLabel(value: string): string {
+  return CLUSTER_STATUS_LABELS[value] ?? humanizeToken(value);
+}
+
+function outputStatusLabel(value: string): string {
+  return OUTPUT_STATUS_LABELS[value] ?? humanizeToken(value);
+}
+
+function humanizeToken(value: string): string {
+  const words = value
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .trim();
+  return words ? `${words.charAt(0).toUpperCase()}${words.slice(1)}` : value;
 }
 
 function jsonRecord(value: unknown): Record<string, unknown> | null {
