@@ -401,9 +401,12 @@ export function McpServersUi({
 
   async function remove(server: McpServerRow) {
     if (activeBusyIds().has(server.id)) return;
+    const isPersonalServer = ownership === 'personal';
     const confirmed = await dialog.confirm({
-      title: 'Remove MCP server?',
-      description: `${server.name} will be disconnected from this team.`,
+      title: `Remove ${isPersonalServer ? 'personal' : 'team'} MCP server?`,
+      description: isPersonalServer
+        ? `${server.name} will be removed from your personal MCP servers. Only you will lose access to its tools.`
+        : `${server.name} will be removed from this team. Everyone on this team will lose access to its tools.`,
       confirmLabel: 'Remove',
       destructive: true,
     });

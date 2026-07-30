@@ -132,7 +132,7 @@ describe('McpServersUi', () => {
     expect(window.location.href).toBe('https://auth.example.test/authorize');
   });
 
-  it('toggles and removes connected servers through the management row', async () => {
+  it('toggles and removes a team MCP server through the management row', async () => {
     const user = userEvent.setup();
     const requests: { url: string; method: string; body: unknown }[] = [];
     vi.stubGlobal(
@@ -163,7 +163,12 @@ describe('McpServersUi', () => {
     expect(routerRefresh).toHaveBeenCalledOnce();
 
     await user.click(screen.getByRole('button', { name: 'Remove' }));
-    expect(screen.getByText('Research MCP will be disconnected from this team.')).toBeTruthy();
+    expect(screen.getByText('Remove team MCP server?')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Research MCP will be removed from this team. Everyone on this team will lose access to its tools.',
+      ),
+    ).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Remove' }));
 
     await waitFor(() => {
@@ -174,6 +179,33 @@ describe('McpServersUi', () => {
       });
     });
     expect(routerRefresh).toHaveBeenCalledTimes(2);
+  });
+
+  it('explains that removing a personal MCP server affects only the owner', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(() => Promise.resolve(new Response(null, { status: 204 })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<McpServersUi ownership="personal" servers={[serverRow({ authType: 'none' })]} />);
+
+    await user.click(screen.getByRole('button', { name: 'Remove' }));
+    expect(screen.getByText('Remove personal MCP server?')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Research MCP will be removed from your personal MCP servers. Only you will lose access to its tools.',
+      ),
+    ).toBeTruthy();
+
+    const confirmRemove = screen.getAllByRole('button', { name: 'Remove' }).at(-1);
+    if (!confirmRemove) throw new Error('expected remove confirmation button');
+    await user.click(confirmRemove);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(`/api/team/mcp-servers/${SERVER_ID}`, {
+        method: 'DELETE',
+      });
+    });
+    expect(routerRefresh).toHaveBeenCalledOnce();
   });
 
   it('keeps the server row unchanged and explains forbidden enable failures', async () => {
