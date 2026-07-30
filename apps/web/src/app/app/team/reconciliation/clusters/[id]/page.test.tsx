@@ -8,6 +8,7 @@ const CLUSTER_ID = '33333333-3333-4333-8333-333333333333';
 
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
+  getCalendarSettings: vi.fn(),
   resolveActiveTeam: vi.fn(),
   getClusterDetail: vi.fn(),
   redirect: vi.fn((path: string) => {
@@ -25,6 +26,7 @@ vi.mock('next/navigation', () => ({
 }));
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
+    calendar: { getCalendarSettings: fakes.getCalendarSettings },
     reconciliation: { getClusterDetail: fakes.getClusterDetail },
   }),
 }));
@@ -41,6 +43,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   fakes.auth.mockResolvedValue({ user: { id: 'user-1' } });
   fakes.resolveActiveTeam.mockResolvedValue({ active: { teamId: 'team-1' } });
+  fakes.getCalendarSettings.mockResolvedValue({ defaultTimezone: 'America/Los_Angeles' });
   fakes.getClusterDetail.mockResolvedValue(sampleDetail());
 });
 
@@ -58,16 +61,16 @@ describe('ReconciliationClusterPage', () => {
     expect(fakes.getClusterDetail).toHaveBeenCalledWith({ clusterId: CLUSTER_ID });
     expect(html).toContain('Lumen onboarding pilot');
     expect(html).toContain('Reconciliation dashboard');
-    expect(html).toContain('customer project');
-    expect(html).toContain('decision');
+    expect(html).toContain('Customer project');
+    expect(html).toContain('Decision');
     expect(html).toContain('monday');
     expect(html).toContain('Launch pilot in July');
-    expect(html).toContain('agent suggestion projection');
+    expect(html).toContain('Suggestion projection');
     expect(html).toContain('Output ID');
     expect(html).toContain('raw-event-1');
     expect(html).toContain('evidence-1');
     expect(html).toContain('inline://monday/pulse-123');
-    expect(html).toContain('workspace object');
+    expect(html).toContain('View workspace item');
     expect(html).toContain(`name="targetId" value="${CLUSTER_ID}"`);
   });
 
@@ -77,6 +80,42 @@ describe('ReconciliationClusterPage', () => {
     );
 
     expect(html).not.toContain('Private founder note');
+  });
+
+  it('leads with human labels and team-local times while keeping diagnostics in technical details', async () => {
+    const html = renderToStaticMarkup(
+      await ReconciliationClusterPage({ params: Promise.resolve({ id: CLUSTER_ID }) }),
+    );
+    const primaryContent = html.replace(/<details[\s\S]*?<\/details>/g, '');
+
+    expect(fakes.getCalendarSettings).toHaveBeenCalledOnce();
+    expect(html).toContain('Monday board');
+    expect(html).toContain('Customer project');
+    expect(html).toContain('Authoritative source');
+    expect(html).toContain('Provider evidence');
+    expect(html).toContain('Suggestion projection');
+    expect(html).toContain('Update workspace memory');
+    expect(html).toContain('High confidence');
+    expect(html).toContain('Needs approval');
+    expect(html).toContain('Jun 30, 2026, 3:00 AM');
+    expect(html).toContain('America/Los_Angeles');
+    expect(html).toContain('Times in America/Los_Angeles');
+    expect(html).toContain('dateTime="2026-06-30T10:00:00.000Z"');
+
+    expect(primaryContent).not.toContain('monday_board');
+    expect(primaryContent).not.toContain('customer_project');
+    expect(primaryContent).not.toContain('agent_suggestion_projection');
+    expect(primaryContent).not.toContain('approval_created');
+
+    expect(technicalDetailsContaining(html, 'monday_board')).toContain('Artifact type');
+    expect(technicalDetailsContaining(html, 'customer_project')).toContain('Cluster kind');
+    expect(technicalDetailsContaining(html, 'provider')).toContain('Evidence strength');
+    expect(technicalDetailsContaining(html, 'agent_suggestion_projection')).toContain(
+      'Output kind',
+    );
+    expect(technicalDetailsContaining(html, 'update')).toContain('Operation');
+    expect(technicalDetailsContaining(html, 'high')).toContain('Confidence');
+    expect(technicalDetailsContaining(html, 'approval_created')).toContain('Status');
   });
 
   it('copies complete output JSON while keeping the rendered preview bounded', async () => {
@@ -137,7 +176,7 @@ function sampleDetail() {
       {
         rawEventId: 'raw-event-1',
         role: 'decision',
-        strength: 'high',
+        strength: 'provider',
         authoritative: true,
         provider: 'monday',
         objectName: null,
@@ -149,7 +188,7 @@ function sampleDetail() {
       {
         id: 'output-1',
         outputKind: 'agent_suggestion_projection',
-        status: 'pending',
+        status: 'approval_created',
         requiresApproval: true,
         targetKind: 'object',
         operation: 'update',
@@ -171,4 +210,12 @@ function sampleDetail() {
       },
     ],
   };
+}
+
+function technicalDetailsContaining(html: string, value: string): string {
+  return (
+    [...html.matchAll(/<details[\s\S]*?<\/details>/g)].find(([details]) =>
+      details.includes(value),
+    )?.[0] ?? ''
+  );
 }

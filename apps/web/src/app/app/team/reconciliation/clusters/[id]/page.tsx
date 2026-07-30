@@ -10,6 +10,17 @@ import type {
 import type { Metadata } from 'next';
 
 import { queueReconciliationJobFormAction } from '@/app/actions/reconciliation';
+import {
+  artifactClusterKindLabel,
+  artifactTypeLabel,
+  clusterStatusLabel,
+  confidenceLabel,
+  evidenceRoleLabel,
+  evidenceStrengthLabel,
+  outputActionLabel,
+  outputKindLabel,
+  outputStatusLabel,
+} from '@/app/app/team/reconciliation/clusters/[id]/presentation';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { PageHeader } from '@/components/page-header';
 import { SectionHeading } from '@/components/section-heading';
@@ -20,6 +31,7 @@ import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { formatDisplayDateTime } from '@/lib/display-dates';
 import { displayArtifactLabel, displaySourceLabel } from '@/lib/display-labels';
 
 export const metadata: Metadata = {
@@ -42,6 +54,8 @@ export default async function ReconciliationClusterPage({
   const scope = withTeam(db, active.teamId, session.user.id);
   const detail = await scope.reconciliation.getClusterDetail({ clusterId: id });
   if (!detail) notFound();
+  const calendarSettings = await scope.calendar.getCalendarSettings();
+  const timezone = calendarSettings.defaultTimezone;
   const { cluster } = detail;
 
   return (
@@ -55,12 +69,26 @@ export default async function ReconciliationClusterPage({
       />
       <PageHeader
         title={displayArtifactLabel(cluster)}
-        subtitle={`${cluster.artifactType.replaceAll('_', ' ')} · updated ${cluster.updatedAt.toLocaleString()}`}
+        subtitle={
+          <>
+            {artifactTypeLabel(cluster.artifactType)} ·{' '}
+            <time dateTime={cluster.updatedAt.toISOString()}>
+              Updated {formatDisplayDateTime(cluster.updatedAt, { timezone })}
+            </time>
+          </>
+        }
         metadata={[
-          { value: <StatusBadge status={cluster.status} /> },
+          {
+            value: (
+              <StatusBadge status={cluster.status} label={clusterStatusLabel(cluster.status)} />
+            ),
+          },
+          { label: 'Category', value: artifactClusterKindLabel(cluster.artifactClusterKind) },
           { label: 'Evidence', value: detail.evidence.length, mono: true },
           { label: 'Outputs', value: detail.outputs.length, mono: true },
+          { label: 'Time zone', value: timezone },
         ]}
+        srLabel={`Reconciliation cluster ${displayArtifactLabel(cluster)}. ${clusterStatusLabel(cluster.status)}. ${String(detail.evidence.length)} evidence items and ${String(detail.outputs.length)} outputs. Times in ${timezone}.`}
       />
 
       <section className="grid gap-4 lg:grid-cols-[1fr_360px]">
@@ -74,11 +102,11 @@ export default async function ReconciliationClusterPage({
           </Link>
           <div className="flex flex-wrap gap-2">
             <Badge variant="outline" className="rounded-sm">
-              {cluster.artifactClusterKind.replaceAll('_', ' ')}
+              {artifactClusterKindLabel(cluster.artifactClusterKind)}
             </Badge>
             {cluster.canonicalEntityId ? (
               <Link href={`/app/objects/${cluster.canonicalEntityId}`}>
-                <Badge className="rounded-sm">workspace object</Badge>
+                <Badge className="rounded-sm">View workspace item</Badge>
               </Link>
             ) : null}
           </div>
@@ -94,6 +122,14 @@ export default async function ReconciliationClusterPage({
                     },
                   ]
                 : []),
+              { label: 'Cluster kind', value: cluster.artifactClusterKind },
+              { label: 'Artifact type', value: cluster.artifactType },
+              { label: 'Status', value: cluster.status },
+              {
+                label: 'Updated at',
+                value: cluster.updatedAt.toISOString(),
+                copyValue: cluster.updatedAt.toISOString(),
+              },
             ]}
           />
         </div>
@@ -114,7 +150,7 @@ export default async function ReconciliationClusterPage({
 
       <section className="grid gap-4 xl:grid-cols-2">
         <EvidenceList rows={detail.evidence} />
-        <OutputList rows={detail.outputs} />
+        <OutputList rows={detail.outputs} timezone={timezone} />
       </section>
     </div>
   );
@@ -134,12 +170,15 @@ function EvidenceList({ rows }: { rows: ReconciliationClusterDetailEvidence[] })
               className="p-3"
             >
               <div className="flex flex-wrap items-center gap-2">
-                <Badge variant={row.authoritative ? 'default' : 'outline'} className="rounded-sm">
-                  {row.role.replaceAll('_', ' ')}
+                <Badge variant="outline" className="rounded-sm">
+                  {evidenceRoleLabel(row.role)}
                 </Badge>
-                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-                  {row.strength.replaceAll('_', ' ')}
-                </span>
+                {row.authoritative ? (
+                  <Badge variant="outline" className="rounded-sm">
+                    Authoritative source
+                  </Badge>
+                ) : null}
+                <span className="text-xs text-fg-muted">{evidenceStrengthLabel(row.strength)}</span>
                 {row.provider ? (
                   <span className="text-xs text-fg-muted">{displaySourceLabel(row.provider)}</span>
                 ) : null}
@@ -162,6 +201,9 @@ function EvidenceList({ rows }: { rows: ReconciliationClusterDetailEvidence[] })
                         },
                       ]
                     : []),
+                  { label: 'Evidence role', value: row.role },
+                  { label: 'Evidence strength', value: row.strength },
+                  { label: 'Authoritative', value: String(row.authoritative) },
                 ]}
               />
             </li>
@@ -172,7 +214,13 @@ function EvidenceList({ rows }: { rows: ReconciliationClusterDetailEvidence[] })
   );
 }
 
-function OutputList({ rows }: { rows: ReconciliationClusterDetailOutput[] }) {
+function OutputList({
+  rows,
+  timezone,
+}: {
+  rows: ReconciliationClusterDetailOutput[];
+  timezone: string;
+}) {
   return (
     <section className="space-y-3">
       <SectionTitle label="Outputs" />
@@ -189,22 +237,44 @@ function OutputList({ rows }: { rows: ReconciliationClusterDetailOutput[] }) {
                   variant={row.status === 'failed' ? 'destructive' : 'outline'}
                   className="rounded-sm"
                 >
-                  {row.status.replaceAll('_', ' ')}
+                  {outputStatusLabel(row.status)}
                 </Badge>
-                {row.requiresApproval ? <Badge className="rounded-sm">approval</Badge> : null}
-                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-                  {row.outputKind.replaceAll('_', ' ')}
-                </span>
+                {row.requiresApproval ? <Badge className="rounded-sm">Needs approval</Badge> : null}
+                <span className="text-xs text-fg-muted">{outputKindLabel(row.outputKind)}</span>
               </div>
-              <div className="font-medium">
-                {row.operation.replaceAll('_', ' ')} {row.targetKind.replaceAll('_', ' ')}
-              </div>
-              <div className="text-xs text-fg-muted">
-                {row.confidence} confidence · {row.createdAt.toLocaleString()}
+              <div className="font-medium">{outputActionLabel(row)}</div>
+              <div className="flex flex-wrap gap-x-2 text-xs text-fg-muted">
+                <span>{confidenceLabel(row.confidence)}</span>
+                <span aria-hidden="true">·</span>
+                <time
+                  dateTime={row.createdAt.toISOString()}
+                  className="font-mono tabular-nums text-fg-dim"
+                >
+                  Created {formatDisplayDateTime(row.createdAt, { timezone })}
+                </time>
               </div>
               <TechnicalDetails
                 items={[
                   { label: 'Output ID', value: row.id, copyValue: row.id },
+                  { label: 'Output kind', value: row.outputKind },
+                  { label: 'Target kind', value: row.targetKind },
+                  { label: 'Operation', value: row.operation },
+                  { label: 'Confidence', value: row.confidence },
+                  { label: 'Status', value: row.status },
+                  { label: 'Requires approval', value: String(row.requiresApproval) },
+                  ...(row.targetId
+                    ? [{ label: 'Target ID', value: row.targetId, copyValue: row.targetId }]
+                    : []),
+                  {
+                    label: 'Created at',
+                    value: row.createdAt.toISOString(),
+                    copyValue: row.createdAt.toISOString(),
+                  },
+                  {
+                    label: 'Updated at',
+                    value: row.updatedAt.toISOString(),
+                    copyValue: row.updatedAt.toISOString(),
+                  },
                   {
                     label: 'Source refs',
                     ...jsonDetail(row.sourceRefs),
