@@ -58,7 +58,7 @@ function row(input: {
   };
 }
 
-describe('TeamSourcesUi', () => {
+describe('PersonalConnectionsUi', () => {
   it('explains GitHub source sharing before team activation', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(
@@ -88,7 +88,7 @@ describe('TeamSourcesUi', () => {
     );
 
     expect(await screen.findByText('2. Shared sources')).toBeTruthy();
-    expect(screen.getByText(/Need a second Monday\.com account/i)).toBeTruthy();
+    expect(screen.queryByText(/add another Monday\.com account/i)).toBeNull();
     expect(screen.getByText(/choose a GitHub organization/i)).toBeTruthy();
     expect(screen.getByRole('link', { name: /GitHub access/i })).toBeTruthy();
   });
@@ -146,6 +146,7 @@ describe('TeamSourcesUi', () => {
     );
 
     expect(await screen.findByText(/Choose Monday.com boards/i)).toBeTruthy();
+    expect(screen.getByText(/To add another Monday\.com account/i)).toBeTruthy();
     expect(screen.getByText(/parent board already imports them/i)).toBeTruthy();
     expect(await screen.findByText(/Board items, updates, columns, and subitems/i)).toBeTruthy();
     expect(screen.getByText(/Choose the Slack channels/i)).toBeTruthy();
@@ -193,7 +194,7 @@ describe('TeamSourcesUi', () => {
     );
 
     await screen.findByText('KIESI');
-    await user.type(screen.getByRole('textbox', { name: /Search provider sources/i }), 'subitems');
+    await user.type(screen.getByRole('textbox', { name: 'Search sources' }), 'subitems');
 
     expect(screen.getByText('KIESI')).toBeTruthy();
     expect(screen.queryByText('Launch notes')).toBeNull();
@@ -225,6 +226,148 @@ describe('TeamSourcesUi', () => {
     expect(screen.queryByRole('button', { name: 'Clear search' })).toBeNull();
   });
 
+  it('gives an empty provider-account list a direct path to connect an account', () => {
+    render(<PersonalConnectionsUi connections={[]} connectProviderHref="#connect-provider" />);
+
+    expect(screen.getByText('No provider accounts yet')).toBeTruthy();
+    expect(
+      screen.getByRole('link', { name: 'Connect a provider account' }).getAttribute('href'),
+    ).toBe('#connect-provider');
+  });
+
+  it('waits for shared sources before enabling save', async () => {
+    let resolveResources: ((response: Response) => void) | undefined;
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveResources = resolve;
+        }),
+    );
+
+    renderWithQueryClient(
+      <PersonalConnectionsUi
+        connections={[
+          {
+            id: 'conn-a',
+            provider: 'github',
+            displayName: 'GitHub — Tim',
+            lastError: null,
+            lastConnectedAt: '2026-06-01T00:00:00.000Z',
+          },
+        ]}
+      />,
+    );
+
+    expect(await screen.findByLabelText('Loading provider sources')).toBeTruthy();
+    const save = screen.getByRole<HTMLButtonElement>('button', { name: 'Save sharing' });
+    expect(save.disabled).toBe(true);
+
+    resolveResources?.(
+      new Response(
+        JSON.stringify({
+          resources: [{ kind: 'github.repo', externalId: 'acme/app', label: 'acme/app' }],
+          shares: [],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await screen.findByText('acme/app');
+    expect(save.disabled).toBe(false);
+  });
+
+  it('retries loading provider sources instead of only dismissing the error', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: 'request_failed' }), { status: 502 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            resources: [{ kind: 'github.repo', externalId: 'acme/app', label: 'acme/app' }],
+            shares: [],
+          }),
+          { status: 200 },
+        ),
+      );
+
+    renderWithQueryClient(
+      <PersonalConnectionsUi
+        connections={[
+          {
+            id: 'conn-a',
+            provider: 'github',
+            displayName: 'GitHub — Tim',
+            lastError: null,
+            lastConnectedAt: '2026-06-01T00:00:00.000Z',
+          },
+        ]}
+      />,
+    );
+
+    const retry = await screen.findByRole('button', { name: 'Retry loading sources' });
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Save sharing' }).disabled).toBe(
+      true,
+    );
+
+    await user.click(retry);
+
+    expect(await screen.findByText('acme/app')).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Save sharing' }).disabled).toBe(
+      false,
+    );
+  });
+
+  it('keeps destructive-account confirmation keyboard reachable and cancellable', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          resources: [{ kind: 'github.repo', externalId: 'acme/app', label: 'acme/app' }],
+          shares: [],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    renderWithQueryClient(
+      <PersonalConnectionsUi
+        connections={[
+          {
+            id: 'conn-a',
+            provider: 'github',
+            displayName: 'GitHub — Tim',
+            lastError: null,
+            lastConnectedAt: '2026-06-01T00:00:00.000Z',
+          },
+        ]}
+      />,
+    );
+
+    await screen.findByText('acme/app');
+    const deleteAccount = screen.getByRole('button', { name: 'Delete account' });
+    deleteAccount.focus();
+    await user.keyboard('{Enter}');
+
+    expect(deleteAccount.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByRole('region', { name: 'Confirm provider account deletion' })).toBeTruthy();
+
+    await user.tab();
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: 'Delete provider account' }),
+    );
+    await user.tab();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancel' }));
+
+    await user.keyboard('{Enter}');
+
+    expect(deleteAccount.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(deleteAccount);
+  });
+
   it('lets keyboard users clear a search with no matching sources', async () => {
     const user = userEvent.setup();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
@@ -251,7 +394,7 @@ describe('TeamSourcesUi', () => {
       />,
     );
 
-    const search = await screen.findByRole('textbox', { name: 'Search provider sources' });
+    const search = await screen.findByRole('textbox', { name: 'Search sources' });
     await user.type(search, 'missing');
 
     expect(await screen.findByText('No sources match “missing”.')).toBeTruthy();
