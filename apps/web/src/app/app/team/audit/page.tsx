@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { formatDisplayDateTime } from '@/lib/display-dates';
 
 export const metadata: Metadata = {
   title: 'Team audit',
@@ -33,17 +34,25 @@ export default async function TrustAuditPage() {
   }
   if (!canViewAudit) redirect('/app/team');
 
-  const rows = await scope.audit.list(200);
+  const [rows, calendarSettings] = await Promise.all([
+    scope.audit.list(200),
+    scope.calendar.getCalendarSettings(),
+  ]);
+  const timezone = calendarSettings.defaultTimezone;
 
   return (
     <div className="space-y-8">
       <Breadcrumb items={[{ label: 'Team', href: '/app/team' }, { label: 'Trust audit' }]} />
       <IndexStrip
-        srLabel={`Trust audit · ${String(rows.length)} rows`}
+        srLabel={`Trust audit · ${String(rows.length)} rows · times in ${timezone}`}
         segments={[
           { value: 'TRUST AUDIT' },
           { label: 'team', value: active.teamName, signal: true },
           { label: 'rows', value: rows.length },
+          {
+            label: 'time zone',
+            value: <span className="normal-case tracking-normal">{timezone}</span>,
+          },
         ]}
       />
       <ul className="divide-y divide-border rounded-sm border border-border bg-surface text-sm">
@@ -58,8 +67,11 @@ export default async function TrustAuditPage() {
                     {row.action}
                   </span>
                   {row.redacted ? <Badge variant="outline">redacted</Badge> : null}
-                  <time className="text-xs text-fg-muted">
-                    {new Date(row.createdAt).toLocaleString()}
+                  <time
+                    dateTime={row.createdAt.toISOString()}
+                    className="font-mono text-xs tabular-nums text-fg-muted"
+                  >
+                    {formatDisplayDateTime(row.createdAt, { timezone })}
                   </time>
                 </div>
                 <div className="truncate font-medium">{row.targetLabel}</div>
