@@ -138,11 +138,11 @@ describe('ApprovalsPage', () => {
     const html = renderToStaticMarkup(
       await ApprovalsPage({ searchParams: Promise.resolve({ status: 'failed' }) }),
     );
-    const failedFilter = html.match(
-      /<a[^>]*href="\/app\/approvals\?status=failed"[^>]*>failed 4<\/a>/,
+    const failedFilter = /<a[^>]*href="\/app\/approvals\?status=failed"[^>]*>failed 4<\/a>/.exec(
+      html,
     )?.[0];
-    const pendingFilter = html.match(
-      /<a[^>]*href="\/app\/approvals\?status=pending"[^>]*>pending 0<\/a>/,
+    const pendingFilter = /<a[^>]*href="\/app\/approvals\?status=pending"[^>]*>pending 0<\/a>/.exec(
+      html,
     )?.[0];
 
     expect(failedFilter).toContain('aria-current="page"');

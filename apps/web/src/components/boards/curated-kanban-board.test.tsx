@@ -199,7 +199,9 @@ describe('CuratedKanbanBoard', () => {
     );
 
     const title = screen.getByRole<HTMLAnchorElement>('link', { name: 'Keyboard link card' });
-    const titleClick = vi.fn((event: Event) => event.preventDefault());
+    const titleClick = vi.fn((event: Event) => {
+      event.preventDefault();
+    });
     title.addEventListener('click', titleClick);
     title.focus();
 

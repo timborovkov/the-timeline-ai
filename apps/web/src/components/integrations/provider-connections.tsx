@@ -442,7 +442,7 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
 
   const grouped = useMemo(() => groupResourcesByKind(filtered), [filtered]);
   const hasSearchQuery = Boolean(query.trim());
-  const showEmptyResult = data !== undefined && !isLoading && !queryError && grouped.length === 0;
+  const showEmptyResult = !isLoading && !queryError && grouped.length === 0;
 
   function clearSearch() {
     dispatch({ type: 'query', query: '' });
@@ -811,8 +811,8 @@ function sourceKey(share: Pick<ResourceShare, 'resourceKind' | 'externalId'>) {
 function buildSelectedByConnection(rows: TeamShareRow[], activeShareIdSet: Set<string>) {
   const initial: Record<string, Set<string>> = {};
   for (const row of rows) {
-    initial[row.connection.id] ??= new Set<string>();
-    if (activeShareIdSet.has(row.share.id)) initial[row.connection.id]?.add(row.share.id);
+    const selected = (initial[row.connection.id] ??= new Set<string>());
+    if (activeShareIdSet.has(row.share.id)) selected.add(row.share.id);
   }
   return initial;
 }

@@ -1,8 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
-import ApprovalsError from './error';
-import ApprovalsLoading from './loading';
+import ApprovalsError from '@/app/app/approvals/error';
+import ApprovalsLoading from '@/app/app/approvals/loading';
 
 describe('Approvals route states', () => {
   it('keeps one page heading and a retry action when loading approvals fails', () => {

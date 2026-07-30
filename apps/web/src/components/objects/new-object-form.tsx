@@ -2,7 +2,7 @@
 
 import { LoaderCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useReducer, useRef, useTransition, type FormEvent } from 'react';
+import { useReducer, useRef, useTransition, type SyntheticEvent } from 'react';
 
 import { createObjectAction } from '@/app/actions/objects';
 import { DueDateDisplay } from '@/components/due-date-display';
@@ -48,7 +48,7 @@ export function NewObjectForm({
   );
   const { error, nameError, type, name, dueAt, projectId, projectLabel } = form;
 
-  function submit(event: FormEvent<HTMLFormElement>): void {
+  function submit(event: SyntheticEvent<HTMLFormElement>): void {
     event.preventDefault();
     const canonicalName = name.trim();
     if (!canonicalName) {
