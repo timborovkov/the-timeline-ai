@@ -134,6 +134,22 @@ describe('ApprovalsPage', () => {
     expect(html).toContain('No pending approvals');
   });
 
+  it('marks only the selected approval status filter as the current page', async () => {
+    const html = renderToStaticMarkup(
+      await ApprovalsPage({ searchParams: Promise.resolve({ status: 'failed' }) }),
+    );
+    const failedFilter = html.match(
+      /<a[^>]*href="\/app\/approvals\?status=failed"[^>]*>failed 4<\/a>/,
+    )?.[0];
+    const pendingFilter = html.match(
+      /<a[^>]*href="\/app\/approvals\?status=pending"[^>]*>pending 0<\/a>/,
+    )?.[0];
+
+    expect(failedFilter).toContain('aria-current="page"');
+    expect(failedFilter).toContain('focus-visible:ring-2');
+    expect(pendingFilter).not.toContain('aria-current');
+  });
+
   it('keeps failed siblings out of the pending filter', async () => {
     fakes.getApprovalItemCounts.mockResolvedValue({ failed: 1, pending: 1 });
     fakes.listSuggestions.mockResolvedValue([suggestionBundle()]);
