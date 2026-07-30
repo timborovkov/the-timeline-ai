@@ -3,10 +3,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { ExternalLink } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useMemo, useReducer, useState } from 'react';
+import { useMemo, useReducer, useRef, useState } from 'react';
 
 import { InlineError } from '@/components/inline-error';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { queryKeys } from '@/lib/query-keys';
 import { groupResourcesByKind, providerLabel, shareDisplayName } from '@/lib/resource-labels';
 import { connectionErrorMessage } from '@/lib/ux-errors';
@@ -304,6 +305,7 @@ function PersonalConnectionToolbar({
 function ConnectionSources({ connection }: { connection: ProviderConnection }) {
   const router = useRouter();
   const [state, dispatch] = useReducer(sourcePickerReducer, initialSourcePickerState);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const {
     data,
     error: queryError,
@@ -377,6 +379,13 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
   }, [query, selectableResources]);
 
   const grouped = useMemo(() => groupResourcesByKind(filtered), [filtered]);
+  const hasSearchQuery = Boolean(query.trim());
+  const showEmptyResult = data !== undefined && !isLoading && !queryError && grouped.length === 0;
+
+  function clearSearch() {
+    dispatch({ type: 'query', query: '' });
+    searchInputRef.current?.focus();
+  }
 
   function toggle(resource: ProviderResource) {
     dispatch({ type: 'toggle', key: resourceKey(resource), currentSelected: selected });
@@ -475,8 +484,9 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
         <ProviderAccountHint provider={connection.provider} />
         <ProviderSourceHint provider={connection.provider} />
         <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-          <input
-            className="h-8 min-w-56 flex-1 rounded-sm border border-border bg-bg px-2 text-sm"
+          <Input
+            ref={searchInputRef}
+            className="min-w-56 flex-1 text-base sm:text-sm"
             aria-label="Search provider sources"
             placeholder="Search sources"
             value={query}
@@ -528,8 +538,47 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
             onToggle={toggle}
           />
         ))}
+        {showEmptyResult ? (
+          <SourcePickerEmptyState
+            query={query}
+            hasSearchQuery={hasSearchQuery}
+            onClearSearch={clearSearch}
+          />
+        ) : null}
       </div>
     </section>
+  );
+}
+
+function SourcePickerEmptyState({
+  query,
+  hasSearchQuery,
+  onClearSearch,
+}: {
+  query: string;
+  hasSearchQuery: boolean;
+  onClearSearch: () => void;
+}) {
+  if (hasSearchQuery) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-border bg-surface-2 px-3 py-2 text-sm">
+        <p role="status" className="text-fg-muted">
+          No sources match “{query.trim()}”.
+        </p>
+        <Button size="sm" variant="outline" onClick={onClearSearch}>
+          Clear search
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-sm border border-border bg-surface-2 px-3 py-2 text-sm">
+      <p className="font-medium text-fg">No shareable sources found</p>
+      <p role="status" className="mt-1 text-fg-muted">
+        This provider account does not currently expose any sources you can share with this team.
+      </p>
+    </div>
   );
 }
 

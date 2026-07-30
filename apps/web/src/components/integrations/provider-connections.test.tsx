@@ -199,6 +199,75 @@ describe('TeamSourcesUi', () => {
     expect(screen.queryByText('Launch notes')).toBeNull();
   });
 
+  it('explains when a successful provider query returns no shareable sources', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ resources: [], shares: [] }), { status: 200 }),
+    );
+
+    renderWithQueryClient(
+      <PersonalConnectionsUi
+        connections={[
+          {
+            id: 'conn-a',
+            provider: 'github',
+            displayName: 'GitHub — Tim',
+            lastError: null,
+            lastConnectedAt: '2026-06-01T00:00:00.000Z',
+          },
+        ]}
+      />,
+    );
+
+    expect(await screen.findByText('No shareable sources found')).toBeTruthy();
+    expect(
+      screen.getByText(/does not currently expose any sources you can share with this team/i),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Clear search' })).toBeNull();
+  });
+
+  it('lets keyboard users clear a search with no matching sources', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          resources: [{ kind: 'github.repo', externalId: 'acme/app', label: 'acme/app' }],
+          shares: [],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    renderWithQueryClient(
+      <PersonalConnectionsUi
+        connections={[
+          {
+            id: 'conn-a',
+            provider: 'github',
+            displayName: 'GitHub — Tim',
+            lastError: null,
+            lastConnectedAt: '2026-06-01T00:00:00.000Z',
+          },
+        ]}
+      />,
+    );
+
+    const search = await screen.findByRole('textbox', { name: 'Search provider sources' });
+    await user.type(search, 'missing');
+
+    expect(await screen.findByText('No sources match “missing”.')).toBeTruthy();
+
+    await user.tab();
+    await user.tab();
+    await user.tab();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Clear search' }));
+
+    await user.keyboard('{Enter}');
+
+    expect(document.activeElement).toBe(search);
+    expect((search as HTMLInputElement).value).toBe('');
+    expect(screen.getByText('acme/app')).toBeTruthy();
+  });
+
   it('describes every known provider resource kind in the source picker', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(
