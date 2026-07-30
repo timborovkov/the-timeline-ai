@@ -56,11 +56,21 @@ describe('McpServersUi', () => {
 
     render(<McpServersUi ownership="personal" servers={[]} />);
 
-    expect(screen.getByText('No custom MCP servers connected.')).toBeTruthy();
-    await user.click(screen.getByRole('button', { name: '+ Add server' }));
+    expect(screen.getByRole('heading', { name: 'No personal MCP servers', level: 3 })).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Add a custom server to use its tools in chats you start. Teammates cannot view or use it.',
+      ),
+    ).toBeTruthy();
+    const addPersonalServer = screen.getByRole<HTMLButtonElement>('button', {
+      name: 'Add personal server',
+    });
+    await user.click(addPersonalServer);
 
-    const add = screen.getByRole<HTMLButtonElement>('button', { name: 'Add' });
-    expect(add.disabled).toBe(true);
+    expect(addPersonalServer.getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(screen.getByLabelText('Server name'));
+    const add = screen.getByRole<HTMLButtonElement>('button', { name: 'Add server' });
+    expect(add.disabled).toBe(false);
     await user.type(screen.getByPlaceholderText('Context7'), 'Research MCP');
     await user.type(screen.getByPlaceholderText('https://mcp.example.com/mcp'), 'https://mcp.test');
     expect(add.disabled).toBe(false);
@@ -82,6 +92,24 @@ describe('McpServersUi', () => {
     await waitFor(() => {
       expect(screen.queryByText('New MCP server')).toBeNull();
     });
+  });
+
+  it('returns focus to the personal add action when cancelling the form with a keyboard', async () => {
+    const user = userEvent.setup();
+
+    render(<McpServersUi ownership="personal" servers={[]} />);
+
+    const addPersonalServer = screen.getByRole<HTMLButtonElement>('button', {
+      name: 'Add personal server',
+    });
+    addPersonalServer.focus();
+    await user.keyboard('{Enter}');
+    expect(document.activeElement).toBe(screen.getByLabelText('Server name'));
+
+    const cancel = screen.getAllByRole('button', { name: 'Cancel' }).at(-1);
+    if (!cancel) throw new Error('expected form cancel button');
+    await user.click(cancel);
+    expect(document.activeElement).toBe(addPersonalServer);
   });
 
   it('starts OAuth immediately when a new OAuth server needs authorization', async () => {
@@ -115,7 +143,7 @@ describe('McpServersUi', () => {
       'https://oauth-mcp.test',
     );
     await user.selectOptions(screen.getByRole('combobox'), 'oauth');
-    await user.click(screen.getByRole('button', { name: 'Add' }));
+    await user.click(screen.getByRole('button', { name: 'Add server' }));
 
     await waitFor(() => {
       expect(requests.map((request) => request.url)).toEqual([
@@ -131,6 +159,52 @@ describe('McpServersUi', () => {
     expect(requests[1]?.body).toEqual({ mcpServerId: SERVER_ID });
     expect(window.location.href).toBe('https://auth.example.test/authorize');
   });
+
+  it.each([
+    ['OAuth start fails', () => new Response('provider unavailable', { status: 502 })],
+    ['OAuth start returns invalid JSON', () => new Response('not JSON', { status: 200 })],
+  ])(
+    'treats personal server creation as a partial success when %s',
+    async (_scenario, oauthResponse) => {
+      const user = userEvent.setup();
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((input: Parameters<typeof fetch>[0]) => {
+          if (fetchUrl(input) === '/api/team/mcp-servers') {
+            return Promise.resolve(
+              new Response(JSON.stringify({ id: SERVER_ID, needsOauth: true }), { status: 200 }),
+            );
+          }
+          return Promise.resolve(oauthResponse());
+        }),
+      );
+
+      render(<McpServersUi ownership="personal" servers={[]} />);
+
+      await user.click(screen.getByRole('button', { name: 'Add personal server' }));
+      await user.type(screen.getByPlaceholderText('Context7'), 'OAuth MCP');
+      await user.type(
+        screen.getByPlaceholderText('https://mcp.example.com/mcp'),
+        'https://oauth-mcp.test',
+      );
+      await user.selectOptions(screen.getByRole('combobox'), 'oauth');
+      await user.click(screen.getByRole('button', { name: 'Add server' }));
+
+      expect(await screen.findByText('Unable to start authorization')).toBeTruthy();
+      expect(
+        screen.getByText(
+          'The server was added, but authorization must be retried. Connect it again to retry.',
+        ),
+      ).toBeTruthy();
+
+      await user.click(screen.getByRole('button', { name: 'OK' }));
+
+      await waitFor(() => {
+        expect(routerRefresh).toHaveBeenCalledOnce();
+        expect(screen.queryByText('Add MCP server')).toBeNull();
+      });
+    },
+  );
 
   it('toggles and removes a team MCP server through the management row', async () => {
     const user = userEvent.setup();
@@ -206,6 +280,23 @@ describe('McpServersUi', () => {
       });
     });
     expect(routerRefresh).toHaveBeenCalledOnce();
+  });
+
+  it('keeps personal OAuth start failures actionable without exposing a raw provider response', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('provider request id=raw-42', { status: 502 }))),
+    );
+
+    render(<McpServersUi ownership="personal" servers={[serverRow()]} />);
+    await user.click(screen.getByRole('button', { name: 'Connect' }));
+
+    expect(await screen.findByText('Unable to start authorization')).toBeTruthy();
+    expect(
+      screen.getByText('Authorization could not start. Check your connection and try again.'),
+    ).toBeTruthy();
+    expect(screen.queryByText('provider request id=raw-42')).toBeNull();
   });
 
   it('keeps the server row unchanged and explains forbidden enable failures', async () => {

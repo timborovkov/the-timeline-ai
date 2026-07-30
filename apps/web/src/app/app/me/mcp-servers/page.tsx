@@ -6,13 +6,14 @@ import type { Metadata } from 'next';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { McpServersUi } from '@/components/integrations/mcp-servers';
 import { PageHeader } from '@/components/page-header';
+import { SectionHeading } from '@/components/section-heading';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 
 export const metadata: Metadata = {
   title: 'My MCP servers',
-  description: 'Manage personal MCP server connections.',
+  description: 'Manage MCP server connections that are visible only to you.',
 };
 
 export const dynamic = 'force-dynamic';
@@ -31,36 +32,40 @@ export default async function PersonalMcpServersPage() {
   return (
     <div className="space-y-8">
       <Breadcrumb
-        items={[{ label: 'Connections', href: '/app/sources' }, { label: 'Personal MCP' }]}
+        items={[{ label: 'Connections', href: '/app/sources' }, { label: 'Personal MCP servers' }]}
       />
       <PageHeader
         title="Personal MCP servers"
-        subtitle="Custom external tools visible only to you, layered on the team catalog."
-        srLabel={`Personal MCP servers · ${String(servers.length)} connected`}
+        subtitle="Custom external tools that only you can use in chats you start."
+        srLabel={`Personal MCP servers · ${String(servers.length)} configured`}
         metadata={[
           { label: 'team', value: active.teamName, signal: true },
           { label: 'mine', value: servers.length },
         ]}
       />
-      <p className="text-sm text-fg-muted">
-        Visible only to you. Tools contribute to chats you start; teammates don&apos;t see them.
-      </p>
-      <McpServersUi
-        ownership="personal"
-        servers={servers.map((s) => ({
-          id: s.id,
-          name: s.name,
-          url: s.url,
-          authType: s.authType,
-          enabled: s.enabled,
-          cachedTools: Array.isArray(s.cachedTools)
-            ? (s.cachedTools as { name: string; description?: string }[])
-            : [],
-          disabledTools: Array.isArray(s.disabledTools) ? (s.disabledTools as string[]) : [],
-          toolsCachedAt: s.toolsCachedAt ? s.toolsCachedAt.toISOString() : null,
-          lastError: s.lastError,
-        }))}
-      />
+      <section className="max-w-3xl space-y-3" aria-labelledby="your-personal-mcp-servers">
+        <SectionHeading id="your-personal-mcp-servers">Your personal servers</SectionHeading>
+        <p className="text-sm text-fg-muted">
+          Only you can see or use these servers. Team-shared MCP servers stay managed in
+          Connections.
+        </p>
+        <McpServersUi
+          ownership="personal"
+          servers={servers.map((s) => ({
+            id: s.id,
+            name: s.name,
+            url: s.url,
+            authType: s.authType,
+            enabled: s.enabled,
+            cachedTools: Array.isArray(s.cachedTools)
+              ? (s.cachedTools as { name: string; description?: string }[])
+              : [],
+            disabledTools: Array.isArray(s.disabledTools) ? (s.disabledTools as string[]) : [],
+            toolsCachedAt: s.toolsCachedAt ? s.toolsCachedAt.toISOString() : null,
+            lastError: s.lastError,
+          }))}
+        />
+      </section>
     </div>
   );
 }

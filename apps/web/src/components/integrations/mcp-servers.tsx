@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useId, useReducer, useRef, useState } from 'react';
+import { useId, useReducer, useRef, useState, type SyntheticEvent } from 'react';
 
 import { TechnicalDetails } from '@/components/technical-details';
 import { useAppDialog } from '@/components/ui/app-dialog';
@@ -54,19 +54,46 @@ function patchAddServerState(
 
 type AppDialogApi = ReturnType<typeof useAppDialog>;
 
+function authTypeLabel(authType: string): string {
+  const labels: Record<string, string> = {
+    none: 'No authentication',
+    bearer: 'Bearer token',
+    header: 'Custom header',
+    basic: 'Basic authentication',
+    url_key: 'URL key',
+    oauth: 'OAuth',
+  };
+  return labels[authType] ?? authType;
+}
+
 async function startOAuth(server: McpServerRow, dialog: AppDialogApi): Promise<void> {
-  const res = await fetch('/api/mcp/oauth/start', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ mcpServerId: server.id }),
-  });
-  if (!res.ok) {
-    await dialog.alert({ title: 'OAuth start failed', description: await res.text() });
-    return;
+  try {
+    const res = await fetch('/api/mcp/oauth/start', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mcpServerId: server.id }),
+    });
+    if (!res.ok) {
+      await dialog.alert({
+        title: 'Unable to start authorization',
+        description: 'Authorization could not start. Check your connection and try again.',
+      });
+      return;
+    }
+    const data = (await res.json()) as { url?: string };
+    if (data.url) window.location.href = data.url;
+    else {
+      await dialog.alert({
+        title: 'Unable to start authorization',
+        description: 'Authorization could not start. Check your connection and try again.',
+      });
+    }
+  } catch {
+    await dialog.alert({
+      title: 'Unable to start authorization',
+      description: 'Authorization could not start. Check your connection and try again.',
+    });
   }
-  const data = (await res.json()) as { url?: string; error?: string };
-  if (data.url) window.location.href = data.url;
-  else await dialog.alert({ title: 'OAuth start failed', description: data.error ?? 'unknown' });
 }
 
 async function testCall(
@@ -142,12 +169,15 @@ function AddCustomMcpServerForm({
   const router = useRouter();
   const dialog = useAppDialog();
   const formId = useId();
+  const formRef = useRef<HTMLFormElement>(null);
   const [{ name, url, authType, token, headerName, headerValue, busy }, setFormState] = useReducer(
     patchAddServerState,
     INITIAL_ADD_SERVER_STATE,
   );
 
-  async function submit() {
+  async function submit(event: SyntheticEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!formRef.current?.reportValidity()) return;
     setFormState({ busy: true });
     try {
       const body: Record<string, unknown> = { name, url, authType };
@@ -160,8 +190,13 @@ function AddCustomMcpServerForm({
         body: JSON.stringify(body),
       });
       if (!res.ok) {
-        const text = await res.text();
-        await dialog.alert({ title: 'Add failed', description: text });
+        await dialog.alert({
+          title: 'Unable to add server',
+          description: await readPublicApiError(
+            res,
+            'The server could not be added. Check its settings and try again.',
+          ),
+        });
         return;
       }
       // Start authorization immediately so a new OAuth server is not left disabled.
@@ -170,29 +205,39 @@ function AddCustomMcpServerForm({
         needsOauth?: boolean;
       };
       if (data.needsOauth && data.id) {
-        const oauth = await fetch('/api/mcp/oauth/start', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ mcpServerId: data.id }),
-        });
-        if (!oauth.ok) {
-          await dialog.alert({ title: 'OAuth start failed', description: await oauth.text() });
-          router.refresh();
-          if (onDone) onDone();
-          return;
+        try {
+          const oauth = await fetch('/api/mcp/oauth/start', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ mcpServerId: data.id }),
+          });
+          const oauthData = oauth.ok
+            ? ((await oauth.json().catch(() => null)) as { url?: string } | null)
+            : null;
+          if (oauthData?.url) {
+            window.location.href = oauthData.url;
+            return;
+          }
+        } catch {
+          // The server was created, so OAuth failure is recoverable from its Connect action.
         }
-        const oauthData = (await oauth.json()) as { url?: string; error?: string };
-        if (oauthData.url) {
-          window.location.href = oauthData.url;
-          return;
-        }
+
         await dialog.alert({
-          title: 'OAuth start failed',
-          description: oauthData.error ?? 'unknown',
+          title: 'Unable to start authorization',
+          description:
+            'The server was added, but authorization must be retried. Connect it again to retry.',
         });
+        router.refresh();
+        if (onDone) onDone();
+        return;
       }
       router.refresh();
       if (onDone) onDone();
+    } catch {
+      await dialog.alert({
+        title: 'Unable to add server',
+        description: networkActionError('add this server'),
+      });
     } finally {
       setFormState({ busy: false });
     }
@@ -201,109 +246,123 @@ function AddCustomMcpServerForm({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-sm">New MCP server</CardTitle>
+        <CardTitle as="h3" className="text-sm">
+          Add MCP server
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className="space-y-1">
-            <Label htmlFor={`${formId}-name`}>Display name</Label>
-            <Input
-              id={`${formId}-name`}
-              name="mcp-server-name"
-              autoComplete="off"
-              value={name}
-              onChange={(e) => {
-                setFormState({ name: e.target.value });
-              }}
-              placeholder="Context7"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor={`${formId}-url`}>URL</Label>
-            <Input
-              id={`${formId}-url`}
-              name="mcp-server-url"
-              type="url"
-              autoComplete="off"
-              value={url}
-              onChange={(e) => {
-                setFormState({ url: e.target.value });
-              }}
-              placeholder="https://mcp.example.com/mcp"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor={`${formId}-auth-type`}>Auth type</Label>
-            <select
-              id={`${formId}-auth-type`}
-              name="mcp-auth-type"
-              className="h-9 w-full rounded-sm border border-border bg-surface px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              value={authType}
-              onChange={(e) => {
-                setFormState({ authType: e.target.value as AuthType });
-              }}
-            >
-              <option value="none">None</option>
-              <option value="bearer">Bearer token</option>
-              <option value="header">Custom header</option>
-              <option value="oauth">OAuth</option>
-            </select>
-          </div>
-          {authType === 'bearer' ? (
+        <form ref={formRef} className="space-y-3" onSubmit={(event) => void submit(event)}>
+          {ownership === 'personal' ? (
+            <p className="text-sm text-fg-muted">
+              Only you can use this server&apos;s tools in chats you start.
+            </p>
+          ) : null}
+          <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-1">
-              <Label htmlFor={`${formId}-token`}>Token</Label>
+              <Label htmlFor={`${formId}-name`}>Server name</Label>
               <Input
-                id={`${formId}-token`}
-                name="mcp-bearer-token"
+                id={`${formId}-name`}
+                name="mcp-server-name"
                 autoComplete="off"
-                type="password"
-                value={token}
+                autoFocus
+                required
+                value={name}
                 onChange={(e) => {
-                  setFormState({ token: e.target.value });
+                  setFormState({ name: e.target.value });
                 }}
+                placeholder="Context7"
               />
             </div>
-          ) : null}
-          {authType === 'header' ? (
-            <>
+            <div className="space-y-1">
+              <Label htmlFor={`${formId}-url`}>Server URL</Label>
+              <Input
+                id={`${formId}-url`}
+                name="mcp-server-url"
+                type="url"
+                autoComplete="off"
+                inputMode="url"
+                required
+                spellCheck={false}
+                value={url}
+                onChange={(e) => {
+                  setFormState({ url: e.target.value });
+                }}
+                placeholder="https://mcp.example.com/mcp"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor={`${formId}-auth-type`}>Authentication</Label>
+              <select
+                id={`${formId}-auth-type`}
+                name="mcp-auth-type"
+                className="h-9 w-full rounded-sm border border-border bg-surface px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                value={authType}
+                onChange={(e) => {
+                  setFormState({ authType: e.target.value as AuthType });
+                }}
+              >
+                <option value="none">None</option>
+                <option value="bearer">Bearer token</option>
+                <option value="header">Custom header</option>
+                <option value="oauth">OAuth</option>
+              </select>
+            </div>
+            {authType === 'bearer' ? (
               <div className="space-y-1">
-                <Label htmlFor={`${formId}-header-name`}>Header name</Label>
+                <Label htmlFor={`${formId}-token`}>Token</Label>
                 <Input
-                  id={`${formId}-header-name`}
-                  name="mcp-header-name"
-                  autoComplete="off"
-                  value={headerName}
-                  onChange={(e) => {
-                    setFormState({ headerName: e.target.value });
-                  }}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor={`${formId}-header-value`}>Header value</Label>
-                <Input
-                  id={`${formId}-header-value`}
-                  name="mcp-header-value"
+                  id={`${formId}-token`}
+                  name="mcp-bearer-token"
                   autoComplete="off"
                   type="password"
-                  value={headerValue}
+                  value={token}
                   onChange={(e) => {
-                    setFormState({ headerValue: e.target.value });
+                    setFormState({ token: e.target.value });
                   }}
                 />
               </div>
-            </>
-          ) : null}
-        </div>
-        <div className="flex items-center gap-2">
-          <Button size="sm" disabled={busy || !name || !url} onClick={() => void submit()}>
-            {busy ? 'Adding…' : 'Add'}
-          </Button>
-          {onCancel ? (
-            <Button size="sm" variant="ghost" onClick={onCancel}>
-              Cancel
+            ) : null}
+            {authType === 'header' ? (
+              <>
+                <div className="space-y-1">
+                  <Label htmlFor={`${formId}-header-name`}>Header name</Label>
+                  <Input
+                    id={`${formId}-header-name`}
+                    name="mcp-header-name"
+                    autoComplete="off"
+                    value={headerName}
+                    onChange={(e) => {
+                      setFormState({ headerName: e.target.value });
+                    }}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor={`${formId}-header-value`}>Header value</Label>
+                  <Input
+                    id={`${formId}-header-value`}
+                    name="mcp-header-value"
+                    autoComplete="off"
+                    type="password"
+                    value={headerValue}
+                    onChange={(e) => {
+                      setFormState({ headerValue: e.target.value });
+                    }}
+                  />
+                </div>
+              </>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="submit" size="sm" disabled={busy} aria-busy={busy}>
+              {busy ? 'Adding server…' : 'Add server'}
             </Button>
-          ) : null}
-        </div>
+            {onCancel ? (
+              <Button type="button" size="sm" variant="ghost" onClick={onCancel}>
+                Cancel
+              </Button>
+            ) : null}
+          </div>
+        </form>
         {dialog.node}
       </CardContent>
     </Card>
@@ -352,6 +411,8 @@ export function McpServersUi({
   const router = useRouter();
   const dialog = useAppDialog();
   const [showAdd, setShowAdd] = useState(false);
+  const addFormId = useId();
+  const addServerTrigger = useRef<HTMLButtonElement>(null);
   const [rowMutations, setRowMutations] = useState<
     Record<string, { busy: 'toggle' | 'remove' | null; error: string | null }>
   >({});
@@ -370,6 +431,14 @@ export function McpServersUi({
       ...current,
       [id]: { busy: null, error: null, ...current[id], ...patch },
     }));
+  }
+
+  const isPersonalServer = ownership === 'personal';
+  const addServerLabel = isPersonalServer ? 'Add personal server' : 'Add server';
+
+  function closeAddServerForm() {
+    setShowAdd(false);
+    addServerTrigger.current?.focus();
   }
 
   async function toggleEnabled(server: McpServerRow) {
@@ -401,7 +470,6 @@ export function McpServersUi({
 
   async function remove(server: McpServerRow) {
     if (activeBusyIds().has(server.id)) return;
-    const isPersonalServer = ownership === 'personal';
     const confirmed = await dialog.confirm({
       title: `Remove ${isPersonalServer ? 'personal' : 'team'} MCP server?`,
       description: isPersonalServer
@@ -432,49 +500,69 @@ export function McpServersUi({
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {hideAddButton ? null : (
-        <div className="flex items-center justify-end">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <Button
+            ref={addServerTrigger}
             size="sm"
+            aria-controls={addFormId}
+            aria-expanded={showAdd}
             onClick={() => {
               setShowAdd((s) => !s);
             }}
           >
-            {showAdd ? 'Cancel' : '+ Add server'}
+            {showAdd ? 'Cancel' : addServerLabel}
           </Button>
         </div>
       )}
 
       {!hideAddButton && showAdd ? (
-        <AddCustomMcpServerForm
-          ownership={ownership ?? 'team'}
-          onDone={() => {
-            setShowAdd(false);
-          }}
-          onCancel={() => {
-            setShowAdd(false);
-          }}
-        />
+        <div id={addFormId}>
+          <AddCustomMcpServerForm
+            ownership={ownership ?? 'team'}
+            onDone={() => {
+              setShowAdd(false);
+            }}
+            onCancel={closeAddServerForm}
+          />
+        </div>
       ) : null}
 
       {servers.length === 0 ? (
-        <p className="text-sm text-fg-muted">No custom MCP servers connected.</p>
+        <div className="rounded-lg border border-border bg-surface p-4">
+          <h3 className="text-sm font-medium text-fg">
+            {isPersonalServer ? 'No personal MCP servers' : 'No custom MCP servers'}
+          </h3>
+          <p className="mt-1 text-sm text-fg-muted">
+            {isPersonalServer
+              ? 'Add a custom server to use its tools in chats you start. Teammates cannot view or use it.'
+              : 'Add a custom server to make its tools available to this team.'}
+          </p>
+        </div>
       ) : (
-        <ul className="divide-y divide-border rounded-sm border border-border bg-surface">
+        <ul
+          aria-label={isPersonalServer ? 'Personal MCP servers' : 'MCP servers'}
+          className="divide-y divide-border rounded-lg border border-border bg-surface"
+        >
           {servers.map((s) => {
             const mutation = rowMutations[s.id] ?? { busy: null, error: null };
             return (
-              <li key={s.id} className="space-y-2 p-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">{s.name}</span>
-                  <span className="text-xs text-fg-muted">{s.authType}</span>
-                  {!s.enabled ? (
-                    <span className="rounded-sm border border-border px-1 text-[10px] uppercase text-fg-muted">
-                      Disabled
-                    </span>
-                  ) : null}
-                  <div className="ml-auto flex gap-2">
+              <li key={s.id} className="space-y-3 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <h3 className="text-sm font-medium text-fg">{s.name}</h3>
+                      <span className="text-xs text-fg-muted">{authTypeLabel(s.authType)}</span>
+                      {!s.enabled ? (
+                        <span className="rounded-sm border border-border px-1.5 py-0.5 text-xs text-fg-muted">
+                          Disabled
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="break-all text-xs text-fg-muted">{s.url}</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
                     {s.authType === 'oauth' ? (
                       <Button
                         size="sm"
@@ -514,7 +602,6 @@ export function McpServersUi({
                     </Button>
                   </div>
                 </div>
-                <div className="break-all text-xs text-fg-muted">{s.url}</div>
                 {s.lastError ? (
                   <div className="space-y-2">
                     <p className="text-xs text-destructive">
@@ -537,23 +624,26 @@ export function McpServersUi({
                   </p>
                 ) : null}
                 {s.cachedTools.length > 0 ? (
-                  <div className="space-y-1">
-                    <div className="text-xs text-fg-muted">Tools ({s.cachedTools.length})</div>
-                    <ul className="space-y-1">
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-medium text-fg-muted">
+                      Available tools ({s.cachedTools.length})
+                    </h4>
+                    <ul className="space-y-2">
                       {s.cachedTools.map((t) => (
                         <li
                           key={t.name}
-                          className="flex items-center justify-between gap-2 text-xs"
+                          className="flex flex-col gap-2 text-xs sm:flex-row sm:items-start sm:justify-between"
                         >
-                          <div>
+                          <div className="min-w-0">
                             <span className="font-mono">{t.name}</span>
                             {t.description ? (
-                              <span className="ml-2 text-fg-muted">: {t.description}</span>
+                              <span className="text-fg-muted">: {t.description}</span>
                             ) : null}
                           </div>
                           <Button
                             size="sm"
                             variant="ghost"
+                            className="self-start"
                             onClick={() => {
                               void testCall(s, t.name, dialog);
                             }}
@@ -565,7 +655,7 @@ export function McpServersUi({
                     </ul>
                   </div>
                 ) : (
-                  <div className="text-xs text-fg-muted">No tools cached yet.</div>
+                  <p className="text-xs text-fg-muted">No tools are available yet.</p>
                 )}
               </li>
             );
