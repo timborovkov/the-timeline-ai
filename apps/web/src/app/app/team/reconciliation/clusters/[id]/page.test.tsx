@@ -118,6 +118,21 @@ describe('ReconciliationClusterPage', () => {
     expect(technicalDetailsContaining(html, 'approval_created')).toContain('Status');
   });
 
+  it('renders output timestamps that match without duplicate technical-detail keys', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      render(await ReconciliationClusterPage({ params: Promise.resolve({ id: CLUSTER_ID }) }));
+
+      expect(consoleError.mock.calls.flat().join(' ')).not.toContain(
+        'Encountered two children with the same key',
+      );
+      expect(consoleError.mock.calls.flat().join(' ')).not.toContain('2026-06-30T10:00:00.000Z');
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   it('copies complete output JSON while keeping the rendered preview bounded', async () => {
     const writeText = vi.fn<(value: string) => Promise<void>>().mockResolvedValue();
     Object.defineProperty(navigator, 'clipboard', {

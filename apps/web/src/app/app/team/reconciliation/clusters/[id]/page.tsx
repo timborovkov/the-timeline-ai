@@ -266,11 +266,13 @@ function OutputList({
                     ? [{ label: 'Target ID', value: row.targetId, copyValue: row.targetId }]
                     : []),
                   {
+                    id: `${row.id}:created-at`,
                     label: 'Created at',
                     value: row.createdAt.toISOString(),
                     copyValue: row.createdAt.toISOString(),
                   },
                   {
+                    id: `${row.id}:updated-at`,
                     label: 'Updated at',
                     value: row.updatedAt.toISOString(),
                     copyValue: row.updatedAt.toISOString(),
