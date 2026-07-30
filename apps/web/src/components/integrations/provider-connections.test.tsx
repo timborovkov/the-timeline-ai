@@ -72,7 +72,6 @@ describe('PersonalConnectionsUi', () => {
       await screen.findByRole('region', { name: 'GitHub account GitHub — Avery' }),
     ).toBeTruthy();
   });
-
   it('explains GitHub source sharing before team activation', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(
