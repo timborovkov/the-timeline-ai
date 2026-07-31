@@ -1,25 +1,63 @@
-import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+// @vitest-environment happy-dom
+
+import { cleanup, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import ApprovalsError from '@/app/app/approvals/error';
 import ApprovalsLoading from '@/app/app/approvals/loading';
 
-describe('Approvals route states', () => {
-  it('keeps one page heading and a retry action when loading approvals fails', () => {
-    const html = renderToStaticMarkup(
-      <ApprovalsError error={new Error('route failed')} reset={vi.fn()} />,
-    );
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
 
-    expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(html).toContain('Couldn’t load approvals');
-    expect(html).toContain('Try again');
+describe('Approvals route states', () => {
+  it('retains approval and Work context and lets keyboard users retry a failed load', async () => {
+    const user = userEvent.setup();
+    const reset = vi.fn();
+
+    render(<ApprovalsError error={new Error('route failed')} reset={reset} />);
+
+    expect(screen.getAllByRole('heading', { level: 1, name: 'Approvals' })).toHaveLength(1);
+    expect(
+      screen.getByText('Review evidence-backed changes before they become team memory.'),
+    ).toBeTruthy();
+    expect(screen.getByRole('navigation', { name: 'Work' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Approvals' }).getAttribute('aria-current')).toBe(
+      'page',
+    );
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Unable to load approvals' }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        'No approval has been accepted, changed, or rejected. Check your connection, then try again.',
+      ),
+    ).toBeTruthy();
+
+    const retry = screen.getByRole('button', { name: 'Try again' });
+    retry.focus();
+    await user.keyboard('{Enter}');
+
+    expect(reset).toHaveBeenCalledOnce();
   });
 
-  it('announces the route loading state without introducing another heading', () => {
-    const html = renderToStaticMarkup(<ApprovalsLoading />);
+  it('announces loading while retaining the route heading, Work navigation, and list shape', () => {
+    render(<ApprovalsLoading />);
 
-    expect(html).toContain('aria-busy="true"');
-    expect(html).toContain('aria-label="Loading page"');
-    expect(html).not.toContain('<h1');
+    expect(screen.getByRole('status').textContent).toBe('Loading approvals');
+    expect(screen.getByLabelText('Loading approvals').getAttribute('aria-busy')).toBe('true');
+    expect(screen.getAllByRole('heading', { level: 1, name: 'Approvals' })).toHaveLength(1);
+    expect(screen.getByRole('link', { name: 'Approvals' }).getAttribute('aria-current')).toBe(
+      'page',
+    );
+    expect(screen.getByRole('region', { name: 'Approvals loading placeholder' })).toBeTruthy();
+  });
+
+  it('keeps the loading skeleton free of interactive approval actions', () => {
+    render(<ApprovalsLoading />);
+
+    expect(screen.queryByRole('button')).toBeNull();
   });
 });
