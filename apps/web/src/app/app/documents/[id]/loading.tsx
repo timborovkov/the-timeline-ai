@@ -1,31 +1,59 @@
-import { CardSkeleton, PageHeaderSkeleton } from '@/components/loading-states';
+import { CardSkeleton } from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
 
-/**
- * Matches the DocumentDetail layout in Design v2: page header (index
- * strip), header card with title + metadata + actions, and a
- * version-history card. Same shape as objects/[id]/loading.tsx after
- * the PR #23 design reset.
- */
 export default function DocumentDetailLoading() {
   return (
-    <div className="space-y-6" aria-busy="true">
-      <PageHeaderSkeleton />
-      <CardSkeleton />
-      <div className="rounded-sm border border-border bg-card p-5">
-        <Skeleton className="mb-4 h-3 w-32" />
-        <ul className="divide-y divide-border">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <li key={i} className="flex items-center justify-between py-3">
+    <>
+      <output className="sr-only" aria-live="polite">
+        Loading document
+      </output>
+      <div className="space-y-6" aria-busy="true" aria-label="Loading document">
+        <h1 className="sr-only">Document</h1>
+        <div className="flex justify-end">
+          <Skeleton className="h-8 w-20 rounded-sm" />
+        </div>
+        <div className="space-y-5">
+          <Skeleton className="h-4 w-16" />
+          <CardSkeleton />
+          <div className="rounded-sm border border-border bg-surface p-4">
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
               <div className="space-y-2">
-                <Skeleton className="h-4 w-24" />
-                <Skeleton className="h-3 w-48" />
+                <Skeleton className="h-5 w-32" />
+                <Skeleton className="h-3 w-56" />
               </div>
-              <Skeleton className="h-7 w-24 rounded-sm" />
-            </li>
-          ))}
-        </ul>
+              <Skeleton className="h-8 w-24 rounded-sm" />
+            </div>
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
+              <Skeleton className="min-h-72 w-full rounded-sm" />
+              <div className="space-y-3">
+                <Skeleton className="h-24 w-full rounded-sm" />
+                <Skeleton className="h-20 w-full rounded-sm" />
+                <Skeleton className="h-16 w-full rounded-sm" />
+              </div>
+            </div>
+          </div>
+          <div className="rounded-sm border border-border bg-surface p-4">
+            <Skeleton className="mb-4 h-5 w-28" />
+            <ul className="divide-y divide-border">
+              {Array.from({ length: 3 }).map((_, index) => (
+                <li
+                  key={index}
+                  className="flex items-center justify-between gap-3 py-3 max-sm:flex-col max-sm:items-stretch"
+                >
+                  <div className="space-y-2">
+                    <Skeleton className="h-4 w-24" />
+                    <Skeleton className="h-3 w-48" />
+                  </div>
+                  <div className="flex gap-2">
+                    <Skeleton className="h-8 w-20 rounded-sm" />
+                    <Skeleton className="h-8 w-24 rounded-sm" />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
       </div>
-    </div>
+    </>
   );
 }

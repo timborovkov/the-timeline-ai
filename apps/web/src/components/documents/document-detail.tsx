@@ -17,10 +17,10 @@ import {
   getDocumentDownloadUrlAction,
   renameDocumentAction,
 } from '@/app/actions/documents';
+import { Breadcrumb } from '@/components/breadcrumb';
 import { ContextualAskLink } from '@/components/chat/contextual-ask-link';
 import { DocumentPreview } from '@/components/documents/document-preview';
 import { EvidenceLink } from '@/components/evidence-link';
-import { HistoryBackLink } from '@/components/history-back-link';
 import { StatusBadge } from '@/components/status-badge';
 import { TechnicalDetails } from '@/components/technical-details';
 import { useAppDialog } from '@/components/ui/app-dialog';
@@ -190,13 +190,16 @@ export function DocumentDetail({
 
   return (
     <div className="space-y-5">
-      <HistoryBackLink
-        fallbackHref={
-          currentDocument.folderId
-            ? `/app/documents?folder=${currentDocument.folderId}`
-            : '/app/documents'
-        }
-        label="Back"
+      <Breadcrumb
+        items={[
+          {
+            label: 'Documents',
+            href: currentDocument.folderId
+              ? `/app/documents?folder=${currentDocument.folderId}`
+              : '/app/documents',
+          },
+          { label: 'Document' },
+        ]}
       />
 
       <Card>
