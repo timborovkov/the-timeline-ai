@@ -26,7 +26,9 @@ export function HelpShell({ children, isSignedIn }: HelpShellProps) {
             className="flex w-full max-w-full gap-2 overflow-x-auto border-b border-border pb-3 lg:block lg:space-y-1 lg:overflow-visible lg:border-b-0 lg:pb-0"
           >
             {HELP_NAV.map(({ href, label, icon: Icon }) => {
-              const active = currentPath === href;
+              const active =
+                currentPath === href ||
+                (href === '/help/support' && currentPath === '/help/contact');
               return (
                 <Link
                   key={href}
