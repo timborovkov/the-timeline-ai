@@ -5,23 +5,33 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fakes = vi.hoisted(() => ({
+  push: vi.fn(),
   refresh: vi.fn(),
+  archiveSavedMeetingAction: vi.fn(),
   createSavedMeetingAction: vi.fn(),
+  scheduleMeetingBotAction: vi.fn(),
   updateSavedMeetingAction: vi.fn(),
 }));
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: fakes.push, refresh: fakes.refresh }),
+}));
 vi.mock('@/app/actions/meetings', () => ({
-  archiveSavedMeetingAction: vi.fn(),
+  archiveSavedMeetingAction: fakes.archiveSavedMeetingAction,
   cancelMeetingBotAction: vi.fn(),
   createSavedMeetingAction: fakes.createSavedMeetingAction,
   joinSavedMeetingAction: vi.fn(),
-  scheduleMeetingBotAction: vi.fn(),
+  scheduleMeetingBotAction: fakes.scheduleMeetingBotAction,
   skipScheduledMeetingAction: vi.fn(),
   updateSavedMeetingAction: fakes.updateSavedMeetingAction,
 }));
 
-const { EditSavedMeetingForm, SavedMeetingForm } = await import('./meeting-forms.js');
+const {
+  ArchiveSavedMeetingButton,
+  EditSavedMeetingForm,
+  SavedMeetingForm,
+  ScheduleMeetingBotForm,
+} = await import('./meeting-forms.js');
 
 function inputValue(label: string): string {
   const control = screen.getByLabelText(label);
@@ -32,6 +42,8 @@ function inputValue(label: string): string {
 beforeEach(() => {
   vi.clearAllMocks();
   fakes.createSavedMeetingAction.mockResolvedValue({ ok: true });
+  fakes.archiveSavedMeetingAction.mockResolvedValue({ ok: true });
+  fakes.scheduleMeetingBotAction.mockResolvedValue({ ok: true });
   fakes.updateSavedMeetingAction.mockResolvedValue({ ok: true });
 });
 
@@ -91,7 +103,7 @@ describe('SavedMeetingForm', () => {
     const user = userEvent.setup();
     render(<SavedMeetingForm defaultTimezone="UTC" />);
 
-    await user.type(screen.getByLabelText('Title'), 'Weekly product sync');
+    await user.type(screen.getByLabelText('Meeting title'), 'Weekly product sync');
     await user.type(screen.getByLabelText('Meeting URL'), 'https://meet.google.com/abc-defg-hij');
     await user.type(screen.getByLabelText('Aliases'), 'product sync');
     await user.click(screen.getByRole('checkbox', { name: /I confirm this team has permission/ }));
@@ -108,10 +120,60 @@ describe('SavedMeetingForm', () => {
       );
     });
     await waitFor(() => {
-      expect(inputValue('Title')).toBe('');
+      expect(inputValue('Meeting title')).toBe('');
     });
     expect(inputValue('Meeting URL')).toBe('');
     expect(inputValue('Aliases')).toBe('');
     expect(fakes.refresh).toHaveBeenCalledOnce();
+  });
+});
+
+describe('ScheduleMeetingBotForm', () => {
+  it('uses keyboard-operable visibility radios and focuses a failed submission message', async () => {
+    const user = userEvent.setup();
+    fakes.scheduleMeetingBotAction.mockResolvedValueOnce({
+      ok: false,
+      error: 'Meeting participants must be informed before you invite the notetaker.',
+    });
+    render(<ScheduleMeetingBotForm />);
+
+    const team = screen.getByRole('radio', { name: 'Team' });
+    const privateVisibility = screen.getByRole('radio', { name: 'Private' });
+    team.focus();
+    await user.keyboard('{ArrowRight}');
+
+    expect(document.activeElement).toBe(privateVisibility);
+    expect((privateVisibility as HTMLInputElement).checked).toBe(true);
+
+    await user.type(screen.getByLabelText('Meeting URL'), 'https://meet.google.com/abc-defg-hij');
+    await user.click(screen.getByRole('checkbox', { name: /I confirm that everyone/ }));
+    await user.click(screen.getByRole('button', { name: 'Invite notetaker' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('Meeting participants must be informed');
+    expect(document.activeElement).toBe(alert);
+    expect(fakes.scheduleMeetingBotAction).toHaveBeenCalledWith(
+      expect.objectContaining({ visibility: 'private' }),
+    );
+  });
+});
+
+describe('ArchiveSavedMeetingButton', () => {
+  it('keeps the meeting visible and explains how to retry when archiving fails', async () => {
+    const user = userEvent.setup();
+    fakes.archiveSavedMeetingAction.mockResolvedValueOnce({
+      ok: false,
+      error: 'The saved meeting could not be archived.',
+    });
+    render(<ArchiveSavedMeetingButton savedMeetingId="saved-meeting-1" />);
+
+    await user.click(screen.getByRole('button', { name: 'Archive meeting' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('The saved meeting could not be archived.');
+    expect(
+      screen.getByRole('button', { name: 'Archive meeting' }).getAttribute('aria-describedby'),
+    ).toBe(alert.id);
+    expect(fakes.refresh).not.toHaveBeenCalled();
   });
 });

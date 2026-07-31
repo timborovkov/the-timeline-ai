@@ -1,5 +1,8 @@
 'use client';
-import { RouteError } from '@/components/route-error';
+
+import { ErrorState } from '@/components/error-state';
+import { PageHeader } from '@/components/page-header';
+
 export default function MeetingsError({
   error,
   reset,
@@ -7,5 +10,15 @@ export default function MeetingsError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  return <RouteError title="Meetings" error={error} reset={reset} />;
+  return (
+    <div className="space-y-6">
+      <PageHeader title="Meetings" />
+      <ErrorState
+        title="Unable to load meetings"
+        description="Your saved links and captured transcripts are unchanged. Check your connection and try again."
+        error={error}
+        reset={reset}
+      />
+    </div>
+  );
 }

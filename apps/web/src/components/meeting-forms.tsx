@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useReducer, useState } from 'react';
+import { useEffect, useId, useMemo, useReducer, useRef, useState } from 'react';
 
 import type { SavedMeetingRow } from '@timeline/shared/meetings';
 
@@ -22,6 +22,11 @@ import { DEFAULT_TIMEZONE, timezoneOptions } from '@/lib/timezones';
 const EMPTY_MEMBERS: { id: string; label: string }[] = [];
 type Visibility = 'team' | 'private' | 'specific_users';
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+const VISIBILITY_OPTIONS: { value: Visibility; label: string }[] = [
+  { value: 'team', label: 'Team' },
+  { value: 'private', label: 'Private' },
+  { value: 'specific_users', label: 'Specific users' },
+];
 
 function browserTimezone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_TIMEZONE;
@@ -303,6 +308,127 @@ function ScheduleFields({
   );
 }
 
+function FormError({
+  errorRef,
+  message,
+}: {
+  errorRef: React.RefObject<HTMLParagraphElement | null>;
+  message: string | null;
+}) {
+  return (
+    <p
+      ref={errorRef}
+      hidden={!message}
+      role={message ? 'alert' : undefined}
+      tabIndex={-1}
+      className="rounded-sm border border-danger/40 p-3 text-sm text-danger"
+    >
+      {message ?? ''}
+    </p>
+  );
+}
+
+function focusFormError(errorRef: React.RefObject<HTMLParagraphElement | null>) {
+  setTimeout(() => {
+    errorRef.current?.focus();
+  });
+}
+
+function ActionError({ id, message }: { id: string; message: string | null }) {
+  if (!message) return null;
+
+  return (
+    <p id={id} role="alert" className="text-sm text-danger">
+      {message}
+    </p>
+  );
+}
+
+function VisibilityField({
+  idPrefix,
+  visibility,
+  visibilityUserIds,
+  members,
+  onVisibilityChange,
+  onVisibilityUserIdsChange,
+}: {
+  idPrefix: string;
+  visibility: Visibility;
+  visibilityUserIds: string[];
+  members: { id: string; label: string }[];
+  onVisibilityChange: (visibility: Visibility) => void;
+  onVisibilityUserIdsChange: (visibilityUserIds: string[]) => void;
+}) {
+  const descriptionId = `${idPrefix}-visibility-description`;
+
+  return (
+    <fieldset aria-describedby={descriptionId} className="space-y-2">
+      <legend className="text-sm font-medium">Visibility</legend>
+      <p id={descriptionId} className="text-xs text-muted-foreground">
+        Choose who can access this meeting and its transcript.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {VISIBILITY_OPTIONS.map((option) => {
+          const inputId = `${idPrefix}-visibility-${option.value}`;
+          return (
+            <label key={option.value} htmlFor={inputId} className="cursor-pointer">
+              <input
+                checked={visibility === option.value}
+                className="peer sr-only"
+                id={inputId}
+                name={`${idPrefix}-visibility`}
+                onChange={() => {
+                  onVisibilityChange(option.value);
+                }}
+                type="radio"
+                value={option.value}
+              />
+              <span className="inline-flex min-h-9 items-center rounded-sm border border-input px-3 text-sm font-medium text-fg transition-colors hover:bg-surface-2 peer-checked:border-signal peer-checked:bg-signal-soft peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2">
+                {option.label}
+              </span>
+            </label>
+          );
+        })}
+      </div>
+      {visibility === 'specific_users' ? (
+        <fieldset className="space-y-2 pt-1">
+          <legend className="text-xs font-medium text-fg-muted">People with access</legend>
+          {members.length > 0 ? (
+            <div className="flex flex-wrap gap-x-4 gap-y-2">
+              {members.map((member) => {
+                const inputId = `${idPrefix}-member-${member.id}`;
+                return (
+                  <label
+                    key={member.id}
+                    htmlFor={inputId}
+                    className="flex items-center gap-2 text-sm text-fg-muted"
+                  >
+                    <input
+                      checked={visibilityUserIds.includes(member.id)}
+                      id={inputId}
+                      onChange={(event) => {
+                        onVisibilityUserIdsChange(
+                          event.target.checked
+                            ? [...new Set([...visibilityUserIds, member.id])]
+                            : visibilityUserIds.filter((id) => id !== member.id),
+                        );
+                      }}
+                      type="checkbox"
+                    />
+                    {member.label}
+                  </label>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">No teammates are available to add.</p>
+          )}
+        </fieldset>
+      ) : null}
+    </fieldset>
+  );
+}
+
 export function ScheduleMeetingBotForm({
   defaultVisibility = 'team',
   defaultVisibilityUserIds = null,
@@ -313,6 +439,7 @@ export function ScheduleMeetingBotForm({
   members?: { id: string; label: string }[];
 }) {
   const router = useRouter();
+  const errorRef = useRef<HTMLParagraphElement>(null);
   const [{ pending, error, visibility, visibilityUserIds, consent }, dispatch] = useReducer(
     scheduleMeetingReducer,
     {
@@ -323,6 +450,11 @@ export function ScheduleMeetingBotForm({
       consent: false,
     },
   );
+
+  function showError(message: string) {
+    dispatch({ type: 'error', error: message });
+    focusFormError(errorRef);
+  }
 
   async function onSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -343,7 +475,7 @@ export function ScheduleMeetingBotForm({
         consentGiven: consent,
       });
       if (!res.ok) {
-        dispatch({ type: 'error', error: res.error ?? 'Failed to invite notetaker' });
+        showError(res.error ?? 'Unable to invite the notetaker. Try again.');
         return;
       }
       if (res.meetingId) {
@@ -351,13 +483,19 @@ export function ScheduleMeetingBotForm({
       } else {
         router.refresh();
       }
+    } catch {
+      showError('Unable to invite the notetaker. Try again.');
     } finally {
       dispatch({ type: 'pending', pending: false });
     }
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4 rounded-lg border p-4">
+    <form
+      aria-busy={pending}
+      onSubmit={onSubmit}
+      className="space-y-4 rounded-md border border-border bg-surface p-4"
+    >
       <div className="space-y-2">
         <Label htmlFor="meetingUrl">Meeting URL</Label>
         <Input
@@ -373,63 +511,21 @@ export function ScheduleMeetingBotForm({
         </p>
       </div>
       <div className="space-y-2">
-        <Label htmlFor="title">Title (optional)</Label>
+        <Label htmlFor="title">Meeting title (optional)</Label>
         <Input id="title" name="title" placeholder="Weekly product sync" />
       </div>
-      <div className="space-y-2">
-        <Label>Visibility</Label>
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            variant={visibility === 'team' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => {
-              dispatch({ type: 'visibility', visibility: 'team' });
-            }}
-          >
-            Team
-          </Button>
-          <Button
-            type="button"
-            variant={visibility === 'private' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => {
-              dispatch({ type: 'visibility', visibility: 'private' });
-            }}
-          >
-            Private
-          </Button>
-          <Button
-            type="button"
-            variant={visibility === 'specific_users' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => {
-              dispatch({ type: 'visibility', visibility: 'specific_users' });
-            }}
-          >
-            Specific users
-          </Button>
-        </div>
-        {visibility === 'specific_users' ? (
-          <div className="flex flex-wrap gap-3">
-            {members.map((m) => (
-              <label key={m.id} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <input
-                  type="checkbox"
-                  checked={visibilityUserIds.includes(m.id)}
-                  onChange={(e) => {
-                    const next = e.target.checked
-                      ? [...new Set([...visibilityUserIds, m.id])]
-                      : visibilityUserIds.filter((id) => id !== m.id);
-                    dispatch({ type: 'visibilityUserIds', visibilityUserIds: next });
-                  }}
-                />
-                {m.label}
-              </label>
-            ))}
-          </div>
-        ) : null}
-      </div>
+      <VisibilityField
+        idPrefix="invite-notetaker"
+        members={members}
+        onVisibilityChange={(nextVisibility) => {
+          dispatch({ type: 'visibility', visibility: nextVisibility });
+        }}
+        onVisibilityUserIdsChange={(nextVisibilityUserIds) => {
+          dispatch({ type: 'visibilityUserIds', visibilityUserIds: nextVisibilityUserIds });
+        }}
+        visibility={visibility}
+        visibilityUserIds={visibilityUserIds}
+      />
       <label className="flex items-start gap-2 text-sm">
         <input
           type="checkbox"
@@ -444,9 +540,9 @@ export function ScheduleMeetingBotForm({
           and capturing the transcript.
         </span>
       </label>
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      <FormError errorRef={errorRef} message={error} />
       <Button type="submit" disabled={pending}>
-        {pending ? 'Inviting…' : 'Invite notetaker'}
+        {pending ? 'Inviting notetaker…' : 'Invite notetaker'}
       </Button>
     </form>
   );
@@ -455,23 +551,36 @@ export function ScheduleMeetingBotForm({
 export function CancelMeetingButton({ meetingId }: { meetingId: string }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const errorId = useId();
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      disabled={pending}
-      onClick={async () => {
-        setPending(true);
-        try {
-          await cancelMeetingBotAction(meetingId);
-          router.refresh();
-        } finally {
-          setPending(false);
-        }
-      }}
-    >
-      {pending ? 'Cancelling…' : 'Cancel notetaker'}
-    </Button>
+    <div className="space-y-2">
+      <Button
+        aria-describedby={error ? errorId : undefined}
+        variant="outline"
+        size="sm"
+        disabled={pending}
+        onClick={async () => {
+          setError(null);
+          setPending(true);
+          try {
+            const result = await cancelMeetingBotAction(meetingId);
+            if (!result.ok) {
+              setError(result.error ?? 'Unable to cancel the notetaker. Try again.');
+              return;
+            }
+            router.refresh();
+          } catch {
+            setError('Unable to cancel the notetaker. Try again.');
+          } finally {
+            setPending(false);
+          }
+        }}
+      >
+        {pending ? 'Cancelling notetaker…' : 'Cancel notetaker'}
+      </Button>
+      <ActionError id={errorId} message={error} />
+    </div>
   );
 }
 
@@ -487,6 +596,7 @@ export function SavedMeetingForm({
   members?: { id: string; label: string }[];
 }) {
   const router = useRouter();
+  const errorRef = useRef<HTMLParagraphElement>(null);
   const [
     { pending, error, visibility, visibilityUserIds, scheduled, autoJoin, timezone },
     dispatch,
@@ -503,6 +613,11 @@ export function SavedMeetingForm({
   useEffect(() => {
     dispatch({ type: 'timezone', timezone: browserTimezone() });
   }, []);
+
+  function showError(message: string) {
+    dispatch({ type: 'error', error: message });
+    focusFormError(errorRef);
+  }
 
   async function onSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -525,7 +640,7 @@ export function SavedMeetingForm({
         autoJoinEnabled: scheduled && autoJoin,
       });
       if (!result.ok) {
-        dispatch({ type: 'error', error: result.error ?? 'Failed to save meeting' });
+        showError(result.error ?? 'Unable to save the meeting. Try again.');
         return;
       }
       router.refresh();
@@ -533,16 +648,22 @@ export function SavedMeetingForm({
       dispatch({ type: 'scheduled', scheduled: false });
       dispatch({ type: 'autoJoin', autoJoin: false });
       dispatch({ type: 'timezone', timezone: browserTimezone() });
+    } catch {
+      showError('Unable to save the meeting. Try again.');
     } finally {
       dispatch({ type: 'pending', pending: false });
     }
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4 rounded-lg border p-4">
+    <form
+      aria-busy={pending}
+      onSubmit={onSubmit}
+      className="space-y-4 rounded-md border border-border bg-surface p-4"
+    >
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
-          <Label htmlFor="saved-title">Title</Label>
+          <Label htmlFor="saved-title">Meeting title</Label>
           <Input id="saved-title" name="title" required placeholder="Internal daily meeting" />
         </div>
         <div className="space-y-2">
@@ -554,6 +675,9 @@ export function SavedMeetingForm({
             type="url"
             placeholder="https://meet.google.com/abc-defg-hij"
           />
+          <p className="text-xs text-muted-foreground">
+            Google Meet, Microsoft Teams, and Zoom links are supported.
+          </p>
         </div>
       </div>
       <div className="space-y-2">
@@ -571,48 +695,19 @@ export function SavedMeetingForm({
           Works with commands like /join daily or /timeline join standup.
         </p>
       </div>
-      <div className="space-y-2">
-        <Label>Visibility</Label>
-        <div className="flex flex-wrap gap-2">
-          {(['team', 'private', 'specific_users'] as const).map((value) => (
-            <Button
-              key={value}
-              type="button"
-              variant={visibility === value ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => {
-                dispatch({ type: 'visibility', visibility: value });
-              }}
-            >
-              {value === 'specific_users'
-                ? 'Specific users'
-                : `${value[0]?.toUpperCase()}${value.slice(1)}`}
-            </Button>
-          ))}
-        </div>
-        {visibility === 'specific_users' ? (
-          <div className="flex flex-wrap gap-3">
-            {members.map((m) => (
-              <label key={m.id} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <input
-                  type="checkbox"
-                  checked={visibilityUserIds.includes(m.id)}
-                  onChange={(event) => {
-                    dispatch({
-                      type: 'visibilityUserIds',
-                      visibilityUserIds: event.target.checked
-                        ? [...new Set([...visibilityUserIds, m.id])]
-                        : visibilityUserIds.filter((id) => id !== m.id),
-                    });
-                  }}
-                />
-                {m.label}
-              </label>
-            ))}
-          </div>
-        ) : null}
-      </div>
-      <div className="space-y-3 rounded-lg border border-border bg-surface p-3">
+      <VisibilityField
+        idPrefix="save-meeting"
+        members={members}
+        onVisibilityChange={(nextVisibility) => {
+          dispatch({ type: 'visibility', visibility: nextVisibility });
+        }}
+        onVisibilityUserIdsChange={(nextVisibilityUserIds) => {
+          dispatch({ type: 'visibilityUserIds', visibilityUserIds: nextVisibilityUserIds });
+        }}
+        visibility={visibility}
+        visibilityUserIds={visibilityUserIds}
+      />
+      <div className="space-y-3 rounded-md border border-border bg-surface-2/40 p-3">
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
@@ -654,7 +749,7 @@ export function SavedMeetingForm({
           teammate joins or auto-join is enabled.
         </span>
       </label>
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      <FormError errorRef={errorRef} message={error} />
       <Button type="submit" disabled={pending}>
         {pending ? 'Saving…' : 'Save meeting'}
       </Button>
@@ -672,6 +767,7 @@ export function EditSavedMeetingForm({
   members?: { id: string; label: string }[];
 }) {
   const router = useRouter();
+  const errorRef = useRef<HTMLParagraphElement>(null);
   const schedule = saved.scheduleConfig;
   const [
     { pending, error, visibility, visibilityUserIds, scheduled, autoJoin, timezone },
@@ -689,6 +785,11 @@ export function EditSavedMeetingForm({
   function onScheduleToggle(checked: boolean) {
     dispatch({ type: 'scheduled', scheduled: checked });
     if (checked && !schedule) dispatch({ type: 'timezone', timezone: browserTimezone() });
+  }
+
+  function showError(message: string) {
+    dispatch({ type: 'error', error: message });
+    focusFormError(errorRef);
   }
 
   async function onSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
@@ -711,10 +812,12 @@ export function EditSavedMeetingForm({
         autoJoinEnabled: scheduled && autoJoin,
       });
       if (!result.ok) {
-        dispatch({ type: 'error', error: result.error ?? 'Failed to update meeting' });
+        showError(result.error ?? 'Unable to update the meeting. Try again.');
         return;
       }
       router.refresh();
+    } catch {
+      showError('Unable to update the meeting. Try again.');
     } finally {
       dispatch({ type: 'pending', pending: false });
     }
@@ -722,11 +825,13 @@ export function EditSavedMeetingForm({
 
   return (
     <details className="space-y-3 text-sm">
-      <summary className="cursor-pointer text-muted-foreground">Edit saved meeting</summary>
-      <form onSubmit={onSubmit} className="space-y-4 pt-3">
+      <summary className="cursor-pointer rounded-sm text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+        Edit saved meeting
+      </summary>
+      <form aria-busy={pending} onSubmit={onSubmit} className="space-y-4 pt-3">
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor={`saved-title-${saved.id}`}>Title</Label>
+            <Label htmlFor={`saved-title-${saved.id}`}>Meeting title</Label>
             <Input
               id={`saved-title-${saved.id}`}
               name="title"
@@ -761,51 +866,19 @@ export function EditSavedMeetingForm({
             defaultValue={saved.description ?? ''}
           />
         </div>
-        <div className="space-y-2">
-          <Label>Visibility</Label>
-          <div className="flex flex-wrap gap-2">
-            {(['team', 'private', 'specific_users'] as const).map((value) => (
-              <Button
-                key={value}
-                type="button"
-                variant={visibility === value ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => {
-                  dispatch({ type: 'visibility', visibility: value });
-                }}
-              >
-                {value === 'specific_users'
-                  ? 'Specific users'
-                  : `${value[0]?.toUpperCase()}${value.slice(1)}`}
-              </Button>
-            ))}
-          </div>
-          {visibility === 'specific_users' ? (
-            <div className="flex flex-wrap gap-3">
-              {members.map((m) => (
-                <label
-                  key={m.id}
-                  className="flex items-center gap-1.5 text-xs text-muted-foreground"
-                >
-                  <input
-                    type="checkbox"
-                    checked={visibilityUserIds.includes(m.id)}
-                    onChange={(event) => {
-                      dispatch({
-                        type: 'visibilityUserIds',
-                        visibilityUserIds: event.target.checked
-                          ? [...new Set([...visibilityUserIds, m.id])]
-                          : visibilityUserIds.filter((id) => id !== m.id),
-                      });
-                    }}
-                  />
-                  {m.label}
-                </label>
-              ))}
-            </div>
-          ) : null}
-        </div>
-        <div className="space-y-3 rounded-lg border border-border bg-surface p-3">
+        <VisibilityField
+          idPrefix={`edit-saved-meeting-${saved.id}`}
+          members={members}
+          onVisibilityChange={(nextVisibility) => {
+            dispatch({ type: 'visibility', visibility: nextVisibility });
+          }}
+          onVisibilityUserIdsChange={(nextVisibilityUserIds) => {
+            dispatch({ type: 'visibilityUserIds', visibilityUserIds: nextVisibilityUserIds });
+          }}
+          visibility={visibility}
+          visibilityUserIds={visibilityUserIds}
+        />
+        <div className="space-y-3 rounded-md border border-border bg-surface-2/40 p-3">
           <label className="flex items-center gap-2">
             <input
               type="checkbox"
@@ -843,7 +916,7 @@ export function EditSavedMeetingForm({
             </div>
           ) : null}
         </div>
-        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        <FormError errorRef={errorRef} message={error} />
         <Button type="submit" size="sm" disabled={pending}>
           {pending ? 'Updating…' : 'Update meeting'}
         </Button>
@@ -855,68 +928,108 @@ export function EditSavedMeetingForm({
 export function JoinSavedMeetingButton({ query }: { query: string }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const errorId = useId();
   return (
-    <Button
-      size="sm"
-      disabled={pending}
-      onClick={async () => {
-        setPending(true);
-        try {
-          const result = await joinSavedMeetingAction({ query });
-          if (result.meetingId) router.push(`/app/meetings/${result.meetingId}`);
-          else router.refresh();
-        } finally {
-          setPending(false);
-        }
-      }}
-    >
-      {pending ? 'Joining…' : 'Join'}
-    </Button>
+    <div className="space-y-2">
+      <Button
+        aria-describedby={error ? errorId : undefined}
+        variant="outline"
+        size="sm"
+        disabled={pending}
+        onClick={async () => {
+          setError(null);
+          setPending(true);
+          try {
+            const result = await joinSavedMeetingAction({ query });
+            if (!result.ok) {
+              setError(result.error ?? 'Unable to join the meeting. Try again.');
+              return;
+            }
+            if (result.meetingId) router.push(`/app/meetings/${result.meetingId}`);
+            else router.refresh();
+          } catch {
+            setError('Unable to join the meeting. Try again.');
+          } finally {
+            setPending(false);
+          }
+        }}
+      >
+        {pending ? 'Joining meeting…' : 'Join meeting'}
+      </Button>
+      <ActionError id={errorId} message={error} />
+    </div>
   );
 }
 
 export function ArchiveSavedMeetingButton({ savedMeetingId }: { savedMeetingId: string }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const errorId = useId();
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      disabled={pending}
-      onClick={async () => {
-        setPending(true);
-        try {
-          await archiveSavedMeetingAction(savedMeetingId);
-          router.refresh();
-        } finally {
-          setPending(false);
-        }
-      }}
-    >
-      {pending ? 'Archiving…' : 'Archive'}
-    </Button>
+    <div className="space-y-2">
+      <Button
+        aria-describedby={error ? errorId : undefined}
+        variant="outline"
+        size="sm"
+        disabled={pending}
+        onClick={async () => {
+          setError(null);
+          setPending(true);
+          try {
+            const result = await archiveSavedMeetingAction(savedMeetingId);
+            if (!result.ok) {
+              setError(result.error ?? 'Unable to archive the saved meeting. Try again.');
+              return;
+            }
+            router.refresh();
+          } catch {
+            setError('Unable to archive the saved meeting. Try again.');
+          } finally {
+            setPending(false);
+          }
+        }}
+      >
+        {pending ? 'Archiving meeting…' : 'Archive meeting'}
+      </Button>
+      <ActionError id={errorId} message={error} />
+    </div>
   );
 }
 
 export function SkipScheduledMeetingButton({ meetingId }: { meetingId: string }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const errorId = useId();
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      disabled={pending}
-      onClick={async () => {
-        setPending(true);
-        try {
-          await skipScheduledMeetingAction(meetingId);
-          router.refresh();
-        } finally {
-          setPending(false);
-        }
-      }}
-    >
-      {pending ? 'Skipping…' : 'Skip once'}
-    </Button>
+    <div className="space-y-2">
+      <Button
+        aria-describedby={error ? errorId : undefined}
+        variant="outline"
+        size="sm"
+        disabled={pending}
+        onClick={async () => {
+          setError(null);
+          setPending(true);
+          try {
+            const result = await skipScheduledMeetingAction(meetingId);
+            if (!result.ok) {
+              setError(result.error ?? 'Unable to skip this occurrence. Try again.');
+              return;
+            }
+            router.refresh();
+          } catch {
+            setError('Unable to skip this occurrence. Try again.');
+          } finally {
+            setPending(false);
+          }
+        }}
+      >
+        {pending ? 'Skipping occurrence…' : 'Skip this occurrence'}
+      </Button>
+      <ActionError id={errorId} message={error} />
+    </div>
   );
 }
