@@ -17,31 +17,60 @@ afterEach(() => {
 });
 
 describe('Meetings route states', () => {
-  it('labels the loading list for assistive technology', () => {
+  it('announces a route-shaped loading state outside the busy Meetings fallback', () => {
     render(<MeetingsLoading />);
 
-    const loading = screen.getByLabelText('Loading meetings');
-    expect(loading.getAttribute('aria-busy')).toBe('true');
+    const announcement = screen.getByRole('status');
+    expect(announcement.textContent).toBe('Loading meetings');
+    expect(announcement.closest('[aria-busy="true"]')).toBeNull();
+    expect(screen.getByLabelText('Loading meetings').getAttribute('aria-busy')).toBe('true');
+    expect(screen.getAllByRole('heading', { level: 1, name: 'Meetings' })).toHaveLength(1);
+    expect(screen.getByRole('navigation', { name: 'Loading meeting views' })).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Meeting setup loading placeholder' })).toBeTruthy();
+    const searchControls = screen.getByRole('region', {
+      name: 'Meeting search controls loading placeholder',
+    });
+    expect(searchControls.className).toContain('sm:grid-cols-[minmax(0,1fr)_11rem_auto]');
+    const captures = screen.getByRole('region', { name: 'Meeting captures loading placeholder' });
+    expect(captures.querySelectorAll('li')).toHaveLength(4);
+    expect(captures.querySelector('li')?.className).toContain('sm:grid-cols-[minmax(0,1fr)_auto]');
+    for (const skeleton of document.querySelectorAll('.animate-pulse')) {
+      expect(skeleton.closest('[class*="motion-reduce"]')).toBeTruthy();
+    }
+    expect(screen.queryByRole('button')).toBeNull();
   });
 
-  it('explains that data is safe and lets keyboard users retry a failed load', async () => {
-    const user = userEvent.setup();
-    const reset = vi.fn();
+  it.each([
+    { name: 'Enter', keys: '{Enter}' },
+    { name: 'Space', keys: ' ' },
+  ])(
+    'retains Meetings context, explains that data is safe, and retries with $name',
+    async ({ keys }) => {
+      const user = userEvent.setup();
+      const reset = vi.fn();
 
-    render(<MeetingsError error={new Error('Database unavailable')} reset={reset} />);
+      render(<MeetingsError error={new Error('Database unavailable')} reset={reset} />);
 
-    expect(screen.getByRole('heading', { name: 'Meetings', level: 1 })).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Unable to load meetings', level: 2 })).toBeTruthy();
-    expect(
-      screen.getByText(
-        'Your saved links and captured transcripts are unchanged. Check your connection and try again.',
-      ),
-    ).toBeTruthy();
+      expect(screen.getAllByRole('heading', { name: 'Meetings', level: 1 })).toHaveLength(1);
+      expect(
+        screen.getByText(
+          'Invite the silent notetaker or manage meeting links for automatic capture.',
+        ),
+      ).toBeTruthy();
+      expect(
+        screen.getByRole('heading', { name: 'Unable to load meetings', level: 2 }),
+      ).toBeTruthy();
+      expect(
+        screen.getByText(
+          'Your saved links and captured transcripts are unchanged. Check your connection and try again.',
+        ),
+      ).toBeTruthy();
 
-    const retry = screen.getByRole('button', { name: 'Try again' });
-    retry.focus();
-    await user.keyboard('{Enter}');
+      const retry = screen.getByRole('button', { name: 'Try again' });
+      retry.focus();
+      await user.keyboard(keys);
 
-    expect(reset).toHaveBeenCalledOnce();
-  });
+      expect(reset).toHaveBeenCalledOnce();
+    },
+  );
 });

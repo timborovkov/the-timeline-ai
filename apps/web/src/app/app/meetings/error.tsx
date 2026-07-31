@@ -12,7 +12,10 @@ export default function MeetingsError({
 }) {
   return (
     <div className="space-y-6">
-      <PageHeader title="Meetings" />
+      <PageHeader
+        title="Meetings"
+        subtitle="Invite the silent notetaker or manage meeting links for automatic capture."
+      />
       <ErrorState
         title="Unable to load meetings"
         description="Your saved links and captured transcripts are unchanged. Check your connection and try again."
