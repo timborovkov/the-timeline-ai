@@ -59,6 +59,20 @@ function row(input: {
 }
 
 describe('PersonalConnectionsUi', () => {
+  it('labels each provider account region with its provider and account name', async () => {
+    renderWithQueryClient(
+      <PersonalConnectionsUi
+        connections={[
+          { ...baseConnection, id: 'connection-region', displayName: 'GitHub — Avery' },
+        ]}
+      />,
+    );
+
+    expect(
+      await screen.findByRole('region', { name: 'GitHub account GitHub — Avery' }),
+    ).toBeTruthy();
+  });
+
   it('explains GitHub source sharing before team activation', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(

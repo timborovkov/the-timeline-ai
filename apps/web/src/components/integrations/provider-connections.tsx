@@ -523,7 +523,10 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
   }
 
   return (
-    <section className="rounded-lg border border-border bg-surface">
+    <section
+      aria-label={`${providerLabel(connection.provider)} account ${connection.displayName}`}
+      className="rounded-lg border border-border bg-surface"
+    >
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
         <div className="min-w-0 flex-1">
           <PersonalConnectionHeader connection={connection} />

@@ -1288,10 +1288,9 @@ test.describe.serial('provider OAuth callback success', () => {
     await expect(
       page.getByText('Connected github. Choose which sources this team may use.'),
     ).toBeVisible();
-    const accountCard = page
-      .locator('section.rounded-md')
-      .filter({ hasText: 'GitHub - Timeline E2E' })
-      .first();
+    const accountCard = page.getByRole('region', {
+      name: 'GitHub account GitHub - Timeline E2E',
+    });
     await expect(accountCard.getByText('GitHub - Timeline E2E')).toBeVisible();
     await expect(accountCard.getByText('Personal provider account')).toBeVisible();
   });
