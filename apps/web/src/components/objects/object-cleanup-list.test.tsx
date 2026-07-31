@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 
 import { cleanup, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as objects from '@timeline/shared/objects/types';
@@ -75,5 +76,33 @@ describe('ObjectCleanupList', () => {
     );
 
     expect(screen.getAllByText('No due date')).toHaveLength(1);
+  });
+
+  it('does not expose a disabled merge action as a keyboard-activatable link', async () => {
+    const user = userEvent.setup();
+    render(
+      <ObjectCleanupList
+        rows={[
+          object({ id: 'object-1', canonicalName: 'First object' }),
+          object({ id: 'object-2', canonicalName: 'Second object' }),
+        ]}
+        typeLabels={{ task: 'Task' }}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Select' }));
+
+    expect(screen.queryByRole('link', { name: 'Merge' })).toBeNull();
+    expect(screen.getByText('Merge').getAttribute('aria-disabled')).toBe('true');
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select First object' }));
+    expect(screen.getByRole('status').textContent).toBe('1 selected');
+    expect(screen.queryByRole('link', { name: 'Merge' })).toBeNull();
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select Second object' }));
+    expect(screen.getByRole('status').textContent).toBe('2 selected');
+    expect(screen.getByRole('link', { name: 'Merge' }).getAttribute('href')).toContain(
+      '/app/objects/merge?ids=object-1%2Cobject-2',
+    );
   });
 });

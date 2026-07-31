@@ -169,23 +169,31 @@ export function ObjectCleanupList({ rows, typeLabels, pageInfo, sectionMoreHrefs
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2">
           <div />
           <div className="flex items-center gap-1.5">
+            <output className="sr-only" aria-live="polite">
+              {selecting ? `${selectedCount} selected` : ''}
+            </output>
             {selecting ? (
               <div className="mr-1 text-xs text-fg-dim">{selectedCount} selected</div>
             ) : null}
             {selecting ? (
               <>
-                <Link
-                  href={canMergeSelected ? objectMergeHref(selectedIds) : '#'}
-                  aria-disabled={!canMergeSelected}
-                  className={`inline-flex h-8 items-center gap-1.5 rounded-sm border px-2.5 text-xs transition-colors ${
-                    canMergeSelected
-                      ? 'border-border text-fg hover:bg-surface-2'
-                      : 'pointer-events-none border-border text-fg-dim opacity-50'
-                  }`}
-                >
-                  <GitMerge className="size-3.5" aria-hidden />
-                  Merge
-                </Link>
+                {canMergeSelected ? (
+                  <Link
+                    href={objectMergeHref(selectedIds)}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-border px-2.5 text-xs text-fg transition-colors hover:bg-surface-2"
+                  >
+                    <GitMerge className="size-3.5" aria-hidden />
+                    Merge
+                  </Link>
+                ) : (
+                  <span
+                    className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-border px-2.5 text-xs text-fg-dim opacity-50"
+                    aria-disabled="true"
+                  >
+                    <GitMerge className="size-3.5" aria-hidden />
+                    Merge
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={() => void archiveSelected()}
