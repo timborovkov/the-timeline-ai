@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -25,12 +25,21 @@ try {
   }
 
   const jsonStart = result.stdout.indexOf('{');
-  if (jsonStart === -1) exitWith('[react-doctor] Analyzer did not emit JSON output.');
+  const report = jsonStart === -1 ? null : JSON.parse(result.stdout.slice(jsonStart));
+  const diagnosticsPath = join(outputDir, 'diagnostics.json');
+  const diagnostics = report
+    ? Array.isArray(report.diagnostics)
+      ? report.diagnostics
+      : []
+    : existsSync(diagnosticsPath)
+      ? JSON.parse(readFileSync(diagnosticsPath, 'utf8'))
+      : null;
+  if (!Array.isArray(diagnostics)) {
+    exitWith('[react-doctor] Analyzer did not emit JSON output or diagnostics.');
+  }
 
-  const report = JSON.parse(result.stdout.slice(jsonStart));
-  const diagnostics = Array.isArray(report.diagnostics) ? report.diagnostics : [];
-  const total = Number(report.summary?.totalDiagnosticCount ?? diagnostics.length);
-  if (!report.ok || total > 0) {
+  const total = Number(report?.summary?.totalDiagnosticCount ?? diagnostics.length);
+  if ((report && !report.ok) || total > 0) {
     process.stdout.write(result.stdout);
     exitWith(`[react-doctor] Found ${String(total)} diagnostics.`);
   }
