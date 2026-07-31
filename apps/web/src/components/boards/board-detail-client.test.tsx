@@ -231,6 +231,8 @@ describe('BoardDetailClient', () => {
     expect(heading.className).not.toContain('uppercase');
     expect(heading.parentElement?.textContent).toContain('Track pilots');
     expect(screen.getByRole('link', { name: 'Boards' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('navigation', { name: 'Board view' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'list' }).getAttribute('aria-current')).toBe('page');
 
     await user.click(screen.getByRole('button', { name: 'Fake optimistic add' }));
 

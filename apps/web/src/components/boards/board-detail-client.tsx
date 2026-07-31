@@ -404,11 +404,15 @@ function BoardViewNavigation({
           : 'mb-4 flex shrink-0 justify-end'
       }
     >
-      <nav className="inline-flex overflow-hidden rounded-sm border border-border">
+      <nav
+        aria-label="Board view"
+        className="inline-flex overflow-hidden rounded-sm border border-border"
+      >
         {(['kanban', 'table', 'list'] as const).map((nextView) => (
           <Link
             key={nextView}
             href={boardViewHref(boardId, nextView, selectedItemId, filterParams)}
+            aria-current={view === nextView ? 'page' : undefined}
             className={`px-3 py-1.5 text-xs ${
               view === nextView ? 'bg-signal text-signal-fg' : 'bg-bg text-fg-muted hover:text-fg'
             }`}

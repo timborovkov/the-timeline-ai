@@ -232,7 +232,28 @@ describe('BoardAddItemForm', () => {
       const rolledBackItem = rollback.mock.calls[0]?.[0];
       expect(optimisticItem?.id).toMatch(/^optimistic-/);
       expect(rolledBackItem?.id).toBe(optimisticItem?.id);
-      expect(screen.getByText('Network lost')).toBeTruthy();
+      expect(screen.getByRole('alert').textContent).toContain('Network lost');
     });
+  });
+
+  it('exposes the selected add mode without relying on its color', async () => {
+    const user = userEvent.setup();
+    render(
+      <BoardAddItemForm
+        boardId="board-1"
+        defaultLaneId={null}
+        recommendedTypes={['company']}
+        candidates={[]}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Expand add item' }));
+
+    expect(screen.getByRole('group', { name: 'Add item mode' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'existing' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    await user.click(screen.getByRole('button', { name: 'new' }));
+    expect(screen.getByRole('button', { name: 'new' }).getAttribute('aria-pressed')).toBe('true');
   });
 });

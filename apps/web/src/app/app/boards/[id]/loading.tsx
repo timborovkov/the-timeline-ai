@@ -9,8 +9,13 @@ import { PageHeaderSkeleton } from '@/components/loading-states';
  */
 export default function BoardDetailLoading() {
   return (
-    <div aria-busy="true">
-      <PageHeaderSkeleton />
-    </div>
+    <>
+      <p className="sr-only" role="status">
+        Loading board
+      </p>
+      <div aria-busy="true">
+        <PageHeaderSkeleton />
+      </div>
+    </>
   );
 }
