@@ -60,7 +60,9 @@ describe('CalendarSubscriptionPanel', () => {
 
     render(<CalendarSubscriptionPanel subscription={null} />);
 
-    expect(screen.getByText('No active URL')).toBeTruthy();
+    expect(
+      screen.getByText('Create a private URL to see Timeline events in your calendar app.'),
+    ).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'Create URL' }));
 
@@ -110,15 +112,15 @@ describe('CalendarSubscriptionPanel', () => {
 
     render(<CalendarSubscriptionPanel subscription={subscription} />);
 
-    await user.click(screen.getByRole('button', { name: 'Disable' }));
+    await user.click(screen.getByRole('button', { name: 'Disable URL' }));
     const dialog = screen.getByRole('dialog', { name: 'Disable calendar URL?' });
     expect(
       within(dialog).getByText('Calendar apps using this URL will stop updating.'),
     ).toBeTruthy();
 
-    await user.click(within(dialog).getByRole('button', { name: 'Disable' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Disable URL' }));
 
-    await screen.findByText('No active URL');
+    await screen.findByText('Create a private URL to see Timeline events in your calendar app.');
     expect(fetchMock).toHaveBeenCalledWith('/api/team/calendar-subscription', { method: 'DELETE' });
     expect(fakes.toastSuccess).toHaveBeenCalledWith('Calendar URL disabled');
     expect(fakes.refresh).toHaveBeenCalled();
@@ -133,9 +135,17 @@ describe('CalendarSubscriptionPanel', () => {
     await user.click(screen.getByRole('button', { name: 'Create URL' }));
 
     await waitFor(() => {
-      expect(fakes.toastError).toHaveBeenCalledWith('Calendar subscription update failed');
+      expect(fakes.toastError).toHaveBeenCalledWith(
+        'Unable to create the calendar URL. Try again.',
+      );
     });
-    expect(screen.getByText('No active URL')).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toContain(
+      'Unable to create the calendar URL. Try again.',
+    );
+    expect(
+      screen.getByText('Create a private URL to see Timeline events in your calendar app.'),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Create URL' }).hasAttribute('disabled')).toBe(false);
     expect(screen.queryByRole('button', { name: 'Copy webcal' })).toBeNull();
     expect(fakes.refresh).not.toHaveBeenCalled();
   });
