@@ -132,7 +132,7 @@ export function MobileNav({ active, memberships, recipientInvites, badges = EMPT
             onClick={closeNavigation}
             aria-label="Close navigation"
           />
-          <aside className="absolute inset-y-0 start-0 flex w-72 max-w-[calc(100vw-2rem)] min-w-0 flex-col overscroll-contain border-e border-border bg-bg px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-[max(1.25rem,env(safe-area-inset-top))]">
+          <aside className="absolute inset-y-0 start-0 flex w-72 max-w-[calc(100vw-2rem)] min-w-0 flex-col overscroll-contain border-e border-border bg-bg pb-[max(1.25rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-[max(1.25rem,env(safe-area-inset-top))]">
             <div className="flex items-center justify-between px-2">
               <p id={MOBILE_NAV_TITLE_ID} className="text-sm font-semibold tracking-tight text-fg">
                 Navigation

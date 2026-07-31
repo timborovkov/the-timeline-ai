@@ -117,4 +117,21 @@ describe('MobileNav', () => {
     ).toBe('page');
     expect(screen.getByRole('link', { name: 'Team' }).getAttribute('aria-current')).toBeNull();
   });
+
+  it('keeps drawer navigation controls inside device safe areas', async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(MobileNav, {
+        active,
+        memberships: [active],
+        recipientInvites: [],
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }));
+
+    const drawer = screen.getByRole('dialog', { name: 'Navigation' }).querySelector('aside');
+    expect(drawer?.className).toContain('pl-[max(1rem,env(safe-area-inset-left))]');
+    expect(drawer?.className).toContain('pr-[max(1rem,env(safe-area-inset-right))]');
+  });
 });
