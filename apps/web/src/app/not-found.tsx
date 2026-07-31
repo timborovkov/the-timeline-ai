@@ -1,24 +1,33 @@
-import { Compass } from 'lucide-react';
+import { ArrowLeft, Compass } from 'lucide-react';
 import Link from 'next/link';
 
 import { Button } from '@/components/ui/button';
 
 export default function NotFound() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center px-6 py-16">
-      <div className="flex max-w-md flex-col items-center gap-4 text-center">
-        <span className="flex size-12 items-center justify-center rounded-full bg-accent text-muted-foreground">
-          <Compass className="size-5" />
-        </span>
-        <div className="space-y-1">
+    <main className="flex min-h-screen items-center justify-center px-4 py-10 sm:px-6 sm:py-16">
+      <div className="w-full max-w-lg border border-border bg-background p-5 sm:p-8">
+        <div className="flex size-10 items-center justify-center border border-border bg-muted text-muted-foreground">
+          <Compass aria-hidden="true" className="size-5" />
+        </div>
+        <div className="mt-5 space-y-2">
           <h1 className="text-2xl font-semibold tracking-tight">Page not found</h1>
           <p className="text-sm text-muted-foreground">
-            That URL doesn't lead anywhere. Head back to your timeline.
+            That address does not lead to a page in The Timeline. Nothing in your workspace was
+            changed.
           </p>
         </div>
-        <Button asChild variant="outline" size="sm">
-          <Link href="/app/timeline">Back to timeline</Link>
-        </Button>
+        <div className="mt-6 flex flex-wrap gap-3" aria-label="Continue navigating">
+          <Button asChild size="sm">
+            <Link href="/">
+              <ArrowLeft aria-hidden="true" className="size-4" />
+              Return home
+            </Link>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/app">Open workspace</Link>
+          </Button>
+        </div>
       </div>
     </main>
   );
