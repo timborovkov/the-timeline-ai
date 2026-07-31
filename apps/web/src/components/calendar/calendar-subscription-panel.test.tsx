@@ -85,6 +85,9 @@ describe('CalendarSubscriptionPanel', () => {
 
     render(<CalendarSubscriptionPanel subscription={subscription} />);
 
+    expect(screen.getByText('Not yet accessed.')).toBeTruthy();
+    expect(screen.getByText(/Reset it if the current link was shared/)).toBeTruthy();
+
     await user.click(screen.getByRole('button', { name: 'Reset URL' }));
     let dialog = screen.getByRole('dialog', { name: 'Reset calendar URL?' });
     expect(
@@ -104,6 +107,17 @@ describe('CalendarSubscriptionPanel', () => {
     await screen.findByText('https://timeline.test/api/calendar/feed/tlcal_reset_plaintext.ics');
     expect(fetchMock).toHaveBeenCalledWith('/api/team/calendar-subscription', { method: 'POST' });
     expect(fakes.toastSuccess).toHaveBeenCalledWith('Calendar URL reset');
+  });
+
+  it('shows when the private feed was last accessed', () => {
+    render(
+      <CalendarSubscriptionPanel
+        subscription={{ ...subscription, lastUsedAt: '2026-06-03T10:00:00.000Z' }}
+      />,
+    );
+
+    expect(screen.getByText(/Last accessed/)).toBeTruthy();
+    expect(screen.queryByText('Not yet accessed.')).toBeNull();
   });
 
   it('disables an existing subscription and clears revealed URL state', async () => {

@@ -130,6 +130,13 @@ export function CalendarSubscriptionPanel({
               ? `A private URL is active · created ${dateLabel(subscription.createdAt)}`
               : 'Create a private URL to see Timeline events in your calendar app.'}
           </p>
+          {subscription ? (
+            <p className="mt-1 text-xs text-fg-muted">
+              {subscription.lastUsedAt
+                ? `Last accessed ${dateLabel(subscription.lastUsedAt)}`
+                : 'Not yet accessed.'}
+            </p>
+          ) : null}
         </div>
         <Button
           type="button"
@@ -172,7 +179,9 @@ export function CalendarSubscriptionPanel({
           <CopyButton value={webcalUrl(revealedUrl)} label="Copy webcal" />
         </div>
       ) : subscription ? (
-        <p className="mt-3 text-sm text-fg-muted">Reset the URL to copy a fresh private link.</p>
+        <p className="mt-3 text-sm text-fg-muted">
+          Reset the URL to copy a fresh private link. Reset it if the current link was shared.
+        </p>
       ) : null}
 
       {error ? (
