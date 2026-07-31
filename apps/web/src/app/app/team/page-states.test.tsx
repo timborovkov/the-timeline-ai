@@ -17,29 +17,53 @@ afterEach(() => {
 });
 
 describe('Team settings route states', () => {
-  it('announces a loading state that mirrors the settings navigation and member panels', () => {
+  it('announces loading outside the busy, route-shaped settings placeholder', () => {
     const { container } = render(<TeamLoading />);
 
-    const loading = screen.getByRole('status', { name: 'Loading team settings' });
-    expect(loading.parentElement?.getAttribute('aria-busy')).toBe('true');
-    expect(screen.getByText('Loading team settings')).toBeTruthy();
-    expect(container.querySelectorAll('[class*="h-9"]').length).toBeGreaterThanOrEqual(4);
-  });
-
-  it('retains the team context and lets keyboard users retry a failed page load', async () => {
-    const user = userEvent.setup();
-    const reset = vi.fn();
-
-    render(<TeamError error={new Error('Database unavailable')} reset={reset} />);
-
+    const announcement = screen.getByRole('status');
+    expect(announcement.textContent).toBe('Loading team settings');
+    expect(announcement.parentElement?.getAttribute('aria-busy')).toBeNull();
+    expect(screen.getByLabelText('Loading team settings').getAttribute('aria-busy')).toBe('true');
     expect(screen.getByRole('heading', { name: 'Team', level: 1 })).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Couldn’t load team', level: 2 })).toBeTruthy();
-    expect(screen.getByText('This page could not be loaded. Try the request again.')).toBeTruthy();
 
-    const retry = screen.getByRole('button', { name: 'Try again' });
-    retry.focus();
-    await user.keyboard('{Enter}');
-
-    expect(reset).toHaveBeenCalledOnce();
+    const navigation = screen.getByRole('navigation', {
+      name: 'Team settings navigation loading placeholder',
+    });
+    expect(navigation.className).toContain('overflow-x-auto');
+    expect(navigation.className).toContain('lg:w-52');
+    expect(container.querySelectorAll('[class*="h-9"]').length).toBeGreaterThanOrEqual(6);
+    expect(
+      screen.getByRole('region', { name: 'Team settings panels loading placeholder' }),
+    ).toBeTruthy();
   });
+
+  it.each([
+    { name: 'Enter', keys: '{Enter}' },
+    { name: 'Space', keys: ' ' },
+  ])(
+    'retains team context, safe retry messaging, and keyboard retry with $name',
+    async ({ keys }) => {
+      const user = userEvent.setup();
+      const reset = vi.fn();
+
+      render(<TeamError error={new Error('Database unavailable')} reset={reset} />);
+
+      expect(screen.getByRole('heading', { name: 'Team', level: 1 })).toBeTruthy();
+      expect(screen.getByText('Manage members, defaults, and access.')).toBeTruthy();
+      expect(
+        screen.getByRole('heading', { name: 'Unable to load team settings', level: 2 }),
+      ).toBeTruthy();
+      expect(
+        screen.getByText(
+          'Your team members, access, and defaults have not changed. Check your connection, then try again.',
+        ),
+      ).toBeTruthy();
+
+      const retry = screen.getByRole('button', { name: 'Try again' });
+      retry.focus();
+      await user.keyboard(keys);
+
+      expect(reset).toHaveBeenCalledOnce();
+    },
+  );
 });

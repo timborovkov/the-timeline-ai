@@ -190,8 +190,10 @@ export default async function TeamSettingsPage({
           { label: 'Members', value: memberRows.length, mono: true },
         ]}
       />
-      <div className="flex flex-col gap-6 md:flex-row">
-        <SettingsNav items={[...SETTINGS_ITEMS]} activeSection={section} isAdmin={isAdmin} />
+      <div className="flex flex-col gap-6 lg:flex-row">
+        <aside className="min-w-0 lg:sticky lg:top-4 lg:self-start">
+          <SettingsNav items={[...SETTINGS_ITEMS]} activeSection={section} isAdmin={isAdmin} />
+        </aside>
         <div className="min-w-0 flex-1 space-y-5">
           {section === 'members' ? (
             <>
