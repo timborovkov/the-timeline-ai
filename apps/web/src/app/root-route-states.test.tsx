@@ -78,7 +78,6 @@ describe('root route recovery states', () => {
     await user.tab();
     expect(document.activeElement).toBe(screen.getByRole('link', { name: 'Open workspace' }));
   });
-
   it('reports a root failure and preserves safe retry guidance with technical details closed', () => {
     const html = renderToStaticMarkup(
       <GlobalError
