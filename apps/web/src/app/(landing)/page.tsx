@@ -15,6 +15,7 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
+import { LandingSkipLink } from '@/app/(landing)/_landing-skip-link';
 import { IntegrationCloud } from '@/app/_integration-cloud';
 import { Logo, Wordmark } from '@/components/brand/logo';
 import { ThemeToggle } from '@/components/theme-toggle';
@@ -104,8 +105,11 @@ export default async function LandingPage() {
   return (
     <div className="min-h-screen bg-bg text-fg">
       <StructuredData />
+      <div className="relative z-[60]">
+        <LandingSkipLink />
+      </div>
       <TopNav isSignedIn={isSignedIn} />
-      <main id="main">
+      <main id="main" tabIndex={-1}>
         <Hero isSignedIn={isSignedIn} />
         <Problem />
         <Solution />
