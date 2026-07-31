@@ -46,9 +46,10 @@ beforeEach(() => {
 });
 
 describe('SourcesPage', () => {
-  it('keeps the inbound address copy control and sender-attribution guidance', async () => {
+  it('keeps one page heading, the inbound address copy control, and sender-attribution guidance', async () => {
     const html = renderToStaticMarkup(await SourcesPage());
 
+    expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('acme+archive@inbound.timeline.test');
     expect(html).toContain('Copy address');
     expect(html).toContain('Member email addresses are attributed automatically.');
