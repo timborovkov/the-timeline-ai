@@ -1,5 +1,5 @@
-import { RouteLoading } from '@/components/route-states';
+import ObjectsLoading from '@/app/app/objects/loading';
 
 export default function EntitiesLoading() {
-  return <RouteLoading />;
+  return <ObjectsLoading />;
 }
