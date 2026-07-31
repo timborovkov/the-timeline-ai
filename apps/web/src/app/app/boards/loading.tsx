@@ -1,5 +1,6 @@
 import { PageHeaderSkeleton } from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
+import { WorkSubnav } from '@/components/work-subnav';
 
 export default function BoardsLoading() {
   return (
