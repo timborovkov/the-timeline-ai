@@ -72,6 +72,9 @@ test('authenticated Quiet Archive surfaces', async ({ browser }) => {
 
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto('/app');
+  // Home's setup panel is client-fetched. The visual baseline covers its loaded
+  // success state, so do not capture the transient skeleton before React commits it.
+  await expect(page.getByRole('button', { name: 'Dismiss setup checklist' })).toBeVisible();
   await capture(page, 'home-light-desktop.png');
 
   await page.setViewportSize({ width: 320, height: 780 });
