@@ -107,7 +107,7 @@ export default async function TelegramSettingsPage() {
 
   return (
     <div className="space-y-6">
-      <HistoryBackLink fallbackHref="/app/team" label="Back" />
+      <HistoryBackLink fallbackHref="/app/team" label="Team settings" />
       <PageHeader
         title="Telegram"
         subtitle="Route chat and voice notes into the same capture pipeline."

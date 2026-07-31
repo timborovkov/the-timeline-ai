@@ -9,6 +9,8 @@ import SlackError from '@/app/app/team/slack/error';
 import SlackLoading from '@/app/app/team/slack/loading';
 import TelegramError from '@/app/app/team/telegram/error';
 
+vi.mock('next/navigation', () => ({ useRouter: () => ({ back: vi.fn() }) }));
+
 const ROUTE_ERRORS = [
   ['app', AppError],
   ['Ask', ChatError],
@@ -29,11 +31,13 @@ describe('authenticated route states', () => {
     expect(html).toContain('Try again');
   });
 
-  it('uses the shared structured loading state for Slack', () => {
+  it('server-renders the route-shaped Slack loading state', () => {
     const html = renderToStaticMarkup(<SlackLoading />);
 
     expect(html).toContain('aria-busy="true"');
-    expect(html).toContain('aria-label="Loading page"');
-    expect(html).not.toContain('Loading Slack');
+    expect(html).toContain('aria-label="Loading Slack settings"');
+    expect(html).toContain('Loading Slack settings');
+    expect(html.match(/<h1\b/g)).toHaveLength(1);
+    expect(html).toContain('href="/app/team"');
   });
 });
