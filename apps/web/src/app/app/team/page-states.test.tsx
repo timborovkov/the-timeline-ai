@@ -8,8 +8,8 @@ const fakes = vi.hoisted(() => ({ reportCaughtError: vi.fn() }));
 
 vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
 
-import TeamError from './error.js';
-import TeamLoading from './loading.js';
+import TeamError from '@/app/app/team/error';
+import TeamLoading from '@/app/app/team/loading';
 
 afterEach(() => {
   cleanup();

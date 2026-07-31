@@ -52,7 +52,9 @@ describe('MobileNav', () => {
     expect(document.body.style.overflow).toBe('hidden');
 
     const helpLink = screen.getByRole('link', { name: 'Open help docs in a new tab' });
-    helpLink.addEventListener('click', (event) => event.preventDefault());
+    helpLink.addEventListener('click', (event) => {
+      event.preventDefault();
+    });
     await user.click(helpLink);
 
     await waitFor(() => {

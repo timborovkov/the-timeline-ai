@@ -16,7 +16,7 @@ vi.mock('@/components/team-forms', () => ({
   ),
 }));
 
-import { TeamMembersSettings } from './team-members-settings.js';
+import { TeamMembersSettings } from '@/components/team-members-settings';
 
 afterEach(() => {
   cleanup();

@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef } from 'react';
+import { useRef, type SyntheticEvent } from 'react';
 import { useFormStatus } from 'react-dom';
 
 import {
@@ -54,7 +54,7 @@ function ConfirmingActionForm({
   const formRef = useRef<HTMLFormElement>(null);
   const allowSubmitRef = useRef(false);
 
-  function confirmSubmit(event: React.FormEvent<HTMLFormElement>) {
+  function confirmSubmit(event: SyntheticEvent<HTMLFormElement>) {
     if (allowSubmitRef.current) {
       allowSubmitRef.current = false;
       return;

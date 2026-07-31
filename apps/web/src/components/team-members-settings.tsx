@@ -5,13 +5,12 @@ import type {
   TeamMemberRow,
 } from '@/components/team-member-types';
 
-import { MembersCard } from '@/components/team-members-card';
 import { TeamInviteCards } from '@/components/team-invite-cards';
+import { MembersCard } from '@/components/team-members-card';
 
 export type {
   RemovedTeamMemberRow,
   TeamInviteRow,
-  TeamMemberInfo,
   TeamMemberMap,
   TeamMemberRow,
 } from '@/components/team-member-types';

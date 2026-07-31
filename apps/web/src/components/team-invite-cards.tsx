@@ -4,9 +4,9 @@ import type {
   TeamMemberMap,
 } from '@/components/team-member-types';
 
-import { InviteMemberForm } from '@/components/team-forms';
 import { PendingInvitesCard } from '@/components/pending-invites-card';
 import { RemovedMembersCard } from '@/components/removed-members-card';
+import { InviteMemberForm } from '@/components/team-forms';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export function TeamInviteCards({

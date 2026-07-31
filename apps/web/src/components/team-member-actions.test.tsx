@@ -64,19 +64,24 @@ describe('destructive team member actions', () => {
     expect(screen.getByRole('button', { name: 'Remove member' })).toBeTruthy();
 
     await user.keyboard('{Escape}');
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
     expect(document.activeElement).toBe(remove);
     expect(fakes.removeMemberAction).not.toHaveBeenCalled();
 
     await user.click(remove);
     const dialog = screen.getByRole('dialog');
-    await user.click(
-      screen
-        .getAllByRole('button', { name: 'Remove member' })
-        .find((button) => dialog.contains(button))!,
-    );
+    const confirm = screen
+      .getAllByRole('button', { name: 'Remove member' })
+      .find((button) => dialog.contains(button));
+    expect(confirm).toBeTruthy();
+    if (!confirm) throw new Error('Expected the remove confirmation button');
+    await user.click(confirm);
 
-    await waitFor(() => expect(fakes.removeMemberAction).toHaveBeenCalledOnce());
+    await waitFor(() => {
+      expect(fakes.removeMemberAction).toHaveBeenCalledOnce();
+    });
     const formData = fakes.removeMemberAction.mock.calls[0]?.[0] as FormData;
     expect(formData.get('userId')).toBe('member-1');
   });
@@ -99,7 +104,9 @@ describe('destructive team member actions', () => {
     ).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
     expect(fakes.revokeInviteAction).not.toHaveBeenCalled();
   });
 });
