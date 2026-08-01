@@ -26,8 +26,10 @@ describe('Boards route states', () => {
     expect(screen.getByRole('status').parentElement?.getAttribute('aria-busy')).toBeNull();
     expect(screen.getByLabelText('Loading boards').getAttribute('aria-busy')).toBe('true');
     expect(screen.getAllByRole('heading', { level: 1, name: 'Boards' })).toHaveLength(1);
-    expect(screen.getByRole('link', { name: 'Boards' }).getAttribute('aria-current')).toBe('page');
-    expect(screen.getByRole('region', { name: 'Boards list loading placeholder' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Boards' })).toBeNull();
+    const listSkeleton = document.querySelector('[aria-busy="true"] > [aria-hidden="true"]');
+    expect(listSkeleton).toBeTruthy();
+    expect(listSkeleton?.querySelectorAll('a, button, input, select, textarea')).toHaveLength(0);
 
     rerender(<BoardDetailLoading />);
 
@@ -35,13 +37,15 @@ describe('Boards route states', () => {
     expect(screen.getByRole('status').parentElement?.getAttribute('aria-busy')).toBeNull();
     expect(screen.getByLabelText('Loading board').getAttribute('aria-busy')).toBe('true');
     expect(screen.getAllByRole('heading', { level: 1, name: 'Board' })).toHaveLength(1);
-    expect(screen.getByRole('link', { name: 'Boards' }).getAttribute('aria-current')).toBe('page');
-    expect(screen.getByRole('region', { name: 'Board detail loading placeholder' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Boards' })).toBeNull();
+    const detailSkeleton = document.querySelector('[aria-busy="true"] > [aria-hidden="true"]');
+    expect(detailSkeleton).toBeTruthy();
+    expect(detailSkeleton?.querySelectorAll('a, button, input, select, textarea')).toHaveLength(0);
     expect(screen.getByLabelText('Loading board').getAttribute('data-app-layout')).toBe(
       'full-bleed',
     );
     expect(
-      screen.getByRole('region', { name: 'Board detail loading placeholder' }).className,
+      document.querySelector('[aria-label="Board detail loading placeholder"]')?.className,
     ).toContain('overflow-x-auto');
     expect(document.querySelectorAll('.motion-reduce\\:animate-none')).not.toHaveLength(0);
   });
