@@ -38,8 +38,8 @@ export default function TeamLoading() {
                 </div>
               ))}
             </div>
+          </div>
         </div>
-      </div>
       </div>
     </>
   );
