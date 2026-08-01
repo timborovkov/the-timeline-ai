@@ -39,15 +39,22 @@ describe('AcceptInvite route states', () => {
     expect(html).toContain('Accept invite');
   });
 
-  it('announces a single-heading invitation loading state', () => {
+  it('announces a single-heading invitation loading state outside its busy placeholder', () => {
     render(<AcceptInviteLoading />);
 
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Loading invitation');
-    expect(screen.getByRole('status').textContent).toBe('Loading invitation');
+    const announcement = screen.getByRole('status');
+    expect(announcement.textContent).toBe('Loading invitation');
+    expect(announcement.parentElement?.getAttribute('aria-busy')).toBeNull();
     expect(screen.getByLabelText('Invitation loading placeholder').getAttribute('aria-busy')).toBe(
       'true',
     );
+    const skeletons = document.querySelectorAll('[class*="animate-pulse"]');
+    expect(skeletons).toHaveLength(4);
+    expect(
+      [...skeletons].every((skeleton) => skeleton.classList.contains('motion-reduce:animate-none')),
+    ).toBe(true);
   });
 
   it('provides an announced, keyboard-operable retry for a failed invitation load', async () => {
@@ -57,9 +64,13 @@ describe('AcceptInvite route states', () => {
     render(<AcceptInviteError error={new Error('route failed')} reset={reset} />);
 
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
-    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Invite unavailable');
-    expect(screen.getByRole('alert').textContent).toBe(
-      'Unable to load invitationCheck your connection, then try again.Try again',
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Accept invitation');
+    expect(screen.getByText('Review the invitation before joining the team.')).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Unable to load invitation' }),
+    ).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toContain(
+      'Unable to load invitationThis failed load did not accept your invitation or change your team access. Check your connection, then try again.Try again',
     );
 
     const retry = screen.getByRole('button', { name: 'Try again' });

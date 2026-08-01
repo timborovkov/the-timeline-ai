@@ -11,10 +11,10 @@ export default function AcceptInviteError({
   reset: () => void;
 }) {
   return (
-    <AuthShell title="Invite unavailable">
+    <AuthShell title="Accept invitation" subtitle="Review the invitation before joining the team.">
       <ErrorState
         title="Unable to load invitation"
-        description="Check your connection, then try again."
+        description="This failed load did not accept your invitation or change your team access. Check your connection, then try again."
         error={error}
         reset={reset}
       />

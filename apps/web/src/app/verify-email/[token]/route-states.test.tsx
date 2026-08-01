@@ -47,15 +47,22 @@ describe('VerifyEmail route states', () => {
     ).rejects.toThrow('database unavailable');
   });
 
-  it('announces a single-heading email verification loading state', () => {
+  it('announces a single-heading email verification loading state outside its busy placeholder', () => {
     render(<VerifyEmailLoading />);
 
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Verifying email');
-    expect(screen.getByRole('status').textContent).toBe('Verifying email');
+    const announcement = screen.getByRole('status');
+    expect(announcement.textContent).toBe('Verifying email');
+    expect(announcement.parentElement?.getAttribute('aria-busy')).toBeNull();
     expect(
       screen.getByLabelText('Email verification loading placeholder').getAttribute('aria-busy'),
     ).toBe('true');
+    const skeletons = document.querySelectorAll('[class*="animate-pulse"]');
+    expect(skeletons).toHaveLength(3);
+    expect(
+      [...skeletons].every((skeleton) => skeleton.classList.contains('motion-reduce:animate-none')),
+    ).toBe(true);
   });
 
   it('provides an announced, keyboard-operable retry for an email verification failure', async () => {
@@ -65,12 +72,13 @@ describe('VerifyEmail route states', () => {
     render(<VerifyEmailError error={new Error('route failed')} reset={reset} />);
 
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
-    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(
-      'Email verification unavailable',
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Email verification');
+    expect(screen.getByText('Confirm the email address for your Timeline account.')).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 2, name: 'Unable to verify email' })).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toContain(
+      'Unable to verify emailEmail verification could not be confirmed. If you just opened this link, it may already have succeeded. Check your connection, then try again.Try again',
     );
-    expect(screen.getByRole('alert').textContent).toBe(
-      'Unable to verify emailCheck your connection, then try again.Try again',
-    );
+    expect(screen.getByRole('link', { name: 'Open dashboard' }).getAttribute('href')).toBe('/app');
 
     const retry = screen.getByRole('button', { name: 'Try again' });
     retry.focus();
