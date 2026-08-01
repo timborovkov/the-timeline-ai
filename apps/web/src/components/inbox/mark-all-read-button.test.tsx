@@ -25,19 +25,54 @@ afterEach(() => {
 });
 
 describe('MarkAllReadButton', () => {
-  it('explains a failed optimistic update and allows a retry', async () => {
+  it('rolls back safely and retries a failed optimistic update with the keyboard', async () => {
     const user = userEvent.setup();
-    fakes.markAllRead.mockResolvedValue({ error: 'Database unavailable' });
+    fakes.markAllRead
+      .mockResolvedValueOnce({ error: 'Database unavailable' })
+      .mockResolvedValueOnce({ ok: true });
 
     render(<MarkAllReadButton hasUnread />);
     await user.click(screen.getByRole('button', { name: 'Mark all read' }));
 
-    expect((await screen.findByRole('alert')).textContent).toBe(
-      'Unable to mark notifications as read. Try again.',
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'Unable to mark notifications as read. Your notifications remain unread.',
     );
     expect(screen.getByRole('button', { name: 'Mark all read' }).hasAttribute('disabled')).toBe(
       false,
     );
+
+    const retry = screen.getByRole('button', { name: 'Try again' });
+    await user.tab();
+    expect(document.activeElement).toBe(retry);
+    await user.keyboard('{Enter}');
+
+    await waitFor(() => {
+      expect(fakes.markAllRead).toHaveBeenCalledTimes(2);
+      expect(fakes.refresh).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('announces when marking notifications as read is in progress', async () => {
+    let resolveAction: (value: { ok: true }) => void = () => {
+      throw new Error('Expected the mark-all action to be pending');
+    };
+    fakes.markAllRead.mockReturnValue(
+      new Promise<{ ok: true }>((resolve) => {
+        resolveAction = resolve;
+      }),
+    );
+    const user = userEvent.setup();
+
+    render(<MarkAllReadButton hasUnread />);
+    await user.click(screen.getByRole('button', { name: 'Mark all read' }));
+
+    expect(screen.getByText('Marking all notifications as read.').getAttribute('aria-live')).toBe(
+      'polite',
+    );
+    resolveAction({ ok: true });
+    await waitFor(() => {
+      expect(fakes.refresh).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('refreshes the inbox after marking every notification read', async () => {
