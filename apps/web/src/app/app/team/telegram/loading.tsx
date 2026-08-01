@@ -1,4 +1,3 @@
-import { HistoryBackLink } from '@/components/history-back-link';
 import { PageHeaderSkeleton } from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
 
