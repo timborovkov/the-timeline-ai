@@ -135,7 +135,7 @@ export default async function TelegramSettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Link a personal DM</CardTitle>
+          <CardTitle as="h2">Link a personal DM</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-muted-foreground">
@@ -149,7 +149,7 @@ export default async function TelegramSettingsPage() {
       {isAdmin ? (
         <Card>
           <CardHeader>
-            <CardTitle>Bind a group chat</CardTitle>
+            <CardTitle as="h2">Bind a group chat</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">
@@ -165,7 +165,7 @@ export default async function TelegramSettingsPage() {
       {activeTokens.length > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle>Pending tokens</CardTitle>
+            <CardTitle as="h2">Pending tokens</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-xs text-muted-foreground">
@@ -174,7 +174,10 @@ export default async function TelegramSettingsPage() {
             </p>
             <ul className="divide-y">
               {activeTokens.map((t) => (
-                <li key={t.id} className="flex items-center justify-between py-3">
+                <li
+                  key={t.id}
+                  className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+                >
                   <div className="flex flex-col">
                     <span className="text-sm">
                       {t.scope === 'group' ? 'Group binding' : 'Personal link'}
@@ -203,7 +206,7 @@ export default async function TelegramSettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Bound group chats</CardTitle>
+          <CardTitle as="h2">Bound group chats</CardTitle>
         </CardHeader>
         <CardContent>
           {bindings.length === 0 ? (
@@ -211,7 +214,10 @@ export default async function TelegramSettingsPage() {
           ) : (
             <ul className="divide-y">
               {bindings.map((b) => (
-                <li key={b.id} className="flex items-center justify-between py-3">
+                <li
+                  key={b.id}
+                  className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+                >
                   <div className="min-w-0 flex-1 space-y-2">
                     <span className="text-sm font-medium">{b.title ?? 'Unnamed chat'}</span>
                     <span className="text-xs text-muted-foreground">
@@ -249,7 +255,7 @@ export default async function TelegramSettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Linked Telegram users</CardTitle>
+          <CardTitle as="h2">Linked Telegram users</CardTitle>
         </CardHeader>
         <CardContent>
           {linkedTgUsers.length === 0 ? (
@@ -263,13 +269,13 @@ export default async function TelegramSettingsPage() {
                 return (
                   <li
                     key={`${u.id}-${u.userId ?? 'unverified'}`}
-                    className="flex items-center justify-between py-3"
+                    className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"
                   >
-                    <div className="flex flex-col">
+                    <div className="min-w-0 flex-1">
                       <span className="text-sm font-medium">
                         {appUser?.name ?? appUser?.email ?? 'Unverified Telegram user'}
                       </span>
-                      <span className="text-xs text-muted-foreground">
+                      <span className="block break-words text-xs text-muted-foreground">
                         tg:{tgName} · {appUser?.email ?? 'no app account'}
                       </span>
                     </div>

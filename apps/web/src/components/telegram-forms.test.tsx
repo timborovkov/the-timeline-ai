@@ -45,7 +45,12 @@ afterEach(() => {
   cleanup();
 });
 
-function mockTokenState(state: { error?: string; scope?: 'personal' | 'group'; token?: string }) {
+function mockTokenState(state: {
+  error?: string;
+  fieldError?: string;
+  scope?: 'personal' | 'group';
+  token?: string;
+}) {
   fakes.useActionState.mockReturnValue([state, fakes.action]);
 }
 
@@ -63,9 +68,11 @@ describe('Telegram link token forms', () => {
     ).toBe(false);
     expect(screen.getByText(/Single-use token/)).toBeTruthy();
     expect(screen.getByText('/link personal-token')).toBeTruthy();
-    const link = screen.getByRole('link', {
-      name: 'https://t.me/timeline_bot?start=personal-token',
-    });
+    expect(screen.getAllByRole('status')[0]?.textContent).toContain(
+      'Link token created. It expires in 15 minutes.',
+    );
+    expect(screen.getByRole('button', { name: 'Copy link command' })).toBeTruthy();
+    const link = screen.getByRole('link', { name: 'Open Telegram link' });
     expect(link.getAttribute('href')).toBe('https://t.me/timeline_bot?start=personal-token');
   });
 
@@ -76,18 +83,21 @@ describe('Telegram link token forms', () => {
     render(<GenerateGroupTokenForm botUsername="timeline_bot" />);
 
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Working…' }).disabled).toBe(true);
-    const link = screen.getByRole('link', {
-      name: 'https://t.me/timeline_bot?startgroup=group-token',
-    });
+    const link = screen.getByRole('link', { name: 'Open Telegram link' });
     expect(link.getAttribute('href')).toBe('https://t.me/timeline_bot?startgroup=group-token');
   });
 
-  it('shows action errors and missing-bot guidance without exposing stale tokens', () => {
-    mockTokenState({ error: 'Username is already linked.' });
+  it('connects username validation errors to the field without exposing stale tokens', () => {
+    mockTokenState({ fieldError: 'Username is already linked.' });
 
     render(<GeneratePersonalTokenForm botUsername={null} />);
 
-    expect(screen.getByText('Username is already linked.')).toBeTruthy();
+    const username = screen.getByLabelText('Your Telegram @username');
+    expect(username.getAttribute('aria-invalid')).toBe('true');
+    expect(username.getAttribute('aria-describedby')).toBe(
+      'personal-tg-username-help personal-tg-username-error',
+    );
+    expect(screen.getByRole('alert').textContent).toContain('Username is already linked.');
     expect(screen.queryByText(/Single-use token/)).toBeNull();
 
     cleanup();
@@ -96,5 +106,25 @@ describe('Telegram link token forms', () => {
 
     expect(screen.getByText('TELEGRAM_BOT_USERNAME')).toBeTruthy();
     expect(screen.queryByRole('link', { name: /t\.me/ })).toBeNull();
+  });
+
+  it('keeps a stable token status region and leaves form-level errors off the username field', () => {
+    mockTokenState({});
+    const { rerender } = render(<GeneratePersonalTokenForm botUsername="timeline_bot" />);
+    const status = screen.getAllByRole('status')[0];
+    expect(status?.textContent).toBe('');
+
+    mockTokenState({ scope: 'personal', token: 'fresh-token' });
+    rerender(<GeneratePersonalTokenForm botUsername="timeline_bot" />);
+    expect(screen.getAllByRole('status')[0]).toBe(status);
+    expect(status?.textContent).toContain('Link token created. It expires in 15 minutes.');
+
+    cleanup();
+    mockTokenState({ error: 'Not signed in' });
+    render(<GeneratePersonalTokenForm botUsername="timeline_bot" />);
+    expect(screen.getByRole('alert').textContent).toContain('Not signed in');
+    expect(
+      screen.getByLabelText('Your Telegram @username').getAttribute('aria-invalid'),
+    ).toBeNull();
   });
 });
