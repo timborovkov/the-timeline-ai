@@ -1,4 +1,3 @@
-import { HistoryBackLink } from '@/components/history-back-link';
 import { PageHeaderSkeleton } from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -8,15 +7,16 @@ export default function SlackLoading() {
       <output className="sr-only" aria-live="polite">
         Loading Slack settings
       </output>
+      <h1 className="sr-only">Slack</h1>
       <div className="space-y-6" aria-busy="true" aria-label="Loading Slack settings">
-        <HistoryBackLink fallbackHref="/app/team" label="Team settings" />
-        <h1 className="sr-only">Slack</h1>
-        <PageHeaderSkeleton />
-        <section aria-label="Slack settings loading placeholder" className="space-y-4">
-          <SlackSetupSkeleton />
-          <SlackSetupSkeleton />
-          <SlackBindingsSkeleton />
-        </section>
+        <div aria-hidden="true" className="space-y-6">
+          <PageHeaderSkeleton />
+          <section className="space-y-4">
+            <SlackSetupSkeleton />
+            <SlackSetupSkeleton />
+            <SlackBindingsSkeleton />
+          </section>
+        </div>
       </div>
     </>
   );

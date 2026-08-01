@@ -23,7 +23,6 @@ describe.each([
   {
     label: 'Telegram',
     loadingLabel: 'Loading Telegram settings',
-    placeholderLabel: 'Telegram settings loading placeholder',
     subtitle: 'Route chat and voice notes into the same capture pipeline.',
     errorTitle: 'Unable to load Telegram settings',
     errorDescription:
@@ -34,7 +33,6 @@ describe.each([
   {
     label: 'Slack',
     loadingLabel: 'Loading Slack settings',
-    placeholderLabel: 'Slack settings loading placeholder',
     subtitle: 'Capture DMs, channel messages, slash-command answers, and linked sender context.',
     errorTitle: 'Unable to load Slack settings',
     errorDescription:
@@ -47,14 +45,13 @@ describe.each([
   ({
     label,
     loadingLabel,
-    placeholderLabel,
     subtitle,
     errorTitle,
     errorDescription,
     Loading,
     Error: ErrorBoundary,
   }) => {
-    it('announces loading outside the busy, route-shaped fallback and retains its Team settings context', () => {
+    it('announces loading outside the busy, route-shaped fallback and keeps visual skeletons out of the accessibility tree', () => {
       render(<Loading />);
 
       const announcement = screen.getByRole('status');
@@ -62,10 +59,10 @@ describe.each([
       expect(announcement.parentElement?.getAttribute('aria-busy')).toBeNull();
       expect(screen.getByLabelText(loadingLabel).getAttribute('aria-busy')).toBe('true');
       expect(screen.getAllByRole('heading', { level: 1, name: label })).toHaveLength(1);
-      expect(screen.getByRole('link', { name: 'Team settings' }).getAttribute('href')).toBe(
-        '/app/team',
-      );
-      expect(screen.getByRole('region', { name: placeholderLabel })).toBeTruthy();
+      expect(screen.queryByRole('link', { name: 'Team settings' })).toBeNull();
+      const skeleton = document.querySelector('[aria-busy="true"] > [aria-hidden="true"]');
+      expect(skeleton).toBeTruthy();
+      expect(skeleton?.querySelectorAll('a, button, input, select, textarea')).toHaveLength(0);
     });
 
     it.each([

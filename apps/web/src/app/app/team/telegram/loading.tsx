@@ -1,4 +1,3 @@
-import { HistoryBackLink } from '@/components/history-back-link';
 import { PageHeaderSkeleton } from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -8,15 +7,16 @@ export default function TelegramLoading() {
       <output className="sr-only" aria-live="polite">
         Loading Telegram settings
       </output>
+      <h1 className="sr-only">Telegram</h1>
       <div className="space-y-6" aria-busy="true" aria-label="Loading Telegram settings">
-        <HistoryBackLink fallbackHref="/app/team" label="Team settings" />
-        <h1 className="sr-only">Telegram</h1>
-        <PageHeaderSkeleton />
-        <section aria-label="Telegram settings loading placeholder" className="space-y-4">
-          <TelegramSetupSkeleton />
-          <TelegramSetupSkeleton />
-          <TelegramListSkeleton />
-        </section>
+        <div aria-hidden="true" className="space-y-6">
+          <PageHeaderSkeleton />
+          <section className="space-y-4">
+            <TelegramSetupSkeleton />
+            <TelegramSetupSkeleton />
+            <TelegramListSkeleton />
+          </section>
+        </div>
       </div>
     </>
   );
