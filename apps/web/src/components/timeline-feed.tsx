@@ -165,6 +165,7 @@ export function TimelineFeed({
     [pages],
   );
   const queryErrorDetails = query.error instanceof Error ? query.error.message : undefined;
+  const hasTimelineContent = events.length > 0 || (serverMoments?.length ?? 0) > 0;
 
   return (
     <div className="space-y-3">
@@ -192,7 +193,11 @@ export function TimelineFeed({
       />
       {query.isError ? (
         <InlineError
-          message="Timeline updates could not load. The current moments and filters are still available."
+          message={
+            hasTimelineContent
+              ? 'Timeline updates could not load. The current moments and filters are still available.'
+              : 'Timeline updates could not load. Check your connection, then try again.'
+          }
           details={queryErrorDetails}
           onRetry={() => {
             void query.refetch();
@@ -201,31 +206,33 @@ export function TimelineFeed({
           retrying={query.isRefetching}
         />
       ) : null}
-      <div className={compact ? 'hidden' : 'flex justify-center'}>
-        {query.hasNextPage || query.isFetchingNextPage ? (
-          <button
-            type="button"
-            disabled={query.isFetchingNextPage}
-            onClick={() => {
-              void query.fetchNextPage().finally(() => {
-                requestAnimationFrame(() => completionStatusRef.current?.focus());
-              });
-            }}
-            className="rounded-sm border border-border px-3 py-2 text-xs text-fg-muted transition-colors hover:bg-surface disabled:opacity-40"
-          >
-            {query.isFetchingNextPage ? 'Loading…' : 'Load more'}
-          </button>
-        ) : (
-          <p
-            ref={completionStatusRef}
-            role="status"
-            tabIndex={-1}
-            className="m-0 px-3 py-2 text-xs text-fg-dim"
-          >
-            You've reached the end of the timeline.
-          </p>
-        )}
-      </div>
+      {!compact && !(query.isError && !hasTimelineContent) ? (
+        <div className="flex justify-center">
+          {query.hasNextPage || query.isFetchingNextPage ? (
+            <button
+              type="button"
+              disabled={query.isFetchingNextPage}
+              onClick={() => {
+                void query.fetchNextPage().finally(() => {
+                  requestAnimationFrame(() => completionStatusRef.current?.focus());
+                });
+              }}
+              className="rounded-sm border border-border px-3 py-2 text-xs text-fg-muted transition-colors hover:bg-surface disabled:opacity-40"
+            >
+              {query.isFetchingNextPage ? 'Loading…' : 'Load more'}
+            </button>
+          ) : (
+            <p
+              ref={completionStatusRef}
+              role="status"
+              tabIndex={-1}
+              className="m-0 px-3 py-2 text-xs text-fg-dim"
+            >
+              You've reached the end of the timeline.
+            </p>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

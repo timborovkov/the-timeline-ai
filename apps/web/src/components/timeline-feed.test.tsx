@@ -288,6 +288,35 @@ describe('TimelineFeed', () => {
     expect(refetch).toHaveBeenCalledTimes(1);
   });
 
+  it('uses truthful recovery guidance when the initial timeline refresh has no moments', () => {
+    const initialPage = page([]);
+    const refetch = vi.fn();
+    fakes.pages = [initialPage];
+    fakes.queryOverrides = {
+      isError: true,
+      error: new Error('upstream timeout'),
+      refetch,
+    };
+
+    render(
+      createElement(TimelineFeed, {
+        initialPage,
+        filters: { source: 'integration' },
+        currentUserId: 'user-1',
+        isAdmin: false,
+        members: [],
+      }),
+    );
+
+    expect(screen.getByRole('alert').textContent).toContain(
+      'Timeline updates could not load. Check your connection, then try again.',
+    );
+    expect(screen.queryByText("You've reached the end of the timeline.")).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry timeline' }));
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
   it('announces that pagination is complete without leaving a disabled action', () => {
     const initialPage = page([timelineEvent('event-1')]);
     fakes.pages = [initialPage];
