@@ -38,13 +38,17 @@ describe('root route recovery states', () => {
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('Your saved workspace data has not been changed.');
-    expect(html).toContain('role="status"');
+    expect(html).toContain('<main');
+    expect(html).toContain('tabindex="-1"');
     expect(html).toContain('<details');
     expect(html).not.toContain('<details open');
     expect(html).toContain('Reference: digest-123');
+    expect(html).toContain('@media (prefers-color-scheme: dark)');
+    expect(html).toContain('color: #20211e;');
+    expect(html).toContain('.global-error-button:focus-visible');
   });
 
-  it('retries a root failure with Enter and Space while reporting it to Sentry', async () => {
+  it('focuses, retries, and reports a root failure', async () => {
     const user = userEvent.setup();
     const reset = vi.fn();
     const error = Object.assign(new Error('route failed'), { digest: 'digest-123' });
@@ -54,6 +58,9 @@ describe('root route recovery states', () => {
     try {
       render(<GlobalError error={error} reset={reset} />);
 
+      expect(document.activeElement).toBe(
+        screen.getByRole('heading', { name: 'We couldn’t open this page' }),
+      );
       const retry = screen.getByRole('button', { name: 'Try again' });
       retry.focus();
       await user.keyboard('{Enter}');
