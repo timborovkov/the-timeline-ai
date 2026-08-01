@@ -300,7 +300,10 @@ export function SlackSettingsPageView({ model }: { model: SlackSettingsViewModel
           ) : (
             <ul className="divide-y">
               {model.bindings.map((b) => (
-                <li key={b.id} className="flex items-center justify-between py-3">
+                <li
+                  key={b.id}
+                  className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+                >
                   <div className="min-w-0 flex-1 space-y-2">
                     <p className="text-sm font-medium">{b.title ?? 'Unnamed channel'}</p>
                     <p className="text-xs text-muted-foreground">
@@ -345,17 +348,24 @@ export function SlackSettingsPageView({ model }: { model: SlackSettingsViewModel
             <ul className="divide-y">
               {model.linkedSlackUsers.map((u) => {
                 return (
-                  <li key={u.id} className="flex items-center justify-between py-3">
-                    <div>
+                  <li
+                    key={u.id}
+                    className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium">
                         {u.appUser?.name ?? u.appUser?.email ?? 'Timeline user'}
                       </p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="break-words text-xs text-muted-foreground">
                         Slack {u.realName ?? u.name ?? 'member'}
                         {u.email ? ` · ${u.email}` : ''}
                       </p>
                     </div>
-                    {u.isActive ? <Badge variant="outline">Active DM</Badge> : null}
+                    {u.isActive ? (
+                      <Badge className="shrink-0 self-start" variant="outline">
+                        Active DM
+                      </Badge>
+                    ) : null}
                   </li>
                 );
               })}
