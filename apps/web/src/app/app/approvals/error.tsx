@@ -20,7 +20,7 @@ export default function ApprovalsError({
       <WorkSubnav current="/app/approvals" />
       <ErrorState
         title="Unable to load approvals"
-        description="No approval has been accepted, changed, or rejected. Check your connection, then try again."
+        description="Your pending approvals and saved decisions have not changed. Check your connection, then try again."
         error={error}
         reset={reset}
       />
