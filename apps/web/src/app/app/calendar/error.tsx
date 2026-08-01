@@ -16,8 +16,8 @@ export default function CalendarError({
       <PageHeader title="Calendar" subtitle="Track deadlines, meetings, and follow-ups." />
       <WorkSubnav current="/app/calendar" />
       <ErrorState
-        title="Couldn’t load calendar"
-        description="Calendar could not be loaded. Check your connection, then try again."
+        title="Unable to load calendar"
+        description="Your calendar events and saved schedule changes have not changed. Try again."
         error={error}
         reset={reset}
       />

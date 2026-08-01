@@ -39,7 +39,7 @@ afterEach(() => {
 });
 
 describe('CalendarError', () => {
-  it('retains calendar context and offers a retry action', async () => {
+  it('retains calendar context and offers safe keyboard-operable recovery', async () => {
     const user = userEvent.setup();
     render(<CalendarError error={new Error('offline')} reset={fakes.reset} />);
 
@@ -47,12 +47,17 @@ describe('CalendarError', () => {
     expect(screen.getByRole('navigation', { name: 'Work navigation' }).textContent).toContain(
       '/app/calendar',
     );
-    expect(screen.getByRole('heading', { level: 2, name: 'Couldn’t load calendar' })).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 2, name: 'Unable to load calendar' })).toBeTruthy();
     expect(
-      screen.getByText('Calendar could not be loaded. Check your connection, then try again.'),
+      screen.getByText(
+        'Your calendar events and saved schedule changes have not changed. Try again.',
+      ),
     ).toBeTruthy();
 
-    await user.click(screen.getByRole('button', { name: 'Try again' }));
-    expect(fakes.reset).toHaveBeenCalledOnce();
+    const retry = screen.getByRole('button', { name: 'Try again' });
+    retry.focus();
+    await user.keyboard('{Enter}');
+    await user.keyboard(' ');
+    expect(fakes.reset).toHaveBeenCalledTimes(2);
   });
 });
