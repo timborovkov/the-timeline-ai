@@ -17,7 +17,7 @@ afterEach(() => {
 });
 
 describe('Team settings route states', () => {
-  it('announces loading outside the busy, route-shaped settings placeholder', () => {
+  it('keeps team context while hiding the route-shaped visual placeholder', () => {
     const { container } = render(<TeamLoading />);
 
     const announcement = screen.getByRole('status');
@@ -26,15 +26,15 @@ describe('Team settings route states', () => {
     expect(screen.getByLabelText('Loading team settings').getAttribute('aria-busy')).toBe('true');
     expect(screen.getByRole('heading', { name: 'Team', level: 1 })).toBeTruthy();
 
-    const navigation = screen.getByRole('navigation', {
-      name: 'Team settings navigation loading placeholder',
-    });
-    expect(navigation.className).toContain('overflow-x-auto');
-    expect(navigation.className).toContain('lg:w-52');
+    expect(screen.queryByRole('navigation')).toBeNull();
+    expect(screen.queryByRole('region')).toBeNull();
+    expect(screen.queryByRole('button')).toBeNull();
     expect(container.querySelectorAll('[class*="h-9"]').length).toBeGreaterThanOrEqual(6);
-    expect(
-      screen.getByRole('region', { name: 'Team settings panels loading placeholder' }),
-    ).toBeTruthy();
+    const visualPlaceholder = container.querySelector('[aria-hidden="true"]');
+    expect(visualPlaceholder).toBeTruthy();
+    expect(visualPlaceholder?.querySelectorAll('a, button, input, select, textarea')).toHaveLength(
+      0,
+    );
   });
 
   it.each([
