@@ -17,7 +17,7 @@ export default function TasksError({
       <WorkSubnav current="/app/tasks" />
       <ErrorState
         title="Unable to load tasks"
-        description="Tasks could not be loaded. Check your connection, then try again."
+        description="Your saved tasks and task-board state are unchanged. Check your connection, then try again."
         error={error}
         reset={reset}
       />
