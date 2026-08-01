@@ -8,7 +8,11 @@ export default function TelegramLoading() {
         Loading Telegram settings
       </output>
       <h1 className="sr-only">Telegram</h1>
-      <div className="space-y-6" aria-busy="true" aria-label="Loading Telegram settings">
+      <div
+        className="space-y-6 motion-reduce:[&_.animate-pulse]:animate-none"
+        aria-busy="true"
+        aria-label="Loading Telegram settings"
+      >
         <div aria-hidden="true" className="space-y-6">
           <PageHeaderSkeleton />
           <section className="space-y-4">
