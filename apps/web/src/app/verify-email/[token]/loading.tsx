@@ -12,11 +12,13 @@ export default function VerifyEmailLoading() {
         aria-label="Email verification loading placeholder"
         className="space-y-5"
       >
-        <div aria-hidden="true" className="space-y-2">
-          <Skeleton className="h-4 w-full motion-reduce:animate-none" />
-          <Skeleton className="h-4 w-3/4 motion-reduce:animate-none" />
+        <div aria-hidden="true" className="space-y-5">
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-full motion-reduce:animate-none" />
+            <Skeleton className="h-4 w-3/4 motion-reduce:animate-none" />
+          </div>
+          <Skeleton className="h-9 w-32 motion-reduce:animate-none" />
         </div>
-        <Skeleton className="h-9 w-32 motion-reduce:animate-none" />
       </section>
     </AuthShell>
   );

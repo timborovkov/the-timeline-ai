@@ -63,6 +63,7 @@ describe('VerifyEmail route states', () => {
     expect(
       [...skeletons].every((skeleton) => skeleton.classList.contains('motion-reduce:animate-none')),
     ).toBe(true);
+    expect([...skeletons].every((skeleton) => skeleton.closest('[aria-hidden="true"]'))).toBe(true);
   });
 
   it('provides an announced, keyboard-operable retry for an email verification failure', async () => {
