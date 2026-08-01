@@ -1,34 +1,13 @@
-import { ArrowLeft, Compass } from 'lucide-react';
-import Link from 'next/link';
+import { RootNotFoundContent } from '@/app/_root-not-found-content';
+import { PublicShell } from '@/components/public-shell';
+import { auth } from '@/lib/auth';
 
-import { Button } from '@/components/ui/button';
+export default async function NotFound() {
+  const session = await auth();
 
-export default function NotFound() {
   return (
-    <main className="flex min-h-screen items-center justify-center px-4 py-10 sm:px-6 sm:py-16">
-      <div className="w-full max-w-lg border border-border bg-background p-5 sm:p-8">
-        <div className="flex size-10 items-center justify-center border border-border bg-muted text-muted-foreground">
-          <Compass aria-hidden="true" className="size-5" />
-        </div>
-        <div className="mt-5 space-y-2">
-          <h1 className="text-2xl font-semibold tracking-tight">Page not found</h1>
-          <p className="text-sm text-muted-foreground">
-            That address does not lead to a page in The Timeline. Nothing in your workspace was
-            changed.
-          </p>
-        </div>
-        <div className="mt-6 flex flex-wrap gap-3" aria-label="Continue navigating">
-          <Button asChild size="sm">
-            <Link href="/">
-              <ArrowLeft aria-hidden="true" className="size-4" />
-              Return home
-            </Link>
-          </Button>
-          <Button asChild variant="outline" size="sm">
-            <Link href="/app">Open workspace</Link>
-          </Button>
-        </div>
-      </div>
-    </main>
+    <PublicShell isSignedIn={Boolean(session?.user)} footerLabel="The Timeline">
+      <RootNotFoundContent />
+    </PublicShell>
   );
 }

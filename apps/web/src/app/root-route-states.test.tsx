@@ -5,11 +5,15 @@ import userEvent from '@testing-library/user-event';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const fakes = vi.hoisted(() => ({ reportCaughtError: vi.fn() }));
+const fakes = vi.hoisted(() => ({ reportCaughtError: vi.fn(), auth: vi.fn() }));
 
+vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
 vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
 
+import { RootNotFoundContent } from '@/app/_root-not-found-content';
+import AppNotFound from '@/app/app/not-found';
 import GlobalError from '@/app/global-error';
+import HelpNotFound from '@/app/help/not-found';
 import NotFound from '@/app/not-found';
 
 afterEach(() => {
@@ -18,14 +22,57 @@ afterEach(() => {
 });
 
 describe('root route recovery states', () => {
-  it('keeps unauthenticated-safe navigation and one route heading for an unknown address', () => {
-    const html = renderToStaticMarkup(<NotFound />);
+  it('keeps unauthenticated-safe navigation and one route heading for an unknown address', async () => {
+    fakes.auth.mockResolvedValue(null);
+    const html = renderToStaticMarkup(await NotFound());
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('Nothing in your workspace was changed.');
+    expect(html).toContain('href="#main"');
+    expect(html).toContain('focus:z-[60]');
+    expect(html).toContain('<main id="main" tabindex="-1"');
     expect(html).toContain('href="/"');
     expect(html).toContain('href="/app"');
     expect(html).toContain('aria-label="Continue navigating"');
+  });
+
+  it('keeps signed-in people oriented toward the workspace from an unknown address', async () => {
+    fakes.auth.mockResolvedValue({ user: { id: 'user-1' } });
+    const html = renderToStaticMarkup(await NotFound());
+
+    expect(html).toContain('>Open app<');
+    expect(html).not.toContain('>Sign in<');
+  });
+
+  it('keeps unmatched workspace and help content inside their existing shell landmarks', () => {
+    const appHtml = renderToStaticMarkup(<AppNotFound />);
+    const helpHtml = renderToStaticMarkup(<HelpNotFound />);
+
+    expect(appHtml.match(/<h1\b/g)).toHaveLength(1);
+    expect(appHtml).not.toContain('<main');
+    expect(appHtml).toContain('Nothing in your workspace was changed.');
+    expect(appHtml).toContain('href="/app"');
+    expect(appHtml).toContain('href="/app/work"');
+
+    expect(helpHtml.match(/<h1\b/g)).toHaveLength(1);
+    expect(helpHtml).not.toContain('<main');
+    expect(helpHtml).toContain('Your workspace and support requests are unchanged.');
+    expect(helpHtml).toContain('href="/help"');
+    expect(helpHtml).toContain('href="/help/support"');
+  });
+
+  it('moves focus to the unknown-address heading without changing its native link navigation', async () => {
+    const user = userEvent.setup();
+
+    render(<RootNotFoundContent />);
+
+    const title = screen.getByRole('heading', { name: 'Page not found' });
+    expect(document.activeElement).toBe(title);
+
+    await user.tab();
+    expect(document.activeElement).toBe(screen.getByRole('link', { name: 'Return home' }));
+    await user.tab();
+    expect(document.activeElement).toBe(screen.getByRole('link', { name: 'Open workspace' }));
   });
 
   it('reports a root failure and preserves safe retry guidance with technical details closed', () => {
