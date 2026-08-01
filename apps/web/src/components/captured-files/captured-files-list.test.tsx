@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -135,6 +135,54 @@ describe('CapturedFilesList', () => {
     expect(fakes.routerPush).toHaveBeenCalledWith('/app/documents/promoted-doc');
   });
 
+  it('opens promotion in an accessible responsive dialog and restores trigger focus on Escape', async () => {
+    const user = userEvent.setup();
+    render(<CapturedFilesList folders={[]} members={[]} files={[capturedFile()]} />);
+
+    const trigger = screen.getByRole('button', { name: 'Promote' });
+    await user.click(trigger);
+
+    const dialog = screen.getByRole('dialog', { name: 'Promote captured file' });
+    expect(within(dialog).getByRole('textbox', { name: 'Title' })).toHaveProperty(
+      'value',
+      'Whiteboard planning photo',
+    );
+    expect(dialog.className).toContain('max-h-[calc(100dvh-2rem)]');
+    expect(dialog.className).toContain('overflow-y-auto');
+
+    await user.keyboard('{Escape}');
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('keeps promotion form values and offers inline retry when promotion fails', async () => {
+    fakes.promoteCapturedFileAction.mockResolvedValue({ ok: false, error: 'network timeout' });
+    const user = userEvent.setup();
+    render(<CapturedFilesList folders={[]} members={[]} files={[capturedFile()]} />);
+
+    await user.click(screen.getByRole('button', { name: 'Promote' }));
+    const dialog = screen.getByRole('dialog', { name: 'Promote captured file' });
+    await user.click(within(dialog).getByRole('button', { name: 'Promote' }));
+
+    expect(
+      await screen.findByText(
+        'Could not promote this captured file. It remains unchanged. Check your connection, then try again.',
+      ),
+    ).toBeTruthy();
+    expect(within(dialog).getByRole('textbox', { name: 'Title' })).toHaveProperty(
+      'value',
+      'Whiteboard planning photo',
+    );
+
+    await user.click(within(dialog).getByRole('button', { name: 'Promote again' }));
+    await waitFor(() => {
+      expect(fakes.promoteCapturedFileAction).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it('filters captured files by multiple selected statuses', async () => {
     const user = userEvent.setup();
     render(
@@ -231,5 +279,34 @@ describe('CapturedFilesList', () => {
       expect(screen.queryByText('Old contract')).not.toBeNull();
     });
     expect(fetchMock).toHaveBeenCalledWith('/api/documents/captured?cursor=older-cursor');
+  });
+
+  it('keeps loaded files visible and offers inline retry when loading older files fails', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'));
+    const user = userEvent.setup();
+    render(
+      <CapturedFilesList
+        folders={[]}
+        members={[]}
+        files={[capturedFile()]}
+        nextCursor="older-cursor"
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Load older captured files' }));
+
+    expect(
+      await screen.findByText(
+        'Could not load older captured files. The files already shown remain available. Check your connection, then try again.',
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText('Whiteboard planning photo')).toBeTruthy();
+
+    const retry = screen.getByRole('button', { name: 'Retry loading older files' });
+    retry.focus();
+    await user.keyboard('{Enter}');
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
   });
 });
