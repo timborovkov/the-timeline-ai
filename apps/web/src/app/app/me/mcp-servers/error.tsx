@@ -1,5 +1,6 @@
 'use client';
 
+import { Breadcrumb } from '@/components/breadcrumb';
 import { ErrorState } from '@/components/error-state';
 import { PageHeader } from '@/components/page-header';
 
@@ -12,6 +13,9 @@ export default function PersonalMcpServersError({
 }) {
   return (
     <div className="max-w-3xl space-y-8">
+      <Breadcrumb
+        items={[{ label: 'Connections', href: '/app/sources' }, { label: 'Personal MCP servers' }]}
+      />
       <PageHeader
         title="Personal MCP servers"
         subtitle="Custom external tools that only you can use in chats you start."

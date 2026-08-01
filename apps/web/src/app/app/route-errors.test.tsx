@@ -78,7 +78,7 @@ describe('authenticated route states', () => {
     expect(html).toContain('aria-label="Loading Slack settings"');
     expect(html).toContain('Loading Slack settings');
     expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(html).toContain('href="/app/team"');
+    expect(html).not.toContain('href="/app/team"');
   });
 
   it('announces a row-shaped Home loading state outside the busy fallback', () => {
