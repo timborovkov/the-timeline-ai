@@ -18,7 +18,7 @@ vi.mock('@timeline/shared/env', () => ({ getEnv: vi.fn(() => ({})) }));
 vi.mock('@timeline/shared/team-scope', () => ({ withTeam: vi.fn() }));
 vi.mock('@timeline/shared/slack', () => ({ listSlackConversationsForTeam: vi.fn() }));
 
-const { SlackSettingsPageView } = await import('./page.js');
+const { SlackSettingsPageView } = await import('@/app/app/team/slack/slack-settings-page-content');
 
 afterEach(() => {
   cleanup();
@@ -105,6 +105,7 @@ describe('SlackSettingsPageView', () => {
     );
     expect(screen.getByRole('option', { name: '#support (invite bot first)' })).toBeTruthy();
     expect(screen.getByRole('option', { name: '#sales' })).toBeTruthy();
+    expect(screen.getByLabelText('Conversation to bind')).toHaveProperty('required', true);
     expect(screen.queryByRole('option', { name: '#launch' })).toBeNull();
     expect(screen.getByText('#launch')).toBeTruthy();
     expect(screen.getByText('Channel · Team visibility')).toBeTruthy();
@@ -112,7 +113,9 @@ describe('SlackSettingsPageView', () => {
     expect(screen.getByRole('button', { name: 'Unbind' })).toBeTruthy();
     expect(screen.getByText('Ada')).toBeTruthy();
     expect(screen.getByText(/Slack Ada Lovelace · ada@slack\.test/)).toBeTruthy();
-    expect(screen.getByText('active DM')).toBeTruthy();
+    expect(screen.getByText('Active DM')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Slack', level: 1 })).toBeTruthy();
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
   });
 
   it('keeps member-facing settings read-only while preserving status context', () => {

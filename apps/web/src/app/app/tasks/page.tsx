@@ -35,9 +35,6 @@ export const metadata: Metadata = {
   description: 'Review tasks discovered from timeline activity.',
 };
 
-type PageSearchParams = Record<string, string | string[] | undefined>;
-
-const EMPTY_SEARCH_PARAMS: PageSearchParams = {};
 type TaskView = 'kanban' | 'list';
 
 function taskParam(value: string | string[] | undefined): string | null {
@@ -50,15 +47,8 @@ function viewParam(value: string | string[] | undefined): TaskView {
   return v === 'list' ? v : 'kanban';
 }
 
-export default async function TasksPage({
-  searchParams,
-}: {
-  searchParams?: Promise<PageSearchParams>;
-} = {}) {
-  const [session, query] = await Promise.all([
-    auth(),
-    searchParams ?? Promise.resolve(EMPTY_SEARCH_PARAMS),
-  ]);
+export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'>) {
+  const [session, query] = await Promise.all([auth(), searchParams]);
   if (!session?.user) redirect('/sign-in');
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) redirect('/sign-in');

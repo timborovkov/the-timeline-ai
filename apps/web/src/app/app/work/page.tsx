@@ -40,10 +40,6 @@ export const metadata: Metadata = {
 
 const QUEUE_LIMIT = 20;
 
-interface WorkPageProps {
-  searchParams?: Promise<{ view?: string; kind?: string }>;
-}
-
 const PIN_FILTER_KINDS = {
   objects: ['object'],
   boards: ['board'],
@@ -53,16 +49,18 @@ const PIN_FILTER_KINDS = {
   timeline: ['timeline_moment'],
 } as const;
 
-export default async function WorkPage({ searchParams }: WorkPageProps = {}) {
+export default async function WorkPage({ searchParams }: PageProps<'/app/work'>) {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) redirect('/sign-in');
 
   const scope = withTeam(db, active.teamId, session.user.id);
-  const query: { view?: string; kind?: string } = searchParams ? await searchParams : {};
-  if (query.view === 'pinned') {
-    const filter = query.kind && query.kind in PIN_FILTER_KINDS ? query.kind : 'all';
+  const query = await searchParams;
+  const view = Array.isArray(query.view) ? query.view[0] : query.view;
+  const kind = Array.isArray(query.kind) ? query.kind[0] : query.kind;
+  if (view === 'pinned') {
+    const filter = kind && kind in PIN_FILTER_KINDS ? kind : 'all';
     const kinds =
       filter === 'all' ? undefined : [...PIN_FILTER_KINDS[filter as keyof typeof PIN_FILTER_KINDS]];
     const page = await scope.pins.list({ limit: 50, kinds });

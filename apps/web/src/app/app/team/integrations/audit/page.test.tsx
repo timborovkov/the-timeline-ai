@@ -1,6 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { integrationAuditSummary } from '@/app/app/team/integrations/audit/integration-audit-summary';
+
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   getCalendarSettings: vi.fn(),
@@ -27,7 +29,7 @@ vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
 vi.mock('@/lib/db', () => ({ db: {} }));
 
-const { default: IntegrationAuditPage, integrationAuditSummary } = await import('./page.js');
+const { default: IntegrationAuditPage } = await import('@/app/app/team/integrations/audit/page');
 
 beforeEach(() => {
   vi.clearAllMocks();
