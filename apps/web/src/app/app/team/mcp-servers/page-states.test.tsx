@@ -10,9 +10,18 @@ import McpServersError from '@/app/app/team/mcp-servers/error';
 import McpServersLoading from '@/app/app/team/mcp-servers/loading';
 import McpServersRedirect from '@/app/app/team/mcp-servers/page';
 
-const fakes = vi.hoisted(() => ({ redirect: vi.fn(), reportCaughtError: vi.fn() }));
+const fakes = vi.hoisted(() => ({
+  back: vi.fn(),
+  redirect: vi.fn(),
+  reportCaughtError: vi.fn(),
+  searchParams: new URLSearchParams('connected=server-1&error=retry'),
+}));
 
-vi.mock('next/navigation', () => ({ redirect: fakes.redirect }));
+vi.mock('next/navigation', () => ({
+  redirect: fakes.redirect,
+  useRouter: () => ({ back: fakes.back }),
+  useSearchParams: () => fakes.searchParams,
+}));
 vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
 
 afterEach(() => {
@@ -26,6 +35,12 @@ describe('Team MCP servers route states', () => {
 
     expect(screen.getByLabelText('Opening team MCP server settings')).toBeTruthy();
     expect(screen.getByRole('status').textContent).toBe('Opening team MCP server settings');
+    expect(screen.getByRole('heading', { name: 'Team MCP servers', level: 1 })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Team' }).getAttribute('href')).toBe('/app/team');
+    expect(screen.getByRole('link', { name: 'Integrations' }).getAttribute('href')).toBe(
+      '/app/team/integrations',
+    );
+    expect(screen.getByLabelText('Team MCP server settings loading placeholder')).toBeTruthy();
   });
 
   it('keeps recovery copy and retry keyboard accessible if the redirect cannot complete', async () => {
@@ -45,9 +60,13 @@ describe('Team MCP servers route states', () => {
     ).toBeTruthy();
     expect(
       screen.getByText(
-        'MCP server settings are managed in Integrations. Your settings have not changed. Try again.',
+        'This failed redirect did not change your team MCP server settings. Check your connection, then try again.',
       ),
     ).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Team' }).getAttribute('href')).toBe('/app/team');
+    expect(screen.getByRole('link', { name: 'Integrations' }).getAttribute('href')).toBe(
+      '/app/team/integrations?connected=server-1&error=retry',
+    );
 
     const retry = screen.getByRole('button', { name: 'Try again' });
     retry.focus();
@@ -63,7 +82,7 @@ describe('Team MCP servers route states', () => {
     });
 
     expect(fakes.redirect).toHaveBeenCalledWith(
-      '/app/team/integrations?connected=server-1&error=retry',
+      '/app/team/integrations?connected=server-1&error=retry&error=ignored',
     );
   });
 });
