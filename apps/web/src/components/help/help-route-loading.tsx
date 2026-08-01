@@ -17,7 +17,7 @@ export function HelpRouteLoading({ description, title, variant }: HelpRouteLoadi
           <p className="text-xs font-medium text-fg-muted">
             {variant === 'guide' ? 'Guide' : 'Support'}
           </p>
-          <h1 className="text-3xl font-semibold tracking-tight text-fg sm:text-4xl">{title}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-fg">{title}</h1>
           <p className="text-lg text-fg-muted">{description}</p>
         </header>
 

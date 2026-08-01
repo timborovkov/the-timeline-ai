@@ -51,6 +51,7 @@ describe('root route recovery states', () => {
     expect(appHtml.match(/<h1\b/g)).toHaveLength(1);
     expect(appHtml).not.toContain('<main');
     expect(appHtml).toContain('Nothing in your workspace was changed.');
+    expect(appHtml).toContain('rounded-lg border border-border bg-surface');
     expect(appHtml).toContain('href="/app"');
     expect(appHtml).toContain('href="/app/work"');
 
@@ -67,6 +68,9 @@ describe('root route recovery states', () => {
     render(<RootNotFoundContent />);
 
     const title = screen.getByRole('heading', { name: 'Page not found' });
+    expect(
+      title.closest('main')?.querySelector('.rounded-lg.border-border.bg-surface'),
+    ).toBeTruthy();
     expect(document.activeElement).toBe(title);
 
     await user.tab();

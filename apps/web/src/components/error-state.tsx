@@ -35,7 +35,7 @@ export function ErrorState({
   return (
     <div
       role="alert"
-      className="flex flex-col items-center gap-4 rounded-sm border border-danger/30 bg-bg px-6 py-12 text-center"
+      className="flex flex-col items-center gap-4 rounded-lg border border-danger/30 bg-bg px-6 py-12 text-center"
     >
       <span
         aria-hidden="true"

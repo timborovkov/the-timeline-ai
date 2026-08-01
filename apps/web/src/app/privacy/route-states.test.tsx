@@ -43,7 +43,9 @@ describe('Legal route states', () => {
       render(<Loading />);
 
       expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
-      expect(screen.getByRole('heading', { level: 1, name: title })).toBeTruthy();
+      const heading = screen.getByRole('heading', { level: 1, name: title });
+      expect(heading.className).toContain('text-2xl');
+      expect(heading.className).not.toContain('sm:text-4xl');
       expect(screen.getByText(description)).toBeTruthy();
       expect(screen.getByRole('status').textContent).toBe(`Loading ${title}`);
       expect(screen.getByLabelText(`${title} loading placeholder`).getAttribute('aria-busy')).toBe(
@@ -61,7 +63,9 @@ describe('Legal route states', () => {
       render(<ErrorComponent error={new Error('route failed')} reset={reset} />);
 
       expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
-      expect(screen.getByRole('heading', { level: 1, name: title })).toBeTruthy();
+      const heading = screen.getByRole('heading', { level: 1, name: title });
+      expect(heading.className).toContain('text-2xl');
+      expect(heading.className).not.toContain('sm:text-4xl');
       expect(screen.getByText(description)).toBeTruthy();
       expect(
         screen.getByRole('heading', { level: 2, name: `Unable to load ${title}` }),

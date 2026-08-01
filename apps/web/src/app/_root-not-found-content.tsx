@@ -19,7 +19,7 @@ export function RootNotFoundContent() {
       tabIndex={-1}
       className="flex min-h-[calc(100dvh-9.5rem)] items-center justify-center px-4 py-10 sm:px-6 sm:py-16"
     >
-      <div className="w-full max-w-lg border border-border bg-surface p-5 sm:p-8">
+      <div className="w-full max-w-lg rounded-lg border border-border bg-surface p-5 sm:p-8">
         <div className="flex size-10 items-center justify-center border border-border bg-surface-2 text-fg-muted">
           <Compass aria-hidden="true" className="size-5" />
         </div>

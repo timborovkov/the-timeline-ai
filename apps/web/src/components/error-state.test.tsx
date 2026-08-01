@@ -28,6 +28,8 @@ describe('ErrorState', () => {
     );
 
     const heading = screen.getByRole('heading', { level: 2, name: 'Unable to load workspace' });
+    expect(screen.getByRole('alert').className).toContain('rounded-lg');
+    expect(screen.getByRole('alert').className).not.toContain('rounded-sm');
     expect(heading.getAttribute('tabindex')).toBe('-1');
     expect(document.activeElement).toBe(heading);
     expect(fakes.reportCaughtError).toHaveBeenCalledWith(

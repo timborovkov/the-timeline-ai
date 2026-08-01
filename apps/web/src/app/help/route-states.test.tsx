@@ -127,6 +127,12 @@ describe('Help child route states', () => {
         'true',
       );
       expect(screen.getAllByRole('heading', { level: 1, name: title })).toHaveLength(1);
+      expect(screen.getByRole('heading', { level: 1, name: title }).className).toContain(
+        'text-2xl',
+      );
+      expect(screen.getByRole('heading', { level: 1, name: title }).className).not.toContain(
+        'sm:text-4xl',
+      );
       expect(screen.getByRole('navigation', { name: 'Help guides' })).toBeTruthy();
       expect(screen.getByText(loadingDescription)).toBeTruthy();
       expect(
@@ -153,6 +159,12 @@ describe('Help child route states', () => {
       );
 
       expect(screen.getAllByRole('heading', { level: 1, name: title })).toHaveLength(1);
+      expect(screen.getByRole('heading', { level: 1, name: title }).className).toContain(
+        'text-2xl',
+      );
+      expect(screen.getByRole('heading', { level: 1, name: title }).className).not.toContain(
+        'sm:text-4xl',
+      );
       expect(screen.getByRole('navigation', { name: 'Help guides' })).toBeTruthy();
       expect(
         screen.getByRole('heading', { level: 2, name: `Unable to load ${title}` }),
