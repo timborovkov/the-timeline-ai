@@ -22,6 +22,15 @@ import { DEFAULT_TIMEZONE, timezoneOptions } from '@/lib/timezones';
 const EMPTY_MEMBERS: { id: string; label: string }[] = [];
 type Visibility = 'team' | 'private' | 'specific_users';
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+const WEEKDAY_NAMES = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+] as const;
 const VISIBILITY_OPTIONS: { value: Visibility; label: string }[] = [
   { value: 'team', label: 'Team' },
   { value: 'private', label: 'Private' },
@@ -295,6 +304,7 @@ function ScheduleFields({
               className="flex h-9 min-w-14 items-center justify-center gap-1.5 rounded-sm border px-2 text-sm"
             >
               <input
+                aria-label={compact ? WEEKDAY_NAMES[index] : undefined}
                 name={`weekday-${index}`}
                 type="checkbox"
                 defaultChecked={weekdays?.includes(index) ?? (index > 0 && index < 6)}
