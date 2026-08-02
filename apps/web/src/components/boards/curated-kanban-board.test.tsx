@@ -94,6 +94,22 @@ describe('CuratedKanbanBoard', () => {
     fakes.updateBoardItemAction.mockResolvedValue({ ok: true, id: 'item-1' });
   });
 
+  it('groups the scrollable board columns with uniquely named duplicate lane regions', () => {
+    render(
+      <CuratedKanbanBoard
+        boardId="board-1"
+        lanes={[lane('lane-1', 'Open'), lane('lane-2', 'Open')]}
+        items={[boardItem('Board card')]}
+        selectedItemId={null}
+        members={[]}
+      />,
+    );
+
+    const boardColumns = screen.getByRole('region', { name: 'Board columns' });
+    expect(within(boardColumns).getByRole('region', { name: 'Open, board column 1' })).toBeTruthy();
+    expect(within(boardColumns).getByRole('region', { name: 'Open, board column 2' })).toBeTruthy();
+  });
+
   it('wraps long card titles', () => {
     const longTitle =
       'timborovkov/the-timeline-ai#202: Add cursor pagination to the visible sales pipeline so full titles remain readable';
