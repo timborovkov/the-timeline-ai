@@ -13,7 +13,11 @@ export default function SearchLoading() {
           <Skeleton className="h-4 w-full max-w-2xl motion-reduce:animate-none" />
         </header>
 
-        <section aria-label="Search loading placeholder" className="space-y-5">
+        <section
+          aria-hidden="true"
+          className="space-y-5 motion-reduce:animate-none"
+          data-testid="search-loading-visuals"
+        >
           <div className="h-11 rounded-sm border border-border bg-surface px-3 py-3">
             <Skeleton className="h-4 w-1/3 motion-reduce:animate-none" />
           </div>

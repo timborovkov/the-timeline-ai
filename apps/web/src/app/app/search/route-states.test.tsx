@@ -44,13 +44,19 @@ describe('Search route states', () => {
   });
 
   it('announces loading outside the busy, search-shaped fallback and retains one route heading', () => {
-    render(<SearchLoading />);
+    const { getByTestId } = render(<SearchLoading />);
 
     const announcement = screen.getByRole('status');
     expect(announcement.textContent).toBe('Loading search');
     expect(announcement.parentElement?.getAttribute('aria-busy')).toBeNull();
     expect(screen.getByLabelText('Loading search').getAttribute('aria-busy')).toBe('true');
     expect(screen.getAllByRole('heading', { level: 1, name: 'Search' })).toHaveLength(1);
-    expect(screen.getByRole('region', { name: 'Search loading placeholder' })).toBeTruthy();
+    expect(screen.queryByRole('region', { name: 'Search loading placeholder' })).toBeNull();
+    expect(screen.queryByText('Search loading placeholder')).toBeNull();
+    const visuals = getByTestId('search-loading-visuals');
+    expect(visuals.getAttribute('aria-hidden')).toBe('true');
+    expect(visuals.querySelectorAll('a, button, input, select, textarea, [tabindex]').length).toBe(
+      0,
+    );
   });
 });
