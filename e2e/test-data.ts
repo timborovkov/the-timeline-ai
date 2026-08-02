@@ -79,3 +79,10 @@ export const e2eSeedEvents = {
   specificForMember: `E2E specific member note ${E2E_RUN_ID}`,
   otherTeam: `E2E other team note ${E2E_RUN_ID}`,
 };
+
+export const e2eSeedTasks = {
+  mobileKanban: {
+    id: uuidFrom('mobile-kanban-task'),
+    canonicalName: `E2E mobile Kanban task ${E2E_RUN_ID}`,
+  },
+};

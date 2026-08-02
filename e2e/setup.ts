@@ -4,7 +4,14 @@ import { closeDb } from '@timeline/db';
 import { hashPassword } from '@timeline/shared/passwords';
 
 import { cleanupE2eDataWithinTransaction, withE2eDataTransaction } from './cleanup.js';
-import { E2E_PASSWORD, e2eOtherTeam, e2eSeedEvents, e2eTeam, e2eUsers } from './test-data.js';
+import {
+  E2E_PASSWORD,
+  e2eOtherTeam,
+  e2eSeedEvents,
+  e2eSeedTasks,
+  e2eTeam,
+  e2eUsers,
+} from './test-data.js';
 
 const TERMS_VERSION = '2026-06-02';
 const PRIVACY_VERSION = '2026-06-02';
@@ -90,6 +97,16 @@ export async function setupE2eData(): Promise<void> {
           NULL,
           '{"e2e":true}'::jsonb
         )
+    `;
+    await sql`
+      INSERT INTO entities (id, team_id, type, canonical_name, status)
+      VALUES (
+        ${e2eSeedTasks.mobileKanban.id},
+        ${e2eTeam.id},
+        'task',
+        ${e2eSeedTasks.mobileKanban.canonicalName},
+        'backlog'
+      )
     `;
   });
 }

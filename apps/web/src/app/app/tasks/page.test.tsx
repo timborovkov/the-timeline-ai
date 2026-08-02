@@ -314,7 +314,21 @@ describe('TasksPage', () => {
 
     expect(html.match(/<h1/g)).toHaveLength(1);
     expect(html).toContain('No active tasks');
+    expect(html).toContain('Capture a follow-up');
+    expect(html).toContain('href="/app#capture"');
     expect(html).not.toContain('Pending task proposals');
+    expect(html).not.toContain('data-app-layout="full-bleed"');
+  });
+
+  it('keeps a filtered empty task archive reassuring and preserves list view when filters clear', async () => {
+    const html = renderToStaticMarkup(await TasksPage(pageProps({ status: 'todo', view: 'list' })));
+
+    expect(html).toContain('No tasks match this filter');
+    expect(html).toContain(
+      'The task archive is still intact. Clear the filters or broaden the slice to see more work.',
+    );
+    expect(html).toContain('Clear filters');
+    expect(html).toContain('href="/app/tasks?view=list"');
     expect(html).not.toContain('data-app-layout="full-bleed"');
   });
 
