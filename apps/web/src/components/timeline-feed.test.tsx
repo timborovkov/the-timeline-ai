@@ -30,6 +30,7 @@ vi.mock('@/lib/use-paginated-queries', () => {
         isError: false,
         error: null,
         isFetchingNextPage: false,
+        isFetchNextPageError: false,
         isRefetching: false,
         refetch: vi.fn(),
         ...fakes.queryOverrides,
@@ -315,6 +316,65 @@ describe('TimelineFeed', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Retry timeline' }));
     expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries the failed next page without offering a competing load-more action', async () => {
+    const initialPage = page([timelineEvent('event-1')]);
+    const fetchNextPage = vi.fn(() => Promise.resolve());
+    const refetch = vi.fn();
+    const requestAnimationFrame = vi.fn();
+    vi.stubGlobal('requestAnimationFrame', requestAnimationFrame);
+    fakes.pages = [initialPage];
+    fakes.queryOverrides = {
+      isError: true,
+      isFetchNextPageError: true,
+      hasNextPage: true,
+      error: new Error('upstream timeout'),
+      fetchNextPage,
+      refetch,
+    };
+
+    const { rerender } = render(
+      createElement(TimelineFeed, {
+        initialPage,
+        filters: { source: 'integration' },
+        currentUserId: 'user-1',
+        isAdmin: false,
+        members: [],
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        'More timeline updates could not load. The current moments and filters are still available.',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
+
+    const retry = screen.getByRole('button', { name: 'Retry loading more' });
+    retry.focus();
+    fireEvent.click(retry);
+
+    expect(fetchNextPage).toHaveBeenCalledOnce();
+    expect(refetch).not.toHaveBeenCalled();
+
+    await Promise.resolve();
+    fakes.queryOverrides = { hasNextPage: false, fetchNextPage, refetch };
+    rerender(
+      createElement(TimelineFeed, {
+        initialPage,
+        filters: { source: 'integration' },
+        currentUserId: 'user-1',
+        isAdmin: false,
+        members: [],
+      }),
+    );
+    const focusPaginationControl = requestAnimationFrame.mock.calls[0]?.[0] as
+      | (() => void)
+      | undefined;
+    expect(focusPaginationControl).toBeTypeOf('function');
+    focusPaginationControl?.();
+    expect(document.activeElement).toBe(screen.getByRole('status'));
   });
 
   it('announces that pagination is complete without leaving a disabled action', () => {
