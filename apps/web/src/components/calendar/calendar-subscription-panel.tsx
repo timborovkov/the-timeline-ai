@@ -2,7 +2,7 @@
 
 import { Link2, RefreshCw, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useReducer } from 'react';
 import { toast } from 'sonner';
 
 import { CopyButton } from '@/components/copy-button';
@@ -32,6 +32,21 @@ interface SubscriptionResponse {
   url: string;
 }
 
+interface CalendarSubscriptionPanelState {
+  subscription: CalendarSubscription | null;
+  revealedUrl: string | null;
+  busy: boolean;
+  error: string | null;
+  confirmAction: 'reset' | 'disable' | null;
+}
+
+function calendarSubscriptionPanelReducer(
+  state: CalendarSubscriptionPanelState,
+  action: Partial<CalendarSubscriptionPanelState>,
+): CalendarSubscriptionPanelState {
+  return { ...state, ...action };
+}
+
 function webcalUrl(url: string): string {
   return url.replace(/^https?:/, 'webcal:');
 }
@@ -44,68 +59,92 @@ export function CalendarSubscriptionPanel({
   subscription: initialSubscription,
 }: CalendarSubscriptionPanelProps) {
   const router = useRouter();
-  const [subscription, setSubscription] = useState(initialSubscription);
-  const [revealedUrl, setRevealedUrl] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [confirmAction, setConfirmAction] = useState<'reset' | 'disable' | null>(null);
+  const [state, dispatch] = useReducer(calendarSubscriptionPanelReducer, {
+    subscription: initialSubscription,
+    revealedUrl: null,
+    busy: false,
+    error: null,
+    confirmAction: null,
+  });
+  const { subscription, revealedUrl, busy, error, confirmAction } = state;
 
   async function createOrReset() {
-    setBusy(true);
+    const action = subscription ? 'reset' : 'create';
+    dispatch({ busy: true, error: null });
     try {
       const res = await fetch('/api/team/calendar-subscription', { method: 'POST' });
       if (!res.ok) {
-        toast.error('Calendar subscription update failed');
-        return;
+        throw new Error('calendar_subscription_update_failed');
       }
       const data = (await res.json()) as SubscriptionResponse;
-      setSubscription(data.subscription);
-      setRevealedUrl(data.url);
-      setConfirmAction(null);
-      toast.success(subscription ? 'Calendar URL reset' : 'Calendar URL created');
+      dispatch({ subscription: data.subscription, revealedUrl: data.url, confirmAction: null });
+      toast.success(action === 'reset' ? 'Calendar URL reset' : 'Calendar URL created');
       router.refresh();
+    } catch {
+      const message =
+        action === 'reset'
+          ? 'Unable to reset the calendar URL. Try again.'
+          : 'Unable to create the calendar URL. Try again.';
+      dispatch({ error: message });
+      toast.error(message);
     } finally {
-      setBusy(false);
+      dispatch({ busy: false });
     }
   }
 
   async function disable() {
-    setBusy(true);
+    dispatch({ busy: true, error: null });
     try {
       const res = await fetch('/api/team/calendar-subscription', { method: 'DELETE' });
       if (!res.ok) {
-        toast.error('Calendar subscription disable failed');
-        return;
+        throw new Error('calendar_subscription_disable_failed');
       }
-      setSubscription(null);
-      setRevealedUrl(null);
-      setConfirmAction(null);
+      dispatch({ subscription: null, revealedUrl: null, confirmAction: null });
       toast.success('Calendar URL disabled');
       router.refresh();
+    } catch {
+      const message = 'Unable to disable the calendar URL. Try again.';
+      dispatch({ error: message });
+      toast.error(message);
     } finally {
-      setBusy(false);
+      dispatch({ busy: false });
     }
   }
 
   return (
-    <section className="rounded-sm border border-border bg-surface p-3">
+    <section
+      className="rounded-md border border-border bg-surface p-4"
+      aria-labelledby="calendar-subscription-heading"
+      aria-busy={busy}
+    >
       <div className="flex flex-wrap items-center gap-3">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 text-sm font-medium">
-            <Link2 className="size-4 text-fg-muted" aria-hidden />
-            Calendar subscription
+          <div className="flex items-center gap-2">
+            <Link2 className="size-4 shrink-0 text-fg-muted" aria-hidden="true" />
+            <h2 id="calendar-subscription-heading" className="text-base font-semibold text-fg">
+              Calendar subscription
+            </h2>
           </div>
-          <div className="mt-1 font-mono text-xs text-fg-muted">
+          <p className="mt-1 text-sm text-fg-muted">
             {subscription
-              ? `${subscription.prefix}… · created ${dateLabel(subscription.createdAt)}`
-              : 'No active URL'}
-          </div>
+              ? `A private URL is active · created ${dateLabel(subscription.createdAt)}`
+              : 'Create a private URL to see Timeline events in your calendar app.'}
+          </p>
+          {subscription ? (
+            <p className="mt-1 text-xs text-fg-muted">
+              {subscription.lastUsedAt
+                ? `Last accessed ${dateLabel(subscription.lastUsedAt)}`
+                : 'Not yet accessed.'}
+            </p>
+          ) : null}
         </div>
         <Button
           type="button"
           size="sm"
+          variant="outline"
           disabled={busy}
           onClick={() => {
-            if (subscription) setConfirmAction('reset');
+            if (subscription) dispatch({ confirmAction: 'reset' });
             else void createOrReset();
           }}
         >
@@ -119,17 +158,20 @@ export function CalendarSubscriptionPanel({
             variant="ghost"
             disabled={busy}
             onClick={() => {
-              setConfirmAction('disable');
+              dispatch({ confirmAction: 'disable' });
             }}
           >
             <Trash2 className="size-4" aria-hidden />
-            Disable
+            Disable URL
           </Button>
         ) : null}
       </div>
 
       {revealedUrl ? (
         <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-3">
+          <p className="w-full text-sm text-fg-muted">
+            This private URL is shown once. Copy it before you leave this page.
+          </p>
           <code className="min-w-0 flex-1 break-all rounded-sm border border-signal/40 bg-surface-2 px-2 py-1.5 font-mono text-xs">
             {revealedUrl}
           </code>
@@ -137,13 +179,21 @@ export function CalendarSubscriptionPanel({
           <CopyButton value={webcalUrl(revealedUrl)} label="Copy webcal" />
         </div>
       ) : subscription ? (
-        <p className="mt-2 text-xs text-fg-muted">Reset to reveal a fresh URL.</p>
+        <p className="mt-3 text-sm text-fg-muted">
+          Reset the URL to copy a fresh private link. Reset it if the current link was shared.
+        </p>
+      ) : null}
+
+      {error ? (
+        <p role="alert" className="mt-3 text-sm text-danger">
+          {error}
+        </p>
       ) : null}
 
       <Dialog
         open={confirmAction !== null}
         onOpenChange={(open) => {
-          if (!open) setConfirmAction(null);
+          if (!open) dispatch({ confirmAction: null });
         }}
       >
         <DialogContent>
@@ -162,7 +212,7 @@ export function CalendarSubscriptionPanel({
               type="button"
               variant="ghost"
               onClick={() => {
-                setConfirmAction(null);
+                dispatch({ confirmAction: null });
               }}
             >
               Cancel
@@ -176,7 +226,7 @@ export function CalendarSubscriptionPanel({
                 if (confirmAction === 'disable') void disable();
               }}
             >
-              {confirmAction === 'reset' ? 'Reset URL' : 'Disable'}
+              {confirmAction === 'reset' ? 'Reset URL' : 'Disable URL'}
             </Button>
           </DialogFooter>
         </DialogContent>

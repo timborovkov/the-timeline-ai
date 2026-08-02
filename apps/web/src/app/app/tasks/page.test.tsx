@@ -118,7 +118,7 @@ vi.mock('@/components/work-filter-bar', () => ({
   },
 }));
 
-const { default: TasksPage } = await import('./page.js');
+const { default: TasksPage } = await import('@/app/app/tasks/page');
 
 const NEWER_TASK_ID = '00000000-0000-4000-8000-000000000001';
 const SELECTED_TASK_ID = '00000000-0000-4000-8000-000000000002';
@@ -172,6 +172,13 @@ function taskRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function pageProps(searchParams: Record<string, string | string[] | undefined> = {}) {
+  return {
+    params: Promise.resolve({}),
+    searchParams: Promise.resolve(searchParams),
+  };
+}
+
 describe('TasksPage', () => {
   it('hydrates a selected project outside the preloaded filter window', async () => {
     const projectId = '00000000-0000-4000-8000-000000000099';
@@ -184,9 +191,7 @@ describe('TasksPage', () => {
       return Promise.resolve([]);
     });
 
-    renderToStaticMarkup(
-      await TasksPage({ searchParams: Promise.resolve({ project: projectId }) }),
-    );
+    renderToStaticMarkup(await TasksPage(pageProps({ project: projectId })));
 
     expect(fakes.listObjects).toHaveBeenCalledWith({
       id: [projectId],
@@ -253,7 +258,7 @@ describe('TasksPage', () => {
       },
     ]);
 
-    const html = renderToStaticMarkup(await TasksPage());
+    const html = renderToStaticMarkup(await TasksPage(pageProps()));
 
     expect(html).toContain('Task approvals');
     expect(html).toContain('1 pending task proposal');
@@ -296,7 +301,7 @@ describe('TasksPage', () => {
       },
     ]);
 
-    const html = renderToStaticMarkup(await TasksPage());
+    const html = renderToStaticMarkup(await TasksPage(pageProps()));
 
     expect(html).not.toContain('Pending task proposals');
     expect(html).not.toContain('Commitment: Send proposal');
@@ -305,17 +310,16 @@ describe('TasksPage', () => {
   });
 
   it('renders the empty state when there are no tasks or task suggestions', async () => {
-    const html = renderToStaticMarkup(await TasksPage());
+    const html = renderToStaticMarkup(await TasksPage(pageProps()));
 
+    expect(html.match(/<h1/g)).toHaveLength(1);
     expect(html).toContain('No active tasks');
     expect(html).not.toContain('Pending task proposals');
     expect(html).not.toContain('data-app-layout="full-bleed"');
   });
 
   it('watches the full task result set while a category filter is active', async () => {
-    const html = renderToStaticMarkup(
-      await TasksPage({ searchParams: Promise.resolve({ category: 'design' }) }),
-    );
+    const html = renderToStaticMarkup(await TasksPage(pageProps({ category: 'design' })));
 
     expect(html).toContain('task-category-filter-refresh');
     expect(fakes.categoryRefresh?.surface).toBe('tasks');
@@ -335,7 +339,7 @@ describe('TasksPage', () => {
       filter.statusNot ? 490 : 501,
     );
 
-    const html = renderToStaticMarkup(await TasksPage());
+    const html = renderToStaticMarkup(await TasksPage(pageProps()));
 
     expect(html).toContain('Task 499');
     expect(html).not.toContain('Task 500');
@@ -363,9 +367,7 @@ describe('TasksPage', () => {
         : Promise.resolve([taskRow({ id: NEWER_TASK_ID, canonicalName: 'Newer' })]),
     );
 
-    const html = renderToStaticMarkup(
-      await TasksPage({ searchParams: Promise.resolve({ task: SELECTED_TASK_ID }) }),
-    );
+    const html = renderToStaticMarkup(await TasksPage(pageProps({ task: SELECTED_TASK_ID })));
 
     expect(html).toContain('Selected older task');
     expect(html).toContain('Newer');
@@ -389,9 +391,7 @@ describe('TasksPage', () => {
     );
 
     const html = renderToStaticMarkup(
-      await TasksPage({
-        searchParams: Promise.resolve({ task: SELECTED_TASK_ID, status: 'todo' }),
-      }),
+      await TasksPage(pageProps({ task: SELECTED_TASK_ID, status: 'todo' })),
     );
 
     expect(fakes.listObjects).toHaveBeenCalledWith({
@@ -419,9 +419,7 @@ describe('TasksPage', () => {
     );
 
     const html = renderToStaticMarkup(
-      await TasksPage({
-        searchParams: Promise.resolve({ task: SELECTED_TASK_ID, q: '2' }),
-      }),
+      await TasksPage(pageProps({ task: SELECTED_TASK_ID, q: '2' })),
     );
 
     expect(fakes.listObjects).toHaveBeenCalledWith({
@@ -462,9 +460,7 @@ describe('TasksPage', () => {
       },
     ]);
 
-    const html = renderToStaticMarkup(
-      await TasksPage({ searchParams: Promise.resolve({ task: 'task-1' }) }),
-    );
+    const html = renderToStaticMarkup(await TasksPage(pageProps({ task: 'task-1' })));
 
     expect(html).toContain('Send proposal');
     expect(html).toContain('selected task-1');
@@ -496,9 +492,7 @@ describe('TasksPage', () => {
       },
     ]);
 
-    const html = renderToStaticMarkup(
-      await TasksPage({ searchParams: Promise.resolve({ view: 'list' }) }),
-    );
+    const html = renderToStaticMarkup(await TasksPage(pageProps({ view: 'list' })));
 
     expect(html).toContain('view list');
   });
@@ -529,7 +523,7 @@ describe('TasksPage', () => {
       },
     ]);
 
-    const html = renderToStaticMarkup(await TasksPage());
+    const html = renderToStaticMarkup(await TasksPage(pageProps()));
 
     expect(html).toContain('columns backlog, open, doing, blocked, done, cancelled');
   });

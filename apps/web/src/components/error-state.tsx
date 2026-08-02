@@ -1,7 +1,7 @@
 'use client';
 
 import { AlertTriangle, RotateCw } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 import { TechnicalDetails } from '@/components/technical-details';
 import { Button } from '@/components/ui/button';
@@ -20,6 +20,8 @@ export function ErrorState({
   error,
   reset,
 }: Props) {
+  const titleRef = useRef<HTMLHeadingElement>(null);
+
   useEffect(() => {
     if (!error) return;
     reportCaughtError(error, {
@@ -27,12 +29,13 @@ export function ErrorState({
       operation: title,
       tags: { digest: error.digest },
     });
+    titleRef.current?.focus();
   }, [error, title]);
 
   return (
     <div
       role="alert"
-      className="flex flex-col items-center gap-4 rounded-sm border border-danger/30 bg-bg px-6 py-12 text-center"
+      className="flex flex-col items-center gap-4 rounded-lg border border-danger/30 bg-bg px-6 py-12 text-center"
     >
       <span
         aria-hidden="true"
@@ -41,7 +44,9 @@ export function ErrorState({
         <AlertTriangle className="size-5" />
       </span>
       <div className="space-y-1">
-        <h2 className="text-base font-medium text-fg">{title}</h2>
+        <h2 ref={titleRef} tabIndex={-1} className="text-base font-medium text-fg">
+          {title}
+        </h2>
         <p className="text-sm text-fg-muted">{description}</p>
         {error?.digest ? (
           <TechnicalDetails

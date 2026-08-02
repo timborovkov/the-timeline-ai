@@ -1,6 +1,6 @@
 'use client';
 
-import { RouteError } from '@/components/route-error';
+import ObjectsError from '@/app/app/objects/error';
 
 export default function EntitiesError({
   error,
@@ -9,5 +9,7 @@ export default function EntitiesError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  return <RouteError title="Entities" error={error} reset={reset} />;
+  // Legacy entity links now resolve to Objects, so their recovery state must
+  // retain the destination's route context rather than reintroduce Entities.
+  return <ObjectsError error={error} reset={reset} />;
 }

@@ -14,6 +14,7 @@ import { TechnicalDetails } from '@/components/technical-details';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { providerLabel } from '@/lib/resource-labels';
 
 export const metadata: Metadata = {
   title: 'Provider accounts',
@@ -56,18 +57,21 @@ export default async function PersonalConnectionsPage({
       />
 
       <div className="flex flex-wrap items-center gap-2 border-y border-border py-2">
-        <ActionChip href="/app/sources" label="Connections ->" />
-        <ActionChip href="/app/me/mcp-servers" label="Personal MCP ->" />
+        <ActionChip href="/app/sources" label="View connections" />
+        <ActionChip href="/app/me/mcp-servers" label="Manage personal MCP" />
       </div>
 
       {params.connected ? (
-        <div className="rounded-sm border border-signal/40 bg-signal/10 px-3 py-2 text-sm text-signal">
-          Connected {params.connected}. Choose which sources this team may use.
-        </div>
+        <output className="block rounded-sm border border-signal/40 bg-signal/10 px-3 py-2 text-sm text-fg">
+          Connected {providerLabel(params.connected)}. Choose which sources this team may use.
+        </output>
       ) : null}
       {params.error ? (
-        <div className="space-y-2 rounded-sm border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          <p>We couldn&apos;t connect that account. Try again or choose a different account.</p>
+        <div
+          role="alert"
+          className="space-y-2 rounded-sm border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+        >
+          <p>Unable to connect this account. Try again or choose a different account.</p>
           <TechnicalDetails
             items={[{ label: 'Connection error', value: params.error }]}
             className="text-fg"
@@ -85,10 +89,11 @@ export default async function PersonalConnectionsPage({
             lastError: connection.lastError,
             lastConnectedAt: connection.lastConnectedAt.toISOString(),
           }))}
+          connectProviderHref="#connect-provider"
         />
       </section>
 
-      <section className="space-y-3">
+      <section id="connect-provider" className="space-y-3">
         <SectionHeading>Connect another provider account</SectionHeading>
         <p className="text-sm text-fg-muted">
           If the provider reuses the wrong account, switch accounts on the provider OAuth page or

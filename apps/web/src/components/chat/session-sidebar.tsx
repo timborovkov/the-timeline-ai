@@ -76,17 +76,19 @@ function SessionSidebarContent({
   }
 
   return (
-    <aside className="hidden h-full w-60 shrink-0 flex-col border-r bg-card/40 p-3 md:flex">
+    <aside className="hidden h-full w-60 shrink-0 flex-col border-r border-border bg-surface p-3 md:flex">
       <button
         type="button"
         onClick={newChat}
-        className="mb-3 flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-accent"
+        className="mb-3 flex min-h-9 items-center gap-2 rounded-sm border border-border px-3 text-sm font-medium text-fg transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
       >
-        <Plus className="size-3.5" /> New chat
+        <Plus aria-hidden="true" className="size-3.5" /> New chat
       </button>
       <div data-visual-dynamic="chat-sessions" className="min-h-0 flex-1">
         {sessions.length === 0 ? (
-          <p className="px-1 text-xs text-muted-foreground">No chats yet.</p>
+          <p className="px-1 text-xs text-fg-muted">
+            No chats yet. Start a new chat to ask about your timeline.
+          </p>
         ) : (
           <ul className="h-full space-y-1 overflow-y-auto">
             {sessions.map((s) => {
@@ -96,11 +98,12 @@ function SessionSidebarContent({
                 <li key={s.id} className="group relative">
                   <Link
                     href={`/app/chat?session=${s.id}`}
+                    aria-current={isActive ? 'page' : undefined}
                     className={cn(
-                      'block truncate rounded-md px-2 py-1.5 pr-7 text-sm',
+                      'block truncate rounded-sm px-2 py-1.5 pr-10 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
                       isActive
-                        ? 'bg-primary/10 text-primary'
-                        : 'text-foreground/80 hover:bg-accent/60',
+                        ? 'bg-signal-soft text-signal'
+                        : 'text-fg-muted hover:bg-surface-2 hover:text-fg',
                     )}
                   >
                     <span className="flex min-w-0 items-center gap-1.5">
@@ -108,7 +111,7 @@ function SessionSidebarContent({
                       <span className="truncate">{label}</span>
                     </span>
                     {s.pinnedEntityName && !s.title && (
-                      <span className="block truncate text-[10px] text-muted-foreground">
+                      <span className="block truncate text-[10px] text-fg-dim">
                         Pinned · {s.pinnedEntityName}
                       </span>
                     )}
@@ -116,7 +119,7 @@ function SessionSidebarContent({
                   <button
                     type="button"
                     disabled={pending}
-                    aria-label="Archive chat"
+                    aria-label={`Archive chat: ${label}`}
                     onClick={async () => {
                       const confirmed = await dialog.confirm({
                         title: 'Archive chat?',
@@ -137,9 +140,9 @@ function SessionSidebarContent({
                         router.refresh();
                       });
                     }}
-                    className="absolute right-1 top-1.5 hidden rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive group-hover:block"
+                    className="absolute right-1 top-1 grid size-8 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-50"
                   >
-                    <Trash2 className="size-3" />
+                    <Trash2 aria-hidden="true" className="size-3" />
                   </button>
                 </li>
               );
@@ -185,10 +188,10 @@ function MobileSessionNavContent({
 
   return (
     <nav aria-label="Chat sessions" className="mb-3 shrink-0 md:hidden">
-      <details className="group rounded-md border bg-card/40">
-        <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-3 text-sm font-medium marker:hidden">
+      <details className="group rounded-sm border border-border bg-surface">
+        <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-3 text-sm font-medium marker:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg">
           <span>{activeSessionId ? 'Current chat' : 'Chats'}</span>
-          <span className="font-mono text-xs text-muted-foreground">
+          <span className="font-mono text-xs text-fg-muted">
             {sessions.length} session{sessions.length === 1 ? '' : 's'}
           </span>
         </summary>
@@ -196,12 +199,14 @@ function MobileSessionNavContent({
           <button
             type="button"
             onClick={newChat}
-            className="flex min-h-9 w-full items-center gap-2 rounded-md border px-2 text-left text-sm font-medium hover:bg-accent"
+            className="flex min-h-9 w-full items-center gap-2 rounded-sm border border-border px-2 text-left text-sm font-medium text-fg transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
           >
-            <Plus className="size-3.5" /> New chat
+            <Plus aria-hidden="true" className="size-3.5" /> New chat
           </button>
           {sessions.length === 0 ? (
-            <p className="px-1 py-2 text-xs text-muted-foreground">No chats yet.</p>
+            <p className="px-1 py-2 text-xs text-fg-muted">
+              No chats yet. Start a new chat to ask about your timeline.
+            </p>
           ) : (
             <ul className="space-y-1" data-visual-dynamic="mobile-chat-sessions">
               {sessions.map((session) => {
@@ -212,10 +217,10 @@ function MobileSessionNavContent({
                       href={`/app/chat?session=${session.id}`}
                       aria-current={isActive ? 'page' : undefined}
                       className={cn(
-                        'min-w-0 flex-1 truncate rounded-md px-2 py-2 text-sm',
+                        'min-w-0 flex-1 truncate rounded-sm px-2 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
                         isActive
-                          ? 'bg-primary/10 text-primary'
-                          : 'text-foreground/80 hover:bg-accent/60',
+                          ? 'bg-signal-soft text-signal'
+                          : 'text-fg-muted hover:bg-surface-2 hover:text-fg',
                       )}
                     >
                       <span className="flex min-w-0 items-center gap-1.5">
@@ -226,7 +231,7 @@ function MobileSessionNavContent({
                     <button
                       type="button"
                       disabled={pending}
-                      aria-label="Archive chat"
+                      aria-label={`Archive chat: ${sessionLabel(session)}`}
                       onClick={async () => {
                         const confirmed = await dialog.confirm({
                           title: 'Archive chat?',
@@ -247,7 +252,7 @@ function MobileSessionNavContent({
                           router.refresh();
                         });
                       }}
-                      className="grid size-9 shrink-0 place-items-center rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                      className="grid size-9 shrink-0 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-50"
                     >
                       <Trash2 aria-hidden="true" className="size-3.5" />
                     </button>

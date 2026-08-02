@@ -94,7 +94,7 @@ export function AppShell({
                 <Link
                   href="/app/search"
                   aria-label="Open search"
-                  className="grid size-9 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg md:hidden"
+                  className="grid size-9 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg md:hidden"
                 >
                   <Search aria-hidden="true" className="size-4" />
                 </Link>

@@ -18,6 +18,7 @@ interface SupportFormProps {
 
 const initialState: SupportFormState = {};
 const subscribeToPageUrl = () => () => undefined;
+const protectionErrorId = 'support-form-protection-error';
 
 export function SupportForm({
   defaultName,
@@ -26,6 +27,7 @@ export function SupportForm({
   requiresTurnstile,
 }: SupportFormProps) {
   const [state, action, pending] = useActionState(submitSupportRequestAction, initialState);
+  const protectionUnavailable = requiresTurnstile && !turnstileSiteKey;
   const currentPage = useSyncExternalStore(
     subscribeToPageUrl,
     () => window.location.href,
@@ -104,11 +106,14 @@ export function SupportForm({
 
       {turnstileSiteKey ? (
         <TurnstileWidget action="support" siteKey={turnstileSiteKey} />
-      ) : requiresTurnstile ? (
-        <p className="text-sm text-danger">Support form protection is not configured.</p>
+      ) : protectionUnavailable ? (
+        <p id={protectionErrorId} className="text-sm text-danger">
+          Support form protection is unavailable in this deployment. Contact your workspace
+          administrator.
+        </p>
       ) : null}
 
-      <div aria-live="polite" aria-atomic="true">
+      <div>
         {state.error ? (
           <p className="text-sm text-danger" role="alert">
             {state.error}
@@ -124,7 +129,11 @@ export function SupportForm({
         ) : null}
       </div>
 
-      <Button type="submit" disabled={pending || (requiresTurnstile && !turnstileSiteKey)}>
+      <Button
+        type="submit"
+        disabled={pending || protectionUnavailable}
+        aria-describedby={protectionUnavailable ? protectionErrorId : undefined}
+      >
         {pending ? 'Sending…' : 'Send request'}
       </Button>
     </form>

@@ -3,7 +3,7 @@
 import { truncateFilenameMiddle } from '@timeline/shared/documents/presentation';
 import { FileText, Image as ImageIcon, Link2, Upload } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useReducer, useTransition } from 'react';
+import { useMemo, useReducer, useRef, useState, useTransition } from 'react';
 import { toast } from 'sonner';
 
 import type { ReactNode } from 'react';
@@ -12,9 +12,19 @@ import { promoteCapturedFileAction } from '@/app/actions/documents';
 import { DocumentPreview } from '@/components/documents/document-preview';
 import { EvidenceLink } from '@/components/evidence-link';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
+import { InlineError } from '@/components/inline-error';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { selectedValues } from '@/lib/filter-values';
 
 interface CapturedFileItem {
@@ -127,50 +137,27 @@ const FILE_TYPE_OPTIONS = [
 ] as const;
 
 interface PaginationState {
-  inputFiles: CapturedFileItem[];
-  inputCursor: string | null;
   loadedFiles: CapturedFileItem[];
   cursor: string | null;
 }
 
-type PaginationAction =
-  | {
-      type: 'reset';
-      files: CapturedFileItem[];
-      nextCursor: string | null;
-    }
-  | {
-      type: 'append';
-      files: CapturedFileItem[];
-      nextCursor: string | null;
-    };
+interface PaginationAction {
+  type: 'append';
+  files: CapturedFileItem[];
+  nextCursor: string | null;
+}
 
 function paginationStateForProps(
   files: CapturedFileItem[],
   nextCursor: string | null,
-  current?: PaginationState,
 ): PaginationState {
-  if (current?.inputFiles === files && current.inputCursor === nextCursor) return current;
   return {
-    inputFiles: files,
-    inputCursor: nextCursor,
     loadedFiles: files,
     cursor: nextCursor,
   };
 }
 
 function paginationReducer(state: PaginationState, action: PaginationAction): PaginationState {
-  if (action.type === 'reset') {
-    if (state.inputFiles === action.files && state.inputCursor === action.nextCursor) {
-      return state;
-    }
-    return {
-      inputFiles: action.files,
-      inputCursor: action.nextCursor,
-      loadedFiles: action.files,
-      cursor: action.nextCursor,
-    };
-  }
   const seen = new Set(state.loadedFiles.map((file) => file.id));
   return {
     ...state,
@@ -180,16 +167,24 @@ function paginationReducer(state: PaginationState, action: PaginationAction): Pa
 }
 
 export function CapturedFilesList({ files, nextCursor = null, folders, members }: Props) {
-  const [paginationState, dispatchPagination] = useReducer(paginationReducer, undefined, () =>
+  const [paginationState, setPaginationState] = useState(() =>
     paginationStateForProps(files, nextCursor),
   );
-  const { loadedFiles, cursor } = paginationState;
+  const paginationInputsRef = useRef({ files, nextCursor });
   const [loadingMore, startLoadMore] = useTransition();
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [uiState, dispatchUi] = useReducer(capturedFilesUiReducer, capturedFilesUiInitialState);
 
-  useEffect(() => {
-    dispatchPagination({ type: 'reset', files, nextCursor });
-  }, [files, nextCursor]);
+  if (
+    paginationInputsRef.current.files !== files ||
+    paginationInputsRef.current.nextCursor !== nextCursor
+  ) {
+    paginationInputsRef.current = { files, nextCursor };
+    setPaginationState(paginationStateForProps(files, nextCursor));
+    setLoadMoreError(null);
+  }
+
+  const { loadedFiles, cursor } = paginationState;
 
   const sources = useMemo(
     () => Array.from(new Set(loadedFiles.map((file) => file.provenance.source))).sort(),
@@ -237,15 +232,26 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
 
   function loadMore(): void {
     if (!cursor) return;
+    setLoadMoreError(null);
     startLoadMore(async () => {
-      const params = new URLSearchParams({ cursor });
-      const response = await fetch(`/api/documents/captured?${params.toString()}`);
-      if (!response.ok) {
-        toast.error('Failed to load captured files');
-        return;
+      try {
+        const params = new URLSearchParams({ cursor });
+        const response = await fetch(`/api/documents/captured?${params.toString()}`);
+        if (!response.ok) throw new Error('captured_files_load_failed');
+        const page = (await response.json()) as CapturedFilesPageResponse;
+        setPaginationState((state) =>
+          paginationReducer(state, {
+            type: 'append',
+            files: page.items,
+            nextCursor: page.nextCursor,
+          }),
+        );
+      } catch {
+        const message =
+          'Could not load older captured files. The files already shown remain available. Check your connection, then try again.';
+        setLoadMoreError(message);
+        toast.error('Could not load older captured files');
       }
-      const page = (await response.json()) as CapturedFilesPageResponse;
-      dispatchPagination({ type: 'append', files: page.items, nextCursor: page.nextCursor });
     });
   }
 
@@ -324,17 +330,34 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
         </div>
       </div>
 
-      <ul className="space-y-2">
-        {visibleFiles.map((file) => (
-          <CapturedFileRow
-            key={file.id}
-            file={file}
-            onPromote={() => {
-              dispatchUi({ type: 'promote', file });
+      <Dialog
+        open={uiState.promoting !== null}
+        onOpenChange={(open) => {
+          if (!open) dispatchUi({ type: 'promote', file: null });
+        }}
+      >
+        <ul className="space-y-2">
+          {visibleFiles.map((file) => (
+            <CapturedFileRow
+              key={file.id}
+              file={file}
+              onPromote={() => {
+                dispatchUi({ type: 'promote', file });
+              }}
+            />
+          ))}
+        </ul>
+        {uiState.promoting ? (
+          <PromoteDialog
+            file={uiState.promoting}
+            folders={folders}
+            members={members}
+            onClose={() => {
+              dispatchUi({ type: 'promote', file: null });
             }}
           />
-        ))}
-      </ul>
+        ) : null}
+      </Dialog>
       {visibleFiles.length === 0 ? (
         <div className="rounded-lg border border-border p-6 text-center text-sm text-muted-foreground">
           {cursor
@@ -342,20 +365,30 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
             : 'No captured files match these filters.'}
         </div>
       ) : null}
-      {cursor ? (
-        <Button type="button" variant="outline" size="sm" onClick={loadMore} disabled={loadingMore}>
-          {loadingMore ? 'Loading…' : 'Load older captured files'}
-        </Button>
-      ) : null}
-      {uiState.promoting ? (
-        <PromoteDialog
-          file={uiState.promoting}
-          folders={folders}
-          members={members}
-          onClose={() => {
-            dispatchUi({ type: 'promote', file: null });
-          }}
+      {loadMoreError ? (
+        <InlineError
+          message={loadMoreError}
+          onRetry={loadMore}
+          retrying={loadingMore}
+          retryLabel="Retry loading older files"
         />
+      ) : null}
+      {cursor ? (
+        <>
+          <output className="sr-only" aria-live="polite">
+            {loadingMore ? 'Loading older captured files' : ''}
+          </output>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={loadMore}
+            disabled={loadingMore}
+            aria-busy={loadingMore}
+          >
+            {loadingMore ? 'Loading…' : 'Load older captured files'}
+          </Button>
+        </>
       ) : null}
     </section>
   );
@@ -476,10 +509,12 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
             Event
           </EvidenceLink>
         ) : null}
-        <Button type="button" size="sm" onClick={onPromote}>
-          <Upload className="mr-2 size-4" />
-          Promote
-        </Button>
+        <DialogTrigger asChild>
+          <Button type="button" size="sm" onClick={onPromote}>
+            <Upload className="mr-2 size-4" />
+            Promote
+          </Button>
+        </DialogTrigger>
       </div>
     </li>
   );
@@ -542,107 +577,143 @@ function PromoteDialog({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [form, dispatchForm] = useReducer(promoteDialogReducer, file, promoteDialogInitialState);
+  const [promotionError, setPromotionError] = useState<string | null>(null);
 
   function submit(): void {
+    setPromotionError(null);
     startTransition(async () => {
-      const result = await promoteCapturedFileAction({
-        id: file.id,
-        name: form.name,
-        folderId: form.folderId || null,
-        visibility: form.visibility,
-        visibilityUserIds: form.visibility === 'specific_users' ? form.visibilityUserIds : [],
-      });
-      if (!result.ok || !result.documentId) {
-        toast.error(result.error ?? 'Promotion failed');
-        return;
+      try {
+        const result = await promoteCapturedFileAction({
+          id: file.id,
+          name: form.name,
+          folderId: form.folderId || null,
+          visibility: form.visibility,
+          visibilityUserIds: form.visibility === 'specific_users' ? form.visibilityUserIds : [],
+        });
+        if (!result.ok || !result.documentId) {
+          throw new Error(result.error ?? 'Promotion failed');
+        }
+        toast.success('Promoted to documents');
+        router.push(`/app/documents/${result.documentId}`);
+      } catch (error) {
+        const details = error instanceof Error ? error.message : undefined;
+        setPromotionError(details ?? 'Promotion failed');
+        toast.error('Could not promote captured file');
       }
-      toast.success('Promoted to documents');
-      router.push(`/app/documents/${result.documentId}`);
     });
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">
-      <div className="w-full max-w-lg rounded-sm border border-border bg-card p-4 shadow-xl">
-        <div className="mb-4">
-          <h2 className="text-base font-semibold text-foreground">Promote captured file</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Turn this evidence attachment into curated team knowledge.
-          </p>
-        </div>
-        <div className="space-y-3">
-          <label className="block space-y-1">
-            <span className="text-[11px] text-fg-dim">Title</span>
-            <input
-              value={form.name}
-              onChange={(event) => {
-                dispatchForm({ type: 'name', value: event.target.value });
-              }}
-              className="h-9 w-full rounded-sm border border-border bg-bg px-2 text-sm"
-            />
-          </label>
-          <label className="block space-y-1">
-            <span className="text-[11px] text-fg-dim">Folder</span>
-            <select
-              value={form.folderId}
-              onChange={(event) => {
-                dispatchForm({ type: 'folder', value: event.target.value });
-              }}
-              className="h-9 w-full rounded-sm border border-border bg-bg px-2 text-sm"
-            >
-              <option value="">Documents root</option>
-              {folders.map((folder) => (
-                <option key={folder.id} value={folder.id}>
-                  {folder.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block space-y-1">
-            <span className="text-[11px] text-fg-dim">Visibility</span>
-            <select
-              value={form.visibility}
-              onChange={(event) => {
-                dispatchForm({ type: 'visibility', value: event.target.value as Visibility });
-              }}
-              className="h-9 w-full rounded-sm border border-border bg-bg px-2 text-sm"
-            >
-              <option value="team">Team</option>
-              <option value="private">Private</option>
-              <option value="specific_users">Specific users</option>
-            </select>
-          </label>
-          {form.visibility === 'specific_users' ? (
-            <div className="max-h-36 space-y-1 overflow-auto rounded-sm border border-border p-2">
-              {members.map((member) => (
-                <label key={member.id} className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={form.visibilityUserIds.includes(member.id)}
-                    onChange={(event) => {
-                      dispatchForm({
-                        type: 'member',
-                        memberId: member.id,
-                        checked: event.target.checked,
-                      });
-                    }}
-                  />
-                  {member.label}
-                </label>
-              ))}
-            </div>
-          ) : null}
-        </div>
-        <div className="mt-5 flex justify-end gap-2">
+    <DialogContent
+      className="max-h-[calc(100dvh-2rem)] overflow-y-auto border-border bg-bg p-4 sm:max-w-lg"
+      showCloseButton={!pending}
+      onEscapeKeyDown={(event) => {
+        if (pending) event.preventDefault();
+      }}
+      onPointerDownOutside={(event) => {
+        if (pending) event.preventDefault();
+      }}
+    >
+      <DialogHeader>
+        <DialogTitle>Promote captured file</DialogTitle>
+        <DialogDescription>
+          Turn this evidence attachment into curated team knowledge.
+        </DialogDescription>
+      </DialogHeader>
+      <div className="space-y-3" aria-busy={pending}>
+        <label className="block space-y-1">
+          <span className="text-[11px] text-fg-dim">Title</span>
+          <input
+            name="title"
+            autoComplete="off"
+            required
+            disabled={pending}
+            value={form.name}
+            onChange={(event) => {
+              dispatchForm({ type: 'name', value: event.target.value });
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && form.name.trim() && !pending) submit();
+            }}
+            className="h-9 w-full rounded-sm border border-border bg-bg px-2 text-base focus-visible:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg sm:text-sm"
+          />
+        </label>
+        <label className="block space-y-1">
+          <span className="text-[11px] text-fg-dim">Folder</span>
+          <select
+            name="folder"
+            disabled={pending}
+            value={form.folderId}
+            onChange={(event) => {
+              dispatchForm({ type: 'folder', value: event.target.value });
+            }}
+            className="h-9 w-full rounded-sm border border-border bg-bg px-2 text-base focus-visible:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg sm:text-sm"
+          >
+            <option value="">Documents root</option>
+            {folders.map((folder) => (
+              <option key={folder.id} value={folder.id}>
+                {folder.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block space-y-1">
+          <span className="text-[11px] text-fg-dim">Visibility</span>
+          <select
+            name="visibility"
+            disabled={pending}
+            value={form.visibility}
+            onChange={(event) => {
+              dispatchForm({ type: 'visibility', value: event.target.value as Visibility });
+            }}
+            className="h-9 w-full rounded-sm border border-border bg-bg px-2 text-base focus-visible:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg sm:text-sm"
+          >
+            <option value="team">Team</option>
+            <option value="private">Private</option>
+            <option value="specific_users">Specific users</option>
+          </select>
+        </label>
+        {form.visibility === 'specific_users' ? (
+          <fieldset className="max-h-36 space-y-1 overflow-auto rounded-sm border border-border p-2">
+            <legend className="px-1 text-[11px] text-fg-dim">Share with</legend>
+            {members.map((member) => (
+              <label key={member.id} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  disabled={pending}
+                  checked={form.visibilityUserIds.includes(member.id)}
+                  onChange={(event) => {
+                    dispatchForm({
+                      type: 'member',
+                      memberId: member.id,
+                      checked: event.target.checked,
+                    });
+                  }}
+                />
+                {member.label}
+              </label>
+            ))}
+          </fieldset>
+        ) : null}
+        {promotionError ? (
+          <InlineError
+            message="Could not promote this captured file. It remains unchanged. Check your connection, then try again."
+            details={promotionError}
+            onRetry={submit}
+            retrying={pending}
+            retryLabel="Promote again"
+          />
+        ) : null}
+        <DialogFooter className="mt-5">
           <Button type="button" variant="outline" onClick={onClose} disabled={pending}>
             Cancel
           </Button>
           <Button type="button" onClick={submit} disabled={pending || !form.name.trim()}>
             {pending ? 'Promoting…' : 'Promote'}
           </Button>
-        </div>
+        </DialogFooter>
       </div>
-    </div>
+    </DialogContent>
   );
 }
 

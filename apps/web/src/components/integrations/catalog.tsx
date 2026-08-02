@@ -43,27 +43,28 @@ export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
 
   const available = catalog.filter((provider) => provider.available);
   const unavailable = catalog.filter((provider) => !provider.available);
+  const pendingProvider = catalog.find((provider) => provider.id === pending);
+
+  if (catalog.length === 0) {
+    return (
+      <div className="border-y border-border py-6">
+        <p className="text-sm font-medium text-fg">No providers are available.</p>
+        <p className="mt-1 text-sm text-fg-muted">
+          There are no providers ready to connect right now.
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-3">
-      <div className="grid auto-rows-fr gap-3 md:grid-cols-2">
-        {available.map((provider) => (
-          <ProviderCard
-            key={provider.id}
-            provider={provider}
-            pending={pending}
-            error={error}
-            onConnect={startConnect}
-          />
-        ))}
-      </div>
-      {unavailable.length > 0 ? (
-        <details className="rounded-lg border border-border bg-surface p-4">
-          <summary className="cursor-pointer text-sm font-medium text-fg-muted hover:text-fg">
-            More providers · {unavailable.length}
-          </summary>
-          <div className="mt-4 grid auto-rows-fr gap-3 border-t border-border pt-4 md:grid-cols-2">
-            {unavailable.map((provider) => (
+    <>
+      <output className="sr-only" aria-live="polite">
+        {pendingProvider ? `Opening ${pendingProvider.label} sign-in` : ''}
+      </output>
+      <div className="space-y-3" aria-busy={pending !== null}>
+        {available.length > 0 ? (
+          <div className="grid auto-rows-fr gap-3 md:grid-cols-2">
+            {available.map((provider) => (
               <ProviderCard
                 key={provider.id}
                 provider={provider}
@@ -73,9 +74,38 @@ export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
               />
             ))}
           </div>
-        </details>
-      ) : null}
-    </div>
+        ) : null}
+        {unavailable.length > 0 ? (
+          <details
+            open={available.length === 0}
+            className="rounded-lg border border-border bg-surface p-4"
+          >
+            <summary className="cursor-pointer text-sm font-medium text-fg-muted hover:text-fg">
+              {available.length === 0
+                ? `Provider setup required · ${String(unavailable.length)}`
+                : `More providers · ${String(unavailable.length)}`}
+            </summary>
+            {available.length === 0 ? (
+              <p className="mt-2 text-sm text-fg-muted">
+                No providers are ready to connect. These providers need configuration before you can
+                connect an account.
+              </p>
+            ) : null}
+            <div className="mt-4 grid auto-rows-fr gap-3 border-t border-border pt-4 md:grid-cols-2">
+              {unavailable.map((provider) => (
+                <ProviderCard
+                  key={provider.id}
+                  provider={provider}
+                  pending={pending}
+                  error={error}
+                  onConnect={startConnect}
+                />
+              ))}
+            </div>
+          </details>
+        ) : null}
+      </div>
+    </>
   );
 }
 
@@ -90,9 +120,12 @@ function ProviderCard({
   error: { id: string; message: string; details: string } | null;
   onConnect: (id: string) => Promise<void>;
 }) {
+  const setupStatusId = `provider-${provider.id}-setup-status`;
+  const isPending = pending === provider.id;
+
   return (
     <Card id={provider.id} className="flex h-full scroll-mt-24 flex-col">
-      <CardHeader className="flex flex-row items-center gap-3">
+      <CardHeader className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
         <Image
           src={provider.logo}
           alt=""
@@ -102,9 +135,12 @@ function ProviderCard({
         />
         <CardTitle className="text-sm font-medium">{provider.label}</CardTitle>
         {!provider.available ? (
-          <span className="ml-auto rounded-sm border border-border bg-surface-2 px-1.5 py-0.5 text-[10px] text-fg-muted">
-            Not configured
-          </span>
+          <p
+            id={setupStatusId}
+            className="text-xs text-fg-muted sm:ml-auto sm:max-w-48 sm:text-right"
+          >
+            Provider setup is required before you can connect this account.
+          </p>
         ) : null}
       </CardHeader>
       <CardContent className="flex flex-1 flex-col">
@@ -125,10 +161,12 @@ function ProviderCard({
         <div className="mt-auto pt-3">
           <Button
             size="sm"
-            disabled={!provider.available || pending === provider.id}
+            aria-busy={isPending || undefined}
+            aria-describedby={!provider.available ? setupStatusId : undefined}
+            disabled={!provider.available || pending !== null}
             onClick={() => void onConnect(provider.id)}
           >
-            {pending === provider.id ? 'Redirecting…' : 'Connect account'}
+            {isPending ? 'Opening sign-in…' : 'Connect account'}
           </Button>
         </div>
       </CardContent>

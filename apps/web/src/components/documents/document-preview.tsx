@@ -39,6 +39,7 @@ export function DocumentPreview({
   showButton = true,
 }: Props) {
   const [preview, setPreview] = useState<PreviewState | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const loadedKeyRef = useRef<string | null>(null);
   const inFlightKeyRef = useRef<string | null>(null);
@@ -52,24 +53,37 @@ export function DocumentPreview({
     const requestSeq = requestSeqRef.current + 1;
     requestSeqRef.current = requestSeq;
     inFlightKeyRef.current = requestKey;
+    setPreviewError(null);
     startTransition(async () => {
       const requestIsCurrent =
         requestSeqRef.current === requestSeq && inFlightKeyRef.current === requestKey;
       if (!requestIsCurrent) return;
-      // react-doctor-disable-next-line react-doctor/async-defer-await -- The current-request guard directly above is the fast skip path before signing.
-      const res = await getDocumentPreviewUrlAction({
-        documentId: target.documentId ?? undefined,
-        versionId: target.versionId ?? undefined,
-        versionNumber: target.versionNumber ?? undefined,
-      });
+      let res: Awaited<ReturnType<typeof getDocumentPreviewUrlAction>>;
+      try {
+        // react-doctor-disable-next-line react-doctor/async-defer-await -- The current-request guard directly above is the fast skip path before signing.
+        res = await getDocumentPreviewUrlAction({
+          documentId: target.documentId ?? undefined,
+          versionId: target.versionId ?? undefined,
+          versionNumber: target.versionNumber ?? undefined,
+        });
+      } catch {
+        if (requestSeqRef.current !== requestSeq || inFlightKeyRef.current !== requestKey) return;
+        inFlightKeyRef.current = null;
+        setPreviewError('Preview unavailable');
+        toast.error('Preview unavailable');
+        return;
+      }
       if (requestSeqRef.current !== requestSeq || inFlightKeyRef.current !== requestKey) return;
       inFlightKeyRef.current = null;
       if (!res.ok || !res.url || !res.mediaKind) {
         if (loadedKeyRef.current === requestKey) loadedKeyRef.current = null;
-        toast.error(res.error ?? 'Preview unavailable');
+        const message = res.error ?? 'Preview unavailable';
+        setPreviewError(message);
+        toast.error(message);
         return;
       }
       loadedKeyRef.current = requestKey;
+      setPreviewError(null);
       setPreview({
         key: requestKey,
         url: res.url,
@@ -92,6 +106,11 @@ export function DocumentPreview({
 
   return (
     <div className={cn('min-w-0', className)}>
+      {pending ? (
+        <p aria-live="polite" className="sr-only">
+          Loading preview…
+        </p>
+      ) : null}
       {showButton ? (
         <Button
           type="button"
@@ -109,9 +128,33 @@ export function DocumentPreview({
           {pending ? 'Opening…' : activePreview ? 'Refresh preview' : label}
         </Button>
       ) : pending ? (
-        <div className="flex min-h-48 items-center justify-center rounded-sm border border-border bg-bg text-sm text-muted-foreground">
+        <div
+          aria-busy="true"
+          aria-label="Loading preview"
+          className="flex min-h-48 items-center justify-center rounded-sm border border-border bg-bg text-sm text-muted-foreground"
+        >
           <Loader2 aria-hidden="true" className="mr-2 size-4 animate-spin" />
           Loading preview…
+        </div>
+      ) : null}
+
+      {previewError ? (
+        <div
+          role="alert"
+          className="mt-3 flex flex-wrap items-center gap-2 text-sm text-destructive"
+        >
+          <span>
+            Could not load this preview: {previewError}. The original file remains unchanged.
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={openPreview}
+            disabled={pending}
+          >
+            Try again
+          </Button>
         </div>
       ) : null}
 

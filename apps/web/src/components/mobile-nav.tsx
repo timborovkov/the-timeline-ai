@@ -11,8 +11,9 @@ import type { TeamMembership } from '@/lib/active-team';
 import {
   formatNavBadge,
   isNavItemActive,
+  navItemAccessibleLabel,
   type NavBadgeMap,
-  visibleNavItems,
+  visibleNavGroups,
 } from '@/components/nav-items';
 import { TeamSwitcher } from '@/components/team-switcher';
 import { cn } from '@/lib/utils';
@@ -25,6 +26,8 @@ interface Props {
 }
 
 const EMPTY_BADGES: NavBadgeMap = {};
+const MOBILE_NAV_DIALOG_ID = 'mobile-primary-navigation';
+const MOBILE_NAV_TITLE_ID = 'mobile-primary-navigation-title';
 
 export function MobileNav({ active, memberships, recipientInvites, badges = EMPTY_BADGES }: Props) {
   const [open, setOpen] = useState(false);
@@ -100,17 +103,20 @@ export function MobileNav({ active, memberships, recipientInvites, badges = EMPT
           setOpen(true);
         }}
         aria-label="Open navigation"
+        aria-haspopup="dialog"
+        aria-controls={open ? MOBILE_NAV_DIALOG_ID : undefined}
         aria-expanded={open}
-        className="grid size-9 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg md:hidden"
+        className="grid size-10 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg md:hidden"
       >
-        <Menu className="size-5" />
+        <Menu aria-hidden="true" className="size-5" />
       </button>
 
       {open ? (
         <dialog
+          id={MOBILE_NAV_DIALOG_ID}
           ref={setDialogRef}
           className="fixed inset-0 z-50 m-0 h-dvh max-h-none w-screen max-w-none overscroll-contain bg-transparent p-0 md:hidden"
-          aria-label="Navigation"
+          aria-labelledby={MOBILE_NAV_TITLE_ID}
           onCancel={(event) => {
             event.preventDefault();
             closeNavigation();
@@ -121,15 +127,16 @@ export function MobileNav({ active, memberships, recipientInvites, badges = EMPT
         >
           <button
             type="button"
+            tabIndex={-1}
             className="absolute inset-0 bg-bg/70 backdrop-blur-sm"
-            onClick={() => {
-              closeNavigation();
-            }}
+            onClick={closeNavigation}
             aria-label="Close navigation"
           />
-          <aside className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col overscroll-contain border-r border-border bg-bg px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-[max(1.25rem,env(safe-area-inset-top))]">
+          <aside className="absolute inset-y-0 start-0 flex w-72 max-w-[calc(100vw-2rem)] min-w-0 flex-col overscroll-contain border-e border-border bg-bg pb-[max(1.25rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-[max(1.25rem,env(safe-area-inset-top))]">
             <div className="flex items-center justify-between px-2">
-              <span className="text-sm font-semibold tracking-tight text-fg">The Timeline</span>
+              <p id={MOBILE_NAV_TITLE_ID} className="text-sm font-semibold tracking-tight text-fg">
+                Navigation
+              </p>
               <button
                 ref={closeRef}
                 type="button"
@@ -137,51 +144,68 @@ export function MobileNav({ active, memberships, recipientInvites, badges = EMPT
                   closeNavigation();
                 }}
                 aria-label="Close navigation"
-                className="grid size-8 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg"
+                className="grid size-10 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg"
               >
-                <X className="size-4" />
+                <X aria-hidden="true" className="size-4" />
               </button>
             </div>
-            <nav aria-label="Primary" className="mt-8 flex flex-col gap-1">
-              {visibleNavItems(active.role).map((item) => {
-                const isActive = isNavItemActive(item, pathname);
-                const Icon = item.icon;
-                const badge = formatNavBadge(item.badgeKey ? badges[item.badgeKey] : undefined);
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    aria-current={isActive ? 'page' : undefined}
-                    onClick={() => {
-                      closeNavigation();
-                    }}
-                    className={cn(
-                      'flex items-center gap-3 rounded-sm px-3 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg',
-                      isActive
-                        ? 'bg-surface-2 text-signal'
-                        : 'text-fg-muted hover:bg-surface-2 hover:text-fg',
-                    )}
+            <nav aria-label="Primary" className="mt-6 min-h-0 flex-1 overflow-y-auto pb-4">
+              {visibleNavGroups(active.role).map((group, groupIndex) => (
+                <div key={group.id} className={groupIndex > 0 ? 'mt-5' : undefined}>
+                  <p
+                    aria-hidden="true"
+                    className="mb-1 px-3 text-xs font-medium leading-[1.35] text-fg-dim"
                   >
-                    <Icon aria-hidden="true" className="size-4" />
-                    <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                    {badge ? (
-                      <span
-                        aria-label={`${item.label} attention ${badge}`}
-                        className={cn(
-                          'grid h-5 min-w-5 place-items-center rounded-sm border px-1 font-mono text-[10px]',
-                          isActive
-                            ? 'border-signal/40 bg-bg text-signal'
-                            : 'border-danger/40 text-danger',
-                        )}
-                      >
-                        {badge}
-                      </span>
-                    ) : null}
-                  </Link>
-                );
-              })}
+                    {group.label}
+                  </p>
+                  <ul aria-label={group.label} className="m-0 list-none space-y-1 p-0">
+                    {group.items.map((item) => {
+                      const isActive = isNavItemActive(item, pathname);
+                      const Icon = item.icon;
+                      const badge = formatNavBadge(
+                        item.badgeKey ? badges[item.badgeKey] : undefined,
+                      );
+                      return (
+                        <li key={item.href}>
+                          <Link
+                            href={item.href}
+                            aria-label={navItemAccessibleLabel(item.label, badge)}
+                            aria-current={isActive ? 'page' : undefined}
+                            data-current={isActive ? 'true' : undefined}
+                            onClick={() => {
+                              closeNavigation();
+                            }}
+                            className={cn(
+                              'flex min-h-9 items-center gap-3 rounded-sm px-3 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg',
+                              isActive
+                                ? 'bg-surface-2 font-medium text-signal'
+                                : 'text-fg-muted hover:bg-surface-2 hover:text-fg',
+                            )}
+                          >
+                            <Icon aria-hidden="true" className="size-4" />
+                            <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                            {badge ? (
+                              <span
+                                aria-hidden="true"
+                                className={cn(
+                                  'grid h-5 min-w-5 place-items-center rounded-sm border px-1 font-mono text-[10px]',
+                                  isActive
+                                    ? 'border-signal/40 bg-bg text-signal'
+                                    : 'border-danger/40 text-danger',
+                                )}
+                              >
+                                {badge}
+                              </span>
+                            ) : null}
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ))}
             </nav>
-            <div className="mt-auto space-y-3 border-t border-border pt-4">
+            <div className="mt-auto shrink-0 space-y-3 border-t border-border pt-4">
               <Link
                 href="/help"
                 target="_blank"

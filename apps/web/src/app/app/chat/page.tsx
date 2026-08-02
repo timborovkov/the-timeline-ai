@@ -109,7 +109,7 @@ export default async function ChatPage({
           className="mb-5 flex shrink-0 items-baseline gap-x-4 border-b border-border pb-3 text-sm text-fg-muted"
           aria-label={`Chat with ${team?.name ?? active.teamName}'s timeline`}
         >
-          <h1 className="text-base font-semibold text-fg">Ask</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-fg">Ask</h1>
           <span
             className="ml-auto hidden w-20 text-right font-mono text-xs text-fg-dim md:block"
             data-visual-dynamic="chat-session-count"

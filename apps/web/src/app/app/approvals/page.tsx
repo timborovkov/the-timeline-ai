@@ -91,10 +91,11 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
           <Link
             key={filter}
             href={`/app/approvals?status=${filter}`}
-            className={`rounded-sm border px-3 py-1.5 text-xs capitalize ${
+            aria-current={status === filter ? 'page' : undefined}
+            className={`inline-flex min-h-9 items-center rounded-sm border px-2.5 text-xs capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg ${
               status === filter
-                ? 'border-signal bg-signal/10 text-signal'
-                : 'border-border text-fg-dim hover:text-fg'
+                ? 'border-signal/40 bg-signal-soft text-signal'
+                : 'border-border text-fg-muted hover:bg-surface-2 hover:text-fg'
             }`}
           >
             {filter}

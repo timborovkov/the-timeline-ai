@@ -19,6 +19,7 @@ import type { ComponentType, SVGProps, SyntheticEvent } from 'react';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
+import { Skeleton } from '@/components/ui/skeleton';
 import { isSchedulableObjectType } from '@/lib/due-dates';
 import { selectedValues } from '@/lib/filter-values';
 import { fetchGlobalSearch } from '@/lib/global-search';
@@ -31,6 +32,7 @@ interface SearchViewState {
   results: GlobalSearchResult[];
   warnings: string[];
   error: string | null;
+  searchVersion: number;
 }
 interface PageState extends SearchViewState {
   draft: string;
@@ -58,7 +60,8 @@ type PageAction =
     }
   | { type: 'search_start' }
   | { type: 'search_success'; results: GlobalSearchResult[]; warnings: string[] }
-  | { type: 'search_error'; error: string };
+  | { type: 'search_error'; error: string }
+  | { type: 'search_retry' };
 
 const FILTERS: { label: string; param: string; kinds: GlobalSearchKind[] | null }[] = [
   { label: 'All', param: 'all', kinds: null },
@@ -113,6 +116,9 @@ function pageReducer(state: PageState, action: PageAction): PageState {
     };
   }
   if (action.type === 'search_start') return { ...state, loading: true, error: null };
+  if (action.type === 'search_retry') {
+    return { ...state, searchVersion: state.searchVersion + 1 };
+  }
   if (action.type === 'search_success') {
     return {
       ...state,
@@ -228,7 +234,7 @@ function DateFilterInput({
         onChange={(event) => {
           onChange(event.target.value);
         }}
-        className="h-9 w-full rounded-sm border border-border bg-surface px-2 text-xs font-mono text-fg outline-none transition-colors focus-visible:border-signal/60 focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+        className="h-9 w-full rounded-sm border border-border bg-surface px-2 text-base font-mono text-fg outline-none transition-colors focus-visible:border-signal/60 focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg sm:text-xs"
       />
     </label>
   );
@@ -273,20 +279,25 @@ function SearchResultRow({ result }: { result: GlobalSearchResult }) {
 
   if (result.externalHref) {
     return (
-      <a
-        href={result.externalHref}
-        target="_blank"
-        rel="noreferrer"
-        className="block border-b border-border transition-colors hover:bg-surface"
-      >
-        {content}
-      </a>
+      <li>
+        <a
+          href={result.externalHref}
+          target="_blank"
+          rel="noreferrer"
+          className="block border-b border-border transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-strong"
+        >
+          {content}
+        </a>
+      </li>
     );
   }
 
   return (
-    <div className="flex items-center border-b border-border transition-colors hover:bg-surface">
-      <Link href={result.href} className="min-w-0 flex-1">
+    <li className="flex items-center border-b border-border transition-colors hover:bg-surface">
+      <Link
+        href={result.href}
+        className="min-w-0 flex-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-strong"
+      >
         {content}
       </Link>
       {result.pinTarget ? (
@@ -298,6 +309,20 @@ function SearchResultRow({ result }: { result: GlobalSearchResult }) {
           />
         </div>
       ) : null}
+    </li>
+  );
+}
+
+function SearchResultsLoading() {
+  return (
+    <div className="space-y-3 px-3 py-4" aria-hidden="true">
+      {Array.from({ length: 3 }).map((_, index) => (
+        <div key={index} className="space-y-2 border-b border-border pb-3 last:border-b-0">
+          <Skeleton className="h-4 w-2/5" />
+          <Skeleton className="h-3 w-4/5" />
+          <Skeleton className="h-3 w-3/5" />
+        </div>
+      ))}
     </div>
   );
 }
@@ -330,6 +355,7 @@ export function GlobalSearchPage({
     results: [],
     warnings: [],
     error: null,
+    searchVersion: 0,
   });
 
   useEffect(() => {
@@ -379,7 +405,7 @@ export function GlobalSearchPage({
     return () => {
       controller.abort();
     };
-  }, [kinds, selectedSources, state.from, state.query, state.to]);
+  }, [kinds, selectedSources, state.from, state.query, state.searchVersion, state.to]);
 
   function replaceSearchUrl(
     next: Partial<Pick<PageState, 'query' | 'typeFilters' | 'source' | 'from' | 'to'>>,
@@ -412,6 +438,12 @@ export function GlobalSearchPage({
     selectedSources.length +
     (state.from ? 1 : 0) +
     (state.to ? 1 : 0);
+  const hasSearchCriteria = Boolean(state.query || filterCount > 0);
+  const resultStatus = state.loading
+    ? 'Searching…'
+    : state.error
+      ? 'Search unavailable'
+      : `${state.results.length} results`;
 
   return (
     <div className="space-y-5">
@@ -423,20 +455,26 @@ export function GlobalSearchPage({
       </header>
 
       <form onSubmit={submit} className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-fg-dim" />
+        <label htmlFor="global-search-query" className="sr-only">
+          Search everything
+        </label>
+        <Search
+          aria-hidden="true"
+          className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-fg-dim"
+        />
         <input
+          id="global-search-query"
           type="search"
-          aria-label="Search everything"
           value={state.draft}
           onChange={(event) => {
             dispatch({ type: 'draft', value: event.target.value });
           }}
           placeholder="Search everything"
-          className="h-11 w-full rounded-sm border border-border bg-surface pl-10 pr-28 text-sm focus-visible:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+          className="h-11 w-full rounded-sm border border-border bg-surface pl-10 pr-28 text-base focus-visible:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg sm:text-sm"
         />
         <button
           type="submit"
-          className="absolute right-2 top-1/2 h-8 -translate-y-1/2 rounded-sm px-3 text-xs text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
+          className="absolute right-2 top-1/2 h-8 -translate-y-1/2 rounded-sm px-3 text-xs text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
         >
           Search
         </button>
@@ -500,21 +538,56 @@ export function GlobalSearchPage({
         </div>
       ) : null}
 
-      <section className="overflow-hidden rounded-sm border border-border bg-bg">
+      <section
+        aria-labelledby="search-results-heading"
+        className="overflow-hidden rounded-sm border border-border bg-bg"
+      >
         <div className="flex items-center justify-between border-b border-border px-3 py-2">
-          <p className="text-xs text-fg-dim">
-            {state.loading ? 'Searching' : `${state.results.length} results`}
+          <h2 id="search-results-heading" className="sr-only">
+            Search results
+          </h2>
+          <p aria-live="polite" className="text-xs text-fg-dim">
+            {resultStatus}
           </p>
           {state.loading ? (
-            <Loader2 aria-hidden="true" className="size-4 animate-spin text-fg-dim" />
+            <Loader2
+              aria-hidden="true"
+              className="size-4 animate-spin text-fg-dim motion-reduce:animate-none"
+            />
           ) : null}
         </div>
         {state.error ? (
-          <p className="px-3 py-8 text-sm text-destructive">{state.error}</p>
+          <div role="alert" className="space-y-3 px-3 py-8">
+            <p className="text-sm text-danger">Unable to search. {state.error}</p>
+            <button
+              type="button"
+              onClick={() => {
+                dispatch({ type: 'search_retry' });
+              }}
+              className="min-h-9 rounded-sm border border-border px-3 text-sm font-medium text-fg transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+            >
+              Try search again
+            </button>
+          </div>
+        ) : state.loading && state.results.length === 0 ? (
+          <SearchResultsLoading />
         ) : state.results.length === 0 && !state.loading ? (
-          <p className="px-3 py-8 text-sm text-fg-muted">No matches.</p>
+          <div className="px-3 py-8">
+            <p className="text-sm font-medium text-fg">
+              {hasSearchCriteria ? 'No matches found' : 'Start with a search'}
+            </p>
+            <p className="mt-1 text-sm text-fg-muted">
+              {hasSearchCriteria
+                ? 'Try different words or adjust the filters.'
+                : 'Enter words, then narrow results by type, source, or date.'}
+            </p>
+          </div>
         ) : (
-          state.results.map((result) => <SearchResultRow key={result.id} result={result} />)
+          <ul>
+            {state.results.map((result) => (
+              <SearchResultRow key={result.id} result={result} />
+            ))}
+          </ul>
         )}
       </section>
     </div>

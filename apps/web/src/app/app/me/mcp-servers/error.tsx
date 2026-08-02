@@ -1,6 +1,8 @@
 'use client';
 
-import { RouteError } from '@/components/route-error';
+import { Breadcrumb } from '@/components/breadcrumb';
+import { ErrorState } from '@/components/error-state';
+import { PageHeader } from '@/components/page-header';
 
 export default function PersonalMcpServersError({
   error,
@@ -9,5 +11,21 @@ export default function PersonalMcpServersError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  return <RouteError title="Personal MCP servers" error={error} reset={reset} />;
+  return (
+    <div className="max-w-3xl space-y-8">
+      <Breadcrumb
+        items={[{ label: 'Connections', href: '/app/sources' }, { label: 'Personal MCP servers' }]}
+      />
+      <PageHeader
+        title="Personal MCP servers"
+        subtitle="Custom external tools that only you can use in chats you start."
+      />
+      <ErrorState
+        title="Unable to open personal MCP servers"
+        description="Your personal server settings have not changed. Check your connection and try again."
+        error={error}
+        reset={reset}
+      />
+    </div>
+  );
 }

@@ -78,25 +78,36 @@ describe('SupportForm', () => {
     cleanup();
     render(<SupportForm requiresTurnstile />);
 
-    expect(screen.getByText('Support form protection is not configured.')).toBeTruthy();
-    expect(screen.queryByTestId('turnstile-widget')).toBeNull();
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Send request' }).disabled).toBe(
-      true,
+    const protectionError = screen.getByText(
+      'Support form protection is unavailable in this deployment. Contact your workspace administrator.',
     );
+    expect(protectionError.textContent).toBe(
+      'Support form protection is unavailable in this deployment. Contact your workspace administrator.',
+    );
+    expect(protectionError.id).toBe('support-form-protection-error');
+    expect(protectionError.getAttribute('role')).toBeNull();
+    expect(screen.queryByTestId('turnstile-widget')).toBeNull();
+    const submit = screen.getByRole<HTMLButtonElement>('button', { name: 'Send request' });
+    expect(submit.disabled).toBe(true);
+    expect(submit.getAttribute('aria-describedby')).toBe(protectionError.id);
   });
 
   it('shows success, error, and pending action states', () => {
     fakes.useActionState.mockReturnValue([{ ok: true }, fakes.action, true]);
     render(<SupportForm requiresTurnstile={false} />);
 
-    expect(screen.getByRole('status').textContent).toBe('We received your request.');
+    const success = screen.getByRole('status');
+    expect(success.textContent).toBe('We received your request.');
+    expect(success.parentElement?.getAttribute('aria-live')).toBeNull();
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Sending…' }).disabled).toBe(true);
 
     cleanup();
     fakes.useActionState.mockReturnValue([{ error: 'Verification failed.' }, fakes.action, false]);
     render(<SupportForm requiresTurnstile={false} />);
 
-    expect(screen.getByRole('alert').textContent).toBe('Verification failed.');
+    const error = screen.getByRole('alert');
+    expect(error.textContent).toBe('Verification failed.');
+    expect(error.parentElement?.getAttribute('aria-live')).toBeNull();
     expect(screen.queryByText('We received your request.')).toBeNull();
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Send request' }).disabled).toBe(
       false,

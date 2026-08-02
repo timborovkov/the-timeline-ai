@@ -1,5 +1,9 @@
 'use client';
-import { RouteError } from '@/components/route-error';
+
+import { ErrorState } from '@/components/error-state';
+import { PageHeader } from '@/components/page-header';
+import { WorkSubnav } from '@/components/work-subnav';
+
 export default function ApprovalsError({
   error,
   reset,
@@ -7,5 +11,19 @@ export default function ApprovalsError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  return <RouteError title="Approvals" error={error} reset={reset} />;
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Approvals"
+        subtitle="Review evidence-backed changes before they become team memory."
+      />
+      <WorkSubnav current="/app/approvals" />
+      <ErrorState
+        title="Unable to load approvals"
+        description="Your pending approvals and saved decisions have not changed. Check your connection, then try again."
+        error={error}
+        reset={reset}
+      />
+    </div>
+  );
 }

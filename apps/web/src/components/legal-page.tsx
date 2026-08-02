@@ -34,10 +34,10 @@ export async function LegalPage({
         <article
           className={cn(
             'mt-10 max-w-[70ch] space-y-5 text-sm leading-7 text-fg-muted',
-            '[&_a]:text-primary [&_a]:hover:underline [&_h2]:pt-6 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:text-fg',
+            '[&_a]:rounded-sm [&_a]:text-primary [&_a]:outline-none [&_a]:hover:underline [&_a]:focus-visible:ring-2 [&_a]:focus-visible:ring-ring [&_a]:focus-visible:ring-offset-2 [&_h2]:pt-6 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:text-fg',
             '[&_li]:ml-5 [&_li]:list-disc [&_strong]:text-fg',
-            '[&_table]:w-full [&_table]:border-collapse [&_table]:text-left [&_td]:border [&_td]:border-border [&_td]:p-3 [&_td]:align-top',
-            '[&_th]:border [&_th]:border-border [&_th]:bg-surface [&_th]:p-3 [&_th]:font-medium [&_th]:text-fg',
+            '[&_table]:w-full [&_table]:table-fixed [&_table]:border-collapse [&_table]:text-left [&_td]:break-words [&_td]:border [&_td]:border-border [&_td]:p-3 [&_td]:align-top',
+            '[&_th]:w-1/2 [&_th]:break-words [&_th]:border [&_th]:border-border [&_th]:bg-surface [&_th]:p-3 [&_th]:font-medium [&_th]:text-fg',
             className,
           )}
         >

@@ -3,10 +3,8 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  IntegrationsPageView,
-  visibleConnectionAttentionStats,
-} from '@/app/app/team/integrations/page';
+import { visibleConnectionAttentionStats } from '@/app/app/team/integrations/connection-attention';
+import { IntegrationsPageView } from '@/app/app/team/integrations/integrations-page-content';
 
 vi.mock('next/navigation', () => ({
   redirect: vi.fn(),
@@ -138,6 +136,7 @@ describe('IntegrationsPageView', () => {
     render(<IntegrationsPageView params={{}} active={{ teamName: 'Acme' }} model={model()} />);
 
     expect(screen.getByRole('heading', { name: 'Team integrations', level: 1 })).toBeTruthy();
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(screen.getByRole('link', { name: /Provider accounts/i })).toBeTruthy();
 
     const sectionNames = [
@@ -230,5 +229,18 @@ describe('IntegrationsPageView', () => {
       screen.getByText(/MCP server connected successfully.*Advanced integration tools/i),
     ).toBeTruthy();
     expect(screen.queryByText(/list above/i)).toBeNull();
+  });
+
+  it('keeps connection error codes in a closed technical disclosure', () => {
+    render(
+      <IntegrationsPageView
+        params={{ error: 'oauth_denied' }}
+        active={{ teamName: 'Acme' }}
+        model={model()}
+      />,
+    );
+
+    const errorAlert = screen.getAllByRole('alert').find((alert) => alert.querySelector('details'));
+    expect(errorAlert).toBeTruthy();
   });
 });

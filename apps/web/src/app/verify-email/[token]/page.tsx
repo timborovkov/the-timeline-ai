@@ -21,9 +21,7 @@ export default async function VerifyEmailPage({
 }) {
   const [{ token }, query] = await Promise.all([params, searchParams]);
   const email = typeof query.email === 'string' ? query.email : '';
-  const result = email
-    ? await verifyEmailToken({ db, email, token }).catch(() => 'invalid' as const)
-    : 'invalid';
+  const result = email ? await verifyEmailToken({ db, email, token }) : 'invalid';
   const copy =
     result === 'verified'
       ? {

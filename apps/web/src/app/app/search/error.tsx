@@ -1,5 +1,8 @@
 'use client';
-import { RouteError } from '@/components/route-error';
+
+import { ErrorState } from '@/components/error-state';
+import { PageHeader } from '@/components/page-header';
+
 export default function SearchError({
   error,
   reset,
@@ -7,5 +10,18 @@ export default function SearchError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  return <RouteError title="Search" error={error} reset={reset} />;
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Search"
+        subtitle="Search pages, workspace objects, tasks, boards, calendar, timeline events, and documents."
+      />
+      <ErrorState
+        title="Unable to load search"
+        description="Your query and filters have not changed. Check your connection, then try again."
+        error={error}
+        reset={reset}
+      />
+    </div>
+  );
 }

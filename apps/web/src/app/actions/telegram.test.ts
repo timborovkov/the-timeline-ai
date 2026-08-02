@@ -115,7 +115,7 @@ describe('Telegram server actions', () => {
     ).resolves.toEqual({ error: 'No active team' });
 
     const invalidUsername = await generatePersonalLinkTokenAction({}, form({ tgUsername: '1bad' }));
-    expect(invalidUsername.error).toContain('Enter your Telegram @username');
+    expect(invalidUsername.fieldError).toContain('Enter your Telegram @username');
 
     expect(fakes.dbInsert).not.toHaveBeenCalled();
     expect(fakes.revalidatePath).not.toHaveBeenCalled();

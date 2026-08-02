@@ -95,6 +95,26 @@ describe('ReconciliationDashboardPage', () => {
     expect(html).toContain('href="/app/team/reconciliation/clusters/cluster-2"');
   });
 
+  it('leads recent rows with human labels and keeps their raw values in technical details', async () => {
+    const html = renderToStaticMarkup(
+      await ReconciliationDashboardPage({ searchParams: Promise.resolve({}) }),
+    );
+
+    expect(html).toContain('Customer project');
+    expect(html).toContain('Monday board');
+    expect(html).toContain('Suggestion projection');
+    expect(html).toContain('Update Workspace memory');
+    expect(html).toContain('High confidence');
+    expect(technicalDetailsContaining(html, 'customer_project')).toContain('Cluster kind');
+    expect(technicalDetailsContaining(html, 'monday_board')).toContain('Artifact type');
+    expect(technicalDetailsContaining(html, 'agent_suggestion_projection')).toContain(
+      'Output kind',
+    );
+    expect(technicalDetailsContaining(html, 'object')).toContain('Target kind');
+    expect(technicalDetailsContaining(html, 'update')).toContain('Operation');
+    expect(technicalDetailsContaining(html, 'high')).toContain('Confidence');
+  });
+
   it('passes run-history filters to the dashboard snapshot and preserves them in pagination', async () => {
     fakes.getDashboardSnapshot.mockResolvedValueOnce(
       sampleDashboard({
@@ -321,4 +341,12 @@ function defaultRunHistory(): RunHistoryFixture {
     hasPreviousPage: false,
     hasNextPage: false,
   };
+}
+
+function technicalDetailsContaining(html: string, value: string): string {
+  return (
+    [...html.matchAll(/<details[\s\S]*?<\/details>/g)].find(([details]) =>
+      details.includes(value),
+    )?.[0] ?? ''
+  );
 }

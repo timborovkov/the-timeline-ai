@@ -1,13 +1,21 @@
+// @vitest-environment happy-dom
+
+import { cleanup, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fakes = vi.hoisted(() => ({ auth: vi.fn() }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
 
-const { default: LandingPage } = await import('@/app/page');
+const { default: LandingPage } = await import('@/app/(landing)/page');
 
 describe('LandingPage', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     fakes.auth.mockResolvedValue(null);
@@ -39,5 +47,20 @@ describe('LandingPage', () => {
     expect(html).toContain('href="/app"');
     expect(html).not.toContain('Create team');
     expect(html).not.toContain('href="/sign-in"');
+  });
+
+  it('moves keyboard focus to main when the landing skip link is activated', async () => {
+    const user = userEvent.setup();
+
+    render(await LandingPage());
+
+    const skipLink = screen.getByRole('link', { name: 'Skip to main content' });
+    const main = screen.getByRole('main');
+    skipLink.focus();
+
+    await user.keyboard('{Enter}');
+
+    expect(main.tabIndex).toBe(-1);
+    expect(document.activeElement).toBe(main);
   });
 });

@@ -165,6 +165,57 @@ describe('CuratedBoardTable', () => {
     expect(screen.queryByText(/timborovkov\/the-timeline-ai#202/)).toBeNull();
   });
 
+  it('announces an inline save failure with the affected item name', async () => {
+    const user = userEvent.setup();
+    fakes.updateItem.mockResolvedValueOnce({ error: 'Connection lost' });
+    render(
+      <CuratedBoardTable
+        boardId="board-1"
+        view="table"
+        lanes={LANES}
+        items={[boardItem()]}
+        members={[{ id: 'user-1', label: 'Ada' }]}
+        onUpdateItem={fakes.updateItem}
+      />,
+    );
+
+    await user.selectOptions(
+      screen.getByLabelText('Responsible person for Launch review'),
+      'user-1',
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toContain(
+        'Unable to save Launch review. Connection lost',
+      );
+    });
+  });
+
+  it('announces bulk update failures as errors', async () => {
+    const user = userEvent.setup();
+    fakes.updateItem.mockResolvedValueOnce({ error: 'Connection lost' });
+    render(
+      <CuratedBoardTable
+        boardId="board-1"
+        view="table"
+        lanes={LANES}
+        items={[boardItem()]}
+        members={[]}
+        onUpdateItem={fakes.updateItem}
+      />,
+    );
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select Launch review' }));
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
+
+    await waitFor(() => {
+      const alert = screen.getByText('1 of 1 updates failed.');
+      expect(alert.getAttribute('role')).toBe('alert');
+      expect(alert.className).toContain('text-danger');
+      expect(screen.getAllByRole('alert')).toHaveLength(1);
+    });
+  });
+
   it('syncs the next step editor when refreshed item props change', () => {
     const item = { ...boardItem(), nextStep: 'Call customer' };
     const { rerender } = render(

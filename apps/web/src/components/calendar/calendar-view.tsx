@@ -32,7 +32,7 @@ import {
 
 import type { CalendarEvent } from '@/components/calendar/calendar-overlay';
 import type { SaveState } from '@/lib/utils';
-import type { Dispatch, SetStateAction } from 'react';
+import type { Dispatch, RefObject, SetStateAction } from 'react';
 
 import {
   createCalendarEventAction,
@@ -127,8 +127,17 @@ interface CalendarUiState {
 
 type CalendarUiAction = Partial<CalendarUiState> | ((state: CalendarUiState) => CalendarUiState);
 
-const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const WEEKDAYS = [
+  { short: 'Mon', label: 'Monday' },
+  { short: 'Tue', label: 'Tuesday' },
+  { short: 'Wed', label: 'Wednesday' },
+  { short: 'Thu', label: 'Thursday' },
+  { short: 'Fri', label: 'Friday' },
+  { short: 'Sat', label: 'Saturday' },
+  { short: 'Sun', label: 'Sunday' },
+] as const;
 const EVENT_LIST_PAGE_SIZE = 12;
+const TITLE_REQUIRED_ERROR = 'Enter a title for this event.';
 type EventListScope = 'future' | 'past' | 'all';
 interface EventListParams {
   query: string;
@@ -383,6 +392,7 @@ function useCalendarViewModel({
   );
   const [pending, startTransition] = useTransition();
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
   const dialogContextRef = useRef(0);
   const openedFocusRef = useRef<string | null>(null);
   const eventListParamsRef = useRef<EventListParams | null>(null);
@@ -561,7 +571,8 @@ function useCalendarViewModel({
     dispatchCalendarUi({ error: null });
     const title = draft.title.trim();
     if (!title) {
-      dispatchCalendarUi({ error: 'Title is required.' });
+      dispatchCalendarUi({ error: TITLE_REQUIRED_ERROR });
+      titleInputRef.current?.focus();
       return;
     }
     let times: { start: string; end: string };
@@ -692,7 +703,8 @@ function useCalendarViewModel({
     });
   }
 
-  const gridCols = safeMode === 'day' ? 'grid-cols-1' : 'grid-cols-[3rem_repeat(7,minmax(0,1fr))]';
+  const gridCols =
+    safeMode === 'day' ? 'grid-cols-1' : 'grid-cols-7 sm:grid-cols-[3rem_repeat(7,minmax(0,1fr))]';
 
   return {
     anchor,
@@ -720,6 +732,7 @@ function useCalendarViewModel({
     saveState,
     surfaceError,
     timezone,
+    titleInputRef,
     updateEventListParams,
     visibleDays,
     dispatchCalendarUi,
@@ -769,6 +782,12 @@ function CalendarViewLayout({ model }: { model: ReturnType<typeof useCalendarVie
         onPageChange={(page) => {
           model.updateEventListParams({ page });
         }}
+        onCreate={() => {
+          model.openCreate(model.anchor);
+        }}
+        onClearFilters={() => {
+          model.updateEventListParams({ query: '', scope: 'future', page: 0 });
+        }}
         onEdit={model.openEdit}
       />
       <CalendarEventDialog
@@ -778,6 +797,7 @@ function CalendarViewLayout({ model }: { model: ReturnType<typeof useCalendarVie
         error={model.error}
         pending={model.pending}
         timezone={model.timezone}
+        titleInputRef={model.titleInputRef}
         members={model.members}
         onOpenChange={(nextOpen) => {
           model.dispatchCalendarUi({ open: nextOpen });
@@ -805,6 +825,8 @@ function CalendarEventList({
   onQueryChange,
   onScopeChange,
   onPageChange,
+  onCreate,
+  onClearFilters,
   onEdit,
 }: {
   events: CalendarEvent[];
@@ -816,6 +838,8 @@ function CalendarEventList({
   onQueryChange: (query: string) => void;
   onScopeChange: (scope: 'future' | 'past' | 'all') => void;
   onPageChange: (page: number) => void;
+  onCreate: () => void;
+  onClearFilters: () => void;
   onEdit: (event: CalendarEvent) => void;
 }) {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -824,6 +848,13 @@ function CalendarEventList({
   const pageCount = Math.max(1, Math.ceil(total / EVENT_LIST_PAGE_SIZE));
   const effectivePage = Math.min(page, pageCount - 1);
   const pageStart = effectivePage * EVENT_LIST_PAGE_SIZE;
+  const hasActiveFilters = Boolean(query) || scope !== 'future';
+  const eventCountLabel =
+    scope === 'future'
+      ? `${total} upcoming event${total === 1 ? '' : 's'}`
+      : scope === 'past'
+        ? `${total} past event${total === 1 ? '' : 's'}`
+        : `${total} event${total === 1 ? '' : 's'}`;
 
   useEffect(() => {
     if (query === committedSearchRef.current) return;
@@ -838,18 +869,21 @@ function CalendarEventList({
   }, []);
 
   return (
-    <section className="border-t border-border pt-4">
-      <div className="flex flex-wrap items-end gap-3">
+    <section className="border-t border-border pt-4" aria-labelledby="calendar-events-heading">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
         <div className="min-w-0 flex-1">
-          <h2 className="text-xs text-fg">Calendar events</h2>
-          <p className="mt-1 text-sm text-fg-muted">
-            {total} {scope === 'future' ? 'upcoming' : scope} event
-            {total === 1 ? '' : 's'}
-          </p>
+          <h2 id="calendar-events-heading" className="text-base font-semibold text-fg">
+            Calendar events
+          </h2>
+          <p className="mt-1 text-sm text-fg-muted">{eventCountLabel}</p>
         </div>
-        <div className="flex min-w-64 items-center gap-2 rounded-md border border-input bg-background px-3">
-          <Search className="size-4 text-fg-dim" />
+        <div className="flex w-full items-center gap-2 rounded-sm border border-input bg-background px-3 sm:w-auto sm:min-w-64">
+          <Search className="size-4 shrink-0 text-fg-dim" aria-hidden="true" />
+          <Label htmlFor="calendar-event-search" className="sr-only">
+            Search calendar events
+          </Label>
           <Input
+            id="calendar-event-search"
             ref={searchInputRef}
             defaultValue={query}
             onChange={(event) => {
@@ -864,21 +898,23 @@ function CalendarEventList({
             className="h-9 border-0 px-0 ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0"
           />
         </div>
-        <div className="flex items-center gap-1">
+        <fieldset className="grid w-full grid-cols-3 gap-1 border-0 p-0 sm:flex sm:w-auto">
+          <legend className="sr-only">Event range</legend>
           {(['future', 'past', 'all'] as const).map((nextScope) => (
             <Button
               key={nextScope}
               type="button"
               size="sm"
-              variant={scope === nextScope ? 'default' : 'outline'}
+              variant={scope === nextScope ? 'secondary' : 'outline'}
+              aria-pressed={scope === nextScope}
               onClick={() => {
                 onScopeChange(nextScope);
               }}
             >
-              {nextScope === 'future' ? 'Today+' : nextScope}
+              {nextScope === 'future' ? 'Upcoming' : nextScope === 'past' ? 'Past' : 'All'}
             </Button>
           ))}
-        </div>
+        </fieldset>
       </div>
 
       <div className="mt-3 divide-y divide-border border border-border bg-bg">
@@ -890,7 +926,8 @@ function CalendarEventList({
             >
               <button
                 type="button"
-                className="grid min-w-0 gap-3 text-left md:grid-cols-[minmax(10rem,0.45fr)_minmax(0,1fr)_8rem]"
+                disabled={event.redacted}
+                className="grid min-w-0 gap-3 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-default disabled:opacity-100 md:grid-cols-[minmax(10rem,0.45fr)_minmax(0,1fr)_8rem]"
                 onClick={() => {
                   onEdit(event);
                 }}
@@ -919,12 +956,33 @@ function CalendarEventList({
             </div>
           ))
         ) : (
-          <p className="p-4 text-sm text-fg-muted">No calendar events match these filters.</p>
+          <div className="p-4">
+            <p className="text-sm font-medium text-fg">
+              {hasActiveFilters ? 'No events match these filters' : 'No upcoming events'}
+            </p>
+            <p className="mt-1 text-sm text-fg-muted">
+              {hasActiveFilters
+                ? 'Clear the filters to review all upcoming events.'
+                : 'Create an event to add it to the calendar.'}
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="mt-3"
+              onClick={hasActiveFilters ? onClearFilters : onCreate}
+            >
+              {hasActiveFilters ? 'Clear filters' : 'Create event'}
+            </Button>
+          </div>
         )}
       </div>
 
       {total > EVENT_LIST_PAGE_SIZE ? (
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+        <nav
+          className="mt-3 flex flex-wrap items-center justify-between gap-3"
+          aria-label="Calendar events pages"
+        >
           <p className="text-xs text-fg-dim">
             {pageStart + 1}-{Math.min(pageStart + events.length, total)} of {total}
           </p>
@@ -957,7 +1015,7 @@ function CalendarEventList({
               <ChevronRight className="size-4" />
             </Button>
           </div>
-        </div>
+        </nav>
       ) : null}
     </section>
   );
@@ -983,62 +1041,78 @@ function CalendarToolbar({
   onCreate: () => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex items-center gap-2">
-        <CalendarDays className="size-5 text-muted-foreground" />
+    <section
+      className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+      aria-labelledby="calendar-view-heading"
+    >
+      <div className="flex min-w-0 items-center gap-2">
+        <CalendarDays className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
         <div>
-          <h2 className="text-lg font-semibold">{title}</h2>
+          <h2 id="calendar-view-heading" className="text-lg font-semibold">
+            {title}
+          </h2>
           <p className="text-xs text-muted-foreground">{timezone} · ISO weeks</p>
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-1">
-        {(['month', 'week', 'day'] as const).map((view) => (
+      <div className="flex flex-wrap items-center gap-2">
+        <fieldset className="flex items-center gap-1 border-0 p-0">
+          <legend className="sr-only">Calendar view</legend>
+          {(['month', 'week', 'day'] as const).map((view) => (
+            <Button
+              key={view}
+              type="button"
+              variant={mode === view ? 'secondary' : 'outline'}
+              size="sm"
+              aria-pressed={mode === view}
+              onClick={() => {
+                onPush(view, anchor);
+              }}
+            >
+              {view === 'month' ? 'Month' : view === 'week' ? 'Week' : 'Day'}
+            </Button>
+          ))}
+        </fieldset>
+        <fieldset className="flex items-center gap-1 border-0 p-0">
+          <legend className="sr-only">Calendar navigation</legend>
           <Button
-            key={view}
-            variant={mode === view ? 'default' : 'outline'}
+            type="button"
+            variant="outline"
             size="sm"
             onClick={() => {
-              onPush(view, anchor);
+              onMove(-1);
+            }}
+            aria-label={`Previous ${mode}`}
+          >
+            <ChevronLeft className="size-4" />
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              onPush(mode, today);
             }}
           >
-            {view}
+            Today
           </Button>
-        ))}
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            onMove(-1);
-          }}
-          aria-label="Previous"
-        >
-          <ChevronLeft className="size-4" />
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            onPush(mode, today);
-          }}
-        >
-          Today
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            onMove(1);
-          }}
-          aria-label="Next"
-        >
-          <ChevronRight className="size-4" />
-        </Button>
-        <Button size="sm" onClick={onCreate}>
-          <Plus className="mr-1 size-4" />
-          New
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              onMove(1);
+            }}
+            aria-label={`Next ${mode}`}
+          >
+            <ChevronRight className="size-4" />
+          </Button>
+        </fieldset>
+        <Button type="button" size="sm" onClick={onCreate}>
+          <Plus className="mr-1 size-4" aria-hidden="true" />
+          New event
         </Button>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -1082,9 +1156,10 @@ function CalendarBody({
   onCreate: (day: Temporal.PlainDate) => void;
   onEdit: (event: CalendarEvent) => void;
 }) {
+  const calendarLabel = `Calendar for ${titleFor(mode, anchor)}`;
   if (mode === 'day') {
     return (
-      <div className="rounded-lg border bg-background">
+      <section className="rounded-md border bg-background" aria-label={calendarLabel}>
         <DayCell
           day={anchor}
           anchor={anchor}
@@ -1095,20 +1170,26 @@ function CalendarBody({
           onCreate={onCreate}
           onEdit={onEdit}
         />
-      </div>
+      </section>
     );
   }
   return (
-    <div className={`grid ${gridCols} gap-px rounded-lg border bg-border`}>
-      <div className="bg-muted/40 p-2 text-center text-xs font-medium text-muted-foreground">
-        Wk
+    <section
+      className={`grid ${gridCols} gap-px rounded-md border bg-border`}
+      aria-label={calendarLabel}
+    >
+      <div className="hidden bg-muted/40 p-2 text-center text-xs font-medium text-muted-foreground sm:block">
+        <span aria-hidden="true">Wk</span>
+        <span className="sr-only">Week number</span>
       </div>
       {WEEKDAYS.map((day) => (
         <div
-          key={day}
-          className="bg-muted/40 p-2 text-center text-xs font-medium text-muted-foreground"
+          key={day.short}
+          className="min-w-0 bg-muted/40 p-1 text-center text-xs font-medium text-muted-foreground sm:p-2"
         >
-          {day}
+          <abbr title={day.label} className="no-underline">
+            {day.short}
+          </abbr>
         </div>
       ))}
       {Array.from({ length: Math.ceil(visibleDays.length / 7) }, (_, weekIndex) => {
@@ -1116,9 +1197,10 @@ function CalendarBody({
         return [
           <div
             key={`week-${week[0]?.toString() ?? weekIndex}`}
-            className="min-h-28 bg-background p-2 text-center text-xs font-medium text-muted-foreground"
+            className="hidden min-h-28 bg-background p-2 text-center text-xs font-medium text-muted-foreground sm:block"
           >
-            {week[0]?.weekOfYear}
+            <span aria-hidden="true">{week[0]?.weekOfYear}</span>
+            <span className="sr-only">Week {week[0]?.weekOfYear}</span>
           </div>,
           ...week.map((day) => (
             <DayCell
@@ -1135,7 +1217,7 @@ function CalendarBody({
           )),
         ];
       })}
-    </div>
+    </section>
   );
 }
 
@@ -1146,6 +1228,7 @@ function CalendarEventDialog({
   error,
   pending,
   timezone,
+  titleInputRef,
   members,
   onOpenChange,
   onDraftChange,
@@ -1158,12 +1241,15 @@ function CalendarEventDialog({
   error: string | null;
   pending: boolean;
   timezone: string;
+  titleInputRef: RefObject<HTMLInputElement | null>;
   members: NonNullable<CalendarViewProps['members']>;
   onOpenChange: (open: boolean) => void;
   onDraftChange: Dispatch<SetStateAction<Draft>>;
   onSave: () => void;
   onRemove: () => void;
 }) {
+  const titleError = error === TITLE_REQUIRED_ERROR ? error : null;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl">
@@ -1183,8 +1269,22 @@ function CalendarEventDialog({
           </div>
         ) : null}
         <div className="grid gap-4">
-          <CalendarDraftFields draft={draft} members={members} onDraftChange={onDraftChange} />
-          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+          <CalendarDraftFields
+            draft={draft}
+            members={members}
+            titleErrorId={titleError ? 'calendar-title-error' : undefined}
+            titleInputRef={titleInputRef}
+            onDraftChange={onDraftChange}
+          />
+          {error ? (
+            <p
+              id={titleError ? 'calendar-title-error' : undefined}
+              role="alert"
+              className="text-sm text-destructive"
+            >
+              {error}
+            </p>
+          ) : null}
         </div>
         <DialogFooter className="gap-2 sm:justify-between">
           <div>
@@ -1208,10 +1308,14 @@ function CalendarEventDialog({
 function CalendarDraftFields({
   draft,
   members,
+  titleErrorId,
+  titleInputRef,
   onDraftChange,
 }: {
   draft: Draft;
   members: NonNullable<CalendarViewProps['members']>;
+  titleErrorId?: string;
+  titleInputRef: RefObject<HTMLInputElement | null>;
   onDraftChange: Dispatch<SetStateAction<Draft>>;
 }) {
   return (
@@ -1220,7 +1324,10 @@ function CalendarDraftFields({
         <Label htmlFor="calendar-title">Title</Label>
         <Input
           id="calendar-title"
+          ref={titleInputRef}
           value={draft.title}
+          aria-describedby={titleErrorId}
+          aria-invalid={Boolean(titleErrorId)}
           onChange={(e) => {
             onDraftChange((d) => ({ ...d, title: e.target.value }));
           }}
@@ -1482,15 +1589,24 @@ function DayCell({
 }) {
   const muted = mode === 'month' && day.month !== anchor.month;
   const isToday = Temporal.PlainDate.compare(day, today) === 0;
+  const dayLabel = day.toLocaleString(undefined, {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
   return (
-    <div className={`min-h-28 bg-background p-2 ${isToday ? 'ring-2 ring-inset ring-signal' : ''}`}>
+    <div
+      className={`min-w-0 bg-background p-1 sm:min-h-28 sm:p-2 ${isToday ? 'ring-2 ring-inset ring-signal' : ''}`}
+    >
       <div className="mb-2 flex items-center justify-between gap-2">
         <button
           type="button"
+          aria-label={`Create event on ${dayLabel}`}
           onClick={() => {
             onCreate(day);
           }}
-          className={`rounded px-1 text-xs font-medium hover:bg-accent ${muted ? 'text-muted-foreground' : ''} ${
+          className={`rounded-sm px-1 text-xs font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${muted ? 'text-muted-foreground' : ''} ${
             isToday ? 'text-signal' : ''
           }`}
         >
@@ -1503,11 +1619,11 @@ function DayCell({
           <button
             key={event.id}
             type="button"
-            disabled={event.id.startsWith('optimistic-')}
+            disabled={event.redacted || event.id.startsWith('optimistic-')}
             onClick={() => {
               onEdit(event);
             }}
-            className={`block w-full truncate rounded px-2 py-1 text-left text-xs ${
+            className={`block w-full truncate rounded-sm px-2 py-1 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
               event.redacted
                 ? 'bg-muted text-muted-foreground italic'
                 : event.showAs === 'tentative'
@@ -1518,7 +1634,7 @@ function DayCell({
             } disabled:opacity-70`}
           >
             <span className="inline-flex items-center gap-1">
-              {event.allDay ? null : <Clock className="size-3" />}
+              {event.allDay ? null : <Clock className="size-3" aria-hidden="true" />}
               {event.showAs === 'tentative' ? <span className="text-[11px]">Tentative</span> : null}
               {event.rrule || event.recurringParentId ? (
                 <span className="font-mono text-[10px]" aria-label="Recurring">
@@ -1530,7 +1646,7 @@ function DayCell({
                   ? 'Busy'
                   : event.title
                 : `${formatTime(event, timezone)} ${event.redacted ? 'Busy' : event.title}`}
-              {!event.redacted ? <Pencil className="size-3 opacity-50" /> : null}
+              {!event.redacted ? <Pencil className="size-3 opacity-50" aria-hidden="true" /> : null}
             </span>
           </button>
         ))}

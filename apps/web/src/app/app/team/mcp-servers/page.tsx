@@ -4,7 +4,7 @@ import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
   title: 'Team MCP servers',
-  description: 'Manage team MCP server connections.',
+  description: 'Team MCP server settings are managed in Integrations.',
 };
 
 // Phase 11 — the standalone MCP servers page was folded into
@@ -20,8 +20,10 @@ export default async function McpServersRedirect({
   const params = await searchParams;
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
-    if (typeof v === 'string') qs.set(k, v);
-    else if (Array.isArray(v) && v[0]) qs.set(k, v[0]);
+    if (typeof v === 'string') qs.append(k, v);
+    else if (Array.isArray(v)) {
+      for (const value of v) qs.append(k, value);
+    }
   }
   const suffix = qs.toString();
   redirect(`/app/team/integrations${suffix ? `?${suffix}` : ''}`);

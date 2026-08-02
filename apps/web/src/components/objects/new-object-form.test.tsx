@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 /** Business intent: task creation can find any active project, not only the server preload. */
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -66,11 +66,42 @@ describe('NewObjectForm', () => {
     render(<NewObjectForm />);
 
     expect(screen.getByText('No due date')).toBeTruthy();
-    expect(screen.getByLabelText('Due date')).toBeTruthy();
+    expect(screen.getByLabelText(/Due date/)).toBeTruthy();
     fireEvent.change(screen.getByRole('combobox', { name: 'Object type' }), {
       target: { value: 'person' },
     });
     expect(screen.queryByText('No due date')).toBeNull();
-    expect(screen.queryByLabelText('Due date')).toBeNull();
+    expect(screen.queryByLabelText(/Due date/)).toBeNull();
+  });
+
+  it('keeps the primary submit available and focuses the invalid name field', async () => {
+    render(<NewObjectForm />);
+
+    const createObject = screen.getByRole('button', { name: 'Create object' });
+    expect(createObject.hasAttribute('disabled')).toBe(false);
+
+    await userEvent.click(createObject);
+
+    const name = screen.getByRole('textbox', { name: 'Name' });
+    expect(document.activeElement).toBe(name);
+    expect(name.getAttribute('aria-invalid')).toBe('true');
+    expect(name.getAttribute('aria-describedby')).toBe('object-name-error');
+    expect(screen.getByRole('alert').textContent).toBe('Enter an object name.');
+    expect(fakes.createObjectAction).not.toHaveBeenCalled();
+  });
+
+  it('submits through Enter and routes after a successful creation', async () => {
+    fakes.createObjectAction.mockResolvedValue({ ok: true, id: 'object-1' });
+    render(<NewObjectForm />);
+
+    await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), 'Follow up{Enter}');
+
+    await waitFor(() => {
+      expect(fakes.createObjectAction).toHaveBeenCalledWith({
+        type: 'task',
+        canonicalName: 'Follow up',
+      });
+    });
+    expect(fakes.push).toHaveBeenCalledWith('/app/objects/object-1');
   });
 });

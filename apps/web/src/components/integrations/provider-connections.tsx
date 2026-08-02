@@ -3,10 +3,12 @@
 import { useQuery } from '@tanstack/react-query';
 import { ExternalLink } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useMemo, useReducer, useState } from 'react';
+import { useId, useMemo, useReducer, useRef, useState } from 'react';
 
 import { InlineError } from '@/components/inline-error';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
 import { queryKeys } from '@/lib/query-keys';
 import { groupResourcesByKind, providerLabel, shareDisplayName } from '@/lib/resource-labels';
 import { connectionErrorMessage } from '@/lib/ux-errors';
@@ -46,7 +48,8 @@ type SourcePickerAction =
   | { type: 'toggle'; key: string; currentSelected: Set<string> }
   | { type: 'busy'; busy: 'save' | 'delete' | 'reconnect' | null }
   | { type: 'error'; error: string | null }
-  | { type: 'confirmDelete' }
+  | { type: 'openDeleteConfirmation' }
+  | { type: 'closeDeleteConfirmation' }
   | { type: 'resetSelection' };
 
 interface SourcePickerState {
@@ -135,20 +138,36 @@ function sourcePickerReducer(
       return { ...state, busy: action.busy };
     case 'error':
       return { ...state, error: action.error };
-    case 'confirmDelete':
-      return { ...state, confirmDelete: !state.confirmDelete };
+    case 'openDeleteConfirmation':
+      return { ...state, confirmDelete: true };
+    case 'closeDeleteConfirmation':
+      return { ...state, confirmDelete: false };
     case 'resetSelection':
       return { ...state, selectedOverride: null };
   }
 }
 
-export function PersonalConnectionsUi({ connections }: { connections: ProviderConnection[] }) {
+export function PersonalConnectionsUi({
+  connections,
+  connectProviderHref = '#connect-provider',
+}: {
+  connections: ProviderConnection[];
+  connectProviderHref?: string;
+}) {
   if (connections.length === 0) {
     return (
       <div className="space-y-3">
         <PersonalConnectionFlow />
-        <div className="rounded-lg border border-border bg-surface p-4 text-sm text-fg-muted">
-          No provider connections yet.
+        <div className="space-y-3 rounded-lg border border-border bg-surface p-4">
+          <div className="space-y-1">
+            <p className="text-sm font-medium text-fg">No provider accounts yet</p>
+            <p className="text-sm text-fg-muted">
+              Connect an account to choose the sources this team may use.
+            </p>
+          </div>
+          <Button asChild size="sm">
+            <a href={connectProviderHref}>Connect a provider account</a>
+          </Button>
         </div>
       </div>
     );
@@ -165,7 +184,7 @@ export function PersonalConnectionsUi({ connections }: { connections: ProviderCo
 
 function PersonalConnectionFlow() {
   return (
-    <div className="space-y-3 rounded-sm border border-border bg-surface-2 p-3 text-sm">
+    <div className="space-y-3 rounded-lg border border-border bg-surface-2 p-3 text-sm">
       <div className="grid gap-2 md:grid-cols-3">
         <div>
           <p className="font-medium text-fg">1. Provider account</p>
@@ -184,11 +203,6 @@ function PersonalConnectionFlow() {
           </p>
         </div>
       </div>
-      <p className="border-t border-border pt-3 text-xs text-fg-muted">
-        Need a second Monday.com account? Click Connect account again, then pick another account in
-        Monday.com&apos;s account dropdown or switch accounts in Monday before approving. Timeline
-        stores it separately once Monday returns a different account.
-      </p>
     </div>
   );
 }
@@ -253,7 +267,9 @@ function PersonalConnectionHeader({ connection }: { connection: ProviderConnecti
     <div className="space-y-1">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <span className="text-sm font-medium">{providerLabel(connection.provider)}</span>
-        <span className="min-w-0 truncate text-sm text-fg-muted">{connection.displayName}</span>
+        <span className="min-w-0 max-w-full break-words text-sm text-fg-muted">
+          {connection.displayName}
+        </span>
       </div>
       <PersonalConnectionRoleLine lastConnectedAt={connection.lastConnectedAt} />
     </div>
@@ -275,26 +291,67 @@ function TeamConnectionHeader({ connection }: { connection: TeamShareRow['connec
 function PersonalConnectionToolbar({
   selectedSize,
   busy,
+  isSourcesLoading,
+  hasSourceLoadError,
+  confirmingDeletion,
+  deleteConfirmationId,
+  deleteButtonRef,
   onSave,
   onDelete,
 }: {
   selectedSize: number;
   busy: SourcePickerState['busy'];
+  isSourcesLoading: boolean;
+  hasSourceLoadError: boolean;
+  confirmingDeletion: boolean;
+  deleteConfirmationId: string;
+  deleteButtonRef: React.RefObject<HTMLButtonElement | null>;
   onSave: () => void;
   onDelete: () => void;
 }) {
+  const canSave = !isSourcesLoading && !hasSourceLoadError;
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <div>
-        <p className="text-sm font-medium text-fg">
-          {String(selectedSize)} source{selectedSize === 1 ? '' : 's'} shared to this team
-        </p>
-        <p className="text-xs text-fg-muted">Sharing allows team admins to activate sync later.</p>
+      <div className="min-w-0 flex-1 basis-full sm:basis-auto">
+        {isSourcesLoading ? (
+          <>
+            <p className="text-sm font-medium text-fg">Loading shared sources</p>
+            <p className="text-xs text-fg-muted">Saving will be available when sources load.</p>
+          </>
+        ) : hasSourceLoadError ? (
+          <>
+            <p className="text-sm font-medium text-fg">Unable to load shared sources</p>
+            <p className="text-xs text-fg-muted">Retry loading sources before saving changes.</p>
+          </>
+        ) : (
+          <>
+            <p className="text-sm font-medium text-fg">
+              {String(selectedSize)} source{selectedSize === 1 ? '' : 's'} shared to this team
+            </p>
+            <p className="text-xs text-fg-muted">
+              Sharing allows team admins to activate sync later.
+            </p>
+          </>
+        )}
       </div>
-      <Button size="sm" className="ml-auto" disabled={busy !== null} onClick={onSave}>
+      <Button
+        size="sm"
+        className="min-h-9 sm:ml-auto"
+        disabled={busy !== null || !canSave}
+        onClick={onSave}
+      >
         {busy === 'save' ? 'Saving' : 'Save sharing'}
       </Button>
-      <Button size="sm" variant="ghost" disabled={busy !== null} onClick={onDelete}>
+      <Button
+        ref={deleteButtonRef}
+        size="sm"
+        variant="ghost"
+        className="min-h-9"
+        disabled={busy !== null}
+        aria-controls={deleteConfirmationId}
+        aria-expanded={confirmingDeletion}
+        onClick={onDelete}
+      >
         Delete account
       </Button>
     </div>
@@ -304,10 +361,15 @@ function PersonalConnectionToolbar({
 function ConnectionSources({ connection }: { connection: ProviderConnection }) {
   const router = useRouter();
   const [state, dispatch] = useReducer(sourcePickerReducer, initialSourcePickerState);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const deleteButtonRef = useRef<HTMLButtonElement>(null);
+  const searchInputId = useId();
+  const deleteConfirmationId = useId();
   const {
     data,
     error: queryError,
     isLoading,
+    isFetching,
     refetch,
   } = useQuery({
     queryKey: queryKeys.providerConnectionResources(connection.id),
@@ -337,7 +399,9 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
     return next;
   }, [connection.provider, resourceByKey, shares]);
   const selected = state.selectedOverride ?? savedSelected;
-  const error = state.error ?? (queryError instanceof Error ? queryError.message : null);
+  const sourceLoadError = queryError instanceof Error ? queryError.message : null;
+  const error = state.error ?? sourceLoadError;
+  const canRetrySourceLoad = state.error === null && sourceLoadError !== null;
   const query = state.query;
 
   const activeShareByKey = useMemo(() => {
@@ -377,6 +441,18 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
   }, [query, selectableResources]);
 
   const grouped = useMemo(() => groupResourcesByKind(filtered), [filtered]);
+  const hasSearchQuery = Boolean(query.trim());
+  const showEmptyResult = !isLoading && !queryError && grouped.length === 0;
+
+  function clearSearch() {
+    dispatch({ type: 'query', query: '' });
+    searchInputRef.current?.focus();
+  }
+
+  async function retrySourceLoad() {
+    dispatch({ type: 'error', error: null });
+    await refetch();
+  }
 
   function toggle(resource: ProviderResource) {
     dispatch({ type: 'toggle', key: resourceKey(resource), currentSelected: selected });
@@ -447,14 +523,17 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
   }
 
   return (
-    <section className="rounded-md border border-border bg-surface">
+    <section
+      aria-label={`${providerLabel(connection.provider)} account ${connection.displayName}`}
+      className="rounded-lg border border-border bg-surface"
+    >
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
         <div className="min-w-0 flex-1">
           <PersonalConnectionHeader connection={connection} />
         </div>
         {connection.lastError ? (
           <>
-            <span className="rounded-sm border border-destructive/40 px-1.5 py-0.5 text-[10px] uppercase text-destructive">
+            <span className="rounded-sm border border-destructive/40 px-1.5 py-0.5 text-xs text-destructive">
               Needs reconnect
             </span>
             <Button
@@ -474,30 +553,45 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
       <div className="space-y-3 p-3">
         <ProviderAccountHint provider={connection.provider} />
         <ProviderSourceHint provider={connection.provider} />
-        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-          <input
-            className="h-8 min-w-56 flex-1 rounded-sm border border-border bg-bg px-2 text-sm"
-            aria-label="Search provider sources"
-            placeholder="Search sources"
-            value={query}
-            onChange={(event) => {
-              dispatch({ type: 'query', query: event.currentTarget.value });
-            }}
-          />
+        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+          <div className="min-w-0 space-y-1.5">
+            <label htmlFor={searchInputId} className="block text-xs font-medium text-fg">
+              Search sources
+            </label>
+            <Input
+              ref={searchInputRef}
+              id={searchInputId}
+              className="text-base sm:text-sm"
+              placeholder="Search by name or type"
+              value={query}
+              onChange={(event) => {
+                dispatch({ type: 'query', query: event.currentTarget.value });
+              }}
+            />
+          </div>
           <PersonalConnectionToolbar
             selectedSize={selected.size}
             busy={state.busy}
+            isSourcesLoading={isLoading}
+            hasSourceLoadError={Boolean(sourceLoadError)}
+            confirmingDeletion={state.confirmDelete}
+            deleteConfirmationId={deleteConfirmationId}
+            deleteButtonRef={deleteButtonRef}
             onSave={() => void save()}
             onDelete={() => {
-              dispatch({ type: 'confirmDelete' });
+              dispatch({ type: 'openDeleteConfirmation' });
             }}
           />
         </div>
         {state.confirmDelete ? (
-          <div className="flex flex-wrap items-center gap-2 rounded-sm border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm">
-            <span className="text-destructive">
+          <section
+            id={deleteConfirmationId}
+            aria-label="Confirm provider account deletion"
+            className="flex flex-wrap items-center gap-2 rounded-sm border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm"
+          >
+            <p role="status" className="min-w-0 flex-1 text-destructive">
               Deleting this provider account stops team sync that depends on it.
-            </span>
+            </p>
             <Button
               size="sm"
               variant="destructive"
@@ -506,19 +600,32 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
             >
               {state.busy === 'delete' ? 'Deleting' : 'Delete provider account'}
             </Button>
-          </div>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={state.busy !== null}
+              onClick={() => {
+                dispatch({ type: 'closeDeleteConfirmation' });
+                deleteButtonRef.current?.focus();
+              }}
+            >
+              Cancel
+            </Button>
+          </section>
         ) : null}
         {error ? (
           <InlineError
             message={connectionErrorMessage(error)}
             details={error}
             onRetry={() => {
-              dispatch({ type: 'error', error: null });
+              if (canRetrySourceLoad) void retrySourceLoad();
+              else dispatch({ type: 'error', error: null });
             }}
-            retryLabel="Dismiss"
+            retryLabel={canRetrySourceLoad ? 'Retry loading sources' : 'Dismiss'}
+            retrying={canRetrySourceLoad && isFetching}
           />
         ) : null}
-        {isLoading ? <p className="text-sm text-fg-muted">Loading sources…</p> : null}
+        {isLoading ? <SourcePickerLoading /> : null}
         {grouped.map((group) => (
           <ResourceGroup
             key={group.kind}
@@ -528,8 +635,62 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
             onToggle={toggle}
           />
         ))}
+        {showEmptyResult ? (
+          <SourcePickerEmptyState
+            query={query}
+            hasSearchQuery={hasSearchQuery}
+            onClearSearch={clearSearch}
+          />
+        ) : null}
       </div>
     </section>
+  );
+}
+
+function SourcePickerLoading() {
+  return (
+    <div aria-busy="true" aria-label="Loading provider sources" className="space-y-2">
+      <p role="status" className="sr-only">
+        Loading provider sources
+      </p>
+      <div aria-hidden="true" className="rounded-sm border border-border p-2">
+        <Skeleton className="h-4 w-2/5" />
+        <Skeleton className="mt-2 h-10 w-full" />
+        <Skeleton className="mt-2 h-10 w-full" />
+      </div>
+    </div>
+  );
+}
+
+function SourcePickerEmptyState({
+  query,
+  hasSearchQuery,
+  onClearSearch,
+}: {
+  query: string;
+  hasSearchQuery: boolean;
+  onClearSearch: () => void;
+}) {
+  if (hasSearchQuery) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-border bg-surface-2 px-3 py-2 text-sm">
+        <p role="status" className="text-fg-muted">
+          No sources match “{query.trim()}”.
+        </p>
+        <Button size="sm" variant="outline" onClick={onClearSearch}>
+          Clear search
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-sm border border-border bg-surface-2 px-3 py-2 text-sm">
+      <p className="font-medium text-fg">No shareable sources found</p>
+      <p role="status" className="mt-1 text-fg-muted">
+        This provider account does not currently expose any sources you can share with this team.
+      </p>
+    </div>
   );
 }
 
@@ -588,8 +749,8 @@ function ResourceGroup({
                 }}
               />
               <span className="min-w-0 flex-1">
-                <span className="block truncate">{resource.label}</span>
-                <span className="block truncate text-xs text-fg-muted">
+                <span className="block break-words">{resource.label}</span>
+                <span className="block break-words text-xs text-fg-muted">
                   {resourceKindDescription(resource.kind)}
                 </span>
               </span>
@@ -653,8 +814,8 @@ function sourceKey(share: Pick<ResourceShare, 'resourceKind' | 'externalId'>) {
 function buildSelectedByConnection(rows: TeamShareRow[], activeShareIdSet: Set<string>) {
   const initial: Record<string, Set<string>> = {};
   for (const row of rows) {
-    initial[row.connection.id] ??= new Set<string>();
-    if (activeShareIdSet.has(row.share.id)) initial[row.connection.id]?.add(row.share.id);
+    const selected = (initial[row.connection.id] ??= new Set<string>());
+    if (activeShareIdSet.has(row.share.id)) selected.add(row.share.id);
   }
   return initial;
 }

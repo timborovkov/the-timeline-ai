@@ -1,5 +1,8 @@
 'use client';
-import { RouteError } from '@/components/route-error';
+
+import { ErrorState } from '@/components/error-state';
+import { PageHeader } from '@/components/page-header';
+
 export default function SourcesError({
   error,
   reset,
@@ -7,5 +10,18 @@ export default function SourcesError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  return <RouteError title="Connections" error={error} reset={reset} />;
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Connections"
+        subtitle="Capture surfaces, native sync, and live external tools."
+      />
+      <ErrorState
+        title="Unable to load connections"
+        description="Your connection settings and captured data have not changed. Check your connection, then try again."
+        error={error}
+        reset={reset}
+      />
+    </div>
+  );
 }

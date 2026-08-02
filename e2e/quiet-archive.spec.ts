@@ -78,6 +78,22 @@ test('Home primary controls reflow at 320px', async ({ browser }) => {
   await page.context().close();
 });
 
+test('Documents browser reflows at 320px', async ({ browser }) => {
+  const page = await newSignedInPage(browser, 'owner');
+  await page.setViewportSize({ width: 320, height: 780 });
+  await page.goto('/app/documents');
+
+  await expect(page.locator('h1')).toHaveCount(1);
+  await expect(page.getByRole('searchbox', { name: 'Search document chunks' })).toBeVisible();
+  const dimensions = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
+
+  await page.context().close();
+});
+
 test('work and team subnavigation are URL-backed and human-readable', async ({ browser }) => {
   const page = await newSignedInPage(browser, 'owner');
 

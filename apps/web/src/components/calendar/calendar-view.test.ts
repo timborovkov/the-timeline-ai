@@ -302,8 +302,9 @@ describe('CalendarView recurrence and tentative UI', () => {
 
     expect(screen.getByText('13 upcoming events')).toBeTruthy();
 
-    await user.click(screen.getByRole('button', { name: 'past' }));
+    await user.click(screen.getByRole('button', { name: 'Past' }));
     expect(await screen.findByText('13 past events')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Past' }).getAttribute('aria-pressed')).toBe('true');
     expect(fakes.push).toHaveBeenLastCalledWith(
       '/app/calendar?view=month&date=2026-06-03&eventScope=past',
     );
@@ -344,7 +345,7 @@ describe('CalendarView recurrence and tentative UI', () => {
     if (!eventList) throw new Error('Calendar events section not found');
 
     expect(screen.getByPlaceholderText('Search events')).toHaveProperty('value', 'budget');
-    expect(within(eventList).getByText('1 all event')).toBeTruthy();
+    expect(within(eventList).getByText('1 event')).toBeTruthy();
     expect(within(eventList).getByRole('button', { name: /^Jun 3.*Budget review/ })).toBeTruthy();
     expect(within(eventList).getByText('Finance room')).toBeTruthy();
     expect(within(eventList).queryByRole('button', { name: /Roadmap review/ })).toBeNull();
@@ -361,8 +362,9 @@ describe('CalendarView recurrence and tentative UI', () => {
       }),
     );
 
-    expect(within(eventList).getByText('0 all events')).toBeTruthy();
-    expect(within(eventList).getByText('No calendar events match these filters.')).toBeTruthy();
+    expect(within(eventList).getByText('0 events')).toBeTruthy();
+    expect(within(eventList).getByText('No events match these filters')).toBeTruthy();
+    expect(within(eventList).getByRole('button', { name: 'Clear filters' })).toBeTruthy();
     expect(within(eventList).queryByRole('button', { name: /Roadmap review/ })).toBeNull();
   });
 
@@ -468,7 +470,9 @@ describe('CalendarView recurrence and tentative UI', () => {
     expect(screen.getByLabelText<HTMLInputElement>('Grace Hopper').checked).toBe(false);
 
     await user.click(screen.getByRole('button', { name: /^Save$/ }));
-    expect(screen.getByText('Title is required.')).toBeTruthy();
+    expect(screen.getByText('Enter a title for this event.')).toBeTruthy();
+    expect(screen.getByLabelText('Title').getAttribute('aria-invalid')).toBe('true');
+    expect(document.activeElement).toBe(screen.getByLabelText('Title'));
     expect(fakes.createCalendarEventAction).not.toHaveBeenCalled();
 
     await user.type(screen.getByLabelText('Title'), 'Private launch review');
@@ -533,5 +537,51 @@ describe('CalendarView recurrence and tentative UI', () => {
 
     expect(screen.queryByRole('dialog', { name: 'Edit event' })).toBeNull();
     expect(screen.queryByText('Sensitive customer call')).toBeNull();
+  });
+
+  it('communicates view selection and keeps date creation keyboard-operable', async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(CalendarView, {
+        events: [],
+        eventListEvents: [],
+        timezone: 'UTC',
+      }),
+    );
+
+    const viewControls = screen.getByRole('group', { name: 'Calendar view' });
+    expect(
+      within(viewControls).getByRole('button', { name: 'Month' }).getAttribute('aria-pressed'),
+    ).toBe('true');
+    expect(
+      within(viewControls).getByRole('button', { name: 'Week' }).getAttribute('aria-pressed'),
+    ).toBe('false');
+    expect(screen.getByRole('button', { name: 'Previous month' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Next month' })).toBeTruthy();
+
+    const dayControl = screen.getByRole('button', {
+      name: /Create event on Wednesday, June 3, 2026/,
+    });
+    dayControl.focus();
+    await user.keyboard('{Enter}');
+
+    expect(screen.getByRole('dialog', { name: 'New event' })).toBeTruthy();
+  });
+
+  it('offers a clear next action when there are no upcoming events', async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(CalendarView, {
+        events: [],
+        eventListEvents: [],
+        eventListTotal: 0,
+        timezone: 'UTC',
+      }),
+    );
+
+    expect(screen.getByText('No upcoming events')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Create event' }));
+
+    expect(screen.getByRole('dialog', { name: 'New event' })).toBeTruthy();
   });
 });

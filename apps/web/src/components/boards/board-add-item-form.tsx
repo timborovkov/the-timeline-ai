@@ -130,7 +130,8 @@ function optimisticObject(type: objects.ObjectType, canonicalName: string): obje
 function ModeSwitch({ mode, dispatch }: { mode: State['mode']; dispatch: Dispatch<Action> }) {
   return (
     <div className="mb-3 flex justify-end">
-      <div className="inline-flex overflow-hidden rounded-sm border border-border">
+      <fieldset className="inline-flex overflow-hidden rounded-sm border border-border">
+        <legend className="sr-only">Add item mode</legend>
         {(['existing', 'new'] as const).map((option) => (
           <button
             key={option}
@@ -138,6 +139,7 @@ function ModeSwitch({ mode, dispatch }: { mode: State['mode']; dispatch: Dispatc
             onClick={() => {
               dispatch({ type: 'mode', mode: option });
             }}
+            aria-pressed={mode === option}
             className={`px-2 py-1 text-[11px] ${
               mode === option ? 'bg-signal text-signal-fg' : 'bg-bg text-fg-muted'
             }`}
@@ -145,7 +147,7 @@ function ModeSwitch({ mode, dispatch }: { mode: State['mode']; dispatch: Dispatc
             {option}
           </button>
         ))}
-      </div>
+      </fieldset>
     </div>
   );
 }
@@ -516,7 +518,11 @@ export function BoardAddItemForm({
               dispatch={dispatch}
             />
           )}
-          {state.error ? <p className="mt-2 text-xs text-danger">{state.error}</p> : null}
+          {state.error ? (
+            <p className="mt-2 text-xs text-danger" role="alert">
+              {state.error}
+            </p>
+          ) : null}
           <button
             type="button"
             onClick={submit}

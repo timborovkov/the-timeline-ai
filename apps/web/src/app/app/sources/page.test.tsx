@@ -46,13 +46,34 @@ beforeEach(() => {
 });
 
 describe('SourcesPage', () => {
-  it('keeps the inbound address copy control and sender-attribution guidance', async () => {
+  it('keeps one page heading, the inbound address copy control, and sender-attribution guidance', async () => {
     const html = renderToStaticMarkup(await SourcesPage());
 
+    expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('acme+archive@inbound.timeline.test');
     expect(html).toContain('Copy address');
     expect(html).toContain('Member email addresses are attributed automatically.');
     expect(html).toContain('Unknown senders are captured and marked unverified.');
+  });
+
+  it('keeps source actions contextual and rows responsive for keyboard and narrow-screen use', async () => {
+    const html = renderToStaticMarkup(await SourcesPage());
+
+    expect(html).toContain('aria-label="Manage email: Email"');
+    expect(html).toContain('aria-label="Install Slack: Slack"');
+    expect(html).toContain('min-h-9');
+    expect(html).toContain('sm:flex-row sm:items-center sm:justify-between');
+    expect(html).toContain('focus-visible:ring-2 focus-visible:ring-signal/40');
+    expect(html).toContain('rounded-md border border-border bg-surface p-4');
+    expect(html).toContain(
+      '<details class="group rounded-md border border-border bg-surface p-4">',
+    );
+
+    const advancedToolsSummary = /<summary class="[^"]+">[\s\S]*?<\/summary>/.exec(html)?.[0];
+    expect(advancedToolsSummary).toBeTruthy();
+    expect(advancedToolsSummary).toContain('data-disclosure-indicator="true"');
+    expect(advancedToolsSummary).toContain('group-open:rotate-180');
+    expect(advancedToolsSummary).toContain('aria-hidden="true"');
   });
 
   it('shows administrator tools only to owners and admins', async () => {

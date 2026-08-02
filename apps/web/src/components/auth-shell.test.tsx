@@ -44,5 +44,6 @@ describe('AuthShell', () => {
     expect(html).toContain('href="/sign-up"');
     expect(html).toContain('Create one');
     expect(html).toContain('bg-surface');
+    expect(html).toContain('min-h-dvh');
   });
 });

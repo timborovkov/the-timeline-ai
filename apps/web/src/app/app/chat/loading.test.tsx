@@ -10,5 +10,6 @@ describe('ChatLoading', () => {
     expect(html).toContain('hidden h-full w-60');
     expect(html).toContain('md:hidden');
     expect(html).toContain('min-w-0');
+    expect(html).toContain('aria-label="Loading Ask"');
   });
 });

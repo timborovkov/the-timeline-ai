@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useId, useReducer, useRef, useState } from 'react';
+import { useEffect, useId, useReducer, useRef, useState, type SyntheticEvent } from 'react';
 
 import { CopyButton } from '@/components/copy-button';
 import { useAppDialog } from '@/components/ui/app-dialog';
@@ -66,6 +66,7 @@ interface MintedKey {
 interface McpShareState {
   showCreate: boolean;
   name: string;
+  nameError: string | null;
   busy: boolean;
   mintedKey: MintedKey | null;
   mcpUrl: string;
@@ -275,6 +276,9 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
   const router = useRouter();
   const dialog = useAppDialog();
   const keyNameId = useId();
+  const keyNameErrorId = useId();
+  const keyNameRef = useRef<HTMLInputElement>(null);
+  const focusNameOnError = useRef(false);
   const busyKeyIds = useRef<Set<string> | null>(null);
   const [keyMutations, setKeyMutations] = useState<
     Record<string, { busy: boolean; error: string | null }>
@@ -284,11 +288,12 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
     busyKeyIds.current ??= new Set();
     return busyKeyIds.current;
   }
-  const [{ showCreate, name, busy, mintedKey, mcpUrl }, patchState] = useReducer(
+  const [{ showCreate, name, nameError, busy, mintedKey, mcpUrl }, patchState] = useReducer(
     patchMcpShareState,
     {
       showCreate: false,
       name: '',
+      nameError: null,
       busy: false,
       mintedKey: null,
       mcpUrl: initialMcpUrl,
@@ -299,6 +304,23 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
     if (initialMcpUrl) return;
     patchState({ mcpUrl: `${window.location.origin}/api/mcp/server` });
   }, [initialMcpUrl]);
+
+  useEffect(() => {
+    if (!nameError || !focusNameOnError.current) return;
+    keyNameRef.current?.focus();
+    focusNameOnError.current = false;
+  }, [nameError]);
+
+  function submitCreate(event: SyntheticEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    if (busy) return;
+    if (!name.trim()) {
+      focusNameOnError.current = true;
+      patchState({ nameError: 'Enter a label for this key.' });
+      return;
+    }
+    void create();
+  }
 
   async function create() {
     patchState({ busy: true });
@@ -411,7 +433,7 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
         <Button
           size="sm"
           onClick={() => {
-            patchState({ showCreate: !showCreate });
+            patchState({ showCreate: !showCreate, nameError: null });
           }}
         >
           {showCreate ? 'Cancel' : 'New key'}
@@ -420,23 +442,36 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
 
       {showCreate ? (
         <Card>
-          <CardContent className="space-y-3 pt-4">
-            <div className="space-y-1">
-              <Label htmlFor={keyNameId}>Label</Label>
-              <Input
-                id={keyNameId}
-                name="mcp-key-label"
-                autoComplete="off"
-                value={name}
-                onChange={(e) => {
-                  patchState({ name: e.target.value });
-                }}
-                placeholder="Claude Desktop · personal mac"
-              />
-            </div>
-            <Button size="sm" disabled={busy || !name} onClick={() => void create()}>
-              {busy ? 'Creating…' : 'Create'}
-            </Button>
+          <CardContent className="pt-4">
+            <form className="space-y-3" noValidate onSubmit={submitCreate} aria-busy={busy}>
+              <div className="space-y-1">
+                <Label htmlFor={keyNameId}>
+                  Label <span aria-hidden="true">(required)</span>
+                </Label>
+                <Input
+                  ref={keyNameRef}
+                  id={keyNameId}
+                  name="mcp-key-label"
+                  autoComplete="off"
+                  required
+                  value={name}
+                  onChange={(e) => {
+                    patchState({ name: e.target.value, nameError: null });
+                  }}
+                  placeholder="Claude Desktop · personal mac"
+                  aria-invalid={nameError ? true : undefined}
+                  aria-describedby={nameError ? keyNameErrorId : undefined}
+                />
+                {nameError ? (
+                  <p id={keyNameErrorId} role="alert" className="text-xs text-danger">
+                    {nameError}
+                  </p>
+                ) : null}
+              </div>
+              <Button type="submit" size="sm" disabled={busy}>
+                {busy ? 'Create key · creating…' : 'Create key'}
+              </Button>
+            </form>
           </CardContent>
         </Card>
       ) : null}

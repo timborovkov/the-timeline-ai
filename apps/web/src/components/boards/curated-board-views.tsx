@@ -15,6 +15,7 @@ import { boardViewHref, type BoardLayout } from '@/lib/board-links';
 import { displayText } from '@/lib/display-dates';
 import { displayObjectTitle } from '@/lib/object-title';
 import { statusLabel } from '@/lib/status-labels';
+import { cn } from '@/lib/utils';
 
 export interface BoardMemberOption {
   id: string;
@@ -44,6 +45,34 @@ type BoardBulkAction =
   | { type: 'lane'; laneId: string }
   | { type: 'message'; message: string | null };
 
+interface BoardItemUpdateResult {
+  ok?: boolean;
+  error?: string;
+  id?: string;
+}
+
+function BoardItemSavingNotice({ field }: { field?: string }) {
+  if (!field) return null;
+  return <span className="mt-1 block text-[11px] text-fg-dim">Saving {field}...</span>;
+}
+
+function BoardItemSaveError({
+  objectTitle,
+  error,
+  suppressAlert,
+}: {
+  objectTitle: string;
+  error?: string;
+  suppressAlert: boolean;
+}) {
+  if (!error) return null;
+  return (
+    <span className="mt-1 block text-xs text-danger" role={suppressAlert ? undefined : 'alert'}>
+      Unable to save {displayText(objectTitle)}. {error}
+    </span>
+  );
+}
+
 export function CuratedBoardTable({
   boardId,
   view,
@@ -68,6 +97,7 @@ export function CuratedBoardTable({
   const [, startTransition] = useTransition();
   const [saving, setSaving] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [bulkErrorIds, setBulkErrorIds] = useState<ReadonlySet<string>>(new Set());
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const selectableItems = useMemo(() => items.filter((item) => !isOptimisticItem(item)), [items]);
   const visibleSelectedIds = useMemo(() => {
@@ -79,11 +109,8 @@ export function CuratedBoardTable({
   function updateItem(
     id: string,
     patch: BoardItemOptimisticPatch,
-  ): Promise<{
-    ok?: boolean;
-    error?: string;
-    id?: string;
-  }> {
+    suppressErrorAlert = false,
+  ): Promise<BoardItemUpdateResult> {
     if (!onUpdateItem) return Promise.resolve({ error: 'Board item editing is unavailable.' });
     const field = Object.keys(patch)[0] ?? 'field';
     setSaving((current) => ({ ...current, [id]: field }));
@@ -91,6 +118,14 @@ export function CuratedBoardTable({
       const { [id]: _cleared, ...rest } = current;
       return rest;
     });
+    if (!suppressErrorAlert) {
+      setBulkErrorIds((current) => {
+        if (!current.has(id)) return current;
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
+    }
     return new Promise((resolve) => {
       startTransition(async () => {
         try {
@@ -117,7 +152,8 @@ export function CuratedBoardTable({
     ids: string[],
     patch: BoardItemOptimisticPatch,
   ): Promise<{ failed: number }> {
-    const results = await Promise.allSettled(ids.map((id) => updateItem(id, patch)));
+    setBulkErrorIds(new Set(ids));
+    const results = await Promise.allSettled(ids.map((id) => updateItem(id, patch, true)));
     return {
       failed: results.filter(
         (result) =>
@@ -321,14 +357,12 @@ export function CuratedBoardTable({
                         void updateItem(item.id, { nextStep });
                       }}
                     />
-                    {saving[item.id] ? (
-                      <span className="mt-1 block text-[11px] text-fg-dim">
-                        Saving {saving[item.id]}...
-                      </span>
-                    ) : null}
-                    {errors[item.id] ? (
-                      <span className="mt-1 block text-xs text-danger">{errors[item.id]}</span>
-                    ) : null}
+                    <BoardItemSavingNotice field={saving[item.id]} />
+                    <BoardItemSaveError
+                      objectTitle={objectTitle}
+                      error={errors[item.id]}
+                      suppressAlert={bulkErrorIds.has(item.id)}
+                    />
                   </td>
                 </tr>
               );
@@ -497,7 +531,14 @@ function BoardBulkToolbar({
           Clear
         </button>
       ) : null}
-      {bulk.message ? <span className="text-xs text-fg-dim">{bulk.message}</span> : null}
+      {bulk.message ? (
+        <span
+          className={cn('text-xs', bulk.message.includes('failed') ? 'text-danger' : 'text-fg-dim')}
+          role={bulk.message.includes('failed') ? 'alert' : 'status'}
+        >
+          {bulk.message}
+        </span>
+      ) : null}
     </div>
   );
 }

@@ -47,23 +47,27 @@ function NotificationRowContent({
   // clears the unread dot — the server action runs async without
   // blocking the navigation.
   const [read, setRead] = useState(initiallyRead);
+  const [actionError, setActionError] = useState<string | null>(null);
   const readRef = useRef(initiallyRead);
   const latestInitiallyReadRef = useRef(initiallyRead);
   const individuallyReadRef = useRef(initiallyRead);
   const bulkReadRef = useRef(false);
+  const previousInitiallyReadRef = useRef(initiallyRead);
   // Sync from props when the parent refreshes (e.g. MarkAllReadButton
   // calls router.refresh() and notifications now report as read). Only
   // ratchet toward "read" — never override a local optimistic-read back
   // to unread, since the user's click is the authoritative intent and
   // the server may not have caught up yet.
-  useEffect(() => {
-    latestInitiallyReadRef.current = initiallyRead;
+  latestInitiallyReadRef.current = initiallyRead;
+  if (initiallyRead !== previousInitiallyReadRef.current) {
+    previousInitiallyReadRef.current = initiallyRead;
     if (initiallyRead) {
       individuallyReadRef.current = true;
       readRef.current = true;
       setRead(true);
+      setActionError(null);
     }
-  }, [initiallyRead]);
+  }
 
   useEffect(() => {
     function onAllRead(event: Event): void {
@@ -72,6 +76,7 @@ function NotificationRowContent({
         bulkReadRef.current = bulkReadRef.current || !readRef.current;
         readRef.current = true;
         setRead(true);
+        setActionError(null);
         return;
       }
       if (!bulkReadRef.current) return;
@@ -93,6 +98,7 @@ function NotificationRowContent({
     ) {
       return;
     }
+    setActionError(null);
     individuallyReadRef.current = true;
     readRef.current = true;
     setRead(true);
@@ -119,13 +125,14 @@ function NotificationRowContent({
       const next = latestInitiallyReadRef.current || bulkReadRef.current;
       readRef.current = next;
       setRead(next);
+      setActionError('Unable to mark this notification as read. Try again.');
     });
   }
 
   return (
     <li
       className={cn(
-        'grid grid-cols-[18ch_1fr_auto] gap-x-4 gap-y-1 border-b border-border px-1 py-3 text-sm transition-colors hover:bg-surface',
+        'grid grid-cols-1 gap-x-4 gap-y-2 border-b border-border px-1 py-3 text-sm transition-colors hover:bg-surface sm:grid-cols-[18ch_minmax(0,1fr)_auto] sm:gap-y-1',
         read ? 'opacity-70' : 'opacity-100',
       )}
     >
@@ -134,7 +141,12 @@ function NotificationRowContent({
       </time>
       <div className="min-w-0">
         <div className="flex items-center gap-2 text-xs text-fg-dim">
-          {!read ? <span aria-label="unread" className="size-1.5 rounded-sm bg-signal" /> : null}
+          {!read ? (
+            <span className="inline-flex items-center gap-1.5 font-medium text-fg-muted">
+              <span aria-hidden="true" className="size-1.5 rounded-sm bg-signal" />
+              Unread
+            </span>
+          ) : null}
           <span>{kind.replace(/_/g, ' ')}</span>
         </div>
         <p className="mt-1 text-fg">
@@ -156,10 +168,16 @@ function NotificationRowContent({
           type="button"
           disabled={pending}
           onClick={markRead}
-          className="self-start text-xs text-signal hover:underline disabled:opacity-50"
+          aria-label={`Mark ${summary} as read`}
+          className="inline-flex min-h-9 items-center self-start rounded-sm px-2 text-xs font-medium text-signal transition-colors hover:bg-signal-soft hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-50"
         >
           Mark read
         </button>
+      ) : null}
+      {actionError ? (
+        <p role="alert" className="col-span-full text-xs text-danger">
+          {actionError}
+        </p>
       ) : null}
     </li>
   );

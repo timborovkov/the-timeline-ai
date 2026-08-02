@@ -18,6 +18,7 @@ const LINK_TOKEN_TTL_MS = 15 * 60 * 1000;
 
 export interface GenerateLinkTokenState {
   error?: string;
+  fieldError?: string;
   token?: string;
   scope?: 'personal' | 'group';
   expiresAt?: string;
@@ -58,7 +59,7 @@ async function generateLinkTokenAction(
   const targetTgUsername = normalizeTgUsername(formData.get('tgUsername'));
   if (!targetTgUsername) {
     return {
-      error:
+      fieldError:
         'Enter your Telegram @username (5–32 chars, letters/numbers/underscore, must start with a letter). If you don’t have one yet, set it in Telegram: Settings → Username.',
     };
   }

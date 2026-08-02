@@ -51,7 +51,7 @@ describe('MobileSessionNav', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Archive chat' }));
+    await user.click(screen.getByRole('button', { name: 'Archive chat: Launch review' }));
 
     await waitFor(() => {
       expect(fakes.archive).toHaveBeenCalledWith({ sessionId: 'session-1' });
@@ -94,5 +94,27 @@ describe('MobileSessionNav', () => {
     expect(screen.getAllByLabelText('Telegram conversation')).toHaveLength(2);
     expect(screen.getAllByLabelText('Slack conversation')).toHaveLength(2);
     expect(screen.getAllByLabelText('External conversation')).toHaveLength(2);
+  });
+
+  it('marks the active desktop session and keeps its archive action keyboard reachable', () => {
+    render(
+      <SessionSidebar
+        activeSessionId="session-1"
+        sessions={[
+          {
+            id: 'session-1',
+            surface: 'web',
+            title: 'Launch review',
+            pinnedEntityId: null,
+            pinnedEntityName: null,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByRole('link', { name: 'Launch review' }).getAttribute('aria-current')).toBe(
+      'page',
+    );
+    expect(screen.getByRole('button', { name: 'Archive chat: Launch review' })).toBeTruthy();
   });
 });

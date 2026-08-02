@@ -1,4 +1,5 @@
 import { withTeam } from '@timeline/shared/team-scope';
+import { ExternalLink } from 'lucide-react';
 import { notFound, redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
@@ -10,6 +11,7 @@ import { PageHeader } from '@/components/page-header';
 import { PinButton } from '@/components/pins/pin-button';
 import { SectionHeading } from '@/components/section-heading';
 import { TechnicalDetails } from '@/components/technical-details';
+import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -28,6 +30,41 @@ interface Props {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function renderMeetingHeaderActions({
+  meetingId,
+  meetingUrl,
+  initialPinned,
+  title,
+  transcriptExport,
+  cancellable,
+}: {
+  meetingId: string;
+  meetingUrl: string;
+  initialPinned: boolean;
+  title: string;
+  transcriptExport: string;
+  cancellable: boolean;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      <Button asChild variant="outline" size="sm">
+        <a
+          href={meetingUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Open meeting in a new tab"
+        >
+          Open meeting
+          <ExternalLink aria-hidden="true" />
+        </a>
+      </Button>
+      <PinButton target={{ kind: 'meeting', key: meetingId }} initialPinned={initialPinned} />
+      <MeetingExportButtons title={title} transcriptText={transcriptExport} />
+      {cancellable ? <CancelMeetingButton meetingId={meetingId} /> : null}
+    </div>
+  );
+}
 
 export default async function MeetingDetailPage({ params }: Props) {
   const { id } = await params;
@@ -61,6 +98,14 @@ export default async function MeetingDetailPage({ params }: Props) {
     summary,
     chunks,
   });
+  const headerActions = renderMeetingHeaderActions({
+    meetingId: meeting.id,
+    meetingUrl: meeting.meetingUrl,
+    initialPinned,
+    title,
+    transcriptExport,
+    cancellable,
+  });
 
   return (
     <div className="space-y-6">
@@ -78,27 +123,11 @@ export default async function MeetingDetailPage({ params }: Props) {
             mono: true,
           },
         ]}
+        trailing={headerActions}
       />
-      <div className="flex flex-wrap gap-2">
-        <PinButton target={{ kind: 'meeting', key: meeting.id }} initialPinned={initialPinned} />
-        <MeetingExportButtons title={title} transcriptText={transcriptExport} />
-        {cancellable ? <CancelMeetingButton meetingId={meeting.id} /> : null}
-      </div>
       <TechnicalDetails
-        items={[
-          { label: 'Meeting ID', value: meeting.id, copyValue: meeting.id },
-          { label: 'Meeting URL', value: meeting.meetingUrl, copyValue: meeting.meetingUrl },
-        ]}
-      >
-        <a
-          href={meeting.meetingUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="text-sm text-signal underline"
-        >
-          Open meeting link
-        </a>
-      </TechnicalDetails>
+        items={[{ label: 'Meeting ID', value: meeting.id, copyValue: meeting.id }]}
+      />
 
       {summary ? (
         <section className="space-y-2 rounded-lg border bg-muted/30 p-4">

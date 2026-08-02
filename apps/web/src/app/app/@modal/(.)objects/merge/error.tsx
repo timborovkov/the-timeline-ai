@@ -16,8 +16,8 @@ export default function MergeObjectModalError({
       description="Choose the object to keep, then merge the duplicate into it."
     >
       <ErrorState
-        title="Couldn’t load merge preview"
-        description="The selected objects could not be loaded. Try the request again."
+        title="Unable to load merge preview"
+        description="The merge preview could not be loaded. No objects have been merged. Your saved object data is unchanged. Check your connection, then try again."
         error={error}
         reset={reset}
       />

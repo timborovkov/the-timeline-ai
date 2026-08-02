@@ -44,7 +44,7 @@ vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
 vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
 vi.mock('@/lib/db', () => ({ db: {} }));
 
-const { default: WorkPage } = await import('./page.js');
+const { default: WorkPage } = await import('@/app/app/work/page');
 const { getNavWorkAttention } = await import('@/lib/hub-status');
 
 function objectRow(overrides: Record<string, unknown>) {
@@ -92,6 +92,13 @@ function boardQueueRow(overrides: Record<string, unknown>) {
   };
 }
 
+function pageProps(searchParams: Record<string, string | string[] | undefined> = {}) {
+  return {
+    params: Promise.resolve({}),
+    searchParams: Promise.resolve(searchParams),
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   fakes.auth.mockResolvedValue({ user: { id: USER_ID } });
@@ -117,7 +124,7 @@ describe('WorkPage', () => {
     fakes.getApprovalItemCounts.mockResolvedValue({ failed: 4, pending: 3 });
     fakes.countObjects.mockResolvedValue(2);
 
-    const html = renderToStaticMarkup(await WorkPage());
+    const html = renderToStaticMarkup(await WorkPage(pageProps()));
     const navWorkAttention = await getNavWorkAttention({
       objects: { countObjects: fakes.countObjects },
       suggestions: { getApprovalItemCounts: fakes.getApprovalItemCounts },
@@ -159,7 +166,7 @@ describe('WorkPage', () => {
       return [];
     });
 
-    const html = renderToStaticMarkup(await WorkPage());
+    const html = renderToStaticMarkup(await WorkPage(pageProps()));
 
     expect(html).toContain('Team overdue task');
     expect(html).toContain('>Overdue</span>');
@@ -173,7 +180,7 @@ describe('WorkPage', () => {
         : [],
     );
 
-    const html = renderToStaticMarkup(await WorkPage());
+    const html = renderToStaticMarkup(await WorkPage(pageProps()));
 
     expect(html).toContain('No due date');
   });
@@ -202,7 +209,7 @@ describe('WorkPage', () => {
       }),
     ]);
 
-    const html = renderToStaticMarkup(await WorkPage());
+    const html = renderToStaticMarkup(await WorkPage(pageProps()));
 
     expect(html).toContain('Responsible deal');
     expect(html).toContain('Responsible to you');
@@ -238,7 +245,7 @@ describe('WorkPage', () => {
       }),
     ]);
 
-    const html = renderToStaticMarkup(await WorkPage());
+    const html = renderToStaticMarkup(await WorkPage(pageProps()));
 
     expect(html).toContain('Owned task');
     expect(html).toContain('Owned by you');
@@ -259,7 +266,7 @@ describe('WorkPage', () => {
       }),
     ]);
 
-    const html = renderToStaticMarkup(await WorkPage());
+    const html = renderToStaticMarkup(await WorkPage(pageProps()));
 
     expect(html).toContain('Untitled object');
     expect(html).not.toContain(internalId);
@@ -288,7 +295,7 @@ describe('WorkPage', () => {
       ];
     });
 
-    const html = renderToStaticMarkup(await WorkPage());
+    const html = renderToStaticMarkup(await WorkPage(pageProps()));
 
     expect(html).toContain('Boundary due deal');
     expect(html).toContain('Team due');
@@ -328,7 +335,7 @@ describe('WorkPage', () => {
       ];
     });
 
-    const html = renderToStaticMarkup(await WorkPage());
+    const html = renderToStaticMarkup(await WorkPage(pageProps()));
 
     expect(html).toContain('Stale overdue owned task');
     expect(html).not.toContain('Recent task 100');
@@ -358,7 +365,7 @@ describe('WorkPage', () => {
       }),
     ]);
 
-    const html = renderToStaticMarkup(await WorkPage());
+    const html = renderToStaticMarkup(await WorkPage(pageProps()));
 
     expect((html.match(/Revigo pilot/g) ?? []).length).toBe(1);
     expect(html).toContain('/app/boards/board-1?item=board-item-1');
@@ -366,8 +373,9 @@ describe('WorkPage', () => {
   });
 
   it('renders empty state when no queue items exist', async () => {
-    const html = renderToStaticMarkup(await WorkPage());
+    const html = renderToStaticMarkup(await WorkPage(pageProps()));
 
+    expect(html.match(/<h1/g)).toHaveLength(1);
     expect(html).toContain('Work queue clear');
     expect(html).toContain('Open boards');
     expect(html).toContain('Pinned and team boards');
@@ -396,7 +404,7 @@ describe('WorkPage', () => {
       nextCursor: null,
     });
 
-    const html = renderToStaticMarkup(await WorkPage());
+    const html = renderToStaticMarkup(await WorkPage(pageProps()));
 
     expect(html).toContain('Pilot pipeline');
     expect(html).toContain('Pinned');
@@ -416,7 +424,7 @@ describe('WorkPage', () => {
       nextCursor: null,
     });
 
-    const html = renderToStaticMarkup(await WorkPage());
+    const html = renderToStaticMarkup(await WorkPage(pageProps()));
 
     expect(html).not.toContain('Meeting with Miika');
     expect(html).not.toContain('2026-07-01T00:00:00.000Z');

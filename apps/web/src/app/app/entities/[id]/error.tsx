@@ -1,6 +1,6 @@
 'use client';
 
-import { RouteError } from '@/components/route-error';
+import ObjectError from '@/app/app/objects/[id]/error';
 
 export default function EntityError({
   error,
@@ -9,5 +9,6 @@ export default function EntityError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  return <RouteError title="Entity" error={error} reset={reset} />;
+  // Keep recovery aligned with the object detail destination of this legacy URL.
+  return <ObjectError error={error} reset={reset} />;
 }

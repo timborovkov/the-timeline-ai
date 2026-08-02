@@ -26,7 +26,7 @@ export function AuthShell({
   maxWidth = 'md',
 }: AuthShellProps) {
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-bg px-5 py-12 text-fg">
+    <main className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-bg px-5 py-12 text-fg">
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_120%_70%_at_50%_-10%,var(--signal-soft),transparent_58%)]"
@@ -42,9 +42,7 @@ export function AuthShell({
           </Link>
           <ThemeToggle className="text-fg-muted hover:text-fg" />
         </div>
-        <p className="mt-8 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-muted">
-          Secure access · Cited team memory
-        </p>
+        <p className="mt-8 text-xs text-fg-muted">Secure access · Cited team memory</p>
         <div className="mt-4 rounded-lg border border-border bg-surface/95 p-6 backdrop-blur-sm sm:p-8">
           <header className="space-y-2 border-b border-border pb-6">
             <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>

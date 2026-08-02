@@ -18,7 +18,7 @@ vi.mock('@timeline/shared/env', () => ({ getEnv: vi.fn(() => ({})) }));
 vi.mock('@timeline/shared/team-scope', () => ({ withTeam: vi.fn() }));
 vi.mock('@timeline/shared/slack', () => ({ listSlackConversationsForTeam: vi.fn() }));
 
-const { SlackSettingsPageView } = await import('./page.js');
+const { SlackSettingsPageView } = await import('@/app/app/team/slack/slack-settings-page-content');
 
 afterEach(() => {
   cleanup();
@@ -105,6 +105,7 @@ describe('SlackSettingsPageView', () => {
     );
     expect(screen.getByRole('option', { name: '#support (invite bot first)' })).toBeTruthy();
     expect(screen.getByRole('option', { name: '#sales' })).toBeTruthy();
+    expect(screen.getByLabelText('Conversation to bind')).toHaveProperty('required', true);
     expect(screen.queryByRole('option', { name: '#launch' })).toBeNull();
     expect(screen.getByText('#launch')).toBeTruthy();
     expect(screen.getByText('Channel · Team visibility')).toBeTruthy();
@@ -112,7 +113,54 @@ describe('SlackSettingsPageView', () => {
     expect(screen.getByRole('button', { name: 'Unbind' })).toBeTruthy();
     expect(screen.getByText('Ada')).toBeTruthy();
     expect(screen.getByText(/Slack Ada Lovelace · ada@slack\.test/)).toBeTruthy();
-    expect(screen.getByText('active DM')).toBeTruthy();
+    expect(screen.getByText('Active DM')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Slack', level: 1 })).toBeTruthy();
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+  });
+
+  it('stacks long binding and identity rows before the small-screen layout runs out of room', () => {
+    render(
+      <SlackSettingsPageView
+        model={model({
+          bindings: [
+            {
+              id: 'binding-long',
+              slackConversationId: 'C456',
+              title: '#a-very-long-conversation-name-that-needs-room-to-wrap',
+              conversationType: 'private_channel',
+              visibilityDefault: 'specific_users',
+            },
+          ],
+          linkedSlackUsers: [
+            {
+              id: 'slack-user-long',
+              slackUserId: 'U456',
+              name: 'very-long-slack-handle',
+              realName: 'A very long Slack member name',
+              email: 'a-very-long-slack-identity-address@example.test',
+              isActive: true,
+              appUser: { name: 'A very long Timeline member name', email: null },
+            },
+          ],
+        })}
+      />,
+    );
+
+    const bindingRow = screen
+      .getByText('#a-very-long-conversation-name-that-needs-room-to-wrap')
+      .closest('li');
+    expect(bindingRow?.className).toContain('flex-col');
+    expect(bindingRow?.className).toContain('sm:flex-row');
+
+    const identity = screen.getByText(
+      'Slack A very long Slack member name · a-very-long-slack-identity-address@example.test',
+    );
+    const identityRow = identity.closest('li');
+    expect(identityRow?.className).toContain('flex-col');
+    expect(identityRow?.className).toContain('sm:flex-row');
+    expect(identity.className).toContain('break-words');
+    expect(screen.getByText('Active DM').className).toContain('shrink-0');
+    expect(screen.getByText('Active DM').className).toContain('self-start');
   });
 
   it('keeps member-facing settings read-only while preserving status context', () => {
