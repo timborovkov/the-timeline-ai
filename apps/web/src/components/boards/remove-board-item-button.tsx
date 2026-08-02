@@ -8,6 +8,7 @@ import { removeBoardItemAction } from '@/app/actions/boards';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { boardViewHref, type BoardLayout } from '@/lib/board-links';
 import { displayText } from '@/lib/display-dates';
+import { errorMessage } from '@/lib/utils';
 
 const EMPTY_FILTER_PARAMS: Record<string, string> = {};
 
@@ -41,14 +42,18 @@ export function RemoveBoardItemButton({
     if (!confirmed) return;
     setError(null);
     startTransition(async () => {
-      const result = await removeBoardItemAction({ id: itemId, boardId });
-      if ('error' in result && result.error) {
-        setError(result.error);
-        return;
+      try {
+        const result = await removeBoardItemAction({ id: itemId, boardId });
+        if ('error' in result && result.error) {
+          setError(result.error);
+          return;
+        }
+        onRemoved?.();
+        router.push(boardViewHref(boardId, view, null, filterParams));
+        router.refresh();
+      } catch (err) {
+        setError(errorMessage(err, 'Unable to remove this item from the board. Try again.'));
       }
-      onRemoved?.();
-      router.push(boardViewHref(boardId, view, null, filterParams));
-      router.refresh();
     });
   }
 
@@ -65,7 +70,11 @@ export function RemoveBoardItemButton({
         <Trash2 className="size-3.5" aria-hidden="true" />
         {pending ? 'Removing…' : 'Remove from board'}
       </button>
-      {error ? <span className="text-xs text-danger">{error}</span> : null}
+      {error ? (
+        <span className="text-xs text-danger" role="alert">
+          {error}
+        </span>
+      ) : null}
       {dialog.node}
     </span>
   );
