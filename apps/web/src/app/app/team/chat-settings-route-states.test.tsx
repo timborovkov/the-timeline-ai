@@ -63,6 +63,13 @@ describe.each([
       const skeleton = document.querySelector('[aria-busy="true"] > [aria-hidden="true"]');
       expect(skeleton).toBeTruthy();
       expect(skeleton?.querySelectorAll('a, button, input, select, textarea')).toHaveLength(0);
+
+      if (label === 'Slack') {
+        expect(skeleton?.hasAttribute('inert')).toBe(true);
+        expect(screen.getByLabelText(loadingLabel).className).toContain(
+          'motion-reduce:[&_.animate-pulse]:animate-none',
+        );
+      }
     });
 
     it.each([

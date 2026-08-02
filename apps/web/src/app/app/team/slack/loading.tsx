@@ -8,8 +8,12 @@ export default function SlackLoading() {
         Loading Slack settings
       </output>
       <h1 className="sr-only">Slack</h1>
-      <div className="space-y-6" aria-busy="true" aria-label="Loading Slack settings">
-        <div aria-hidden="true" className="space-y-6">
+      <div
+        className="space-y-6 motion-reduce:[&_.animate-pulse]:animate-none"
+        aria-busy="true"
+        aria-label="Loading Slack settings"
+      >
+        <div aria-hidden="true" inert className="space-y-6">
           <PageHeaderSkeleton />
           <section className="space-y-4">
             <SlackSetupSkeleton />
