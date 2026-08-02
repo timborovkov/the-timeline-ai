@@ -302,6 +302,11 @@ describe('CapturedFilesList', () => {
     ).toBeTruthy();
     expect(screen.getByText('Whiteboard planning photo')).toBeTruthy();
 
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: 'Retry loading older files' }).hasAttribute('disabled'),
+      ).toBe(false);
+    });
     const retry = screen.getByRole('button', { name: 'Retry loading older files' });
     retry.focus();
     await user.keyboard('{Enter}');
