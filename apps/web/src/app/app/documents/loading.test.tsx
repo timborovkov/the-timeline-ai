@@ -17,32 +17,28 @@ afterEach(() => {
 });
 
 describe('Documents route states', () => {
-  it('announces a route-shaped loading state outside its busy document browser placeholder', () => {
-    render(<DocumentsLoading />);
+  it('announces a route-shaped loading state outside inert document browser visuals', () => {
+    const { container } = render(<DocumentsLoading />);
 
     const announcement = screen.getByRole('status');
     expect(announcement.textContent).toBe('Loading documents');
     expect(announcement.parentElement?.getAttribute('aria-busy')).toBeNull();
     expect(screen.getByLabelText('Loading documents').getAttribute('aria-busy')).toBe('true');
     expect(screen.getAllByRole('heading', { level: 1, name: 'Documents' })).toHaveLength(1);
-    expect(
-      screen.getByRole('region', { name: 'Document search loading placeholder' }),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole('region', { name: 'Document controls loading placeholder' }),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole('region', { name: 'New document visibility loading placeholder' }),
-    ).toBeTruthy();
-    expect(screen.getByRole('region', { name: 'Document drive loading placeholder' })).toBeTruthy();
-    expect(screen.getByRole('region', { name: 'Folders loading placeholder' })).toBeTruthy();
-    expect(screen.getByRole('region', { name: 'Document list loading placeholder' })).toBeTruthy();
+    expect(screen.queryByRole('region')).toBeNull();
     expect(document.querySelectorAll('.animate-pulse')).not.toHaveLength(0);
     for (const skeleton of document.querySelectorAll('.animate-pulse')) {
       expect(skeleton.closest('[class*="motion-reduce"]')).toBeTruthy();
     }
     expect(screen.queryByRole('button')).toBeNull();
     expect(screen.queryByRole('textbox')).toBeNull();
+
+    const visuals = container.querySelector('[aria-busy="true"] > [aria-hidden="true"][inert]');
+    expect(visuals).toBeTruthy();
+    expect(visuals?.classList.contains('space-y-6')).toBe(true);
+    expect(
+      visuals?.querySelectorAll('a, button, input, select, textarea, [tabindex]'),
+    ).toHaveLength(0);
   });
 
   it.each([
