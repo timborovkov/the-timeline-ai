@@ -8,7 +8,11 @@ export default function ClusterLoading() {
       <output className="sr-only" aria-live="polite">
         Loading reconciliation cluster
       </output>
-      <div className="space-y-8" aria-busy="true" aria-label="Loading reconciliation cluster">
+      <div
+        className="space-y-8 motion-reduce:[&_.animate-pulse]:animate-none"
+        aria-busy="true"
+        aria-label="Loading reconciliation cluster"
+      >
         <h1 className="sr-only">Reconciliation cluster</h1>
         <Breadcrumb
           items={[
@@ -17,18 +21,20 @@ export default function ClusterLoading() {
             { label: 'Cluster' },
           ]}
         />
-        <PageHeaderSkeleton />
 
-        <section aria-label="Reconciliation cluster loading placeholder" className="space-y-4">
-          <div aria-hidden="true" className="grid gap-4 lg:grid-cols-[1fr_360px]">
-            <ClusterSummarySkeleton />
-            <ClusterActionSkeleton />
-          </div>
-          <div aria-hidden="true" className="grid gap-4 xl:grid-cols-2">
-            <ClusterListSkeleton titleWidth="w-24" />
-            <ClusterListSkeleton titleWidth="w-20" />
-          </div>
-        </section>
+        <div aria-hidden="true" className="space-y-4">
+          <PageHeaderSkeleton />
+          <section aria-label="Reconciliation cluster loading placeholder" className="space-y-4">
+            <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
+              <ClusterSummarySkeleton />
+              <ClusterActionSkeleton />
+            </div>
+            <div className="grid gap-4 xl:grid-cols-2">
+              <ClusterListSkeleton titleWidth="w-24" />
+              <ClusterListSkeleton titleWidth="w-20" />
+            </div>
+          </section>
+        </div>
       </div>
     </>
   );

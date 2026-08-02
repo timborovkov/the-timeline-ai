@@ -46,16 +46,39 @@ describe('Reconciliation route states', () => {
       expect(screen.getByLabelText(loadingLabel).getAttribute('aria-busy')).toBe('true');
       expect(screen.getAllByRole('heading', { level: 1, name: heading })).toHaveLength(1);
       expect(screen.getByRole('link', { name: 'Back' }).getAttribute('href')).toBe(backHref);
-      expect(screen.getByRole('region', { name: placeholderLabel })).toBeTruthy();
       expect(screen.queryByRole('button')).toBeNull();
 
       if (heading === 'Reconciliation') {
         const placeholder = screen.getByRole('region', { name: placeholderLabel });
         expect(placeholder.querySelectorAll('.min-h-48')).toHaveLength(3);
         expect(placeholder.querySelector('[data-loading-section="advanced-tools"]')).toBeTruthy();
+      } else {
+        const placeholder = document.querySelector(`[aria-label="${placeholderLabel}"]`);
+        expect(placeholder).toBeTruthy();
+        expect(screen.queryByRole('region', { name: placeholderLabel })).toBeNull();
       }
     },
   );
+
+  it('keeps cluster navigation available while hiding visual loading chrome from assistive technology', () => {
+    render(<ClusterLoading />);
+
+    expect(screen.getByRole('status').textContent).toBe('Loading reconciliation cluster');
+    expect(screen.getByRole('link', { name: 'Back' }).getAttribute('href')).toBe(
+      '/app/team/reconciliation',
+    );
+
+    const headerSkeleton = document.querySelector('[aria-label="Loading"]');
+    expect(headerSkeleton?.parentElement?.getAttribute('aria-hidden')).toBe('true');
+
+    const placeholder = document.querySelector(
+      '[aria-label="Reconciliation cluster loading placeholder"]',
+    );
+    expect(placeholder?.parentElement?.getAttribute('aria-hidden')).toBe('true');
+    expect(
+      placeholder?.parentElement?.querySelectorAll('a, button, input, select, textarea'),
+    ).toHaveLength(0);
+  });
 
   it.each([
     { keyName: 'Enter', keys: '{Enter}' },
