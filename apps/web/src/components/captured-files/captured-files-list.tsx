@@ -578,8 +578,18 @@ function PromoteDialog({
   const [pending, startTransition] = useTransition();
   const [form, dispatchForm] = useReducer(promoteDialogReducer, file, promoteDialogInitialState);
   const [promotionError, setPromotionError] = useState<string | null>(null);
+  const [titleError, setTitleError] = useState<string | null>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
 
   function submit(): void {
+    if (!form.name.trim()) {
+      setPromotionError(null);
+      setTitleError('Enter a title before promoting this file.');
+      titleInputRef.current?.focus();
+      return;
+    }
+
+    setTitleError(null);
     setPromotionError(null);
     startTransition(async () => {
       try {
@@ -624,20 +634,30 @@ function PromoteDialog({
         <label className="block space-y-1">
           <span className="text-[11px] text-fg-dim">Title</span>
           <input
+            ref={titleInputRef}
             name="title"
             autoComplete="off"
-            required
             disabled={pending}
             value={form.name}
+            aria-required="true"
+            aria-invalid={Boolean(titleError)}
+            aria-describedby={titleError ? 'captured-file-title-error' : undefined}
             onChange={(event) => {
-              dispatchForm({ type: 'name', value: event.target.value });
+              const value = event.target.value;
+              dispatchForm({ type: 'name', value });
+              if (value.trim()) setTitleError(null);
             }}
             onKeyDown={(event) => {
-              if (event.key === 'Enter' && form.name.trim() && !pending) submit();
+              if (event.key === 'Enter' && !pending) submit();
             }}
             className="h-9 w-full rounded-sm border border-border bg-bg px-2 text-base focus-visible:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg sm:text-sm"
           />
         </label>
+        {titleError ? (
+          <p id="captured-file-title-error" className="text-sm text-danger" aria-live="polite">
+            {titleError}
+          </p>
+        ) : null}
         <label className="block space-y-1">
           <span className="text-[11px] text-fg-dim">Folder</span>
           <select
@@ -708,7 +728,7 @@ function PromoteDialog({
           <Button type="button" variant="outline" onClick={onClose} disabled={pending}>
             Cancel
           </Button>
-          <Button type="button" onClick={submit} disabled={pending || !form.name.trim()}>
+          <Button type="button" onClick={submit} disabled={pending}>
             {pending ? 'Promoting…' : 'Promote'}
           </Button>
         </DialogFooter>
