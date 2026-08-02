@@ -19,7 +19,11 @@ export default function JobsLoading() {
           <Skeleton className="h-3 w-32 motion-reduce:animate-none" />
         </div>
 
-        <section aria-label="Background jobs loading placeholder" className="space-y-8">
+        <section
+          aria-hidden="true"
+          inert
+          className="space-y-8 motion-reduce:[&_.animate-pulse]:animate-none"
+        >
           <section aria-labelledby="processing-summary-heading" className="space-y-3">
             <h2 id="processing-summary-heading" className="text-base font-semibold text-fg">
               Processing summary

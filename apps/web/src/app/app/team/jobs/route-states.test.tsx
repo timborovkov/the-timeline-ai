@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -18,8 +18,8 @@ afterEach(() => {
 });
 
 describe('Background jobs route states', () => {
-  it('announces a route-shaped loading state outside the busy operator view', () => {
-    render(<JobsLoading />);
+  it('announces loading outside an inert, motion-safe placeholder while retaining route context', () => {
+    const { container } = render(<JobsLoading />);
 
     const announcement = screen.getByRole('status');
     expect(announcement.textContent).toBe('Loading background jobs');
@@ -27,19 +27,27 @@ describe('Background jobs route states', () => {
     expect(screen.getByLabelText('Loading background jobs').getAttribute('aria-busy')).toBe('true');
     expect(screen.getAllByRole('heading', { level: 1, name: 'Background jobs' })).toHaveLength(1);
     expect(screen.getByRole('link', { name: 'Back' }).getAttribute('href')).toBe('/app/team');
-    expect(
-      screen.getByRole('region', { name: 'Background jobs loading placeholder' }),
-    ).toBeTruthy();
-    expect(screen.getByRole('heading', { level: 2, name: 'Processing summary' })).toBeTruthy();
-    expect(screen.getByText('Processing activity')).toBeTruthy();
-    const dashboard = screen.getByLabelText('Loading job dashboard');
+    expect(screen.queryByRole('region')).toBeNull();
+    expect(screen.queryByRole('heading', { level: 2, name: 'Processing summary' })).toBeNull();
+    expect(screen.queryByRole('heading', { level: 2, name: 'Finished jobs' })).toBeNull();
+
+    const visualPlaceholders = container.querySelectorAll(
+      '[aria-busy="true"] > section[aria-hidden="true"][inert]',
+    );
+    expect(visualPlaceholders).toHaveLength(1);
+    const [placeholder] = visualPlaceholders;
+    expect(placeholder?.querySelectorAll('a, button, input, select, textarea')).toHaveLength(0);
+    expect(placeholder?.className).toContain('motion-reduce:[&_.animate-pulse]:animate-none');
+
+    const dashboard = placeholder?.querySelector('[aria-label="Loading job dashboard"]');
+    if (!dashboard) throw new Error('Expected the visual job dashboard placeholder');
     expect(dashboard.tagName).toBe('UL');
     expect(dashboard.children).toHaveLength(6);
     expect(dashboard.firstElementChild?.className).toContain('rounded-lg');
-    expect(screen.getByRole('region', { name: 'Conversation suggestions' })).toBeTruthy();
-    const recoveryControls = screen.getByRole('region', {
-      name: 'Job recovery controls loading placeholder',
-    });
+    const recoveryControls = placeholder?.querySelector(
+      '[aria-label="Job recovery controls loading placeholder"]',
+    );
+    if (!recoveryControls) throw new Error('Expected the visual job recovery controls placeholder');
     expect(recoveryControls.querySelectorAll('[data-loading-filter]')).toHaveLength(7);
     expect(recoveryControls.querySelector('[data-loading-action="retry"]')?.className).toContain(
       'h-8 w-28',
@@ -47,9 +55,8 @@ describe('Background jobs route states', () => {
     expect(recoveryControls.querySelector('[data-loading-action="dismiss"]')?.className).toContain(
       'h-8 w-32',
     );
-    expect(screen.getByRole('heading', { level: 2, name: 'Finished jobs' })).toBeTruthy();
-    const finishedJobs = screen.getByRole('region', { name: 'Finished jobs' });
-    const finishedJobsTable = within(finishedJobs).getByRole('table');
+    const finishedJobsTable = placeholder?.querySelector('table');
+    if (!finishedJobsTable) throw new Error('Expected the visual finished jobs table placeholder');
     expect(finishedJobsTable.className).toContain('min-w-[760px]');
     expect(finishedJobsTable.querySelectorAll('th')).toHaveLength(6);
     expect(finishedJobsTable.parentElement?.className).toContain('overflow-x-auto');
