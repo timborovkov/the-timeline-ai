@@ -129,6 +129,31 @@ describe('CuratedKanbanBoard', () => {
     expect(title.className).not.toContain('truncate');
   });
 
+  it('identifies the card open in the detail panel as current', () => {
+    const firstCard = boardItem('Open card');
+    const secondCard = boardItem('Other card');
+    secondCard.id = 'item-2';
+    secondCard.entityId = 'object-2';
+    secondCard.object.id = 'object-2';
+
+    render(
+      <CuratedKanbanBoard
+        boardId="board-1"
+        lanes={[lane()]}
+        items={[firstCard, secondCard]}
+        selectedItemId="item-1"
+        members={[]}
+      />,
+    );
+
+    expect(screen.getByRole('link', { name: 'Open card' }).getAttribute('aria-current')).toBe(
+      'true',
+    );
+    expect(screen.getByRole('link', { name: 'Other card' }).hasAttribute('aria-current')).toBe(
+      false,
+    );
+  });
+
   it('updates a pending task category on the card', async () => {
     fakes.loadTaskCategoryStatesAction.mockResolvedValue({
       rows: [

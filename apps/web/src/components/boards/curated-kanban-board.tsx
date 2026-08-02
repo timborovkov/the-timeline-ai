@@ -422,6 +422,7 @@ function KanbanCard({
           <Link
             id={titleId}
             href={boardViewHref(boardId, 'kanban', item.id, filterParams)}
+            aria-current={selected ? 'true' : undefined}
             className="min-w-0 flex-1 whitespace-normal break-words font-medium leading-snug hover:underline"
           >
             {displayText(title)}
