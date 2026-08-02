@@ -45,16 +45,28 @@ describe('Merge objects route states', () => {
     expect(reset).toHaveBeenCalledOnce();
   });
 
-  it('announces loading outside the busy fallback with a responsive merge preview shape', () => {
-    render(<MergeObjectsLoading />);
+  it('announces loading outside an inert, motion-safe fallback with a responsive merge preview shape', () => {
+    const { container } = render(<MergeObjectsLoading />);
 
     const announcement = screen.getByRole('status');
     expect(announcement.textContent).toBe('Loading merge objects');
-    expect(announcement.parentElement?.getAttribute('aria-busy')).toBeNull();
-    expect(screen.getByLabelText('Loading merge objects').getAttribute('aria-busy')).toBe('true');
+    expect(announcement.closest('[aria-busy="true"]')).toBeNull();
+    const loading = screen.getByLabelText('Loading merge objects');
+    expect(loading.getAttribute('aria-busy')).toBe('true');
+    expect(loading.className).toContain('motion-reduce:[&_.animate-pulse]:animate-none');
     expect(screen.getAllByRole('heading', { level: 1, name: 'Merge objects' })).toHaveLength(1);
     expect(screen.getByRole('link', { name: 'Objects' }).getAttribute('aria-current')).toBe('page');
-    expect(screen.getByRole('region', { name: 'Object merge loading placeholder' })).toBeTruthy();
+    expect(screen.getByRole('navigation', { name: 'Work' })).toBeTruthy();
+    expect(screen.queryByRole('region')).toBeNull();
     expect(screen.queryByRole('button')).toBeNull();
+
+    const visualPlaceholders = container.querySelectorAll(
+      '[aria-busy="true"] > [aria-hidden="true"][inert]',
+    );
+    expect(visualPlaceholders.length).toBeGreaterThan(0);
+    for (const placeholder of visualPlaceholders) {
+      expect(placeholder.querySelectorAll('a, button, input, select, textarea')).toHaveLength(0);
+    }
+    expect(container.querySelector('[class~="sm:grid-cols-4"]')).toBeTruthy();
   });
 });

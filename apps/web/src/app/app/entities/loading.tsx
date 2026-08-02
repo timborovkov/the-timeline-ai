@@ -8,7 +8,11 @@ export default function EntitiesLoading() {
       <output className="sr-only" aria-live="polite">
         Loading objects
       </output>
-      <div className="space-y-6" aria-busy="true" aria-label="Loading objects">
+      <div
+        className="space-y-6 motion-reduce:[&_.animate-pulse]:animate-none"
+        aria-busy="true"
+        aria-label="Loading objects"
+      >
         <h1 className="sr-only">Objects</h1>
         <div aria-hidden="true" inert className="space-y-6">
           <PageHeaderSkeleton />

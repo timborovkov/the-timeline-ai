@@ -38,14 +38,21 @@ describe('Inbox route states', () => {
     expect(reset).toHaveBeenCalledOnce();
   });
 
-  it('announces loading outside the busy inbox placeholder and retains one route heading', () => {
-    render(<InboxLoading />);
+  it('announces loading outside an inert, motion-safe inbox skeleton and retains one route heading', () => {
+    const { container } = render(<InboxLoading />);
 
     const announcement = screen.getByRole('status');
     expect(announcement.textContent).toBe('Loading inbox');
-    expect(announcement.parentElement?.getAttribute('aria-busy')).toBeNull();
-    expect(screen.getByLabelText('Loading inbox').getAttribute('aria-busy')).toBe('true');
+    expect(announcement.closest('[aria-busy="true"]')).toBeNull();
+    const loading = screen.getByLabelText('Loading inbox');
+    expect(loading.getAttribute('aria-busy')).toBe('true');
+    expect(loading.className).toContain('motion-reduce:[&_.animate-pulse]:animate-none');
     expect(screen.getAllByRole('heading', { level: 1, name: 'Inbox' })).toHaveLength(1);
-    expect(screen.getByRole('region', { name: 'Inbox loading placeholder' })).toBeTruthy();
+    expect(screen.queryByRole('region')).toBeNull();
+    expect(screen.queryByRole('navigation')).toBeNull();
+
+    const placeholder = container.querySelector('[aria-busy="true"] > [aria-hidden="true"][inert]');
+    expect(placeholder).toBeTruthy();
+    expect(placeholder?.querySelectorAll('a, button, input, select, textarea')).toHaveLength(0);
   });
 });

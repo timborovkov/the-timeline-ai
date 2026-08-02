@@ -11,7 +11,13 @@ export default function MergeObjectModalLoading() {
         title="Review merge"
         description="Choose the object to keep, then merge the duplicate into it."
       >
-        <div className="space-y-5" aria-busy="true" aria-label="Loading merge preview">
+        <div
+          aria-hidden="true"
+          inert
+          className="space-y-5 motion-reduce:[&_.animate-pulse]:animate-none"
+          aria-busy="true"
+          aria-label="Loading merge preview"
+        >
           <div className="grid gap-px overflow-hidden border border-border">
             {Array.from({ length: 2 }).map((_, index) => (
               <div key={index} className="bg-bg px-3 py-2.5">

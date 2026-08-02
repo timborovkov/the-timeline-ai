@@ -41,14 +41,27 @@ describe('Objects route states', () => {
     expect(reset).toHaveBeenCalledOnce();
   });
 
-  it('announces loading outside the busy fallback and retains the route heading', () => {
-    render(<ObjectsLoading />);
+  it('announces loading outside an inert, motion-safe fallback and retains the route heading', () => {
+    const { container } = render(<ObjectsLoading />);
 
-    expect(screen.getByRole('status').textContent).toBe('Loading objects');
-    expect(screen.getByLabelText('Loading objects').getAttribute('aria-busy')).toBe('true');
+    const announcement = screen.getByRole('status');
+    expect(announcement.textContent).toBe('Loading objects');
+    expect(announcement.closest('[aria-busy="true"]')).toBeNull();
+    const loading = screen.getByLabelText('Loading objects');
+    expect(loading.getAttribute('aria-busy')).toBe('true');
+    expect(loading.className).toContain('motion-reduce:[&_.animate-pulse]:animate-none');
     expect(screen.getAllByRole('heading', { level: 1, name: 'Objects' })).toHaveLength(1);
     expect(screen.getByRole('link', { name: 'Objects' }).getAttribute('aria-current')).toBe('page');
-    expect(screen.getByRole('navigation', { name: 'Loading object type filters' })).toBeTruthy();
-    expect(screen.getByRole('region', { name: 'Object list loading placeholder' })).toBeTruthy();
+    expect(screen.getByRole('navigation', { name: 'Work' })).toBeTruthy();
+    expect(screen.queryByRole('region')).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'Loading object type filters' })).toBeNull();
+
+    const visualPlaceholders = container.querySelectorAll(
+      '[aria-busy="true"] > [aria-hidden="true"][inert]',
+    );
+    expect(visualPlaceholders.length).toBeGreaterThan(0);
+    for (const placeholder of visualPlaceholders) {
+      expect(placeholder.querySelectorAll('a, button, input, select, textarea')).toHaveLength(0);
+    }
   });
 });

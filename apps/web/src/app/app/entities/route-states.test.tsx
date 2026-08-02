@@ -86,7 +86,9 @@ describe('legacy entity route states', () => {
       const announcement = screen.getByRole('status');
       expect(announcement.textContent).toBe(label);
       expect(announcement.closest('[aria-busy="true"]')).toBeNull();
-      expect(screen.getByLabelText(label).getAttribute('aria-busy')).toBe('true');
+      const loading = screen.getByLabelText(label);
+      expect(loading.getAttribute('aria-busy')).toBe('true');
+      expect(loading.className).toContain('motion-reduce:[&_.animate-pulse]:animate-none');
       expect(screen.getAllByRole('heading', { level: 1, name: heading })).toHaveLength(1);
       expect(screen.getByRole('navigation', { name: 'Work' })).toBeTruthy();
       expect(screen.getByRole('link', { name: 'Objects' }).getAttribute('aria-current')).toBe(

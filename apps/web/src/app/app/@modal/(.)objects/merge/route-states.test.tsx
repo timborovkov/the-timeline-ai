@@ -64,7 +64,7 @@ describe('intercepted merge route states', () => {
     expect(reset).toHaveBeenCalledOnce();
   });
 
-  it('keeps its loading state inside the modal without adding a second page heading', () => {
+  it('keeps an inert, motion-safe loading state inside the modal without adding a second page heading', () => {
     const html = renderAlongsideBackground(<MergeObjectModalLoading />);
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
@@ -72,6 +72,9 @@ describe('intercepted merge route states', () => {
     expect(html).toContain('aria-live="polite"');
     expect(html).toContain('aria-label="Loading merge preview"');
     expect(html.indexOf('aria-live="polite"')).toBeLessThan(html.indexOf('aria-busy="true"'));
+    expect(html).toContain('aria-hidden="true"');
+    expect(html).toContain('inert=""');
+    expect(html).toContain('motion-reduce:[&amp;_.animate-pulse]:animate-none');
     expect(html).toContain('sm:grid-cols-4');
   });
 });

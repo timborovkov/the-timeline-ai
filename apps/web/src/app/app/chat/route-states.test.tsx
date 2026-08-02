@@ -44,14 +44,20 @@ describe('Ask route states', () => {
     },
   );
 
-  it('announces loading outside the busy Ask placeholder and retains one route heading', () => {
-    render(<ChatLoading />);
+  it('announces loading outside an inert, motion-safe Ask skeleton and retains one route heading', () => {
+    const { container } = render(<ChatLoading />);
 
     const announcement = screen.getByRole('status');
     expect(announcement.textContent).toBe('Loading Ask');
-    expect(announcement.parentElement?.getAttribute('aria-busy')).toBeNull();
-    expect(screen.getByLabelText('Loading Ask').getAttribute('aria-busy')).toBe('true');
+    expect(announcement.closest('[aria-busy="true"]')).toBeNull();
+    const loading = screen.getByLabelText('Loading Ask');
+    expect(loading.getAttribute('aria-busy')).toBe('true');
+    expect(loading.className).toContain('motion-reduce:[&_.animate-pulse]:animate-none');
     expect(screen.getAllByRole('heading', { level: 1, name: 'Ask' })).toHaveLength(1);
-    expect(screen.getByRole('region', { name: 'Ask loading placeholder' })).toBeTruthy();
+    expect(screen.queryByRole('region')).toBeNull();
+
+    const placeholder = container.querySelector('[aria-busy="true"] > [aria-hidden="true"][inert]');
+    expect(placeholder).toBeTruthy();
+    expect(placeholder?.querySelectorAll('a, button, input, select, textarea')).toHaveLength(0);
   });
 });
