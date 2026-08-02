@@ -1,9 +1,7 @@
 import { withTeam } from '@timeline/shared/team-scope';
 import {
-  AlertTriangle,
   Bot,
-  CheckCircle2,
-  Circle,
+  ChevronDown,
   FileText,
   Mail,
   MessageSquare,
@@ -192,14 +190,6 @@ function buildSources(summary: SourcesStatusSummary): SourceEntry[] {
   return [email, slack, telegram, docs, meetings, integrations, mcp];
 }
 
-function StatusIcon({ status }: { status: SourceStatus }) {
-  if (status === 'attention')
-    return <AlertTriangle className="size-4 text-danger" aria-hidden="true" />;
-  if (status === 'connected')
-    return <CheckCircle2 className="size-4 text-signal" aria-hidden="true" />;
-  return <Circle className="size-4 text-fg-dim" aria-hidden="true" />;
-}
-
 function sourceDoesNotNeedAttention(source: SourceEntry): boolean {
   return source.status !== 'attention';
 }
@@ -269,9 +259,14 @@ export default async function SourcesPage() {
       />
       <section className="space-y-3">
         <SectionHeading>Advanced tools</SectionHeading>
-        <details className="rounded-lg border border-border bg-surface p-4">
-          <summary className="cursor-pointer text-sm font-medium text-fg">
-            MCP, webhooks, and audit tools
+        <details className="group rounded-md border border-border bg-surface p-4">
+          <summary className="flex min-h-9 cursor-pointer items-center justify-between gap-3 rounded-sm text-sm font-medium text-fg outline-none transition-colors hover:text-fg-muted focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg">
+            <span>MCP, webhooks, and audit tools</span>
+            <ChevronDown
+              aria-hidden="true"
+              data-disclosure-indicator
+              className="size-4 shrink-0 text-fg-muted transition-transform motion-reduce:transition-none group-open:rotate-180"
+            />
           </summary>
           <div className="mt-4 space-y-3 border-t border-border pt-4">
             {advancedSources.map((source) => (
@@ -338,7 +333,7 @@ function SourceGroup({
 
 function SourceRow({ source }: { source: SourceEntry }) {
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface p-4">
+    <div className="flex flex-col gap-3 rounded-md border border-border bg-surface p-4 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 flex-1 items-start gap-3">
         <source.icon className="mt-0.5 size-5 shrink-0 text-fg-muted" aria-hidden="true" />
         <div className="min-w-0 flex-1">
@@ -370,19 +365,20 @@ function SourceRow({ source }: { source: SourceEntry }) {
           {source.note ? <p className="mt-1 text-xs text-fg-muted">{source.note}</p> : null}
         </div>
       </div>
-      <div className="flex items-center gap-2">
-        <StatusIcon status={source.status} />
+      <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0">
         {source.secondaryActionHref ? (
           <Link
             href={source.secondaryActionHref}
-            className="inline-flex min-h-8 items-center rounded-sm px-2.5 text-sm text-fg-muted hover:bg-surface-2 hover:text-fg"
+            aria-label={`${source.secondaryActionLabel}: ${source.label}`}
+            className="inline-flex min-h-9 items-center rounded-sm px-2.5 text-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
           >
             {source.secondaryActionLabel}
           </Link>
         ) : null}
         <Link
           href={source.actionHref}
-          className="inline-flex min-h-8 items-center rounded-sm border border-border px-2.5 text-sm text-fg-muted hover:bg-surface-2 hover:text-fg"
+          aria-label={`${source.actionLabel}: ${source.label}`}
+          className="inline-flex min-h-9 items-center rounded-sm border border-border px-2.5 text-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
         >
           {source.actionLabel}
         </Link>

@@ -28,7 +28,7 @@ function SourceGroupSkeleton({ rows }: { rows: number }) {
         {Array.from({ length: rows }).map((_, index) => (
           <div
             key={index}
-            className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4 sm:flex-row sm:items-center sm:justify-between"
+            className="flex flex-col gap-3 rounded-md border border-border bg-surface p-4 sm:flex-row sm:items-center sm:justify-between"
           >
             <div className="flex min-w-0 flex-1 items-start gap-3">
               <Skeleton className="mt-0.5 size-5 shrink-0 rounded-sm" />
