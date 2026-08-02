@@ -47,6 +47,19 @@ describe('DesktopSidebar', () => {
     expect(html).not.toContain('min-w-0 flex-1 truncate font-mono');
   });
 
+  it('disables the sidebar-width transition when reduced motion is preferred', () => {
+    const html = renderToStaticMarkup(
+      <DesktopSidebar
+        active={active}
+        memberships={[active]}
+        recipientInvites={[]}
+        initialExpanded
+      />,
+    );
+
+    expect(html).toContain('transition-[width] duration-200 motion-reduce:transition-none');
+  });
+
   it('defaults to expanded unless the cookie explicitly stores false', () => {
     expect(sidebarExpandedFromCookie(undefined)).toBe(true);
     expect(sidebarExpandedFromCookie('true')).toBe(true);

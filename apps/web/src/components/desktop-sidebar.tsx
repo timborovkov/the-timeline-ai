@@ -60,7 +60,7 @@ export function DesktopSidebar({
       aria-label="Application sidebar"
       data-expanded={expanded}
       className={cn(
-        'sticky top-0 hidden h-full shrink-0 flex-col border-r border-border bg-surface py-3 transition-[width] duration-200 md:flex',
+        'sticky top-0 hidden h-full shrink-0 flex-col border-r border-border bg-surface py-3 transition-[width] duration-200 motion-reduce:transition-none md:flex',
         expanded ? 'w-60 px-3' : 'w-14 items-center px-0',
       )}
     >
