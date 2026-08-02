@@ -27,7 +27,7 @@ export default function LandingError({
         <div className="mt-10">
           <ErrorState
             title="Unable to load The Timeline"
-            description="Check your connection, then try again."
+            description="This failed load did not change any account or workspace data. Check your connection, then try again."
             error={error}
             reset={reset}
           />

@@ -63,7 +63,11 @@ describe('Landing route states', () => {
     expect(
       screen.getByRole('heading', { level: 2, name: 'Unable to load The Timeline' }),
     ).toBeTruthy();
-    expect(screen.getByText('Check your connection, then try again.')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'This failed load did not change any account or workspace data. Check your connection, then try again.',
+      ),
+    ).toBeTruthy();
 
     const retry = screen.getByRole('button', { name: 'Try again' });
     retry.focus();
