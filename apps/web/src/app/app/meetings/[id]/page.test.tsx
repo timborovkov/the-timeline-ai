@@ -84,7 +84,11 @@ describe('MeetingDetailPage', () => {
     expect(html).toContain('Recall');
     expect(html).toContain('Completed');
     expect(html).toContain('Jul 1, 2026, 8:00 AM');
-    expect(html).toContain('https://meet.google.com/abc-defg-hij');
+    expect(html).toContain('Open meeting');
+    expect(html).toContain('aria-label="Open meeting in a new tab"');
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('rel="noopener noreferrer"');
+    expect(html).toContain('href="https://meet.google.com/abc-defg-hij"');
     expect(html).toContain('Summary');
     expect(html).toContain('Acme confirmed launch readiness and Friday follow-up.');
     expect(html).toContain('Ada:');
@@ -92,6 +96,13 @@ describe('MeetingDetailPage', () => {
     expect(html).toContain('1:02');
     expect(html).toContain('## Transcript');
     expect(html).not.toContain(`Cancel ${MEETING_ID}`);
+
+    const headerEnd = html.indexOf('</header>');
+    expect(html.indexOf('Open meeting')).toBeLessThan(headerEnd);
+    expect(html.indexOf('Pin')).toBeLessThan(headerEnd);
+    expect(html.indexOf('transcript export')).toBeLessThan(headerEnd);
+    expect(html).toContain('Meeting ID');
+    expect(html).not.toContain('Meeting URL');
   });
 
   it('renders pending empty transcript state and exposes cancellation', async () => {
@@ -109,6 +120,7 @@ describe('MeetingDetailPage', () => {
     expect(html).toContain('Pending');
     expect(html).toContain('Waiting for the notetaker to join');
     expect(html).toContain(`Cancel ${MEETING_ID}`);
+    expect(html.indexOf(`Cancel ${MEETING_ID}`)).toBeLessThan(html.indexOf('</header>'));
   });
 
   it('rejects invalid meeting ids before loading team data', async () => {
