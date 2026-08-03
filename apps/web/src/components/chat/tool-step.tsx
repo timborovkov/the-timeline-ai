@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, X } from 'lucide-react';
+import { Check, CircleAlert, CircleCheck, CirclePause, LoaderCircle, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { type ReactNode, useState, useTransition } from 'react';
 
@@ -11,6 +11,7 @@ import { DueDateDisplay } from '@/components/due-date-display';
 import { EvidenceLink } from '@/components/evidence-link';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { evidenceSourceContextLabel } from '@/lib/evidence-source-label';
+import { statusLabel } from '@/lib/status-labels';
 
 interface Props {
   name: string;
@@ -372,22 +373,22 @@ function InlineApprovalCard({ suggestion }: { suggestion: SuggestionBundle }) {
   }
 
   return (
-    <div className="mt-2 border border-border bg-background p-3">
-      <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-        Approval queued
-      </div>
-      <div className="mt-1 font-medium">{suggestion.title}</div>
+    <div className="mt-2 rounded-md border border-border bg-surface p-3">
+      <div className="text-xs font-medium text-fg">Approval queued</div>
+      <div className="mt-1 break-words text-sm font-medium text-fg">{suggestion.title}</div>
       {suggestion.summary ? (
-        <p className="mt-1 text-xs text-muted-foreground">{suggestion.summary}</p>
+        <p className="mt-1 text-xs text-fg-muted">{suggestion.summary}</p>
       ) : null}
       {suggestion.evidence.length ? (
-        <div className="mt-2 space-y-1 border-t pt-2">
+        <div className="mt-2 space-y-1 border-t border-border pt-2">
           {suggestion.evidence.slice(0, 3).map((evidence) => (
-            <div key={evidence.rawEventId} className="text-[11px] text-muted-foreground">
-              {evidence.quote ? <span className="text-foreground">"{evidence.quote}"</span> : null}
+            <div key={evidence.rawEventId} className="text-xs text-fg-muted">
+              {evidence.quote ? (
+                <span className="text-fg">&quot;{evidence.quote}&quot;</span>
+              ) : null}
               <EvidenceLink
                 eventId={evidence.rawEventId}
-                className="ml-1 text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                className="ml-1 text-signal underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg-muted focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
                 previewText={evidence.quote}
                 source={evidence.source}
                 title="Approval evidence"
@@ -398,25 +399,30 @@ function InlineApprovalCard({ suggestion }: { suggestion: SuggestionBundle }) {
           ))}
         </div>
       ) : null}
-      {error ? <p className="mt-2 text-xs text-danger">{error}</p> : null}
+      {error ? (
+        <p role="alert" className="mt-2 text-xs text-danger">
+          {error}
+        </p>
+      ) : null}
       <ul className="mt-2 space-y-2">
         {suggestion.items.map((item) => {
           const displayedItem = { ...item, ...localItems[item.id] };
           const status = localStatuses[item.id] ?? displayedItem.status;
           return (
-            <li key={item.id} className="flex items-start justify-between gap-2 border-t pt-2">
+            <li
+              key={item.id}
+              className="flex flex-col gap-2 border-t pt-2 sm:flex-row sm:items-start sm:justify-between"
+            >
               <div className="min-w-0">
-                <div className="truncate text-xs font-medium">{displayedItem.title}</div>
-                <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-                  {status}
-                </div>
+                <div className="break-words text-xs font-medium">{displayedItem.title}</div>
+                <div className="text-xs text-fg-muted">{statusLabel(status)}</div>
               </div>
               {status === 'pending' || status === 'failed' ? (
-                <div className="flex shrink-0 gap-1">
+                <div className="flex flex-wrap gap-1">
                   <button
                     type="button"
                     disabled={pending}
-                    className="rounded-sm border border-signal/40 px-2 py-1 text-signal disabled:opacity-50"
+                    className="inline-flex size-8 items-center justify-center rounded-sm border border-signal/40 text-signal hover:bg-signal-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg-muted focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-50"
                     onClick={() => {
                       run(item.id, 'accepted', () =>
                         acceptSuggestionItemAction({ itemId: item.id }),
@@ -424,7 +430,7 @@ function InlineApprovalCard({ suggestion }: { suggestion: SuggestionBundle }) {
                     }}
                     aria-label={`Accept ${displayedItem.title}`}
                   >
-                    <Check className="size-3.5" />
+                    <Check aria-hidden="true" className="size-3.5" />
                   </button>
                   {displayedItem.targetKind !== 'object_merge' ? (
                     <SuggestionChangeDialog
@@ -443,7 +449,7 @@ function InlineApprovalCard({ suggestion }: { suggestion: SuggestionBundle }) {
                   <button
                     type="button"
                     disabled={pending}
-                    className="rounded-sm border border-border px-2 py-1 text-muted-foreground disabled:opacity-50"
+                    className="inline-flex size-8 items-center justify-center rounded-sm border border-border text-fg-muted hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg-muted focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-50"
                     onClick={() => {
                       run(item.id, 'rejected', () =>
                         rejectSuggestionItemAction({ itemId: item.id }),
@@ -451,7 +457,7 @@ function InlineApprovalCard({ suggestion }: { suggestion: SuggestionBundle }) {
                     }}
                     aria-label={`Reject ${displayedItem.title}`}
                   >
-                    <X className="size-3.5" />
+                    <X aria-hidden="true" className="size-3.5" />
                   </button>
                 </div>
               ) : null}
@@ -477,7 +483,7 @@ function ReconnectButton({ serverId, serverName }: { serverId: string; serverNam
   const [forbidden, setForbidden] = useState(false);
   if (forbidden) {
     return (
-      <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-muted">
+      <p className="mt-1 text-xs text-fg-muted">
         {serverName} needs reconnecting. Ask a team admin to visit /app/team/mcp-servers
       </p>
     );
@@ -511,7 +517,7 @@ function ReconnectButton({ serverId, serverName }: { serverId: string; serverNam
             setBusy(false);
           });
       }}
-      className="mt-1 rounded-sm border border-danger/40 bg-danger/10 px-2 py-1 text-xs text-danger hover:bg-danger/20 disabled:opacity-50"
+      className="mt-1 rounded-sm border border-danger/40 bg-danger/10 px-2 py-1 text-xs text-danger hover:bg-danger/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg-muted focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-50"
     >
       {busy ? 'Opening…' : `Reconnect ${serverName}`}
     </button>
@@ -529,7 +535,7 @@ function formatApprovalValue(value: unknown): string {
 function ApprovalRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="grid grid-cols-[6rem_1fr] gap-2">
-      <dt className="font-mono uppercase tracking-[0.1em] text-fg-dim">{label}</dt>
+      <dt className="text-xs text-fg-muted">{label}</dt>
       <dd className="break-words text-fg">{children}</dd>
     </div>
   );
@@ -559,12 +565,10 @@ function ToolApprovalCard({
   const reason = typeof record.reason === 'string' ? record.reason : null;
   const mergedIds = survivorId ? objectIds.filter((id) => id !== survivorId) : [];
   return (
-    <div className="mt-2 rounded-sm border border-signal/40 bg-signal/5 p-3">
-      <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-signal">
-        approval required
-      </p>
+    <div className="mt-2 rounded-md border border-signal/40 bg-signal-soft p-3">
+      <p className="text-xs font-medium text-fg">Approval needed</p>
       {name === 'execute_object_create' ? (
-        <dl className="mt-2 grid gap-2 text-[11px] text-fg-muted">
+        <dl className="mt-2 grid gap-2 text-xs text-fg-muted">
           <ApprovalRow label="Type">{formatApprovalValue(record.type ?? 'other')}</ApprovalRow>
           <ApprovalRow label="Name">{formatApprovalValue(record.canonicalName)}</ApprovalRow>
           {record.status !== undefined ? (
@@ -596,7 +600,7 @@ function ToolApprovalCard({
           {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
         </dl>
       ) : name === 'execute_calendar_create' ? (
-        <dl className="mt-2 grid gap-2 text-[11px] text-fg-muted">
+        <dl className="mt-2 grid gap-2 text-xs text-fg-muted">
           <ApprovalRow label="Title">{formatApprovalValue(record.title)}</ApprovalRow>
           {calendarToolRange(record) ? (
             <ApprovalRow label="When">{calendarToolRange(record)}</ApprovalRow>
@@ -621,7 +625,7 @@ function ToolApprovalCard({
           {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
         </dl>
       ) : name === 'execute_calendar_update' ? (
-        <dl className="mt-2 grid gap-2 text-[11px] text-fg-muted">
+        <dl className="mt-2 grid gap-2 text-xs text-fg-muted">
           {calendarEventId ? (
             <ApprovalRow label="Event">
               <ArtifactReferenceChip refValue={{ kind: 'calendar_event', id: calendarEventId }} />
@@ -655,7 +659,7 @@ function ToolApprovalCard({
           {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
         </dl>
       ) : name === 'execute_calendar_cancel' ? (
-        <dl className="mt-2 grid gap-2 text-[11px] text-fg-muted">
+        <dl className="mt-2 grid gap-2 text-xs text-fg-muted">
           {calendarEventId ? (
             <ApprovalRow label="Event">
               <ArtifactReferenceChip refValue={{ kind: 'calendar_event', id: calendarEventId }} />
@@ -674,7 +678,7 @@ function ToolApprovalCard({
           {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
         </dl>
       ) : name === 'execute_object_archive' ? (
-        <dl className="mt-2 grid gap-2 text-[11px] text-fg-muted">
+        <dl className="mt-2 grid gap-2 text-xs text-fg-muted">
           {entityId ? (
             <ApprovalRow label="Object">
               <ArtifactReferenceChip refValue={{ kind: 'object', id: entityId }} />
@@ -701,7 +705,7 @@ function ToolApprovalCard({
           {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
         </dl>
       ) : (
-        <dl className="mt-2 grid gap-1 text-[11px] text-fg-muted">
+        <dl className="mt-2 grid gap-1 text-xs text-fg-muted">
           <ApprovalRow label="Field">{field}</ApprovalRow>
           <ApprovalRow label="Current">
             {field === 'dueAt' ? (
@@ -734,7 +738,7 @@ function ToolApprovalCard({
           onClick={() => {
             onApprovalResponse({ id: approval.id, approved: true });
           }}
-          className="rounded-sm bg-signal px-3 py-1.5 text-xs font-medium text-signal-fg hover:opacity-90"
+          className="h-9 rounded-sm bg-signal px-3 text-xs font-medium text-signal-fg hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg-muted focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
         >
           Approve
         </button>
@@ -747,7 +751,7 @@ function ToolApprovalCard({
               reason: 'User denied in chat',
             });
           }}
-          className="rounded-sm border border-border px-3 py-1.5 text-xs font-medium text-fg hover:bg-surface-2"
+          className="h-9 rounded-sm border border-border px-3 text-xs font-medium text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg-muted focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
         >
           Deny
         </button>
@@ -756,8 +760,37 @@ function ToolApprovalCard({
   );
 }
 
+function ToolDetails({
+  name,
+  state,
+  input,
+  output,
+}: Pick<Props, 'name' | 'state' | 'input' | 'output'>) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <details
+      className="group mt-2 border-t border-border pt-2 text-sm"
+      onToggle={(event) => {
+        setIsOpen(event.currentTarget.open);
+      }}
+    >
+      <summary className="flex min-h-6 cursor-pointer list-none items-center text-sm font-medium text-fg-muted marker:hidden hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg-muted focus-visible:ring-offset-2">
+        <span aria-hidden="true" className="mr-2 inline-block text-fg-dim group-open:rotate-90">
+          ›
+        </span>
+        Technical details
+      </summary>
+      {isOpen ? (
+        <pre className="mt-3 max-h-60 overflow-auto rounded-sm bg-surface-2 p-2 text-[11px] leading-[1.35] text-fg">
+          {JSON.stringify({ name, state, input, output }, null, 2)}
+        </pre>
+      ) : null}
+    </details>
+  );
+}
+
 export function ToolStep({ name, state, input, output, approval, onApprovalResponse }: Props) {
-  const [open, setOpen] = useState(false);
   const isRunning =
     state === 'input-streaming' || state === 'input-available' || state === 'partial-call';
   const isApprovalPending = state === 'approval-requested';
@@ -781,21 +814,40 @@ export function ToolStep({ name, state, input, output, approval, onApprovalRespo
   const needsApproval =
     state === 'approval-requested' && approval && onApprovalResponse ? approval : null;
   const approvalResponse = needsApproval && onApprovalResponse ? onApprovalResponse : null;
+  const toolStateLabel = isApprovalPending
+    ? 'Approval needed'
+    : isRunning
+      ? 'Running'
+      : isError
+        ? 'Unable to complete'
+        : 'Completed';
+  const StateIcon = isApprovalPending
+    ? CirclePause
+    : isRunning
+      ? LoaderCircle
+      : isError
+        ? CircleAlert
+        : CircleCheck;
+  const stateClassName = isError ? 'text-danger' : 'text-fg-muted';
   return (
-    <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs">
-      <button
-        type="button"
-        className="flex w-full items-center justify-between gap-2 text-left font-mono"
-        onClick={() => {
-          setOpen((v) => !v);
-        }}
-      >
-        <span className="truncate">
-          {isApprovalPending ? '⏸ ' : isRunning ? '⏳ ' : isError ? '⚠ ' : '✓ '}
-          {summary}
-        </span>
-        <span className="text-muted-foreground">{open ? '−' : '+'}</span>
-      </button>
+    <div className="rounded-md border border-border bg-surface px-3 py-2 text-xs">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+        <div className="flex min-w-0 items-start gap-2 text-fg">
+          <StateIcon
+            aria-hidden="true"
+            className={
+              isRunning
+                ? 'mt-0.5 size-3.5 shrink-0 animate-spin text-fg-muted motion-reduce:animate-none'
+                : `mt-0.5 size-3.5 shrink-0 ${stateClassName}`
+            }
+          />
+          <span className="min-w-0 break-words text-sm leading-[1.35]">{summary}</span>
+        </div>
+        <output aria-atomic="true" className={`shrink-0 text-xs sm:text-right ${stateClassName}`}>
+          <span aria-hidden="true">{toolStateLabel}</span>
+          <span className="sr-only">{`${summary}: ${toolStateLabel}`}</span>
+        </output>
+      </div>
       {reauthServerId ? (
         <ReconnectButton serverId={reauthServerId} serverName={reauthServerName} />
       ) : null}
@@ -808,11 +860,7 @@ export function ToolStep({ name, state, input, output, approval, onApprovalRespo
         />
       ) : null}
       {suggestion ? <InlineApprovalCard suggestion={suggestion} /> : null}
-      {open && (
-        <pre className="mt-2 max-h-60 overflow-auto rounded bg-background p-2 text-[10px] leading-snug">
-          {JSON.stringify({ name, state, input, output }, null, 2)}
-        </pre>
-      )}
+      <ToolDetails name={name} state={state} input={input} output={output} />
     </div>
   );
 }

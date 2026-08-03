@@ -31,6 +31,88 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('ToolStep', () => {
+  it('uses an announced status and only mounts raw tool data while its disclosure is open', async () => {
+    const { container, rerender } = render(
+      <ToolStep
+        name="search_timeline"
+        state="input-streaming"
+        input={{ query: 'open customer work' }}
+      />,
+    );
+
+    const status = screen.getByRole('status');
+    expect(status.textContent).toContain('Running');
+    expect(status.tagName).toBe('OUTPUT');
+    expect(screen.getByText('Searched timeline for "open customer work"')).toBeTruthy();
+    expect(screen.getByText('Technical details')).toBeTruthy();
+    expect(container.querySelector('details')?.hasAttribute('open')).toBe(false);
+    expect(container.querySelector('pre')).toBeNull();
+    expect(container.textContent).not.toContain('⏳');
+    expect(container.querySelector('svg')?.getAttribute('class')).toContain(
+      'motion-reduce:animate-none',
+    );
+
+    await userEvent
+      .setup({ pointerEventsCheck: PointerEventsCheckLevel.Never })
+      .click(screen.getByText('Technical details'));
+    expect(container.querySelector('pre')?.textContent).toContain('open customer work');
+    await userEvent
+      .setup({ pointerEventsCheck: PointerEventsCheckLevel.Never })
+      .click(screen.getByText('Technical details'));
+    expect(container.querySelector('pre')).toBeNull();
+
+    rerender(
+      <ToolStep
+        name="search_timeline"
+        state="output-available"
+        input={{ query: 'open customer work' }}
+        output={{ count: 1 }}
+      />,
+    );
+
+    expect(screen.getByRole('status').textContent).toContain('Completed');
+  });
+
+  it('keeps inline approval actions named and updates the accepted item', async () => {
+    const itemId = '11111111-1111-4111-8111-111111111112';
+    const user = userEvent.setup({ pointerEventsCheck: PointerEventsCheckLevel.Never });
+    fakes.acceptSuggestionItemAction.mockResolvedValue({ ok: true });
+    render(
+      <ToolStep
+        name="suggest_object_memory"
+        state="output-available"
+        output={{
+          suggestion: {
+            id: '22222222-2222-4222-8222-222222222223',
+            title: 'PRH company registration',
+            evidence: [],
+            items: [
+              {
+                id: itemId,
+                status: 'pending',
+                targetKind: 'task',
+                title: 'Tim to register with PRH',
+              },
+            ],
+          },
+        }}
+      />,
+    );
+
+    const accept = screen.getByRole('button', { name: 'Accept Tim to register with PRH' });
+    expect(accept).toBeTruthy();
+    expect(accept.getAttribute('class')).toContain('focus-visible:ring-fg-muted');
+    expect(screen.getByRole('button', { name: 'Change Tim to register with PRH' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Reject Tim to register with PRH' })).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: 'Accept Tim to register with PRH' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Accepted')).toBeTruthy();
+    });
+    expect(fakes.acceptSuggestionItemAction).toHaveBeenCalledWith({ itemId });
+  });
+
   it('renders source names and immediately updates a revised inline proposal', async () => {
     const itemId = '11111111-1111-4111-8111-111111111111';
     const user = userEvent.setup({ pointerEventsCheck: PointerEventsCheckLevel.Never });
@@ -80,6 +162,7 @@ describe('ToolStep', () => {
     expect(
       screen.getByText('Mikael Rintala (Miku, @mikael) in AuditAI founders on Telegram'),
     ).toBeTruthy();
+    expect(screen.getByText('Pending')).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Change Tim to register with PRH' }));
     const dialog = screen.getByRole('dialog');
     await user.type(
@@ -111,7 +194,7 @@ describe('ToolStep', () => {
       }),
     );
 
-    expect(html).toContain('approval required');
+    expect(html).toContain('Approval needed');
     expect(html).toContain('status');
     expect(html).toContain('active');
     expect(html).toContain('done');
@@ -179,7 +262,7 @@ describe('ToolStep', () => {
       }),
     );
 
-    expect(html).toContain('approval required');
+    expect(html).toContain('Approval needed');
     expect(html).toContain('Type');
     expect(html).toContain('project');
     expect(html).toContain('Name');
@@ -202,7 +285,7 @@ describe('ToolStep', () => {
       }),
     );
 
-    expect(html).toContain('approval required');
+    expect(html).toContain('Approval needed');
     expect(html).toContain('Object');
     expect(html).toContain('[ent:aaaaaaaa]');
     expect(html).toContain('User confirmed this object is obsolete.');
@@ -226,7 +309,7 @@ describe('ToolStep', () => {
       }),
     );
 
-    expect(html).toContain('approval required');
+    expect(html).toContain('Approval needed');
     expect(html).toContain('Pilot planning');
     expect(html).toContain('Jun');
     expect(html).toContain('Zoom');
@@ -256,7 +339,7 @@ describe('ToolStep', () => {
       }),
     );
 
-    expect(html).toContain('approval required');
+    expect(html).toContain('Approval needed');
     expect(html).toContain('from');
     expect(html).toContain('; to');
     expect(html).toContain('[cal:12121212]');
@@ -285,7 +368,7 @@ describe('ToolStep', () => {
       }),
     );
 
-    expect(html).toContain('approval required');
+    expect(html).toContain('Approval needed');
     expect(html).toContain('[cal:12121212]');
     expect(html).toContain('single');
     expect(html).toContain('User asked to cancel it.');
@@ -309,7 +392,7 @@ describe('ToolStep', () => {
       }),
     );
 
-    expect(html).toContain('approval required');
+    expect(html).toContain('Approval needed');
     expect(html).toContain('Keep');
     expect(html).toContain('Merge');
     expect(html).toContain('[ent:aaaaaaaa]');
