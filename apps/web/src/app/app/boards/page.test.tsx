@@ -45,6 +45,7 @@ describe('BoardsIndexPage', () => {
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('No boards yet');
+    expect(html).toContain('Boards organize the work your team wants to follow.');
     expect(html.match(/>Create board</g)).toHaveLength(1);
     expect(html).not.toContain('Capture source material');
   });
@@ -68,7 +69,34 @@ describe('BoardsIndexPage', () => {
     expect(html).toContain('overflow-hidden rounded-lg border border-border');
     expect(html).toContain('focus-visible:ring-2 focus-visible:ring-ring');
     expect(html).toContain('Launch plan');
+    expect(html).toContain('<h2 class="m-0 truncate text-sm font-medium text-fg">Launch plan</h2>');
+    expect(html).toContain('<span class="sr-only">Template: </span>task board');
     expect(html).toContain('3 items');
+    expect(html).toContain('Updated Aug 3, 2026');
+    expect(html).toContain('dateTime="2026-08-03T12:00:00.000Z"');
     expect(html.match(/>Create board</g)).toHaveLength(1);
+  });
+
+  it('uses singular board and item labels without changing the board action layout', async () => {
+    fakes.listBoards.mockResolvedValue([
+      {
+        id: 'board-1',
+        name: 'Launch plan',
+        purpose: null,
+        templateKind: 'task_board',
+        itemCount: 1,
+        pinned: false,
+        updatedAt: new Date('2026-08-03T12:00:00.000Z'),
+      },
+    ]);
+
+    const html = renderToStaticMarkup(await BoardsIndexPage());
+
+    expect(html).toContain('<span class="sr-only">1 board</span>');
+    expect(html).toContain('1 item');
+    expect(html).not.toContain('1 items');
+    expect(html).toContain(
+      'flex shrink-0 self-end items-center justify-between gap-3 sm:self-auto',
+    );
   });
 });

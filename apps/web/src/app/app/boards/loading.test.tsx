@@ -62,6 +62,7 @@ describe('Boards route states', () => {
       name: 'boards',
       heading: 'Boards',
       errorHeading: 'Unable to load boards',
+      subtitle: 'Curated work surfaces for the way your team operates.',
       description:
         'Boards could not be loaded. Your saved board data is unchanged. Check your connection, then try again.',
       Component: BoardsError,
@@ -70,19 +71,21 @@ describe('Boards route states', () => {
       name: 'board',
       heading: 'Board',
       errorHeading: 'Unable to load board',
+      subtitle: undefined,
       description:
         'Board details could not be loaded. Your saved board data is unchanged. Check your connection, then try again.',
       Component: BoardError,
     },
   ])(
     'retains Work context and lets keyboard users retry a failed $name load',
-    async ({ heading, errorHeading, description, Component }) => {
+    async ({ heading, errorHeading, subtitle, description, Component }) => {
       const user = userEvent.setup();
       const reset = vi.fn();
 
       render(<Component error={new Error('route failed')} reset={reset} />);
 
       expect(screen.getAllByRole('heading', { level: 1, name: heading })).toHaveLength(1);
+      if (subtitle) expect(screen.getByText(subtitle)).toBeTruthy();
       expect(screen.getByRole('navigation', { name: 'Work' })).toBeTruthy();
       expect(screen.getByRole('link', { name: 'Boards' }).getAttribute('aria-current')).toBe(
         'page',
