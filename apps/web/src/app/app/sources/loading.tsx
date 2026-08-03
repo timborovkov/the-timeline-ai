@@ -7,14 +7,20 @@ export default function SourcesLoading() {
       <output className="sr-only" aria-live="polite">
         Loading connections
       </output>
-      <div className="space-y-6" aria-busy="true" aria-label="Loading connections">
+      <div
+        className="space-y-6 motion-reduce:[&_.animate-pulse]:animate-none"
+        aria-busy="true"
+        aria-label="Loading connections"
+      >
         <h1 className="sr-only">Connections</h1>
-        <PageHeaderSkeleton />
-        <section aria-label="Connections loading placeholder" className="space-y-6">
-          <SourceGroupSkeleton rows={2} />
-          <SourceGroupSkeleton rows={3} />
-          <SourceGroupSkeleton rows={2} />
-        </section>
+        <div aria-hidden="true" inert className="space-y-6">
+          <PageHeaderSkeleton />
+          <section className="space-y-6">
+            <SourceGroupSkeleton rows={2} />
+            <SourceGroupSkeleton rows={3} />
+            <SourceGroupSkeleton rows={2} />
+          </section>
+        </div>
       </div>
     </>
   );
