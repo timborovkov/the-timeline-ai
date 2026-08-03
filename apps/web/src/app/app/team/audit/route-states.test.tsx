@@ -18,31 +18,35 @@ afterEach(() => {
 });
 
 describe('Trust audit route states', () => {
-  it('announces a route-shaped loading state outside the busy audit list', () => {
-    render(<AuditLoading />);
+  it('announces loading outside an inert, responsive audit skeleton', () => {
+    const { container } = render(<AuditLoading />);
 
     const announcement = screen.getByRole('status');
     expect(announcement.textContent).toBe('Loading trust audit');
     expect(announcement.parentElement?.getAttribute('aria-busy')).toBeNull();
     expect(screen.getByLabelText('Loading trust audit').getAttribute('aria-busy')).toBe('true');
+    expect(screen.getByLabelText('Loading trust audit').className).toContain(
+      'motion-reduce:[&_.animate-pulse]:animate-none',
+    );
     expect(screen.getAllByRole('heading', { level: 1, name: 'Trust audit' })).toHaveLength(1);
     expect(screen.getByRole('link', { name: 'Back' }).getAttribute('href')).toBe('/app/team');
 
-    const placeholder = screen.getByRole('region', { name: 'Trust audit loading placeholder' });
-    expect(placeholder.children).toHaveLength(5);
-    expect(placeholder.firstElementChild?.className).toContain('sm:grid-cols-[1fr_auto]');
-    const technicalDetailsPlaceholders = placeholder.querySelectorAll(
-      '[data-loading-technical-details]',
-    );
+    expect(screen.queryByRole('region')).toBeNull();
+    const placeholder = container.querySelector('[aria-busy="true"] > [aria-hidden="true"][inert]');
+    expect(placeholder).toBeTruthy();
+    const rows = placeholder?.querySelectorAll('section > div');
+    expect(rows).toHaveLength(5);
+    const firstRow = rows?.item(0);
+    expect(firstRow?.className).toContain('sm:grid-cols-[minmax(0,1fr)_minmax(10rem,18rem)]');
+    const technicalDetailsPlaceholders =
+      placeholder?.querySelectorAll('[data-loading-technical-details]') ?? [];
     expect(technicalDetailsPlaceholders).toHaveLength(5);
     for (const technicalDetailsPlaceholder of technicalDetailsPlaceholders) {
-      expect(technicalDetailsPlaceholder.getAttribute('aria-hidden')).toBe('true');
       expect(technicalDetailsPlaceholder.className).toContain('border-t');
       expect(technicalDetailsPlaceholder.className).toContain('pt-3');
+      expect(technicalDetailsPlaceholder.className).toContain('sm:col-span-2');
     }
-    for (const skeleton of document.querySelectorAll('.animate-pulse')) {
-      expect(skeleton.className).toContain('motion-reduce:animate-none');
-    }
+    expect(placeholder?.querySelectorAll('a, button, input, select, textarea')).toHaveLength(0);
     expect(screen.queryByRole('button')).toBeNull();
   });
 
