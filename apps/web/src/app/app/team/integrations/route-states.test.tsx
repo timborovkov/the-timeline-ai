@@ -32,10 +32,11 @@ describe('Team integrations route states', () => {
       loadingLabel: 'Loading integration audit',
       placeholderLabel: 'Integration audit loading placeholder',
       Loading: IntegrationAuditLoading,
+      hiddenPlaceholder: true,
     },
   ])(
     'announces $heading loading outside its busy, route-shaped placeholder',
-    ({ heading, loadingLabel, placeholderLabel, Loading }) => {
+    ({ heading, loadingLabel, placeholderLabel, Loading, hiddenPlaceholder = false }) => {
       render(<Loading />);
 
       const announcement = screen.getByRole('status');
@@ -43,7 +44,8 @@ describe('Team integrations route states', () => {
       expect(announcement.parentElement?.getAttribute('aria-busy')).toBeNull();
       expect(screen.getByLabelText(loadingLabel).getAttribute('aria-busy')).toBe('true');
       expect(screen.getAllByRole('heading', { level: 1, name: heading })).toHaveLength(1);
-      expect(screen.getByRole('region', { name: placeholderLabel })).toBeTruthy();
+      const placeholder = screen.queryByRole('region', { name: placeholderLabel });
+      expect(placeholder ? !hiddenPlaceholder : hiddenPlaceholder).toBe(true);
       expect(screen.queryByRole('button')).toBeNull();
     },
   );
