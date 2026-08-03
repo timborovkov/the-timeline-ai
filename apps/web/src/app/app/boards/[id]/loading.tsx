@@ -1,5 +1,6 @@
 import { PageHeaderSkeleton } from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
+import { WorkSubnav } from '@/components/work-subnav';
 
 export default function BoardDetailLoading() {
   return (
@@ -11,23 +12,17 @@ export default function BoardDetailLoading() {
       <div
         data-app-layout="full-bleed"
         className="-mx-4 -my-6 flex h-[calc(100dvh-3rem)] min-w-0 flex-col md:-mx-8 md:-my-8"
-        aria-busy="true"
-        aria-label="Loading board"
       >
-        <div className="flex min-h-0 flex-1 flex-col" aria-hidden="true" inert>
-          <div className="shrink-0 px-4 pt-5 md:px-8 md:pt-6">
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div aria-hidden="true" inert className="shrink-0 px-4 pt-5 md:px-8 md:pt-6">
             <PageHeaderSkeleton />
-            <div
-              className="mt-5 flex gap-2 overflow-hidden py-1"
-              aria-label="Work navigation placeholder"
-            >
-              {Array.from({ length: 5 }).map((_, index) => (
-                <Skeleton key={index} className="h-8 w-16 shrink-0 motion-reduce:animate-none" />
-              ))}
-            </div>
           </div>
+          <WorkSubnav current="/app/boards" className="shrink-0 px-4 md:px-8" />
           <section
-            aria-label="Board detail loading placeholder"
+            aria-label="Loading board"
+            aria-hidden="true"
+            inert
+            aria-busy="true"
             className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-4 pb-2 pt-5 md:px-8"
           >
             {Array.from({ length: 3 }).map((_, index) => (

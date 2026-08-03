@@ -13,7 +13,7 @@ export default function BoardError({
 }) {
   return (
     <div className="space-y-6">
-      <PageHeader title="Board" />
+      <PageHeader title="Board" subtitle="Review the work your team is tracking on this board." />
       <WorkSubnav current="/app/boards" />
       <ErrorState
         title="Unable to load board"
