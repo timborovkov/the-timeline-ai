@@ -1,11 +1,14 @@
 import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
 
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { embed as aiEmbed, embedMany as aiEmbedMany, type EmbeddingModel } from 'ai';
 
+import type * as Cl100kBaseTokenizer from 'gpt-tokenizer/encoding/cl100k_base';
+
 import { getEnv } from '#src/env.js';
 import { wrapAiFailure } from '#src/llm/errors.js';
-import { TIMELINE_MODELS, truncateTextToTokenBudget } from '#src/llm/models.js';
+import { TIMELINE_MODELS } from '#src/llm/models.js';
 
 export interface EmbedInput {
   text: string;
@@ -39,6 +42,55 @@ function resolveModelId(): string {
 function embeddingInputTokenBudget(): number {
   const contextWindow = TIMELINE_MODELS.embedding.contextWindowTokens;
   return Math.max(1, Math.floor(contextWindow * 0.8));
+}
+
+const NO_DISALLOWED_SPECIAL_TOKENS = new Set<string>();
+const CL100K_EMBEDDING_MODELS = new Set(['openai/text-embedding-3-small']);
+const requireEmbeddingDependency = createRequire(import.meta.url);
+type EmbeddingTokenizer = typeof Cl100kBaseTokenizer;
+let loadedEmbeddingTokenizer: EmbeddingTokenizer | undefined;
+
+function getEmbeddingTokenizer(): EmbeddingTokenizer {
+  const modelId = resolveModelId();
+  if (!CL100K_EMBEDDING_MODELS.has(modelId)) {
+    throw new Error(`Embedding tokenizer is not configured for model ${modelId}`);
+  }
+  loadedEmbeddingTokenizer ??= requireEmbeddingDependency(
+    'gpt-tokenizer/encoding/cl100k_base',
+  ) as EmbeddingTokenizer;
+  return loadedEmbeddingTokenizer;
+}
+
+function encodeEmbeddingText(text: string): number[] {
+  return getEmbeddingTokenizer().encode(text, {
+    disallowedSpecial: NO_DISALLOWED_SPECIAL_TOKENS,
+  });
+}
+
+export function countEmbeddingTokens(text: string): number {
+  return encodeEmbeddingText(text).length;
+}
+
+export function truncateEmbeddingTextToTokenBudget(text: string, maxTokens: number): string {
+  const tokens = encodeEmbeddingText(text);
+  if (tokens.length <= maxTokens) return text;
+
+  const suffix = '…';
+  const suffixTokens = encodeEmbeddingText(suffix).length;
+  if (suffixTokens > maxTokens) return '';
+
+  const characters = Array.from(text);
+  const prefixBudget = maxTokens - suffixTokens;
+  let bestEnd = Math.floor((characters.length * prefixBudget) / tokens.length);
+  let truncated = `${characters.slice(0, bestEnd).join('')}${suffix}`;
+  let truncatedTokens = countEmbeddingTokens(truncated);
+  while (bestEnd > 0 && truncatedTokens > maxTokens) {
+    const scaledEnd = Math.floor((bestEnd * maxTokens) / truncatedTokens);
+    bestEnd = Math.min(bestEnd - 1, scaledEnd);
+    truncated = `${characters.slice(0, bestEnd).join('')}${suffix}`;
+    truncatedTokens = countEmbeddingTokens(truncated);
+  }
+  return truncated;
 }
 
 function buildDefaultModel(modelId: string): EmbeddingModel {
@@ -115,7 +167,7 @@ function assertEmbeddingVector(vector: readonly number[], index: number): void {
 export async function embed(input: EmbedInput, deps: EmbedDeps = {}): Promise<EmbedResult> {
   const modelId = resolveModelId();
   return wrapAiFailure({ operation: 'llm.embed', model: modelId }, async () => {
-    const text = truncateTextToTokenBudget(input.text, embeddingInputTokenBudget());
+    const text = truncateEmbeddingTextToTokenBudget(input.text, embeddingInputTokenBudget());
     if (!deps.model && deterministicEmbeddingsEnabled()) {
       return { vector: deterministicEmbeddingVector(text), model: modelId };
     }
@@ -133,7 +185,7 @@ export async function embedMany(
   return wrapAiFailure({ operation: 'llm.embedMany', model: modelId }, async () => {
     if (input.texts.length === 0) return { vectors: [], model: modelId };
     const texts = input.texts.map((text) =>
-      truncateTextToTokenBudget(text, embeddingInputTokenBudget()),
+      truncateEmbeddingTextToTokenBudget(text, embeddingInputTokenBudget()),
     );
     if (!deps.model && deterministicEmbeddingsEnabled()) {
       return { vectors: texts.map(deterministicEmbeddingVector), model: modelId };

@@ -5313,6 +5313,71 @@ describe('suggestion scope', () => {
     });
   });
 
+  it('retries reviewer feedback against a concurrently changed proposal', async () => {
+    let itemId = '';
+    const chatStructured = vi.fn(async ({ prompt }: { prompt: string }) => {
+      const concurrentPayload = {
+        canonicalName: 'Call Tec',
+        taskCategory: 'sales',
+        taskCategoryMode: 'manual',
+      };
+      if (chatStructured.mock.calls.length === 1) {
+        await db
+          .update(agentSuggestionItems)
+          .set({
+            proposedPayload: concurrentPayload,
+            updatedAt: new Date('2026-08-03T11:00:00.000Z'),
+          })
+          .where(eq(agentSuggestionItems.id, itemId));
+      }
+      const sawConcurrentChange = prompt.includes('"taskCategory":"sales"');
+      return {
+        object: {
+          title: 'Call Tecci',
+          description: 'Corrected the company name.',
+          proposedPayload: sawConcurrentChange
+            ? { ...concurrentPayload, canonicalName: 'Call Tecci' }
+            : { canonicalName: 'Call Tecci' },
+          explanation: 'Corrected Tec to Tecci.',
+        },
+        model: 'test-concurrent-proposal-revision',
+      };
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID, {
+      chatStructured: chatStructured as never,
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Call Tec',
+      dedupeKey: 'concurrent-reviewer-revision',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Call Tec',
+          dedupeKey: 'concurrent-reviewer-revision:item',
+          proposedPayload: { canonicalName: 'Call Tec' },
+        },
+      ],
+    });
+    itemId = bundle.items[0]?.id ?? '';
+
+    await expect(
+      scope.suggestions.reviseSuggestionItem({
+        itemId,
+        feedback: "It's Tecci, not Tec",
+      }),
+    ).resolves.toMatchObject({
+      title: 'Call Tecci',
+      proposedPayload: {
+        canonicalName: 'Call Tecci',
+        taskCategory: 'sales',
+        taskCategoryMode: 'manual',
+      },
+    });
+    expect(chatStructured).toHaveBeenCalledTimes(2);
+  });
+
   it('preserves concurrent category and project revisions to the same task proposal', async () => {
     const ownerScope = withTeam(db as never, TEAM_ID, USER_ID);
     const reviewerScope = withTeam(db as never, TEAM_ID, REVIEWER_ID);

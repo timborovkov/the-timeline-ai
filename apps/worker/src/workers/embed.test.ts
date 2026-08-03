@@ -390,6 +390,77 @@ describe('processEmbedJobForTests', () => {
     expect(row?.sourceMetadata).not.toHaveProperty('embedded_at');
   });
 
+  it('splits token-dense source text before calling the embedding provider', async () => {
+    const rawEventId = '13131313-2222-4333-8444-555555555555';
+    await db.insert(rawEvents).values({
+      id: rawEventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: '😀'.repeat(20_000),
+      occurredAt: new Date('2026-05-27T12:00:00Z'),
+      visibility: 'team',
+      visibilityOwnerUserId: USER_ID,
+      sourceMetadata: {},
+    });
+    const tokenBudget = Math.floor(llm.TIMELINE_MODELS.embedding.contextWindowTokens * 0.8);
+    const embedMany = vi.fn<
+      (input: { texts: string[] }) => Promise<{ vectors: number[][]; model: string }>
+    >(({ texts }) => {
+      for (const text of texts) {
+        expect(llm.countEmbeddingTokens(text)).toBeLessThanOrEqual(tokenBudget);
+      }
+      return Promise.resolve({
+        vectors: texts.map(() => [0.1, 0.2, 0.3, 0.4]),
+        model: 'test-embed-model',
+      });
+    });
+    const upsertVector = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSource = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSourceFromChunk = vi
+      .fn<DeletePointsForSourceFromChunk>()
+      .mockResolvedValue(undefined);
+
+    await processEmbedJobForTests(
+      { db: db as never },
+      { scope: 'raw_event', teamId: TEAM_ID, rawEventId },
+      {
+        getEnv: () =>
+          ({ OPENROUTER_API_KEY: 'test-key', QDRANT_URL: 'http://qdrant.test' }) as never,
+        embedMany,
+        getQdrantClient: vi.fn(
+          () => ({ deletePointsForSource, deletePointsForSourceFromChunk, upsertVector }) as never,
+        ),
+      },
+    );
+
+    const batchTexts = embedMany.mock.calls[0]?.[0].texts ?? [];
+    expect(batchTexts.length).toBeGreaterThan(1);
+    expect(upsertVector).toHaveBeenCalledTimes(batchTexts.length);
+  });
+
+  it('keeps exact-token chunk overlap and avoids tiny tail vectors', () => {
+    const tokenBudget = Math.floor(llm.TIMELINE_MODELS.embedding.contextWindowTokens * 0.8);
+    const input = Array.from({ length: 5_001 }, (_, index) =>
+      String.fromCodePoint(0x10_000 + index),
+    ).join('');
+
+    const chunks = embedWorkerInternals.splitEmbeddingChunk(input, tokenBudget);
+
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const [index, chunk] of chunks.entries()) {
+      expect(llm.countEmbeddingTokens(chunk)).toBeLessThanOrEqual(tokenBudget);
+      if (index === 0) continue;
+      const previous = chunks[index - 1] ?? '';
+      const previousStart = input.indexOf(previous);
+      const currentStart = input.indexOf(chunk);
+      expect(currentStart).toBeLessThan(previousStart + previous.length);
+    }
+    expect(llm.countEmbeddingTokens(chunks.at(-1) ?? '')).toBeGreaterThanOrEqual(
+      embedWorkerInternals.embeddingOverlapTokens,
+    );
+  });
+
   it('embeds each oversized chunk batch with one provider request', async () => {
     const rawEventId = '12121212-2222-4333-8444-555555555555';
     const longText = Array.from(

@@ -1,10 +1,11 @@
 import { MockEmbeddingModelV3 } from 'ai/test';
+import { encode } from 'gpt-tokenizer/encoding/cl100k_base';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { EmbeddingModel } from 'ai';
 
 import { resetEnvForTests } from '#src/env.js';
-import { embed, embedMany } from '#src/llm/embed.js';
+import { embed, embedMany, truncateEmbeddingTextToTokenBudget } from '#src/llm/embed.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 
 const ENV_BACKUP = { ...process.env };
@@ -56,6 +57,7 @@ describe('llm.embed', () => {
   });
 
   it('truncates text before sending it to the embedding model budget', async () => {
+    const input = 'x '.repeat(40_000);
     let modelInput = '';
     const model = new MockEmbeddingModelV3({
       doEmbed: (({ values }: { values: string[] }) => {
@@ -64,13 +66,42 @@ describe('llm.embed', () => {
       }) as never,
     });
 
-    await embed({ text: 'x'.repeat(40_000) }, { model });
+    await embed({ text: input }, { model });
 
-    expect(modelInput.length).toBeLessThan(40_000);
+    expect(modelInput.length).toBeLessThan(input.length);
     expect(modelInput.endsWith('…')).toBe(true);
     expect(modelInput.length).toBeLessThanOrEqual(
       Math.floor(TIMELINE_MODELS.embedding.contextWindowTokens * 0.8) * 4,
     );
+  });
+
+  it('keeps token-dense Unicode within the embedding model budget', async () => {
+    let modelInput = '';
+    const model = new MockEmbeddingModelV3({
+      doEmbed: (({ values }: { values: string[] }) => {
+        modelInput = values[0] ?? '';
+        return Promise.resolve({ embeddings: [embeddingVector(1)] });
+      }) as never,
+    });
+
+    await embedMany({ texts: ['😀'.repeat(4_000)] }, { model });
+
+    expect(encode(modelInput).length).toBeLessThanOrEqual(
+      Math.floor(TIMELINE_MODELS.embedding.contextWindowTokens * 0.8),
+    );
+    expect(modelInput.endsWith('…')).toBe(true);
+  });
+
+  it('truncates repeated multibyte inputs without cross-call corruption', () => {
+    const input = `a${'漢'.repeat(4_000)}`;
+    const tokenBudget = Math.floor(TIMELINE_MODELS.embedding.contextWindowTokens * 0.8);
+
+    const first = truncateEmbeddingTextToTokenBudget(input, tokenBudget);
+    const second = truncateEmbeddingTextToTokenBudget(input, tokenBudget);
+
+    expect(second).toBe(first);
+    expect(second).not.toContain('�');
+    expect(input.startsWith(second.slice(0, -1))).toBe(true);
   });
 
   it('embeds multiple texts', async () => {

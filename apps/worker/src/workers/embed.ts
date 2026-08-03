@@ -58,10 +58,63 @@ function embeddingChunkBudgetTokens(): number {
 }
 
 function chunkForEmbedding(text: string) {
-  return chunkText(text, {
-    targetTokens: embeddingChunkBudgetTokens(),
+  const tokenBudget = embeddingChunkBudgetTokens();
+  const estimatedChunks = chunkText(text, {
+    targetTokens: tokenBudget,
     overlapTokens: EMBEDDING_OVERLAP_TOKENS,
   });
+  return estimatedChunks
+    .flatMap((chunk) => splitEmbeddingChunk(chunk.text, tokenBudget))
+    .map((chunkText, index) => ({
+      index,
+      text: chunkText,
+      tokenCount: llm.countEmbeddingTokens(chunkText),
+    }));
+}
+
+function splitEmbeddingChunk(text: string, tokenBudget: number): string[] {
+  if (llm.countEmbeddingTokens(text) <= tokenBudget) return [text];
+
+  const characters = Array.from(text);
+  const chunks: string[] = [];
+  const overlapTokens = Math.min(EMBEDDING_OVERLAP_TOKENS, Math.max(0, tokenBudget - 1));
+  let cursor = 0;
+  while (cursor < characters.length) {
+    let low = cursor + 1;
+    let high = characters.length;
+    let bestEnd = cursor;
+    while (low <= high) {
+      const midpoint = Math.floor((low + high) / 2);
+      const candidate = characters.slice(cursor, midpoint).join('');
+      if (llm.countEmbeddingTokens(candidate) <= tokenBudget) {
+        bestEnd = midpoint;
+        low = midpoint + 1;
+      } else {
+        high = midpoint - 1;
+      }
+    }
+    if (bestEnd === cursor) {
+      throw new Error('Embedding token budget cannot fit one Unicode character');
+    }
+    chunks.push(characters.slice(cursor, bestEnd).join(''));
+    if (bestEnd === characters.length) break;
+
+    let overlapLow = cursor + 1;
+    let overlapHigh = bestEnd;
+    let nextCursor = bestEnd;
+    while (overlapLow <= overlapHigh) {
+      const midpoint = Math.floor((overlapLow + overlapHigh) / 2);
+      const overlap = characters.slice(midpoint, bestEnd).join('');
+      if (llm.countEmbeddingTokens(overlap) <= overlapTokens) {
+        nextCursor = midpoint;
+        overlapHigh = midpoint - 1;
+      } else {
+        overlapLow = midpoint + 1;
+      }
+    }
+    cursor = nextCursor;
+  }
+  return chunks;
 }
 
 function embeddingStartChunk(data: queue.EmbedJobData): number {
@@ -539,5 +592,7 @@ export async function processEmbedJobForTests(
 export const embedWorkerInternals = {
   embedFailureTags,
   embedFailureMessage,
+  splitEmbeddingChunk,
+  embeddingOverlapTokens: EMBEDDING_OVERLAP_TOKENS,
   embeddingChunksPerJob: EMBEDDING_CHUNKS_PER_JOB,
 };
