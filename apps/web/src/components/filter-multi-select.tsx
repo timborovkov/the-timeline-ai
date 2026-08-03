@@ -96,7 +96,7 @@ export function FilterMultiSelect({
       type="button"
       aria-label={label}
       className={cn(
-        'flex h-9 w-full items-center justify-between gap-2 rounded-sm border border-border bg-surface px-2 text-left text-xs text-fg outline-none transition-colors hover:border-border-strong focus-visible:border-signal/60 focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
+        'flex h-9 w-full items-center justify-between gap-2 rounded-sm border border-border bg-surface px-2 text-left text-xs text-fg outline-none transition-colors hover:border-border-strong focus-visible:border-signal/60 focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2',
         selectedList.length === 0 && 'text-fg-muted',
         triggerClassName,
       )}
@@ -209,7 +209,7 @@ function SearchableMultiSelect({
             }}
             placeholder={search.placeholder}
             aria-label={search.ariaLabel}
-            className="h-8 w-full rounded-sm border border-border bg-bg py-1 pl-8 pr-2 text-xs text-fg outline-none placeholder:text-fg-dim focus-visible:border-signal/60 focus-visible:ring-2 focus-visible:ring-signal/40"
+            className="h-9 w-full rounded-sm border border-border bg-bg py-1 pl-8 pr-2 text-base text-fg outline-none placeholder:text-fg-dim focus-visible:border-signal/60 focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2 sm:text-xs"
           />
         </div>
         <div className="-mx-1 my-1 h-px bg-muted" />
@@ -228,7 +228,7 @@ function SearchableMultiSelect({
                 onSelect({ type: 'clear' });
               }}
               onKeyDown={handlePickerOptionKeyDown}
-              className="flex w-full items-center rounded-sm px-2 py-1.5 text-left text-sm text-fg-muted outline-none transition-colors hover:bg-accent focus:bg-accent focus:text-accent-foreground"
+              className="flex min-h-9 w-full items-center rounded-sm px-2 py-1.5 text-left text-sm text-fg-muted outline-none transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:text-accent-foreground focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-inset forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2"
             >
               {placeholder}
             </button>
@@ -247,7 +247,7 @@ function SearchableMultiSelect({
                   });
                 }}
                 onKeyDown={handlePickerOptionKeyDown}
-                className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus:bg-accent focus:text-accent-foreground"
+                className="flex min-h-9 w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:text-accent-foreground focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-inset forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2"
               >
                 <Check
                   className={cn(
