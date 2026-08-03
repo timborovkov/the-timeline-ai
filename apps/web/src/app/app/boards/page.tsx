@@ -5,7 +5,6 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 
 import { BoardCreateDialog } from '@/components/boards/board-create-form';
-import { EmptyAction } from '@/components/empty-action';
 import { PageHeader } from '@/components/page-header';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { WorkSubnav } from '@/components/work-subnav';
@@ -40,47 +39,63 @@ export default async function BoardsIndexPage() {
         title="Boards"
         subtitle="Curated work surfaces for the way your team operates."
         metadata={[{ label: 'Total', value: boards.length, mono: true }]}
-        trailing={BOARD_CREATE_DIALOG}
+        trailing={boards.length > 0 ? BOARD_CREATE_DIALOG : undefined}
       />
       <WorkSubnav current="/app/boards" />
 
       {boards.length === 0 ? (
-        <EmptyAction
-          title="No boards yet"
-          body="Boards are work surfaces over objects and tasks. Start with a preset, then tune the stages to match the way your team works."
-          href="/app#capture"
-          action="Capture source material"
-        />
+        <section
+          className="border-y border-border py-10 text-center"
+          aria-labelledby="empty-boards-title"
+        >
+          <h2 id="empty-boards-title" className="text-sm font-semibold text-fg">
+            No boards yet
+          </h2>
+          <p className="mx-auto mt-2 max-w-md text-sm text-fg-muted">
+            Boards are work surfaces over objects and tasks. Start with a preset, then tune the
+            stages to match the way your team works.
+          </p>
+          <div className="mt-4 flex justify-center">{BOARD_CREATE_DIALOG}</div>
+        </section>
       ) : (
-        <ul className="divide-y divide-border border border-border" aria-label="Boards">
-          {boards.map((b) => {
-            const description = visibleBoardDescription(b.purpose);
+        <ul
+          className="divide-y divide-border overflow-hidden rounded-lg border border-border"
+          aria-label="Boards"
+        >
+          {boards.map((board) => {
+            const description = visibleBoardDescription(board.purpose);
             return (
-              <li key={b.id} className="bg-bg transition-colors hover:bg-surface">
+              <li
+                key={board.id}
+                className="bg-bg transition-colors hover:bg-surface focus-within:bg-surface"
+              >
                 <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-start">
-                  <Link href={`/app/boards/${b.id}`} className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-fg">{b.name}</span>
+                  <Link
+                    href={`/app/boards/${board.id}`}
+                    className="min-w-0 flex-1 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+                  >
+                    <span className="block truncate text-sm font-medium text-fg">{board.name}</span>
                     {description ? (
                       <span className="mt-1 block line-clamp-2 text-sm text-fg-muted">
                         {description}
                       </span>
                     ) : null}
                     <span className="mt-2 flex flex-wrap items-center gap-2 text-xs text-fg-dim">
-                      <span className="capitalize">{b.templateKind.replaceAll('_', ' ')}</span>
+                      <span className="capitalize">{board.templateKind.replaceAll('_', ' ')}</span>
                       <span aria-hidden="true">·</span>
                       <span>
-                        {formatDisplayDate(b.updatedAt, {
+                        {formatDisplayDate(board.updatedAt, {
                           timezone: calendarSettings.defaultTimezone,
                         })}
                       </span>
                     </span>
                   </Link>
                   <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-start">
-                    <span className="font-mono text-xs text-fg-dim">{b.itemCount} items</span>
+                    <span className="font-mono text-xs text-fg-dim">{board.itemCount} items</span>
                     <PinOverflowMenu
-                      target={{ kind: 'board', key: b.id }}
-                      title={b.name}
-                      initialPinned={b.pinned}
+                      target={{ kind: 'board', key: board.id }}
+                      title={board.name}
+                      initialPinned={board.pinned}
                     />
                   </div>
                 </div>

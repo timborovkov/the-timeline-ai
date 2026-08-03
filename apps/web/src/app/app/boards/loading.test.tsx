@@ -30,6 +30,9 @@ describe('Boards route states', () => {
     const listSkeleton = document.querySelector('[aria-busy="true"] > [aria-hidden="true"]');
     expect(listSkeleton).toBeTruthy();
     expect(listSkeleton?.querySelectorAll('a, button, input, select, textarea')).toHaveLength(0);
+    expect(
+      document.querySelector('[aria-label="Boards list loading placeholder"] ul')?.className,
+    ).toContain('overflow-hidden rounded-lg border border-border');
 
     rerender(<BoardDetailLoading />);
 

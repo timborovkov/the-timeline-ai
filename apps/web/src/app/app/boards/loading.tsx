@@ -17,7 +17,7 @@ export default function BoardsLoading() {
             ))}
           </div>
           <section aria-label="Boards list loading placeholder">
-            <ul className="divide-y divide-border border border-border">
+            <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border">
               {Array.from({ length: 3 }).map((_, i) => (
                 <li key={i} className="bg-bg">
                   <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-start">
