@@ -875,7 +875,14 @@ function CalendarEventList({
           <h2 id="calendar-events-heading" className="text-base font-semibold text-fg">
             Calendar events
           </h2>
-          <p className="mt-1 text-sm text-fg-muted">{eventCountLabel}</p>
+          <p
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            className="mt-1 text-sm text-fg-muted"
+          >
+            {eventCountLabel}
+          </p>
         </div>
         <div className="flex w-full items-center gap-2 rounded-sm border border-input bg-background px-3 sm:w-auto sm:min-w-64">
           <Search className="size-4 shrink-0 text-fg-dim" aria-hidden="true" />
@@ -1175,7 +1182,7 @@ function CalendarBody({
   }
   return (
     <section
-      className={`grid ${gridCols} gap-px rounded-md border bg-border`}
+      className={`grid min-w-0 overflow-hidden ${gridCols} gap-px rounded-md border bg-border`}
       aria-label={calendarLabel}
     >
       <div className="hidden bg-muted/40 p-2 text-center text-xs font-medium text-muted-foreground sm:block">
@@ -1623,7 +1630,7 @@ function DayCell({
             onClick={() => {
               onEdit(event);
             }}
-            className={`block w-full truncate rounded-sm px-2 py-1 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
+            className={`block w-full min-w-0 overflow-hidden rounded-sm px-2 py-1 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
               event.redacted
                 ? 'bg-muted text-muted-foreground italic'
                 : event.showAs === 'tentative'
@@ -1633,7 +1640,7 @@ function DayCell({
                     : 'bg-primary/10 text-foreground hover:bg-primary/15'
             } disabled:opacity-70`}
           >
-            <span className="inline-flex items-center gap-1">
+            <span className="flex min-w-0 items-center gap-1">
               {event.allDay ? null : <Clock className="size-3" aria-hidden="true" />}
               {event.showAs === 'tentative' ? <span className="text-[11px]">Tentative</span> : null}
               {event.rrule || event.recurringParentId ? (
@@ -1641,12 +1648,16 @@ function DayCell({
                   R
                 </span>
               ) : null}
-              {event.allDay
-                ? event.redacted
-                  ? 'Busy'
-                  : event.title
-                : `${formatTime(event, timezone)} ${event.redacted ? 'Busy' : event.title}`}
-              {!event.redacted ? <Pencil className="size-3 opacity-50" aria-hidden="true" /> : null}
+              <span className="min-w-0 truncate">
+                {event.allDay
+                  ? event.redacted
+                    ? 'Busy'
+                    : event.title
+                  : `${formatTime(event, timezone)} ${event.redacted ? 'Busy' : event.title}`}
+              </span>
+              {!event.redacted ? (
+                <Pencil className="hidden size-3 shrink-0 opacity-50 sm:block" aria-hidden="true" />
+              ) : null}
             </span>
           </button>
         ))}
