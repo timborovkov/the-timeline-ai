@@ -11,13 +11,16 @@ const fakes = vi.hoisted(() => ({
 
 vi.mock('next/navigation', () => ({ usePathname: () => fakes.pathname }));
 vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
+vi.mock('@/lib/auth', () => ({ auth: vi.fn().mockResolvedValue(null) }));
 
 import HelpTopicError from '@/app/help/[slug]/error';
 import HelpTopicLoading from '@/app/help/[slug]/loading';
+import HelpTopicPage from '@/app/help/[slug]/page';
 import ContactError from '@/app/help/contact/error';
 import ContactLoading from '@/app/help/contact/loading';
 import HelpError from '@/app/help/error';
 import HelpLoading from '@/app/help/loading';
+import HelpIndexPage from '@/app/help/page';
 import SupportError from '@/app/help/support/error';
 import SupportLoading from '@/app/help/support/loading';
 import { HelpShell } from '@/components/help/help-shell';
@@ -50,15 +53,22 @@ describe('Help route states', () => {
     expect(reset).toHaveBeenCalledOnce();
   });
 
-  it('announces loading outside the busy, help-shaped placeholder', () => {
-    render(<HelpLoading />);
+  it('announces loading outside inert, help-shaped visuals', () => {
+    const { container } = render(<HelpLoading />);
 
     const announcement = screen.getByRole('status');
     expect(announcement.textContent).toBe('Loading help');
     expect(announcement.parentElement?.getAttribute('aria-busy')).toBeNull();
-    expect(screen.getByLabelText('Loading help').getAttribute('aria-busy')).toBe('true');
+    const loading = screen.getByLabelText('Loading help');
+    expect(loading.getAttribute('aria-busy')).toBe('true');
     expect(screen.getByRole('heading', { level: 1, name: 'Help' })).toBeTruthy();
-    expect(screen.getByRole('region', { name: 'Help loading placeholder' })).toBeTruthy();
+    expect(screen.queryByRole('region')).toBeNull();
+    const visuals = container.querySelector('[aria-busy="true"] > [aria-hidden="true"][inert]');
+    expect(visuals).toBeTruthy();
+    expect(
+      visuals?.querySelectorAll('a, button, input, select, textarea, [tabindex]'),
+    ).toHaveLength(0);
+    expect(visuals?.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
   });
 
   it('identifies the guide navigation and exposes the current page', () => {
@@ -73,6 +83,29 @@ describe('Help route states', () => {
       'page',
     );
     expect(screen.getByRole('link', { name: 'Overview' }).hasAttribute('aria-current')).toBe(false);
+  });
+
+  it('gives Help discovery links a visible keyboard focus treatment', async () => {
+    render(<HelpIndexPage />);
+
+    for (const name of ['Document drive', 'Capture surfaces']) {
+      const link = screen.getByRole('link', { name });
+      expect(link.className).toContain('focus-visible:ring-2');
+      expect(link.className).toContain('focus-visible:ring-fg');
+      expect(link.className).toContain('focus-visible:ring-offset-bg');
+      expect(link.className).toContain('forced-colors:focus-visible:outline');
+      expect(link.className).toContain('forced-colors:focus-visible:outline-2');
+    }
+
+    cleanup();
+    render(await HelpTopicPage({ params: Promise.resolve({ slug: 'documents' }) }));
+
+    for (const name of ['Capture surfaces', 'Work surface', 'Contact support']) {
+      const link = screen.getByRole('link', { name });
+      expect(link.className).toContain('focus-visible:ring-2');
+      expect(link.className).toContain('focus-visible:ring-fg');
+      expect(link.className).toContain('forced-colors:focus-visible:outline-2');
+    }
   });
 });
 
@@ -135,6 +168,13 @@ describe('Help child route states', () => {
       );
       expect(screen.getByRole('navigation', { name: 'Help guides' })).toBeTruthy();
       expect(screen.getByText(loadingDescription)).toBeTruthy();
+      const visuals = screen
+        .getByLabelText(`${title} loading placeholder`)
+        .querySelector('[aria-hidden="true"][inert]');
+      expect(visuals).toBeTruthy();
+      expect(
+        visuals?.querySelectorAll('a, button, input, select, textarea, [tabindex]'),
+      ).toHaveLength(0);
       expect(
         within(screen.getByRole('navigation', { name: 'Help guides' }))
           .getByRole('link', {

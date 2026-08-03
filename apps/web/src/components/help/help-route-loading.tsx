@@ -21,7 +21,7 @@ export function HelpRouteLoading({ description, title, variant }: HelpRouteLoadi
           <p className="text-lg text-fg-muted">{description}</p>
         </header>
 
-        <div aria-hidden="true" className="max-w-3xl space-y-8">
+        <div aria-hidden="true" inert className="max-w-3xl space-y-8">
           {variant === 'guide' ? (
             <>
               {Array.from({ length: 2 }).map((_, index) => (
