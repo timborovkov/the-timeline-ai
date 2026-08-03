@@ -7,6 +7,7 @@ import { Suspense, useEffect, useRef, useState, useTransition } from 'react';
 import { markNotificationReadAction } from '@/app/actions/objects';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { formatDisplayDateTime } from '@/lib/display-dates';
+import { notificationKindLabel } from '@/lib/notification-labels';
 import { cn } from '@/lib/utils';
 
 interface Props {
@@ -143,11 +144,11 @@ function NotificationRowContent({
         <div className="flex items-center gap-2 text-xs text-fg-dim">
           {!read ? (
             <span className="inline-flex items-center gap-1.5 font-medium text-fg-muted">
-              <span aria-hidden="true" className="size-1.5 rounded-sm bg-signal" />
+              <span aria-hidden="true" className="size-1.5 bg-signal" />
               Unread
             </span>
           ) : null}
-          <span>{kind.replace(/_/g, ' ')}</span>
+          <span>{notificationKindLabel(kind)}</span>
         </div>
         <p className="mt-1 text-fg">
           {entityId || agentSuggestionId ? (

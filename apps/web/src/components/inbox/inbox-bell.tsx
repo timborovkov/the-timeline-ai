@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { formatDisplayDate } from '@/lib/display-dates';
+import { notificationKindLabel } from '@/lib/notification-labels';
 import { cn } from '@/lib/utils';
 
 export interface InboxBellNotification {
@@ -166,7 +167,7 @@ export function InboxBell({ unreadCount, notifications }: InboxBellProps) {
                     />
                     <span className="min-w-0">
                       <span className="flex items-center gap-2 text-[11px] text-fg-dim">
-                        <span className="truncate">{notification.kind.replace(/_/g, ' ')}</span>
+                        <span className="truncate">{notificationKindLabel(notification.kind)}</span>
                         <time dateTime={notification.createdAt} className="shrink-0">
                           {formatPreviewTime(notification.createdAt, timezone)}
                         </time>
