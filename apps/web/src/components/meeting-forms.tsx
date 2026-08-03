@@ -20,6 +20,8 @@ import { Label } from '@/components/ui/label';
 import { DEFAULT_TIMEZONE, timezoneOptions } from '@/lib/timezones';
 
 const EMPTY_MEMBERS: { id: string; label: string }[] = [];
+const INCOMPLETE_SCHEDULE_ERROR =
+  'Add at least one start time and one day before saving a schedule.';
 type Visibility = 'team' | 'private' | 'specific_users';
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 const WEEKDAY_NAMES = [
@@ -123,6 +125,7 @@ function scheduleMeetingReducer(
 interface SavedMeetingState {
   pending: boolean;
   error: string | null;
+  scheduleError: 'times' | 'weekdays' | 'both' | null;
   visibility: Visibility;
   visibilityUserIds: string[];
   scheduled: boolean;
@@ -133,6 +136,7 @@ interface SavedMeetingState {
 type SavedMeetingAction =
   | { type: 'pending'; pending: boolean }
   | { type: 'error'; error: string | null }
+  | { type: 'scheduleError'; scheduleError: SavedMeetingState['scheduleError'] }
   | { type: 'visibility'; visibility: Visibility }
   | { type: 'visibilityUserIds'; visibilityUserIds: string[] }
   | { type: 'scheduled'; scheduled: boolean }
@@ -148,6 +152,8 @@ function savedMeetingReducer(
       return { ...state, pending: action.pending };
     case 'error':
       return { ...state, error: action.error };
+    case 'scheduleError':
+      return { ...state, scheduleError: action.scheduleError };
     case 'visibility':
       return { ...state, visibility: action.visibility };
     case 'visibilityUserIds':
@@ -234,6 +240,10 @@ function ScheduleFields({
   durationMinutes,
   joinOffsetMinutes,
   compact = false,
+  timesInvalid = false,
+  weekdaysInvalid = false,
+  errorId,
+  onScheduleFieldChange,
 }: {
   idPrefix: string;
   timezone: string;
@@ -243,11 +253,16 @@ function ScheduleFields({
   durationMinutes: number;
   joinOffsetMinutes: number;
   compact?: boolean;
+  timesInvalid?: boolean;
+  weekdaysInvalid?: boolean;
+  errorId?: string;
+  onScheduleFieldChange?: () => void;
 }) {
   const timesHelpId = `${idPrefix}-times-help`;
+  const timesDescribedBy = timesInvalid && errorId ? `${timesHelpId} ${errorId}` : timesHelpId;
 
   return (
-    <div className="space-y-4 rounded-md border bg-surface/40 p-4">
+    <div className="space-y-4">
       <div className="grid gap-4 md:grid-cols-[minmax(0,1.15fr)_minmax(14rem,1fr)]">
         <div className="space-y-2">
           <Label htmlFor={`${idPrefix}-times`}>Start times</Label>
@@ -257,7 +272,9 @@ function ScheduleFields({
             defaultValue={times?.join(', ') ?? ''}
             placeholder="09:00, 16:30"
             inputMode="text"
-            aria-describedby={timesHelpId}
+            onChange={onScheduleFieldChange}
+            aria-describedby={timesDescribedBy}
+            aria-invalid={timesInvalid || undefined}
           />
           <p id={timesHelpId} className="text-xs text-muted-foreground">
             Use 24-hour local times, separated by commas.
@@ -298,7 +315,11 @@ function ScheduleFields({
         </div>
       </div>
 
-      <fieldset className="space-y-2">
+      <fieldset
+        aria-describedby={weekdaysInvalid ? errorId : undefined}
+        aria-invalid={weekdaysInvalid || undefined}
+        className="space-y-2"
+      >
         <legend className="text-sm font-medium">Repeat on</legend>
         <div className="flex flex-wrap gap-2">
           {WEEKDAYS.map((label, index) => (
@@ -309,6 +330,7 @@ function ScheduleFields({
               <input
                 aria-label={compact ? WEEKDAY_NAMES[index] : undefined}
                 name={`weekday-${index}`}
+                onChange={onScheduleFieldChange}
                 type="checkbox"
                 defaultChecked={weekdays?.includes(index) ?? (index > 0 && index < 6)}
               />
@@ -324,13 +346,16 @@ function ScheduleFields({
 function FormError({
   errorRef,
   message,
+  id,
 }: {
   errorRef: React.RefObject<HTMLParagraphElement | null>;
   message: string | null;
+  id?: string;
 }) {
   return (
     <p
       ref={errorRef}
+      id={id}
       hidden={!message}
       role={message ? 'alert' : undefined}
       tabIndex={-1}
@@ -610,12 +635,14 @@ export function SavedMeetingForm({
 }) {
   const router = useRouter();
   const errorRef = useRef<HTMLParagraphElement>(null);
+  const errorId = useId();
   const [
-    { pending, error, visibility, visibilityUserIds, scheduled, autoJoin, timezone },
+    { pending, error, scheduleError, visibility, visibilityUserIds, scheduled, autoJoin, timezone },
     dispatch,
   ] = useReducer(savedMeetingReducer, {
     pending: false,
     error: null,
+    scheduleError: null,
     visibility: defaultVisibility,
     visibilityUserIds: defaultVisibilityUserIds ?? [],
     scheduled: false,
@@ -636,9 +663,25 @@ export function SavedMeetingForm({
     e.preventDefault();
     const formElement = e.currentTarget;
     dispatch({ type: 'error', error: null });
-    dispatch({ type: 'pending', pending: true });
     const form = new FormData(formElement);
     const scheduleConfig = formScheduleConfig(form, scheduled);
+    if (scheduled && !scheduleConfig) {
+      const times = formTimes(form);
+      const weekdays = formWeekdays(form);
+      dispatch({
+        type: 'scheduleError',
+        scheduleError:
+          times.length === 0 && weekdays.length === 0
+            ? 'both'
+            : times.length === 0
+              ? 'times'
+              : 'weekdays',
+      });
+      showError(INCOMPLETE_SCHEDULE_ERROR);
+      return;
+    }
+    dispatch({ type: 'scheduleError', scheduleError: null });
+    dispatch({ type: 'pending', pending: true });
     try {
       const result = await createSavedMeetingAction({
         title: formString(form, 'title').trim(),
@@ -727,6 +770,8 @@ export function SavedMeetingForm({
             checked={scheduled}
             onChange={(event) => {
               dispatch({ type: 'scheduled', scheduled: event.target.checked });
+              dispatch({ type: 'error', error: null });
+              dispatch({ type: 'scheduleError', scheduleError: null });
             }}
           />
           Add a recurring schedule
@@ -741,6 +786,13 @@ export function SavedMeetingForm({
               }}
               durationMinutes={30}
               joinOffsetMinutes={2}
+              timesInvalid={scheduleError === 'times' || scheduleError === 'both'}
+              weekdaysInvalid={scheduleError === 'weekdays' || scheduleError === 'both'}
+              errorId={errorId}
+              onScheduleFieldChange={() => {
+                dispatch({ type: 'error', error: null });
+                dispatch({ type: 'scheduleError', scheduleError: null });
+              }}
             />
             <label className="flex items-center gap-2 text-sm">
               <input
@@ -762,7 +814,7 @@ export function SavedMeetingForm({
           teammate joins or auto-join is enabled.
         </span>
       </label>
-      <FormError errorRef={errorRef} message={error} />
+      <FormError errorRef={errorRef} id={errorId} message={error} />
       <Button type="submit" disabled={pending}>
         {pending ? 'Saving…' : 'Save meeting'}
       </Button>
@@ -781,13 +833,15 @@ export function EditSavedMeetingForm({
 }) {
   const router = useRouter();
   const errorRef = useRef<HTMLParagraphElement>(null);
+  const errorId = useId();
   const schedule = saved.scheduleConfig;
   const [
-    { pending, error, visibility, visibilityUserIds, scheduled, autoJoin, timezone },
+    { pending, error, scheduleError, visibility, visibilityUserIds, scheduled, autoJoin, timezone },
     dispatch,
   ] = useReducer(savedMeetingReducer, {
     pending: false,
     error: null,
+    scheduleError: null,
     visibility: saved.defaultVisibility,
     visibilityUserIds: saved.visibilityUserIds ?? [],
     scheduled: Boolean(schedule),
@@ -797,6 +851,8 @@ export function EditSavedMeetingForm({
 
   function onScheduleToggle(checked: boolean) {
     dispatch({ type: 'scheduled', scheduled: checked });
+    dispatch({ type: 'error', error: null });
+    dispatch({ type: 'scheduleError', scheduleError: null });
     if (checked && !schedule) dispatch({ type: 'timezone', timezone: browserTimezone() });
   }
 
@@ -808,9 +864,25 @@ export function EditSavedMeetingForm({
   async function onSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     dispatch({ type: 'error', error: null });
-    dispatch({ type: 'pending', pending: true });
     const form = new FormData(e.currentTarget);
     const scheduleConfig = formScheduleConfig(form, scheduled);
+    if (scheduled && !scheduleConfig) {
+      const times = formTimes(form);
+      const weekdays = formWeekdays(form);
+      dispatch({
+        type: 'scheduleError',
+        scheduleError:
+          times.length === 0 && weekdays.length === 0
+            ? 'both'
+            : times.length === 0
+              ? 'times'
+              : 'weekdays',
+      });
+      showError(INCOMPLETE_SCHEDULE_ERROR);
+      return;
+    }
+    dispatch({ type: 'scheduleError', scheduleError: null });
+    dispatch({ type: 'pending', pending: true });
     try {
       const result = await updateSavedMeetingAction({
         savedMeetingId: saved.id,
@@ -915,6 +987,13 @@ export function EditSavedMeetingForm({
                 durationMinutes={saved.durationMinutes}
                 joinOffsetMinutes={schedule?.joinOffsetMinutes ?? 2}
                 compact
+                timesInvalid={scheduleError === 'times' || scheduleError === 'both'}
+                weekdaysInvalid={scheduleError === 'weekdays' || scheduleError === 'both'}
+                errorId={errorId}
+                onScheduleFieldChange={() => {
+                  dispatch({ type: 'error', error: null });
+                  dispatch({ type: 'scheduleError', scheduleError: null });
+                }}
               />
               <label className="flex items-center gap-2">
                 <input
@@ -929,7 +1008,7 @@ export function EditSavedMeetingForm({
             </div>
           ) : null}
         </div>
-        <FormError errorRef={errorRef} message={error} />
+        <FormError errorRef={errorRef} id={errorId} message={error} />
         <Button type="submit" size="sm" disabled={pending}>
           {pending ? 'Updating…' : 'Update meeting'}
         </Button>
