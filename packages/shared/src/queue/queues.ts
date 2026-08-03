@@ -371,6 +371,12 @@ interface EmbedJobBase {
    */
   embeddingSourceHash?: string;
   /**
+   * Internal chunk-layout version carried by continuation jobs. A worker
+   * restarts continuations created by a different algorithm so numeric chunk
+   * cursors never mix point layouts across deployments.
+   */
+  embeddingChunkingVersion?: string;
+  /**
    * Internal model id carried by continuation jobs so an orphaned continuation
    * can still prune stale tail chunks even when it has no new chunk to embed.
    */

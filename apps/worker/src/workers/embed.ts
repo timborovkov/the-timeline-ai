@@ -10,6 +10,7 @@ import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring
 const log = childLogger('worker:embed');
 const EMBEDDING_OVERLAP_TOKENS = 120;
 const EMBEDDING_CHUNKS_PER_JOB = 16;
+const EMBEDDING_CHUNKING_VERSION = 'exact-token-v1';
 
 interface EmbedWorkerDeps {
   db: Db;
@@ -131,6 +132,11 @@ function expectedEmbeddingSourceHash(data: queue.EmbedJobData): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
+function expectedEmbeddingChunkingVersion(data: queue.EmbedJobData): string | null {
+  const value = 'embeddingChunkingVersion' in data ? data.embeddingChunkingVersion : undefined;
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
 function embeddingModel(data: queue.EmbedJobData): string {
   const value = 'embeddingModel' in data ? data.embeddingModel : undefined;
   return typeof value === 'string' && value.length > 0 ? value : llm.TIMELINE_MODELS.embedding.id;
@@ -146,6 +152,7 @@ function continuationJob(
     ...data,
     embeddingStartChunk: nextChunk,
     embeddingSourceHash: sourceHash,
+    embeddingChunkingVersion: EMBEDDING_CHUNKING_VERSION,
     embeddingModel: model,
   };
 }
@@ -154,6 +161,7 @@ function restartJob(data: queue.EmbedJobData): queue.EmbedJobData {
   const {
     embeddingStartChunk: _start,
     embeddingSourceHash: _hash,
+    embeddingChunkingVersion: _chunkingVersion,
     embeddingModel: _model,
     ...rest
   } = data;
@@ -403,7 +411,11 @@ async function processEmbedJob(
   const startChunk = embeddingStartChunk(data);
   const sourceHash = embeddingSourceHash(plan.text);
   const expectedSourceHash = expectedEmbeddingSourceHash(data);
-  if (startChunk > 0 && expectedSourceHash && expectedSourceHash !== sourceHash) {
+  const expectedChunkingVersion = expectedEmbeddingChunkingVersion(data);
+  if (
+    startChunk > 0 &&
+    (expectedSourceHash !== sourceHash || expectedChunkingVersion !== EMBEDDING_CHUNKING_VERSION)
+  ) {
     const enqueueEmbedJob = io.enqueueEmbedJob ?? queue.enqueueEmbedJob;
     await enqueueEmbedJob(restartJob(data));
     return {
@@ -595,4 +607,5 @@ export const embedWorkerInternals = {
   splitEmbeddingChunk,
   embeddingOverlapTokens: EMBEDDING_OVERLAP_TOKENS,
   embeddingChunksPerJob: EMBEDDING_CHUNKS_PER_JOB,
+  embeddingChunkingVersion: EMBEDDING_CHUNKING_VERSION,
 };
