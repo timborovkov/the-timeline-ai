@@ -146,8 +146,8 @@ export default function GlobalError({
             We couldn’t open this page
           </h1>
           <p className="global-error-copy">
-            An unexpected error interrupted this page. Your saved workspace data has not been
-            changed. Try again to reload it.
+            An unexpected error interrupted this page. Try again to reload it, then check any recent
+            changes.
           </p>
           {error.digest ? (
             <details className="global-error-details">

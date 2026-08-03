@@ -388,7 +388,7 @@ export function DocumentDrive({
       if (optimisticDocumentId) removeOptimisticDocument(optimisticDocumentId);
       const message =
         err instanceof TypeError
-          ? 'Browser could not reach document storage. Check S3_PUBLIC_ENDPOINT and RustFS CORS.'
+          ? 'Unable to reach document storage. Check your connection, then try again.'
           : err instanceof Error
             ? err.message
             : 'Upload error';
@@ -579,7 +579,7 @@ function Breadcrumbs({ breadcrumbs }: { breadcrumbs: Crumb[] }) {
               </Link>
             )}
           </li>
-        ))}
+      ))}
       </ol>
     </nav>
   );
@@ -686,7 +686,7 @@ function DocumentDropZone({
         e.preventDefault();
       }}
       onDrop={onDrop}
-      className="rounded-lg border border-border bg-card/30 p-6"
+      className="rounded-md border border-border bg-surface p-4"
     >
       {isEmpty ? (
         <EmptyDocumentDrive fileInputRef={fileInputRef} />
@@ -765,7 +765,7 @@ function FolderList({
               variant="ghost"
               size="sm"
               aria-label={`Delete folder ${f.name}`}
-              className="px-2 text-fg-muted opacity-100 transition-opacity hover:text-fg sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
+              className="min-h-9 px-2 text-fg-muted opacity-100 transition-opacity group-focus-within:opacity-100 hover:text-fg focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
             >
               Delete
             </Button>

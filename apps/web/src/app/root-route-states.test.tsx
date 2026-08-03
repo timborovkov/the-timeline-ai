@@ -78,7 +78,7 @@ describe('root route recovery states', () => {
     await user.tab();
     expect(document.activeElement).toBe(screen.getByRole('link', { name: 'Open workspace' }));
   });
-    it('reports a root failure and preserves safe retry guidance with technical details closed', () => {
+  it('reports a root failure and keeps technical details closed', () => {
     const html = renderToStaticMarkup(
       <GlobalError
         error={Object.assign(new Error('route failed'), { digest: 'digest-123' })}
@@ -87,12 +87,14 @@ describe('root route recovery states', () => {
     );
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(html).toContain('Your saved workspace data has not been changed.');
+    expect(html).toContain('Try again to reload it, then check any recent changes.');
+    expect(html).not.toContain('Your saved workspace data has not been changed.');
     expect(html).toContain('<main');
     expect(html).toContain('tabindex="-1"');
     expect(html).toContain('<details');
     expect(html).not.toContain('<details open');
     expect(html).toContain('Reference: digest-123');
+
     expect(html).toContain('@media (prefers-color-scheme: dark)');
     expect(html).toContain('color: #20211e;');
     expect(html).toContain('.global-error-button:focus-visible');
