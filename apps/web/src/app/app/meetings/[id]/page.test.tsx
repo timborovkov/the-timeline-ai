@@ -103,6 +103,10 @@ describe('MeetingDetailPage', () => {
     expect(html.indexOf('transcript export')).toBeLessThan(headerEnd);
     expect(html).toContain('Meeting ID');
     expect(html).not.toContain('Meeting URL');
+    expect(html).toContain('space-y-2 rounded-lg border border-border bg-surface p-4');
+    expect(html).toContain('space-y-2 rounded-lg border border-border bg-surface p-3 text-sm');
+    expect(html).toContain('font-mono text-xs text-fg-muted');
+    expect(html).toContain('font-medium text-fg');
   });
 
   it('renders pending empty transcript state and exposes cancellation', async () => {

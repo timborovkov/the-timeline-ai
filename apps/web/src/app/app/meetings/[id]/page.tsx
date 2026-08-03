@@ -130,7 +130,7 @@ export default async function MeetingDetailPage({ params }: Props) {
       />
 
       {summary ? (
-        <section className="space-y-2 rounded-lg border bg-muted/30 p-4">
+        <section className="space-y-2 rounded-lg border border-border bg-surface p-4">
           <SectionHeading>Summary</SectionHeading>
           <p className="whitespace-pre-wrap text-sm">{summary}</p>
         </section>
@@ -139,22 +139,20 @@ export default async function MeetingDetailPage({ params }: Props) {
       <section className="space-y-2">
         <SectionHeading>Transcript</SectionHeading>
         {chunks.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-fg-muted">
             {meeting.status === 'pending' || meeting.status === 'joining'
               ? 'Waiting for the notetaker to join…'
               : 'No transcript chunks captured.'}
           </p>
         ) : (
-          <ol className="space-y-2 rounded-lg border p-3 text-sm">
+          <ol className="space-y-2 rounded-lg border border-border bg-surface p-3 text-sm">
             {chunks.map((c) => (
               <li key={c.id} className="flex gap-3">
-                <span className="w-12 shrink-0 font-mono text-xs text-muted-foreground">
+                <span className="w-12 shrink-0 font-mono text-xs text-fg-muted">
                   {formatMeetingOffset(c.startMs)}
                 </span>
                 <span className="flex-1">
-                  {c.speaker ? (
-                    <span className="font-medium text-foreground">{c.speaker}: </span>
-                  ) : null}
+                  {c.speaker ? <span className="font-medium text-fg">{c.speaker}: </span> : null}
                   {c.text}
                 </span>
               </li>
