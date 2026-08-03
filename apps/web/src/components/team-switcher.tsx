@@ -1,6 +1,8 @@
 'use client';
 
 import { Check, ChevronsUpDown, Mail, Plus, X } from 'lucide-react';
+import { useState } from 'react';
+import { useFormStatus } from 'react-dom';
 
 import type { TeamMembership } from '@/lib/active-team';
 
@@ -42,6 +44,105 @@ interface Props {
 }
 
 const EMPTY_RECIPIENT_INVITES: RecipientInvite[] = [];
+
+function TeamSwitchForm({
+  activeTeamId,
+  membership,
+}: {
+  activeTeamId: string;
+  membership: TeamMembership;
+}) {
+  const [switching, setSwitching] = useState(false);
+  const isActive = membership.teamId === activeTeamId;
+
+  return (
+    <>
+      <output className="sr-only" aria-live="polite">
+        {switching ? `Opening ${membership.teamName}` : ''}
+      </output>
+      <form
+        action={`/app/team/switch/${membership.teamId}`}
+        method="post"
+        aria-busy={switching}
+        onSubmit={() => {
+          setSwitching(true);
+        }}
+      >
+        <button
+          type="submit"
+          disabled={isActive || switching}
+          aria-disabled={switching || undefined}
+          aria-current={isActive ? 'true' : undefined}
+          className={cn(
+            'group flex w-full items-center justify-between rounded-sm border px-4 py-3 text-left transition-colors',
+            isActive
+              ? 'border-signal/40 bg-signal-soft text-fg'
+              : 'border-border bg-surface hover:border-border-strong hover:bg-surface-2',
+          )}
+        >
+          <span className="flex min-w-0 items-center gap-3">
+            <span className="grid size-9 shrink-0 place-items-center rounded-sm border border-border bg-bg text-xs font-semibold text-fg">
+              {initials(membership.teamName)}
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-medium">{membership.teamName}</span>
+              <span className="block text-xs capitalize text-fg-dim">{membership.role}</span>
+            </span>
+          </span>
+          {isActive ? (
+            <span className="flex items-center gap-2 text-xs font-medium text-signal">
+              Active <Check aria-hidden="true" className="size-4" />
+            </span>
+          ) : switching ? (
+            <span className="text-xs text-fg-muted">Opening…</span>
+          ) : (
+            <ChevronsUpDown
+              aria-hidden="true"
+              className="size-4 rotate-90 text-fg-dim transition-colors group-hover:text-fg"
+            />
+          )}
+        </button>
+      </form>
+    </>
+  );
+}
+
+function RecipientInviteActionButton({
+  label,
+  pendingLabel,
+  variant,
+}: {
+  label: string;
+  pendingLabel: string;
+  variant: 'accept' | 'decline';
+}) {
+  const { pending } = useFormStatus();
+
+  return (
+    <>
+      <output className="sr-only" aria-live="polite">
+        {pending ? pendingLabel : ''}
+      </output>
+      <button
+        type="submit"
+        disabled={pending}
+        className={cn(
+          'inline-flex h-9 w-full items-center justify-center gap-2 rounded-sm border px-3 text-sm font-medium sm:w-auto',
+          variant === 'accept'
+            ? 'border-signal/40 bg-signal-soft text-signal hover:bg-signal/20'
+            : 'border-border text-fg-muted hover:bg-surface-2 hover:text-fg',
+        )}
+      >
+        {variant === 'accept' ? (
+          <Check aria-hidden="true" className="size-4" />
+        ) : (
+          <X aria-hidden="true" className="size-4" />
+        )}
+        {pending ? pendingLabel : label}
+      </button>
+    </>
+  );
+}
 
 export function TeamSwitcher({
   active,
@@ -103,41 +204,17 @@ export function TeamSwitcher({
               <h2 className="text-base font-semibold text-fg">Your teams</h2>
               <span className="font-mono text-[11px] text-fg-dim">{memberships.length}</span>
             </div>
+            <p className="text-xs text-fg-muted">
+              Your current team stays active until another workspace opens.
+            </p>
             <div className="grid gap-2">
-              {memberships.map((m) => {
-                const isActive = m.teamId === active.teamId;
-                return (
-                  <form key={m.teamId} action={`/app/team/switch/${m.teamId}`} method="post">
-                    <button
-                      type="submit"
-                      disabled={isActive}
-                      className={cn(
-                        'group flex w-full items-center justify-between rounded-md border px-4 py-3 text-left transition-colors',
-                        isActive
-                          ? 'border-signal/40 bg-signal-soft text-fg'
-                          : 'border-border bg-surface hover:border-border-strong hover:bg-surface-2',
-                      )}
-                    >
-                      <span className="flex min-w-0 items-center gap-3">
-                        <span className="grid size-9 shrink-0 place-items-center rounded-sm border border-border bg-bg text-xs font-semibold text-fg">
-                          {initials(m.teamName)}
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block truncate text-sm font-medium">{m.teamName}</span>
-                          <span className="block text-xs capitalize text-fg-dim">{m.role}</span>
-                        </span>
-                      </span>
-                      {isActive ? (
-                        <span className="flex items-center gap-2 text-xs font-medium text-signal">
-                          Active <Check className="size-4" />
-                        </span>
-                      ) : (
-                        <ChevronsUpDown className="size-4 rotate-90 text-fg-dim transition-colors group-hover:text-fg" />
-                      )}
-                    </button>
-                  </form>
-                );
-              })}
+              {memberships.map((membership) => (
+                <TeamSwitchForm
+                  key={membership.teamId}
+                  activeTeamId={active.teamId}
+                  membership={membership}
+                />
+              ))}
             </div>
           </section>
 
@@ -163,31 +240,27 @@ export function TeamSwitcher({
                           <Mail className="size-4 shrink-0 text-signal" />
                           <p className="truncate text-sm font-medium">{invite.teamName}</p>
                         </div>
-                        <p className="mt-1 text-xs text-fg-dim">
+                        <p className="mt-1 break-words text-xs text-fg-dim">
                           {invite.role} · invited by {invite.invitedBy} · expires{' '}
                           {new Date(invite.expiresAt).toLocaleDateString()}
                         </p>
                       </div>
-                      <div className="flex shrink-0 gap-2">
+                      <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
                         <form action={acceptRecipientInviteAction}>
                           <input type="hidden" name="inviteId" value={invite.id} />
-                          <button
-                            type="submit"
-                            className="inline-flex h-9 items-center gap-2 rounded-md border border-signal/40 bg-signal-soft px-3 text-sm font-medium text-signal hover:bg-signal/20"
-                          >
-                            <Check className="size-4" />
-                            Accept
-                          </button>
+                          <RecipientInviteActionButton
+                            label="Accept"
+                            pendingLabel="Accepting invite…"
+                            variant="accept"
+                          />
                         </form>
                         <form action={declineInviteAction}>
                           <input type="hidden" name="inviteId" value={invite.id} />
-                          <button
-                            type="submit"
-                            className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm text-fg-muted hover:bg-surface-2 hover:text-fg"
-                          >
-                            <X className="size-4" />
-                            Decline
-                          </button>
+                          <RecipientInviteActionButton
+                            label="Decline"
+                            pendingLabel="Declining invite…"
+                            variant="decline"
+                          />
                         </form>
                       </div>
                     </div>
