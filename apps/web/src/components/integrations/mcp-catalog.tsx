@@ -98,7 +98,7 @@ export function McpCatalog({ entries }: { entries: CatalogEntryProps[] }) {
               setQuery(e.target.value);
             }}
             placeholder="Filter MCP servers…"
-            className="h-7 w-48 rounded-sm border border-border bg-surface-2 px-2 text-xs"
+            className="h-9 w-48 rounded-sm border border-border bg-surface-2 px-2 text-xs"
           />
           {categories.map((cat) => {
             const active = activeCategory === cat;
@@ -106,13 +106,14 @@ export function McpCatalog({ entries }: { entries: CatalogEntryProps[] }) {
               <button
                 key={cat}
                 type="button"
+                aria-pressed={active}
                 onClick={() => {
                   setActiveCategory(active ? null : cat);
                 }}
                 className={
                   active
-                    ? 'rounded-sm border border-signal bg-signal/10 px-1.5 py-0.5 text-[11px] text-signal'
-                    : 'rounded-sm border border-border bg-surface px-1.5 py-0.5 text-[11px] text-fg-muted hover:text-signal'
+                    ? 'min-h-9 rounded-sm border border-signal bg-signal/10 px-1.5 py-0.5 text-[11px] text-signal outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2'
+                    : 'min-h-9 rounded-sm border border-border bg-surface px-1.5 py-0.5 text-[11px] text-fg-muted outline-none hover:text-signal focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2'
                 }
               >
                 {cat}
@@ -126,14 +127,14 @@ export function McpCatalog({ entries }: { entries: CatalogEntryProps[] }) {
                 setQuery('');
                 setActiveCategory(null);
               }}
-              className="text-xs text-fg-dim hover:text-signal"
+              className="min-h-9 rounded-sm px-1.5 text-xs text-fg-dim outline-none hover:text-signal focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2"
             >
-              clear
+              Clear filters
             </button>
           ) : null}
-          <span className="ml-auto text-[11px] text-fg-dim">
-            {filtered.length} / {entries.length}
-          </span>
+          <output className="ml-auto text-[11px] text-fg-dim" aria-live="polite" aria-atomic="true">
+            {filtered.length} of {entries.length} MCP servers
+          </output>
         </div>
       ) : null}
 
