@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ConnectedIntegrations } from '@/components/integrations/connected';
@@ -45,6 +46,34 @@ describe('ConnectedIntegrations', () => {
     );
 
     expect(screen.getByText('Last synced Jun 28, 2026, 11:30 PM')).toBeTruthy();
+  });
+
+  it('labels visibility defaults and lets keyboard users choose the people who can view new events', async () => {
+    const user = userEvent.setup();
+    render(
+      <ConnectedIntegrations
+        connected={[connectedRow({ provider: 'github' })]}
+        members={[
+          { id: 'member-1', label: 'Avery Chen' },
+          { id: 'member-2', label: 'Nadiya Singh' },
+        ]}
+      />,
+    );
+
+    const visibility = screen.getByRole<HTMLSelectElement>('combobox', {
+      name: 'Default visibility for GitHub',
+    });
+    expect(visibility.className).toContain('focus-visible:ring-2');
+
+    visibility.focus();
+    await user.selectOptions(visibility, 'specific_users');
+
+    expect(
+      screen.getByRole('group', { name: 'People who can view new captured events' }),
+    ).toBeTruthy();
+    expect(screen.getByRole('checkbox', { name: 'Avery Chen' })).toBeTruthy();
+    expect(screen.getByRole('checkbox', { name: 'Nadiya Singh' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Save default' }).className).toContain('min-h-9');
   });
 
   it('shows provider budget cooldowns without offering retry sync', () => {
