@@ -2,7 +2,6 @@
 
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const fakes = vi.hoisted(() => ({
@@ -22,17 +21,33 @@ afterEach(() => {
 });
 
 describe('Captured files route states', () => {
-  it('announces loading before a captured-files-shaped responsive placeholder with one page heading', () => {
-    const html = renderToStaticMarkup(<CapturedDocumentsLoading />);
+  it('announces loading outside an inert, motion-safe captured-files placeholder', () => {
+    const { container } = render(<CapturedDocumentsLoading />);
 
-    expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(html).toContain('<h1 class="sr-only">Captured files</h1>');
-    expect(html).toContain('aria-live="polite"');
-    expect(html.indexOf('aria-live="polite"')).toBeLessThan(html.indexOf('aria-busy="true"'));
-    expect(html).toContain('aria-label="Loading captured files"');
-    expect(html).toContain('xl:grid-cols-[minmax(0,1fr)_auto]');
-    expect(html).toContain('md:grid-cols-[minmax(0,1fr)_auto]');
-    expect(html).toContain('aria-label="Captured files loading placeholder"');
+    const announcement = screen.getByRole('status');
+    expect(announcement.textContent).toBe('Loading captured files');
+    expect(announcement.parentElement?.getAttribute('aria-busy')).toBeNull();
+    const loading = screen.getByLabelText('Loading captured files');
+    expect(loading.getAttribute('aria-busy')).toBe('true');
+    expect(loading.className).toContain('motion-reduce:[&_.animate-pulse]:animate-none');
+    expect(screen.getAllByRole('heading', { level: 1, name: 'Captured files' })).toHaveLength(1);
+    expect(screen.queryByRole('list')).toBeNull();
+
+    const visuals = container.querySelector('[aria-busy="true"] > [aria-hidden="true"][inert]');
+    expect(visuals).toBeTruthy();
+    expect(
+      visuals?.querySelector('[aria-label="Captured files loading placeholder"]'),
+    ).toBeTruthy();
+    expect(visuals?.classList.contains('space-y-6')).toBe(true);
+    expect(
+      visuals?.querySelectorAll('a, button, input, select, textarea, [tabindex]'),
+    ).toHaveLength(0);
+    expect(visuals?.querySelectorAll('.animate-pulse')).not.toHaveLength(0);
+    for (const skeleton of visuals?.querySelectorAll('.animate-pulse') ?? []) {
+      expect(skeleton.closest('[class*="motion-reduce"]')).toBeTruthy();
+    }
+    expect(visuals?.querySelector('[class*="xl:grid-cols"]')).toBeTruthy();
+    expect(visuals?.querySelector('[class*="md:grid-cols"]')).toBeTruthy();
   });
 
   it('keeps the Documents path and a keyboard-operable retry when captured files fail to load', async () => {
