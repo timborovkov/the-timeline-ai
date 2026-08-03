@@ -64,13 +64,37 @@ afterEach(() => {
 });
 
 describe('DocumentDrive', () => {
-  it('renders empty drive actions', () => {
+  it('renders empty drive actions in a named document location', () => {
     const html = renderDrive();
 
     expect(html).toContain('New folder');
     expect(html).toContain('Upload');
     expect(html).toContain('No documents yet');
     expect(html).toContain('Upload first document');
+    expect(html).toContain('aria-label="Document location"');
+    expect(html).toContain('aria-current="page"');
+  });
+
+  it('labels document controls and keeps folder deletion keyboard reachable', () => {
+    render(
+      driveElement({
+        folders: [
+          {
+            id: 'folder-2',
+            name: 'Acme',
+            visibility: 'team',
+            updatedAt: '2026-06-01T10:00:00.000Z',
+          },
+        ],
+      }),
+    );
+
+    expect(screen.getByRole('navigation', { name: 'Document location' })).toBeTruthy();
+    expect(screen.getByText('Documents').getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('combobox', { name: 'New item visibility' })).toBeTruthy();
+    const deleteFolder = screen.getByRole('button', { name: 'Delete folder Acme' });
+    deleteFolder.focus();
+    expect(document.activeElement).toBe(deleteFolder);
   });
 
   it('renders folders, documents, breadcrumbs, and visibility controls', () => {

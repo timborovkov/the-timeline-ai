@@ -25,6 +25,7 @@ import {
   type DragEvent,
   type RefObject,
   type SetStateAction,
+  useId,
   useMemo,
   useReducer,
   useRef,
@@ -520,7 +521,7 @@ function DocumentDriveHeader({
   return (
     <header className="flex flex-wrap items-center justify-between gap-4">
       <Breadcrumbs breadcrumbs={breadcrumbs} />
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <Button variant="outline" size="sm" asChild>
           <Link href="/app/documents/captured">
             <FileText className="mr-2 size-4" />
@@ -556,22 +557,30 @@ function DocumentDriveHeader({
 
 function Breadcrumbs({ breadcrumbs }: { breadcrumbs: Crumb[] }) {
   return (
-    <nav className="text-sm">
-      {breadcrumbs.map((c, i) => (
-        <span key={`${c.id ?? 'root'}-${String(i)}`}>
-          {i > 0 && <span className="mx-1 text-muted-foreground">/</span>}
-          {i === breadcrumbs.length - 1 ? (
-            <span className="font-semibold text-foreground">{c.name}</span>
-          ) : (
-            <Link
-              href={c.id ? `/app/documents?folder=${c.id}` : '/app/documents'}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              {c.name}
-            </Link>
-          )}
-        </span>
-      ))}
+    <nav aria-label="Document location" className="text-sm">
+      <ol className="flex flex-wrap items-center">
+        {breadcrumbs.map((c, i) => (
+          <li key={`${c.id ?? 'root'}-${String(i)}`} className="flex items-center">
+            {i > 0 ? (
+              <span aria-hidden="true" className="mx-1 text-muted-foreground">
+                /
+              </span>
+            ) : null}
+            {i === breadcrumbs.length - 1 ? (
+              <span aria-current="page" className="font-semibold text-foreground">
+                {c.name}
+              </span>
+            ) : (
+              <Link
+                href={c.id ? `/app/documents?folder=${c.id}` : '/app/documents'}
+                className="rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                {c.name}
+              </Link>
+            )}
+          </li>
+        ))}
+      </ol>
     </nav>
   );
 }
@@ -579,7 +588,7 @@ function Breadcrumbs({ breadcrumbs }: { breadcrumbs: Crumb[] }) {
 function UploadStatusList({ uploads }: { uploads: readonly UploadState[] }) {
   if (uploads.length === 0) return null;
   return (
-    <output className="space-y-2 rounded-sm border border-border bg-card/40 p-3" aria-live="polite">
+    <output className="space-y-2 rounded-lg border border-border bg-card/40 p-3" aria-live="polite">
       {uploads.map((upload) => (
         <div key={upload.id} className="flex items-center justify-between gap-3 text-sm">
           <span className="truncate font-medium">{upload.name}</span>
@@ -611,16 +620,20 @@ function NewItemVisibilityPicker({
   onVisibilityChange: (visibility: Props['defaultVisibility']) => void;
   onVisibilityUserIdsChange: Dispatch<SetStateAction<string[]>>;
 }) {
+  const visibilityId = useId();
+
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-sm border border-border p-3 text-sm">
-      <span className="text-xs text-fg-dim">New item visibility</span>
+    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border p-3 text-sm">
+      <label htmlFor={visibilityId} className="text-xs text-fg-dim">
+        New item visibility
+      </label>
       <select
-        aria-label="New item visibility"
+        id={visibilityId}
         value={visibility}
         onChange={(e) => {
           onVisibilityChange(e.target.value as Props['defaultVisibility']);
         }}
-        className="h-8 rounded-sm border border-border bg-bg px-2 text-sm"
+        className="h-8 rounded-sm border border-border bg-bg px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       >
         <option value="team">Team</option>
         <option value="private">Private</option>
@@ -628,7 +641,10 @@ function NewItemVisibilityPicker({
       </select>
       {visibility === 'specific_users'
         ? members.map((m) => (
-            <label key={m.id} className="flex items-center gap-1 text-xs text-muted-foreground">
+            <label
+              key={m.id}
+              className="flex min-h-6 items-center gap-1 text-xs text-muted-foreground"
+            >
               <input
                 type="checkbox"
                 checked={visibilityUserIds.includes(m.id)}
@@ -696,13 +712,15 @@ function EmptyDocumentDrive({
         Upload a document to make contracts, policies, notes, and customer files searchable and
         citeable.
       </p>
-      <button
+      <Button
         type="button"
+        variant="outline"
+        size="sm"
         onClick={() => fileInputRef.current?.click()}
-        className="mt-4 inline-flex min-h-9 items-center rounded-sm border border-signal/40 bg-signal-soft px-3 text-xs text-signal transition-colors hover:bg-signal/20"
+        className="mt-4"
       >
         Upload first document
-      </button>
+      </Button>
     </div>
   );
 }
@@ -722,7 +740,7 @@ function FolderList({
         {folders.map((f) => (
           <li
             key={f.id}
-            className="group flex items-center justify-between rounded-sm border border-border bg-card p-3 hover:border-fg/20"
+            className="group flex items-center justify-between rounded-lg border border-border bg-card p-3 hover:border-fg/20"
           >
             {f.optimistic ? (
               <div className="flex items-center gap-2 text-sm font-medium opacity-70">
@@ -732,22 +750,25 @@ function FolderList({
             ) : (
               <Link
                 href={`/app/documents?folder=${f.id}`}
-                className="flex items-center gap-2 text-sm font-medium"
+                className="flex min-h-8 items-center gap-2 rounded-sm text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 <FolderIcon className="size-4 text-muted-foreground" />
                 <span>{f.name}</span>
               </Link>
             )}
-            <button
+            <Button
               type="button"
               onClick={() => {
                 void onDeleteFolder(f.id);
               }}
               disabled={f.optimistic}
-              className="text-xs text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:text-foreground"
+              variant="ghost"
+              size="sm"
+              aria-label={`Delete folder ${f.name}`}
+              className="px-2 text-fg-muted opacity-100 transition-opacity hover:text-fg sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
             >
               Delete
-            </button>
+            </Button>
           </li>
         ))}
       </ul>
@@ -820,7 +841,7 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
       normalizeDocumentSummary(document.provenance.summary, document.name, title));
 
   return (
-    <li className="grid gap-3 rounded-sm border border-border bg-card px-3 py-2.5 transition-colors hover:border-border-strong lg:grid-cols-[minmax(0,1fr)_auto]">
+    <li className="grid gap-3 rounded-lg border border-border bg-card px-3 py-2.5 transition-colors hover:border-border-strong lg:grid-cols-[minmax(0,1fr)_auto]">
       <div className="min-w-0">
         <DocumentTitleRow
           document={document}
@@ -908,7 +929,10 @@ function DocumentTitleRow({
     return <div className="flex min-w-0 items-center gap-3">{content}</div>;
   }
   return (
-    <Link href={`/app/documents/${document.id}`} className="flex min-w-0 items-center gap-3">
+    <Link
+      href={`/app/documents/${document.id}`}
+      className="flex min-w-0 items-center gap-3 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+    >
       {content}
     </Link>
   );
