@@ -216,6 +216,35 @@ describe('DocumentDetail', () => {
     );
   });
 
+  it('uses a navigable document hierarchy and keeps bounded context keyboard reachable', () => {
+    renderDetail();
+
+    expect(screen.getByRole('heading', { level: 2, name: 'Selected version' })).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 2, name: 'Version history' })).toBeTruthy();
+
+    const modelUnderstanding = screen.getByRole('heading', {
+      level: 3,
+      name: 'Model understanding',
+    });
+    const contentExcerpts = screen.getByRole('heading', {
+      level: 3,
+      name: 'Content excerpts',
+    });
+    expect(screen.getByRole('heading', { level: 3, name: 'Provenance' })).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 3, name: 'Agent status' })).toBeTruthy();
+
+    const modelRegion = screen.getByRole('region', { name: 'Model understanding' });
+    expect(modelRegion.getAttribute('tabindex')).toBe('0');
+    modelRegion.focus();
+    expect(document.activeElement).toBe(modelRegion);
+
+    const excerptsList = screen
+      .getAllByRole('list')
+      .find((list) => list.getAttribute('aria-labelledby') === contentExcerpts.id);
+    expect(excerptsList).toBeTruthy();
+    expect(modelRegion.getAttribute('aria-labelledby')).toBe(modelUnderstanding.id);
+  });
+
   it('renders unavailable preview and failed processing states without chunks', () => {
     renderDetail({
       versions: versions([
