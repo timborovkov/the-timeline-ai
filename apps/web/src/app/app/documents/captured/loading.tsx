@@ -18,7 +18,7 @@ export default function CapturedDocumentsLoading() {
             <PageHeaderSkeleton />
             <Skeleton className="h-9 w-24 rounded-sm" />
           </div>
-          <div className="grid gap-3 rounded-sm border border-border bg-surface p-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
+          <div className="grid gap-3 rounded-md border border-border bg-surface p-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
             <div className="flex flex-wrap gap-2">
               {Array.from({ length: 4 }).map((_, index) => (
                 <div key={index} className="space-y-1">
@@ -29,12 +29,12 @@ export default function CapturedDocumentsLoading() {
             </div>
             <Skeleton className="h-5 w-16 xl:mt-[1.125rem]" />
           </div>
-          <ul className="space-y-2" aria-label="Captured files loading placeholder">
+          <ul
+            aria-label="Captured files loading placeholder"
+            className="divide-y divide-border overflow-hidden rounded-md border border-border bg-surface"
+          >
             {Array.from({ length: 4 }).map((_, index) => (
-              <li
-                key={index}
-                className="grid gap-3 rounded-sm border border-border bg-surface p-3 md:grid-cols-[minmax(0,1fr)_auto]"
-              >
+              <li key={index} className="grid gap-3 px-3 py-3 md:grid-cols-[minmax(0,1fr)_auto]">
                 <div className="space-y-3">
                   <div className="flex items-center gap-3">
                     <Skeleton className="size-9 rounded-sm" />
