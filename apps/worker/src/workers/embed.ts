@@ -10,6 +10,7 @@ import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring
 const log = childLogger('worker:embed');
 const EMBEDDING_OVERLAP_TOKENS = 120;
 const EMBEDDING_CHUNKS_PER_JOB = 16;
+const EMBEDDING_CHUNKING_VERSION = 'exact-token-v1';
 
 interface EmbedWorkerDeps {
   db: Db;
@@ -58,10 +59,63 @@ function embeddingChunkBudgetTokens(): number {
 }
 
 function chunkForEmbedding(text: string) {
-  return chunkText(text, {
-    targetTokens: embeddingChunkBudgetTokens(),
+  const tokenBudget = embeddingChunkBudgetTokens();
+  const estimatedChunks = chunkText(text, {
+    targetTokens: tokenBudget,
     overlapTokens: EMBEDDING_OVERLAP_TOKENS,
   });
+  return estimatedChunks
+    .flatMap((chunk) => splitEmbeddingChunk(chunk.text, tokenBudget))
+    .map((chunkText, index) => ({
+      index,
+      text: chunkText,
+      tokenCount: llm.countEmbeddingTokens(chunkText),
+    }));
+}
+
+function splitEmbeddingChunk(text: string, tokenBudget: number): string[] {
+  if (llm.countEmbeddingTokens(text) <= tokenBudget) return [text];
+
+  const characters = Array.from(text);
+  const chunks: string[] = [];
+  const overlapTokens = Math.min(EMBEDDING_OVERLAP_TOKENS, Math.max(0, tokenBudget - 1));
+  let cursor = 0;
+  while (cursor < characters.length) {
+    let low = cursor + 1;
+    let high = characters.length;
+    let bestEnd = cursor;
+    while (low <= high) {
+      const midpoint = Math.floor((low + high) / 2);
+      const candidate = characters.slice(cursor, midpoint).join('');
+      if (llm.countEmbeddingTokens(candidate) <= tokenBudget) {
+        bestEnd = midpoint;
+        low = midpoint + 1;
+      } else {
+        high = midpoint - 1;
+      }
+    }
+    if (bestEnd === cursor) {
+      throw new Error('Embedding token budget cannot fit one Unicode character');
+    }
+    chunks.push(characters.slice(cursor, bestEnd).join(''));
+    if (bestEnd === characters.length) break;
+
+    let overlapLow = cursor + 1;
+    let overlapHigh = bestEnd;
+    let nextCursor = bestEnd;
+    while (overlapLow <= overlapHigh) {
+      const midpoint = Math.floor((overlapLow + overlapHigh) / 2);
+      const overlap = characters.slice(midpoint, bestEnd).join('');
+      if (llm.countEmbeddingTokens(overlap) <= overlapTokens) {
+        nextCursor = midpoint;
+        overlapHigh = midpoint - 1;
+      } else {
+        overlapLow = midpoint + 1;
+      }
+    }
+    cursor = nextCursor;
+  }
+  return chunks;
 }
 
 function embeddingStartChunk(data: queue.EmbedJobData): number {
@@ -75,6 +129,11 @@ function embeddingSourceHash(text: string): string {
 
 function expectedEmbeddingSourceHash(data: queue.EmbedJobData): string | null {
   const value = 'embeddingSourceHash' in data ? data.embeddingSourceHash : undefined;
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+function expectedEmbeddingChunkingVersion(data: queue.EmbedJobData): string | null {
+  const value = 'embeddingChunkingVersion' in data ? data.embeddingChunkingVersion : undefined;
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
@@ -93,6 +152,7 @@ function continuationJob(
     ...data,
     embeddingStartChunk: nextChunk,
     embeddingSourceHash: sourceHash,
+    embeddingChunkingVersion: EMBEDDING_CHUNKING_VERSION,
     embeddingModel: model,
   };
 }
@@ -101,6 +161,7 @@ function restartJob(data: queue.EmbedJobData): queue.EmbedJobData {
   const {
     embeddingStartChunk: _start,
     embeddingSourceHash: _hash,
+    embeddingChunkingVersion: _chunkingVersion,
     embeddingModel: _model,
     ...rest
   } = data;
@@ -350,7 +411,11 @@ async function processEmbedJob(
   const startChunk = embeddingStartChunk(data);
   const sourceHash = embeddingSourceHash(plan.text);
   const expectedSourceHash = expectedEmbeddingSourceHash(data);
-  if (startChunk > 0 && expectedSourceHash && expectedSourceHash !== sourceHash) {
+  const expectedChunkingVersion = expectedEmbeddingChunkingVersion(data);
+  if (
+    startChunk > 0 &&
+    (expectedSourceHash !== sourceHash || expectedChunkingVersion !== EMBEDDING_CHUNKING_VERSION)
+  ) {
     const enqueueEmbedJob = io.enqueueEmbedJob ?? queue.enqueueEmbedJob;
     await enqueueEmbedJob(restartJob(data));
     return {
@@ -539,5 +604,8 @@ export async function processEmbedJobForTests(
 export const embedWorkerInternals = {
   embedFailureTags,
   embedFailureMessage,
+  splitEmbeddingChunk,
+  embeddingOverlapTokens: EMBEDDING_OVERLAP_TOKENS,
   embeddingChunksPerJob: EMBEDDING_CHUNKS_PER_JOB,
+  embeddingChunkingVersion: EMBEDDING_CHUNKING_VERSION,
 };

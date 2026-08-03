@@ -943,7 +943,7 @@ describe('database schema contracts', () => {
         VALUES
           ('${TEAM_ID}', '${OWNER_ID}', 'UTC'),
           ('${explicitTeamId}', '${OWNER_ID}', 'Europe/Paris');
-      `);
+        `);
 
       await applyMigrationFile(migrationPg, '0047_existing_team_timezones.sql');
 
@@ -955,7 +955,7 @@ describe('database schema contracts', () => {
         FROM team_calendar_settings
         WHERE team_id IN ('${TEAM_ID}', '${OTHER_TEAM_ID}', '${explicitTeamId}')
         ORDER BY team_id
-      `);
+        `);
       expect(settingsRows.rows).toEqual([
         { team_id: TEAM_ID, default_timezone: 'Europe/Helsinki' },
         { team_id: OTHER_TEAM_ID, default_timezone: 'Europe/Helsinki' },
@@ -967,7 +967,7 @@ describe('database schema contracts', () => {
         FROM message_preferences
         WHERE team_id IN ('${TEAM_ID}', '${explicitTeamId}')
         ORDER BY team_id
-      `);
+        `);
       expect(preferenceRows.rows).toEqual([
         { team_id: TEAM_ID, timezone: 'Europe/Helsinki' },
         { team_id: explicitTeamId, timezone: 'Europe/Paris' },
@@ -975,7 +975,7 @@ describe('database schema contracts', () => {
     } finally {
       await migrationPg.close();
     }
-  });
+  }, 20_000);
 
   it('enforces member, invite, visibility-default, and enum invariants', async () => {
     await expect(

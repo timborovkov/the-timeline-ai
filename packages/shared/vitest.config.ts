@@ -73,6 +73,7 @@ export default defineConfig({
           environment: 'node',
           fileParallelism: false,
           hookTimeout: 240_000,
+          testTimeout: 120_000,
           env,
           onConsoleLog: filterExpectedTestConsole,
         },

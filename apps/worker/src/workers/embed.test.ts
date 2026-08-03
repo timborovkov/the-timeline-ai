@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { PGlite } from '@electric-sql/pglite';
 import { calendarEvents, rawEvents } from '@timeline/db';
 import { llm, qdrant, type queue } from '@timeline/shared';
@@ -19,6 +21,13 @@ const SCHEDULED_RAW_EVENT_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 const START_RAW_EVENT_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 type EnqueueEmbed = (data: queue.EmbedJobData) => Promise<void>;
 type DeletePointsForSourceFromChunk = qdrant.QdrantClient['deletePointsForSourceFromChunk'];
+
+function currentEmbeddingContinuationIdentity(text: string) {
+  return {
+    embeddingSourceHash: createHash('sha256').update(text).digest('hex'),
+    embeddingChunkingVersion: embedWorkerInternals.embeddingChunkingVersion,
+  };
+}
 
 async function seed(pg: PGlite): Promise<void> {
   await pg.exec(`INSERT INTO teams (id, slug, name) VALUES ('${TEAM_ID}', 't', 'Test');`);
@@ -383,11 +392,83 @@ describe('processEmbedJobForTests', () => {
       teamId: TEAM_ID,
       rawEventId,
       embeddingStartChunk: embedWorkerInternals.embeddingChunksPerJob,
+      embeddingChunkingVersion: embedWorkerInternals.embeddingChunkingVersion,
       embeddingModel: 'test-embed-model',
     });
     expect(continuation?.embeddingSourceHash).toMatch(/^[0-9a-f]{64}$/);
     const row = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
     expect(row?.sourceMetadata).not.toHaveProperty('embedded_at');
+  });
+
+  it('splits token-dense source text before calling the embedding provider', async () => {
+    const rawEventId = '13131313-2222-4333-8444-555555555555';
+    await db.insert(rawEvents).values({
+      id: rawEventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: '😀'.repeat(20_000),
+      occurredAt: new Date('2026-05-27T12:00:00Z'),
+      visibility: 'team',
+      visibilityOwnerUserId: USER_ID,
+      sourceMetadata: {},
+    });
+    const tokenBudget = Math.floor(llm.TIMELINE_MODELS.embedding.contextWindowTokens * 0.8);
+    const embedMany = vi.fn<
+      (input: { texts: string[] }) => Promise<{ vectors: number[][]; model: string }>
+    >(({ texts }) => {
+      for (const text of texts) {
+        expect(llm.countEmbeddingTokens(text)).toBeLessThanOrEqual(tokenBudget);
+      }
+      return Promise.resolve({
+        vectors: texts.map(() => [0.1, 0.2, 0.3, 0.4]),
+        model: 'test-embed-model',
+      });
+    });
+    const upsertVector = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSource = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSourceFromChunk = vi
+      .fn<DeletePointsForSourceFromChunk>()
+      .mockResolvedValue(undefined);
+
+    await processEmbedJobForTests(
+      { db: db as never },
+      { scope: 'raw_event', teamId: TEAM_ID, rawEventId },
+      {
+        getEnv: () =>
+          ({ OPENROUTER_API_KEY: 'test-key', QDRANT_URL: 'http://qdrant.test' }) as never,
+        embedMany,
+        getQdrantClient: vi.fn(
+          () => ({ deletePointsForSource, deletePointsForSourceFromChunk, upsertVector }) as never,
+        ),
+      },
+    );
+
+    const batchTexts = embedMany.mock.calls[0]?.[0].texts ?? [];
+    expect(batchTexts.length).toBeGreaterThan(1);
+    expect(upsertVector).toHaveBeenCalledTimes(batchTexts.length);
+  });
+
+  it('keeps exact-token chunk overlap and avoids tiny tail vectors', () => {
+    const tokenBudget = Math.floor(llm.TIMELINE_MODELS.embedding.contextWindowTokens * 0.8);
+    const input = Array.from({ length: 5_001 }, (_, index) =>
+      String.fromCodePoint(0x10_000 + index),
+    ).join('');
+
+    const chunks = embedWorkerInternals.splitEmbeddingChunk(input, tokenBudget);
+
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const [index, chunk] of chunks.entries()) {
+      expect(llm.countEmbeddingTokens(chunk)).toBeLessThanOrEqual(tokenBudget);
+      if (index === 0) continue;
+      const previous = chunks[index - 1] ?? '';
+      const previousStart = input.indexOf(previous);
+      const currentStart = input.indexOf(chunk);
+      expect(currentStart).toBeLessThan(previousStart + previous.length);
+    }
+    expect(llm.countEmbeddingTokens(chunks.at(-1) ?? '')).toBeGreaterThanOrEqual(
+      embedWorkerInternals.embeddingOverlapTokens,
+    );
   });
 
   it('embeds each oversized chunk batch with one provider request', async () => {
@@ -448,6 +529,7 @@ describe('processEmbedJobForTests', () => {
     expect(enqueueEmbedJob).toHaveBeenCalledWith(
       expect.objectContaining({
         embeddingStartChunk: embedWorkerInternals.embeddingChunksPerJob,
+        embeddingChunkingVersion: embedWorkerInternals.embeddingChunkingVersion,
         embeddingModel: 'test-embed-model',
       }),
     );
@@ -1060,6 +1142,7 @@ describe('processEmbedJobForTests', () => {
         teamId: TEAM_ID,
         rawEventId,
         embeddingStartChunk: embedWorkerInternals.embeddingChunksPerJob,
+        ...currentEmbeddingContinuationIdentity(longText),
       },
       {
         getEnv: () =>
@@ -1121,6 +1204,7 @@ describe('processEmbedJobForTests', () => {
         teamId: TEAM_ID,
         rawEventId,
         embeddingStartChunk: embedWorkerInternals.embeddingChunksPerJob,
+        ...currentEmbeddingContinuationIdentity('Shorter replacement text'),
         embeddingModel: 'test-embed-model',
       },
       {
@@ -1251,6 +1335,71 @@ describe('processEmbedJobForTests', () => {
         rawEventId,
         embeddingStartChunk: embedWorkerInternals.embeddingChunksPerJob,
         embeddingSourceHash: 'stale-hash',
+        embeddingChunkingVersion: embedWorkerInternals.embeddingChunkingVersion,
+      },
+      {
+        getEnv: () =>
+          ({ OPENROUTER_API_KEY: 'test-key', QDRANT_URL: 'http://qdrant.test' }) as never,
+        embed,
+        enqueueEmbedJob,
+        getQdrantClient: vi.fn(
+          () => ({ deletePointsForSource, deletePointsForSourceFromChunk, upsertVector }) as never,
+        ),
+      },
+    );
+
+    expect(result).toMatchObject({
+      skipped: true,
+      reason: 'stale_continuation',
+      scope: 'event',
+      sourceId: rawEventId,
+    });
+    expect(embed).not.toHaveBeenCalled();
+    expect(upsertVector).not.toHaveBeenCalled();
+    expect(deletePointsForSource).not.toHaveBeenCalled();
+    expect(deletePointsForSourceFromChunk).not.toHaveBeenCalled();
+    expect(enqueueEmbedJob).toHaveBeenCalledWith({
+      scope: 'raw_event',
+      teamId: TEAM_ID,
+      rawEventId,
+    });
+  });
+
+  it('restarts continuations created by a previous chunking algorithm', async () => {
+    const rawEventId = '55555555-6666-4777-8888-999999999999';
+    const longText = Array.from(
+      { length: 10_000 },
+      (_, i) => `Legacy continuation sentence ${String(i)} with a useful detail.`,
+    ).join(' ');
+    await db.insert(rawEvents).values({
+      id: rawEventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: longText,
+      occurredAt: new Date('2026-05-27T12:00:00Z'),
+      visibility: 'team',
+      visibilityOwnerUserId: USER_ID,
+      sourceMetadata: {},
+    });
+    const embed = vi.fn(() =>
+      Promise.resolve({ vector: [0.1, 0.2, 0.3, 0.4], model: 'test-embed-model' }),
+    );
+    const upsertVector = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSource = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSourceFromChunk = vi
+      .fn<DeletePointsForSourceFromChunk>()
+      .mockResolvedValue(undefined);
+    const enqueueEmbedJob = vi.fn<EnqueueEmbed>().mockResolvedValue(undefined);
+
+    const result = await processEmbedJobForTests(
+      { db: db as never },
+      {
+        scope: 'raw_event',
+        teamId: TEAM_ID,
+        rawEventId,
+        embeddingStartChunk: embedWorkerInternals.embeddingChunksPerJob,
+        embeddingSourceHash: createHash('sha256').update(longText).digest('hex'),
       },
       {
         getEnv: () =>

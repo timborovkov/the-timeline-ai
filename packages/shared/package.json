@@ -426,6 +426,7 @@
     "bcryptjs": "^3.0.3",
     "bullmq": "5.79.0",
     "drizzle-orm": "^0.45.2",
+    "gpt-tokenizer": "^3.4.0",
     "ioredis": "5.10.1",
     "ipaddr.js": "2.4.0",
     "jszip": "3.10.1",
