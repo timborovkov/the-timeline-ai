@@ -5,6 +5,7 @@ import type { Metadata } from 'next';
 
 import { integrationAuditSummary } from '@/app/app/team/integrations/audit/integration-audit-summary';
 import { Breadcrumb } from '@/components/breadcrumb';
+import { EmptyAction } from '@/components/empty-action';
 import { IndexStrip } from '@/components/index-strip';
 import { TechnicalDetails } from '@/components/technical-details';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -62,41 +63,51 @@ export default async function IntegrationAuditPage() {
           },
         ]}
       />
-      <ul className="divide-y divide-border rounded-sm border border-border bg-surface text-sm">
+      <section aria-labelledby="integration-audit-entries">
+        <h2 id="integration-audit-entries" className="sr-only">
+          Audit entries
+        </h2>
         {rows.length === 0 ? (
-          <li className="px-3 py-2 text-fg-muted">No audit entries yet.</li>
+          <EmptyAction
+            title="No integration audit entries yet"
+            body="Connection and sync activity that creates an audit record will appear here."
+            href="/app/team/integrations"
+            action="Manage integrations"
+          />
         ) : (
-          rows.map((r) => (
-            <li key={r.id} className="p-3">
-              <div className="min-w-0 space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="font-medium leading-snug text-fg">
-                    {integrationAuditSummary(r.kind)}
+          <ul className="divide-y divide-border rounded-sm border border-border bg-surface text-sm">
+            {rows.map((r) => (
+              <li key={r.id} className="p-3">
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="font-medium leading-snug text-fg">
+                      {integrationAuditSummary(r.kind)}
+                    </div>
+                    <time
+                      dateTime={r.createdAt.toISOString()}
+                      className="font-mono text-xs tabular-nums text-fg-muted"
+                    >
+                      {formatDisplayDateTime(r.createdAt, { timezone })}
+                    </time>
                   </div>
-                  <time
-                    dateTime={r.createdAt.toISOString()}
-                    className="font-mono text-xs tabular-nums text-fg-muted"
-                  >
-                    {formatDisplayDateTime(r.createdAt, { timezone })}
-                  </time>
+                  <TechnicalDetails
+                    className="mt-3"
+                    items={[
+                      { label: 'Audit ID', value: r.id, copyValue: r.id },
+                      { label: 'Event code', value: r.kind, copyValue: r.kind },
+                      {
+                        label: 'Payload',
+                        value: JSON.stringify(r.payload, null, 2),
+                        copyValue: JSON.stringify(r.payload, null, 2),
+                      },
+                    ]}
+                  />
                 </div>
-                <TechnicalDetails
-                  className="mt-3"
-                  items={[
-                    { label: 'Audit ID', value: r.id, copyValue: r.id },
-                    { label: 'Event code', value: r.kind, copyValue: r.kind },
-                    {
-                      label: 'Payload',
-                      value: JSON.stringify(r.payload, null, 2),
-                      copyValue: JSON.stringify(r.payload, null, 2),
-                    },
-                  ]}
-                />
-              </div>
-            </li>
-          ))
+              </li>
+            ))}
+          </ul>
         )}
-      </ul>
+      </section>
     </div>
   );
 }

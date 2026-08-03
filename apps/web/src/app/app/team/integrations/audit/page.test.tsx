@@ -72,6 +72,22 @@ describe('IntegrationAuditPage', () => {
     expect(html).toContain('Event code');
     expect(html).toContain('webhook_provision_failed');
   });
+
+  it('gives an empty integration audit a named, explanatory archive state', async () => {
+    fakes.integrationAuditList.mockResolvedValueOnce([]);
+
+    const html = renderToStaticMarkup(await IntegrationAuditPage());
+
+    expect(html.match(/<h1/g)).toHaveLength(1);
+    expect(html).toContain('aria-labelledby="integration-audit-entries"');
+    expect(html).toContain('id="integration-audit-entries"');
+    expect(html).toContain('No integration audit entries yet');
+    expect(html).toContain(
+      'Connection and sync activity that creates an audit record will appear here.',
+    );
+    expect(html).toContain('href="/app/team/integrations"');
+    expect(html).toContain('Manage integrations');
+  });
 });
 
 describe('integrationAuditSummary', () => {
