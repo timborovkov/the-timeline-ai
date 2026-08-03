@@ -8,11 +8,17 @@ export default function NewObjectLoading() {
       <output className="sr-only" aria-live="polite">
         Loading new object
       </output>
-      <div className="space-y-6" aria-busy="true" aria-label="Loading new object">
+      <div
+        className="space-y-6 motion-reduce:[&_.animate-pulse]:animate-none"
+        aria-busy="true"
+        aria-label="Loading new object"
+      >
         <h1 className="sr-only">New object</h1>
-        <PageHeaderSkeleton />
+        <div aria-hidden="true" inert>
+          <PageHeaderSkeleton />
+        </div>
         <WorkSubnav current="/app/objects/new" />
-        <section aria-label="New object form loading placeholder" className="max-w-xl space-y-5">
+        <section aria-hidden="true" inert className="max-w-xl space-y-5">
           {Array.from({ length: 4 }).map((_, index) => (
             <div key={index} className="space-y-1">
               <Skeleton className="h-3 w-24" />

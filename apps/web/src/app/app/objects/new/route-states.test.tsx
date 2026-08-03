@@ -43,18 +43,26 @@ describe('New object route states', () => {
     expect(reset).toHaveBeenCalledOnce();
   });
 
-  it('announces loading outside the busy fallback with an object creation form shape', () => {
-    render(<NewObjectLoading />);
+  it('announces loading outside an inert, motion-safe fallback and retains real navigation', () => {
+    const { container } = render(<NewObjectLoading />);
 
     const announcement = screen.getByRole('status');
     expect(announcement.textContent).toBe('Loading new object');
     expect(announcement.parentElement?.getAttribute('aria-busy')).toBeNull();
-    expect(screen.getByLabelText('Loading new object').getAttribute('aria-busy')).toBe('true');
+    const loading = screen.getByLabelText('Loading new object');
+    expect(loading.getAttribute('aria-busy')).toBe('true');
+    expect(loading.className).toContain('motion-reduce:[&_.animate-pulse]:animate-none');
     expect(screen.getAllByRole('heading', { level: 1, name: 'New object' })).toHaveLength(1);
     expect(screen.getByRole('link', { name: 'Objects' }).getAttribute('aria-current')).toBe('page');
-    expect(
-      screen.getByRole('region', { name: 'New object form loading placeholder' }),
-    ).toBeTruthy();
+    expect(screen.queryByRole('region')).toBeNull();
     expect(screen.queryByRole('button')).toBeNull();
+
+    const visualPlaceholders = container.querySelectorAll(
+      '[aria-busy="true"] > [aria-hidden="true"][inert]',
+    );
+    expect(visualPlaceholders.length).toBeGreaterThan(0);
+    for (const placeholder of visualPlaceholders) {
+      expect(placeholder.querySelectorAll('a, button, input, select, textarea')).toHaveLength(0);
+    }
   });
 });

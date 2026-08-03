@@ -40,16 +40,26 @@ describe('Object detail route states', () => {
     expect(reset).toHaveBeenCalledOnce();
   });
 
-  it('announces loading outside the busy fallback and retains the object detail structure', () => {
-    render(<ObjectDetailLoading />);
+  it('announces loading outside an inert, motion-safe fallback and retains real navigation', () => {
+    const { container } = render(<ObjectDetailLoading />);
 
-    expect(screen.getByRole('status').textContent).toBe('Loading object');
-    expect(screen.getByLabelText('Loading object').getAttribute('aria-busy')).toBe('true');
+    const announcement = screen.getByRole('status');
+    expect(announcement.textContent).toBe('Loading object');
+    expect(announcement.parentElement?.getAttribute('aria-busy')).toBeNull();
+    const loading = screen.getByLabelText('Loading object');
+    expect(loading.getAttribute('aria-busy')).toBe('true');
+    expect(loading.className).toContain('motion-reduce:[&_.animate-pulse]:animate-none');
     expect(screen.getAllByRole('heading', { level: 1, name: 'Object' })).toHaveLength(1);
     expect(screen.getByRole('link', { name: 'Objects' }).getAttribute('aria-current')).toBe('page');
-    expect(screen.getByRole('region', { name: 'Object detail loading placeholder' })).toBeTruthy();
-    expect(
-      screen.getByRole('complementary', { name: 'Object fields loading placeholder' }),
-    ).toBeTruthy();
+    expect(screen.queryByRole('region')).toBeNull();
+    expect(screen.queryByRole('complementary')).toBeNull();
+
+    const visualPlaceholders = container.querySelectorAll(
+      '[aria-busy="true"] > [aria-hidden="true"][inert]',
+    );
+    expect(visualPlaceholders.length).toBeGreaterThan(0);
+    for (const placeholder of visualPlaceholders) {
+      expect(placeholder.querySelectorAll('a, button, input, select, textarea')).toHaveLength(0);
+    }
   });
 });
