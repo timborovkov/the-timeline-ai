@@ -244,6 +244,8 @@ function ScheduleFields({
   joinOffsetMinutes: number;
   compact?: boolean;
 }) {
+  const timesHelpId = `${idPrefix}-times-help`;
+
   return (
     <div className="space-y-4 rounded-md border bg-surface/40 p-4">
       <div className="grid gap-4 md:grid-cols-[minmax(0,1.15fr)_minmax(14rem,1fr)]">
@@ -255,8 +257,9 @@ function ScheduleFields({
             defaultValue={times?.join(', ') ?? ''}
             placeholder="09:00, 16:30"
             inputMode="text"
+            aria-describedby={timesHelpId}
           />
-          <p className="text-xs text-muted-foreground">
+          <p id={timesHelpId} className="text-xs text-muted-foreground">
             Use 24-hour local times, separated by commas.
           </p>
         </div>

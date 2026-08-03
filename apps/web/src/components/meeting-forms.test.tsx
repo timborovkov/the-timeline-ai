@@ -144,6 +144,19 @@ afterEach(() => {
 });
 
 describe('SavedMeetingForm', () => {
+  it('announces the required start-time format when a recurring schedule is enabled', async () => {
+    const user = userEvent.setup();
+    render(<SavedMeetingForm defaultTimezone="UTC" />);
+
+    await user.click(screen.getByRole('checkbox', { name: 'Add a recurring schedule' }));
+
+    const startTimes = screen.getByLabelText('Start times');
+    const help = screen.getByText('Use 24-hour local times, separated by commas.');
+
+    expect(startTimes.getAttribute('aria-describedby')).toBe('saved-times-help');
+    expect(help.id).toBe('saved-times-help');
+  });
+
   it('resets the submitted form after the async create action resolves', async () => {
     const user = userEvent.setup();
     render(<SavedMeetingForm defaultTimezone="UTC" />);
