@@ -17,7 +17,8 @@
     },
     "apps/worker": {
       "entry": ["scripts/*.mjs", "src/scripts/*.ts", "src/workers/*.test.ts"],
-      "project": ["scripts/*.mjs", "src/**/*.ts"]
+      "project": ["scripts/*.mjs", "src/**/*.ts"],
+      "ignoreDependencies": ["@firecrawl/pdf-inspector"]
     },
     "packages/db": {
       "entry": ["src/schema/**/*.ts"],

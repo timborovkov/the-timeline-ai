@@ -1,3 +1,5 @@
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import { Worker, type WorkerOptions } from 'node:worker_threads';
 
 import { type NativePdfExtractResult } from '#src/workers/pdfNativeExtract.js';
@@ -9,21 +11,50 @@ import { type NativePdfExtractResult } from '#src/workers/pdfNativeExtract.js';
  * missing darwin-x64 (or other) binary fails this call and lets the PDF
  * router fall back to vision instead of crashing worker process startup.
  *
+ * Module resolution is anchored to this file (via `createRequire`), not
+ * `process.cwd()`. That matters on Railway, where the worker starts as
+ * `node apps/worker/dist/index.js` from the repo root — a bare
+ * `import('@firecrawl/pdf-inspector')` inside an eval worker would look
+ * in root `node_modules` and miss the pnpm link under `apps/worker`.
+ *
  * Bounded timeout so a wedged native parse cannot stall BullMQ forever.
  */
 const NATIVE_PDF_THREAD_TIMEOUT_MS = 60_000;
+
+const requireFromThisModule = createRequire(import.meta.url);
+
+/** True when the worker package can resolve + load the native binding. */
+export function isPdfInspectorNativeSupported(): boolean {
+  try {
+    // Resolving is not enough — the package loads a platform optional
+    // binary at require-time. Probe that here so Darwin x64 (and peers)
+    // report unsupported instead of failing later in the thread.
+    requireFromThisModule.resolve('@firecrawl/pdf-inspector');
+    requireFromThisModule('@firecrawl/pdf-inspector');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function resolvePdfInspectorModuleUrl(): string {
+  return pathToFileURL(requireFromThisModule.resolve('@firecrawl/pdf-inspector')).href;
+}
 
 const THREAD_SOURCE = `
 import { parentPort, workerData } from 'node:worker_threads';
 
 const bytes = workerData.pdfBytes;
+const moduleUrl = workerData.moduleUrl;
 if (!parentPort) {
   throw new Error('pdf-inspector thread missing parentPort');
 }
-if (!bytes || !(bytes instanceof Uint8Array)) {
+if (typeof moduleUrl !== 'string' || moduleUrl.length === 0) {
+  parentPort.postMessage({ ok: false, error: 'pdf-inspector thread missing moduleUrl' });
+} else if (!bytes || !(bytes instanceof Uint8Array)) {
   parentPort.postMessage({ ok: false, error: 'pdf-inspector thread missing pdfBytes' });
 } else {
-  import('@firecrawl/pdf-inspector')
+  import(moduleUrl)
     .then(({ processPdf }) => {
       const result = processPdf(Buffer.from(bytes));
       parentPort.postMessage({
@@ -71,11 +102,19 @@ function isThreadMessage(value: unknown): value is ThreadMessage {
   return typeof value.ok === 'boolean';
 }
 
-async function processPdfNativeOnMainThread(body: Buffer): Promise<NativePdfExtractResult> {
-  // Dynamic import keeps this off the worker startup path while still giving
-  // knip/packaging a resolvable dependency edge (the thread loads via eval).
-  const { processPdf } = await import('@firecrawl/pdf-inspector');
-  const result = processPdf(body);
+function processPdfNativeOnMainThread(body: Buffer): NativePdfExtractResult {
+  // Load via createRequire (same resolution base as the off-thread path) so
+  // process.cwd() cannot change which package we get.
+  const mod = requireFromThisModule('@firecrawl/pdf-inspector') as {
+    processPdf: (buffer: Buffer) => {
+      pdfType: NativePdfExtractResult['pdfType'];
+      confidence: number;
+      hasEncodingIssues: boolean;
+      markdown?: string;
+      title?: string;
+    };
+  };
+  const result = mod.processPdf(body);
   return {
     pdfType: result.pdfType,
     confidence: result.confidence,
@@ -86,8 +125,10 @@ async function processPdfNativeOnMainThread(body: Buffer): Promise<NativePdfExtr
 }
 
 export async function processPdfNativeOffThread(body: Buffer): Promise<NativePdfExtractResult> {
+  const moduleUrl = resolvePdfInspectorModuleUrl();
+
   if (process.env.TIMELINE_PDF_NATIVE_MAIN_THREAD === '1') {
-    return processPdfNativeOnMainThread(body);
+    return Promise.resolve(processPdfNativeOnMainThread(body));
   }
 
   return new Promise((resolve, reject) => {
@@ -96,7 +137,10 @@ export async function processPdfNativeOffThread(body: Buffer): Promise<NativePdf
     const workerOptions = {
       eval: true,
       type: 'module',
-      workerData: { pdfBytes: new Uint8Array(body) },
+      workerData: {
+        pdfBytes: new Uint8Array(body),
+        moduleUrl,
+      },
     } as WorkerOptions;
     const worker = new Worker(THREAD_SOURCE, workerOptions);
 
