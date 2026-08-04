@@ -797,6 +797,13 @@ describe('POST /api/chat', () => {
     expect(response.headers.get('x-tl-session-id')).toBe(SESSION_ID);
     expect(fakes.fakeRequireMembership).toHaveBeenCalled();
     expect(fakes.fakeChatSessionTitleStatus).toHaveBeenCalledWith(SESSION_ID);
+    // The deterministic response builds its own scoped result. It must not
+    // wait for production-only prompt context before returning its session
+    // header on a cold E2E server.
+    expect(fakes.fakeTeam).not.toHaveBeenCalled();
+    expect(fakes.fakeCurrentUserIdentityContext).not.toHaveBeenCalled();
+    expect(fakes.fakeGetCalendarSettings).not.toHaveBeenCalled();
+    expect(fakes.fakeBuildSystemPrompt).not.toHaveBeenCalled();
     expect(fakes.fakeListObjects).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'task', archived: false, limit: 50 }),
     );
