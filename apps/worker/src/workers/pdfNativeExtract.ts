@@ -10,12 +10,10 @@
 export const PDF_NATIVE_MODEL = 'pdf-inspector@1.12.0';
 
 /** Minimum classifier confidence required to trust native PDF markdown. */
-export const NATIVE_PDF_MIN_CONFIDENCE = 0.8;
-
-export type NativePdfType = 'TextBased' | 'Scanned' | 'ImageBased' | 'Mixed';
+const NATIVE_PDF_MIN_CONFIDENCE = 0.8;
 
 export interface NativePdfExtractResult {
-  pdfType: NativePdfType;
+  pdfType: 'TextBased' | 'Scanned' | 'ImageBased' | 'Mixed';
   confidence: number;
   markdown?: string;
   hasEncodingIssues: boolean;

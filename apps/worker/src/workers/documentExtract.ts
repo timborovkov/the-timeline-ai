@@ -19,17 +19,14 @@ import mammoth from 'mammoth';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 import {
   type NativePdfExtractResult,
-  type NativePdfType,
   PDF_NATIVE_MODEL,
   shouldAcceptNativePdf,
 } from '#src/workers/pdfNativeExtract.js';
 
 export {
-  NATIVE_PDF_MIN_CONFIDENCE,
   PDF_NATIVE_MODEL,
   shouldAcceptNativePdf,
   type NativePdfExtractResult,
-  type NativePdfType,
 } from '#src/workers/pdfNativeExtract.js';
 
 const log = childLogger('worker:document-extract');
@@ -110,15 +107,15 @@ function defaultIO(): DocumentExtractIO {
       const result = await mammoth.extractRawText({ buffer: body });
       return { text: result.value };
     },
-    async extractPdfNative(body) {
+    extractPdfNative(body) {
       const result = processPdf(body);
-      return {
-        pdfType: result.pdfType as NativePdfType,
+      return Promise.resolve({
+        pdfType: result.pdfType,
         confidence: result.confidence,
         hasEncodingIssues: result.hasEncodingIssues,
         ...(result.markdown !== undefined ? { markdown: result.markdown } : {}),
         ...(result.title ? { title: result.title } : {}),
-      };
+      });
     },
   };
 }

@@ -24,13 +24,42 @@ function loadFixture(name: string): Buffer {
 
 function toNativeResult(result: ReturnType<typeof processPdf>): NativePdfExtractResult {
   return {
-    pdfType: result.pdfType as NativePdfExtractResult['pdfType'],
+    pdfType: result.pdfType,
     confidence: result.confidence,
     hasEncodingIssues: result.hasEncodingIssues,
     ...(result.markdown !== undefined ? { markdown: result.markdown } : {}),
     ...(result.title ? { title: result.title } : {}),
   };
 }
+
+describe('shouldAcceptNativePdf', () => {
+  it('accepts confident TextBased markdown and rejects other cases', () => {
+    expect(
+      shouldAcceptNativePdf({
+        pdfType: 'TextBased',
+        confidence: 0.8,
+        hasEncodingIssues: false,
+        markdown: 'ok',
+      }),
+    ).toBe(true);
+    expect(
+      shouldAcceptNativePdf({
+        pdfType: 'TextBased',
+        confidence: 0.79,
+        hasEncodingIssues: false,
+        markdown: 'ok',
+      }),
+    ).toBe(false);
+    expect(
+      shouldAcceptNativePdf({
+        pdfType: 'Scanned',
+        confidence: 1,
+        hasEncodingIssues: false,
+        markdown: 'ghost text layer',
+      }),
+    ).toBe(false);
+  });
+});
 
 describe('pdf-inspector native binary + fixtures', () => {
   it('loads the native binding and exports processPdf', () => {

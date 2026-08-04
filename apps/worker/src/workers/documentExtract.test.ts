@@ -16,6 +16,9 @@ import {
   shouldAcceptNativePdf,
 } from '#src/workers/documentExtract.js';
 
+// shouldAcceptNativePdf is also covered in pdfNativeExtract.test.ts; keep
+// the import load-bearing for the routing cases that call it directly.
+
 /**
  * Real-DB integration tests for the documentExtract worker handler.
  * Uses pglite for Postgres + injected fakes for S3 and the embed queue
@@ -248,11 +251,7 @@ function inboundEmailPayload(messageId: string) {
 let h: Harness = undefined as unknown as Harness;
 
 afterEach(async () => {
-  const pg = h?.pg;
-  h = undefined as unknown as Harness;
-  if (pg) {
-    await pg.close();
-  }
+  await h.pg.close();
 });
 
 describe('processDocumentExtractJob — happy path', () => {
@@ -1116,35 +1115,6 @@ describe('processDocumentExtractJob — content-type routing', () => {
     // Must NOT say the MIME is unsupported — that diagnosis would
     // mislead the operator.
     expect(row.rows[0]?.processing_error).not.toContain('not supported');
-  });
-});
-
-describe('shouldAcceptNativePdf', () => {
-  it('accepts confident TextBased markdown and rejects other cases', () => {
-    expect(
-      shouldAcceptNativePdf({
-        pdfType: 'TextBased',
-        confidence: 0.8,
-        hasEncodingIssues: false,
-        markdown: 'ok',
-      }),
-    ).toBe(true);
-    expect(
-      shouldAcceptNativePdf({
-        pdfType: 'TextBased',
-        confidence: 0.79,
-        hasEncodingIssues: false,
-        markdown: 'ok',
-      }),
-    ).toBe(false);
-    expect(
-      shouldAcceptNativePdf({
-        pdfType: 'Scanned',
-        confidence: 1,
-        hasEncodingIssues: false,
-        markdown: 'ghost text layer',
-      }),
-    ).toBe(false);
   });
 });
 
