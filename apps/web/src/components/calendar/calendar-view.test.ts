@@ -589,6 +589,23 @@ describe('CalendarView recurrence and tentative UI', () => {
     expect(screen.getByRole('status').textContent).toBe('1 upcoming event');
   });
 
+  it('keeps the event search field visibly focused for keyboard users', () => {
+    render(
+      createElement(CalendarView, {
+        events: [],
+        eventListEvents: [],
+        timezone: 'UTC',
+      }),
+    );
+
+    const search = screen.getByRole('textbox', { name: 'Search calendar events' });
+    search.focus();
+
+    expect(document.activeElement).toBe(search);
+    expect(search.className).toContain('focus-visible:ring-2');
+    expect(search.className).not.toContain('focus-visible:ring-0');
+  });
+
   it('offers a clear next action when there are no upcoming events', async () => {
     const user = userEvent.setup();
     render(

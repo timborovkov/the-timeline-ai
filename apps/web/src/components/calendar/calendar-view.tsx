@@ -902,7 +902,7 @@ function CalendarEventList({
               }, 350);
             }}
             placeholder="Search events"
-            className="h-9 border-0 px-0 ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+            className="h-9 border-0 px-0"
           />
         </div>
         <fieldset className="grid w-full grid-cols-3 gap-1 border-0 p-0 sm:flex sm:w-auto">
