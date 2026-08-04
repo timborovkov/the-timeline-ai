@@ -243,3 +243,21 @@ docs/
 
 Phased build plan and current state: [todo.md](todo.md). Product vision:
 [docs/product-brief.html](docs/product-brief.html). Design system: [design.md](design.md).
+
+## Cursor Cloud specific instructions
+
+### Local stack for this environment
+
+- Infra (Postgres, Redis, Qdrant, RustFS) is started with `docker compose up -d` from the repo root. Dockerd is not managed by systemd here — if containers are down, ensure `dockerd` is running first, then compose up. Confirm health with `docker compose ps`.
+- App processes: web (`apps/web`, Next.js on `:3000`) + worker (`apps/worker`, BullMQ). Standard commands are in [README.md](README.md) (`pnpm dev`, `pnpm db:migrate`, `pnpm dev:seed`, `pnpm validate`, `pnpm test`, `pnpm run doctor`).
+- Seeded demo logins (after `pnpm db:migrate` + `pnpm dev:seed`): `owner@timeline.dev` / `member@timeline.dev`, password `timeline-dev`.
+
+### Non-obvious env / startup gotchas
+
+- **Node must be >=24.** This Cloud Agent image ships an older Node on `/exec-daemon` ahead of nvm on `PATH`. Prefer the nvm Node 24 binary (see `~/.bashrc` PATH override). Use `pnpm` via Corepack on that Node (`packageManager` pins `pnpm@11.8.0`).
+- **Root `.env` is not auto-loaded by the worker or by `drizzle-kit`.** Next.js loads `apps/web/.env` (symlink to `../../.env`). Before `pnpm db:migrate`, `pnpm dev:seed`, or running the worker, export the root env into the shell, e.g. `set -a; . ./.env; set +a`. Quote any values that contain spaces (for example `RECALL_BOT_DISPLAY_NAME="Timeline Bot"`) or bash will try to execute the trailing words when sourcing.
+- **Turbo defaults to `envMode: strict`**, so `pnpm dev` (`turbo run dev`) strips unlisted env vars from the worker task even after sourcing `.env`. Start the stack with:
+  `set -a; . ./.env; set +a; pnpm exec turbo run dev --env-mode=loose`
+  Alternatively run packages separately with env already exported: `pnpm --filter @timeline/web dev` and `pnpm --filter @timeline/worker dev`.
+- Do **not** blindly `source` a template `.env` that sets optional URL keys to empty strings (for example `RECALL_TRANSCRIPT_WEBHOOK_URL=`). Empty strings stay set in the process env and fail Zod `z.url()` validation in `getEnv()`; omit those keys or leave them unset.
+- Keep a real `OPENROUTER_API_KEY` and `SECRETS_ENCRYPTION_KEY` in `.env` for chat/extraction/embeddings and for `pnpm dev:seed` (seed encrypts fake integration credentials).
