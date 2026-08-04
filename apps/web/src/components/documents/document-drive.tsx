@@ -579,7 +579,7 @@ function Breadcrumbs({ breadcrumbs }: { breadcrumbs: Crumb[] }) {
               </Link>
             )}
           </li>
-      ))}
+        ))}
       </ol>
     </nav>
   );

@@ -44,21 +44,47 @@ describe('InlineError', () => {
     expect(onRetry).not.toHaveBeenCalled();
   });
 
-  it('toggles the details disclosure on click', () => {
+  it('keeps technical details closed until requested and wraps long recovery values', () => {
     const { container } = render(
       <InlineError message="Failed." details="TypeError: Cannot read token of undefined" />,
     );
-    expect(container.querySelector('pre')).toBeNull();
-    const detailsButton = findButtonByText(container, /details/i);
-    if (detailsButton) fireEvent.click(detailsButton);
+    const disclosure = container.querySelector('details');
+    expect(disclosure?.open).toBe(false);
+    const detailsSummary = Array.from(container.querySelectorAll('summary')).find((summary) =>
+      /technical details/i.test(summary.textContent),
+    );
+    expect(detailsSummary).toBeTruthy();
+    if (detailsSummary) fireEvent.click(detailsSummary);
     const pre = container.querySelector('pre');
+    expect(disclosure?.open).toBe(true);
     expect(pre).toBeTruthy();
     expect(pre?.textContent).toContain('Cannot read token');
+    expect(pre?.className).toContain('max-w-full');
+    expect(pre?.className).toContain('whitespace-pre-wrap');
+    expect(pre?.className).toContain('break-words');
   });
 
   it('does not render a details toggle when details is omitted', () => {
     const noop = vi.fn();
     const { container } = render(<InlineError message="Failed." onRetry={noop} />);
     expect(findButtonByText(container, /details/i)).toBeUndefined();
+  });
+
+  it('keeps opened technical details on their own row beside a retry action', () => {
+    const { container } = render(
+      <InlineError
+        message="Sync failed."
+        details="Connection reference: abc123"
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(findButtonByText(container, /try again/i)).toBeTruthy();
+    const disclosure = container.querySelector('details');
+    expect(disclosure?.className).toContain('basis-full');
+    const summary = disclosure?.querySelector('summary');
+    if (summary) fireEvent.click(summary);
+    expect(disclosure?.open).toBe(true);
+    expect(disclosure?.querySelector('pre')?.textContent).toContain('Connection reference: abc123');
   });
 });

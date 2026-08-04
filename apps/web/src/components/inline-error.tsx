@@ -1,7 +1,6 @@
 'use client';
 
 import { AlertTriangle, ChevronDown, RotateCw } from 'lucide-react';
-import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -37,7 +36,6 @@ export function InlineError({
   retrying = false,
   className,
 }: InlineErrorProps) {
-  const [showDetails, setShowDetails] = useState(false);
   return (
     <div
       role="alert"
@@ -50,7 +48,7 @@ export function InlineError({
         <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-danger" />
         <p className="min-w-0 flex-1 text-sm text-danger">{message}</p>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {onRetry ? (
           <Button
             type="button"
@@ -67,27 +65,20 @@ export function InlineError({
           </Button>
         ) : null}
         {details ? (
-          <button
-            type="button"
-            onClick={() => {
-              setShowDetails((v) => !v);
-            }}
-            className="inline-flex items-center gap-1 text-xs text-fg-muted transition-colors hover:text-fg"
-            aria-expanded={showDetails}
-          >
-            <ChevronDown
-              aria-hidden="true"
-              className={cn('size-3 transition-transform', showDetails && 'rotate-180')}
-            />
-            Details
-          </button>
+          <details className="group min-w-0 basis-full">
+            <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-sm text-xs text-fg-muted transition-colors marker:hidden hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg">
+              <ChevronDown
+                aria-hidden="true"
+                className="size-3 transition-transform group-open:rotate-180"
+              />
+              Technical details
+            </summary>
+            <pre className="mt-2 max-w-full whitespace-pre-wrap break-words rounded-sm bg-bg/60 p-2 font-mono text-[11px] text-fg-muted">
+              {details}
+            </pre>
+          </details>
         ) : null}
       </div>
-      {details && showDetails ? (
-        <pre className="overflow-auto rounded-sm bg-bg/60 p-2 font-mono text-[11px] text-fg-muted">
-          {details}
-        </pre>
-      ) : null}
     </div>
   );
 }
