@@ -1,4 +1,3 @@
-import { processPdf } from '@firecrawl/pdf-inspector';
 import { type Db, documentChunks, documents, documentVersions } from '@timeline/db';
 import {
   childLogger,
@@ -22,6 +21,7 @@ import {
   PDF_NATIVE_MODEL,
   shouldAcceptNativePdf,
 } from '#src/workers/pdfNativeExtract.js';
+import { processPdfNativeOffThread } from '#src/workers/pdfNativeExtractRuntime.js';
 
 export {
   PDF_NATIVE_MODEL,
@@ -73,9 +73,10 @@ export interface DocumentExtractIO {
    */
   extractDocx: (body: Buffer) => Promise<{ text: string }>;
   /**
-   * Native PDF classify + markdown via pdf-inspector. Defaults to
-   * `processPdf`. Tests inject fakes to assert accept/reject routing
-   * without loading the napi binary on every case.
+   * Native PDF classify + markdown via pdf-inspector. Defaults to an
+   * off-thread `processPdf` so the napi package is never imported at
+   * worker startup (unsupported platforms fall back to vision). Tests
+   * inject fakes to assert accept/reject routing without the binary.
    */
   extractPdfNative: (body: Buffer) => Promise<NativePdfExtractResult>;
 }
@@ -108,14 +109,7 @@ function defaultIO(): DocumentExtractIO {
       return { text: result.value };
     },
     extractPdfNative(body) {
-      const result = processPdf(body);
-      return Promise.resolve({
-        pdfType: result.pdfType,
-        confidence: result.confidence,
-        hasEncodingIssues: result.hasEncodingIssues,
-        ...(result.markdown !== undefined ? { markdown: result.markdown } : {}),
-        ...(result.title ? { title: result.title } : {}),
-      });
+      return processPdfNativeOffThread(body);
     },
   };
 }
@@ -364,15 +358,19 @@ export async function processDocumentExtractJob(
     if (routed.model) extractionModel = routed.model;
     suggestedTitle = normalizeSuggestedTitle(routed.suggestedTitle);
   } catch (err: unknown) {
-    // Already stamped above for the routed-failure branch.
-    if (err instanceof UnrecoverableError) throw err;
+    // Always stamp failed before rethrowing — including UnrecoverableError
+    // from missing OPENROUTER_API_KEY after the version was claimed as
+    // extracting. Skipping the stamp left rows stuck in extracting forever
+    // because later jobs treat that status as already_processed.
+    // (The routed-failure branch above may have already stamped; rewriting
+    // the same failed status/error is idempotent.)
     const message = err instanceof Error ? err.message : String(err);
     await deps.db
       .update(documentVersions)
       .set({ processingStatus: 'failed', processingError: message.slice(0, 500) })
       .where(eq(documentVersions.id, version.id));
-    // Transient LLM / mammoth errors bubble up so BullMQ retries. The
-    // version row records the last error so the operator sees progress.
+    // UnrecoverableError stops BullMQ retries (unsupported MIME, missing
+    // vision key). Transient LLM / mammoth errors still retry.
     throw err;
   }
 

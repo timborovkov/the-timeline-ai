@@ -775,6 +775,51 @@ describe('processDocumentExtractJob — content-type routing', () => {
     expect(h.extractFromMedia).not.toHaveBeenCalled();
   });
 
+  it('stamps failed when missing OpenRouter throws UnrecoverableError after claim', async () => {
+    // Regression for Codex P1: requireEnv threw UnrecoverableError after the
+    // version was claimed as extracting; the catch rethrew without stamping
+    // failed, so later jobs skipped the row as already_processed forever.
+    const { UnrecoverableError } = await import('bullmq');
+    h = await makeHarness('%PDF scanned', {
+      visionResponse: 'recovered after key configured',
+      nativePdf: { pdfType: 'Scanned', confidence: 0.9, hasEncodingIssues: false },
+    });
+    h.requireEnv.mockImplementation(() => {
+      throw new UnrecoverableError('document-extract: OPENROUTER_API_KEY not configured');
+    });
+    const { versionId } = await createFinalisedDocument(h.db, {
+      name: 'stuck-scan.pdf',
+      contentType: 'application/pdf',
+    });
+    await expect(
+      processDocumentExtractJob(
+        { db: h.db },
+        { documentVersionId: versionId, teamId: TEAM_ID },
+        h.io,
+      ),
+    ).rejects.toThrow(/OPENROUTER_API_KEY not configured/);
+
+    const row = await h.pg.query<{ processing_status: string; processing_error: string }>(
+      `SELECT processing_status, processing_error FROM document_versions WHERE id = $1`,
+      [versionId],
+    );
+    expect(row.rows[0]?.processing_status).toBe('failed');
+    expect(row.rows[0]?.processing_status).not.toBe('extracting');
+    expect(row.rows[0]?.processing_error).toContain('OPENROUTER_API_KEY not configured');
+
+    // After the key is available, a follow-up job must be able to reclaim
+    // the failed row (it must not be stuck as extracting/already_processed).
+    h.requireEnv.mockImplementation(() => undefined);
+    const retry = await processDocumentExtractJob(
+      { db: h.db },
+      { documentVersionId: versionId, teamId: TEAM_ID },
+      h.io,
+    );
+    expect(retry.skipped).toBeUndefined();
+    expect(retry.chunkCount).toBeGreaterThanOrEqual(1);
+    expect(h.requireEnv).toHaveBeenCalledTimes(2);
+  });
+
   it('routes image/* through the vision extractor', async () => {
     h = await makeHarness('\xff\xd8\xff image bytes');
     h.extractFromMedia.mockResolvedValueOnce({
