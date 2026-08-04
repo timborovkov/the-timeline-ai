@@ -8,7 +8,16 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
-import { type DocumentExtractIO, processDocumentExtractJob } from '#src/workers/documentExtract.js';
+import {
+  type DocumentExtractIO,
+  type NativePdfExtractResult,
+  PDF_NATIVE_MODEL,
+  processDocumentExtractJob,
+  shouldAcceptNativePdf,
+} from '#src/workers/documentExtract.js';
+
+// shouldAcceptNativePdf is also covered in pdfNativeExtract.test.ts; keep
+// the import load-bearing for the routing cases that call it directly.
 
 /**
  * Real-DB integration tests for the documentExtract worker handler.
@@ -50,15 +59,26 @@ interface Harness {
   enqueueEmbed: ReturnType<typeof vi.fn>;
   extractFromMedia: ReturnType<typeof vi.fn>;
   extractDocx: ReturnType<typeof vi.fn>;
+  extractPdfNative: ReturnType<typeof vi.fn>;
+  requireEnv: ReturnType<typeof vi.fn>;
   io: DocumentExtractIO;
 }
 
+/** Default mock rejects native accept criteria so existing PDF→vision cases stay stable. */
+const DEFAULT_NATIVE_PDF_REJECT: NativePdfExtractResult = {
+  pdfType: 'Scanned',
+  confidence: 0.9,
+  hasEncodingIssues: false,
+};
+
 async function makeHarness(
-  blobBody: string,
+  blobBody: string | Buffer,
   opts: {
     visionResponse?: string;
     docxResponse?: string;
     visionModel?: string;
+    nativePdf?: NativePdfExtractResult | (() => NativePdfExtractResult);
+    nativePdfThrows?: Error;
   } = {},
 ): Promise<Harness> {
   const pg = new PGlite();
@@ -68,7 +88,8 @@ async function makeHarness(
   // vi.fn signatures kept sync — eslint flags `async` without `await` as
   // useless. Wrap in Promise.resolve so the surface matches the interface
   // (which returns a Promise) without an empty async function.
-  const fetchBlob = vi.fn(() => Promise.resolve({ body: Buffer.from(blobBody, 'utf-8') }));
+  const body = typeof blobBody === 'string' ? Buffer.from(blobBody, 'utf-8') : blobBody;
+  const fetchBlob = vi.fn(() => Promise.resolve({ body }));
   const enqueueEmbed = vi.fn((_data: queueNS.EmbedJobData) => Promise.resolve(undefined));
   const extractFromMedia = vi.fn((_input: { body: Buffer; mediaType: string; filename: string }) =>
     Promise.resolve({
@@ -80,14 +101,36 @@ async function makeHarness(
   const extractDocx = vi.fn((_body: Buffer) =>
     Promise.resolve({ text: opts.docxResponse ?? 'mock docx content' }),
   );
+  const extractPdfNative = vi.fn((_body: Buffer) => {
+    if (opts.nativePdfThrows) {
+      return Promise.reject(opts.nativePdfThrows);
+    }
+    const result =
+      typeof opts.nativePdf === 'function'
+        ? opts.nativePdf()
+        : (opts.nativePdf ?? DEFAULT_NATIVE_PDF_REJECT);
+    return Promise.resolve(result);
+  });
+  const requireEnv = vi.fn(() => undefined);
   const io: DocumentExtractIO = {
     fetchBlob,
     enqueueEmbed,
-    requireEnv: () => undefined, // Tests don't need the OPENROUTER gate.
+    requireEnv,
     extractFromMedia,
     extractDocx,
+    extractPdfNative,
   };
-  return { pg, db, fetchBlob, enqueueEmbed, extractFromMedia, extractDocx, io };
+  return {
+    pg,
+    db,
+    fetchBlob,
+    enqueueEmbed,
+    extractFromMedia,
+    extractDocx,
+    extractPdfNative,
+    requireEnv,
+    io,
+  };
 }
 
 /**
@@ -483,10 +526,11 @@ describe('processDocumentExtractJob — content-type routing', () => {
     });
   }, 30_000);
 
-  it('routes application/pdf through the vision extractor (LLM OCR)', async () => {
+  it('routes scanned application/pdf through the vision extractor (LLM OCR)', async () => {
     h = await makeHarness('%PDF-1.4 fake pdf bytes', {
       visionResponse: '# Contract\n\nParties: Acme and Beta.\n\nTerms: ...',
       visionModel: 'anthropic/claude-3-5-sonnet',
+      nativePdf: { pdfType: 'Scanned', confidence: 0.95, hasEncodingIssues: false },
     });
     const { versionId } = await createFinalisedDocument(h.db, {
       name: 'contract.pdf',
@@ -498,8 +542,10 @@ describe('processDocumentExtractJob — content-type routing', () => {
       h.io,
     );
     expect(result.chunkCount).toBeGreaterThanOrEqual(1);
-    // Vision was called with the right mediaType + filename hint.
+    // Native classifier ran first, then vision for the scanned PDF.
+    expect(h.extractPdfNative).toHaveBeenCalledOnce();
     expect(h.extractFromMedia).toHaveBeenCalledOnce();
+    expect(h.requireEnv).toHaveBeenCalledOnce();
     const call = h.extractFromMedia.mock.calls[0]?.[0] as {
       mediaType: string;
       filename: string;
@@ -515,6 +561,263 @@ describe('processDocumentExtractJob — content-type routing', () => {
       [versionId],
     );
     expect(row.rows[0]?.extraction_model_version).toContain('anthropic/claude-3-5-sonnet');
+  });
+
+  it('routes TextBased PDFs through pdf-inspector (native), not vision', async () => {
+    h = await makeHarness('%PDF-1.4 text pdf', {
+      nativePdf: {
+        pdfType: 'TextBased',
+        confidence: 0.95,
+        hasEncodingIssues: false,
+        markdown: '# Native Contract\n\nParties: Acme and Beta.',
+        title: 'Acme Beta Contract',
+      },
+    });
+    const { versionId } = await createFinalisedDocument(h.db, {
+      name: 'native-contract.pdf',
+      contentType: 'application/pdf',
+    });
+    const result = await processDocumentExtractJob(
+      { db: h.db },
+      { documentVersionId: versionId, teamId: TEAM_ID },
+      h.io,
+    );
+    expect(result.chunkCount).toBeGreaterThanOrEqual(1);
+    expect(h.extractPdfNative).toHaveBeenCalledOnce();
+    expect(h.extractFromMedia).not.toHaveBeenCalled();
+    expect(h.requireEnv).not.toHaveBeenCalled();
+
+    const chunks = await h.pg.query<{ text: string; representation_kind: string }>(
+      `SELECT text, representation_kind FROM document_chunks WHERE document_version_id = $1 ORDER BY chunk_index`,
+      [versionId],
+    );
+    expect(chunks.rows).toHaveLength(1);
+    expect(chunks.rows[0]?.representation_kind).toBe('source_text');
+    expect(chunks.rows[0]?.text).toContain('Native Contract');
+    expect(chunks.rows.map((row) => row.representation_kind)).not.toContain('visual_description');
+
+    const row = await h.pg.query<{ extraction_model_version: string }>(
+      `SELECT extraction_model_version FROM document_versions WHERE id = $1`,
+      [versionId],
+    );
+    expect(row.rows[0]?.extraction_model_version).toBe(`2026-08-a+${PDF_NATIVE_MODEL}`);
+  });
+
+  it('accepts TextBased PDFs even when pagesNeedingOcr is non-empty (library quirk)', async () => {
+    // Real pdf-inspector returns pagesNeedingOcr for clean TextBased PDFs.
+    // Accept criteria must ignore that field or every text PDF would hit vision.
+    expect(
+      shouldAcceptNativePdf({
+        pdfType: 'TextBased',
+        confidence: 1,
+        hasEncodingIssues: false,
+        markdown: '## Dummy PDF file\n',
+      }),
+    ).toBe(true);
+
+    h = await makeHarness('%PDF text', {
+      nativePdf: {
+        pdfType: 'TextBased',
+        confidence: 1,
+        hasEncodingIssues: false,
+        markdown: '## Dummy PDF file\n',
+      },
+    });
+    const { versionId } = await createFinalisedDocument(h.db, {
+      name: 'dummy.pdf',
+      contentType: 'application/pdf',
+    });
+    await processDocumentExtractJob(
+      { db: h.db },
+      { documentVersionId: versionId, teamId: TEAM_ID },
+      h.io,
+    );
+    expect(h.extractFromMedia).not.toHaveBeenCalled();
+  });
+
+  it('falls back to vision for Mixed/ImageBased/low-confidence/encoding-issue/empty markdown PDFs', async () => {
+    const rejectCases: NativePdfExtractResult[] = [
+      { pdfType: 'Mixed', confidence: 0.95, hasEncodingIssues: false, markdown: 'partial' },
+      { pdfType: 'ImageBased', confidence: 0.95, hasEncodingIssues: false },
+      {
+        pdfType: 'TextBased',
+        confidence: 0.5,
+        hasEncodingIssues: false,
+        markdown: 'low confidence text',
+      },
+      {
+        pdfType: 'TextBased',
+        confidence: 0.95,
+        hasEncodingIssues: true,
+        markdown: 'garbled ???',
+      },
+      { pdfType: 'TextBased', confidence: 0.95, hasEncodingIssues: false, markdown: '   ' },
+    ];
+    for (const [index, nativePdf] of rejectCases.entries()) {
+      if (index > 0) {
+        await h.pg.close();
+      }
+      h = await makeHarness('%PDF bytes', {
+        visionResponse: `vision for ${nativePdf.pdfType}`,
+        nativePdf,
+      });
+      const { versionId } = await createFinalisedDocument(h.db, {
+        name: `case-${nativePdf.pdfType}-${String(index)}.pdf`,
+        contentType: 'application/pdf',
+      });
+      await processDocumentExtractJob(
+        { db: h.db },
+        { documentVersionId: versionId, teamId: TEAM_ID },
+        h.io,
+      );
+      expect(h.extractPdfNative).toHaveBeenCalledOnce();
+      expect(h.extractFromMedia).toHaveBeenCalledOnce();
+    }
+  });
+
+  it('falls back to vision when native PDF extract throws', async () => {
+    h = await makeHarness('%PDF bytes', {
+      visionResponse: 'recovered via vision',
+      nativePdfThrows: new Error('napi panic'),
+    });
+    const { versionId } = await createFinalisedDocument(h.db, {
+      name: 'broken-native.pdf',
+      contentType: 'application/pdf',
+    });
+    const result = await processDocumentExtractJob(
+      { db: h.db },
+      { documentVersionId: versionId, teamId: TEAM_ID },
+      h.io,
+    );
+    expect(result.chunkCount).toBeGreaterThanOrEqual(1);
+    expect(h.extractPdfNative).toHaveBeenCalledOnce();
+    expect(h.extractFromMedia).toHaveBeenCalledOnce();
+    const chunk = await h.pg.query<{ text: string }>(
+      `SELECT text FROM document_chunks WHERE document_version_id = $1`,
+      [versionId],
+    );
+    expect(chunk.rows[0]?.text).toContain('recovered via vision');
+  });
+
+  it('stores suggested titles from native PDF title metadata', async () => {
+    h = await makeHarness('%PDF text', {
+      nativePdf: {
+        pdfType: 'TextBased',
+        confidence: 0.99,
+        hasEncodingIssues: false,
+        markdown: 'Body of the MSA.',
+        title: 'Signed Acme MSA',
+      },
+    });
+    const { documentId, versionId } = await createFinalisedCapturedFile(h.pg, {
+      name: 'AgACAgQAAyEFAATcv6dYAAP3aimENrbqY6kNAAEqxvEv6YGMrdExAAK5DmsbjOI.pdf',
+      contentType: 'application/pdf',
+    });
+    await processDocumentExtractJob(
+      { db: h.db },
+      { documentVersionId: versionId, teamId: TEAM_ID },
+      h.io,
+    );
+    const row = await h.pg.query<{ metadata: Record<string, unknown> }>(
+      `SELECT metadata FROM documents WHERE id = $1`,
+      [documentId],
+    );
+    expect(row.rows[0]?.metadata).toMatchObject({
+      suggested_title: 'Signed Acme MSA',
+      suggested_title_source: 'document_extract',
+      suggested_title_model: PDF_NATIVE_MODEL,
+    });
+  });
+
+  it('succeeds for native PDFs without calling requireEnv (no OpenRouter)', async () => {
+    h = await makeHarness('%PDF text', {
+      nativePdf: {
+        pdfType: 'TextBased',
+        confidence: 0.9,
+        hasEncodingIssues: false,
+        markdown: 'offline extract ok',
+      },
+    });
+    h.requireEnv.mockImplementation(() => {
+      throw new Error('OPENROUTER_API_KEY not configured');
+    });
+    const { versionId } = await createFinalisedDocument(h.db, {
+      name: 'offline.pdf',
+      contentType: 'application/pdf',
+    });
+    const result = await processDocumentExtractJob(
+      { db: h.db },
+      { documentVersionId: versionId, teamId: TEAM_ID },
+      h.io,
+    );
+    expect(result.chunkCount).toBeGreaterThanOrEqual(1);
+    expect(h.requireEnv).not.toHaveBeenCalled();
+  });
+
+  it('requires OpenRouter when falling back to vision for scanned PDFs', async () => {
+    h = await makeHarness('%PDF scanned', {
+      nativePdf: { pdfType: 'Scanned', confidence: 0.9, hasEncodingIssues: false },
+    });
+    h.requireEnv.mockImplementation(() => {
+      throw new Error('document-extract: OPENROUTER_API_KEY not configured');
+    });
+    const { versionId } = await createFinalisedDocument(h.db, {
+      name: 'scan.pdf',
+      contentType: 'application/pdf',
+    });
+    await expect(
+      processDocumentExtractJob(
+        { db: h.db },
+        { documentVersionId: versionId, teamId: TEAM_ID },
+        h.io,
+      ),
+    ).rejects.toThrow(/OPENROUTER_API_KEY not configured/);
+    expect(h.extractFromMedia).not.toHaveBeenCalled();
+  });
+
+  it('stamps failed when missing OpenRouter throws UnrecoverableError after claim', async () => {
+    // Regression for Codex P1: requireEnv threw UnrecoverableError after the
+    // version was claimed as extracting; the catch rethrew without stamping
+    // failed, so later jobs skipped the row as already_processed forever.
+    const { UnrecoverableError } = await import('bullmq');
+    h = await makeHarness('%PDF scanned', {
+      visionResponse: 'recovered after key configured',
+      nativePdf: { pdfType: 'Scanned', confidence: 0.9, hasEncodingIssues: false },
+    });
+    h.requireEnv.mockImplementation(() => {
+      throw new UnrecoverableError('document-extract: OPENROUTER_API_KEY not configured');
+    });
+    const { versionId } = await createFinalisedDocument(h.db, {
+      name: 'stuck-scan.pdf',
+      contentType: 'application/pdf',
+    });
+    await expect(
+      processDocumentExtractJob(
+        { db: h.db },
+        { documentVersionId: versionId, teamId: TEAM_ID },
+        h.io,
+      ),
+    ).rejects.toThrow(/OPENROUTER_API_KEY not configured/);
+
+    const row = await h.pg.query<{ processing_status: string; processing_error: string }>(
+      `SELECT processing_status, processing_error FROM document_versions WHERE id = $1`,
+      [versionId],
+    );
+    expect(row.rows[0]?.processing_status).toBe('failed');
+    expect(row.rows[0]?.processing_status).not.toBe('extracting');
+    expect(row.rows[0]?.processing_error).toContain('OPENROUTER_API_KEY not configured');
+
+    // After the key is available, a follow-up job must be able to reclaim
+    // the failed row (it must not be stuck as extracting/already_processed).
+    h.requireEnv.mockImplementation(() => undefined);
+    const retry = await processDocumentExtractJob(
+      { db: h.db },
+      { documentVersionId: versionId, teamId: TEAM_ID },
+      h.io,
+    );
+    expect(retry.skipped).toBeUndefined();
+    expect(retry.chunkCount).toBeGreaterThanOrEqual(1);
+    expect(h.requireEnv).toHaveBeenCalledTimes(2);
   });
 
   it('routes image/* through the vision extractor', async () => {
@@ -681,7 +984,15 @@ describe('processDocumentExtractJob — content-type routing', () => {
     // RustFS sometimes loses the explicit Content-Type on PUT and the
     // version row stores application/octet-stream. The extension fallback
     // is what keeps a PDF uploaded with no MIME from stamping failed.
-    h = await makeHarness('%PDF bytes', { visionResponse: 'fallback works' });
+    h = await makeHarness('%PDF bytes', {
+      visionResponse: 'fallback works',
+      nativePdf: {
+        pdfType: 'TextBased',
+        confidence: 0.95,
+        hasEncodingIssues: false,
+        markdown: 'octet-stream native path',
+      },
+    });
     const { versionId } = await createFinalisedDocument(h.db, {
       name: 'noheader.pdf',
       contentType: 'application/octet-stream',
@@ -691,7 +1002,9 @@ describe('processDocumentExtractJob — content-type routing', () => {
       { documentVersionId: versionId, teamId: TEAM_ID },
       h.io,
     );
-    expect(h.extractFromMedia).toHaveBeenCalledOnce();
+    // Native router runs first for .pdf even when MIME is lost.
+    expect(h.extractPdfNative).toHaveBeenCalledOnce();
+    expect(h.extractFromMedia).not.toHaveBeenCalled();
   });
 
   it('extension fallback reads the upload filename, not the display name (bugbot #3298769081)', async () => {
@@ -700,7 +1013,10 @@ describe('processDocumentExtractJob — content-type routing', () => {
     // "msa.pdf". Pre-fix the worker read document.name for the
     // extension regex and stamped the doc as unsupported. Post-fix the
     // worker derives the filename from version.objectKey.
-    h = await makeHarness('%PDF bytes', { visionResponse: 'derived from filename' });
+    h = await makeHarness('%PDF bytes', {
+      visionResponse: 'derived from filename',
+      nativePdf: { pdfType: 'Scanned', confidence: 0.9, hasEncodingIssues: false },
+    });
     const { versionId } = await createFinalisedDocument(h.db, {
       name: 'Acme MSA', // display name — no extension
       filename: 'msa.pdf', // upload filename — extension lives here
@@ -711,7 +1027,8 @@ describe('processDocumentExtractJob — content-type routing', () => {
       { documentVersionId: versionId, teamId: TEAM_ID },
       h.io,
     );
-    // Vision was called because the .pdf extension routed correctly.
+    // .pdf extension routed to the PDF router (native first, then vision).
+    expect(h.extractPdfNative).toHaveBeenCalledOnce();
     expect(h.extractFromMedia).toHaveBeenCalledOnce();
     expect(result.chunkCount).toBeGreaterThanOrEqual(1);
   });
@@ -766,10 +1083,13 @@ describe('processDocumentExtractJob — content-type routing', () => {
     // Critically: neither extractor was called — the worker exited cleanly.
     expect(h.extractFromMedia).not.toHaveBeenCalled();
     expect(h.extractDocx).not.toHaveBeenCalled();
+    expect(h.extractPdfNative).not.toHaveBeenCalled();
   });
 
   it('stamps failed when vision LLM throws (lets BullMQ retry)', async () => {
-    h = await makeHarness('%PDF bytes');
+    h = await makeHarness('%PDF bytes', {
+      nativePdf: { pdfType: 'Scanned', confidence: 0.9, hasEncodingIssues: false },
+    });
     h.extractFromMedia.mockRejectedValueOnce(new Error('OpenRouter 429'));
     const { versionId } = await createFinalisedDocument(h.db, {
       name: 'doc.pdf',
