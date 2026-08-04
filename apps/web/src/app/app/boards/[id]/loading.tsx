@@ -14,7 +14,7 @@ export default function BoardDetailLoading() {
         aria-busy="true"
         aria-label="Loading board"
       >
-        <div className="flex min-h-0 flex-1 flex-col" aria-hidden="true">
+        <div className="flex min-h-0 flex-1 flex-col" aria-hidden="true" inert>
           <div className="shrink-0 px-4 pt-5 md:px-8 md:pt-6">
             <PageHeaderSkeleton />
             <div

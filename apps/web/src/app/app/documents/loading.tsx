@@ -26,7 +26,7 @@ export default function DocumentsLoading() {
               <Skeleton className="h-8 w-20 rounded-sm" />
             </div>
           </section>
-          <section className="flex flex-wrap items-center gap-3 rounded-sm border border-border p-3">
+          <section className="flex flex-wrap items-center gap-3 rounded-lg border border-border p-3">
             <Skeleton className="h-3 w-28" />
             <Skeleton className="h-8 w-24 rounded-sm" />
           </section>
@@ -36,7 +36,7 @@ export default function DocumentsLoading() {
               <Skeleton className="mb-3 h-5 w-16" />
               <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {Array.from({ length: 3 }).map((_, index) => (
-                  <li key={index} className="rounded-sm border border-border bg-card p-3">
+                  <li key={index} className="rounded-lg border border-border bg-card p-3">
                     <Skeleton className="h-4 w-32 max-w-full" />
                   </li>
                 ))}
@@ -49,7 +49,7 @@ export default function DocumentsLoading() {
                 {Array.from({ length: 4 }).map((_, index) => (
                   <li
                     key={index}
-                    className="grid gap-3 rounded-sm border border-border bg-card px-3 py-2.5 lg:grid-cols-[minmax(0,1fr)_auto]"
+                    className="grid gap-3 rounded-lg border border-border bg-card px-3 py-2.5 lg:grid-cols-[minmax(0,1fr)_auto]"
                   >
                     <div className="space-y-2">
                       <Skeleton className="h-4 w-56 max-w-full" />

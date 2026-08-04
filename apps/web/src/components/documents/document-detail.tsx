@@ -7,7 +7,7 @@ import {
 import { Download, EyeOff, FileText, Link2, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { useId, useState, useTransition } from 'react';
 import { toast } from 'sonner';
 
 import type { ReactNode } from 'react';
@@ -268,7 +268,9 @@ export function DocumentDetail({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Version history</CardTitle>
+          <CardTitle as="h2" className="text-base">
+            Version history
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <ul className="divide-y divide-border">
@@ -362,6 +364,8 @@ function CurrentVersionPanel({
   onDownload: (versionId: string) => Promise<void>;
   downloading: boolean;
 }) {
+  const modelUnderstandingId = useId();
+  const contentExcerptsId = useId();
   const kind = mediaKind(version.contentType);
   const description = bestChunkDescription(chunks);
   const eventId = document.provenance.parentEventId ?? document.provenance.sourceEventId;
@@ -373,7 +377,7 @@ function CurrentVersionPanel({
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-4 max-sm:flex-col">
         <div>
-          <CardTitle className="text-base">
+          <CardTitle as="h2" className="text-base">
             {isCurrentVersion ? 'Current version' : 'Selected version'}
           </CardTitle>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -407,8 +411,13 @@ function CurrentVersionPanel({
               <UnsupportedPreview chunks={chunks} />
             )}
           </div>
-          <aside className="space-y-3">
-            <InfoBlock title="Model understanding" contentClassName="max-h-72 overflow-y-auto pr-1">
+          <aside aria-label="Document context" className="space-y-3">
+            <InfoBlock
+              title="Model understanding"
+              headingId={modelUnderstandingId}
+              contentClassName="max-h-72 overflow-y-auto pr-1"
+              contentScrollable
+            >
               {description ? (
                 <p className="break-words text-sm leading-6 text-fg-muted">{description}</p>
               ) : (
@@ -456,8 +465,12 @@ function CurrentVersionPanel({
               ) : null}
             </InfoBlock>
             {chunks.length > 0 ? (
-              <InfoBlock title="Content excerpts" contentClassName="space-y-3">
-                <ChunkCitationList chunks={chunks} />
+              <InfoBlock
+                title="Content excerpts"
+                headingId={contentExcerptsId}
+                contentClassName="space-y-3"
+              >
+                <ChunkCitationList chunks={chunks} ariaLabelledBy={contentExcerptsId} />
                 <TechnicalDetails
                   summary="Indexing details"
                   items={chunks.map((chunk, index) => ({
@@ -476,9 +489,18 @@ function CurrentVersionPanel({
   );
 }
 
-function ChunkCitationList({ chunks }: { chunks: Props['activeVersionChunks'] }) {
+function ChunkCitationList({
+  chunks,
+  ariaLabelledBy,
+}: {
+  chunks: Props['activeVersionChunks'];
+  ariaLabelledBy: string;
+}) {
   return (
-    <ol className="max-h-72 space-y-2 overflow-y-auto pr-1">
+    <ol
+      aria-labelledby={ariaLabelledBy}
+      className="max-h-72 space-y-2 overflow-y-auto rounded-sm pr-1"
+    >
       {chunks.map((chunk) => (
         <li
           key={chunk.id}
@@ -501,15 +523,35 @@ function InfoBlock({
   title,
   children,
   contentClassName = '',
+  headingId,
+  contentScrollable = false,
 }: {
   title: string;
   children: ReactNode;
   contentClassName?: string;
+  headingId?: string;
+  contentScrollable?: boolean;
 }) {
+  const generatedHeadingId = useId();
+  const resolvedHeadingId = headingId ?? generatedHeadingId;
+
   return (
     <div className="rounded-sm border border-border bg-bg px-3 py-2">
-      <p className="text-sm font-semibold text-fg">{title}</p>
-      <div className={`mt-1 ${contentClassName}`}>{children}</div>
+      <h3 id={resolvedHeadingId} className="text-sm font-semibold text-fg">
+        {title}
+      </h3>
+      <div
+        className={`mt-1 ${contentClassName}`}
+        {...(contentScrollable
+          ? {
+              'aria-labelledby': resolvedHeadingId,
+              role: 'region',
+              tabIndex: 0,
+            }
+          : {})}
+      >
+        {children}
+      </div>
     </div>
   );
 }

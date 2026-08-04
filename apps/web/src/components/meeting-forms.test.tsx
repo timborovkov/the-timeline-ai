@@ -48,6 +48,101 @@ beforeEach(() => {
 });
 
 describe('EditSavedMeetingForm', () => {
+  it('keeps a valid start time valid when an enabled schedule has no repeat day', async () => {
+    const user = userEvent.setup();
+    render(
+      <EditSavedMeetingForm
+        saved={{
+          id: '11111111-1111-1111-1111-111111111111',
+          teamId: '22222222-2222-2222-2222-222222222222',
+          createdByUserId: '33333333-3333-3333-3333-333333333333',
+          title: 'Weekly product sync',
+          description: null,
+          platform: 'meet',
+          meetingUrl: 'https://meet.google.com/abc-defg-hij',
+          defaultVisibility: 'team',
+          visibilityUserIds: null,
+          permissionConfirmedAt: new Date('2026-01-01T00:00:00Z'),
+          permissionConfirmedByUserId: '33333333-3333-3333-3333-333333333333',
+          scheduleConfig: null,
+          durationMinutes: 30,
+          autoJoinEnabled: false,
+          autoJoinPausedAt: null,
+          autoJoinPausedReason: null,
+          consecutiveFailureCount: 0,
+          archivedAt: null,
+          archivedByUserId: null,
+          metadata: {},
+          createdAt: new Date('2026-01-01T12:00:00Z'),
+          updatedAt: new Date('2026-01-01T12:00:00Z'),
+          aliases: [],
+        }}
+      />,
+    );
+
+    await user.click(screen.getByText('Edit saved meeting'));
+    await user.click(screen.getByRole('checkbox', { name: 'Add a recurring schedule' }));
+    await user.type(screen.getByLabelText('Start times'), '09:00');
+    for (const day of ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']) {
+      await user.click(screen.getByRole('checkbox', { name: day }));
+    }
+    await user.click(screen.getByRole('button', { name: 'Update meeting' }));
+
+    const alert = await screen.findByRole('alert');
+    const startTimes = screen.getByLabelText('Start times');
+    expect(document.activeElement).toBe(alert);
+    expect(startTimes.getAttribute('aria-invalid')).toBeNull();
+    expect(screen.getByRole('group', { name: 'Repeat on' }).getAttribute('aria-invalid')).toBe(
+      'true',
+    );
+    expect(fakes.updateSavedMeetingAction).not.toHaveBeenCalled();
+  });
+
+  it('keeps compact schedule weekdays understandable to assistive technology', async () => {
+    const user = userEvent.setup();
+    render(
+      <EditSavedMeetingForm
+        saved={{
+          id: '11111111-1111-1111-1111-111111111111',
+          teamId: '22222222-2222-2222-2222-222222222222',
+          createdByUserId: '33333333-3333-3333-3333-333333333333',
+          title: 'Weekly product sync',
+          description: null,
+          platform: 'meet',
+          meetingUrl: 'https://meet.google.com/abc-defg-hij',
+          defaultVisibility: 'team',
+          visibilityUserIds: null,
+          permissionConfirmedAt: new Date('2026-01-01T00:00:00Z'),
+          permissionConfirmedByUserId: '33333333-3333-3333-3333-333333333333',
+          scheduleConfig: {
+            weekdays: [1, 3, 5],
+            times: ['09:00'],
+            timezone: 'UTC',
+            joinOffsetMinutes: 2,
+          },
+          durationMinutes: 30,
+          autoJoinEnabled: false,
+          autoJoinPausedAt: null,
+          autoJoinPausedReason: null,
+          consecutiveFailureCount: 0,
+          archivedAt: null,
+          archivedByUserId: null,
+          metadata: {},
+          createdAt: new Date('2026-01-01T12:00:00Z'),
+          updatedAt: new Date('2026-01-01T12:00:00Z'),
+          aliases: ['product'],
+        }}
+      />,
+    );
+
+    await user.click(screen.getByText('Edit saved meeting'));
+
+    expect(screen.getByRole('checkbox', { name: 'Sunday' }).getAttribute('name')).toBe('weekday-0');
+    expect(screen.getByRole('checkbox', { name: 'Wednesday' }).getAttribute('name')).toBe(
+      'weekday-3',
+    );
+  });
+
   it('allows the meeting URL to be changed', async () => {
     const user = userEvent.setup();
     render(
@@ -99,6 +194,47 @@ afterEach(() => {
 });
 
 describe('SavedMeetingForm', () => {
+  it('keeps an incomplete recurring schedule from being saved and identifies the fields to fix', async () => {
+    const user = userEvent.setup();
+    render(<SavedMeetingForm defaultTimezone="UTC" />);
+
+    await user.type(screen.getByLabelText('Meeting title'), 'Weekly product sync');
+    await user.type(screen.getByLabelText('Meeting URL'), 'https://meet.google.com/abc-defg-hij');
+    await user.click(screen.getByRole('checkbox', { name: 'Add a recurring schedule' }));
+    await user.click(screen.getByRole('button', { name: 'Save meeting' }));
+
+    const alert = await screen.findByRole('alert');
+    const startTimes = screen.getByLabelText('Start times');
+    expect(alert.textContent).toBe(
+      'Add at least one start time and one day before saving a schedule.',
+    );
+    expect(document.activeElement).toBe(alert);
+    expect(startTimes.getAttribute('aria-invalid')).toBe('true');
+    expect(startTimes.getAttribute('aria-describedby')).toContain(alert.id);
+    expect(
+      screen.getByRole('group', { name: 'Repeat on' }).getAttribute('aria-invalid'),
+    ).toBeNull();
+    await user.type(startTimes, '09:00');
+    await waitFor(() => {
+      expect(startTimes.getAttribute('aria-invalid')).toBeNull();
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+    expect(fakes.createSavedMeetingAction).not.toHaveBeenCalled();
+  });
+
+  it('announces the required start-time format when a recurring schedule is enabled', async () => {
+    const user = userEvent.setup();
+    render(<SavedMeetingForm defaultTimezone="UTC" />);
+
+    await user.click(screen.getByRole('checkbox', { name: 'Add a recurring schedule' }));
+
+    const startTimes = screen.getByLabelText('Start times');
+    const help = screen.getByText('Use 24-hour local times, separated by commas.');
+
+    expect(startTimes.getAttribute('aria-describedby')).toBe('saved-times-help');
+    expect(help.id).toBe('saved-times-help');
+  });
+
   it('resets the submitted form after the async create action resolves', async () => {
     const user = userEvent.setup();
     render(<SavedMeetingForm defaultTimezone="UTC" />);

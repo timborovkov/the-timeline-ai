@@ -258,12 +258,16 @@ export function CuratedKanbanBoard({
       }}
     >
       <div className="flex h-full min-h-0 min-w-0 flex-col">
-        <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto overflow-y-hidden px-4 pb-2 md:px-8">
-          {visibleLanes.map((lane) => (
+        <section
+          aria-label="Board columns"
+          className="flex min-h-0 flex-1 gap-3 overflow-x-auto overflow-y-hidden px-4 pb-2 md:px-8"
+        >
+          {visibleLanes.map((lane, index) => (
             <KanbanColumn
               key={lane.id}
               boardId={boardId}
               lane={lane}
+              ordinal={index + 1}
               items={byLane.get(lane.id === 'unset' ? null : lane.id) ?? []}
               savingIds={savingIds}
               errors={errors}
@@ -275,7 +279,7 @@ export function CuratedKanbanBoard({
               onMoveControlRef={registerMoveControl}
             />
           ))}
-        </div>
+        </section>
         {saveState !== 'idle' ? (
           <output className="px-4 pb-2 text-xs text-fg-dim md:px-8" aria-live="polite">
             {saveState === 'saving' ? 'Saving…' : 'Saved'}
@@ -289,6 +293,7 @@ export function CuratedKanbanBoard({
 function KanbanColumn({
   boardId,
   lane,
+  ordinal,
   items,
   savingIds,
   errors,
@@ -301,6 +306,7 @@ function KanbanColumn({
 }: {
   boardId: string;
   lane: boards.BoardLaneRow;
+  ordinal: number;
   items: boards.BoardItemRow[];
   savingIds: ReadonlySet<string>;
   errors: Record<string, string>;
@@ -313,8 +319,9 @@ function KanbanColumn({
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: lane.id });
   return (
-    <div
+    <section
       ref={setNodeRef}
+      aria-label={`${lane.name}, board column ${ordinal}`}
       className={cn(
         'flex h-full w-[min(290px,calc(100vw-4rem))] shrink-0 flex-col rounded-sm border border-border bg-surface p-3',
         isOver && 'border-signal/40 bg-signal-soft',
@@ -342,7 +349,7 @@ function KanbanColumn({
           />
         ))}
       </ul>
-    </div>
+    </section>
   );
 }
 
@@ -415,6 +422,7 @@ function KanbanCard({
           <Link
             id={titleId}
             href={boardViewHref(boardId, 'kanban', item.id, filterParams)}
+            aria-current={selected ? 'true' : undefined}
             className="min-w-0 flex-1 whitespace-normal break-words font-medium leading-snug hover:underline"
           >
             {displayText(title)}

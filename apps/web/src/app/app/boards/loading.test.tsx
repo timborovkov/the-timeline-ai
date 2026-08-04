@@ -19,7 +19,7 @@ afterEach(() => {
 });
 
 describe('Boards route states', () => {
-  it('announces route-shaped responsive loading states outside their busy content', () => {
+  it('announces route-shaped responsive loading states outside inert busy visuals', () => {
     const { rerender } = render(<BoardsLoading />);
 
     expect(screen.getByRole('status').textContent).toBe('Loading boards');
@@ -33,12 +33,16 @@ describe('Boards route states', () => {
 
     rerender(<BoardDetailLoading />);
 
+    expect(screen.getAllByRole('status')).toHaveLength(1);
     expect(screen.getByRole('status').textContent).toBe('Loading board');
     expect(screen.getByRole('status').parentElement?.getAttribute('aria-busy')).toBeNull();
     expect(screen.getByLabelText('Loading board').getAttribute('aria-busy')).toBe('true');
     expect(screen.getAllByRole('heading', { level: 1, name: 'Board' })).toHaveLength(1);
     expect(screen.queryByRole('link', { name: 'Boards' })).toBeNull();
-    const detailSkeleton = document.querySelector('[aria-busy="true"] > [aria-hidden="true"]');
+    expect(screen.queryByRole('region')).toBeNull();
+    const detailSkeleton = document.querySelector(
+      '[aria-busy="true"] > [aria-hidden="true"][inert]',
+    );
     expect(detailSkeleton).toBeTruthy();
     expect(detailSkeleton?.querySelectorAll('a, button, input, select, textarea')).toHaveLength(0);
     expect(screen.getByLabelText('Loading board').getAttribute('data-app-layout')).toBe(

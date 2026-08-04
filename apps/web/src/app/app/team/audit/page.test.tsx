@@ -63,4 +63,18 @@ describe('TrustAuditPage', () => {
     expect(html).toContain('times in America/Los_Angeles');
     expect(html).toContain('dateTime="2026-07-15T00:30:00.000Z"');
   });
+
+  it('gives an empty audit log a named, explanatory archive state', async () => {
+    fakes.auditList.mockResolvedValueOnce([]);
+
+    const html = renderToStaticMarkup(await TrustAuditPage());
+
+    expect(html.match(/<h1/g)).toHaveLength(1);
+    expect(html).toContain('aria-labelledby="trust-audit-entries"');
+    expect(html).toContain('id="trust-audit-entries"');
+    expect(html).toContain('No audit entries yet');
+    expect(html).toContain('Team activity that creates an audit record will appear here.');
+    expect(html).toContain('href="/app/team"');
+    expect(html).toContain('Manage team settings');
+  });
 });

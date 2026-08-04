@@ -66,12 +66,12 @@ export function DocumentSearch() {
           type="button"
           onClick={submitSearch}
           disabled={!draft.trim() || search.isFetching}
-          className="absolute right-2 top-1/2 h-7 -translate-y-1/2 rounded-sm px-2 text-xs text-fg-muted hover:bg-surface-2 disabled:opacity-40"
+          className="absolute right-2 top-1/2 h-7 -translate-y-1/2 rounded-sm px-2 text-xs text-fg-muted hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-40"
         >
           {search.isFetching ? 'Searching' : 'Search'}
         </button>
       </search>
-      <p aria-live="polite" aria-atomic="true" className="sr-only">
+      <p role="status" aria-live="polite" aria-atomic="true" className="sr-only">
         {searchAnnouncement}
       </p>
       {query && (
@@ -87,7 +87,7 @@ export function DocumentSearch() {
               retryLabel="Retry search"
             />
           ) : hasNoMatches ? (
-            <div className="rounded-sm border border-border bg-card/30 px-4 py-3 text-sm">
+            <div className="rounded-lg border border-border bg-card/30 px-4 py-3 text-sm">
               <p className="font-medium">No matches for “{query}”</p>
               <p className="mt-1 text-fg-muted">
                 Try a different phrase, or clear the search to return to the document browser.
@@ -95,7 +95,7 @@ export function DocumentSearch() {
               <button
                 type="button"
                 onClick={clearSearch}
-                className="mt-3 rounded-sm border border-border px-3 py-1.5 text-xs font-medium text-fg-muted hover:bg-surface-2 hover:text-fg"
+                className="mt-3 rounded-sm border border-border px-3 py-1.5 text-xs font-medium text-fg-muted hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 Clear search
               </button>
@@ -106,7 +106,7 @@ export function DocumentSearch() {
                 <Link
                   key={hit.documentChunkId}
                   href={`/app/documents/${hit.documentId}?version=${String(hit.version)}#chunk-${hit.documentChunkId}`}
-                  className="block rounded-sm border border-border bg-surface px-4 py-3 text-sm hover:border-border-strong"
+                  className="block rounded-lg border border-border bg-surface px-4 py-3 text-sm hover:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
                   <span className="font-medium">{hit.documentDisplayTitle}</span>
                   <p className="mt-1 text-[11px] text-fg-dim">
@@ -123,7 +123,7 @@ export function DocumentSearch() {
                   onClick={() => {
                     void search.fetchNextPage();
                   }}
-                  className="rounded-sm border border-border px-3 py-1.5 text-xs text-fg-muted hover:bg-surface disabled:opacity-40"
+                  className="rounded-sm border border-border px-3 py-1.5 text-xs text-fg-muted hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-40"
                 >
                   {search.isFetchingNextPage ? 'Loading…' : 'Load more'}
                 </button>

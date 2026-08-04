@@ -183,6 +183,61 @@ describe('CapturedFilesList', () => {
     });
   });
 
+  it('explains a blank promotion title, focuses it, and lets the user recover', async () => {
+    fakes.promoteCapturedFileAction.mockResolvedValue({ ok: true, documentId: 'promoted-doc' });
+    const user = userEvent.setup();
+    render(<CapturedFilesList folders={[]} members={[]} files={[capturedFile()]} />);
+
+    await user.click(screen.getByRole('button', { name: 'Promote' }));
+    const dialog = screen.getByRole('dialog', { name: 'Promote captured file' });
+    const title = within(dialog).getByRole('textbox', { name: 'Title' });
+    await user.clear(title);
+    await user.keyboard('{Enter}');
+
+    expect(screen.getByText('Enter a title before promoting this file.')).toBeTruthy();
+    expect(title.getAttribute('aria-invalid')).toBe('true');
+    expect(title.getAttribute('aria-describedby')).toBe('captured-file-title-error');
+    expect(title.getAttribute('aria-required')).toBe('true');
+    expect(document.activeElement).toBe(title);
+    expect(fakes.promoteCapturedFileAction).not.toHaveBeenCalled();
+
+    await user.type(title, 'Roadmap photo');
+    expect(screen.queryByText('Enter a title before promoting this file.')).toBeNull();
+    expect(title.getAttribute('aria-invalid')).toBe('false');
+
+    await user.click(within(dialog).getByRole('button', { name: 'Promote' }));
+    await waitFor(() => {
+      expect(fakes.promoteCapturedFileAction).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'Roadmap photo' }),
+      );
+    });
+  });
+
+  it('replaces a failed promotion message with title guidance before retrying', async () => {
+    fakes.promoteCapturedFileAction.mockResolvedValue({ ok: false, error: 'network timeout' });
+    const user = userEvent.setup();
+    render(<CapturedFilesList folders={[]} members={[]} files={[capturedFile()]} />);
+
+    await user.click(screen.getByRole('button', { name: 'Promote' }));
+    const dialog = screen.getByRole('dialog', { name: 'Promote captured file' });
+    await user.click(within(dialog).getByRole('button', { name: 'Promote' }));
+    await screen.findByText(
+      'Could not promote this captured file. It remains unchanged. Check your connection, then try again.',
+    );
+
+    const title = within(dialog).getByRole('textbox', { name: 'Title' });
+    await user.clear(title);
+    await user.click(within(dialog).getByRole('button', { name: 'Promote' }));
+
+    expect(screen.getByText('Enter a title before promoting this file.')).toBeTruthy();
+    expect(
+      screen.queryByText(
+        'Could not promote this captured file. It remains unchanged. Check your connection, then try again.',
+      ),
+    ).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Promote again' })).toBeNull();
+  });
+
   it('filters captured files by multiple selected statuses', async () => {
     const user = userEvent.setup();
     render(
@@ -302,6 +357,11 @@ describe('CapturedFilesList', () => {
     ).toBeTruthy();
     expect(screen.getByText('Whiteboard planning photo')).toBeTruthy();
 
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: 'Retry loading older files' }).hasAttribute('disabled'),
+      ).toBe(false);
+    });
     const retry = screen.getByRole('button', { name: 'Retry loading older files' });
     retry.focus();
     await user.keyboard('{Enter}');

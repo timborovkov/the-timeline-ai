@@ -94,6 +94,22 @@ describe('CuratedKanbanBoard', () => {
     fakes.updateBoardItemAction.mockResolvedValue({ ok: true, id: 'item-1' });
   });
 
+  it('groups the scrollable board columns with uniquely named duplicate lane regions', () => {
+    render(
+      <CuratedKanbanBoard
+        boardId="board-1"
+        lanes={[lane('lane-1', 'Open'), lane('lane-2', 'Open')]}
+        items={[boardItem('Board card')]}
+        selectedItemId={null}
+        members={[]}
+      />,
+    );
+
+    const boardColumns = screen.getByRole('region', { name: 'Board columns' });
+    expect(within(boardColumns).getByRole('region', { name: 'Open, board column 1' })).toBeTruthy();
+    expect(within(boardColumns).getByRole('region', { name: 'Open, board column 2' })).toBeTruthy();
+  });
+
   it('wraps long card titles', () => {
     const longTitle =
       'timborovkov/the-timeline-ai#202: Add cursor pagination to the visible sales pipeline so full titles remain readable';
@@ -111,6 +127,31 @@ describe('CuratedKanbanBoard', () => {
     const title = screen.getByRole('link', { name: longTitle });
     expect(title.className).toContain('break-words');
     expect(title.className).not.toContain('truncate');
+  });
+
+  it('identifies the card open in the detail panel as current', () => {
+    const firstCard = boardItem('Open card');
+    const secondCard = boardItem('Other card');
+    secondCard.id = 'item-2';
+    secondCard.entityId = 'object-2';
+    secondCard.object.id = 'object-2';
+
+    render(
+      <CuratedKanbanBoard
+        boardId="board-1"
+        lanes={[lane()]}
+        items={[firstCard, secondCard]}
+        selectedItemId="item-1"
+        members={[]}
+      />,
+    );
+
+    expect(screen.getByRole('link', { name: 'Open card' }).getAttribute('aria-current')).toBe(
+      'true',
+    );
+    expect(screen.getByRole('link', { name: 'Other card' }).hasAttribute('aria-current')).toBe(
+      false,
+    );
   });
 
   it('updates a pending task category on the card', async () => {

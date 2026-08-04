@@ -9,8 +9,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as boards from '@timeline/shared/boards';
 import type * as objects from '@timeline/shared/objects/types';
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
-vi.mock('@/app/actions/boards', () => ({ removeBoardItemAction: vi.fn() }));
+const fakes = vi.hoisted(() => ({
+  confirm: vi.fn(),
+  removeBoardItemAction: vi.fn(),
+  push: vi.fn(),
+  refresh: vi.fn(),
+}));
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: fakes.push, refresh: fakes.refresh }),
+}));
+vi.mock('@/components/ui/app-dialog', () => ({
+  useAppDialog: () => ({ confirm: fakes.confirm, node: null }),
+}));
+vi.mock('@/app/actions/boards', () => ({ removeBoardItemAction: fakes.removeBoardItemAction }));
 vi.mock('@/app/actions/objects', () => ({
   resetTaskCategoryAction: vi.fn(),
   retryTaskCategoryAction: vi.fn(),
@@ -140,6 +152,9 @@ function connectedWork(): objects.ObjectDetail['connectedWork'] {
 describe('BoardCardDetail', () => {
   beforeEach(() => {
     cleanup();
+    vi.clearAllMocks();
+    fakes.confirm.mockResolvedValue(false);
+    fakes.removeBoardItemAction.mockResolvedValue({ ok: true });
   });
 
   it('surfaces a remove-from-board action without implying object deletion', () => {
@@ -162,6 +177,49 @@ describe('BoardCardDetail', () => {
     expect(html).toContain('Remove from board');
     expect(html).toContain('Open object');
     expect(html).not.toContain('Delete object');
+  });
+
+  it('announces a rejected remove action and supports retrying it', async () => {
+    const user = userEvent.setup();
+    fakes.confirm.mockResolvedValue(true);
+    fakes.removeBoardItemAction
+      .mockRejectedValueOnce(new Error('Connection lost. Try again.'))
+      .mockResolvedValueOnce({ ok: true });
+    render(
+      <BoardCardDetail
+        boardId="board-1"
+        view="kanban"
+        item={boardItem({
+          id: 'item-1',
+          entityId: 'object-1',
+          canonicalName: 'MyAuditor',
+        })}
+        history={[]}
+        lanes={lanes}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Remove from board' }));
+
+    await waitFor(() => {
+      expect(fakes.removeBoardItemAction).toHaveBeenCalledWith({
+        id: 'item-1',
+        boardId: 'board-1',
+      });
+      expect(screen.getByRole('alert').textContent).toContain('Connection lost. Try again.');
+      expect(
+        screen.getByRole('button', { name: 'Remove from board' }).hasAttribute('disabled'),
+      ).toBe(false);
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Remove from board' }));
+
+    await waitFor(() => {
+      expect(fakes.removeBoardItemAction).toHaveBeenCalledTimes(2);
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(fakes.push).toHaveBeenCalledWith('/app/boards/board-1?view=kanban');
+      expect(fakes.refresh).toHaveBeenCalledOnce();
+    });
   });
 
   it('wraps long board item titles in the detail panel', () => {
