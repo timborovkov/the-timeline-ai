@@ -473,6 +473,249 @@ describe('githubProvider.handleWebhook', () => {
       },
     ]);
   });
+
+  it('preserves collaboration context for GitHub work items and renders it for search', async () => {
+    const integration = { id: 'integration-1', teamId: 'team-1' } as never;
+    const handle = githubProvider.handleWebhook?.bind(githubProvider);
+    if (!handle) throw new Error('no handleWebhook');
+    const normalize = (
+      result: Awaited<ReturnType<NonNullable<typeof githubProvider.handleWebhook>>>,
+    ) => (Array.isArray(result) ? { events: result, syncTasks: [] } : result);
+
+    const populated = normalize(
+      await handle({
+        integration,
+        payload: {
+          repository: { full_name: 'acme/app' },
+          action: 'assigned',
+          pull_request: {
+            id: 7,
+            number: 7,
+            title: 'Add webhook ingestion',
+            body: 'Webhook body',
+            html_url: 'https://github.com/acme/app/pull/7',
+            state: 'open',
+            merged_at: null,
+            updated_at: '2026-06-25T10:00:00Z',
+            user: { login: 'alice' },
+            assignees: [
+              { id: 101, login: 'octo-alice' },
+              { id: 102, login: 'octo-bob' },
+            ],
+            labels: [
+              { id: 201, name: 'backend' },
+              { id: 202, name: 'needs-triage' },
+            ],
+            milestone: { id: 301, number: 4, title: 'First release', state: 'open' },
+            base: { ref: 'main' },
+            head: { ref: 'webhooks' },
+          },
+        },
+      }),
+    ).events[0];
+
+    const empty = normalize(
+      await handle({
+        integration,
+        payload: {
+          repository: { full_name: 'acme/app' },
+          action: 'edited',
+          issue: {
+            id: 8,
+            number: 8,
+            title: 'Bug report',
+            body: null,
+            html_url: 'https://github.com/acme/app/issues/8',
+            state: 'open',
+            updated_at: '2026-06-25T11:00:00Z',
+            user: { login: 'bob' },
+            assignees: [],
+            labels: [],
+            milestone: null,
+          },
+        },
+      }),
+    ).events[0];
+
+    expect(populated).toMatchObject({
+      extra: {
+        github: {
+          assignees: [
+            { id: '101', login: 'octo-alice' },
+            { id: '102', login: 'octo-bob' },
+          ],
+          labels: [
+            { id: '201', name: 'backend' },
+            { id: '202', name: 'needs-triage' },
+          ],
+          milestone: { id: '301', number: 4, title: 'First release', state: 'open' },
+        },
+      },
+    });
+    expect(populated?.contentText).toContain('Assignees: @octo-alice, @octo-bob');
+    expect(populated?.contentText).toContain('Labels: backend, needs-triage');
+    expect(populated?.contentText).toContain('Milestone: First release (open)');
+    expect(empty).toMatchObject({
+      extra: { github: { assignees: [], labels: [], milestone: null } },
+    });
+    expect(empty?.contentText).not.toMatch(/Assignees:|Labels:|Milestone:/u);
+  });
+});
+
+describe('githubProvider.backfill', () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it('normalizes REST work-item collaboration context into metadata and searchable text', async () => {
+    const fetchMock = vi.fn<typeof fetch>((input) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.pathname.endsWith('/pulls')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify(
+              url.searchParams.get('state') === 'open'
+                ? [
+                    {
+                      id: 7,
+                      number: 7,
+                      title: 'Backfill PR',
+                      body: null,
+                      html_url: 'https://github.com/acme/app/pull/7',
+                      state: 'open',
+                      merged_at: null,
+                      updated_at: '2026-06-25T10:00:00Z',
+                      user: { login: 'alice' },
+                      assignees: [{ id: 101, login: 'octo-alice' }],
+                      labels: [{ id: 201, name: 'backend' }],
+                      milestone: { id: 301, number: 4, title: 'First release', state: 'open' },
+                      base: { ref: 'main' },
+                      head: { ref: 'backfill' },
+                    },
+                  ]
+                : [],
+            ),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+        );
+      }
+      if (url.pathname.endsWith('/pulls/7/reviews')) {
+        return Promise.resolve(
+          new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/issues')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              {
+                id: 8,
+                number: 8,
+                title: 'Backfill issue',
+                body: null,
+                html_url: 'https://github.com/acme/app/issues/8',
+                state: 'open',
+                updated_at: '2026-06-25T11:00:00Z',
+                user: { login: 'bob' },
+                assignees: [{ id: 102, login: 'octo-bob' }],
+                labels: [{ id: 202, name: 'needs-triage' }],
+                milestone: { id: 302, number: 5, title: 'Bug bash', state: 'closed' },
+              },
+              {
+                id: 9,
+                number: 9,
+                title: 'Backfill issue without collaboration context',
+                body: null,
+                html_url: 'https://github.com/acme/app/issues/9',
+                state: 'open',
+                updated_at: '2026-06-25T12:00:00Z',
+                user: { login: 'carol' },
+              },
+            ]),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+        );
+      }
+      if (url.pathname.endsWith('/releases') || url.pathname.endsWith('/commits')) {
+        return Promise.resolve(
+          new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/actions/runs')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ workflow_runs: [] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ message: 'unexpected' }), {
+          status: 404,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+    });
+    globalThis.fetch = fetchMock;
+    const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
+
+    await githubProvider.backfill({
+      integration: {} as never,
+      tokens: { access_token: 'gho_token' },
+      selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+      ctx: {
+        writeEvents,
+        recordAudit: vi.fn(),
+        saveCursor: vi.fn(),
+        loadCursor: vi.fn().mockResolvedValue({}),
+        persistTokens: vi.fn(),
+      },
+    });
+
+    const events = writeEvents.mock.calls.flatMap(([batch]) => batch);
+    const pr = events.find((event) => event.eventType === 'pr.updated');
+    const issue = events.find((event) => event.eventType === 'issue.updated');
+    const missingIssue = events.find((event) => event.externalObjectId === 'acme/app#issue:9');
+    expect(pr).toMatchObject({
+      extra: {
+        github: {
+          assignees: [{ id: '101', login: 'octo-alice' }],
+          labels: [{ id: '201', name: 'backend' }],
+          milestone: { id: '301', number: 4, title: 'First release', state: 'open' },
+        },
+      },
+    });
+    expect(pr?.contentText).toContain('Assignees: @octo-alice');
+    expect(pr?.contentText).toContain('Labels: backend');
+    expect(pr?.contentText).toContain('Milestone: First release (open)');
+    expect(issue).toMatchObject({
+      extra: {
+        github: {
+          assignees: [{ id: '102', login: 'octo-bob' }],
+          labels: [{ id: '202', name: 'needs-triage' }],
+          milestone: { id: '302', number: 5, title: 'Bug bash', state: 'closed' },
+        },
+      },
+    });
+    expect(issue?.contentText).toContain('Assignees: @octo-bob');
+    expect(issue?.contentText).toContain('Labels: needs-triage');
+    expect(issue?.contentText).toContain('Milestone: Bug bash (closed)');
+    expect(missingIssue).toMatchObject({
+      extra: { github: { assignees: [], labels: [], milestone: null } },
+    });
+    expect(missingIssue?.contentText).not.toMatch(/Assignees:|Labels:|Milestone:/u);
+  });
 });
 
 describe('githubProvider.incrementalSync', () => {

@@ -612,8 +612,28 @@ interface GhPullRequest {
   merged_at: string | null;
   updated_at: string;
   user: { login: string } | null;
+  assignees?: GhAssignee[];
+  labels?: GhLabel[];
+  milestone?: GhMilestone | null;
   base: { ref: string };
   head: { ref: string };
+}
+
+interface GhAssignee {
+  id: number;
+  login: string;
+}
+
+interface GhLabel {
+  id: number | null;
+  name: string;
+}
+
+interface GhMilestone {
+  id: number;
+  number: number;
+  title: string;
+  state: string;
 }
 
 interface GhIssue {
@@ -625,6 +645,9 @@ interface GhIssue {
   state: 'open' | 'closed';
   updated_at: string;
   user: { login: string } | null;
+  assignees?: GhAssignee[];
+  labels?: GhLabel[];
+  milestone?: GhMilestone | null;
   pull_request?: { html_url: string };
 }
 
@@ -872,6 +895,49 @@ function repoDisplayName(repo: string): string {
   return repo.split('/').pop() ?? repo;
 }
 
+function githubWorkItemContext(item: Pick<GhPullRequest, 'assignees' | 'labels' | 'milestone'>) {
+  const assignees = Array.isArray(item.assignees) ? item.assignees : [];
+  const labels = Array.isArray(item.labels) ? item.labels : [];
+  return {
+    assignees: assignees.map((assignee) => ({
+      id: String(assignee.id),
+      login: assignee.login,
+    })),
+    labels: labels.map((label) => ({
+      ...(label.id === null ? {} : { id: String(label.id) }),
+      name: label.name,
+    })),
+    milestone: item.milestone
+      ? {
+          id: String(item.milestone.id),
+          number: item.milestone.number,
+          title: item.milestone.title,
+          state: item.milestone.state,
+        }
+      : null,
+  };
+}
+
+function githubWorkItemContentText(
+  prefix: string,
+  body: string | null,
+  item: Pick<GhPullRequest, 'assignees' | 'labels' | 'milestone'>,
+): string {
+  const context = githubWorkItemContext(item);
+  const contextLines = [
+    context.assignees.length > 0
+      ? `Assignees: ${context.assignees.map((assignee) => `@${assignee.login}`).join(', ')}`
+      : null,
+    context.labels.length > 0
+      ? `Labels: ${context.labels.map((label) => label.name).join(', ')}`
+      : null,
+    context.milestone ? `Milestone: ${context.milestone.title} (${context.milestone.state})` : null,
+  ].filter((line): line is string => line !== null);
+  return [prefix, ...contextLines, body]
+    .filter((line): line is string => line !== null)
+    .join('\n\n');
+}
+
 function prToEvent(repo: string, pr: GhPullRequest): IntegrationEvent {
   const eventType = pr.merged_at ? 'pr.merged' : pr.state === 'closed' ? 'pr.closed' : 'pr.updated';
   const status: 'open' | 'done' | 'cancelled' = pr.merged_at
@@ -888,7 +954,11 @@ function prToEvent(repo: string, pr: GhPullRequest): IntegrationEvent {
     eventType,
     occurredAt: new Date(pr.updated_at),
     actor: pr.user ? { externalId: pr.user.login, name: pr.user.login } : null,
-    contentText: `GitHub PR ${repo}#${String(pr.number)} — ${pr.title}${pr.body ? `\n\n${pr.body}` : ''}`,
+    contentText: githubWorkItemContentText(
+      `GitHub PR ${repo}#${String(pr.number)} — ${pr.title}`,
+      pr.body,
+      pr,
+    ),
     extra: {
       github: {
         type: 'pull_request',
@@ -899,6 +969,7 @@ function prToEvent(repo: string, pr: GhPullRequest): IntegrationEvent {
         merged_at: pr.merged_at,
         base: pr.base.ref,
         head: pr.head.ref,
+        ...githubWorkItemContext(pr),
       },
     },
     objectMap: {
@@ -924,7 +995,11 @@ function issueToEvent(repo: string, issue: GhIssue): IntegrationEvent | null {
     eventType: issue.state === 'closed' ? 'issue.closed' : 'issue.updated',
     occurredAt: new Date(issue.updated_at),
     actor: issue.user ? { externalId: issue.user.login, name: issue.user.login } : null,
-    contentText: `GitHub Issue ${repo}#${String(issue.number)} — ${issue.title}${issue.body ? `\n\n${issue.body}` : ''}`,
+    contentText: githubWorkItemContentText(
+      `GitHub Issue ${repo}#${String(issue.number)} — ${issue.title}`,
+      issue.body,
+      issue,
+    ),
     extra: {
       github: {
         type: 'issue',
@@ -932,6 +1007,7 @@ function issueToEvent(repo: string, issue: GhIssue): IntegrationEvent | null {
         number: issue.number,
         url: issue.html_url,
         state: issue.state,
+        ...githubWorkItemContext(issue),
       },
     },
     objectMap: {
@@ -1087,6 +1163,35 @@ function userValue(value: unknown): { login: string } | null {
   return login ? { login } : null;
 }
 
+function assigneesFromWebhook(value: unknown): GhAssignee[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((assignee) => {
+    const record = recordValue(assignee);
+    const id = numberValue(record?.id);
+    const login = stringValue(record?.login);
+    return id === null || !login ? [] : [{ id, login }];
+  });
+}
+
+function labelsFromWebhook(value: unknown): GhLabel[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((label) => {
+    if (typeof label === 'string') return label.trim() ? [{ id: null, name: label }] : [];
+    const record = recordValue(label);
+    const name = stringValue(record?.name);
+    return name ? [{ id: numberValue(record?.id), name }] : [];
+  });
+}
+
+function milestoneFromWebhook(value: unknown): GhMilestone | null {
+  const record = recordValue(value);
+  const id = numberValue(record?.id);
+  const number = numberValue(record?.number);
+  const title = stringValue(record?.title);
+  const state = stringValue(record?.state);
+  return id === null || number === null || !title || !state ? null : { id, number, title, state };
+}
+
 function repoFromWebhookPayload(payload: Record<string, unknown>): string | null {
   return stringValue(recordValue(payload.repository)?.full_name);
 }
@@ -1114,6 +1219,9 @@ function ghPrFromWebhook(record: Record<string, unknown>): GhPullRequest | null 
     merged_at: mergedAt,
     updated_at: updatedAt,
     user: userValue(record.user),
+    assignees: assigneesFromWebhook(record.assignees),
+    labels: labelsFromWebhook(record.labels),
+    milestone: milestoneFromWebhook(record.milestone),
     base: { ref: stringValue(base?.ref) ?? '' },
     head: { ref: stringValue(head?.ref) ?? '' },
   };
@@ -1136,6 +1244,9 @@ function ghIssueFromWebhook(record: Record<string, unknown>): GhIssue | null {
     state: state === 'closed' ? 'closed' : 'open',
     updated_at: updatedAt,
     user: userValue(record.user),
+    assignees: assigneesFromWebhook(record.assignees),
+    labels: labelsFromWebhook(record.labels),
+    milestone: milestoneFromWebhook(record.milestone),
     ...(record.pull_request ? { pull_request: { html_url: htmlUrl } } : {}),
   };
 }
