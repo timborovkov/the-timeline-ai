@@ -264,7 +264,7 @@ TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-pr
 # Slack DMs. TELEGRAM_BOT_TOKEN must be present on worker as well as web; Slack
 # tokens remain encrypted per installed workspace and require the shared
 # SECRETS_ENCRYPTION_KEY on both processes.
-pnpm e2e                  # Playwright core journey tests
+pnpm e2e                  # Playwright core journey tests (requires 4 GiB free disk space)
 pnpm run doctor           # React Doctor scan for React/Next health regressions
 pnpm canary:integrations  # secret-safe live provider OAuth/LLM+transcription/Postmark/Telegram/Slack/Recall + optional signed capture canaries
 pnpm canary:integrations:strict
