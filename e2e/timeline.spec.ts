@@ -1878,6 +1878,30 @@ test('agentic core object update approval updates existing object', async ({ bro
   await memberPage.context().close();
 });
 
+test('Home Ask creates a persisted chat session', async ({ browser }) => {
+  const ownerPage = await newSignedInPage(browser, 'owner');
+  const question = `What is blocked in E2E Home Ask ${Date.now()}?`;
+
+  await ownerPage.goto('/app');
+  const chatResponse = ownerPage.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === '/api/chat' && response.request().method() === 'POST',
+    { timeout: 10_000 },
+  );
+  await ownerPage.getByPlaceholder('Ask the timeline…').fill(question);
+  await ownerPage.getByRole('button', { name: 'Send' }).click();
+
+  const sessionId = (await chatResponse).headers()['x-tl-session-id'];
+  expect(sessionId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+  await expect(ownerPage).toHaveURL(new RegExp(`/app/chat\\?session=${sessionId}`));
+  await expect(ownerPage.getByText(question, { exact: true })).toBeVisible();
+  await ownerPage.reload();
+  await expect(ownerPage).toHaveURL(new RegExp(`/app/chat\\?session=${sessionId}`));
+  await expect(ownerPage.getByText(question, { exact: true })).toBeVisible();
+
+  await ownerPage.context().close();
+});
+
 test('chat answers timeline questions with citations and reloadable tool history', async ({
   browser,
 }) => {
@@ -1896,7 +1920,9 @@ test('chat answers timeline questions with citations and reloadable tool history
   const question = `What does the timeline say about ${chatFact}?`;
   await ownerPage.getByPlaceholder('Ask the timeline…').fill(question);
   await ownerPage.getByRole('button', { name: 'Send' }).click();
-  await expect(ownerPage.getByText(`Searched timeline for "${question}" — 1 result`)).toBeVisible();
+  await expect(
+    ownerPage.getByText(`Searched timeline for "${question}" — 1 result`).first(),
+  ).toBeVisible();
   await expect(ownerPage.getByText(chatFact).last()).toBeVisible();
   await expect(
     ownerPage.getByRole('button', {
@@ -1909,7 +1935,9 @@ test('chat answers timeline questions with citations and reloadable tool history
   await ownerPage.reload();
   await expect(ownerPage).toHaveURL(sessionUrl);
   await expect(ownerPage.getByText(question).first()).toBeVisible();
-  await expect(ownerPage.getByText(`Searched timeline for "${question}" — 1 result`)).toBeVisible();
+  await expect(
+    ownerPage.getByText(`Searched timeline for "${question}" — 1 result`).first(),
+  ).toBeVisible();
   await expect(ownerPage.getByText(chatFact).last()).toBeVisible();
   await expect(
     ownerPage.getByRole('button', {

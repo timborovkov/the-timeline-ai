@@ -757,10 +757,6 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
-  const team = await scope.timeline.team();
-  const teamName = team?.name ?? active.teamName;
-  const userName = session.user.name ?? session.user.email ?? 'a teammate';
-
   // Resolve the chat session, three cases:
   //   1. sessionId provided        → validate + persist into it.
   //   2. startNewSession: true     → create a new session, return id via header.
@@ -796,20 +792,6 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
 
-  const [calendarSettings, currentUser] = await Promise.all([
-    scope.calendar.getCalendarSettings(),
-    scope.timeline.currentUserIdentityContext(),
-  ]);
-  const currentDate = new Date();
-  const baseSystem = agent.buildSystemPrompt({
-    teamName,
-    userName,
-    currentUser,
-    currentDate,
-    workspaceTime: time.workspaceTimeContext(calendarSettings.defaultTimezone, currentDate),
-  });
-  const contextPrompt = dashboardContextPrompt(parsed.data.dashboardContext);
-  const system = contextPrompt ? `${baseSystem}\n\n${contextPrompt}` : baseSystem;
   // Validate UIMessages BEFORE convertToModelMessages so a malformed client
   // (or attacker poking the endpoint) gets a clean 400 instead of an
   // unhandled rejection on the streaming path. The zod gate above only
@@ -824,6 +806,11 @@ export async function POST(req: Request): Promise<Response> {
   const titleSourceMessage = firstUserMessageWithText(uiMessages);
   const latestUserMessage = [...uiMessages].reverse().find((m) => m.role === 'user') ?? null;
 
+  // E2E deterministic chat has its own scoped retrieval path and does not use
+  // the production agent's identity, calendar, or prompt context. Return it
+  // immediately after the same auth, membership, rate-limit, session, and
+  // message-validation gates so a cold server does not delay its session-id
+  // response header on unrelated context lookups.
   if (deterministicChatEnabled()) {
     return deterministicChatResponse({
       scope,
@@ -835,6 +822,24 @@ export async function POST(req: Request): Promise<Response> {
       shouldTitleSession,
     });
   }
+
+  const team = await scope.timeline.team();
+  const teamName = team?.name ?? active.teamName;
+  const userName = session.user.name ?? session.user.email ?? 'a teammate';
+  const [calendarSettings, currentUser] = await Promise.all([
+    scope.calendar.getCalendarSettings(),
+    scope.timeline.currentUserIdentityContext(),
+  ]);
+  const currentDate = new Date();
+  const baseSystem = agent.buildSystemPrompt({
+    teamName,
+    userName,
+    currentUser,
+    currentDate,
+    workspaceTime: time.workspaceTimeContext(calendarSettings.defaultTimezone, currentDate),
+  });
+  const contextPrompt = dashboardContextPrompt(parsed.data.dashboardContext);
+  const system = contextPrompt ? `${baseSystem}\n\n${contextPrompt}` : baseSystem;
 
   const latestQuestion = messageText(latestUserMessage);
   const toolSelection = selectAgentToolGroups({
