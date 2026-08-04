@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useMemo, useSyncExternalStore } from 'react';
+import { type ReactNode, useActionState, useMemo, useSyncExternalStore } from 'react';
 import { useFormStatus } from 'react-dom';
 
 import {
@@ -57,21 +57,122 @@ function Submit({
   );
 }
 
+function FormFeedback({
+  error,
+  success,
+  errorId,
+}: {
+  error?: string;
+  success?: string;
+  errorId?: string;
+}) {
+  const { pending } = useFormStatus();
+  const status = pending ? 'Saving changes…' : error ? undefined : success;
+  const failure = pending ? undefined : error;
+
+  return (
+    <>
+      <p
+        aria-atomic="true"
+        aria-live="polite"
+        className="text-sm text-muted-foreground"
+        role={status ? 'status' : undefined}
+      >
+        {status ?? ''}
+      </p>
+      <p
+        id={errorId}
+        aria-atomic="true"
+        aria-live="assertive"
+        className="text-sm text-destructive"
+        role={failure ? 'alert' : undefined}
+      >
+        {failure ?? ''}
+      </p>
+    </>
+  );
+}
+
+function FieldError({
+  error,
+  children,
+}: {
+  error?: string;
+  children: (activeError: string | undefined) => ReactNode;
+}) {
+  const { pending } = useFormStatus();
+
+  return children(pending ? undefined : error);
+}
+
+function InviteFeedback({
+  inviteUrl,
+  sendStatus,
+  sendError,
+}: Pick<InviteState, 'inviteUrl' | 'sendStatus' | 'sendError'>) {
+  const status = !inviteUrl
+    ? undefined
+    : sendStatus === 'sent'
+      ? 'Invite created and email sent. The invite link is ready to share.'
+      : sendStatus === 'failed'
+        ? undefined
+        : 'Invite created. The invite link is ready to share.';
+  const error =
+    inviteUrl && sendStatus === 'failed'
+      ? `Invite created, but the email was not sent: ${sendError ?? 'unknown error'}. The link is ready to share.`
+      : undefined;
+
+  return (
+    <>
+      <p
+        aria-atomic="true"
+        aria-live="polite"
+        className="sr-only"
+        role={status ? 'status' : undefined}
+      >
+        {status ?? ''}
+      </p>
+      <p
+        aria-atomic="true"
+        aria-live="assertive"
+        className="sr-only"
+        role={error ? 'alert' : undefined}
+      >
+        {error ?? ''}
+      </p>
+    </>
+  );
+}
+
 export function CreateTeamForm({ id = 'new-team-name' }: { id?: string }) {
   const [state, action] = useActionState<CreateTeamState, FormData>(createTeamAction, {});
   const timezone = useSyncExternalStore(subscribeTimezone, browserTimezone, serverTimezone);
+  const nameError = state.error === 'Invalid team name' ? state.error : undefined;
+  const errorId = `${id}-error`;
 
   return (
     <form action={action} className="flex flex-col gap-3 sm:flex-row sm:items-end">
       <input type="hidden" name="timezone" value={timezone} />
       <div className="flex-1 space-y-2">
         <Label htmlFor={id}>Team name</Label>
-        <Input id={id} name="name" placeholder="Acme Sales" required />
+        <FieldError error={nameError}>
+          {(activeNameError) => (
+            <Input
+              id={id}
+              name="name"
+              placeholder="Acme Sales"
+              required
+              className="transition-colors hover:border-border-strong"
+              aria-invalid={activeNameError ? true : undefined}
+              aria-describedby={activeNameError ? errorId : undefined}
+            />
+          )}
+        </FieldError>
       </div>
       <Submit label="Create" />
-      {state.error ? (
-        <span className="self-center text-xs text-destructive">{state.error}</span>
-      ) : null}
+      <div className="self-center">
+        <FormFeedback error={state.error} errorId={errorId} />
+      </div>
     </form>
   );
 }
@@ -79,22 +180,29 @@ export function CreateTeamForm({ id = 'new-team-name' }: { id?: string }) {
 export function TeamTimezoneForm({ timezone }: { timezone: string }) {
   const [state, action] = useActionState<TeamTimezoneState, FormData>(updateTeamTimezoneAction, {});
   const options = useMemo(() => timezoneOptions(timezone), [timezone]);
+  const timezoneError = state.error === 'Choose a valid timezone' ? state.error : undefined;
   return (
     <form action={action} className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor="team-timezone">Team timezone</Label>
-        <select
-          id="team-timezone"
-          name="timezone"
-          defaultValue={timezone}
-          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-        >
-          {options.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
+        <FieldError error={timezoneError}>
+          {(activeTimezoneError) => (
+            <select
+              id="team-timezone"
+              name="timezone"
+              defaultValue={timezone}
+              className="h-9 w-full rounded-sm border border-input bg-background px-3 text-sm transition-colors hover:border-border-strong ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              aria-invalid={activeTimezoneError ? true : undefined}
+              aria-describedby={activeTimezoneError ? 'team-timezone-error' : undefined}
+            >
+              {options.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          )}
+        </FieldError>
         <p className="text-sm text-muted-foreground">
           Used for calendar views, event defaults, meeting schedules, daily digests, and
           workspace-relative dates in chat.
@@ -102,8 +210,11 @@ export function TeamTimezoneForm({ timezone }: { timezone: string }) {
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <Submit label="Save timezone" />
-        {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
-        {state.ok ? <p className="text-sm text-muted-foreground">Timezone updated.</p> : null}
+        <FormFeedback
+          error={state.error}
+          success={state.ok ? 'Timezone updated.' : undefined}
+          errorId="team-timezone-error"
+        />
       </div>
     </form>
   );
@@ -111,18 +222,35 @@ export function TeamTimezoneForm({ timezone }: { timezone: string }) {
 
 export function RenameTeamForm({ currentName, teamId }: { currentName: string; teamId: string }) {
   const [state, action] = useActionState<RenameTeamState, FormData>(renameTeamAction, {});
+  const nameError = state.error === 'Invalid team name' ? state.error : undefined;
   return (
     <form action={action} className="space-y-3">
       <input type="hidden" name="teamId" value={teamId} />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <div className="flex-1 space-y-2">
           <Label htmlFor="team-name">Team name</Label>
-          <Input id="team-name" name="name" defaultValue={currentName} required maxLength={80} />
+          <FieldError error={nameError}>
+            {(activeNameError) => (
+              <Input
+                id="team-name"
+                name="name"
+                defaultValue={currentName}
+                required
+                maxLength={80}
+                className="transition-colors hover:border-border-strong"
+                aria-invalid={activeNameError ? true : undefined}
+                aria-describedby={activeNameError ? 'team-name-error' : undefined}
+              />
+            )}
+          </FieldError>
         </div>
         <Submit label="Rename" />
       </div>
-      {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
-      {state.ok ? <p className="text-sm text-muted-foreground">Team name updated.</p> : null}
+      <FormFeedback
+        error={state.error}
+        success={state.ok ? 'Team name updated.' : undefined}
+        errorId="team-name-error"
+      />
     </form>
   );
 }
@@ -140,6 +268,11 @@ export function InboundEmailWhitelistForm({
     updateInboundEmailWhitelistAction,
     {},
   );
+  const sendersError =
+    state.error === 'Enter valid email addresses only' ||
+    state.error === 'Add at least one sender before enabling the whitelist'
+      ? state.error
+      : undefined;
   return (
     <form action={action} className="space-y-4">
       <div className="space-y-1">
@@ -148,29 +281,38 @@ export function InboundEmailWhitelistForm({
           {inboundEmail ?? 'Not configured'}
         </code>
       </div>
-      <label className="flex items-center gap-2 text-sm">
+      <label className="flex min-h-9 items-center gap-2 text-sm">
         <input
           type="checkbox"
           name="enabled"
           defaultChecked={enabled}
-          className="size-4 rounded border-input"
+          className="size-4 rounded-sm border-input accent-signal transition-colors hover:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         />
         Enable sender whitelist
       </label>
       <div className="space-y-2">
         <Label htmlFor="inbound-email-senders">Allowed senders</Label>
-        <Textarea
-          id="inbound-email-senders"
-          name="senders"
-          defaultValue={senders.join(', ')}
-          placeholder="alice@example.com, vendor@example.net"
-          className="min-h-28"
-        />
+        <FieldError error={sendersError}>
+          {(activeSendersError) => (
+            <Textarea
+              id="inbound-email-senders"
+              name="senders"
+              defaultValue={senders.join(', ')}
+              placeholder="alice@example.com, vendor@example.net"
+              className="min-h-28 transition-colors hover:border-border-strong"
+              aria-invalid={activeSendersError ? true : undefined}
+              aria-describedby={activeSendersError ? 'inbound-email-senders-error' : undefined}
+            />
+          )}
+        </FieldError>
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <Submit label="Save email settings" />
-        {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
-        {state.ok ? <p className="text-sm text-muted-foreground">Email settings updated.</p> : null}
+        <FormFeedback
+          error={state.error}
+          success={state.ok ? 'Email settings updated.' : undefined}
+          errorId="inbound-email-senders-error"
+        />
       </div>
     </form>
   );
@@ -183,12 +325,12 @@ export function DigestPreferenceForm({ enabled }: { enabled: boolean }) {
   );
   return (
     <form action={action} className="space-y-4">
-      <label className="flex items-start gap-3 text-sm">
+      <label className="flex min-h-9 items-center gap-3 text-sm">
         <input
           type="checkbox"
           name="dailyDigestEnabled"
           defaultChecked={enabled}
-          className="mt-0.5 size-4 rounded border-input"
+          className="size-4 rounded-sm border-input accent-signal transition-colors hover:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         />
         <span>
           <span className="block font-medium">Send me the daily team digest</span>
@@ -200,8 +342,10 @@ export function DigestPreferenceForm({ enabled }: { enabled: boolean }) {
       </label>
       <div className="flex flex-wrap items-center gap-3">
         <Submit label="Save digest setting" />
-        {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
-        {state.ok ? <p className="text-sm text-muted-foreground">Digest setting updated.</p> : null}
+        <FormFeedback
+          error={state.error}
+          success={state.ok ? 'Digest setting updated.' : undefined}
+        />
       </div>
     </form>
   );
@@ -209,20 +353,31 @@ export function DigestPreferenceForm({ enabled }: { enabled: boolean }) {
 
 export function InviteMemberForm({ canInviteAdmin }: { canInviteAdmin: boolean }) {
   const [state, action] = useActionState<InviteState, FormData>(inviteMemberAction, {});
+  const emailError = state.error === 'Invalid email' ? state.error : undefined;
   return (
     <form action={action} className="space-y-3">
+      <InviteFeedback
+        inviteUrl={state.inviteUrl}
+        sendStatus={state.sendStatus}
+        sendError={state.sendError}
+      />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <div className="min-w-0 flex-1 space-y-2">
           <Label htmlFor="invite-email">Email</Label>
-          <Input
-            id="invite-email"
-            name="email"
-            type="email"
-            placeholder="teammate@example.com"
-            required
-            aria-invalid={state.error ? true : undefined}
-            aria-describedby={state.error ? 'invite-error' : undefined}
-          />
+          <FieldError error={emailError}>
+            {(activeEmailError) => (
+              <Input
+                id="invite-email"
+                name="email"
+                type="email"
+                placeholder="teammate@example.com"
+                required
+                className="transition-colors hover:border-border-strong"
+                aria-invalid={activeEmailError ? true : undefined}
+                aria-describedby={activeEmailError ? 'invite-error' : undefined}
+              />
+            )}
+          </FieldError>
         </div>
         <div className="space-y-2 sm:w-36">
           <Label htmlFor="invite-role">Role</Label>
@@ -230,9 +385,7 @@ export function InviteMemberForm({ canInviteAdmin }: { canInviteAdmin: boolean }
             id="invite-role"
             name="role"
             defaultValue="member"
-            className="h-10 w-full rounded-md border border-input bg-background px-2 text-sm"
-            aria-invalid={state.error ? true : undefined}
-            aria-describedby={state.error ? 'invite-error' : undefined}
+            className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm transition-colors hover:border-border-strong ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             <option value="member">Member</option>
             {canInviteAdmin ? <option value="admin">Admin</option> : null}
@@ -250,21 +403,23 @@ export function InviteMemberForm({ canInviteAdmin }: { canInviteAdmin: boolean }
         </p>
       ) : null}
       {state.inviteUrl ? (
-        <>
-          <output className="sr-only">Invite created. The invite link is ready to share.</output>
-          <div className="rounded-md border bg-muted p-3 text-xs">
-            <p className="mb-1 font-medium">Invite link (copy and share):</p>
-            <code className="break-all font-mono text-[12px]">{state.inviteUrl}</code>
-            {state.sendStatus === 'sent' ? (
-              <p className="mt-2 text-muted-foreground">Invite email sent.</p>
-            ) : null}
-            {state.sendStatus === 'failed' ? (
-              <p className="mt-2 text-destructive">
-                Email was not sent: {state.sendError ?? 'unknown error'}. The link still works.
-              </p>
-            ) : null}
-          </div>
-        </>
+        <div className="rounded-md border bg-muted p-3 text-xs">
+          <p className="mb-1 font-medium">Invite link (copy and share):</p>
+          <code className="break-all font-mono text-[12px]">{state.inviteUrl}</code>
+          {state.sendStatus === 'sent' ? (
+            <p className="mt-2 text-muted-foreground">Invite email sent.</p>
+          ) : null}
+          {state.sendStatus === 'failed' ? (
+            <p className="mt-2 text-destructive">
+              Email was not sent: {state.sendError ?? 'unknown error'}. The link is ready to share.
+            </p>
+          ) : null}
+          {!state.sendStatus ? (
+            <p className="mt-2 text-muted-foreground">
+              Invite created. The invite link is ready to share.
+            </p>
+          ) : null}
+        </div>
       ) : null}
     </form>
   );
@@ -319,8 +474,7 @@ export function TeamExportPanel({
           <p className="text-sm text-muted-foreground">
             Builds a 24-hour archive of team data you are already allowed to see.
           </p>
-          {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
-          {state.ok ? <p className="text-sm text-muted-foreground">Export queued.</p> : null}
+          <FormFeedback error={state.error} success={state.ok ? 'Export queued.' : undefined} />
         </div>
         <Submit label="Start export" />
       </form>

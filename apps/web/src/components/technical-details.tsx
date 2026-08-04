@@ -1,7 +1,7 @@
 'use client';
 
 import { Check, Copy } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -29,64 +29,96 @@ export function TechnicalDetails({
   className,
 }: TechnicalDetailsProps) {
   const [copied, setCopied] = useState<string | null>(null);
+  const [copyAnnouncement, setCopyAnnouncement] = useState('');
+  const [copyError, setCopyError] = useState(false);
 
-  async function copyTechnicalValue(value: string, itemKey: string) {
-    if (!('clipboard' in navigator)) return;
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => {
+      setCopied(null);
+      setCopyAnnouncement('');
+    }, 1500);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [copied]);
+
+  async function copyTechnicalValue(value: string, itemKey: string, itemLabel: string) {
+    setCopied(null);
+    setCopyAnnouncement('');
+    setCopyError(false);
+    const clipboard = Reflect.get(navigator, 'clipboard') as Clipboard | undefined;
+    if (!clipboard?.writeText) {
+      setCopyError(true);
+      return;
+    }
     try {
-      await navigator.clipboard.writeText(value);
+      await clipboard.writeText(value);
     } catch {
+      setCopyError(true);
       return;
     }
     setCopied(itemKey);
-    window.setTimeout(() => {
-      setCopied((current) => (current === itemKey ? null : current));
-    }, 1500);
+    setCopyAnnouncement(`Copied ${itemLabel}.`);
   }
 
   return (
-    <details className={cn('group border-t border-border pt-3 text-sm', className)}>
-      <summary className="cursor-pointer list-none text-sm font-medium text-fg-muted marker:hidden hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
-        <span aria-hidden="true" className="mr-2 inline-block text-fg-dim group-open:rotate-90">
-          ›
-        </span>
-        {summary}
-      </summary>
-      <div className="mt-3 space-y-3">
-        {items.length > 0 ? (
-          <dl className="grid gap-3 sm:grid-cols-[minmax(8rem,0.35fr)_minmax(0,1fr)]">
-            {items.map((item) => {
-              const itemCopyValue = item.copyValue;
-              const itemKey = item.id ?? itemCopyValue ?? item.label;
-              return (
-                <div key={itemKey} className="contents">
-                  <dt className="text-xs text-fg-muted">{item.label}</dt>
-                  <dd className="m-0 flex min-w-0 items-start gap-2">
-                    <code className="min-w-0 flex-1 break-all text-xs text-fg">{item.value}</code>
-                    {itemCopyValue ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 shrink-0 px-2"
-                        onClick={() => void copyTechnicalValue(itemCopyValue, itemKey)}
-                        aria-label={`Copy ${typeof item.label === 'string' ? item.label : 'technical value'}`}
-                      >
-                        {copied === itemKey ? (
-                          <Check aria-hidden="true" />
-                        ) : (
-                          <Copy aria-hidden="true" />
-                        )}
-                        {copied === itemKey ? 'Copied' : 'Copy'}
-                      </Button>
-                    ) : null}
-                  </dd>
-                </div>
-              );
-            })}
-          </dl>
-        ) : null}
-        {children}
-      </div>
-    </details>
+    <>
+      <details className={cn('group border-t border-border pt-3 text-sm', className)}>
+        <summary className="cursor-pointer list-none text-sm font-medium text-fg-muted marker:hidden hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+          <span aria-hidden="true" className="mr-2 inline-block text-fg-dim group-open:rotate-90">
+            ›
+          </span>
+          {summary}
+        </summary>
+        <div className="mt-3 space-y-3">
+          {items.length > 0 ? (
+            <dl className="grid gap-3 sm:grid-cols-[minmax(8rem,0.35fr)_minmax(0,1fr)]">
+              {items.map((item) => {
+                const itemCopyValue = item.copyValue;
+                const itemKey = item.id ?? itemCopyValue ?? item.label;
+                return (
+                  <div key={itemKey} className="contents">
+                    <dt className="text-xs text-fg-muted">{item.label}</dt>
+                    <dd className="m-0 flex min-w-0 items-start gap-2">
+                      <code className="min-w-0 flex-1 break-all text-xs text-fg">{item.value}</code>
+                      {itemCopyValue ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 shrink-0 px-2"
+                          onClick={() =>
+                            void copyTechnicalValue(itemCopyValue, itemKey, item.label)
+                          }
+                          aria-label={`Copy ${item.label}`}
+                        >
+                          {copied === itemKey ? (
+                            <Check aria-hidden="true" />
+                          ) : (
+                            <Copy aria-hidden="true" />
+                          )}
+                          {copied === itemKey ? 'Copied' : 'Copy'}
+                        </Button>
+                      ) : null}
+                    </dd>
+                  </div>
+                );
+              })}
+            </dl>
+          ) : null}
+          {children}
+        </div>
+      </details>
+      <output
+        aria-live="polite"
+        aria-atomic="true"
+        className={copyError ? 'mt-2 block text-xs text-danger' : 'sr-only'}
+      >
+        {copyError
+          ? 'Could not copy. Try again or select the text and copy it manually.'
+          : copyAnnouncement}
+      </output>
+    </>
   );
 }

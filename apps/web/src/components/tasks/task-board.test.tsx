@@ -1073,6 +1073,14 @@ describe('TaskBoard', () => {
     expect(screen.getByText('4 loaded tasks hidden. Narrow filter.')).toBeTruthy();
   });
 
+  it('names the kanban rail and each status column for navigation', () => {
+    renderBoard();
+
+    const rail = screen.getByRole('region', { name: 'Task status columns' });
+    expect(rail).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Backlog' })).toBeTruthy();
+  });
+
   it('bounds rendered list rows while reporting loaded tasks outside the window', () => {
     const rows = Array.from({ length: 22 }, (_, index) =>
       task({ id: `task-${index}`, canonicalName: `Task ${index}` }),

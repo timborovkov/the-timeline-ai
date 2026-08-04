@@ -470,6 +470,7 @@ export function McpServersUi({
 
   async function remove(server: McpServerRow) {
     if (activeBusyIds().has(server.id)) return;
+    const isPersonalServer = ownership === 'personal';
     const confirmed = await dialog.confirm({
       title: `Remove ${isPersonalServer ? 'personal' : 'team'} MCP server?`,
       description: isPersonalServer

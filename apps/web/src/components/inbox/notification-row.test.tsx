@@ -28,6 +28,25 @@ afterEach(() => {
 });
 
 describe('NotificationRow', () => {
+  it('uses a human notification label instead of exposing the stored enum', () => {
+    render(
+      <ul>
+        <NotificationRow
+          id="notification-1"
+          kind="agent_suggestion"
+          summary="Review the launch plan"
+          entityId={null}
+          agentSuggestionId={null}
+          createdAt="2026-07-29T12:00:00.000Z"
+          initiallyRead={false}
+        />
+      </ul>,
+    );
+
+    expect(screen.getByText('Suggestion ready')).toBeTruthy();
+    expect(screen.queryByText('agent suggestion')).toBeNull();
+  });
+
   it('keeps unread status explicit and reports a failed read action', async () => {
     const user = userEvent.setup();
     fakes.markRead.mockResolvedValue({ error: 'Database unavailable' });

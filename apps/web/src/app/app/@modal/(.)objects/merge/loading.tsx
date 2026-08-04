@@ -3,21 +3,19 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 export default function MergeObjectModalLoading() {
   return (
-    <>
+    <ObjectMergeRouteModalFrame
+      title="Review merge"
+      description="Choose the object to keep, then merge the duplicate into it."
+    >
       <output className="sr-only" aria-live="polite">
         Loading merge preview
       </output>
-      <ObjectMergeRouteModalFrame
-        title="Review merge"
-        description="Choose the object to keep, then merge the duplicate into it."
+      <div
+        className="space-y-5 motion-reduce:[&_.animate-pulse]:animate-none"
+        aria-busy="true"
+        aria-label="Loading merge preview"
       >
-        <div
-          aria-hidden="true"
-          inert
-          className="space-y-5 motion-reduce:[&_.animate-pulse]:animate-none"
-          aria-busy="true"
-          aria-label="Loading merge preview"
-        >
+        <div aria-hidden="true" inert className="space-y-5">
           <div className="grid gap-px overflow-hidden border border-border">
             {Array.from({ length: 2 }).map((_, index) => (
               <div key={index} className="bg-bg px-3 py-2.5">
@@ -48,7 +46,7 @@ export default function MergeObjectModalLoading() {
             <Skeleton className="h-4 w-4/5" />
           </div>
         </div>
-      </ObjectMergeRouteModalFrame>
-    </>
+      </div>
+    </ObjectMergeRouteModalFrame>
   );
 }

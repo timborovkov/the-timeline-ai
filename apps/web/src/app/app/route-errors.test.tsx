@@ -24,7 +24,6 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
 });
-
 const ROUTE_ERRORS = [
   ['Home', AppError],
   ['Ask', ChatError],
@@ -70,7 +69,6 @@ describe('authenticated route states', () => {
 
     expect(reset).toHaveBeenCalledTimes(2);
   });
-
   it('server-renders the route-shaped Slack loading state', () => {
     const html = renderToStaticMarkup(<SlackLoading />);
 

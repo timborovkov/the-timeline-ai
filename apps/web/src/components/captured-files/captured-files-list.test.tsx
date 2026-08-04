@@ -78,7 +78,7 @@ afterEach(() => {
 });
 
 describe('CapturedFilesList', () => {
-  it('renders filters, suggested titles, preview, event link, and promote affordance', () => {
+  it('uses friendly labels for captured files and keeps evidence visible', () => {
     const html = renderToStaticMarkup(
       createElement(CapturedFilesList, {
         folders: [{ id: 'folder-1', name: 'Internal' }],
@@ -93,9 +93,33 @@ describe('CapturedFilesList', () => {
     expect(html).toContain(
       'title="AgACAgQAAyEFAATcv6dYAAP3aimENrbqY6kNAAEqxvEv6YGMrdExAAK5DmsbjOI.jpg"',
     );
+    expect(html).toContain('Telegram');
+    expect(html).toContain('Ready for search');
+    expect(html).toContain('Team visibility');
+    expect(html).toContain('Showing 1 captured file');
     expect(html).toContain('Preview');
-    expect(html).toContain('Event');
+    expect(html).toContain('View evidence');
     expect(html).toContain('Promote');
+  });
+
+  it('keeps row promotion secondary and makes promotion primary only in its dialog', async () => {
+    const user = userEvent.setup();
+    render(<CapturedFilesList folders={[]} members={[]} files={[capturedFile()]} />);
+
+    expect(screen.getByRole('group', { name: 'Filter captured files' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'View evidence' })).toBeTruthy();
+
+    const promote = screen.getByRole('button', { name: 'Promote' });
+    expect(promote.className).toContain('border');
+    expect(promote.className).not.toContain('bg-primary');
+
+    await user.click(promote);
+
+    const dialog = screen.getByRole('dialog', { name: 'Promote to Documents' });
+    expect(within(dialog).getByRole('button', { name: 'Promote' }).className).toContain(
+      'bg-primary',
+    );
+    expect(within(dialog).getByText('Who can view it')).toBeTruthy();
   });
 
   it('preserves specific-user visibility defaults when promoting', async () => {
@@ -142,7 +166,7 @@ describe('CapturedFilesList', () => {
     const trigger = screen.getByRole('button', { name: 'Promote' });
     await user.click(trigger);
 
-    const dialog = screen.getByRole('dialog', { name: 'Promote captured file' });
+    const dialog = screen.getByRole('dialog', { name: 'Promote to Documents' });
     expect(within(dialog).getByRole('textbox', { name: 'Title' })).toHaveProperty(
       'value',
       'Whiteboard planning photo',
@@ -164,7 +188,7 @@ describe('CapturedFilesList', () => {
     render(<CapturedFilesList folders={[]} members={[]} files={[capturedFile()]} />);
 
     await user.click(screen.getByRole('button', { name: 'Promote' }));
-    const dialog = screen.getByRole('dialog', { name: 'Promote captured file' });
+    const dialog = screen.getByRole('dialog', { name: 'Promote to Documents' });
     await user.click(within(dialog).getByRole('button', { name: 'Promote' }));
 
     expect(
@@ -189,7 +213,7 @@ describe('CapturedFilesList', () => {
     render(<CapturedFilesList folders={[]} members={[]} files={[capturedFile()]} />);
 
     await user.click(screen.getByRole('button', { name: 'Promote' }));
-    const dialog = screen.getByRole('dialog', { name: 'Promote captured file' });
+    const dialog = screen.getByRole('dialog', { name: 'Promote to Documents' });
     const title = within(dialog).getByRole('textbox', { name: 'Title' });
     await user.clear(title);
     await user.keyboard('{Enter}');
@@ -219,7 +243,7 @@ describe('CapturedFilesList', () => {
     render(<CapturedFilesList folders={[]} members={[]} files={[capturedFile()]} />);
 
     await user.click(screen.getByRole('button', { name: 'Promote' }));
-    const dialog = screen.getByRole('dialog', { name: 'Promote captured file' });
+    const dialog = screen.getByRole('dialog', { name: 'Promote to Documents' });
     await user.click(within(dialog).getByRole('button', { name: 'Promote' }));
     await screen.findByText(
       'Could not promote this captured file. It remains unchanged. Check your connection, then try again.',
@@ -280,8 +304,8 @@ describe('CapturedFilesList', () => {
     );
 
     await user.click(screen.getByRole('button', { name: 'Status' }));
-    await user.click(screen.getByRole('menuitemcheckbox', { name: 'chunked' }));
-    await user.click(screen.getByRole('menuitemcheckbox', { name: 'embedded' }));
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'Ready for search' }));
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'Ready' }));
     await user.keyboard('{Escape}');
 
     expect(screen.queryByText('Whiteboard planning photo')).not.toBeNull();

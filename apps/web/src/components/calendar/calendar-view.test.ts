@@ -568,6 +568,44 @@ describe('CalendarView recurrence and tentative UI', () => {
     expect(screen.getByRole('dialog', { name: 'New event' })).toBeTruthy();
   });
 
+  it('keeps long event labels inside the compact grid while announcing the filtered result count', () => {
+    const title = 'Review the cross-functional customer migration readiness plan';
+    render(
+      createElement(CalendarView, {
+        events: [event('event-1', title)],
+        eventListEvents: [],
+        eventListTotal: 1,
+        timezone: 'UTC',
+      }),
+    );
+
+    const grid = screen.getByRole('region', { name: /Calendar for June 2026/ });
+    expect(grid.className).toContain('min-w-0');
+    expect(grid.className).toContain('overflow-hidden');
+
+    const eventControl = screen.getByRole('button', { name: new RegExp(title) });
+    expect(eventControl.className).toContain('min-w-0');
+    expect(within(eventControl).getByText(new RegExp(title)).className).toContain('truncate');
+    expect(screen.getByRole('status').textContent).toBe('1 upcoming event');
+  });
+
+  it('keeps the event search field visibly focused for keyboard users', () => {
+    render(
+      createElement(CalendarView, {
+        events: [],
+        eventListEvents: [],
+        timezone: 'UTC',
+      }),
+    );
+
+    const search = screen.getByRole('textbox', { name: 'Search calendar events' });
+    search.focus();
+
+    expect(document.activeElement).toBe(search);
+    expect(search.className).toContain('focus-visible:ring-2');
+    expect(search.className).not.toContain('focus-visible:ring-0');
+  });
+
   it('offers a clear next action when there are no upcoming events', async () => {
     const user = userEvent.setup();
     render(

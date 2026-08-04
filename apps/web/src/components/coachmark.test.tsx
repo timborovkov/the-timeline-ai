@@ -36,4 +36,13 @@ describe('Coachmark', () => {
     const { container } = render(<Coachmark storageKey="a11y-test">Hint</Coachmark>);
     expect(container.querySelector('[role="note"]')).toBeTruthy();
   });
+
+  it('keeps a visible keyboard focus indicator on its dismiss control', () => {
+    const { container } = render(<Coachmark storageKey="focus-test">Hint</Coachmark>);
+    const closeButton = container.querySelector('button[aria-label="Dismiss hint"]');
+
+    expect(closeButton?.className).toContain('focus-visible:ring-2');
+    expect(closeButton?.className).toContain('focus-visible:ring-fg');
+    expect(closeButton?.className).toContain('forced-colors:focus-visible:outline-2');
+  });
 });

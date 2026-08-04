@@ -72,7 +72,6 @@ describe('PersonalConnectionsUi', () => {
       await screen.findByRole('region', { name: 'GitHub account GitHub — Avery' }),
     ).toBeTruthy();
   });
-
   it('explains GitHub source sharing before team activation', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(
@@ -381,7 +380,6 @@ describe('PersonalConnectionsUi', () => {
     expect(deleteAccount.getAttribute('aria-expanded')).toBe('false');
     expect(document.activeElement).toBe(deleteAccount);
   });
-
   it('lets keyboard users clear a search with no matching sources', async () => {
     const user = userEvent.setup();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(

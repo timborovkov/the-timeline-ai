@@ -94,6 +94,35 @@ test('Documents browser reflows at 320px', async ({ browser }) => {
   await page.context().close();
 });
 
+test('Task kanban retains an internal mobile scroll rail at 320px', async ({ browser }) => {
+  const page = await newSignedInPage(browser, 'owner');
+  await page.setViewportSize({ width: 320, height: 780 });
+  await page.goto('/app/tasks');
+
+  await expect(page.locator('h1')).toHaveCount(1);
+  const rail = page.getByRole('region', { name: 'Task status columns' });
+  const column = rail.getByRole('region', { name: 'Backlog' });
+  await expect(column).toBeVisible();
+  const dimensions = await rail.evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+    contentWidth:
+      element.clientWidth -
+      Number.parseFloat(getComputedStyle(element).paddingInlineStart) -
+      Number.parseFloat(getComputedStyle(element).paddingInlineEnd),
+  }));
+  const columnWidth = await column.evaluate((element) => element.getBoundingClientRect().width);
+
+  expect(dimensions.scrollWidth).toBeGreaterThan(dimensions.clientWidth);
+  expect(columnWidth).toBeLessThanOrEqual(dimensions.contentWidth);
+  const documentDimensions = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(documentDimensions.scrollWidth).toBeLessThanOrEqual(documentDimensions.clientWidth);
+  await page.context().close();
+});
+
 test('work and team subnavigation are URL-backed and human-readable', async ({ browser }) => {
   const page = await newSignedInPage(browser, 'owner');
 

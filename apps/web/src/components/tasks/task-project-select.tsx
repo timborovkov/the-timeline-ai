@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { useId, useRef, useState, useTransition } from 'react';
 
 import { setTaskProjectAction } from '@/app/actions/objects';
 import { ProjectPicker } from '@/components/tasks/project-picker';
@@ -29,6 +29,23 @@ export function TaskProjectSelect({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const errorId = useId();
+  const selectorRef = useRef<HTMLButtonElement>(null);
+  const restoreSelectorFocus = () => {
+    const selector = selectorRef.current;
+    if (!selector) return;
+
+    const observer = new MutationObserver(() => {
+      if (selector.disabled) return;
+      observer.disconnect();
+      selector.focus();
+    });
+    observer.observe(selector, { attributes: true, attributeFilter: ['disabled'] });
+    if (!selector.disabled) {
+      observer.disconnect();
+      selector.focus();
+    }
+  };
   return (
     <div>
       <ProjectPicker
@@ -37,6 +54,8 @@ export function TaskProjectSelect({
         selectedArchived={projectArchived}
         projects={projects}
         disabled={pending}
+        ariaDescribedBy={error ? errorId : undefined}
+        triggerRef={selectorRef}
         onValueChange={(nextProject) => {
           const nextProjectId = nextProject?.id ?? null;
           setError(null);
@@ -47,6 +66,7 @@ export function TaskProjectSelect({
               if (result.error) {
                 onProjectChangeReverted?.();
                 setError(result.error);
+                restoreSelectorFocus();
               } else {
                 onProjectChangeCommitted?.();
                 router.refresh();
@@ -54,11 +74,16 @@ export function TaskProjectSelect({
             } catch (cause) {
               onProjectChangeReverted?.();
               setError(errorMessage(cause, 'Project update failed'));
+              restoreSelectorFocus();
             }
           });
         }}
       />
-      {error ? <p className="mt-2 text-xs text-danger">{error}</p> : null}
+      {error ? (
+        <p id={errorId} role="alert" className="mt-2 text-xs text-danger">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }

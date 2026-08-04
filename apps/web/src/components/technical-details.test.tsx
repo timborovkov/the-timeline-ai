@@ -31,16 +31,24 @@ describe('TechnicalDetails', () => {
     expect(details?.open).toBe(true);
   });
 
-  it('copies an explicit technical value', () => {
+  it('copies an explicit technical value and announces the result', async () => {
     render(
       <TechnicalDetails items={[{ label: 'Event ID', value: 'evt_123', copyValue: 'evt_123' }]} />,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Copy Event ID' }));
-    expect(writeText).toHaveBeenCalledWith('evt_123');
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith('evt_123');
+      const status = screen.getByRole('status');
+      expect(status.textContent).toBe('Copied Event ID.');
+      expect(status.closest('details')).toBeNull();
+    });
   });
 
-  it('keeps Copy available without throwing when the Clipboard API is unavailable', () => {
-    Reflect.deleteProperty(navigator, 'clipboard');
+  it('reports recovery steps when the Clipboard API is unavailable', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: undefined,
+    });
     render(
       <TechnicalDetails items={[{ label: 'Event ID', value: 'evt_123', copyValue: 'evt_123' }]} />,
     );
@@ -48,18 +56,32 @@ describe('TechnicalDetails', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Copy Event ID' }));
 
     expect(screen.getByRole('button', { name: 'Copy Event ID' }).textContent).toContain('Copy');
+    await waitFor(() => {
+      expect(screen.getByRole('status').textContent).toBe(
+        'Could not copy. Try again or select the text and copy it manually.',
+      );
+      expect(screen.getByRole('status').className).toContain('text-danger');
+    });
   });
 
-  it('does not report a successful copy when clipboard permission is denied', async () => {
-    writeText.mockRejectedValueOnce(new Error('Permission denied'));
+  it('clears a prior success and reports recovery steps when clipboard permission is denied', async () => {
     render(
       <TechnicalDetails items={[{ label: 'Event ID', value: 'evt_123', copyValue: 'evt_123' }]} />,
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy Event ID' }));
+    await waitFor(() => {
+      expect(screen.getByRole('status').textContent).toBe('Copied Event ID.');
+    });
+
+    writeText.mockRejectedValueOnce(new Error('Permission denied'));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy Event ID' }));
 
     await waitFor(() => {
-      expect(writeText).toHaveBeenCalledWith('evt_123');
+      expect(writeText).toHaveBeenCalledTimes(2);
+      expect(screen.getByRole('status').textContent).toBe(
+        'Could not copy. Try again or select the text and copy it manually.',
+      );
     });
     expect(screen.getByRole('button', { name: 'Copy Event ID' }).textContent).toContain('Copy');
   });

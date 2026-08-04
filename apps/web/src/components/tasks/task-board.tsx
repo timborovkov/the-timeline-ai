@@ -956,7 +956,10 @@ function TaskBoardView({
             </p>
           ) : null}
           {view === 'kanban' ? (
-            <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto overflow-y-hidden px-4 pb-2 md:px-8">
+            <section
+              aria-label="Task status columns"
+              className="flex min-h-0 flex-1 gap-3 overflow-x-auto overflow-y-hidden px-4 pb-2 md:px-8"
+            >
               {allColumns.map((column) => (
                 <TaskColumn
                   key={column}
@@ -971,7 +974,7 @@ function TaskBoardView({
                   pinnedObjectIds={pinnedObjectIdSet}
                 />
               ))}
-            </div>
+            </section>
           ) : (
             <TaskListView
               rows={visibleRows}
@@ -1606,18 +1609,22 @@ function TaskColumn({
   pinnedObjectIds: ReadonlySet<string>;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id });
+  const headingId = useId();
   const renderedRows = rows.slice(0, TASK_BOARD_COLUMN_RENDER_LIMIT);
   const hiddenRows = rows.length - renderedRows.length;
   return (
-    <div
+    <section
       ref={setNodeRef}
+      aria-labelledby={headingId}
       className={cn(
-        'flex h-full w-[290px] shrink-0 flex-col rounded-sm border border-border bg-surface p-3',
+        'flex h-full w-[min(290px,calc(100vw-4rem))] shrink-0 flex-col rounded-sm border border-border bg-surface p-3',
         isOver && 'border-signal/40 bg-signal-soft',
       )}
     >
       <div className="mb-3 flex shrink-0 items-baseline justify-between">
-        <h3 className="text-xs text-fg-dim">{statusLabel(id)}</h3>
+        <h3 id={headingId} className="text-xs text-fg-dim">
+          {statusLabel(id)}
+        </h3>
         <span className="text-xs text-fg">{rows.length}</span>
       </div>
       <ul className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
@@ -1640,7 +1647,7 @@ function TaskColumn({
           </li>
         ) : null}
       </ul>
-    </div>
+    </section>
   );
 }
 

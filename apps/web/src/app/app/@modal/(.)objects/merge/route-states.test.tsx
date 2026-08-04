@@ -20,7 +20,9 @@ vi.mock('@/components/ui/dialog', () => ({
       {children}
     </dialog>
   ),
-  DialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DialogContent: ({ children }: { children: ReactNode }) => (
+    <div data-slot="dialog-content">{children}</div>
+  ),
   DialogDescription: ({ children }: { children: ReactNode }) => <p>{children}</p>,
   DialogHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
@@ -76,5 +78,26 @@ describe('intercepted merge route states', () => {
     expect(html).toContain('inert=""');
     expect(html).toContain('motion-reduce:[&amp;_.animate-pulse]:animate-none');
     expect(html).toContain('sm:grid-cols-4');
+
+    const { container } = render(<MergeObjectModalLoading />);
+    const announcement = screen.getByRole('status');
+    const loading = screen.getByLabelText('Loading merge preview');
+
+    expect(announcement.textContent).toBe('Loading merge preview');
+    expect(announcement.closest('dialog')).not.toBeNull();
+    expect(announcement.closest('[data-slot="dialog-content"]')).not.toBeNull();
+    expect(announcement.closest('[aria-busy="true"]')).toBeNull();
+    expect(loading.getAttribute('aria-busy')).toBe('true');
+    expect(loading.closest('[aria-hidden="true"]')).toBeNull();
+    expect(loading.className).toContain('motion-reduce:[&_.animate-pulse]:animate-none');
+
+    const visualPlaceholders = container.querySelectorAll(
+      '[aria-busy="true"] > [aria-hidden="true"][inert]',
+    );
+    expect(visualPlaceholders).toHaveLength(1);
+    expect(visualPlaceholders[0]?.className).toContain('space-y-5');
+    expect(
+      visualPlaceholders[0]?.querySelectorAll('a, button, input, select, textarea, [tabindex]'),
+    ).toHaveLength(0);
   });
 });

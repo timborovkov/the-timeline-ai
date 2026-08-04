@@ -1,9 +1,9 @@
 'use client';
 
 import { Check, ChevronDown, Search } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 
-import type { KeyboardEvent } from 'react';
+import type { KeyboardEvent, Ref } from 'react';
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useProjectSearch } from '@/hooks/use-project-search';
@@ -22,6 +22,8 @@ export function ProjectPicker({
   disabled = false,
   onValueChange,
   ariaLabel = 'Task project',
+  ariaDescribedBy,
+  triggerRef,
   className,
 }: {
   value: string | null;
@@ -31,37 +33,55 @@ export function ProjectPicker({
   disabled?: boolean;
   onValueChange: (project: ProjectOption | null) => void;
   ariaLabel?: string;
+  ariaDescribedBy?: string;
+  triggerRef?: Ref<HTMLButtonElement>;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const optionListRef = useRef<HTMLUListElement>(null);
-  const { query, setQuery, projects: remoteProjects } = useProjectSearch();
-  const visibleProjects = useMemo(() => {
+  const listId = useId();
+  const searchStatusId = useId();
+  const projectSearch = useProjectSearch();
+  const { query, setQuery, projects: remoteProjects, retry } = projectSearch;
+  const searchStatus = projectSearch.status;
+  const matchingProjects = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     const matches = normalized
       ? [
-          ...projects.filter(
-            (project) => project.id === value || project.label.toLowerCase().includes(normalized),
-          ),
+          ...projects.filter((project) => project.label.toLowerCase().includes(normalized)),
           ...remoteProjects,
         ]
       : projects;
+    return [...new Map(matches.map((project) => [project.id, project])).values()];
+  }, [projects, query, remoteProjects]);
+  const visibleProjects = useMemo(() => {
     const candidates =
-      value && selectedLabel ? [...matches, { id: value, label: selectedLabel }] : matches;
+      value && selectedLabel
+        ? [...matchingProjects, { id: value, label: selectedLabel }]
+        : matchingProjects;
     return [...new Map(candidates.map((project) => [project.id, project])).values()];
-  }, [projects, query, remoteProjects, selectedLabel, value]);
+  }, [matchingProjects, selectedLabel, value]);
   const selectedProject = visibleProjects.find((project) => project.id === value);
   const triggerLabel = value
     ? `${selectedProject?.label ?? selectedLabel ?? value}${selectedArchived ? ' · Archived' : ''}`
     : 'No project';
+  const normalizedQuery = query.trim();
+  const resultMessage = projectSearchMessage({
+    query: normalizedQuery,
+    resultCount: matchingProjects.length,
+    status: searchStatus,
+  });
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
+          ref={triggerRef}
           type="button"
           aria-label={`${ariaLabel}: ${triggerLabel}`}
+          aria-describedby={ariaDescribedBy}
+          aria-busy={disabled || searchStatus === 'loading' ? true : undefined}
           disabled={disabled}
           className={cn(
             'flex h-9 w-full items-center justify-between gap-2 rounded-sm border border-border bg-bg px-2 text-left text-sm text-fg outline-none transition-colors hover:border-border-strong focus-visible:border-signal/60 focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-progress disabled:opacity-60',
@@ -77,7 +97,7 @@ export function ProjectPicker({
         align="start"
         role="dialog"
         aria-label={`${ariaLabel} choices`}
-        className="w-[var(--radix-popover-trigger-width)] min-w-56"
+        className="w-[min(var(--radix-popover-trigger-width),calc(100vw-1.5rem))] min-w-0 sm:min-w-56"
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           searchRef.current?.focus();
@@ -102,12 +122,32 @@ export function ProjectPicker({
             }}
             placeholder="Search projects…"
             aria-label="Search task projects"
+            aria-describedby={searchStatusId}
             className="h-8 w-full rounded-sm border border-border bg-bg py-1 pl-8 pr-2 text-xs text-fg outline-none placeholder:text-fg-dim focus-visible:border-signal/60 focus-visible:ring-2 focus-visible:ring-signal/40"
           />
         </div>
         <div className="-mx-1 my-1 h-px bg-muted" />
+        <p id={searchStatusId} role="status" className="px-2 pb-1 text-xs text-fg-muted">
+          {resultMessage}
+        </p>
+        {searchStatus === 'error' ? (
+          <div
+            role="alert"
+            className="flex items-center justify-between gap-2 px-2 pb-1 text-xs text-danger"
+          >
+            <span>Unable to search projects.</span>
+            <button
+              type="button"
+              onClick={retry}
+              className="shrink-0 rounded-sm font-medium text-danger underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+            >
+              Retry
+            </button>
+          </div>
+        ) : null}
         <ul
           ref={optionListRef}
+          id={listId}
           data-picker-list
           aria-label="Projects"
           className="max-h-64 overflow-y-auto"
@@ -122,7 +162,7 @@ export function ProjectPicker({
                 setOpen(false);
               }}
               onKeyDown={handleProjectOptionKeyDown}
-              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus:bg-accent focus:text-accent-foreground"
+              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:text-accent-foreground focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-inset"
             >
               <Check className={cn('size-4', value ? 'invisible' : 'visible')} aria-hidden />
               No project
@@ -139,7 +179,7 @@ export function ProjectPicker({
                   setOpen(false);
                 }}
                 onKeyDown={handleProjectOptionKeyDown}
-                className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus:bg-accent focus:text-accent-foreground"
+                className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:text-accent-foreground focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-inset"
               >
                 <Check
                   className={cn('size-4', project.id === value ? 'visible' : 'invisible')}
@@ -153,6 +193,27 @@ export function ProjectPicker({
       </PopoverContent>
     </Popover>
   );
+}
+
+function projectSearchMessage({
+  query,
+  resultCount,
+  status,
+}: {
+  query: string;
+  resultCount: number;
+  status: 'idle' | 'loading' | 'success' | 'error';
+}): string {
+  if (query.length === 0) {
+    return resultCount === 1
+      ? '1 project shown. Search to find other projects.'
+      : `${String(resultCount)} projects shown. Search to find other projects.`;
+  }
+  if (query.length === 1) return 'Type one more character to search all projects.';
+  if (status === 'loading') return 'Searching projects…';
+  if (status === 'error') return 'Project search failed.';
+  if (resultCount === 0) return 'No matching projects.';
+  return resultCount === 1 ? '1 matching project.' : `${String(resultCount)} matching projects.`;
 }
 
 function handleProjectOptionKeyDown(event: KeyboardEvent<HTMLButtonElement>): void {

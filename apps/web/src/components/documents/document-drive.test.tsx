@@ -7,21 +7,27 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fakes = vi.hoisted(() => ({
+  createFolderAction: vi.fn(),
+  deleteFolderAction: vi.fn(),
+  finalizeDocumentVersionAction: vi.fn(),
+  requestDocumentUploadAction: vi.fn(),
+  toastError: vi.fn(),
+  toastSuccess: vi.fn(),
   useQueryClient: vi.fn(),
   useDocumentListQuery: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: fakes.useQueryClient }));
-vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+vi.mock('sonner', () => ({ toast: { error: fakes.toastError, success: fakes.toastSuccess } }));
 vi.mock('@/lib/use-paginated-queries', () => ({
   useDocumentListQuery: fakes.useDocumentListQuery,
 }));
 vi.mock('@/app/actions/documents', () => ({
-  createFolderAction: vi.fn(),
-  deleteFolderAction: vi.fn(),
-  finalizeDocumentVersionAction: vi.fn(),
-  requestDocumentUploadAction: vi.fn(),
+  createFolderAction: fakes.createFolderAction,
+  deleteFolderAction: fakes.deleteFolderAction,
+  finalizeDocumentVersionAction: fakes.finalizeDocumentVersionAction,
+  requestDocumentUploadAction: fakes.requestDocumentUploadAction,
 }));
 vi.mock('@/app/actions/pins', () => ({
   pinTargetAction: vi.fn(),
@@ -91,7 +97,11 @@ describe('DocumentDrive', () => {
 
     expect(screen.getByRole('navigation', { name: 'Document location' })).toBeTruthy();
     expect(screen.getByText('Documents').getAttribute('aria-current')).toBe('page');
-    expect(screen.getByRole('combobox', { name: 'New item visibility' })).toBeTruthy();
+    expect(
+      screen.getByRole('combobox', {
+        name: 'Default visibility for new documents and folders',
+      }),
+    ).toBeTruthy();
     const deleteFolder = screen.getByRole('button', { name: 'Delete folder Acme' });
     deleteFolder.focus();
     expect(document.activeElement).toBe(deleteFolder);
@@ -165,6 +175,89 @@ describe('DocumentDrive', () => {
     expect(html).toContain('Ada');
     expect(html).not.toMatch(/<h2[^>]*uppercase[^>]*>Folders<\/h2>/);
     expect(html).not.toMatch(/<h2[^>]*uppercase[^>]*>Documents<\/h2>/);
+  });
+
+  it('groups new-item access controls with visible keyboard focus treatment', () => {
+    render(
+      driveElement({
+        defaultVisibility: 'specific_users',
+        defaultVisibilityUserIds: ['user-1'],
+        members: [
+          { id: 'user-1', label: 'Ada' },
+          { id: 'user-2', label: 'Grace' },
+        ],
+      }),
+    );
+
+    expect(screen.getByRole('group', { name: 'New item visibility' })).toBeTruthy();
+    const visibility = screen.getByRole('combobox', {
+      name: 'Default visibility for new documents and folders',
+    });
+    expect(visibility.className).toContain('focus-visible:ring-2');
+
+    expect(screen.getByRole('group', { name: 'People with access' })).toBeTruthy();
+    const ada = screen.getByRole('checkbox', { name: 'Ada' });
+    expect((ada as HTMLInputElement).checked).toBe(true);
+    expect(ada.className).toContain('focus-visible:ring-2');
+    expect(screen.getByRole('checkbox', { name: 'Grace' })).toHaveProperty('checked', false);
+    expect(ada.id).not.toContain('user-1');
+  });
+
+  it('keeps a folder deletion control discoverable and operable for keyboard users', async () => {
+    const user = userEvent.setup();
+    render(
+      driveElement({
+        folders: [
+          {
+            id: 'folder-2',
+            name: 'Acme',
+            visibility: 'team',
+            updatedAt: '2026-06-01T10:00:00.000Z',
+          },
+        ],
+      }),
+    );
+
+    const deleteFolder = screen.getByRole('button', { name: 'Delete folder Acme' });
+    expect(deleteFolder.className).toContain('min-h-9');
+    expect(deleteFolder.className).toContain('group-focus-within:opacity-100');
+    expect(deleteFolder.className).toContain('focus-visible:opacity-100');
+    expect(deleteFolder.className).toContain('focus-visible:ring-2');
+    expect(deleteFolder.className).toContain('transition-opacity');
+
+    deleteFolder.focus();
+    await user.keyboard('{Enter}');
+
+    expect(screen.getByRole('heading', { name: 'Delete folder?' })).toBeTruthy();
+    expect(screen.getByText('Documents inside stay where they are.')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+  });
+
+  it('uses safe wording when document storage cannot be reached', async () => {
+    const user = userEvent.setup();
+    fakes.requestDocumentUploadAction.mockResolvedValue({
+      ok: true,
+      url: 'https://storage.example.test/upload',
+      versionId: 'version-1',
+    });
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('network failed')));
+
+    render(driveElement());
+
+    await user.upload(
+      screen.getByLabelText('Upload document'),
+      new File(['contents'], 'customer-plan.pdf', { type: 'application/pdf' }),
+    );
+
+    await waitFor(() => {
+      expect(fakes.toastError).toHaveBeenCalledWith(
+        'Unable to reach document storage. Check your connection, then try again.',
+      );
+    });
+    expect(fakes.toastError).not.toHaveBeenCalledWith(
+      expect.stringContaining('S3_PUBLIC_ENDPOINT'),
+    );
+    expect(fakes.toastError).not.toHaveBeenCalledWith(expect.stringContaining('RustFS'));
   });
 
   it('opens document provenance with the full timeline event id', async () => {

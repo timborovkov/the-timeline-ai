@@ -30,6 +30,9 @@ describe('Boards route states', () => {
     const listSkeleton = document.querySelector('[aria-busy="true"] > [aria-hidden="true"]');
     expect(listSkeleton).toBeTruthy();
     expect(listSkeleton?.querySelectorAll('a, button, input, select, textarea')).toHaveLength(0);
+    expect(
+      document.querySelector('[aria-label="Boards list loading placeholder"] ul')?.className,
+    ).toContain('overflow-hidden rounded-lg border border-border');
 
     rerender(<BoardDetailLoading />);
 
@@ -38,19 +41,18 @@ describe('Boards route states', () => {
     expect(screen.getByRole('status').parentElement?.getAttribute('aria-busy')).toBeNull();
     expect(screen.getByLabelText('Loading board').getAttribute('aria-busy')).toBe('true');
     expect(screen.getAllByRole('heading', { level: 1, name: 'Board' })).toHaveLength(1);
-    expect(screen.queryByRole('link', { name: 'Boards' })).toBeNull();
-    expect(screen.queryByRole('region')).toBeNull();
-    const detailSkeleton = document.querySelector(
-      '[aria-busy="true"] > [aria-hidden="true"][inert]',
-    );
-    expect(detailSkeleton).toBeTruthy();
-    expect(detailSkeleton?.querySelectorAll('a, button, input, select, textarea')).toHaveLength(0);
-    expect(screen.getByLabelText('Loading board').getAttribute('data-app-layout')).toBe(
-      'full-bleed',
-    );
+    expect(screen.getByRole('navigation', { name: 'Work' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Boards' }).getAttribute('aria-current')).toBe('page');
     expect(
-      document.querySelector('[aria-label="Board detail loading placeholder"]')?.className,
-    ).toContain('overflow-x-auto');
+      screen.getByRole('navigation', { name: 'Work' }).closest('[aria-busy="true"]'),
+    ).toBeNull();
+    const detailSkeletons = document.querySelectorAll('[aria-hidden="true"][inert]');
+    expect(detailSkeletons).toHaveLength(2);
+    for (const detailSkeleton of detailSkeletons) {
+      expect(detailSkeleton.querySelectorAll('a, button, input, select, textarea')).toHaveLength(0);
+    }
+    expect(document.querySelector('[data-app-layout="full-bleed"]')).toBeTruthy();
+    expect(screen.getByLabelText('Loading board').className).toContain('overflow-x-auto');
     expect(document.querySelectorAll('.motion-reduce\\:animate-none')).not.toHaveLength(0);
   });
 
@@ -59,6 +61,7 @@ describe('Boards route states', () => {
       name: 'boards',
       heading: 'Boards',
       errorHeading: 'Unable to load boards',
+      subtitle: 'Curated work surfaces for the way your team operates.',
       description:
         'Boards could not be loaded. Your saved board data is unchanged. Check your connection, then try again.',
       Component: BoardsError,
@@ -67,19 +70,21 @@ describe('Boards route states', () => {
       name: 'board',
       heading: 'Board',
       errorHeading: 'Unable to load board',
+      subtitle: 'Review the work your team is tracking on this board.',
       description:
         'Board details could not be loaded. Your saved board data is unchanged. Check your connection, then try again.',
       Component: BoardError,
     },
   ])(
     'retains Work context and lets keyboard users retry a failed $name load',
-    async ({ heading, errorHeading, description, Component }) => {
+    async ({ heading, errorHeading, subtitle, description, Component }) => {
       const user = userEvent.setup();
       const reset = vi.fn();
 
       render(<Component error={new Error('route failed')} reset={reset} />);
 
       expect(screen.getAllByRole('heading', { level: 1, name: heading })).toHaveLength(1);
+      if (subtitle) expect(screen.getByText(subtitle)).toBeTruthy();
       expect(screen.getByRole('navigation', { name: 'Work' })).toBeTruthy();
       expect(screen.getByRole('link', { name: 'Boards' }).getAttribute('aria-current')).toBe(
         'page',

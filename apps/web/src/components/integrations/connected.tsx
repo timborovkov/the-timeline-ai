@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useActionState, useState } from 'react';
+import { useActionState, useId, useState } from 'react';
 
 import { setIntegrationVisibilityDefaultAction } from '@/app/actions/visibility';
 import { InlineError } from '@/components/inline-error';
@@ -389,6 +389,7 @@ function IntegrationVisibilityForm({
   members: MemberOption[];
 }) {
   const [state, action, pending] = useActionState(setIntegrationVisibilityDefaultAction, {});
+  const visibilityId = useId();
   const formKey = `${integration.id}:${integration.visibilityDefault}:${(
     integration.visibilityDefaultUserIds ?? []
   ).join(',')}`;
@@ -397,20 +398,26 @@ function IntegrationVisibilityForm({
   return (
     <form key={formKey} action={action} className="mt-2 flex flex-wrap items-center gap-2 text-xs">
       <input type="hidden" name="id" value={integration.id} />
+      <label htmlFor={visibilityId} className="font-medium text-fg">
+        Default visibility for {providerLabel(integration.provider)}
+      </label>
       <select
+        id={visibilityId}
         name="visibility"
         value={selectedVisibility}
         onChange={(e) => {
           setSelectedVisibility(e.currentTarget.value as ConnectedRow['visibilityDefault']);
         }}
-        className="h-7 rounded-sm border border-border bg-bg px-2"
+        className="min-h-9 rounded-sm border border-border bg-bg px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       >
         <option value="team">Team</option>
         <option value="private">Private</option>
         <option value="specific_users">Specific users</option>
       </select>
-      {selectedVisibility === 'specific_users'
-        ? members.map((m) => (
+      {selectedVisibility === 'specific_users' ? (
+        <fieldset className="flex flex-wrap items-center gap-2">
+          <legend className="sr-only">People who can view new captured events</legend>
+          {members.map((m) => (
             <label key={m.id} className="flex items-center gap-1 text-fg-muted">
               <input
                 type="checkbox"
@@ -420,17 +427,20 @@ function IntegrationVisibilityForm({
               />
               {m.label}
             </label>
-          ))
-        : null}
-      <button
-        className="rounded-sm border border-border px-2 py-1 disabled:opacity-60"
-        type="submit"
-        disabled={pending}
-      >
+          ))}
+        </fieldset>
+      ) : null}
+      <Button type="submit" size="sm" variant="outline" className="min-h-9" disabled={pending}>
         {pending ? 'Saving' : 'Save default'}
-      </button>
-      {state.error ? <p className="basis-full text-xs text-destructive">{state.error}</p> : null}
-      {state.ok ? <p className="basis-full text-xs text-fg-muted">Saved</p> : null}
+      </Button>
+      {state.error ? (
+        <p role="alert" className="basis-full text-xs text-destructive">
+          {state.error}
+        </p>
+      ) : null}
+      {state.ok ? (
+        <output className="basis-full text-xs text-fg-muted">Default visibility saved.</output>
+      ) : null}
     </form>
   );
 }

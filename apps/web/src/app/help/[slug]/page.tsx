@@ -90,7 +90,7 @@ export default async function HelpTopicPage({ params }: HelpPageProps) {
               <Link
                 key={related.slug}
                 href={`/help/${related.slug}`}
-                className="rounded-sm border border-border px-3 py-2 text-sm text-fg-muted hover:border-signal/50 hover:text-fg"
+                className="rounded-sm border border-border px-3 py-2 text-sm text-fg-muted transition-colors hover:border-signal/50 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg focus-visible:ring-offset-2 focus-visible:ring-offset-bg forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2"
               >
                 {related.title}
               </Link>
@@ -98,7 +98,7 @@ export default async function HelpTopicPage({ params }: HelpPageProps) {
           })}
           <Link
             href="/help/support"
-            className="rounded-sm border border-border px-3 py-2 text-sm text-fg-muted hover:border-signal/50 hover:text-fg"
+            className="rounded-sm border border-border px-3 py-2 text-sm text-fg-muted transition-colors hover:border-signal/50 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg focus-visible:ring-offset-2 focus-visible:ring-offset-bg forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2"
           >
             Contact support
           </Link>

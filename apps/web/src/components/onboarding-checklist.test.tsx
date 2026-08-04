@@ -49,8 +49,8 @@ function renderChecklist(
     checklistPending: options.checklistPending ?? false,
   });
 
-  render(<OnboardingChecklist />);
-  return { mutateChecklist, retryChecklist, retryChecklistMutation };
+  const view = render(<OnboardingChecklist />);
+  return { mutateChecklist, retryChecklist, retryChecklistMutation, view };
 }
 
 describe('OnboardingChecklist', () => {
@@ -95,6 +95,29 @@ describe('OnboardingChecklist', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reopen setup' }));
 
     expect(mutateChecklist).toHaveBeenCalledWith({ action: 'reopen' });
+  });
+
+  it('restores focus to dismiss setup after reopening the checklist', () => {
+    const { mutateChecklist, view } = renderChecklist({ dismissed: true, items: [] });
+
+    const reopen = screen.getByRole('button', { name: 'Reopen setup' });
+    reopen.focus();
+    fireEvent.click(reopen);
+    expect(mutateChecklist).toHaveBeenCalledWith({ action: 'reopen' });
+
+    fakes.useOnboardingChecklistQuery.mockReturnValue({
+      isPending: false,
+      checklistLoadFailed: false,
+      checklistMutationFailed: false,
+      data: { dismissed: false, items: [] },
+      mutateChecklist,
+      retryChecklist: vi.fn(),
+      retryChecklistMutation: vi.fn(),
+      checklistPending: false,
+    });
+    view.rerender(<OnboardingChecklist />);
+
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Dismiss setup' }));
   });
 
   it('announces and retries a failed reopen from the dismissed state', () => {
@@ -144,6 +167,123 @@ describe('OnboardingChecklist', () => {
     expect(window.location.hash).toBe('#capture');
   });
 
+  it('moves focus to the surviving dismiss control after completing the final step', () => {
+    const { mutateChecklist, view } = renderChecklist({
+      dismissed: false,
+      items: [{ key: 'telegram', label: 'Link Telegram', completed: false }],
+    });
+
+    const complete = screen.getByRole('button', { name: 'Mark Link Telegram complete' });
+    complete.focus();
+    fireEvent.click(complete);
+    expect(mutateChecklist).toHaveBeenCalledWith({ action: 'complete', key: 'telegram' });
+
+    fakes.useOnboardingChecklistQuery.mockReturnValue({
+      isPending: false,
+      checklistLoadFailed: false,
+      checklistMutationFailed: false,
+      data: {
+        dismissed: false,
+        items: [{ key: 'telegram', label: 'Link Telegram', completed: true }],
+      },
+      mutateChecklist,
+      retryChecklist: vi.fn(),
+      retryChecklistMutation: vi.fn(),
+      checklistPending: true,
+    });
+    view.rerender(<OnboardingChecklist />);
+
+    fakes.useOnboardingChecklistQuery.mockReturnValue({
+      isPending: false,
+      checklistLoadFailed: false,
+      checklistMutationFailed: false,
+      data: {
+        dismissed: false,
+        items: [{ key: 'telegram', label: 'Link Telegram', completed: true }],
+      },
+      mutateChecklist,
+      retryChecklist: vi.fn(),
+      retryChecklistMutation: vi.fn(),
+      checklistPending: false,
+    });
+    view.rerender(<OnboardingChecklist />);
+
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Dismiss setup' }));
+  });
+
+  it('returns completion retry focus to retry after rollback and dismiss after success', () => {
+    const item = { key: 'telegram', label: 'Link Telegram', completed: false };
+    const { mutateChecklist, retryChecklistMutation, view } = renderChecklist({
+      dismissed: false,
+      items: [item],
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Mark Link Telegram complete' }));
+
+    fakes.useOnboardingChecklistQuery.mockReturnValue({
+      isPending: false,
+      checklistLoadFailed: false,
+      checklistMutationFailed: false,
+      data: { dismissed: false, items: [{ ...item, completed: true }] },
+      mutateChecklist,
+      retryChecklist: vi.fn(),
+      retryChecklistMutation,
+      checklistPending: true,
+    });
+    view.rerender(<OnboardingChecklist />);
+    fakes.useOnboardingChecklistQuery.mockReturnValue({
+      isPending: false,
+      checklistLoadFailed: false,
+      checklistMutationFailed: true,
+      data: { dismissed: false, items: [item] },
+      mutateChecklist,
+      retryChecklist: vi.fn(),
+      retryChecklistMutation,
+      checklistPending: false,
+    });
+    view.rerender(<OnboardingChecklist />);
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Retry update' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry update' }));
+    expect(retryChecklistMutation).toHaveBeenCalledOnce();
+    fakes.useOnboardingChecklistQuery.mockReturnValue({
+      isPending: false,
+      checklistLoadFailed: false,
+      checklistMutationFailed: false,
+      data: { dismissed: false, items: [{ ...item, completed: true }] },
+      mutateChecklist,
+      retryChecklist: vi.fn(),
+      retryChecklistMutation,
+      checklistPending: true,
+    });
+    view.rerender(<OnboardingChecklist />);
+    fakes.useOnboardingChecklistQuery.mockReturnValue({
+      isPending: false,
+      checklistLoadFailed: false,
+      checklistMutationFailed: false,
+      data: { dismissed: false, items: [{ ...item, completed: true }] },
+      mutateChecklist,
+      retryChecklist: vi.fn(),
+      retryChecklistMutation,
+      checklistPending: false,
+    });
+    view.rerender(<OnboardingChecklist />);
+
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Dismiss setup' }));
+  });
+
+  it('announces progress and an in-flight setup update', () => {
+    renderChecklist(
+      {
+        dismissed: false,
+        items: [{ key: 'telegram', label: 'Link Telegram', completed: false }],
+      },
+      { checklistPending: true },
+    );
+
+    expect(screen.getByText('0/1').getAttribute('aria-label')).toBe('0 of 1 setup steps complete');
+    expect(screen.getByText('Updating setup…').getAttribute('aria-live')).toBe('polite');
+  });
+
   it('dismisses the checklist and disables mutation controls while pending', () => {
     const { mutateChecklist } = renderChecklist(
       {
@@ -154,7 +294,7 @@ describe('OnboardingChecklist', () => {
     );
 
     const dismiss = screen.getByRole<HTMLButtonElement>('button', {
-      name: 'Dismiss setup checklist',
+      name: 'Dismiss setup',
     });
     const complete = screen.getByRole<HTMLButtonElement>('button', {
       name: 'Mark Link Telegram complete',
@@ -171,8 +311,110 @@ describe('OnboardingChecklist', () => {
       items: [{ key: 'telegram', label: 'Link Telegram', completed: false }],
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Dismiss setup checklist' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss setup' }));
     expect(active.mutateChecklist).toHaveBeenCalledWith({ action: 'dismiss' });
+  });
+
+  it('restores focus to reopen setup after dismissing the checklist', () => {
+    const { mutateChecklist, view } = renderChecklist({
+      dismissed: false,
+      items: [{ key: 'telegram', label: 'Link Telegram', completed: false }],
+    });
+
+    const dismiss = screen.getByRole<HTMLButtonElement>('button', { name: 'Dismiss setup' });
+    dismiss.focus();
+    fireEvent.click(dismiss);
+    expect(mutateChecklist).toHaveBeenCalledWith({ action: 'dismiss' });
+
+    fakes.useOnboardingChecklistQuery.mockReturnValue({
+      isPending: false,
+      checklistLoadFailed: false,
+      checklistMutationFailed: false,
+      data: { dismissed: true, items: [] },
+      mutateChecklist,
+      retryChecklist: vi.fn(),
+      retryChecklistMutation: vi.fn(),
+      checklistPending: false,
+    });
+    view.rerender(<OnboardingChecklist />);
+
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Reopen setup' }));
+  });
+
+  it('restores focus to dismiss setup when a dismissal is rolled back', () => {
+    const { mutateChecklist, view } = renderChecklist({
+      dismissed: false,
+      items: [{ key: 'telegram', label: 'Link Telegram', completed: false }],
+    });
+
+    const dismiss = screen.getByRole('button', { name: 'Dismiss setup' });
+    dismiss.focus();
+    fireEvent.click(dismiss);
+    expect(mutateChecklist).toHaveBeenCalledWith({ action: 'dismiss' });
+
+    fakes.useOnboardingChecklistQuery.mockReturnValue({
+      isPending: false,
+      checklistLoadFailed: false,
+      checklistMutationFailed: false,
+      data: { dismissed: true, items: [] },
+      mutateChecklist,
+      retryChecklist: vi.fn(),
+      retryChecklistMutation: vi.fn(),
+      checklistPending: true,
+    });
+    view.rerender(<OnboardingChecklist />);
+
+    fakes.useOnboardingChecklistQuery.mockReturnValue({
+      isPending: false,
+      checklistLoadFailed: false,
+      checklistMutationFailed: true,
+      data: {
+        dismissed: false,
+        items: [{ key: 'telegram', label: 'Link Telegram', completed: false }],
+      },
+      mutateChecklist,
+      retryChecklist: vi.fn(),
+      retryChecklistMutation: vi.fn(),
+      checklistPending: false,
+    });
+    view.rerender(<OnboardingChecklist />);
+
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Dismiss setup' }));
+  });
+
+  it('restores focus to reopen setup when a reopening is rolled back', () => {
+    const { mutateChecklist, view } = renderChecklist({ dismissed: true, items: [] });
+
+    const reopen = screen.getByRole('button', { name: 'Reopen setup' });
+    reopen.focus();
+    fireEvent.click(reopen);
+    expect(mutateChecklist).toHaveBeenCalledWith({ action: 'reopen' });
+
+    fakes.useOnboardingChecklistQuery.mockReturnValue({
+      isPending: false,
+      checklistLoadFailed: false,
+      checklistMutationFailed: false,
+      data: { dismissed: false, items: [] },
+      mutateChecklist,
+      retryChecklist: vi.fn(),
+      retryChecklistMutation: vi.fn(),
+      checklistPending: true,
+    });
+    view.rerender(<OnboardingChecklist />);
+
+    fakes.useOnboardingChecklistQuery.mockReturnValue({
+      isPending: false,
+      checklistLoadFailed: false,
+      checklistMutationFailed: true,
+      data: { dismissed: true, items: [] },
+      mutateChecklist,
+      retryChecklist: vi.fn(),
+      retryChecklistMutation: vi.fn(),
+      checklistPending: false,
+    });
+    view.rerender(<OnboardingChecklist />);
+
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Reopen setup' }));
   });
 
   it('announces an update failure and retries the restored action', () => {
@@ -189,5 +431,80 @@ describe('OnboardingChecklist', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'Retry update' }));
     expect(retryChecklistMutation).toHaveBeenCalledOnce();
+  });
+
+  it('restores focus to reopen setup after a retried dismissal succeeds', () => {
+    const { retryChecklistMutation, view } = renderChecklist(
+      {
+        dismissed: false,
+        items: [{ key: 'telegram', label: 'Link Telegram', completed: false }],
+      },
+      { checklistMutationFailed: true },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry update' }));
+    expect(retryChecklistMutation).toHaveBeenCalledOnce();
+
+    fakes.useOnboardingChecklistQuery.mockReturnValue({
+      isPending: false,
+      checklistLoadFailed: false,
+      checklistMutationFailed: false,
+      data: { dismissed: true, items: [] },
+      mutateChecklist: vi.fn(),
+      retryChecklist: vi.fn(),
+      retryChecklistMutation,
+      checklistPending: true,
+    });
+    view.rerender(<OnboardingChecklist />);
+
+    fakes.useOnboardingChecklistQuery.mockReturnValue({
+      isPending: false,
+      checklistLoadFailed: false,
+      checklistMutationFailed: false,
+      data: { dismissed: true, items: [] },
+      mutateChecklist: vi.fn(),
+      retryChecklist: vi.fn(),
+      retryChecklistMutation,
+      checklistPending: false,
+    });
+    view.rerender(<OnboardingChecklist />);
+
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Reopen setup' }));
+  });
+
+  it('restores focus after a retried reopening is rolled back', () => {
+    const { retryChecklistMutation, view } = renderChecklist(
+      { dismissed: true, items: [] },
+      { checklistMutationFailed: true },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry update' }));
+    expect(retryChecklistMutation).toHaveBeenCalledOnce();
+
+    fakes.useOnboardingChecklistQuery.mockReturnValue({
+      isPending: false,
+      checklistLoadFailed: false,
+      checklistMutationFailed: false,
+      data: { dismissed: false, items: [] },
+      mutateChecklist: vi.fn(),
+      retryChecklist: vi.fn(),
+      retryChecklistMutation,
+      checklistPending: true,
+    });
+    view.rerender(<OnboardingChecklist />);
+
+    fakes.useOnboardingChecklistQuery.mockReturnValue({
+      isPending: false,
+      checklistLoadFailed: false,
+      checklistMutationFailed: true,
+      data: { dismissed: true, items: [] },
+      mutateChecklist: vi.fn(),
+      retryChecklist: vi.fn(),
+      retryChecklistMutation,
+      checklistPending: false,
+    });
+    view.rerender(<OnboardingChecklist />);
+
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Reopen setup' }));
   });
 });

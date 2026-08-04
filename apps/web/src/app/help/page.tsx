@@ -33,7 +33,7 @@ export default function HelpIndexPage() {
                 <Link
                   key={href}
                   href={href}
-                  className="flex items-center gap-3 py-4 text-fg transition-colors hover:text-signal"
+                  className="flex items-center gap-3 rounded-sm py-4 text-fg transition-colors hover:text-signal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg focus-visible:ring-offset-2 focus-visible:ring-offset-bg forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2"
                 >
                   <Icon className="size-5 text-fg-dim" />
                   <span className="text-lg font-medium">{label}</span>
@@ -51,7 +51,7 @@ export default function HelpIndexPage() {
             <Link
               key={page.slug}
               href={`/help/${page.slug}`}
-              className="group rounded-sm border border-border p-4 transition-colors hover:border-signal/50 hover:bg-surface"
+              className="group rounded-sm border border-border p-4 transition-colors hover:border-signal/50 hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg focus-visible:ring-offset-2 focus-visible:ring-offset-bg forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2"
             >
               <page.icon className="mb-4 size-5 text-signal" />
               <h3 className="text-lg font-semibold text-fg group-hover:text-signal">

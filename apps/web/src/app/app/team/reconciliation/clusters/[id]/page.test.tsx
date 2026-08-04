@@ -132,7 +132,6 @@ describe('ReconciliationClusterPage', () => {
       consoleError.mockRestore();
     }
   });
-
   it('copies complete output JSON while keeping the rendered preview bounded', async () => {
     const writeText = vi.fn<(value: string) => Promise<void>>().mockResolvedValue();
     Object.defineProperty(navigator, 'clipboard', {

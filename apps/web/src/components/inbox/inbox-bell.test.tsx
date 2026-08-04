@@ -41,6 +41,16 @@ afterEach(() => {
 });
 
 describe('InboxBell', () => {
+  it('uses the same human notification label as the Inbox', async () => {
+    const user = userEvent.setup();
+
+    render(<InboxBell unreadCount={1} notifications={[notification]} />);
+    await user.click(screen.getByRole('button', { name: 'Open inbox, 1 unread' }));
+
+    expect(screen.getByText('Suggestion ready')).toBeTruthy();
+    expect(screen.queryByText('agent suggestion')).toBeNull();
+  });
+
   it('keeps unread notifications visible and reports a failed bulk read without refreshing', async () => {
     const user = userEvent.setup();
     fakes.markAllRead.mockResolvedValue({ error: 'Database unavailable' });

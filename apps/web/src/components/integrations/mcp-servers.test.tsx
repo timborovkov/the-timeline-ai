@@ -298,7 +298,6 @@ describe('McpServersUi', () => {
     ).toBeTruthy();
     expect(screen.queryByText('provider request id=raw-42')).toBeNull();
   });
-
   it('keeps the server row unchanged and explains forbidden enable failures', async () => {
     const user = userEvent.setup();
     const fetchMock = vi.fn(() =>

@@ -19,6 +19,12 @@ export const metadata: Metadata = {
   description: 'Review captured source files before promotion.',
 };
 
+const documentsAction = (
+  <Button asChild variant="outline">
+    <Link href="/app/documents">Documents</Link>
+  </Button>
+);
+
 export default async function CapturedFilesPage() {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
@@ -52,15 +58,11 @@ export default async function CapturedFilesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <PageHeader
-          title="Captured files"
-          subtitle="Source attachments stay here until someone promotes them into the document drive."
-        />
-        <Button asChild variant="outline">
-          <Link href="/app/documents">Documents</Link>
-        </Button>
-      </div>
+      <PageHeader
+        title="Captured files"
+        subtitle="Review source attachments, then promote the files your team should keep in Documents."
+        trailing={documentsAction}
+      />
       <CapturedFilesList
         folders={folders.map((folder) => ({ id: folder.id, name: folder.name }))}
         members={members.map((member) => {

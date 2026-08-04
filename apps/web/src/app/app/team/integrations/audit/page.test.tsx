@@ -2,7 +2,6 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { integrationAuditSummary } from '@/app/app/team/integrations/audit/integration-audit-summary';
-
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   getCalendarSettings: vi.fn(),

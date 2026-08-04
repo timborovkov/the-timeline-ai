@@ -1,6 +1,6 @@
 'use client';
 
-import { truncateFilenameMiddle } from '@timeline/shared/documents/presentation';
+import { documentKindLabel, truncateFilenameMiddle } from '@timeline/shared/documents/presentation';
 import { FileText, Image as ImageIcon, Link2, Upload } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMemo, useReducer, useRef, useState, useTransition } from 'react';
@@ -14,6 +14,7 @@ import { EvidenceLink } from '@/components/evidence-link';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
 import { InlineError } from '@/components/inline-error';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
+import { StatusBadge } from '@/components/status-badge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,7 +26,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { displaySourceLabel } from '@/lib/display-labels';
 import { selectedValues } from '@/lib/filter-values';
+import { statusLabel } from '@/lib/status-labels';
 
 interface CapturedFileItem {
   id: string;
@@ -203,11 +206,11 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
     [loadedFiles],
   );
   const sourceOptions = useMemo(
-    () => sources.map((source) => ({ value: source, label: source })),
+    () => sources.map((source) => ({ value: source, label: displaySourceLabel(source) })),
     [sources],
   );
   const statusOptions = useMemo(
-    () => statuses.map((status) => ({ value: status, label: status })),
+    () => statuses.map((status) => ({ value: status, label: processingStatusLabel(status) })),
     [statuses],
   );
   const typeOptions = useMemo(() => [...FILE_TYPE_OPTIONS], []);
@@ -217,7 +220,7 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
     selectedValues(uiState.statusFilter, statusOptions).length +
     (uiState.dateFilter !== ALL ? 1 : 0);
   const visibleFiles = loadedFiles.filter((file) => {
-    const kind = fileKind(file.currentVersion?.contentType ?? null);
+    const kind = documentKindLabel(file.currentVersion?.contentType ?? null);
     const status = file.currentVersion?.processingStatus ?? 'pending';
     if (!matchesMultiFilter(file.provenance.source, uiState.sourceFilter, sourceOptions)) {
       return false;
@@ -257,18 +260,23 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
 
   if (loadedFiles.length === 0) {
     return (
-      <div className="rounded-lg border border-border bg-card/30 p-8 text-center">
-        <p className="text-xs text-fg-dim">No captured files</p>
-        <p className="mx-auto mt-2 max-w-md text-sm text-fg-muted">
-          Telegram and Slack attachments will appear here before they are promoted to documents.
+      <section
+        aria-label="Captured files"
+        className="rounded-md border border-border bg-surface px-4 py-10 text-center"
+      >
+        <p className="text-sm font-semibold text-fg">No captured files yet</p>
+        <p className="mx-auto mt-1 max-w-md text-sm leading-6 text-fg-muted">
+          Attachments from conversations and connected sources appear here before you add them to
+          Documents.
         </p>
-      </div>
+      </section>
     );
   }
 
   return (
-    <section className="space-y-3">
-      <div className="grid gap-3 rounded-sm border border-border bg-card p-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
+    <section aria-label="Captured files" className="space-y-4">
+      <fieldset className="grid min-w-0 gap-3 rounded-md border border-border bg-surface p-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
+        <legend className="sr-only">Filter captured files</legend>
         <div className="flex min-w-0 flex-wrap items-end gap-2">
           <FilterMultiSelect
             label="Source"
@@ -310,10 +318,10 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
           </FilterSelect>
         </div>
         <div className="flex flex-wrap items-center gap-2 xl:justify-end xl:pt-[1.125rem]">
-          <output className="text-xs text-fg-dim" aria-live="polite">
+          <output className="text-xs tabular-nums text-fg-dim" aria-live="polite">
             {activeFilterCount > 0
-              ? `${String(visibleFiles.length)} / ${String(loadedFiles.length)}`
-              : `${String(loadedFiles.length)} visible`}
+              ? `Showing ${capturedFileCountLabel(visibleFiles.length)} of ${String(loadedFiles.length)}`
+              : `Showing ${capturedFileCountLabel(loadedFiles.length)}`}
           </output>
           {activeFilterCount > 0 ? (
             <Button
@@ -324,11 +332,11 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
                 dispatchUi({ type: 'clear_filters' });
               }}
             >
-              Clear
+              Clear filters
             </Button>
           ) : null}
         </div>
-      </div>
+      </fieldset>
 
       <Dialog
         open={uiState.promoting !== null}
@@ -336,7 +344,7 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
           if (!open) dispatchUi({ type: 'promote', file: null });
         }}
       >
-        <ul className="space-y-2">
+        <ul className="overflow-hidden rounded-md border border-border bg-surface divide-y divide-border">
           {visibleFiles.map((file) => (
             <CapturedFileRow
               key={file.id}
@@ -359,10 +367,13 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
         ) : null}
       </Dialog>
       {visibleFiles.length === 0 ? (
-        <div className="rounded-lg border border-border p-6 text-center text-sm text-muted-foreground">
-          {cursor
-            ? 'No loaded captured files match these filters. Load older captures to keep searching.'
-            : 'No captured files match these filters.'}
+        <div className="rounded-md border border-border bg-surface px-4 py-8 text-center">
+          <p className="text-sm font-medium text-fg">No captured files match these filters</p>
+          <p className="mt-1 text-sm leading-6 text-fg-muted">
+            {cursor
+              ? 'Load older captures to keep searching, or clear the filters to view every loaded file.'
+              : 'Clear the filters to view every captured file.'}
+          </p>
         </div>
       ) : null}
       {loadMoreError ? (
@@ -440,25 +451,28 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
     : null;
 
   return (
-    <li className="grid gap-3 rounded-sm border border-border bg-card p-3 md:grid-cols-[minmax(0,1fr)_auto]">
+    <li className="grid gap-3 px-3 py-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="grid size-9 shrink-0 place-items-center rounded-sm border border-border bg-surface-2 text-muted-foreground">
-            <Icon className="size-4" />
+          <span className="grid size-9 shrink-0 place-items-center rounded-sm border border-border bg-surface-2 text-fg-muted">
+            <Icon aria-hidden="true" className="size-4" />
           </span>
           <span className="min-w-0">
             <span
-              className="block truncate text-sm font-semibold text-foreground"
+              className="block line-clamp-2 break-words text-sm font-semibold leading-5 text-fg"
               title={presentation.displayTitle}
             >
               {presentation.displayTitle}
             </span>
-            <span className="mt-0.5 block truncate text-xs text-fg-dim">
-              {contentType || 'captured file'}
+            <span
+              className="mt-0.5 block truncate text-xs text-fg-dim"
+              title={storedName ?? undefined}
+            >
+              {fileTypeLabel(contentType)}
               {storedName ? (
                 <span
                   title={presentation.storedName}
-                  className="normal-case tracking-normal text-muted-foreground"
+                  className="font-mono normal-case tracking-normal text-fg-dim"
                 >
                   {' '}
                   · stored as {storedName}
@@ -468,28 +482,35 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
           </span>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Badge variant="secondary" className="rounded-sm text-[11px]">
-            {file.provenance.source}
+          <Badge variant="secondary" className="text-[11px] text-fg-muted">
+            {displaySourceLabel(file.provenance.source)}
           </Badge>
-          <Badge variant="outline" className="rounded-sm text-[11px]">
-            {file.currentVersion?.processingStatus ?? 'pending'}
+          <StatusBadge
+            status={file.currentVersion?.processingStatus ?? 'pending'}
+            label={processingStatusLabel(file.currentVersion?.processingStatus ?? 'pending')}
+            className="text-[11px]"
+          />
+          <Badge variant="outline" className="text-[11px] text-fg-muted">
+            {visibilityLabel(file.visibility)}
           </Badge>
-          <Badge variant="outline" className="rounded-sm text-[11px]">
-            {file.visibility}
-          </Badge>
-          <span className="text-xs text-fg-dim">{formatDate(file.updatedAt)}</span>
+          <span className="text-xs tabular-nums text-fg-dim">
+            Updated {formatDate(file.updatedAt)}
+          </span>
         </div>
         {file.description ? (
-          <p className="mt-2 line-clamp-1 text-xs text-muted-foreground">{file.description}</p>
+          <p className="mt-2 line-clamp-2 break-words text-xs leading-5 text-fg-muted">
+            {file.description}
+          </p>
         ) : null}
       </div>
-      <div className="flex flex-wrap items-center justify-end gap-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-2 md:justify-end">
         <PinOverflowMenu
           target={{ kind: 'document', key: file.id }}
           title={presentation.displayTitle}
           initialPinned={file.pinned}
         />
-        {file.currentVersion?.id && ['image', 'pdf', 'audio'].includes(fileKind(contentType)) ? (
+        {file.currentVersion?.id &&
+        ['image', 'pdf', 'audio'].includes(documentKindLabel(contentType)) ? (
           <DocumentPreview
             target={{ versionId: file.currentVersion.id }}
             compact
@@ -503,15 +524,15 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
             previewText={file.provenance.summary}
             source={file.provenance.source}
             occurredAt={file.provenance.occurredAt}
-            className="inline-flex h-8 items-center gap-1 rounded-sm border border-border px-2 text-xs text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"
+            className="inline-flex h-8 items-center gap-1 rounded-sm border border-signal/30 bg-signal-soft px-2 font-mono text-[10px] text-signal transition-colors hover:border-signal/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2"
           >
-            <Link2 className="size-3.5" />
-            Event
+            <Link2 aria-hidden="true" className="size-3.5" />
+            View evidence
           </EvidenceLink>
         ) : null}
         <DialogTrigger asChild>
-          <Button type="button" size="sm" onClick={onPromote}>
-            <Upload className="mr-2 size-4" />
+          <Button type="button" variant="outline" size="sm" onClick={onPromote}>
+            <Upload aria-hidden="true" className="mr-2 size-4" />
             Promote
           </Button>
         </DialogTrigger>
@@ -625,9 +646,9 @@ function PromoteDialog({
       }}
     >
       <DialogHeader>
-        <DialogTitle>Promote captured file</DialogTitle>
+        <DialogTitle>Promote to Documents</DialogTitle>
         <DialogDescription>
-          Turn this evidence attachment into curated team knowledge.
+          Create a document from this captured file. Choose its title, location, and visibility.
         </DialogDescription>
       </DialogHeader>
       <div className="space-y-3" aria-busy={pending}>
@@ -659,7 +680,7 @@ function PromoteDialog({
           </p>
         ) : null}
         <label className="block space-y-1">
-          <span className="text-[11px] text-fg-dim">Folder</span>
+          <span className="text-[11px] text-fg-dim">Save in</span>
           <select
             name="folder"
             disabled={pending}
@@ -678,7 +699,7 @@ function PromoteDialog({
           </select>
         </label>
         <label className="block space-y-1">
-          <span className="text-[11px] text-fg-dim">Visibility</span>
+          <span className="text-[11px] text-fg-dim">Who can view it</span>
           <select
             name="visibility"
             disabled={pending}
@@ -688,9 +709,9 @@ function PromoteDialog({
             }}
             className="h-9 w-full rounded-sm border border-border bg-bg px-2 text-base focus-visible:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg sm:text-sm"
           >
-            <option value="team">Team</option>
-            <option value="private">Private</option>
-            <option value="specific_users">Specific users</option>
+            <option value="team">Everyone on the team</option>
+            <option value="private">Only you</option>
+            <option value="specific_users">Specific people</option>
           </select>
         </label>
         {form.visibility === 'specific_users' ? (
@@ -737,14 +758,6 @@ function PromoteDialog({
   );
 }
 
-function fileKind(contentType: string | null): 'image' | 'pdf' | 'audio' | 'file' {
-  const base = contentType?.toLowerCase().split(';')[0]?.trim() ?? '';
-  if (base.startsWith('image/')) return 'image';
-  if (base === 'application/pdf') return 'pdf';
-  if (base.startsWith('audio/')) return 'audio';
-  return 'file';
-}
-
 function matchesDateFilter(value: string, filter: string): boolean {
   if (filter === ALL) return true;
   const days = filter === '7d' ? 7 : 30;
@@ -753,4 +766,36 @@ function matchesDateFilter(value: string, filter: string): boolean {
 
 function formatDate(value: string): string {
   return capturedFileDateFormatter.format(new Date(value));
+}
+
+function capturedFileCountLabel(count: number): string {
+  return `${String(count)} captured ${count === 1 ? 'file' : 'files'}`;
+}
+
+function fileTypeLabel(contentType: string): string {
+  const labels = {
+    image: 'Image',
+    pdf: 'PDF',
+    audio: 'Audio',
+    file: 'File',
+  } as const;
+  return labels[documentKindLabel(contentType)];
+}
+
+function processingStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    pending: 'Waiting to process',
+    extracting: 'Extracting text',
+    chunked: 'Ready for search',
+    embedded: 'Ready',
+    deferred: 'Processing deferred',
+    failed: 'Needs attention',
+  };
+  return labels[status] ?? statusLabel(status);
+}
+
+function visibilityLabel(visibility: Visibility): string {
+  if (visibility === 'team') return 'Team visibility';
+  if (visibility === 'private') return 'Only you';
+  return 'Selected people';
 }

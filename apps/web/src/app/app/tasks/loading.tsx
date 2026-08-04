@@ -15,12 +15,13 @@ export default function TasksLoading() {
         aria-label="Loading tasks"
       >
         <h1 className="sr-only">Tasks</h1>
-        <div aria-hidden="true" className="shrink-0 px-4 pt-5 md:px-8">
+        <div aria-hidden="true" inert className="shrink-0 px-4 pt-5 md:px-8">
           <PageHeaderSkeleton />
         </div>
         <WorkSubnav current="/app/tasks" className="shrink-0 px-4 md:px-8" />
         <div
           aria-hidden="true"
+          inert
           className="shrink-0 border-y border-border bg-bg/80 px-4 py-3 md:px-8"
         >
           <div className="flex flex-wrap items-end gap-2">
@@ -36,12 +37,16 @@ export default function TasksLoading() {
             ))}
           </div>
         </div>
-        <div aria-hidden="true" className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4 md:px-8">
+        <div
+          aria-hidden="true"
+          inert
+          className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4 md:px-8"
+        >
           <section className="flex min-h-0 flex-1 gap-3 overflow-x-auto">
             {Array.from({ length: 5 }).map((_, col) => (
               <div
                 key={col}
-                className="flex w-[280px] shrink-0 flex-col rounded-sm border border-border bg-surface p-3"
+                className="flex w-[min(290px,calc(100vw-4rem))] shrink-0 flex-col rounded-sm border border-border bg-surface p-3"
               >
                 <div className="mb-3 flex items-center justify-between">
                   <Skeleton className="h-3 w-16" />

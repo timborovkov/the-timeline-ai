@@ -47,7 +47,7 @@ describe('Tasks route states', () => {
     },
   );
 
-  it('announces route-shaped loading outside the busy fallback and hides visual skeletons', () => {
+  it('announces an inert, responsive loading fallback outside the busy state', () => {
     const { container } = render(<TasksLoading />);
 
     const announcement = screen.getByRole('status');
@@ -62,7 +62,7 @@ describe('Tasks route states', () => {
     expect(screen.queryByRole('region')).toBeNull();
     expect(screen.queryByRole('button')).toBeNull();
     const visualPlaceholders = container.querySelectorAll(
-      '[aria-busy="true"] > [aria-hidden="true"]',
+      '[aria-busy="true"] > [aria-hidden="true"][inert]',
     );
     expect(visualPlaceholders.length).toBeGreaterThan(0);
     for (const visualPlaceholder of visualPlaceholders) {
