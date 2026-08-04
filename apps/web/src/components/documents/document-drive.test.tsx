@@ -97,7 +97,11 @@ describe('DocumentDrive', () => {
 
     expect(screen.getByRole('navigation', { name: 'Document location' })).toBeTruthy();
     expect(screen.getByText('Documents').getAttribute('aria-current')).toBe('page');
-    expect(screen.getByRole('combobox', { name: 'New item visibility' })).toBeTruthy();
+    expect(
+      screen.getByRole('combobox', {
+        name: 'Default visibility for new documents and folders',
+      }),
+    ).toBeTruthy();
     const deleteFolder = screen.getByRole('button', { name: 'Delete folder Acme' });
     deleteFolder.focus();
     expect(document.activeElement).toBe(deleteFolder);
@@ -171,6 +175,32 @@ describe('DocumentDrive', () => {
     expect(html).toContain('Ada');
     expect(html).not.toMatch(/<h2[^>]*uppercase[^>]*>Folders<\/h2>/);
     expect(html).not.toMatch(/<h2[^>]*uppercase[^>]*>Documents<\/h2>/);
+  });
+
+  it('groups new-item access controls with visible keyboard focus treatment', () => {
+    render(
+      driveElement({
+        defaultVisibility: 'specific_users',
+        defaultVisibilityUserIds: ['user-1'],
+        members: [
+          { id: 'user-1', label: 'Ada' },
+          { id: 'user-2', label: 'Grace' },
+        ],
+      }),
+    );
+
+    expect(screen.getByRole('group', { name: 'New item visibility' })).toBeTruthy();
+    const visibility = screen.getByRole('combobox', {
+      name: 'Default visibility for new documents and folders',
+    });
+    expect(visibility.className).toContain('focus-visible:ring-2');
+
+    expect(screen.getByRole('group', { name: 'People with access' })).toBeTruthy();
+    const ada = screen.getByRole('checkbox', { name: 'Ada' });
+    expect((ada as HTMLInputElement).checked).toBe(true);
+    expect(ada.className).toContain('focus-visible:ring-2');
+    expect(screen.getByRole('checkbox', { name: 'Grace' })).toHaveProperty('checked', false);
+    expect(ada.id).not.toContain('user-1');
   });
 
   it('keeps a folder deletion control discoverable and operable for keyboard users', async () => {

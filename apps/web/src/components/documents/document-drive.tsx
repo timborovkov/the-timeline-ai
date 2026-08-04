@@ -623,9 +623,10 @@ function NewItemVisibilityPicker({
   const visibilityId = useId();
 
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border p-3 text-sm">
-      <label htmlFor={visibilityId} className="text-xs text-fg-dim">
-        New item visibility
+    <fieldset className="flex flex-wrap items-center gap-3 rounded-lg border border-border p-3 text-sm">
+      <legend className="px-1 text-xs text-fg-dim">New item visibility</legend>
+      <label className="sr-only" htmlFor={visibilityId}>
+        Default visibility for new documents and folders
       </label>
       <select
         id={visibilityId}
@@ -639,28 +640,37 @@ function NewItemVisibilityPicker({
         <option value="private">Private</option>
         <option value="specific_users">Specific users</option>
       </select>
-      {visibility === 'specific_users'
-        ? members.map((m) => (
-            <label
-              key={m.id}
-              className="flex min-h-6 items-center gap-1 text-xs text-muted-foreground"
-            >
-              <input
-                type="checkbox"
-                checked={visibilityUserIds.includes(m.id)}
-                onChange={(e) => {
-                  onVisibilityUserIdsChange((prev) =>
-                    e.target.checked
-                      ? [...new Set([...prev, m.id])]
-                      : prev.filter((id) => id !== m.id),
-                  );
-                }}
-              />
-              {m.label}
-            </label>
-          ))
-        : null}
-    </div>
+      {visibility === 'specific_users' ? (
+        <fieldset className="flex flex-wrap items-center gap-x-3 gap-y-2 border-l border-border pl-3">
+          <legend className="sr-only">People with access</legend>
+          {members.map((m, index) => {
+            const memberId = `${visibilityId}-member-${String(index)}`;
+            return (
+              <label
+                key={m.id}
+                htmlFor={memberId}
+                className="flex items-center gap-1.5 text-xs text-muted-foreground"
+              >
+                <input
+                  id={memberId}
+                  type="checkbox"
+                  checked={visibilityUserIds.includes(m.id)}
+                  onChange={(e) => {
+                    onVisibilityUserIdsChange((prev) =>
+                      e.target.checked
+                        ? [...new Set([...prev, m.id])]
+                        : prev.filter((id) => id !== m.id),
+                    );
+                  }}
+                  className="size-4 rounded-sm border-input accent-signal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                />
+                {m.label}
+              </label>
+            );
+          })}
+        </fieldset>
+      ) : null}
+    </fieldset>
   );
 }
 
