@@ -42,10 +42,16 @@ vi.mock('@/app/actions/teams', () => ({
   updateTeamTimezoneAction: vi.fn(),
 }));
 
-const { InboundEmailWhitelistForm, InviteMemberForm, TeamExportPanel } =
-  await import('./team-forms.js');
+const {
+  DigestPreferenceForm,
+  InboundEmailWhitelistForm,
+  InviteMemberForm,
+  TeamExportPanel,
+  TeamTimezoneForm,
+} = await import('./team-forms.js');
 
 beforeEach(() => {
+  cleanup();
   vi.clearAllMocks();
   fakes.useActionState.mockReturnValue([{}, fakes.action]);
   fakes.useFormStatus.mockReturnValue({ pending: false });
@@ -82,9 +88,14 @@ describe('InboundEmailWhitelistForm', () => {
     render(<InboundEmailWhitelistForm inboundEmail={null} enabled={false} senders={[]} />);
 
     expect(screen.getByText('Not configured')).toBeTruthy();
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Working…' }).disabled).toBe(true);
-    expect(screen.getByText('Email settings updated.')).toBeTruthy();
+    const submit = screen.getByRole<HTMLButtonElement>('button', { name: 'Working…' });
+    expect(submit.disabled).toBe(true);
+    expect(screen.getByRole('status').textContent).toBe('Saving changes…');
+    const enabledCheckbox = screen.getByRole('checkbox', { name: 'Enable sender whitelist' });
+    expect(enabledCheckbox.closest('label')?.className).toContain('min-h-9');
+    expect(enabledCheckbox.className).toContain('hover:border-border-strong');
 
+    cleanup();
     fakes.useActionState.mockReturnValue([
       { error: 'Only admins can change inbound email settings.' },
       fakes.action,
@@ -92,7 +103,90 @@ describe('InboundEmailWhitelistForm', () => {
     fakes.useFormStatus.mockReturnValue({ pending: false });
     render(<InboundEmailWhitelistForm inboundEmail={null} enabled={false} senders={[]} />);
 
-    expect(screen.getByText('Only admins can change inbound email settings.')).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toBe(
+      'Only admins can change inbound email settings.',
+    );
+  });
+});
+
+describe('TeamTimezoneForm', () => {
+  it('replaces stale feedback while pending, then announces action errors and confirmations', () => {
+    fakes.useActionState.mockReturnValue([{ ok: true }, fakes.action]);
+    fakes.useFormStatus.mockReturnValue({ pending: true });
+    const view = render(<TeamTimezoneForm timezone="America/New_York" />);
+    const feedback = view.container.querySelector('p[aria-live="polite"]');
+
+    expect(screen.getByRole('status').textContent).toBe('Saving changes…');
+
+    fakes.useActionState.mockReturnValue([
+      { error: 'Only admins can update the timezone.' },
+      fakes.action,
+    ]);
+    fakes.useFormStatus.mockReturnValue({ pending: false });
+    view.rerender(<TeamTimezoneForm timezone="America/New_York" />);
+
+    const error = screen.getByRole('alert');
+    const timezone = screen.getByLabelText('Team timezone');
+    expect(error.textContent).toBe('Only admins can update the timezone.');
+    expect(error.id).toBe('team-timezone-error');
+    expect(timezone.className).toContain('focus-visible:ring-2');
+    expect(timezone.className).toContain('h-9');
+    expect(timezone.className).toContain('rounded-sm');
+    expect(timezone.className).toContain('hover:border-border-strong');
+    expect(timezone.getAttribute('aria-invalid')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(view.container.querySelector('p[aria-live="polite"]')).toBe(feedback);
+    expect(feedback?.id).toBe('');
+
+    fakes.useActionState.mockReturnValue([{ error: 'Choose a valid timezone' }, fakes.action]);
+    view.rerender(<TeamTimezoneForm timezone="America/New_York" />);
+
+    expect(screen.getByLabelText('Team timezone').getAttribute('aria-invalid')).toBe('true');
+    expect(screen.getByLabelText('Team timezone').getAttribute('aria-describedby')).toBe(
+      'team-timezone-error',
+    );
+    expect(screen.getByRole('alert').id).toBe('team-timezone-error');
+
+    fakes.useFormStatus.mockReturnValue({ pending: true });
+    view.rerender(<TeamTimezoneForm timezone="America/New_York" />);
+
+    expect(screen.getByLabelText('Team timezone').getAttribute('aria-invalid')).toBeNull();
+    expect(screen.getByLabelText('Team timezone').getAttribute('aria-describedby')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+
+    fakes.useActionState.mockReturnValue([{ ok: true }, fakes.action]);
+    fakes.useFormStatus.mockReturnValue({ pending: false });
+    view.rerender(<TeamTimezoneForm timezone="America/New_York" />);
+
+    expect(screen.getByRole('status').textContent).toBe('Timezone updated.');
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+});
+
+describe('DigestPreferenceForm', () => {
+  it('gives the digest checkbox a 36px labelled target with a visible focus ring', () => {
+    render(<DigestPreferenceForm enabled />);
+
+    const checkbox = screen.getByRole('checkbox', { name: /Send me the daily team digest/ });
+    expect(checkbox.className).toContain('focus-visible:ring-2');
+    expect(checkbox.className).toContain('hover:border-border-strong');
+    expect(checkbox.closest('label')?.className).toContain('min-h-9');
+  });
+});
+
+describe('Team form field hover treatment', () => {
+  it('keeps text inputs and the sender field in the explicit hover contract', () => {
+    render(
+      <>
+        <InboundEmailWhitelistForm inboundEmail={null} enabled={false} senders={[]} />
+        <InviteMemberForm canInviteAdmin={false} />
+      </>,
+    );
+
+    expect(screen.getByLabelText('Allowed senders').className).toContain(
+      'hover:border-border-strong',
+    );
+    expect(screen.getByLabelText('Email').className).toContain('hover:border-border-strong');
   });
 });
 
@@ -102,6 +196,7 @@ describe('InviteMemberForm', () => {
 
     const role = screen.getByLabelText<HTMLSelectElement>('Role');
     expect([...role.options].map((option) => option.value)).toEqual(['member']);
+    expect(role.className).toContain('hover:border-border-strong');
     expect(screen.getByRole('button', { name: 'Create invite' })).toBeTruthy();
   });
 
@@ -120,8 +215,11 @@ describe('InviteMemberForm', () => {
     ).toEqual(['member', 'admin']);
     expect(screen.getByText('Invite link (copy and share):')).toBeTruthy();
     expect(screen.getByText('https://timeline.test/invite/token-1')).toBeTruthy();
-    expect(screen.getByText('Invite email sent.')).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toBe(
+      'Invite created and email sent. The invite link is ready to share.',
+    );
 
+    cleanup();
     fakes.useActionState.mockReturnValue([
       {
         inviteUrl: 'https://timeline.test/invite/token-2',
@@ -133,11 +231,12 @@ describe('InviteMemberForm', () => {
     render(<InviteMemberForm canInviteAdmin />);
 
     expect(screen.getByText('https://timeline.test/invite/token-2')).toBeTruthy();
-    expect(screen.getByText(/Email was not sent: Postmark rejected the recipient/)).toBeTruthy();
-    expect(screen.getByText(/The link still works/)).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toBe(
+      'Invite created, but the email was not sent: Postmark rejected the recipient. The link is ready to share.',
+    );
   });
 
-  it('shows validation and permission errors next to the invite form', () => {
+  it('keeps permission errors at the form level and connects email validation to its field', () => {
     fakes.useActionState.mockReturnValue([
       { error: 'Only admins can invite members.' },
       fakes.action,
@@ -147,9 +246,16 @@ describe('InviteMemberForm', () => {
 
     const error = screen.getByRole('alert');
     expect(error.textContent).toBe('Only admins can invite members.');
+    expect(screen.getByLabelText('Email').getAttribute('aria-invalid')).toBeNull();
+    expect(screen.getByLabelText('Role').getAttribute('aria-invalid')).toBeNull();
+
+    cleanup();
+    fakes.useActionState.mockReturnValue([{ error: 'Invalid email' }, fakes.action]);
+    render(<InviteMemberForm canInviteAdmin={false} />);
+
     expect(screen.getByLabelText('Email').getAttribute('aria-invalid')).toBe('true');
     expect(screen.getByLabelText('Email').getAttribute('aria-describedby')).toBe('invite-error');
-    expect(screen.getByLabelText('Role').getAttribute('aria-describedby')).toBe('invite-error');
+    expect(screen.getByLabelText('Role').getAttribute('aria-describedby')).toBeNull();
   });
 
   it('uses a specific pending label and lets the invite action reflow to the full mobile width', () => {
@@ -179,19 +285,25 @@ describe('TeamExportPanel', () => {
     fakes.useActionState.mockReturnValue([{ ok: true }, fakes.action]);
     fakes.useFormStatus.mockReturnValue({ pending: true });
 
-    render(<TeamExportPanel exports={[]} />);
+    const view = render(<TeamExportPanel exports={[]} />);
+    const feedback = view.container.querySelector('p[aria-live="polite"]');
 
-    expect(screen.getByText('Export queued.')).toBeTruthy();
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Working…' }).disabled).toBe(true);
+    expect(screen.getByRole('status').textContent).toBe('Saving changes…');
+    const submit = screen.getByRole<HTMLButtonElement>('button', { name: 'Working…' });
+    expect(submit.disabled).toBe(true);
 
     fakes.useActionState.mockReturnValue([
       { error: 'Only owners and admins can export team data' },
       fakes.action,
     ]);
     fakes.useFormStatus.mockReturnValue({ pending: false });
-    render(<TeamExportPanel exports={[]} />);
+    view.rerender(<TeamExportPanel exports={[]} />);
 
-    expect(screen.getByText('Only owners and admins can export team data')).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toBe(
+      'Only owners and admins can export team data',
+    );
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(view.container.querySelector('p[aria-live="polite"]')).toBe(feedback);
   });
 
   it.each([
