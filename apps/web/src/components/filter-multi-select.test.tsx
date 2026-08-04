@@ -14,6 +14,25 @@ const options = [
 afterEach(cleanup);
 
 describe('FilterMultiSelect', () => {
+  it('describes the current selection from its closed trigger', async () => {
+    const user = userEvent.setup();
+    render(<FilterMultiSelect label="Source" options={options} placeholder="All sources" />);
+
+    const trigger = screen.getByRole('button', { name: 'Source' });
+    const descriptionId = trigger.getAttribute('aria-describedby');
+    expect(descriptionId).toBeTruthy();
+    expect(document.getElementById(descriptionId ?? '')?.textContent).toBe(
+      'No selection. All sources.',
+    );
+
+    await user.click(trigger);
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'Engineering' }));
+
+    expect(document.getElementById(descriptionId ?? '')?.textContent).toBe(
+      'Selected: Engineering.',
+    );
+  });
+
   it('keeps its trigger at the shared 36px control size with a forced-colors focus indicator', () => {
     render(<FilterMultiSelect label="Source" options={options} placeholder="All sources" />);
 

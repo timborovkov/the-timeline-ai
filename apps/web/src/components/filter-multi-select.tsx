@@ -1,7 +1,7 @@
 'use client';
 
 import { Check, ChevronDown, Search } from 'lucide-react';
-import { useMemo, useReducer, useRef } from 'react';
+import { useId, useMemo, useReducer, useRef } from 'react';
 
 import type { KeyboardEvent, ReactNode } from 'react';
 
@@ -55,6 +55,7 @@ export function FilterMultiSelect({
   search,
 }: FilterMultiSelectProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const selectionDescriptionId = useId();
   const selectedSource = value ?? defaultValue;
   const normalizedOptions = useMemo(
     () => optionsWithSelectedValues(options, selectedSource),
@@ -77,12 +78,19 @@ export function FilterMultiSelect({
     () => new Map(normalizedOptions.map((option) => [option.value, option.label])),
     [normalizedOptions],
   );
+  const selectedLabels = selectedList.map(
+    (selectedValue) => optionLabel.get(selectedValue) ?? selectedValue,
+  );
   const buttonText =
     selectedList.length === 0
       ? placeholder
       : selectedList.length === 1
         ? (optionLabel.get(selectedList[0] ?? '') ?? selectedList[0])
         : `${selectedList.length} selected`;
+  const selectionDescription =
+    selectedLabels.length === 0
+      ? `No selection. ${placeholder}.`
+      : `Selected: ${selectedLabels.join(', ')}.`;
 
   function applySelected(action: SelectedAction): void {
     const next = selectedReducer(selected, action);
@@ -95,6 +103,7 @@ export function FilterMultiSelect({
     <button
       type="button"
       aria-label={label}
+      aria-describedby={selectionDescriptionId}
       className={cn(
         'flex h-9 w-full items-center justify-between gap-2 rounded-sm border border-border bg-surface px-2 text-left text-xs text-fg outline-none transition-colors hover:border-border-strong focus-visible:border-signal/60 focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2',
         selectedList.length === 0 && 'text-fg-muted',
@@ -110,6 +119,9 @@ export function FilterMultiSelect({
     <label className={cn('min-w-36', className)}>
       <span className="mb-1 block text-xs font-medium text-fg-muted">{label}</span>
       {name ? <input ref={inputRef} type="hidden" name={name} value={selected} /> : null}
+      <span id={selectionDescriptionId} className="sr-only">
+        {selectionDescription}
+      </span>
       {search ? (
         <SearchableMultiSelect
           trigger={trigger}
