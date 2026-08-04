@@ -190,7 +190,7 @@ TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-pr
 # audit/backfill jobs persist reconciliation_runs metrics, including
 # release-gate failures for audit runs.
 pnpm check:web-bundle                 # scan built Next server chunks after a web build
-pnpm e2e                              # Playwright core journeys; requires compose infra + migrations
+pnpm e2e                              # Playwright core journeys; requires compose infra + migrations + 4 GiB free disk space
 pnpm e2e:prod-smoke                   # build + standalone-server smoke; requires compose infra + migrations
 pnpm e2e:setup / pnpm e2e:cleanup     # seed/remove deterministic e2e users and team
 pnpm dev:seed                         # seed local demo data with disabled fake integrations and reconciliation provenance

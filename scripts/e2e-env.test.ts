@@ -3,7 +3,12 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { buildE2eEnv, buildE2eWebServerConfig } from './e2e-env.js';
+import {
+  assertE2eDiskCapacity,
+  buildE2eEnv,
+  buildE2eWebServerConfig,
+  MIN_E2E_FREE_DISK_BYTES,
+} from './e2e-env.js';
 
 const dockerPorts = new Map<string, string>([
   ['timeline-e2e-postgres-1:5432', '55432'],
@@ -199,6 +204,23 @@ function lookupPort(container: string, port: number): string | null {
   assert.throws(
     () => buildE2eWebServerConfig({ E2E_WEB_PORT: '3000; rm -rf /' }),
     /Invalid E2E_WEB_PORT/,
+  );
+}
+
+{
+  assert.doesNotThrow(() =>
+    assertE2eDiskCapacity('/workspace', () => ({
+      bavail: 2,
+      bsize: MIN_E2E_FREE_DISK_BYTES,
+    })),
+  );
+  assert.throws(
+    () =>
+      assertE2eDiskCapacity('/workspace', () => ({
+        bavail: 512,
+        bsize: 1024 * 1024,
+      })),
+    /Strict E2E requires at least 4 GiB of free disk space at \/workspace; only 0\.50 GiB is available\./,
   );
 }
 

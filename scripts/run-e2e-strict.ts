@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 
-import { buildE2eEnv } from './e2e-env.js';
+import { assertE2eDiskCapacity, buildE2eEnv } from './e2e-env.js';
 
 const forbiddenPatterns = [
   { name: 'missing module', pattern: /MODULE_NOT_FOUND/ },
@@ -34,6 +34,8 @@ if (fixture !== undefined) {
   console.log('Strict E2E log fixture passed');
   process.exit(0);
 }
+
+assertE2eDiskCapacity();
 
 const env = buildE2eEnv();
 

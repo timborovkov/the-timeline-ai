@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { statfsSync } from 'node:fs';
 
 type Env = NodeJS.ProcessEnv;
 type PublishedPortLookup = (container: string, containerPort: number) => string | null;
@@ -7,11 +8,33 @@ type PublishedPortLookup = (container: string, containerPort: number) => string 
 const DEFAULT_DOCKER_INSPECT_TIMEOUT_MS = 5_000;
 const MIN_E2E_WEB_PORT = 10_000;
 const E2E_WEB_PORT_SPAN = 20_000;
+export const MIN_E2E_FREE_DISK_BYTES = 4 * 1024 * 1024 * 1024;
 
 interface BuildE2eEnvOptions {
   publishedPort?: PublishedPortLookup;
   dockerInspectTimeoutMs?: number;
   workspacePath?: string;
+}
+
+interface FileSystemSpace {
+  bavail: number;
+  bsize: number;
+}
+
+type ReadFileSystemSpace = (path: string) => FileSystemSpace;
+
+export function assertE2eDiskCapacity(
+  directory = process.cwd(),
+  readFileSystemSpace: ReadFileSystemSpace = statfsSync,
+): void {
+  const stats = readFileSystemSpace(directory);
+  const availableBytes = stats.bavail * stats.bsize;
+  if (availableBytes >= MIN_E2E_FREE_DISK_BYTES) return;
+
+  const availableGiB = (availableBytes / 1024 ** 3).toFixed(2);
+  throw new Error(
+    `Strict E2E requires at least 4 GiB of free disk space at ${directory}; only ${availableGiB} GiB is available. Clear generated build/cache artifacts or use a filesystem with more capacity.`,
+  );
 }
 
 function publishedPort(
