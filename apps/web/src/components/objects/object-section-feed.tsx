@@ -243,36 +243,37 @@ function factSharedObjects(value: unknown): SharedFactObject[] {
 
 function SharedFactObjects({ objects }: { objects: SharedFactObject[] }) {
   const label = `Fact (${objects.length})`;
+  const objectNoun = `object${objects.length === 1 ? '' : 's'}`;
   return (
-    <span className="group relative inline-flex shrink-0">
-      <button
-        type="button"
-        aria-label={`${objects.length} other object${objects.length === 1 ? '' : 's'} share this fact`}
-        className="rounded-sm border border-signal/30 bg-signal-soft px-2 py-0.5 text-xs text-signal outline-none transition hover:border-signal/60 hover:bg-signal/20 focus-visible:border-signal focus-visible:ring-2 focus-visible:ring-signal/30"
-      >
+    <details className="group relative inline-flex shrink-0">
+      <summary className="cursor-pointer list-none rounded-sm border border-signal/30 bg-signal-soft px-2 py-0.5 text-xs text-signal transition hover:border-signal/60 hover:bg-signal/20 marker:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg">
         {label}
-      </button>
-      <span className="absolute right-0 top-full z-20 hidden w-64 pt-2 group-hover:block group-focus-within:block">
-        <span className="block rounded-sm border border-border bg-background p-2 shadow-lg">
-          <span className="block px-2 pb-1 text-[11px] text-fg-dim">Objects sharing this fact</span>
-          <span className="block max-h-56 overflow-y-auto">
-            {objects.map((object) => (
-              <a
-                key={`${object.id}:${object.role}`}
-                href={`/app/objects/${object.id}`}
-                className="block rounded-sm px-2 py-1.5 hover:bg-surface focus-visible:bg-surface focus-visible:outline-none"
-              >
-                <span className="block truncate font-medium">
-                  {displayText(object.canonicalName)}
-                </span>
-                <span className="block text-[11px] text-fg-dim">
-                  {displayText(object.type)} · {displayText(object.role)}
-                </span>
-              </a>
-            ))}
-          </span>
+        <span className="sr-only">
+          Show {objects.length} other {objectNoun} sharing this fact
         </span>
-      </span>
-    </span>
+      </summary>
+      <div className="absolute right-0 top-full z-20 hidden w-64 pt-2 group-open:block">
+        <div className="rounded-sm border border-border bg-background p-2 shadow-lg">
+          <p className="px-2 pb-1 text-[11px] text-fg-dim">Objects sharing this fact</p>
+          <ul className="max-h-56 overflow-y-auto">
+            {objects.map((object) => (
+              <li key={`${object.id}:${object.role}`}>
+                <a
+                  href={`/app/objects/${object.id}`}
+                  className="block rounded-sm px-2 py-1.5 hover:bg-surface focus-visible:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-inset"
+                >
+                  <span className="block truncate font-medium">
+                    {displayText(object.canonicalName)}
+                  </span>
+                  <span className="block text-[11px] text-fg-dim">
+                    {displayText(object.type)} · {displayText(object.role)}
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </details>
   );
 }

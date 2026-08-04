@@ -214,6 +214,34 @@ describe('ObjectSectionFeed', () => {
     expect(html).toContain('Mia Chen');
   });
 
+  it('uses a native disclosure for shared objects', async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      createElement(ObjectSectionFeed, {
+        objectId: 'object-1',
+        section: 'facts',
+        title: 'Facts',
+      }),
+    );
+
+    const details = container.querySelector('details');
+    expect(details?.open).toBe(false);
+    expect(container.querySelector('details > div')?.className).toContain('group-open:block');
+    expect(container.querySelector('details > div')?.className).not.toContain('group-hover:block');
+    expect(screen.getByText('Fact (2)').closest('summary')).toBeTruthy();
+    expect(screen.getByText('Fact (2)').closest('summary')?.textContent).toContain(
+      'Show 2 other objects sharing this fact',
+    );
+
+    await user.click(screen.getByText('Fact (2)'));
+
+    expect(details?.open).toBe(true);
+    expect(screen.getByRole('link', { name: /Northwind/i })).toHaveProperty(
+      'href',
+      'http://localhost:3000/app/objects/object-2',
+    );
+  });
+
   it('does not render a fake end control when a section has no next page', () => {
     render(
       createElement(ObjectSectionFeed, {
