@@ -73,7 +73,7 @@ export function Coachmark({ storageKey, children, className }: CoachmarkProps) {
           }
           setDismissed(true);
         }}
-        className="grid size-6 shrink-0 place-items-center rounded-sm text-fg-muted hover:bg-surface-2 hover:text-fg"
+        className="grid size-6 shrink-0 place-items-center rounded-sm text-fg-muted hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg focus-visible:ring-offset-2 focus-visible:ring-offset-bg forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2"
       >
         <X className="size-3.5" />
       </button>

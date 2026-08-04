@@ -235,6 +235,26 @@ describe('SavedMeetingForm', () => {
     expect(help.id).toBe('saved-times-help');
   });
 
+  it('announces minutes for recurring schedule duration inputs', async () => {
+    const user = userEvent.setup();
+    render(<SavedMeetingForm defaultTimezone="UTC" />);
+
+    await user.click(screen.getByRole('checkbox', { name: 'Add a recurring schedule' }));
+
+    expect(screen.getByLabelText('Meeting duration').getAttribute('aria-describedby')).toBe(
+      'saved-duration-unit',
+    );
+    expect(screen.getByLabelText('Join before start').getAttribute('aria-describedby')).toBe(
+      'saved-join-offset-unit',
+    );
+    expect(screen.getByText('minutes', { selector: '#saved-duration-unit' }).textContent).toBe(
+      'minutes',
+    );
+    expect(screen.getByText('minutes', { selector: '#saved-join-offset-unit' }).textContent).toBe(
+      'minutes',
+    );
+  });
+
   it('resets the submitted form after the async create action resolves', async () => {
     const user = userEvent.setup();
     render(<SavedMeetingForm defaultTimezone="UTC" />);

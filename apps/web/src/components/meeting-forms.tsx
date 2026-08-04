@@ -218,14 +218,21 @@ function NumberWithUnit({
       <Input
         id={id}
         name={name}
+        aria-describedby={`${id}-unit`}
         type="number"
         min={min}
         max={max}
         defaultValue={defaultValue}
         className="pr-16"
       />
-      <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground"
+      >
         min
+      </span>
+      <span id={`${id}-unit`} className="sr-only">
+        minutes
       </span>
     </div>
   );
