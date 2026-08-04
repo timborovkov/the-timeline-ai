@@ -34,6 +34,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@firecrawl/pdf-inspector": "1.12.0",
     "@sentry/node": "^10.59.0",
     "@timeline/db": "workspace:*",
     "@timeline/shared": "workspace:*",

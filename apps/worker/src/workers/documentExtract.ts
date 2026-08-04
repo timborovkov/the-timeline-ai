@@ -1,3 +1,4 @@
+import { processPdf } from '@firecrawl/pdf-inspector';
 import { type Db, documentChunks, documents, documentVersions } from '@timeline/db';
 import {
   childLogger,
@@ -16,6 +17,20 @@ import { and, eq, sql } from 'drizzle-orm';
 import mammoth from 'mammoth';
 
 import { captureWorkerJobFailure } from '#src/monitoring.js';
+import {
+  type NativePdfExtractResult,
+  type NativePdfType,
+  PDF_NATIVE_MODEL,
+  shouldAcceptNativePdf,
+} from '#src/workers/pdfNativeExtract.js';
+
+export {
+  NATIVE_PDF_MIN_CONFIDENCE,
+  PDF_NATIVE_MODEL,
+  shouldAcceptNativePdf,
+  type NativePdfExtractResult,
+  type NativePdfType,
+} from '#src/workers/pdfNativeExtract.js';
 
 const log = childLogger('worker:document-extract');
 
@@ -37,8 +52,11 @@ export interface DocumentExtractIO {
   ) => Promise<{ body: Buffer; contentType?: string }>;
   /** Enqueue one embed job per chunk. Defaults to the real BullMQ queue. */
   enqueueEmbed: (data: queue.EmbedJobData) => Promise<void>;
-  /** Resolve env. Defaults to the process env via `getEnv()`. Tests can
-   *  override to bypass the OPENROUTER_API_KEY gate. */
+  /**
+   * Gate for vision/OpenRouter. Called only when a route needs
+   * `extractFromMedia` (images, scanned/mixed PDFs). Text, DOCX, and
+   * accepted native PDFs must succeed without OpenRouter.
+   */
   requireEnv: () => void;
   /**
    * Run vision-based OCR / transcription on a binary document. Defaults
@@ -57,6 +75,12 @@ export interface DocumentExtractIO {
    * .docx payload. Defaults to `mammoth.extractRawText`.
    */
   extractDocx: (body: Buffer) => Promise<{ text: string }>;
+  /**
+   * Native PDF classify + markdown via pdf-inspector. Defaults to
+   * `processPdf`. Tests inject fakes to assert accept/reject routing
+   * without loading the napi binary on every case.
+   */
+  extractPdfNative: (body: Buffer) => Promise<NativePdfExtractResult>;
 }
 
 function defaultIO(): DocumentExtractIO {
@@ -86,13 +110,23 @@ function defaultIO(): DocumentExtractIO {
       const result = await mammoth.extractRawText({ buffer: body });
       return { text: result.value };
     },
+    async extractPdfNative(body) {
+      const result = processPdf(body);
+      return {
+        pdfType: result.pdfType as NativePdfType,
+        confidence: result.confidence,
+        hasEncodingIssues: result.hasEncodingIssues,
+        ...(result.markdown !== undefined ? { markdown: result.markdown } : {}),
+        ...(result.title ? { title: result.title } : {}),
+      };
+    },
   };
 }
 
 // Code-version tag stamped on every successful extraction so the
 // `redocument-extract` script can re-drive jobs whose chunking policy
 // predates a change.
-const EXTRACT_CODE_VERSION = '2026-05-a';
+const EXTRACT_CODE_VERSION = '2026-08-a';
 
 // Cap on document size we will pull into memory for processing. Above
 // this, the worker stamps the version as 'failed' with a clear message
@@ -104,16 +138,13 @@ const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
  * Phase 9 document extract worker. One job per `document_versions.id`:
  *   1. Advisory-lock by version id (cross-process serialisation).
  *   2. Load version + document; bail unrecoverably on mismatch / missing.
- *   3. Privacy gate: only `visibility='team'` documents process today.
- *   4. Download the blob from RustFS.
- *   5. Route by content type → text. Today supports text/markdown only.
- *      PDF, DOCX, and image (OCR / vision) routes are scaffolded but
- *      stamp the version as 'failed' so the surface area is honest —
- *      adding extractors is a follow-up PR that does not change the
- *      pipeline or schema.
- *   6. chunkText() to a uniform ~800/120 budget.
- *   7. Insert document_chunks rows + enqueue an embed job per chunk.
- *   8. Stamp version status = 'chunked' (embed promotes to 'embedded').
+ *   3. Download the blob from RustFS (or defer oversized versions).
+ *   4. Route by content type → text:
+ *        text/* → UTF-8; DOCX → mammoth; TextBased PDF → pdf-inspector;
+ *        scanned/mixed PDF + images → vision OCR.
+ *   5. chunkText() to a uniform ~800/120 budget.
+ *   6. Insert document_chunks rows + enqueue an embed job per chunk.
+ *   7. Stamp version status = 'chunked' (embed promotes to 'embedded').
  *
  * Idempotency: the advisory lock + (document_version_id, chunk_index)
  * unique index together mean a duplicate enqueue is safe (the second
@@ -165,7 +196,8 @@ export async function processDocumentExtractJob(
   io: DocumentExtractIO = defaultIO(),
 ): Promise<DocumentExtractResult> {
   const { documentVersionId, teamId, targetCollection } = data;
-  io.requireEnv();
+  // OpenRouter is gated lazily inside routeContentToText only when a
+  // vision path is taken. Text / DOCX / accepted native PDFs work without it.
 
   const lockKey = sql`hashtextextended(${documentVersionId}, 0)`;
 
@@ -474,19 +506,17 @@ export function startDocumentExtractWorker(
 }
 
 /**
- * Route a document body to plain text. Returns `{ text: null }` when no
+ * Route a document body to plain text. Returns `{ failure }` when no
  * extractor matches — the caller stamps the version row 'failed' and
  * the operator can revisit.
  *
  * Routes:
  *   - text/*, json, xml, recognised text-ish extensions → utf-8 read +
  *     NUL-byte heuristic against accidentally treating binary as text.
- *   - application/pdf, image/* → `io.extractFromMedia` (vision LLM via
- *     OpenRouter). Returns the model id so the version row records
- *     which model produced the text.
  *   - DOCX (Office Open XML) → `io.extractDocx` (mammoth raw-text).
- *     Native extraction is faster and free; vision is reserved for
- *     formats that need OCR.
+ *   - application/pdf → native pdf-inspector when TextBased + confident;
+ *     otherwise vision OCR via `io.extractFromMedia`.
+ *   - image/* → `io.extractFromMedia` (vision LLM via OpenRouter).
  *   - Anything else → `{ failure }` with an honest reason string. Two
  *     failure modes the caller must distinguish:
  *       * "content_type=… not supported" — no extractor for the MIME
@@ -497,6 +527,44 @@ export function startDocumentExtractWorker(
 type RouteResult =
   | { representations: ExtractedRepresentation[]; model?: string; suggestedTitle?: string }
   | { failure: string };
+
+async function extractViaVision(
+  io: DocumentExtractIO,
+  input: { body: Buffer; mediaType: string; filename: string },
+): Promise<RouteResult> {
+  io.requireEnv();
+  const result = await io.extractFromMedia(input);
+  return mediaRepresentations(result, true);
+}
+
+async function routePdfContent(
+  input: { body: Buffer; name: string },
+  io: DocumentExtractIO,
+): Promise<RouteResult> {
+  let native: NativePdfExtractResult | null = null;
+  try {
+    native = await io.extractPdfNative(input.body);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    log.warn(
+      { err: message, filename: input.name },
+      'native PDF extract failed; falling back to vision',
+    );
+  }
+  if (native && shouldAcceptNativePdf(native)) {
+    const markdown = native.markdown?.trim() ?? '';
+    return {
+      representations: [{ kind: 'source_text', text: markdown }],
+      model: PDF_NATIVE_MODEL,
+      ...(native.title ? { suggestedTitle: native.title } : {}),
+    };
+  }
+  return extractViaVision(io, {
+    body: input.body,
+    mediaType: 'application/pdf',
+    filename: input.name,
+  });
+}
 
 async function routeContentToText(
   input: { contentType: string; body: Buffer; name: string },
@@ -538,16 +606,10 @@ async function routeContentToText(
     const { text } = await io.extractDocx(input.body);
     return { representations: [{ kind: 'source_text', text }] };
   }
-  // PDF and image routes both go through the vision model. Vision can
-  // also handle scanned PDFs (no text layer) and screenshots without us
-  // needing to detect which kind we have.
+  // PDFs: prefer native pdf-inspector for TextBased docs; vision for
+  // scanned/mixed/unreliable extractions (and when native throws).
   if (ct === 'application/pdf' || /\.pdf$/i.test(input.name)) {
-    const result = await io.extractFromMedia({
-      body: input.body,
-      mediaType: 'application/pdf',
-      filename: input.name,
-    });
-    return mediaRepresentations(result, true);
+    return routePdfContent(input, io);
   }
   // Image extension fallback matches the PDF/DOCX behaviour above: when
   // RustFS loses the explicit Content-Type on PUT we still route the
@@ -571,12 +633,11 @@ async function routeContentToText(
   const extLower = extMatch?.[1]?.toLowerCase();
   const fallbackImageMime = extLower ? IMAGE_EXT_TO_MIME[extLower] : undefined;
   if (ct.startsWith('image/') || fallbackImageMime) {
-    const result = await io.extractFromMedia({
+    return extractViaVision(io, {
       body: input.body,
       mediaType: ct.startsWith('image/') ? ct : (fallbackImageMime ?? 'image/png'),
       filename: input.name,
     });
-    return mediaRepresentations(result, true);
   }
   // audio/video and anything else: out of scope for the extract worker.
   // Audio goes through the transcribe worker; video has no route yet.
