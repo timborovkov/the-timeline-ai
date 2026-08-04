@@ -135,10 +135,18 @@ export interface SyncPartialFailure {
   error: string;
 }
 
+export interface SyncContinuation {
+  resourceType: string;
+  externalId: string;
+  surface?: string;
+  /** Earliest safe time to resume a durable provider checkpoint. */
+  retryAt?: Date;
+}
+
 export interface SyncResult {
   partialFailures?: SyncPartialFailure[];
   /** Provider resources that must be resumed promptly before their page cursor expires. */
-  continuations?: { resourceType: string; externalId: string }[];
+  continuations?: SyncContinuation[];
 }
 
 export interface SyncTarget {
@@ -277,6 +285,42 @@ export class ProviderRateLimitError extends Error {
     this.reason = input.reason;
     if (input.externalAccountId) this.externalAccountId = input.externalAccountId;
   }
+}
+
+interface SyncContinuationCarrier {
+  syncContinuation?: SyncContinuation;
+}
+
+/**
+ * Keep a resource checkpoint attached to a provider error so the worker can
+ * resume exactly that resource once a provider pause expires.
+ */
+export function attachSyncContinuation<T extends Error>(
+  err: T,
+  continuation: SyncContinuation,
+): T & SyncContinuationCarrier {
+  return Object.assign(err, { syncContinuation: continuation });
+}
+
+export function syncContinuationFromError(err: unknown): SyncContinuation | null {
+  if (typeof err !== 'object' || err === null || !('syncContinuation' in err)) return null;
+  const continuation = (err as SyncContinuationCarrier).syncContinuation;
+  if (
+    !continuation ||
+    typeof continuation.resourceType !== 'string' ||
+    continuation.resourceType.length === 0 ||
+    typeof continuation.externalId !== 'string' ||
+    continuation.externalId.length === 0
+  ) {
+    return null;
+  }
+  return {
+    resourceType: continuation.resourceType,
+    externalId: continuation.externalId,
+    ...(typeof continuation.surface === 'string' && continuation.surface.length > 0
+      ? { surface: continuation.surface }
+      : {}),
+  };
 }
 
 export function isProviderRateLimitError(err: unknown): err is ProviderRateLimitError {

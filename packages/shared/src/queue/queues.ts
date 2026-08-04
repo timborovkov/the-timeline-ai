@@ -795,6 +795,8 @@ export type IntegrationSyncJobData =
       externalId: string;
       surface?: string;
       reason?: string;
+      /** Bounded handoff count used when a continuation finds its integration lock busy. */
+      continuationAttempt?: number;
     };
 
 export interface WebhookDeliveryJobData {
@@ -865,7 +867,10 @@ function integrationSyncJobId(data: IntegrationSyncJobData): string | undefined 
   ]);
 }
 
-export async function enqueueIntegrationSyncJob(data: IntegrationSyncJobData): Promise<void> {
+export async function enqueueIntegrationSyncJob(
+  data: IntegrationSyncJobData,
+  opts: { delayMs?: number } = {},
+): Promise<void> {
   // Backfill and broad incremental jobs intentionally avoid jobId dedupe:
   // idempotency lives in raw_event dedup keys, per-resource cursors, and the
   // worker's advisory lock. Provider-policy reconciliation and targeted webhook
@@ -893,7 +898,15 @@ export async function enqueueIntegrationSyncJob(data: IntegrationSyncJobData): P
       }
     }
   }
-  await q.add('integration-sync', data, jobId ? { jobId } : undefined);
+  const addOptions = {
+    ...(jobId ? { jobId } : {}),
+    ...(opts.delayMs && opts.delayMs > 0 ? { delay: opts.delayMs } : {}),
+  };
+  await q.add(
+    'integration-sync',
+    data,
+    Object.keys(addOptions).length > 0 ? addOptions : undefined,
+  );
 }
 
 /**

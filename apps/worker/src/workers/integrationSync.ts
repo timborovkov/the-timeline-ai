@@ -31,6 +31,21 @@ import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring
 const log = childLogger('worker:integration-sync');
 type NativeSyncProvider = integrationsLib.NativeProviderId;
 const HARVESTED_DOCUMENT_SOURCE_SNAPSHOT_VERSION = 'integration-document-source-snapshot-2026-07';
+const PAGINATION_LOCK_RETRY_DELAY_MS = 5_000;
+const MAX_PAGINATION_LOCK_RETRY_ATTEMPTS = 3;
+
+type TargetedIntegrationSyncJob = Extract<queue.IntegrationSyncJobData, { kind: 'targeted' }>;
+
+function delayUntil(retryAt: Date): number | undefined {
+  const delayMs = retryAt.getTime() - Date.now();
+  return delayMs > 0 ? delayMs : undefined;
+}
+
+function isProviderPaginationContinuation(
+  target: TargetedIntegrationSyncJob | undefined,
+): target is TargetedIntegrationSyncJob {
+  return target?.reason === 'provider_pagination_continuation';
+}
 
 interface IntegrationSyncDeps {
   db: Db;
@@ -326,7 +341,7 @@ export async function runOneIntegration(
   db: Db,
   integrationId: string,
   kind: 'backfill' | 'incremental' | 'targeted',
-  target?: Extract<queue.IntegrationSyncJobData, { kind: 'targeted' }>,
+  target?: TargetedIntegrationSyncJob,
 ): Promise<void> {
   // Per-integration session-scoped advisory lock. With worker
   // concurrency=2 + no jobId dedup, the 5-min tick can race with a
@@ -351,9 +366,30 @@ export async function runOneIntegration(
   if (!lockedRow?.locked) {
     log.info({ integrationId, kind }, 'integration sync already running — skipping this tick');
     reserved.release();
+    if (isProviderPaginationContinuation(target)) {
+      const attempt = target.continuationAttempt ?? 0;
+      if (attempt < MAX_PAGINATION_LOCK_RETRY_ATTEMPTS) {
+        try {
+          await queue.enqueueIntegrationSyncJob(
+            { ...target, continuationAttempt: attempt + 1 },
+            { delayMs: PAGINATION_LOCK_RETRY_DELAY_MS },
+          );
+        } catch (err) {
+          log.warn(
+            { err, integrationId, target },
+            'failed to requeue blocked provider pagination continuation',
+          );
+        }
+      } else {
+        log.warn(
+          { integrationId, target, attempt },
+          'provider pagination continuation exhausted lock-contention retries',
+        );
+      }
+    }
     return;
   }
-  const continuationJobs: Extract<queue.IntegrationSyncJobData, { kind: 'targeted' }>[] = [];
+  const continuationJobs: { data: TargetedIntegrationSyncJob; delayMs?: number }[] = [];
   try {
     const integration = await integrationsLib.adminLoadIntegration(db, integrationId);
     if (!integration) {
@@ -437,6 +473,13 @@ export async function runOneIntegration(
         },
         { integrationId },
       );
+      const pauseDelayMs = delayUntil(pause.retryAt);
+      if (isProviderPaginationContinuation(target)) {
+        continuationJobs.push({
+          data: target,
+          ...(pauseDelayMs ? { delayMs: pauseDelayMs } : {}),
+        });
+      }
       return;
     }
     const providerBudgetPause = await loadFirstProviderBudgetPause(db, integration, tokens);
@@ -457,6 +500,13 @@ export async function runOneIntegration(
         },
         { integrationId },
       );
+      const providerBudgetPauseDelayMs = delayUntil(providerBudgetPause.retryAt);
+      if (isProviderPaginationContinuation(target)) {
+        continuationJobs.push({
+          data: target,
+          ...(providerBudgetPauseDelayMs ? { delayMs: providerBudgetPauseDelayMs } : {}),
+        });
+      }
       return;
     }
     const provider = integrationsLib.getProvider(integration.provider);
@@ -624,14 +674,21 @@ export async function runOneIntegration(
         });
       }
       for (const continuation of syncResult?.continuations ?? []) {
+        const continuationDelayMs = continuation.retryAt
+          ? delayUntil(continuation.retryAt)
+          : undefined;
         continuationJobs.push({
-          kind: 'targeted',
-          integrationId,
-          teamId: integration.teamId,
-          triggeredBy: 'reconcile',
-          resourceType: continuation.resourceType,
-          externalId: continuation.externalId,
-          reason: 'provider_pagination_continuation',
+          data: {
+            kind: 'targeted',
+            integrationId,
+            teamId: integration.teamId,
+            triggeredBy: 'reconcile',
+            resourceType: continuation.resourceType,
+            externalId: continuation.externalId,
+            ...(continuation.surface ? { surface: continuation.surface } : {}),
+            reason: 'provider_pagination_continuation',
+          },
+          ...(continuationDelayMs ? { delayMs: continuationDelayMs } : {}),
         });
       }
       await integrationsLib.adminRecordAudit(
@@ -676,6 +733,31 @@ export async function runOneIntegration(
           },
           { integrationId },
         );
+        const continuation =
+          integrationsLib.syncContinuationFromError(err) ??
+          (isProviderPaginationContinuation(target)
+            ? {
+                resourceType: target.resourceType,
+                externalId: target.externalId,
+                ...(target.surface ? { surface: target.surface } : {}),
+              }
+            : null);
+        if (continuation) {
+          const continuationDelayMs = delayUntil(rateLimit.retryAt);
+          continuationJobs.push({
+            data: {
+              kind: 'targeted',
+              integrationId,
+              teamId: integration.teamId,
+              triggeredBy: 'reconcile',
+              resourceType: continuation.resourceType,
+              externalId: continuation.externalId,
+              ...(continuation.surface ? { surface: continuation.surface } : {}),
+              reason: 'provider_pagination_continuation',
+            },
+            ...(continuationDelayMs ? { delayMs: continuationDelayMs } : {}),
+          });
+        }
         return;
       }
       if (isAuthOrAccessFailure(msg)) {
@@ -719,16 +801,29 @@ export async function runOneIntegration(
       // the lock is auto-released by Postgres anyway.
     }
     reserved.release();
-  }
-  for (const continuationJob of continuationJobs) {
-    await queue.enqueueIntegrationSyncJob(continuationJob);
+    for (const continuationJob of continuationJobs) {
+      try {
+        if (continuationJob.delayMs) {
+          await queue.enqueueIntegrationSyncJob(continuationJob.data, {
+            delayMs: continuationJob.delayMs,
+          });
+        } else {
+          await queue.enqueueIntegrationSyncJob(continuationJob.data);
+        }
+      } catch (err) {
+        log.warn(
+          { err, integrationId, continuationJob },
+          'failed to enqueue provider pagination continuation',
+        );
+      }
+    }
   }
 }
 
 function targetedSelections(
   provider: NativeSyncProvider,
   selections: { kind: string; externalId: string }[],
-  target: Extract<queue.IntegrationSyncJobData, { kind: 'targeted' }>,
+  target: TargetedIntegrationSyncJob,
 ): { kind: string; externalId: string }[] {
   const exact = selections.filter(
     (selection) =>

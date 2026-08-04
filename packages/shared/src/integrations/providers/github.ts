@@ -1,8 +1,9 @@
-import { createSign } from 'node:crypto';
+import { createHash, createSign } from 'node:crypto';
 
 import { getEnv } from '#src/env.js';
 import { externalFetch as fetch } from '#src/http/external-fetch.js';
 import {
+  attachSyncContinuation,
   type IntegrationEvent,
   type IntegrationProvider,
   type OAuthCallbackInput,
@@ -11,6 +12,7 @@ import {
   ProviderRateLimitError,
   type ProviderResource,
   type SyncContext,
+  type SyncContinuation,
   type SyncPartialFailure,
 } from '#src/integrations/types.js';
 import { childLogger } from '#src/logger.js';
@@ -23,8 +25,9 @@ import { childLogger } from '#src/logger.js';
 //
 // Sync surface per selected repo:
 //   - Pull requests (open + closed, with merged_at)
-//   - PR reviews
+//   - PR review summaries + inline review comments
 //   - Issues (filtered to exclude PR rows)
+//   - Issue / pull-request conversation comments
 //   - Releases
 //   - Recent commits on the default branch
 //   - Workflow runs (CI state)
@@ -94,6 +97,34 @@ interface GithubRequestBudget {
 interface GithubConditionalValidator {
   etag?: string;
   lastModified?: string;
+}
+
+interface GithubConversationContinuation {
+  /** Exact `since` value for the in-progress ascending comment scan. */
+  since: string;
+  /** Next page in a bounded drain or replay pass. */
+  page: number;
+  /**
+   * A capped drain is provisional because GitHub's offset pages can move.
+   * Once it reaches the end, replay from page one before promoting its
+   * timestamp boundary. Cursors written by the previous implementation omit
+   * this and are treated as a replay from page one.
+   */
+  phase?: 'drain' | 'replay';
+  /** Latest GitHub timestamp observed while completing this provisional scan. */
+  max_updated_at?: string;
+  /** Rolling fingerprint of the preceding complete traversal to verify. */
+  expected_fingerprint?: string;
+  /** Partial rolling fingerprint for the currently resumable traversal. */
+  scan_fingerprint?: string;
+  /** Number of immediate-changing replay boundaries handled in this checkpoint. */
+  replay_attempts?: number;
+  /** The persisted backoff deadline for the next replay attempt. */
+  replay_retry_at?: string;
+  /** Number of consecutive transient fetch failures for this checkpoint. */
+  recovery_attempts?: number;
+  /** The persisted backoff deadline for the next transient recovery attempt. */
+  recovery_retry_at?: string;
 }
 
 type GithubConditionalResult<T> =
@@ -658,6 +689,36 @@ interface GhReview {
   submitted_at?: string | null;
   user: { login: string } | null;
   html_url: string;
+  pull_request_url?: string | null;
+}
+
+type GithubConversationParentType = 'issue' | 'pull_request';
+type GithubCommentAction = 'created' | 'updated' | 'deleted';
+
+interface GhIssueComment {
+  id: number;
+  body: string | null;
+  html_url: string;
+  issue_url: string;
+  created_at: string;
+  updated_at: string;
+  user: { login: string } | null;
+  parent_type?: GithubConversationParentType;
+  parent_number?: number;
+  parent_url?: string;
+}
+
+interface GhReviewComment {
+  id: number;
+  body: string | null;
+  html_url: string;
+  pull_request_url: string;
+  created_at: string;
+  updated_at: string;
+  user: { login: string } | null;
+  path?: string | null;
+  line?: number | null;
+  pull_request_number?: number;
 }
 
 interface GhRelease {
@@ -707,6 +768,14 @@ interface RepoCursor {
   prs_since?: string;
   /** ISO timestamp; used for issue polling. */
   issues_since?: string;
+  /** ISO timestamp; used for issue and pull-request conversation comments. */
+  issue_comments_since?: string;
+  /** In-progress ascending issue-comment scan, retained across capped or failed syncs. */
+  issue_comments_continuation?: GithubConversationContinuation;
+  /** ISO timestamp; used for inline pull-request review comments. */
+  pr_review_comments_since?: string;
+  /** In-progress ascending review-comment scan, retained across capped or failed syncs. */
+  pr_review_comments_continuation?: GithubConversationContinuation;
   /** ISO timestamp; used for release polling. */
   releases_since?: string;
   /** ISO timestamp; used for workflow run polling. */
@@ -728,9 +797,25 @@ interface RepoCursor {
 }
 
 const MAX_SYNC_PAGES = 20;
+const GITHUB_CONVERSATION_FINGERPRINT_SEED = 'github-conversation-scan-v1';
+const MAX_GITHUB_CONVERSATION_REPLAY_ATTEMPTS = 3;
+const MAX_GITHUB_CONVERSATION_RECOVERY_ATTEMPTS = 3;
+const GITHUB_CONVERSATION_RETRY_INITIAL_DELAY_MS = 5_000;
+const GITHUB_CONVERSATION_RETRY_MAX_DELAY_MS = 60_000;
 const GITHUB_RELEASE_SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const GITHUB_WORKFLOW_RUN_SYNC_INTERVAL_MS = 2 * 60 * 60 * 1000;
-type GithubRepoSurface = 'prs' | 'issues' | 'releases' | 'commits' | 'workflow_runs';
+// GitHub comment `since` is strictly after a seconds-precision timestamp. Keep
+// the previous second in every poll so a row that becomes visible late at the
+// high-water second is not skipped. Event-writer dedup makes the replay safe.
+const GITHUB_CONVERSATION_CURSOR_LOOKBACK_MS = 1000;
+type GithubRepoSurface =
+  | 'prs'
+  | 'issues'
+  | 'issue_comments'
+  | 'pr_review_comments'
+  | 'releases'
+  | 'commits'
+  | 'workflow_runs';
 
 interface GithubSurfaceFailure {
   repo: string;
@@ -741,6 +826,39 @@ interface GithubSurfaceFailure {
 
 function maxIso(current: string | undefined, candidate: string): string {
   return !current || candidate > current ? candidate : current;
+}
+
+function appendGithubConversationFingerprint(
+  previous: string | undefined,
+  rows: readonly string[],
+): string {
+  // Persisting a rolling digest keeps a complete multi-job replay bounded while
+  // still detecting a row inserted, removed, or revised before a resumed page.
+  return createHash('sha256')
+    .update(previous ?? GITHUB_CONVERSATION_FINGERPRINT_SEED)
+    .update('\n')
+    .update(JSON.stringify(rows))
+    .digest('hex');
+}
+
+function githubConversationRetryAt(attempt: number): Date {
+  const delayMs = Math.min(
+    GITHUB_CONVERSATION_RETRY_INITIAL_DELAY_MS * 2 ** Math.max(0, attempt - 1),
+    GITHUB_CONVERSATION_RETRY_MAX_DELAY_MS,
+  );
+  return new Date(Date.now() + delayMs);
+}
+
+function githubConversationAttempt(value: unknown): number {
+  return Number.isSafeInteger(value) && typeof value === 'number' && value >= 0 ? value : 0;
+}
+
+function conversationCursorLookback(since: string): string {
+  const parsed = Date.parse(since);
+  if (Number.isNaN(parsed)) return since;
+  return new Date(parsed - GITHUB_CONVERSATION_CURSOR_LOOKBACK_MS)
+    .toISOString()
+    .replace('.000Z', 'Z');
 }
 
 function commitTimestamp(commit: GhCommit): string {
@@ -797,7 +915,7 @@ function surfaceCursor(
       legacy.commit_gap_high_water_sha = legacyCursor.commit_gap_high_water_sha;
     }
     if (legacyCursor.commit_gap_until) legacy.commit_gap_until = legacyCursor.commit_gap_until;
-  } else {
+  } else if (surface === 'workflow_runs') {
     const since = legacyCursor.workflow_runs_since ?? legacyCursor.since;
     if (since) {
       legacy.workflow_runs_since = since;
@@ -1022,9 +1140,150 @@ function issueToEvent(repo: string, issue: GhIssue): IntegrationEvent | null {
   };
 }
 
+interface GithubConversationParent {
+  type: GithubConversationParentType;
+  number: number;
+  external_id: string;
+  url: string;
+}
+
+function githubConversationParent(
+  repo: string,
+  type: GithubConversationParentType,
+  number: number,
+): GithubConversationParent {
+  const path = type === 'pull_request' ? 'pull' : 'issues';
+  return {
+    type,
+    number,
+    external_id:
+      type === 'pull_request' ? `${repo}#${String(number)}` : `${repo}#issue:${String(number)}`,
+    url: `https://github.com/${repo}/${path}/${String(number)}`,
+  };
+}
+
+function githubConversationParentFromUrl(
+  repo: string,
+  url: string | null | undefined,
+): GithubConversationParent | null {
+  if (!url) return null;
+  try {
+    const match = /\/(issues|pull)\/(\d+)(?:\/|$)/u.exec(new URL(url).pathname);
+    if (!match?.[1] || !match[2]) return null;
+    const number = Number(match[2]);
+    if (!Number.isSafeInteger(number) || number <= 0) return null;
+    return githubConversationParent(repo, match[1] === 'pull' ? 'pull_request' : 'issue', number);
+  } catch {
+    return null;
+  }
+}
+
+function githubIssueCommentParent(
+  repo: string,
+  comment: GhIssueComment,
+): GithubConversationParent | null {
+  if (comment.parent_number && comment.parent_type) {
+    return githubConversationParent(repo, comment.parent_type, comment.parent_number);
+  }
+  return (
+    githubConversationParentFromUrl(repo, comment.html_url) ??
+    githubConversationParentFromUrl(repo, comment.parent_url) ??
+    githubConversationParentFromUrl(repo, comment.issue_url)
+  );
+}
+
+function githubReviewCommentParent(
+  repo: string,
+  comment: GhReviewComment,
+): GithubConversationParent | null {
+  if (comment.pull_request_number) {
+    return githubConversationParent(repo, 'pull_request', comment.pull_request_number);
+  }
+  return (
+    githubConversationParentFromUrl(repo, comment.html_url) ??
+    githubConversationParentFromUrl(repo, comment.pull_request_url)
+  );
+}
+
+interface GithubCommentRevisionState {
+  body: string | null;
+  author: string | null;
+  path: string | null;
+  line: number | null;
+  deleted: boolean;
+}
+
+function githubCommentRevisionDiscriminator(input: {
+  createdAt: string;
+  updatedAt: string;
+  state: GithubCommentRevisionState;
+}): string {
+  // GitHub exposes only second-precision edit timestamps. A revision identity
+  // must therefore describe the normalized material state, rather than the
+  // delivery action: a REST snapshot of a create-then-edit second has no way
+  // to reproduce the webhook's action history. Tombstones remain distinct
+  // material states without coupling ordinary create/edit snapshots to action.
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        created_at: input.createdAt,
+        updated_at: input.updatedAt,
+        body: input.state.body,
+        author: input.state.author,
+        path: input.state.path,
+        line: input.state.line,
+        deleted: input.state.deleted,
+      }),
+    )
+    .digest('hex');
+}
+
+function githubCommentDedupKey(input: {
+  kind: 'issue_comment' | 'review_comment';
+  id: number;
+  createdAt: string;
+  updatedAt: string;
+  action: GithubCommentAction | null;
+  state: GithubCommentRevisionState;
+}): string {
+  const base = `github:${input.kind}:${String(input.id)}:${input.updatedAt}`;
+  return `${base}:state:${githubCommentRevisionDiscriminator({
+    createdAt: input.createdAt,
+    updatedAt: input.updatedAt,
+    state: { ...input.state, deleted: input.action === 'deleted' },
+  })}`;
+}
+
+function githubConversationContentText(input: {
+  kind: string;
+  repo: string;
+  parent: GithubConversationParent;
+  author: { login: string } | null;
+  url: string;
+  body: string | null;
+  timestamps: { label: string; value: string | null | undefined }[];
+  context?: string | null;
+}): string {
+  const parentKind = input.parent.type === 'pull_request' ? 'PR' : 'Issue';
+  return [
+    `GitHub ${input.kind} on ${parentKind} ${input.repo}#${String(input.parent.number)}`,
+    `Author: ${input.author ? `@${input.author.login}` : 'unavailable'}`,
+    `Parent URL: ${input.parent.url}`,
+    `URL: ${input.url}`,
+    ...input.timestamps.flatMap(({ label, value }) => (value ? [`${label}: ${value}`] : [])),
+    input.context ? `Context: ${input.context}` : null,
+    `Body: ${input.body ?? '[body unavailable]'}`,
+  ]
+    .filter((line): line is string => line !== null)
+    .join('\n');
+}
+
 function reviewToEvent(repo: string, prNumber: number, review: GhReview): IntegrationEvent | null {
   const ts = review.submitted_at;
   if (!ts) return null;
+  const parent = githubConversationParent(repo, 'pull_request', prNumber);
+  const body = review.body ?? null;
+  const url = review.html_url;
   return {
     dedupKey: `github:review:${String(review.id)}:${ts}`,
     provider: 'github',
@@ -1033,14 +1292,154 @@ function reviewToEvent(repo: string, prNumber: number, review: GhReview): Integr
     eventType: `pr.review.${review.state.toLowerCase()}`,
     occurredAt: new Date(ts),
     actor: review.user ? { externalId: review.user.login, name: review.user.login } : null,
-    contentText: `GitHub PR ${repo}#${String(prNumber)} review (${review.state})${review.body ? `: ${review.body}` : ''}`,
+    contentText: githubConversationContentText({
+      kind: `review (${review.state})`,
+      repo,
+      parent,
+      author: review.user,
+      url,
+      body,
+      timestamps: [{ label: 'Submitted', value: ts }],
+    }),
     extra: {
       github: {
         type: 'review',
         repo,
         pr_number: prNumber,
-        url: review.html_url,
+        body,
+        author: review.user ? { login: review.user.login } : null,
+        url,
+        submitted_at: ts,
+        pull_request_url: review.pull_request_url ?? null,
+        parent,
         state: review.state,
+      },
+    },
+  };
+}
+
+function issueCommentToEvent(
+  repo: string,
+  comment: GhIssueComment,
+  action: GithubCommentAction | null = null,
+): IntegrationEvent | null {
+  const parent = githubIssueCommentParent(repo, comment);
+  if (!parent) return null;
+  const eventAction = action ?? 'updated';
+  const body = comment.body ?? null;
+  const url = comment.html_url || parent.url;
+  return {
+    dedupKey: githubCommentDedupKey({
+      kind: 'issue_comment',
+      id: comment.id,
+      createdAt: comment.created_at,
+      updatedAt: comment.updated_at,
+      action,
+      state: {
+        body,
+        author: comment.user?.login ?? null,
+        path: null,
+        line: null,
+        deleted: false,
+      },
+    }),
+    provider: 'github',
+    externalObjectId: `${parent.external_id}:comment:${String(comment.id)}`,
+    externalEventId: comment.updated_at,
+    eventType: `issue_comment.${eventAction}`,
+    occurredAt: new Date(comment.updated_at),
+    actor: comment.user ? { externalId: comment.user.login, name: comment.user.login } : null,
+    contentText: githubConversationContentText({
+      kind: 'comment',
+      repo,
+      parent,
+      author: comment.user,
+      url,
+      body,
+      timestamps: [
+        { label: 'Created', value: comment.created_at },
+        { label: 'Updated', value: comment.updated_at },
+      ],
+    }),
+    extra: {
+      github: {
+        type: 'issue_comment',
+        repo,
+        body,
+        author: comment.user ? { login: comment.user.login } : null,
+        url,
+        issue_url: comment.issue_url,
+        created_at: comment.created_at,
+        updated_at: comment.updated_at,
+        parent,
+      },
+    },
+  };
+}
+
+function reviewCommentToEvent(
+  repo: string,
+  comment: GhReviewComment,
+  action: GithubCommentAction | null = null,
+): IntegrationEvent | null {
+  const parent = githubReviewCommentParent(repo, comment);
+  if (!parent) return null;
+  const eventAction = action ?? 'updated';
+  const body = comment.body ?? null;
+  const url = comment.html_url || parent.url;
+  const context = [
+    comment.path ? `File: ${comment.path}` : null,
+    comment.line !== null && comment.line !== undefined ? `Line: ${String(comment.line)}` : null,
+  ]
+    .filter((value): value is string => value !== null)
+    .join(', ');
+  return {
+    dedupKey: githubCommentDedupKey({
+      kind: 'review_comment',
+      id: comment.id,
+      createdAt: comment.created_at,
+      updatedAt: comment.updated_at,
+      action,
+      state: {
+        body,
+        author: comment.user?.login ?? null,
+        path: comment.path ?? null,
+        line: comment.line ?? null,
+        deleted: false,
+      },
+    }),
+    provider: 'github',
+    externalObjectId: `${parent.external_id}:review_comment:${String(comment.id)}`,
+    externalEventId: comment.updated_at,
+    eventType: `pr.review_comment.${eventAction}`,
+    occurredAt: new Date(comment.updated_at),
+    actor: comment.user ? { externalId: comment.user.login, name: comment.user.login } : null,
+    contentText: githubConversationContentText({
+      kind: 'inline review comment',
+      repo,
+      parent,
+      author: comment.user,
+      url,
+      body,
+      timestamps: [
+        { label: 'Created', value: comment.created_at },
+        { label: 'Updated', value: comment.updated_at },
+      ],
+      context,
+    }),
+    extra: {
+      github: {
+        type: 'review_comment',
+        repo,
+        body,
+        author: comment.user ? { login: comment.user.login } : null,
+        url,
+        pull_request_url: comment.pull_request_url,
+        created_at: comment.created_at,
+        updated_at: comment.updated_at,
+        path: comment.path ?? null,
+        line: comment.line ?? null,
+        parent,
       },
     },
   };
@@ -1263,7 +1662,57 @@ function ghReviewFromWebhook(record: Record<string, unknown>): GhReview | null {
     submitted_at: stringValue(record.submitted_at),
     user: userValue(record.user),
     html_url: htmlUrl,
+    pull_request_url: stringValue(record.pull_request_url),
   };
+}
+
+function ghIssueCommentFromWebhook(
+  record: Record<string, unknown>,
+  issue: GhIssue,
+): GhIssueComment | null {
+  const id = numberValue(record.id);
+  const createdAt = stringValue(record.created_at);
+  const updatedAt = stringValue(record.updated_at) ?? createdAt ?? issue.updated_at;
+  if (!id || !updatedAt) return null;
+  return {
+    id,
+    body: stringValue(record.body),
+    html_url: stringValue(record.html_url) ?? issue.html_url,
+    issue_url: stringValue(record.issue_url) ?? issue.html_url,
+    created_at: createdAt ?? updatedAt,
+    updated_at: updatedAt,
+    user: userValue(record.user),
+    parent_type: issue.pull_request ? 'pull_request' : 'issue',
+    parent_number: issue.number,
+    parent_url: issue.html_url,
+  };
+}
+
+function ghReviewCommentFromWebhook(
+  record: Record<string, unknown>,
+  pr: GhPullRequest,
+): GhReviewComment | null {
+  const id = numberValue(record.id);
+  const createdAt = stringValue(record.created_at);
+  const updatedAt = stringValue(record.updated_at) ?? createdAt ?? pr.updated_at;
+  if (!id || !updatedAt) return null;
+  return {
+    id,
+    body: stringValue(record.body),
+    html_url: stringValue(record.html_url) ?? pr.html_url,
+    pull_request_url: stringValue(record.pull_request_url) ?? pr.html_url,
+    created_at: createdAt ?? updatedAt,
+    updated_at: updatedAt,
+    user: userValue(record.user),
+    path: stringValue(record.path),
+    line: numberValue(record.line),
+    pull_request_number: pr.number,
+  };
+}
+
+function webhookCommentAction(value: unknown): GithubCommentAction {
+  const action = stringValue(value);
+  return action === 'created' || action === 'deleted' ? action : 'updated';
 }
 
 function ghReleaseFromWebhook(record: Record<string, unknown>): GhRelease | null {
@@ -1354,6 +1803,7 @@ function githubWebhookEvents(payload: unknown): IntegrationEvent[] {
   const pr = recordValue(record.pull_request);
   const issue = recordValue(record.issue);
   const review = recordValue(record.review);
+  const comment = recordValue(record.comment);
   const release = recordValue(record.release);
   const workflowRun = recordValue(record.workflow_run);
   if (pr) {
@@ -1364,6 +1814,11 @@ function githubWebhookEvents(payload: unknown): IntegrationEvent[] {
     const event = ghIssueFromWebhook(issue);
     const normalized = event ? issueToEvent(repo, event) : null;
     if (normalized) events.push(normalized);
+    const issueComment = event && comment ? ghIssueCommentFromWebhook(comment, event) : null;
+    const commentEvent = issueComment
+      ? issueCommentToEvent(repo, issueComment, webhookCommentAction(record.action))
+      : null;
+    if (commentEvent) events.push(commentEvent);
   }
   if (review && pr) {
     const prNumber = numberValue(pr.number);
@@ -1372,6 +1827,14 @@ function githubWebhookEvents(payload: unknown): IntegrationEvent[] {
       const normalized = reviewToEvent(repo, prNumber, event);
       if (normalized) events.push(normalized);
     }
+  }
+  if (pr && comment && !issue) {
+    const parent = ghPrFromWebhook(pr);
+    const reviewComment = parent ? ghReviewCommentFromWebhook(comment, parent) : null;
+    const commentEvent = reviewComment
+      ? reviewCommentToEvent(repo, reviewComment, webhookCommentAction(record.action))
+      : null;
+    if (commentEvent) events.push(commentEvent);
   }
   if (release) {
     const event = ghReleaseFromWebhook(release);
@@ -1390,25 +1853,61 @@ function githubWebhookEvents(payload: unknown): IntegrationEvent[] {
   return events;
 }
 
+interface GithubConversationSurfaceSyncResult {
+  surface: GithubConversationSurface;
+  failures: GithubSurfaceFailure[];
+  needsContinuation: boolean;
+  retryAt?: Date;
+}
+
 async function syncRepo(
   tokens: GithubTokens,
   repo: string,
   ctx: SyncContext,
-  options: { mode: 'backfill' | 'incremental'; legacyCursor?: RepoCursor },
+  options: {
+    mode: 'backfill' | 'incremental';
+    legacyCursor?: RepoCursor;
+    conversationSurface?: GithubConversationSurface;
+  },
   budget?: GithubRequestBudget,
-): Promise<GithubSurfaceFailure[]> {
+): Promise<{ failures: GithubSurfaceFailure[]; continuations: SyncContinuation[] }> {
   const legacyCursor = options.legacyCursor ?? {};
   const failures: GithubSurfaceFailure[] = [];
-  failures.push(...(await syncPullRequestsSurface(tokens, repo, ctx, legacyCursor, budget)));
-  failures.push(...(await syncIssuesSurface(tokens, repo, ctx, legacyCursor, budget)));
-  failures.push(
-    ...(await syncReleasesSurface(tokens, repo, ctx, legacyCursor, options.mode, budget)),
+  const conversations: GithubConversationSurfaceSyncResult[] = [];
+  if (options.conversationSurface === 'issue_comments') {
+    conversations.push(await syncIssueCommentsSurface(tokens, repo, ctx, legacyCursor, budget));
+  } else if (options.conversationSurface === 'pr_review_comments') {
+    conversations.push(await syncReviewCommentsSurface(tokens, repo, ctx, legacyCursor, budget));
+  } else {
+    failures.push(...(await syncPullRequestsSurface(tokens, repo, ctx, legacyCursor, budget)));
+    failures.push(...(await syncIssuesSurface(tokens, repo, ctx, legacyCursor, budget)));
+    conversations.push(await syncIssueCommentsSurface(tokens, repo, ctx, legacyCursor, budget));
+    conversations.push(await syncReviewCommentsSurface(tokens, repo, ctx, legacyCursor, budget));
+    failures.push(
+      ...(await syncReleasesSurface(tokens, repo, ctx, legacyCursor, options.mode, budget)),
+    );
+    failures.push(...(await syncCommitsSurface(tokens, repo, ctx, legacyCursor, budget)));
+    failures.push(
+      ...(await syncWorkflowRunsSurface(tokens, repo, ctx, legacyCursor, options.mode, budget)),
+    );
+  }
+  failures.push(...conversations.flatMap((conversation) => conversation.failures));
+  const continuations = conversations.flatMap((conversation) =>
+    conversation.needsContinuation
+      ? [
+          {
+            resourceType: 'github.repo',
+            externalId: repo,
+            surface: conversation.surface,
+            ...(conversation.retryAt ? { retryAt: conversation.retryAt } : {}),
+          },
+        ]
+      : [],
   );
-  failures.push(...(await syncCommitsSurface(tokens, repo, ctx, legacyCursor, budget)));
-  failures.push(
-    ...(await syncWorkflowRunsSurface(tokens, repo, ctx, legacyCursor, options.mode, budget)),
-  );
-  return failures;
+  return {
+    failures,
+    continuations,
+  };
 }
 
 async function syncPullRequestsSurface(
@@ -1594,6 +2093,310 @@ async function syncIssuesSurface(
     await saveRepoSurfaceFailure(ctx, repo, 'issues', cursor, summarizeSurfaceFailures(failures));
   }
   return failures;
+}
+
+type GithubConversationSurface = 'issue_comments' | 'pr_review_comments';
+type GithubConversationCursorKey = 'issue_comments_since' | 'pr_review_comments_since';
+type GithubConversationContinuationKey =
+  | 'issue_comments_continuation'
+  | 'pr_review_comments_continuation';
+
+function githubConversationSurface(
+  value: string | undefined,
+): GithubConversationSurface | undefined {
+  return value === 'issue_comments' || value === 'pr_review_comments' ? value : undefined;
+}
+
+function githubConversationContinuation(
+  cursor: RepoCursor,
+  key: GithubConversationContinuationKey,
+): GithubConversationContinuation | null {
+  const continuation = cursor[key];
+  if (!continuation || typeof continuation.since !== 'string') return null;
+  if (!Number.isSafeInteger(continuation.page) || continuation.page < 1) return null;
+  // A legacy cursor stored only a page number. Restart it from page one rather
+  // than trusting an offset whose earlier rows may have moved since the job
+  // stopped; the replay pass below is what makes that migration safe.
+  if (continuation.phase !== 'drain' && continuation.phase !== 'replay') {
+    return { since: continuation.since, page: 1, phase: 'replay' };
+  }
+  return continuation;
+}
+
+function clearGithubConversationContinuation(
+  cursor: RepoCursor,
+  key: GithubConversationContinuationKey,
+): void {
+  if (key === 'issue_comments_continuation') {
+    delete cursor.issue_comments_continuation;
+    return;
+  }
+  delete cursor.pr_review_comments_continuation;
+}
+
+function githubConversationPersistedRetryAt(
+  continuation: GithubConversationContinuation | null,
+): Date | undefined {
+  if (!continuation) return undefined;
+  const retryAts = [continuation.recovery_retry_at, continuation.replay_retry_at]
+    .map((value) => (value ? new Date(value) : null))
+    .filter((value): value is Date => value !== null && !Number.isNaN(value.getTime()))
+    .filter((value) => value > new Date());
+  return retryAts.reduce<Date | undefined>(
+    (latest, retryAt) => (!latest || retryAt > latest ? retryAt : latest),
+    undefined,
+  );
+}
+
+async function syncTimestampedConversationSurface<T extends { updated_at: string }>(input: {
+  repo: string;
+  ctx: SyncContext;
+  legacyCursor: RepoCursor;
+  surface: GithubConversationSurface;
+  cursorKey: GithubConversationCursorKey;
+  continuationKey: GithubConversationContinuationKey;
+  pathForPage: (since: string, page: number) => string;
+  loadConditionalPage: (
+    path: string,
+    validator: GithubConditionalValidator | undefined,
+  ) => Promise<GithubConditionalResult<T[]>>;
+  loadPage: (path: string) => Promise<T[]>;
+  toEvent: (item: T) => IntegrationEvent | null;
+}): Promise<GithubConversationSurfaceSyncResult> {
+  const {
+    ctx,
+    continuationKey,
+    cursorKey,
+    legacyCursor,
+    loadConditionalPage,
+    loadPage,
+    pathForPage,
+    repo,
+    surface,
+    toEvent,
+  } = input;
+  const cursor = await loadRepoSurfaceCursor(ctx, repo, surface, legacyCursor);
+  const next: RepoCursor = { ...cursor };
+  const continuation = githubConversationContinuation(cursor, continuationKey);
+  const persistedRetryAt = githubConversationPersistedRetryAt(continuation);
+  if (persistedRetryAt) {
+    return { surface, failures: [], needsContinuation: true, retryAt: persistedRetryAt };
+  }
+  const highWater = cursor[cursorKey];
+  const since =
+    continuation?.since ??
+    (highWater ? conversationCursorLookback(highWater) : new Date(0).toISOString());
+  const startPage = continuation?.page ?? 1;
+  const isHighWaterOverlap = Boolean(highWater ?? continuation);
+  const failures: GithubSurfaceFailure[] = [];
+  let maxUpdatedAt = continuation?.max_updated_at;
+  let fingerprint = continuation?.scan_fingerprint;
+  let needsContinuation = false;
+  let continuationRetryAt: Date | undefined;
+  let activePage = startPage;
+  const finishScan = () => {
+    if (continuation?.phase === 'drain') {
+      // Never promote a timestamp after resuming an offset page. A late row
+      // can have landed on an earlier page while the worker was idle.
+      next[continuationKey] = {
+        since,
+        page: 1,
+        phase: 'replay',
+        ...(maxUpdatedAt ? { max_updated_at: maxUpdatedAt } : {}),
+        ...(fingerprint ? { expected_fingerprint: fingerprint } : {}),
+      };
+      needsContinuation = true;
+      return;
+    }
+    if (continuation?.phase === 'replay') {
+      // A second full pass whose rolling page fingerprint matches the prior
+      // pass proves that an offset continuation did not strand a row on an
+      // earlier mutable page. A mismatch starts another bounded replay.
+      if (!fingerprint || continuation.expected_fingerprint !== fingerprint) {
+        const replayAttempts = Math.min(
+          MAX_GITHUB_CONVERSATION_REPLAY_ATTEMPTS,
+          githubConversationAttempt(continuation.replay_attempts) + 1,
+        );
+        const retryAt = githubConversationRetryAt(replayAttempts);
+        next[continuationKey] = {
+          since,
+          page: 1,
+          phase: 'replay',
+          ...(maxUpdatedAt ? { max_updated_at: maxUpdatedAt } : {}),
+          ...(fingerprint ? { expected_fingerprint: fingerprint } : {}),
+          replay_attempts: replayAttempts,
+          replay_retry_at: retryAt.toISOString(),
+        };
+        if (replayAttempts < MAX_GITHUB_CONVERSATION_REPLAY_ATTEMPTS) {
+          needsContinuation = true;
+          continuationRetryAt = retryAt;
+        }
+        return;
+      }
+    }
+    if (maxUpdatedAt) next[cursorKey] = maxIso(next[cursorKey], maxUpdatedAt);
+    clearGithubConversationContinuation(next, continuationKey);
+  };
+  try {
+    for (let offset = 0; offset < MAX_SYNC_PAGES; offset++) {
+      const page = startPage + offset;
+      activePage = page;
+      const path = pathForPage(since, page);
+      const conditionalKey = githubConditionalPathKey(surface, path);
+      // GitHub's `since` is strictly after a seconds-precision timestamp, so
+      // an overlap starts one second earlier and is ordered ascending. A dense
+      // high-water second can therefore have an unchanged first page while a
+      // late row belongs on a later page; enumerate the overlap unconditionally.
+      const conditional =
+        page === 1 && !isHighWaterOverlap
+          ? await loadConditionalPage(path, githubConditionalValidator(cursor, conditionalKey))
+          : null;
+      if (conditional?.status === 'not_modified') {
+        rememberGithubConditionalValidator(next, conditionalKey, conditional.validator);
+        break;
+      }
+      if (conditional?.status === 'ok') {
+        rememberGithubConditionalValidator(next, conditionalKey, conditional.validator);
+      }
+      const items = conditional?.status === 'ok' ? conditional.data : await loadPage(path);
+      if (items.length === 0) {
+        finishScan();
+        break;
+      }
+      const itemEvents = items.map((item) => ({ item, event: toEvent(item) }));
+      fingerprint = appendGithubConversationFingerprint(
+        fingerprint,
+        itemEvents.map(({ event, item }) => event?.dedupKey ?? JSON.stringify(item)),
+      );
+      const events = itemEvents
+        .map(({ event }) => event)
+        .filter((event): event is IntegrationEvent => event !== null);
+      if (events.length > 0) await ctx.writeEvents(events);
+      for (const item of items) {
+        maxUpdatedAt = maxIso(maxUpdatedAt, item.updated_at);
+      }
+      if (items.length < 100) {
+        finishScan();
+        break;
+      }
+      if (offset === MAX_SYNC_PAGES - 1) {
+        next[continuationKey] = {
+          since,
+          page: page + 1,
+          phase: continuation?.phase ?? 'drain',
+          ...(maxUpdatedAt ? { max_updated_at: maxUpdatedAt } : {}),
+          ...(continuation?.expected_fingerprint
+            ? { expected_fingerprint: continuation.expected_fingerprint }
+            : {}),
+          ...(fingerprint ? { scan_fingerprint: fingerprint } : {}),
+          ...(continuation?.replay_attempts
+            ? { replay_attempts: continuation.replay_attempts }
+            : {}),
+        };
+        needsContinuation = true;
+      }
+    }
+  } catch (err) {
+    next[continuationKey] = {
+      since,
+      page: activePage,
+      phase: continuation?.phase ?? 'drain',
+      ...(maxUpdatedAt ? { max_updated_at: maxUpdatedAt } : {}),
+      ...(continuation?.expected_fingerprint
+        ? { expected_fingerprint: continuation.expected_fingerprint }
+        : {}),
+      ...(fingerprint ? { scan_fingerprint: fingerprint } : {}),
+      ...(continuation?.replay_attempts
+        ? { replay_attempts: githubConversationAttempt(continuation.replay_attempts) }
+        : {}),
+    };
+    if (isGithubRateLimitError(err)) {
+      await saveRepoSurfaceFailure(ctx, repo, surface, next, err.message);
+      throw attachSyncContinuation(err, {
+        resourceType: 'github.repo',
+        externalId: repo,
+        surface,
+      });
+    }
+    log.warn({ err, repo, surface }, 'github conversation comment fetch failed');
+    failures.push({
+      repo,
+      surface,
+      area: surface,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    const recoveryAttempts = Math.min(
+      MAX_GITHUB_CONVERSATION_RECOVERY_ATTEMPTS,
+      githubConversationAttempt(continuation?.recovery_attempts) + 1,
+    );
+    const retryAt = githubConversationRetryAt(recoveryAttempts);
+    next[continuationKey] = {
+      ...next[continuationKey],
+      recovery_attempts: recoveryAttempts,
+      recovery_retry_at: retryAt.toISOString(),
+    };
+    if (recoveryAttempts < MAX_GITHUB_CONVERSATION_RECOVERY_ATTEMPTS) {
+      needsContinuation = true;
+      continuationRetryAt = retryAt;
+    }
+  }
+  if (failures.length === 0) {
+    await saveRepoSurfaceCursor(ctx, repo, surface, next);
+  } else {
+    await saveRepoSurfaceFailure(ctx, repo, surface, next, summarizeSurfaceFailures(failures));
+  }
+  return {
+    surface,
+    failures,
+    needsContinuation,
+    ...(continuationRetryAt ? { retryAt: continuationRetryAt } : {}),
+  };
+}
+
+async function syncIssueCommentsSurface(
+  tokens: GithubTokens,
+  repo: string,
+  ctx: SyncContext,
+  legacyCursor: RepoCursor,
+  budget?: GithubRequestBudget,
+): Promise<GithubConversationSurfaceSyncResult> {
+  return syncTimestampedConversationSurface<GhIssueComment>({
+    repo,
+    ctx,
+    legacyCursor,
+    surface: 'issue_comments',
+    cursorKey: 'issue_comments_since',
+    continuationKey: 'issue_comments_continuation',
+    pathForPage: (since, page) =>
+      `/repos/${repo}/issues/comments?since=${encodeURIComponent(since)}&sort=updated&direction=asc&per_page=100&page=${String(page)}`,
+    loadConditionalPage: (path, validator) =>
+      ghGetConditional<GhIssueComment[]>(tokens, path, validator, budget),
+    loadPage: (path) => ghGet<GhIssueComment[]>(tokens, path, budget),
+    toEvent: (comment) => issueCommentToEvent(repo, comment),
+  });
+}
+
+async function syncReviewCommentsSurface(
+  tokens: GithubTokens,
+  repo: string,
+  ctx: SyncContext,
+  legacyCursor: RepoCursor,
+  budget?: GithubRequestBudget,
+): Promise<GithubConversationSurfaceSyncResult> {
+  return syncTimestampedConversationSurface<GhReviewComment>({
+    repo,
+    ctx,
+    legacyCursor,
+    surface: 'pr_review_comments',
+    cursorKey: 'pr_review_comments_since',
+    continuationKey: 'pr_review_comments_continuation',
+    pathForPage: (since, page) =>
+      `/repos/${repo}/pulls/comments?since=${encodeURIComponent(since)}&sort=updated&direction=asc&per_page=100&page=${String(page)}`,
+    loadConditionalPage: (path, validator) =>
+      ghGetConditional<GhReviewComment[]>(tokens, path, validator, budget),
+    loadPage: (path) => ghGet<GhReviewComment[]>(tokens, path, budget),
+    toEvent: (comment) => reviewCommentToEvent(repo, comment),
+  });
 }
 
 async function syncReleasesSurface(
@@ -2085,35 +2888,63 @@ export const githubProvider: IntegrationProvider = {
     const budget: GithubRequestBudget = {};
     const repos = await expandGithubSelections(fresh, selections, ctx, budget);
     const failures: GithubSurfaceFailure[] = [];
+    const continuations: SyncContinuation[] = [];
     for (const repo of repos) {
       const repoTokens = await ensureGithubInstallationAccessToken(fresh, repo);
       fresh = await persistUpdatedGithubTokens(ctx, fresh, repoTokens);
-      failures.push(...(await syncRepo(repoTokens, repo, ctx, { mode: 'backfill' }, budget)));
+      const result = await syncRepo(repoTokens, repo, ctx, { mode: 'backfill' }, budget);
+      failures.push(...result.failures);
+      continuations.push(...result.continuations);
     }
-    if (failures.length > 0) {
-      await ctx.recordAudit('github_backfill_partial', summarizeIntegrationFailures(failures));
-      return { partialFailures: toSyncPartialFailures(failures) };
+    if (failures.length > 0 || continuations.length > 0) {
+      if (failures.length > 0) {
+        await ctx.recordAudit('github_backfill_partial', summarizeIntegrationFailures(failures));
+      }
+      return {
+        ...(failures.length > 0 ? { partialFailures: toSyncPartialFailures(failures) } : {}),
+        ...(continuations.length > 0 ? { continuations } : {}),
+      };
     }
   },
 
-  async incrementalSync({ tokens, selections, ctx }) {
+  async incrementalSync({ tokens, selections, ctx, target }) {
     const input = tokens as GithubTokens;
     let fresh = await ensureGithubAccessToken(input);
     fresh = await persistUpdatedGithubTokens(ctx, input, fresh);
     const budget: GithubRequestBudget = {};
     const repos = await expandGithubSelections(fresh, selections, ctx, budget);
     const failures: GithubSurfaceFailure[] = [];
+    const continuations: SyncContinuation[] = [];
+    const targetConversationSurface =
+      target?.resourceType === 'github.repo'
+        ? githubConversationSurface(target.surface)
+        : undefined;
     for (const repo of repos) {
       const legacyCursor = (await ctx.loadCursor(`github.repo:${repo}`)) as RepoCursor;
       const repoTokens = await ensureGithubInstallationAccessToken(fresh, repo);
       fresh = await persistUpdatedGithubTokens(ctx, fresh, repoTokens);
-      failures.push(
-        ...(await syncRepo(repoTokens, repo, ctx, { mode: 'incremental', legacyCursor }, budget)),
+      const result = await syncRepo(
+        repoTokens,
+        repo,
+        ctx,
+        {
+          mode: 'incremental',
+          legacyCursor,
+          ...(targetConversationSurface ? { conversationSurface: targetConversationSurface } : {}),
+        },
+        budget,
       );
+      failures.push(...result.failures);
+      continuations.push(...result.continuations);
     }
-    if (failures.length > 0) {
-      await ctx.recordAudit('github_incremental_partial', summarizeIntegrationFailures(failures));
-      return { partialFailures: toSyncPartialFailures(failures) };
+    if (failures.length > 0 || continuations.length > 0) {
+      if (failures.length > 0) {
+        await ctx.recordAudit('github_incremental_partial', summarizeIntegrationFailures(failures));
+      }
+      return {
+        ...(failures.length > 0 ? { partialFailures: toSyncPartialFailures(failures) } : {}),
+        ...(continuations.length > 0 ? { continuations } : {}),
+      };
     }
   },
 

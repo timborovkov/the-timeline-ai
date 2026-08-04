@@ -141,6 +141,24 @@ describe('webhook delivery worker', () => {
   });
 
   it('enqueues provider-supplied targeted sync tasks instead of a full catch-up', async () => {
+    const handleWebhook = vi.fn().mockResolvedValue({
+      events: [
+        {
+          dedupKey: 'github:commit:sha-1',
+          provider: 'github',
+        },
+      ],
+      syncTasks: [
+        {
+          integrationId: INTEGRATION_ID,
+          teamId: TEAM_ID,
+          triggeredBy: 'webhook',
+          resourceType: 'github.repo',
+          externalId: 'acme/app',
+          reason: 'github_repo_webhook',
+        },
+      ],
+    });
     fakes.loadWebhookDeliveryWork.mockResolvedValueOnce({
       delivery: {
         ...delivery,
@@ -150,24 +168,7 @@ describe('webhook delivery worker', () => {
       targets: [{ target, integration: { ...integration, provider: 'github' } }],
     });
     fakes.getProvider.mockReturnValueOnce({
-      handleWebhook: vi.fn().mockResolvedValue({
-        events: [
-          {
-            dedupKey: 'github:commit:sha-1',
-            provider: 'github',
-          },
-        ],
-        syncTasks: [
-          {
-            integrationId: INTEGRATION_ID,
-            teamId: TEAM_ID,
-            triggeredBy: 'webhook',
-            resourceType: 'github.repo',
-            externalId: 'acme/app',
-            reason: 'github_repo_webhook',
-          },
-        ],
-      }),
+      handleWebhook,
     });
     fakes.providerSyncPolicy.mockReturnValueOnce({
       supportsTargetedSync: true,
@@ -189,6 +190,10 @@ describe('webhook delivery worker', () => {
       resourceType: 'github.repo',
       externalId: 'acme/app',
       reason: 'github_repo_webhook',
+    });
+    expect(handleWebhook).toHaveBeenCalledWith({
+      integration: { ...integration, provider: 'github' },
+      payload: { repository: { full_name: 'acme/app' } },
     });
   });
 

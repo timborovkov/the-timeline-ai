@@ -128,6 +128,7 @@ beforeEach(() => {
   integrations.setSlackProviderFetchForTests((input, init) => globalThis.fetch(input, init));
   vi.clearAllMocks();
   fakes.reserved.mockClear();
+  fakes.reserved.mockImplementation(() => Promise.resolve([{ locked: true }]));
   fakes.reserved.release.mockClear();
   fakes.getDbClient.mockReturnValue({ reserve: vi.fn(() => Promise.resolve(fakes.reserved)) });
   fakes.adminLoadIntegration.mockResolvedValue(integration);
@@ -421,6 +422,151 @@ describe('runOneIntegration attention classification', () => {
     });
   });
 
+  it('hands a GitHub conversation page-cap continuation to an immediate repository sync', async () => {
+    let lockHeld = false;
+    fakes.reserved.mockImplementation((strings: TemplateStringsArray) => {
+      const query = strings.join('');
+      if (query.includes('pg_try_advisory_lock')) {
+        lockHeld = true;
+        return Promise.resolve([{ locked: true }]);
+      }
+      if (query.includes('pg_advisory_unlock')) lockHeld = false;
+      return Promise.resolve([]);
+    });
+    fakes.adminLoadIntegration.mockResolvedValueOnce(integration);
+    fakes.adminListSelections.mockResolvedValueOnce([
+      { kind: 'github.repo', externalId: 'acme/app' },
+    ]);
+    fakes.incrementalSync.mockResolvedValueOnce({
+      continuations: [{ resourceType: 'github.repo', externalId: 'acme/app' }],
+    });
+    fakes.enqueueIntegrationSyncJob.mockImplementationOnce(() => {
+      expect(lockHeld).toBe(false);
+      return Promise.resolve();
+    });
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
+
+    expect(fakes.enqueueIntegrationSyncJob).toHaveBeenCalledWith({
+      kind: 'targeted',
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: 'reconcile',
+      resourceType: 'github.repo',
+      externalId: 'acme/app',
+      reason: 'provider_pagination_continuation',
+    });
+  });
+
+  it('schedules GitHub conversation continuations separately for each surface', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-25T02:59:00.000Z'));
+    const issueRetryAt = new Date('2026-06-25T03:00:00.000Z');
+    const reviewRetryAt = new Date('2026-06-25T03:02:00.000Z');
+    fakes.adminListSelections.mockResolvedValueOnce([
+      { kind: 'github.repo', externalId: 'acme/app' },
+    ]);
+    fakes.incrementalSync.mockResolvedValueOnce({
+      continuations: [
+        {
+          resourceType: 'github.repo',
+          externalId: 'acme/app',
+          surface: 'issue_comments',
+          retryAt: issueRetryAt,
+        },
+        {
+          resourceType: 'github.repo',
+          externalId: 'acme/app',
+          surface: 'pr_review_comments',
+          retryAt: reviewRetryAt,
+        },
+      ],
+    });
+
+    try {
+      await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(fakes.enqueueIntegrationSyncJob).toHaveBeenNthCalledWith(
+      1,
+      {
+        kind: 'targeted',
+        integrationId: INTEGRATION_ID,
+        teamId: TEAM_ID,
+        triggeredBy: 'reconcile',
+        resourceType: 'github.repo',
+        externalId: 'acme/app',
+        surface: 'issue_comments',
+        reason: 'provider_pagination_continuation',
+      },
+      { delayMs: 60_000 },
+    );
+    expect(fakes.enqueueIntegrationSyncJob).toHaveBeenNthCalledWith(
+      2,
+      {
+        kind: 'targeted',
+        integrationId: INTEGRATION_ID,
+        teamId: TEAM_ID,
+        triggeredBy: 'reconcile',
+        resourceType: 'github.repo',
+        externalId: 'acme/app',
+        surface: 'pr_review_comments',
+        reason: 'provider_pagination_continuation',
+      },
+      { delayMs: 180_000 },
+    );
+  });
+
+  it('requeues a blocked provider pagination continuation after a short bounded delay', async () => {
+    fakes.reserved.mockImplementation((strings: TemplateStringsArray) => {
+      const query = strings.join('');
+      if (query.includes('pg_try_advisory_lock')) return Promise.resolve([{ locked: false }]);
+      return Promise.resolve([]);
+    });
+    const continuation = {
+      kind: 'targeted' as const,
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: 'reconcile',
+      resourceType: 'github.repo',
+      externalId: 'acme/app',
+      reason: 'provider_pagination_continuation',
+    };
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', continuation);
+
+    expect(fakes.adminLoadIntegration).not.toHaveBeenCalled();
+    expect(fakes.enqueueIntegrationSyncJob).toHaveBeenCalledWith(
+      { ...continuation, continuationAttempt: 1 },
+      { delayMs: 5_000 },
+    );
+    expect(fakes.reserved.release).toHaveBeenCalledOnce();
+  });
+
+  it('does not create an unbounded lock-contention requeue chain', async () => {
+    fakes.reserved.mockImplementation((strings: TemplateStringsArray) => {
+      const query = strings.join('');
+      if (query.includes('pg_try_advisory_lock')) return Promise.resolve([{ locked: false }]);
+      return Promise.resolve([]);
+    });
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', {
+      kind: 'targeted',
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: 'reconcile',
+      resourceType: 'github.repo',
+      externalId: 'acme/app',
+      reason: 'provider_pagination_continuation',
+      continuationAttempt: 3,
+    });
+
+    expect(fakes.enqueueIntegrationSyncJob).not.toHaveBeenCalled();
+    expect(fakes.reserved.release).toHaveBeenCalledOnce();
+  });
+
   it('keeps legacy Monday connections syncing while surfacing reconnect for missing scopes', async () => {
     fakes.adminLoadIntegration.mockResolvedValueOnce({
       ...integration,
@@ -679,16 +825,38 @@ describe('runOneIntegration attention classification', () => {
   });
 
   it('records GitHub rate limits as a paused sync without BullMQ retry pressure', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-25T02:59:00.000Z'));
     const retryAt = new Date('2026-06-25T03:00:00.000Z');
     const err = Object.assign(
       new Error(
         'github_rate_limited: GitHub API rate limit reached; retry after 2026-06-25T03:00:00.000Z',
       ),
-      { code: 'github_rate_limited', retryAt },
+      {
+        code: 'github_rate_limited',
+        retryAt,
+      },
     );
     fakes.incrementalSync.mockRejectedValueOnce(err);
+    fakes.adminListSelections.mockResolvedValueOnce([
+      { kind: 'github.repo', externalId: 'acme/app' },
+    ]);
+    const target = {
+      kind: 'targeted' as const,
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: 'reconcile',
+      resourceType: 'github.repo',
+      externalId: 'acme/app',
+      surface: 'issue_comments',
+      reason: 'provider_pagination_continuation',
+    };
 
-    await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
+    try {
+      await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', target);
+    } finally {
+      vi.useRealTimers();
+    }
 
     expect(fakes.adminRecordError).toHaveBeenCalledWith(
       expect.anything(),
@@ -706,10 +874,11 @@ describe('runOneIntegration attention classification', () => {
     );
     expect(fakes.adminRecordConnectionAttention).not.toHaveBeenCalled();
     expect(fakes.adminRecordTransientSyncFailure).not.toHaveBeenCalled();
+    expect(fakes.enqueueIntegrationSyncJob).toHaveBeenCalledWith(target, { delayMs: 60_000 });
     expect(fakes.adminRecordAudit).toHaveBeenCalledWith(
       expect.anything(),
       TEAM_ID,
-      'sync_paused:incremental',
+      'sync_paused:targeted',
       {
         provider: 'github',
         reason: 'github_rate_limited',

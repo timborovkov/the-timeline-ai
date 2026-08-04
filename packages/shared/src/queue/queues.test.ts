@@ -332,6 +332,54 @@ describe('queue wrappers', () => {
     expect(fakes.queues[0]?.addCalls[1]?.opts).toBeUndefined();
   });
 
+  it('delays a targeted pagination continuation when a provider supplies a retry time', async () => {
+    const queues = await importQueues();
+    const continuation = {
+      kind: 'targeted' as const,
+      integrationId: '11111111-1111-4111-8111-111111111111',
+      teamId: '22222222-2222-4222-8222-222222222222',
+      triggeredBy: 'reconcile',
+      resourceType: 'github.repo',
+      externalId: 'acme/app',
+      reason: 'provider_pagination_continuation',
+    };
+
+    await queues.enqueueIntegrationSyncJob(continuation, { delayMs: 60_000 });
+
+    expect(fakes.queues[0]?.addCalls).toEqual([
+      {
+        name: 'integration-sync',
+        data: continuation,
+        opts: { delay: 60_000 },
+      },
+    ]);
+  });
+
+  it('keeps GitHub conversation continuations separate by surface', async () => {
+    const queues = await importQueues();
+    const base = {
+      kind: 'targeted' as const,
+      integrationId: '11111111-1111-4111-8111-111111111111',
+      teamId: '22222222-2222-4222-8222-222222222222',
+      triggeredBy: 'reconcile',
+      resourceType: 'github.repo',
+      externalId: 'acme/app',
+      reason: 'provider_pagination_continuation',
+    };
+
+    await queues.enqueueIntegrationSyncJob({ ...base, surface: 'issue_comments' });
+    await queues.enqueueIntegrationSyncJob({ ...base, surface: 'pr_review_comments' });
+
+    expect(fakes.queues[0]?.addCalls).toEqual([
+      { name: 'integration-sync', data: { ...base, surface: 'issue_comments' }, opts: undefined },
+      {
+        name: 'integration-sync',
+        data: { ...base, surface: 'pr_review_comments' },
+        opts: undefined,
+      },
+    ]);
+  });
+
   it('coalesces provider-policy reconciliation while a matching job is pending', async () => {
     const queues = await importQueues();
     const reconcile = {
