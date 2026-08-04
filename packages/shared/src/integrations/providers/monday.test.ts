@@ -1097,6 +1097,352 @@ describe('mondayProvider', () => {
     ]);
   });
 
+  it('normalizes and renders parent groups and people columns beyond the generic column budget', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((_input, init) => {
+        const body = requestPayload(init);
+        if (
+          body.query.includes('boards(ids: $ids)') &&
+          !body.query.includes('items_page') &&
+          !body.query.includes('activity_logs')
+        ) {
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                boards: [
+                  {
+                    id: 'board-1',
+                    name: 'Product',
+                    updated_at: '2026-06-20T09:00:00Z',
+                    columns: [
+                      ...Array.from({ length: 12 }, (_, index) => ({
+                        id: `detail_${String(index + 1)}`,
+                        title: `Detail ${String(index + 1)}`,
+                        type: 'text',
+                      })),
+                      { id: 'status', title: 'Stage', type: 'status' },
+                      { id: 'owner', title: 'Owner', type: 'people' },
+                      { id: 'due_date', title: 'Due date', type: 'date' },
+                      { id: 'priority', title: 'Priority', type: 'priority' },
+                      { id: 'untrusted_payload', title: 'Untrusted payload', type: 'text' },
+                    ],
+                  },
+                ],
+              },
+            }),
+          );
+        }
+        if (body.query.includes('activity_logs')) {
+          return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
+        }
+        if (body.query.includes('items_page')) {
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                boards: [
+                  {
+                    items_page: {
+                      cursor: null,
+                      items: [
+                        {
+                          id: 'item-1',
+                          name: 'Publish launch plan',
+                          updated_at: '2026-06-20T10:00:00Z',
+                          group: { id: 'group-active', title: 'Active work' },
+                          column_values: [
+                            ...Array.from({ length: 12 }, (_, index) => ({
+                              id: `detail_${String(index + 1)}`,
+                              type: 'text',
+                              text: `detail ${String(index + 1)}`,
+                            })),
+                            { id: 'status', type: 'status', text: 'Working on it' },
+                            {
+                              id: 'owner',
+                              type: 'people',
+                              text: 'Ada Lovelace, Research, Product team',
+                              persons_and_teams: [
+                                { id: 'person-1', kind: 'person' },
+                                { id: 'team-1', kind: 'team' },
+                              ],
+                              value:
+                                '{"personsAndTeams":[{"id":"person-1","kind":"person"},{"id":"team-1","kind":"team"}]}',
+                            },
+                            { id: 'due_date', type: 'date', text: '2026-06-30' },
+                            { id: 'priority', type: 'priority', text: 'High' },
+                            {
+                              id: 'untrusted_payload',
+                              type: 'text',
+                              text: null,
+                              value:
+                                '{"personsAndTeams":[{"id":"not-an-assignee","kind":"person"}]}',
+                            },
+                          ],
+                          updates: [],
+                          subitems: [],
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            }),
+          );
+        }
+        throw new Error(`unexpected query: ${body.query}`);
+      }),
+    );
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await mondayProvider.backfill({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      ctx,
+    });
+
+    const event = ((ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[]).find(
+      (candidate) => candidate.externalObjectId === 'item-1',
+    );
+    expect(event?.contentText).toContain('Group: Active work');
+    expect(event?.contentText).toContain('Status: Working on it');
+    expect(event?.contentText).toContain('Owner: Ada Lovelace, Research, Product team');
+    expect(event?.contentText).toContain('Due date: 2026-06-30');
+    expect(event?.contentText).toContain('Priority: High');
+    expect(event?.extra).toMatchObject({
+      monday_group: { id: 'group-active', title: 'Active work' },
+      monday_assignees: [
+        {
+          columnId: 'owner',
+          columnTitle: 'Owner',
+          id: 'person-1',
+          kind: 'person',
+          name: null,
+        },
+        {
+          columnId: 'owner',
+          columnTitle: 'Owner',
+          id: 'team-1',
+          kind: 'team',
+          name: null,
+        },
+      ],
+    });
+    expect(event?.objectMap?.metadata).toMatchObject({
+      monday_group: { id: 'group-active', title: 'Active work' },
+      monday_assignees: [
+        {
+          columnId: 'owner',
+          columnTitle: 'Owner',
+          id: 'person-1',
+          kind: 'person',
+          name: null,
+        },
+        {
+          columnId: 'owner',
+          columnTitle: 'Owner',
+          id: 'team-1',
+          kind: 'team',
+          name: null,
+        },
+      ],
+    });
+    const columns = event?.objectMap?.metadata?.monday_columns as
+      | Record<string, unknown>[]
+      | undefined;
+    expect(columns?.find((column) => column.id === 'owner')).toMatchObject({
+      assignees: [
+        { id: 'person-1', kind: 'person', name: null },
+        { id: 'team-1', kind: 'team', name: null },
+      ],
+    });
+    expect(columns?.find((column) => column.id === 'untrusted_payload')).toEqual({
+      id: 'untrusted_payload',
+      title: 'Untrusted payload',
+      type: 'text',
+      text: null,
+      value: '{"personsAndTeams":[{"id":"not-an-assignee","kind":"person"}]}',
+    });
+  });
+
+  it('normalizes legacy person and team base values without pairing comma-separated display text to IDs', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((_input, init) => {
+        const body = requestPayload(init);
+        expect(body.variables).toEqual({ itemIds: ['subitem-1'] });
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              items: [
+                {
+                  id: 'subitem-1',
+                  name: 'Review launch copy',
+                  updated_at: '2026-06-20T10:00:00Z',
+                  group: { id: 'group-review', title: 'Editorial review' },
+                  board: {
+                    id: 'subitems-board-1',
+                    name: 'Subitems of Product',
+                    type: 'sub_items_board',
+                    hierarchy_type: 'classic',
+                    columns: [
+                      { id: 'assignee', title: 'Assignee', type: 'people' },
+                      { id: 'legacy_person', title: 'Legacy person', type: 'person' },
+                      { id: 'legacy_team', title: 'Legacy team', type: 'team' },
+                      { id: 'legacy_invalid', title: 'Legacy invalid', type: 'person' },
+                    ],
+                  },
+                  parent_item: {
+                    id: 'item-1',
+                    name: 'Publish launch plan',
+                    board: {
+                      id: 'board-1',
+                      name: 'Product',
+                      type: 'board',
+                      hierarchy_type: 'classic',
+                    },
+                  },
+                  column_values: [
+                    {
+                      id: 'assignee',
+                      type: 'people',
+                      text: 'Grace Hopper',
+                      value: '{"personsAndTeams":[{"id":42,"kind":"person"}]}',
+                    },
+                    {
+                      id: 'legacy_person',
+                      type: 'person',
+                      text: 'Doe, Jane, Alice Nguyen',
+                      value:
+                        '{"personsAndTeams":[{"id":101,"kind":"person"},{"id":102,"kind":"person"}]}',
+                    },
+                    {
+                      id: 'legacy_team',
+                      type: 'team',
+                      text: 'Research, Design',
+                      value: '{"persons_and_teams":[{"id":"team-7","kind":"team"}]}',
+                    },
+                    {
+                      id: 'legacy_invalid',
+                      type: 'person',
+                      text: 'Unresolved legacy person',
+                      value: '{not valid JSON}',
+                    },
+                  ],
+                  updates: [],
+                  subitems: [],
+                },
+              ],
+            },
+          }),
+        );
+      }),
+    );
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await mondayProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      target: {
+        resourceType: 'monday.item',
+        externalId: 'board-1:subitem-1',
+        triggeredBy: 'webhook',
+      },
+      ctx,
+    });
+
+    const event = ((ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[])[0];
+    expect(event).toMatchObject({
+      eventType: 'subitem.updated',
+      extra: {
+        monday_group: { id: 'group-review', title: 'Editorial review' },
+        monday_assignees: [
+          {
+            columnId: 'assignee',
+            columnTitle: 'Assignee',
+            id: '42',
+            kind: 'person',
+            name: null,
+          },
+          {
+            columnId: 'legacy_person',
+            columnTitle: 'Legacy person',
+            id: '101',
+            kind: 'person',
+            name: null,
+          },
+          {
+            columnId: 'legacy_person',
+            columnTitle: 'Legacy person',
+            id: '102',
+            kind: 'person',
+            name: null,
+          },
+          {
+            columnId: 'legacy_team',
+            columnTitle: 'Legacy team',
+            id: 'team-7',
+            kind: 'team',
+            name: null,
+          },
+        ],
+      },
+      objectMap: {
+        metadata: {
+          monday_group: { id: 'group-review', title: 'Editorial review' },
+          monday_assignees: [
+            {
+              columnId: 'assignee',
+              columnTitle: 'Assignee',
+              id: '42',
+              kind: 'person',
+              name: null,
+            },
+            {
+              columnId: 'legacy_person',
+              columnTitle: 'Legacy person',
+              id: '101',
+              kind: 'person',
+              name: null,
+            },
+            {
+              columnId: 'legacy_person',
+              columnTitle: 'Legacy person',
+              id: '102',
+              kind: 'person',
+              name: null,
+            },
+            {
+              columnId: 'legacy_team',
+              columnTitle: 'Legacy team',
+              id: 'team-7',
+              kind: 'team',
+              name: null,
+            },
+          ],
+        },
+      },
+    });
+    expect(event?.contentText).toContain('Group: Editorial review');
+    expect(event?.contentText).toContain('Assignee: Grace Hopper');
+    expect(event?.contentText).toContain('Legacy person: Doe, Jane, Alice Nguyen');
+    expect(event?.contentText).toContain('Legacy team: Research, Design');
+    expect(event?.contentText).toContain('Legacy invalid: Unresolved legacy person');
+  });
+
   it('syncs board activity, records, subitems, paginated items, and updates into timeline events', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
       const body = requestPayload(init);

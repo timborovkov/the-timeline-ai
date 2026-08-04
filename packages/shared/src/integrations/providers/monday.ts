@@ -96,6 +96,18 @@ interface MondayColumnValue {
   text?: string | null;
   type?: string;
   value?: unknown;
+  persons_and_teams?: MondayPeopleEntity[];
+}
+
+interface MondayPeopleEntity {
+  id?: string | number;
+  kind?: string | null;
+  name?: string | null;
+}
+
+interface MondayGroup {
+  id?: string | number;
+  title?: string | null;
 }
 
 interface MondayActivityLog {
@@ -120,6 +132,7 @@ interface MondayItem {
   updated_at?: string;
   url?: string;
   board?: MondayBoard | null;
+  group?: MondayGroup | null;
   creator?: { id?: string; name?: string } | null;
   parent_item?: { id?: string; name?: string; board?: MondayBoard | null } | null;
   column_values?: MondayColumnValue[];
@@ -186,6 +199,24 @@ interface NormalizedColumn {
   type: string | null;
   text: string | null;
   value: unknown;
+  assignees?: MondayAssignee[];
+}
+
+interface MondayAssignee {
+  id: string;
+  kind: string | null;
+  name: string | null;
+}
+
+interface MondayGroupMembership {
+  id: string | null;
+  title: string | null;
+}
+
+interface MondayItemSemantics {
+  columns: NormalizedColumn[];
+  group: MondayGroupMembership | null;
+  assignees: (MondayAssignee & { columnId: string; columnTitle: string })[];
 }
 
 const BOARD_FIELDS = `
@@ -201,16 +232,24 @@ const ITEM_BOARD_FIELDS = `
 
 const ITEM_FIELDS = `
   id name updated_at url
+  group { id title }
   creator { id name }
   parent_item { id name board { ${ITEM_BOARD_FIELDS} } }
-  column_values { id text type value }
+  column_values {
+    id text type value
+    ... on PeopleValue { persons_and_teams { id kind } }
+  }
   updates(limit: ${String(UPDATE_LIMIT)}) { id body created_at updated_at creator { id name } }
   subitems {
     id name updated_at url
+    group { id title }
     board { ${ITEM_BOARD_FIELDS} }
     creator { id name }
     parent_item { id name }
-    column_values { id text type value }
+    column_values {
+      id text type value
+      ... on PeopleValue { persons_and_teams { id kind } }
+    }
     updates(limit: ${String(UPDATE_LIMIT)}) { id body created_at updated_at creator { id name } }
   }
 `;
@@ -497,22 +536,141 @@ function boardMetadata(board: MondayBoard): Record<string, unknown> {
   };
 }
 
+function mondayPeopleEntities(value: unknown): MondayPeopleEntity[] {
+  let parsed = value;
+  if (typeof value === 'string') {
+    try {
+      parsed = JSON.parse(value) as unknown;
+    } catch {
+      return [];
+    }
+  }
+  const record = recordValue(parsed);
+  const entities = record?.personsAndTeams ?? record?.persons_and_teams;
+  if (!Array.isArray(entities)) return [];
+  return entities.flatMap((entity) => {
+    const item = recordValue(entity);
+    const id = mondayIdValue(item?.id);
+    return id
+      ? [
+          {
+            id,
+            kind: stringValue(item?.kind) ?? null,
+            name: stringValue(item?.name),
+          },
+        ]
+      : [];
+  });
+}
+
+function isMondayPeopleColumnType(type: string | null | undefined): boolean {
+  return type === 'people' || type === 'person' || type === 'team';
+}
+
+function mondayColumnAssignees(
+  column: MondayColumnValue,
+  columnType: string | null,
+): MondayAssignee[] {
+  const entities = column.persons_and_teams?.length
+    ? column.persons_and_teams
+    : mondayPeopleEntities(column.value);
+  const legacyKind = columnType === 'person' || columnType === 'team' ? columnType : null;
+  const assignees = entities.flatMap((entity) => {
+    const id = mondayIdValue(entity.id);
+    return id
+      ? [
+          {
+            id,
+            kind: stringValue(entity.kind)?.toLowerCase() ?? legacyKind,
+            name: stringValue(entity.name),
+          },
+        ]
+      : [];
+  });
+  return [
+    ...new Map(
+      assignees.map((assignee) => [`${assignee.kind ?? ''}:${assignee.id}`, assignee]),
+    ).values(),
+  ];
+}
+
 function normalizedColumns(board: MondayBoard, item: MondayItem): NormalizedColumn[] {
   const schemaById = new Map((board.columns ?? []).map((column) => [column.id, column]));
   return (item.column_values ?? []).map((column) => {
     const schema = schemaById.get(column.id);
+    const type = column.type ?? schema?.type ?? null;
+    const assignees = isMondayPeopleColumnType(type) ? mondayColumnAssignees(column, type) : [];
     return {
       id: column.id,
       title: schema?.title ?? column.id,
-      type: column.type ?? schema?.type ?? null,
+      type,
       text: column.text ?? null,
       value: column.value ?? null,
+      ...(assignees.length ? { assignees } : {}),
     };
   });
 }
 
-function statusColumn(board: MondayBoard, item: MondayItem): NormalizedColumn | undefined {
-  return normalizedColumns(board, item).find((column) => column.type === 'status');
+function mondayGroupMembership(item: MondayItem): MondayGroupMembership | null {
+  const id = mondayIdValue(item.group?.id);
+  const title = stringValue(item.group?.title);
+  return id || title ? { id, title } : null;
+}
+
+function mondayItemSemantics(board: MondayBoard, item: MondayItem): MondayItemSemantics {
+  const columns = normalizedColumns(board, item);
+  return {
+    columns,
+    group: mondayGroupMembership(item),
+    assignees: columns.flatMap((column) =>
+      (column.assignees ?? []).map((assignee) => ({
+        ...assignee,
+        columnId: column.id,
+        columnTitle: column.title,
+      })),
+    ),
+  };
+}
+
+function mondayItemSemanticMetadata(semantics: MondayItemSemantics): Record<string, unknown> {
+  return {
+    ...(semantics.group ? { monday_group: semantics.group } : {}),
+    ...(semantics.assignees.length ? { monday_assignees: semantics.assignees } : {}),
+  };
+}
+
+function mondayColumnDisplayValue(column: NormalizedColumn): string | null {
+  if (column.text) return column.text;
+  if (!isMondayPeopleColumnType(column.type) || !column.assignees?.length) return null;
+  return column.assignees
+    .map((assignee) => assignee.name ?? `${assignee.kind ?? 'member'} ${assignee.id}`)
+    .join(', ');
+}
+
+function isSemanticallyImportantMondayColumn(column: NormalizedColumn): boolean {
+  if (
+    ['status', 'date', 'priority'].includes(column.type ?? '') ||
+    isMondayPeopleColumnType(column.type)
+  ) {
+    return true;
+  }
+  return /\b(?:owner|assignee|due(?: date)?|deadline|priority|group)\b/iu.test(column.title);
+}
+
+function mondayItemColumnLines(columns: NormalizedColumn[]): string[] {
+  const textualColumns = columns.flatMap((column) => {
+    const value = mondayColumnDisplayValue(column);
+    return value ? [{ column, value }] : [];
+  });
+  const importantColumns = textualColumns.filter(({ column }) =>
+    isSemanticallyImportantMondayColumn(column),
+  );
+  const genericColumns = textualColumns
+    .filter(({ column }) => !isSemanticallyImportantMondayColumn(column))
+    .slice(0, 12);
+  return [...importantColumns, ...genericColumns].map(
+    ({ column, value }) => `${column.type === 'status' ? 'Status' : column.title}: ${value}`,
+  );
 }
 
 function mondayRecordMap(
@@ -522,7 +680,8 @@ function mondayRecordMap(
   itemBoard: MondayBoard = board,
   hierarchyDepth = kind === 'subitem' ? 1 : 0,
 ): ObjectMapping {
-  const status = statusColumn(itemBoard, item);
+  const semantics = mondayItemSemantics(itemBoard, item);
+  const status = semantics.columns.find((column) => column.type === 'status');
   const parent = item.parent_item;
   return {
     type: 'other',
@@ -541,7 +700,8 @@ function mondayRecordMap(
       monday_parent_item_id: parent?.id ?? null,
       monday_parent_item_name: parent?.name ?? null,
       monday_hierarchy_depth: hierarchyDepth,
-      monday_columns: normalizedColumns(itemBoard, item),
+      ...mondayItemSemanticMetadata(semantics),
+      monday_columns: semantics.columns,
     },
   };
 }
@@ -634,7 +794,7 @@ function itemEvent(
   hierarchyDepth = kind === 'subitem' ? 1 : 0,
 ): IntegrationEvent {
   const occurredAt = dateValue(item.updated_at);
-  const status = statusColumn(itemBoard, item);
+  const semantics = mondayItemSemantics(itemBoard, item);
   return {
     dedupKey: `monday:${kind}:${board.id}:${item.id}:${occurredAt.toISOString()}`,
     provider: 'monday',
@@ -645,11 +805,8 @@ function itemEvent(
     contentText: [
       `Monday ${kind} updated on ${board.name}: ${item.name}`,
       item.parent_item?.name ? `Parent: ${item.parent_item.name}` : null,
-      status?.text ? `Status: ${status.text}` : null,
-      ...normalizedColumns(itemBoard, item)
-        .filter((column) => column.text && column.type !== 'status')
-        .slice(0, 12)
-        .map((column) => `${column.title}: ${column.text}`),
+      semantics.group ? `Group: ${semantics.group.title ?? semantics.group.id}` : null,
+      ...mondayItemColumnLines(semantics.columns),
     ]
       .filter(Boolean)
       .join('\n'),
@@ -661,7 +818,8 @@ function itemEvent(
       monday_parent_item_id: item.parent_item?.id ?? null,
       monday_hierarchy_depth: hierarchyDepth,
       external_url: item.url ?? null,
-      columns: normalizedColumns(itemBoard, item),
+      ...mondayItemSemanticMetadata(semantics),
+      columns: semantics.columns,
     },
     objectMap: mondayRecordMap(board, item, kind, itemBoard, hierarchyDepth),
   };
