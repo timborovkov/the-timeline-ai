@@ -1,0 +1,80 @@
+name: Publish document-extract Daytona snapshot
+
+# When sandbox scripts/deps (or the Image recipe module) change, ensure a
+# content-hashed snapshot exists in Daytona. Operators pin Railway
+# DAYTONA_SNAPSHOT to the job output (or leave unset / auto and rely on
+# extract-main boot ensure). See docs/adr/0013-daytona-document-extract.md.
+
+on:
+  push:
+    branches: [main, staging]
+    paths:
+      - 'apps/worker/document-extract-sandbox/**'
+      - 'apps/worker/src/document-ingestion/document-extract-snapshot.ts'
+      - 'apps/worker/scripts/create-document-extract-snapshot.ts'
+      - '.github/workflows/publish-document-extract-snapshot.yml'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    name: Ensure Daytona snapshot
+    runs-on: ubuntu-latest
+    # Skip quietly when the org secret is not configured (forks / personal clones).
+    if: ${{ vars.DAYTONA_SNAPSHOT_PUBLISH == 'true' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Enable pnpm via corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.8.0 --activate
+
+      - name: Configure pnpm store cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Resolve content-hashed snapshot name
+        id: name
+        run: |
+          NAME="$(pnpm --filter @timeline/worker create-document-extract-snapshot -- --print-name-only)"
+          echo "snapshot_name=${NAME}" >> "$GITHUB_OUTPUT"
+          echo "Resolved DAYTONA_SNAPSHOT=${NAME}"
+
+      - name: Ensure snapshot exists in Daytona
+        env:
+          DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
+          DAYTONA_API_URL: ${{ vars.DAYTONA_API_URL }}
+          DAYTONA_TARGET: ${{ vars.DAYTONA_TARGET }}
+        run: |
+          if [ -z "${DAYTONA_API_KEY}" ]; then
+            echo "DAYTONA_API_KEY secret is required when DAYTONA_SNAPSHOT_PUBLISH=true" >&2
+            exit 1
+          fi
+          pnpm --filter @timeline/worker create-document-extract-snapshot
+
+      - name: Summarize
+        run: |
+          {
+            echo "## Document-extract Daytona snapshot"
+            echo ""
+            echo "Set on the Railway \`extract\` service (or leave unset / \`auto\` for content-hash resolution + boot ensure):"
+            echo ""
+            echo "\`\`\`"
+            echo "DAYTONA_SNAPSHOT=${{ steps.name.outputs.snapshot_name }}"
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"

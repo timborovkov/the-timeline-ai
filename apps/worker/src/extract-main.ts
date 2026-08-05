@@ -3,6 +3,7 @@ import { waitForMigrations } from '@timeline/db/wait-for-migrations';
 import { childLogger, getEnv, queue } from '@timeline/shared';
 import { shutdownPostHogNodeClients } from '@timeline/shared/analytics/posthog-node';
 
+import { ensureDocumentExtractSnapshot } from '#src/document-ingestion/document-extract-snapshot.js';
 import { captureWorkerException, flushWorkerSentry, initWorkerSentry } from '#src/monitoring.js';
 import { startDocumentExtractWorker } from '#src/workers/documentExtract.js';
 
@@ -23,6 +24,24 @@ async function main(): Promise<void> {
   if (env.WORKER_MODE !== 'document-extract') {
     throw new Error(
       'extract-main requires WORKER_MODE=document-extract (refusing to start a full worker from this entrypoint)',
+    );
+  }
+
+  // Prefer CI/CD publish of the content-hashed snapshot. When missing (new
+  // env / forgotten publish), optionally create once — never rebuild on every
+  // restart. See docs/adr/0013-daytona-document-extract.md.
+  if (env.DAYTONA_API_KEY && env.DAYTONA_SNAPSHOT_ENSURE) {
+    const snapshot = await ensureDocumentExtractSnapshot({
+      explicitName: env.DAYTONA_SNAPSHOT,
+      force: false,
+    });
+    log.info(
+      {
+        snapshot: snapshot.name,
+        contentHash: snapshot.contentHash,
+        created: snapshot.created,
+      },
+      'document-extract Daytona snapshot ensured',
     );
   }
 

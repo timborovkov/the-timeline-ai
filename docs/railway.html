@@ -140,11 +140,15 @@
         On the main <code>worker</code>, set <code>DOCUMENT_EXTRACT_ENABLED=false</code> so only
         <code>extract</code> consumes that queue. On <code>extract</code>, set
         <code>WORKER_MODE=document-extract</code>, <code>DAYTONA_API_KEY</code>,
-        <code>DAYTONA_SNAPSHOT=timeline-document-extract</code>, <code>OPENROUTER_API_KEY</code>,
-        <code>DATABASE_URL</code>, <code>REDIS_URL</code>, and S3 document-bucket variables. Do
-        <strong>not</strong> set <code>SECRETS_ENCRYPTION_KEY</code>, Auth secrets, or
-        Telegram/Slack/integration OAuth tokens on <code>extract</code>. Create the Daytona snapshot
-        once with <code>pnpm --filter @timeline/worker create-document-extract-snapshot</code>.
+        <code>OPENROUTER_API_KEY</code>, <code>DATABASE_URL</code>, <code>REDIS_URL</code>, and S3
+        document-bucket variables. Optionally pin
+        <code>DAYTONA_SNAPSHOT=timeline-document-extract-&lt;hash&gt;</code> (leave unset /
+        <code>auto</code> to resolve the content hash from
+        <code>document-extract-sandbox/</code>). Do <strong>not</strong> set
+        <code>SECRETS_ENCRYPTION_KEY</code>, Auth secrets, or Telegram/Slack/integration OAuth
+        tokens on <code>extract</code>. Snapshot lifecycle (CI ensure + optional boot create-once):
+        ADR 0013 and
+        <code>pnpm --filter @timeline/worker create-document-extract-snapshot</code>.
       </p>
 
       <h2 id="environment-variables">Environment variables</h2>
@@ -235,7 +239,8 @@ DOCUMENT_EXTRACT_ENABLED=true
 DAYTONA_API_KEY=&lt;daytona api key&gt;
 DAYTONA_API_URL=https://app.daytona.io/api
 DAYTONA_TARGET=us
-DAYTONA_SNAPSHOT=timeline-document-extract
+DAYTONA_SNAPSHOT=timeline-document-extract-&lt;hash-or-auto&gt;
+DAYTONA_SNAPSHOT_ENSURE=true
 DOCUMENT_EXTRACT_SPARSE_TEXT_CHARS=500
 DOCUMENT_EXTRACT_MAX_VISION_PAGES=20
 DATABASE_URL=${{ Postgres.DATABASE_URL }}

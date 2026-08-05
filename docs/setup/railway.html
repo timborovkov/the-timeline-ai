@@ -85,12 +85,15 @@
       <p>
         The <code>extract</code> service is the credential-thin document-extract consumer (ADR
         0013). Set <code>WORKER_MODE=document-extract</code>, <code>DAYTONA_API_KEY</code>,
-        <code>DAYTONA_SNAPSHOT=timeline-document-extract</code>, <code>OPENROUTER_API_KEY</code>,
-        <code>DATABASE_URL</code>, <code>REDIS_URL</code>, and S3 document-bucket variables. Do
-        <strong>not</strong> set <code>SECRETS_ENCRYPTION_KEY</code>, Auth secrets, or
-        Telegram/Slack/integration OAuth tokens on <code>extract</code>. On the main
-        <code>worker</code>, set <code>DOCUMENT_EXTRACT_ENABLED=false</code> so only
-        <code>extract</code> consumes that queue. Create the Daytona snapshot once with
+        <code>OPENROUTER_API_KEY</code>, <code>DATABASE_URL</code>, <code>REDIS_URL</code>, and S3
+        document-bucket variables. Pin
+        <code>DAYTONA_SNAPSHOT=timeline-document-extract-&lt;hash&gt;</code> from CI (or leave
+        unset / <code>auto</code> for content-hash resolution).
+        <code>DAYTONA_SNAPSHOT_ENSURE=true</code> (default) create-once if missing; it does not
+        rebuild every restart. Do <strong>not</strong> set <code>SECRETS_ENCRYPTION_KEY</code>,
+        Auth secrets, or Telegram/Slack/integration OAuth tokens on <code>extract</code>. On the
+        main <code>worker</code>, set <code>DOCUMENT_EXTRACT_ENABLED=false</code> so only
+        <code>extract</code> consumes that queue. Local/CI ensure:
         <code>pnpm --filter @timeline/worker create-document-extract-snapshot</code>.
       </p>
 

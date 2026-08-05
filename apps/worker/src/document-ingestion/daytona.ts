@@ -1,6 +1,7 @@
 import { Daytona, type Sandbox } from '@daytonaio/sdk';
 import { childLogger, getEnv } from '@timeline/shared';
 
+import { resolveDocumentExtractSnapshotName } from '#src/document-ingestion/document-extract-snapshot.js';
 import {
   maxVisionPages,
   type SandboxDocxExtractResult,
@@ -47,7 +48,8 @@ export function daytonaSandboxCreateParams(snapshot: string): {
 async function withSandbox<T>(fn: (sandbox: Sandbox) => Promise<T>): Promise<T> {
   const env = getEnv();
   const daytona = createDaytonaClient();
-  const sandbox = await daytona.create(daytonaSandboxCreateParams(env.DAYTONA_SNAPSHOT), {
+  const snapshot = await resolveDocumentExtractSnapshotName(env.DAYTONA_SNAPSHOT);
+  const sandbox = await daytona.create(daytonaSandboxCreateParams(snapshot), {
     timeout: 120,
   });
   try {

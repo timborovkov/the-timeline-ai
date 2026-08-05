@@ -211,15 +211,18 @@ describe('getEnv', () => {
       DAYTONA_API_KEY: 'dtn_test',
       OPENROUTER_API_KEY: 'sk-or-test',
       REDIS_URL: 'redis://localhost:6379',
+      DAYTONA_SNAPSHOT: undefined,
     });
 
-    expect(getEnv()).toMatchObject({
+    const env = getEnv();
+    expect(env).toMatchObject({
       WORKER_MODE: 'document-extract',
       AUTH_SECRET: undefined,
-      DAYTONA_SNAPSHOT: 'timeline-document-extract',
+      DAYTONA_SNAPSHOT_ENSURE: true,
       DOCUMENT_EXTRACT_SPARSE_TEXT_CHARS: 500,
       DOCUMENT_EXTRACT_MAX_VISION_PAGES: 20,
     });
+    expect(env.DAYTONA_SNAPSHOT).toBeUndefined();
   });
 
   it('still requires AUTH_SECRET for full worker mode', () => {
@@ -296,14 +299,28 @@ describe('getEnv', () => {
   });
 
   it('accepts a minimal production document-extract env', () => {
-    setExtractProductionEnv();
+    setExtractProductionEnv({ DAYTONA_SNAPSHOT: undefined });
 
-    expect(getEnv()).toMatchObject({
+    const env = getEnv();
+    expect(env).toMatchObject({
       WORKER_MODE: 'document-extract',
       DOCUMENT_EXTRACT_ALLOW_INPROCESS: false,
-      DAYTONA_SNAPSHOT: 'timeline-document-extract',
+      DAYTONA_SNAPSHOT_ENSURE: true,
       S3_ENDPOINT: 'http://localhost:9000',
       S3_REGION: 'us-east-1',
+    });
+    expect(env.DAYTONA_SNAPSHOT).toBeUndefined();
+  });
+
+  it('accepts an explicit DAYTONA_SNAPSHOT pin and disabling boot ensure', () => {
+    setExtractProductionEnv({
+      DAYTONA_SNAPSHOT: 'timeline-document-extract-deadbeefcafe',
+      DAYTONA_SNAPSHOT_ENSURE: '0',
+    });
+
+    expect(getEnv()).toMatchObject({
+      DAYTONA_SNAPSHOT: 'timeline-document-extract-deadbeefcafe',
+      DAYTONA_SNAPSHOT_ENSURE: false,
     });
   });
 });
@@ -311,6 +328,7 @@ describe('getEnv', () => {
 describe('isAllowedDocumentExtractProcessEnvKey', () => {
   it('allows extract credentials and platform noise', () => {
     expect(isAllowedDocumentExtractProcessEnvKey('DAYTONA_API_KEY')).toBe(true);
+    expect(isAllowedDocumentExtractProcessEnvKey('DAYTONA_SNAPSHOT_ENSURE')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('S3_SECRET_ACCESS_KEY')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('RAILWAY_ENVIRONMENT')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('PATH')).toBe(true);

@@ -41,6 +41,7 @@ const DOCUMENT_EXTRACT_PROCESS_ENV_ALLOWLIST = new Set([
   'DAYTONA_API_URL',
   'DAYTONA_TARGET',
   'DAYTONA_SNAPSHOT',
+  'DAYTONA_SNAPSHOT_ENSURE',
   'DATABASE_URL',
   'REDIS_URL',
   'OPENROUTER_API_KEY',
@@ -149,10 +150,17 @@ const baseSchema = z.object({
   DAYTONA_API_KEY: z.string().optional(),
   DAYTONA_API_URL: z.preprocess(emptyStringAsUnset, z.url().default('https://app.daytona.io/api')),
   DAYTONA_TARGET: z.preprocess(emptyStringAsUnset, z.string().default('us')),
-  DAYTONA_SNAPSHOT: z.preprocess(
-    emptyStringAsUnset,
-    z.string().default('timeline-document-extract'),
-  ),
+  /**
+   * Daytona snapshot name for document-extract sandboxes.
+   * Unset / `auto` / `content-hash` → `timeline-document-extract-<sandboxHash>`
+   * (resolved in the worker; see ADR 0013).
+   */
+  DAYTONA_SNAPSHOT: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  /**
+   * When true (default), extract-main ensures the named snapshot exists once
+   * at boot (create-if-missing; never rebuilds an existing snapshot).
+   */
+  DAYTONA_SNAPSHOT_ENSURE: z.preprocess(booleanString, z.boolean().default(true)),
   /** Sparse-PDF text threshold (chars) before rendering pages for vision. */
   DOCUMENT_EXTRACT_SPARSE_TEXT_CHARS: z.coerce.number().int().positive().default(500),
   /** Max pages rendered for sparse-PDF vision (hard-capped at 100 in code). */

@@ -27,10 +27,11 @@ authored by a trusted teammate.
    `DOCUMENT_EXTRACT_ENABLED=false` so only the extract service consumes the
    queue.
 2. **Daytona sandbox for parsers.** PDF/DOCX bytes are uploaded into a fresh
-   sandbox created from snapshot `timeline-document-extract` (1 CPU / 2 GB,
-   `networkBlockAll`, no credentials). Python tries pdfplumber → pypdfium2;
-   sparse text (< 500 chars) renders up to 20 pages (env-capped at 100) to
-   PNG. DOCX text is extracted in the same sandbox.
+   sandbox created from a content-hashed snapshot
+   `timeline-document-extract-<hash>` (1 CPU / 2 GB, `networkBlockAll`, no
+   credentials). Python tries pdfplumber → pypdfium2; sparse text
+   (< 500 chars) renders up to 20 pages (env-capped at 100) to PNG. DOCX text
+   is extracted in the same sandbox.
 3. **Vision stays in the extract service.** Sandboxes cannot call OpenRouter
    under `networkBlockAll`. Sparse PDF page images and `image/*` inputs are
    transcribed via `llm.extractTextFromMedia` in the extract service Node
@@ -50,6 +51,29 @@ authored by a trusted teammate.
    not shared `getEnv()`, so production web can boot with the same defaults).
    Only `WORKER_MODE=document-extract` consumes that queue. Non-production
    full workers still skip the consumer when Daytona is unset.
+6. **Content-hashed snapshot lifecycle.** The snapshot name is derived from a
+   hash of `apps/worker/document-extract-sandbox/**` (non-markdown files) plus
+   an Image recipe revision constant. CI publishes/ensures that snapshot when
+   those paths change; extract-main may create-once if missing
+   (`DAYTONA_SNAPSHOT_ENSURE`, default true) but must not rebuild on every
+   restart. Explicit `DAYTONA_SNAPSHOT` still overrides the hash pin.
+
+## Snapshot operations
+
+| Path | When | Command / behavior |
+| --- | --- | --- |
+| Content-hash name | Always (default) | `timeline-document-extract-<12-char-sha256>` from sandbox dir + image revision |
+| Print name only | Local / CI | `pnpm --filter @timeline/worker create-document-extract-snapshot -- --print-name-only` |
+| Ensure (idempotent) | Local once, CI on sandbox changes, optional extract boot | `pnpm --filter @timeline/worker create-document-extract-snapshot` (alias: `ensure-document-extract-snapshot`) |
+| Force rebuild | Corruption / debugging | same script with `--force` |
+| CI publish | Push to `main`/`staging` touching sandbox or snapshot recipe | `.github/workflows/publish-document-extract-snapshot.yml` when repo variable `DAYTONA_SNAPSHOT_PUBLISH=true` and secret `DAYTONA_API_KEY` |
+| Boot ensure | extract-main start | If `DAYTONA_SNAPSHOT_ENSURE=true` (default) and `DAYTONA_API_KEY` set: get-or-create once |
+
+Recommended Railway pin after CI (or leave unset / `auto` so the worker resolves the hash from the shipped sandbox directory):
+
+```bash
+DAYTONA_SNAPSHOT=timeline-document-extract-<hash>
+```
 
 ## Non-goals
 
@@ -57,14 +81,15 @@ authored by a trusted teammate.
 - Video ingest.
 - Meeting-bot raw audio (Recall transcripts only; unchanged).
 - Fact extraction (`extract` queue) — operates on already-text events.
-- Daytona warm pools and content-addressed fingerprint skip-reuse.
+- Daytona warm pools and per-document fingerprint skip-reuse.
 
 ## Consequences
 
 - Main worker no longer loads untrusted PDF/DOCX parsers on the hot path.
 - Extract service still has DB write + S3 read + OpenRouter; compromise is
   narrower than full worker secret theft but not zero.
-- Operators must maintain the Daytona snapshot and set `DAYTONA_*` on the
-  extract service (and locally when not using the in-process escape hatch).
+- Operators set `DAYTONA_*` on the extract service. Snapshot drift is avoided
+  by content-hash names + CI ensure; first boot without a published snapshot
+  may be slow when boot ensure creates it.
 - Document product behavior (chunking, embed fan-out, failed/retry UX, 25 MiB
   cap) stays the same; only the trust boundary moves.
