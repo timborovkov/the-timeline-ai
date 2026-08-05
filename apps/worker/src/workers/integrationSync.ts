@@ -31,6 +31,150 @@ import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring
 const log = childLogger('worker:integration-sync');
 type NativeSyncProvider = integrationsLib.NativeProviderId;
 const HARVESTED_DOCUMENT_SOURCE_SNAPSHOT_VERSION = 'integration-document-source-snapshot-2026-07';
+const PAGINATION_LOCK_RETRY_DELAY_MS = 5_000;
+const MAX_PAGINATION_LOCK_RETRY_ATTEMPTS = 3;
+const PAGINATION_LOCK_DURABLE_RETRY_DELAY_MS = 60_000;
+
+type TargetedIntegrationSyncJob = Extract<queue.IntegrationSyncJobData, { kind: 'targeted' }>;
+interface ContinuationJob {
+  data: TargetedIntegrationSyncJob;
+  /** Absolute retry boundary; recalculated at handoff so retries never shorten it. */
+  retryAt?: Date;
+  /** Its continuation was atomically staged with this run's cursor checkpoint. */
+  staged?: boolean;
+  /** Lease that owns this durable Postgres-to-BullMQ handoff. */
+  handoff?: Pick<integrationsLib.ClaimedIntegrationSyncContinuation, 'handoffId' | 'claimToken'>;
+}
+
+function delayUntil(retryAt: Date): number | undefined {
+  const delayMs = retryAt.getTime() - Date.now();
+  return delayMs > 0 ? delayMs : undefined;
+}
+
+function isProviderPaginationContinuation(
+  target: TargetedIntegrationSyncJob | undefined,
+): target is TargetedIntegrationSyncJob {
+  return target?.reason === 'provider_pagination_continuation';
+}
+
+function isMatchingContinuation(
+  target: TargetedIntegrationSyncJob,
+  continuation: integrationsLib.SyncContinuation,
+): boolean {
+  return (
+    target.resourceType === continuation.resourceType &&
+    target.externalId === continuation.externalId &&
+    target.surface === continuation.surface
+  );
+}
+
+function includeCurrentContinuationWhenMissing(
+  continuations: integrationsLib.SyncContinuation[],
+  target: TargetedIntegrationSyncJob | undefined,
+): void {
+  if (
+    isProviderPaginationContinuation(target) &&
+    !continuations.some((continuation) => isMatchingContinuation(target, continuation))
+  ) {
+    continuations.push({
+      resourceType: target.resourceType,
+      externalId: target.externalId,
+      ...(target.surface ? { surface: target.surface } : {}),
+    });
+  }
+}
+
+function continuationJob(
+  integration: Pick<integrationsLib.IntegrationRow, 'id' | 'teamId'>,
+  continuation: integrationsLib.SyncContinuation,
+  retryAt = continuation.retryAt,
+  handoff?: Pick<integrationsLib.ClaimedIntegrationSyncContinuation, 'handoffId' | 'claimToken'>,
+): ContinuationJob {
+  return {
+    data: {
+      kind: 'targeted',
+      integrationId: integration.id,
+      teamId: integration.teamId,
+      triggeredBy: 'reconcile',
+      resourceType: continuation.resourceType,
+      externalId: continuation.externalId,
+      ...(continuation.surface ? { surface: continuation.surface } : {}),
+      reason: 'provider_pagination_continuation',
+      ...(continuation.continuationAttempt
+        ? { continuationAttempt: continuation.continuationAttempt }
+        : {}),
+      ...(handoff ? { continuationHandoffId: handoff.handoffId } : {}),
+    },
+    ...(retryAt ? { retryAt } : {}),
+    ...(handoff ? { handoff } : {}),
+  };
+}
+
+function latestRetryAt(...retryAts: (Date | undefined)[]): Date | undefined {
+  return retryAts.reduce<Date | undefined>(
+    (latest, retryAt) => (!latest || (retryAt && retryAt > latest) ? retryAt : latest),
+    undefined,
+  );
+}
+
+function continuationFromJob(job: ContinuationJob): integrationsLib.SyncContinuation {
+  return {
+    resourceType: job.data.resourceType,
+    externalId: job.data.externalId,
+    ...(job.data.surface ? { surface: job.data.surface } : {}),
+    ...(job.retryAt ? { retryAt: job.retryAt } : {}),
+    ...(job.data.continuationAttempt ? { continuationAttempt: job.data.continuationAttempt } : {}),
+  };
+}
+
+async function handoffClaimedContinuations(
+  db: Db,
+  continuationJobs: readonly ContinuationJob[],
+): Promise<void> {
+  let handoffError: unknown;
+  for (const continuationJob of continuationJobs) {
+    const handoff = continuationJob.handoff;
+    if (!handoff) continue;
+    try {
+      const delayMs = continuationJob.retryAt ? delayUntil(continuationJob.retryAt) : undefined;
+      if (delayMs) {
+        await queue.enqueueIntegrationSyncJob(continuationJob.data, { delayMs });
+      } else {
+        await queue.enqueueIntegrationSyncJob(continuationJob.data);
+      }
+      const acknowledged = await integrationsLib.adminAcknowledgePendingIntegrationSyncContinuation(
+        db,
+        handoff.handoffId,
+        handoff.claimToken,
+      );
+      if (!acknowledged) {
+        throw new Error(
+          'provider pagination continuation handoff lease was lost before acknowledgement',
+        );
+      }
+    } catch (err) {
+      try {
+        await integrationsLib.adminReleasePendingIntegrationSyncContinuation(
+          db,
+          handoff.handoffId,
+          handoff.claimToken,
+        );
+      } catch (releaseErr) {
+        log.error(
+          { releaseErr, integrationId: continuationJob.data.integrationId, continuationJob },
+          'failed to release rejected provider pagination continuation handoff',
+        );
+      }
+      handoffError ??= err;
+    }
+  }
+  if (handoffError) {
+    if (handoffError instanceof Error) throw handoffError;
+    throw new Error('Provider pagination continuation handoff failed with a non-Error value', {
+      cause: handoffError,
+    });
+  }
+}
 
 interface IntegrationSyncDeps {
   db: Db;
@@ -326,7 +470,7 @@ export async function runOneIntegration(
   db: Db,
   integrationId: string,
   kind: 'backfill' | 'incremental' | 'targeted',
-  target?: Extract<queue.IntegrationSyncJobData, { kind: 'targeted' }>,
+  target?: TargetedIntegrationSyncJob,
 ): Promise<void> {
   // Per-integration session-scoped advisory lock. With worker
   // concurrency=2 + no jobId dedup, the 5-min tick can race with a
@@ -351,9 +495,48 @@ export async function runOneIntegration(
   if (!lockedRow?.locked) {
     log.info({ integrationId, kind }, 'integration sync already running — skipping this tick');
     reserved.release();
+    if (isProviderPaginationContinuation(target)) {
+      const attempt = target.continuationAttempt ?? 0;
+      const continuationAttempt =
+        attempt < MAX_PAGINATION_LOCK_RETRY_ATTEMPTS ? attempt + 1 : attempt;
+      const retryDelayMs =
+        attempt < MAX_PAGINATION_LOCK_RETRY_ATTEMPTS
+          ? PAGINATION_LOCK_RETRY_DELAY_MS
+          : PAGINATION_LOCK_DURABLE_RETRY_DELAY_MS;
+      // The current job has already acknowledged its prior outbox handoff.
+      // Persist the next target before asking Redis to delay it; otherwise an
+      // enqueue rejection would strand the continuation after BullMQ exhausts
+      // this job's own retries.
+      await integrationsLib.adminRecordPendingIntegrationSyncContinuations(db, integrationId, [
+        {
+          resourceType: target.resourceType,
+          externalId: target.externalId,
+          ...(target.surface ? { surface: target.surface } : {}),
+          retryAt: new Date(Date.now() + retryDelayMs),
+          continuationAttempt,
+        },
+      ]);
+      const claimed = await integrationsLib.adminClaimPendingIntegrationSyncContinuations(
+        db,
+        integrationId,
+      );
+      await handoffClaimedContinuations(
+        db,
+        claimed.map((claim) =>
+          continuationJob(
+            { id: integrationId, teamId: target.teamId },
+            claim.continuation,
+            claim.continuation.retryAt,
+            claim,
+          ),
+        ),
+      );
+    }
     return;
   }
-  const continuationJobs: Extract<queue.IntegrationSyncJobData, { kind: 'targeted' }>[] = [];
+  const continuationJobs: ContinuationJob[] = [];
+  const cursorCheckpoints = new Map<string, integrationsLib.IntegrationSyncCursorCheckpoint>();
+  let integrationForHandoff: Pick<integrationsLib.IntegrationRow, 'id' | 'teamId'> | null = null;
   try {
     const integration = await integrationsLib.adminLoadIntegration(db, integrationId);
     if (!integration) {
@@ -370,6 +553,7 @@ export async function runOneIntegration(
       // additive.
       return;
     }
+    integrationForHandoff = integration;
     const missingRequiredScopes = integrationsLib.missingRequiredProviderScopes(
       integration.provider,
       integration.scopes,
@@ -424,6 +608,37 @@ export async function runOneIntegration(
       return;
     }
     const pause = await integrationsLib.adminLoadIntegrationSyncPause(db, integrationId);
+    const providerBudgetPause = await loadFirstProviderBudgetPause(db, integration, tokens);
+    const pendingContinuations =
+      await integrationsLib.adminClaimPendingIntegrationSyncContinuations(db, integrationId);
+    if (pendingContinuations.length > 0) {
+      log.info(
+        { integrationId, kind, continuationCount: pendingContinuations.length },
+        'restoring pending provider pagination continuations',
+      );
+      for (const pendingContinuation of pendingContinuations) {
+        continuationJobs.push(
+          continuationJob(
+            integration,
+            pendingContinuation.continuation,
+            latestRetryAt(
+              pendingContinuation.continuation.retryAt,
+              pause?.retryAt,
+              providerBudgetPause?.retryAt,
+            ),
+            pendingContinuation,
+          ),
+        );
+      }
+      return;
+    }
+    if (await integrationsLib.adminHasPendingIntegrationSyncContinuations(db, integrationId)) {
+      log.info(
+        { integrationId, kind },
+        'provider pagination continuation is leased by another worker — skipping provider sync',
+      );
+      return;
+    }
     if (pause) {
       log.info({ integrationId, kind, retryAt: pause.retryAt }, 'integration sync paused');
       await integrationsLib.adminRecordAudit(
@@ -437,9 +652,14 @@ export async function runOneIntegration(
         },
         { integrationId },
       );
+      if (isProviderPaginationContinuation(target)) {
+        continuationJobs.push({
+          data: target,
+          retryAt: pause.retryAt,
+        });
+      }
       return;
     }
-    const providerBudgetPause = await loadFirstProviderBudgetPause(db, integration, tokens);
     if (providerBudgetPause) {
       log.info(
         { integrationId, kind, retryAt: providerBudgetPause.retryAt },
@@ -457,6 +677,12 @@ export async function runOneIntegration(
         },
         { integrationId },
       );
+      if (isProviderPaginationContinuation(target)) {
+        continuationJobs.push({
+          data: target,
+          retryAt: providerBudgetPause.retryAt,
+        });
+      }
       return;
     }
     const provider = integrationsLib.getProvider(integration.provider);
@@ -519,8 +745,16 @@ export async function runOneIntegration(
           integrationId,
         });
       },
-      async saveCursor(resourceType, cursor, status) {
-        await integrationsLib.adminSaveCursor(db, integrationId, resourceType, cursor, status);
+      saveCursor(resourceType, cursor, status) {
+        // Providers can checkpoint a page before they know whether another
+        // surface will need a continuation. Hold the final value for each
+        // resource until the run's cursor/outbox transaction commits.
+        cursorCheckpoints.set(resourceType, {
+          resourceType,
+          cursor,
+          ...(status ? { status } : {}),
+        });
+        return Promise.resolve();
       },
       async loadCursor(resourceType) {
         return integrationsLib.adminLoadCursor(db, integrationId, resourceType);
@@ -578,7 +812,18 @@ export async function runOneIntegration(
       const partialFailures = syncPartialFailures(syncResult);
       const partialSummary =
         partialFailures.length > 0 ? summarizeSyncPartialFailures(partialFailures) : null;
-      await integrationsLib.adminMarkSynced(db, integrationId);
+      const continuations = syncResult?.continuations ?? [];
+      // A targeted job proves only one provider surface is healthy. Preserve
+      // integration-wide transient state until an uninterrupted full sync has
+      // completed without leaving any durable page checkpoint behind.
+      const clearsIntegrationHealth =
+        kind !== 'targeted' && partialFailures.length === 0 && continuations.length === 0;
+      await integrationsLib.adminCommitIntegrationSyncCheckpoint(db, {
+        integrationId,
+        cursors: [...cursorCheckpoints.values()],
+        continuations,
+        ...(clearsIntegrationHealth ? { markSynced: {} } : {}),
+      });
       if (partialSummary) {
         const authPartialFailures = partialFailures.filter(isAuthOrAccessPartialFailure);
         const transientPartialFailures = partialFailures.filter(
@@ -614,7 +859,7 @@ export async function runOneIntegration(
             });
           }
         }
-      } else {
+      } else if (clearsIntegrationHealth) {
         await integrationsLib.adminResetTransientSyncFailures(db, integrationId);
         await integrationsLib.adminResolveConnectionAttention(db, integration.teamId, {
           providerConnectionId: integration.providerConnectionId,
@@ -623,16 +868,8 @@ export async function runOneIntegration(
             missingRequiredScopes.length > 0 ? ['sync_error'] : ['needs_reconnect', 'sync_error'],
         });
       }
-      for (const continuation of syncResult?.continuations ?? []) {
-        continuationJobs.push({
-          kind: 'targeted',
-          integrationId,
-          teamId: integration.teamId,
-          triggeredBy: 'reconcile',
-          resourceType: continuation.resourceType,
-          externalId: continuation.externalId,
-          reason: 'provider_pagination_continuation',
-        });
+      for (const continuation of continuations) {
+        continuationJobs.push({ ...continuationJob(integration, continuation), staged: true });
       }
       await integrationsLib.adminRecordAudit(
         db,
@@ -676,8 +913,33 @@ export async function runOneIntegration(
           },
           { integrationId },
         );
+        const continuations = integrationsLib.syncContinuationsFromError(err);
+        includeCurrentContinuationWhenMissing(continuations, target);
+        const rateLimitedContinuations = continuations.map((continuation) => {
+          const retryAt = latestRetryAt(continuation.retryAt, rateLimit.retryAt);
+          return { ...continuation, ...(retryAt ? { retryAt } : {}) };
+        });
+        await integrationsLib.adminCommitIntegrationSyncCheckpoint(db, {
+          integrationId,
+          cursors: [...cursorCheckpoints.values()],
+          continuations: rateLimitedContinuations,
+        });
+        for (const continuation of rateLimitedContinuations) {
+          continuationJobs.push({ ...continuationJob(integration, continuation), staged: true });
+        }
         return;
       }
+      // A provider may carry pages it checkpointed before a later resource
+      // fails. Persist both recovery pieces before rethrowing to BullMQ: its
+      // retry budget can exhaust, whereas the durable handoff will be picked
+      // up by a later scheduled sync. Do not mark the integration healthy.
+      const errorContinuations = integrationsLib.syncContinuationsFromError(err);
+      includeCurrentContinuationWhenMissing(errorContinuations, target);
+      await integrationsLib.adminCommitIntegrationSyncCheckpoint(db, {
+        integrationId,
+        cursors: [...cursorCheckpoints.values()],
+        continuations: errorContinuations,
+      });
       if (isAuthOrAccessFailure(msg)) {
         await integrationsLib.adminRecordConnectionAttention(db, integration.teamId, {
           providerConnectionId: integration.providerConnectionId,
@@ -710,6 +972,48 @@ export async function runOneIntegration(
       throw err;
     }
   } finally {
+    let handoffError: unknown;
+    // Stage fallback continuations while this integration still owns its
+    // advisory lock. Sync-result continuations were already staged with their
+    // cursor checkpoint; these cover pause and lock-contention paths that do
+    // not have a provider cursor to commit.
+    if (integrationForHandoff) {
+      const unstagedContinuations = continuationJobs
+        .filter((continuationJob) => !continuationJob.handoff && !continuationJob.staged)
+        .map(continuationFromJob);
+      const needsClaim = continuationJobs.some((continuationJob) => !continuationJob.handoff);
+      if (needsClaim) {
+        try {
+          if (unstagedContinuations.length > 0) {
+            await integrationsLib.adminRecordPendingIntegrationSyncContinuations(
+              db,
+              integrationId,
+              unstagedContinuations,
+            );
+          }
+          const claimed = await integrationsLib.adminClaimPendingIntegrationSyncContinuations(
+            db,
+            integrationId,
+          );
+          for (const pendingContinuation of claimed) {
+            continuationJobs.push(
+              continuationJob(
+                integrationForHandoff,
+                pendingContinuation.continuation,
+                pendingContinuation.continuation.retryAt,
+                pendingContinuation,
+              ),
+            );
+          }
+        } catch (err) {
+          log.error(
+            { err, integrationId, unstagedContinuations },
+            'failed to stage provider pagination continuations before handoff',
+          );
+          handoffError ??= err;
+        }
+      }
+    }
     // Release the session lock on the SAME connection that acquired it
     // (see `reserved` above), then return that connection to the pool.
     try {
@@ -719,16 +1023,26 @@ export async function runOneIntegration(
       // the lock is auto-released by Postgres anyway.
     }
     reserved.release();
-  }
-  for (const continuationJob of continuationJobs) {
-    await queue.enqueueIntegrationSyncJob(continuationJob);
+    if (!handoffError) {
+      try {
+        await handoffClaimedContinuations(db, continuationJobs);
+      } catch (err) {
+        log.warn({ err, integrationId }, 'failed to enqueue provider pagination continuation');
+        handoffError ??= err;
+      }
+    }
+    if (handoffError) {
+      throw handoffError instanceof Error
+        ? handoffError
+        : new Error('failed to enqueue provider pagination continuation');
+    }
   }
 }
 
 function targetedSelections(
   provider: NativeSyncProvider,
   selections: { kind: string; externalId: string }[],
-  target: Extract<queue.IntegrationSyncJobData, { kind: 'targeted' }>,
+  target: TargetedIntegrationSyncJob,
 ): { kind: string; externalId: string }[] {
   const exact = selections.filter(
     (selection) =>
@@ -835,7 +1149,9 @@ export async function handleTick(db: Db): Promise<void> {
       );
       continue;
     }
-    if (!reconciliationDue({ provider, lastSyncedAt: i.lastSyncedAt })) {
+    const hasPendingContinuation =
+      await integrationsLib.adminHasPendingIntegrationSyncContinuations(db, i.id);
+    if (!hasPendingContinuation && !reconciliationDue({ provider, lastSyncedAt: i.lastSyncedAt })) {
       log.debug(
         { integrationId: i.id, provider, lastSyncedAt: i.lastSyncedAt },
         'integration reconciliation not due yet',

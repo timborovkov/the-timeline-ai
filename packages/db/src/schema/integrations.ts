@@ -176,6 +176,41 @@ export const integrationSyncState = pgTable(
   ],
 );
 
+// Durable outbox for provider pagination continuations. A queue handoff spans
+// Postgres and Redis, so the row remains until the worker has observed an
+// idempotent BullMQ accept. `surface` is non-null specifically so GitHub's
+// independent pagination surfaces never collapse into one continuation.
+export const integrationSyncContinuationHandoffs = pgTable(
+  'integration_sync_continuation_handoffs',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    integrationId: uuid('integration_id')
+      .notNull()
+      .references(() => integrations.id, { onDelete: 'cascade' }),
+    resourceType: text('resource_type').notNull(),
+    externalId: text('external_id').notNull(),
+    surface: text('surface').notNull().default(''),
+    retryAt: timestamp('retry_at', { withTimezone: true }),
+    continuationAttempt: integer('continuation_attempt').notNull().default(0),
+    claimToken: uuid('claim_token'),
+    leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('integration_sync_continuation_handoffs_target_unq').on(
+      table.integrationId,
+      table.resourceType,
+      table.externalId,
+      table.surface,
+    ),
+    index('integration_sync_continuation_handoffs_lease_idx').on(
+      table.integrationId,
+      table.leaseExpiresAt,
+    ),
+  ],
+);
+
 // User-selected resources to sync (folders, projects, repos). The team
 // admin picks these from the settings UI after connecting.
 export const integrationSelections = pgTable(

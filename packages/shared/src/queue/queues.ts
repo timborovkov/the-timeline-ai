@@ -795,6 +795,14 @@ export type IntegrationSyncJobData =
       externalId: string;
       surface?: string;
       reason?: string;
+      /** Bounded handoff count used when a continuation finds its integration lock busy. */
+      continuationAttempt?: number;
+      /**
+       * Durable Postgres outbox identity. Unlike ordinary pagination jobs,
+       * retries of this exact handoff must be idempotent after an ambiguous
+       * Redis/BullMQ response.
+       */
+      continuationHandoffId?: string;
     };
 
 export interface WebhookDeliveryJobData {
@@ -855,7 +863,11 @@ function integrationSyncJobId(data: IntegrationSyncJobData): string | undefined 
     return bullmqCustomJobId(['integration-reconcile', data.integrationId]);
   }
   if (data.kind !== 'targeted') return undefined;
-  if (data.reason === 'provider_pagination_continuation') return undefined;
+  if (data.reason === 'provider_pagination_continuation') {
+    return data.continuationHandoffId
+      ? bullmqCustomJobId(['integration-pagination-continuation', data.continuationHandoffId])
+      : undefined;
+  }
   return bullmqCustomJobId([
     'integration-targeted',
     data.integrationId,
@@ -865,7 +877,10 @@ function integrationSyncJobId(data: IntegrationSyncJobData): string | undefined 
   ]);
 }
 
-export async function enqueueIntegrationSyncJob(data: IntegrationSyncJobData): Promise<void> {
+export async function enqueueIntegrationSyncJob(
+  data: IntegrationSyncJobData,
+  opts: { delayMs?: number } = {},
+): Promise<void> {
   // Backfill and broad incremental jobs intentionally avoid jobId dedupe:
   // idempotency lives in raw_event dedup keys, per-resource cursors, and the
   // worker's advisory lock. Provider-policy reconciliation and targeted webhook
@@ -879,6 +894,11 @@ export async function enqueueIntegrationSyncJob(data: IntegrationSyncJobData): P
   if (jobId) {
     const existing = (await q.getJob(jobId)) as ExistingJobLike | null;
     if (existing) {
+      // A durable outbox handoff is acknowledged only after this function
+      // returns. Any retained job state proves BullMQ already accepted its
+      // stable handoff id, including a completed job after an "accepted then
+      // Redis connection dropped" error. Do not recycle it into a duplicate.
+      if (data.kind === 'targeted' && data.continuationHandoffId) return;
       const state = await existing.getState?.().catch(() => null);
       if (!state || INTEGRATION_SYNC_JOB_DEDUPE_STATES.has(state)) return;
       if (INTEGRATION_SYNC_JOB_REPLACEABLE_STATES.has(state)) {
@@ -893,7 +913,15 @@ export async function enqueueIntegrationSyncJob(data: IntegrationSyncJobData): P
       }
     }
   }
-  await q.add('integration-sync', data, jobId ? { jobId } : undefined);
+  const addOptions = {
+    ...(jobId ? { jobId } : {}),
+    ...(opts.delayMs && opts.delayMs > 0 ? { delay: opts.delayMs } : {}),
+  };
+  await q.add(
+    'integration-sync',
+    data,
+    Object.keys(addOptions).length > 0 ? addOptions : undefined,
+  );
 }
 
 /**

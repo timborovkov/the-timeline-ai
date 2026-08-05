@@ -39,7 +39,10 @@ import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
 import { resetSecretsKeyCacheForTests } from '#src/crypto/secrets.js';
 import { resetEnvForTests } from '#src/env.js';
 import {
+  adminCommitIntegrationSyncCheckpoint,
   adminDecryptIntegrationTokens,
+  adminMarkSynced,
+  adminRecordError,
   adminRecordTransientSyncFailure,
   adminResetTransientSyncFailures,
 } from '#src/integrations/scope.js';
@@ -2805,6 +2808,41 @@ describe('withTeam namespaced port', () => {
       lastStatus: 'ok',
       lastError: null,
     });
+  });
+
+  it('keeps an integration unhealthy while a partial surface checkpoint is durable', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const integration = await scope.integrations.createIntegration({
+      provider: 'github',
+      displayName: 'GitHub',
+      externalAccountId: 'surface-health',
+    });
+
+    await adminRecordError(db as never, integration.id, 'Review comments are retrying');
+    await adminCommitIntegrationSyncCheckpoint(db as never, {
+      integrationId: integration.id,
+      cursors: [
+        {
+          resourceType: 'github.repo:acme/app:issue_comments',
+          cursor: { issue_comments_continuation: { page: 2, phase: 'drain' } },
+          status: { lastStatus: 'error', lastError: 'Review comments are retrying' },
+        },
+      ],
+    });
+
+    const [partialProgress] = await db
+      .select({ lastError: integrations.lastError, lastSyncedAt: integrations.lastSyncedAt })
+      .from(integrations)
+      .where(eq(integrations.id, integration.id));
+    expect(partialProgress).toMatchObject({ lastError: 'Review comments are retrying' });
+    expect(partialProgress?.lastSyncedAt).toBeNull();
+
+    await adminMarkSynced(db as never, integration.id);
+    const [complete] = await db
+      .select({ lastError: integrations.lastError })
+      .from(integrations)
+      .where(eq(integrations.id, integration.id));
+    expect(complete?.lastError).toBeNull();
   });
 
   it('preserves per-integration visibility defaults when reconnecting', async () => {

@@ -135,10 +135,20 @@ export interface SyncPartialFailure {
   error: string;
 }
 
+export interface SyncContinuation {
+  resourceType: string;
+  externalId: string;
+  surface?: string;
+  /** Earliest safe time to resume a durable provider checkpoint. */
+  retryAt?: Date;
+  /** Bounded worker-local retry count for an integration advisory-lock miss. */
+  continuationAttempt?: number;
+}
+
 export interface SyncResult {
   partialFailures?: SyncPartialFailure[];
   /** Provider resources that must be resumed promptly before their page cursor expires. */
-  continuations?: { resourceType: string; externalId: string }[];
+  continuations?: SyncContinuation[];
 }
 
 export interface SyncTarget {
@@ -277,6 +287,98 @@ export class ProviderRateLimitError extends Error {
     this.reason = input.reason;
     if (input.externalAccountId) this.externalAccountId = input.externalAccountId;
   }
+}
+
+interface SyncContinuationCarrier {
+  syncContinuation?: SyncContinuation;
+  syncContinuations?: SyncContinuation[];
+}
+
+function validSyncContinuation(value: unknown): SyncContinuation | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const continuation = value as Partial<SyncContinuation>;
+  if (
+    typeof continuation.resourceType !== 'string' ||
+    continuation.resourceType.length === 0 ||
+    typeof continuation.externalId !== 'string' ||
+    continuation.externalId.length === 0
+  ) {
+    return null;
+  }
+  return {
+    resourceType: continuation.resourceType,
+    externalId: continuation.externalId,
+    ...(typeof continuation.surface === 'string' && continuation.surface.length > 0
+      ? { surface: continuation.surface }
+      : {}),
+    ...(continuation.retryAt instanceof Date ? { retryAt: continuation.retryAt } : {}),
+  };
+}
+
+function dedupeSyncContinuations(continuations: readonly SyncContinuation[]): SyncContinuation[] {
+  const byTarget = new Map<string, SyncContinuation>();
+  for (const continuation of continuations) {
+    const key = [
+      continuation.resourceType,
+      continuation.externalId,
+      continuation.surface ?? '',
+    ].join('\u0000');
+    if (!byTarget.has(key)) byTarget.set(key, continuation);
+  }
+  return [...byTarget.values()];
+}
+
+/**
+ * Keep a resource checkpoint attached to a provider error so the worker can
+ * resume exactly that resource once a provider pause expires.
+ */
+export function attachSyncContinuation<T extends Error>(
+  err: T,
+  continuation: SyncContinuation,
+): T & SyncContinuationCarrier {
+  const carried = syncContinuationsFromError(err);
+  return Object.assign(err, {
+    syncContinuation: continuation,
+    syncContinuations: dedupeSyncContinuations([...carried, continuation]),
+  });
+}
+
+/**
+ * Retain every already-checkpointed resource when a later provider call throws.
+ * The singular field remains for callers that can only resume one target.
+ */
+export function attachSyncContinuations<T extends Error>(
+  err: T,
+  continuations: readonly SyncContinuation[],
+): T & SyncContinuationCarrier {
+  const carried = syncContinuationsFromError(err);
+  const all = dedupeSyncContinuations([...continuations, ...carried]);
+  const singular =
+    validSyncContinuation((err as SyncContinuationCarrier).syncContinuation) ?? all.at(-1);
+  if (singular) {
+    return Object.assign(err, {
+      syncContinuation: singular,
+      syncContinuations: all,
+    });
+  }
+  return Object.assign(err, { syncContinuations: all });
+}
+
+export function syncContinuationsFromError(err: unknown): SyncContinuation[] {
+  if (typeof err !== 'object' || err === null) return [];
+  const carrier = err as SyncContinuationCarrier;
+  const plural = Array.isArray(carrier.syncContinuations)
+    ? carrier.syncContinuations
+        .map(validSyncContinuation)
+        .filter((value): value is SyncContinuation => value !== null)
+    : [];
+  const singular = validSyncContinuation(carrier.syncContinuation);
+  return dedupeSyncContinuations([...plural, ...(singular ? [singular] : [])]);
+}
+
+export function syncContinuationFromError(err: unknown): SyncContinuation | null {
+  if (typeof err !== 'object' || err === null) return null;
+  return validSyncContinuation((err as SyncContinuationCarrier).syncContinuation);
 }
 
 export function isProviderRateLimitError(err: unknown): err is ProviderRateLimitError {

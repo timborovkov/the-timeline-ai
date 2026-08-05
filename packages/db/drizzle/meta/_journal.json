@@ -456,6 +456,13 @@
       "when": 1795654200000,
       "tag": "0064_chat_message_sequence",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1795654260000,
+      "tag": "0065_integration_sync_continuation_handoffs",
+      "breakpoints": true
     }
   ]
 }

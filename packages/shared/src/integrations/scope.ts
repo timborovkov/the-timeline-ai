@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import {
   type Db,
   auditLog,
@@ -7,6 +9,7 @@ import {
   integrationProviderBudgets,
   integrationProvider,
   integrationSelections,
+  integrationSyncContinuationHandoffs,
   integrationSyncState,
   integrationWebhookDeliveryTargets,
   integrationWebhookSubscriptions,
@@ -24,6 +27,7 @@ import { and, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'dri
 import type {
   IntegrationRow,
   ProviderConnectionRow,
+  SyncContinuation,
   WebhookSubscription,
 } from '#src/integrations/types.js';
 
@@ -118,6 +122,8 @@ type NativeProviderName = Exclude<IntegrationProviderName, 'mcp'>;
 const transientSyncResourceType = 'integration.run';
 const transientSyncAttentionThreshold = 3;
 const githubRateLimitedUntilKey = 'github_rate_limited_until';
+const integrationSyncContinuationHandoffLeaseMs = 2 * 60 * 1000;
+const integrationSyncContinuationHandoffClaimLimit = 100;
 const log = childLogger('integrations:scope');
 const connectionAttentionCategoryValues: ConnectionAttentionInput['category'][] = [
   'needs_reconnect',
@@ -1941,11 +1947,35 @@ export async function adminLoadCursor(
   return rows[0]?.cursor ?? {};
 }
 
-export async function adminMarkSynced(db: Db, integrationId: string): Promise<void> {
+export async function adminMarkSynced(
+  db: Db,
+  integrationId: string,
+  options: { clearError?: boolean } = {},
+): Promise<void> {
   await db
     .update(integrationsTable)
-    .set({ lastSyncedAt: new Date(), lastError: null, updatedAt: new Date() })
+    .set({
+      lastSyncedAt: new Date(),
+      ...(options.clearError === false ? {} : { lastError: null }),
+      updatedAt: new Date(),
+    })
     .where(eq(integrationsTable.id, integrationId));
+}
+
+export interface IntegrationSyncCursorCheckpoint {
+  resourceType: string;
+  cursor: unknown;
+  status?: { lastStatus?: string; lastError?: string | null };
+}
+
+export interface CommitIntegrationSyncCheckpointInput {
+  integrationId: string;
+  /** The final checkpoint for each resource touched during this provider run. */
+  cursors: readonly IntegrationSyncCursorCheckpoint[];
+  /** Every durable provider-page handoff produced by this provider run. */
+  continuations?: readonly SyncContinuation[];
+  /** Update integration health only after cursor and outbox writes succeed. */
+  markSynced?: { clearError?: boolean };
 }
 
 export async function adminRecordError(
@@ -2074,6 +2104,251 @@ export async function adminRecordIntegrationSyncPause(
     },
     { lastStatus: 'rate_limited', lastError: input.error },
   );
+}
+
+export interface ClaimedIntegrationSyncContinuation {
+  /** Stable identity shared with BullMQ; a replay of this row is idempotent. */
+  handoffId: string;
+  /** Opaque lease ownership token required to acknowledge or release the row. */
+  claimToken: string;
+  continuation: SyncContinuation;
+}
+
+function continuationTargetKey(continuation: SyncContinuation): string {
+  return [continuation.resourceType, continuation.externalId, continuation.surface ?? ''].join(
+    '\u0000',
+  );
+}
+
+function normalizedPendingContinuations(
+  continuations: readonly SyncContinuation[],
+): SyncContinuation[] {
+  const byTarget = new Map<string, SyncContinuation>();
+  for (const continuation of continuations) {
+    if (!continuation.resourceType || !continuation.externalId) continue;
+    const key = continuationTargetKey(continuation);
+    const existing = byTarget.get(key);
+    if (!existing) {
+      byTarget.set(key, continuation);
+      continue;
+    }
+    const retryAt =
+      !existing.retryAt || (continuation.retryAt && continuation.retryAt > existing.retryAt)
+        ? continuation.retryAt
+        : existing.retryAt;
+    byTarget.set(key, {
+      ...existing,
+      ...(retryAt ? { retryAt } : {}),
+      continuationAttempt: Math.max(
+        existing.continuationAttempt ?? 0,
+        continuation.continuationAttempt ?? 0,
+      ),
+    });
+  }
+  return [...byTarget.values()];
+}
+
+function normalizedCursorCheckpoints(
+  checkpoints: readonly IntegrationSyncCursorCheckpoint[],
+): IntegrationSyncCursorCheckpoint[] {
+  const byResourceType = new Map<string, IntegrationSyncCursorCheckpoint>();
+  for (const checkpoint of checkpoints) {
+    if (checkpoint.resourceType) byResourceType.set(checkpoint.resourceType, checkpoint);
+  }
+  return [...byResourceType.values()];
+}
+
+async function stagePendingIntegrationSyncContinuations(
+  db: Db,
+  integrationId: string,
+  continuations: readonly SyncContinuation[],
+): Promise<void> {
+  const normalized = normalizedPendingContinuations(continuations);
+  if (normalized.length === 0) return;
+  const now = new Date();
+  await db
+    .insert(integrationSyncContinuationHandoffs)
+    .values(
+      normalized.map((continuation) => ({
+        integrationId,
+        resourceType: continuation.resourceType,
+        externalId: continuation.externalId,
+        surface: continuation.surface ?? '',
+        retryAt: continuation.retryAt ?? null,
+        continuationAttempt: continuation.continuationAttempt ?? 0,
+      })),
+    )
+    .onConflictDoUpdate({
+      target: [
+        integrationSyncContinuationHandoffs.integrationId,
+        integrationSyncContinuationHandoffs.resourceType,
+        integrationSyncContinuationHandoffs.externalId,
+        integrationSyncContinuationHandoffs.surface,
+      ],
+      set: {
+        retryAt: sql`GREATEST(${integrationSyncContinuationHandoffs.retryAt}, excluded.retry_at)`,
+        continuationAttempt: sql`GREATEST(${integrationSyncContinuationHandoffs.continuationAttempt}, excluded.continuation_attempt)`,
+        updatedAt: now,
+      },
+    });
+}
+
+/**
+ * Transactionally stage continuation handoffs before Redis is contacted. The
+ * target unique index merges concurrent failures without losing a later rate
+ * deadline or a capped lock-contention attempt.
+ */
+export async function adminRecordPendingIntegrationSyncContinuations(
+  db: Db,
+  integrationId: string,
+  continuations: readonly SyncContinuation[],
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    await stagePendingIntegrationSyncContinuations(
+      tx as unknown as Db,
+      integrationId,
+      continuations,
+    );
+  });
+}
+
+/**
+ * Commits a provider run's durable recovery boundary. A continuation never
+ * becomes visible without the cursor that describes where it resumes, and an
+ * integration cannot report a successful sync before both are committed.
+ */
+export async function adminCommitIntegrationSyncCheckpoint(
+  db: Db,
+  input: CommitIntegrationSyncCheckpointInput,
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    const transactionDb = tx as unknown as Db;
+    for (const checkpoint of normalizedCursorCheckpoints(input.cursors)) {
+      await adminSaveCursor(
+        transactionDb,
+        input.integrationId,
+        checkpoint.resourceType,
+        checkpoint.cursor,
+        checkpoint.status,
+      );
+    }
+    await stagePendingIntegrationSyncContinuations(
+      transactionDb,
+      input.integrationId,
+      input.continuations ?? [],
+    );
+    if (input.markSynced) {
+      await adminMarkSynced(transactionDb, input.integrationId, input.markSynced);
+    }
+  });
+}
+
+/**
+ * Lease (but never delete) available continuation rows. A crashed worker
+ * leaves the row visible again after the lease instead of dropping work between
+ * the Postgres claim and a Redis enqueue.
+ */
+export async function adminClaimPendingIntegrationSyncContinuations(
+  db: Db,
+  integrationId: string,
+): Promise<ClaimedIntegrationSyncContinuation[]> {
+  const claimToken = randomUUID();
+  const now = new Date();
+  const leaseExpiresAt = new Date(now.getTime() + integrationSyncContinuationHandoffLeaseMs);
+  return db.transaction(async (tx) => {
+    const rows = await tx
+      .select({
+        id: integrationSyncContinuationHandoffs.id,
+        resourceType: integrationSyncContinuationHandoffs.resourceType,
+        externalId: integrationSyncContinuationHandoffs.externalId,
+        surface: integrationSyncContinuationHandoffs.surface,
+        retryAt: integrationSyncContinuationHandoffs.retryAt,
+        continuationAttempt: integrationSyncContinuationHandoffs.continuationAttempt,
+      })
+      .from(integrationSyncContinuationHandoffs)
+      .where(
+        and(
+          eq(integrationSyncContinuationHandoffs.integrationId, integrationId),
+          or(
+            isNull(integrationSyncContinuationHandoffs.leaseExpiresAt),
+            lte(integrationSyncContinuationHandoffs.leaseExpiresAt, now),
+          ),
+        ),
+      )
+      .limit(integrationSyncContinuationHandoffClaimLimit)
+      .for('update', { skipLocked: true });
+    if (rows.length === 0) return [];
+    await tx
+      .update(integrationSyncContinuationHandoffs)
+      .set({ claimToken, leaseExpiresAt, updatedAt: now })
+      .where(
+        inArray(
+          integrationSyncContinuationHandoffs.id,
+          rows.map((row) => row.id),
+        ),
+      );
+    return rows.map((row) => ({
+      handoffId: row.id,
+      claimToken,
+      continuation: {
+        resourceType: row.resourceType,
+        externalId: row.externalId,
+        ...(row.surface ? { surface: row.surface } : {}),
+        ...(row.retryAt ? { retryAt: row.retryAt } : {}),
+        ...(row.continuationAttempt > 0 ? { continuationAttempt: row.continuationAttempt } : {}),
+      },
+    }));
+  });
+}
+
+/** Returns true while another worker owns a live continuation lease. */
+export async function adminHasPendingIntegrationSyncContinuations(
+  db: Db,
+  integrationId: string,
+): Promise<boolean> {
+  const rows = await db
+    .select({ id: integrationSyncContinuationHandoffs.id })
+    .from(integrationSyncContinuationHandoffs)
+    .where(eq(integrationSyncContinuationHandoffs.integrationId, integrationId))
+    .limit(1);
+  return rows.length > 0;
+}
+
+/** Delete only the exact lease after BullMQ accepted its stable handoff id. */
+export async function adminAcknowledgePendingIntegrationSyncContinuation(
+  db: Db,
+  handoffId: string,
+  claimToken: string,
+): Promise<boolean> {
+  const rows = await db
+    .delete(integrationSyncContinuationHandoffs)
+    .where(
+      and(
+        eq(integrationSyncContinuationHandoffs.id, handoffId),
+        eq(integrationSyncContinuationHandoffs.claimToken, claimToken),
+      ),
+    )
+    .returning({ id: integrationSyncContinuationHandoffs.id });
+  return rows.length === 1;
+}
+
+/** Release a known failed/ambiguous handoff for immediate safe replay. */
+export async function adminReleasePendingIntegrationSyncContinuation(
+  db: Db,
+  handoffId: string,
+  claimToken: string,
+): Promise<boolean> {
+  const rows = await db
+    .update(integrationSyncContinuationHandoffs)
+    .set({ claimToken: null, leaseExpiresAt: null, updatedAt: new Date() })
+    .where(
+      and(
+        eq(integrationSyncContinuationHandoffs.id, handoffId),
+        eq(integrationSyncContinuationHandoffs.claimToken, claimToken),
+      ),
+    )
+    .returning({ id: integrationSyncContinuationHandoffs.id });
+  return rows.length === 1;
 }
 
 export async function adminLoadProviderBudgetPause(
