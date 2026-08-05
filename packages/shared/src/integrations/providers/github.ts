@@ -1065,18 +1065,16 @@ function githubIssueLifecycle(state: string): 'open' | 'closed' {
   return state === 'closed' ? 'closed' : 'open';
 }
 
-function githubPullRequestLifecycle(pr: Pick<GhPullRequest, 'state' | 'merged_at'>):
-  | 'open'
-  | 'merged'
-  | 'closed' {
+function githubPullRequestLifecycle(
+  pr: Pick<GhPullRequest, 'state' | 'merged_at'>,
+): 'open' | 'merged' | 'closed' {
   if (pr.merged_at) return 'merged';
   return pr.state === 'closed' ? 'closed' : 'open';
 }
 
-function githubReleaseLifecycle(release: Pick<GhRelease, 'draft' | 'prerelease'>):
-  | 'draft'
-  | 'prerelease'
-  | 'published' {
+function githubReleaseLifecycle(
+  release: Pick<GhRelease, 'draft' | 'prerelease'>,
+): 'draft' | 'prerelease' | 'published' {
   if (release.draft) return 'draft';
   if (release.prerelease) return 'prerelease';
   return 'published';
