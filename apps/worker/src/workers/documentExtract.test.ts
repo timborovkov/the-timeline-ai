@@ -8,6 +8,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
+import { DaytonaNotConfiguredError } from '#src/document-ingestion/types.js';
 import {
   type DocumentExtractIO,
   type SandboxPdfExtractResult,
@@ -75,6 +76,7 @@ async function makeHarness(
   opts: {
     visionResponse?: string;
     docxResponse?: string;
+    docxThrows?: Error;
     visionModel?: string;
     sandboxPdf?: SandboxPdfExtractResult | (() => SandboxPdfExtractResult);
     sandboxPdfThrows?: Error;
@@ -98,12 +100,15 @@ async function makeHarness(
         model: opts.visionModel ?? 'openai/gpt-4o-mini',
       }),
   );
-  const extractDocx = vi.fn((_body: Buffer) =>
-    Promise.resolve({
+  const extractDocx = vi.fn((_body: Buffer) => {
+    if (opts.docxThrows) {
+      return Promise.reject(opts.docxThrows);
+    }
+    return Promise.resolve({
       text: opts.docxResponse ?? 'mock docx content',
       model: 'daytona-python-docx@1',
-    }),
-  );
+    });
+  });
   const extractPdfSandbox = vi.fn((_body: Buffer) => {
     if (opts.sandboxPdfThrows) {
       return Promise.reject(opts.sandboxPdfThrows);
@@ -616,16 +621,17 @@ describe('processDocumentExtractJob — content-type routing', () => {
   });
 
   it('accepts non-sparse sandbox text via shouldAcceptSandboxPdfText', async () => {
+    const denseText = 'Quarterly report body with enough words for the plausibility gate.';
     expect(
       shouldAcceptSandboxPdfText({
-        text: '## Dummy PDF file\n',
+        text: denseText,
         sparse: false,
       }),
     ).toBe(true);
 
     h = await makeHarness('%PDF text', {
       sandboxPdf: {
-        text: '## Dummy PDF file\n',
+        text: denseText,
         method: 'pdfplumber',
         pageCount: 1,
         sparse: false,
@@ -642,6 +648,85 @@ describe('processDocumentExtractJob — content-type routing', () => {
       h.io,
     );
     expect(h.extractFromMedia).not.toHaveBeenCalled();
+  });
+
+  it('falls back to vision for dense but garbled sandbox PDF text', async () => {
+    const garbage = Array.from({ length: 40 }, () => '§§@@##$$%%^^&&').join(' ');
+    h = await makeHarness('%PDF bytes', {
+      visionResponse: 'vision recovered garbled pdf',
+      sandboxPdf: {
+        text: garbage,
+        method: 'pypdfium2',
+        pageCount: 1,
+        sparse: false,
+        pageImages: [],
+      },
+    });
+    const { versionId } = await createFinalisedDocument(h.db, {
+      name: 'garbled.pdf',
+      contentType: 'application/pdf',
+    });
+    await processDocumentExtractJob(
+      { db: h.db },
+      { documentVersionId: versionId, teamId: TEAM_ID },
+      h.io,
+    );
+    expect(h.extractFromMedia).toHaveBeenCalledOnce();
+  });
+
+  it('fails closed when Daytona is not configured for PDF (no vision fallback)', async () => {
+    h = await makeHarness('%PDF bytes', {
+      sandboxPdfThrows: new DaytonaNotConfiguredError('PDF'),
+    });
+    const { versionId } = await createFinalisedDocument(h.db, {
+      name: 'no-daytona.pdf',
+      contentType: 'application/pdf',
+    });
+    await expect(
+      processDocumentExtractJob(
+        { db: h.db },
+        { documentVersionId: versionId, teamId: TEAM_ID },
+        h.io,
+      ),
+    ).rejects.toThrow(/Daytona is not configured/);
+    expect(h.extractFromMedia).not.toHaveBeenCalled();
+    const row = await h.pg.query<{ processing_status: string; processing_error: string }>(
+      `SELECT processing_status, processing_error FROM document_versions WHERE id = $1`,
+      [versionId],
+    );
+    expect(row.rows[0]?.processing_status).toBe('failed');
+    expect(row.rows[0]?.processing_error).toMatch(/Daytona is not configured/);
+  });
+
+  it('stores PDF metadata titles from dense sandbox extracts', async () => {
+    h = await makeHarness('%PDF text', {
+      sandboxPdf: {
+        text: 'Master services agreement body with enough words for dense acceptance.',
+        method: 'pdfplumber',
+        pageCount: 1,
+        sparse: false,
+        pageImages: [],
+        title: 'Master Services Agreement',
+      },
+    });
+    const { documentId, versionId } = await createFinalisedCapturedFile(h.pg, {
+      name: 'AgACAgQAAyEFAATcv6dYAAP3aimENrbqY6kNAAEqxvEv6YGMrdExAAK5DmsbjOI.pdf',
+      contentType: 'application/pdf',
+    });
+    await processDocumentExtractJob(
+      { db: h.db },
+      { documentVersionId: versionId, teamId: TEAM_ID },
+      h.io,
+    );
+    expect(h.extractFromMedia).not.toHaveBeenCalled();
+    const row = await h.pg.query<{ metadata: Record<string, unknown> }>(
+      `SELECT metadata FROM documents WHERE id = $1`,
+      [documentId],
+    );
+    expect(row.rows[0]?.metadata).toMatchObject({
+      suggested_title: 'Master Services Agreement',
+      suggested_title_source: 'document_extract',
+    });
   });
 
   it('falls back to vision for sparse / empty sandbox PDF results', async () => {
@@ -976,9 +1061,8 @@ describe('processDocumentExtractJob — content-type routing', () => {
     expect(chunk.rows[0]?.text).toContain('Document: large-promoted.pdf');
   });
 
-  it('routes DOCX through mammoth (native), not the vision LLM', async () => {
-    // DOCX vision would cost ~50x more for worse output than mammoth's
-    // raw-text extraction. The routing must keep these on separate paths.
+  it('routes DOCX through the sandbox extractor, not the vision LLM', async () => {
+    // DOCX has no vision fallback; routing must stay on the sandbox path.
     h = await makeHarness('PK fake docx bytes', {
       docxResponse: 'Section 1\n\nThis is the contract body extracted from XML.',
     });
@@ -997,6 +1081,29 @@ describe('processDocumentExtractJob — content-type routing', () => {
     expect(h.extractFromMedia).not.toHaveBeenCalled();
   });
 
+  it('fails closed for DOCX when Daytona is not configured', async () => {
+    h = await makeHarness('PK fake docx bytes', {
+      docxThrows: new DaytonaNotConfiguredError('DOCX'),
+    });
+    const { versionId } = await createFinalisedDocument(h.db, {
+      name: 'agreement.docx',
+      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+    await expect(
+      processDocumentExtractJob(
+        { db: h.db },
+        { documentVersionId: versionId, teamId: TEAM_ID },
+        h.io,
+      ),
+    ).rejects.toThrow(/Daytona is not configured/);
+    expect(h.extractFromMedia).not.toHaveBeenCalled();
+    const row = await h.pg.query<{ processing_status: string }>(
+      `SELECT processing_status FROM document_versions WHERE id = $1`,
+      [versionId],
+    );
+    expect(row.rows[0]?.processing_status).toBe('failed');
+  });
+
   it('falls back to filename extension when content-type is application/octet-stream', async () => {
     // RustFS sometimes loses the explicit Content-Type on PUT and the
     // version row stores application/octet-stream. The extension fallback
@@ -1004,7 +1111,7 @@ describe('processDocumentExtractJob — content-type routing', () => {
     h = await makeHarness('%PDF bytes', {
       visionResponse: 'fallback works',
       sandboxPdf: {
-        text: 'octet-stream sandbox path',
+        text: 'octet-stream sandbox path with enough words for acceptance',
         method: 'pdfplumber',
         pageCount: 1,
         sparse: false,

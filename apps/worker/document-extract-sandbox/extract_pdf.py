@@ -14,6 +14,43 @@ import sys
 from pathlib import Path
 
 
+def _normalize_title(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    title = value.strip()
+    return title or None
+
+
+def extract_pdf_title(path: Path) -> str | None:
+    """Best-effort PDF metadata Title for dense text extracts."""
+    try:
+        import pdfplumber
+
+        with pdfplumber.open(str(path)) as pdf:
+            meta = pdf.metadata or {}
+            title = _normalize_title(meta.get("Title") or meta.get("title"))
+            if title:
+                return title
+    except Exception:  # noqa: BLE001 — title is optional
+        pass
+
+    try:
+        import pypdfium2 as pdfium
+
+        pdf = pdfium.PdfDocument(str(path))
+        try:
+            meta = pdf.get_metadata_dict(skip_empty=True) if hasattr(pdf, "get_metadata_dict") else {}
+            if isinstance(meta, dict):
+                title = _normalize_title(meta.get("Title") or meta.get("title"))
+                if title:
+                    return title
+        finally:
+            pdf.close()
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
 def extract_pdfplumber(path: Path) -> tuple[str, int]:
     import pdfplumber
 
@@ -114,6 +151,8 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001
             error = f"{error + '; ' if error else ''}render: {exc}"
 
+    title = extract_pdf_title(input_path)
+
     result = {
         "ok": error is None or bool(text.strip()) or bool(page_images),
         "method": method,
@@ -121,6 +160,7 @@ def main() -> int:
         "pageCount": page_count,
         "pageImagePaths": page_images,
         "sparse": len(text.strip()) < sparse_chars,
+        "title": title,
         "error": error,
     }
     json.dump(result, sys.stdout)

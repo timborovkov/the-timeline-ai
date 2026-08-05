@@ -6,26 +6,26 @@ import {
   isDaytonaConfigured,
 } from '#src/document-ingestion/daytona.js';
 import {
+  DaytonaNotConfiguredError,
+  type SandboxDocxExtractResult,
+  type SandboxPdfExtractResult,
+} from '#src/document-ingestion/types.js';
+
+export {
+  DaytonaNotConfiguredError,
   DOCX_SANDBOX_MODEL,
+  isDaytonaNotConfiguredError,
   PDF_SANDBOX_MODEL,
   shouldAcceptSandboxPdfText,
   type SandboxDocxExtractResult,
   type SandboxPdfExtractResult,
 } from '#src/document-ingestion/types.js';
 
-export {
-  DOCX_SANDBOX_MODEL,
-  PDF_SANDBOX_MODEL,
-  shouldAcceptSandboxPdfText,
-  type SandboxDocxExtractResult,
-  type SandboxPdfExtractResult,
-};
-
 /**
  * Resolve PDF extraction: Daytona sandbox by default; optional in-process
- * escape hatch only when `DOCUMENT_EXTRACT_ALLOW_INPROCESS=1` and Daytona
- * is unset (dev). In-process PDF path returns empty text so the caller
- * falls through to vision without opening a native PDF parser.
+ * escape hatch only when `DOCUMENT_EXTRACT_ALLOW_INPROCESS=true` (or `1`)
+ * and Daytona is unset (dev). In-process PDF path returns empty text so the
+ * caller falls through to vision without opening a native PDF parser.
  */
 export async function extractPdfForDocument(body: Buffer): Promise<SandboxPdfExtractResult> {
   if (isDaytonaConfigured()) {
@@ -41,9 +41,7 @@ export async function extractPdfForDocument(body: Buffer): Promise<SandboxPdfExt
       pageImages: [],
     };
   }
-  throw new Error(
-    'Daytona is not configured for PDF extraction (set DAYTONA_API_KEY or DOCUMENT_EXTRACT_ALLOW_INPROCESS=1 for local vision-only)',
-  );
+  throw new DaytonaNotConfiguredError('PDF');
 }
 
 export async function extractDocxForDocument(body: Buffer): Promise<SandboxDocxExtractResult> {
@@ -58,7 +56,5 @@ export async function extractDocxForDocument(body: Buffer): Promise<SandboxDocxE
     const result = await mammoth.extractRawText({ buffer: body });
     return { text: result.value };
   }
-  throw new Error(
-    'Daytona is not configured for DOCX extraction (set DAYTONA_API_KEY or DOCUMENT_EXTRACT_ALLOW_INPROCESS=1 for local mammoth)',
-  );
+  throw new DaytonaNotConfiguredError('DOCX');
 }

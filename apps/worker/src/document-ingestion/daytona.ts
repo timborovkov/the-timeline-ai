@@ -68,16 +68,26 @@ function parseJsonObject(stdout: string): Record<string, unknown> {
 async function downloadPageImages(sandbox: Sandbox, paths: string[]): Promise<Buffer[]> {
   const images: Buffer[] = [];
   for (const remotePath of paths) {
-    if (typeof remotePath !== 'string' || remotePath.length === 0) continue;
+    if (typeof remotePath !== 'string' || remotePath.length === 0) {
+      throw new Error('sandbox PDF extract returned an empty page image path');
+    }
     try {
       const buf = await sandbox.fs.downloadFile(remotePath);
-      if (buf.byteLength > 0) images.push(buf);
+      if (buf.byteLength === 0) {
+        throw new Error(`sandbox page image is empty: ${remotePath}`);
+      }
+      images.push(buf);
     } catch (err: unknown) {
-      log.warn(
-        { err: err instanceof Error ? err.message : String(err), remotePath },
-        'failed to download sandbox page image',
-      );
+      const message = err instanceof Error ? err.message : String(err);
+      // Fail closed: do not OCR a partial page set. The caller falls back to
+      // full-PDF vision (or BullMQ retries if the error escapes).
+      throw new Error(`failed to download sandbox page image (${remotePath}): ${message}`);
     }
+  }
+  if (images.length !== paths.length) {
+    throw new Error(
+      `sandbox page image download incomplete: got ${String(images.length)} of ${String(paths.length)}`,
+    );
   }
   return images;
 }
@@ -118,9 +128,30 @@ export async function extractPdfInDaytonaSandbox(body: Buffer): Promise<SandboxP
       ? parsed.pageImagePaths.filter((p): p is string => typeof p === 'string')
       : [];
     const error = typeof parsed.error === 'string' ? parsed.error : undefined;
-    const pageImages = sparse ? await downloadPageImages(sandbox, pageImagePaths) : [];
+    const title =
+      typeof parsed.title === 'string' && parsed.title.trim() ? parsed.title.trim() : undefined;
+    let pageImages: Buffer[] = [];
+    if (sparse && pageImagePaths.length > 0) {
+      try {
+        pageImages = await downloadPageImages(sandbox, pageImagePaths);
+      } catch (err: unknown) {
+        // Incomplete page PNGs must not reach vision — clear them so the
+        // extract service OCRs the full PDF instead of a silent subset.
+        log.warn(
+          {
+            err: err instanceof Error ? err.message : String(err),
+            expected: pageImagePaths.length,
+          },
+          'sandbox page image download incomplete; omitting pageImages for full-PDF vision',
+        );
+        pageImages = [];
+      }
+    }
 
-    if (!text.trim() && pageImages.length === 0) {
+    // Empty text + no page images is still ok when sparse: caller falls back
+    // to full-PDF vision. Hard-fail only when the sandbox produced nothing
+    // usable and did not mark the result sparse (dense path with empty text).
+    if (!text.trim() && pageImages.length === 0 && !sparse) {
       throw new Error(error ?? 'sandbox PDF extract produced no text or page images');
     }
 
@@ -130,6 +161,7 @@ export async function extractPdfInDaytonaSandbox(body: Buffer): Promise<SandboxP
       pageCount,
       sparse,
       pageImages,
+      ...(title ? { title } : {}),
       ...(error ? { error } : {}),
     };
   });

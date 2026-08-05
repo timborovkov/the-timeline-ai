@@ -158,6 +158,19 @@ describe('getEnv', () => {
     expect(() => getEnv()).toThrow(/LANGSMITH_TRACING_SAMPLING_RATE/);
   });
 
+  it('accepts 1/0 for boolean env flags including DOCUMENT_EXTRACT_ALLOW_INPROCESS', () => {
+    setBaseEnv({
+      DOCUMENT_EXTRACT_ALLOW_INPROCESS: '1',
+      DOCUMENT_EXTRACT_ENABLED: '0',
+      LANGSMITH_TRACING: 'false',
+    });
+
+    expect(getEnv()).toMatchObject({
+      DOCUMENT_EXTRACT_ALLOW_INPROCESS: true,
+      DOCUMENT_EXTRACT_ENABLED: false,
+    });
+  });
+
   it('allows omitting AUTH_SECRET in document-extract worker mode', () => {
     setBaseEnv({
       AUTH_SECRET: undefined,

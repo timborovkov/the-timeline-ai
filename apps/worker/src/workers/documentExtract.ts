@@ -18,6 +18,7 @@ import {
   DOCX_SANDBOX_MODEL,
   extractDocxForDocument,
   extractPdfForDocument,
+  isDaytonaNotConfiguredError,
   PDF_SANDBOX_MODEL,
   shouldAcceptSandboxPdfText,
   type SandboxPdfExtractResult,
@@ -25,6 +26,8 @@ import {
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 
 export {
+  DaytonaNotConfiguredError,
+  isDaytonaNotConfiguredError,
   PDF_SANDBOX_MODEL,
   shouldAcceptSandboxPdfText,
   type SandboxPdfExtractResult,
@@ -543,6 +546,11 @@ async function routePdfContent(
   try {
     sandbox = await io.extractPdfSandbox(input.body);
   } catch (err: unknown) {
+    // Missing Daytona on a credentialed worker must fail closed — do not
+    // download/OCR the PDF via vision outside the extract service.
+    if (isDaytonaNotConfiguredError(err)) {
+      return { failure: err.message };
+    }
     const message = err instanceof Error ? err.message : String(err);
     log.warn(
       { err: message, filename: input.name },
@@ -553,6 +561,7 @@ async function routePdfContent(
     return {
       representations: [{ kind: 'source_text', text: sandbox.text.trim() }],
       model: `${PDF_SANDBOX_MODEL}+${sandbox.method}`,
+      ...(sandbox.title ? { suggestedTitle: sandbox.title } : {}),
     };
   }
   return extractViaVision(io, {
@@ -594,16 +603,24 @@ async function routeContentToText(
     return { representations: [{ kind: 'source_text', text }] };
   }
   // DOCX (Office Open XML) — Daytona sandbox (python-docx). Old-school
-  // .doc (binary BIFF) remains unsupported.
+  // .doc (binary BIFF) remains unsupported. No vision fallback for DOCX.
   if (
     ct === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
     /\.docx$/i.test(input.name)
   ) {
-    const { text, model } = await io.extractDocx(input.body);
-    return {
-      representations: [{ kind: 'source_text', text }],
-      ...(model ? { model } : {}),
-    };
+    try {
+      const { text, model } = await io.extractDocx(input.body);
+      return {
+        representations: [{ kind: 'source_text', text }],
+        ...(model ? { model } : {}),
+      };
+    } catch (err: unknown) {
+      if (isDaytonaNotConfiguredError(err)) {
+        return { failure: err.message };
+      }
+      const message = err instanceof Error ? err.message : String(err);
+      return { failure: `DOCX extract failed: ${message}` };
+    }
   }
   // PDFs: Daytona pdfplumber/pypdfium2 when dense; vision for sparse /
   // scanned / sandbox failures.
