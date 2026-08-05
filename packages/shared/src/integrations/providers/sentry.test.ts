@@ -188,6 +188,8 @@ describe('sentryProvider', () => {
 
     const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
     expect(events.map((event) => event.eventType)).toEqual(['issue.updated', 'release.created']);
+    expect(events[0]?.dedupKey).toBe('sentry:issue:issue-1:open');
+    expect(events[1]?.dedupKey).toBe('sentry:release:acme:web:web@1.2.3:created');
     expect(events[0]?.extra).toMatchObject({
       level: 'error',
       status: 'unresolved',
@@ -525,7 +527,7 @@ describe('sentryProvider', () => {
     const normalized = Array.isArray(result) ? { events: result, syncTasks: [] } : result;
 
     expect(normalized?.events[0]).toMatchObject({
-      dedupKey: 'sentry:webhook:issue-1:2026-06-20T10:00:00.000Z:triggered',
+      dedupKey: 'sentry:issue:issue-1:open',
       eventType: 'alert.triggered',
       objectMap: {
         type: 'incident',
@@ -548,6 +550,80 @@ describe('sentryProvider', () => {
         reason: 'sentry_project_webhook',
       },
     ]);
+  });
+
+  it('keeps one open-issue dedup key across lastSeen and alert timestamp churn', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((input) => {
+        const url = requestUrl(input);
+        if (url.includes('/issues/')) {
+          return Promise.resolve(
+            jsonResponse([
+              {
+                id: 'issue-1',
+                shortId: 'WEB-1',
+                title: 'Checkout failed',
+                status: 'unresolved',
+                level: 'error',
+                lastSeen: '2026-06-20T10:00:00Z',
+                count: '3',
+              },
+              {
+                id: 'issue-1',
+                shortId: 'WEB-1',
+                title: 'Checkout failed',
+                status: 'unresolved',
+                level: 'error',
+                lastSeen: '2026-06-21T08:00:00Z',
+                count: '40',
+              },
+            ]),
+          );
+        }
+        return Promise.resolve(jsonResponse([]));
+      }),
+    );
+    const writeEvents = vi.fn().mockResolvedValue([]);
+    await sentryProvider.backfill({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'sentry.project', externalId: 'acme/web' }],
+      ctx: {
+        loadCursor: vi.fn().mockResolvedValue({}),
+        saveCursor: vi.fn().mockResolvedValue(undefined),
+        writeEvents,
+        persistTokens: vi.fn(),
+        recordAudit: vi.fn(),
+      },
+    });
+    const syncEvents = (writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    expect(syncEvents.map((event) => event.dedupKey)).toEqual([
+      'sentry:issue:issue-1:open',
+      'sentry:issue:issue-1:open',
+    ]);
+
+    const alertDedupKeys = [];
+    for (const datetime of ['2026-06-20T10:00:00Z', '2026-06-21T09:00:00Z']) {
+      const result = await sentryProvider.handleWebhook?.({
+        integration: { id: 'integration-1', teamId: 'team-1' } as never,
+        payload: {
+          action: 'triggered',
+          organization: { slug: 'acme' },
+          project: { slug: 'web' },
+          data: {
+            event: {
+              issue_id: 'issue-1',
+              title: 'Checkout failed',
+              datetime,
+            },
+          },
+        },
+      });
+      const normalized = Array.isArray(result) ? { events: result } : (result ?? { events: [] });
+      alertDedupKeys.push(normalized.events[0]?.dedupKey);
+    }
+    expect(alertDedupKeys).toEqual(['sentry:issue:issue-1:open', 'sentry:issue:issue-1:open']);
   });
 
   it('normalizes issue lifecycle webhooks from Sentry issue payloads', async () => {
@@ -577,7 +653,7 @@ describe('sentryProvider', () => {
     const normalized = Array.isArray(result) ? { events: result, syncTasks: [] } : result;
 
     expect(normalized?.events[0]).toMatchObject({
-      dedupKey: 'sentry:webhook:issue-1:2026-06-20T10:00:00.000Z:resolved',
+      dedupKey: 'sentry:issue:issue-1:resolved',
       eventType: 'issue.resolved',
       actor: { externalId: 'user-1', name: 'Ada Lovelace', email: 'ada@example.com' },
       extra: {
@@ -637,7 +713,7 @@ describe('sentryProvider', () => {
     const normalized = Array.isArray(result) ? { events: result, syncTasks: [] } : result;
 
     expect(normalized?.events[0]).toMatchObject({
-      dedupKey: 'sentry:release:acme:web:web@1.2.4:2026-06-20T12:00:00.000Z:deployed',
+      dedupKey: 'sentry:release:acme:web:web@1.2.4:deployed',
       eventType: 'release.deployed',
       externalObjectId: 'acme/web/release/web@1.2.4',
       extra: {

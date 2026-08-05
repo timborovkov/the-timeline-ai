@@ -276,6 +276,27 @@ function issueWebhookEventType(action: string, status?: string): string {
   return 'issue.updated';
 }
 
+/**
+ * Lifecycle bucket used in Sentry issue dedup keys.
+ *
+ * Intentionally excludes `lastSeen` / occurrence timestamps. Sentry issue
+ * sync and noisy issue-alert webhooks bump `lastSeen` on every new error
+ * event; putting that timestamp in the dedup key created a fresh raw_event
+ * (and extract/embed/suggestions jobs) for each occurrence. One row per
+ * issue + lifecycle state keeps incident evidence current via reconciliation
+ * replays without re-billing OpenRouter for count-only churn.
+ */
+function issueLifecycleBucket(actionOrStatus?: string | null): 'resolved' | 'ignored' | 'open' {
+  const value = (actionOrStatus ?? '').trim().toLowerCase();
+  if (value === 'resolved' || value === 'done') return 'resolved';
+  if (value === 'ignored' || value === 'muted') return 'ignored';
+  return 'open';
+}
+
+function issueDedupKey(issueId: string, actionOrStatus?: string | null): string {
+  return `sentry:issue:${issueId}:${issueLifecycleBucket(actionOrStatus)}`;
+}
+
 function issuePermalink(issue: SentryIssue): string | null {
   return stringValue(issue.permalink);
 }
@@ -302,7 +323,7 @@ function issueEvent(orgSlug: string, projectSlug: string, issue: SentryIssue): I
   const priority = priorityFromLevel(issue.level);
   const permalink = issuePermalink(issue);
   return {
-    dedupKey: `sentry:issue:${issue.id}:${occurredAt.toISOString()}:${issue.status ?? ''}`,
+    dedupKey: issueDedupKey(issue.id, issue.status),
     provider: 'sentry',
     externalObjectId: issue.id,
     eventType: issue.status === 'resolved' ? 'issue.resolved' : 'issue.updated',
@@ -370,7 +391,12 @@ function issueWebhookEvent(input: {
   const permalink = issuePermalink(input.issue);
   const eventType = issueWebhookEventType(input.action, input.issue.status);
   return {
-    dedupKey: `sentry:webhook:${input.issue.id}:${occurredAt.toISOString()}:${input.action}`,
+    dedupKey: issueDedupKey(
+      input.issue.id,
+      input.action === 'ignored' || input.action === 'resolved' || input.action === 'unresolved'
+        ? input.action
+        : (input.issue.status ?? input.action),
+    ),
     provider: 'sentry',
     externalObjectId: input.issue.id,
     eventType,
@@ -431,7 +457,9 @@ function releaseEvent(
 ): IntegrationEvent {
   const occurredAt = dateValue(release.dateReleased ?? release.dateCreated ?? release.dateAdded);
   return {
-    dedupKey: `sentry:release:${orgSlug}:${projectSlug}:${release.version}:${occurredAt.toISOString()}:${action}`,
+    // Version + action only — not release timestamp — so repeated sync/webhook
+    // delivery for the same release does not mint another extract job.
+    dedupKey: `sentry:release:${orgSlug}:${projectSlug}:${release.version}:${action}`,
     provider: 'sentry',
     externalObjectId: `${orgSlug}/${projectSlug}/release/${release.version}`,
     eventType: action === 'deployed' ? 'release.deployed' : 'release.created',
@@ -839,7 +867,7 @@ export const sentryProvider: IntegrationProvider = {
     return {
       events: [
         {
-          dedupKey: `sentry:webhook:${issueId}:${occurredAt.toISOString()}:${action}`,
+          dedupKey: issueDedupKey(issueId, action === 'resolved' ? 'resolved' : 'open'),
           provider: 'sentry',
           externalObjectId: issueId,
           eventType: action === 'resolved' ? 'issue.resolved' : 'alert.triggered',
