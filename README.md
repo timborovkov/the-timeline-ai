@@ -298,6 +298,10 @@ server/client import boundaries.
 - [`docs/product-brief.html`](./docs/product-brief.html) — product vision,
   principles, and architecture overview.
 
+- [`docs/cross-source-evidence.md`](./docs/cross-source-evidence.md) — north-star
+  for compounding memory across chat, meetings, email, and work systems
+  (product, eng, and website messaging).
+
 - [`docs/captured-files.md`](./docs/captured-files.md) — captured-file vs.
   document semantics, processing rules, and follow-up implementation bar.
 
