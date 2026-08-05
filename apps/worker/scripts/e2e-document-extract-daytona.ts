@@ -22,11 +22,14 @@ import {
 } from '@timeline/shared';
 import { eq } from 'drizzle-orm';
 
+// Relative imports: this file lives under scripts/ (outside tsconfig rootDir),
+// so the package `#src/*` map would resolve to dist/ and break knip/CI when
+// dist is absent. Source-relative paths stay analyzable.
 import {
   extractDocxForDocument,
   extractPdfForDocument,
-} from '#src/document-ingestion/pdf-extraction.js';
-import { processDocumentExtractJob } from '#src/workers/documentExtract.js';
+} from '../src/document-ingestion/pdf-extraction.js';
+import { processDocumentExtractJob } from '../src/workers/documentExtract.js';
 
 const TEAM_ID = '20000000-0000-4000-8000-000000000001';
 const OWNER_ID = '10000000-0000-4000-8000-000000000001';
