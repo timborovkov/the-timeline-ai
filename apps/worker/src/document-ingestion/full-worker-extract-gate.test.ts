@@ -7,30 +7,30 @@ import {
 
 describe('assertProductionFullWorkerSkipsDocumentExtract', () => {
   it('throws when production full worker still has extract enabled', () => {
-    expect(() =>
+    expect(() => {
       assertProductionFullWorkerSkipsDocumentExtract({
         NODE_ENV: 'production',
         DOCUMENT_EXTRACT_ENABLED: true,
-      }),
-    ).toThrow(/DOCUMENT_EXTRACT_ENABLED must be false on production full/);
+      });
+    }).toThrow(/DOCUMENT_EXTRACT_ENABLED must be false on production full/);
   });
 
   it('allows production when extract is disabled', () => {
-    expect(() =>
+    expect(() => {
       assertProductionFullWorkerSkipsDocumentExtract({
         NODE_ENV: 'production',
         DOCUMENT_EXTRACT_ENABLED: false,
-      }),
-    ).not.toThrow();
+      });
+    }).not.toThrow();
   });
 
   it('allows non-production even when extract is enabled', () => {
-    expect(() =>
+    expect(() => {
       assertProductionFullWorkerSkipsDocumentExtract({
         NODE_ENV: 'development',
         DOCUMENT_EXTRACT_ENABLED: true,
-      }),
-    ).not.toThrow();
+      });
+    }).not.toThrow();
   });
 });
 
