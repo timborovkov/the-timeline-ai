@@ -61,9 +61,8 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
         structured no-object outputs can use the fallback model. Structured calls default to
         <code>maxOutputTokens=8000</code> so routine extraction and meeting-summary jobs keep
         quality headroom without over-reserving OpenRouter credits against unused completion tokens.
-        Bulk callers may pass a higher per-call <code>maxOutputTokens</code> or batch their
-        prompts. Authentication and request-shape failures still fail fast so misconfiguration is
-        not hidden.
+        Bulk callers may pass a higher per-call <code>maxOutputTokens</code> or batch their prompts.
+        Authentication and request-shape failures still fail fast so misconfiguration is not hidden.
       </p>
       <p>
         Agent chat streams also include an OpenRouter <code>models</code> fallback list so transient
