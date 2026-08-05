@@ -1,5 +1,8 @@
 import * as Sentry from '@sentry/node';
-import { scrubSentryRequestEvent } from '@timeline/shared/monitoring/sentry-scrub';
+import {
+  scrubSentryBreadcrumb,
+  scrubSentryRequestEvent,
+} from '@timeline/shared/monitoring/sentry-scrub';
 import { UnrecoverableError, type Job } from 'bullmq';
 
 function sampleRate(name: string): number {
@@ -21,6 +24,9 @@ export function initWorkerSentry(): boolean {
     sendDefaultPii: false,
     beforeSend(event) {
       return scrubSentryRequestEvent(event);
+    },
+    beforeBreadcrumb(breadcrumb) {
+      return scrubSentryBreadcrumb(breadcrumb);
     },
   });
   Sentry.setTag('component', 'worker');

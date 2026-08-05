@@ -19,10 +19,20 @@ interface WorkerBeforeSendEvent {
     cookies?: Record<string, string>;
     headers?: Record<string, string>;
   };
+  breadcrumbs?: Array<{
+    message?: string;
+    data?: Record<string, unknown>;
+  }>;
+}
+
+interface WorkerBreadcrumb {
+  message?: string;
+  data?: Record<string, unknown>;
 }
 
 interface WorkerSentryInitOptions {
   beforeSend?: (event: WorkerBeforeSendEvent) => WorkerBeforeSendEvent;
+  beforeBreadcrumb?: (breadcrumb: WorkerBreadcrumb) => WorkerBreadcrumb;
 }
 
 vi.mock('@sentry/node', () => ({

@@ -24,6 +24,11 @@ describe('proxy matcher', () => {
     const source = readFileSync(join(process.cwd(), 'src/proxy.ts'), 'utf8');
     expect(source).toContain('api/health');
   });
+
+  it('rejects malformed multipart bodies before auth', () => {
+    const source = readFileSync(join(process.cwd(), 'src/proxy.ts'), 'utf8');
+    expect(source).toContain('rejectInvalidMultipartRequest');
+  });
 });
 
 describe('canonicalHostRedirect', () => {

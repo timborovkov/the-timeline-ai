@@ -1,6 +1,10 @@
 import * as Sentry from '@sentry/nextjs';
 
-import { parseSentrySampleRate, scrubSentryEvent } from '@/sentry.shared';
+import {
+  parseSentrySampleRate,
+  scrubSentryBreadcrumbEvent,
+  scrubSentryEvent,
+} from '@/sentry.shared';
 
 const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
 const tracesSampleRate = parseSentrySampleRate(process.env.NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE);
@@ -15,6 +19,7 @@ if (dsn) {
     profilesSampleRate,
     sendDefaultPii: false,
     beforeSend: scrubSentryEvent,
+    beforeBreadcrumb: scrubSentryBreadcrumbEvent,
   });
 }
 
