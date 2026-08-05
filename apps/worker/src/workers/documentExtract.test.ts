@@ -1104,6 +1104,25 @@ describe('processDocumentExtractJob — content-type routing', () => {
     expect(row.rows[0]?.processing_status).toBe('failed');
   });
 
+  it('rethrows transient DOCX sandbox failures so BullMQ can retry', async () => {
+    h = await makeHarness('PK fake docx bytes', {
+      docxThrows: new Error('sandbox create timeout'),
+    });
+    const { versionId } = await createFinalisedDocument(h.db, {
+      name: 'flaky.docx',
+      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+    await expect(
+      processDocumentExtractJob(
+        { db: h.db },
+        { documentVersionId: versionId, teamId: TEAM_ID },
+        h.io,
+      ),
+    ).rejects.toThrow(/sandbox create timeout/);
+    // Not UnrecoverableError — BullMQ retries. Claim logic re-accepts failed.
+    expect(h.extractFromMedia).not.toHaveBeenCalled();
+  });
+
   it('falls back to filename extension when content-type is application/octet-stream', async () => {
     // RustFS sometimes loses the explicit Content-Type on PUT and the
     // version row stores application/octet-stream. The extension fallback

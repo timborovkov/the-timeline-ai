@@ -7,23 +7,48 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Iterator
+
+
+def iter_block_items(document) -> Iterator[object]:
+    """Yield paragraphs and tables in document-body order."""
+    from docx.oxml.table import CT_Tbl
+    from docx.oxml.text.paragraph import CT_P
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
+
+    body = document.element.body
+    for child in body.iterchildren():
+        if isinstance(child, CT_P):
+            yield Paragraph(child, document)
+        elif isinstance(child, CT_Tbl):
+            yield Table(child, document)
+
+
+def table_lines(table) -> list[str]:
+    lines: list[str] = []
+    for row in table.rows:
+        cells = [(cell.text or "").strip() for cell in row.cells]
+        line = " | ".join(cell for cell in cells if cell)
+        if line:
+            lines.append(line)
+    return lines
 
 
 def extract_docx(path: Path) -> str:
     from docx import Document
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
 
     document = Document(str(path))
     parts: list[str] = []
-    for paragraph in document.paragraphs:
-        text = (paragraph.text or "").strip()
-        if text:
-            parts.append(text)
-    for table in document.tables:
-        for row in table.rows:
-            cells = [(cell.text or "").strip() for cell in row.cells]
-            line = " | ".join(cell for cell in cells if cell)
-            if line:
-                parts.append(line)
+    for block in iter_block_items(document):
+        if isinstance(block, Paragraph):
+            text = (block.text or "").strip()
+            if text:
+                parts.append(text)
+        elif isinstance(block, Table):
+            parts.extend(table_lines(block))
     return "\n".join(parts).strip()
 
 

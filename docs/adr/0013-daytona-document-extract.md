@@ -36,16 +36,18 @@ authored by a trusted teammate.
    transcribed via `llm.extractTextFromMedia` in the extract service Node
    process.
 4. **Credential boundary.** Extract service env is limited to Daytona, OpenRouter,
-   Database, Redis, and S3 document-bucket access. It must not carry
-   `SECRETS_ENCRYPTION_KEY`, Auth.js secrets, or integration/chat provider
-   tokens. In production `WORKER_MODE=document-extract`, `getEnv()` rejects
-   those secrets if set and requires Daytona, OpenRouter, Redis, and S3
-   document-bucket credentials at boot.
+   Database, Redis, and S3 document-bucket access (`S3_ENDPOINT`, `S3_REGION`,
+   access keys, `S3_BUCKET_DOCUMENTS`). It must not carry
+   `SECRETS_ENCRYPTION_KEY`, Auth.js secrets, cron/email/Sentry upload tokens,
+   or integration/chat provider secrets. In production
+   `WORKER_MODE=document-extract`, `getEnv()` rejects those secrets if set and
+   requires the extract-only credentials at boot.
 5. **Local escape hatch.** PDF/DOCX fail closed without Daytona unless
    `DOCUMENT_EXTRACT_ALLOW_INPROCESS=true` (or `1`; dev only — rejected when
-   `NODE_ENV=production`). A full worker with `DOCUMENT_EXTRACT_ENABLED=true`
-   but no Daytona key skips the document-extract consumer rather than falling
-   through to in-process vision on credentialed hosts.
+   `NODE_ENV=production`). Production full workers must set
+   `DOCUMENT_EXTRACT_ENABLED=false` (enforced by `getEnv()`); only
+   `WORKER_MODE=document-extract` consumes that queue. Non-production full
+   workers still skip the consumer when Daytona is unset.
 
 ## Non-goals
 

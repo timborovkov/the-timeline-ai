@@ -614,11 +614,12 @@ async function routeContentToText(
         ...(model ? { model } : {}),
       };
     } catch (err: unknown) {
+      // Misconfiguration is permanent. Sandbox/infra failures must rethrow
+      // so BullMQ can retry (claim logic re-accepts `failed` → extracting).
       if (isDaytonaNotConfiguredError(err)) {
         return { failure: err.message };
       }
-      const message = err instanceof Error ? err.message : String(err);
-      return { failure: `DOCX extract failed: ${message}` };
+      throw err;
     }
   }
   // PDFs: Daytona pdfplumber/pypdfium2 when dense; vision for sparse /

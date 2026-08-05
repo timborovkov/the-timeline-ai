@@ -46,16 +46,23 @@ async function main(): Promise<void> {
   await waitForMigrations();
 
   const db = getDb();
-  // Cutover safety: a full worker must not consume document-extract without
-  // Daytona (or the explicit in-process escape hatch). Default enabled +
-  // missing DAYTONA_API_KEY would otherwise pull PDFs into the credentialed
-  // process via vision fallback.
+  // Cutover safety (ADR 0013):
+  // - Production full workers never consume document-extract (credential-thin
+  //   extract service owns that queue; getEnv also rejects ENABLED=true).
+  // - Non-production full workers still need Daytona (or the in-process
+  //   escape hatch) before starting the consumer.
   const documentExtractCanRun =
-    Boolean(env.DAYTONA_API_KEY) || env.DOCUMENT_EXTRACT_ALLOW_INPROCESS;
+    env.NODE_ENV !== 'production' &&
+    (Boolean(env.DAYTONA_API_KEY) || env.DOCUMENT_EXTRACT_ALLOW_INPROCESS);
   const documentExtractEnabled = env.DOCUMENT_EXTRACT_ENABLED && documentExtractCanRun;
   if (env.DOCUMENT_EXTRACT_ENABLED && !documentExtractCanRun) {
     log.warn(
-      'DOCUMENT_EXTRACT_ENABLED=true but DAYTONA_API_KEY unset and DOCUMENT_EXTRACT_ALLOW_INPROCESS=false; skipping document-extract consumer (use the extract service or set credentials)',
+      {
+        nodeEnv: env.NODE_ENV,
+        hasDaytona: Boolean(env.DAYTONA_API_KEY),
+        allowInprocess: env.DOCUMENT_EXTRACT_ALLOW_INPROCESS,
+      },
+      'skipping document-extract consumer on full worker (use WORKER_MODE=document-extract in production, or set DAYTONA_API_KEY / DOCUMENT_EXTRACT_ALLOW_INPROCESS locally)',
     );
   }
   const transcribeWorker = startTranscribeWorker({ db });
