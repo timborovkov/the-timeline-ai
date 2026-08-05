@@ -824,28 +824,24 @@ describe('processDocumentExtractJob — content-type routing', () => {
     expect(call.mediaType).toBe('application/pdf');
   });
 
-  it('falls back to vision when sandbox PDF extract throws', async () => {
+  it('rethrows transient PDF sandbox failures so BullMQ can retry', async () => {
     h = await makeHarness('%PDF bytes', {
-      visionResponse: 'recovered via vision',
-      sandboxPdfThrows: new Error('sandbox boom'),
+      visionResponse: 'should not run',
+      sandboxPdfThrows: new Error('sandbox create timeout'),
     });
     const { versionId } = await createFinalisedDocument(h.db, {
-      name: 'broken-sandbox.pdf',
+      name: 'flaky-sandbox.pdf',
       contentType: 'application/pdf',
     });
-    const result = await processDocumentExtractJob(
-      { db: h.db },
-      { documentVersionId: versionId, teamId: TEAM_ID },
-      h.io,
-    );
-    expect(result.chunkCount).toBeGreaterThanOrEqual(1);
+    await expect(
+      processDocumentExtractJob(
+        { db: h.db },
+        { documentVersionId: versionId, teamId: TEAM_ID },
+        h.io,
+      ),
+    ).rejects.toThrow(/sandbox create timeout/);
     expect(h.extractPdfSandbox).toHaveBeenCalledOnce();
-    expect(h.extractFromMedia).toHaveBeenCalledOnce();
-    const chunk = await h.pg.query<{ text: string }>(
-      `SELECT text FROM document_chunks WHERE document_version_id = $1`,
-      [versionId],
-    );
-    expect(chunk.rows[0]?.text).toContain('recovered via vision');
+    expect(h.extractFromMedia).not.toHaveBeenCalled();
   });
 
   it('stores suggested titles from vision OCR on sparse PDFs', async () => {

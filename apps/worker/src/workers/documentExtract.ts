@@ -541,22 +541,19 @@ async function routePdfContent(
   io: DocumentExtractIO,
 ): Promise<RouteResult> {
   const sparseChars = getEnv().DOCUMENT_EXTRACT_SPARSE_TEXT_CHARS;
-  let sandbox: SandboxPdfExtractResult | null = null;
+  let sandbox: SandboxPdfExtractResult;
   try {
     sandbox = await io.extractPdfSandbox(input.body);
   } catch (err: unknown) {
-    // Missing Daytona on a credentialed worker must fail closed — do not
-    // download/OCR the PDF via vision outside the extract service.
+    // Missing Daytona is permanent. Transient Daytona/infra failures must
+    // rethrow for BullMQ retry — do not permanently OCR via vision and mark
+    // the version chunked on a sandbox blip.
     if (isDaytonaNotConfiguredError(err)) {
       return { failure: err.message };
     }
-    const message = err instanceof Error ? err.message : String(err);
-    log.warn(
-      { err: message, filename: input.name },
-      'sandbox PDF extract failed; falling back to vision',
-    );
+    throw err;
   }
-  if (sandbox && shouldAcceptSandboxPdfText(sandbox, sparseChars)) {
+  if (shouldAcceptSandboxPdfText(sandbox, sparseChars)) {
     return {
       representations: [{ kind: 'source_text', text: sandbox.text.trim() }],
       model: `${PDF_SANDBOX_MODEL}+${sandbox.method}`,

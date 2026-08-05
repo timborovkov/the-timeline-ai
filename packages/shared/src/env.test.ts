@@ -1,16 +1,48 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { getEnv, resetEnvForTests } from '#src/env.js';
+import { getEnv, isAllowedDocumentExtractProcessEnvKey, resetEnvForTests } from '#src/env.js';
 
 const ENV_BACKUP = { ...process.env };
 
 function setBaseEnv(overrides: Record<string, string | undefined> = {}): void {
-  process.env = {
+  const next: Record<string, string | undefined> = {
     ...ENV_BACKUP,
     AUTH_SECRET: 'a'.repeat(32),
     DATABASE_URL: 'postgres://x:y@localhost:5432/x',
     ...overrides,
   };
+  // Explicit undefined overrides must omit keys (spread keeps ENV_BACKUP values).
+  const cleaned: Record<string, string> = {};
+  for (const [key, value] of Object.entries(next)) {
+    if (value !== undefined) cleaned[key] = value;
+  }
+  process.env = cleaned;
+  resetEnvForTests();
+}
+
+/** Clean env for production extract allowlist tests (no copied .env secrets). */
+function setExtractProductionEnv(overrides: Record<string, string | undefined> = {}): void {
+  const base: Record<string, string | undefined> = {
+    PATH: process.env.PATH ?? '/usr/bin',
+    HOME: process.env.HOME ?? '/tmp',
+    NODE_ENV: 'production',
+    WORKER_MODE: 'document-extract',
+    DATABASE_URL: 'postgres://x:y@localhost:5432/x',
+    REDIS_URL: 'redis://localhost:6379',
+    DAYTONA_API_KEY: 'dtn_test',
+    OPENROUTER_API_KEY: 'sk-or-test',
+    S3_ENDPOINT: 'http://localhost:9000',
+    S3_REGION: 'us-east-1',
+    S3_ACCESS_KEY_ID: 'key',
+    S3_SECRET_ACCESS_KEY: 'secret',
+    S3_BUCKET_DOCUMENTS: 'timeline-documents',
+    ...overrides,
+  };
+  const cleaned: Record<string, string> = {};
+  for (const [key, value] of Object.entries(base)) {
+    if (value !== undefined) cleaned[key] = value;
+  }
+  process.env = cleaned;
   resetEnvForTests();
 }
 
@@ -201,31 +233,16 @@ describe('getEnv', () => {
   });
 
   it('requires Daytona + OpenRouter in production document-extract mode', () => {
-    setBaseEnv({
-      AUTH_SECRET: undefined,
-      NODE_ENV: 'production',
-      WORKER_MODE: 'document-extract',
+    setExtractProductionEnv({
       DAYTONA_API_KEY: undefined,
       OPENROUTER_API_KEY: undefined,
-      REDIS_URL: 'redis://localhost:6379',
-      S3_ENDPOINT: 'http://localhost:9000',
-      S3_REGION: 'us-east-1',
-      S3_BUCKET_DOCUMENTS: 'timeline-documents',
-      S3_ACCESS_KEY_ID: 'key',
-      S3_SECRET_ACCESS_KEY: 'secret',
     });
 
     expect(() => getEnv()).toThrow(/DAYTONA_API_KEY/);
   });
 
   it('requires full S3 client settings in production document-extract mode', () => {
-    setBaseEnv({
-      AUTH_SECRET: undefined,
-      NODE_ENV: 'production',
-      WORKER_MODE: 'document-extract',
-      DAYTONA_API_KEY: 'dtn_test',
-      OPENROUTER_API_KEY: 'sk-or-test',
-      REDIS_URL: 'redis://localhost:6379',
+    setExtractProductionEnv({
       S3_ENDPOINT: undefined,
       S3_REGION: undefined,
       S3_BUCKET_DOCUMENTS: undefined,
@@ -236,34 +253,22 @@ describe('getEnv', () => {
     expect(() => getEnv()).toThrow(/S3_ENDPOINT/);
   });
 
-  it('rejects credential-thick secrets on production document-extract mode', () => {
-    const extractBase = {
-      AUTH_SECRET: undefined,
-      NODE_ENV: 'production',
-      WORKER_MODE: 'document-extract',
-      DAYTONA_API_KEY: 'dtn_test',
-      OPENROUTER_API_KEY: 'sk-or-test',
-      REDIS_URL: 'redis://localhost:6379',
-      S3_ENDPOINT: 'http://localhost:9000',
-      S3_REGION: 'us-east-1',
-      S3_BUCKET_DOCUMENTS: 'timeline-documents',
-      S3_ACCESS_KEY_ID: 'key',
-      S3_SECRET_ACCESS_KEY: 'secret',
-    } as const;
-
-    setBaseEnv({ ...extractBase, SECRETS_ENCRYPTION_KEY: 'not-for-extract' });
+  it('rejects credential-thick secrets on production document-extract mode via process.env allowlist', () => {
+    setExtractProductionEnv({ SECRETS_ENCRYPTION_KEY: 'not-for-extract' });
     expect(() => getEnv()).toThrow(/SECRETS_ENCRYPTION_KEY must not be set/);
 
-    setBaseEnv({ ...extractBase, CRON_SECRET: 'cron', SECRETS_ENCRYPTION_KEY: undefined });
+    setExtractProductionEnv({ CRON_SECRET: 'cron' });
     expect(() => getEnv()).toThrow(/CRON_SECRET must not be set/);
 
-    setBaseEnv({
-      ...extractBase,
-      AUTH_GITHUB_SECRET: 'gh-secret',
-      POSTMARK_SERVER_TOKEN: 'pm-token',
-      CRON_SECRET: undefined,
-    });
-    expect(() => getEnv()).toThrow(/AUTH_GITHUB_SECRET must not be set/);
+    setExtractProductionEnv({ LANGSMITH_API_KEY: 'lsv2_secret' });
+    expect(() => getEnv()).toThrow(/LANGSMITH_API_KEY must not be set/);
+
+    // Unparsed / undocumented secrets still reject (not in Zod schema).
+    setExtractProductionEnv({ SLACK_CANARY_BOT_TOKEN: 'xoxb-canary' });
+    expect(() => getEnv()).toThrow(/SLACK_CANARY_BOT_TOKEN must not be set/);
+
+    setExtractProductionEnv({ MCP_PREREGISTERED_ACME_CLIENT_SECRET: 'mcp-secret' });
+    expect(() => getEnv()).toThrow(/MCP_PREREGISTERED_ACME_CLIENT_SECRET must not be set/);
   });
 
   it('rejects DOCUMENT_EXTRACT_ALLOW_INPROCESS in production', () => {
@@ -291,25 +296,7 @@ describe('getEnv', () => {
   });
 
   it('accepts a minimal production document-extract env', () => {
-    setBaseEnv({
-      AUTH_SECRET: undefined,
-      NEXTAUTH_SECRET: undefined,
-      NODE_ENV: 'production',
-      WORKER_MODE: 'document-extract',
-      DAYTONA_API_KEY: 'dtn_test',
-      OPENROUTER_API_KEY: 'sk-or-test',
-      REDIS_URL: 'redis://localhost:6379',
-      S3_ENDPOINT: 'http://localhost:9000',
-      S3_REGION: 'us-east-1',
-      S3_BUCKET_DOCUMENTS: 'timeline-documents',
-      S3_ACCESS_KEY_ID: 'key',
-      S3_SECRET_ACCESS_KEY: 'secret',
-      SECRETS_ENCRYPTION_KEY: undefined,
-      TELEGRAM_BOT_TOKEN: undefined,
-      CRON_SECRET: undefined,
-      AUTH_GITHUB_SECRET: undefined,
-      POSTMARK_SERVER_TOKEN: undefined,
-    });
+    setExtractProductionEnv();
 
     expect(getEnv()).toMatchObject({
       WORKER_MODE: 'document-extract',
@@ -318,5 +305,21 @@ describe('getEnv', () => {
       S3_ENDPOINT: 'http://localhost:9000',
       S3_REGION: 'us-east-1',
     });
+  });
+});
+
+describe('isAllowedDocumentExtractProcessEnvKey', () => {
+  it('allows extract credentials and platform noise', () => {
+    expect(isAllowedDocumentExtractProcessEnvKey('DAYTONA_API_KEY')).toBe(true);
+    expect(isAllowedDocumentExtractProcessEnvKey('S3_SECRET_ACCESS_KEY')).toBe(true);
+    expect(isAllowedDocumentExtractProcessEnvKey('RAILWAY_ENVIRONMENT')).toBe(true);
+    expect(isAllowedDocumentExtractProcessEnvKey('PATH')).toBe(true);
+  });
+
+  it('rejects non-extract secrets including unparsed canary/MCP keys', () => {
+    expect(isAllowedDocumentExtractProcessEnvKey('LANGSMITH_API_KEY')).toBe(false);
+    expect(isAllowedDocumentExtractProcessEnvKey('SLACK_CANARY_BOT_TOKEN')).toBe(false);
+    expect(isAllowedDocumentExtractProcessEnvKey('MCP_PREREGISTERED_X_CLIENT_SECRET')).toBe(false);
+    expect(isAllowedDocumentExtractProcessEnvKey('AUTH_SECRET')).toBe(false);
   });
 });

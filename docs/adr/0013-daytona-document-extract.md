@@ -37,11 +37,12 @@ authored by a trusted teammate.
    process.
 4. **Credential boundary.** Extract service env is limited to Daytona, OpenRouter,
    Database, Redis, and S3 document-bucket access (`S3_ENDPOINT`, `S3_REGION`,
-   access keys, `S3_BUCKET_DOCUMENTS`). It must not carry
-   `SECRETS_ENCRYPTION_KEY`, Auth.js secrets, cron/email/Sentry upload tokens,
-   or integration/chat provider secrets. In production
-   `WORKER_MODE=document-extract`, `getEnv()` rejects those secrets if set and
-   requires the extract-only credentials at boot.
+   access keys, `S3_BUCKET_DOCUMENTS`). In production
+   `WORKER_MODE=document-extract`, `getEnv()` requires those credentials and
+   enforces an allowlist against raw `process.env` so copied Railway vars
+   (including unparsed secrets like `SLACK_CANARY_*`,
+   `MCP_PREREGISTERED_*_CLIENT_SECRET`, `LANGSMITH_API_KEY`) cannot remain
+   readable in the extract process.
 5. **Local escape hatch.** PDF/DOCX fail closed without Daytona unless
    `DOCUMENT_EXTRACT_ALLOW_INPROCESS=true` (or `1`; dev only — rejected when
    `NODE_ENV=production`). Production full workers must set

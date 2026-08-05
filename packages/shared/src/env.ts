@@ -23,6 +23,107 @@ function applyAuthAliases(raw: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   };
 }
 
+/**
+ * Keys permitted non-empty on production `WORKER_MODE=document-extract`.
+ * Enforced against raw `process.env` (not just parsed schema keys) so
+ * undocumented secrets like `SLACK_CANARY_*` / `MCP_PREREGISTERED_*` cannot
+ * hitch a ride on a copied Railway variable set (ADR 0013).
+ */
+const DOCUMENT_EXTRACT_PROCESS_ENV_ALLOWLIST = new Set([
+  'NODE_ENV',
+  'LOG_LEVEL',
+  'WORKER_MODE',
+  'DOCUMENT_EXTRACT_ENABLED',
+  'DOCUMENT_EXTRACT_ALLOW_INPROCESS',
+  'DOCUMENT_EXTRACT_SPARSE_TEXT_CHARS',
+  'DOCUMENT_EXTRACT_MAX_VISION_PAGES',
+  'DAYTONA_API_KEY',
+  'DAYTONA_API_URL',
+  'DAYTONA_TARGET',
+  'DAYTONA_SNAPSHOT',
+  'DATABASE_URL',
+  'REDIS_URL',
+  'OPENROUTER_API_KEY',
+  'OPENROUTER_BASE_URL',
+  'S3_ENDPOINT',
+  'S3_PUBLIC_ENDPOINT',
+  'S3_REGION',
+  'S3_ACCESS_KEY_ID',
+  'S3_SECRET_ACCESS_KEY',
+  'S3_FORCE_PATH_STYLE',
+  'S3_BUCKET_DOCUMENTS',
+  // Crash reporting only — not SENTRY_AUTH_TOKEN (release upload).
+  'SENTRY_DSN',
+  'SENTRY_ENVIRONMENT',
+  'SENTRY_TRACES_SAMPLE_RATE',
+  'SENTRY_PROFILES_SAMPLE_RATE',
+  'SENTRY_RELEASE',
+  'SENTRY_ORG',
+  'SENTRY_PROJECT',
+]);
+
+/** Exact shell/runtime keys (not prefixes — avoid `LANG` matching `LANGSMITH_*`). */
+const DOCUMENT_EXTRACT_PROCESS_ENV_EXACT_ALLOWLIST = new Set([
+  '_',
+  'PORT',
+  'PATH',
+  'HOME',
+  'USER',
+  'LOGNAME',
+  'SHELL',
+  'TERM',
+  'TMPDIR',
+  'TMP',
+  'TEMP',
+  'LANG',
+  'TZ',
+  'HOSTNAME',
+  'HOSTTYPE',
+  'MACHTYPE',
+  'OSTYPE',
+  'SHLVL',
+  'PWD',
+  'OLDPWD',
+  'COLORTERM',
+]);
+
+const DOCUMENT_EXTRACT_PROCESS_ENV_PREFIX_ALLOWLIST = [
+  'LC_',
+  'XDG_',
+  'SSH_',
+  'NODE_',
+  'npm_',
+  'NPM_',
+  'PNPM_',
+  'COREPACK_',
+  'RAILWAY_',
+  'NIX_',
+  'SSL_CERT_',
+  'OPENSSL_',
+] as const;
+
+/** Exported for unit tests. */
+export function isAllowedDocumentExtractProcessEnvKey(key: string): boolean {
+  if (DOCUMENT_EXTRACT_PROCESS_ENV_ALLOWLIST.has(key)) return true;
+  if (DOCUMENT_EXTRACT_PROCESS_ENV_EXACT_ALLOWLIST.has(key)) return true;
+  return DOCUMENT_EXTRACT_PROCESS_ENV_PREFIX_ALLOWLIST.some((prefix) => key.startsWith(prefix));
+}
+
+function assertDocumentExtractProcessEnvAllowlist(
+  raw: NodeJS.ProcessEnv,
+  ctx: z.RefinementCtx,
+): void {
+  for (const [key, value] of Object.entries(raw)) {
+    if (value === undefined || value === '') continue;
+    if (isAllowedDocumentExtractProcessEnvKey(key)) continue;
+    ctx.addIssue({
+      code: 'custom',
+      path: [key],
+      message: `${key} must not be set on WORKER_MODE=document-extract (credential-thin extract service)`,
+    });
+  }
+}
+
 const baseSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error', 'silent']).default('info'),
@@ -321,45 +422,9 @@ const schema = baseSchema
           });
         }
       }
-      // Credential-thin boundary (ADR 0013): reject secrets that belong on
-      // web/full-worker, not the extract service.
-      const forbiddenOnExtract: { key: keyof typeof env; label: string }[] = [
-        { key: 'SECRETS_ENCRYPTION_KEY', label: 'SECRETS_ENCRYPTION_KEY' },
-        { key: 'AUTH_SECRET', label: 'AUTH_SECRET' },
-        { key: 'AUTH_GITHUB_SECRET', label: 'AUTH_GITHUB_SECRET' },
-        { key: 'TELEGRAM_BOT_TOKEN', label: 'TELEGRAM_BOT_TOKEN' },
-        { key: 'TELEGRAM_WEBHOOK_SECRET', label: 'TELEGRAM_WEBHOOK_SECRET' },
-        { key: 'POSTMARK_SERVER_TOKEN', label: 'POSTMARK_SERVER_TOKEN' },
-        { key: 'POSTMARK_WEBHOOK_SECRET', label: 'POSTMARK_WEBHOOK_SECRET' },
-        { key: 'TURNSTILE_SECRET_KEY', label: 'TURNSTILE_SECRET_KEY' },
-        { key: 'SLACK_CLIENT_ID', label: 'SLACK_CLIENT_ID' },
-        { key: 'SLACK_CLIENT_SECRET', label: 'SLACK_CLIENT_SECRET' },
-        { key: 'SLACK_SIGNING_SECRET', label: 'SLACK_SIGNING_SECRET' },
-        { key: 'CRON_SECRET', label: 'CRON_SECRET' },
-        { key: 'SENTRY_AUTH_TOKEN', label: 'SENTRY_AUTH_TOKEN' },
-        { key: 'QDRANT_API_KEY', label: 'QDRANT_API_KEY' },
-        { key: 'RECALL_API_KEY', label: 'RECALL_API_KEY' },
-        { key: 'RECALL_STATUS_WEBHOOK_SECRET', label: 'RECALL_STATUS_WEBHOOK_SECRET' },
-        { key: 'GOOGLE_CLIENT_SECRET', label: 'GOOGLE_CLIENT_SECRET' },
-        { key: 'GOOGLE_DRIVE_WEBHOOK_SECRET', label: 'GOOGLE_DRIVE_WEBHOOK_SECRET' },
-        { key: 'LINEAR_CLIENT_SECRET', label: 'LINEAR_CLIENT_SECRET' },
-        { key: 'LINEAR_WEBHOOK_SECRET', label: 'LINEAR_WEBHOOK_SECRET' },
-        { key: 'GITHUB_APP_CLIENT_SECRET', label: 'GITHUB_APP_CLIENT_SECRET' },
-        { key: 'GITHUB_APP_PRIVATE_KEY', label: 'GITHUB_APP_PRIVATE_KEY' },
-        { key: 'GITHUB_WEBHOOK_SECRET', label: 'GITHUB_WEBHOOK_SECRET' },
-        { key: 'MONDAY_CLIENT_SECRET', label: 'MONDAY_CLIENT_SECRET' },
-        { key: 'MONDAY_WEBHOOK_SECRET', label: 'MONDAY_WEBHOOK_SECRET' },
-        { key: 'SENTRY_INTEGRATION_CLIENT_SECRET', label: 'SENTRY_INTEGRATION_CLIENT_SECRET' },
-      ];
-      for (const { key, label } of forbiddenOnExtract) {
-        if (env[key]) {
-          ctx.addIssue({
-            code: 'custom',
-            path: [key],
-            message: `${label} must not be set on WORKER_MODE=document-extract (credential-thin extract service)`,
-          });
-        }
-      }
+      // Credential-thin boundary (ADR 0013): allowlist against raw process.env
+      // so unparsed secrets cannot survive a copied shared Railway env.
+      assertDocumentExtractProcessEnvAllowlist(process.env, ctx);
     }
   })
   .transform((env) => ({
