@@ -2101,10 +2101,12 @@ async function syncPullRequestsSurface(
               return prToEvent(repo, pr, action);
             }),
           );
-          next.pr_lifecycles = pruneLifecycleMap(
+          const prunedPrLifecycles = pruneLifecycleMap(
             lifecycles,
             new Set(filtered.map((pr) => String(pr.id))),
           );
+          if (prunedPrLifecycles) next.pr_lifecycles = prunedPrLifecycles;
+          else delete next.pr_lifecycles;
           for (const pr of filtered) {
             next.prs_since = maxIso(next.prs_since, pr.updated_at);
             next.since = maxIso(next.since, pr.updated_at);
@@ -2225,10 +2227,12 @@ async function syncIssuesSurface(
       if (issueEvents.length > 0) {
         await ctx.writeEvents(issueEvents);
       }
-      next.issue_lifecycles = pruneLifecycleMap(
+      const prunedIssueLifecycles = pruneLifecycleMap(
         lifecycles,
         new Set(issues.filter((i) => !i.pull_request).map((i) => String(i.id))),
       );
+      if (prunedIssueLifecycles) next.issue_lifecycles = prunedIssueLifecycles;
+      else delete next.issue_lifecycles;
       for (const i of issues) {
         next.issues_since = maxIso(next.issues_since, i.updated_at);
         next.since = maxIso(next.since, i.updated_at);

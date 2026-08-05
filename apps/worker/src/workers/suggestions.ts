@@ -3455,13 +3455,13 @@ function assembleSuggestionPrompt(parts: SuggestionPromptParts, maxTokens: numbe
   let evidence = parts.evidence;
   let workspace = parts.workspace;
 
-  let anchorTokens = estimate(anchor);
+  const anchorTokens = estimate(anchor);
   if (anchorTokens + 2 * separatorTokens >= maxTokens) {
     anchor = truncate(anchor, Math.max(1, maxTokens - 2 * separatorTokens));
     return anchor;
   }
 
-  let evidenceBudget = maxTokens - anchorTokens - 2 * separatorTokens;
+  const evidenceBudget = maxTokens - anchorTokens - 2 * separatorTokens;
   if (estimate(evidence) > evidenceBudget) {
     evidence = truncate(evidence, Math.max(1, evidenceBudget));
   }

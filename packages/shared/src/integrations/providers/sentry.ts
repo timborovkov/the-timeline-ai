@@ -321,7 +321,7 @@ function nextOpenFamilyBucket(previous: string | undefined, occurredAt: Date): s
   if (isClosedLifecycle(previous)) {
     return `regressed:${occurredAt.toISOString()}`;
   }
-  if (previous && previous.startsWith('regressed')) return previous;
+  if (previous?.startsWith('regressed')) return previous;
   return 'open';
 }
 

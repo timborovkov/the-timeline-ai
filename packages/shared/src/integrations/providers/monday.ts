@@ -1055,15 +1055,16 @@ function mondayWebhookEvent(payload: unknown): IntegrationEvent[] {
   const lifecycleBucket = mondayWebhookLifecycleBucket(event, rawType, valueText);
   return [
     {
-      dedupKey: isUpdateEvent
-        ? mondayWebhookUpdateDedupKey({
-            itemId,
-            updateId: updateId ?? '',
-            rawType,
-            triggerUuid,
-            occurredAt,
-          })
-        : `monday:${kind}:${boardId}:${itemId}:${lifecycleBucket}`,
+      dedupKey:
+        isUpdateEvent && updateId
+          ? mondayWebhookUpdateDedupKey({
+              itemId,
+              updateId,
+              rawType,
+              triggerUuid,
+              occurredAt,
+            })
+          : `monday:${kind}:${boardId}:${itemId}:${lifecycleBucket}`,
       provider: 'monday',
       externalObjectId: updateId ? `${itemId}:update:${updateId}` : itemId,
       externalEventId: triggerUuid ?? updateId ?? subscriptionId ?? null,

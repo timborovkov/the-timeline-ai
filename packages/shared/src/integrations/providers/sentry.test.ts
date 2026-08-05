@@ -585,7 +585,7 @@ describe('sentryProvider', () => {
     );
     const writeEvents = vi.fn().mockResolvedValue([]);
     const saveCursor = vi.fn().mockResolvedValue(undefined);
-    await sentryProvider.incrementalSync?.({
+    await sentryProvider.backfill({
       integration: { id: 'integration-1' } as never,
       tokens: { access_token: 'token' },
       selections: [{ kind: 'sentry.project', externalId: 'acme/web' }],

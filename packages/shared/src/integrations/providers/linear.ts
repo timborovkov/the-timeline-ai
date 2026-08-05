@@ -277,9 +277,10 @@ function linearIssueDedupKey(
   opts?: { previousStatus?: string | null; forceTransition?: boolean },
 ): string {
   const status = linearStatus(node.state.type);
+  const previousStatus = opts?.previousStatus;
   const transitioned =
     opts?.forceTransition === true ||
-    (opts?.previousStatus != null && opts.previousStatus !== status);
+    (typeof previousStatus === 'string' && previousStatus !== status);
   return transitioned
     ? `linear:issue:${node.id}:${status}:${node.updatedAt}`
     : `linear:issue:${node.id}:${status}`;
@@ -469,7 +470,7 @@ async function paginateIssues(
       const touched = new Set<string>();
       await ctx.writeEvents(
         nodes.map((node) => {
-          const previous = statuses[node.id];
+          const previous = statuses[node.id] ?? null;
           const event = issueToEvent(node, { previousStatus: previous });
           statuses[node.id] = linearStatus(node.state.type);
           touched.add(node.id);
