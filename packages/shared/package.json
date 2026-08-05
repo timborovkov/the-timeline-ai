@@ -12,8 +12,10 @@
   },
   "exports": {
     ".": {
+      "types": "./src/index.ts",
+      "development": "./src/index.ts",
       "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "default": "./dist/index.js"
     },
     "./integrations": {
       "types": "./src/integrations/index.ts",
@@ -22,8 +24,10 @@
       "default": "./dist/integrations/index.js"
     },
     "./integrations/registry": {
+      "types": "./src/integrations/registry.ts",
+      "development": "./src/integrations/registry.ts",
       "import": "./dist/integrations/registry.js",
-      "types": "./dist/integrations/registry.d.ts"
+      "default": "./dist/integrations/registry.js"
     },
     "./ingest-webhooks": {
       "types": "./src/ingest-webhooks/index.ts",
@@ -98,8 +102,10 @@
       "default": "./dist/documents/presentation.js"
     },
     "./logger": {
+      "types": "./src/logger.ts",
+      "development": "./src/logger.ts",
       "import": "./dist/logger.js",
-      "types": "./dist/logger.d.ts"
+      "default": "./dist/logger.js"
     },
     "./messaging": {
       "types": "./src/messaging/index.ts",
@@ -174,8 +180,10 @@
       "default": "./dist/env-reset.js"
     },
     "./email": {
+      "types": "./src/email/index.ts",
+      "development": "./src/email/index.ts",
       "import": "./dist/email/index.js",
-      "types": "./dist/email/index.d.ts"
+      "default": "./dist/email/index.js"
     },
     "./agent": {
       "types": "./src/agent/index.ts",
@@ -375,12 +383,16 @@
       "default": "./dist/telegram/index.js"
     },
     "./rate-limit": {
+      "types": "./src/rate-limit/index.ts",
+      "development": "./src/rate-limit/index.ts",
       "import": "./dist/rate-limit/index.js",
-      "types": "./dist/rate-limit/index.d.ts"
+      "default": "./dist/rate-limit/index.js"
     },
     "./slug": {
+      "types": "./src/slug.ts",
+      "development": "./src/slug.ts",
       "import": "./dist/slug.js",
-      "types": "./dist/slug.d.ts"
+      "default": "./dist/slug.js"
     },
     "./sql-like": {
       "types": "./src/sql-like.ts",
