@@ -122,9 +122,9 @@ describe('processExtractJobForTests', () => {
         new Error('job stalled more than allowable limit'),
       ),
     ).toBe(true);
-    expect(extractWorkerInternals.isBullMqStallFailure(new Error('OPENROUTER_API_KEY missing'))).toBe(
-      false,
-    );
+    expect(
+      extractWorkerInternals.isBullMqStallFailure(new Error('OPENROUTER_API_KEY missing')),
+    ).toBe(false);
   });
 
   it('extracts team-visible raw events into facts, entities, suggestion work, and embed fanout', async () => {
