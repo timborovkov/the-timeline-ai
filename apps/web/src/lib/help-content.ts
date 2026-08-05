@@ -2,14 +2,11 @@ import {
   Boxes,
   ClipboardList,
   FolderOpen,
-  GitBranch,
   Inbox,
   KanbanSquare,
+  LibraryBig,
   LifeBuoy,
   PlugZap,
-  Search,
-  Settings2,
-  Upload,
 } from 'lucide-react';
 
 import type { LucideIcon } from 'lucide-react';
@@ -221,33 +218,13 @@ export const HELP_PAGES: HelpPage[] = [
 ];
 
 export const HELP_NAV = [
-  { href: '/help', label: 'Overview', icon: Search },
+  { href: '/help', label: 'Overview', icon: LibraryBig },
   ...HELP_PAGES.map((page) => ({
     href: `/help/${page.slug}`,
     label: page.title,
     icon: page.icon,
   })),
   { href: '/help/support', label: 'Support', icon: LifeBuoy },
-];
-
-export const HELP_INDEX_GROUPS = [
-  {
-    title: 'Start here',
-    items: [
-      { href: '/help/capture', label: 'Capture surfaces', icon: Upload },
-      { href: '/help/work', label: 'Work surface', icon: ClipboardList },
-      { href: '/help/objects', label: 'Object management', icon: Boxes },
-    ],
-  },
-  {
-    title: 'Workflows',
-    items: [
-      { href: '/help/boards', label: 'Boards', icon: ClipboardList },
-      { href: '/help/documents', label: 'Document drive', icon: FolderOpen },
-      { href: '/help/integrations', label: 'Integrations', icon: GitBranch },
-      { href: '/help/support', label: 'Contact support', icon: Settings2 },
-    ],
-  },
 ];
 
 export function findHelpPage(slug: string): HelpPage | undefined {

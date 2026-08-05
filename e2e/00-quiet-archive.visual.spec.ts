@@ -62,6 +62,9 @@ test('public Quiet Archive surfaces', async ({ page }) => {
   await page.goto('/sign-in');
   await capture(page, 'sign-in-light-desktop.png');
 
+  await page.goto('/help');
+  await capture(page, 'help-light-desktop.png');
+
   await page.setViewportSize({ width: 320, height: 780 });
   await page.goto('/');
   await capture(page, 'landing-light-mobile.png');
@@ -74,7 +77,7 @@ test('authenticated Quiet Archive surfaces', async ({ browser }) => {
   await page.goto('/app');
   // Home's setup panel is client-fetched. The visual baseline covers its loaded
   // success state, so do not capture the transient skeleton before React commits it.
-  await expect(page.getByRole('button', { name: 'Dismiss setup checklist' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Dismiss setup' })).toBeVisible();
   await capture(page, 'home-light-desktop.png');
 
   await page.setViewportSize({ width: 320, height: 780 });
