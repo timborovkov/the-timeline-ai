@@ -18,8 +18,6 @@ const BROWSER_EXTENSION_FRAME_PREFIXES = [
 const METAMASK_ERROR_PATTERNS = [/Failed to connect to MetaMask/i, /MetaMask extension not found/i];
 
 const FORMDATA_PARSE_ERROR_RE = /Failed to parse body as FormData/i;
-const MULTIPART_BOUNDARY_CAUSE_RE =
-  /(?:no boundary found in multipart body|missing boundary in content-type header|expected boundary)/i;
 
 interface StackFrameLike {
   filename?: string;
@@ -86,12 +84,13 @@ export function shouldDropBrowserExtensionEvent(event: ErrorEvent): boolean {
 
 /**
  * Drop Next.js noise from scanner/malformed multipart POSTs that never reach
- * app code. Keep FormData parse failures on real routes — those can still
- * indicate broken uploads or Server Action skew.
+ * app code (`POST /_not-found/page`). Keep FormData parse failures on real
+ * routes — those can still indicate broken uploads or Server Action skew,
+ * even when undici reports the same boundary-related cause text.
  */
 export function shouldDropMalformedMultipartFormDataEvent(
   event: ErrorEvent,
-  hint?: EventHint,
+  _hint?: EventHint,
 ): boolean {
   const parsed = event as ErrorEventWithExceptions;
   const exceptionValues = parsed.exception?.values ?? [];
@@ -105,19 +104,7 @@ export function shouldDropMalformedMultipartFormDataEvent(
     return false;
   }
 
-  const transaction = parsed.transaction ?? '';
-  if (transaction.includes('_not-found')) return true;
-
-  const causeMessage = readErrorCauseMessage(hint?.originalException);
-  return Boolean(causeMessage && MULTIPART_BOUNDARY_CAUSE_RE.test(causeMessage));
-}
-
-function readErrorCauseMessage(error: unknown): string | null {
-  if (!error || typeof error !== 'object') return null;
-  const cause = 'cause' in error ? error.cause : null;
-  if (!cause || typeof cause !== 'object') return null;
-  if (!('message' in cause) || typeof cause.message !== 'string') return null;
-  return cause.message;
+  return (parsed.transaction ?? '').includes('_not-found');
 }
 
 function isBrowserExtensionFrame(frame: StackFrameLike): boolean {

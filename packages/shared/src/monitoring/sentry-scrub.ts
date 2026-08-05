@@ -1,7 +1,12 @@
 const SENSITIVE_HEADER_NAMES = new Set(['authorization', 'cookie', 'x-auth-token']);
 const SENSITIVE_PATH_PREDECESSORS = new Set(['accept-invite']);
-/** Telegram Bot API embeds the bot token in the URL path (`/bot<token>/method`). */
-const TELEGRAM_BOT_TOKEN_IN_URL_RE = /(?:https?:\/\/)?api\.telegram\.org\/bot[^/\s"'\\?#]+/gi;
+/**
+ * Telegram Bot API embeds the bot token in URL paths:
+ * - `https://api.telegram.org/bot<token>/method`
+ * - `https://api.telegram.org/file/bot<token>/<path>`
+ */
+const TELEGRAM_BOT_TOKEN_IN_URL_RE =
+  /(?:https?:\/\/)?api\.telegram\.org\/(?:file\/)?bot[^/\s"'\\?#]+/gi;
 
 export interface SentryRequestLike {
   url?: string;
@@ -59,7 +64,8 @@ export function sanitizeRequestUrl(rawUrl: string | undefined): string | undefin
 export function redactTelegramBotTokenInUrl(raw: string): string {
   return raw.replace(TELEGRAM_BOT_TOKEN_IN_URL_RE, (match) => {
     const hasScheme = /^https?:\/\//i.test(match);
-    return `${hasScheme ? 'https://' : ''}api.telegram.org/bot[redacted]`;
+    const filePrefix = /api\.telegram\.org\/file\/bot/i.test(match) ? 'file/' : '';
+    return `${hasScheme ? 'https://' : ''}api.telegram.org/${filePrefix}bot[redacted]`;
   });
 }
 

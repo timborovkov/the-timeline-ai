@@ -114,7 +114,7 @@ describe('Sentry web config helpers', () => {
     expect(scrubSentryEvent(event)).toBeNull();
   });
 
-  it('drops FormData parse errors whose cause is a missing multipart boundary', () => {
+  it('keeps FormData parse errors on real routes even with a boundary cause', () => {
     const event = {
       transaction: 'POST /app',
       exception: {
@@ -125,20 +125,8 @@ describe('Sentry web config helpers', () => {
       cause: new TypeError('no boundary found in multipart body'),
     });
 
-    expect(shouldDropMalformedMultipartFormDataEvent(event, { originalException })).toBe(true);
-    expect(scrubSentryEvent(event, { originalException })).toBeNull();
-  });
-
-  it('keeps FormData parse errors on real routes without a boundary cause', () => {
-    const event = {
-      transaction: 'POST /app',
-      exception: {
-        values: [{ type: 'TypeError', value: 'Failed to parse body as FormData.' }],
-      },
-    } as unknown as ErrorEvent;
-
-    expect(shouldDropMalformedMultipartFormDataEvent(event)).toBe(false);
-    expect(scrubSentryEvent(event)).toBe(event);
+    expect(shouldDropMalformedMultipartFormDataEvent(event, { originalException })).toBe(false);
+    expect(scrubSentryEvent(event, { originalException })).toBe(event);
   });
 
   it('redacts Telegram bot tokens from breadcrumbs before send', () => {

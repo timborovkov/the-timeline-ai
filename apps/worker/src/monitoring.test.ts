@@ -162,6 +162,11 @@ describe('worker Sentry monitoring', () => {
         url: 'https://api.telegram.org/bot123456:AAExampleTokenValue_for-tests/setWebhook',
       },
     });
+    const fileBreadcrumb = initOptions?.beforeBreadcrumb?.({
+      data: {
+        url: 'https://api.telegram.org/file/bot123456:AAExampleTokenValue_for-tests/voice/file_1.oga',
+      },
+    });
     const event = initOptions?.beforeSend?.({
       breadcrumbs: [
         {
@@ -173,6 +178,9 @@ describe('worker Sentry monitoring', () => {
     });
 
     expect(breadcrumb?.data?.url).toBe('https://api.telegram.org/bot[redacted]/setWebhook');
+    expect(fileBreadcrumb?.data?.url).toBe(
+      'https://api.telegram.org/file/bot[redacted]/voice/file_1.oga',
+    );
     expect(event?.breadcrumbs?.[0]?.data?.url).toBe(
       'https://api.telegram.org/bot[redacted]/getWebhookInfo',
     );

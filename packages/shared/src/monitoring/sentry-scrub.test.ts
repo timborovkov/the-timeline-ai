@@ -52,6 +52,11 @@ describe('Sentry scrubber', () => {
         'https://api.telegram.org/bot123456:AAExampleTokenValue_for-tests/getWebhookInfo',
       ),
     ).toBe('https://api.telegram.org/bot[redacted]/getWebhookInfo');
+    expect(
+      redactTelegramBotTokenInUrl(
+        'https://api.telegram.org/file/bot123456:AAExampleTokenValue_for-tests/voice/file_1.oga',
+      ),
+    ).toBe('https://api.telegram.org/file/bot[redacted]/voice/file_1.oga');
   });
 
   it('scrubs Telegram bot tokens from HTTP breadcrumbs', () => {
