@@ -32,7 +32,11 @@ export interface SlackOAuthState {
 }
 
 function stateSecret(): string {
-  return getEnv().AUTH_SECRET;
+  const secret = getEnv().AUTH_SECRET;
+  if (!secret) {
+    throw new Error('AUTH_SECRET is required for Slack OAuth state');
+  }
+  return secret;
 }
 
 export function signSlackOAuthState(input: Omit<SlackOAuthState, 'nonce' | 'createdAt'>): string {

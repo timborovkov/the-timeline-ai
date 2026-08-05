@@ -13,21 +13,23 @@ import {
 } from '@timeline/shared';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, eq, sql } from 'drizzle-orm';
-import mammoth from 'mammoth';
 
-import { captureWorkerJobFailure } from '#src/monitoring.js';
 import {
-  type NativePdfExtractResult,
-  PDF_NATIVE_MODEL,
-  shouldAcceptNativePdf,
-} from '#src/workers/pdfNativeExtract.js';
-import { processPdfNativeOffThread } from '#src/workers/pdfNativeExtractRuntime.js';
+  DOCX_SANDBOX_MODEL,
+  extractDocxForDocument,
+  extractPdfForDocument,
+  PDF_SANDBOX_MODEL,
+  shouldAcceptSandboxPdfText,
+  type SandboxPdfExtractResult,
+} from '#src/document-ingestion/pdf-extraction.js';
+import { captureWorkerJobFailure } from '#src/monitoring.js';
 
 export {
-  PDF_NATIVE_MODEL,
-  shouldAcceptNativePdf,
-  type NativePdfExtractResult,
-} from '#src/workers/pdfNativeExtract.js';
+  DOCX_SANDBOX_MODEL,
+  PDF_SANDBOX_MODEL,
+  shouldAcceptSandboxPdfText,
+  type SandboxPdfExtractResult,
+} from '#src/document-ingestion/pdf-extraction.js';
 
 const log = childLogger('worker:document-extract');
 
@@ -51,8 +53,8 @@ export interface DocumentExtractIO {
   enqueueEmbed: (data: queue.EmbedJobData) => Promise<void>;
   /**
    * Gate for vision/OpenRouter. Called only when a route needs
-   * `extractFromMedia` (images, scanned/mixed PDFs). Text, DOCX, and
-   * accepted native PDFs must succeed without OpenRouter.
+   * `extractFromMedia` (images, sparse PDFs). Text, DOCX, and accepted
+   * sandbox PDFs must succeed without OpenRouter.
    */
   requireEnv: () => void;
   /**
@@ -60,25 +62,27 @@ export interface DocumentExtractIO {
    * to `llm.extractTextFromMedia` (OpenRouter vision model). Tests inject
    * a fake so they can exercise the routing without hitting OpenRouter.
    */
-  extractFromMedia: (input: { body: Buffer; mediaType: string; filename: string }) => Promise<{
+  extractFromMedia: (input: {
+    body: Buffer;
+    mediaType: string;
+    filename: string;
+    pageImages?: Buffer[];
+  }) => Promise<{
     text: string;
     suggestedTitle?: string;
     visualDescription?: string;
     model: string;
   }>;
   /**
-   * Native DOCX text extraction via mammoth. Splitting this out from
-   * the worker body lets tests assert routing without needing a real
-   * .docx payload. Defaults to `mammoth.extractRawText`.
+   * DOCX text extraction. Production uses a Daytona sandbox (python-docx);
+   * the in-process mammoth path is only for DOCUMENT_EXTRACT_ALLOW_INPROCESS.
    */
-  extractDocx: (body: Buffer) => Promise<{ text: string }>;
+  extractDocx: (body: Buffer) => Promise<{ text: string; model?: string }>;
   /**
-   * Native PDF classify + markdown via pdf-inspector. Defaults to an
-   * off-thread `processPdf` so the napi package is never imported at
-   * worker startup (unsupported platforms fall back to vision). Tests
-   * inject fakes to assert accept/reject routing without the binary.
+   * Isolated PDF text extract (Daytona pdfplumber/pypdfium2 + optional
+   * page PNGs). Tests inject fakes to assert accept/reject routing.
    */
-  extractPdfNative: (body: Buffer) => Promise<NativePdfExtractResult>;
+  extractPdfSandbox: (body: Buffer) => Promise<SandboxPdfExtractResult>;
 }
 
 function defaultIO(): DocumentExtractIO {
@@ -98,18 +102,17 @@ function defaultIO(): DocumentExtractIO {
         body: input.body,
         mediaType: input.mediaType,
         filename: input.filename,
+        ...(input.pageImages && input.pageImages.length > 0
+          ? { pageImages: input.pageImages }
+          : {}),
       });
     },
     async extractDocx(body) {
-      // mammoth.extractRawText drops styles + structure but keeps reading
-      // order — best fit for retrieval. Pass-through warnings array is
-      // ignored; mammoth surfaces things like "unrecognised paragraph
-      // style" which don't change the text.
-      const result = await mammoth.extractRawText({ buffer: body });
-      return { text: result.value };
+      const result = await extractDocxForDocument(body);
+      return { text: result.text, model: DOCX_SANDBOX_MODEL };
     },
-    extractPdfNative(body) {
-      return processPdfNativeOffThread(body);
+    extractPdfSandbox(body) {
+      return extractPdfForDocument(body);
     },
   };
 }
@@ -117,7 +120,7 @@ function defaultIO(): DocumentExtractIO {
 // Code-version tag stamped on every successful extraction so the
 // `redocument-extract` script can re-drive jobs whose chunking policy
 // predates a change.
-const EXTRACT_CODE_VERSION = '2026-08-a';
+const EXTRACT_CODE_VERSION = '2026-08-b';
 
 // Cap on document size we will pull into memory for processing. Above
 // this, the worker stamps the version as 'failed' with a clear message
@@ -131,8 +134,8 @@ const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
  *   2. Load version + document; bail unrecoverably on mismatch / missing.
  *   3. Download the blob from RustFS (or defer oversized versions).
  *   4. Route by content type → text:
- *        text/* → UTF-8; DOCX → mammoth; TextBased PDF → pdf-inspector;
- *        scanned/mixed PDF + images → vision OCR.
+ *        text/* → UTF-8; DOCX → Daytona sandbox; PDF → Daytona
+ *        pdfplumber/pypdfium2 (sparse → vision on page PNGs); images → vision.
  *   5. chunkText() to a uniform ~800/120 budget.
  *   6. Insert document_chunks rows + enqueue an embed job per chunk.
  *   7. Stamp version status = 'chunked' (embed promotes to 'embedded').
@@ -188,7 +191,7 @@ export async function processDocumentExtractJob(
 ): Promise<DocumentExtractResult> {
   const { documentVersionId, teamId, targetCollection } = data;
   // OpenRouter is gated lazily inside routeContentToText only when a
-  // vision path is taken. Text / DOCX / accepted native PDFs work without it.
+  // vision path is taken. Text / DOCX / accepted sandbox PDFs work without it.
 
   const lockKey = sql`hashtextextended(${documentVersionId}, 0)`;
 
@@ -508,9 +511,9 @@ export function startDocumentExtractWorker(
  * Routes:
  *   - text/*, json, xml, recognised text-ish extensions → utf-8 read +
  *     NUL-byte heuristic against accidentally treating binary as text.
- *   - DOCX (Office Open XML) → `io.extractDocx` (mammoth raw-text).
- *   - application/pdf → native pdf-inspector when TextBased + confident;
- *     otherwise vision OCR via `io.extractFromMedia`.
+ *   - DOCX (Office Open XML) → `io.extractDocx` (Daytona sandbox).
+ *   - application/pdf → Daytona pdfplumber/pypdfium2 when text is dense;
+ *     otherwise vision OCR on rendered page PNGs (or full PDF).
  *   - image/* → `io.extractFromMedia` (vision LLM via OpenRouter).
  *   - Anything else → `{ failure }` with an honest reason string. Two
  *     failure modes the caller must distinguish:
@@ -525,7 +528,7 @@ type RouteResult =
 
 async function extractViaVision(
   io: DocumentExtractIO,
-  input: { body: Buffer; mediaType: string; filename: string },
+  input: { body: Buffer; mediaType: string; filename: string; pageImages?: Buffer[] },
 ): Promise<RouteResult> {
   io.requireEnv();
   const result = await io.extractFromMedia(input);
@@ -536,28 +539,28 @@ async function routePdfContent(
   input: { body: Buffer; name: string },
   io: DocumentExtractIO,
 ): Promise<RouteResult> {
-  let native: NativePdfExtractResult | null = null;
+  const sparseChars = getEnv().DOCUMENT_EXTRACT_SPARSE_TEXT_CHARS;
+  let sandbox: SandboxPdfExtractResult | null = null;
   try {
-    native = await io.extractPdfNative(input.body);
+    sandbox = await io.extractPdfSandbox(input.body);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     log.warn(
       { err: message, filename: input.name },
-      'native PDF extract failed; falling back to vision',
+      'sandbox PDF extract failed; falling back to vision',
     );
   }
-  if (native && shouldAcceptNativePdf(native)) {
-    const markdown = native.markdown?.trim() ?? '';
+  if (sandbox && shouldAcceptSandboxPdfText(sandbox, sparseChars)) {
     return {
-      representations: [{ kind: 'source_text', text: markdown }],
-      model: PDF_NATIVE_MODEL,
-      ...(native.title ? { suggestedTitle: native.title } : {}),
+      representations: [{ kind: 'source_text', text: sandbox.text.trim() }],
+      model: `${PDF_SANDBOX_MODEL}+${sandbox.method}`,
     };
   }
   return extractViaVision(io, {
     body: input.body,
     mediaType: 'application/pdf',
     filename: input.name,
+    ...(sandbox && sandbox.pageImages.length > 0 ? { pageImages: sandbox.pageImages } : {}),
   });
 }
 
@@ -591,18 +594,20 @@ async function routeContentToText(
     }
     return { representations: [{ kind: 'source_text', text }] };
   }
-  // DOCX (Office Open XML) — native extraction via mammoth. Note: the
-  // MIME for .docx is the full ms-office identifier. Old-school .doc
-  // (binary BIFF) is NOT mammoth's domain and remains unsupported.
+  // DOCX (Office Open XML) — Daytona sandbox (python-docx). Old-school
+  // .doc (binary BIFF) remains unsupported.
   if (
     ct === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
     /\.docx$/i.test(input.name)
   ) {
-    const { text } = await io.extractDocx(input.body);
-    return { representations: [{ kind: 'source_text', text }] };
+    const { text, model } = await io.extractDocx(input.body);
+    return {
+      representations: [{ kind: 'source_text', text }],
+      ...(model ? { model } : {}),
+    };
   }
-  // PDFs: prefer native pdf-inspector for TextBased docs; vision for
-  // scanned/mixed/unreliable extractions (and when native throws).
+  // PDFs: Daytona pdfplumber/pypdfium2 when dense; vision for sparse /
+  // scanned / sandbox failures.
   if (ct === 'application/pdf' || /\.pdf$/i.test(input.name)) {
     return routePdfContent(input, io);
   }

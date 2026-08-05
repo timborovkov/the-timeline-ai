@@ -157,4 +157,46 @@ describe('getEnv', () => {
 
     expect(() => getEnv()).toThrow(/LANGSMITH_TRACING_SAMPLING_RATE/);
   });
+
+  it('allows omitting AUTH_SECRET in document-extract worker mode', () => {
+    setBaseEnv({
+      AUTH_SECRET: undefined,
+      NEXTAUTH_SECRET: undefined,
+      WORKER_MODE: 'document-extract',
+      DAYTONA_API_KEY: 'dtn_test',
+      OPENROUTER_API_KEY: 'sk-or-test',
+      REDIS_URL: 'redis://localhost:6379',
+    });
+
+    expect(getEnv()).toMatchObject({
+      WORKER_MODE: 'document-extract',
+      AUTH_SECRET: undefined,
+      DAYTONA_SNAPSHOT: 'timeline-document-extract',
+      DOCUMENT_EXTRACT_SPARSE_TEXT_CHARS: 500,
+      DOCUMENT_EXTRACT_MAX_VISION_PAGES: 20,
+    });
+  });
+
+  it('still requires AUTH_SECRET for full worker mode', () => {
+    setBaseEnv({
+      AUTH_SECRET: undefined,
+      NEXTAUTH_SECRET: undefined,
+      WORKER_MODE: 'full',
+    });
+
+    expect(() => getEnv()).toThrow(/AUTH_SECRET/);
+  });
+
+  it('requires Daytona + OpenRouter in production document-extract mode', () => {
+    setBaseEnv({
+      AUTH_SECRET: undefined,
+      NODE_ENV: 'production',
+      WORKER_MODE: 'document-extract',
+      DAYTONA_API_KEY: undefined,
+      OPENROUTER_API_KEY: undefined,
+      REDIS_URL: 'redis://localhost:6379',
+    });
+
+    expect(() => getEnv()).toThrow(/DAYTONA_API_KEY/);
+  });
 });

@@ -1,6 +1,6 @@
 import { closeDb, getDb, migrateDatabase } from '@timeline/db';
 import { waitForMigrations } from '@timeline/db/wait-for-migrations';
-import { childLogger, queue } from '@timeline/shared';
+import { childLogger, getEnv, queue } from '@timeline/shared';
 import { shutdownPostHogNodeClients } from '@timeline/shared/analytics/posthog-node';
 
 import { captureWorkerException, flushWorkerSentry, initWorkerSentry } from '#src/monitoring.js';
@@ -30,6 +30,13 @@ const log = childLogger('worker');
 initWorkerSentry();
 
 async function main(): Promise<void> {
+  const env = getEnv();
+  if (env.WORKER_MODE === 'document-extract') {
+    throw new Error(
+      'WORKER_MODE=document-extract must use apps/worker/dist/extract-main.js (refusing full worker boot)',
+    );
+  }
+
   // Railway can deploy/restart the worker independently from web, so the
   // worker must be able to advance migrations too. The shared advisory lock
   // keeps concurrent web/worker migrators serialized and no-op once current.
@@ -39,6 +46,7 @@ async function main(): Promise<void> {
   await waitForMigrations();
 
   const db = getDb();
+  const documentExtractEnabled = env.DOCUMENT_EXTRACT_ENABLED;
   const transcribeWorker = startTranscribeWorker({ db });
   const extractWorker = startExtractWorker({ db });
   const suggestionWorker = startSuggestionWorker({ db });
@@ -46,7 +54,7 @@ async function main(): Promise<void> {
   const overdueWorker = startOverdueWorker({ db });
   const calendarRecurrenceWorker = startCalendarRecurrenceWorker({ db });
   const conversationAgentWorker = startConversationAgentWorker({ db });
-  const documentExtractWorker = startDocumentExtractWorker({ db });
+  const documentExtractWorker = documentExtractEnabled ? startDocumentExtractWorker({ db }) : null;
   const meetingFinalizeWorker = startMeetingFinalizeWorker({ db });
   const meetingSchedulerWorker = startMeetingSchedulerWorker({ db });
   const objectSummaryWorker = startObjectSummaryWorker({ db });
@@ -73,7 +81,10 @@ async function main(): Promise<void> {
   await queue.scheduleMeetingSchedulerTick();
   await queue.scheduleDailyDigest();
   log.info(
-    { taskCategoryWorkerEnabled: taskCategoryWorker !== null },
+    {
+      taskCategoryWorkerEnabled: taskCategoryWorker !== null,
+      documentExtractEnabled,
+    },
     'transcribe + extract + suggestions + embed + overdue + calendar-recurrence + conversation-agent + document-extract + meeting-finalize + meeting-scheduler + object-summary + janitor + webhook-delivery + integration-sync + mcp-health + team-export + timeline-moment-presentation + daily-digest + reconciliation workers started',
   );
 
@@ -88,7 +99,7 @@ async function main(): Promise<void> {
         overdueWorker.close(),
         calendarRecurrenceWorker.close(),
         conversationAgentWorker.close(),
-        documentExtractWorker.close(),
+        documentExtractWorker?.close(),
         meetingFinalizeWorker.close(),
         meetingSchedulerWorker.close(),
         objectSummaryWorker.close(),
@@ -109,7 +120,9 @@ async function main(): Promise<void> {
       await queue.closeOverdueScanQueue();
       await queue.closeCalendarRecurrenceQueue();
       await queue.closeConversationAgentQueue();
-      await queue.closeDocumentExtractQueue();
+      if (documentExtractEnabled) {
+        await queue.closeDocumentExtractQueue();
+      }
       await queue.closeMeetingFinalizeQueue();
       await queue.closeMeetingSchedulerQueue();
       await queue.closeObjectSummaryQueue();

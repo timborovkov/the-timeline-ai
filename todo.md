@@ -48,7 +48,7 @@ records:
       target, recovery-kind, and outcome metadata.
 - [ ] Add per-team monthly vision-spend caps and a dashboard. Vision OCR is much
       more expensive than text extraction; text-based PDFs now extract locally
-      via pdf-inspector, but scanned/mixed PDFs and images still need a clear
+      via Daytona sandbox text extract, but scanned/mixed PDFs and images still need a clear
       budget guardrail before heavy dogfooding.
 - [ ] Add dogfood document content: contracts, deal docs, internal guides,
       policies, office rules, onboarding docs, and customer notes.

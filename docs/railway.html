@@ -62,6 +62,14 @@
             <td><code>NODE_ENV=production node apps/worker/dist/index.js</code></td>
           </tr>
           <tr>
+            <td><code>extract</code></td>
+            <td>App</td>
+            <td><code>apps/worker/railway.extract.json</code> (Railpack)</td>
+            <td>
+              <code>NODE_ENV=production WORKER_MODE=document-extract node apps/worker/dist/extract-main.js</code>
+            </td>
+          </tr>
+          <tr>
             <td><code>postgres</code></td>
             <td>Plugin</td>
             <td>—</td>

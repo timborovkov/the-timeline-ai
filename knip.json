@@ -16,9 +16,15 @@
       "ignoreDependencies": ["tailwindcss"]
     },
     "apps/worker": {
-      "entry": ["scripts/*.mjs", "src/scripts/*.ts", "src/workers/*.test.ts"],
-      "project": ["scripts/*.mjs", "src/**/*.ts"],
-      "ignoreDependencies": ["@firecrawl/pdf-inspector"]
+      "entry": [
+        "scripts/*.mjs",
+        "scripts/*.ts",
+        "src/extract-main.ts",
+        "src/scripts/*.ts",
+        "src/workers/*.test.ts",
+        "src/document-ingestion/*.test.ts"
+      ],
+      "project": ["scripts/*.{mjs,ts}", "src/**/*.ts"]
     },
     "packages/db": {
       "entry": ["src/schema/**/*.ts"],

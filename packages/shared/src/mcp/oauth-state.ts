@@ -26,8 +26,10 @@ const STATE_TTL_MS = 15 * 60 * 1000;
 
 function getSecret(): string {
   const env = getEnv();
-  // AUTH_SECRET is already validated as a required, non-empty string in
-  // env.ts (min 16 chars) so this never throws in a well-configured env.
+  // Required for web / full worker; document-extract mode omits Auth secrets.
+  if (!env.AUTH_SECRET) {
+    throw new Error('AUTH_SECRET is required for MCP OAuth state');
+  }
   return env.AUTH_SECRET;
 }
 

@@ -1,7 +1,8 @@
 # @timeline/worker
 
 BullMQ workers for the async processing pipeline: durable direct conversation
-agents, transcribe, extract, embed, document-extract, meeting-finalize,
+agents, transcribe, extract, embed, document-extract (also as a dedicated
+`WORKER_MODE=document-extract` / Daytona sandbox service — ADR 0013), meeting-finalize,
 task-category classification, overdue-scan, integrations, maintenance, and
 exports. One Node entry point starts the queue workers from the same codebase.
 

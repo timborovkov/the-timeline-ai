@@ -27,8 +27,38 @@ const baseSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error', 'silent']).default('info'),
 
-  // Auth
-  AUTH_SECRET: z.string().min(16, 'AUTH_SECRET must be at least 16 chars'),
+  /**
+   * Worker process role. `document-extract` boots only the document-extract
+   * BullMQ consumer (credential-thin extract service). `full` boots the
+   * normal worker set; pair with `DOCUMENT_EXTRACT_ENABLED=false` on the
+   * main worker when a dedicated extract service owns that queue.
+   */
+  WORKER_MODE: z.enum(['full', 'document-extract']).default('full'),
+  /**
+   * When false, a `full` worker skips starting the document-extract consumer.
+   * Ignored in `WORKER_MODE=document-extract` (that mode always starts it).
+   */
+  DOCUMENT_EXTRACT_ENABLED: z.preprocess(booleanString, z.boolean().default(true)),
+  /**
+   * Dev-only: allow in-process PDF/DOCX parsers when Daytona is unset.
+   * Production extract mode must use Daytona sandboxes.
+   */
+  DOCUMENT_EXTRACT_ALLOW_INPROCESS: z.preprocess(booleanString, z.boolean().default(false)),
+  // Daytona sandbox isolation for untrusted document parsers (ADR 0013).
+  DAYTONA_API_KEY: z.string().optional(),
+  DAYTONA_API_URL: z.preprocess(emptyStringAsUnset, z.url().default('https://app.daytona.io/api')),
+  DAYTONA_TARGET: z.preprocess(emptyStringAsUnset, z.string().default('us')),
+  DAYTONA_SNAPSHOT: z.preprocess(
+    emptyStringAsUnset,
+    z.string().default('timeline-document-extract'),
+  ),
+  /** Sparse-PDF text threshold (chars) before rendering pages for vision. */
+  DOCUMENT_EXTRACT_SPARSE_TEXT_CHARS: z.coerce.number().int().positive().default(500),
+  /** Max pages rendered for sparse-PDF vision (hard-capped at 100 in code). */
+  DOCUMENT_EXTRACT_MAX_VISION_PAGES: z.coerce.number().int().positive().default(20),
+
+  // Auth — required for web + full worker; optional for document-extract mode.
+  AUTH_SECRET: z.string().min(16, 'AUTH_SECRET must be at least 16 chars').optional(),
   AUTH_URL: z.url().default('http://localhost:3000'),
   AUTH_GITHUB_ID: z.string().optional(),
   AUTH_GITHUB_SECRET: z.string().optional(),
@@ -250,6 +280,38 @@ const schema = baseSchema
         path: ['LANGSMITH_API_KEY'],
         message: 'LANGSMITH_API_KEY is required when LANGSMITH_TRACING=true',
       });
+    }
+    // Web + full worker still need Auth.js secrets. The credential-thin
+    // document-extract service must not require them (and should not set them).
+    if (env.WORKER_MODE !== 'document-extract' && !env.AUTH_SECRET) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['AUTH_SECRET'],
+        message: 'AUTH_SECRET is required unless WORKER_MODE=document-extract',
+      });
+    }
+    if (env.WORKER_MODE === 'document-extract' && env.NODE_ENV === 'production') {
+      if (!env.DAYTONA_API_KEY) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['DAYTONA_API_KEY'],
+          message: 'DAYTONA_API_KEY is required when WORKER_MODE=document-extract in production',
+        });
+      }
+      if (!env.OPENROUTER_API_KEY) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['OPENROUTER_API_KEY'],
+          message: 'OPENROUTER_API_KEY is required when WORKER_MODE=document-extract in production',
+        });
+      }
+      if (!env.REDIS_URL) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['REDIS_URL'],
+          message: 'REDIS_URL is required when WORKER_MODE=document-extract in production',
+        });
+      }
     }
   })
   .transform((env) => ({
