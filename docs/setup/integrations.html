@@ -641,13 +641,15 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
         forever. A first sync that starts with oversized commit history imports the newest window,
         records an audit row, and advances the high-water cursor so future polling stays current.
         Timestamped issue-comment and inline-review-comment syncs use a per-surface continuation:
-        after a page cap, Timeline drains the bounded page work provisionally, then replays the
-        mutable result set from page one until two full page traversals agree before it advances the
-        timestamp cursor. The worker resumes ordinary page handoffs promptly, backs off a changing
-        dense boundary for a bounded number of replay attempts, and preserves its checkpoint for
-        later reconciliation. Rate-limited comment checkpoints resume as targeted work for that same
-        comment surface when the provider's recorded retry time arrives, so an issue-comment retry
-        cannot consume an inline-review checkpoint.
+        whenever a scan spans more than one mutable results page, Timeline treats that traversal as
+        provisional and replays the result set from page one until two full page traversals agree
+        before it advances the timestamp cursor. The worker resumes ordinary page handoffs promptly,
+        backs off a changing dense boundary for a bounded number of replay attempts, and preserves
+        its checkpoint for later reconciliation. Rate-limited comment checkpoints resume as targeted
+        work for that same comment surface when the provider's recorded retry time arrives, so an
+        issue-comment retry cannot consume an inline-review checkpoint. Each cursor checkpoint and
+        its continuation handoffs commit together to durable recovery storage before the sync
+        reports success.
       </p>
       <p>Manual full backfill from the CLI:</p>
       <pre><code>pnpm --filter @timeline/worker integration-resync -- --team=&lt;uuid&gt; --from-zero</code></pre>

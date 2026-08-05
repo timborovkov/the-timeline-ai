@@ -4,6 +4,7 @@ import { getEnv } from '#src/env.js';
 import { externalFetch as fetch } from '#src/http/external-fetch.js';
 import {
   attachSyncContinuation,
+  attachSyncContinuations,
   type IntegrationEvent,
   type IntegrationProvider,
   type OAuthCallbackInput,
@@ -105,8 +106,8 @@ interface GithubConversationContinuation {
   /** Next page in a bounded drain or replay pass. */
   page: number;
   /**
-   * A capped drain is provisional because GitHub's offset pages can move.
-   * Once it reaches the end, replay from page one before promoting its
+   * A multi-page traversal is provisional because GitHub's offset pages can
+   * move. Once it reaches the end, replay from page one before promoting its
    * timestamp boundary. Cursors written by the previous implementation omit
    * this and are treated as a replay from page one.
    */
@@ -1874,36 +1875,46 @@ async function syncRepo(
   const legacyCursor = options.legacyCursor ?? {};
   const failures: GithubSurfaceFailure[] = [];
   const conversations: GithubConversationSurfaceSyncResult[] = [];
-  if (options.conversationSurface === 'issue_comments') {
-    conversations.push(await syncIssueCommentsSurface(tokens, repo, ctx, legacyCursor, budget));
-  } else if (options.conversationSurface === 'pr_review_comments') {
-    conversations.push(await syncReviewCommentsSurface(tokens, repo, ctx, legacyCursor, budget));
-  } else {
-    failures.push(...(await syncPullRequestsSurface(tokens, repo, ctx, legacyCursor, budget)));
-    failures.push(...(await syncIssuesSurface(tokens, repo, ctx, legacyCursor, budget)));
-    conversations.push(await syncIssueCommentsSurface(tokens, repo, ctx, legacyCursor, budget));
-    conversations.push(await syncReviewCommentsSurface(tokens, repo, ctx, legacyCursor, budget));
-    failures.push(
-      ...(await syncReleasesSurface(tokens, repo, ctx, legacyCursor, options.mode, budget)),
+  const conversationContinuations = () =>
+    conversations.flatMap((conversation) =>
+      conversation.needsContinuation
+        ? [
+            {
+              resourceType: 'github.repo',
+              externalId: repo,
+              surface: conversation.surface,
+              ...(conversation.retryAt ? { retryAt: conversation.retryAt } : {}),
+            },
+          ]
+        : [],
     );
-    failures.push(...(await syncCommitsSurface(tokens, repo, ctx, legacyCursor, budget)));
-    failures.push(
-      ...(await syncWorkflowRunsSurface(tokens, repo, ctx, legacyCursor, options.mode, budget)),
-    );
+  try {
+    if (options.conversationSurface === 'issue_comments') {
+      conversations.push(await syncIssueCommentsSurface(tokens, repo, ctx, legacyCursor, budget));
+    } else if (options.conversationSurface === 'pr_review_comments') {
+      conversations.push(await syncReviewCommentsSurface(tokens, repo, ctx, legacyCursor, budget));
+    } else {
+      failures.push(...(await syncPullRequestsSurface(tokens, repo, ctx, legacyCursor, budget)));
+      failures.push(...(await syncIssuesSurface(tokens, repo, ctx, legacyCursor, budget)));
+      conversations.push(await syncIssueCommentsSurface(tokens, repo, ctx, legacyCursor, budget));
+      conversations.push(await syncReviewCommentsSurface(tokens, repo, ctx, legacyCursor, budget));
+      failures.push(
+        ...(await syncReleasesSurface(tokens, repo, ctx, legacyCursor, options.mode, budget)),
+      );
+      failures.push(...(await syncCommitsSurface(tokens, repo, ctx, legacyCursor, budget)));
+      failures.push(
+        ...(await syncWorkflowRunsSurface(tokens, repo, ctx, legacyCursor, options.mode, budget)),
+      );
+    }
+  } catch (err) {
+    const continuations = conversationContinuations();
+    if (err instanceof Error && continuations.length > 0) {
+      throw attachSyncContinuations(err, continuations);
+    }
+    throw err;
   }
   failures.push(...conversations.flatMap((conversation) => conversation.failures));
-  const continuations = conversations.flatMap((conversation) =>
-    conversation.needsContinuation
-      ? [
-          {
-            resourceType: 'github.repo',
-            externalId: repo,
-            surface: conversation.surface,
-            ...(conversation.retryAt ? { retryAt: conversation.retryAt } : {}),
-          },
-        ]
-      : [],
-  );
+  const continuations = conversationContinuations();
   return {
     failures,
     continuations,
@@ -2195,9 +2206,10 @@ async function syncTimestampedConversationSurface<T extends { updated_at: string
   let continuationRetryAt: Date | undefined;
   let activePage = startPage;
   const finishScan = () => {
-    if (continuation?.phase === 'drain') {
-      // Never promote a timestamp after resuming an offset page. A late row
-      // can have landed on an earlier page while the worker was idle.
+    if (continuation?.phase === 'drain' || (!continuation && activePage > startPage)) {
+      // Never promote a timestamp after an offset traversal. A late row can
+      // land on an earlier page while the worker is scanning, even when this
+      // run reaches the end before the page cap.
       next[continuationKey] = {
         since,
         page: 1,
@@ -2890,11 +2902,18 @@ export const githubProvider: IntegrationProvider = {
     const failures: GithubSurfaceFailure[] = [];
     const continuations: SyncContinuation[] = [];
     for (const repo of repos) {
-      const repoTokens = await ensureGithubInstallationAccessToken(fresh, repo);
-      fresh = await persistUpdatedGithubTokens(ctx, fresh, repoTokens);
-      const result = await syncRepo(repoTokens, repo, ctx, { mode: 'backfill' }, budget);
-      failures.push(...result.failures);
-      continuations.push(...result.continuations);
+      try {
+        const repoTokens = await ensureGithubInstallationAccessToken(fresh, repo);
+        fresh = await persistUpdatedGithubTokens(ctx, fresh, repoTokens);
+        const result = await syncRepo(repoTokens, repo, ctx, { mode: 'backfill' }, budget);
+        failures.push(...result.failures);
+        continuations.push(...result.continuations);
+      } catch (err) {
+        if (err instanceof Error && continuations.length > 0) {
+          throw attachSyncContinuations(err, continuations);
+        }
+        throw err;
+      }
     }
     if (failures.length > 0 || continuations.length > 0) {
       if (failures.length > 0) {
@@ -2920,22 +2939,31 @@ export const githubProvider: IntegrationProvider = {
         ? githubConversationSurface(target.surface)
         : undefined;
     for (const repo of repos) {
-      const legacyCursor = (await ctx.loadCursor(`github.repo:${repo}`)) as RepoCursor;
-      const repoTokens = await ensureGithubInstallationAccessToken(fresh, repo);
-      fresh = await persistUpdatedGithubTokens(ctx, fresh, repoTokens);
-      const result = await syncRepo(
-        repoTokens,
-        repo,
-        ctx,
-        {
-          mode: 'incremental',
-          legacyCursor,
-          ...(targetConversationSurface ? { conversationSurface: targetConversationSurface } : {}),
-        },
-        budget,
-      );
-      failures.push(...result.failures);
-      continuations.push(...result.continuations);
+      try {
+        const legacyCursor = (await ctx.loadCursor(`github.repo:${repo}`)) as RepoCursor;
+        const repoTokens = await ensureGithubInstallationAccessToken(fresh, repo);
+        fresh = await persistUpdatedGithubTokens(ctx, fresh, repoTokens);
+        const result = await syncRepo(
+          repoTokens,
+          repo,
+          ctx,
+          {
+            mode: 'incremental',
+            legacyCursor,
+            ...(targetConversationSurface
+              ? { conversationSurface: targetConversationSurface }
+              : {}),
+          },
+          budget,
+        );
+        failures.push(...result.failures);
+        continuations.push(...result.continuations);
+      } catch (err) {
+        if (err instanceof Error && continuations.length > 0) {
+          throw attachSyncContinuations(err, continuations);
+        }
+        throw err;
+      }
     }
     if (failures.length > 0 || continuations.length > 0) {
       if (failures.length > 0) {

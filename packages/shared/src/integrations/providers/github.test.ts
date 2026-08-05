@@ -1941,8 +1941,126 @@ describe('githubProvider.incrementalSync', () => {
         );
       }),
     ).toHaveLength(2);
-    expect(result).toBeUndefined();
+    expect(result).toEqual({
+      continuations: [
+        { resourceType: 'github.repo', externalId: 'acme/app', surface: 'issue_comments' },
+        { resourceType: 'github.repo', externalId: 'acme/app', surface: 'pr_review_comments' },
+      ],
+    });
     expect(recordAudit).not.toHaveBeenCalledWith('github_incremental_partial', expect.anything());
+  });
+
+  it('replays a normal multi-page comment scan when the boundary mutates between pages', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-12T12:00:00.000Z'));
+    const committedHighWater = '2026-06-10T11:59:00Z';
+    const observedHighWater = '2026-06-10T12:00:00Z';
+    const overlapSince = '2026-06-10T11:58:59Z';
+    const cursors = new Map<string, TestGithubCursor>();
+    let pass: 'initial' | 'replay' = 'initial';
+    const comment = (id: number) => ({
+      id,
+      body: `Comment ${String(id)}`,
+      html_url: `https://github.com/acme/app/issues/8#issuecomment-${String(id)}`,
+      issue_url: 'https://api.github.com/repos/acme/app/issues/8',
+      created_at: observedHighWater,
+      updated_at: observedHighWater,
+      user: { login: 'alice' },
+    });
+    const initialPage = Array.from({ length: 100 }, (_, index) => comment(index + 1));
+    const lateComment = comment(101);
+    const mutation = comment(102);
+    const fetchMock = vi.fn<typeof fetch>((input) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.pathname === '/repos/acme/app/issues/comments') {
+        expect(url.searchParams.get('since')).toBe(overlapSince);
+        const page = Number(url.searchParams.get('page'));
+        if (pass === 'initial') {
+          return Promise.resolve(
+            jsonResponse(page === 1 ? initialPage : [initialPage[99], lateComment]),
+          );
+        }
+        return Promise.resolve(
+          jsonResponse(
+            page === 1 ? [mutation, ...initialPage.slice(0, 99)] : [initialPage[99], lateComment],
+          ),
+        );
+      }
+      if (url.pathname === '/repos/acme/app/commits') return Promise.resolve(jsonResponse([]));
+      const base = emptyGithubFetch(input);
+      return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
+    });
+    globalThis.fetch = fetchMock;
+    const saveCursor = vi
+      .fn<SyncContext['saveCursor']>()
+      .mockImplementation((resourceType, cursor) => {
+        cursors.set(resourceType, cursor as TestGithubCursor);
+        return Promise.resolve(undefined);
+      });
+    const sync = () =>
+      githubProvider.incrementalSync({
+        integration: {} as never,
+        tokens: { access_token: 'gho_token' },
+        selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+        ctx: {
+          writeEvents: vi.fn().mockResolvedValue([]),
+          recordAudit: vi.fn().mockResolvedValue(undefined),
+          saveCursor,
+          loadCursor: vi.fn((resourceType: string) =>
+            Promise.resolve(cursors.get(resourceType) ?? {}),
+          ),
+          persistTokens: vi.fn(),
+        },
+      });
+
+    cursors.set('github.repo:acme/app:issue_comments', {
+      issue_comments_since: committedHighWater,
+    });
+
+    try {
+      await expect(sync()).resolves.toMatchObject({
+        continuations: [
+          {
+            resourceType: 'github.repo',
+            externalId: 'acme/app',
+            surface: 'issue_comments',
+          },
+        ],
+      });
+      expect(cursors.get('github.repo:acme/app:issue_comments')).toMatchObject({
+        issue_comments_since: committedHighWater,
+        issue_comments_continuation: {
+          since: overlapSince,
+          page: 1,
+          phase: 'replay',
+          max_updated_at: observedHighWater,
+        },
+      });
+
+      pass = 'replay';
+      const replay = await sync();
+
+      expect(replay?.continuations).toEqual([
+        expect.objectContaining({
+          resourceType: 'github.repo',
+          externalId: 'acme/app',
+          surface: 'issue_comments',
+        }),
+      ]);
+      expect(replay?.continuations?.[0]?.retryAt).toBeInstanceOf(Date);
+      expect(cursors.get('github.repo:acme/app:issue_comments')).toMatchObject({
+        issue_comments_since: committedHighWater,
+        issue_comments_continuation: {
+          since: overlapSince,
+          page: 1,
+          phase: 'replay',
+        },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('replays a capped dense timestamp boundary before promoting it', async () => {
@@ -2489,6 +2607,70 @@ describe('githubProvider.incrementalSync', () => {
         return new URL(requestUrl).pathname === '/repos/acme/app/issues/comments';
       }),
     ).toBe(false);
+  });
+
+  it('carries comment continuations collected before a later surface rate limit', async () => {
+    const highWater = '2026-06-10T12:00:00Z';
+    const comment = (id: number) => ({
+      id,
+      body: `Comment ${String(id)}`,
+      html_url: `https://github.com/acme/app/issues/8#issuecomment-${String(id)}`,
+      issue_url: 'https://api.github.com/repos/acme/app/issues/8',
+      created_at: highWater,
+      updated_at: highWater,
+      user: { login: 'alice' },
+    });
+    const fetchMock = vi.fn<typeof fetch>((input) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.pathname === '/repos/acme/app/issues/comments') {
+        const page = Number(url.searchParams.get('page'));
+        return Promise.resolve(
+          jsonResponse(
+            Array.from({ length: 100 }, (_, index) => comment((page - 1) * 100 + index + 1)),
+          ),
+        );
+      }
+      if (url.pathname === '/repos/acme/app/pulls/comments') {
+        return Promise.resolve(
+          jsonResponse({ message: 'secondary rate limit' }, 403, { 'retry-after': '60' }),
+        );
+      }
+      if (url.pathname === '/repos/acme/app/commits') return Promise.resolve(jsonResponse([]));
+      const base = emptyGithubFetch(input);
+      return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
+    });
+    globalThis.fetch = fetchMock;
+
+    await expect(
+      githubProvider.incrementalSync({
+        integration: {} as never,
+        tokens: { access_token: 'gho_token' },
+        selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+        ctx: {
+          writeEvents: vi.fn().mockResolvedValue([]),
+          recordAudit: vi.fn().mockResolvedValue(undefined),
+          saveCursor: vi.fn().mockResolvedValue(undefined),
+          loadCursor: vi.fn().mockResolvedValue({}),
+          persistTokens: vi.fn(),
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'github_rate_limited',
+      syncContinuations: [
+        {
+          resourceType: 'github.repo',
+          externalId: 'acme/app',
+          surface: 'issue_comments',
+        },
+        {
+          resourceType: 'github.repo',
+          externalId: 'acme/app',
+          surface: 'pr_review_comments',
+        },
+      ],
+    });
   });
 
   it('checkpoints a later-page comment rate limit before retrying from a safe overlap', async () => {
