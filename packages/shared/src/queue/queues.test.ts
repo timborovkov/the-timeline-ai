@@ -331,10 +331,12 @@ describe('queue wrappers', () => {
 
     await queues.enqueueIntegrationSyncJob(continuation);
     await queues.enqueueIntegrationSyncJob(continuation);
+    await queues.enqueueIntegrationSyncJob(continuation, { delayMs: 5_000 });
 
-    expect(fakes.queues[0]?.addCalls).toHaveLength(2);
+    expect(fakes.queues[0]?.addCalls).toHaveLength(3);
     expect(fakes.queues[0]?.addCalls[0]?.opts).toBeUndefined();
     expect(fakes.queues[0]?.addCalls[1]?.opts).toBeUndefined();
+    expect(fakes.queues[0]?.addCalls[2]?.opts).toEqual({ delay: 5_000 });
   });
 
   it('treats a replay of an ambiguously accepted durable continuation handoff as idempotent', async () => {
@@ -366,6 +368,45 @@ describe('queue wrappers', () => {
         data: continuation,
         opts: {
           jobId: 'integration-pagination-continuation|33333333-3333-4333-8333-333333333333',
+        },
+      },
+    ]);
+  });
+
+  it('keeps Monday handoff delivery idempotent while allowing a successor', async () => {
+    const queues = await importQueues();
+    const firstHandoff = {
+      kind: 'targeted' as const,
+      integrationId: '11111111-1111-4111-8111-111111111111',
+      teamId: '22222222-2222-4222-8222-222222222222',
+      triggeredBy: 'reconcile',
+      resourceType: 'monday.item',
+      externalId: 'board-1:item-1:update-1',
+      reason: 'provider_pagination_continuation',
+      continuationHandoffId: '33333333-3333-4333-8333-333333333333',
+    };
+    const successor = {
+      ...firstHandoff,
+      continuationHandoffId: '44444444-4444-4444-8444-444444444444',
+    };
+
+    await queues.enqueueIntegrationSyncJob(firstHandoff);
+    await queues.enqueueIntegrationSyncJob(firstHandoff);
+    await queues.enqueueIntegrationSyncJob(successor);
+
+    expect(fakes.queues[0]?.addCalls).toEqual([
+      {
+        name: 'integration-sync',
+        data: firstHandoff,
+        opts: {
+          jobId: 'integration-pagination-continuation|33333333-3333-4333-8333-333333333333',
+        },
+      },
+      {
+        name: 'integration-sync',
+        data: successor,
+        opts: {
+          jobId: 'integration-pagination-continuation|44444444-4444-4444-8444-444444444444',
         },
       },
     ]);

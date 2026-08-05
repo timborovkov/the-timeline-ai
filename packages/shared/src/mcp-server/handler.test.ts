@@ -1,5 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
-import { mcpOutboundKeys } from '@timeline/db';
+import { mcpOutboundKeys, rawEvents } from '@timeline/db';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -116,6 +116,53 @@ describe('handleMcpRequest', () => {
         serverInfo: { name: 'the-timeline' },
       },
     });
+  });
+
+  it('does not expose tombstoned integration history through the outbound MCP resource tool', async () => {
+    await db.insert(rawEvents).values([
+      {
+        id: 'dddddddd-dddd-4ddd-8ddd-ddddddddddd1',
+        teamId: TEAM_ID,
+        source: 'integration',
+        contentText: 'Visible Monday update',
+        occurredAt: new Date('2026-06-20T10:00:00Z'),
+        sourceMetadata: {
+          provider: 'monday',
+          integration_id: 'integration-1',
+          external_object_id: 'item-1',
+          event_type: 'update.created',
+        },
+      },
+      {
+        id: 'dddddddd-dddd-4ddd-8ddd-ddddddddddd2',
+        teamId: TEAM_ID,
+        source: 'integration',
+        contentText: 'Tombstoned Monday update',
+        occurredAt: new Date('2026-06-20T10:01:00Z'),
+        sourceMetadata: {
+          provider: 'monday',
+          integration_id: 'integration-1',
+          external_object_id: 'item-1',
+          event_type: 'update.created',
+          deleted: true,
+        },
+      },
+    ]);
+
+    const result = await callTool(db, 'timeline.get_integration_resource', {
+      provider: 'monday',
+      externalObjectId: 'item-1',
+    });
+
+    expect(result).toMatchObject({
+      found: true,
+      history: [
+        expect.objectContaining({
+          event_id: 'dddddddd-dddd-4ddd-8ddd-ddddddddddd1',
+        }),
+      ],
+    });
+    expect(JSON.stringify(result)).not.toContain('dddddddd-dddd-4ddd-8ddd-ddddddddddd2');
   });
 
   it('rejects missing and invalid bearers for authenticated methods', async () => {

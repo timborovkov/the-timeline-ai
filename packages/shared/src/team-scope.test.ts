@@ -556,6 +556,49 @@ describe('withTeam namespaced port', () => {
     ]);
   });
 
+  it('hides tombstoned integration history from the resource read surface', async () => {
+    const visibleId = '00000000-0000-0000-0000-000000000111';
+    const deletedId = '00000000-0000-0000-0000-000000000112';
+    await db.insert(rawEvents).values([
+      {
+        id: visibleId,
+        teamId: TEAM_A,
+        source: 'integration',
+        contentText: 'Current Monday update',
+        occurredAt: new Date('2026-06-20T10:00:00Z'),
+        sourceMetadata: {
+          provider: 'monday',
+          integration_id: 'integration-a',
+          external_object_id: 'item-1',
+          event_type: 'update.created',
+        },
+      },
+      {
+        id: deletedId,
+        teamId: TEAM_A,
+        source: 'integration',
+        contentText: 'Deleted Monday update must never be returned',
+        occurredAt: new Date('2026-06-20T10:01:00Z'),
+        sourceMetadata: {
+          provider: 'monday',
+          integration_id: 'integration-a',
+          external_object_id: 'item-1',
+          event_type: 'update.created',
+          deleted: true,
+        },
+      },
+    ]);
+
+    const result = await withTeam(db as never, TEAM_A, USER_A).integrations.getIntegrationResource({
+      provider: 'monday',
+      externalObjectId: 'item-1',
+    });
+
+    expect(result?.history).toEqual([
+      expect.objectContaining({ id: visibleId, contentText: 'Current Monday update' }),
+    ]);
+  });
+
   it('filters timeline events by provider resources and lists only visible source facets', async () => {
     const mondayId = '00000000-0000-0000-0000-000000000201';
     const githubId = '00000000-0000-0000-0000-000000000202';

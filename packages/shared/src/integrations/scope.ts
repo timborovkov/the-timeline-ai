@@ -1625,6 +1625,7 @@ export function createIntegrationScope(deps: {
           sql`(${rawEvents.sourceMetadata} ->> 'provider') = ${input.provider}`,
           sql`(${rawEvents.sourceMetadata} ->> 'external_object_id') = ${input.externalObjectId}`,
           integrationVisibility,
+          sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
         ),
       )
       .orderBy(desc(rawEvents.occurredAt))

@@ -6,7 +6,10 @@ import {
   artifactClusters,
   artifactEvidenceAssociations,
   entities,
+  factEntities,
+  facts,
   integrations,
+  objectSummaries,
   rawEvents,
   reconciliationEvidence,
   reconciliationEvidenceAnchors,
@@ -20,8 +23,9 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { writeIntegrationEvents } from '#src/integrations/event-writer.js';
-import { enqueueEmbedJob, enqueueExtractJob } from '#src/queue/queues.js';
+import { enqueueEmbedJob, enqueueExtractJob, enqueueObjectSummaryJob } from '#src/queue/queues.js';
 import { AUTHORITY_POLICY_VERSION } from '#src/reconciliation/authority.js';
+import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
 vi.mock('#src/queue/queues.js', () => ({
@@ -166,6 +170,534 @@ describe('writeIntegrationEvents visibility', () => {
     const [row] = await db.select().from(rawEvents).where(eq(rawEvents.id, eventId));
     expect(row?.visibility).toBe('specific_users');
     expect(row?.visibilityUserIds).toEqual([USER_B_ID]);
+  });
+
+  it('tombstones only the deleted Monday update conversation without rewriting its raw source', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'monday',
+        displayName: 'Monday.com',
+        externalAccountId: 'acct-conversation-tombstone',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const createdAt = new Date('2026-06-20T10:05:00Z');
+    await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'monday:update:item-1:update-1:created',
+          provider: 'monday',
+          externalObjectId: 'item-1',
+          externalEventId: 'update-1',
+          eventType: 'update.observed',
+          occurredAt: createdAt,
+          contentText: 'Monday update on Acme renewal: private negotiation detail',
+          extra: {
+            monday_update_id: 'update-1',
+            monday_conversation_kind: 'update',
+          },
+        },
+        {
+          dedupKey: 'monday:reply:item-1:update-1:reply-1:created',
+          provider: 'monday',
+          externalObjectId: 'item-1',
+          externalEventId: 'reply-1',
+          eventType: 'reply.observed',
+          occurredAt: createdAt,
+          contentText: 'Monday reply on Acme renewal: acknowledgement',
+          extra: {
+            monday_update_id: 'update-1',
+            monday_reply_id: 'reply-1',
+            monday_conversation_kind: 'reply',
+          },
+        },
+        {
+          dedupKey: 'monday:update:item-1:update-2:created',
+          provider: 'monday',
+          externalObjectId: 'item-1',
+          externalEventId: 'update-2',
+          eventType: 'update.observed',
+          occurredAt: createdAt,
+          contentText: 'Monday update on Acme renewal: keep me',
+          extra: {
+            monday_update_id: 'update-2',
+            monday_conversation_kind: 'update',
+          },
+        },
+      ],
+    });
+
+    await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'monday:webhook:delete-update-1',
+          provider: 'monday',
+          externalObjectId: 'item-1:update:update-1',
+          externalEventId: 'delete-update-1',
+          eventType: 'update.deleted',
+          occurredAt: new Date('2026-06-20T10:07:00Z'),
+          contentText: 'Monday update deleted on Acme renewal',
+          extra: { monday_update_id: 'update-1' },
+          sourceTombstone: {
+            kind: 'monday_conversation',
+            updateId: 'update-1',
+            reason: 'monday_update_deleted_at_source',
+          },
+        },
+      ],
+    });
+
+    const rows = await db.select().from(rawEvents).orderBy(rawEvents.occurredAt);
+    const deletedUpdate = rows.find(
+      (row) =>
+        (row.sourceMetadata as { dedup_key?: string }).dedup_key ===
+        'monday:update:item-1:update-1:created',
+    );
+    const deletedReply = rows.find(
+      (row) =>
+        (row.sourceMetadata as { dedup_key?: string }).dedup_key ===
+        'monday:reply:item-1:update-1:reply-1:created',
+    );
+    const retainedUpdate = rows.find(
+      (row) =>
+        (row.sourceMetadata as { dedup_key?: string }).dedup_key ===
+        'monday:update:item-1:update-2:created',
+    );
+    const deleteAudit = rows.find(
+      (row) =>
+        (row.sourceMetadata as { dedup_key?: string }).dedup_key ===
+        'monday:webhook:delete-update-1',
+    );
+
+    expect(deletedUpdate?.contentText).toBe(
+      'Monday update on Acme renewal: private negotiation detail',
+    );
+    expect(deletedReply?.contentText).toBe('Monday reply on Acme renewal: acknowledgement');
+    expect(deletedUpdate?.sourceMetadata).toMatchObject({
+      deleted: true,
+      delete_reason: 'monday_update_deleted_at_source',
+    });
+    expect(deletedReply?.sourceMetadata).toMatchObject({
+      deleted: true,
+      delete_reason: 'monday_update_deleted_at_source',
+    });
+    expect(retainedUpdate?.sourceMetadata).not.toMatchObject({ deleted: true });
+    expect(deleteAudit?.sourceMetadata).not.toMatchObject({ deleted: true });
+  });
+
+  it('removes a retrieval-facing object summary that cites a tombstoned Monday conversation', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'monday',
+        displayName: 'Monday.com',
+        externalAccountId: 'acct-summary-tombstone',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const [rawEventId] = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'monday:update:item-1:update-summary:created',
+          provider: 'monday',
+          externalObjectId: 'item-1',
+          externalEventId: 'update-summary',
+          eventType: 'update.observed',
+          occurredAt: new Date('2026-06-20T10:05:00Z'),
+          contentText: 'Monday update: the Acme renewal is blocked on a private negotiation.',
+          extra: { monday_update_id: 'update-summary' },
+        },
+      ],
+    });
+    if (!rawEventId) throw new Error('conversation insert failed');
+
+    const [object] = await db
+      .insert(entities)
+      .values({ teamId: TEAM_ID, type: 'project', canonicalName: 'Acme renewal' })
+      .returning();
+    if (!object) throw new Error('object insert failed');
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_ID,
+        rawEventId,
+        statement: 'The Acme renewal is blocked on a private negotiation.',
+        confidence: 1,
+        modelVersion: 'test',
+      })
+      .returning();
+    if (!fact) throw new Error('fact insert failed');
+    await db.insert(factEntities).values({ factId: fact.id, entityId: object.id, role: 'subject' });
+    await db.insert(objectSummaries).values({
+      teamId: TEAM_ID,
+      entityId: object.id,
+      status: 'ready',
+      summary: {
+        overview: 'The Acme renewal is blocked on a private negotiation.',
+        overviewSourceRefs: [{ kind: 'fact', id: fact.id }],
+        currentState: [],
+        openQuestions: [],
+        conflicts: [],
+      },
+      plainText: 'The Acme renewal is blocked on a private negotiation.',
+      sourceRefs: [{ kind: 'fact', id: fact.id }],
+      sourceCounts: {
+        fields: 2,
+        facts: 1,
+        events: 1,
+        notes: 0,
+        relationships: 0,
+        tasks: 0,
+        changes: 0,
+      },
+      inputFingerprint: 'test-fingerprint',
+      model: 'test-summary-model',
+      promptVersion: 'object-summary-v1',
+      generatedAt: new Date('2026-06-20T10:06:00Z'),
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    expect((await scope.objects.getObject(object.id))?.summary?.summary?.overview).toContain(
+      'private negotiation',
+    );
+
+    // The writer discovers the tombstone and invalidates its summary before
+    // it inserts the raw audit event. A later SQL error must roll all of that
+    // work back together, rather than committing a tombstone with a stale
+    // retrieval summary (or the reverse).
+    await expect(
+      writeIntegrationEvents({
+        db: db as never,
+        integration,
+        events: [
+          {
+            dedupKey: 'monday:webhook:delete-update-summary-rolled-back',
+            provider: 'monday',
+            externalObjectId: 'item-1:update:update-summary',
+            externalEventId: 'delete-update-summary-rolled-back',
+            eventType: 'update.deleted',
+            occurredAt: new Date('2026-06-20T10:06:30Z'),
+            contentText: 'Monday update deleted',
+            extra: { monday_update_id: 'update-summary' },
+            sourceTombstone: {
+              kind: 'monday_conversation',
+              updateId: 'update-summary',
+              reason: 'monday_update_deleted_at_source',
+            },
+          },
+          {
+            dedupKey: 'monday:invalid-visibility-rollback',
+            provider: 'monday',
+            externalObjectId: 'item-1',
+            eventType: 'update.observed',
+            occurredAt: new Date('2026-06-20T10:06:31Z'),
+            contentText: 'This row deliberately fails the raw event insert.',
+            visibility: 'specific_users',
+            visibilityUserIds: ['not-a-uuid'],
+          },
+        ],
+      }),
+    ).rejects.toThrow();
+    const [uncommittedConversation] = await db
+      .select({ sourceMetadata: rawEvents.sourceMetadata })
+      .from(rawEvents)
+      .where(eq(rawEvents.id, rawEventId));
+    expect(uncommittedConversation?.sourceMetadata).not.toMatchObject({ deleted: true });
+    expect((await scope.objects.getObject(object.id))?.summary?.summary?.overview).toContain(
+      'private negotiation',
+    );
+
+    await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'monday:webhook:delete-update-summary',
+          provider: 'monday',
+          externalObjectId: 'item-1:update:update-summary',
+          externalEventId: 'delete-update-summary',
+          eventType: 'update.deleted',
+          occurredAt: new Date('2026-06-20T10:07:00Z'),
+          contentText: 'Monday update deleted',
+          extra: { monday_update_id: 'update-summary' },
+          sourceTombstone: {
+            kind: 'monday_conversation',
+            updateId: 'update-summary',
+            reason: 'monday_update_deleted_at_source',
+          },
+        },
+      ],
+    });
+
+    expect((await scope.objects.getObject(object.id))?.summary?.summary).toBeNull();
+    expect(enqueueObjectSummaryJob).toHaveBeenCalledWith(
+      { teamId: TEAM_ID, objectId: object.id, trigger: 'auto' },
+      { delayMs: 120_000 },
+    );
+
+    // A duplicate delete audit remains a safe repair path: it re-runs the
+    // idempotent invalidation even though the source row is already marked
+    // deleted and the audit event is deduped.
+    await db.insert(objectSummaries).values({
+      teamId: TEAM_ID,
+      entityId: object.id,
+      status: 'ready',
+      summary: {
+        overview: 'Stale deleted Monday evidence must not remain retrievable.',
+        overviewSourceRefs: [{ kind: 'fact', id: fact.id }],
+        currentState: [],
+        openQuestions: [],
+        conflicts: [],
+      },
+      plainText: 'Stale deleted Monday evidence must not remain retrievable.',
+      sourceRefs: [{ kind: 'fact', id: fact.id }],
+      sourceCounts: {
+        fields: 2,
+        facts: 1,
+        events: 1,
+        notes: 0,
+        relationships: 0,
+        tasks: 0,
+        changes: 0,
+      },
+      inputFingerprint: 'stale-after-tombstone',
+      model: 'test-summary-model',
+      promptVersion: 'object-summary-v1',
+      generatedAt: new Date('2026-06-20T10:08:00Z'),
+    });
+
+    await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'monday:webhook:delete-update-summary',
+          provider: 'monday',
+          externalObjectId: 'item-1:update:update-summary',
+          externalEventId: 'delete-update-summary',
+          eventType: 'update.deleted',
+          occurredAt: new Date('2026-06-20T10:07:00Z'),
+          contentText: 'Monday update deleted',
+          extra: { monday_update_id: 'update-summary' },
+          sourceTombstone: {
+            kind: 'monday_conversation',
+            updateId: 'update-summary',
+            reason: 'monday_update_deleted_at_source',
+          },
+        },
+      ],
+    });
+
+    expect((await scope.objects.getObject(object.id))?.summary?.summary).toBeNull();
+  });
+
+  it('persists a Monday conversation delete for legacy rows and late stale writes in only its integration', async () => {
+    const [integration, otherIntegration] = await db
+      .insert(integrations)
+      .values([
+        {
+          teamId: TEAM_ID,
+          connectedByUserId: USER_ID,
+          provider: 'monday',
+          displayName: 'Monday primary',
+          externalAccountId: 'acct-monday-primary',
+          visibilityDefault: 'team',
+        },
+        {
+          teamId: TEAM_ID,
+          connectedByUserId: USER_ID,
+          provider: 'monday',
+          displayName: 'Monday other',
+          externalAccountId: 'acct-monday-other',
+          visibilityDefault: 'team',
+        },
+      ])
+      .returning();
+    if (!integration || !otherIntegration) throw new Error('integration insert failed');
+
+    const observedAt = new Date('2026-06-20T10:05:00Z');
+    await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'monday:update:item-1:legacy-update-1',
+          provider: 'monday',
+          externalObjectId: 'item-1',
+          externalEventId: 'legacy-update-1',
+          eventType: 'update.observed',
+          occurredAt: observedAt,
+          contentText: 'Legacy immutable update body',
+          // Pre-conversation-rollout rows recorded only these stable ids.
+          extra: { monday_update_id: 'legacy-update-1' },
+        },
+        {
+          dedupKey: 'monday:reply:item-1:legacy-update-1:legacy-reply-1',
+          provider: 'monday',
+          externalObjectId: 'item-1',
+          externalEventId: 'legacy-reply-1',
+          eventType: 'reply.observed',
+          occurredAt: observedAt,
+          contentText: 'Legacy immutable reply body',
+          extra: {
+            monday_update_id: 'legacy-update-1',
+            monday_reply_id: 'legacy-reply-1',
+          },
+        },
+      ],
+    });
+
+    await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'monday:webhook:delete-legacy-update-1',
+          provider: 'monday',
+          externalObjectId: 'item-1:update:legacy-update-1',
+          externalEventId: 'delete-legacy-update-1',
+          eventType: 'update.deleted',
+          occurredAt: new Date('2026-06-20T10:06:00Z'),
+          contentText: 'Monday update deleted',
+          extra: { monday_update_id: 'legacy-update-1' },
+          sourceTombstone: {
+            kind: 'monday_conversation',
+            updateId: 'legacy-update-1',
+            reason: 'monday_update_deleted_at_source',
+          },
+        },
+      ],
+    });
+
+    await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'monday:update:item-1:legacy-update-1:late-sync',
+          provider: 'monday',
+          externalObjectId: 'item-1',
+          externalEventId: 'legacy-update-1',
+          eventType: 'update.observed',
+          occurredAt: new Date('2026-06-20T10:05:00Z'),
+          contentText: 'Late stale copy must remain invisible',
+          extra: { monday_update_id: 'legacy-update-1' },
+        },
+      ],
+    });
+    await writeIntegrationEvents({
+      db: db as never,
+      integration: otherIntegration,
+      events: [
+        {
+          dedupKey: 'monday:update:item-1:legacy-update-1:other-integration',
+          provider: 'monday',
+          externalObjectId: 'item-1',
+          externalEventId: 'legacy-update-1',
+          eventType: 'update.observed',
+          occurredAt: observedAt,
+          contentText: 'A separate selected Monday source must stay active',
+          extra: { monday_update_id: 'legacy-update-1' },
+        },
+      ],
+    });
+
+    const rows = await db.select().from(rawEvents);
+    const byDedupKey = new Map(
+      rows.map((row) => [String((row.sourceMetadata as { dedup_key?: string }).dedup_key), row]),
+    );
+    expect(byDedupKey.get('monday:update:item-1:legacy-update-1')?.contentText).toBe(
+      'Legacy immutable update body',
+    );
+    expect(byDedupKey.get('monday:update:item-1:legacy-update-1')?.sourceMetadata).toMatchObject({
+      deleted: true,
+    });
+    expect(
+      byDedupKey.get('monday:reply:item-1:legacy-update-1:legacy-reply-1')?.sourceMetadata,
+    ).toMatchObject({ deleted: true });
+    expect(
+      byDedupKey.get('monday:update:item-1:legacy-update-1:late-sync')?.sourceMetadata,
+    ).toMatchObject({ deleted: true });
+    expect(
+      byDedupKey.get('monday:update:item-1:legacy-update-1:other-integration')?.sourceMetadata,
+    ).not.toMatchObject({ deleted: true });
+
+    await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'monday:update:item-1:legacy-update-2',
+          provider: 'monday',
+          externalObjectId: 'item-1',
+          externalEventId: 'legacy-update-2',
+          eventType: 'update.observed',
+          occurredAt: observedAt,
+          contentText: 'Legacy update with a separately deleted reply',
+          extra: { monday_update_id: 'legacy-update-2' },
+        },
+        {
+          dedupKey: 'monday:reply:item-1:legacy-update-2:legacy-reply-2',
+          provider: 'monday',
+          externalObjectId: 'item-1',
+          externalEventId: 'legacy-reply-2',
+          eventType: 'reply.observed',
+          occurredAt: observedAt,
+          contentText: 'Legacy reply with a separately deleted reply',
+          extra: {
+            monday_update_id: 'legacy-update-2',
+            monday_reply_id: 'legacy-reply-2',
+          },
+        },
+        {
+          dedupKey: 'monday:webhook:delete-legacy-reply-2',
+          provider: 'monday',
+          externalObjectId: 'item-1:update:legacy-update-2',
+          externalEventId: 'delete-legacy-reply-2',
+          eventType: 'reply.deleted',
+          occurredAt: new Date('2026-06-20T10:06:00Z'),
+          contentText: 'Monday reply deleted',
+          extra: {
+            monday_update_id: 'legacy-update-2',
+            monday_reply_id: 'legacy-reply-2',
+          },
+          sourceTombstone: {
+            kind: 'monday_conversation',
+            updateId: 'legacy-update-2',
+            replyId: 'legacy-reply-2',
+            reason: 'monday_reply_deleted_at_source',
+          },
+        },
+      ],
+    });
+    const replyDeletionRows = await db.select().from(rawEvents);
+    const replyDeletionByDedupKey = new Map(
+      replyDeletionRows.map((row) => [
+        String((row.sourceMetadata as { dedup_key?: string }).dedup_key),
+        row,
+      ]),
+    );
+    expect(
+      replyDeletionByDedupKey.get('monday:update:item-1:legacy-update-2')?.sourceMetadata,
+    ).not.toMatchObject({ deleted: true });
+    expect(
+      replyDeletionByDedupKey.get('monday:reply:item-1:legacy-update-2:legacy-reply-2')
+        ?.sourceMetadata,
+    ).toMatchObject({ deleted: true, delete_reason: 'monday_reply_deleted_at_source' });
   });
 
   it('normalizes integration events into replay-safe reconciliation evidence and anchors', async () => {
