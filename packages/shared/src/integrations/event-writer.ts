@@ -2,6 +2,9 @@ import {
   artifactEvidenceAssociations,
   type Db,
   entities,
+  integrations,
+  mondayConversationTombstoneInvalidations,
+  mondayConversationTombstones,
   rawEvents,
   reconciliationEvidence,
   reconciliationOutputs,
@@ -26,6 +29,7 @@ import {
   reconcileLinkArtifactsForRawEvent,
   textHasLinks,
 } from '#src/conversational/link-artifacts.js';
+import { invalidateObjectSummariesForRawEvent } from '#src/objects/summaries.js';
 import { enqueueEmbedJob, enqueueExtractJob } from '#src/queue/queues.js';
 import {
   AUTHORITY_POLICY_VERSION,
@@ -44,6 +48,7 @@ import {
   payloadDigestFromMetadata,
   sourcePayloadRefFromMetadata,
 } from '#src/reconciliation/source-snapshot.js';
+import { withTeam } from '#src/team-scope.js';
 
 // Phase 11 — Persist normalized integration events into raw_events with
 // source='integration' + dedup_key. The partial unique index
@@ -64,6 +69,7 @@ const INTEGRATION_DIRECT_WRITE_PLANNER_VERSION = 'integration-object-map-2026-06
 const INTEGRATION_OBSERVED_ASSOCIATION_RUN_VERSION = 'integration-observed-association-2026-06';
 const INTEGRATION_OBSERVED_ASSOCIATION_PLANNER_VERSION = 'integration-association-2026-06';
 const INTEGRATION_SOURCE_SNAPSHOT_VERSION = 'integration-source-snapshot-2026-06';
+const TOMBSTONE_SYSTEM_ACTOR_ID = '00000000-0000-0000-0000-000000000000';
 
 interface IntegrationProjectionEvidence {
   id: string;
@@ -172,62 +178,123 @@ export async function writeIntegrationEvents(deps: {
   const writableEvents = await filterEventsOwnedByNativeIntegrations(deps, uniqueEvents);
   if (writableEvents.length === 0) return [];
 
-  const values = writableEvents.map((evt) => {
-    const visibilityOwnerUserId = deps.integration.connectedByUserId ?? null;
-    const sourcePayloadMetadata = sourcePayloadMetadataForEvent(evt);
-    const requestedVisibility = evt.visibility ?? visibility;
-    const requestedUserIds =
-      requestedVisibility === 'specific_users'
-        ? (evt.visibilityUserIds ??
-          (visibility === 'specific_users' ? deps.integration.visibilityDefaultUserIds : null))
-        : null;
-    const hasSpecificUsers = (requestedUserIds?.length ?? 0) > 0;
-    const resolvedVisibility = resolveEventVisibility({
-      requestedVisibility,
-      integrationDefault: visibility,
-      hasSpecificUsers,
-      hasVisibilityOwner: Boolean(visibilityOwnerUserId),
+  // A delete and a stale backfill can arrive in either order. Serialize writes
+  // for this integration, persist delete targets first, and consult those
+  // targets while constructing immutable raw rows. The lock makes this durable
+  // across workers rather than merely within one in-memory batch.
+  const writeResult = await deps.db.transaction(async (tx) => {
+    const lockedIntegration = await tx
+      .select({ id: integrations.id })
+      .from(integrations)
+      .where(
+        and(
+          eq(integrations.id, deps.integration.id),
+          eq(integrations.teamId, deps.integration.teamId),
+        ),
+      )
+      .for('update')
+      .limit(1);
+    if (!lockedIntegration[0]) {
+      throw new Error('Integration is no longer available for event writing');
+    }
+
+    const tombstones = mondayConversationTombstonesFromEvents(deps.integration, writableEvents);
+    await persistMondayConversationTombstones(tx as unknown as Db, tombstones);
+    const tombstonedConversations = await tombstoneStoredMondayConversations(
+      tx as unknown as Db,
+      deps.integration,
+      tombstones,
+    );
+    await persistMondayConversationTombstoneInvalidations(
+      tx as unknown as Db,
+      deps.integration,
+      tombstonedConversations,
+    );
+    // Deleting a ready summary is derived database state, so make it atomic
+    // with the tombstone and its durable invalidation record. If this fails,
+    // the source lifecycle change rolls back too; there is no committed state
+    // where retrieval can serve a deleted conversation from a stale summary.
+    await invalidateMondayConversationTombstoneSummaries(
+      tx as unknown as Db,
+      deps.integration,
+      tombstones.map((target) => target.targetKey),
+    );
+    const tombstonesByTargetKey = await loadMondayConversationTombstones(
+      tx as unknown as Db,
+      deps.integration,
+      writableEvents,
+    );
+
+    const values = writableEvents.map((evt) => {
+      const visibilityOwnerUserId = deps.integration.connectedByUserId ?? null;
+      const sourcePayloadMetadata = sourcePayloadMetadataForEvent(evt);
+      const requestedVisibility = evt.visibility ?? visibility;
+      const requestedUserIds =
+        requestedVisibility === 'specific_users'
+          ? (evt.visibilityUserIds ??
+            (visibility === 'specific_users' ? deps.integration.visibilityDefaultUserIds : null))
+          : null;
+      const hasSpecificUsers = (requestedUserIds?.length ?? 0) > 0;
+      const resolvedVisibility = resolveEventVisibility({
+        requestedVisibility,
+        integrationDefault: visibility,
+        hasSpecificUsers,
+        hasVisibilityOwner: Boolean(visibilityOwnerUserId),
+      });
+      const deletionMetadata = tombstoneMetadataForFutureConversationEvent(
+        evt,
+        tombstonesByTargetKey,
+      );
+
+      return {
+        teamId,
+        authorUserId,
+        visibilityOwnerUserId,
+        source: 'integration' as const,
+        contentText: evt.contentText,
+        occurredAt: evt.occurredAt,
+        visibility: resolvedVisibility,
+        visibilityUserIds: resolvedVisibility === 'specific_users' ? requestedUserIds : null,
+        sourceMetadata: sourceMetadataWithConversationArtifacts(
+          {
+            ...rawMetadataExtra(evt.extra),
+            provider: evt.provider,
+            integration_id: deps.integration.id,
+            external_object_id: evt.externalObjectId,
+            external_event_id: evt.externalEventId ?? null,
+            event_type: evt.eventType,
+            actor: evt.actor ?? null,
+            dedup_key: evt.dedupKey,
+            sync_at: new Date().toISOString(),
+            source_kind: 'integration_event',
+            ...sourcePayloadMetadata,
+            ...deletionMetadata,
+          },
+          evt.contentText,
+        ),
+      };
     });
 
-    return {
-      teamId,
-      authorUserId,
-      visibilityOwnerUserId,
-      source: 'integration' as const,
-      contentText: evt.contentText,
-      occurredAt: evt.occurredAt,
-      visibility: resolvedVisibility,
-      visibilityUserIds: resolvedVisibility === 'specific_users' ? requestedUserIds : null,
-      sourceMetadata: sourceMetadataWithConversationArtifacts(
-        {
-          ...rawMetadataExtra(evt.extra),
-          provider: evt.provider,
-          integration_id: deps.integration.id,
-          external_object_id: evt.externalObjectId,
-          external_event_id: evt.externalEventId ?? null,
-          event_type: evt.eventType,
-          actor: evt.actor ?? null,
-          dedup_key: evt.dedupKey,
-          sync_at: new Date().toISOString(),
-          source_kind: 'integration_event',
-          ...sourcePayloadMetadata,
-        },
-        evt.contentText,
-      ),
-    };
+    const inserted = await tx
+      .insert(rawEvents)
+      .values(values)
+      .returning({
+        id: rawEvents.id,
+        dedupKey: sql<string>`${rawEvents.sourceMetadata} ->> 'dedup_key'`,
+        sourceMetadata: rawEvents.sourceMetadata,
+      })
+      .onConflictDoNothing();
+    return { inserted };
   });
 
-  const inserted = await deps.db
-    .insert(rawEvents)
-    .values(values)
-    .returning({
-      id: rawEvents.id,
-      dedupKey: sql<string>`${rawEvents.sourceMetadata} ->> 'dedup_key'`,
-    })
-    .onConflictDoNothing();
+  const { inserted } = writeResult;
+
+  const activeInserted = inserted.filter(
+    (row) => (row.sourceMetadata as { deleted?: unknown }).deleted !== true,
+  );
 
   await Promise.all(
-    inserted.flatMap((row) => [
+    activeInserted.flatMap((row) => [
       enqueueIntegrationProcessingJob(deps.db, row.id, 'extraction', () =>
         enqueueExtractJob({ teamId, rawEventId: row.id }),
       ),
@@ -245,17 +312,23 @@ export async function writeIntegrationEvents(deps: {
     teamId,
     writableEvents.map((event) => event.dedupKey),
   );
+  // A raw source that is already tombstoned remains immutable evidence, but
+  // must not feed extraction, embeddings, links, or reconciliation again on a
+  // stale sync replay.
+  const activeWritableEvents = writableEvents.filter((event) =>
+    rawEventIdsByDedupKey.has(event.dedupKey),
+  );
   await normalizeIntegrationEventsToEvidence({
     db: deps.db,
     teamId,
-    events: writableEvents,
+    events: activeWritableEvents,
     rawEventIdsByDedupKey,
   });
 
-  const artifactEvents = writableEvents.filter(
+  const artifactEvents = activeWritableEvents.filter(
     (evt): evt is IntegrationEvent & { objectMap: ObjectMapping } => Boolean(evt.objectMap),
   );
-  const linkEvents = writableEvents.filter((evt) => textHasLinks(evt.contentText));
+  const linkEvents = activeWritableEvents.filter((evt) => textHasLinks(evt.contentText));
   await Promise.all(
     linkEvents.map((evt) => {
       const rawEventId = rawEventIdsByDedupKey.get(evt.dedupKey);
@@ -269,7 +342,7 @@ export async function writeIntegrationEvents(deps: {
     }),
   );
   const byExternal = new Map<string, IntegrationEvent & { objectMap: ObjectMapping }>();
-  // Iterate `writableEvents` (the dedup-winning list) instead of `deps.events`
+  // Iterate the active, dedup-winning list instead of `deps.events`
   // so the objectMap paired with each externalId comes from the same event as
   // the raw_events row. Iterating the pre-dedup list would let a later
   // same-dedupKey event silently override the winner's objectMap.
@@ -294,6 +367,299 @@ export async function writeIntegrationEvents(deps: {
   }
 
   return inserted.map((r) => r.id);
+}
+
+interface MondayConversationTombstoneTarget {
+  teamId: string;
+  integrationId: string;
+  updateId: string;
+  replyId: string | null;
+  targetKey: string;
+  reason: string;
+  sourceEventDedupKey: string;
+  deletedAt: Date;
+}
+
+function mondayConversationTargetKey(updateId: string, replyId: string | null): string {
+  return replyId ? `reply:${updateId}:${replyId}` : `update:${updateId}`;
+}
+
+function mondayConversationTombstonesFromEvents(
+  integration: IntegrationRow,
+  events: IntegrationEvent[],
+): MondayConversationTombstoneTarget[] {
+  const byTargetKey = new Map<string, MondayConversationTombstoneTarget>();
+  for (const event of events) {
+    const tombstone = event.sourceTombstone;
+    if (!tombstone) continue;
+    if (integration.provider !== 'monday' || event.provider !== 'monday') {
+      throw new Error('Only Monday integrations may persist Monday conversation tombstones');
+    }
+    const updateId = tombstone.updateId.trim();
+    const replyId = tombstone.replyId?.trim() ?? null;
+    if (!updateId) throw new Error('Monday conversation tombstones require an update id');
+    const targetKey = mondayConversationTargetKey(updateId, replyId);
+    if (!byTargetKey.has(targetKey)) {
+      byTargetKey.set(targetKey, {
+        teamId: integration.teamId,
+        integrationId: integration.id,
+        updateId,
+        replyId,
+        targetKey,
+        reason: tombstone.reason,
+        sourceEventDedupKey: event.dedupKey,
+        deletedAt: event.occurredAt,
+      });
+    }
+  }
+  return [...byTargetKey.values()];
+}
+
+async function persistMondayConversationTombstones(
+  db: Db,
+  targets: MondayConversationTombstoneTarget[],
+): Promise<void> {
+  if (targets.length === 0) return;
+  await db
+    .insert(mondayConversationTombstones)
+    .values(
+      targets.map((target) => ({
+        teamId: target.teamId,
+        integrationId: target.integrationId,
+        provider: 'monday' as const,
+        updateId: target.updateId,
+        replyId: target.replyId,
+        targetKey: target.targetKey,
+        reason: target.reason,
+        sourceEventDedupKey: target.sourceEventDedupKey,
+        deletedAt: target.deletedAt,
+      })),
+    )
+    .onConflictDoNothing();
+}
+
+interface MondayTombstoneInvalidation {
+  targetKey: string;
+  rawEventId: string;
+}
+
+function mondayStoredConversationConditions(
+  integration: IntegrationRow,
+  target: MondayConversationTombstoneTarget,
+  options: { activeOnly?: boolean } = {},
+) {
+  return [
+    eq(rawEvents.teamId, integration.teamId),
+    eq(rawEvents.source, 'integration'),
+    sql`${rawEvents.sourceMetadata} ->> 'provider' = 'monday'`,
+    sql`${rawEvents.sourceMetadata} ->> 'integration_id' = ${integration.id}`,
+    sql`${rawEvents.sourceMetadata} ->> 'monday_update_id' = ${target.updateId}`,
+    ...(target.replyId
+      ? [sql`${rawEvents.sourceMetadata} ->> 'monday_reply_id' = ${target.replyId}`]
+      : []),
+    // The delete audit event intentionally has the same stable update id.
+    sql`COALESCE(${rawEvents.sourceMetadata} ->> 'event_type', '') NOT IN ('update.deleted', 'reply.deleted')`,
+    sql`(${rawEvents.sourceMetadata} ->> 'dedup_key') IS DISTINCT FROM ${target.sourceEventDedupKey}`,
+    ...(options.activeOnly
+      ? [sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`]
+      : []),
+  ];
+}
+
+async function tombstoneStoredMondayConversations(
+  db: Db,
+  integration: IntegrationRow,
+  targets: MondayConversationTombstoneTarget[],
+): Promise<MondayTombstoneInvalidation[]> {
+  const invalidations = new Map<string, MondayTombstoneInvalidation>();
+  for (const target of targets) {
+    const patch = JSON.stringify(tombstoneRawEventMetadata(target));
+    await db
+      .update(rawEvents)
+      .set({
+        // Content is immutable. Tombstoning only records derived lifecycle
+        // metadata that keeps the original source available for audit/export.
+        sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${patch}::jsonb`,
+      })
+      .where(and(...mondayStoredConversationConditions(integration, target, { activeOnly: true })));
+
+    // Include already-deleted rows. A tombstone replay must recreate/execute
+    // its idempotent invalidation even though the lifecycle update above now
+    // returns zero rows.
+    const rows = await db
+      .select({ id: rawEvents.id })
+      .from(rawEvents)
+      .where(and(...mondayStoredConversationConditions(integration, target)));
+    for (const row of rows) {
+      invalidations.set(`${target.targetKey}\x00${row.id}`, {
+        targetKey: target.targetKey,
+        rawEventId: row.id,
+      });
+    }
+  }
+  return [...invalidations.values()];
+}
+
+async function persistMondayConversationTombstoneInvalidations(
+  db: Db,
+  integration: IntegrationRow,
+  invalidations: MondayTombstoneInvalidation[],
+): Promise<void> {
+  if (invalidations.length === 0) return;
+  await db
+    .insert(mondayConversationTombstoneInvalidations)
+    .values(
+      invalidations.map((invalidation) => ({
+        teamId: integration.teamId,
+        integrationId: integration.id,
+        targetKey: invalidation.targetKey,
+        rawEventId: invalidation.rawEventId,
+      })),
+    )
+    .onConflictDoNothing();
+}
+
+async function invalidateMondayConversationTombstoneSummaries(
+  db: Db,
+  integration: IntegrationRow,
+  targetKeys: string[],
+): Promise<void> {
+  if (targetKeys.length === 0) return;
+  const invalidations = await db
+    .select({
+      id: mondayConversationTombstoneInvalidations.id,
+      rawEventId: mondayConversationTombstoneInvalidations.rawEventId,
+    })
+    .from(mondayConversationTombstoneInvalidations)
+    .where(
+      and(
+        eq(mondayConversationTombstoneInvalidations.teamId, integration.teamId),
+        eq(mondayConversationTombstoneInvalidations.integrationId, integration.id),
+        inArray(mondayConversationTombstoneInvalidations.targetKey, [...new Set(targetKeys)]),
+      ),
+    );
+  if (invalidations.length === 0) return;
+
+  const systemScope = withTeam(db, integration.teamId, TOMBSTONE_SYSTEM_ACTOR_ID, {
+    skipMembershipCheck: true,
+  });
+  for (const invalidation of invalidations) {
+    try {
+      await invalidateObjectSummariesForRawEvent(db, systemScope, invalidation.rawEventId, {
+        trigger: 'monday_conversation_tombstone',
+      });
+      await db
+        .update(mondayConversationTombstoneInvalidations)
+        .set({ invalidatedAt: new Date(), lastError: null, updatedAt: new Date() })
+        .where(eq(mondayConversationTombstoneInvalidations.id, invalidation.id));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await db
+        .update(mondayConversationTombstoneInvalidations)
+        .set({ lastError: message.slice(0, 500), updatedAt: new Date() })
+        .where(eq(mondayConversationTombstoneInvalidations.id, invalidation.id))
+        .catch(() => undefined);
+      throw error;
+    }
+  }
+}
+
+interface MondayConversationIdentity {
+  updateId: string;
+  replyId: string | null;
+}
+
+function metadataText(metadata: IntegrationEvent['extra'], key: string): string | null {
+  const value = metadata?.[key];
+  if (typeof value !== 'string' && typeof value !== 'number') return null;
+  const text = String(value).trim();
+  return text || null;
+}
+
+function mondayConversationIdentity(event: IntegrationEvent): MondayConversationIdentity | null {
+  if (event.provider !== 'monday' || event.sourceTombstone) return null;
+  const updateId = metadataText(event.extra, 'monday_update_id');
+  if (!updateId) return null;
+  const replyId = metadataText(event.extra, 'monday_reply_id');
+  const kind = metadataText(event.extra, 'monday_conversation_kind');
+  if (
+    kind !== 'update' &&
+    kind !== 'reply' &&
+    !event.eventType.startsWith('update.') &&
+    !event.eventType.startsWith('reply.')
+  ) {
+    return null;
+  }
+  return { updateId, replyId };
+}
+
+function tombstoneRawEventMetadata(target: MondayConversationTombstoneTarget) {
+  return {
+    deleted: true,
+    delete_reason: target.reason,
+    deleted_at: target.deletedAt.toISOString(),
+    deleted_from_dedup_key: target.sourceEventDedupKey,
+  };
+}
+
+async function loadMondayConversationTombstones(
+  db: Db,
+  integration: IntegrationRow,
+  events: IntegrationEvent[],
+): Promise<Map<string, MondayConversationTombstoneTarget>> {
+  if (integration.provider !== 'monday') return new Map();
+  const keys = [
+    ...new Set(
+      events.flatMap((event) => {
+        const identity = mondayConversationIdentity(event);
+        if (!identity) return [];
+        return [
+          mondayConversationTargetKey(identity.updateId, null),
+          ...(identity.replyId
+            ? [mondayConversationTargetKey(identity.updateId, identity.replyId)]
+            : []),
+        ];
+      }),
+    ),
+  ];
+  if (keys.length === 0) return new Map();
+  const rows = await db
+    .select({
+      teamId: mondayConversationTombstones.teamId,
+      integrationId: mondayConversationTombstones.integrationId,
+      updateId: mondayConversationTombstones.updateId,
+      replyId: mondayConversationTombstones.replyId,
+      targetKey: mondayConversationTombstones.targetKey,
+      reason: mondayConversationTombstones.reason,
+      sourceEventDedupKey: mondayConversationTombstones.sourceEventDedupKey,
+      deletedAt: mondayConversationTombstones.deletedAt,
+    })
+    .from(mondayConversationTombstones)
+    .where(
+      and(
+        eq(mondayConversationTombstones.teamId, integration.teamId),
+        eq(mondayConversationTombstones.integrationId, integration.id),
+        eq(mondayConversationTombstones.provider, 'monday'),
+        inArray(mondayConversationTombstones.targetKey, keys),
+      ),
+    );
+  return new Map(rows.map((row) => [row.targetKey, row]));
+}
+
+function tombstoneMetadataForFutureConversationEvent(
+  event: IntegrationEvent,
+  tombstonesByTargetKey: Map<string, MondayConversationTombstoneTarget>,
+): Record<string, unknown> {
+  const identity = mondayConversationIdentity(event);
+  if (!identity) return {};
+  // An update deletion takes precedence for a reply: it made the entire
+  // thread unavailable, whereas a reply-specific tombstone is narrower.
+  const target =
+    tombstonesByTargetKey.get(mondayConversationTargetKey(identity.updateId, null)) ??
+    (identity.replyId
+      ? tombstonesByTargetKey.get(mondayConversationTargetKey(identity.updateId, identity.replyId))
+      : undefined);
+  return target ? tombstoneRawEventMetadata(target) : {};
 }
 
 async function enqueueIntegrationProcessingJob(
@@ -388,6 +754,7 @@ async function loadRawEventIdsByDedupKey(
       and(
         eq(rawEvents.teamId, teamId),
         inArray(sql<string>`${rawEvents.sourceMetadata} ->> 'dedup_key'`, keys),
+        sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
       ),
     );
   return new Map(rows.map((row) => [row.dedupKey, row.id]));

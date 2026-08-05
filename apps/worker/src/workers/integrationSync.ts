@@ -536,6 +536,7 @@ export async function runOneIntegration(
   }
   const continuationJobs: ContinuationJob[] = [];
   const cursorCheckpoints = new Map<string, integrationsLib.IntegrationSyncCursorCheckpoint>();
+  const checkpointContinuations: integrationsLib.SyncContinuation[] = [];
   let integrationForHandoff: Pick<integrationsLib.IntegrationRow, 'id' | 'teamId'> | null = null;
   try {
     const integration = await integrationsLib.adminLoadIntegration(db, integrationId);
@@ -756,6 +757,15 @@ export async function runOneIntegration(
         });
         return Promise.resolve();
       },
+      saveCursorWithContinuations(resourceType, cursor, continuations, status) {
+        cursorCheckpoints.set(resourceType, {
+          resourceType,
+          cursor,
+          ...(status ? { status } : {}),
+        });
+        checkpointContinuations.push(...continuations);
+        return Promise.resolve();
+      },
       async loadCursor(resourceType) {
         return integrationsLib.adminLoadCursor(db, integrationId, resourceType);
       },
@@ -812,7 +822,7 @@ export async function runOneIntegration(
       const partialFailures = syncPartialFailures(syncResult);
       const partialSummary =
         partialFailures.length > 0 ? summarizeSyncPartialFailures(partialFailures) : null;
-      const continuations = syncResult?.continuations ?? [];
+      const continuations = [...checkpointContinuations, ...(syncResult?.continuations ?? [])];
       // A targeted job proves only one provider surface is healthy. Preserve
       // integration-wide transient state until an uninterrupted full sync has
       // completed without leaving any durable page checkpoint behind.
@@ -913,7 +923,10 @@ export async function runOneIntegration(
           },
           { integrationId },
         );
-        const continuations = integrationsLib.syncContinuationsFromError(err);
+        const continuations = [
+          ...checkpointContinuations,
+          ...integrationsLib.syncContinuationsFromError(err),
+        ];
         includeCurrentContinuationWhenMissing(continuations, target);
         const rateLimitedContinuations = continuations.map((continuation) => {
           const retryAt = latestRetryAt(continuation.retryAt, rateLimit.retryAt);
@@ -933,7 +946,10 @@ export async function runOneIntegration(
       // fails. Persist both recovery pieces before rethrowing to BullMQ: its
       // retry budget can exhaust, whereas the durable handoff will be picked
       // up by a later scheduled sync. Do not mark the integration healthy.
-      const errorContinuations = integrationsLib.syncContinuationsFromError(err);
+      const errorContinuations = [
+        ...checkpointContinuations,
+        ...integrationsLib.syncContinuationsFromError(err),
+      ];
       includeCurrentContinuationWhenMissing(errorContinuations, target);
       await integrationsLib.adminCommitIntegrationSyncCheckpoint(db, {
         integrationId,

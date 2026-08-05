@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
   customType,
   index,
   integer,
@@ -14,6 +15,7 @@ import {
 } from 'drizzle-orm/pg-core';
 
 import { eventVisibility } from '#src/schema/raw-events.js';
+import { rawEvents } from '#src/schema/raw-events.js';
 import { teams } from '#src/schema/teams.js';
 import { users } from '#src/schema/users.js';
 
@@ -121,6 +123,81 @@ export const integrations = pgTable(
     uniqueIndex('integrations_team_provider_account_unq')
       .on(table.teamId, table.provider, table.externalAccountId)
       .where(sql`${table.externalAccountId} IS NOT NULL`),
+  ],
+);
+
+// Monday update/reply deletes are durable source state, not a best-effort
+// mutation of whichever raw_events happened to arrive first. The stable
+// target key is either `update:<updateId>` or `reply:<updateId>:<replyId>`.
+// Keeping team, provider, and integration on the row lets the event writer
+// enforce all three boundaries before an out-of-order sync write is accepted.
+export const mondayConversationTombstones = pgTable(
+  'monday_conversation_tombstones',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    integrationId: uuid('integration_id')
+      .notNull()
+      .references(() => integrations.id, { onDelete: 'cascade' }),
+    provider: integrationProvider('provider').notNull(),
+    updateId: text('update_id').notNull(),
+    replyId: text('reply_id'),
+    targetKey: text('target_key').notNull(),
+    reason: text('reason').notNull(),
+    sourceEventDedupKey: text('source_event_dedup_key').notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('monday_conversation_tombstones_team_integration_idx').on(
+      table.teamId,
+      table.integrationId,
+    ),
+    uniqueIndex('monday_conversation_tombstones_target_unq').on(
+      table.teamId,
+      table.integrationId,
+      table.targetKey,
+    ),
+    check('monday_conversation_tombstones_provider_chk', sql`${table.provider} = 'monday'`),
+  ],
+);
+
+// Tombstones change retrieval-facing derived state. Persist the exact raw
+// source invalidation in the same transaction as the tombstone so a crash or
+// queue/database failure after commit cannot leave a deleted conversation in
+// a ready object summary. Replays may execute this idempotently.
+export const mondayConversationTombstoneInvalidations = pgTable(
+  'monday_conversation_tombstone_invalidations',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    integrationId: uuid('integration_id')
+      .notNull()
+      .references(() => integrations.id, { onDelete: 'cascade' }),
+    targetKey: text('target_key').notNull(),
+    rawEventId: uuid('raw_event_id')
+      .notNull()
+      .references(() => rawEvents.id, { onDelete: 'cascade' }),
+    invalidatedAt: timestamp('invalidated_at', { withTimezone: true }),
+    lastError: text('last_error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('monday_conversation_tombstone_invalidations_target_unq').on(
+      table.teamId,
+      table.integrationId,
+      table.targetKey,
+      table.rawEventId,
+    ),
+    index('monday_conversation_tombstone_invalidations_pending_idx').on(
+      table.integrationId,
+      table.invalidatedAt,
+    ),
   ],
 );
 

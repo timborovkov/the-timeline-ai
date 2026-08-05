@@ -823,7 +823,7 @@ async function objectIdsTouchedByRawEvent(
   teamId: string,
   rawEventId: string,
 ): Promise<string[]> {
-  const [factRows, outputRows] = await Promise.all([
+  const [factRows, outputRows, associationRows] = await Promise.all([
     db
       .select({ entityId: factEntities.entityId })
       .from(factEntities)
@@ -850,8 +850,36 @@ async function objectIdsTouchedByRawEvent(
           )`,
         ),
       ),
+    db
+      .select({ entityId: entities.id })
+      .from(artifactEvidenceAssociations)
+      .innerJoin(
+        artifactClusters,
+        and(
+          eq(artifactClusters.id, artifactEvidenceAssociations.clusterId),
+          eq(artifactClusters.teamId, teamId),
+        ),
+      )
+      .innerJoin(
+        entities,
+        and(eq(entities.id, artifactClusters.canonicalEntityId), eq(entities.teamId, teamId)),
+      )
+      .innerJoin(
+        reconciliationEvidence,
+        and(
+          eq(reconciliationEvidence.id, artifactEvidenceAssociations.evidenceId),
+          eq(reconciliationEvidence.teamId, teamId),
+        ),
+      )
+      .where(
+        and(
+          eq(artifactEvidenceAssociations.teamId, teamId),
+          sql`COALESCE(${artifactEvidenceAssociations.rawEventId}, ${reconciliationEvidence.rawEventId}) = ${rawEventId}`,
+          isNull(entities.mergedIntoId),
+        ),
+      ),
   ]);
-  return [...new Set([...factRows, ...outputRows].map((row) => row.entityId))];
+  return [...new Set([...factRows, ...outputRows, ...associationRows].map((row) => row.entityId))];
 }
 
 export async function invalidateObjectSummariesForRawEvent(
