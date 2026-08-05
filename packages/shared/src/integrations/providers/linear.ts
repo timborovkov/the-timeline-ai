@@ -21,8 +21,9 @@ import { childLogger } from '#src/logger.js';
 //   - Projects
 //   - Webhook → Issue + Comment + Project events
 //
-// Idempotency is by dedupKey = `linear:<kind>:<id>:<updatedAt>`. A status or
-// assignee change updates `updatedAt`, so the next sync emits a fresh event.
+// Idempotency is by lifecycle buckets, not `updatedAt`. Issue/project keys use
+// status/state so count-only or description churn reuses the raw_event;
+// comments key by id so edits do not mint another extract job.
 
 const log = childLogger('integrations:linear');
 
@@ -260,7 +261,7 @@ function issueToEvent(node: LinearIssueNode): IntegrationEvent {
   if (stateType === 'completed' || stateType === 'canceled') eventType = `issue.${stateType}`;
   const priority = linearPriorityLabel(node.priority);
   return {
-    dedupKey: `linear:issue:${node.id}:${node.updatedAt}`,
+    dedupKey: `linear:issue:${node.id}:${linearStatus(stateType)}`,
     provider: 'linear',
     externalObjectId: node.id,
     externalEventId: node.updatedAt,
@@ -310,7 +311,7 @@ function commentToEvent(node: LinearCommentNode): IntegrationEvent {
       }
     : null;
   return {
-    dedupKey: `linear:comment:${node.id}:${node.updatedAt}`,
+    dedupKey: `linear:comment:${node.id}`,
     provider: 'linear',
     externalObjectId: `${node.issue.id}#comment:${node.id}`,
     externalEventId: node.updatedAt,
@@ -333,7 +334,7 @@ function projectToEvent(node: LinearProjectNode): IntegrationEvent {
     ? { externalId: node.lead.id, name: node.lead.name }
     : null;
   return {
-    dedupKey: `linear:project:${node.id}:${node.updatedAt}`,
+    dedupKey: `linear:project:${node.id}:${node.state}`,
     provider: 'linear',
     externalObjectId: node.id,
     externalEventId: node.updatedAt,

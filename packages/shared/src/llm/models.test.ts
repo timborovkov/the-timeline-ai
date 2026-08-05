@@ -6,28 +6,34 @@ import { TIMELINE_MODELS } from '#src/llm/models.js';
 describe('TIMELINE_MODELS', () => {
   it('matches OpenRouter metadata for OSS chat-capable roles', () => {
     expect(TIMELINE_MODELS.extraction).toMatchObject({
-      id: 'deepseek/deepseek-v4-pro',
+      id: 'deepseek/deepseek-v4-flash-0731',
       provider: 'openrouter',
       contextWindowTokens: 1_048_576,
       capabilities: ['chat', 'structured', 'tools'],
     });
     expect(TIMELINE_MODELS.agent).toMatchObject({
-      id: 'deepseek/deepseek-v4-pro',
+      id: 'deepseek/deepseek-v4-flash-0731',
       provider: 'openrouter',
       contextWindowTokens: 1_048_576,
       capabilities: ['chat', 'structured', 'tools'],
     });
     expect(TIMELINE_MODELS.structuredFallback).toMatchObject({
-      id: 'deepseek/deepseek-v4-flash',
+      id: 'deepseek/deepseek-v4-pro',
       provider: 'openrouter',
       contextWindowTokens: 1_048_576,
       capabilities: ['chat', 'structured', 'tools'],
     });
     expect(TIMELINE_MODELS.summarization).toMatchObject({
-      id: 'deepseek/deepseek-v4-flash',
+      id: 'deepseek/deepseek-v4-flash-0731',
       provider: 'openrouter',
       contextWindowTokens: 1_048_576,
       capabilities: ['chat', 'structured', 'tools'],
+    });
+    expect(TIMELINE_MODELS.taskCategorization).toMatchObject({
+      id: 'deepseek/deepseek-v4-flash-0731',
+      provider: 'openrouter',
+      contextWindowTokens: 1_048_576,
+      capabilities: ['chat', 'structured'],
     });
   });
 

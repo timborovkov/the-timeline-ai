@@ -463,12 +463,12 @@ describe('githubProvider.handleWebhook', () => {
     const pushEvents = push.events;
 
     expect(pullRequestEvents[0]).toMatchObject({
-      dedupKey: 'github:pr:7:2026-06-25T10:00:00Z',
+      dedupKey: 'github:pr:7:open',
       eventType: 'pr.updated',
       objectMap: { type: 'task', externalId: 'acme/app#7' },
     });
     expect(issueEvents[0]).toMatchObject({
-      dedupKey: 'github:issue:8:2026-06-25T11:00:00Z',
+      dedupKey: 'github:issue:8:open',
       eventType: 'issue.updated',
       objectMap: { type: 'task', externalId: 'acme/app#issue:8' },
     });
@@ -477,11 +477,11 @@ describe('githubProvider.handleWebhook', () => {
       eventType: 'pr.review.approved',
     });
     expect(releaseEvents[0]).toMatchObject({
-      dedupKey: 'github:release:10:2026-06-25T13:00:00Z',
+      dedupKey: 'github:release:10:published',
       eventType: 'release.published',
     });
     expect(workflowEvents[0]).toMatchObject({
-      dedupKey: 'github:workflow_run:11:2026-06-25T14:00:00Z',
+      dedupKey: 'github:workflow_run:11:success',
       eventType: 'workflow_run.success',
     });
     expect(pushEvents[0]).toMatchObject({
@@ -498,6 +498,108 @@ describe('githubProvider.handleWebhook', () => {
         reason: 'github_repo_webhook',
       },
     ]);
+  });
+
+  it('keeps issue and PR dedup keys stable across same-lifecycle updated_at churn', async () => {
+    const integration = { id: 'integration-1', teamId: 'team-1' } as never;
+    const handle = githubProvider.handleWebhook?.bind(githubProvider);
+    if (!handle) throw new Error('no handleWebhook');
+    const normalize = (
+      result: Awaited<ReturnType<NonNullable<typeof githubProvider.handleWebhook>>>,
+    ) => (Array.isArray(result) ? { events: result, syncTasks: [] } : result);
+    const baseRepo = {
+      repository: { id: 1, full_name: 'acme/app', name: 'app', private: false },
+    };
+
+    const issueFirst = normalize(
+      await handle({
+        integration,
+        payload: {
+          ...baseRepo,
+          action: 'edited',
+          issue: {
+            id: 8,
+            number: 8,
+            title: 'Bug report',
+            body: null,
+            html_url: 'https://github.com/acme/app/issues/8',
+            state: 'open',
+            updated_at: '2026-06-25T11:00:00Z',
+            user: { login: 'bob' },
+          },
+        },
+      }),
+    ).events[0];
+    const issueSecond = normalize(
+      await handle({
+        integration,
+        payload: {
+          ...baseRepo,
+          action: 'edited',
+          issue: {
+            id: 8,
+            number: 8,
+            title: 'Bug report (edited)',
+            body: 'more detail',
+            html_url: 'https://github.com/acme/app/issues/8',
+            state: 'open',
+            updated_at: '2026-06-25T12:00:00Z',
+            user: { login: 'bob' },
+          },
+        },
+      }),
+    ).events[0];
+    const prFirst = normalize(
+      await handle({
+        integration,
+        payload: {
+          ...baseRepo,
+          action: 'edited',
+          pull_request: {
+            id: 7,
+            number: 7,
+            title: 'Add webhook ingestion',
+            body: 'Webhook body',
+            html_url: 'https://github.com/acme/app/pull/7',
+            state: 'open',
+            merged_at: null,
+            updated_at: '2026-06-25T10:00:00Z',
+            user: { login: 'alice' },
+            base: { ref: 'main' },
+            head: { ref: 'webhooks' },
+          },
+        },
+      }),
+    ).events[0];
+    const prSecond = normalize(
+      await handle({
+        integration,
+        payload: {
+          ...baseRepo,
+          action: 'edited',
+          pull_request: {
+            id: 7,
+            number: 7,
+            title: 'Add webhook ingestion (edited)',
+            body: 'Webhook body v2',
+            html_url: 'https://github.com/acme/app/pull/7',
+            state: 'open',
+            merged_at: null,
+            updated_at: '2026-06-25T10:30:00Z',
+            user: { login: 'alice' },
+            base: { ref: 'main' },
+            head: { ref: 'webhooks' },
+          },
+        },
+      }),
+    ).events[0];
+
+    expect(issueFirst?.dedupKey).toBe('github:issue:8:open');
+    expect(issueSecond?.dedupKey).toBe(issueFirst?.dedupKey);
+    expect(prFirst?.dedupKey).toBe('github:pr:7:open');
+    expect(prSecond?.dedupKey).toBe(prFirst?.dedupKey);
+    expect(issueSecond?.contentText).toContain('edited');
+    expect(prSecond?.contentText).toContain('edited');
   });
 
   it('renders issue comments, review summaries, and inline review comments with parent evidence', async () => {

@@ -32,6 +32,10 @@ import { childLogger } from '#src/logger.js';
 //   - Releases
 //   - Recent commits on the default branch
 //   - Workflow runs (CI state)
+//
+// Idempotency for issue/PR/workflow/release is by lifecycle buckets, not
+// `updated_at`, so title/body edits and timestamp churn reuse the raw_event.
+// Commits key by SHA; reviews by submitted_at; comments stay content-hashed.
 
 const log = childLogger('integrations:github');
 
@@ -1057,6 +1061,27 @@ function githubWorkItemContentText(
     .join('\n\n');
 }
 
+function githubIssueLifecycle(state: string): 'open' | 'closed' {
+  return state === 'closed' ? 'closed' : 'open';
+}
+
+function githubPullRequestLifecycle(pr: Pick<GhPullRequest, 'state' | 'merged_at'>):
+  | 'open'
+  | 'merged'
+  | 'closed' {
+  if (pr.merged_at) return 'merged';
+  return pr.state === 'closed' ? 'closed' : 'open';
+}
+
+function githubReleaseLifecycle(release: Pick<GhRelease, 'draft' | 'prerelease'>):
+  | 'draft'
+  | 'prerelease'
+  | 'published' {
+  if (release.draft) return 'draft';
+  if (release.prerelease) return 'prerelease';
+  return 'published';
+}
+
 function prToEvent(repo: string, pr: GhPullRequest): IntegrationEvent {
   const eventType = pr.merged_at ? 'pr.merged' : pr.state === 'closed' ? 'pr.closed' : 'pr.updated';
   const status: 'open' | 'done' | 'cancelled' = pr.merged_at
@@ -1064,9 +1089,10 @@ function prToEvent(repo: string, pr: GhPullRequest): IntegrationEvent {
     : pr.state === 'closed'
       ? 'cancelled'
       : 'open';
+  const lifecycle = githubPullRequestLifecycle(pr);
   const externalId = `${repo}#${String(pr.number)}`;
   return {
-    dedupKey: `github:pr:${String(pr.id)}:${pr.updated_at}`,
+    dedupKey: `github:pr:${String(pr.id)}:${lifecycle}`,
     provider: 'github',
     externalObjectId: externalId,
     externalEventId: pr.updated_at,
@@ -1105,9 +1131,10 @@ function prToEvent(repo: string, pr: GhPullRequest): IntegrationEvent {
 
 function issueToEvent(repo: string, issue: GhIssue): IntegrationEvent | null {
   if (issue.pull_request) return null;
+  const lifecycle = githubIssueLifecycle(issue.state);
   const externalId = `${repo}#issue:${String(issue.number)}`;
   return {
-    dedupKey: `github:issue:${String(issue.id)}:${issue.updated_at}`,
+    dedupKey: `github:issue:${String(issue.id)}:${lifecycle}`,
     provider: 'github',
     externalObjectId: externalId,
     externalEventId: issue.updated_at,
@@ -1448,9 +1475,10 @@ function reviewCommentToEvent(
 
 function releaseToEvent(repo: string, release: GhRelease): IntegrationEvent {
   const ts = release.published_at ?? release.created_at;
+  const lifecycle = githubReleaseLifecycle(release);
   const externalId = `${repo}#release:${release.tag_name}`;
   return {
-    dedupKey: `github:release:${String(release.id)}:${ts}`,
+    dedupKey: `github:release:${String(release.id)}:${lifecycle}`,
     provider: 'github',
     externalObjectId: externalId,
     externalEventId: ts,
@@ -1508,8 +1536,9 @@ function commitToEvent(repo: string, commit: GhCommit): IntegrationEvent {
 }
 
 function workflowRunToEvent(repo: string, run: GhWorkflowRun): IntegrationEvent {
+  const lifecycle = run.conclusion ?? run.status ?? 'updated';
   return {
-    dedupKey: `github:workflow_run:${String(run.id)}:${run.updated_at}`,
+    dedupKey: `github:workflow_run:${String(run.id)}:${lifecycle}`,
     provider: 'github',
     externalObjectId: `${repo}#workflow_run:${String(run.id)}`,
     externalEventId: run.updated_at,

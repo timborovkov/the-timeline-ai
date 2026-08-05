@@ -327,9 +327,10 @@ describe('mondayProvider', () => {
     const normalized = Array.isArray(result) ? { events: result, syncTasks: [] } : result;
 
     expect(normalized?.events[0]).toMatchObject({
-      dedupKey: 'monday:webhook:645fc8d8709d35718f1ae00ceded91e9',
+      dedupKey: 'monday:item:1771812698:1771812728:done',
       eventType: 'column.changed',
       externalObjectId: '1771812728',
+      externalEventId: '645fc8d8709d35718f1ae00ceded91e9',
       objectMap: {
         type: 'other',
         externalId: '1771812728',
@@ -339,6 +340,7 @@ describe('mondayProvider', () => {
         monday_board_id: '1771812698',
         monday_item_id: '1771812728',
         monday_subscription_id: '73760484',
+        monday_trigger_uuid: '645fc8d8709d35718f1ae00ceded91e9',
       },
     });
     expect(normalized?.events[0]?.contentText).toContain('Column: Status');
@@ -353,6 +355,47 @@ describe('mondayProvider', () => {
         reason: 'monday_item_webhook',
       },
     ]);
+  });
+
+  it('keeps the same Monday item dedup key across same-lifecycle webhook churn', async () => {
+    const payload = {
+      event: {
+        userId: 9603417,
+        boardId: 1771812698,
+        pulseId: 1771812728,
+        pulseName: 'Launch checklist',
+        columnId: 'status',
+        columnType: 'color',
+        columnTitle: 'Status',
+        value: { label: 'Done' },
+        previousValue: { label: 'Working on it' },
+        type: 'update_column_value',
+        triggerTime: '2026-06-25T09:15:03.429Z',
+        subscriptionId: 73760484,
+        triggerUuid: '645fc8d8709d35718f1ae00ceded91e9',
+      },
+    };
+    const first = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload,
+    });
+    const second = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          ...payload.event,
+          triggerTime: '2026-06-25T10:15:03.429Z',
+          triggerUuid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          pulseName: 'Launch checklist (renamed)',
+        },
+      },
+    });
+    const firstEvent = (Array.isArray(first) ? first[0] : first?.events[0]) ?? null;
+    const secondEvent = (Array.isArray(second) ? second[0] : second?.events[0]) ?? null;
+    expect(firstEvent?.dedupKey).toBe('monday:item:1771812698:1771812728:done');
+    expect(secondEvent?.dedupKey).toBe(firstEvent?.dedupKey);
+    expect(secondEvent?.externalEventId).toBe('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    expect(secondEvent?.contentText).toContain('renamed');
   });
 
   it('routes classic subitem webhooks through the selected parent board', async () => {
@@ -1092,7 +1135,7 @@ describe('mondayProvider', () => {
 
     expect(ctx.writeEvents).toHaveBeenCalledWith([
       expect.objectContaining({
-        dedupKey: 'monday:board-schema:board-1:2026-06-20T09:00:00.000Z',
+        dedupKey: 'monday:board-schema:board-1',
       }),
     ]);
   });

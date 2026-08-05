@@ -124,7 +124,9 @@ const suggestionExtractionSchema = z.object({
  * long summary/reason/quote/payload fields. Keep this above the global 8k
  * structured default without returning to the old 32k credit reservation.
  */
-const SUGGESTION_EXTRACTION_MAX_OUTPUT_TOKENS = 16_000;
+const SUGGESTION_EXTRACTION_MAX_OUTPUT_TOKENS = 8_000;
+/** Hard cap for suggestion prompt input — far below the extraction model window. */
+export const SUGGESTION_PROMPT_MAX_INPUT_TOKENS = 24_000;
 
 type RawEventRow = typeof rawEvents.$inferSelect;
 
@@ -756,6 +758,14 @@ export async function processSuggestionJobForTests(
     await stampSuggestionMetadata(deps.db, rawEventId, {
       suggestions_skipped_at: new Date().toISOString(),
       suggestions_skipped_reason: 'ingest_webhook_proposals_disabled',
+      suggestion_model_version: modelVersion,
+    });
+    return;
+  }
+  if (row.source === 'integration') {
+    await stampSuggestionMetadata(deps.db, rawEventId, {
+      suggestions_skipped_at: new Date().toISOString(),
+      suggestions_skipped_reason: 'integration_structured_source',
       suggestion_model_version: modelVersion,
     });
     return;
@@ -2399,6 +2409,14 @@ async function runSuggestionExtraction(
     });
     return 0;
   }
+  if (row.source === 'integration') {
+    await stampSuggestionMetadata(deps.db, rawEventId, {
+      suggestions_skipped_at: new Date().toISOString(),
+      suggestions_skipped_reason: 'integration_structured_source',
+      suggestion_model_version: modelVersion,
+    });
+    return 0;
+  }
   if (!args.conversation && meta.suggestion_model_version === modelVersion) return 0;
 
   const hasSettledExtraction = extractionSettled(meta);
@@ -2472,7 +2490,7 @@ async function runSuggestionExtraction(
       ),
     )
     .orderBy(desc(objectNotes.updatedAt))
-    .limit(40);
+    .limit(15);
 
   const memberRows = await deps.db
     .select({ userId: teamMembers.userId, name: users.name, email: users.email })
@@ -2513,7 +2531,7 @@ async function runSuggestionExtraction(
 
   const calendarRows = await scope.calendar.listCalendarEvents({
     ...calendarContextRange(row.occurredAt),
-    limit: 40,
+    limit: 20,
   });
   const pendingCalendarRows = await deps.db
     .select({
@@ -2540,8 +2558,8 @@ async function runSuggestionExtraction(
   const boardDetails = (
     await Promise.all(
       (await scope.boards.listBoards())
-        .slice(0, 8)
-        .map((board) => scope.boards.getBoard(board.id, { itemLimit: 20 })),
+        .slice(0, 4)
+        .map((board) => scope.boards.getBoard(board.id, { itemLimit: 10 })),
     )
   ).filter((board) => board !== null);
 
@@ -2573,7 +2591,7 @@ async function runSuggestionExtraction(
       })),
       projects: matchingEntityRows
         .filter((entity) => entity.type === 'project')
-        .slice(0, 100)
+        .slice(0, 40)
         .map((project) => ({
           id: project.id,
           name: project.name,
@@ -2625,7 +2643,7 @@ async function runSuggestionExtraction(
           .filter((lane) => !lane.archivedAt)
           .slice(0, 10)
           .map((lane) => ({ id: lane.id, name: lane.name })),
-        items: board.items.slice(0, 20).map((item) => ({
+        items: board.items.slice(0, 10).map((item) => ({
           id: item.id,
           objectId: item.entityId,
           objectType: item.object.type,
@@ -2647,7 +2665,7 @@ async function runSuggestionExtraction(
       conversationWindow: args.conversation?.window ?? null,
       linkedContext: args.conversation?.linkedContext ?? [],
     }),
-    llm.inputTokenBudgetFor(llm.TIMELINE_MODELS.extraction),
+    SUGGESTION_PROMPT_MAX_INPUT_TOKENS,
   );
 
   const chatStructured = io.chatStructured ?? llm.chatStructured;
@@ -3508,7 +3526,7 @@ function buildPrompt(args: {
       (note) =>
         `- note:${note.id} object:${note.entityId} ${note.entityType} "${note.entityName}" ${truncate(
           note.body,
-          500,
+          220,
         )}`,
     ),
     '',
@@ -3569,7 +3587,7 @@ function buildPrompt(args: {
               r.authorUserId,
               args.members,
               r.id,
-            )}] ${fenceExternalContent(truncate(r.contentText, 700), {
+            )}] ${fenceExternalContent(truncate(r.contentText, 280), {
               source: 'raw-event-conversation-window',
               eventId: r.id,
             })}`,
@@ -3582,7 +3600,7 @@ function buildPrompt(args: {
             r.authorUserId,
             args.members,
             r.id,
-          )}] ${fenceExternalContent(truncate(r.text ?? '', 500), {
+          )}] ${fenceExternalContent(truncate(r.text ?? '', 220), {
             source: 'raw-event-context',
             eventId: r.id,
           })}`;
@@ -3602,7 +3620,7 @@ function buildPrompt(args: {
                 r.id,
               )} objects=${r.linkedObjects
                 .map((object) => `${object.type}:${object.name}`)
-                .join(', ')}] ${fenceExternalContent(truncate(r.contentText, 500), {
+                .join(', ')}] ${fenceExternalContent(truncate(r.contentText, 220), {
                 source: `raw-event:${r.source}`,
                 eventId: r.id,
               })}`,
@@ -3617,7 +3635,7 @@ function buildPrompt(args: {
       args.authorUserId,
       args.members,
       args.sourceEventId,
-    )}] ${fenceExternalContent(args.text, {
+    )}] ${fenceExternalContent(truncate(args.text, 1200), {
       source: args.conversationWindow ? 'raw-event-anchor' : 'raw-event-current',
       eventId: args.sourceEventId,
     })}`,

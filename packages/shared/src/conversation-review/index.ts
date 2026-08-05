@@ -2,9 +2,9 @@ import { type Db, entities, factEntities, facts, rawEvents } from '@timeline/db'
 import { and, desc, eq, gte, inArray, isNotNull, lte, ne, notInArray, or, sql } from 'drizzle-orm';
 
 export const CONVERSATION_REVIEW_DEBOUNCE_MS = 10 * 60 * 1000;
-export const CONVERSATION_WINDOW_DAYS = 7;
-export const CONVERSATION_WINDOW_LIMIT = 100;
-export const LINKED_CONTEXT_LIMIT = 20;
+export const CONVERSATION_WINDOW_DAYS = 2;
+export const CONVERSATION_WINDOW_LIMIT = 24;
+export const LINKED_CONTEXT_LIMIT = 8;
 
 type Metadata = Record<string, unknown>;
 

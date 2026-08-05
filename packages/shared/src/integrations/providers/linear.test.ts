@@ -115,7 +115,7 @@ describe('linearProvider.handleWebhook', () => {
     );
     expect(events).toHaveLength(1);
     const evt = expectFirst(events);
-    expect(evt.dedupKey).toBe('linear:issue:LIN-1:2026-05-25T10:00:00Z');
+    expect(evt.dedupKey).toBe('linear:issue:LIN-1:in_progress');
     expect(evt.eventType).toBe('issue.updated');
     expect(evt.actor?.name).toBe('Alice');
     expect(evt.objectMap).toMatchObject({
@@ -130,6 +130,45 @@ describe('linearProvider.handleWebhook', () => {
         linear_team_key: 'ENG',
       },
     });
+  });
+
+  it('keeps the same issue dedup key across same-state updatedAt churn', async () => {
+    const handle = linearProvider.handleWebhook?.bind(linearProvider);
+    if (!handle) throw new Error('no handleWebhook');
+    const baseData = {
+      id: 'LIN-1',
+      identifier: 'ENG-42',
+      title: 'Wire Phase 11',
+      description: null,
+      url: 'https://linear.app/acme/issue/ENG-42',
+      updatedAt: '2026-05-25T10:00:00Z',
+      state: { name: 'In Progress', type: 'started' },
+      assignee: { id: 'u1', name: 'Alice', email: null },
+      team: { id: 't1', key: 'ENG' },
+    };
+    const first = webhookEvents(
+      await handle({
+        integration: { teamId: 't1' } as never,
+        payload: { action: 'update', type: 'Issue', data: baseData },
+      }),
+    );
+    const second = webhookEvents(
+      await handle({
+        integration: { teamId: 't1' } as never,
+        payload: {
+          action: 'update',
+          type: 'Issue',
+          data: {
+            ...baseData,
+            title: 'Wire Phase 11 (edited)',
+            updatedAt: '2026-05-25T11:00:00Z',
+          },
+        },
+      }),
+    );
+    expect(first[0]?.dedupKey).toBe('linear:issue:LIN-1:in_progress');
+    expect(second[0]?.dedupKey).toBe(first[0]?.dedupKey);
+    expect(second[0]?.contentText).toContain('edited');
   });
 
   it('ignores non-Issue payloads', async () => {

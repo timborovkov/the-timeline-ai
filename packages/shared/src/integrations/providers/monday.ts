@@ -16,6 +16,13 @@ import {
   type WebhookSubscription,
 } from '#src/integrations/types.js';
 
+// Phase 11 — Monday.com provider.
+//
+// Idempotency for items/subitems is by lifecycle status buckets (not
+// updated_at), so column text churn reuses the raw_event. Sync and webhook
+// share the same item key family; triggerUuid stays on externalEventId only.
+// Updates/docs/board-schema key by stable ids; activity logs stay per log.id.
+
 const AUTH_URL = 'https://auth.monday.com/oauth2/authorize';
 const TOKEN_URL = 'https://auth.monday.com/oauth2/token';
 const GRAPHQL_URL = 'https://api.monday.com/v2';
@@ -709,7 +716,7 @@ function mondayRecordMap(
 function boardSchemaEvent(board: MondayBoard): IntegrationEvent {
   const occurredAt = dateValue(board.updated_at);
   return {
-    dedupKey: `monday:board-schema:${board.id}:${occurredAt.toISOString()}`,
+    dedupKey: `monday:board-schema:${board.id}`,
     provider: 'monday',
     externalObjectId: board.id,
     eventType: 'board.schema',
@@ -795,8 +802,9 @@ function itemEvent(
 ): IntegrationEvent {
   const occurredAt = dateValue(item.updated_at);
   const semantics = mondayItemSemantics(itemBoard, item);
+  const status = mondayStatus(semantics.columns.find((column) => column.type === 'status')?.text);
   return {
-    dedupKey: `monday:${kind}:${board.id}:${item.id}:${occurredAt.toISOString()}`,
+    dedupKey: `monday:${kind}:${board.id}:${item.id}:${status}`,
     provider: 'monday',
     externalObjectId: item.id,
     eventType: kind === 'subitem' ? 'subitem.updated' : 'item.updated',
@@ -835,7 +843,7 @@ function updateEvent(
 ): IntegrationEvent {
   const occurredAt = dateValue(update.updated_at ?? update.created_at);
   return {
-    dedupKey: `monday:update:${item.id}:${update.id}:${occurredAt.toISOString()}`,
+    dedupKey: `monday:update:${item.id}:${update.id}`,
     provider: 'monday',
     externalObjectId: item.id,
     externalEventId: update.id,
@@ -877,7 +885,7 @@ function docEvent(doc: MondayDoc): IntegrationEvent {
   const occurredAt = dateValue(doc.updated_at ?? doc.created_at);
   const text = docTextFromBlocks(doc.blocks);
   return {
-    dedupKey: `monday:doc:${doc.id}:${occurredAt.toISOString()}`,
+    dedupKey: `monday:doc:${doc.id}`,
     provider: 'monday',
     externalObjectId: doc.id,
     eventType: 'doc.updated',
@@ -981,11 +989,19 @@ function mondayWebhookEvent(payload: unknown): IntegrationEvent[] {
   const valueText = mondayWebhookTextValue(event.value);
   const previousValueText = mondayWebhookTextValue(event.previousValue);
   const title = itemName ?? `Monday item ${itemId}`;
+  const status = mondayStatus(valueText);
+  const kind = isSubitem ? 'subitem' : 'item';
+  const isUpdateEvent =
+    updateId !== null &&
+    (rawType === 'create_update' ||
+      rawType === 'edit_update' ||
+      rawType === 'delete_update' ||
+      eventType.startsWith('update.'));
   return [
     {
-      dedupKey: triggerUuid
-        ? `monday:webhook:${triggerUuid}`
-        : `monday:webhook:${boardId}:${subscriptionId ?? 'unknown'}:${itemId}:${rawType}:${occurredAt.toISOString()}`,
+      dedupKey: isUpdateEvent
+        ? `monday:update:${itemId}:${updateId}`
+        : `monday:${kind}:${boardId}:${itemId}:${status}`,
       provider: 'monday',
       externalObjectId: updateId ? `${itemId}:update:${updateId}` : itemId,
       externalEventId: triggerUuid ?? updateId ?? subscriptionId ?? null,
@@ -1021,7 +1037,7 @@ function mondayWebhookEvent(payload: unknown): IntegrationEvent[] {
         canonicalName: `Monday record ${itemId}: ${title}`,
         displayTitle: title,
         externalId: itemId,
-        status: mondayStatus(valueText),
+        status,
         metadata: {
           monday_record_kind: isSubitem ? 'subitem' : 'webhook-record',
           monday_board_id: boardId,

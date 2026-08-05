@@ -15,7 +15,7 @@ import {
   reconciliationRuns,
   type Db,
 } from '@timeline/db';
-import { suggestions } from '@timeline/shared';
+import { conversationReview, suggestions } from '@timeline/shared';
 import { resetEnvForTests } from '@timeline/shared/env';
 import { RECONCILIATION_PLANNER_PROMPT_VERSION } from '@timeline/shared/reconciliation/planner';
 import { withTeam } from '@timeline/shared/team-scope';
@@ -24,7 +24,11 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
-import { fallbackBundles, processSuggestionJobForTests } from '#src/workers/suggestions.js';
+import {
+  fallbackBundles,
+  processSuggestionJobForTests,
+  SUGGESTION_PROMPT_MAX_INPUT_TOKENS,
+} from '#src/workers/suggestions.js';
 
 /**
  * Agentic-core worker tests. These exercise the background suggestion
@@ -301,6 +305,39 @@ describe('processSuggestionJobForTests', () => {
         ORIGINAL_TASK_CATEGORY_CLASSIFICATION_ENABLED;
     }
     resetEnvForTests();
+  });
+
+  it('skips suggestion extraction for integration-sourced events without calling the LLM', async () => {
+    const rawEventId = '99999999-4444-4444-8444-444444444444';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      source: 'integration',
+      text: 'Sentry issue exploded again with a long body that would otherwise burn tokens.',
+      sourceMetadata: {
+        integration_provider: 'sentry',
+        integration_external_id: 'issue-1',
+      },
+    });
+    const chat = emptyModel();
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    expect(chat).not.toHaveBeenCalled();
+    await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 0, items: 0 });
+    const [row] = await db
+      .select({ sourceMetadata: rawEvents.sourceMetadata })
+      .from(rawEvents)
+      .where(eq(rawEvents.id, rawEventId))
+      .limit(1);
+    expect(row?.sourceMetadata).toMatchObject({
+      suggestions_skipped_reason: 'integration_structured_source',
+      suggestion_model_version: `${MODEL_ID}@2026-07-b`,
+    });
+    expect(row?.sourceMetadata).toHaveProperty('suggestions_skipped_at');
   });
 
   it('skips queued ingest webhook proposals when the source setting is disabled before processing', async () => {
@@ -4562,6 +4599,69 @@ describe('processSuggestionJobForTests', () => {
     expect(prompt).toContain('Sarah can send the Acme deck Friday.');
     expect(prompt).toContain('Actually wait for legal before sending anything.');
     expect(await suggestionCounts(pg)).toEqual({ suggestions: 0, items: 0 });
+  });
+
+  it('caps conversation evidence windows and truncates long event text in suggestion prompts', async () => {
+    expect(conversationReview.CONVERSATION_WINDOW_LIMIT).toBe(24);
+    expect(conversationReview.CONVERSATION_WINDOW_DAYS).toBe(2);
+    expect(SUGGESTION_PROMPT_MAX_INPUT_TOKENS).toBe(24_000);
+
+    const reviewId = '20000000-0000-0000-0000-0000000000c1';
+    const conversationKey = `telegram:${TEAM_ID}:chat:cap-window`;
+    const longMarker = 'LONG_MARKER_';
+    const longBody = `${longMarker}${'x'.repeat(1_500)}`;
+    const staleId = '10000000-0000-4000-8000-0000000000c0';
+    const eventIds = Array.from(
+      { length: 30 },
+      (_, index) => `10000000-0000-4000-8000-${(index + 1).toString(16).padStart(12, '0')}`,
+    );
+    const anchorId = eventIds[29]!;
+    await seedRawEvent(db as never, {
+      id: staleId,
+      source: 'telegram',
+      text: 'STALE_OUTSIDE_WINDOW should not appear',
+      occurredAt: new Date('2026-05-20T10:00:00.000Z'),
+      sourceMetadata: { tg_chat_id: 'cap-window', tg_message_id: '0' },
+    });
+    for (let index = 0; index < eventIds.length; index += 1) {
+      await seedRawEvent(db as never, {
+        id: eventIds[index]!,
+        source: 'telegram',
+        text: index === eventIds.length - 1 ? longBody : `window message ${String(index + 1)}`,
+        occurredAt: new Date(REFERENCE_DATE.getTime() - (eventIds.length - 1 - index) * 60_000),
+        sourceMetadata: {
+          tg_chat_id: 'cap-window',
+          tg_message_id: String(index + 1),
+        },
+      });
+    }
+    await seedConversationReview(db as never, {
+      id: reviewId,
+      conversationKey,
+      lastRawEventId: anchorId,
+      quietUntil: new Date('2026-05-27T09:00:00.000Z'),
+    });
+    const chat = emptyModel();
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    expect(chat).toHaveBeenCalledOnce();
+    const prompt = (chat.mock.calls[0]?.[0] as { prompt: string }).prompt;
+    expect(prompt).not.toContain('STALE_OUTSIDE_WINDOW');
+    expect(prompt).not.toContain('window message 1');
+    expect(prompt).toContain(longMarker);
+    expect(prompt).not.toContain(longBody);
+    const evidenceSection = prompt.split('# Conversation evidence window')[1]?.split('# ')[0] ?? '';
+    const evidenceLines = evidenceSection
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith('- ['));
+    expect(evidenceLines.length).toBeLessThanOrEqual(conversationReview.CONVERSATION_WINDOW_LIMIT);
+    expect(prompt.length).toBeLessThan(SUGGESTION_PROMPT_MAX_INPUT_TOKENS * 4);
   });
 
   it('stores high-confidence Telegram Q&A proposals as object-note suggestion items', async () => {

@@ -19,31 +19,31 @@ export interface TimelineModelConfig {
 
 export const TIMELINE_MODELS = {
   extraction: {
-    id: 'deepseek/deepseek-v4-pro',
+    id: 'deepseek/deepseek-v4-flash-0731',
     provider: 'openrouter',
     contextWindowTokens: 1_048_576,
     capabilities: ['chat', 'structured', 'tools'],
   },
   structuredFallback: {
-    id: 'deepseek/deepseek-v4-flash',
-    provider: 'openrouter',
-    contextWindowTokens: 1_048_576,
-    capabilities: ['chat', 'structured', 'tools'],
-  },
-  agent: {
     id: 'deepseek/deepseek-v4-pro',
     provider: 'openrouter',
     contextWindowTokens: 1_048_576,
     capabilities: ['chat', 'structured', 'tools'],
   },
+  agent: {
+    id: 'deepseek/deepseek-v4-flash-0731',
+    provider: 'openrouter',
+    contextWindowTokens: 1_048_576,
+    capabilities: ['chat', 'structured', 'tools'],
+  },
   summarization: {
-    id: 'deepseek/deepseek-v4-flash',
+    id: 'deepseek/deepseek-v4-flash-0731',
     provider: 'openrouter',
     contextWindowTokens: 1_048_576,
     capabilities: ['chat', 'structured', 'tools'],
   },
   taskCategorization: {
-    id: 'deepseek/deepseek-v4-flash',
+    id: 'deepseek/deepseek-v4-flash-0731',
     provider: 'openrouter',
     contextWindowTokens: 1_048_576,
     capabilities: ['chat', 'structured'],

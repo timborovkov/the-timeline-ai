@@ -382,14 +382,14 @@ describe('chatStructured', () => {
       { fetch: fetchStub },
     );
 
-    expect(result.model).toBe('deepseek/deepseek-v4-pro');
+    expect(result.model).toBe('deepseek/deepseek-v4-flash-0731');
     expect(result.object.facts[0]).toMatchObject({
       statement: 'Mikael Rintala shared a Google Drive folder for AuditAI.',
       mentions: [{ name: 'Mikael Rintala', type: 'person', role: 'subject' }],
     });
     expect(requests).toHaveLength(1);
     const body = openRouterRequestSchema.parse(requests[0]);
-    expect(body.model).toBe('deepseek/deepseek-v4-pro');
+    expect(body.model).toBe('deepseek/deepseek-v4-flash-0731');
     expect(
       body.messages.some((message) => String(message.content).toLowerCase().includes('json')),
     ).toBe(true);
@@ -1153,7 +1153,7 @@ describe('chatStructured', () => {
           'Current event: Tim met Apple about SaaS licensing. Return one explicit fact with mentions.',
       });
 
-      expect(result.model).toBe('deepseek/deepseek-v4-pro');
+      expect(result.model).toBe('deepseek/deepseek-v4-flash-0731');
       expect(result.object.facts.length).toBeGreaterThan(0);
       const fact = result.object.facts[0];
       expect(fact).toBeDefined();
