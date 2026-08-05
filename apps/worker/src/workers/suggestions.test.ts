@@ -4615,7 +4615,8 @@ describe('processSuggestionJobForTests', () => {
       { length: 30 },
       (_, index) => `10000000-0000-4000-8000-${(index + 1).toString(16).padStart(12, '0')}`,
     );
-    const anchorId = eventIds[29]!;
+    const anchorId = eventIds.at(-1);
+    if (!anchorId) throw new Error('expected conversation window fixture ids');
     await seedRawEvent(db as never, {
       id: staleId,
       source: 'telegram',
@@ -4623,9 +4624,9 @@ describe('processSuggestionJobForTests', () => {
       occurredAt: new Date('2026-05-20T10:00:00.000Z'),
       sourceMetadata: { tg_chat_id: 'cap-window', tg_message_id: '0' },
     });
-    for (let index = 0; index < eventIds.length; index += 1) {
+    for (const [index, eventId] of eventIds.entries()) {
       await seedRawEvent(db as never, {
-        id: eventIds[index]!,
+        id: eventId,
         source: 'telegram',
         text: index === eventIds.length - 1 ? longBody : `window message ${String(index + 1)}`,
         occurredAt: new Date(REFERENCE_DATE.getTime() - (eventIds.length - 1 - index) * 60_000),
