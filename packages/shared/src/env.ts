@@ -290,6 +290,14 @@ const schema = baseSchema
         message: 'AUTH_SECRET is required unless WORKER_MODE=document-extract',
       });
     }
+    // Dev escape hatch must never ship to production (full or extract worker).
+    if (env.NODE_ENV === 'production' && env.DOCUMENT_EXTRACT_ALLOW_INPROCESS) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['DOCUMENT_EXTRACT_ALLOW_INPROCESS'],
+        message: 'DOCUMENT_EXTRACT_ALLOW_INPROCESS must be false in production',
+      });
+    }
     if (env.WORKER_MODE === 'document-extract' && env.NODE_ENV === 'production') {
       if (!env.DAYTONA_API_KEY) {
         ctx.addIssue({
@@ -311,6 +319,55 @@ const schema = baseSchema
           path: ['REDIS_URL'],
           message: 'REDIS_URL is required when WORKER_MODE=document-extract in production',
         });
+      }
+      if (!env.S3_BUCKET_DOCUMENTS) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['S3_BUCKET_DOCUMENTS'],
+          message:
+            'S3_BUCKET_DOCUMENTS is required when WORKER_MODE=document-extract in production',
+        });
+      }
+      if (!env.S3_ACCESS_KEY_ID) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['S3_ACCESS_KEY_ID'],
+          message: 'S3_ACCESS_KEY_ID is required when WORKER_MODE=document-extract in production',
+        });
+      }
+      if (!env.S3_SECRET_ACCESS_KEY) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['S3_SECRET_ACCESS_KEY'],
+          message:
+            'S3_SECRET_ACCESS_KEY is required when WORKER_MODE=document-extract in production',
+        });
+      }
+      // Credential-thin boundary (ADR 0013): reject secrets that belong on
+      // web/full-worker, not the extract service.
+      const forbiddenOnExtract: Array<{ key: keyof typeof env; label: string }> = [
+        { key: 'SECRETS_ENCRYPTION_KEY', label: 'SECRETS_ENCRYPTION_KEY' },
+        { key: 'AUTH_SECRET', label: 'AUTH_SECRET' },
+        { key: 'TELEGRAM_BOT_TOKEN', label: 'TELEGRAM_BOT_TOKEN' },
+        { key: 'TELEGRAM_WEBHOOK_SECRET', label: 'TELEGRAM_WEBHOOK_SECRET' },
+        { key: 'SLACK_CLIENT_ID', label: 'SLACK_CLIENT_ID' },
+        { key: 'SLACK_CLIENT_SECRET', label: 'SLACK_CLIENT_SECRET' },
+        { key: 'SLACK_SIGNING_SECRET', label: 'SLACK_SIGNING_SECRET' },
+        { key: 'GOOGLE_CLIENT_SECRET', label: 'GOOGLE_CLIENT_SECRET' },
+        { key: 'LINEAR_CLIENT_SECRET', label: 'LINEAR_CLIENT_SECRET' },
+        { key: 'GITHUB_APP_CLIENT_SECRET', label: 'GITHUB_APP_CLIENT_SECRET' },
+        { key: 'GITHUB_APP_PRIVATE_KEY', label: 'GITHUB_APP_PRIVATE_KEY' },
+        { key: 'MONDAY_CLIENT_SECRET', label: 'MONDAY_CLIENT_SECRET' },
+        { key: 'SENTRY_INTEGRATION_CLIENT_SECRET', label: 'SENTRY_INTEGRATION_CLIENT_SECRET' },
+      ];
+      for (const { key, label } of forbiddenOnExtract) {
+        if (env[key]) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [key],
+            message: `${label} must not be set on WORKER_MODE=document-extract (credential-thin extract service)`,
+          });
+        }
       }
     }
   })

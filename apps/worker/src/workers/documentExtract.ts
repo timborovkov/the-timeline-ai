@@ -373,7 +373,8 @@ export async function processDocumentExtractJob(
       .set({ processingStatus: 'failed', processingError: message.slice(0, 500) })
       .where(eq(documentVersions.id, version.id));
     // UnrecoverableError stops BullMQ retries (unsupported MIME, missing
-    // vision key). Transient LLM / mammoth errors still retry.
+    // vision key, Daytona misconfiguration). Transient LLM / sandbox errors
+    // still retry.
     throw err;
   }
 

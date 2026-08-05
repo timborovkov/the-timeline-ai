@@ -130,11 +130,28 @@
           Add the <code>worker</code> service from this repo, pointing at
           <code>apps/worker/railway.json</code>.
         </li>
+        <li>
+          Add the <code>extract</code> service from this repo, pointing at
+          <code>apps/worker/railway.extract.json</code> (credential-thin
+          document-extract consumer — ADR 0013).
+        </li>
       </ol>
+      <p>
+        On the main <code>worker</code>, set
+        <code>DOCUMENT_EXTRACT_ENABLED=false</code> so only <code>extract</code> consumes that
+        queue. On <code>extract</code>, set <code>WORKER_MODE=document-extract</code>,
+        <code>DAYTONA_API_KEY</code>, <code>DAYTONA_SNAPSHOT=timeline-document-extract</code>,
+        <code>OPENROUTER_API_KEY</code>, <code>DATABASE_URL</code>, <code>REDIS_URL</code>, and S3
+        document-bucket variables. Do <strong>not</strong> set
+        <code>SECRETS_ENCRYPTION_KEY</code>, Auth secrets, or Telegram/Slack/integration OAuth
+        tokens on <code>extract</code>. Create the Daytona snapshot once with
+        <code>pnpm --filter @timeline/worker create-document-extract-snapshot</code>.
+      </p>
 
       <h2 id="environment-variables">Environment variables</h2>
       <p>
-        Each app service needs these. Railway's service-to-service references (<code
+        Shared variables for <code>web</code> and <code>worker</code> (not the credential-thin
+        <code>extract</code> service). Railway's service-to-service references (<code
           >${{ Postgres.DATABASE_URL }}</code
         >) keep things DRY.
       </p>
@@ -201,6 +218,7 @@ GITHUB_APP_PRIVATE_KEY=&lt;github app private key pem, use \n escapes for single
 GITHUB_WEBHOOK_SECRET=&lt;github webhook hmac secret&gt;
 SENTRY_INTEGRATION_CLIENT_ID=&lt;sentry oauth app client id&gt;
 SENTRY_INTEGRATION_CLIENT_SECRET=&lt;sentry oauth app client secret&gt;
+DOCUMENT_EXTRACT_ENABLED=false
 NODE_ENV=production
 LOG_LEVEL=info
 </code></pre>
@@ -212,6 +230,29 @@ LOG_LEVEL=info
         delivery needs no plaintext bot-token variable because it decrypts the installed workspace
         token from Postgres with <code>SECRETS_ENCRYPTION_KEY</code>.
       </p>
+      <p>
+        <code>extract</code> service variables (keep this set minimal — ADR 0013):
+      </p>
+      <pre><code>WORKER_MODE=document-extract
+DOCUMENT_EXTRACT_ENABLED=true
+DAYTONA_API_KEY=&lt;daytona api key&gt;
+DAYTONA_API_URL=https://app.daytona.io/api
+DAYTONA_TARGET=us
+DAYTONA_SNAPSHOT=timeline-document-extract
+DOCUMENT_EXTRACT_SPARSE_TEXT_CHARS=500
+DOCUMENT_EXTRACT_MAX_VISION_PAGES=20
+DATABASE_URL=${{ Postgres.DATABASE_URL }}
+REDIS_URL=${{ Redis.REDIS_URL }}
+OPENROUTER_API_KEY=&lt;openrouter key&gt;
+S3_ENDPOINT=http://${{ RustFS.RAILWAY_PRIVATE_DOMAIN }}:9000
+S3_ACCESS_KEY_ID=&lt;from RustFS service vars&gt;
+S3_SECRET_ACCESS_KEY=&lt;from RustFS service vars&gt;
+S3_REGION=us-east-1
+S3_FORCE_PATH_STYLE=true
+S3_BUCKET_DOCUMENTS=timeline-documents
+NODE_ENV=production
+LOG_LEVEL=info
+</code></pre>
       <p>
         <code>AUTH_URL</code> is also the canonical public origin. Requests that arrive through
         <code>www.thetimeline.cc</code> or the default <code>*.up.railway.app</code> host are

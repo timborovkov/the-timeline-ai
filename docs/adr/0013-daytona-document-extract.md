@@ -38,12 +38,14 @@ authored by a trusted teammate.
 4. **Credential boundary.** Extract service env is limited to Daytona, OpenRouter,
    Database, Redis, and S3 document-bucket access. It must not carry
    `SECRETS_ENCRYPTION_KEY`, Auth.js secrets, or integration/chat provider
-   tokens.
+   tokens. In production `WORKER_MODE=document-extract`, `getEnv()` rejects
+   those secrets if set and requires Daytona, OpenRouter, Redis, and S3
+   document-bucket credentials at boot.
 5. **Local escape hatch.** PDF/DOCX fail closed without Daytona unless
-   `DOCUMENT_EXTRACT_ALLOW_INPROCESS=true` (or `1`; dev only). A full
-   worker with `DOCUMENT_EXTRACT_ENABLED=true` but no Daytona key skips
-   the document-extract consumer rather than falling through to in-process
-   vision on credentialed hosts.
+   `DOCUMENT_EXTRACT_ALLOW_INPROCESS=true` (or `1`; dev only — rejected when
+   `NODE_ENV=production`). A full worker with `DOCUMENT_EXTRACT_ENABLED=true`
+   but no Daytona key skips the document-extract consumer rather than falling
+   through to in-process vision on credentialed hosts.
 
 ## Non-goals
 

@@ -208,8 +208,76 @@ describe('getEnv', () => {
       DAYTONA_API_KEY: undefined,
       OPENROUTER_API_KEY: undefined,
       REDIS_URL: 'redis://localhost:6379',
+      S3_BUCKET_DOCUMENTS: 'timeline-documents',
+      S3_ACCESS_KEY_ID: 'key',
+      S3_SECRET_ACCESS_KEY: 'secret',
     });
 
     expect(() => getEnv()).toThrow(/DAYTONA_API_KEY/);
+  });
+
+  it('requires S3 document-bucket credentials in production document-extract mode', () => {
+    setBaseEnv({
+      AUTH_SECRET: undefined,
+      NODE_ENV: 'production',
+      WORKER_MODE: 'document-extract',
+      DAYTONA_API_KEY: 'dtn_test',
+      OPENROUTER_API_KEY: 'sk-or-test',
+      REDIS_URL: 'redis://localhost:6379',
+      S3_BUCKET_DOCUMENTS: undefined,
+      S3_ACCESS_KEY_ID: undefined,
+      S3_SECRET_ACCESS_KEY: undefined,
+    });
+
+    expect(() => getEnv()).toThrow(/S3_BUCKET_DOCUMENTS/);
+  });
+
+  it('rejects credential-thick secrets on production document-extract mode', () => {
+    setBaseEnv({
+      AUTH_SECRET: undefined,
+      NODE_ENV: 'production',
+      WORKER_MODE: 'document-extract',
+      DAYTONA_API_KEY: 'dtn_test',
+      OPENROUTER_API_KEY: 'sk-or-test',
+      REDIS_URL: 'redis://localhost:6379',
+      S3_BUCKET_DOCUMENTS: 'timeline-documents',
+      S3_ACCESS_KEY_ID: 'key',
+      S3_SECRET_ACCESS_KEY: 'secret',
+      SECRETS_ENCRYPTION_KEY: 'not-for-extract',
+    });
+
+    expect(() => getEnv()).toThrow(/SECRETS_ENCRYPTION_KEY must not be set/);
+  });
+
+  it('rejects DOCUMENT_EXTRACT_ALLOW_INPROCESS in production', () => {
+    setBaseEnv({
+      NODE_ENV: 'production',
+      DOCUMENT_EXTRACT_ALLOW_INPROCESS: 'true',
+    });
+
+    expect(() => getEnv()).toThrow(/DOCUMENT_EXTRACT_ALLOW_INPROCESS must be false/);
+  });
+
+  it('accepts a minimal production document-extract env', () => {
+    setBaseEnv({
+      AUTH_SECRET: undefined,
+      NEXTAUTH_SECRET: undefined,
+      NODE_ENV: 'production',
+      WORKER_MODE: 'document-extract',
+      DAYTONA_API_KEY: 'dtn_test',
+      OPENROUTER_API_KEY: 'sk-or-test',
+      REDIS_URL: 'redis://localhost:6379',
+      S3_BUCKET_DOCUMENTS: 'timeline-documents',
+      S3_ACCESS_KEY_ID: 'key',
+      S3_SECRET_ACCESS_KEY: 'secret',
+      SECRETS_ENCRYPTION_KEY: undefined,
+      TELEGRAM_BOT_TOKEN: undefined,
+    });
+
+    expect(getEnv()).toMatchObject({
+      WORKER_MODE: 'document-extract',
+      DOCUMENT_EXTRACT_ALLOW_INPROCESS: false,
+      DAYTONA_SNAPSHOT: 'timeline-document-extract',
+    });
   });
 });

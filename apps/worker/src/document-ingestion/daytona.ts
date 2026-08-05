@@ -25,20 +25,31 @@ function createDaytonaClient(): Daytona {
   });
 }
 
+/** Exported for unit tests — sandbox create options must stay credential-thin. */
+export function daytonaSandboxCreateParams(snapshot: string): {
+  snapshot: string;
+  language: 'python';
+  networkBlockAll: true;
+  ephemeral: true;
+  autoStopInterval: number;
+  labels: { purpose: string };
+} {
+  return {
+    snapshot,
+    language: 'python',
+    networkBlockAll: true,
+    ephemeral: true,
+    autoStopInterval: 5,
+    labels: { purpose: 'timeline-document-extract' },
+  };
+}
+
 async function withSandbox<T>(fn: (sandbox: Sandbox) => Promise<T>): Promise<T> {
   const env = getEnv();
   const daytona = createDaytonaClient();
-  const sandbox = await daytona.create(
-    {
-      snapshot: env.DAYTONA_SNAPSHOT,
-      language: 'python',
-      networkBlockAll: true,
-      ephemeral: true,
-      autoStopInterval: 5,
-      labels: { purpose: 'timeline-document-extract' },
-    },
-    { timeout: 120 },
-  );
+  const sandbox = await daytona.create(daytonaSandboxCreateParams(env.DAYTONA_SNAPSHOT), {
+    timeout: 120,
+  });
   try {
     return await fn(sandbox);
   } finally {
@@ -53,7 +64,8 @@ async function withSandbox<T>(fn: (sandbox: Sandbox) => Promise<T>): Promise<T> 
   }
 }
 
-function parseJsonObject(stdout: string): Record<string, unknown> {
+/** Exported for unit tests. */
+export function parseSandboxJsonObject(stdout: string): Record<string, unknown> {
   const trimmed = stdout.trim();
   // Prefer the last JSON object line — Python may print warnings first.
   const lines = trimmed.split('\n').filter((line) => line.trim().startsWith('{'));
@@ -65,7 +77,27 @@ function parseJsonObject(stdout: string): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
-async function downloadPageImages(sandbox: Sandbox, paths: string[]): Promise<Buffer[]> {
+function readSandboxCommandJson(
+  response: { exitCode: number; result: string },
+  label: string,
+): Record<string, unknown> {
+  try {
+    return parseSandboxJsonObject(response.result);
+  } catch (err: unknown) {
+    if (response.exitCode !== 0) {
+      throw new Error(
+        `${label} exited ${String(response.exitCode)} without usable JSON: ${response.result.slice(0, 300)}`,
+      );
+    }
+    throw err;
+  }
+}
+
+/** Exported for unit tests — incomplete downloads must fail closed. */
+export async function downloadSandboxPageImages(
+  sandbox: Pick<Sandbox, 'fs'>,
+  paths: string[],
+): Promise<Buffer[]> {
   const images: Buffer[] = [];
   for (const remotePath of paths) {
     if (typeof remotePath !== 'string' || remotePath.length === 0) {
@@ -79,8 +111,7 @@ async function downloadPageImages(sandbox: Sandbox, paths: string[]): Promise<Bu
       images.push(buf);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      // Fail closed: do not OCR a partial page set. The caller falls back to
-      // full-PDF vision (or BullMQ retries if the error escapes).
+      // Fail closed: do not OCR a partial page set.
       throw new Error(`failed to download sandbox page image (${remotePath}): ${message}`);
     }
   }
@@ -119,7 +150,7 @@ export async function extractPdfInDaytonaSandbox(body: Buffer): Promise<SandboxP
       String(maxPages),
     ].join(' ');
     const response = await sandbox.process.executeCommand(cmd, undefined, undefined, 90);
-    const parsed = parseJsonObject(response.result);
+    const parsed = readSandboxCommandJson(response, 'sandbox PDF extract');
     const text = typeof parsed.text === 'string' ? parsed.text : '';
     const method = typeof parsed.method === 'string' ? parsed.method : 'unknown';
     const pageCount = typeof parsed.pageCount === 'number' ? parsed.pageCount : 0;
@@ -133,7 +164,7 @@ export async function extractPdfInDaytonaSandbox(body: Buffer): Promise<SandboxP
     let pageImages: Buffer[] = [];
     if (sparse && pageImagePaths.length > 0) {
       try {
-        pageImages = await downloadPageImages(sandbox, pageImagePaths);
+        pageImages = await downloadSandboxPageImages(sandbox, pageImagePaths);
       } catch (err: unknown) {
         // Incomplete page PNGs must not reach vision — clear them so the
         // extract service OCRs the full PDF instead of a silent subset.
@@ -175,7 +206,7 @@ export async function extractDocxInDaytonaSandbox(body: Buffer): Promise<Sandbox
     await sandbox.fs.uploadFile(body, remoteDocx);
     const cmd = ['python3', REMOTE_DOCX_SCRIPT, '--input', remoteDocx].join(' ');
     const response = await sandbox.process.executeCommand(cmd, undefined, undefined, 60);
-    const parsed = parseJsonObject(response.result);
+    const parsed = readSandboxCommandJson(response, 'sandbox DOCX extract');
     const text = typeof parsed.text === 'string' ? parsed.text : '';
     const error = typeof parsed.error === 'string' ? parsed.error : undefined;
     if (parsed.ok !== true && !text.trim()) {

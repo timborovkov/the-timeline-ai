@@ -27,7 +27,10 @@ From the repo root:
 
 ```bash
 pnpm --filter @timeline/worker dev          # all workers, watch mode
+pnpm --filter @timeline/worker dev:extract  # document-extract only (WORKER_MODE=document-extract)
 pnpm --filter @timeline/worker build
+pnpm --filter @timeline/worker start:extract
+pnpm --filter @timeline/worker create-document-extract-snapshot  # Daytona snapshot (once / after sandbox Python changes)
 pnpm --filter @timeline/worker reextract -- --team=<teamId>
 pnpm --filter @timeline/worker reembed   -- --team=<teamId> --target-collection=events_v2
 pnpm --filter @timeline/worker resuggest -- --team=<teamId> [--since=2026-06-01] [--until=2026-06-04] [--source=all|telegram|slack] [--limit=N] [--all] [--dry-run]
@@ -66,6 +69,16 @@ Production starts the combined worker entry point (see [docs/railway.html](../..
 ```bash
 NODE_ENV=production node apps/worker/dist/index.js
 ```
+
+Document extract (ADR 0013) runs as a separate Railway service:
+
+```bash
+NODE_ENV=production WORKER_MODE=document-extract node apps/worker/dist/extract-main.js
+```
+
+Set `DOCUMENT_EXTRACT_ENABLED=false` on the main worker when `extract` owns the queue.
+Locally, prefer `DAYTONA_API_KEY` + `dev:extract`. Only set
+`DOCUMENT_EXTRACT_ALLOW_INPROCESS=true` for offline/dev without Daytona (never in production).
 
 ## Where it fits
 

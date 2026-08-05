@@ -141,6 +141,17 @@ def main() -> int:
             text = ""
             page_count = 0
 
+    # If pdfplumber returned sparse text without throwing, try pypdfium2
+    # before rendering pages for vision (ADR: pdfplumber → pypdfium2 → render).
+    if method == "pdfplumber" and len(text.strip()) < sparse_chars:
+        try:
+            alt_text, alt_count = extract_pypdfium2(input_path)
+            if len(alt_text.strip()) > len(text.strip()):
+                text, page_count = alt_text, alt_count
+                method = "pypdfium2"
+        except Exception as exc:  # noqa: BLE001
+            error = f"{error + '; ' if error else ''}pypdfium2: {exc}"
+
     page_images: list[str] = []
     if len(text.strip()) < sparse_chars:
         try:
