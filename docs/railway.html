@@ -132,20 +132,19 @@
         </li>
         <li>
           Add the <code>extract</code> service from this repo, pointing at
-          <code>apps/worker/railway.extract.json</code> (credential-thin
-          document-extract consumer — ADR 0013).
+          <code>apps/worker/railway.extract.json</code> (credential-thin document-extract consumer —
+          ADR 0013).
         </li>
       </ol>
       <p>
-        On the main <code>worker</code>, set
-        <code>DOCUMENT_EXTRACT_ENABLED=false</code> so only <code>extract</code> consumes that
-        queue. On <code>extract</code>, set <code>WORKER_MODE=document-extract</code>,
-        <code>DAYTONA_API_KEY</code>, <code>DAYTONA_SNAPSHOT=timeline-document-extract</code>,
-        <code>OPENROUTER_API_KEY</code>, <code>DATABASE_URL</code>, <code>REDIS_URL</code>, and S3
-        document-bucket variables. Do <strong>not</strong> set
-        <code>SECRETS_ENCRYPTION_KEY</code>, Auth secrets, or Telegram/Slack/integration OAuth
-        tokens on <code>extract</code>. Create the Daytona snapshot once with
-        <code>pnpm --filter @timeline/worker create-document-extract-snapshot</code>.
+        On the main <code>worker</code>, set <code>DOCUMENT_EXTRACT_ENABLED=false</code> so only
+        <code>extract</code> consumes that queue. On <code>extract</code>, set
+        <code>WORKER_MODE=document-extract</code>, <code>DAYTONA_API_KEY</code>,
+        <code>DAYTONA_SNAPSHOT=timeline-document-extract</code>, <code>OPENROUTER_API_KEY</code>,
+        <code>DATABASE_URL</code>, <code>REDIS_URL</code>, and S3 document-bucket variables. Do
+        <strong>not</strong> set <code>SECRETS_ENCRYPTION_KEY</code>, Auth secrets, or
+        Telegram/Slack/integration OAuth tokens on <code>extract</code>. Create the Daytona snapshot
+        once with <code>pnpm --filter @timeline/worker create-document-extract-snapshot</code>.
       </p>
 
       <h2 id="environment-variables">Environment variables</h2>
@@ -230,9 +229,7 @@ LOG_LEVEL=info
         delivery needs no plaintext bot-token variable because it decrypts the installed workspace
         token from Postgres with <code>SECRETS_ENCRYPTION_KEY</code>.
       </p>
-      <p>
-        <code>extract</code> service variables (keep this set minimal — ADR 0013):
-      </p>
+      <p><code>extract</code> service variables (keep this set minimal — ADR 0013):</p>
       <pre><code>WORKER_MODE=document-extract
 DOCUMENT_EXTRACT_ENABLED=true
 DAYTONA_API_KEY=&lt;daytona api key&gt;

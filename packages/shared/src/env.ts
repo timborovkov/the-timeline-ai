@@ -345,7 +345,7 @@ const schema = baseSchema
       }
       // Credential-thin boundary (ADR 0013): reject secrets that belong on
       // web/full-worker, not the extract service.
-      const forbiddenOnExtract: Array<{ key: keyof typeof env; label: string }> = [
+      const forbiddenOnExtract: { key: keyof typeof env; label: string }[] = [
         { key: 'SECRETS_ENCRYPTION_KEY', label: 'SECRETS_ENCRYPTION_KEY' },
         { key: 'AUTH_SECRET', label: 'AUTH_SECRET' },
         { key: 'TELEGRAM_BOT_TOKEN', label: 'TELEGRAM_BOT_TOKEN' },

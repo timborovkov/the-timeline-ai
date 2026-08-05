@@ -146,7 +146,7 @@ describe('extractTextFromMedia', () => {
     const userMsg = calls[0]?.prompt.find((m: { role: string }) => m.role === 'user');
     if (!userMsg) throw new Error('no user message');
     // ai-sdk may normalise ImagePart → type:'file' with image mediaType.
-    const parts = userMsg.content as Array<{ type: string; mediaType?: string }>;
+    const parts = userMsg.content as { type: string; mediaType?: string }[];
     const pngParts = parts.filter((p) => p.mediaType === 'image/png');
     const pdfParts = parts.filter((p) => p.mediaType === 'application/pdf');
     expect(pngParts).toHaveLength(2);

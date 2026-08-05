@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type * as SharedModule from '@timeline/shared';
+
 import {
   daytonaSandboxCreateParams,
   downloadSandboxPageImages,
@@ -17,14 +19,14 @@ const fakes = vi.hoisted(() => ({
 
 vi.mock('@daytonaio/sdk', () => ({
   Daytona: class {
-    create(...args: unknown[]) {
-      return fakes.create(...args);
+    create(...args: unknown[]): Promise<unknown> {
+      return fakes.create(...args) as Promise<unknown>;
     }
   },
 }));
 
 vi.mock('@timeline/shared', async () => {
-  const actual = await vi.importActual<typeof import('@timeline/shared')>('@timeline/shared');
+  const actual = await vi.importActual<typeof SharedModule>('@timeline/shared');
   return {
     ...actual,
     getEnv: () => ({
