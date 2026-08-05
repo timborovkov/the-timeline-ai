@@ -107,7 +107,6 @@ describe('getEnv', () => {
   it('accepts LangSmith production config', () => {
     setBaseEnv({
       NODE_ENV: 'production',
-      DOCUMENT_EXTRACT_ENABLED: 'false',
       LANGSMITH_TRACING: 'true',
       LANGSMITH_TRACING_SAMPLING_RATE: '0.05',
       LANGSMITH_API_KEY: 'lsv2_test_key',
@@ -137,7 +136,6 @@ describe('getEnv', () => {
   it('treats a blank LangSmith project as unset', () => {
     setBaseEnv({
       NODE_ENV: 'production',
-      DOCUMENT_EXTRACT_ENABLED: 'false',
       LANGSMITH_PROJECT: '',
     });
 
@@ -271,21 +269,25 @@ describe('getEnv', () => {
   it('rejects DOCUMENT_EXTRACT_ALLOW_INPROCESS in production', () => {
     setBaseEnv({
       NODE_ENV: 'production',
-      DOCUMENT_EXTRACT_ENABLED: 'false',
       DOCUMENT_EXTRACT_ALLOW_INPROCESS: 'true',
     });
 
     expect(() => getEnv()).toThrow(/DOCUMENT_EXTRACT_ALLOW_INPROCESS must be false/);
   });
 
-  it('rejects DOCUMENT_EXTRACT_ENABLED on production full workers', () => {
+  it('does not reject DOCUMENT_EXTRACT_ENABLED for production web (full-mode defaults)', () => {
+    // Web calls getEnv() with WORKER_MODE defaulting to full. The full-worker
+    // extract gate lives in apps/worker, not shared env parsing.
     setBaseEnv({
       NODE_ENV: 'production',
-      WORKER_MODE: 'full',
-      DOCUMENT_EXTRACT_ENABLED: 'true',
+      WORKER_MODE: undefined,
+      DOCUMENT_EXTRACT_ENABLED: undefined,
     });
 
-    expect(() => getEnv()).toThrow(/DOCUMENT_EXTRACT_ENABLED must be false on production full/);
+    expect(getEnv()).toMatchObject({
+      WORKER_MODE: 'full',
+      DOCUMENT_EXTRACT_ENABLED: true,
+    });
   });
 
   it('accepts a minimal production document-extract env', () => {

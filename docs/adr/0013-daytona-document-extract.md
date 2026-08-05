@@ -45,9 +45,10 @@ authored by a trusted teammate.
 5. **Local escape hatch.** PDF/DOCX fail closed without Daytona unless
    `DOCUMENT_EXTRACT_ALLOW_INPROCESS=true` (or `1`; dev only — rejected when
    `NODE_ENV=production`). Production full workers must set
-   `DOCUMENT_EXTRACT_ENABLED=false` (enforced by `getEnv()`); only
-   `WORKER_MODE=document-extract` consumes that queue. Non-production full
-   workers still skip the consumer when Daytona is unset.
+   `DOCUMENT_EXTRACT_ENABLED=false` (enforced in `apps/worker` entrypoint —
+   not shared `getEnv()`, so production web can boot with the same defaults).
+   Only `WORKER_MODE=document-extract` consumes that queue. Non-production
+   full workers still skip the consumer when Daytona is unset.
 
 ## Non-goals
 

@@ -298,20 +298,9 @@ const schema = baseSchema
         message: 'DOCUMENT_EXTRACT_ALLOW_INPROCESS must be false in production',
       });
     }
-    // Production full workers must not consume document-extract — that queue
-    // belongs on the credential-thin extract service (ADR 0013).
-    if (
-      env.NODE_ENV === 'production' &&
-      env.WORKER_MODE === 'full' &&
-      env.DOCUMENT_EXTRACT_ENABLED
-    ) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['DOCUMENT_EXTRACT_ENABLED'],
-        message:
-          'DOCUMENT_EXTRACT_ENABLED must be false on production full workers; use WORKER_MODE=document-extract (ADR 0013)',
-      });
-    }
+    // Note: production full workers must set DOCUMENT_EXTRACT_ENABLED=false.
+    // That gate lives in apps/worker (index.ts), not here — web also calls
+    // getEnv() with WORKER_MODE defaulting to full and must not be rejected.
     if (env.WORKER_MODE === 'document-extract' && env.NODE_ENV === 'production') {
       const requiredOnExtract: { key: keyof typeof env; label: string }[] = [
         { key: 'DAYTONA_API_KEY', label: 'DAYTONA_API_KEY' },

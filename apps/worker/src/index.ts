@@ -3,6 +3,10 @@ import { waitForMigrations } from '@timeline/db/wait-for-migrations';
 import { childLogger, getEnv, queue } from '@timeline/shared';
 import { shutdownPostHogNodeClients } from '@timeline/shared/analytics/posthog-node';
 
+import {
+  assertProductionFullWorkerSkipsDocumentExtract,
+  shouldStartDocumentExtractOnFullWorker,
+} from '#src/document-ingestion/full-worker-extract-gate.js';
 import { captureWorkerException, flushWorkerSentry, initWorkerSentry } from '#src/monitoring.js';
 import { startCalendarRecurrenceWorker } from '#src/workers/calendarRecurrence.js';
 import { startConversationAgentWorker } from '#src/workers/conversationAgent.js';
@@ -45,17 +49,13 @@ async function main(): Promise<void> {
   // migrator still fails before queues start consuming jobs.
   await waitForMigrations();
 
+  // Worker-only gate (not in shared getEnv — production web shares those defaults).
+  assertProductionFullWorkerSkipsDocumentExtract(env);
+
   const db = getDb();
-  // Cutover safety (ADR 0013):
-  // - Production full workers never consume document-extract (credential-thin
-  //   extract service owns that queue; getEnv also rejects ENABLED=true).
-  // - Non-production full workers still need Daytona (or the in-process
-  //   escape hatch) before starting the consumer.
-  const documentExtractCanRun =
-    env.NODE_ENV !== 'production' &&
-    (Boolean(env.DAYTONA_API_KEY) || env.DOCUMENT_EXTRACT_ALLOW_INPROCESS);
-  const documentExtractEnabled = env.DOCUMENT_EXTRACT_ENABLED && documentExtractCanRun;
-  if (env.DOCUMENT_EXTRACT_ENABLED && !documentExtractCanRun) {
+  // Non-production: need Daytona (or in-process escape hatch) before starting.
+  const documentExtractEnabled = shouldStartDocumentExtractOnFullWorker(env);
+  if (env.DOCUMENT_EXTRACT_ENABLED && !documentExtractEnabled) {
     log.warn(
       {
         nodeEnv: env.NODE_ENV,

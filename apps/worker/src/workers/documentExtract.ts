@@ -563,12 +563,34 @@ async function routePdfContent(
       ...(sandbox.title ? { suggestedTitle: sandbox.title } : {}),
     };
   }
+  // Only pass page PNGs when they cover the whole document. A capped prefix
+  // (DOCUMENT_EXTRACT_MAX_VISION_PAGES < pageCount) would OCR a truncated
+  // subset and mark the version chunked — fall back to full-PDF vision.
+  const pageImagesForVision = completeSandboxPageImages(sandbox);
   return extractViaVision(io, {
     body: input.body,
     mediaType: 'application/pdf',
     filename: input.name,
-    ...(sandbox && sandbox.pageImages.length > 0 ? { pageImages: sandbox.pageImages } : {}),
+    ...(pageImagesForVision ? { pageImages: pageImagesForVision } : {}),
   });
+}
+
+/** Exported for unit tests. */
+export function completeSandboxPageImages(
+  sandbox: SandboxPdfExtractResult | null,
+): Buffer[] | undefined {
+  if (!sandbox || sandbox.pageImages.length === 0) return undefined;
+  if (sandbox.pageCount > sandbox.pageImages.length) {
+    log.warn(
+      {
+        pageCount: sandbox.pageCount,
+        pageImageCount: sandbox.pageImages.length,
+      },
+      'sandbox pageImages truncated vs pageCount; using full PDF for vision',
+    );
+    return undefined;
+  }
+  return sandbox.pageImages;
 }
 
 async function routeContentToText(

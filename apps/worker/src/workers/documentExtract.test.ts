@@ -12,6 +12,7 @@ import { applyDbMigrations } from '#src/test/pglite.js';
 import {
   type DocumentExtractIO,
   type SandboxPdfExtractResult,
+  completeSandboxPageImages,
   PDF_SANDBOX_MODEL,
   processDocumentExtractJob,
   shouldAcceptSandboxPdfText,
@@ -773,6 +774,54 @@ describe('processDocumentExtractJob — content-type routing', () => {
       expect(h.extractPdfSandbox).toHaveBeenCalledOnce();
       expect(h.extractFromMedia).toHaveBeenCalledOnce();
     }
+  });
+
+  it('omits truncated sandbox pageImages so vision OCRs the full PDF', async () => {
+    expect(
+      completeSandboxPageImages({
+        text: '',
+        method: 'render',
+        pageCount: 50,
+        sparse: true,
+        pageImages: [Buffer.from('p1'), Buffer.from('p2')],
+      }),
+    ).toBeUndefined();
+    expect(
+      completeSandboxPageImages({
+        text: '',
+        method: 'render',
+        pageCount: 2,
+        sparse: true,
+        pageImages: [Buffer.from('p1'), Buffer.from('p2')],
+      }),
+    ).toHaveLength(2);
+
+    h = await makeHarness('%PDF bytes', {
+      visionResponse: 'full pdf ocr',
+      sandboxPdf: {
+        text: '',
+        method: 'render',
+        pageCount: 50,
+        sparse: true,
+        pageImages: Array.from({ length: 20 }, (_, i) => Buffer.from(`p${String(i)}`)),
+      },
+    });
+    const { versionId } = await createFinalisedDocument(h.db, {
+      name: 'long-scan.pdf',
+      contentType: 'application/pdf',
+    });
+    await processDocumentExtractJob(
+      { db: h.db },
+      { documentVersionId: versionId, teamId: TEAM_ID },
+      h.io,
+    );
+    expect(h.extractFromMedia).toHaveBeenCalledOnce();
+    const call = h.extractFromMedia.mock.calls[0]?.[0] as {
+      pageImages?: Buffer[];
+      mediaType: string;
+    };
+    expect(call.pageImages).toBeUndefined();
+    expect(call.mediaType).toBe('application/pdf');
   });
 
   it('falls back to vision when sandbox PDF extract throws', async () => {
