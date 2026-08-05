@@ -19,7 +19,7 @@ export const DOCUMENT_EXTRACT_SNAPSHOT_PREFIX = 'timeline-document-extract';
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** Sandbox sources shipped next to the worker package (src/ or dist/). */
-export function defaultDocumentExtractSandboxDir(): string {
+function defaultDocumentExtractSandboxDir(): string {
   return join(HERE, '..', '..', 'document-extract-sandbox');
 }
 
@@ -101,7 +101,7 @@ export async function resolveDocumentExtractSnapshotName(
 }
 
 /** Image definition baked into the Daytona snapshot (must match sandbox scripts). */
-export function buildDocumentExtractSnapshotImage(
+function buildDocumentExtractSnapshotImage(
   sandboxDir: string = defaultDocumentExtractSandboxDir(),
 ): Image {
   return Image.debianSlim('3.12')
@@ -112,17 +112,17 @@ export function buildDocumentExtractSnapshotImage(
     .runCommands('chmod +x /opt/timeline/extract_pdf.py /opt/timeline/extract_docx.py');
 }
 
-export type EnsureDocumentExtractSnapshotResult = {
+export interface EnsureDocumentExtractSnapshotResult {
   name: string;
   created: boolean;
   contentHash: string;
-};
+}
 
-export type DocumentExtractSnapshotDaytonaConfig = {
+export interface DocumentExtractSnapshotDaytonaConfig {
   apiKey: string;
   apiUrl?: string;
   target?: string;
-};
+}
 
 /** Build a Daytona client without requiring full app `getEnv()` (CLI / CI). */
 export function createDocumentExtractSnapshotDaytona(
@@ -132,10 +132,12 @@ export function createDocumentExtractSnapshotDaytona(
   if (!apiKey) {
     throw new Error('DAYTONA_API_KEY is required to manage document-extract snapshots');
   }
+  const apiUrl = config.apiUrl?.trim();
+  const target = config.target?.trim();
   return new Daytona({
     apiKey,
-    apiUrl: config.apiUrl?.trim() || 'https://app.daytona.io/api',
-    target: config.target?.trim() || 'us',
+    apiUrl: apiUrl && apiUrl.length > 0 ? apiUrl : 'https://app.daytona.io/api',
+    target: target && target.length > 0 ? target : 'us',
   });
 }
 
@@ -176,7 +178,7 @@ async function createSnapshot(
       image,
       resources: { cpu: 1, memory: 2, disk: 3 },
     },
-    { onLogs },
+    onLogs ? { onLogs } : undefined,
   );
 }
 
@@ -201,7 +203,10 @@ export async function ensureDocumentExtractSnapshot(options?: {
   if (!force) {
     try {
       await daytona.snapshot.get(snapshotName);
-      log.info({ snapshot: snapshotName, contentHash }, 'document-extract snapshot already present');
+      log.info(
+        { snapshot: snapshotName, contentHash },
+        'document-extract snapshot already present',
+      );
       return { name: snapshotName, created: false, contentHash };
     } catch {
       // Missing — create below.

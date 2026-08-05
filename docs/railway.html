@@ -143,11 +143,10 @@
         <code>OPENROUTER_API_KEY</code>, <code>DATABASE_URL</code>, <code>REDIS_URL</code>, and S3
         document-bucket variables. Optionally pin
         <code>DAYTONA_SNAPSHOT=timeline-document-extract-&lt;hash&gt;</code> (leave unset /
-        <code>auto</code> to resolve the content hash from
-        <code>document-extract-sandbox/</code>). Do <strong>not</strong> set
-        <code>SECRETS_ENCRYPTION_KEY</code>, Auth secrets, or Telegram/Slack/integration OAuth
-        tokens on <code>extract</code>. Snapshot lifecycle (CI ensure + optional boot create-once):
-        ADR 0013 and
+        <code>auto</code> to resolve the content hash from <code>document-extract-sandbox/</code>).
+        Do <strong>not</strong> set <code>SECRETS_ENCRYPTION_KEY</code>, Auth secrets, or
+        Telegram/Slack/integration OAuth tokens on <code>extract</code>. Snapshot lifecycle (CI
+        ensure + optional boot create-once): ADR 0013 and
         <code>pnpm --filter @timeline/worker create-document-extract-snapshot</code>.
       </p>
 

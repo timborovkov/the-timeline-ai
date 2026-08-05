@@ -32,7 +32,7 @@ async function main(): Promise<void> {
   // restart. See docs/adr/0013-daytona-document-extract.md.
   if (env.DAYTONA_API_KEY && env.DAYTONA_SNAPSHOT_ENSURE) {
     const snapshot = await ensureDocumentExtractSnapshot({
-      explicitName: env.DAYTONA_SNAPSHOT,
+      ...(env.DAYTONA_SNAPSHOT ? { explicitName: env.DAYTONA_SNAPSHOT } : {}),
       force: false,
     });
     log.info(
