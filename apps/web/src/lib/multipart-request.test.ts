@@ -70,8 +70,7 @@ describe('rejectInvalidMultipartRequest', () => {
   });
 
   it('allows well-formed multipart posts', () => {
-    const body =
-      '------x\r\nContent-Disposition: form-data; name="a"\r\n\r\nb\r\n------x--\r\n';
+    const body = '------x\r\nContent-Disposition: form-data; name="a"\r\n\r\nb\r\n------x--\r\n';
     expect(
       rejectInvalidMultipartRequest(
         request({

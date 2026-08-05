@@ -67,17 +67,15 @@ describe('Sentry scrubber', () => {
       ],
     });
 
-    expect(event.breadcrumbs?.[0]?.message).toBe(
-      'https://api.telegram.org/bot[redacted]/setWebhook',
-    );
-    expect(event.breadcrumbs?.[0]?.data).toEqual({
+    expect(event.breadcrumbs[0]?.message).toBe('https://api.telegram.org/bot[redacted]/setWebhook');
+    expect(event.breadcrumbs[0]?.data).toEqual({
       url: 'https://api.telegram.org/bot[redacted]/setWebhook',
       'http.method': 'POST',
     });
     expect(
       scrubSentryBreadcrumb({
         data: { url: 'https://api.telegram.org/bot123456:AAExampleTokenValue_for-tests/getMe' },
-      }).data?.url,
+      }).data.url,
     ).toBe('https://api.telegram.org/bot[redacted]/getMe');
   });
 });

@@ -19,10 +19,10 @@ interface WorkerBeforeSendEvent {
     cookies?: Record<string, string>;
     headers?: Record<string, string>;
   };
-  breadcrumbs?: Array<{
+  breadcrumbs?: {
     message?: string;
     data?: Record<string, unknown>;
-  }>;
+  }[];
 }
 
 interface WorkerBreadcrumb {
@@ -149,6 +149,33 @@ describe('worker Sentry monitoring', () => {
     });
 
     expect(event?.request?.url).toBe('https://app.timeline.test/accept-invite/[redacted]');
+  });
+
+  it('redacts Telegram bot tokens from breadcrumbs', async () => {
+    process.env.SENTRY_DSN = 'https://example@sentry.invalid/1';
+    const monitoring = await import('#src/monitoring.js');
+
+    monitoring.initWorkerSentry();
+    const initOptions = init.mock.calls[0]?.[0] as WorkerSentryInitOptions | undefined;
+    const breadcrumb = initOptions?.beforeBreadcrumb?.({
+      data: {
+        url: 'https://api.telegram.org/bot123456:AAExampleTokenValue_for-tests/setWebhook',
+      },
+    });
+    const event = initOptions?.beforeSend?.({
+      breadcrumbs: [
+        {
+          data: {
+            url: 'https://api.telegram.org/bot123456:AAExampleTokenValue_for-tests/getWebhookInfo',
+          },
+        },
+      ],
+    });
+
+    expect(breadcrumb?.data?.url).toBe('https://api.telegram.org/bot[redacted]/setWebhook');
+    expect(event?.breadcrumbs?.[0]?.data?.url).toBe(
+      'https://api.telegram.org/bot[redacted]/getWebhookInfo',
+    );
   });
 
   it('captures retrying and terminal worker job failures with artifact tags', async () => {

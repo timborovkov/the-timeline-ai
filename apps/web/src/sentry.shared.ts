@@ -6,7 +6,7 @@ import {
 
 import type { Breadcrumb, ErrorEvent, EventHint } from '@sentry/nextjs';
 
-export { sanitizeRequestUrl, scrubSentryBreadcrumb };
+export { sanitizeRequestUrl };
 
 const BROWSER_EXTENSION_FRAME_PREFIXES = [
   'app:///scripts/',

@@ -17,7 +17,7 @@ export function rejectInvalidMultipartRequest(request: NextRequest): NextRespons
   if (!BODY_METHODS.has(request.method)) return null;
 
   const contentType = request.headers.get('content-type');
-  if (!contentType || !contentType.toLowerCase().startsWith('multipart/form-data')) {
+  if (!contentType?.toLowerCase().startsWith('multipart/form-data')) {
     return null;
   }
 
