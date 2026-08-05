@@ -720,9 +720,6 @@ export async function processSuggestionJobForTests(
   }
 
   const env = (io.getEnv ?? getEnv)();
-  if (!env.OPENROUTER_API_KEY) {
-    throw new UnrecoverableError('suggestions: OPENROUTER_API_KEY not configured');
-  }
   const modelId = io.modelId ?? llm.TIMELINE_MODELS.extraction.id;
   const modelVersion = makeModelVersion(modelId);
   const effectiveIo: SuggestionWorkerIO = {
@@ -731,6 +728,9 @@ export async function processSuggestionJobForTests(
   };
 
   if ('scope' in data) {
+    if (!env.OPENROUTER_API_KEY) {
+      throw new UnrecoverableError('suggestions: OPENROUTER_API_KEY not configured');
+    }
     await processConversationReviewJob(deps, data, { ...effectiveIo, modelId }, modelVersion);
     return;
   }
@@ -741,17 +741,14 @@ export async function processSuggestionJobForTests(
   const row = rows[0];
   if (!row) throw new UnrecoverableError(`raw event ${rawEventId} not found`);
   if (row.teamId !== teamId) throw new UnrecoverableError(`raw event ${rawEventId} team mismatch`);
-  const identity = conversationReview.conversationIdentityForRawEvent(row);
-  if (identity) {
-    if (row.visibility !== 'team') {
-      await stampSuggestionMetadata(deps.db, rawEventId, {
-        suggestions_skipped_at: new Date().toISOString(),
-        suggestions_skipped_reason: `visibility=${row.visibility}`,
-        suggestion_model_version: modelVersion,
-      });
-      return;
-    }
-    await scheduleConversationReview(deps, row, identity, effectiveIo);
+  // Skip paths that never call the LLM before requiring OPENROUTER_API_KEY so
+  // integration / visibility / ingest-disabled jobs can settle without credentials.
+  if (row.source === 'integration') {
+    await stampSuggestionMetadata(deps.db, rawEventId, {
+      suggestions_skipped_at: new Date().toISOString(),
+      suggestions_skipped_reason: 'integration_structured_source',
+      suggestion_model_version: modelVersion,
+    });
     return;
   }
   if (await ingestWebhookProposalsDisabled(deps.db, row)) {
@@ -762,13 +759,32 @@ export async function processSuggestionJobForTests(
     });
     return;
   }
-  if (row.source === 'integration') {
+  const identity = conversationReview.conversationIdentityForRawEvent(row);
+  if (identity) {
+    if (row.visibility !== 'team') {
+      await stampSuggestionMetadata(deps.db, rawEventId, {
+        suggestions_skipped_at: new Date().toISOString(),
+        suggestions_skipped_reason: `visibility=${row.visibility}`,
+        suggestion_model_version: modelVersion,
+      });
+      return;
+    }
+    if (!env.OPENROUTER_API_KEY) {
+      throw new UnrecoverableError('suggestions: OPENROUTER_API_KEY not configured');
+    }
+    await scheduleConversationReview(deps, row, identity, effectiveIo);
+    return;
+  }
+  if (row.visibility !== 'team') {
     await stampSuggestionMetadata(deps.db, rawEventId, {
       suggestions_skipped_at: new Date().toISOString(),
-      suggestions_skipped_reason: 'integration_structured_source',
+      suggestions_skipped_reason: `visibility=${row.visibility}`,
       suggestion_model_version: modelVersion,
     });
     return;
+  }
+  if (!env.OPENROUTER_API_KEY) {
+    throw new UnrecoverableError('suggestions: OPENROUTER_API_KEY not configured');
   }
   await runSuggestionExtraction(deps, {
     anchor: row,
@@ -2574,8 +2590,8 @@ async function runSuggestionExtraction(
     updatedAt: entity.updatedAt,
   }));
 
-  const prompt = llm.truncateTextToTokenBudget(
-    buildPrompt({
+  const prompt = assembleSuggestionPrompt(
+    buildPromptParts({
       text,
       sourceEventId: row.id,
       occurredAt: row.occurredAt,
@@ -3421,7 +3437,47 @@ function recordFromUnknown(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function buildPrompt(args: {
+interface SuggestionPromptParts {
+  workspace: string;
+  evidence: string;
+  anchor: string;
+}
+
+/**
+ * Prefer dropping fat workspace dump over evidence/anchor. Anchor is reserved
+ * first, then evidence, then workspace fills the remaining token budget.
+ */
+function assembleSuggestionPrompt(parts: SuggestionPromptParts, maxTokens: number): string {
+  const estimate = llm.estimateTextTokens;
+  const truncate = llm.truncateTextToTokenBudget;
+  const separatorTokens = estimate('\n\n');
+  let anchor = parts.anchor;
+  let evidence = parts.evidence;
+  let workspace = parts.workspace;
+
+  let anchorTokens = estimate(anchor);
+  if (anchorTokens + 2 * separatorTokens >= maxTokens) {
+    anchor = truncate(anchor, Math.max(1, maxTokens - 2 * separatorTokens));
+    return anchor;
+  }
+
+  let evidenceBudget = maxTokens - anchorTokens - 2 * separatorTokens;
+  if (estimate(evidence) > evidenceBudget) {
+    evidence = truncate(evidence, Math.max(1, evidenceBudget));
+  }
+
+  const evidenceTokens = estimate(evidence);
+  const workspaceBudget = maxTokens - anchorTokens - evidenceTokens - 2 * separatorTokens;
+  if (workspaceBudget <= 0) {
+    return [evidence, anchor].filter(Boolean).join('\n\n');
+  }
+  if (estimate(workspace) > workspaceBudget) {
+    workspace = truncate(workspace, workspaceBudget);
+  }
+  return [workspace, evidence, anchor].filter(Boolean).join('\n\n');
+}
+
+function buildPromptParts(args: {
   text: string;
   sourceEventId: string;
   occurredAt: Date;
@@ -3493,8 +3549,8 @@ function buildPrompt(args: {
   authorUserId: string | null;
   conversationWindow: conversationReview.ConversationEvidenceEvent[] | null;
   linkedContext: conversationReview.ConversationLinkedContextEvent[];
-}): string {
-  return [
+}): SuggestionPromptParts {
+  const workspace = [
     `Workspace timezone: ${args.workspaceTime.timezone}`,
     `Current workspace date: ${args.workspaceTime.today}`,
     `Source event occurred at: ${args.occurredAt.toISOString()}`,
@@ -3576,7 +3632,9 @@ function buildPrompt(args: {
     '',
     '# Existing facts from this event',
     ...args.facts.map((f) => `- ${f}`),
-    '',
+  ].join('\n');
+
+  const evidence = [
     args.conversationWindow ? '# Conversation evidence window' : '# Recent context',
     ...(args.conversationWindow
       ? args.conversationWindow.map(
@@ -3627,7 +3685,9 @@ function buildPrompt(args: {
           ),
         ]
       : []),
-    '',
+  ].join('\n');
+
+  const anchor = [
     args.conversationWindow ? '# Anchor raw event' : '# Current raw event',
     `[${sourceContextForPrompt(
       args.source,
@@ -3640,6 +3700,8 @@ function buildPrompt(args: {
       eventId: args.sourceEventId,
     })}`,
   ].join('\n');
+
+  return { workspace, evidence, anchor };
 }
 
 export function startSuggestionWorker(deps: SuggestionWorkerDeps): Worker<queue.SuggestionJobData> {

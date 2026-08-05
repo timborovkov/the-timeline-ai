@@ -50,6 +50,8 @@ interface TestGithubCursor {
   commit_gap_until?: string;
   last_polled_at?: string;
   github_conditional?: Record<string, { etag?: string; lastModified?: string }>;
+  issue_lifecycles?: Record<string, 'open' | 'closed'>;
+  pr_lifecycles?: Record<string, 'open' | 'merged' | 'closed'>;
 }
 
 describe('githubProvider.startOAuth', () => {
@@ -4303,6 +4305,70 @@ describe('githubProvider.incrementalSync', () => {
     expect(writeEvents.mock.calls.flatMap(([events]) => events)).toEqual([]);
     expect(savedCursor(saveCursor, 'github.repo:acme/app:issues')).toMatchObject({
       issues_since: '2026-06-10T13:08:00Z',
+    });
+  });
+
+  it('mints a polling reopen dedup key when issue lifecycle history shows closed→open', async () => {
+    const fetchMock = vi.fn<typeof fetch>((input) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.pathname.endsWith('/issues')) {
+        return Promise.resolve(
+          jsonResponse([
+            {
+              id: 8,
+              number: 8,
+              title: 'Bug report',
+              body: null,
+              html_url: 'https://github.com/acme/app/issues/8',
+              state: 'open',
+              updated_at: '2026-06-25T13:00:00Z',
+              user: { login: 'bob' },
+            },
+          ]),
+        );
+      }
+      if (url.pathname.endsWith('/commits')) return Promise.resolve(jsonResponse([]));
+      const base = emptyGithubFetch(input);
+      return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
+    });
+    globalThis.fetch = fetchMock;
+    const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
+    const saveCursor = vi.fn().mockResolvedValue(undefined);
+
+    await githubProvider.incrementalSync({
+      integration: {} as never,
+      tokens: { access_token: 'gho_token' },
+      selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+      ctx: {
+        writeEvents,
+        recordAudit: vi.fn(),
+        saveCursor,
+        loadCursor: vi.fn((resourceType: string) =>
+          Promise.resolve(
+            resourceType === 'github.repo:acme/app:issues'
+              ? {
+                  issues_since: '2026-06-25T12:00:00Z',
+                  issue_lifecycles: { '8': 'closed' },
+                }
+              : resourceType === 'github.repo:acme/app:releases' ||
+                  resourceType === 'github.repo:acme/app:workflow_runs'
+                ? { last_polled_at: new Date().toISOString() }
+                : {},
+          ),
+        ),
+        persistTokens: vi.fn(),
+      },
+    });
+
+    const issueEvents = writeEvents.mock.calls
+      .flatMap(([events]) => events)
+      .filter((event) => event.dedupKey.startsWith('github:issue:8:'));
+    expect(issueEvents[0]?.dedupKey).toBe('github:issue:8:open:2026-06-25T13:00:00Z');
+    expect(issueEvents[0]?.eventType).toBe('issue.reopened');
+    expect(savedCursor(saveCursor, 'github.repo:acme/app:issues')).toMatchObject({
+      issue_lifecycles: { '8': 'open' },
     });
   });
 

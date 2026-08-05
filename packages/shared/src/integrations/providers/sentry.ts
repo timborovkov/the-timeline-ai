@@ -64,6 +64,12 @@ interface SentryRelease {
 interface SentryCursor {
   issues_since?: string | undefined;
   releases_since?: string | undefined;
+  /**
+   * Last issued lifecycle bucket suffix per issue id (`open`, `resolved`,
+   * `ignored`, or `regressed:<iso>`). Lets polling mint a distinct key when an
+   * issue returns from resolved/ignored without a webhook action.
+   */
+  issue_lifecycles?: Record<string, string> | undefined;
 }
 
 function buildAuthorizeUrl(input: {
@@ -271,7 +277,7 @@ function issueWebhookEventType(action: string, status?: string): string {
   if (action === 'resolved') return 'issue.resolved';
   if (action === 'ignored') return 'issue.ignored';
   if (action === 'assigned') return 'issue.assigned';
-  if (action === 'unresolved') return 'issue.unresolved';
+  if (action === 'unresolved') return 'issue.regressed';
   if (status === 'resolved') return 'issue.resolved';
   return 'issue.updated';
 }
@@ -279,22 +285,50 @@ function issueWebhookEventType(action: string, status?: string): string {
 /**
  * Lifecycle bucket used in Sentry issue dedup keys.
  *
- * Intentionally excludes `lastSeen` / occurrence timestamps. Sentry issue
- * sync and noisy issue-alert webhooks bump `lastSeen` on every new error
- * event; putting that timestamp in the dedup key created a fresh raw_event
- * (and extract/embed/suggestions jobs) for each occurrence. One row per
- * issue + lifecycle state keeps incident evidence current via reconciliation
- * replays without re-billing OpenRouter for count-only churn.
+ * Intentionally excludes `lastSeen` / occurrence timestamps for ordinary open
+ * alerts. Sentry issue sync and noisy issue-alert webhooks bump `lastSeen` on
+ * every new error event; putting that timestamp in the dedup key created a
+ * fresh raw_event (and extract/embed/suggestions jobs) for each occurrence.
+ * Resolved→unresolved regressions use a distinct `regressed:<iso>` bucket so
+ * the timeline gets a new immutable source row without reopening the original
+ * open alert key.
  */
-function issueLifecycleBucket(actionOrStatus?: string | null): 'resolved' | 'ignored' | 'open' {
+function issueLifecycleBucket(
+  actionOrStatus?: string | null,
+): 'resolved' | 'ignored' | 'open' | 'regressed' {
   const value = (actionOrStatus ?? '').trim().toLowerCase();
   if (value === 'resolved' || value === 'done') return 'resolved';
   if (value === 'ignored' || value === 'muted') return 'ignored';
+  if (value === 'regressed') return 'regressed';
   return 'open';
 }
 
-function issueDedupKey(issueId: string, actionOrStatus?: string | null): string {
-  return `sentry:issue:${issueId}:${issueLifecycleBucket(actionOrStatus)}`;
+function issueDedupKey(issueId: string, lifecycleBucket: string): string {
+  return `sentry:issue:${issueId}:${lifecycleBucket}`;
+}
+
+function issueStatusBucket(actionOrStatus?: string | null): 'resolved' | 'ignored' | 'open' {
+  const bucket = issueLifecycleBucket(actionOrStatus);
+  return bucket === 'regressed' ? 'open' : bucket;
+}
+
+function isClosedLifecycle(bucket: string | undefined): boolean {
+  return bucket === 'resolved' || bucket === 'ignored';
+}
+
+/** Choose the open-family bucket, minting a new regression key when needed. */
+function nextOpenFamilyBucket(previous: string | undefined, occurredAt: Date): string {
+  if (isClosedLifecycle(previous)) {
+    return `regressed:${occurredAt.toISOString()}`;
+  }
+  if (previous && previous.startsWith('regressed')) return previous;
+  return 'open';
+}
+
+function syncIssueLifecycleBucket(issue: SentryIssue, previous: string | undefined): string {
+  const status = issueStatusBucket(issue.status);
+  if (status !== 'open') return status;
+  return nextOpenFamilyBucket(previous, dateValue(issue.lastSeen ?? issue.firstSeen));
 }
 
 function issuePermalink(issue: SentryIssue): string | null {
@@ -316,17 +350,29 @@ function actorFromRecord(
   };
 }
 
-function issueEvent(orgSlug: string, projectSlug: string, issue: SentryIssue): IntegrationEvent {
+function issueEvent(
+  orgSlug: string,
+  projectSlug: string,
+  issue: SentryIssue,
+  previousLifecycle?: string,
+): IntegrationEvent {
   const occurredAt = dateValue(issue.lastSeen ?? issue.firstSeen);
   const title = issue.title ?? issue.culprit ?? issue.shortId ?? `Sentry issue ${issue.id}`;
   const shortId = issue.shortId ?? issue.id;
   const priority = priorityFromLevel(issue.level);
   const permalink = issuePermalink(issue);
+  const lifecycleBucket = syncIssueLifecycleBucket(issue, previousLifecycle);
+  const regressed = lifecycleBucket.startsWith('regressed');
   return {
-    dedupKey: issueDedupKey(issue.id, issue.status),
+    dedupKey: issueDedupKey(issue.id, lifecycleBucket),
     provider: 'sentry',
     externalObjectId: issue.id,
-    eventType: issue.status === 'resolved' ? 'issue.resolved' : 'issue.updated',
+    eventType:
+      issue.status === 'resolved'
+        ? 'issue.resolved'
+        : regressed
+          ? 'issue.regressed'
+          : 'issue.updated',
     occurredAt,
     contentText: [
       `Sentry issue ${shortId}: ${title}`,
@@ -390,13 +436,14 @@ function issueWebhookEvent(input: {
   const priority = priorityFromLevel(input.issue.level);
   const permalink = issuePermalink(input.issue);
   const eventType = issueWebhookEventType(input.action, input.issue.status);
+  const lifecycleBucket =
+    input.action === 'unresolved'
+      ? nextOpenFamilyBucket('resolved', occurredAt)
+      : input.action === 'ignored' || input.action === 'resolved'
+        ? issueLifecycleBucket(input.action)
+        : issueStatusBucket(input.issue.status ?? input.action);
   return {
-    dedupKey: issueDedupKey(
-      input.issue.id,
-      input.action === 'ignored' || input.action === 'resolved' || input.action === 'unresolved'
-        ? input.action
-        : (input.issue.status ?? input.action),
-    ),
+    dedupKey: issueDedupKey(input.issue.id, lifecycleBucket),
     provider: 'sentry',
     externalObjectId: input.issue.id,
     eventType,
@@ -675,10 +722,15 @@ async function syncProject(
       (event) =>
         !cursor.releases_since || event.occurredAt > dateValue(cursor.releases_since, new Date(0)),
     );
-  const events = [
-    ...issues.map((issue) => issueEvent(orgSlug, projectSlug, issue)),
-    ...releaseEvents,
-  ];
+  const issueLifecycles = { ...(cursor.issue_lifecycles ?? {}) };
+  const issueEvents = issues.map((issue) => {
+    const previous = issueLifecycles[issue.id];
+    const event = issueEvent(orgSlug, projectSlug, issue, previous);
+    const bucket = event.dedupKey.slice(`sentry:issue:${issue.id}:`.length);
+    issueLifecycles[issue.id] = bucket;
+    return event;
+  });
+  const events = [...issueEvents, ...releaseEvents];
   const latestIssue = events
     .filter((event) => event.eventType.startsWith('issue.'))
     .map((event) => event.occurredAt.toISOString())
@@ -694,6 +746,7 @@ async function syncProject(
     cursor: {
       issues_since: latestIssue ?? cursor.issues_since,
       releases_since: latestRelease ?? cursor.releases_since,
+      issue_lifecycles: issueLifecycles,
     },
   };
 }
@@ -867,10 +920,22 @@ export const sentryProvider: IntegrationProvider = {
     return {
       events: [
         {
-          dedupKey: issueDedupKey(issueId, action === 'resolved' ? 'resolved' : 'open'),
+          dedupKey: issueDedupKey(
+            issueId,
+            action === 'resolved'
+              ? 'resolved'
+              : action === 'unresolved'
+                ? nextOpenFamilyBucket('resolved', occurredAt)
+                : 'open',
+          ),
           provider: 'sentry',
           externalObjectId: issueId,
-          eventType: action === 'resolved' ? 'issue.resolved' : 'alert.triggered',
+          eventType:
+            action === 'resolved'
+              ? 'issue.resolved'
+              : action === 'unresolved'
+                ? 'issue.regressed'
+                : 'alert.triggered',
           occurredAt,
           actor: actorFromRecord(actor),
           contentText: `Sentry alert: ${title}`,

@@ -21,7 +21,9 @@ import {
 // Idempotency for items/subitems is by lifecycle status buckets (not
 // updated_at), so column text churn reuses the raw_event. Sync and webhook
 // share the same item key family; triggerUuid stays on externalEventId only.
-// Updates/docs/board-schema key by stable ids; activity logs stay per log.id.
+// Mutable surfaces (updates, docs, board schema) include a revision
+// discriminator so edits/deletes mint a new immutable raw_event. Activity
+// logs stay per log.id.
 
 const AUTH_URL = 'https://auth.monday.com/oauth2/authorize';
 const TOKEN_URL = 'https://auth.monday.com/oauth2/token';
@@ -716,7 +718,7 @@ function mondayRecordMap(
 function boardSchemaEvent(board: MondayBoard): IntegrationEvent {
   const occurredAt = dateValue(board.updated_at);
   return {
-    dedupKey: `monday:board-schema:${board.id}`,
+    dedupKey: `monday:board-schema:${board.id}:${occurredAt.toISOString()}`,
     provider: 'monday',
     externalObjectId: board.id,
     eventType: 'board.schema',
@@ -843,7 +845,7 @@ function updateEvent(
 ): IntegrationEvent {
   const occurredAt = dateValue(update.updated_at ?? update.created_at);
   return {
-    dedupKey: `monday:update:${item.id}:${update.id}`,
+    dedupKey: `monday:update:${item.id}:${update.id}:${occurredAt.toISOString()}`,
     provider: 'monday',
     externalObjectId: item.id,
     externalEventId: update.id,
@@ -885,7 +887,7 @@ function docEvent(doc: MondayDoc): IntegrationEvent {
   const occurredAt = dateValue(doc.updated_at ?? doc.created_at);
   const text = docTextFromBlocks(doc.blocks);
   return {
-    dedupKey: `monday:doc:${doc.id}`,
+    dedupKey: `monday:doc:${doc.id}:${occurredAt.toISOString()}`,
     provider: 'monday',
     externalObjectId: doc.id,
     eventType: 'doc.updated',
@@ -986,11 +988,35 @@ function mondayWebhookLifecycleStatus(
   rawType: string,
   valueText: string | null,
 ): NonNullable<ObjectMapping['status']> | null {
+  if (rawType === 'item_deleted' || rawType === 'item_archived') return 'cancelled';
+  if (rawType === 'item_restored') return 'open';
   if (isMondayStatusColumnWebhook(event)) return mondayStatus(valueText);
   if (rawType === 'create_pulse' || rawType === 'create_item' || rawType === 'create_subitem') {
     return 'open';
   }
   return null;
+}
+
+/** Dedup bucket for item webhooks — archive/delete stay distinct from open. */
+function mondayWebhookLifecycleBucket(
+  event: Record<string, unknown>,
+  rawType: string,
+  valueText: string | null,
+): string {
+  if (rawType === 'item_deleted') return 'deleted';
+  if (rawType === 'item_archived') return 'archived';
+  return mondayWebhookLifecycleStatus(event, rawType, valueText) ?? 'observed';
+}
+
+function mondayWebhookUpdateDedupKey(input: {
+  itemId: string;
+  updateId: string;
+  rawType: string;
+  triggerUuid: string | null;
+  occurredAt: Date;
+}): string {
+  const revision = input.triggerUuid ?? input.occurredAt.toISOString();
+  return `monday:update:${input.itemId}:${input.updateId}:${input.rawType}:${revision}`;
 }
 
 function mondayWebhookEvent(payload: unknown): IntegrationEvent[] {
@@ -1026,11 +1052,17 @@ function mondayWebhookEvent(payload: unknown): IntegrationEvent[] {
       rawType === 'edit_update' ||
       rawType === 'delete_update' ||
       eventType.startsWith('update.'));
-  const lifecycleBucket = status ?? 'observed';
+  const lifecycleBucket = mondayWebhookLifecycleBucket(event, rawType, valueText);
   return [
     {
       dedupKey: isUpdateEvent
-        ? `monday:update:${itemId}:${updateId}`
+        ? mondayWebhookUpdateDedupKey({
+            itemId,
+            updateId: updateId ?? '',
+            rawType,
+            triggerUuid,
+            occurredAt,
+          })
         : `monday:${kind}:${boardId}:${itemId}:${lifecycleBucket}`,
       provider: 'monday',
       externalObjectId: updateId ? `${itemId}:update:${updateId}` : itemId,

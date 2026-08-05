@@ -301,7 +301,9 @@ describe('sentryProvider', () => {
     });
 
     expect(ctx.saveCursor).toHaveBeenCalledWith('sentry.project:acme/web', {
+      issues_since: undefined,
       releases_since: '2026-06-20T11:00:00.000Z',
+      issue_lifecycles: {},
     });
   });
 
@@ -550,6 +552,79 @@ describe('sentryProvider', () => {
         reason: 'sentry_project_webhook',
       },
     ]);
+  });
+
+  it('mints a distinct regression dedup key when a resolved issue becomes unresolved', async () => {
+    const loadCursor = vi
+      .fn()
+      .mockResolvedValueOnce({
+        issue_lifecycles: { 'issue-1': 'resolved' },
+      })
+      .mockResolvedValue({});
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((input) => {
+        const url = requestUrl(input);
+        if (url.includes('/issues/')) {
+          return Promise.resolve(
+            jsonResponse([
+              {
+                id: 'issue-1',
+                shortId: 'WEB-1',
+                title: 'Checkout failed',
+                status: 'unresolved',
+                level: 'error',
+                lastSeen: '2026-06-22T08:00:00Z',
+                count: '41',
+              },
+            ]),
+          );
+        }
+        return Promise.resolve(jsonResponse([]));
+      }),
+    );
+    const writeEvents = vi.fn().mockResolvedValue([]);
+    const saveCursor = vi.fn().mockResolvedValue(undefined);
+    await sentryProvider.incrementalSync?.({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'sentry.project', externalId: 'acme/web' }],
+      ctx: {
+        loadCursor,
+        saveCursor,
+        writeEvents,
+        persistTokens: vi.fn(),
+        recordAudit: vi.fn(),
+      },
+    });
+    const syncEvents = (writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    expect(syncEvents[0]?.dedupKey).toBe('sentry:issue:issue-1:regressed:2026-06-22T08:00:00.000Z');
+    expect(syncEvents[0]?.eventType).toBe('issue.regressed');
+
+    const webhook = await sentryProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        action: 'unresolved',
+        organization: { slug: 'acme' },
+        data: {
+          issue: {
+            id: 'issue-1',
+            shortId: 'WEB-1',
+            title: 'Checkout failed',
+            status: 'unresolved',
+            level: 'error',
+            lastSeen: '2026-06-22T09:00:00Z',
+            permalink: 'https://sentry.io/issues/issue-1',
+            project: { slug: 'web' },
+          },
+        },
+      },
+    });
+    const normalized = Array.isArray(webhook) ? { events: webhook } : (webhook ?? { events: [] });
+    expect(normalized.events[0]?.dedupKey).toBe(
+      'sentry:issue:issue-1:regressed:2026-06-22T09:00:00.000Z',
+    );
+    expect(normalized.events[0]?.eventType).toBe('issue.regressed');
   });
 
   it('keeps one open-issue dedup key across lastSeen and alert timestamp churn', async () => {

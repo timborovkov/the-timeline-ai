@@ -801,6 +801,16 @@ interface RepoCursor {
   last_polled_at?: string;
   /** Conditional GET validators by stable request key. */
   github_conditional?: Record<string, GithubConditionalValidator>;
+  /**
+   * Last observed issue lifecycle per GitHub issue id. Used so polling can mint
+   * transition discriminators (e.g. closed→open) without a webhook action.
+   */
+  issue_lifecycles?: Record<string, 'open' | 'closed'>;
+  /**
+   * Last observed pull-request lifecycle per GitHub PR id. Same role as
+   * `issue_lifecycles` for open/closed/merged polling transitions.
+   */
+  pr_lifecycles?: Record<string, 'open' | 'merged' | 'closed'>;
 }
 
 const MAX_SYNC_PAGES = 20;
@@ -1120,6 +1130,49 @@ function githubPullRequestDedupKey(
     return `github:pr:${String(pr.id)}:${lifecycle}:${pr.updated_at}`;
   }
   return `github:pr:${String(pr.id)}:${lifecycle}`;
+}
+
+const GITHUB_LIFECYCLE_CURSOR_CAP = 5_000;
+
+function pruneLifecycleMap<T extends string>(
+  map: Record<string, T> | undefined,
+  keepIds: ReadonlySet<string>,
+): Record<string, T> | undefined {
+  if (!map) return undefined;
+  const entries = Object.entries(map);
+  if (entries.length <= GITHUB_LIFECYCLE_CURSOR_CAP) return map;
+  const next: Record<string, T> = {};
+  for (const id of keepIds) {
+    const value = map[id];
+    if (value) next[id] = value;
+  }
+  // If the keep set is tiny, retain a suffix of recent entries so we still
+  // detect transitions on the next page after a cap prune.
+  if (Object.keys(next).length < Math.min(keepIds.size, 64)) {
+    for (const [id, value] of entries.slice(-Math.floor(GITHUB_LIFECYCLE_CURSOR_CAP / 2))) {
+      next[id] = value;
+    }
+  }
+  return next;
+}
+
+/** Infer a webhook-equivalent transition action from polling lifecycle history. */
+function githubSyncIssueTransitionAction(
+  previous: 'open' | 'closed' | undefined,
+  current: 'open' | 'closed',
+): string | null {
+  if (!previous || previous === current) return null;
+  if (current === 'closed') return 'closed';
+  return 'reopened';
+}
+
+function githubSyncPullRequestTransitionAction(
+  previous: 'open' | 'merged' | 'closed' | undefined,
+  current: 'open' | 'merged' | 'closed',
+): string | null {
+  if (!previous || previous === current) return null;
+  if (current === 'open') return 'reopened';
+  return 'closed';
 }
 
 function prToEvent(repo: string, pr: GhPullRequest, action?: string | null): IntegrationEvent {
@@ -2038,7 +2091,20 @@ async function syncPullRequestsSurface(
         if (prs.length === 0) break;
         const filtered = prs.filter((p) => p.updated_at > prsSince);
         if (filtered.length > 0) {
-          await ctx.writeEvents(filtered.map((pr) => prToEvent(repo, pr)));
+          const lifecycles = { ...(next.pr_lifecycles ?? {}) };
+          await ctx.writeEvents(
+            filtered.map((pr) => {
+              const lifecycle = githubPullRequestLifecycle(pr);
+              const previous = lifecycles[String(pr.id)];
+              const action = githubSyncPullRequestTransitionAction(previous, lifecycle);
+              lifecycles[String(pr.id)] = lifecycle;
+              return prToEvent(repo, pr, action);
+            }),
+          );
+          next.pr_lifecycles = pruneLifecycleMap(
+            lifecycles,
+            new Set(filtered.map((pr) => String(pr.id))),
+          );
           for (const pr of filtered) {
             next.prs_since = maxIso(next.prs_since, pr.updated_at);
             next.since = maxIso(next.since, pr.updated_at);
@@ -2145,12 +2211,24 @@ async function syncIssuesSurface(
           ? conditional.data
           : await ghGet<GhIssue[]>(tokens, path, budget);
       if (issues.length === 0) break;
+      const lifecycles = { ...(next.issue_lifecycles ?? {}) };
       const issueEvents = issues
-        .map((i) => issueToEvent(repo, i))
+        .map((i) => {
+          if (i.pull_request) return null;
+          const lifecycle = githubIssueLifecycle(i.state);
+          const previous = lifecycles[String(i.id)];
+          const action = githubSyncIssueTransitionAction(previous, lifecycle);
+          lifecycles[String(i.id)] = lifecycle;
+          return issueToEvent(repo, i, action);
+        })
         .filter((e): e is IntegrationEvent => e !== null);
       if (issueEvents.length > 0) {
         await ctx.writeEvents(issueEvents);
       }
+      next.issue_lifecycles = pruneLifecycleMap(
+        lifecycles,
+        new Set(issues.filter((i) => !i.pull_request).map((i) => String(i.id))),
+      );
       for (const i of issues) {
         next.issues_since = maxIso(next.issues_since, i.updated_at);
         next.since = maxIso(next.since, i.updated_at);

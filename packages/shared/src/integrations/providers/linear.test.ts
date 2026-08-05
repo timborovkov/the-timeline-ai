@@ -171,6 +171,67 @@ describe('linearProvider.handleWebhook', () => {
     expect(second[0]?.contentText).toContain('edited');
   });
 
+  it('mints a transition dedup key when a Linear issue returns to a prior status bucket', async () => {
+    const handle = linearProvider.handleWebhook?.bind(linearProvider);
+    if (!handle) throw new Error('no handleWebhook');
+    const baseData = {
+      id: 'LIN-1',
+      identifier: 'ENG-42',
+      title: 'Wire Phase 11',
+      description: null,
+      url: 'https://linear.app/acme/issue/ENG-42',
+      updatedAt: '2026-05-25T12:00:00Z',
+      state: { id: 'state-started', name: 'In Progress', type: 'started' },
+      assignee: { id: 'u1', name: 'Alice', email: null },
+      team: { id: 't1', key: 'ENG' },
+    };
+    const restarted = webhookEvents(
+      await handle({
+        integration: { teamId: 't1' } as never,
+        payload: {
+          action: 'update',
+          type: 'Issue',
+          data: baseData,
+          updatedFrom: { stateId: 'state-completed' },
+        },
+      }),
+    );
+    expect(restarted[0]?.dedupKey).toBe('linear:issue:LIN-1:in_progress:2026-05-25T12:00:00Z');
+  });
+
+  it('mints a new comment dedup key when the body changes', async () => {
+    const handle = linearProvider.handleWebhook?.bind(linearProvider);
+    if (!handle) throw new Error('no handleWebhook');
+    const base = {
+      id: 'C-1',
+      body: 'First draft',
+      url: 'https://linear.app/acme/issue/ENG-42#comment-C-1',
+      updatedAt: '2026-05-25T10:00:00Z',
+      user: { id: 'u1', name: 'Alice', email: null },
+      issue: { id: 'LIN-1', identifier: 'ENG-42', title: 'Wire Phase 11' },
+    };
+    const first = webhookEvents(
+      await handle({
+        integration: { teamId: 't1' } as never,
+        payload: { action: 'create', type: 'Comment', data: base },
+      }),
+    );
+    const edited = webhookEvents(
+      await handle({
+        integration: { teamId: 't1' } as never,
+        payload: {
+          action: 'update',
+          type: 'Comment',
+          data: { ...base, body: 'Edited body', updatedAt: '2026-05-25T11:00:00Z' },
+        },
+      }),
+    );
+    expect(first[0]?.dedupKey).toMatch(/^linear:comment:C-1:[a-f0-9]{16}$/);
+    expect(edited[0]?.dedupKey).toMatch(/^linear:comment:C-1:[a-f0-9]{16}$/);
+    expect(edited[0]?.dedupKey).not.toBe(first[0]?.dedupKey);
+    expect(edited[0]?.contentText).toContain('Edited body');
+  });
+
   it('ignores non-Issue payloads', async () => {
     const handle = linearProvider.handleWebhook?.bind(linearProvider);
     if (!handle) throw new Error('no handleWebhook');
@@ -374,6 +435,10 @@ describe('linearProvider.incrementalSync', () => {
     );
     expect(ctx.saveCursor).toHaveBeenCalledWith('linear.issues', {
       updated_after: '2026-06-20T11:00:00.000Z',
+      issue_statuses: {
+        'issue-1': 'in_progress',
+        'issue-2': 'in_progress',
+      },
     });
     expect(ctx.saveCursor).toHaveBeenCalledWith('linear.comments', {
       updated_after: '2026-06-20T13:00:00.000Z',

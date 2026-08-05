@@ -357,6 +357,89 @@ describe('mondayProvider', () => {
     ]);
   });
 
+  it('mints revision keys for Monday update edit/delete webhooks', async () => {
+    const created = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          userId: 9603417,
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          updateId: 55,
+          type: 'create_update',
+          triggerTime: '2026-06-25T09:15:03.429Z',
+          subscriptionId: 73760484,
+          triggerUuid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        },
+      },
+    });
+    const edited = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          userId: 9603417,
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          updateId: 55,
+          type: 'edit_update',
+          triggerTime: '2026-06-25T09:20:03.429Z',
+          subscriptionId: 73760484,
+          triggerUuid: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        },
+      },
+    });
+    const createdEvents = Array.isArray(created) ? created : (created?.events ?? []);
+    const editedEvents = Array.isArray(edited) ? edited : (edited?.events ?? []);
+    expect(createdEvents[0]?.dedupKey).toBe(
+      'monday:update:1771812728:55:create_update:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    );
+    expect(editedEvents[0]?.dedupKey).toBe(
+      'monday:update:1771812728:55:edit_update:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    );
+    expect(editedEvents[0]?.dedupKey).not.toBe(createdEvents[0]?.dedupKey);
+  });
+
+  it('uses distinct lifecycle buckets for Monday archive and delete webhooks', async () => {
+    const archived = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          userId: 9603417,
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          type: 'item_archived',
+          triggerTime: '2026-06-25T09:15:03.429Z',
+          subscriptionId: 73760484,
+          triggerUuid: 'cccccccccccccccccccccccccccccccc',
+        },
+      },
+    });
+    const deleted = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          userId: 9603417,
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          type: 'item_deleted',
+          triggerTime: '2026-06-25T09:16:03.429Z',
+          subscriptionId: 73760484,
+          triggerUuid: 'dddddddddddddddddddddddddddddddd',
+        },
+      },
+    });
+    const archivedEvents = Array.isArray(archived) ? archived : (archived?.events ?? []);
+    const deletedEvents = Array.isArray(deleted) ? deleted : (deleted?.events ?? []);
+    expect(archivedEvents[0]?.dedupKey).toBe('monday:item:1771812698:1771812728:archived');
+    expect(deletedEvents[0]?.dedupKey).toBe('monday:item:1771812698:1771812728:deleted');
+    expect(archivedEvents[0]?.objectMap).toMatchObject({ status: 'cancelled' });
+    expect(deletedEvents[0]?.objectMap).toMatchObject({ status: 'cancelled' });
+  });
+
   it('does not derive lifecycle status from non-status Monday column webhooks', async () => {
     const result = await mondayProvider.handleWebhook?.({
       integration: { id: 'integration-1', teamId: 'team-1' } as never,
@@ -1169,7 +1252,7 @@ describe('mondayProvider', () => {
 
     expect(ctx.writeEvents).toHaveBeenCalledWith([
       expect.objectContaining({
-        dedupKey: 'monday:board-schema:board-1',
+        dedupKey: 'monday:board-schema:board-1:2026-06-20T09:00:00.000Z',
       }),
     ]);
   });

@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
 import type {
   IntegrationEvent,
@@ -21,9 +21,10 @@ import { childLogger } from '#src/logger.js';
 //   - Projects
 //   - Webhook → Issue + Comment + Project events
 //
-// Idempotency is by lifecycle buckets, not `updatedAt`. Issue/project keys use
-// status/state so count-only or description churn reuses the raw_event;
-// comments key by id so edits do not mint another extract job.
+// Issue idempotency is by lifecycle bucket; when a status bucket repeats
+// (started→completed→started) the key gains `updatedAt` so the reopen is a
+// new immutable raw_event. Comments key by content digest so body edits mint
+// a revision row. Projects stay on state-only keys.
 
 const log = childLogger('integrations:linear');
 
@@ -173,6 +174,29 @@ interface LinearProjectNode {
 
 interface LinearCursor {
   updated_after?: string;
+  /** Last observed lifecycle bucket per Linear issue id. */
+  issue_statuses?: Record<string, string>;
+}
+
+const LINEAR_ISSUE_STATUS_CURSOR_CAP = 5_000;
+
+function pruneIssueStatuses(
+  map: Record<string, string>,
+  keepIds: ReadonlySet<string>,
+): Record<string, string> {
+  const entries = Object.entries(map);
+  if (entries.length <= LINEAR_ISSUE_STATUS_CURSOR_CAP) return map;
+  const next: Record<string, string> = {};
+  for (const id of keepIds) {
+    const value = map[id];
+    if (value) next[id] = value;
+  }
+  if (Object.keys(next).length < Math.min(keepIds.size, 64)) {
+    for (const [id, value] of entries.slice(-Math.floor(LINEAR_ISSUE_STATUS_CURSOR_CAP / 2))) {
+      next[id] = value;
+    }
+  }
+  return next;
 }
 
 const ISSUE_FIELDS = `
@@ -248,7 +272,27 @@ function linearStatus(stateType: string): 'open' | 'in_progress' | 'done' | 'can
   }
 }
 
-function issueToEvent(node: LinearIssueNode): IntegrationEvent {
+function linearIssueDedupKey(
+  node: Pick<LinearIssueNode, 'id' | 'updatedAt' | 'state'>,
+  opts?: { previousStatus?: string | null; forceTransition?: boolean },
+): string {
+  const status = linearStatus(node.state.type);
+  const transitioned =
+    opts?.forceTransition === true ||
+    (opts?.previousStatus != null && opts.previousStatus !== status);
+  return transitioned
+    ? `linear:issue:${node.id}:${status}:${node.updatedAt}`
+    : `linear:issue:${node.id}:${status}`;
+}
+
+function linearCommentBodyDigest(body: string): string {
+  return createHash('sha256').update(body).digest('hex').slice(0, 16);
+}
+
+function issueToEvent(
+  node: LinearIssueNode,
+  opts?: { previousStatus?: string | null; forceTransition?: boolean },
+): IntegrationEvent {
   const actor: { externalId?: string; name?: string; email?: string } | null = node.assignee
     ? {
         externalId: node.assignee.id,
@@ -261,7 +305,7 @@ function issueToEvent(node: LinearIssueNode): IntegrationEvent {
   if (stateType === 'completed' || stateType === 'canceled') eventType = `issue.${stateType}`;
   const priority = linearPriorityLabel(node.priority);
   return {
-    dedupKey: `linear:issue:${node.id}:${linearStatus(stateType)}`,
+    dedupKey: linearIssueDedupKey(node, opts),
     provider: 'linear',
     externalObjectId: node.id,
     externalEventId: node.updatedAt,
@@ -310,8 +354,9 @@ function commentToEvent(node: LinearCommentNode): IntegrationEvent {
         ...(node.user.email ? { email: node.user.email } : {}),
       }
     : null;
+  const bodyDigest = linearCommentBodyDigest(node.body);
   return {
-    dedupKey: `linear:comment:${node.id}`,
+    dedupKey: `linear:comment:${node.id}:${bodyDigest}`,
     provider: 'linear',
     externalObjectId: `${node.issue.id}#comment:${node.id}`,
     externalEventId: node.updatedAt,
@@ -386,8 +431,10 @@ async function paginateIssues(
   since: string | null,
   teamIds: string[],
   ctx: SyncContext,
-): Promise<string> {
+  issueStatuses: Record<string, string>,
+): Promise<{ latest: string; issueStatuses: Record<string, string> }> {
   let latest = since ?? '';
+  let statuses = { ...issueStatuses };
   const filterClauses: string[] = [];
   if (since) filterClauses.push('updatedAt: { gt: $since }');
   if (teamIds.length > 0) filterClauses.push('team: { id: { in: $teamIds } }');
@@ -419,11 +466,21 @@ async function paginateIssues(
         }
       ).issues,
     async (nodes) => {
-      await ctx.writeEvents(nodes.map(issueToEvent));
+      const touched = new Set<string>();
+      await ctx.writeEvents(
+        nodes.map((node) => {
+          const previous = statuses[node.id];
+          const event = issueToEvent(node, { previousStatus: previous });
+          statuses[node.id] = linearStatus(node.state.type);
+          touched.add(node.id);
+          return event;
+        }),
+      );
       for (const n of nodes) if (n.updatedAt > latest) latest = n.updatedAt;
+      statuses = pruneIssueStatuses(statuses, touched);
     },
   );
-  return latest;
+  return { latest, issueStatuses: statuses };
 }
 
 async function paginateComments(
@@ -634,10 +691,15 @@ export const linearProvider: IntegrationProvider = {
       // sync starts from current state.
       await ctx.persistTokens(linearTokens as unknown as Record<string, unknown>);
     }
-    const latestIssues = await paginateIssues(linearTokens, null, teamIds, ctx);
+    const issues = await paginateIssues(linearTokens, null, teamIds, ctx, {});
     const latestComments = await paginateComments(linearTokens, null, teamIds, ctx);
     const latestProjects = await paginateProjects(linearTokens, null, teamIds, ctx);
-    if (latestIssues) await ctx.saveCursor('linear.issues', { updated_after: latestIssues });
+    if (issues.latest) {
+      await ctx.saveCursor('linear.issues', {
+        updated_after: issues.latest,
+        issue_statuses: issues.issueStatuses,
+      });
+    }
     if (latestComments) await ctx.saveCursor('linear.comments', { updated_after: latestComments });
     if (latestProjects) await ctx.saveCursor('linear.projects', { updated_after: latestProjects });
   },
@@ -657,10 +719,19 @@ export const linearProvider: IntegrationProvider = {
     const issuesSince = issuesCursor.updated_after ?? fallback;
     const commentsSince = commentsCursor.updated_after ?? fallback;
     const projectsSince = projectsCursor.updated_after ?? fallback;
-    const latestIssues = await paginateIssues(linearTokens, issuesSince, teamIds, ctx);
+    const issues = await paginateIssues(
+      linearTokens,
+      issuesSince,
+      teamIds,
+      ctx,
+      issuesCursor.issue_statuses ?? {},
+    );
     const latestComments = await paginateComments(linearTokens, commentsSince, teamIds, ctx);
     const latestProjects = await paginateProjects(linearTokens, projectsSince, teamIds, ctx);
-    await ctx.saveCursor('linear.issues', { updated_after: latestIssues || issuesSince });
+    await ctx.saveCursor('linear.issues', {
+      updated_after: issues.latest || issuesSince,
+      issue_statuses: issues.issueStatuses,
+    });
     await ctx.saveCursor('linear.comments', { updated_after: latestComments || commentsSince });
     await ctx.saveCursor('linear.projects', { updated_after: latestProjects || projectsSince });
   },
@@ -671,6 +742,7 @@ export const linearProvider: IntegrationProvider = {
       action?: string;
       type?: string;
       data?: Record<string, unknown>;
+      updatedFrom?: Record<string, unknown>;
       createdAt?: string;
     };
     if (!p.data) return [];
@@ -678,7 +750,13 @@ export const linearProvider: IntegrationProvider = {
       case 'Issue': {
         const node = p.data as unknown as LinearIssueNode;
         if (!node.id || !node.updatedAt) return [];
-        return [issueToEvent(node)];
+        const updatedFrom = p.updatedFrom;
+        const forceTransition = Boolean(
+          updatedFrom &&
+          (Object.prototype.hasOwnProperty.call(updatedFrom, 'stateId') ||
+            Object.prototype.hasOwnProperty.call(updatedFrom, 'state')),
+        );
+        return [issueToEvent(node, { forceTransition })];
       }
       case 'Comment': {
         const node = p.data as unknown as LinearCommentNode;

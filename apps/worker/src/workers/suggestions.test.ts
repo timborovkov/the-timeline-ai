@@ -340,6 +340,40 @@ describe('processSuggestionJobForTests', () => {
     expect(row?.sourceMetadata).toHaveProperty('suggestions_skipped_at');
   });
 
+  it('skips integration-sourced events before requiring OPENROUTER_API_KEY', async () => {
+    const rawEventId = '99999999-4444-4444-8444-444444444445';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      source: 'integration',
+      text: 'Monday item updated',
+      sourceMetadata: {
+        integration_provider: 'monday',
+        integration_external_id: 'item-1',
+      },
+    });
+    const chat = emptyModel();
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      {
+        getEnv: () => ({ OPENROUTER_API_KEY: undefined }) as never,
+        chatStructured: chat,
+        modelId: MODEL_ID,
+      },
+    );
+
+    expect(chat).not.toHaveBeenCalled();
+    const [row] = await db
+      .select({ sourceMetadata: rawEvents.sourceMetadata })
+      .from(rawEvents)
+      .where(eq(rawEvents.id, rawEventId))
+      .limit(1);
+    expect(row?.sourceMetadata).toMatchObject({
+      suggestions_skipped_reason: 'integration_structured_source',
+    });
+  });
+
   it('skips queued ingest webhook proposals when the source setting is disabled before processing', async () => {
     const webhookId = '99999999-1111-4111-8111-111111111111';
     const rawEventId = '99999999-2222-4222-8222-222222222222';
