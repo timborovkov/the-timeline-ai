@@ -1,21 +1,21 @@
 import { getEnv } from '@timeline/shared';
 
 import {
-  extractDocxInDaytonaSandbox,
+  extractOfficeInDaytonaSandbox,
   extractPdfInDaytonaSandbox,
   isDaytonaConfigured,
 } from '#src/document-ingestion/daytona.js';
 import {
   DaytonaNotConfiguredError,
-  type SandboxDocxExtractResult,
+  type SandboxOfficeExtractResult,
   type SandboxPdfExtractResult,
 } from '#src/document-ingestion/types.js';
 
 export {
-  DOCX_SANDBOX_MODEL,
-  PDF_SANDBOX_MODEL,
+  ANYDOC_SANDBOX_MODEL,
+  resolveAnydocFormatHint,
   shouldAcceptSandboxPdfText,
-  type SandboxDocxExtractResult,
+  type SandboxOfficeExtractResult,
   type SandboxPdfExtractResult,
 } from '#src/document-ingestion/types.js';
 
@@ -42,17 +42,25 @@ export async function extractPdfForDocument(body: Buffer): Promise<SandboxPdfExt
   throw new DaytonaNotConfiguredError('PDF');
 }
 
-export async function extractDocxForDocument(body: Buffer): Promise<SandboxDocxExtractResult> {
+/**
+ * Office formats via Daytona anydoc. In-process hatch only supports DOCX
+ * via mammoth; other office formats require Daytona.
+ */
+export async function extractOfficeForDocument(
+  body: Buffer,
+  formatHint: string,
+): Promise<SandboxOfficeExtractResult> {
+  const format = formatHint.trim().toLowerCase();
   if (isDaytonaConfigured()) {
-    return extractDocxInDaytonaSandbox(body);
+    return extractOfficeInDaytonaSandbox(body, format);
   }
   const env = getEnv();
-  if (env.DOCUMENT_EXTRACT_ALLOW_INPROCESS) {
+  if (env.DOCUMENT_EXTRACT_ALLOW_INPROCESS && (format === 'docx' || format === 'docm')) {
     // Dev escape hatch: mammoth stays local-only and is never loaded on
     // the production extract hot path when Daytona is configured.
     const mammoth = await import('mammoth');
     const result = await mammoth.extractRawText({ buffer: body });
-    return { text: result.value };
+    return { text: result.value, method: 'inprocess-mammoth' };
   }
-  throw new DaytonaNotConfiguredError('DOCX');
+  throw new DaytonaNotConfiguredError('office');
 }

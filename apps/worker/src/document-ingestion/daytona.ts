@@ -4,15 +4,14 @@ import { childLogger, getEnv } from '@timeline/shared';
 import { resolveDocumentExtractSnapshotName } from '#src/document-ingestion/document-extract-snapshot.js';
 import {
   maxVisionPages,
-  type SandboxDocxExtractResult,
+  type SandboxOfficeExtractResult,
   type SandboxPdfExtractResult,
 } from '#src/document-ingestion/types.js';
 
 const log = childLogger('worker:document-ingestion:daytona');
 
 const REMOTE_WORK = '/tmp/timeline-extract';
-const REMOTE_PDF_SCRIPT = '/opt/timeline/extract_pdf.py';
-const REMOTE_DOCX_SCRIPT = '/opt/timeline/extract_docx.py';
+const REMOTE_ANYDOC_SCRIPT = '/opt/timeline/extract_anydoc.py';
 
 function createDaytonaClient(): Daytona {
   const env = getEnv();
@@ -125,38 +124,61 @@ export async function downloadSandboxPageImages(
   return images;
 }
 
+interface ExtractDocumentInDaytonaOptions {
+  /** anydoc format hint (pdf, docx, pptx, …). */
+  formatHint: string;
+  /** Remote filename suffix / extension for the uploaded bytes. */
+  remoteFilename?: string;
+  timeoutSeconds?: number;
+}
+
 /**
- * Upload PDF bytes into a fresh Daytona sandbox, run the baked Python
- * extractor, and return text + optional page PNGs for vision.
+ * Upload document bytes into a fresh Daytona sandbox, run the baked anydoc
+ * extractor, and return text (+ optional page PNGs for sparse PDFs).
  */
-export async function extractPdfInDaytonaSandbox(body: Buffer): Promise<SandboxPdfExtractResult> {
+async function extractDocumentInDaytonaSandbox(
+  body: Buffer,
+  options: ExtractDocumentInDaytonaOptions,
+): Promise<SandboxPdfExtractResult> {
   const env = getEnv();
   const sparseChars = env.DOCUMENT_EXTRACT_SPARSE_TEXT_CHARS;
   const maxPages = maxVisionPages(env.DOCUMENT_EXTRACT_MAX_VISION_PAGES);
+  const trimmedHint = options.formatHint.trim().toLowerCase();
+  const formatHint = trimmedHint.length > 0 ? trimmedHint : 'pdf';
+  const remoteName = options.remoteFilename?.trim() ?? `input.${formatHint}`;
+  const timeoutSeconds = options.timeoutSeconds ?? (formatHint === 'pdf' ? 90 : 60);
 
   return withSandbox(async (sandbox) => {
     await sandbox.process.executeCommand(`mkdir -p ${REMOTE_WORK}/pages`);
-    const remotePdf = `${REMOTE_WORK}/input.pdf`;
-    await sandbox.fs.uploadFile(body, remotePdf);
+    const remotePath = `${REMOTE_WORK}/${remoteName}`;
+    await sandbox.fs.uploadFile(body, remotePath);
 
     const cmd = [
       'python3',
-      REMOTE_PDF_SCRIPT,
+      REMOTE_ANYDOC_SCRIPT,
       '--input',
-      remotePdf,
+      remotePath,
       '--out-dir',
       REMOTE_WORK,
       '--sparse-chars',
       String(sparseChars),
       '--max-pages',
       String(maxPages),
+      '--format',
+      formatHint,
     ].join(' ');
-    const response = await sandbox.process.executeCommand(cmd, undefined, undefined, 90);
-    const parsed = readSandboxCommandJson(response, 'sandbox PDF extract');
+    const response = await sandbox.process.executeCommand(
+      cmd,
+      undefined,
+      undefined,
+      timeoutSeconds,
+    );
+    const parsed = readSandboxCommandJson(response, 'sandbox anydoc extract');
     const text = typeof parsed.text === 'string' ? parsed.text : '';
-    const method = typeof parsed.method === 'string' ? parsed.method : 'unknown';
+    const method = typeof parsed.method === 'string' ? parsed.method : 'anydoc';
     const pageCount = typeof parsed.pageCount === 'number' ? parsed.pageCount : 0;
-    const sparse = parsed.sparse === true || text.trim().length < sparseChars;
+    const sparse =
+      formatHint === 'pdf' ? parsed.sparse === true || text.trim().length < sparseChars : false;
     const pageImagePaths = Array.isArray(parsed.pageImagePaths)
       ? parsed.pageImagePaths.filter((p): p is string => typeof p === 'string')
       : [];
@@ -164,7 +186,7 @@ export async function extractPdfInDaytonaSandbox(body: Buffer): Promise<SandboxP
     const title =
       typeof parsed.title === 'string' && parsed.title.trim() ? parsed.title.trim() : undefined;
     let pageImages: Buffer[] = [];
-    if (sparse && pageImagePaths.length > 0) {
+    if (formatHint === 'pdf' && sparse && pageImagePaths.length > 0) {
       try {
         pageImages = await downloadSandboxPageImages(sandbox, pageImagePaths);
       } catch (err: unknown) {
@@ -181,11 +203,15 @@ export async function extractPdfInDaytonaSandbox(body: Buffer): Promise<SandboxP
       }
     }
 
-    // Empty text + no page images is still ok when sparse: caller falls back
-    // to full-PDF vision. Hard-fail only when the sandbox produced nothing
-    // usable and did not mark the result sparse (dense path with empty text).
-    if (!text.trim() && pageImages.length === 0 && !sparse) {
-      throw new Error(error ?? 'sandbox PDF extract produced no text or page images');
+    if (formatHint === 'pdf') {
+      // Empty text + no page images is still ok when sparse: caller falls back
+      // to full-PDF vision. Hard-fail only when the sandbox produced nothing
+      // usable and did not mark the result sparse (dense path with empty text).
+      if (!text.trim() && pageImages.length === 0 && !sparse) {
+        throw new Error(error ?? 'sandbox PDF extract produced no text or page images');
+      }
+    } else if (parsed.ok !== true && !text.trim()) {
+      throw new Error(error ?? 'sandbox anydoc extract failed');
     }
 
     return {
@@ -200,22 +226,33 @@ export async function extractPdfInDaytonaSandbox(body: Buffer): Promise<SandboxP
   });
 }
 
-/** Upload DOCX bytes into a Daytona sandbox and return plain text. */
-export async function extractDocxInDaytonaSandbox(body: Buffer): Promise<SandboxDocxExtractResult> {
-  return withSandbox(async (sandbox) => {
-    await sandbox.process.executeCommand(`mkdir -p ${REMOTE_WORK}`);
-    const remoteDocx = `${REMOTE_WORK}/input.docx`;
-    await sandbox.fs.uploadFile(body, remoteDocx);
-    const cmd = ['python3', REMOTE_DOCX_SCRIPT, '--input', remoteDocx].join(' ');
-    const response = await sandbox.process.executeCommand(cmd, undefined, undefined, 60);
-    const parsed = readSandboxCommandJson(response, 'sandbox DOCX extract');
-    const text = typeof parsed.text === 'string' ? parsed.text : '';
-    const error = typeof parsed.error === 'string' ? parsed.error : undefined;
-    if (parsed.ok !== true && !text.trim()) {
-      throw new Error(error ?? 'sandbox DOCX extract failed');
-    }
-    return { text, ...(error ? { error } : {}) };
+/**
+ * Upload PDF bytes into a fresh Daytona sandbox, run anydoc (+ optional
+ * page PNG render), and return text + optional page PNGs for vision.
+ */
+export async function extractPdfInDaytonaSandbox(body: Buffer): Promise<SandboxPdfExtractResult> {
+  return extractDocumentInDaytonaSandbox(body, {
+    formatHint: 'pdf',
+    remoteFilename: 'input.pdf',
+    timeoutSeconds: 90,
   });
+}
+
+/** Upload office bytes into a Daytona sandbox and return anydoc Markdown. */
+export async function extractOfficeInDaytonaSandbox(
+  body: Buffer,
+  formatHint: string,
+): Promise<SandboxOfficeExtractResult> {
+  const result = await extractDocumentInDaytonaSandbox(body, {
+    formatHint,
+    remoteFilename: `input.${formatHint}`,
+    timeoutSeconds: 60,
+  });
+  return {
+    text: result.text,
+    method: result.method,
+    ...(result.error ? { error: result.error } : {}),
+  };
 }
 
 export function isDaytonaConfigured(): boolean {

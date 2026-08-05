@@ -5,6 +5,7 @@ import {
   isDaytonaNotConfiguredError,
   isPlausibleSandboxPdfText,
   maxVisionPages,
+  resolveAnydocFormatHint,
   shouldAcceptSandboxPdfText,
 } from '#src/document-ingestion/types.js';
 
@@ -12,7 +13,7 @@ describe('shouldAcceptSandboxPdfText', () => {
   it('accepts non-sparse plausible text', () => {
     expect(
       shouldAcceptSandboxPdfText({
-        text: 'enough text from pdfplumber about the quarterly report',
+        text: 'enough text from anydoc about the quarterly report summary',
         sparse: false,
       }),
     ).toBe(true);
@@ -45,5 +46,19 @@ describe('maxVisionPages', () => {
     expect(maxVisionPages(20)).toBe(20);
     expect(maxVisionPages(0)).toBe(1);
     expect(maxVisionPages(500)).toBe(100);
+  });
+});
+
+describe('resolveAnydocFormatHint', () => {
+  it('resolves MIME and extension for office + PDF', () => {
+    expect(
+      resolveAnydocFormatHint(
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'deck.bin',
+      ),
+    ).toBe('pptx');
+    expect(resolveAnydocFormatHint('application/octet-stream', 'sheet.xlsx')).toBe('xlsx');
+    expect(resolveAnydocFormatHint('application/pdf', 'scan.pdf')).toBe('pdf');
+    expect(resolveAnydocFormatHint('text/csv', 'data.csv')).toBeUndefined();
   });
 });

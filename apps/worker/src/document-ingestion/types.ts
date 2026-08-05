@@ -1,6 +1,6 @@
 /**
- * Result of isolated PDF parsing inside a Daytona sandbox.
- * Vision fallback (sparse text / page images) runs in the extract service.
+ * Result of isolated document parsing inside a Daytona sandbox.
+ * Vision fallback (sparse PDF / page images) runs in the extract service.
  */
 export interface SandboxPdfExtractResult {
   text: string;
@@ -14,32 +14,34 @@ export interface SandboxPdfExtractResult {
   error?: string;
 }
 
-export interface SandboxDocxExtractResult {
+/** Office / non-PDF anydoc sandbox result (no page images). */
+export interface SandboxOfficeExtractResult {
   text: string;
+  method: string;
   error?: string;
 }
 
-/** Model stamp for Daytona sandbox PDF text extraction. */
-export const PDF_SANDBOX_MODEL = 'daytona-pdfplumber-pypdfium2@1';
+/** Model stamp for Daytona anydoc sandbox extraction. */
+export const ANYDOC_SANDBOX_MODEL = 'daytona-anydoc@1';
 
-/** Model stamp for Daytona sandbox DOCX text extraction. */
-export const DOCX_SANDBOX_MODEL = 'daytona-python-docx@1';
+export type DaytonaExtractSurface = 'PDF' | 'office' | 'DOCX';
 
 export function maxVisionPages(configured: number): number {
   return Math.max(1, Math.min(configured, 100));
 }
 
 /**
- * Thrown when PDF/DOCX extract needs Daytona but `DAYTONA_API_KEY` is unset
+ * Thrown when document extract needs Daytona but `DAYTONA_API_KEY` is unset
  * and the in-process escape hatch is off. Callers must fail closed — do not
  * fall through to vision on a credentialed full worker.
  */
 export class DaytonaNotConfiguredError extends Error {
   readonly code = 'DAYTONA_NOT_CONFIGURED' as const;
 
-  constructor(surface: 'PDF' | 'DOCX') {
+  constructor(surface: DaytonaExtractSurface) {
+    const label = surface === 'DOCX' ? 'office' : surface;
     super(
-      `Daytona is not configured for ${surface} extraction (set DAYTONA_API_KEY or DOCUMENT_EXTRACT_ALLOW_INPROCESS=true for local escape hatch)`,
+      `Daytona is not configured for ${label} extraction (set DAYTONA_API_KEY or DOCUMENT_EXTRACT_ALLOW_INPROCESS=true for local escape hatch)`,
     );
     this.name = 'DaytonaNotConfiguredError';
   }
@@ -84,4 +86,70 @@ export function shouldAcceptSandboxPdfText(
   // then require plausible text so dense OCR garbage falls through to vision.
   const text = result.text.trim();
   return Boolean(text) && !result.sparse && isPlausibleSandboxPdfText(text);
+}
+
+/**
+ * Formats handled by Daytona anydoc (not UTF-8 text/*, not images).
+ * CSV stays on the cheap UTF-8 path in the worker router.
+ */
+const ANYDOC_FORMAT_BY_EXTENSION: Record<string, string> = {
+  // Word
+  doc: 'doc',
+  docx: 'docx',
+  docm: 'docm',
+  // PowerPoint
+  ppt: 'ppt',
+  pps: 'pps',
+  pot: 'pot',
+  pptx: 'pptx',
+  pptm: 'pptm',
+  ppsx: 'ppsx',
+  ppsm: 'ppsm',
+  // Excel
+  xls: 'xls',
+  xlsx: 'xlsx',
+  xlsm: 'xlsm',
+  xlsb: 'xlsb',
+  // OpenDocument
+  odt: 'odt',
+  ods: 'ods',
+  odp: 'odp',
+  // Other
+  rtf: 'rtf',
+  epub: 'epub',
+  pdf: 'pdf',
+};
+
+const ANYDOC_FORMAT_BY_MIME: Record<string, string> = {
+  'application/pdf': 'pdf',
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.ms-word.document.macroenabled.12': 'docm',
+  'application/vnd.ms-powerpoint': 'ppt',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+  'application/vnd.openxmlformats-officedocument.presentationml.slideshow': 'ppsx',
+  'application/vnd.ms-powerpoint.presentation.macroenabled.12': 'pptm',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.ms-excel.sheet.macroenabled.12': 'xlsm',
+  'application/vnd.ms-excel.sheet.binary.macroenabled.12': 'xlsb',
+  'application/vnd.oasis.opendocument.text': 'odt',
+  'application/vnd.oasis.opendocument.spreadsheet': 'ods',
+  'application/vnd.oasis.opendocument.presentation': 'odp',
+  'application/rtf': 'rtf',
+  'text/rtf': 'rtf',
+  'application/epub+zip': 'epub',
+};
+
+export function resolveAnydocFormatHint(contentType: string, filename: string): string | undefined {
+  const ct = contentType.toLowerCase().split(';')[0]?.trim() ?? '';
+  if (ct && ANYDOC_FORMAT_BY_MIME[ct]) {
+    return ANYDOC_FORMAT_BY_MIME[ct];
+  }
+  const extMatch = /\.([a-z0-9]+)$/i.exec(filename);
+  const ext = extMatch?.[1]?.toLowerCase();
+  if (ext && ANYDOC_FORMAT_BY_EXTENSION[ext]) {
+    return ANYDOC_FORMAT_BY_EXTENSION[ext];
+  }
+  return undefined;
 }

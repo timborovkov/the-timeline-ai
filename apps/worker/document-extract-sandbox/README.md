@@ -1,11 +1,13 @@
 # Document-extract Daytona snapshot
 
-Python tools baked into the content-hashed Daytona snapshot
+Tools baked into the content-hashed Daytona snapshot
 `timeline-document-extract-<hash>` (ADR 0013).
 
-- `extract_pdf.py` — pdfplumber → pypdfium2 → sparse page PNG render
-- `extract_docx.py` — python-docx plain text
-- `requirements.txt` — pinned sandbox deps
+- `extract_anydoc.py` — Firecrawl anydoc → Markdown for office + text PDFs;
+  sparse / scanned PDFs render page PNGs via pypdfium2 for host vision
+- `requirements.txt` — pinned `firecrawl-anydoc` + `pypdfium2`
+
+No hosted Firecrawl `/parse`. Sandboxes run with `networkBlockAll`.
 
 ## Lifecycle
 

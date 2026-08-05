@@ -25,9 +25,8 @@ describe('document-extract snapshot naming', () => {
   it('hashes sandbox inputs stably and ignores markdown', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'doc-extract-snap-'));
     await writeSandbox(dir, {
-      'requirements.txt': 'pdfplumber==0.11.0\n',
-      'extract_pdf.py': 'print("pdf")\n',
-      'extract_docx.py': 'print("docx")\n',
+      'requirements.txt': 'firecrawl-anydoc==0.1.6\n',
+      'extract_anydoc.py': 'print("anydoc")\n',
       'README.md': 'docs only\n',
     });
 
@@ -39,7 +38,7 @@ describe('document-extract snapshot naming', () => {
     await writeFile(join(dir, 'README.md'), 'docs changed\n');
     expect(await hashDocumentExtractSandbox(dir)).toBe(first);
 
-    await writeFile(join(dir, 'requirements.txt'), 'pdfplumber==0.11.1\n');
+    await writeFile(join(dir, 'requirements.txt'), 'firecrawl-anydoc==0.1.7\n');
     expect(await hashDocumentExtractSandbox(dir)).not.toBe(first);
   });
 
@@ -54,8 +53,7 @@ describe('document-extract snapshot naming', () => {
     const dir = await mkdtemp(join(tmpdir(), 'doc-extract-snap-'));
     await writeSandbox(dir, {
       'requirements.txt': 'x\n',
-      'extract_pdf.py': 'x\n',
-      'extract_docx.py': 'x\n',
+      'extract_anydoc.py': 'x\n',
     });
     const hash = await hashDocumentExtractSandbox(dir);
     const expected = documentExtractSnapshotName(hash);
@@ -76,8 +74,7 @@ describe('ensureDocumentExtractSnapshot', () => {
     const dir = await mkdtemp(join(tmpdir(), 'doc-extract-snap-'));
     await writeSandbox(dir, {
       'requirements.txt': 'x\n',
-      'extract_pdf.py': 'x\n',
-      'extract_docx.py': 'x\n',
+      'extract_anydoc.py': 'x\n',
     });
     const get = vi.fn().mockResolvedValue({ name: 'exists' });
     const create = vi.fn();
@@ -101,8 +98,7 @@ describe('ensureDocumentExtractSnapshot', () => {
     const dir = await mkdtemp(join(tmpdir(), 'doc-extract-snap-'));
     await writeSandbox(dir, {
       'requirements.txt': 'x\n',
-      'extract_pdf.py': 'x\n',
-      'extract_docx.py': 'x\n',
+      'extract_anydoc.py': 'x\n',
     });
     const get = vi
       .fn()

@@ -26,7 +26,8 @@ import { eq } from 'drizzle-orm';
 // so the package `#src/*` map would resolve to dist/ and break knip/CI when
 // dist is absent. Source-relative paths stay analyzable.
 import {
-  extractDocxForDocument,
+  ANYDOC_SANDBOX_MODEL,
+  extractOfficeForDocument,
   extractPdfForDocument,
 } from '../src/document-ingestion/pdf-extraction.js';
 import { processDocumentExtractJob } from '../src/workers/documentExtract.js';
@@ -36,15 +37,23 @@ const OWNER_ID = '10000000-0000-4000-8000-000000000001';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_PDF = join(HERE, '../test/fixtures/pdfs/text-based-dummy.pdf');
+const DEFAULT_DOCX = join(HERE, '../test/fixtures/office/minimal.docx');
 
-type Mode = 'pdf' | 'docx' | 'queue';
+type Mode = 'pdf' | 'docx' | 'pptx' | 'xlsx' | 'queue';
 
 function parseArgs(): { mode: Mode; fixturePath: string } {
   const mode = (process.argv[2] ?? 'pdf') as Mode;
-  if (mode !== 'pdf' && mode !== 'docx' && mode !== 'queue') {
+  if (!['pdf', 'docx', 'pptx', 'xlsx', 'queue'].includes(mode)) {
     throw new Error(`unsupported mode ${mode}`);
   }
-  const fixturePath = process.argv[3] ?? (mode === 'docx' ? '/tmp/dense-e2e.docx' : DEFAULT_PDF);
+  const defaults: Record<Mode, string> = {
+    pdf: DEFAULT_PDF,
+    docx: DEFAULT_DOCX,
+    pptx: join(HERE, '../test/fixtures/office/minimal.pptx'),
+    xlsx: join(HERE, '../test/fixtures/office/minimal.xlsx'),
+    queue: DEFAULT_PDF,
+  };
+  const fixturePath = process.argv[3] ?? defaults[mode];
   return { mode, fixturePath };
 }
 
@@ -73,9 +82,9 @@ function realExtractIO(stubEmbed: boolean) {
     }) {
       return llm.extractTextFromMedia(input);
     },
-    async extractDocx(bodyBuf: Buffer) {
-      const out = await extractDocxForDocument(bodyBuf);
-      return { text: out.text };
+    async extractOffice(bodyBuf: Buffer, formatHint: string) {
+      const out = await extractOfficeForDocument(bodyBuf, formatHint);
+      return { text: out.text, model: `${ANYDOC_SANDBOX_MODEL}+${out.method}` };
     },
     async extractPdfSandbox(bodyBuf: Buffer) {
       return extractPdfForDocument(bodyBuf);
@@ -177,17 +186,36 @@ async function printSummary(versionId: string, result?: unknown): Promise<void> 
   }
 }
 
+function contentTypeForMode(mode: Mode, fixturePath: string): { contentType: string; ext: string } {
+  if (mode === 'docx' || fixturePath.endsWith('.docx')) {
+    return {
+      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      ext: 'docx',
+    };
+  }
+  if (mode === 'pptx' || fixturePath.endsWith('.pptx')) {
+    return {
+      contentType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      ext: 'pptx',
+    };
+  }
+  if (mode === 'xlsx' || fixturePath.endsWith('.xlsx')) {
+    return {
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      ext: 'xlsx',
+    };
+  }
+  return { contentType: 'application/pdf', ext: 'pdf' };
+}
+
 async function main(): Promise<void> {
   const { mode, fixturePath } = parseArgs();
   const body = readFileSync(fixturePath);
-  const isDocx = mode === 'docx' || fixturePath.endsWith('.docx');
-  const contentType = isDocx
-    ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-    : 'application/pdf';
-  const filename = isDocx ? 'daytona-e2e.docx' : 'daytona-e2e.pdf';
+  const { contentType, ext } = contentTypeForMode(mode, fixturePath);
+  const filename = `daytona-e2e.${ext}`;
 
   const uploaded = await createAndUpload({
-    name: `daytona-e2e-${mode}-${Date.now()}.${isDocx ? 'docx' : 'pdf'}`,
+    name: `daytona-e2e-${mode}-${Date.now()}.${ext}`,
     filename,
     contentType,
     body,

@@ -1,6 +1,6 @@
 # Daytona isolates untrusted document extraction
 
-Untrusted document bytes (PDF, DOCX, and related binaries) must not be opened
+Untrusted document bytes (PDF, Office, and related binaries) must not be opened
 inside the credentialed main worker. Extraction for every current
 `document-extract` ingest surface runs in a credential-thin extract service
 that parses files inside ephemeral Daytona sandboxes (`networkBlockAll`, no
@@ -26,17 +26,23 @@ authored by a trusted teammate.
    `WORKER_MODE=document-extract`. The full worker sets
    `DOCUMENT_EXTRACT_ENABLED=false` so only the extract service consumes the
    queue.
-2. **Daytona sandbox for parsers.** PDF/DOCX bytes are uploaded into a fresh
-   sandbox created from a content-hashed snapshot
+2. **Daytona sandbox + anydoc.** Untrusted binary formats are uploaded into a
+   fresh sandbox created from a content-hashed snapshot
    `timeline-document-extract-<hash>` (1 CPU / 2 GB, `networkBlockAll`, no
-   credentials). Python tries pdfplumber → pypdfium2; sparse text
-   (< 500 chars) renders up to 20 pages (env-capped at 100) to PNG. DOCX text
-   is extracted in the same sandbox.
-3. **Vision stays in the extract service.** Sandboxes cannot call OpenRouter
-   under `networkBlockAll`. Sparse PDF page images and `image/*` inputs are
-   transcribed via `llm.extractTextFromMedia` in the extract service Node
-   process.
-4. **Credential boundary.** Extract service env is limited to Daytona, OpenRouter,
+   credentials). The sandbox runs Firecrawl **anydoc** (`firecrawl-anydoc`)
+   to Markdown. Supported families include Word (`.doc`/`.docx`/`.docm`),
+   PowerPoint, Excel, OpenDocument (`.odt`/`.ods`/`.odp`), RTF, EPUB, and
+   text-based PDF. We do **not** call Firecrawl hosted `/parse` for team
+   uploads.
+3. **PDF vision stays in the extract service.** Sandboxes cannot call
+   OpenRouter under `networkBlockAll`. When anydoc returns sparse / empty /
+   unsupported (scanned) PDF text, pypdfium2 renders up to 20 pages
+   (env-capped at 100) to PNG and the extract service runs
+   `llm.extractTextFromMedia`. `image/*` inputs use the same vision path.
+4. **Cheap UTF-8 for real text.** `text/*`, JSON/XML, and text-ish extensions
+   (md/txt/csv/tsv/json/yaml/html/…) decode in-process without Daytona. CSV
+   is never routed through anydoc.
+5. **Credential boundary.** Extract service env is limited to Daytona, OpenRouter,
    Database, Redis, and S3 document-bucket access (`S3_ENDPOINT`, `S3_REGION`,
    access keys, `S3_BUCKET_DOCUMENTS`). In production
    `WORKER_MODE=document-extract`, `getEnv()` requires those credentials and
@@ -44,14 +50,14 @@ authored by a trusted teammate.
    (including unparsed secrets like `SLACK_CANARY_*`,
    `MCP_PREREGISTERED_*_CLIENT_SECRET`, `LANGSMITH_API_KEY`) cannot remain
    readable in the extract process.
-5. **Local escape hatch.** PDF/DOCX fail closed without Daytona unless
+6. **Local escape hatch.** Binary formats fail closed without Daytona unless
    `DOCUMENT_EXTRACT_ALLOW_INPROCESS=true` (or `1`; dev only — rejected when
-   `NODE_ENV=production`). Production full workers must set
-   `DOCUMENT_EXTRACT_ENABLED=false` (enforced in `apps/worker` entrypoint —
-   not shared `getEnv()`, so production web can boot with the same defaults).
-   Only `WORKER_MODE=document-extract` consumes that queue. Non-production
-   full workers still skip the consumer when Daytona is unset.
-6. **Content-hashed snapshot lifecycle.** The snapshot name is derived from a
+   `NODE_ENV=production`). The hatch uses mammoth for DOCX and empty-PDF→vision;
+   it does not run anydoc in the credentialed process. Production full workers
+   must set `DOCUMENT_EXTRACT_ENABLED=false` (enforced in `apps/worker`
+   entrypoint — not shared `getEnv()`, so production web can boot with the
+   same defaults).
+7. **Content-hashed snapshot lifecycle.** The snapshot name is derived from a
    hash of `apps/worker/document-extract-sandbox/**` (non-markdown files) plus
    an Image recipe revision constant. CI publishes/ensures that snapshot when
    those paths change; extract-main may create-once if missing
@@ -77,19 +83,22 @@ DAYTONA_SNAPSHOT=timeline-document-extract-<hash>
 
 ## Non-goals
 
+- Firecrawl hosted Parse / OCR API for team uploads.
 - Audio / `transcribe` / ffmpeg isolation (later).
 - Video ingest.
 - Meeting-bot raw audio (Recall transcripts only; unchanged).
 - Fact extraction (`extract` queue) — operates on already-text events.
 - Daytona warm pools and per-document fingerprint skip-reuse.
+- Running anydoc in web or full-worker address space.
 
 ## Consequences
 
-- Main worker no longer loads untrusted PDF/DOCX parsers on the hot path.
+- Main worker no longer loads untrusted PDF/Office parsers on the hot path.
 - Extract service still has DB write + S3 read + OpenRouter; compromise is
   narrower than full worker secret theft but not zero.
 - Operators set `DAYTONA_*` on the extract service. Snapshot drift is avoided
   by content-hash names + CI ensure; first boot without a published snapshot
-  may be slow when boot ensure creates it.
+  may be slow when boot ensure creates it. Sandbox/deps changes (including
+  anydoc pins) require a new content-hashed snapshot.
 - Document product behavior (chunking, embed fan-out, failed/retry UX, 25 MiB
-  cap) stays the same; only the trust boundary moves.
+  cap) stays the same; only the trust boundary and format coverage move.

@@ -15,10 +15,10 @@ import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, eq, sql } from 'drizzle-orm';
 
 import {
-  DOCX_SANDBOX_MODEL,
-  extractDocxForDocument,
+  ANYDOC_SANDBOX_MODEL,
+  extractOfficeForDocument,
   extractPdfForDocument,
-  PDF_SANDBOX_MODEL,
+  resolveAnydocFormatHint,
   shouldAcceptSandboxPdfText,
   type SandboxPdfExtractResult,
 } from '#src/document-ingestion/pdf-extraction.js';
@@ -26,7 +26,7 @@ import { isDaytonaNotConfiguredError } from '#src/document-ingestion/types.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 
 export {
-  PDF_SANDBOX_MODEL,
+  ANYDOC_SANDBOX_MODEL,
   shouldAcceptSandboxPdfText,
   type SandboxPdfExtractResult,
 } from '#src/document-ingestion/pdf-extraction.js';
@@ -53,8 +53,8 @@ export interface DocumentExtractIO {
   enqueueEmbed: (data: queue.EmbedJobData) => Promise<void>;
   /**
    * Gate for vision/OpenRouter. Called only when a route needs
-   * `extractFromMedia` (images, sparse PDFs). Text, DOCX, and accepted
-   * sandbox PDFs must succeed without OpenRouter.
+   * `extractFromMedia` (images, sparse PDFs). Text, office anydoc, and
+   * accepted sandbox PDFs must succeed without OpenRouter.
    */
   requireEnv: () => void;
   /**
@@ -74,13 +74,14 @@ export interface DocumentExtractIO {
     model: string;
   }>;
   /**
-   * DOCX text extraction. Production uses a Daytona sandbox (python-docx);
-   * the in-process mammoth path is only for DOCUMENT_EXTRACT_ALLOW_INPROCESS.
+   * Office text extraction (docx/pptx/xlsx/…). Production uses Daytona
+   * anydoc; in-process mammoth is only for DOCUMENT_EXTRACT_ALLOW_INPROCESS
+   * on DOCX.
    */
-  extractDocx: (body: Buffer) => Promise<{ text: string; model?: string }>;
+  extractOffice: (body: Buffer, formatHint: string) => Promise<{ text: string; model?: string }>;
   /**
-   * Isolated PDF text extract (Daytona pdfplumber/pypdfium2 + optional
-   * page PNGs). Tests inject fakes to assert accept/reject routing.
+   * Isolated PDF text extract (Daytona anydoc + optional page PNGs).
+   * Tests inject fakes to assert accept/reject routing.
    */
   extractPdfSandbox: (body: Buffer) => Promise<SandboxPdfExtractResult>;
 }
@@ -107,9 +108,9 @@ function defaultIO(): DocumentExtractIO {
           : {}),
       });
     },
-    async extractDocx(body) {
-      const result = await extractDocxForDocument(body);
-      return { text: result.text, model: DOCX_SANDBOX_MODEL };
+    async extractOffice(body, formatHint) {
+      const result = await extractOfficeForDocument(body, formatHint);
+      return { text: result.text, model: `${ANYDOC_SANDBOX_MODEL}+${result.method}` };
     },
     extractPdfSandbox(body) {
       return extractPdfForDocument(body);
@@ -120,7 +121,7 @@ function defaultIO(): DocumentExtractIO {
 // Code-version tag stamped on every successful extraction so the
 // `redocument-extract` script can re-drive jobs whose chunking policy
 // predates a change.
-const EXTRACT_CODE_VERSION = '2026-08-b';
+const EXTRACT_CODE_VERSION = '2026-08-c';
 
 // Cap on document size we will pull into memory for processing. Above
 // this, the worker stamps the version as 'failed' with a clear message
@@ -134,8 +135,8 @@ const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
  *   2. Load version + document; bail unrecoverably on mismatch / missing.
  *   3. Download the blob from RustFS (or defer oversized versions).
  *   4. Route by content type → text:
- *        text/* → UTF-8; DOCX → Daytona sandbox; PDF → Daytona
- *        pdfplumber/pypdfium2 (sparse → vision on page PNGs); images → vision.
+ *        text/* → UTF-8; office → Daytona anydoc; PDF → Daytona anydoc
+ *        (sparse → vision on page PNGs); images → vision.
  *   5. chunkText() to a uniform ~800/120 budget.
  *   6. Insert document_chunks rows + enqueue an embed job per chunk.
  *   7. Stamp version status = 'chunked' (embed promotes to 'embedded').
@@ -512,9 +513,10 @@ export function startDocumentExtractWorker(
  * Routes:
  *   - text/*, json, xml, recognised text-ish extensions → utf-8 read +
  *     NUL-byte heuristic against accidentally treating binary as text.
- *   - DOCX (Office Open XML) → `io.extractDocx` (Daytona sandbox).
- *   - application/pdf → Daytona pdfplumber/pypdfium2 when text is dense;
- *     otherwise vision OCR on rendered page PNGs (or full PDF).
+ *   - Office (doc/docx/pptx/xlsx/odt/rtf/epub/…) → `io.extractOffice`
+ *     (Daytona anydoc). No vision fallback.
+ *   - application/pdf → Daytona anydoc when text is dense; otherwise
+ *     vision OCR on rendered page PNGs (or full PDF).
  *   - image/* → `io.extractFromMedia` (vision LLM via OpenRouter).
  *   - Anything else → `{ failure }` with an honest reason string. Two
  *     failure modes the caller must distinguish:
@@ -556,7 +558,7 @@ async function routePdfContent(
   if (shouldAcceptSandboxPdfText(sandbox, sparseChars)) {
     return {
       representations: [{ kind: 'source_text', text: sandbox.text.trim() }],
-      model: `${PDF_SANDBOX_MODEL}+${sandbox.method}`,
+      model: `${ANYDOC_SANDBOX_MODEL}+${sandbox.method}`,
       ...(sandbox.title ? { suggestedTitle: sandbox.title } : {}),
     };
   }
@@ -620,14 +622,19 @@ async function routeContentToText(
     }
     return { representations: [{ kind: 'source_text', text }] };
   }
-  // DOCX (Office Open XML) — Daytona sandbox (python-docx). Old-school
-  // .doc (binary BIFF) remains unsupported. No vision fallback for DOCX.
-  if (
-    ct === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-    /\.docx$/i.test(input.name)
-  ) {
+  // PDF first so the sparse → vision path stays dedicated.
+  if (ct === 'application/pdf' || /\.pdf$/i.test(input.name)) {
+    return routePdfContent(input, io);
+  }
+  // Office / anydoc formats (docx, pptx, xlsx, odt, rtf, epub, legacy .doc, …).
+  // No vision fallback. CSV stays on the UTF-8 branch above.
+  const anydocFormat = resolveAnydocFormatHint(ct, input.name);
+  if (anydocFormat && anydocFormat !== 'pdf') {
     try {
-      const { text, model } = await io.extractDocx(input.body);
+      const { text, model } = await io.extractOffice(input.body, anydocFormat);
+      if (!text.trim()) {
+        return { failure: `anydoc produced empty text for format=${anydocFormat}` };
+      }
       return {
         representations: [{ kind: 'source_text', text }],
         ...(model ? { model } : {}),
@@ -640,11 +647,6 @@ async function routeContentToText(
       }
       throw err;
     }
-  }
-  // PDFs: Daytona pdfplumber/pypdfium2 when dense; vision for sparse /
-  // scanned / sandbox failures.
-  if (ct === 'application/pdf' || /\.pdf$/i.test(input.name)) {
-    return routePdfContent(input, io);
   }
   // Image extension fallback matches the PDF/DOCX behaviour above: when
   // RustFS loses the explicit Content-Type on PUT we still route the

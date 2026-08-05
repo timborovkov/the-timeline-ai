@@ -12,7 +12,7 @@ const log = childLogger('worker:document-ingestion:snapshot');
  * Bump when the Image recipe changes without a sandbox-dir file change
  * (base image, workdir, remote paths, resources, chmod set, etc.).
  */
-export const DOCUMENT_EXTRACT_SNAPSHOT_IMAGE_REVISION = '1';
+export const DOCUMENT_EXTRACT_SNAPSHOT_IMAGE_REVISION = '2';
 
 export const DOCUMENT_EXTRACT_SNAPSHOT_PREFIX = 'timeline-document-extract';
 
@@ -107,9 +107,8 @@ function buildDocumentExtractSnapshotImage(
   return Image.debianSlim('3.12')
     .pipInstallFromRequirements(join(sandboxDir, 'requirements.txt'))
     .workdir('/opt/timeline')
-    .addLocalFile(join(sandboxDir, 'extract_pdf.py'), '/opt/timeline/extract_pdf.py')
-    .addLocalFile(join(sandboxDir, 'extract_docx.py'), '/opt/timeline/extract_docx.py')
-    .runCommands('chmod +x /opt/timeline/extract_pdf.py /opt/timeline/extract_docx.py');
+    .addLocalFile(join(sandboxDir, 'extract_anydoc.py'), '/opt/timeline/extract_anydoc.py')
+    .runCommands('chmod +x /opt/timeline/extract_anydoc.py');
 }
 
 export interface EnsureDocumentExtractSnapshotResult {

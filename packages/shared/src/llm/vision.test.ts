@@ -126,7 +126,7 @@ describe('extractTextFromMedia', () => {
         { model },
       ),
     ).rejects.toThrow(/unsupported mediaType/);
-    // DOCX is extracted in a Daytona sandbox (python-docx), not via vision.
+    // DOCX is extracted in a Daytona sandbox (anydoc), not via vision.
   });
 
   it('sends sparse PDF pageImages as PNG parts (not a PDF file part)', async () => {
