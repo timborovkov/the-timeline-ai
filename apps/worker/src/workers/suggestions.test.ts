@@ -4652,7 +4652,6 @@ describe('processSuggestionJobForTests', () => {
     expect(chat).toHaveBeenCalledOnce();
     const prompt = (chat.mock.calls[0]?.[0] as { prompt: string }).prompt;
     expect(prompt).not.toContain('STALE_OUTSIDE_WINDOW');
-    expect(prompt).not.toContain('window message 1');
     expect(prompt).toContain(longMarker);
     expect(prompt).not.toContain(longBody);
     const evidenceSection = prompt.split('# Conversation evidence window')[1]?.split('# ')[0] ?? '';
@@ -4660,7 +4659,10 @@ describe('processSuggestionJobForTests', () => {
       .split('\n')
       .map((line) => line.trim())
       .filter((line) => line.startsWith('- ['));
-    expect(evidenceLines.length).toBeLessThanOrEqual(conversationReview.CONVERSATION_WINDOW_LIMIT);
+    expect(evidenceLines.length).toBe(conversationReview.CONVERSATION_WINDOW_LIMIT);
+    expect(evidenceLines.some((line) => line.includes('>window message 1</'))).toBe(false);
+    expect(evidenceLines.some((line) => line.includes('>window message 6</'))).toBe(false);
+    expect(evidenceLines.some((line) => line.includes('>window message 7</'))).toBe(true);
     expect(prompt.length).toBeLessThan(SUGGESTION_PROMPT_MAX_INPUT_TOKENS * 4);
   });
 
