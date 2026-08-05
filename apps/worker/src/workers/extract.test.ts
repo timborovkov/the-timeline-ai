@@ -116,6 +116,17 @@ describe('processExtractJobForTests', () => {
     ).toEqual({ rawEventId: 'raw-1', teamId: 'team-1' });
   });
 
+  it('recognizes BullMQ stall UnrecoverableErrors so extract does not stamp content failure', () => {
+    expect(
+      extractWorkerInternals.isBullMqStallFailure(
+        new Error('job stalled more than allowable limit'),
+      ),
+    ).toBe(true);
+    expect(extractWorkerInternals.isBullMqStallFailure(new Error('OPENROUTER_API_KEY missing'))).toBe(
+      false,
+    );
+  });
+
   it('extracts team-visible raw events into facts, entities, suggestion work, and embed fanout', async () => {
     const rawEventId = '33333333-3333-4333-8333-333333333333';
     await seedEvent(db, { id: rawEventId, text: 'Acme is evaluating Timeline for Q4.' });

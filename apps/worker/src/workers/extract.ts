@@ -431,6 +431,13 @@ export async function processExtractJobForTests(
  *     never enqueue extract before transcript exists, so this is a safety net.
  *   - LLM returns malformed JSON beyond zod repair → ai-sdk throws, BullMQ retries.
  */
+/** BullMQ default lock is 30s; LLM extract can outlive that across deploy/Redis blips. */
+const EXTRACT_LOCK_DURATION_MS = 5 * 60_000;
+
+function isBullMqStallFailure(err: unknown): boolean {
+  return err instanceof Error && /job stalled more than allowable limit/i.test(err.message);
+}
+
 export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.ExtractJobData> {
   const worker = new Worker<queue.ExtractJobData>(
     queue.QUEUE_NAMES.extract,
@@ -440,6 +447,9 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
       // One in-flight extraction per process. Extraction is heavier than
       // transcription per job and benefits less from parallelism.
       concurrency: 1,
+      lockDuration: EXTRACT_LOCK_DURATION_MS,
+      // Allow one stall recovery before BullMQ marks the job unrecoverable.
+      maxStalledCount: 2,
     },
   );
 
@@ -447,6 +457,9 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
     log.error({ jobId: job?.id, err }, 'job failed');
     captureWorkerJobFailure(err, job, extractFailureTags(job));
     if (!job) return;
+    // Stall deaths are infra/deploy lock-loss, not bad event content. Do not
+    // stamp extraction_failed_* so job-recovery / re-enqueue can retry.
+    if (isBullMqStallFailure(err)) return;
     const maxAttempts = job.opts.attempts ?? 1;
     const unrecoverable = err instanceof UnrecoverableError;
     if (!unrecoverable && job.attemptsMade < maxAttempts) return;
@@ -475,4 +488,4 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
   return worker;
 }
 
-export const extractWorkerInternals = { extractFailureTags };
+export const extractWorkerInternals = { extractFailureTags, isBullMqStallFailure };

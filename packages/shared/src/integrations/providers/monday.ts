@@ -964,6 +964,35 @@ function mondayWebhookEventType(rawType: string, isSubitem = false): string {
   return rawType || 'item.updated';
 }
 
+/**
+ * Only status-column webhooks should derive lifecycle buckets from `value`.
+ * Owner/priority/date/rename payloads often stringify to text that
+ * `mondayStatus` misreads as `open`, which would mint the wrong dedup key
+ * and overwrite artifact status during reconciliation.
+ */
+function isMondayStatusColumnWebhook(event: Record<string, unknown>): boolean {
+  const rawType = stringValue(event.type) ?? '';
+  if (rawType.includes('status')) return true;
+  const columnType = stringValue(event.columnType);
+  if (columnType === 'status') return true;
+  const columnId = stringValue(event.columnId);
+  if (columnId && /^status\b/i.test(columnId)) return true;
+  const columnTitle = stringValue(event.columnTitle);
+  return Boolean(columnTitle && /\bstatus\b/i.test(columnTitle));
+}
+
+function mondayWebhookLifecycleStatus(
+  event: Record<string, unknown>,
+  rawType: string,
+  valueText: string | null,
+): NonNullable<ObjectMapping['status']> | null {
+  if (isMondayStatusColumnWebhook(event)) return mondayStatus(valueText);
+  if (rawType === 'create_pulse' || rawType === 'create_item' || rawType === 'create_subitem') {
+    return 'open';
+  }
+  return null;
+}
+
 function mondayWebhookEvent(payload: unknown): IntegrationEvent[] {
   const event = recordValue(recordValue(payload)?.event);
   if (!event) return [];
@@ -989,7 +1018,7 @@ function mondayWebhookEvent(payload: unknown): IntegrationEvent[] {
   const valueText = mondayWebhookTextValue(event.value);
   const previousValueText = mondayWebhookTextValue(event.previousValue);
   const title = itemName ?? `Monday item ${itemId}`;
-  const status = mondayStatus(valueText);
+  const status = mondayWebhookLifecycleStatus(event, rawType, valueText);
   const kind = isSubitem ? 'subitem' : 'item';
   const isUpdateEvent =
     updateId !== null &&
@@ -997,11 +1026,12 @@ function mondayWebhookEvent(payload: unknown): IntegrationEvent[] {
       rawType === 'edit_update' ||
       rawType === 'delete_update' ||
       eventType.startsWith('update.'));
+  const lifecycleBucket = status ?? 'observed';
   return [
     {
       dedupKey: isUpdateEvent
         ? `monday:update:${itemId}:${updateId}`
-        : `monday:${kind}:${boardId}:${itemId}:${status}`,
+        : `monday:${kind}:${boardId}:${itemId}:${lifecycleBucket}`,
       provider: 'monday',
       externalObjectId: updateId ? `${itemId}:update:${updateId}` : itemId,
       externalEventId: triggerUuid ?? updateId ?? subscriptionId ?? null,
@@ -1037,7 +1067,7 @@ function mondayWebhookEvent(payload: unknown): IntegrationEvent[] {
         canonicalName: `Monday record ${itemId}: ${title}`,
         displayTitle: title,
         externalId: itemId,
-        status,
+        ...(status ? { status } : {}),
         metadata: {
           monday_record_kind: isSubitem ? 'subitem' : 'webhook-record',
           monday_board_id: boardId,

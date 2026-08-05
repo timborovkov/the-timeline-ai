@@ -463,12 +463,12 @@ describe('githubProvider.handleWebhook', () => {
     const pushEvents = push.events;
 
     expect(pullRequestEvents[0]).toMatchObject({
-      dedupKey: 'github:pr:7:open',
+      dedupKey: 'github:pr:7:open:2026-06-25T10:00:00Z',
       eventType: 'pr.updated',
       objectMap: { type: 'task', externalId: 'acme/app#7' },
     });
     expect(issueEvents[0]).toMatchObject({
-      dedupKey: 'github:issue:8:open',
+      dedupKey: 'github:issue:8:open:2026-06-25T11:00:00Z',
       eventType: 'issue.updated',
       objectMap: { type: 'task', externalId: 'acme/app#issue:8' },
     });
@@ -600,6 +600,81 @@ describe('githubProvider.handleWebhook', () => {
     expect(prSecond?.dedupKey).toBe(prFirst?.dedupKey);
     expect(issueSecond?.contentText).toContain('edited');
     expect(prSecond?.contentText).toContain('edited');
+  });
+
+  it('mints a new issue dedup key when a closed issue is reopened', async () => {
+    const integration = { id: 'integration-1', teamId: 'team-1' } as never;
+    const handle = githubProvider.handleWebhook?.bind(githubProvider);
+    if (!handle) throw new Error('no handleWebhook');
+    const normalize = (
+      result: Awaited<ReturnType<NonNullable<typeof githubProvider.handleWebhook>>>,
+    ) => (Array.isArray(result) ? { events: result, syncTasks: [] } : result);
+    const baseRepo = {
+      repository: { id: 1, full_name: 'acme/app', name: 'app', private: false },
+    };
+    const opened = normalize(
+      await handle({
+        integration,
+        payload: {
+          ...baseRepo,
+          action: 'opened',
+          issue: {
+            id: 8,
+            number: 8,
+            title: 'Bug report',
+            body: null,
+            html_url: 'https://github.com/acme/app/issues/8',
+            state: 'open',
+            updated_at: '2026-06-25T11:00:00Z',
+            user: { login: 'bob' },
+          },
+        },
+      }),
+    ).events[0];
+    const closed = normalize(
+      await handle({
+        integration,
+        payload: {
+          ...baseRepo,
+          action: 'closed',
+          issue: {
+            id: 8,
+            number: 8,
+            title: 'Bug report',
+            body: null,
+            html_url: 'https://github.com/acme/app/issues/8',
+            state: 'closed',
+            updated_at: '2026-06-25T12:00:00Z',
+            user: { login: 'bob' },
+          },
+        },
+      }),
+    ).events[0];
+    const reopened = normalize(
+      await handle({
+        integration,
+        payload: {
+          ...baseRepo,
+          action: 'reopened',
+          issue: {
+            id: 8,
+            number: 8,
+            title: 'Bug report',
+            body: null,
+            html_url: 'https://github.com/acme/app/issues/8',
+            state: 'open',
+            updated_at: '2026-06-25T13:00:00Z',
+            user: { login: 'bob' },
+          },
+        },
+      }),
+    ).events[0];
+
+    expect(opened?.dedupKey).toBe('github:issue:8:open:2026-06-25T11:00:00Z');
+    expect(closed?.dedupKey).toBe('github:issue:8:closed:2026-06-25T12:00:00Z');
+    expect(reopened?.dedupKey).toBe('github:issue:8:open:2026-06-25T13:00:00Z');
+    expect(reopened?.dedupKey).not.toBe(opened?.dedupKey);
+    expect(reopened?.eventType).toBe('issue.reopened');
   });
 
   it('renders issue comments, review summaries, and inline review comments with parent evidence', async () => {

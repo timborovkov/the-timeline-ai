@@ -35,7 +35,9 @@ import { childLogger } from '#src/logger.js';
 //
 // Idempotency for issue/PR/workflow/release is by lifecycle buckets, not
 // `updated_at`, so title/body edits and timestamp churn reuse the raw_event.
-// Commits key by SHA; reviews by submitted_at; comments stay content-hashed.
+// Webhook lifecycle transitions (opened/reopened/closed/…) append updated_at
+// so closed→reopened mints a fresh timeline event. Commits key by SHA; reviews
+// by submitted_at; comments stay content-hashed.
 
 const log = childLogger('integrations:github');
 
@@ -1080,17 +1082,56 @@ function githubReleaseLifecycle(
   return 'published';
 }
 
-function prToEvent(repo: string, pr: GhPullRequest): IntegrationEvent {
+/** Webhook actions that change issue/PR lifecycle identity (not title/body churn). */
+const GITHUB_ISSUE_TRANSITION_ACTIONS = new Set([
+  'opened',
+  'reopened',
+  'closed',
+  'deleted',
+  'transferred',
+]);
+const GITHUB_PR_TRANSITION_ACTIONS = new Set([
+  'opened',
+  'reopened',
+  'closed',
+  'ready_for_review',
+  'converted_to_draft',
+]);
+
+function githubIssueDedupKey(
+  issue: Pick<GhIssue, 'id' | 'state' | 'updated_at'>,
+  action?: string | null,
+): string {
+  const lifecycle = githubIssueLifecycle(issue.state);
+  // Transitions (especially closed→reopened) must mint a new raw_event. Same-state
+  // edits keep the lifecycle-only key so title/body churn coalesces.
+  if (action && GITHUB_ISSUE_TRANSITION_ACTIONS.has(action)) {
+    return `github:issue:${String(issue.id)}:${lifecycle}:${issue.updated_at}`;
+  }
+  return `github:issue:${String(issue.id)}:${lifecycle}`;
+}
+
+function githubPullRequestDedupKey(
+  pr: Pick<GhPullRequest, 'id' | 'state' | 'merged_at' | 'updated_at'>,
+  action?: string | null,
+): string {
+  const lifecycle = githubPullRequestLifecycle(pr);
+  if (action && GITHUB_PR_TRANSITION_ACTIONS.has(action)) {
+    return `github:pr:${String(pr.id)}:${lifecycle}:${pr.updated_at}`;
+  }
+  return `github:pr:${String(pr.id)}:${lifecycle}`;
+}
+
+function prToEvent(repo: string, pr: GhPullRequest, action?: string | null): IntegrationEvent {
   const eventType = pr.merged_at ? 'pr.merged' : pr.state === 'closed' ? 'pr.closed' : 'pr.updated';
   const status: 'open' | 'done' | 'cancelled' = pr.merged_at
     ? 'done'
     : pr.state === 'closed'
       ? 'cancelled'
       : 'open';
-  const lifecycle = githubPullRequestLifecycle(pr);
   const externalId = `${repo}#${String(pr.number)}`;
   return {
-    dedupKey: `github:pr:${String(pr.id)}:${lifecycle}`,
+    dedupKey: githubPullRequestDedupKey(pr, action),
     provider: 'github',
     externalObjectId: externalId,
     externalEventId: pr.updated_at,
@@ -1127,16 +1168,24 @@ function prToEvent(repo: string, pr: GhPullRequest): IntegrationEvent {
   };
 }
 
-function issueToEvent(repo: string, issue: GhIssue): IntegrationEvent | null {
+function issueToEvent(
+  repo: string,
+  issue: GhIssue,
+  action?: string | null,
+): IntegrationEvent | null {
   if (issue.pull_request) return null;
-  const lifecycle = githubIssueLifecycle(issue.state);
   const externalId = `${repo}#issue:${String(issue.number)}`;
   return {
-    dedupKey: `github:issue:${String(issue.id)}:${lifecycle}`,
+    dedupKey: githubIssueDedupKey(issue, action),
     provider: 'github',
     externalObjectId: externalId,
     externalEventId: issue.updated_at,
-    eventType: issue.state === 'closed' ? 'issue.closed' : 'issue.updated',
+    eventType:
+      action === 'reopened'
+        ? 'issue.reopened'
+        : issue.state === 'closed'
+          ? 'issue.closed'
+          : 'issue.updated',
     occurredAt: new Date(issue.updated_at),
     actor: issue.user ? { externalId: issue.user.login, name: issue.user.login } : null,
     contentText: githubWorkItemContentText(
@@ -1834,13 +1883,14 @@ function githubWebhookEvents(payload: unknown): IntegrationEvent[] {
   const comment = recordValue(record.comment);
   const release = recordValue(record.release);
   const workflowRun = recordValue(record.workflow_run);
+  const webhookAction = stringValue(record.action);
   if (pr) {
     const event = ghPrFromWebhook(pr);
-    if (event) events.push(prToEvent(repo, event));
+    if (event) events.push(prToEvent(repo, event, webhookAction));
   }
   if (issue) {
     const event = ghIssueFromWebhook(issue);
-    const normalized = event ? issueToEvent(repo, event) : null;
+    const normalized = event ? issueToEvent(repo, event, webhookAction) : null;
     if (normalized) events.push(normalized);
     const issueComment = event && comment ? ghIssueCommentFromWebhook(comment, event) : null;
     const commentEvent = issueComment

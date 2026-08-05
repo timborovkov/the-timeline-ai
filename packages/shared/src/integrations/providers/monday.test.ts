@@ -357,6 +357,40 @@ describe('mondayProvider', () => {
     ]);
   });
 
+  it('does not derive lifecycle status from non-status Monday column webhooks', async () => {
+    const result = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          userId: 9603417,
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          columnId: 'person',
+          columnType: 'multiple-person',
+          columnTitle: 'Owner',
+          value: { personsAndTeams: [{ id: 1, kind: 'person' }] },
+          previousValue: null,
+          type: 'update_column_value',
+          triggerTime: '2026-06-25T09:15:03.429Z',
+          subscriptionId: 73760484,
+          triggerUuid: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        },
+      },
+    });
+    const normalized = Array.isArray(result) ? { events: result, syncTasks: [] } : result;
+
+    expect(normalized?.events[0]).toMatchObject({
+      dedupKey: 'monday:item:1771812698:1771812728:observed',
+      eventType: 'column.changed',
+      objectMap: {
+        type: 'other',
+        externalId: '1771812728',
+      },
+    });
+    expect(normalized?.events[0]?.objectMap).not.toHaveProperty('status');
+  });
+
   it('keeps the same Monday item dedup key across same-lifecycle webhook churn', async () => {
     const payload = {
       event: {
