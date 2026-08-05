@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { sanitizeRequestUrl, scrubSentryRequestEvent } from '#src/monitoring/sentry-scrub.js';
+import {
+  redactTelegramBotTokenInUrl,
+  sanitizeRequestUrl,
+  scrubSentryBreadcrumb,
+  scrubSentryRequestEvent,
+} from '#src/monitoring/sentry-scrub.js';
 
 describe('Sentry scrubber', () => {
   it('scrubs request auth material case-insensitively', () => {
@@ -34,5 +39,48 @@ describe('Sentry scrubber', () => {
     expect(sanitizeRequestUrl('/accept-invite/sensitive-token?invite=secret')).toBe(
       '/accept-invite/[redacted]',
     );
+  });
+
+  it('redacts Telegram bot tokens embedded in Bot API URLs', () => {
+    expect(
+      redactTelegramBotTokenInUrl(
+        'https://api.telegram.org/bot123456:AAExampleTokenValue_for-tests/setWebhook',
+      ),
+    ).toBe('https://api.telegram.org/bot[redacted]/setWebhook');
+    expect(
+      sanitizeRequestUrl(
+        'https://api.telegram.org/bot123456:AAExampleTokenValue_for-tests/getWebhookInfo',
+      ),
+    ).toBe('https://api.telegram.org/bot[redacted]/getWebhookInfo');
+    expect(
+      redactTelegramBotTokenInUrl(
+        'https://api.telegram.org/file/bot123456:AAExampleTokenValue_for-tests/voice/file_1.oga',
+      ),
+    ).toBe('https://api.telegram.org/file/bot[redacted]/voice/file_1.oga');
+  });
+
+  it('scrubs Telegram bot tokens from HTTP breadcrumbs', () => {
+    const event = scrubSentryRequestEvent({
+      breadcrumbs: [
+        {
+          message: 'https://api.telegram.org/bot123456:AAExampleTokenValue_for-tests/setWebhook',
+          data: {
+            url: 'https://api.telegram.org/bot123456:AAExampleTokenValue_for-tests/setWebhook',
+            'http.method': 'POST',
+          },
+        },
+      ],
+    });
+
+    expect(event.breadcrumbs[0]?.message).toBe('https://api.telegram.org/bot[redacted]/setWebhook');
+    expect(event.breadcrumbs[0]?.data).toEqual({
+      url: 'https://api.telegram.org/bot[redacted]/setWebhook',
+      'http.method': 'POST',
+    });
+    expect(
+      scrubSentryBreadcrumb({
+        data: { url: 'https://api.telegram.org/bot123456:AAExampleTokenValue_for-tests/getMe' },
+      }).data.url,
+    ).toBe('https://api.telegram.org/bot[redacted]/getMe');
   });
 });

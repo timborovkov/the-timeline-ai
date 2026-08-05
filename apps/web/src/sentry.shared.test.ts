@@ -8,6 +8,7 @@ import {
   scrubSentryEvent,
   sentrySampleRate,
   shouldDropBrowserExtensionEvent,
+  shouldDropMalformedMultipartFormDataEvent,
 } from '@/sentry.shared';
 
 describe('Sentry web config helpers', () => {
@@ -99,5 +100,48 @@ describe('Sentry web config helpers', () => {
 
     expect(shouldDropBrowserExtensionEvent(event)).toBe(false);
     expect(scrubSentryEvent(event)).toBe(event);
+  });
+
+  it('drops malformed multipart FormData parse errors on not-found', () => {
+    const event = {
+      transaction: 'POST /_not-found/page',
+      exception: {
+        values: [{ type: 'TypeError', value: 'Failed to parse body as FormData.' }],
+      },
+    } as unknown as ErrorEvent;
+
+    expect(shouldDropMalformedMultipartFormDataEvent(event)).toBe(true);
+    expect(scrubSentryEvent(event)).toBeNull();
+  });
+
+  it('keeps FormData parse errors on real routes even with a boundary cause', () => {
+    const event = {
+      transaction: 'POST /app',
+      exception: {
+        values: [{ type: 'TypeError', value: 'Failed to parse body as FormData.' }],
+      },
+    } as unknown as ErrorEvent;
+    const originalException = Object.assign(new TypeError('Failed to parse body as FormData.'), {
+      cause: new TypeError('no boundary found in multipart body'),
+    });
+
+    expect(shouldDropMalformedMultipartFormDataEvent(event, { originalException })).toBe(false);
+    expect(scrubSentryEvent(event, { originalException })).toBe(event);
+  });
+
+  it('redacts Telegram bot tokens from breadcrumbs before send', () => {
+    const event = scrubSentryEvent({
+      breadcrumbs: [
+        {
+          data: {
+            url: 'https://api.telegram.org/bot123456:AAExampleTokenValue_for-tests/setWebhook',
+          },
+        },
+      ],
+    } as unknown as ErrorEvent);
+
+    expect(event?.breadcrumbs?.[0]?.data?.url).toBe(
+      'https://api.telegram.org/bot[redacted]/setWebhook',
+    );
   });
 });
