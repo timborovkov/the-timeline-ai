@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-import { getEnv } from '@timeline/shared/env';
+import { requireAuthSecret } from '@timeline/shared/env';
 import * as integrationsLib from '@timeline/shared/integrations';
 import { childLogger } from '@timeline/shared/logger';
 import { withTeam } from '@timeline/shared/team-scope';
@@ -34,8 +34,7 @@ function verifyState(state: string): z.infer<typeof stateSchema> | null {
   if (parts.length !== 2) return null;
   const [payloadB64, sigB64] = parts;
   if (!payloadB64 || !sigB64) return null;
-  const env = getEnv();
-  const expected = createHmac('sha256', env.AUTH_SECRET).update(payloadB64).digest('base64url');
+  const expected = createHmac('sha256', requireAuthSecret()).update(payloadB64).digest('base64url');
   const a = Buffer.from(expected, 'utf8');
   const b = Buffer.from(sigB64, 'utf8');
   if (a.length !== b.length) return null;

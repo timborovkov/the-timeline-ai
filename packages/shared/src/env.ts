@@ -343,3 +343,15 @@ export function getEnv(): Env {
 export function resetEnvForTests(): void {
   _env = undefined;
 }
+
+/**
+ * Auth.js / OAuth-state secret. Required for web and full worker; omitted
+ * on the credential-thin document-extract service.
+ */
+export function requireAuthSecret(): string {
+  const secret = getEnv().AUTH_SECRET;
+  if (!secret) {
+    throw new Error('AUTH_SECRET is required');
+  }
+  return secret;
+}

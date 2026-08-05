@@ -76,9 +76,9 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
         The primary extraction and agent routes use GLM 5.2 because those paths need long-context
         structured output, tools, and reasoning support. The vision/OCR route uses a model that
         advertises image and file input because sparse PDF page images and image uploads are sent as
-        image or file parts; dense text PDFs extract inside Daytona sandboxes
-        (pdfplumber/pypdfium2) and do not call OpenRouter. Transcription uses a
-        dedicated audio-to-transcription model through OpenRouter's JSON audio endpoint.
+        image or file parts; dense text PDFs extract inside Daytona sandboxes (pdfplumber/pypdfium2)
+        and do not call OpenRouter. Transcription uses a dedicated audio-to-transcription model
+        through OpenRouter's JSON audio endpoint.
       </p>
       <p>
         The embedding model remains special: changing it or its dimensions invalidates the current

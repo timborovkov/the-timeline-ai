@@ -109,7 +109,7 @@ export async function extractPdfInDaytonaSandbox(body: Buffer): Promise<SandboxP
       String(maxPages),
     ].join(' ');
     const response = await sandbox.process.executeCommand(cmd, undefined, undefined, 90);
-    const parsed = parseJsonObject(response.result ?? '');
+    const parsed = parseJsonObject(response.result);
     const text = typeof parsed.text === 'string' ? parsed.text : '';
     const method = typeof parsed.method === 'string' ? parsed.method : 'unknown';
     const pageCount = typeof parsed.pageCount === 'number' ? parsed.pageCount : 0;
@@ -143,7 +143,7 @@ export async function extractDocxInDaytonaSandbox(body: Buffer): Promise<Sandbox
     await sandbox.fs.uploadFile(body, remoteDocx);
     const cmd = ['python3', REMOTE_DOCX_SCRIPT, '--input', remoteDocx].join(' ');
     const response = await sandbox.process.executeCommand(cmd, undefined, undefined, 60);
-    const parsed = parseJsonObject(response.result ?? '');
+    const parsed = parseJsonObject(response.result);
     const text = typeof parsed.text === 'string' ? parsed.text : '';
     const error = typeof parsed.error === 'string' ? parsed.error : undefined;
     if (parsed.ok !== true && !text.trim()) {

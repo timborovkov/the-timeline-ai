@@ -25,7 +25,6 @@ import {
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 
 export {
-  DOCX_SANDBOX_MODEL,
   PDF_SANDBOX_MODEL,
   shouldAcceptSandboxPdfText,
   type SandboxPdfExtractResult,

@@ -130,7 +130,7 @@ export async function extractTextFromMedia(
   // the vision endpoint; PDFs are file attachments that vision-capable
   // models (Claude 3.5+, GPT-4o, Gemini 1.5+) read natively. Sparse PDFs
   // from Daytona pass rendered page PNGs as multiple image parts.
-  const mediaParts: Array<ImagePart | FilePart> =
+  const mediaParts: (ImagePart | FilePart)[] =
     pageImages.length > 0
       ? pageImages.map((image) => ({
           type: 'image' as const,

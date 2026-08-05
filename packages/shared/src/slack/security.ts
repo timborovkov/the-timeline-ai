@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
-import { getEnv } from '#src/env.js';
+import { requireAuthSecret } from '#src/env.js';
 
 const MAX_SKEW_SECONDS = 5 * 60;
 
@@ -32,11 +32,7 @@ export interface SlackOAuthState {
 }
 
 function stateSecret(): string {
-  const secret = getEnv().AUTH_SECRET;
-  if (!secret) {
-    throw new Error('AUTH_SECRET is required for Slack OAuth state');
-  }
-  return secret;
+  return requireAuthSecret();
 }
 
 export function signSlackOAuthState(input: Omit<SlackOAuthState, 'nonce' | 'createdAt'>): string {

@@ -74,17 +74,17 @@
 
       <h2 id="app-services">4. App services</h2>
       <p>
-        Add <code>web</code>, <code>worker</code>, and <code>extract</code> services pointing at this
-        repo. Use <code>apps/web/railway.json</code>, <code>apps/worker/railway.json</code>, and
-        <code>apps/worker/railway.extract.json</code> respectively. All three use Railpack build
+        Add <code>web</code>, <code>worker</code>, and <code>extract</code> services pointing at
+        this repo. Use <code>apps/web/railway.json</code>, <code>apps/worker/railway.json</code>,
+        and <code>apps/worker/railway.extract.json</code> respectively. All three use Railpack build
         commands that install the pnpm workspace and build the packages they run. App services also
         run the shared DB migrator in <code>preDeployCommand</code>; the advisory lock makes
         overlapping deploys safe. Portable app Dockerfiles live in <code>docker/</code>; do not add
         a root <code>Dockerfile</code> for these services.
       </p>
       <p>
-        The <code>extract</code> service is the credential-thin document-extract consumer (ADR 0013).
-        Set <code>WORKER_MODE=document-extract</code>, <code>DAYTONA_API_KEY</code>,
+        The <code>extract</code> service is the credential-thin document-extract consumer (ADR
+        0013). Set <code>WORKER_MODE=document-extract</code>, <code>DAYTONA_API_KEY</code>,
         <code>DAYTONA_SNAPSHOT=timeline-document-extract</code>, <code>OPENROUTER_API_KEY</code>,
         <code>DATABASE_URL</code>, <code>REDIS_URL</code>, and S3 document-bucket variables. Do
         <strong>not</strong> set <code>SECRETS_ENCRYPTION_KEY</code>, Auth secrets, or
