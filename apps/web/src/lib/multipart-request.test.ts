@@ -1,7 +1,11 @@
 import { NextRequest } from 'next/server';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { hasMultipartBoundary, rejectInvalidMultipartRequest } from '@/lib/multipart-request';
+import {
+  hasMultipartBoundary,
+  isExplicitZeroContentLength,
+  rejectInvalidMultipartRequest,
+} from '@/lib/multipart-request';
 
 const ORIGINAL_AUTH_URL = process.env.AUTH_URL;
 const ORIGINAL_NEXTAUTH_URL = process.env.NEXTAUTH_URL;
@@ -50,6 +54,23 @@ describe('hasMultipartBoundary', () => {
     expect(hasMultipartBoundary('multipart/form-data; boundary= ;')).toBe(false);
     expect(hasMultipartBoundary('multipart/form-data; boundary=""')).toBe(false);
     expect(hasMultipartBoundary("multipart/form-data; boundary=''")).toBe(false);
+    expect(hasMultipartBoundary('multipart/form-data; boundary="')).toBe(false);
+    expect(hasMultipartBoundary("multipart/form-data; boundary='")).toBe(false);
+    expect(hasMultipartBoundary('multipart/form-data; x-boundary=abc')).toBe(false);
+  });
+});
+
+describe('isExplicitZeroContentLength', () => {
+  it('treats decimal-zero Content-Length values as empty', () => {
+    expect(isExplicitZeroContentLength('0')).toBe(true);
+    expect(isExplicitZeroContentLength('00')).toBe(true);
+    expect(isExplicitZeroContentLength(' 0 ')).toBe(true);
+  });
+
+  it('allows missing or non-zero Content-Length', () => {
+    expect(isExplicitZeroContentLength(null)).toBe(false);
+    expect(isExplicitZeroContentLength('12')).toBe(false);
+    expect(isExplicitZeroContentLength('chunked')).toBe(false);
   });
 });
 
@@ -72,40 +93,50 @@ describe('rejectInvalidMultipartRequest', () => {
     expect(response?.status).toBe(400);
   });
 
-  it('rejects empty quoted multipart boundaries', () => {
+  it('rejects empty or dangling quoted multipart boundaries', () => {
     process.env.AUTH_URL = 'https://app.timeline.test';
-    const response = rejectInvalidMultipartRequest(
-      request({
-        headers: {
-          'content-type': 'multipart/form-data; boundary=""',
-          'content-length': '12',
-        },
-      }),
-    );
-    expect(response?.status).toBe(400);
+    for (const contentType of [
+      'multipart/form-data; boundary=""',
+      'multipart/form-data; boundary="',
+      "multipart/form-data; boundary='",
+      'multipart/form-data; x-boundary=abc',
+    ]) {
+      const response = rejectInvalidMultipartRequest(
+        request({
+          headers: {
+            'content-type': contentType,
+            'content-length': '12',
+          },
+        }),
+      );
+      expect(response?.status, contentType).toBe(400);
+    }
   });
 
-  it('rejects empty multipart bodies', () => {
+  it('rejects empty multipart bodies for zero Content-Length variants', () => {
     process.env.AUTH_URL = 'https://app.timeline.test';
-    const response = rejectInvalidMultipartRequest(
-      request({
-        headers: {
-          'content-type': 'multipart/form-data; boundary=----x',
-          'content-length': '0',
-        },
-      }),
-    );
-    expect(response?.status).toBe(400);
+    for (const contentLength of ['0', '00', ' 0 ']) {
+      const response = rejectInvalidMultipartRequest(
+        request({
+          headers: {
+            'content-type': 'multipart/form-data; boundary=----x',
+            'content-length': contentLength,
+          },
+        }),
+      );
+      expect(response?.status, contentLength).toBe(400);
+    }
   });
 
-  it('rejects multipart without content-length when not chunked', () => {
+  it('allows lengthless multipart posts with a usable boundary', () => {
     process.env.AUTH_URL = 'https://app.timeline.test';
-    const response = rejectInvalidMultipartRequest(
-      request({
-        headers: { 'content-type': 'multipart/form-data; boundary=----x' },
-      }),
-    );
-    expect(response?.status).toBe(400);
+    expect(
+      rejectInvalidMultipartRequest(
+        request({
+          headers: { 'content-type': 'multipart/form-data; boundary=----x' },
+        }),
+      ),
+    ).toBeNull();
   });
 
   it('allows well-formed multipart posts', () => {
