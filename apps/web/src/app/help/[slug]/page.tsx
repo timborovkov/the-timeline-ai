@@ -1,3 +1,4 @@
+import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
@@ -38,7 +39,13 @@ export default async function HelpTopicPage({ params }: HelpPageProps) {
   return (
     <article className="space-y-10">
       <header className="max-w-[70ch] space-y-4">
-        <p className="text-xs font-medium text-fg-muted">Guide</p>
+        <Link
+          href="/help"
+          className="inline-flex min-h-10 items-center gap-2 rounded-sm text-sm font-medium text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+        >
+          <ArrowLeft aria-hidden="true" className="size-4" />
+          All guides
+        </Link>
         <div className="flex items-center gap-3">
           <page.icon className="size-8 text-signal" />
           <h1 className="text-3xl font-semibold tracking-tight text-fg sm:text-4xl">

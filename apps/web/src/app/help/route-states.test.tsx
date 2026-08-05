@@ -89,7 +89,7 @@ describe('Help route states', () => {
     render(<HelpIndexPage />);
 
     for (const name of ['Document drive', 'Capture surfaces']) {
-      const link = screen.getByRole('link', { name });
+      const link = screen.getByRole('link', { name: new RegExp(name) });
       expect(link.className).toContain('focus-visible:ring-2');
       expect(link.className).toContain('focus-visible:ring-fg');
       expect(link.className).toContain('focus-visible:ring-offset-bg');
@@ -106,6 +106,28 @@ describe('Help route states', () => {
       expect(link.className).toContain('focus-visible:ring-fg');
       expect(link.className).toContain('forced-colors:focus-visible:outline-2');
     }
+  });
+
+  it('searches full guide content and provides a clear empty state', async () => {
+    const user = userEvent.setup();
+    render(<HelpIndexPage />);
+
+    const search = screen.getByRole('searchbox', { name: 'Search guides' });
+    expect(search.className).toContain('[&::-webkit-search-cancel-button]:appearance-none');
+    await user.type(search, 'kanban');
+
+    expect(screen.getByRole('link', { name: /Boards/ })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: /Document drive/ })).toBeNull();
+    expect(screen.getByRole('status').textContent).toBe('1 guide found');
+
+    await user.clear(search);
+    await user.type(search, 'not a timeline feature');
+
+    expect(screen.getByText('No guide matches “not a timeline feature”')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Clear search' }));
+
+    expect(screen.getByRole('link', { name: /Document drive/ })).toBeTruthy();
+    expect((search as HTMLInputElement).value).toBe('');
   });
 });
 

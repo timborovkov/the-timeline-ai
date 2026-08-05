@@ -653,9 +653,8 @@ describe('PersonalConnectionsUi', () => {
       />,
     );
 
-    expect(
-      await screen.findByText(/Monday GraphQL errors: Unauthorized field or type/i),
-    ).toBeTruthy();
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('Monday GraphQL errors: Unauthorized field or type');
   });
 
   it('maps provider account delete JSON errors to readable copy', async () => {

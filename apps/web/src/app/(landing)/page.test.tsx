@@ -26,15 +26,21 @@ describe('LandingPage', () => {
 
     expect(html.match(/<header\b/g)).toHaveLength(1);
     expect(html.match(/<footer\b/g)).toHaveLength(1);
-    expect(html).toContain('aria-label="The Timeline — home"');
+    expect(html).toContain('aria-label="The Timeline home"');
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('Ask what changed.');
+    expect(html).toContain('Get cited answers.');
     expect(html).toContain('Teams do the work, then separately report that the work happened.');
-    expect(html).toContain('CONCEPTS · CAPTURE → EVIDENCE → OPERATIONAL MEMORY');
-    expect(html).toContain('PRINCIPLES · BUILT FOR THE WORK');
+    expect(html).toContain('Capture once. Build durable memory.');
+    expect(html).toContain('Trust is part of the system.');
+    expect(html).toContain('Questions, answered.');
+    expect(html).toContain('EVIDENCE / EVERY CLAIM IS CITED');
     expect(html).toContain('WITHOUT TIMELINE');
     expect(html).toContain('WITH TIMELINE');
     expect(html).toContain('linear-gradient');
+    expect(html).not.toMatch(/[—–]/);
+    expect(html).not.toContain('ACME');
+    expect(html).not.toContain('Acme');
     expect(html).not.toContain('aria-label="Public"');
   });
 
