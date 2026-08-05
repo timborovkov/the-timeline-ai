@@ -535,7 +535,7 @@ describe('mondayProvider', () => {
     });
   });
 
-  it('uses the delete_update operation rather than its non-null body to tombstone a conversation', async () => {
+  it('handles update and reply delete operations without requesting catch-up sync', async () => {
     const normalized = await mondayProvider.handleWebhook?.({
       integration: { id: 'integration-1', teamId: 'team-1' } as never,
       payload: {
@@ -570,6 +570,40 @@ describe('mondayProvider', () => {
       monday_webhook_type: 'delete_update',
     });
     expect(normalized.syncTasks).toEqual([]);
+    expect(normalized.syncTaskDisposition).toBe('handled');
+
+    const replyDeletion = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          updateId: 1190616585,
+          replyId: 1190616586,
+          body: '<p>The removed reply still has a body in Monday’s payload.</p>',
+          type: 'delete_update',
+          triggerTime: '2021-10-11T09:19:57.368Z',
+          subscriptionId: 73760983,
+          triggerUuid: 'deleted-reply-trigger',
+        },
+      },
+    });
+    if (!replyDeletion || Array.isArray(replyDeletion)) {
+      throw new Error('Expected normalized reply deletion webhook');
+    }
+    expect(replyDeletion.events).toEqual([
+      expect.objectContaining({
+        eventType: 'reply.deleted',
+        sourceTombstone: {
+          kind: 'monday_conversation',
+          updateId: '1190616585',
+          replyId: '1190616586',
+          reason: 'monday_reply_deleted_at_source',
+        },
+      }),
+    ]);
+    expect(replyDeletion.syncTasks).toEqual([]);
+    expect(replyDeletion.syncTaskDisposition).toBe('handled');
   });
 
   it('provisions monday.com board webhooks for selected boards', async () => {
@@ -3522,7 +3556,10 @@ describe('mondayProvider', () => {
       ]),
     );
     expect(cursors.get('monday.conversation:board-1:item-1')).toEqual({
-      update_next_page: 2,
+      update_boundary: {
+        created_at: '2026-06-20T10:05:00.000Z',
+        id: 'update-100',
+      },
     });
 
     await mondayProvider.incrementalSync({
@@ -3545,7 +3582,10 @@ describe('mondayProvider', () => {
       ]),
     );
     expect(cursors.get('monday.conversation:board-1:item-1')).toEqual({
-      update_next_page: 2,
+      update_boundary: {
+        created_at: '2026-06-20T10:05:00.000Z',
+        id: 'update-100',
+      },
     });
   });
 
@@ -3651,11 +3691,14 @@ describe('mondayProvider', () => {
     const updatePage = (page: number, count = 100) =>
       Array.from({ length: count }, (_, index) => {
         const id = (page - 1) * 100 + index + 1;
+        const occurredAt = new Date(
+          Date.UTC(2026, 5, 20, 12, 0, 0) - (id - 1) * 1_000,
+        ).toISOString();
         return {
           id: `update-${String(id)}`,
           body: `<p>Update ${String(id)}</p>`,
-          created_at: '2026-06-20T10:05:00Z',
-          updated_at: '2026-06-20T10:05:00Z',
+          created_at: occurredAt,
+          updated_at: occurredAt,
           replies: [],
         };
       });
@@ -3728,7 +3771,6 @@ describe('mondayProvider', () => {
                     updated_at: '2026-06-20T10:00:00Z',
                     board: { id: 'board-1', name: 'Pipeline', columns: [] },
                     column_values: [],
-                    updates: updatePage(1),
                     subitems: [],
                   },
                 ],
@@ -3767,8 +3809,12 @@ describe('mondayProvider', () => {
       expect.arrayContaining([{ resourceType: 'monday.item', externalId: 'board-1:item-1' }]),
     );
     expect(initial?.continuations).toHaveLength(1);
+    const initialBoundary = updatePage(71).at(-1);
     expect(cursors.get('monday.conversation:board-1:item-1')).toEqual({
-      update_next_page: 72,
+      update_boundary: {
+        created_at: initialBoundary?.created_at,
+        id: initialBoundary?.id,
+      },
     });
 
     const resumed = await mondayProvider.incrementalSync({
@@ -3784,13 +3830,181 @@ describe('mondayProvider', () => {
     });
 
     expect(resumed).toBeUndefined();
-    expect(requestedUpdatePages.filter((page) => page === 2)).toHaveLength(1);
+    expect(requestedUpdatePages.filter((page) => page === 1)).toHaveLength(1);
+    expect(requestedUpdatePages.filter((page) => page === 2)).toHaveLength(2);
     expect(requestedUpdatePages.at(-1)).toBe(102);
     expect(cursors.get('monday.conversation:board-1:item-1')).toEqual({});
     const resumedEvents = (ctx.writeEvents.mock.calls[1]?.[0] ?? []) as IntegrationEvent[];
     expect(resumedEvents).toEqual(
       expect.arrayContaining([expect.objectContaining({ externalEventId: 'update-10101' })]),
     );
+    expect(resumedEvents).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ externalEventId: 'update-7100' })]),
+    );
+  });
+
+  it('resumes update history from a stable boundary when a newer update shifts provider pages', async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => ({
+      id: `update-${String(200 - index)}`,
+      body: `<p>Update ${String(200 - index)}</p>`,
+      created_at: new Date(Date.UTC(2026, 5, 20, 12, 0, 0) - index * 1_000).toISOString(),
+      updated_at: new Date(Date.UTC(2026, 5, 20, 12, 0, 0) - index * 1_000).toISOString(),
+      replies: Array.from({ length: 70 }, (_, replyIndex) => ({
+        id: `reply-${String(200 - index)}-${String(replyIndex + 1)}`,
+        body: `<p>Reply ${String(replyIndex + 1)}</p>`,
+        created_at: new Date(
+          Date.UTC(2026, 5, 20, 12, 0, 0) - index * 1_000 + replyIndex,
+        ).toISOString(),
+        updated_at: new Date(
+          Date.UTC(2026, 5, 20, 12, 0, 0) - index * 1_000 + replyIndex,
+        ).toISOString(),
+      })),
+    }));
+    const olderUpdate = {
+      id: 'update-100',
+      body: '<p>Older update</p>',
+      created_at: '2026-06-20T11:58:20.000Z',
+      updated_at: '2026-06-20T11:58:20.000Z',
+      replies: [],
+    };
+    const insertedUpdate = {
+      id: 'update-201',
+      body: '<p>Inserted before continuation</p>',
+      created_at: '2026-06-20T12:00:01.000Z',
+      updated_at: '2026-06-20T12:00:01.000Z',
+      replies: [],
+    };
+    let resumed = false;
+    const requestedUpdatePages: number[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((_input, init) => {
+        const body = requestPayload(init);
+        if (
+          body.query.includes('boards(ids: $ids)') &&
+          !body.query.includes('items_page') &&
+          !body.query.includes('activity_logs')
+        ) {
+          return Promise.resolve(
+            jsonResponse({ data: { boards: [{ id: 'board-1', name: 'Pipeline', columns: [] }] } }),
+          );
+        }
+        if (body.query.includes('activity_logs')) {
+          return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
+        }
+        if (body.query.includes('items_page')) {
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                boards: [
+                  {
+                    items_page: {
+                      cursor: null,
+                      items: [
+                        {
+                          id: 'item-1',
+                          name: 'Acme renewal',
+                          updated_at: '2026-06-20T12:00:00Z',
+                          column_values: [],
+                          updates: firstPage,
+                          subitems: [],
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            }),
+          );
+        }
+        if (
+          body.query.includes('items(ids: $itemIds)') &&
+          !body.query.includes('updates(limit: $limit, page: $page)')
+        ) {
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                items: [
+                  {
+                    id: 'item-1',
+                    name: 'Acme renewal',
+                    updated_at: '2026-06-20T12:00:01Z',
+                    board: { id: 'board-1', name: 'Pipeline', columns: [] },
+                    column_values: [],
+                    subitems: [],
+                  },
+                ],
+              },
+            }),
+          );
+        }
+        if (body.query.includes('updates(limit: $limit, page: $page)')) {
+          const page = body.variables?.page;
+          if (typeof page !== 'number') throw new Error('expected update page');
+          requestedUpdatePages.push(page);
+          const updates = resumed
+            ? page === 1
+              ? [insertedUpdate, ...firstPage.slice(0, 99)]
+              : page === 2
+                ? [firstPage[99], olderUpdate]
+                : []
+            : page === 2
+              ? [olderUpdate]
+              : [];
+          return Promise.resolve(jsonResponse({ data: { items: [{ updates }] } }));
+        }
+        throw new Error(`unexpected query: ${body.query}`);
+      }),
+    );
+    const cursors = new Map<string, unknown>();
+    const ctx = {
+      loadCursor: vi.fn((resourceType: string) => Promise.resolve(cursors.get(resourceType) ?? {})),
+      saveCursor: vi.fn((resourceType: string, cursor: unknown) => {
+        cursors.set(resourceType, cursor);
+        return Promise.resolve(undefined);
+      }),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    const initial = await mondayProvider.backfill({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      ctx,
+    });
+
+    expect(initial?.continuations).toEqual(
+      expect.arrayContaining([{ resourceType: 'monday.item', externalId: 'board-1:item-1' }]),
+    );
+    expect(cursors.get('monday.conversation:board-1:item-1')).toEqual({
+      update_boundary: {
+        created_at: firstPage[99]?.created_at,
+        id: firstPage[99]?.id,
+      },
+    });
+
+    resumed = true;
+    await mondayProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      target: {
+        resourceType: 'monday.item',
+        externalId: 'board-1:item-1',
+        triggeredBy: 'reconcile',
+      },
+      ctx,
+    });
+
+    const resumedEvents = (ctx.writeEvents.mock.calls[1]?.[0] ?? []) as IntegrationEvent[];
+    const resumedUpdateIds = resumedEvents
+      .filter((event) => event.eventType.startsWith('update.'))
+      .map((event) => event.externalEventId);
+    expect(resumedUpdateIds).toEqual(['update-100']);
+    expect(requestedUpdatePages).toEqual([1, 2]);
+    expect(cursors.get('monday.conversation:board-1:item-1')).toEqual({});
   });
 
   it('hydrates the same update conversation through a selected-board webhook target', async () => {

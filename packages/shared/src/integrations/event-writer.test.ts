@@ -505,6 +505,132 @@ describe('writeIntegrationEvents visibility', () => {
     expect((await scope.objects.getObject(object.id))?.summary?.summary).toBeNull();
   });
 
+  it('removes an object summary sourced only through a Monday evidence association', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'monday',
+        displayName: 'Monday.com',
+        externalAccountId: 'acct-association-summary-tombstone',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const [object] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'project',
+        canonicalName: 'Association-only renewal',
+        metadata: {
+          integration_provider: 'monday',
+          integration_external_id: 'item-association-summary',
+        },
+      })
+      .returning();
+    if (!object) throw new Error('object insert failed');
+
+    const [rawEventId] = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'monday:update:item-association-summary:update-association-summary:created',
+          provider: 'monday',
+          externalObjectId: 'item-association-summary',
+          externalEventId: 'update-association-summary',
+          eventType: 'update.observed',
+          occurredAt: new Date('2026-06-20T11:00:00Z'),
+          contentText: 'Monday update: the association-only renewal is blocked.',
+          extra: { monday_update_id: 'update-association-summary' },
+          objectMap: {
+            type: 'project',
+            canonicalName: 'Association-only renewal',
+            externalId: 'item-association-summary',
+            status: 'in_progress',
+          },
+        },
+      ],
+    });
+    if (!rawEventId) throw new Error('conversation insert failed');
+
+    const [association] = await db
+      .select()
+      .from(artifactEvidenceAssociations)
+      .where(eq(artifactEvidenceAssociations.rawEventId, rawEventId));
+    expect(association).toBeDefined();
+    expect(await db.select().from(facts).where(eq(facts.rawEventId, rawEventId))).toEqual([]);
+    expect(
+      await db
+        .select()
+        .from(reconciliationOutputs)
+        .where(eq(reconciliationOutputs.targetId, object.id)),
+    ).toEqual([]);
+
+    const insertReadySummary = () =>
+      db.insert(objectSummaries).values({
+        teamId: TEAM_ID,
+        entityId: object.id,
+        status: 'ready',
+        summary: {
+          overview: 'The association-only renewal is blocked.',
+          overviewSourceRefs: [{ kind: 'timeline_event', id: rawEventId }],
+          currentState: [],
+          openQuestions: [],
+          conflicts: [],
+        },
+        plainText: 'The association-only renewal is blocked.',
+        sourceRefs: [{ kind: 'timeline_event', id: rawEventId }],
+        sourceCounts: {
+          fields: 2,
+          facts: 0,
+          events: 1,
+          notes: 0,
+          relationships: 0,
+          tasks: 0,
+          changes: 0,
+        },
+        inputFingerprint: 'association-only-summary',
+        model: 'test-summary-model',
+        promptVersion: 'object-summary-v1',
+        generatedAt: new Date('2026-06-20T11:01:00Z'),
+      });
+    await insertReadySummary();
+
+    const deleteEvent = {
+      dedupKey: 'monday:webhook:delete-update-association-summary',
+      provider: 'monday' as const,
+      externalObjectId: 'item-association-summary:update:update-association-summary',
+      externalEventId: 'delete-update-association-summary',
+      eventType: 'update.deleted',
+      occurredAt: new Date('2026-06-20T11:02:00Z'),
+      contentText: 'Monday update deleted',
+      extra: { monday_update_id: 'update-association-summary' },
+      sourceTombstone: {
+        kind: 'monday_conversation' as const,
+        updateId: 'update-association-summary',
+        reason: 'monday_update_deleted_at_source',
+      },
+    };
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+
+    await writeIntegrationEvents({ db: db as never, integration, events: [deleteEvent] });
+
+    expect((await scope.objects.getObject(object.id))?.summary?.summary).toBeNull();
+    expect(enqueueObjectSummaryJob).toHaveBeenCalledWith(
+      { teamId: TEAM_ID, objectId: object.id, trigger: 'auto' },
+      { delayMs: 120_000 },
+    );
+
+    await insertReadySummary();
+    await writeIntegrationEvents({ db: db as never, integration, events: [deleteEvent] });
+
+    expect((await scope.objects.getObject(object.id))?.summary?.summary).toBeNull();
+  });
+
   it('persists a Monday conversation delete for legacy rows and late stale writes in only its integration', async () => {
     const [integration, otherIntegration] = await db
       .insert(integrations)

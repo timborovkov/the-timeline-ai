@@ -210,8 +210,14 @@ interface MondayCursor {
 }
 
 interface MondayConversationCursor {
-  update_next_page?: number;
+  update_boundary?: MondayUpdateBoundary;
   reply_next_pages?: Record<string, number>;
+  legacy_update_page?: true;
+}
+
+interface MondayUpdateBoundary {
+  created_at: string;
+  id: string;
 }
 
 interface MondayConversationContinuation {
@@ -1427,16 +1433,69 @@ function mondayConversationCursor(value: unknown): MondayConversationCursor {
           }),
         )
       : {};
-  const updateNextPage = positiveConversationPage(input.update_next_page, 2);
+  const updateBoundary = mondayUpdateBoundary(input.update_boundary);
+  const legacyUpdatePage = positiveConversationPage(input.update_next_page, 2);
   return {
-    ...(updateNextPage ? { update_next_page: updateNextPage } : {}),
+    ...(updateBoundary ? { update_boundary: updateBoundary } : {}),
     ...(Object.keys(replyNextPages).length > 0 ? { reply_next_pages: replyNextPages } : {}),
+    ...(legacyUpdatePage ? { legacy_update_page: true } : {}),
   };
 }
 
 function hasMondayConversationCursor(cursor: MondayConversationCursor): boolean {
-  if (cursor.update_next_page) return true;
+  if (cursor.update_boundary || cursor.legacy_update_page) return true;
   return Object.keys(cursor.reply_next_pages ?? {}).length > 0;
+}
+
+function mondayUpdateBoundary(value: unknown): MondayUpdateBoundary | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const input = value as Record<string, unknown>;
+  const id = stringValue(input.id);
+  const createdAt = stringValue(input.created_at);
+  if (!id || !createdAt) return undefined;
+  const createdAtDate = new Date(createdAt);
+  if (Number.isNaN(createdAtDate.getTime())) return undefined;
+  return { created_at: createdAtDate.toISOString(), id };
+}
+
+function mondayUpdateBoundaryForRecord(update: MondayUpdate): MondayUpdateBoundary {
+  const createdAt = stringValue(update.created_at);
+  const createdAtDate = createdAt ? new Date(createdAt) : null;
+  if (!createdAtDate || Number.isNaN(createdAtDate.getTime())) {
+    throw new Error(`monday_update_boundary_missing_created_at:${update.id}`);
+  }
+  return { created_at: createdAtDate.toISOString(), id: update.id };
+}
+
+function mondayUpdateBoundaryForPage(updates: MondayUpdate[]): MondayUpdateBoundary {
+  const lastUpdate = updates.at(-1);
+  if (!lastUpdate) throw new Error('monday_update_boundary_empty_page');
+  return mondayUpdateBoundaryForRecord(lastUpdate);
+}
+
+function compareMondayIds(left: string, right: string): number {
+  if (/^\d+$/u.test(left) && /^\d+$/u.test(right)) {
+    const normalizedLeft = left.replace(/^0+(?=\d)/u, '');
+    const normalizedRight = right.replace(/^0+(?=\d)/u, '');
+    return (
+      normalizedLeft.length - normalizedRight.length ||
+      normalizedLeft.localeCompare(normalizedRight)
+    );
+  }
+  return left.localeCompare(right);
+}
+
+function mondayUpdateIsOlderThanBoundary(
+  update: MondayUpdate,
+  boundary: MondayUpdateBoundary,
+): boolean {
+  const updateBoundary = mondayUpdateBoundaryForRecord(update);
+  const timestampDifference =
+    new Date(updateBoundary.created_at).getTime() - new Date(boundary.created_at).getTime();
+  return (
+    timestampDifference < 0 ||
+    (timestampDifference === 0 && compareMondayIds(updateBoundary.id, boundary.id) < 0)
+  );
 }
 
 function mondayConversationCursorKey(boardId: string, itemId: string): string {
@@ -1487,7 +1546,7 @@ async function hydrateItemConversations(
 ): Promise<HydratedMondayConversations> {
   const includeUpdatePages = options.includeUpdatePages ?? true;
   let remaining = options.maxConversationEvents ?? MONDAY_BOARD_WRITER_EVENT_BUDGET;
-  const updateCursorBefore = cursor.update_next_page;
+  const updateBoundaryBefore = cursor.update_boundary;
   let replyNextPages = { ...(cursor.reply_next_pages ?? {}) };
   const continuations: MondayConversationContinuation[] = [];
   const hydratedUpdates: MondayUpdate[] = [];
@@ -1527,45 +1586,73 @@ async function hydrateItemConversations(
   };
 
   // A selected-update continuation only advances that update's reply pages;
-  // preserve any separate item-level update-page cursor until its generic
-  // selected-board continuation consumes it.
-  let updateNextPage: number | undefined = includeUpdatePages ? undefined : updateCursorBefore;
+  // preserve any separate item-level update boundary until its generic
+  // selected-board continuation consumes it. Legacy numeric pages are not
+  // preserved: their safe migration is a replay from the newest page.
+  let updateBoundary: MondayUpdateBoundary | undefined = includeUpdatePages
+    ? undefined
+    : updateBoundaryBefore;
   if (!includeUpdatePages) {
     const updates = item.updates ?? [];
     if (!(await hydrateReplies(updates))) {
       continuations.push(...updates.map((update) => ({ itemId: item.id, updateId: update.id })));
     }
   } else {
-    let page = updateCursorBefore ?? 1;
-    let updates = updateCursorBefore ? undefined : item.updates;
+    let page = 1;
+    let updates = item.updates;
+    let boundaryCrossed = !updateBoundaryBefore;
+    let lastCoveredBoundary = updateBoundaryBefore;
     for (;;) {
       // A shell has no conversation payload yet. Do not ask Monday for a
       // 100-update page when this writer cannot persist that page whole; the
       // exact item continuation below will hydrate it in a fresh safe budget.
       if (updates === undefined && remaining < CONVERSATION_PAGE_LIMIT) {
-        if (page >= 2) updateNextPage = page;
+        updateBoundary = lastCoveredBoundary;
         continuations.push({ itemId: item.id });
         break;
       }
-      const pageUpdates = updates ?? (await fetchItemUpdatesPage(tokens, item.id, page));
-      if (pageUpdates.length === 0) break;
+      const providerPage = updates ?? (await fetchItemUpdatesPage(tokens, item.id, page));
+      if (providerPage.length === 0) break;
+      let pageUpdates = providerPage;
+      if (!boundaryCrossed && updateBoundaryBefore) {
+        const boundaryIndex = providerPage.findIndex(
+          (update) => update.id === updateBoundaryBefore.id,
+        );
+        if (boundaryIndex >= 0) {
+          boundaryCrossed = true;
+          pageUpdates = providerPage.slice(boundaryIndex + 1);
+        } else {
+          pageUpdates = providerPage.filter((update) =>
+            mondayUpdateIsOlderThanBoundary(update, updateBoundaryBefore),
+          );
+          if (pageUpdates.length > 0) boundaryCrossed = true;
+        }
+      }
+      if (pageUpdates.length === 0) {
+        if (providerPage.length < CONVERSATION_PAGE_LIMIT) break;
+        page += 1;
+        updates = undefined;
+        continue;
+      }
       if (!(await hydrateReplies(pageUpdates))) {
         // Do not split an update page. A selected-update continuation can
         // write each deferred record (and its reply history) independently,
-        // while the item cursor continues at the following provider page.
+        // while the item cursor continues after the last covered stable
+        // update boundary.
         continuations.push(
           ...pageUpdates.map((update) => ({ itemId: item.id, updateId: update.id })),
         );
-        if (pageUpdates.length === CONVERSATION_PAGE_LIMIT) {
-          updateNextPage = page + 1;
+        if (providerPage.length === CONVERSATION_PAGE_LIMIT) {
+          updateBoundary = mondayUpdateBoundaryForPage(pageUpdates);
           continuations.push({ itemId: item.id });
         }
         break;
       }
-      if (pageUpdates.length < CONVERSATION_PAGE_LIMIT) break;
+      lastCoveredBoundary = mondayUpdateBoundaryForPage(pageUpdates);
+      if (providerPage.length < CONVERSATION_PAGE_LIMIT) break;
       page += 1;
       if (remaining === 0) {
-        updateNextPage = page;
+        updateBoundary = lastCoveredBoundary;
         continuations.push({ itemId: item.id });
         break;
       }
@@ -1574,7 +1661,7 @@ async function hydrateItemConversations(
   }
 
   const nextCursor: MondayConversationCursor = {
-    ...(updateNextPage ? { update_next_page: updateNextPage } : {}),
+    ...(updateBoundary ? { update_boundary: updateBoundary } : {}),
     ...(Object.keys(replyNextPages).length > 0 ? { reply_next_pages: replyNextPages } : {}),
   };
   return {
@@ -2513,6 +2600,9 @@ export const mondayProvider: IntegrationProvider = {
     return {
       events,
       syncTasks,
+      ...(events.some((event) => event.sourceTombstone)
+        ? { syncTaskDisposition: 'handled' as const }
+        : {}),
     };
   },
 

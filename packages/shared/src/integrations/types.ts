@@ -499,6 +499,8 @@ export interface WebhookNormalizeInput {
 export interface WebhookNormalizeResult {
   events: IntegrationEvent[];
   syncTasks: TargetedSyncTask[];
+  /** The provider fully handled this delivery and an empty task list is intentional. */
+  syncTaskDisposition?: 'handled';
   ignoredReason?: string;
 }
 

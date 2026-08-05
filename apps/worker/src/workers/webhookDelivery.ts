@@ -23,11 +23,13 @@ function normalizeWebhookResult(
 ): {
   events: integrationsLib.IntegrationEvent[];
   syncTasks: integrationsLib.TargetedSyncTask[];
+  syncTaskDisposition?: 'handled';
 } {
   if (Array.isArray(result)) return { events: result, syncTasks: [] };
   return {
     events: result.events,
     syncTasks: result.syncTasks,
+    ...(result.syncTaskDisposition ? { syncTaskDisposition: result.syncTaskDisposition } : {}),
   };
 }
 
@@ -146,7 +148,9 @@ export async function processWebhookDeliveryJob(
                 ? [task]
                 : [catchUpTask(integration)],
             )
-          : [catchUpTask(integration)];
+          : normalized.syncTaskDisposition === 'handled'
+            ? []
+            : [catchUpTask(integration)];
       if (events.length > 0) {
         await integrationsLib.writeIntegrationEvents({
           db: deps.db,
