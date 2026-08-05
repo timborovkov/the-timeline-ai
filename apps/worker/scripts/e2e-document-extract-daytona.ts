@@ -189,7 +189,15 @@ async function main(): Promise<void> {
     contentType,
     body,
   });
-  console.log(JSON.stringify({ step: 'finalized', mode, fixturePath, ...uploaded, byteSize: body.byteLength }));
+  console.log(
+    JSON.stringify({
+      step: 'finalized',
+      mode,
+      fixturePath,
+      ...uploaded,
+      byteSize: body.byteLength,
+    }),
+  );
 
   if (mode === 'queue') {
     // Leave version pending; enqueue for the extract-main consumer.

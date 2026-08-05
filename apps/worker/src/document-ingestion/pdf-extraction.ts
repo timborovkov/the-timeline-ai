@@ -12,9 +12,7 @@ import {
 } from '#src/document-ingestion/types.js';
 
 export {
-  DaytonaNotConfiguredError,
   DOCX_SANDBOX_MODEL,
-  isDaytonaNotConfiguredError,
   PDF_SANDBOX_MODEL,
   shouldAcceptSandboxPdfText,
   type SandboxDocxExtractResult,

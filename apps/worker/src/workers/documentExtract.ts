@@ -18,16 +18,14 @@ import {
   DOCX_SANDBOX_MODEL,
   extractDocxForDocument,
   extractPdfForDocument,
-  isDaytonaNotConfiguredError,
   PDF_SANDBOX_MODEL,
   shouldAcceptSandboxPdfText,
   type SandboxPdfExtractResult,
 } from '#src/document-ingestion/pdf-extraction.js';
+import { isDaytonaNotConfiguredError } from '#src/document-ingestion/types.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 
 export {
-  DaytonaNotConfiguredError,
-  isDaytonaNotConfiguredError,
   PDF_SANDBOX_MODEL,
   shouldAcceptSandboxPdfText,
   type SandboxPdfExtractResult,

@@ -7,8 +7,8 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { applyDbMigrations } from '#src/test/pglite.js';
 import { DaytonaNotConfiguredError } from '#src/document-ingestion/types.js';
+import { applyDbMigrations } from '#src/test/pglite.js';
 import {
   type DocumentExtractIO,
   type SandboxPdfExtractResult,
