@@ -6,19 +6,19 @@ import { TIMELINE_MODELS } from '#src/llm/models.js';
 describe('TIMELINE_MODELS', () => {
   it('matches OpenRouter metadata for OSS chat-capable roles', () => {
     expect(TIMELINE_MODELS.extraction).toMatchObject({
-      id: 'z-ai/glm-5.2',
+      id: 'deepseek/deepseek-v4-pro',
       provider: 'openrouter',
       contextWindowTokens: 1_048_576,
       capabilities: ['chat', 'structured', 'tools'],
     });
     expect(TIMELINE_MODELS.agent).toMatchObject({
-      id: 'z-ai/glm-5.2',
+      id: 'deepseek/deepseek-v4-pro',
       provider: 'openrouter',
       contextWindowTokens: 1_048_576,
       capabilities: ['chat', 'structured', 'tools'],
     });
     expect(TIMELINE_MODELS.structuredFallback).toMatchObject({
-      id: 'deepseek/deepseek-v4-pro',
+      id: 'deepseek/deepseek-v4-flash',
       provider: 'openrouter',
       contextWindowTokens: 1_048_576,
       capabilities: ['chat', 'structured', 'tools'],

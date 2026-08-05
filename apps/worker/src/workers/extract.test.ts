@@ -571,7 +571,7 @@ describe('processExtractJobForTests', () => {
   it('skips reruns already stamped by the current structured fallback model', async () => {
     const rawEventId = '46464646-4646-4646-8646-464646464646';
     const fallbackModelVersion = currentExtractionModelVersions().find((version) =>
-      version.includes('deepseek/deepseek-v4-pro'),
+      version.includes('deepseek/deepseek-v4-flash'),
     );
     if (!fallbackModelVersion) throw new Error('expected fallback extraction model version');
     await seedEvent(db, {
