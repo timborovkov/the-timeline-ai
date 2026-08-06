@@ -6,6 +6,7 @@ import {
   daytonaSandboxCreateParams,
   downloadSandboxPageImages,
   extractPdfInDaytonaSandbox,
+  MAX_SANDBOX_PAGE_IMAGE_BYTES,
   parseSandboxJsonObject,
 } from '#src/document-ingestion/daytona.js';
 
@@ -14,6 +15,7 @@ const fakes = vi.hoisted(() => ({
   delete: vi.fn(),
   uploadFile: vi.fn(),
   downloadFile: vi.fn(),
+  getFileDetails: vi.fn(),
   executeCommand: vi.fn(),
 }));
 
@@ -72,6 +74,10 @@ describe('downloadSandboxPageImages', () => {
   it('throws when any page download fails (fail closed)', async () => {
     const sandbox = {
       fs: {
+        getFileDetails: vi
+          .fn()
+          .mockResolvedValueOnce({ size: 4 })
+          .mockResolvedValueOnce({ size: 4 }),
         downloadFile: vi
           .fn()
           .mockResolvedValueOnce(Buffer.from('png1'))
@@ -86,6 +92,10 @@ describe('downloadSandboxPageImages', () => {
   it('returns all images when downloads succeed', async () => {
     const sandbox = {
       fs: {
+        getFileDetails: vi
+          .fn()
+          .mockResolvedValueOnce({ size: 4 })
+          .mockResolvedValueOnce({ size: 4 }),
         downloadFile: vi
           .fn()
           .mockResolvedValueOnce(Buffer.from('png1'))
@@ -95,6 +105,48 @@ describe('downloadSandboxPageImages', () => {
     const images = await downloadSandboxPageImages(sandbox as never, ['/tmp/a.png', '/tmp/b.png']);
     expect(images).toHaveLength(2);
   });
+
+  it('rejects an oversized page before downloading it', async () => {
+    const downloadFile = vi.fn();
+    const sandbox = {
+      fs: {
+        getFileDetails: vi.fn().mockResolvedValue({ size: MAX_SANDBOX_PAGE_IMAGE_BYTES + 1 }),
+        downloadFile,
+      },
+    };
+
+    await expect(downloadSandboxPageImages(sandbox as never, ['/tmp/huge.png'])).rejects.toThrow(
+      /page image exceeds/,
+    );
+    expect(downloadFile).not.toHaveBeenCalled();
+  });
+
+  it('rejects an oversized page set before downloading any image', async () => {
+    const downloadFile = vi.fn();
+    const sandbox = {
+      fs: {
+        getFileDetails: vi
+          .fn()
+          .mockResolvedValueOnce({ size: MAX_SANDBOX_PAGE_IMAGE_BYTES })
+          .mockResolvedValueOnce({ size: MAX_SANDBOX_PAGE_IMAGE_BYTES })
+          .mockResolvedValueOnce({ size: MAX_SANDBOX_PAGE_IMAGE_BYTES })
+          .mockResolvedValueOnce({ size: MAX_SANDBOX_PAGE_IMAGE_BYTES })
+          .mockResolvedValueOnce({ size: 1 }),
+        downloadFile,
+      },
+    };
+
+    await expect(
+      downloadSandboxPageImages(sandbox as never, [
+        '/tmp/a.png',
+        '/tmp/b.png',
+        '/tmp/c.png',
+        '/tmp/d.png',
+        '/tmp/e.png',
+      ]),
+    ).rejects.toThrow(/aggregate bytes/);
+    expect(downloadFile).not.toHaveBeenCalled();
+  });
 });
 
 describe('extractPdfInDaytonaSandbox', () => {
@@ -103,6 +155,7 @@ describe('extractPdfInDaytonaSandbox', () => {
     fakes.delete.mockReset();
     fakes.uploadFile.mockReset();
     fakes.downloadFile.mockReset();
+    fakes.getFileDetails.mockReset();
     fakes.executeCommand.mockReset();
 
     const sandbox = {
@@ -111,6 +164,7 @@ describe('extractPdfInDaytonaSandbox', () => {
       fs: {
         uploadFile: fakes.uploadFile.mockResolvedValue(undefined),
         downloadFile: fakes.downloadFile,
+        getFileDetails: fakes.getFileDetails.mockResolvedValue({ size: 4 }),
       },
       process: {
         executeCommand: fakes.executeCommand,

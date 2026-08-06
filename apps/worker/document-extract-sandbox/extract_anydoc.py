@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -59,15 +60,53 @@ def render_pages(path: Path, out_dir: Path, max_pages: int) -> tuple[list[str], 
             page = pdf[i]
             try:
                 bitmap = page.render(scale=2)
-                pil_image = bitmap.to_pil()
-                out_path = out_dir / f"page-{i + 1:04d}.png"
-                pil_image.save(out_path, format="PNG")
-                paths.append(str(out_path))
+                try:
+                    pil_image = bitmap.to_pil()
+                    try:
+                        out_path = out_dir / f"page-{i + 1:04d}.png"
+                        pil_image.save(out_path, format="PNG")
+                        paths.append(str(out_path))
+                    finally:
+                        pil_image.close()
+                finally:
+                    bitmap.close()
             finally:
                 page.close()
         return paths, page_count
     finally:
         pdf.close()
+
+
+def inspect_pdf_page_text(path: Path) -> tuple[list[int], int]:
+    """Return non-whitespace native-text counts for every PDF page."""
+    import pypdfium2 as pdfium
+
+    pdf = pdfium.PdfDocument(str(path))
+    try:
+        page_count = len(pdf)
+        text_counts: list[int] = []
+        for i in range(page_count):
+            page = pdf[i]
+            try:
+                text_page = page.get_textpage()
+                try:
+                    text = text_page.get_text_bounded()
+                    text_counts.append(sum(not char.isspace() for char in text))
+                finally:
+                    text_page.close()
+            finally:
+                page.close()
+        return text_counts, page_count
+    finally:
+        pdf.close()
+
+
+def has_sparse_pdf_pages(text_counts: list[int], sparse_chars: int) -> bool:
+    """Detect mixed/scanned PDFs without penalizing page count."""
+    if not text_counts:
+        return True
+    per_page_floor = max(1, math.ceil(sparse_chars / len(text_counts)))
+    return any(count < per_page_floor for count in text_counts)
 
 
 def _error_label(exc: BaseException) -> str:
@@ -124,9 +163,20 @@ def extract_pdf(
     page_images: list[str] = []
 
     sparse = len(text) < sparse_chars
+    try:
+        page_text_counts, page_count = inspect_pdf_page_text(path)
+        sparse = sparse or has_sparse_pdf_pages(page_text_counts, sparse_chars)
+    except Exception as exc:  # noqa: BLE001
+        # If per-page coverage cannot be verified, do not accept potentially
+        # partial anydoc text as complete. Rendering remains the safe fallback.
+        sparse = True
+        error = f"{error}; page text: {exc}" if error else f"page text: {exc}"
     if sparse:
         try:
-            page_images, page_count = render_pages(path, out_dir / "pages", max_pages)
+            page_images, rendered_page_count = render_pages(
+                path, out_dir / "pages", max_pages
+            )
+            page_count = max(page_count, rendered_page_count)
             method = f"{method}+render" if text else "render"
             # Image-only / unsupported anydoc is expected for scanned PDFs.
             if convert_error and page_images:

@@ -42,9 +42,10 @@ evidence; documents are curated workspace knowledge.
   renames or promotes with that title.
 - Visual files need both faithful text extraction when available and semantic
   visual description when useful. Current processing extracts PDF/DOCX bytes in
-  ephemeral Daytona sandboxes via Firecrawl anydoc (office + text PDFs; sparse /
-  scanned PDFs render page PNGs with pypdfium2), sends those page images and
-  `image/*` uploads through vision OCR in the credential-thin extract service
+  ephemeral Daytona sandboxes via Firecrawl anydoc (office + text PDFs;
+  per-page coverage sends sparse, scanned, and mixed PDFs through bounded page
+  PNG rendering), sends those page images and `image/*` uploads through vision OCR in the
+  credential-thin extract service
   (with optional visual description), and defers only oversized captured files;
   future processing can tune depth by intent so lightweight
   previews are enough until promotion, targeted inspection, or explicit user

@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { closeDb, documentChunks, documentVersions, getDb } from '@timeline/db';
+import { closeDb, getDb } from '@timeline/db';
 import {
   getDocumentsBucket,
   getObjectBuffer,
@@ -20,8 +20,6 @@ import {
   queue,
   withTeam,
 } from '@timeline/shared';
-import { eq } from 'drizzle-orm';
-
 // Relative imports: this file lives under scripts/ (outside tsconfig rootDir),
 // so the package `#src/*` map would resolve to dist/ and break knip/CI when
 // dist is absent. Source-relative paths stay analyzable.
@@ -126,14 +124,10 @@ async function createAndUpload(input: {
 }
 
 async function waitForChunked(versionId: string, timeoutMs: number): Promise<void> {
-  const db = getDb();
+  const scope = withTeam(getDb(), TEAM_ID, OWNER_ID);
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
-    const [version] = await db
-      .select()
-      .from(documentVersions)
-      .where(eq(documentVersions.id, versionId))
-      .limit(1);
+    const version = await scope.documents.getDocumentVersion(versionId);
     if (version?.processingStatus === 'chunked' || version?.processingStatus === 'embedded') {
       return;
     }
@@ -146,16 +140,9 @@ async function waitForChunked(versionId: string, timeoutMs: number): Promise<voi
 }
 
 async function printSummary(versionId: string, result?: unknown): Promise<void> {
-  const db = getDb();
-  const [version] = await db
-    .select()
-    .from(documentVersions)
-    .where(eq(documentVersions.id, versionId))
-    .limit(1);
-  const chunks = await db
-    .select()
-    .from(documentChunks)
-    .where(eq(documentChunks.documentVersionId, versionId));
+  const scope = withTeam(getDb(), TEAM_ID, OWNER_ID);
+  const version = await scope.documents.getDocumentVersion(versionId);
+  const chunks = await scope.documents.listDocumentVersionChunks(versionId);
   console.log(
     JSON.stringify(
       {
@@ -231,11 +218,7 @@ async function main(): Promise<void> {
   );
 
   if (mode === 'queue') {
-    // Leave version pending; enqueue for the extract-main consumer.
-    await getDb()
-      .update(documentVersions)
-      .set({ processingStatus: 'pending', processingError: null })
-      .where(eq(documentVersions.id, uploaded.versionId));
+    // Finalization leaves the version pending; enqueue for extract-main.
     await queue.enqueueDocumentExtractJob({
       documentVersionId: uploaded.versionId,
       teamId: TEAM_ID,

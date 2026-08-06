@@ -3,7 +3,7 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { Daytona, Image } from '@daytonaio/sdk';
+import { Daytona, DaytonaNotFoundError, Image } from '@daytonaio/sdk';
 import { childLogger, getEnv } from '@timeline/shared';
 
 const log = childLogger('worker:document-ingestion:snapshot');
@@ -157,8 +157,9 @@ async function waitUntilSnapshotGone(daytona: Daytona, name: string): Promise<vo
     try {
       await daytona.snapshot.get(name);
       await new Promise((resolve) => setTimeout(resolve, 1000));
-    } catch {
-      return;
+    } catch (err: unknown) {
+      if (err instanceof DaytonaNotFoundError) return;
+      throw err;
     }
   }
   throw new Error(`timed out waiting for Daytona snapshot "${name}" to disappear after delete`);
@@ -198,30 +199,26 @@ export async function ensureDocumentExtractSnapshot(options?: {
   const snapshotName = await resolveDocumentExtractSnapshotName(options?.explicitName, sandboxDir);
   const daytona = options?.daytona ?? createDaytonaFromAppEnv();
   const force = options?.force === true;
+  let existing: Awaited<ReturnType<Daytona['snapshot']['get']>> | null = null;
 
-  if (!force) {
-    try {
-      await daytona.snapshot.get(snapshotName);
-      log.info(
-        { snapshot: snapshotName, contentHash },
-        'document-extract snapshot already present',
-      );
-      return { name: snapshotName, created: false, contentHash };
-    } catch {
-      // Missing — create below.
-    }
-  } else {
-    try {
-      const existing = await daytona.snapshot.get(snapshotName);
-      log.info(
-        { snapshot: snapshotName },
-        'deleting existing document-extract snapshot before force create',
-      );
-      await daytona.snapshot.delete(existing);
-      await waitUntilSnapshotGone(daytona, snapshotName);
-    } catch {
-      // Did not exist.
-    }
+  try {
+    existing = await daytona.snapshot.get(snapshotName);
+  } catch (err: unknown) {
+    if (!(err instanceof DaytonaNotFoundError)) throw err;
+  }
+
+  if (!force && existing) {
+    log.info({ snapshot: snapshotName, contentHash }, 'document-extract snapshot already present');
+    return { name: snapshotName, created: false, contentHash };
+  }
+
+  if (force && existing) {
+    log.info(
+      { snapshot: snapshotName },
+      'deleting existing document-extract snapshot before force create',
+    );
+    await daytona.snapshot.delete(existing);
+    await waitUntilSnapshotGone(daytona, snapshotName);
   }
 
   log.info(

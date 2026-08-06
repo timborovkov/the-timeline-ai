@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { DaytonaNotFoundError } from '@daytonaio/sdk';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -102,7 +103,7 @@ describe('ensureDocumentExtractSnapshot', () => {
     });
     const get = vi
       .fn()
-      .mockRejectedValueOnce(new Error('not found'))
+      .mockRejectedValueOnce(new DaytonaNotFoundError('not found', 404))
       .mockResolvedValue({ name: 'new' });
     const create = vi.fn().mockResolvedValue({ name: 'new' });
     const daytona = {
@@ -120,5 +121,72 @@ describe('ensureDocumentExtractSnapshot', () => {
       name: result.name,
       resources: { cpu: 1, memory: 2, disk: 3 },
     });
+  });
+
+  it('propagates snapshot lookup failures instead of treating them as missing', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'doc-extract-snap-'));
+    await writeSandbox(dir, {
+      'requirements.txt': 'x\n',
+      'extract_anydoc.py': 'x\n',
+    });
+    const create = vi.fn();
+    const daytona = {
+      snapshot: {
+        get: vi.fn().mockRejectedValue(new Error('Daytona unavailable')),
+        create,
+        delete: vi.fn(),
+      },
+    };
+
+    await expect(
+      ensureDocumentExtractSnapshot({ sandboxDir: dir, daytona: daytona as never }),
+    ).rejects.toThrow('Daytona unavailable');
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('propagates force-delete failures and does not report a rebuild', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'doc-extract-snap-'));
+    await writeSandbox(dir, {
+      'requirements.txt': 'x\n',
+      'extract_anydoc.py': 'x\n',
+    });
+    const create = vi.fn();
+    const daytona = {
+      snapshot: {
+        get: vi.fn().mockResolvedValue({ name: 'exists' }),
+        create,
+        delete: vi.fn().mockRejectedValue(new Error('delete failed')),
+      },
+    };
+
+    await expect(
+      ensureDocumentExtractSnapshot({ force: true, sandboxDir: dir, daytona: daytona as never }),
+    ).rejects.toThrow('delete failed');
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('force-rebuilds after the deleted snapshot returns not found', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'doc-extract-snap-'));
+    await writeSandbox(dir, {
+      'requirements.txt': 'x\n',
+      'extract_anydoc.py': 'x\n',
+    });
+    const create = vi.fn().mockResolvedValue({ name: 'new' });
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ name: 'exists' })
+      .mockRejectedValueOnce(new DaytonaNotFoundError('not found', 404));
+    const daytona = {
+      snapshot: { get, create, delete: vi.fn().mockResolvedValue(undefined) },
+    };
+
+    const result = await ensureDocumentExtractSnapshot({
+      force: true,
+      sandboxDir: dir,
+      daytona: daytona as never,
+    });
+
+    expect(result.created).toBe(true);
+    expect(create).toHaveBeenCalledOnce();
   });
 });

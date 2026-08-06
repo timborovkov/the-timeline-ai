@@ -96,6 +96,12 @@
         <code>extract</code> consumes that queue. Local/CI ensure:
         <code>pnpm --filter @timeline/worker create-document-extract-snapshot</code>.
       </p>
+      <p>
+        Extract startup enforces a raw-env allowlist. Standard Railway Railpack / MISE runtime keys
+        are supported, but a copied app secret or unknown service variable intentionally stops the
+        process. Remove the extra variable instead of sharing the web/worker variable group with
+        <code>extract</code>.
+      </p>
 
       <h2 id="shared-variables">5. Shared variables</h2>
       <p>

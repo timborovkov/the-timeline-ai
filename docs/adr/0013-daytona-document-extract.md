@@ -35,10 +35,14 @@ authored by a trusted teammate.
    text-based PDF. We do **not** call Firecrawl hosted `/parse` for team
    uploads.
 3. **PDF vision stays in the extract service.** Sandboxes cannot call
-   OpenRouter under `networkBlockAll`. When anydoc returns sparse / empty /
-   unsupported (scanned) PDF text, pypdfium2 renders up to 20 pages
-   (env-capped at 100) to PNG and the extract service runs
-   `llm.extractTextFromMedia`. `image/*` inputs use the same vision path.
+   OpenRouter under `networkBlockAll`. Native text coverage is checked per
+   page, so a mixed PDF cannot hide scanned pages behind one dense text page.
+   When anydoc returns sparse / empty / unsupported PDF text, pypdfium2 plus
+   Pillow renders up to 20 pages (env-capped at 100) to PNG and the extract
+   service runs `llm.extractTextFromMedia`. Before download, every remote PNG
+   is capped at 8 MiB and the complete set at 32 MiB; larger sets use the
+   compressed full-PDF vision path instead of accumulating rendered buffers.
+   `image/*` inputs use the same vision path.
 4. **Cheap UTF-8 for real text.** `text/*`, JSON/XML, and text-ish extensions
    (md/txt/csv/tsv/json/yaml/html/…) decode in-process without Daytona. CSV
    is never routed through anydoc.
@@ -99,6 +103,6 @@ DAYTONA_SNAPSHOT=timeline-document-extract-<hash>
 - Operators set `DAYTONA_*` on the extract service. Snapshot drift is avoided
   by content-hash names + CI ensure; first boot without a published snapshot
   may be slow when boot ensure creates it. Sandbox/deps changes (including
-  anydoc pins) require a new content-hashed snapshot.
+  anydoc, pypdfium2, or Pillow pins) require a new content-hashed snapshot.
 - Document product behavior (chunking, embed fan-out, failed/retry UX, 25 MiB
   cap) stays the same; only the trust boundary and format coverage move.

@@ -51,7 +51,7 @@ jobs:
       - name: Resolve content-hashed snapshot name
         id: name
         run: |
-          NAME="$(pnpm --filter @timeline/worker create-document-extract-snapshot -- --print-name-only)"
+          NAME="$(pnpm --silent --filter @timeline/worker create-document-extract-snapshot -- --print-name-only)"
           echo "snapshot_name=${NAME}" >> "$GITHUB_OUTPUT"
           echo "Resolved DAYTONA_SNAPSHOT=${NAME}"
 

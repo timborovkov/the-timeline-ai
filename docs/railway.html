@@ -149,6 +149,12 @@
         ensure + optional boot create-once): ADR 0013 and
         <code>pnpm --filter @timeline/worker create-document-extract-snapshot</code>.
       </p>
+      <p>
+        Extract startup checks the raw environment against a strict credential-thin allowlist.
+        Railway's normal Railpack / MISE runtime variables are accepted automatically. If startup
+        reports an unexpected variable, remove that copied service variable or deliberately add an
+        exact non-secret platform key in code; do not widen the allowlist by prefix.
+      </p>
 
       <h2 id="environment-variables">Environment variables</h2>
       <p>

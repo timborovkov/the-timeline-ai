@@ -86,6 +86,17 @@ const DOCUMENT_EXTRACT_PROCESS_ENV_EXACT_ALLOWLIST = new Set([
   'PWD',
   'OLDPWD',
   'COLORTERM',
+  'CI',
+  // Railpack's mise toolchain/runtime metadata. Keep these exact so a future
+  // credential-bearing MISE_* or RAILPACK_* variable is still rejected.
+  'MISE_DATA_DIR',
+  'MISE_SHIMS_DIR',
+  'MISE_CACHE_DIR',
+  'MISE_CONFIG_DIR',
+  'MISE_INSTALLS_DIR',
+  'RAILPACK_VERSION',
+  '__MISE_SHIM',
+  '__MISE_DIFF',
 ]);
 
 const DOCUMENT_EXTRACT_PROCESS_ENV_PREFIX_ALLOWLIST = [

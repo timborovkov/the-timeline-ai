@@ -13,6 +13,10 @@ const log = childLogger('worker:document-ingestion:daytona');
 const REMOTE_WORK = '/tmp/timeline-extract';
 const REMOTE_ANYDOC_SCRIPT = '/opt/timeline/extract_anydoc.py';
 
+/** Keep two concurrent extract jobs well below the service memory ceiling. */
+export const MAX_SANDBOX_PAGE_IMAGE_BYTES = 8 * 1024 * 1024;
+const MAX_SANDBOX_PAGE_IMAGES_TOTAL_BYTES = 32 * 1024 * 1024;
+
 function createDaytonaClient(): Daytona {
   const env = getEnv();
   if (!env.DAYTONA_API_KEY) {
@@ -99,15 +103,46 @@ export async function downloadSandboxPageImages(
   sandbox: Pick<Sandbox, 'fs'>,
   paths: string[],
 ): Promise<Buffer[]> {
-  const images: Buffer[] = [];
+  let expectedTotalBytes = 0;
   for (const remotePath of paths) {
     if (typeof remotePath !== 'string' || remotePath.length === 0) {
       throw new Error('sandbox PDF extract returned an empty page image path');
     }
+    const details = await sandbox.fs.getFileDetails(remotePath);
+    if (!Number.isSafeInteger(details.size) || details.size <= 0) {
+      throw new Error(`sandbox page image has invalid size: ${remotePath}`);
+    }
+    if (details.size > MAX_SANDBOX_PAGE_IMAGE_BYTES) {
+      throw new Error(
+        `sandbox page image exceeds ${String(MAX_SANDBOX_PAGE_IMAGE_BYTES)} bytes: ${remotePath}`,
+      );
+    }
+    expectedTotalBytes += details.size;
+    if (expectedTotalBytes > MAX_SANDBOX_PAGE_IMAGES_TOTAL_BYTES) {
+      throw new Error(
+        `sandbox page images exceed ${String(MAX_SANDBOX_PAGE_IMAGES_TOTAL_BYTES)} aggregate bytes`,
+      );
+    }
+  }
+
+  const images: Buffer[] = [];
+  let downloadedTotalBytes = 0;
+  for (const remotePath of paths) {
     try {
       const buf = await sandbox.fs.downloadFile(remotePath);
       if (buf.byteLength === 0) {
         throw new Error(`sandbox page image is empty: ${remotePath}`);
+      }
+      if (buf.byteLength > MAX_SANDBOX_PAGE_IMAGE_BYTES) {
+        throw new Error(
+          `sandbox page image exceeds ${String(MAX_SANDBOX_PAGE_IMAGE_BYTES)} bytes: ${remotePath}`,
+        );
+      }
+      downloadedTotalBytes += buf.byteLength;
+      if (downloadedTotalBytes > MAX_SANDBOX_PAGE_IMAGES_TOTAL_BYTES) {
+        throw new Error(
+          `sandbox page images exceed ${String(MAX_SANDBOX_PAGE_IMAGES_TOTAL_BYTES)} aggregate bytes`,
+        );
       }
       images.push(buf);
     } catch (err: unknown) {
