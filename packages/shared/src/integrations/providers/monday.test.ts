@@ -529,7 +529,8 @@ describe('mondayProvider', () => {
     });
     const ownerEvent = (Array.isArray(owner) ? owner[0] : owner?.events[0]) ?? null;
     const dueEvent = (Array.isArray(due) ? due[0] : due?.events[0]) ?? null;
-    const replayEvent = (Array.isArray(ownerReplay) ? ownerReplay[0] : ownerReplay?.events[0]) ?? null;
+    const replayEvent =
+      (Array.isArray(ownerReplay) ? ownerReplay[0] : ownerReplay?.events[0]) ?? null;
     expect(ownerEvent?.dedupKey).toBe(
       'monday:item:1771812698:1771812728:observed:update_column_value:owner-trigger-1',
     );

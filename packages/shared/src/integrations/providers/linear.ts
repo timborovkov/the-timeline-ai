@@ -376,10 +376,7 @@ function commentToEvent(node: LinearCommentNode): IntegrationEvent {
 }
 
 function linearProjectRevisionDigest(
-  node: Pick<
-    LinearProjectNode,
-    'name' | 'description' | 'lead' | 'startDate' | 'targetDate'
-  >,
+  node: Pick<LinearProjectNode, 'name' | 'description' | 'lead' | 'startDate' | 'targetDate'>,
 ): string {
   return createHash('sha256')
     .update(

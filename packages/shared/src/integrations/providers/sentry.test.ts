@@ -672,16 +672,10 @@ describe('sentryProvider', () => {
         recordAudit: vi.fn(),
       },
     });
-    expect(saveCursor).toHaveBeenCalledWith(
-      'sentry.project:acme/web',
-      expect.objectContaining({
-        issue_lifecycles: expect.any(Object),
-      }),
-    );
-    const saved = saveCursor.mock.calls.find(
-      (call) => call[0] === 'sentry.project:acme/web',
-    )?.[1] as { issue_lifecycles?: Record<string, string> };
-    const lifecycles = saved.issue_lifecycles ?? {};
+    const savedCursor = saveCursor.mock.calls.find(
+      ([resourceType]) => resourceType === 'sentry.project:acme/web',
+    )?.[1] as { issue_lifecycles?: Record<string, string> } | undefined;
+    const lifecycles = savedCursor?.issue_lifecycles ?? {};
     expect(Object.keys(lifecycles)).toHaveLength(2_501);
     expect(lifecycles['issue-1']).toBe('regressed:2026-06-22T08:00:00.000Z');
     expect(lifecycles['issue-5000']).toBe('resolved');
