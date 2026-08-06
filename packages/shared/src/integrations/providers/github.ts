@@ -1166,12 +1166,10 @@ function pruneLifecycleMap<T extends string>(
     const value = map[id];
     if (value) next[id] = value;
   }
-  // If the keep set is tiny, retain a suffix of recent entries so we still
-  // detect transitions on the next page after a cap prune.
-  if (Object.keys(next).length < Math.min(keepIds.size, 64)) {
-    for (const [id, value] of entries.slice(-Math.floor(GITHUB_LIFECYCLE_CURSOR_CAP / 2))) {
-      next[id] = value;
-    }
+  // Always retain a recent suffix so polling can still detect close/reopen
+  // transitions after a cap prune, even when the current page keeps many ids.
+  for (const [id, value] of entries.slice(-Math.floor(GITHUB_LIFECYCLE_CURSOR_CAP / 2))) {
+    next[id] = value;
   }
   return next;
 }

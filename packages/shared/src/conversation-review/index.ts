@@ -146,18 +146,21 @@ export function quietUntilFor(date = new Date()): Date {
   return new Date(date.getTime() + CONVERSATION_REVIEW_DEBOUNCE_MS);
 }
 
-export async function buildConversationEvidenceWindow(
+async function loadSlackThreadRoot(
   db: Db,
   args: {
     teamId: string;
     identity: ConversationIdentity;
     anchorOccurredAt: Date;
-    limit?: number;
   },
-): Promise<ConversationEvidenceEvent[]> {
-  const from = new Date(args.anchorOccurredAt);
-  from.setUTCDate(from.getUTCDate() - CONVERSATION_WINDOW_DAYS);
-  const rows = await db
+): Promise<ConversationEvidenceEvent | null> {
+  if (args.identity.kind !== 'slack_thread') return null;
+  const threadTs = args.identity.key.split(':').at(-1);
+  if (!threadTs) return null;
+  const parts = args.identity.key.split(':');
+  const workspaceId = parts[2];
+  const channelId = parts[3];
+  const [row] = await db
     .select({
       id: rawEvents.id,
       occurredAt: rawEvents.occurredAt,
@@ -169,24 +172,74 @@ export async function buildConversationEvidenceWindow(
     .where(
       and(
         eq(rawEvents.teamId, args.teamId),
+        eq(rawEvents.source, 'slack'),
         eq(rawEvents.visibility, 'team'),
         isNotNull(rawEvents.contentText),
-        gte(rawEvents.occurredAt, from),
         lte(rawEvents.occurredAt, args.anchorOccurredAt),
         sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
-        conversationCondition(args.identity),
+        sql`${rawEvents.sourceMetadata} ->> 'slack_workspace_id' = ${workspaceId}`,
+        sql`${rawEvents.sourceMetadata} ->> 'slack_channel_id' = ${channelId}`,
+        sql`${rawEvents.sourceMetadata} ->> 'slack_message_ts' = ${threadTs}`,
       ),
     )
     .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
-    .limit(args.limit ?? CONVERSATION_WINDOW_LIMIT);
+    .limit(1);
+  if (!row?.contentText?.trim()) return null;
+  return {
+    ...row,
+    contentText: row.contentText.trim(),
+  };
+}
 
-  return rows
+export async function buildConversationEvidenceWindow(
+  db: Db,
+  args: {
+    teamId: string;
+    identity: ConversationIdentity;
+    anchorOccurredAt: Date;
+    limit?: number;
+  },
+): Promise<ConversationEvidenceEvent[]> {
+  const from = new Date(args.anchorOccurredAt);
+  from.setUTCDate(from.getUTCDate() - CONVERSATION_WINDOW_DAYS);
+  const limit = args.limit ?? CONVERSATION_WINDOW_LIMIT;
+  const reservedRoot = await loadSlackThreadRoot(db, args);
+  const historyLimit =
+    reservedRoot && args.identity.kind === 'slack_thread' ? Math.max(0, limit - 1) : limit;
+  const historyConditions = [
+    eq(rawEvents.teamId, args.teamId),
+    eq(rawEvents.visibility, 'team'),
+    isNotNull(rawEvents.contentText),
+    gte(rawEvents.occurredAt, from),
+    lte(rawEvents.occurredAt, args.anchorOccurredAt),
+    sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+    conversationCondition(args.identity),
+  ];
+  if (reservedRoot) historyConditions.push(ne(rawEvents.id, reservedRoot.id));
+  const rows = await db
+    .select({
+      id: rawEvents.id,
+      occurredAt: rawEvents.occurredAt,
+      authorUserId: rawEvents.authorUserId,
+      contentText: rawEvents.contentText,
+      sourceMetadata: rawEvents.sourceMetadata,
+    })
+    .from(rawEvents)
+    .where(and(...historyConditions))
+    .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
+    .limit(historyLimit);
+
+  const history = rows
     .reverse()
     .map((row) => ({
       ...row,
       contentText: row.contentText?.trim() ?? '',
     }))
     .filter((row) => row.contentText.length > 0);
+
+  if (!reservedRoot) return history;
+  if (history.some((row) => row.id === reservedRoot.id)) return history;
+  return [reservedRoot, ...history];
 }
 
 export async function buildLinkedContextWindow(

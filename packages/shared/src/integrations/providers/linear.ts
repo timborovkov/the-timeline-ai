@@ -21,10 +21,10 @@ import { childLogger } from '#src/logger.js';
 //   - Projects
 //   - Webhook → Issue + Comment + Project events
 //
-// Issue idempotency is by lifecycle bucket; when a status bucket repeats
+// Issue idempotency is by lifecycle bucket plus a content digest for
+// same-state title/assignee/… edits. When a status bucket repeats
 // (started→completed→started) the key gains `updatedAt` so the reopen is a
-// new immutable raw_event. Comments and projects key by content digest so
-// mutable field edits mint a revision row without pure timestamp churn.
+// new immutable raw_event. Comments and projects also key by content digest.
 
 const log = childLogger('integrations:linear');
 
@@ -191,10 +191,9 @@ function pruneIssueStatuses(
     const value = map[id];
     if (value) next[id] = value;
   }
-  if (Object.keys(next).length < Math.min(keepIds.size, 64)) {
-    for (const [id, value] of entries.slice(-Math.floor(LINEAR_ISSUE_STATUS_CURSOR_CAP / 2))) {
-      next[id] = value;
-    }
+  // Always retain a recent suffix so reopen detection survives a cap prune.
+  for (const [id, value] of entries.slice(-Math.floor(LINEAR_ISSUE_STATUS_CURSOR_CAP / 2))) {
+    next[id] = value;
   }
   return next;
 }
@@ -272,8 +271,40 @@ function linearStatus(stateType: string): 'open' | 'in_progress' | 'done' | 'can
   }
 }
 
+function linearIssueRevisionDigest(
+  node: Pick<
+    LinearIssueNode,
+    'title' | 'description' | 'priority' | 'assignee' | 'project' | 'parent'
+  >,
+): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        title: node.title,
+        description: node.description ?? null,
+        priority: node.priority ?? null,
+        assignee: node.assignee?.id ?? null,
+        project: node.project?.id ?? null,
+        parent: node.parent?.id ?? null,
+      }),
+    )
+    .digest('hex')
+    .slice(0, 16);
+}
+
 function linearIssueDedupKey(
-  node: Pick<LinearIssueNode, 'id' | 'updatedAt' | 'state'>,
+  node: Pick<
+    LinearIssueNode,
+    | 'id'
+    | 'updatedAt'
+    | 'state'
+    | 'title'
+    | 'description'
+    | 'priority'
+    | 'assignee'
+    | 'project'
+    | 'parent'
+  >,
   opts?: { previousStatus?: string | null; forceTransition?: boolean },
 ): string {
   const status = linearStatus(node.state.type);
@@ -281,9 +312,11 @@ function linearIssueDedupKey(
   const transitioned =
     opts?.forceTransition === true ||
     (typeof previousStatus === 'string' && previousStatus !== status);
-  return transitioned
-    ? `linear:issue:${node.id}:${status}:${node.updatedAt}`
-    : `linear:issue:${node.id}:${status}`;
+  if (transitioned) {
+    return `linear:issue:${node.id}:${status}:${node.updatedAt}`;
+  }
+  const revision = linearIssueRevisionDigest(node);
+  return `linear:issue:${node.id}:${status}:${revision}`;
 }
 
 function linearCommentBodyDigest(body: string): string {

@@ -327,7 +327,7 @@ describe('mondayProvider', () => {
     const normalized = Array.isArray(result) ? { events: result, syncTasks: [] } : result;
 
     expect(normalized?.events[0]).toMatchObject({
-      dedupKey: 'monday:item:1771812698:1771812728:done',
+      dedupKey: 'monday:item:1771812698:1771812728:done:645fc8d8709d35718f1ae00ceded91e9',
       eventType: 'column.changed',
       externalObjectId: '1771812728',
       externalEventId: '645fc8d8709d35718f1ae00ceded91e9',
@@ -541,7 +541,7 @@ describe('mondayProvider', () => {
     expect(replayEvent?.dedupKey).toBe(ownerEvent?.dedupKey);
   });
 
-  it('keeps the same Monday item dedup key across same-lifecycle webhook churn', async () => {
+  it('coalesces duplicate Monday status webhook deliveries with the same triggerUuid', async () => {
     const payload = {
       event: {
         userId: 9603417,
@@ -563,23 +563,99 @@ describe('mondayProvider', () => {
       integration: { id: 'integration-1', teamId: 'team-1' } as never,
       payload,
     });
-    const second = await mondayProvider.handleWebhook?.({
+    const replay = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload,
+    });
+    const firstEvent = (Array.isArray(first) ? first[0] : first?.events[0]) ?? null;
+    const replayEvent = (Array.isArray(replay) ? replay[0] : replay?.events[0]) ?? null;
+    expect(firstEvent?.dedupKey).toBe(
+      'monday:item:1771812698:1771812728:done:645fc8d8709d35718f1ae00ceded91e9',
+    );
+    expect(replayEvent?.dedupKey).toBe(firstEvent?.dedupKey);
+  });
+
+  it('recognizes renamed Monday status columns that report columnType color', async () => {
+    const result = await mondayProvider.handleWebhook?.({
       integration: { id: 'integration-1', teamId: 'team-1' } as never,
       payload: {
         event: {
-          ...payload.event,
-          triggerTime: '2026-06-25T10:15:03.429Z',
-          triggerUuid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-          pulseName: 'Launch checklist (renamed)',
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          columnId: 'phase',
+          columnType: 'color',
+          columnTitle: 'Phase',
+          value: { label: 'Done' },
+          previousValue: { label: 'Working on it' },
+          type: 'update_column_value',
+          triggerTime: '2026-06-25T09:15:03.429Z',
+          triggerUuid: 'phase-status-trigger',
         },
       },
     });
-    const firstEvent = (Array.isArray(first) ? first[0] : first?.events[0]) ?? null;
-    const secondEvent = (Array.isArray(second) ? second[0] : second?.events[0]) ?? null;
-    expect(firstEvent?.dedupKey).toBe('monday:item:1771812698:1771812728:done');
-    expect(secondEvent?.dedupKey).toBe(firstEvent?.dedupKey);
-    expect(secondEvent?.externalEventId).toBe('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
-    expect(secondEvent?.contentText).toContain('renamed');
+    const event = (Array.isArray(result) ? result[0] : result?.events[0]) ?? null;
+    expect(event?.dedupKey).toBe('monday:item:1771812698:1771812728:done:phase-status-trigger');
+    expect(event?.objectMap).toMatchObject({ status: 'done' });
+  });
+
+  it('mints a distinct Monday dedup key when a lifecycle status bucket repeats', async () => {
+    const toDone = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          columnId: 'status',
+          columnType: 'color',
+          columnTitle: 'Status',
+          value: { label: 'Done' },
+          previousValue: { label: 'Working on it' },
+          type: 'update_column_value',
+          triggerTime: '2026-06-25T09:15:03.429Z',
+          triggerUuid: 'to-done-1',
+        },
+      },
+    });
+    const reopen = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          columnId: 'status',
+          columnType: 'color',
+          columnTitle: 'Status',
+          value: { label: 'Working on it' },
+          previousValue: { label: 'Done' },
+          type: 'update_column_value',
+          triggerTime: '2026-06-25T10:15:03.429Z',
+          triggerUuid: 'reopen-2',
+        },
+      },
+    });
+    const firstOpen = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          type: 'create_pulse',
+          triggerTime: '2026-06-25T08:15:03.429Z',
+          triggerUuid: 'create-0',
+        },
+      },
+    });
+    const doneEvent = (Array.isArray(toDone) ? toDone[0] : toDone?.events[0]) ?? null;
+    const reopenEvent = (Array.isArray(reopen) ? reopen[0] : reopen?.events[0]) ?? null;
+    const createEvent = (Array.isArray(firstOpen) ? firstOpen[0] : firstOpen?.events[0]) ?? null;
+    expect(createEvent?.dedupKey).toBe('monday:item:1771812698:1771812728:open');
+    expect(doneEvent?.dedupKey).toBe('monday:item:1771812698:1771812728:done:to-done-1');
+    expect(reopenEvent?.dedupKey).toBe('monday:item:1771812698:1771812728:in_progress:reopen-2');
+    expect(reopenEvent?.dedupKey).not.toBe(createEvent?.dedupKey);
   });
 
   it('routes classic subitem webhooks through the selected parent board', async () => {
@@ -2166,6 +2242,7 @@ describe('mondayProvider', () => {
     });
     expect(ctx.saveCursor).toHaveBeenCalledWith('monday.item:board-1:item-1', {
       item_since: '2026-06-20T10:05:00.000Z',
+      item_lifecycles: { 'item-1': 'done' },
     });
     expect(fetch).toHaveBeenCalledTimes(1);
   });

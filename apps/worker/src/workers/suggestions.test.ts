@@ -4635,7 +4635,7 @@ describe('processSuggestionJobForTests', () => {
     expect(await suggestionCounts(pg)).toEqual({ suggestions: 0, items: 0 });
   });
 
-  it('caps conversation evidence windows and truncates long event text in suggestion prompts', async () => {
+  it('caps conversation evidence windows and keeps full anchor text under the token budget', async () => {
     expect(conversationReview.CONVERSATION_WINDOW_LIMIT).toBe(24);
     expect(conversationReview.CONVERSATION_WINDOW_DAYS).toBe(2);
     expect(SUGGESTION_PROMPT_MAX_INPUT_TOKENS).toBe(24_000);
@@ -4643,7 +4643,8 @@ describe('processSuggestionJobForTests', () => {
     const reviewId = '20000000-0000-0000-0000-0000000000c1';
     const conversationKey = `telegram:${TEAM_ID}:chat:cap-window`;
     const longMarker = 'LONG_MARKER_';
-    const longBody = `${longMarker}${'x'.repeat(1_500)}`;
+    const longTail = 'DEADLINE_FRIDAY_COMMITMENT';
+    const longBody = `${longMarker}${'x'.repeat(1_500)}${longTail}`;
     const staleId = '10000000-0000-4000-8000-0000000000c0';
     const eventIds = Array.from(
       { length: 30 },
@@ -4688,7 +4689,8 @@ describe('processSuggestionJobForTests', () => {
     const prompt = (chat.mock.calls[0]?.[0] as { prompt: string }).prompt;
     expect(prompt).not.toContain('STALE_OUTSIDE_WINDOW');
     expect(prompt).toContain(longMarker);
-    expect(prompt).not.toContain(longBody);
+    expect(prompt).toContain(longTail);
+    expect(prompt).toContain(longBody);
     const evidenceSection = prompt.split('# Conversation evidence window')[1]?.split('# ')[0] ?? '';
     const evidenceLines = evidenceSection
       .split('\n')
@@ -4699,6 +4701,53 @@ describe('processSuggestionJobForTests', () => {
     expect(evidenceLines.some((line) => line.includes('>window message 6</'))).toBe(false);
     expect(evidenceLines.some((line) => line.includes('>window message 7</'))).toBe(true);
     expect(prompt.length).toBeLessThan(SUGGESTION_PROMPT_MAX_INPUT_TOKENS * 4);
+  });
+
+  it('reserves the Slack thread root even when it falls outside the two-day window', async () => {
+    const rootId = '10000000-0000-0000-0000-0000000000c2';
+    const replyId = '10000000-0000-0000-0000-0000000000c3';
+    const reviewId = '20000000-0000-0000-0000-0000000000c2';
+    const conversationKey = `slack:${TEAM_ID}:T1:C9:thread:1716400000.000100`;
+    await seedRawEvent(db as never, {
+      id: rootId,
+      source: 'slack',
+      text: 'Please ship the Acme deck this Friday.',
+      occurredAt: new Date('2026-05-22T10:00:00.000Z'),
+      sourceMetadata: {
+        slack_workspace_id: 'T1',
+        slack_channel_id: 'C9',
+        slack_message_ts: '1716400000.000100',
+      },
+    });
+    await seedRawEvent(db as never, {
+      id: replyId,
+      source: 'slack',
+      text: 'Yes, do that Friday.',
+      occurredAt: new Date('2026-05-27T10:05:00.000Z'),
+      sourceMetadata: {
+        slack_workspace_id: 'T1',
+        slack_channel_id: 'C9',
+        slack_message_ts: '1716810300.000200',
+        slack_thread_ts: '1716400000.000100',
+      },
+    });
+    await seedConversationReview(db as never, {
+      id: reviewId,
+      conversationKey,
+      lastRawEventId: replyId,
+      quietUntil: new Date('2026-05-27T09:00:00.000Z'),
+    });
+    const chat = emptyModel();
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const prompt = (chat.mock.calls[0]?.[0] as { prompt: string }).prompt;
+    expect(prompt).toContain('Please ship the Acme deck this Friday.');
+    expect(prompt).toContain('Yes, do that Friday.');
   });
 
   it('stores high-confidence Telegram Q&A proposals as object-note suggestion items', async () => {

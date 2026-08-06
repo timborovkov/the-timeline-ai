@@ -124,7 +124,7 @@ const suggestionExtractionSchema = z.object({
  * long summary/reason/quote/payload fields. Keep this above the global 8k
  * structured default without returning to the old 32k credit reservation.
  */
-const SUGGESTION_EXTRACTION_MAX_OUTPUT_TOKENS = 8_000;
+const SUGGESTION_EXTRACTION_MAX_OUTPUT_TOKENS = 16_000;
 /** Hard cap for suggestion prompt input — far below the extraction model window. */
 export const SUGGESTION_PROMPT_MAX_INPUT_TOKENS = 24_000;
 
@@ -3695,7 +3695,7 @@ function buildPromptParts(args: {
       args.authorUserId,
       args.members,
       args.sourceEventId,
-    )}] ${fenceExternalContent(truncate(args.text, 1200), {
+    )}] ${fenceExternalContent(args.text, {
       source: args.conversationWindow ? 'raw-event-anchor' : 'raw-event-current',
       eventId: args.sourceEventId,
     })}`,

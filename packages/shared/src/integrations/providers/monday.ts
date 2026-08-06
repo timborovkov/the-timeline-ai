@@ -19,8 +19,8 @@ import {
 // Phase 11 — Monday.com provider.
 //
 // Idempotency for items/subitems is by lifecycle status buckets (not
-// updated_at), so status churn reuses the raw_event. Sync and webhook share
-// the same status key family; triggerUuid stays on externalEventId for those.
+// updated_at), so same-status churn reuses the raw_event. Real status
+// transitions (including returns to a prior bucket) append a revision.
 // Non-status webhooks (owner/due/rename) use observed:<type>:<revision>.
 // Mutable surfaces (updates, docs, board schema) include a revision
 // discriminator so edits/deletes mint a new immutable raw_event. Activity
@@ -188,6 +188,32 @@ interface MondayCursor {
   item_page_cursor_expires_at?: string | undefined;
   doc_since?: string | undefined;
   doc_last_polled_at?: string | undefined;
+  /** Last observed lifecycle bucket per Monday item id. */
+  item_lifecycles?: Record<string, string> | undefined;
+}
+
+const MONDAY_ITEM_LIFECYCLE_CURSOR_CAP = 5_000;
+
+function pruneMondayItemLifecycles(
+  map: Record<string, string>,
+  keepIds: ReadonlySet<string>,
+): Record<string, string> {
+  const entries = Object.entries(map);
+  if (entries.length <= MONDAY_ITEM_LIFECYCLE_CURSOR_CAP) return map;
+  const next: Record<string, string> = {};
+  for (const id of keepIds) {
+    const value = map[id];
+    if (value) next[id] = value;
+  }
+  for (const [id, value] of entries.slice(-Math.floor(MONDAY_ITEM_LIFECYCLE_CURSOR_CAP / 2))) {
+    next[id] = value;
+  }
+  return next;
+}
+
+/** Monday status columns report GraphQL/webhook type `color` (or `status`). */
+function isMondayStatusColumnType(type: string | null | undefined): boolean {
+  return type === 'status' || type === 'color';
 }
 
 interface MondayGraphQLError {
@@ -659,7 +685,9 @@ function mondayColumnDisplayValue(column: NormalizedColumn): string | null {
 
 function isSemanticallyImportantMondayColumn(column: NormalizedColumn): boolean {
   if (
-    ['status', 'date', 'priority'].includes(column.type ?? '') ||
+    isMondayStatusColumnType(column.type) ||
+    column.type === 'date' ||
+    column.type === 'priority' ||
     isMondayPeopleColumnType(column.type)
   ) {
     return true;
@@ -679,7 +707,8 @@ function mondayItemColumnLines(columns: NormalizedColumn[]): string[] {
     .filter(({ column }) => !isSemanticallyImportantMondayColumn(column))
     .slice(0, 12);
   return [...importantColumns, ...genericColumns].map(
-    ({ column, value }) => `${column.type === 'status' ? 'Status' : column.title}: ${value}`,
+    ({ column, value }) =>
+      `${isMondayStatusColumnType(column.type) ? 'Status' : column.title}: ${value}`,
   );
 }
 
@@ -691,7 +720,7 @@ function mondayRecordMap(
   hierarchyDepth = kind === 'subitem' ? 1 : 0,
 ): ObjectMapping {
   const semantics = mondayItemSemantics(itemBoard, item);
-  const status = semantics.columns.find((column) => column.type === 'status');
+  const status = semantics.columns.find((column) => isMondayStatusColumnType(column.type));
   const parent = item.parent_item;
   return {
     type: 'other',
@@ -802,12 +831,18 @@ function itemEvent(
   kind: 'item' | 'subitem',
   itemBoard: MondayBoard = board,
   hierarchyDepth = kind === 'subitem' ? 1 : 0,
+  previousLifecycle: string | null = null,
 ): IntegrationEvent {
   const occurredAt = dateValue(item.updated_at);
   const semantics = mondayItemSemantics(itemBoard, item);
-  const status = mondayStatus(semantics.columns.find((column) => column.type === 'status')?.text);
+  const status = mondayStatus(
+    semantics.columns.find((column) => isMondayStatusColumnType(column.type))?.text,
+  );
+  const transitioned = previousLifecycle !== null && previousLifecycle !== status;
   return {
-    dedupKey: `monday:${kind}:${board.id}:${item.id}:${status}`,
+    dedupKey: transitioned
+      ? `monday:${kind}:${board.id}:${item.id}:${status}:${occurredAt.toISOString()}`
+      : `monday:${kind}:${board.id}:${item.id}:${status}`,
     provider: 'monday',
     externalObjectId: item.id,
     eventType: kind === 'subitem' ? 'subitem.updated' : 'item.updated',
@@ -972,12 +1007,15 @@ function mondayWebhookEventType(rawType: string, isSubitem = false): string {
  * Owner/priority/date/rename payloads often stringify to text that
  * `mondayStatus` misreads as `open`, which would mint the wrong dedup key
  * and overwrite artifact status during reconciliation.
+ *
+ * Monday status columns report `columnType: "color"` in webhook payloads
+ * (fixtures + docs); custom ids/titles like `phase`/`Phase` still count.
  */
 function isMondayStatusColumnWebhook(event: Record<string, unknown>): boolean {
   const rawType = stringValue(event.type) ?? '';
   if (rawType.includes('status')) return true;
   const columnType = stringValue(event.columnType);
-  if (columnType === 'status') return true;
+  if (isMondayStatusColumnType(columnType)) return true;
   const columnId = stringValue(event.columnId);
   if (columnId && /^status\b/i.test(columnId)) return true;
   const columnTitle = stringValue(event.columnTitle);
@@ -1024,22 +1062,27 @@ function mondayWebhookUpdateDedupKey(input: {
  * Non-lifecycle item webhooks (owner/due/rename/…) use an observed revision key
  * so each change mints a new immutable raw_event. Duplicate deliveries reuse the
  * same triggerUuid (or occurredAt fallback). Status/archive/create stay on
- * lifecycle-only buckets.
+ * lifecycle buckets; when previousValue shows a real status transition the key
+ * gains a revision so open→done→open does not collide with the first open.
  */
 function mondayWebhookItemDedupKey(input: {
   kind: 'item' | 'subitem';
   boardId: string;
   itemId: string;
   lifecycleBucket: string;
+  previousLifecycleBucket: string | null;
   rawType: string;
   triggerUuid: string | null;
   occurredAt: Date;
 }): string {
-  if (input.lifecycleBucket !== 'observed') {
-    return `monday:${input.kind}:${input.boardId}:${input.itemId}:${input.lifecycleBucket}`;
-  }
   const revision = input.triggerUuid ?? input.occurredAt.toISOString();
-  return `monday:${input.kind}:${input.boardId}:${input.itemId}:observed:${input.rawType}:${revision}`;
+  if (input.lifecycleBucket === 'observed') {
+    return `monday:${input.kind}:${input.boardId}:${input.itemId}:observed:${input.rawType}:${revision}`;
+  }
+  if (input.previousLifecycleBucket && input.previousLifecycleBucket !== input.lifecycleBucket) {
+    return `monday:${input.kind}:${input.boardId}:${input.itemId}:${input.lifecycleBucket}:${revision}`;
+  }
+  return `monday:${input.kind}:${input.boardId}:${input.itemId}:${input.lifecycleBucket}`;
 }
 
 function mondayWebhookEvent(payload: unknown): IntegrationEvent[] {
@@ -1068,6 +1111,10 @@ function mondayWebhookEvent(payload: unknown): IntegrationEvent[] {
   const previousValueText = mondayWebhookTextValue(event.previousValue);
   const title = itemName ?? `Monday item ${itemId}`;
   const status = mondayWebhookLifecycleStatus(event, rawType, valueText);
+  const previousLifecycleBucket =
+    isMondayStatusColumnWebhook(event) && previousValueText
+      ? mondayStatus(previousValueText)
+      : null;
   const kind = isSubitem ? 'subitem' : 'item';
   const isUpdateEvent =
     updateId !== null &&
@@ -1092,6 +1139,7 @@ function mondayWebhookEvent(payload: unknown): IntegrationEvent[] {
               boardId,
               itemId,
               lifecycleBucket,
+              previousLifecycleBucket,
               rawType,
               triggerUuid,
               occurredAt,
@@ -1505,14 +1553,37 @@ async function syncTargetedItem(
     return;
   }
   const kind = item.parent_item?.id ? 'subitem' : 'item';
+  const cursor = (await ctx.loadCursor(`monday.item:${boardId}:${itemId}`)) as MondayCursor;
+  let itemLifecycles = { ...(cursor.item_lifecycles ?? {}) };
+  const previous = itemLifecycles[item.id] ?? null;
   const events = [
-    ...recordEvents(board, item, kind, itemBoard),
+    ...recordEvents(board, item, kind, itemBoard, kind === 'subitem' ? 1 : 0, previous),
     ...(kind === 'item'
-      ? (item.subitems ?? []).flatMap((subitem) =>
-          recordEvents(board, subitem, 'subitem', subitem.board ?? board),
-        )
+      ? (item.subitems ?? []).flatMap((subitem) => {
+          const previousSub = itemLifecycles[subitem.id] ?? null;
+          const subEvents = recordEvents(
+            board,
+            subitem,
+            'subitem',
+            subitem.board ?? board,
+            1,
+            previousSub,
+          );
+          itemLifecycles[subitem.id] = mondayStatus(
+            mondayItemSemantics(subitem.board ?? board, subitem).columns.find((column) =>
+              isMondayStatusColumnType(column.type),
+            )?.text,
+          );
+          return subEvents;
+        })
       : []),
   ];
+  itemLifecycles[item.id] = mondayStatus(
+    mondayItemSemantics(itemBoard, item).columns.find((column) =>
+      isMondayStatusColumnType(column.type),
+    )?.text,
+  );
+  itemLifecycles = pruneMondayItemLifecycles(itemLifecycles, new Set(Object.keys(itemLifecycles)));
   await ctx.writeEvents(events);
   const latestItem = events
     .map((event) => event.occurredAt.toISOString())
@@ -1520,6 +1591,7 @@ async function syncTargetedItem(
     .at(-1);
   await ctx.saveCursor(`monday.item:${boardId}:${itemId}`, {
     item_since: latestItem ?? new Date().toISOString(),
+    item_lifecycles: itemLifecycles,
   });
 }
 
@@ -1600,9 +1672,10 @@ function recordEvents(
   kind: 'item' | 'subitem',
   itemBoard: MondayBoard = board,
   hierarchyDepth = kind === 'subitem' ? 1 : 0,
+  previousLifecycle: string | null = null,
 ): IntegrationEvent[] {
   return [
-    itemEvent(board, item, kind, itemBoard, hierarchyDepth),
+    itemEvent(board, item, kind, itemBoard, hierarchyDepth, previousLifecycle),
     ...(item.updates ?? []).map((update) =>
       updateEvent(board, item, update, kind, itemBoard, hierarchyDepth),
     ),
@@ -1687,23 +1760,44 @@ async function syncBoard(
   const items = itemBatch.items;
   const itemsById = new Map(items.map((item) => [item.id, item]));
   const activityEvents = activityLogs.map((log) => activityEvent(board, log));
+  let itemLifecycles = { ...(cursor.item_lifecycles ?? {}) };
+  const touchedItemIds = new Set<string>();
+  const rememberLifecycle = (record: MondayItem, itemBoard: MondayBoard) => {
+    const status = mondayStatus(
+      mondayItemSemantics(itemBoard, record).columns.find((column) =>
+        isMondayStatusColumnType(column.type),
+      )?.text,
+    );
+    itemLifecycles[record.id] = status;
+    touchedItemIds.add(record.id);
+    return itemLifecycles[record.id] ?? null;
+  };
   const itemEvents = items.flatMap((item) => {
     const kind = item.parent_item?.id ? 'subitem' : 'item';
-    return [
-      ...recordEvents(
-        board,
-        item,
-        kind,
-        item.board ?? board,
-        mondayHierarchyDepth(item, itemsById),
-      ),
-      ...(board.hierarchy_type === 'multi_level'
+    const itemBoard = item.board ?? board;
+    const previous = itemLifecycles[item.id] ?? null;
+    const events = recordEvents(
+      board,
+      item,
+      kind,
+      itemBoard,
+      mondayHierarchyDepth(item, itemsById),
+      previous,
+    );
+    rememberLifecycle(item, itemBoard);
+    const subitemEvents =
+      board.hierarchy_type === 'multi_level'
         ? []
-        : (item.subitems ?? []).flatMap((subitem) =>
-            recordEvents(board, subitem, 'subitem', subitem.board ?? board, 1),
-          )),
-    ];
+        : (item.subitems ?? []).flatMap((subitem) => {
+            const subBoard = subitem.board ?? board;
+            const previousSub = itemLifecycles[subitem.id] ?? null;
+            const subEvents = recordEvents(board, subitem, 'subitem', subBoard, 1, previousSub);
+            rememberLifecycle(subitem, subBoard);
+            return subEvents;
+          });
+    return [...events, ...subitemEvents];
   });
+  itemLifecycles = pruneMondayItemLifecycles(itemLifecycles, touchedItemIds);
   const schemaEvent = boardSchemaEvent(board);
   const events = [schemaEvent, ...activityEvents, ...itemEvents];
   const flattenedRecords =
@@ -1736,6 +1830,7 @@ async function syncBoard(
       item_since: itemBatch.nextCursor
         ? cursor.item_since
         : (latestItem ?? cursor.item_since ?? to),
+      item_lifecycles: itemLifecycles,
       ...(itemBatch.nextCursor
         ? {
             item_page_cursor: itemBatch.nextCursor,

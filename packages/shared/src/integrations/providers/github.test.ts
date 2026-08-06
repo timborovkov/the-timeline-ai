@@ -4516,6 +4516,70 @@ describe('githubProvider.incrementalSync', () => {
     });
   });
 
+  it('retains a recent lifecycle suffix when pruning oversized issue cursors', async () => {
+    const bloatedLifecycles = Object.fromEntries(
+      Array.from({ length: 5_001 }, (_, index) => [String(index), 'closed' as const]),
+    );
+    const fetchMock = vi.fn<typeof fetch>((input) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.pathname.endsWith('/issues')) {
+        return Promise.resolve(
+          jsonResponse([
+            {
+              id: 8,
+              number: 8,
+              title: 'Bug report',
+              body: null,
+              html_url: 'https://github.com/acme/app/issues/8',
+              state: 'open',
+              updated_at: '2026-06-25T13:00:00Z',
+              user: { login: 'bob' },
+            },
+          ]),
+        );
+      }
+      if (url.pathname.endsWith('/commits')) return Promise.resolve(jsonResponse([]));
+      const base = emptyGithubFetch(input);
+      return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
+    });
+    globalThis.fetch = fetchMock;
+    const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
+    const saveCursor = vi.fn().mockResolvedValue(undefined);
+
+    await githubProvider.incrementalSync({
+      integration: {} as never,
+      tokens: { access_token: 'gho_token' },
+      selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+      ctx: {
+        writeEvents,
+        recordAudit: vi.fn(),
+        saveCursor,
+        loadCursor: vi.fn((resourceType: string) =>
+          Promise.resolve(
+            resourceType === 'github.repo:acme/app:issues'
+              ? {
+                  issues_since: '2026-06-25T12:00:00Z',
+                  issue_lifecycles: bloatedLifecycles,
+                }
+              : resourceType === 'github.repo:acme/app:releases' ||
+                  resourceType === 'github.repo:acme/app:workflow_runs'
+                ? { last_polled_at: new Date().toISOString() }
+                : {},
+          ),
+        ),
+        persistTokens: vi.fn(),
+      },
+    });
+
+    const lifecycles = savedCursor(saveCursor, 'github.repo:acme/app:issues')?.issue_lifecycles;
+    expect(Object.keys(lifecycles ?? {})).toHaveLength(2_501);
+    expect(lifecycles?.['8']).toBe('open');
+    expect(lifecycles?.['5000']).toBe('closed');
+    expect(lifecycles?.['0']).toBeUndefined();
+  });
+
   it('uses issue ETags to skip unchanged issue reconciliation by since query', async () => {
     const issuesPath =
       '/repos/acme/app/issues?state=all&since=2026-06-10T12%3A00%3A00Z&sort=updated&direction=desc&per_page=100&page=1';
