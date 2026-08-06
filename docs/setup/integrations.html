@@ -292,12 +292,22 @@ MONDAY_WEBHOOK_SECRET=...</code></pre>
         </li>
         <li>
           A team admin activates shared sources from <code>/app/sources</code>. The integration
-          worker imports board schema, generic records, subitems, record updates, status changes,
-          owners, column changes, and selected WorkDocs into cited timeline events. Activation,
-          newly added selections, and retries with an unresolved sync error enqueue a historical
-          backfill immediately and reconcile webhooks independently, so a webhook failure does not
-          block older items. Classic subitem webhook payloads are routed through
-          <code>parentItemBoardId</code> and hydrate against the selected parent board. Multi-level
+          worker imports board schema, generic records, subitems, item-update conversations and
+          threaded replies, status changes, owners, column changes, and selected WorkDocs into cited
+          timeline events. Activation, newly added selections, and retries with an unresolved sync
+          error enqueue a historical backfill immediately and reconcile webhooks independently, so a
+          webhook failure does not block older items. Classic subitem webhook payloads are routed
+          through <code>parentItemBoardId</code> and hydrate against the selected parent board.
+          Source-deletion deliveries durably tombstone only their matching update or reply: captured
+          content stays immutable for audit while normal history and retrieval omit it, and any
+          affected object summary is invalidated before it can remain retrieval-visible, including a
+          summary sourced only through the update's artifact evidence association. Board pages fetch
+          item shells first, then hydrate update/reply pages per item only within the raw-event
+          writer budget. Update history resumes from a reverse-chronological creation-time and
+          update-ID boundary, so updates inserted before a continuation do not shift its logical
+          position. The stable boundary and exact deferred item, update, or reply target commit
+          together before BullMQ delivery, so large conversations resume after contention or queue
+          outages without re-emitting completed updates or retrying in a hot loop. Multi-level
           boards use monday's <code>hierarchy_scope_config: "allItems"</code> query so descendants
           at every supported depth are imported from the real board. Slow reconciliation remains
           responsible for missed deliveries, while selected WorkDocs reconcile through their own
@@ -631,7 +641,9 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
         per-resource cursor in <code>integration_sync_state</code>. Providers with inbound webhooks
         persist native deliveries first, then the <code>webhook-delivery</code> worker normalizes
         the matching team targets and enqueues either targeted sync work or a bounded catch-up
-        fallback. Google Drive can still use webhooks as wake-up signals; GitHub, Linear,
+        fallback. A successfully written Monday update/reply deletion is explicitly terminal for
+        that delivery and does not enqueue a broad catch-up; genuinely unhandled deliveries retain
+        the fallback. Google Drive can still use webhooks as wake-up signals; GitHub, Linear,
         Monday.com, and Sentry now route protected deliveries through the shared delivery worker.
         GitHub repo deliveries, Monday item/board deliveries, and Sentry project deliveries hydrate
         only the affected selected resource. Sentry issue alert, issue lifecycle, and release

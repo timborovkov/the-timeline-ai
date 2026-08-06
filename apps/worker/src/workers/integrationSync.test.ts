@@ -510,7 +510,7 @@ describe('runOneIntegration attention classification', () => {
     );
   });
 
-  it('queues an immediate targeted continuation when a provider has more resource pages', async () => {
+  it('stages a Monday conversation checkpoint before handing off its exact continuation', async () => {
     let lockHeld = false;
     fakes.reserved.mockImplementation((strings: TemplateStringsArray) => {
       const query = strings.join('');
@@ -525,9 +525,22 @@ describe('runOneIntegration attention classification', () => {
     fakes.adminListSelections.mockResolvedValueOnce([
       { kind: 'monday.board', externalId: 'board-1' },
     ]);
-    fakes.incrementalSync.mockResolvedValueOnce({
-      continuations: [{ resourceType: 'monday.board', externalId: 'board-1' }],
-    });
+    const continuation = {
+      resourceType: 'monday.item',
+      externalId: 'board-1:item-1:update-1',
+    };
+    fakes.incrementalSync.mockImplementationOnce(
+      async ({ ctx }: { ctx: TimelineShared.integrations.SyncContext }) => {
+        if (!ctx.saveCursorWithContinuations) {
+          throw new Error('worker must provide a durable continuation checkpoint');
+        }
+        await ctx.saveCursorWithContinuations(
+          'monday.board:board-1',
+          { item_page_cursor: 'next-page' },
+          [continuation],
+        );
+      },
+    );
     fakes.enqueueIntegrationSyncJob.mockImplementationOnce(() => {
       expect(lockHeld).toBe(false);
       return Promise.resolve();
@@ -540,10 +553,20 @@ describe('runOneIntegration attention classification', () => {
       integrationId: INTEGRATION_ID,
       teamId: TEAM_ID,
       triggeredBy: 'reconcile',
-      resourceType: 'monday.board',
-      externalId: 'board-1',
+      resourceType: 'monday.item',
+      externalId: 'board-1:item-1:update-1',
       reason: 'provider_pagination_continuation',
       continuationHandoffId: continuationHandoffId(1),
+    });
+    expect(fakes.adminCommitIntegrationSyncCheckpoint).toHaveBeenCalledWith(expect.anything(), {
+      integrationId: INTEGRATION_ID,
+      cursors: [
+        {
+          resourceType: 'monday.board:board-1',
+          cursor: { item_page_cursor: 'next-page' },
+        },
+      ],
+      continuations: [continuation],
     });
   });
 

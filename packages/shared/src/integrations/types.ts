@@ -78,6 +78,17 @@ export interface IntegrationEvent {
    * still has a stable source payload ref.
    */
   extra?: Record<string, unknown>;
+  /**
+   * A durable Monday update/reply deletion target. The writer persists it
+   * before writing the event batch, hides matching immutable source rows, and
+   * applies it to future late/stale conversation writes in this integration.
+   */
+  sourceTombstone?: {
+    kind: 'monday_conversation';
+    updateId: string;
+    replyId?: string | null;
+    reason: string;
+  };
   /** Phase 11: optional workspace object mapping. */
   objectMap?: ObjectMapping;
 }
@@ -106,6 +117,22 @@ export interface SyncContext {
   saveCursor(
     resourceType: string,
     cursor: unknown,
+    status?: { lastStatus?: string; lastError?: string | null },
+  ): Promise<void>;
+  /**
+   * Record a cursor and the exact continuation(s) needed to resume it for the
+   * worker's final durable checkpoint transaction. Providers with
+   * expiring/provider-page cursors must use this rather than saveCursor()
+   * when a continuation is required.
+   *
+   * It remains optional only for isolated provider tests and non-worker
+   * callers that do not persist cursors. The integration worker always
+   * supplies it.
+   */
+  saveCursorWithContinuations?(
+    resourceType: string,
+    cursor: unknown,
+    continuations: SyncContinuation[],
     status?: { lastStatus?: string; lastError?: string | null },
   ): Promise<void>;
   /** Load the last persisted cursor for a resource. Returns `{}` when unset. */
@@ -472,6 +499,8 @@ export interface WebhookNormalizeInput {
 export interface WebhookNormalizeResult {
   events: IntegrationEvent[];
   syncTasks: TargetedSyncTask[];
+  /** The provider fully handled this delivery and an empty task list is intentional. */
+  syncTaskDisposition?: 'handled';
   ignoredReason?: string;
 }
 
