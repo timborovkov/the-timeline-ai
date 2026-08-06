@@ -2293,7 +2293,7 @@ async function hydratedSubitemEvents(
   ctx: SyncContext,
   maxEvents = MONDAY_BOARD_WRITER_EVENT_BUDGET,
   itemLifecycles: Record<string, string> = {},
-  touchedItemIds: Set<string> = new Set(),
+  touchedItemIds: Set<string> = new Set<string>(),
 ): Promise<{
   events: IntegrationEvent[];
   progress: MondayConversationProgress[];
