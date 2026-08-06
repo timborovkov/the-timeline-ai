@@ -45,7 +45,7 @@ evidence; documents are curated workspace knowledge.
   ephemeral Daytona sandboxes via Firecrawl anydoc (office + text PDFs;
   per-page coverage sends sparse, scanned, and mixed PDFs through bounded page
   PNG rendering), sends those page images and `image/*` uploads through vision OCR in the
-  credential-thin extract service
+  credential-thin document-extract orchestrator
   (with optional visual description), and defers only oversized captured files;
   future processing can tune depth by intent so lightweight
   previews are enough until promotion, targeted inspection, or explicit user

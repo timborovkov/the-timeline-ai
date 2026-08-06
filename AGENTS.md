@@ -202,7 +202,7 @@ apps/
             task-category,
             webhook-delivery, integration-sync, mcp-health, team-export,
             daily-digest, timeline-moment-presentation, reconciliation);
-            also hosts the credential-thin document-extract service
+            also hosts the credential-thin document-extract orchestrator service
             (`WORKER_MODE=document-extract` / `extract-main`, Daytona
             sandboxes — ADR 0013)
 packages/

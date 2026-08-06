@@ -793,7 +793,7 @@ images, screenshots, scans, and visually meaningful PDFs queryable as context
 without pretending the description is source-authored text. Current processing
 extracts office/PDF bytes in Daytona sandboxes (Firecrawl anydoc; sparse PDFs
 render via pypdfium2), sends sparse PDF page images and images through vision OCR in the
-extract service, and defers only oversized captured files; future processing can
+document-extract orchestrator, and defers only oversized captured files; future processing can
 tune depth by intent so unpromoted conversational captures receive a cheaper
 preview pass until promotion, targeted inspection, or explicit user intent
 warrants deeper analysis. Persisted visual descriptions should be

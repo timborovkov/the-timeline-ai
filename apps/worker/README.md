@@ -70,13 +70,16 @@ Production starts the combined worker entry point (see [docs/railway.html](../..
 NODE_ENV=production node apps/worker/dist/index.js
 ```
 
-Document extract (ADR 0013) runs as a separate Railway service:
+Document extract (ADR 0013) runs in Daytona sandboxes coordinated by the separate Railway
+`document-extract-orchestrator` service:
 
 ```bash
 NODE_ENV=production WORKER_MODE=document-extract node apps/worker/dist/extract-main.js
 ```
 
-Set `DOCUMENT_EXTRACT_ENABLED=false` on the main worker when `extract` owns the queue.
+Set `DOCUMENT_EXTRACT_ENABLED=false` on the main worker when
+`document-extract-orchestrator` owns the queue. Configure that Railway service to use
+`/apps/worker/railway.extract.json` as its custom config path.
 Locally, prefer `DAYTONA_API_KEY` + `dev:extract`. Only set
 `DOCUMENT_EXTRACT_ALLOW_INPROCESS=true` for offline/dev without Daytona (never in production).
 

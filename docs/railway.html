@@ -62,7 +62,7 @@
             <td><code>NODE_ENV=production node apps/worker/dist/index.js</code></td>
           </tr>
           <tr>
-            <td><code>extract</code></td>
+            <td><code>document-extract-orchestrator</code></td>
             <td>App</td>
             <td><code>apps/worker/railway.extract.json</code> (Railpack)</td>
             <td>
@@ -131,22 +131,23 @@
           <code>apps/worker/railway.json</code>.
         </li>
         <li>
-          Add the <code>extract</code> service from this repo, pointing at
-          <code>apps/worker/railway.extract.json</code> (credential-thin document-extract consumer —
-          ADR 0013).
+          Add the <code>document-extract-orchestrator</code> service from this repo. In Railway's
+          service settings, set the custom config path to
+          <code>/apps/worker/railway.extract.json</code> (credential-thin document-extract consumer
+          — ADR 0013).
         </li>
       </ol>
       <p>
         On the main <code>worker</code>, set <code>DOCUMENT_EXTRACT_ENABLED=false</code> so only
-        <code>extract</code> consumes that queue. On <code>extract</code>, set
-        <code>WORKER_MODE=document-extract</code>, <code>DAYTONA_API_KEY</code>,
-        <code>OPENROUTER_API_KEY</code>, <code>DATABASE_URL</code>, <code>REDIS_URL</code>, and S3
-        document-bucket variables. Optionally pin
+        <code>document-extract-orchestrator</code> consumes that queue. On
+        <code>document-extract-orchestrator</code>, set <code>WORKER_MODE=document-extract</code>,
+        <code>DAYTONA_API_KEY</code>, <code>OPENROUTER_API_KEY</code>, <code>DATABASE_URL</code>,
+        <code>REDIS_URL</code>, and S3 document-bucket variables. Optionally pin
         <code>DAYTONA_SNAPSHOT=timeline-document-extract-&lt;hash&gt;</code> (leave unset /
         <code>auto</code> to resolve the content hash from <code>document-extract-sandbox/</code>).
         Do <strong>not</strong> set <code>SECRETS_ENCRYPTION_KEY</code>, Auth secrets, or
-        Telegram/Slack/integration OAuth tokens on <code>extract</code>. Snapshot lifecycle (CI
-        ensure + optional boot create-once): ADR 0013 and
+        Telegram/Slack/integration OAuth tokens on <code>document-extract-orchestrator</code>.
+        Snapshot lifecycle (CI ensure + optional boot create-once): ADR 0013 and
         <code>pnpm --filter @timeline/worker create-document-extract-snapshot</code>.
       </p>
       <p>
@@ -159,9 +160,8 @@
       <h2 id="environment-variables">Environment variables</h2>
       <p>
         Shared variables for <code>web</code> and <code>worker</code> (not the credential-thin
-        <code>extract</code> service). Railway's service-to-service references (<code
-          >${{ Postgres.DATABASE_URL }}</code
-        >) keep things DRY.
+        <code>document-extract-orchestrator</code> service). Railway's service-to-service references
+        (<code>${{ Postgres.DATABASE_URL }}</code>) keep things DRY.
       </p>
       <pre><code>DATABASE_URL=${{ Postgres.DATABASE_URL }}
 REDIS_URL=${{ Redis.REDIS_URL }}
@@ -238,7 +238,10 @@ LOG_LEVEL=info
         delivery needs no plaintext bot-token variable because it decrypts the installed workspace
         token from Postgres with <code>SECRETS_ENCRYPTION_KEY</code>.
       </p>
-      <p><code>extract</code> service variables (keep this set minimal — ADR 0013):</p>
+      <p>
+        <code>document-extract-orchestrator</code> service variables (keep this set minimal — ADR
+        0013):
+      </p>
       <pre><code>WORKER_MODE=document-extract
 DOCUMENT_EXTRACT_ENABLED=true
 DAYTONA_API_KEY=&lt;daytona api key&gt;

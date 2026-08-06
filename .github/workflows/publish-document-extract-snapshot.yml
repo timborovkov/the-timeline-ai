@@ -72,7 +72,7 @@ jobs:
           {
             echo "## Document-extract Daytona snapshot"
             echo ""
-            echo "Set on the Railway \`extract\` service (or leave unset / \`auto\` for content-hash resolution + boot ensure):"
+            echo "Set on the Railway \`document-extract-orchestrator\` service (or leave unset / \`auto\` for content-hash resolution + boot ensure):"
             echo ""
             echo "\`\`\`"
             echo "DAYTONA_SNAPSHOT=${{ steps.name.outputs.snapshot_name }}"

@@ -2,10 +2,11 @@
 
 Untrusted document bytes (PDF, Office, and related binaries) must not be opened
 inside the credentialed main worker. Extraction for every current
-`document-extract` ingest surface runs in a credential-thin extract service
-that parses files inside ephemeral Daytona sandboxes (`networkBlockAll`, no
-team secrets) and runs OpenRouter vision fallbacks in that service process
-only when sandbox text is sparse or the input is an image.
+`document-extract` ingest surface runs through a credential-thin Railway
+orchestrator service named `document-extract-orchestrator`. It parses files
+inside ephemeral Daytona sandboxes (`networkBlockAll`, no team secrets) and
+runs OpenRouter vision fallbacks in the orchestrator process only when sandbox
+text is sparse or the input is an image.
 
 ## Context
 
@@ -22,10 +23,10 @@ authored by a trusted teammate.
 
 ## Decision
 
-1. **Separate extract service.** Deploy the same `@timeline/worker` build with
+1. **Separate extract orchestrator.** Deploy the same `@timeline/worker` build
+   as the Railway service `document-extract-orchestrator` with
    `WORKER_MODE=document-extract`. The full worker sets
-   `DOCUMENT_EXTRACT_ENABLED=false` so only the extract service consumes the
-   queue.
+   `DOCUMENT_EXTRACT_ENABLED=false` so only the orchestrator consumes the queue.
 2. **Daytona sandbox + anydoc.** Untrusted binary formats are uploaded into a
    fresh sandbox created from a content-hashed snapshot
    `timeline-document-extract-<hash>` (1 CPU / 2 GB, `networkBlockAll`, no
@@ -34,21 +35,21 @@ authored by a trusted teammate.
    PowerPoint, Excel, OpenDocument (`.odt`/`.ods`/`.odp`), RTF, EPUB, and
    text-based PDF. We do **not** call Firecrawl hosted `/parse` for team
    uploads.
-3. **PDF vision stays in the extract service.** Sandboxes cannot call
+3. **PDF vision stays in the orchestrator.** Sandboxes cannot call
    OpenRouter under `networkBlockAll`. Native text coverage is checked per
    page, so a mixed PDF cannot hide scanned pages behind one dense text page.
    When anydoc returns sparse / empty / unsupported PDF text, pypdfium2 plus
    Pillow renders up to 20 pages (env-capped at 100) to PNG and the extract
-   service runs `llm.extractTextFromMedia`. Before download, every remote PNG
+   orchestrator runs `llm.extractTextFromMedia`. Before download, every remote PNG
    is capped at 8 MiB and the complete set at 32 MiB; larger sets use the
    compressed full-PDF vision path instead of accumulating rendered buffers.
    `image/*` inputs use the same vision path.
 4. **Cheap UTF-8 for real text.** `text/*`, JSON/XML, and text-ish extensions
    (md/txt/csv/tsv/json/yaml/html/…) decode in-process without Daytona. CSV
    is never routed through anydoc.
-5. **Credential boundary.** Extract service env is limited to Daytona, OpenRouter,
-   Database, Redis, and S3 document-bucket access (`S3_ENDPOINT`, `S3_REGION`,
-   access keys, `S3_BUCKET_DOCUMENTS`). In production
+5. **Credential boundary.** The orchestrator env is limited to Daytona,
+   OpenRouter, Database, Redis, and S3 document-bucket access (`S3_ENDPOINT`,
+   `S3_REGION`, access keys, `S3_BUCKET_DOCUMENTS`). In production
    `WORKER_MODE=document-extract`, `getEnv()` requires those credentials and
    enforces an allowlist against raw `process.env` so copied Railway vars
    (including unparsed secrets like `SLACK_CANARY_*`,
@@ -98,9 +99,9 @@ DAYTONA_SNAPSHOT=timeline-document-extract-<hash>
 ## Consequences
 
 - Main worker no longer loads untrusted PDF/Office parsers on the hot path.
-- Extract service still has DB write + S3 read + OpenRouter; compromise is
+- The orchestrator still has DB write + S3 read + OpenRouter; compromise is
   narrower than full worker secret theft but not zero.
-- Operators set `DAYTONA_*` on the extract service. Snapshot drift is avoided
+- Operators set `DAYTONA_*` on `document-extract-orchestrator`. Snapshot drift is avoided
   by content-hash names + CI ensure; first boot without a published snapshot
   may be slow when boot ensure creates it. Sandbox/deps changes (including
   anydoc, pypdfium2, or Pillow pins) require a new content-hashed snapshot.
