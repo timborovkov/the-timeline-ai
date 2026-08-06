@@ -21,7 +21,10 @@ vi.mock('@/lib/analytics', () => ({
   trackProductEventBestEffort: fakes.trackProductEventBestEffort,
 }));
 vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: vi.fn() }));
-vi.mock('@timeline/shared/env', () => ({ getEnv: () => ({ AUTH_SECRET }) }));
+vi.mock('@timeline/shared/env', () => ({
+  getEnv: () => ({ AUTH_SECRET }),
+  requireAuthSecret: () => AUTH_SECRET,
+}));
 vi.mock('@timeline/shared/integrations', () => ({ getProvider: fakes.getProvider }));
 vi.mock('@timeline/shared/logger', () => ({
   childLogger: () => ({ warn: fakes.loggerWarn, error: vi.fn(), info: vi.fn() }),

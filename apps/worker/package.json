@@ -29,12 +29,16 @@
     "integration-resync": "NODE_OPTIONS=--conditions=development tsx src/scripts/integration-resync.ts",
     "timeline-moment-presentations": "NODE_OPTIONS=--conditions=development tsx src/scripts/timeline-moment-presentations.ts",
     "task-category-backfill": "NODE_OPTIONS=--conditions=development tsx src/scripts/task-category-backfill.ts",
+    "create-document-extract-snapshot": "NODE_OPTIONS=--conditions=development tsx scripts/create-document-extract-snapshot.ts",
+    "ensure-document-extract-snapshot": "NODE_OPTIONS=--conditions=development tsx scripts/create-document-extract-snapshot.ts",
+    "dev:extract": "NODE_OPTIONS=--conditions=development WORKER_MODE=document-extract tsx watch src/extract-main.ts",
+    "start:extract": "WORKER_MODE=document-extract node dist/extract-main.js",
     "lint": "eslint src",
     "test": "NODE_OPTIONS=--conditions=development node scripts/run-tests.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@firecrawl/pdf-inspector": "1.12.0",
+    "@daytonaio/sdk": "^0.203.0",
     "@sentry/node": "^10.59.0",
     "@timeline/db": "workspace:*",
     "@timeline/shared": "workspace:*",

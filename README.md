@@ -82,7 +82,7 @@ This is a pnpm/Turborepo monorepo.
 | Path | Purpose |
 | --- | --- |
 | `apps/web` | Next.js app, public docs, auth, server actions, UI, API routes, and inbound webhooks. |
-| `apps/worker` | BullMQ workers for direct conversation agents, transcription, extraction, embeddings, documents, meetings, integrations, reconciliation, MCP health, object summaries, daily digest, team export, and maintenance jobs. |
+| `apps/worker` | BullMQ workers for direct conversation agents, transcription, extraction, embeddings, meetings, integrations, reconciliation, MCP health, object summaries, daily digest, team export, and maintenance jobs. Also the credential-thin `document-extract` service (`WORKER_MODE=document-extract`, Daytona sandboxes — see `docs/adr/0013-daytona-document-extract.md`). |
 | `packages/db` | Drizzle schema, migrations, and database package exports. |
 | `packages/shared` | Team-scoped data access, personal pins, LLM wrapper, Qdrant/S3 wrappers, queues, integrations, artifact/workspace reconciliation, calendar, documents, meetings, objects, MCP, and other shared domain modules. |
 | `docs` | Product, setup, architecture, and deployment documentation. |

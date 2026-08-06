@@ -6,8 +6,8 @@ function nonEmptyString(value: unknown): string | undefined {
 
 function booleanString(value: unknown): boolean | undefined {
   if (value === undefined || value === '') return undefined;
-  if (value === true || value === 'true') return true;
-  if (value === false || value === 'false') return false;
+  if (value === true || value === 'true' || value === '1' || value === 1) return true;
+  if (value === false || value === 'false' || value === '0' || value === 0) return false;
   return value as boolean;
 }
 
@@ -23,12 +23,162 @@ function applyAuthAliases(raw: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   };
 }
 
+/**
+ * Keys permitted non-empty on production `WORKER_MODE=document-extract`.
+ * Enforced against raw `process.env` (not just parsed schema keys) so
+ * undocumented secrets like `SLACK_CANARY_*` / `MCP_PREREGISTERED_*` cannot
+ * hitch a ride on a copied Railway variable set (ADR 0013).
+ */
+const DOCUMENT_EXTRACT_PROCESS_ENV_ALLOWLIST = new Set([
+  'NODE_ENV',
+  'LOG_LEVEL',
+  'WORKER_MODE',
+  'DOCUMENT_EXTRACT_ENABLED',
+  'DOCUMENT_EXTRACT_ALLOW_INPROCESS',
+  'DOCUMENT_EXTRACT_SPARSE_TEXT_CHARS',
+  'DOCUMENT_EXTRACT_MAX_VISION_PAGES',
+  'DAYTONA_API_KEY',
+  'DAYTONA_API_URL',
+  'DAYTONA_TARGET',
+  'DAYTONA_SNAPSHOT',
+  'DAYTONA_SNAPSHOT_ENSURE',
+  'DATABASE_URL',
+  'REDIS_URL',
+  'OPENROUTER_API_KEY',
+  'OPENROUTER_BASE_URL',
+  'S3_ENDPOINT',
+  'S3_PUBLIC_ENDPOINT',
+  'S3_REGION',
+  'S3_ACCESS_KEY_ID',
+  'S3_SECRET_ACCESS_KEY',
+  'S3_FORCE_PATH_STYLE',
+  'S3_BUCKET_DOCUMENTS',
+  // Crash reporting only — not SENTRY_AUTH_TOKEN (release upload).
+  'SENTRY_DSN',
+  'SENTRY_ENVIRONMENT',
+  'SENTRY_TRACES_SAMPLE_RATE',
+  'SENTRY_PROFILES_SAMPLE_RATE',
+  'SENTRY_RELEASE',
+  'SENTRY_ORG',
+  'SENTRY_PROJECT',
+]);
+
+/** Exact shell/runtime keys (not prefixes — avoid `LANG` matching `LANGSMITH_*`). */
+const DOCUMENT_EXTRACT_PROCESS_ENV_EXACT_ALLOWLIST = new Set([
+  '_',
+  'PORT',
+  'PATH',
+  'HOME',
+  'USER',
+  'LOGNAME',
+  'SHELL',
+  'TERM',
+  'TMPDIR',
+  'TMP',
+  'TEMP',
+  'LANG',
+  'TZ',
+  'HOSTNAME',
+  'HOSTTYPE',
+  'MACHTYPE',
+  'OSTYPE',
+  'SHLVL',
+  'PWD',
+  'OLDPWD',
+  'COLORTERM',
+  'CI',
+  // Railpack's mise toolchain/runtime metadata. Keep these exact so a future
+  // credential-bearing MISE_* or RAILPACK_* variable is still rejected.
+  'MISE_DATA_DIR',
+  'MISE_SHIMS_DIR',
+  'MISE_CACHE_DIR',
+  'MISE_CONFIG_DIR',
+  'MISE_INSTALLS_DIR',
+  'RAILPACK_VERSION',
+  '__MISE_SHIM',
+  '__MISE_DIFF',
+]);
+
+const DOCUMENT_EXTRACT_PROCESS_ENV_PREFIX_ALLOWLIST = [
+  'LC_',
+  'XDG_',
+  'SSH_',
+  'NODE_',
+  'npm_',
+  'NPM_',
+  'PNPM_',
+  'COREPACK_',
+  'RAILWAY_',
+  'NIX_',
+  'SSL_CERT_',
+  'OPENSSL_',
+] as const;
+
+/** Exported for unit tests. */
+export function isAllowedDocumentExtractProcessEnvKey(key: string): boolean {
+  if (DOCUMENT_EXTRACT_PROCESS_ENV_ALLOWLIST.has(key)) return true;
+  if (DOCUMENT_EXTRACT_PROCESS_ENV_EXACT_ALLOWLIST.has(key)) return true;
+  return DOCUMENT_EXTRACT_PROCESS_ENV_PREFIX_ALLOWLIST.some((prefix) => key.startsWith(prefix));
+}
+
+function assertDocumentExtractProcessEnvAllowlist(
+  raw: NodeJS.ProcessEnv,
+  ctx: z.RefinementCtx,
+): void {
+  for (const [key, value] of Object.entries(raw)) {
+    if (value === undefined || value === '') continue;
+    if (isAllowedDocumentExtractProcessEnvKey(key)) continue;
+    ctx.addIssue({
+      code: 'custom',
+      path: [key],
+      message: `${key} must not be set on WORKER_MODE=document-extract (credential-thin extract service)`,
+    });
+  }
+}
+
 const baseSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error', 'silent']).default('info'),
 
-  // Auth
-  AUTH_SECRET: z.string().min(16, 'AUTH_SECRET must be at least 16 chars'),
+  /**
+   * Worker process role. `document-extract` boots only the document-extract
+   * BullMQ consumer (credential-thin extract service). `full` boots the
+   * normal worker set; pair with `DOCUMENT_EXTRACT_ENABLED=false` on the
+   * main worker when a dedicated extract service owns that queue.
+   */
+  WORKER_MODE: z.enum(['full', 'document-extract']).default('full'),
+  /**
+   * When false, a `full` worker skips starting the document-extract consumer.
+   * Ignored in `WORKER_MODE=document-extract` (that mode always starts it).
+   */
+  DOCUMENT_EXTRACT_ENABLED: z.preprocess(booleanString, z.boolean().default(true)),
+  /**
+   * Dev-only: allow in-process PDF/DOCX parsers when Daytona is unset.
+   * Production extract mode must use Daytona sandboxes.
+   */
+  DOCUMENT_EXTRACT_ALLOW_INPROCESS: z.preprocess(booleanString, z.boolean().default(false)),
+  // Daytona sandbox isolation for untrusted document parsers (ADR 0013).
+  DAYTONA_API_KEY: z.string().optional(),
+  DAYTONA_API_URL: z.preprocess(emptyStringAsUnset, z.url().default('https://app.daytona.io/api')),
+  DAYTONA_TARGET: z.preprocess(emptyStringAsUnset, z.string().default('us')),
+  /**
+   * Daytona snapshot name for document-extract sandboxes.
+   * Unset / `auto` / `content-hash` → `timeline-document-extract-<sandboxHash>`
+   * (resolved in the worker; see ADR 0013).
+   */
+  DAYTONA_SNAPSHOT: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  /**
+   * When true (default), extract-main ensures the named snapshot exists once
+   * at boot (create-if-missing; never rebuilds an existing snapshot).
+   */
+  DAYTONA_SNAPSHOT_ENSURE: z.preprocess(booleanString, z.boolean().default(true)),
+  /** Sparse-PDF text threshold (chars) before rendering pages for vision. */
+  DOCUMENT_EXTRACT_SPARSE_TEXT_CHARS: z.coerce.number().int().positive().default(500),
+  /** Max pages rendered for sparse-PDF vision (hard-capped at 100 in code). */
+  DOCUMENT_EXTRACT_MAX_VISION_PAGES: z.coerce.number().int().positive().default(20),
+
+  // Auth — required for web + full worker; optional for document-extract mode.
+  AUTH_SECRET: z.string().min(16, 'AUTH_SECRET must be at least 16 chars').optional(),
   AUTH_URL: z.url().default('http://localhost:3000'),
   AUTH_GITHUB_ID: z.string().optional(),
   AUTH_GITHUB_SECRET: z.string().optional(),
@@ -251,6 +401,50 @@ const schema = baseSchema
         message: 'LANGSMITH_API_KEY is required when LANGSMITH_TRACING=true',
       });
     }
+    // Web + full worker still need Auth.js secrets. The credential-thin
+    // document-extract service must not require them (and should not set them).
+    if (env.WORKER_MODE !== 'document-extract' && !env.AUTH_SECRET) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['AUTH_SECRET'],
+        message: 'AUTH_SECRET is required unless WORKER_MODE=document-extract',
+      });
+    }
+    // Dev escape hatch must never ship to production (full or extract worker).
+    if (env.NODE_ENV === 'production' && env.DOCUMENT_EXTRACT_ALLOW_INPROCESS) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['DOCUMENT_EXTRACT_ALLOW_INPROCESS'],
+        message: 'DOCUMENT_EXTRACT_ALLOW_INPROCESS must be false in production',
+      });
+    }
+    // Note: production full workers must set DOCUMENT_EXTRACT_ENABLED=false.
+    // That gate lives in apps/worker (index.ts), not here — web also calls
+    // getEnv() with WORKER_MODE defaulting to full and must not be rejected.
+    if (env.WORKER_MODE === 'document-extract' && env.NODE_ENV === 'production') {
+      const requiredOnExtract: { key: keyof typeof env; label: string }[] = [
+        { key: 'DAYTONA_API_KEY', label: 'DAYTONA_API_KEY' },
+        { key: 'OPENROUTER_API_KEY', label: 'OPENROUTER_API_KEY' },
+        { key: 'REDIS_URL', label: 'REDIS_URL' },
+        { key: 'S3_ENDPOINT', label: 'S3_ENDPOINT' },
+        { key: 'S3_REGION', label: 'S3_REGION' },
+        { key: 'S3_ACCESS_KEY_ID', label: 'S3_ACCESS_KEY_ID' },
+        { key: 'S3_SECRET_ACCESS_KEY', label: 'S3_SECRET_ACCESS_KEY' },
+        { key: 'S3_BUCKET_DOCUMENTS', label: 'S3_BUCKET_DOCUMENTS' },
+      ];
+      for (const { key, label } of requiredOnExtract) {
+        if (!env[key]) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [key],
+            message: `${label} is required when WORKER_MODE=document-extract in production`,
+          });
+        }
+      }
+      // Credential-thin boundary (ADR 0013): allowlist against raw process.env
+      // so unparsed secrets cannot survive a copied shared Railway env.
+      assertDocumentExtractProcessEnvAllowlist(process.env, ctx);
+    }
   })
   .transform((env) => ({
     ...env,
@@ -280,4 +474,16 @@ export function getEnv(): Env {
  */
 export function resetEnvForTests(): void {
   _env = undefined;
+}
+
+/**
+ * Auth.js / OAuth-state secret. Required for web and full worker; omitted
+ * on the credential-thin document-extract service.
+ */
+export function requireAuthSecret(): string {
+  const secret = getEnv().AUTH_SECRET;
+  if (!secret) {
+    throw new Error('AUTH_SECRET is required');
+  }
+  return secret;
 }

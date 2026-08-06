@@ -1,7 +1,7 @@
 # Cross-source evidence — product brief
 
-**Status:** north-star direction (not fully shipped)  
-**Audience:** product, eng, and website copy  
+**Status:** north-star direction (not fully shipped)
+**Audience:** product, eng, and website copy
 **Last updated:** 2026-08-05
 
 ## The promise we sell

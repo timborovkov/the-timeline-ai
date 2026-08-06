@@ -1,0 +1,13 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "RAILPACK",
+    "buildCommand": "corepack enable && pnpm install --frozen-lockfile && pnpm --filter @timeline/db build && pnpm --filter @timeline/shared build && pnpm --filter @timeline/worker build"
+  },
+  "deploy": {
+    "preDeployCommand": ["NODE_ENV=production node packages/db/dist/migrate.js"],
+    "startCommand": "NODE_ENV=production WORKER_MODE=document-extract node apps/worker/dist/extract-main.js",
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 3
+  }
+}

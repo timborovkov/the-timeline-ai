@@ -41,14 +41,17 @@ evidence; documents are curated workspace knowledge.
   filenames and must not overwrite `documents.name` unless a user explicitly
   renames or promotes with that title.
 - Visual files need both faithful text extraction when available and semantic
-  visual description when useful. Current processing extracts text-based PDFs
-  locally (pdf-inspector Markdown), sends scanned/mixed PDFs and images through
-  vision OCR (with optional visual description), and defers only oversized
-  captured files; future processing can tune depth by intent so lightweight
+  visual description when useful. Current processing extracts PDF/DOCX bytes in
+  ephemeral Daytona sandboxes via Firecrawl anydoc (office + text PDFs;
+  per-page coverage sends sparse, scanned, and mixed PDFs through bounded page
+  PNG rendering), sends those page images and `image/*` uploads through vision OCR in the
+  credential-thin document-extract orchestrator
+  (with optional visual description), and defers only oversized captured files;
+  future processing can tune depth by intent so lightweight
   previews are enough until promotion, targeted inspection, or explicit user
   intent warrants deeper analysis. Persisted visual descriptions should be
   neutral observations about what is visible; business interpretation belongs in
-  answers or suggestions.
+  answers or suggestions. See [ADR 0013](adr/0013-daytona-document-extract.md).
 - Budget deferral is normal product state, not processing failure. Deferred
   files keep lightweight metadata or preview context so they remain findable.
 - Voice memos are timeline evidence. Native voice-message surfaces from

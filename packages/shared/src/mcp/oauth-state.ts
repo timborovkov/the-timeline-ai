@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-import { getEnv } from '#src/env.js';
+import { requireAuthSecret } from '#src/env.js';
 
 // Phase 11 — Minimal stateful JWT-equivalent for the MCP OAuth dance.
 // Carries (teamId, mcpServerId, userId, issuedAt) and is HS256-MACed
@@ -25,10 +25,7 @@ interface OAuthStatePayload {
 const STATE_TTL_MS = 15 * 60 * 1000;
 
 function getSecret(): string {
-  const env = getEnv();
-  // AUTH_SECRET is already validated as a required, non-empty string in
-  // env.ts (min 16 chars) so this never throws in a well-configured env.
-  return env.AUTH_SECRET;
+  return requireAuthSecret();
 }
 
 function b64url(buf: Buffer): string {

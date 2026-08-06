@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 
-import { getEnv } from '@timeline/shared/env';
+import { requireAuthSecret } from '@timeline/shared/env';
 import * as integrationsLib from '@timeline/shared/integrations';
 import { childLogger } from '@timeline/shared/logger';
 import { NextResponse } from 'next/server';
@@ -44,8 +44,7 @@ export async function POST(
   // Build a self-contained state JWT-equivalent (HMAC-SHA256 of payload
   // with AUTH_SECRET). We could route through the MCP oauth-state but
   // this is a different audience — keep them separate.
-  const env = getEnv();
-  const secret = env.AUTH_SECRET;
+  const secret = requireAuthSecret();
   const payload = stateSchema.parse({
     teamId: active.teamId,
     userId: session.user.id,

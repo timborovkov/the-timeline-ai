@@ -36,6 +36,12 @@ export interface ExtractTextFromMediaInput {
   /** Optional filename hint surfaced to the model. Improves OCR on scans
    *  where the name carries domain context (e.g. "lease.pdf"). */
   filename?: string;
+  /**
+   * Optional rendered page images (PNG/JPEG) from isolated PDF extract.
+   * When present, these are sent as vision image parts instead of the
+   * original PDF file bytes (sparse-PDF Daytona path).
+   */
+  pageImages?: Buffer[];
   /** Override the configured vision model for this call. */
   model?: string;
   /** Hard cap on output tokens to bound cost and runtime. Defaults to
@@ -113,7 +119,8 @@ export async function extractTextFromMedia(
   const mediaType = input.mediaType.toLowerCase();
   const isImage = mediaType.startsWith('image/');
   const isPdf = mediaType === 'application/pdf';
-  if (!isImage && !isPdf) {
+  const pageImages = input.pageImages?.filter((buf) => buf.byteLength > 0) ?? [];
+  if (!isImage && !isPdf && pageImages.length === 0) {
     throw new Error(
       `extractTextFromMedia: unsupported mediaType "${input.mediaType}" (images and PDFs only)`,
     );
@@ -121,15 +128,25 @@ export async function extractTextFromMedia(
 
   // ai-sdk discriminates image vs file content parts. Images go through
   // the vision endpoint; PDFs are file attachments that vision-capable
-  // models (Claude 3.5+, GPT-4o, Gemini 1.5+) read natively.
-  const contentPart: ImagePart | FilePart = isImage
-    ? { type: 'image', image: input.body, mediaType }
-    : {
-        type: 'file',
-        data: input.body,
-        mediaType: 'application/pdf',
-        ...(input.filename ? { filename: input.filename } : {}),
-      };
+  // models (Claude 3.5+, GPT-4o, Gemini 1.5+) read natively. Sparse PDFs
+  // from Daytona pass rendered page PNGs as multiple image parts.
+  const mediaParts: (ImagePart | FilePart)[] =
+    pageImages.length > 0
+      ? pageImages.map((image) => ({
+          type: 'image' as const,
+          image,
+          mediaType: 'image/png',
+        }))
+      : isImage
+        ? [{ type: 'image' as const, image: input.body, mediaType }]
+        : [
+            {
+              type: 'file' as const,
+              data: input.body,
+              mediaType: 'application/pdf',
+              ...(input.filename ? { filename: input.filename } : {}),
+            },
+          ];
 
   const result = await wrapAiFailure(
     { operation: 'llm.extractTextFromMedia', model: modelId },
@@ -142,7 +159,7 @@ export async function extractTextFromMedia(
           {
             role: 'user',
             content: [
-              contentPart,
+              ...mediaParts,
               {
                 type: 'text',
                 text: 'Extract readable text, suggest a concise title, and write a neutral visual description. Follow the section format in the system prompt.',
@@ -160,6 +177,7 @@ export async function extractTextFromMedia(
             operation: 'extract_text_from_media',
             media_type: mediaType,
             input_bytes: input.body.byteLength,
+            page_image_count: pageImages.length,
             has_filename: Boolean(input.filename),
             max_output_tokens: input.maxOutputTokens ?? 8000,
           },

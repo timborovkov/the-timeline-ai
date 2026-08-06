@@ -197,11 +197,14 @@ apps/
   web/      Next.js 16 app (App Router, RSC, server actions, Auth.js)
   worker/   BullMQ workers (conversation-agent, transcribe, extract,
             suggestions, embed,
-            overdue-scan, calendar-recurrence, document-extract,
+            overdue-scan, calendar-recurrence,
             meeting-finalize, meeting-scheduler, object-summary, janitor,
             task-category,
             webhook-delivery, integration-sync, mcp-health, team-export,
-            daily-digest, timeline-moment-presentation, reconciliation)
+            daily-digest, timeline-moment-presentation, reconciliation);
+            also hosts the credential-thin document-extract orchestrator service
+            (`WORKER_MODE=document-extract` / `extract-main`, Daytona
+            sandboxes — ADR 0013)
 packages/
   db/       Drizzle schema + migrations
   shared/   Cross-package code: withTeam workspace port, llm wrapper, Qdrant
