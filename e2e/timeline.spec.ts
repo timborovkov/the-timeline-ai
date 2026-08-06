@@ -1083,7 +1083,7 @@ test('onboarding checklist supports manual completion, dismissal, and reopening'
   await expect(ownerPage.getByRole('button', { name: completedStepLabel })).toHaveCount(0);
 
   await waitForOnboardingPatch(ownerPage, async () => {
-    await ownerPage.getByRole('button', { name: 'Dismiss setup checklist' }).click();
+    await ownerPage.getByRole('button', { name: 'Dismiss setup' }).click();
   });
   await expect(ownerPage.getByRole('button', { name: 'Reopen setup' })).toBeVisible();
 

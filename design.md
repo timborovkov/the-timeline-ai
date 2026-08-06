@@ -96,7 +96,7 @@ Both families are self-hosted with `next/font/local`.
 | Role | Font and size |
 | --- | --- |
 | Page title | Switzer 600, 24px |
-| Marketing hero | Switzer 600, 36px mobile / 48px desktop |
+| Marketing hero | Switzer 600, 32px mobile / 48px tablet / 60px desktop |
 | Section heading | Switzer 600, 16px |
 | Body and controls | Switzer 400–600, 14px |
 | Secondary metadata | Switzer 400, 12px |
@@ -301,13 +301,18 @@ shared due-date vocabulary above.
 
 ### Marketing and public pages
 
-The public landing page keeps the earlier archive marketing structure: sticky
-landing nav, large hero with proof mock, problem before/after, concept diagram,
-surfaces, integrations, cited receipts, principles, FAQ, and final CTA. Mono
-index strips and uppercase section labels remain appropriate on that marketing
-surface. Legal pages use the shared public shell at reading width (65–70ch).
-Help uses the same public shell at wide width with a sidebar nav; article bodies
-may optionally constrain to a reading measure without forcing the shell narrow.
+The public landing page keeps the archive marketing structure: sticky landing
+nav, concise hero with proof mock, audience and source proof, problem
+before/after, concept diagram, surfaces, integrations, cited receipts,
+principles, FAQ, and final CTA. Mono index strips and uppercase section labels
+are reserved for the hero, evidence, and final CTA so the page does not repeat
+the same heading rhythm in every section. Legal pages use the shared public
+shell at reading width (65–70ch).
+Help uses the same public shell at wide width with a sidebar nav. Its overview
+is one searchable, single-column guide directory rather than repeating the
+same destinations in category lists and card grids. Guide and support pages
+provide a visible route back to all guides; article bodies may optionally
+constrain to a reading measure without forcing the shell narrow.
 
 ### Administrator dashboards
 
@@ -368,3 +373,5 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-07-14 | Attention + Ask Home | Makes the first screen action-oriented instead of duplicating navigation. |
 | 2026-07-20 | Quiet, full-width Home with universal work pins | Removes redundant headings and card weight while letting people keep any important work item close. |
 | 2026-07-27 | Cross-surface chat history badges | Makes Telegram and Slack transcripts recognizable without changing ordinary web sessions. |
+| 2026-08-05 | Taste v2 landing evolution | Tightens the hero, varies section rhythm, and adds tactile states while preserving Quiet Archive tokens and IA. |
+| 2026-08-05 | Searchable public help directory | Removes repeated guide grids and makes task-level help discoverable from one calm index. |

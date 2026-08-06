@@ -15,7 +15,7 @@ import {
   reconciliationRuns,
   type Db,
 } from '@timeline/db';
-import { suggestions } from '@timeline/shared';
+import { conversationReview, suggestions } from '@timeline/shared';
 import { resetEnvForTests } from '@timeline/shared/env';
 import { RECONCILIATION_PLANNER_PROMPT_VERSION } from '@timeline/shared/reconciliation/planner';
 import { withTeam } from '@timeline/shared/team-scope';
@@ -24,7 +24,11 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
-import { fallbackBundles, processSuggestionJobForTests } from '#src/workers/suggestions.js';
+import {
+  fallbackBundles,
+  processSuggestionJobForTests,
+  SUGGESTION_PROMPT_MAX_INPUT_TOKENS,
+} from '#src/workers/suggestions.js';
 
 /**
  * Agentic-core worker tests. These exercise the background suggestion
@@ -301,6 +305,73 @@ describe('processSuggestionJobForTests', () => {
         ORIGINAL_TASK_CATEGORY_CLASSIFICATION_ENABLED;
     }
     resetEnvForTests();
+  });
+
+  it('skips suggestion extraction for integration-sourced events without calling the LLM', async () => {
+    const rawEventId = '99999999-4444-4444-8444-444444444444';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      source: 'integration',
+      text: 'Sentry issue exploded again with a long body that would otherwise burn tokens.',
+      sourceMetadata: {
+        integration_provider: 'sentry',
+        integration_external_id: 'issue-1',
+      },
+    });
+    const chat = emptyModel();
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    expect(chat).not.toHaveBeenCalled();
+    await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 0, items: 0 });
+    const [row] = await db
+      .select({ sourceMetadata: rawEvents.sourceMetadata })
+      .from(rawEvents)
+      .where(eq(rawEvents.id, rawEventId))
+      .limit(1);
+    expect(row?.sourceMetadata).toMatchObject({
+      suggestions_skipped_reason: 'integration_structured_source',
+      suggestion_model_version: `${MODEL_ID}@2026-07-b`,
+    });
+    expect(row?.sourceMetadata).toHaveProperty('suggestions_skipped_at');
+  });
+
+  it('skips integration-sourced events before requiring OPENROUTER_API_KEY', async () => {
+    const rawEventId = '99999999-4444-4444-8444-444444444445';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      source: 'integration',
+      text: 'Monday item updated',
+      sourceMetadata: {
+        integration_provider: 'monday',
+        integration_external_id: 'item-1',
+      },
+    });
+    const chat = emptyModel();
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      {
+        getEnv: () => ({ OPENROUTER_API_KEY: undefined }) as never,
+        chatStructured: chat,
+        modelId: MODEL_ID,
+      },
+    );
+
+    expect(chat).not.toHaveBeenCalled();
+    const [row] = await db
+      .select({ sourceMetadata: rawEvents.sourceMetadata })
+      .from(rawEvents)
+      .where(eq(rawEvents.id, rawEventId))
+      .limit(1);
+    expect(row?.sourceMetadata).toMatchObject({
+      suggestions_skipped_reason: 'integration_structured_source',
+    });
   });
 
   it('skips queued ingest webhook proposals when the source setting is disabled before processing', async () => {
@@ -4562,6 +4633,121 @@ describe('processSuggestionJobForTests', () => {
     expect(prompt).toContain('Sarah can send the Acme deck Friday.');
     expect(prompt).toContain('Actually wait for legal before sending anything.');
     expect(await suggestionCounts(pg)).toEqual({ suggestions: 0, items: 0 });
+  });
+
+  it('caps conversation evidence windows and keeps full anchor text under the token budget', async () => {
+    expect(conversationReview.CONVERSATION_WINDOW_LIMIT).toBe(24);
+    expect(conversationReview.CONVERSATION_WINDOW_DAYS).toBe(2);
+    expect(SUGGESTION_PROMPT_MAX_INPUT_TOKENS).toBe(24_000);
+
+    const reviewId = '20000000-0000-0000-0000-0000000000c1';
+    const conversationKey = `telegram:${TEAM_ID}:chat:cap-window`;
+    const longMarker = 'LONG_MARKER_';
+    const longTail = 'DEADLINE_FRIDAY_COMMITMENT';
+    const longBody = `${longMarker}${'x'.repeat(1_500)}${longTail}`;
+    const staleId = '10000000-0000-4000-8000-0000000000c0';
+    const eventIds = Array.from(
+      { length: 30 },
+      (_, index) => `10000000-0000-4000-8000-${(index + 1).toString(16).padStart(12, '0')}`,
+    );
+    const anchorId = eventIds.at(-1);
+    if (!anchorId) throw new Error('expected conversation window fixture ids');
+    await seedRawEvent(db as never, {
+      id: staleId,
+      source: 'telegram',
+      text: 'STALE_OUTSIDE_WINDOW should not appear',
+      occurredAt: new Date('2026-05-20T10:00:00.000Z'),
+      sourceMetadata: { tg_chat_id: 'cap-window', tg_message_id: '0' },
+    });
+    for (const [index, eventId] of eventIds.entries()) {
+      await seedRawEvent(db as never, {
+        id: eventId,
+        source: 'telegram',
+        text: index === eventIds.length - 1 ? longBody : `window message ${String(index + 1)}`,
+        occurredAt: new Date(REFERENCE_DATE.getTime() - (eventIds.length - 1 - index) * 60_000),
+        sourceMetadata: {
+          tg_chat_id: 'cap-window',
+          tg_message_id: String(index + 1),
+        },
+      });
+    }
+    await seedConversationReview(db as never, {
+      id: reviewId,
+      conversationKey,
+      lastRawEventId: anchorId,
+      quietUntil: new Date('2026-05-27T09:00:00.000Z'),
+    });
+    const chat = emptyModel();
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    expect(chat).toHaveBeenCalledOnce();
+    const prompt = (chat.mock.calls[0]?.[0] as { prompt: string }).prompt;
+    expect(prompt).not.toContain('STALE_OUTSIDE_WINDOW');
+    expect(prompt).toContain(longMarker);
+    expect(prompt).toContain(longTail);
+    expect(prompt).toContain(longBody);
+    const evidenceSection = prompt.split('# Conversation evidence window')[1]?.split('# ')[0] ?? '';
+    const evidenceLines = evidenceSection
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith('- ['));
+    expect(evidenceLines.length).toBe(conversationReview.CONVERSATION_WINDOW_LIMIT);
+    expect(evidenceLines.some((line) => line.includes('>window message 1</'))).toBe(false);
+    expect(evidenceLines.some((line) => line.includes('>window message 6</'))).toBe(false);
+    expect(evidenceLines.some((line) => line.includes('>window message 7</'))).toBe(true);
+    expect(prompt.length).toBeLessThan(SUGGESTION_PROMPT_MAX_INPUT_TOKENS * 4);
+  });
+
+  it('reserves the Slack thread root even when it falls outside the two-day window', async () => {
+    const rootId = '10000000-0000-0000-0000-0000000000c2';
+    const replyId = '10000000-0000-0000-0000-0000000000c3';
+    const reviewId = '20000000-0000-0000-0000-0000000000c2';
+    const conversationKey = `slack:${TEAM_ID}:T1:C9:thread:1716400000.000100`;
+    await seedRawEvent(db as never, {
+      id: rootId,
+      source: 'slack',
+      text: 'Please ship the Acme deck this Friday.',
+      occurredAt: new Date('2026-05-22T10:00:00.000Z'),
+      sourceMetadata: {
+        slack_workspace_id: 'T1',
+        slack_channel_id: 'C9',
+        slack_message_ts: '1716400000.000100',
+      },
+    });
+    await seedRawEvent(db as never, {
+      id: replyId,
+      source: 'slack',
+      text: 'Yes, do that Friday.',
+      occurredAt: new Date('2026-05-27T10:05:00.000Z'),
+      sourceMetadata: {
+        slack_workspace_id: 'T1',
+        slack_channel_id: 'C9',
+        slack_message_ts: '1716810300.000200',
+        slack_thread_ts: '1716400000.000100',
+      },
+    });
+    await seedConversationReview(db as never, {
+      id: reviewId,
+      conversationKey,
+      lastRawEventId: replyId,
+      quietUntil: new Date('2026-05-27T09:00:00.000Z'),
+    });
+    const chat = emptyModel();
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const prompt = (chat.mock.calls[0]?.[0] as { prompt: string }).prompt;
+    expect(prompt).toContain('Please ship the Acme deck this Friday.');
+    expect(prompt).toContain('Yes, do that Friday.');
   });
 
   it('stores high-confidence Telegram Q&A proposals as object-note suggestion items', async () => {

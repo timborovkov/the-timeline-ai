@@ -7,7 +7,10 @@ vi.mock('#src/http/external-fetch.js', () => ({
 import type { IntegrationEvent } from '#src/integrations/types.js';
 
 import { resetEnvForTests } from '#src/env.js';
-import { mondayProvider } from '#src/integrations/providers/monday.js';
+import {
+  MONDAY_BOARD_WRITER_EVENT_BUDGET,
+  mondayProvider,
+} from '#src/integrations/providers/monday.js';
 import { ProviderRateLimitError } from '#src/integrations/types.js';
 
 const ENV_BACKUP = { ...process.env };
@@ -327,9 +330,10 @@ describe('mondayProvider', () => {
     const normalized = Array.isArray(result) ? { events: result, syncTasks: [] } : result;
 
     expect(normalized?.events[0]).toMatchObject({
-      dedupKey: 'monday:webhook:645fc8d8709d35718f1ae00ceded91e9',
+      dedupKey: 'monday:item:1771812698:1771812728:done:645fc8d8709d35718f1ae00ceded91e9',
       eventType: 'column.changed',
       externalObjectId: '1771812728',
+      externalEventId: '645fc8d8709d35718f1ae00ceded91e9',
       objectMap: {
         type: 'other',
         externalId: '1771812728',
@@ -339,6 +343,7 @@ describe('mondayProvider', () => {
         monday_board_id: '1771812698',
         monday_item_id: '1771812728',
         monday_subscription_id: '73760484',
+        monday_trigger_uuid: '645fc8d8709d35718f1ae00ceded91e9',
       },
     });
     expect(normalized?.events[0]?.contentText).toContain('Column: Status');
@@ -353,6 +358,307 @@ describe('mondayProvider', () => {
         reason: 'monday_item_webhook',
       },
     ]);
+  });
+
+  it('mints revision keys for Monday update edit/delete webhooks', async () => {
+    const created = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          userId: 9603417,
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          updateId: 55,
+          type: 'create_update',
+          triggerTime: '2026-06-25T09:15:03.429Z',
+          subscriptionId: 73760484,
+          triggerUuid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        },
+      },
+    });
+    const edited = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          userId: 9603417,
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          updateId: 55,
+          type: 'edit_update',
+          triggerTime: '2026-06-25T09:20:03.429Z',
+          subscriptionId: 73760484,
+          triggerUuid: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        },
+      },
+    });
+    const createdEvents = Array.isArray(created) ? created : (created?.events ?? []);
+    const editedEvents = Array.isArray(edited) ? edited : (edited?.events ?? []);
+    expect(createdEvents[0]?.dedupKey).toBe(
+      'monday:update:1771812728:55:create_update:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    );
+    expect(editedEvents[0]?.dedupKey).toBe(
+      'monday:update:1771812728:55:edit_update:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    );
+    expect(editedEvents[0]?.dedupKey).not.toBe(createdEvents[0]?.dedupKey);
+  });
+
+  it('uses distinct lifecycle buckets for Monday archive and delete webhooks', async () => {
+    const archived = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          userId: 9603417,
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          type: 'item_archived',
+          triggerTime: '2026-06-25T09:15:03.429Z',
+          subscriptionId: 73760484,
+          triggerUuid: 'cccccccccccccccccccccccccccccccc',
+        },
+      },
+    });
+    const deleted = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          userId: 9603417,
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          type: 'item_deleted',
+          triggerTime: '2026-06-25T09:16:03.429Z',
+          subscriptionId: 73760484,
+          triggerUuid: 'dddddddddddddddddddddddddddddddd',
+        },
+      },
+    });
+    const archivedEvents = Array.isArray(archived) ? archived : (archived?.events ?? []);
+    const deletedEvents = Array.isArray(deleted) ? deleted : (deleted?.events ?? []);
+    expect(archivedEvents[0]?.dedupKey).toBe('monday:item:1771812698:1771812728:archived');
+    expect(deletedEvents[0]?.dedupKey).toBe('monday:item:1771812698:1771812728:deleted');
+    expect(archivedEvents[0]?.objectMap).toMatchObject({ status: 'cancelled' });
+    expect(deletedEvents[0]?.objectMap).toMatchObject({ status: 'cancelled' });
+  });
+
+  it('does not derive lifecycle status from non-status Monday column webhooks', async () => {
+    const result = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          userId: 9603417,
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          columnId: 'person',
+          columnType: 'multiple-person',
+          columnTitle: 'Owner',
+          value: { personsAndTeams: [{ id: 1, kind: 'person' }] },
+          previousValue: null,
+          type: 'update_column_value',
+          triggerTime: '2026-06-25T09:15:03.429Z',
+          subscriptionId: 73760484,
+          triggerUuid: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        },
+      },
+    });
+    const normalized = Array.isArray(result) ? { events: result, syncTasks: [] } : result;
+
+    expect(normalized?.events[0]).toMatchObject({
+      dedupKey:
+        'monday:item:1771812698:1771812728:observed:update_column_value:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      eventType: 'column.changed',
+      objectMap: {
+        type: 'other',
+        externalId: '1771812728',
+      },
+    });
+    expect(normalized?.events[0]?.objectMap).not.toHaveProperty('status');
+  });
+
+  it('mints distinct observed revision keys for successive non-status Monday webhooks', async () => {
+    const owner = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          columnId: 'person',
+          columnType: 'multiple-person',
+          columnTitle: 'Owner',
+          value: { personsAndTeams: [{ id: 1, kind: 'person' }] },
+          type: 'update_column_value',
+          triggerTime: '2026-06-25T09:15:03.429Z',
+          triggerUuid: 'owner-trigger-1',
+        },
+      },
+    });
+    const due = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          columnId: 'date',
+          columnType: 'date',
+          columnTitle: 'Due',
+          value: { date: '2026-07-01' },
+          type: 'update_column_value',
+          triggerTime: '2026-06-25T09:16:03.429Z',
+          triggerUuid: 'due-trigger-2',
+        },
+      },
+    });
+    const ownerReplay = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          columnId: 'person',
+          columnType: 'multiple-person',
+          columnTitle: 'Owner',
+          value: { personsAndTeams: [{ id: 1, kind: 'person' }] },
+          type: 'update_column_value',
+          triggerTime: '2026-06-25T09:15:03.429Z',
+          triggerUuid: 'owner-trigger-1',
+        },
+      },
+    });
+    const ownerEvent = (Array.isArray(owner) ? owner[0] : owner?.events[0]) ?? null;
+    const dueEvent = (Array.isArray(due) ? due[0] : due?.events[0]) ?? null;
+    const replayEvent =
+      (Array.isArray(ownerReplay) ? ownerReplay[0] : ownerReplay?.events[0]) ?? null;
+    expect(ownerEvent?.dedupKey).toBe(
+      'monday:item:1771812698:1771812728:observed:update_column_value:owner-trigger-1',
+    );
+    expect(dueEvent?.dedupKey).toBe(
+      'monday:item:1771812698:1771812728:observed:update_column_value:due-trigger-2',
+    );
+    expect(dueEvent?.dedupKey).not.toBe(ownerEvent?.dedupKey);
+    expect(replayEvent?.dedupKey).toBe(ownerEvent?.dedupKey);
+  });
+
+  it('coalesces duplicate Monday status webhook deliveries with the same triggerUuid', async () => {
+    const payload = {
+      event: {
+        userId: 9603417,
+        boardId: 1771812698,
+        pulseId: 1771812728,
+        pulseName: 'Launch checklist',
+        columnId: 'status',
+        columnType: 'color',
+        columnTitle: 'Status',
+        value: { label: 'Done' },
+        previousValue: { label: 'Working on it' },
+        type: 'update_column_value',
+        triggerTime: '2026-06-25T09:15:03.429Z',
+        subscriptionId: 73760484,
+        triggerUuid: '645fc8d8709d35718f1ae00ceded91e9',
+      },
+    };
+    const first = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload,
+    });
+    const replay = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload,
+    });
+    const firstEvent = (Array.isArray(first) ? first[0] : first?.events[0]) ?? null;
+    const replayEvent = (Array.isArray(replay) ? replay[0] : replay?.events[0]) ?? null;
+    expect(firstEvent?.dedupKey).toBe(
+      'monday:item:1771812698:1771812728:done:645fc8d8709d35718f1ae00ceded91e9',
+    );
+    expect(replayEvent?.dedupKey).toBe(firstEvent?.dedupKey);
+  });
+
+  it('recognizes renamed Monday status columns that report columnType color', async () => {
+    const result = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          columnId: 'phase',
+          columnType: 'color',
+          columnTitle: 'Phase',
+          value: { label: 'Done' },
+          previousValue: { label: 'Working on it' },
+          type: 'update_column_value',
+          triggerTime: '2026-06-25T09:15:03.429Z',
+          triggerUuid: 'phase-status-trigger',
+        },
+      },
+    });
+    const event = (Array.isArray(result) ? result[0] : result?.events[0]) ?? null;
+    expect(event?.dedupKey).toBe('monday:item:1771812698:1771812728:done:phase-status-trigger');
+    expect(event?.objectMap).toMatchObject({ status: 'done' });
+  });
+
+  it('mints a distinct Monday dedup key when a lifecycle status bucket repeats', async () => {
+    const toDone = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          columnId: 'status',
+          columnType: 'color',
+          columnTitle: 'Status',
+          value: { label: 'Done' },
+          previousValue: { label: 'Working on it' },
+          type: 'update_column_value',
+          triggerTime: '2026-06-25T09:15:03.429Z',
+          triggerUuid: 'to-done-1',
+        },
+      },
+    });
+    const reopen = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          columnId: 'status',
+          columnType: 'color',
+          columnTitle: 'Status',
+          value: { label: 'Working on it' },
+          previousValue: { label: 'Done' },
+          type: 'update_column_value',
+          triggerTime: '2026-06-25T10:15:03.429Z',
+          triggerUuid: 'reopen-2',
+        },
+      },
+    });
+    const firstOpen = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          type: 'create_pulse',
+          triggerTime: '2026-06-25T08:15:03.429Z',
+          triggerUuid: 'create-0',
+        },
+      },
+    });
+    const doneEvent = (Array.isArray(toDone) ? toDone[0] : toDone?.events[0]) ?? null;
+    const reopenEvent = (Array.isArray(reopen) ? reopen[0] : reopen?.events[0]) ?? null;
+    const createEvent = (Array.isArray(firstOpen) ? firstOpen[0] : firstOpen?.events[0]) ?? null;
+    expect(createEvent?.dedupKey).toBe('monday:item:1771812698:1771812728:open');
+    expect(doneEvent?.dedupKey).toBe('monday:item:1771812698:1771812728:done:to-done-1');
+    expect(reopenEvent?.dedupKey).toBe('monday:item:1771812698:1771812728:in_progress:reopen-2');
+    expect(reopenEvent?.dedupKey).not.toBe(createEvent?.dedupKey);
   });
 
   it('routes classic subitem webhooks through the selected parent board', async () => {
@@ -402,6 +708,205 @@ describe('mondayProvider', () => {
         reason: 'monday_item_webhook',
       },
     ]);
+  });
+
+  it('hydrates create_subitem_update through the selected parent board and targeted update id', async () => {
+    const normalized = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          boardId: 1772135370,
+          parentItemBoardId: 1771812698,
+          parentItemId: 1771812716,
+          pulseId: 1772139123,
+          pulseName: 'sub-item',
+          updateId: 1772140001,
+          replyId: null,
+          body: '<p>Subitem update</p>',
+          textBody: 'Subitem update',
+          type: 'create_subitem_update',
+          triggerTime: '2021-10-11T09:24:51.835Z',
+          subscriptionId: 73761697,
+          triggerUuid: 'subitem-update-trigger',
+        },
+      },
+    });
+    if (!normalized || Array.isArray(normalized)) throw new Error('Expected normalized webhook');
+
+    expect(normalized.events[0]).toMatchObject({
+      eventType: 'update.created',
+      extra: {
+        monday_board_id: '1771812698',
+        monday_item_board_id: '1772135370',
+        monday_parent_item_id: '1771812716',
+        monday_update_id: '1772140001',
+        monday_webhook_type: 'create_subitem_update',
+      },
+    });
+    expect(normalized.syncTasks).toEqual([
+      {
+        integrationId: 'integration-1',
+        teamId: 'team-1',
+        triggeredBy: 'webhook',
+        resourceType: 'monday.item',
+        externalId: '1771812698:1772139123:1772140001',
+        surface: 'update.created',
+        reason: 'monday_item_webhook',
+      },
+    ]);
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((_input, init) => {
+        const body = requestPayload(init);
+        expect(body.query).toContain('updates(ids: $updateIds)');
+        expect(body.variables).toEqual({
+          itemIds: ['1772139123'],
+          updateIds: ['1772140001'],
+        });
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              items: [
+                {
+                  id: '1772139123',
+                  name: 'sub-item',
+                  updated_at: '2021-10-11T09:24:51.835Z',
+                  board: { id: '1772135370', name: 'Subitems of Pipeline', columns: [] },
+                  parent_item: {
+                    id: '1771812716',
+                    name: 'parent item',
+                    board: { id: '1771812698', name: 'Pipeline', columns: [] },
+                  },
+                  column_values: [],
+                  updates: [
+                    {
+                      id: '1772140001',
+                      body: '<p>Subitem update</p>',
+                      text_body: 'Subitem update',
+                      created_at: '2021-10-11T09:24:51.835Z',
+                      updated_at: '2021-10-11T09:24:51.835Z',
+                      creator: { id: 'user-1', name: 'Ada' },
+                      replies: [],
+                    },
+                  ],
+                  subitems: [],
+                },
+              ],
+            },
+          }),
+        );
+      }),
+    );
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+    const target = normalized.syncTasks[0];
+    if (!target) throw new Error('Expected targeted sync task');
+    await mondayProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: '1771812698' }],
+      target,
+      ctx,
+    });
+    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventType: 'subitem.updated',
+        }),
+        expect.objectContaining({
+          eventType: 'update.created',
+          externalEventId: '1772140001',
+        }),
+      ]),
+    );
+    expect(events.find((event) => event.eventType === 'subitem.updated')?.extra).toMatchObject({
+      monday_board_id: '1771812698',
+      monday_item_board_id: '1772135370',
+    });
+    expect(events.find((event) => event.externalEventId === '1772140001')?.extra).toMatchObject({
+      monday_board_id: '1771812698',
+      monday_item_board_id: '1772135370',
+      monday_update_id: '1772140001',
+      monday_conversation_operation: 'created',
+    });
+  });
+
+  it('handles update and reply delete operations without requesting catch-up sync', async () => {
+    const normalized = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          updateId: 1190616585,
+          body: '<p>The removed update still has a body in Monday’s payload.</p>',
+          textBody: 'The removed update still has a body in Monday’s payload.',
+          type: 'delete_update',
+          triggerTime: '2021-10-11T09:18:57.368Z',
+          subscriptionId: 73760983,
+          triggerUuid: 'deleted-update-trigger',
+        },
+      },
+    });
+    if (!normalized || Array.isArray(normalized)) throw new Error('Expected normalized webhook');
+
+    expect(normalized.events).toEqual([
+      expect.objectContaining({
+        eventType: 'update.deleted',
+        sourceTombstone: {
+          kind: 'monday_conversation',
+          updateId: '1190616585',
+          reason: 'monday_update_deleted_at_source',
+        },
+      }),
+    ]);
+    expect(normalized.events[0]?.extra).toMatchObject({
+      monday_update_id: '1190616585',
+      monday_reply_id: null,
+      monday_webhook_type: 'delete_update',
+    });
+    expect(normalized.syncTasks).toEqual([]);
+    expect(normalized.syncTaskDisposition).toBe('handled');
+
+    const replyDeletion = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          updateId: 1190616585,
+          replyId: 1190616586,
+          body: '<p>The removed reply still has a body in Monday’s payload.</p>',
+          type: 'delete_update',
+          triggerTime: '2021-10-11T09:19:57.368Z',
+          subscriptionId: 73760983,
+          triggerUuid: 'deleted-reply-trigger',
+        },
+      },
+    });
+    if (!replyDeletion || Array.isArray(replyDeletion)) {
+      throw new Error('Expected normalized reply deletion webhook');
+    }
+    expect(replyDeletion.events).toEqual([
+      expect.objectContaining({
+        eventType: 'reply.deleted',
+        sourceTombstone: {
+          kind: 'monday_conversation',
+          updateId: '1190616585',
+          replyId: '1190616586',
+          reason: 'monday_reply_deleted_at_source',
+        },
+      }),
+    ]);
+    expect(replyDeletion.syncTasks).toEqual([]);
+    expect(replyDeletion.syncTaskDisposition).toBe('handled');
   });
 
   it('provisions monday.com board webhooks for selected boards', async () => {
@@ -460,7 +965,7 @@ describe('mondayProvider', () => {
       ],
     });
 
-    expect(active).toHaveLength(12);
+    expect(active).toHaveLength(13);
     expect(active).toContainEqual({
       externalSubscriptionId: 'existing-create-item-hook',
       resourceKind: 'monday.board',
@@ -474,7 +979,14 @@ describe('mondayProvider', () => {
       eventType: 'change_column_value',
       expiresAt: null,
     });
-    expect(fetch).toHaveBeenCalledTimes(12);
+    expect(active).toContainEqual({
+      externalSubscriptionId: 'hook-create_subitem_update',
+      resourceKind: 'monday.board',
+      externalResourceId: 'board-1',
+      eventType: 'create_subitem_update',
+      expiresAt: null,
+    });
+    expect(fetch).toHaveBeenCalledTimes(13);
   });
 
   it('does not attempt to provision webhooks on a persisted classic subitems board selection', async () => {
@@ -577,7 +1089,7 @@ describe('mondayProvider', () => {
       existingSubscriptions: [],
     });
 
-    expect(active).toHaveLength(12);
+    expect(active).toHaveLength(13);
     expect(active?.every((subscription) => subscription.externalResourceId === 'board-1')).toBe(
       true,
     );
@@ -1542,6 +2054,7 @@ describe('mondayProvider', () => {
                             body: 'Legal approved the renewal',
                             created_at: '2026-06-20T12:00:00Z',
                             creator: { id: 'user-1', name: 'Ada' },
+                            replies: [],
                           },
                         ],
                         subitems: [
@@ -1556,6 +2069,7 @@ describe('mondayProvider', () => {
                                 id: 'update-2',
                                 body: 'Security signed off',
                                 created_at: '2026-06-20T13:00:00Z',
+                                replies: [],
                               },
                             ],
                           },
@@ -1593,9 +2107,9 @@ describe('mondayProvider', () => {
       'board.schema',
       'status.changed',
       'item.updated',
-      'update.created',
+      'update.observed',
       'subitem.updated',
-      'update.created',
+      'update.observed',
       'item.updated',
     ]);
     expect(events[1]?.contentText).toContain('Monday status changed on Pipeline: Acme renewal');
@@ -1645,6 +2159,7 @@ describe('mondayProvider', () => {
       activityCount: 1,
       eventCount: 7,
       hasMoreItems: false,
+      hasMoreActivity: false,
       cursorRestarted: false,
     });
   });
@@ -1895,6 +2410,7 @@ describe('mondayProvider', () => {
                       created_at: '2026-06-20T10:05:00Z',
                       updated_at: '2026-06-20T10:05:00Z',
                       creator: { id: 'user-2', name: 'Grace' },
+                      replies: [],
                     },
                   ],
                   subitems: [],
@@ -1939,6 +2455,7 @@ describe('mondayProvider', () => {
     });
     expect(ctx.saveCursor).toHaveBeenCalledWith('monday.item:board-1:item-1', {
       item_since: '2026-06-20T10:05:00.000Z',
+      item_lifecycles: { 'item-1': 'done' },
     });
     expect(fetch).toHaveBeenCalledTimes(1);
   });
@@ -2196,10 +2713,19 @@ describe('mondayProvider', () => {
       throw new Error(`unexpected query: ${body.query}`);
     });
     vi.stubGlobal('fetch', fetch);
+    let boardCursorReads = 0;
     const ctx = {
-      loadCursor: vi.fn().mockResolvedValueOnce({}).mockResolvedValueOnce({
-        activity_since: '2026-06-20T00:00:00.000Z',
-        item_page_cursor: 'cursor-101',
+      loadCursor: vi.fn((resourceType: string) => {
+        if (resourceType !== 'monday.board:board-1') return Promise.resolve({});
+        boardCursorReads += 1;
+        return Promise.resolve(
+          boardCursorReads === 1
+            ? {}
+            : {
+                activity_since: '2026-06-20T00:00:00.000Z',
+                item_page_cursor: 'cursor-101',
+              },
+        );
       }),
       saveCursor: vi.fn().mockResolvedValue(undefined),
       writeEvents: vi.fn().mockResolvedValue([]),
@@ -2248,6 +2774,105 @@ describe('mondayProvider', () => {
         (event) => event.externalObjectId,
       ),
     ).toContain('item-101');
+  });
+
+  it('atomically checkpoints an overflowing activity window past equal timestamps', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-20T12:00:00Z'));
+    const timestamp = '2026-06-20T10:00:00.000Z';
+    const firstActivityId = `activity-${String(MONDAY_BOARD_WRITER_EVENT_BUDGET - 1).padStart(5, '0')}`;
+    const finalActivityId = `activity-${String(MONDAY_BOARD_WRITER_EVENT_BUDGET).padStart(5, '0')}`;
+    const activityLogs = Array.from({ length: MONDAY_BOARD_WRITER_EVENT_BUDGET }, (_, index) => ({
+      id: `activity-${String(index + 1).padStart(5, '0')}`,
+      event: 'update_column_value',
+      data: JSON.stringify({ item_id: 'item-1', item_name: 'Acme renewal' }),
+      created_at: timestamp,
+      user_id: 'user-1',
+    }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((_input, init) => {
+        const body = requestPayload(init);
+        if (
+          body.query.includes('boards(ids: $ids)') &&
+          !body.query.includes('items_page') &&
+          !body.query.includes('activity_logs')
+        ) {
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                boards: [{ id: 'board-1', name: 'Pipeline', updated_at: timestamp, columns: [] }],
+              },
+            }),
+          );
+        }
+        if (body.query.includes('activity_logs')) {
+          return Promise.resolve(
+            jsonResponse({ data: { boards: [{ activity_logs: activityLogs }] } }),
+          );
+        }
+        if (body.query.includes('items_page')) {
+          return Promise.resolve(
+            jsonResponse({ data: { boards: [{ items_page: { cursor: null, items: [] } }] } }),
+          );
+        }
+        throw new Error(`unexpected query: ${body.query}`);
+      }),
+    );
+    const cursors = new Map<string, unknown>();
+    const ctx = {
+      loadCursor: vi.fn((resourceType: string) => Promise.resolve(cursors.get(resourceType) ?? {})),
+      saveCursor: vi.fn((resourceType: string, cursor: unknown) => {
+        cursors.set(resourceType, cursor);
+        return Promise.resolve(undefined);
+      }),
+      saveCursorWithContinuations: vi.fn(
+        (resourceType: string, cursor: unknown, _continuations: unknown[]) => {
+          cursors.set(resourceType, cursor);
+          return Promise.resolve(undefined);
+        },
+      ),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    const first = await mondayProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      ctx,
+    });
+    const second = await mondayProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      ctx,
+    });
+
+    expect(first?.continuations).toEqual([{ resourceType: 'monday.board', externalId: 'board-1' }]);
+    expect(ctx.saveCursorWithContinuations).toHaveBeenCalledWith(
+      'monday.board:board-1',
+      expect.objectContaining({
+        activity_since: timestamp,
+        activity_after_id: firstActivityId,
+      }),
+      [{ resourceType: 'monday.board', externalId: 'board-1' }],
+    );
+    expect(ctx.saveCursor).toHaveBeenCalledWith(
+      'monday.board:board-1',
+      expect.objectContaining({ activity_after_id: finalActivityId }),
+    );
+    expect(cursors.get('monday.board:board-1')).toMatchObject({
+      activity_since: timestamp,
+      activity_after_id: finalActivityId,
+    });
+    expect(second?.continuations).toBeUndefined();
+    expect(
+      (ctx.writeEvents.mock.calls[1]?.[0] as IntegrationEvent[]).map(
+        (event) => event.externalEventId,
+      ),
+    ).toEqual([undefined, finalActivityId]);
   });
 
   it('restarts an incremental page scan when the saved monday cursor expired', async () => {
@@ -2697,5 +3322,1273 @@ describe('mondayProvider', () => {
 
     expect(ctx.writeEvents).toHaveBeenCalledTimes(1);
     expect(ctx.harvestDocument).not.toHaveBeenCalled();
+  });
+
+  it('renders selected-board update conversations and preserves reply thread metadata', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+      const body = requestPayload(init);
+      if (
+        body.query.includes('boards(ids: $ids)') &&
+        !body.query.includes('items_page') &&
+        !body.query.includes('activity_logs')
+      ) {
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              boards: [
+                {
+                  id: 'board-1',
+                  name: 'Pipeline',
+                  updated_at: '2026-06-20T09:00:00Z',
+                  columns: [],
+                },
+              ],
+            },
+          }),
+        );
+      }
+      if (body.query.includes('activity_logs')) {
+        return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
+      }
+      if (body.query.includes('items_page')) {
+        expect(body.query).not.toContain('text_body');
+        expect(body.query).not.toContain('updates(');
+        expect(body.query).not.toContain('replies(');
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              boards: [
+                {
+                  items_page: {
+                    cursor: null,
+                    items: [
+                      {
+                        id: 'item-1',
+                        name: 'Acme renewal',
+                        updated_at: '2026-06-20T10:00:00Z',
+                        url: 'https://monday.com/boards/1/pulses/1',
+                        column_values: [],
+                        updates: [
+                          {
+                            id: 'update-1',
+                            body: '<p>Raw <strong>approval</strong></p>',
+                            text_body: 'Rendered approval',
+                            created_at: '2026-06-20T10:05:00Z',
+                            updated_at: '2026-06-20T10:06:00Z',
+                            creator: { id: 'user-1', name: 'Ada' },
+                            replies: [
+                              {
+                                id: 'reply-1',
+                                body: '<p>Raw reply</p>',
+                                text_body: 'Rendered reply',
+                                created_at: '2026-06-20T10:07:00Z',
+                                updated_at: '2026-06-20T10:08:00Z',
+                                creator: { id: 'user-2', name: 'Grace' },
+                              },
+                            ],
+                          },
+                          {
+                            id: 'update-html-only',
+                            body: '<p>HTML-only <strong>body</strong></p>',
+                            text_body: null,
+                            created_at: '2026-06-20T10:10:00Z',
+                            creator: null,
+                            replies: [],
+                          },
+                        ],
+                        subitems: [],
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          }),
+        );
+      }
+      throw new Error(`unexpected query: ${body.query}`);
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await mondayProvider.backfill({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      ctx,
+    });
+
+    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    const update = events.find((event) => event.externalEventId === 'update-1');
+    const reply = events.find((event) => event.externalEventId === 'reply-1');
+    const htmlOnly = events.find((event) => event.externalEventId === 'update-html-only');
+
+    expect(update).toMatchObject({
+      eventType: 'update.updated',
+      occurredAt: new Date('2026-06-20T10:06:00Z'),
+      actor: { externalId: 'user-1', name: 'Ada' },
+      contentText: 'Monday update on Acme renewal: Rendered approval',
+      extra: {
+        monday_item_id: 'item-1',
+        monday_item_name: 'Acme renewal',
+        monday_update_id: 'update-1',
+        monday_parent_update_id: null,
+        monday_conversation_body: '<p>Raw <strong>approval</strong></p>',
+        monday_conversation_text_body: 'Rendered approval',
+        monday_conversation_created_at: '2026-06-20T10:05:00Z',
+        monday_conversation_updated_at: '2026-06-20T10:06:00Z',
+        monday_conversation_author_id: 'user-1',
+        monday_conversation_author_name: 'Ada',
+        external_url: 'https://monday.com/boards/1/pulses/1',
+      },
+    });
+    expect(reply).toMatchObject({
+      eventType: 'reply.updated',
+      occurredAt: new Date('2026-06-20T10:08:00Z'),
+      actor: { externalId: 'user-2', name: 'Grace' },
+      contentText: 'Monday reply on Acme renewal to update update-1: Rendered reply',
+      extra: {
+        monday_item_id: 'item-1',
+        monday_update_id: 'update-1',
+        monday_reply_id: 'reply-1',
+        monday_parent_update_id: 'update-1',
+        monday_conversation_body: '<p>Raw reply</p>',
+        monday_conversation_text_body: 'Rendered reply',
+        monday_conversation_created_at: '2026-06-20T10:07:00Z',
+        monday_conversation_updated_at: '2026-06-20T10:08:00Z',
+        monday_conversation_author_id: 'user-2',
+        monday_conversation_author_name: 'Grace',
+        external_url: 'https://monday.com/boards/1/pulses/1',
+      },
+    });
+    expect(htmlOnly).toMatchObject({
+      contentText: 'Monday update on Acme renewal: HTML-only body',
+      extra: {
+        monday_update_id: 'update-html-only',
+        monday_conversation_body: '<p>HTML-only <strong>body</strong></p>',
+        monday_conversation_text_body: null,
+      },
+    });
+  });
+
+  it('fetches board item shells before bounded per-item conversation hydration', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+      const body = requestPayload(init);
+      if (
+        body.query.includes('boards(ids: $ids)') &&
+        !body.query.includes('items_page') &&
+        !body.query.includes('activity_logs')
+      ) {
+        return Promise.resolve(
+          jsonResponse({ data: { boards: [{ id: 'board-1', name: 'Pipeline', columns: [] }] } }),
+        );
+      }
+      if (body.query.includes('activity_logs')) {
+        return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
+      }
+      if (body.query.includes('items_page')) {
+        expect(body.query).not.toContain('updates(');
+        expect(body.query).not.toContain('replies(');
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              boards: [
+                {
+                  items_page: {
+                    cursor: null,
+                    items: [
+                      {
+                        id: 'item-1',
+                        name: 'Acme renewal',
+                        updated_at: '2026-06-20T10:00:00Z',
+                        column_values: [],
+                        subitems: [],
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          }),
+        );
+      }
+      if (body.query.includes('updates(limit: $limit, page: $page)')) {
+        expect(body.query).not.toContain('replies(');
+        expect(body.variables).toEqual({ itemIds: ['item-1'], limit: 100, page: 1 });
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              items: [
+                {
+                  updates: [
+                    {
+                      id: 'update-1',
+                      body: '<p>Update</p>',
+                      text_body: 'Update',
+                      created_at: '2026-06-20T10:05:00Z',
+                      updated_at: '2026-06-20T10:05:00Z',
+                    },
+                  ],
+                },
+              ],
+            },
+          }),
+        );
+      }
+      if (body.query.includes('updates(ids: $updateIds)')) {
+        expect(body.variables).toEqual({
+          itemIds: ['item-1'],
+          updateIds: ['update-1'],
+          limit: 100,
+          page: 1,
+        });
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              items: [
+                {
+                  updates: [
+                    {
+                      id: 'update-1',
+                      replies: [
+                        {
+                          id: 'reply-1',
+                          body: '<p>Reply</p>',
+                          text_body: 'Reply',
+                          created_at: '2026-06-20T10:06:00Z',
+                          updated_at: '2026-06-20T10:06:00Z',
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          }),
+        );
+      }
+      throw new Error(`unexpected query: ${body.query}`);
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await mondayProvider.backfill({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      ctx,
+    });
+
+    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ externalEventId: 'update-1' }),
+        expect.objectContaining({ externalEventId: 'reply-1' }),
+      ]),
+    );
+  });
+
+  it('paginates selected-board updates and replies without silently truncating either history', async () => {
+    const updates = Array.from({ length: 100 }, (_, index) => ({
+      id: `update-${String(index + 1)}`,
+      body: `<p>Update ${String(index + 1)}</p>`,
+      text_body: `Update ${String(index + 1)}`,
+      created_at: '2026-06-20T10:05:00Z',
+      updated_at: '2026-06-20T10:05:00Z',
+      creator: { id: 'user-1', name: 'Ada' },
+      replies:
+        index === 0
+          ? Array.from({ length: 100 }, (_, replyIndex) => ({
+              id: `reply-${String(replyIndex + 1)}`,
+              body: `<p>Reply ${String(replyIndex + 1)}</p>`,
+              text_body: `Reply ${String(replyIndex + 1)}`,
+              created_at: '2026-06-20T10:06:00Z',
+              updated_at: '2026-06-20T10:06:00Z',
+              creator: { id: 'user-2', name: 'Grace' },
+            }))
+          : [],
+    }));
+    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+      const body = requestPayload(init);
+      if (
+        body.query.includes('boards(ids: $ids)') &&
+        !body.query.includes('items_page') &&
+        !body.query.includes('activity_logs')
+      ) {
+        return Promise.resolve(
+          jsonResponse({
+            data: { boards: [{ id: 'board-1', name: 'Pipeline', columns: [] }] },
+          }),
+        );
+      }
+      if (body.query.includes('activity_logs')) {
+        return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
+      }
+      if (body.query.includes('items_page')) {
+        expect(body.query).not.toContain('updates(');
+        expect(body.query).not.toContain('replies(');
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              boards: [
+                {
+                  items_page: {
+                    cursor: null,
+                    items: [
+                      {
+                        id: 'item-1',
+                        name: 'Acme renewal',
+                        updated_at: '2026-06-20T10:00:00Z',
+                        column_values: [],
+                        updates,
+                        subitems: [],
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          }),
+        );
+      }
+      if (body.query.includes('updates(limit: $limit, page: $page)')) {
+        expect(body.variables).toEqual({ itemIds: ['item-1'], limit: 100, page: 2 });
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              items: [
+                {
+                  updates: [
+                    {
+                      id: 'update-101',
+                      body: '<p>Update 101</p>',
+                      text_body: 'Update 101',
+                      created_at: '2026-06-20T10:07:00Z',
+                      updated_at: '2026-06-20T10:07:00Z',
+                      creator: { id: 'user-1', name: 'Ada' },
+                      replies: [],
+                    },
+                  ],
+                },
+              ],
+            },
+          }),
+        );
+      }
+      if (body.query.includes('updates(ids: $updateIds)')) {
+        expect(body.variables).toEqual({
+          itemIds: ['item-1'],
+          updateIds: ['update-1'],
+          limit: 100,
+          page: 2,
+        });
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              items: [
+                {
+                  updates: [
+                    {
+                      id: 'update-1',
+                      replies: [
+                        {
+                          id: 'reply-101',
+                          body: '<p>Reply 101</p>',
+                          text_body: 'Reply 101',
+                          created_at: '2026-06-20T10:08:00Z',
+                          updated_at: '2026-06-20T10:08:00Z',
+                          creator: { id: 'user-2', name: 'Grace' },
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          }),
+        );
+      }
+      throw new Error(`unexpected query: ${body.query}`);
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await mondayProvider.backfill({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      ctx,
+    });
+
+    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    expect(events).toHaveLength(204);
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ externalEventId: 'update-101' }),
+        expect.objectContaining({ externalEventId: 'reply-101' }),
+      ]),
+    );
+  });
+
+  it('defers a reply-heavy update page into selected-update continuations', async () => {
+    const updates = Array.from({ length: 100 }, (_, updateIndex) => ({
+      id: `update-${String(updateIndex + 1)}`,
+      body: `<p>Update ${String(updateIndex + 1)}</p>`,
+      created_at: '2026-06-20T10:05:00Z',
+      updated_at: '2026-06-20T10:05:00Z',
+      replies: Array.from({ length: 100 }, (_, replyIndex) => ({
+        id: `reply-${String(updateIndex + 1)}-${String(replyIndex + 1)}`,
+        body: `<p>Reply ${String(replyIndex + 1)}</p>`,
+        created_at: '2026-06-20T10:06:00Z',
+        updated_at: '2026-06-20T10:06:00Z',
+      })),
+    }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((_input, init) => {
+        const body = requestPayload(init);
+        if (
+          body.query.includes('boards(ids: $ids)') &&
+          !body.query.includes('items_page') &&
+          !body.query.includes('activity_logs')
+        ) {
+          return Promise.resolve(
+            jsonResponse({ data: { boards: [{ id: 'board-1', name: 'Pipeline', columns: [] }] } }),
+          );
+        }
+        if (body.query.includes('activity_logs')) {
+          return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
+        }
+        if (body.query.includes('items_page')) {
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                boards: [
+                  {
+                    items_page: {
+                      cursor: null,
+                      items: [
+                        {
+                          id: 'item-1',
+                          name: 'Acme renewal',
+                          updated_at: '2026-06-20T10:00:00Z',
+                          column_values: [],
+                          updates,
+                          subitems: [],
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            }),
+          );
+        }
+        if (body.query.includes('updates(ids: $updateIds)')) {
+          if (body.variables?.page === 2) {
+            return Promise.resolve(
+              jsonResponse({ data: { items: [{ updates: [{ id: 'update-1', replies: [] }] }] } }),
+            );
+          }
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                items: [
+                  {
+                    id: 'item-1',
+                    name: 'Acme renewal',
+                    updated_at: '2026-06-20T10:00:00Z',
+                    board: { id: 'board-1', name: 'Pipeline', columns: [] },
+                    column_values: [],
+                    updates: [updates[0]],
+                    subitems: [],
+                  },
+                ],
+              },
+            }),
+          );
+        }
+        throw new Error(`unexpected query: ${body.query}`);
+      }),
+    );
+    const cursors = new Map<string, unknown>();
+    const ctx = {
+      loadCursor: vi.fn((resourceType: string) => Promise.resolve(cursors.get(resourceType) ?? {})),
+      saveCursor: vi.fn((resourceType: string, cursor: unknown) => {
+        cursors.set(resourceType, cursor);
+        return Promise.resolve(undefined);
+      }),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    const initial = await mondayProvider.backfill({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      ctx,
+    });
+
+    const initialEvents = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    expect(initialEvents.length).toBeLessThanOrEqual(MONDAY_BOARD_WRITER_EVENT_BUDGET);
+    expect(initialEvents).toEqual(
+      expect.arrayContaining([expect.objectContaining({ eventType: 'item.updated' })]),
+    );
+    expect(initial?.continuations).toEqual(
+      expect.arrayContaining([
+        { resourceType: 'monday.item', externalId: 'board-1:item-1' },
+        { resourceType: 'monday.item', externalId: 'board-1:item-1:update-1' },
+      ]),
+    );
+    expect(cursors.get('monday.conversation:board-1:item-1')).toEqual({
+      update_boundary: {
+        created_at: '2026-06-20T10:05:00.000Z',
+        id: 'update-100',
+      },
+    });
+
+    await mondayProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      target: {
+        resourceType: 'monday.item',
+        externalId: 'board-1:item-1:update-1',
+        triggeredBy: 'reconcile',
+      },
+      ctx,
+    });
+
+    const recoveredEvents = (ctx.writeEvents.mock.calls[1]?.[0] ?? []) as IntegrationEvent[];
+    expect(recoveredEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ externalEventId: 'update-1' }),
+        expect.objectContaining({ externalEventId: 'reply-1-100' }),
+      ]),
+    );
+    expect(cursors.get('monday.conversation:board-1:item-1')).toEqual({
+      update_boundary: {
+        created_at: '2026-06-20T10:05:00.000Z',
+        id: 'update-100',
+      },
+    });
+  });
+
+  it('defers a full update page when the selected-board writer budget is exhausted', async () => {
+    const updatePage = (page: number) =>
+      Array.from({ length: 100 }, (_, index) => {
+        const id = (page - 1) * 100 + index + 1;
+        return {
+          id: `update-${String(id)}`,
+          body: `<p>Update ${String(id)}</p>`,
+          created_at: '2026-06-20T10:05:00Z',
+          updated_at: '2026-06-20T10:05:00Z',
+          replies: [],
+        };
+      });
+    const requestedUpdatePages: number[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((_input, init) => {
+        const body = requestPayload(init);
+        if (
+          body.query.includes('boards(ids: $ids)') &&
+          !body.query.includes('items_page') &&
+          !body.query.includes('activity_logs')
+        ) {
+          return Promise.resolve(
+            jsonResponse({ data: { boards: [{ id: 'board-1', name: 'Pipeline', columns: [] }] } }),
+          );
+        }
+        if (body.query.includes('activity_logs')) {
+          return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
+        }
+        if (body.query.includes('items_page')) {
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                boards: [
+                  {
+                    items_page: {
+                      cursor: null,
+                      items: [
+                        {
+                          id: 'item-1',
+                          name: 'Acme renewal',
+                          updated_at: '2026-06-20T10:00:00Z',
+                          column_values: [],
+                          updates: updatePage(1),
+                          subitems: [],
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            }),
+          );
+        }
+        if (body.query.includes('updates(limit: $limit, page: $page)')) {
+          const page = body.variables?.page;
+          if (typeof page !== 'number') throw new Error('expected update page');
+          requestedUpdatePages.push(page);
+          return Promise.resolve(
+            jsonResponse({
+              data: { items: [{ updates: page <= 100 ? updatePage(page) : [] }] },
+            }),
+          );
+        }
+        throw new Error(`unexpected query: ${body.query}`);
+      }),
+    );
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    const result = await mondayProvider.backfill({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      ctx,
+    });
+
+    // Once fewer than a full update page fits, shell hydration defers the
+    // saved item cursor without fetching an update body it cannot write.
+    expect(requestedUpdatePages).toEqual(Array.from({ length: 70 }, (_, index) => index + 2));
+    expect(result?.continuations).toEqual(
+      expect.arrayContaining([{ resourceType: 'monday.item', externalId: 'board-1:item-1' }]),
+    );
+    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    expect(events.length).toBeLessThanOrEqual(MONDAY_BOARD_WRITER_EVENT_BUDGET);
+    expect(events).toEqual(
+      expect.arrayContaining([expect.objectContaining({ externalEventId: 'update-7100' })]),
+    );
+    expect(events).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ externalEventId: 'update-7101' })]),
+    );
+  });
+
+  it('persists an update cursor and resumes after a full probe without replaying earlier pages', async () => {
+    const updatePage = (page: number, count = 100) =>
+      Array.from({ length: count }, (_, index) => {
+        const id = (page - 1) * 100 + index + 1;
+        const occurredAt = new Date(
+          Date.UTC(2026, 5, 20, 12, 0, 0) - (id - 1) * 1_000,
+        ).toISOString();
+        return {
+          id: `update-${String(id)}`,
+          body: `<p>Update ${String(id)}</p>`,
+          created_at: occurredAt,
+          updated_at: occurredAt,
+          replies: [],
+        };
+      });
+    const requestedUpdatePages: number[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((_input, init) => {
+        const body = requestPayload(init);
+        if (
+          body.query.includes('boards(ids: $ids)') &&
+          !body.query.includes('items_page') &&
+          !body.query.includes('activity_logs')
+        ) {
+          return Promise.resolve(
+            jsonResponse({ data: { boards: [{ id: 'board-1', name: 'Pipeline', columns: [] }] } }),
+          );
+        }
+        if (body.query.includes('activity_logs')) {
+          return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
+        }
+        if (body.query.includes('items_page')) {
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                boards: [
+                  {
+                    items_page: {
+                      cursor: null,
+                      items: [
+                        {
+                          id: 'item-1',
+                          name: 'Acme renewal',
+                          updated_at: '2026-06-20T10:00:00Z',
+                          column_values: [],
+                          updates: updatePage(1),
+                          subitems: [],
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            }),
+          );
+        }
+        if (body.query.includes('updates(limit: $limit, page: $page)')) {
+          const page = body.variables?.page;
+          if (typeof page !== 'number') throw new Error('expected update page');
+          requestedUpdatePages.push(page);
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                items: [
+                  {
+                    updates: page <= 101 ? updatePage(page) : updatePage(page, 1),
+                  },
+                ],
+              },
+            }),
+          );
+        }
+        if (body.query.includes('items(ids: $itemIds)')) {
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                items: [
+                  {
+                    id: 'item-1',
+                    name: 'Acme renewal',
+                    updated_at: '2026-06-20T10:00:00Z',
+                    board: { id: 'board-1', name: 'Pipeline', columns: [] },
+                    column_values: [],
+                    subitems: [],
+                  },
+                ],
+              },
+            }),
+          );
+        }
+        throw new Error(`unexpected query: ${body.query}`);
+      }),
+    );
+    const cursors = new Map<string, unknown>();
+    const ctx = {
+      loadCursor: vi.fn((resourceType: string) => Promise.resolve(cursors.get(resourceType) ?? {})),
+      saveCursor: vi.fn((resourceType: string, cursor: unknown) => {
+        cursors.set(resourceType, cursor);
+        return Promise.resolve(undefined);
+      }),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    const initial = await mondayProvider.backfill({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      ctx,
+    });
+    // postgres.js rejects statements at 65,534 parameters. The raw-event
+    // insert binds nine values per event, and the provider leaves explicit
+    // headroom for writer changes: the whole selected-board batch must stay
+    // at or below 7,167 events rather than accumulating every hydrated page.
+    const initialEvents = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    expect(initialEvents).toHaveLength(7_102);
+    expect(initial?.continuations).toEqual(
+      expect.arrayContaining([{ resourceType: 'monday.item', externalId: 'board-1:item-1' }]),
+    );
+    expect(initial?.continuations).toHaveLength(1);
+    const initialBoundary = updatePage(71).at(-1);
+    expect(cursors.get('monday.conversation:board-1:item-1')).toEqual({
+      update_boundary: {
+        created_at: initialBoundary?.created_at,
+        id: initialBoundary?.id,
+      },
+    });
+
+    const resumed = await mondayProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      target: {
+        resourceType: 'monday.item',
+        externalId: 'board-1:item-1',
+        triggeredBy: 'reconcile',
+      },
+      ctx,
+    });
+
+    expect(resumed).toBeUndefined();
+    expect(requestedUpdatePages.filter((page) => page === 1)).toHaveLength(1);
+    expect(requestedUpdatePages.filter((page) => page === 2)).toHaveLength(2);
+    expect(requestedUpdatePages.at(-1)).toBe(102);
+    expect(cursors.get('monday.conversation:board-1:item-1')).toEqual({});
+    const resumedEvents = (ctx.writeEvents.mock.calls[1]?.[0] ?? []) as IntegrationEvent[];
+    expect(resumedEvents).toEqual(
+      expect.arrayContaining([expect.objectContaining({ externalEventId: 'update-10101' })]),
+    );
+    expect(resumedEvents).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ externalEventId: 'update-7100' })]),
+    );
+  });
+
+  it('resumes update history from a stable boundary when a newer update shifts provider pages', async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => ({
+      id: `update-${String(200 - index)}`,
+      body: `<p>Update ${String(200 - index)}</p>`,
+      created_at: new Date(Date.UTC(2026, 5, 20, 12, 0, 0) - index * 1_000).toISOString(),
+      updated_at: new Date(Date.UTC(2026, 5, 20, 12, 0, 0) - index * 1_000).toISOString(),
+      replies: Array.from({ length: 70 }, (_, replyIndex) => ({
+        id: `reply-${String(200 - index)}-${String(replyIndex + 1)}`,
+        body: `<p>Reply ${String(replyIndex + 1)}</p>`,
+        created_at: new Date(
+          Date.UTC(2026, 5, 20, 12, 0, 0) - index * 1_000 + replyIndex,
+        ).toISOString(),
+        updated_at: new Date(
+          Date.UTC(2026, 5, 20, 12, 0, 0) - index * 1_000 + replyIndex,
+        ).toISOString(),
+      })),
+    }));
+    const olderUpdate = {
+      id: 'update-100',
+      body: '<p>Older update</p>',
+      created_at: '2026-06-20T11:58:20.000Z',
+      updated_at: '2026-06-20T11:58:20.000Z',
+      replies: [],
+    };
+    const insertedUpdate = {
+      id: 'update-201',
+      body: '<p>Inserted before continuation</p>',
+      created_at: '2026-06-20T12:00:01.000Z',
+      updated_at: '2026-06-20T12:00:01.000Z',
+      replies: [],
+    };
+    let resumed = false;
+    const requestedUpdatePages: number[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((_input, init) => {
+        const body = requestPayload(init);
+        if (
+          body.query.includes('boards(ids: $ids)') &&
+          !body.query.includes('items_page') &&
+          !body.query.includes('activity_logs')
+        ) {
+          return Promise.resolve(
+            jsonResponse({ data: { boards: [{ id: 'board-1', name: 'Pipeline', columns: [] }] } }),
+          );
+        }
+        if (body.query.includes('activity_logs')) {
+          return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
+        }
+        if (body.query.includes('items_page')) {
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                boards: [
+                  {
+                    items_page: {
+                      cursor: null,
+                      items: [
+                        {
+                          id: 'item-1',
+                          name: 'Acme renewal',
+                          updated_at: '2026-06-20T12:00:00Z',
+                          column_values: [],
+                          updates: firstPage,
+                          subitems: [],
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            }),
+          );
+        }
+        if (
+          body.query.includes('items(ids: $itemIds)') &&
+          !body.query.includes('updates(limit: $limit, page: $page)')
+        ) {
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                items: [
+                  {
+                    id: 'item-1',
+                    name: 'Acme renewal',
+                    updated_at: '2026-06-20T12:00:01Z',
+                    board: { id: 'board-1', name: 'Pipeline', columns: [] },
+                    column_values: [],
+                    subitems: [],
+                  },
+                ],
+              },
+            }),
+          );
+        }
+        if (body.query.includes('updates(limit: $limit, page: $page)')) {
+          const page = body.variables?.page;
+          if (typeof page !== 'number') throw new Error('expected update page');
+          requestedUpdatePages.push(page);
+          const updates = resumed
+            ? page === 1
+              ? [insertedUpdate, ...firstPage.slice(0, 99)]
+              : page === 2
+                ? [firstPage[99], olderUpdate]
+                : []
+            : page === 2
+              ? [olderUpdate]
+              : [];
+          return Promise.resolve(jsonResponse({ data: { items: [{ updates }] } }));
+        }
+        throw new Error(`unexpected query: ${body.query}`);
+      }),
+    );
+    const cursors = new Map<string, unknown>();
+    const ctx = {
+      loadCursor: vi.fn((resourceType: string) => Promise.resolve(cursors.get(resourceType) ?? {})),
+      saveCursor: vi.fn((resourceType: string, cursor: unknown) => {
+        cursors.set(resourceType, cursor);
+        return Promise.resolve(undefined);
+      }),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    const initial = await mondayProvider.backfill({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      ctx,
+    });
+
+    expect(initial?.continuations).toEqual(
+      expect.arrayContaining([{ resourceType: 'monday.item', externalId: 'board-1:item-1' }]),
+    );
+    expect(cursors.get('monday.conversation:board-1:item-1')).toEqual({
+      update_boundary: {
+        created_at: firstPage[99]?.created_at,
+        id: firstPage[99]?.id,
+      },
+    });
+
+    resumed = true;
+    await mondayProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      target: {
+        resourceType: 'monday.item',
+        externalId: 'board-1:item-1',
+        triggeredBy: 'reconcile',
+      },
+      ctx,
+    });
+
+    const resumedEvents = (ctx.writeEvents.mock.calls[1]?.[0] ?? []) as IntegrationEvent[];
+    const resumedUpdateIds = resumedEvents
+      .filter((event) => event.eventType.startsWith('update.'))
+      .map((event) => event.externalEventId);
+    expect(resumedUpdateIds).toEqual(['update-100']);
+    expect(requestedUpdatePages).toEqual([1, 2]);
+    expect(cursors.get('monday.conversation:board-1:item-1')).toEqual({});
+  });
+
+  it('hydrates the same update conversation through a selected-board webhook target', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+      const body = requestPayload(init);
+      expect(body.query).toContain('text_body');
+      expect(body.query).not.toContain('replies(');
+      expect(body.query).toContain('updates(ids: $updateIds)');
+      expect(body.variables).toEqual({ itemIds: ['item-1'], updateIds: ['update-1'] });
+      return Promise.resolve(
+        jsonResponse({
+          data: {
+            items: [
+              {
+                id: 'item-1',
+                name: 'Acme renewal',
+                updated_at: '2026-06-20T10:00:00Z',
+                url: 'https://monday.com/boards/1/pulses/1',
+                board: { id: 'board-1', name: 'Pipeline', columns: [] },
+                column_values: [],
+                updates: [
+                  {
+                    id: 'update-1',
+                    body: '<p>Raw <strong>approval</strong></p>',
+                    text_body: 'Rendered approval',
+                    created_at: '2026-06-20T10:05:00Z',
+                    updated_at: '2026-06-20T10:06:00Z',
+                    creator: { id: 'user-1', name: 'Ada' },
+                    replies: [
+                      {
+                        id: 'reply-1',
+                        body: '<p>Raw reply</p>',
+                        text_body: 'Rendered reply',
+                        created_at: '2026-06-20T10:07:00Z',
+                        updated_at: '2026-06-20T10:08:00Z',
+                        creator: { id: 'user-2', name: 'Grace' },
+                      },
+                    ],
+                  },
+                ],
+                subitems: [],
+              },
+            ],
+          },
+        }),
+      );
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await mondayProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      target: {
+        resourceType: 'monday.item',
+        externalId: 'board-1:item-1:update-1',
+        triggeredBy: 'webhook',
+        surface: 'update.updated',
+        reason: 'monday_item_webhook',
+      },
+      ctx,
+    });
+
+    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          externalEventId: 'update-1',
+          eventType: 'update.updated',
+          contentText: 'Monday update on Acme renewal: Rendered approval',
+        }),
+        expect.objectContaining({
+          externalEventId: 'reply-1',
+          eventType: 'reply.updated',
+          contentText: 'Monday reply on Acme renewal to update update-1: Rendered reply',
+        }),
+      ]),
+    );
+    expect(events.find((event) => event.externalEventId === 'update-1')?.extra).toMatchObject({
+      monday_update_id: 'update-1',
+      monday_parent_update_id: null,
+      monday_conversation_author_name: 'Ada',
+      external_url: 'https://monday.com/boards/1/pulses/1',
+    });
+    expect(events.find((event) => event.externalEventId === 'reply-1')?.extra).toMatchObject({
+      monday_update_id: 'update-1',
+      monday_reply_id: 'reply-1',
+      monday_parent_update_id: 'update-1',
+      monday_conversation_author_name: 'Grace',
+      external_url: 'https://monday.com/boards/1/pulses/1',
+    });
+    expect(ctx.saveCursor).toHaveBeenCalledWith('monday.item:board-1:item-1', {
+      item_since: '2026-06-20T10:08:00.000Z',
+      item_lifecycles: { 'item-1': 'open' },
+    });
+  });
+
+  it('derives conversation operation from source timestamps, not whether backfill or a webhook arrives first', async () => {
+    const item = (includeBoard = false) => ({
+      id: 'item-1',
+      name: 'Acme renewal',
+      updated_at: '2026-06-20T10:00:00Z',
+      ...(includeBoard ? { board: { id: 'board-1', name: 'Pipeline', columns: [] } } : {}),
+      column_values: [],
+      updates: [
+        {
+          id: 'update-1',
+          body: '<p>Initial update</p>',
+          created_at: '2026-06-20T10:05:00Z',
+          updated_at: '2026-06-20T10:05:00Z',
+          replies: [],
+        },
+      ],
+      subitems: [],
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((_input, init) => {
+        const body = requestPayload(init);
+        if (
+          body.query.includes('boards(ids: $ids)') &&
+          !body.query.includes('items_page') &&
+          !body.query.includes('activity_logs')
+        ) {
+          return Promise.resolve(
+            jsonResponse({ data: { boards: [{ id: 'board-1', name: 'Pipeline', columns: [] }] } }),
+          );
+        }
+        if (body.query.includes('activity_logs')) {
+          return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
+        }
+        if (body.query.includes('items_page')) {
+          return Promise.resolve(
+            jsonResponse({
+              data: { boards: [{ items_page: { cursor: null, items: [item()] } }] },
+            }),
+          );
+        }
+        if (body.query.includes('items(ids: $itemIds)')) {
+          return Promise.resolve(jsonResponse({ data: { items: [item(true)] } }));
+        }
+        throw new Error(`unexpected query: ${body.query}`);
+      }),
+    );
+    const backfillContext = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+    const webhookContext = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await mondayProvider.backfill({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      ctx: backfillContext,
+    });
+    await mondayProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      target: {
+        resourceType: 'monday.item',
+        externalId: 'board-1:item-1:update-1',
+        surface: 'update.updated',
+        triggeredBy: 'webhook',
+      },
+      ctx: webhookContext,
+    });
+
+    const backfillUpdate = (
+      (backfillContext.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[]
+    ).find((event) => event.externalEventId === 'update-1');
+    const webhookUpdate = (
+      (webhookContext.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[]
+    ).find((event) => event.externalEventId === 'update-1');
+    expect(backfillUpdate).toMatchObject({
+      eventType: 'update.created',
+      extra: { monday_conversation_operation: 'created' },
+    });
+    expect(webhookUpdate).toMatchObject({
+      eventType: 'update.created',
+      extra: { monday_conversation_operation: 'created' },
+    });
+  });
+
+  it('preserves a reply edit operation through update-id-targeted hydration', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((_input, init) => {
+        const body = requestPayload(init);
+        expect(body.query).toContain('updates(ids: $updateIds)');
+        expect(body.variables).toEqual({ itemIds: ['item-1'], updateIds: ['update-1'] });
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              items: [
+                {
+                  id: 'item-1',
+                  name: 'Acme renewal',
+                  updated_at: '2026-06-20T10:00:00Z',
+                  board: { id: 'board-1', name: 'Pipeline', columns: [] },
+                  column_values: [],
+                  updates: [
+                    {
+                      id: 'update-1',
+                      body: '<p>Parent update</p>',
+                      text_body: 'Parent update',
+                      created_at: '2026-06-20T10:05:00Z',
+                      updated_at: '2026-06-20T10:05:00Z',
+                      creator: { id: 'user-1', name: 'Ada' },
+                      replies: [
+                        {
+                          id: 'reply-1',
+                          body: '<p>Edited reply</p>',
+                          text_body: 'Edited reply',
+                          created_at: '2026-06-20T10:06:00Z',
+                          updated_at: '2026-06-20T10:07:00Z',
+                          creator: { id: 'user-2', name: 'Grace' },
+                        },
+                      ],
+                    },
+                  ],
+                  subitems: [],
+                },
+              ],
+            },
+          }),
+        );
+      }),
+    );
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    await mondayProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      target: {
+        resourceType: 'monday.item',
+        externalId: 'board-1:item-1:update-1:reply-1',
+        triggeredBy: 'webhook',
+        surface: 'reply.updated',
+        reason: 'monday_item_webhook',
+      },
+      ctx,
+    });
+
+    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ externalEventId: 'update-1', eventType: 'update.created' }),
+        expect.objectContaining({
+          externalEventId: 'reply-1',
+          eventType: 'reply.updated',
+        }),
+      ]),
+    );
+    expect(events.find((event) => event.externalEventId === 'reply-1')?.extra).toMatchObject({
+      monday_conversation_operation: 'updated',
+    });
   });
 });

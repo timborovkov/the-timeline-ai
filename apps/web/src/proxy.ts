@@ -4,6 +4,7 @@ import type { NextFetchEvent, NextRequest } from 'next/server';
 
 import { authConfig } from '@/lib/auth.config';
 import { canonicalHostRedirect } from '@/lib/canonical-host';
+import { rejectInvalidMultipartRequest } from '@/lib/multipart-request';
 
 type ProxyHandler = (
   request: NextRequest,
@@ -15,6 +16,8 @@ const authProxy = NextAuth(authConfig).auth as unknown as ProxyHandler;
 export const proxy: ProxyHandler = (request, context) => {
   const redirect = canonicalHostRedirect(request);
   if (redirect) return redirect;
+  const invalidMultipart = rejectInvalidMultipartRequest(request);
+  if (invalidMultipart) return invalidMultipart;
   return authProxy(request, context);
 };
 

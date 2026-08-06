@@ -1,9 +1,10 @@
 import {
   sanitizeRequestUrl,
+  scrubSentryBreadcrumb,
   scrubSentryRequestEvent,
 } from '@timeline/shared/monitoring/sentry-scrub';
 
-import type { ErrorEvent, EventHint } from '@sentry/nextjs';
+import type { Breadcrumb, ErrorEvent, EventHint } from '@sentry/nextjs';
 
 export { sanitizeRequestUrl };
 
@@ -15,6 +16,8 @@ const BROWSER_EXTENSION_FRAME_PREFIXES = [
 ];
 
 const METAMASK_ERROR_PATTERNS = [/Failed to connect to MetaMask/i, /MetaMask extension not found/i];
+
+const FORMDATA_PARSE_ERROR_RE = /Failed to parse body as FormData/i;
 
 interface StackFrameLike {
   filename?: string;
@@ -37,6 +40,7 @@ type ErrorEventWithExceptions = ErrorEvent & {
   logentry?: {
     message?: string;
   };
+  transaction?: string;
 };
 
 export function sentrySampleRate(name: string): number {
@@ -48,9 +52,14 @@ export function parseSentrySampleRate(raw: string | number | undefined): number 
   return Number.isFinite(value) && value >= 0 && value <= 1 ? value : 0;
 }
 
-export function scrubSentryEvent(event: ErrorEvent, _hint?: EventHint): ErrorEvent | null {
+export function scrubSentryEvent(event: ErrorEvent, hint?: EventHint): ErrorEvent | null {
   if (shouldDropBrowserExtensionEvent(event)) return null;
+  if (shouldDropMalformedMultipartFormDataEvent(event, hint)) return null;
   return scrubSentryRequestEvent(event);
+}
+
+export function scrubSentryBreadcrumbEvent(breadcrumb: Breadcrumb): Breadcrumb {
+  return scrubSentryBreadcrumb(breadcrumb);
 }
 
 export function shouldDropBrowserExtensionEvent(event: ErrorEvent): boolean {
@@ -71,6 +80,31 @@ export function shouldDropBrowserExtensionEvent(event: ErrorEvent): boolean {
   return exceptionValues.some((value) =>
     value.stacktrace?.frames?.some((frame) => isBrowserExtensionFrame(frame)),
   );
+}
+
+/**
+ * Drop Next.js noise from scanner/malformed multipart POSTs that never reach
+ * app code (`POST /_not-found/page`). Keep FormData parse failures on real
+ * routes — those can still indicate broken uploads or Server Action skew,
+ * even when undici reports the same boundary-related cause text.
+ */
+export function shouldDropMalformedMultipartFormDataEvent(
+  event: ErrorEvent,
+  _hint?: EventHint,
+): boolean {
+  const parsed = event as ErrorEventWithExceptions;
+  const exceptionValues = parsed.exception?.values ?? [];
+  const messages = [
+    parsed.message,
+    parsed.logentry?.message,
+    ...exceptionValues.map((value) => value.value),
+  ].filter((value): value is string => Boolean(value));
+
+  if (!messages.some((message) => FORMDATA_PARSE_ERROR_RE.test(message))) {
+    return false;
+  }
+
+  return (parsed.transaction ?? '').includes('_not-found');
 }
 
 function isBrowserExtensionFrame(frame: StackFrameLike): boolean {

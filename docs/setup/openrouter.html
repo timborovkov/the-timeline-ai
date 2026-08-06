@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>OpenRouter setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-12</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-08-05</span></div>
       <blockquote>
         <p>Used from <strong>Phase 3</strong> (transcription) and onwards.</p>
       </blockquote>
@@ -54,15 +54,15 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
         key/base URL.
       </p>
       <p>
-        Structured extraction calls use GLM as the primary route. If the provider accepts the
-        request but returns no schema-valid object, the wrapper retries the same model in JSON
-        object mode before falling back to the <code>structuredFallback</code> model. Retryable
-        OpenRouter/provider failures such as 429s, 5xx responses, and structured no-object outputs
-        can use the fallback model. Structured calls default to <code>maxOutputTokens=8000</code> so
-        routine extraction and meeting-summary jobs keep quality headroom without over-reserving
-        OpenRouter credits against unused completion tokens. Bulk callers may pass a higher per-call
-        <code>maxOutputTokens</code> or batch their prompts. Authentication and request-shape
-        failures still fail fast so misconfiguration is not hidden.
+        Structured extraction calls use DeepSeek V4 Flash 0731 as the primary route. If the provider
+        accepts the request but returns no schema-valid object, the wrapper retries the same model
+        in JSON object mode before falling back to the <code>structuredFallback</code> model
+        (DeepSeek V4 Pro). Retryable OpenRouter/provider failures such as 429s, 5xx responses, and
+        structured no-object outputs can use the fallback model. Structured calls default to
+        <code>maxOutputTokens=8000</code> so routine extraction and meeting-summary jobs keep
+        quality headroom without over-reserving OpenRouter credits against unused completion tokens.
+        Bulk callers may pass a higher per-call <code>maxOutputTokens</code> or batch their prompts.
+        Authentication and request-shape failures still fail fast so misconfiguration is not hidden.
       </p>
       <p>
         Agent chat streams also include an OpenRouter <code>models</code> fallback list so transient
@@ -73,8 +73,10 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
       </p>
       <p>
         The catalog should mirror OpenRouter's advertised capabilities, not just model family names.
-        The primary extraction and agent routes use GLM 5.2 because those paths need long-context
-        structured output, tools, and reasoning support. The vision/OCR route uses a model that
+        The primary extraction, agent, summarization, and task-categorization routes use DeepSeek V4
+        Flash 0731 for long-context structured output, tools, and reasoning at a lower OpenRouter
+        unit cost than DeepSeek V4 Pro or the previous GLM 5.2 pin. DeepSeek V4 Pro remains the
+        structured fallback when the primary route fails. The vision/OCR route uses a model that
         advertises image and file input because sparse PDF page images and image uploads are sent as
         image or file parts; dense text PDFs and office files extract inside Daytona sandboxes
         (anydoc) and do not call OpenRouter. Transcription uses a dedicated audio-to-transcription
@@ -103,7 +105,7 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
       <pre><code>curl https://openrouter.ai/api/v1/chat/completions \
   -H "Authorization: Bearer $OPENROUTER_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"z-ai/glm-5.2","messages":[{"role":"user","content":"ping"}]}'
+  -d '{"model":"deepseek/deepseek-v4-flash-0731","messages":[{"role":"user","content":"ping"}]}'
 </code></pre>
       <p>
         The normal test suite mocks OpenRouter. To run the optional live structured-extraction smoke

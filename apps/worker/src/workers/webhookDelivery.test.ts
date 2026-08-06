@@ -141,6 +141,24 @@ describe('webhook delivery worker', () => {
   });
 
   it('enqueues provider-supplied targeted sync tasks instead of a full catch-up', async () => {
+    const handleWebhook = vi.fn().mockResolvedValue({
+      events: [
+        {
+          dedupKey: 'github:commit:sha-1',
+          provider: 'github',
+        },
+      ],
+      syncTasks: [
+        {
+          integrationId: INTEGRATION_ID,
+          teamId: TEAM_ID,
+          triggeredBy: 'webhook',
+          resourceType: 'github.repo',
+          externalId: 'acme/app',
+          reason: 'github_repo_webhook',
+        },
+      ],
+    });
     fakes.loadWebhookDeliveryWork.mockResolvedValueOnce({
       delivery: {
         ...delivery,
@@ -150,24 +168,7 @@ describe('webhook delivery worker', () => {
       targets: [{ target, integration: { ...integration, provider: 'github' } }],
     });
     fakes.getProvider.mockReturnValueOnce({
-      handleWebhook: vi.fn().mockResolvedValue({
-        events: [
-          {
-            dedupKey: 'github:commit:sha-1',
-            provider: 'github',
-          },
-        ],
-        syncTasks: [
-          {
-            integrationId: INTEGRATION_ID,
-            teamId: TEAM_ID,
-            triggeredBy: 'webhook',
-            resourceType: 'github.repo',
-            externalId: 'acme/app',
-            reason: 'github_repo_webhook',
-          },
-        ],
-      }),
+      handleWebhook,
     });
     fakes.providerSyncPolicy.mockReturnValueOnce({
       supportsTargetedSync: true,
@@ -189,6 +190,10 @@ describe('webhook delivery worker', () => {
       resourceType: 'github.repo',
       externalId: 'acme/app',
       reason: 'github_repo_webhook',
+    });
+    expect(handleWebhook).toHaveBeenCalledWith({
+      integration: { ...integration, provider: 'github' },
+      payload: { repository: { full_name: 'acme/app' } },
     });
   });
 
@@ -361,6 +366,50 @@ describe('webhook delivery worker', () => {
       eventDedupKeys: [],
     });
     expect(fakes.markWebhookDeliveryStatus).toHaveBeenLastCalledWith({}, DELIVERY_ID, 'processed');
+  });
+
+  it('writes a handled Monday delete tombstone without enqueueing catch-up sync', async () => {
+    const mondayIntegration = { ...integration, provider: 'monday' };
+    const deleteEvent = {
+      dedupKey: 'monday:webhook:deleted-update-trigger',
+      provider: 'monday',
+      eventType: 'update.deleted',
+      sourceTombstone: {
+        kind: 'monday_conversation',
+        updateId: 'update-1',
+        reason: 'monday_update_deleted_at_source',
+      },
+    };
+    fakes.loadWebhookDeliveryWork.mockResolvedValueOnce({
+      delivery: {
+        ...delivery,
+        provider: 'monday',
+        payload: { event: { type: 'delete_update', updateId: 'update-1' } },
+      },
+      targets: [{ target, integration: mondayIntegration }],
+    });
+    fakes.getProvider.mockReturnValueOnce({
+      handleWebhook: vi.fn().mockResolvedValue({
+        events: [deleteEvent],
+        syncTasks: [],
+        syncTaskDisposition: 'handled',
+      }),
+    });
+    fakes.providerSyncPolicy.mockReturnValueOnce({ supportsTargetedSync: true });
+
+    await expect(
+      processWebhookDeliveryJob({ db: {} as never }, { deliveryId: DELIVERY_ID }),
+    ).resolves.toMatchObject({ processed: 1, ignored: 0, failed: 0 });
+
+    expect(fakes.writeIntegrationEvents).toHaveBeenCalledWith({
+      db: {},
+      integration: mondayIntegration,
+      events: [deleteEvent],
+    });
+    expect(fakes.enqueueIntegrationSyncJob).not.toHaveBeenCalled();
+    expect(fakes.markWebhookDeliveryTargetProcessed).toHaveBeenCalledWith({}, TARGET_ID, {
+      eventDedupKeys: ['monday:webhook:deleted-update-trigger'],
+    });
   });
 
   it('marks failed targets and throws so BullMQ retries the delivery', async () => {

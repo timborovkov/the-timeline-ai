@@ -18,7 +18,7 @@ export function LandingRecoveryShell({ children }: { children: ReactNode }) {
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-2 px-3 sm:gap-4 sm:px-6">
           <Link
             href="/"
-            aria-label="The Timeline — home"
+            aria-label="The Timeline home"
             className="shrink-0 rounded-sm text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             <Logo ariaHidden className="size-5 sm:hidden" />
@@ -48,7 +48,7 @@ export function LandingRecoveryShell({ children }: { children: ReactNode }) {
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
           <span className="inline-flex items-center gap-2 text-fg-dim">
             <Logo ariaHidden className="size-4" />
-            THE TIMELINE · v1 · 2026
+            THE TIMELINE
           </span>
           <nav aria-label="Landing footer" className="flex flex-wrap items-center gap-5">
             <Link

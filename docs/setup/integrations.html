@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Native integrations &amp; custom MCPs</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-30</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-08-05</span></div>
       <p class="tldr">
         Connect native GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry as personal
         provider accounts from <code>/app/me/connections</code>, share the sources a team may use,
@@ -145,7 +145,12 @@ LINEAR_WEBHOOK_SECRET=...</code></pre>
           Any team member can connect Linear from <code>/app/me/connections</code> or the native
           catalog. The member chooses which Linear teams are shared with the current Timeline team.
         </li>
-        <li>A team admin activates shared Linear teams from <code>/app/sources</code>.</li>
+        <li>
+          A team admin activates shared Linear teams from <code>/app/sources</code>. Issue and
+          project dedup keys are lifecycle-stable (status/state, not <code>updatedAt</code>), and
+          comments key by id, so description or timestamp churn reuses the same raw event instead of
+          minting another extract/embed job.
+        </li>
       </ol>
 
       <h2 id="github">GitHub</h2>
@@ -182,7 +187,8 @@ LINEAR_WEBHOOK_SECRET=...</code></pre>
           <code>/pulls</code> endpoint while commits, issues, releases, and workflow runs continue
           to sync when readable. Timeline keeps the connection attention visible until that partial
           failure clears, so admins can reconnect or re-grant access without losing the other GitHub
-          surfaces.
+          surfaces. Keep both Issues and Pull requests read access: Timeline captures ordinary issue
+          comments, PR conversation comments, review summaries, and inline review comments.
         </li>
         <li>
           Copy the app <strong>Client ID</strong>, generate/copy a <strong>Client secret</strong>,
@@ -206,9 +212,11 @@ GITHUB_WEBHOOK_SECRET=...</code></pre>
         </li>
         <li>
           Subscribe the GitHub App webhook to <code>push</code>, <code>pull_request</code>,
-          <code>pull_request_review</code>, <code>issues</code>, <code>release</code>, and
+          <code>pull_request_review</code>, <code>pull_request_review_comment</code>,
+          <code>issues</code>, <code>issue_comment</code>, <code>release</code>, and
           <code>workflow_run</code>. Timeline still reconciles selected repos slowly, but these
-          events carry normal day-to-day activity without waiting for the reconciliation tick.
+          events carry normal day-to-day activity and review conversation without waiting for the
+          reconciliation tick.
         </li>
         <li>
           Any team member can connect GitHub from <code>/app/me/connections</code> or the native
@@ -224,7 +232,10 @@ GITHUB_WEBHOOK_SECRET=...</code></pre>
           Selected GitHub sources still use slow reconciliation through the integration worker, but
           normal PR, issue, release, workflow, and push activity can arrive through signed webhooks
           first. When installation-token config is present, repo hydration uses the GitHub App
-          installation quota instead of spending the connecting user's OAuth token quota.
+          installation quota instead of spending the connecting user's OAuth token quota. Issue, PR,
+          workflow-run, and release dedup keys are lifecycle-stable (not
+          <code>updated_at</code>), so title/body edits reuse the same raw event; commits still key
+          by SHA and review/comment events keep their existing identity rules.
         </li>
       </ol>
 
@@ -281,19 +292,32 @@ MONDAY_WEBHOOK_SECRET=...</code></pre>
         </li>
         <li>
           A team admin activates shared sources from <code>/app/sources</code>. The integration
-          worker imports board schema, generic records, subitems, record updates, status changes,
-          owners, column changes, and selected WorkDocs into cited timeline events. Activation,
-          newly added selections, and retries with an unresolved sync error enqueue a historical
-          backfill immediately and reconcile webhooks independently, so a webhook failure does not
-          block older items. Classic subitem webhook payloads are routed through
-          <code>parentItemBoardId</code> and hydrate against the selected parent board. Multi-level
+          worker imports board schema, generic records, subitems, item-update conversations and
+          threaded replies, status changes, owners, column changes, and selected WorkDocs into cited
+          timeline events. Activation, newly added selections, and retries with an unresolved sync
+          error enqueue a historical backfill immediately and reconcile webhooks independently, so a
+          webhook failure does not block older items. Classic subitem webhook payloads are routed
+          through <code>parentItemBoardId</code> and hydrate against the selected parent board.
+          Source-deletion deliveries durably tombstone only their matching update or reply: captured
+          content stays immutable for audit while normal history and retrieval omit it, and any
+          affected object summary is invalidated before it can remain retrieval-visible, including a
+          summary sourced only through the update's artifact evidence association. Board pages fetch
+          item shells first, then hydrate update/reply pages per item only within the raw-event
+          writer budget. Update history resumes from a reverse-chronological creation-time and
+          update-ID boundary, so updates inserted before a continuation do not shift its logical
+          position. The stable boundary and exact deferred item, update, or reply target commit
+          together before BullMQ delivery, so large conversations resume after contention or queue
+          outages without re-emitting completed updates or retrying in a hot loop. Multi-level
           boards use monday's <code>hierarchy_scope_config: "allItems"</code> query so descendants
           at every supported depth are imported from the real board. Slow reconciliation remains
           responsible for missed deliveries, while selected WorkDocs reconcile through their own
           daily cursor. Agent retrieval resolves the visible provider- and selection-eligible event
           IDs in Postgres before semantic search, so historical helper-board events never consume
           the semantic result budget. Candidate filtering is capped at 10,000 visible events and
-          reports truncation instead of issuing an unbounded sequence of vector searches.
+          reports truncation instead of issuing an unbounded sequence of vector searches. Item and
+          subitem dedup keys are lifecycle-stable (status bucket, not <code>updated_at</code>), and
+          sync/webhook share that same key family so column text or trigger UUID churn reuses the
+          raw event; updates, docs, and board-schema events key by stable ids.
         </li>
         <li>
           Timeline pins monday API version <code>2026-04</code>. Board pagination cursors are
@@ -385,8 +409,11 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
         <li>
           Connect Sentry from the native catalog, share selected projects from
           <code>/app/me/connections</code>, and activate them from <code>/app/sources</code>.
-          Timeline imports issue updates, resolved issues, and releases as cited events; Sentry
-          issues map to cited incident evidence.
+          Timeline imports issue lifecycle changes (open / resolved / ignored) and releases as cited
+          events; Sentry issues map to cited incident evidence. Dedup keys are issue-plus-lifecycle
+          (not <code>lastSeen</code>), so repeated error occurrences and noisy issue-alert
+          timestamps reuse the same raw event instead of minting a new extract/embed job on every
+          bump.
         </li>
         <li>
           For Sentry issue alert, issue lifecycle, and release webhooks, point the Sentry
@@ -394,7 +421,9 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
           <code>https://thetimeline.cc/api/webhooks/sentry</code>. Timeline verifies
           <code>Sentry-Hook-Signature</code> with <code>SENTRY_INTEGRATION_CLIENT_SECRET</code>,
           persists the delivery, and lets <code>webhook-delivery</code> process direct events or
-          targeted reconciliation for the selected organization/project targets.
+          targeted reconciliation for the selected organization/project targets. Alert
+          <code>triggered</code> deliveries for an already-open issue coalesce onto the same open
+          dedup key; reconciliation can still refresh incident evidence without another LLM pass.
         </li>
       </ol>
 
@@ -612,7 +641,9 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
         per-resource cursor in <code>integration_sync_state</code>. Providers with inbound webhooks
         persist native deliveries first, then the <code>webhook-delivery</code> worker normalizes
         the matching team targets and enqueues either targeted sync work or a bounded catch-up
-        fallback. Google Drive can still use webhooks as wake-up signals; GitHub, Linear,
+        fallback. A successfully written Monday update/reply deletion is explicitly terminal for
+        that delivery and does not enqueue a broad catch-up; genuinely unhandled deliveries retain
+        the fallback. Google Drive can still use webhooks as wake-up signals; GitHub, Linear,
         Monday.com, and Sentry now route protected deliveries through the shared delivery worker.
         GitHub repo deliveries, Monday item/board deliveries, and Sentry project deliveries hydrate
         only the affected selected resource. Sentry issue alert, issue lifecycle, and release
@@ -624,11 +655,12 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
         still covers missed events and backfill. GitHub background sync skips active provider
         rate-limit pauses, waits at least an hour after the previous successful sync, and caches
         organization repo expansion for a short window so org-wide selections do not re-list every
-        repository on every tick. GitHub repo cursors are also split by surface — PRs, issues,
-        commits, releases, and workflow runs — so one failing or noisy surface does not block cursor
-        advancement for the others. Releases and workflow runs poll less often than high-signal PR,
-        issue, and commit surfaces. MCP servers are monitored by the MCP health worker, but that
-        health check only validates connectivity and cached tools.
+        repository on every tick. GitHub repo cursors are also split by surface — PRs, issues, issue
+        comments, inline PR review comments, commits, releases, and workflow runs — so one failing
+        or noisy surface does not block cursor advancement for the others. Releases and workflow
+        runs poll less often than high-signal PR, issue, and commit surfaces. MCP servers are
+        monitored by the MCP health worker, but that health check only validates connectivity and
+        cached tools.
       </p>
       <p>
         GitHub commit sync keeps a high-water SHA per repo. If a repo has more than the configured
@@ -636,6 +668,16 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
         incremental run continues draining older commits instead of replaying the same page window
         forever. A first sync that starts with oversized commit history imports the newest window,
         records an audit row, and advances the high-water cursor so future polling stays current.
+        Timestamped issue-comment and inline-review-comment syncs use a per-surface continuation:
+        whenever a scan spans more than one mutable results page, Timeline treats that traversal as
+        provisional and replays the result set from page one until two full page traversals agree
+        before it advances the timestamp cursor. The worker resumes ordinary page handoffs promptly,
+        backs off a changing dense boundary for a bounded number of replay attempts, and preserves
+        its checkpoint for later reconciliation. Rate-limited comment checkpoints resume as targeted
+        work for that same comment surface when the provider's recorded retry time arrives, so an
+        issue-comment retry cannot consume an inline-review checkpoint. Each cursor checkpoint and
+        its continuation handoffs commit together to durable recovery storage before the sync
+        reports success.
       </p>
       <p>Manual full backfill from the CLI:</p>
       <pre><code>pnpm --filter @timeline/worker integration-resync -- --team=&lt;uuid&gt; --from-zero</code></pre>

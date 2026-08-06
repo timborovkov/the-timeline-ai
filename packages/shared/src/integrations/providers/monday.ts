@@ -10,11 +10,22 @@ import {
   ProviderRateLimitError as ProviderRateLimitErrorValue,
   type ProviderRateLimitError as ProviderRateLimitErrorType,
   type ProviderResource,
+  type SyncContinuation,
   type SyncContext,
   type SyncPartialFailure,
   type TargetedSyncTask,
   type WebhookSubscription,
 } from '#src/integrations/types.js';
+
+// Phase 11 — Monday.com provider.
+//
+// Idempotency for items/subitems is by lifecycle status buckets (not
+// updated_at), so same-status churn reuses the raw_event. Real status
+// transitions (including returns to a prior bucket) append a revision.
+// Non-status webhooks (owner/due/rename) use observed:<type>:<revision>.
+// Mutable surfaces (updates, docs, board schema) include a revision
+// discriminator so edits/deletes mint a new immutable raw_event. Activity
+// logs stay per log.id.
 
 const AUTH_URL = 'https://auth.monday.com/oauth2/authorize';
 const TOKEN_URL = 'https://auth.monday.com/oauth2/token';
@@ -31,7 +42,19 @@ const SCOPES = [
 ];
 const BOARD_PAGE_LIMIT = 100;
 const ITEM_PAGE_LIMIT = 100;
-const UPDATE_LIMIT = 50;
+const CONVERSATION_PAGE_LIMIT = 100;
+// postgres.js rejects a statement at 65,534 bind parameters. The raw_events
+// insert built by writeIntegrationEvents has nine parameterized columns per
+// event. Reserve bind headroom for writer changes rather than running right at
+// the protocol limit; this is an event budget for the complete board write,
+// not a conversation-page limit.
+const POSTGRES_JS_MAX_BIND_PARAMETERS = 65_534;
+const RAW_EVENT_INSERT_BINDS_PER_EVENT = 9;
+const RAW_EVENT_INSERT_BIND_HEADROOM = 1_024;
+export const MONDAY_BOARD_WRITER_EVENT_BUDGET = Math.floor(
+  (POSTGRES_JS_MAX_BIND_PARAMETERS - RAW_EVENT_INSERT_BIND_HEADROOM) /
+    RAW_EVENT_INSERT_BINDS_PER_EVENT,
+);
 const DOC_PAGE_LIMIT = 100;
 const BLOCK_PAGE_LIMIT = 100;
 const ITEM_PAGE_CURSOR_TTL_MS = 60 * 60 * 1000;
@@ -42,6 +65,7 @@ const MONDAY_WEBHOOK_EVENTS = [
   'change_status_column_value',
   'change_name',
   'create_update',
+  'create_subitem_update',
   'edit_update',
   'delete_update',
   'create_subitem',
@@ -120,7 +144,21 @@ interface MondayActivityLog {
 
 interface MondayUpdate {
   id: string;
-  body?: string | null;
+  // monday's Update.body is String!, including on records whose rendered
+  // text_body is absent. Deletion is conveyed by the webhook operation, not a
+  // nullable body in a later item snapshot.
+  body: string;
+  text_body?: string | null;
+  created_at?: string;
+  updated_at?: string | null;
+  creator?: { id?: string; name?: string } | null;
+  replies?: MondayReply[];
+}
+
+interface MondayReply {
+  id: string;
+  body: string;
+  text_body?: string | null;
   created_at?: string;
   updated_at?: string | null;
   creator?: { id?: string; name?: string } | null;
@@ -172,12 +210,68 @@ interface MondayDoc {
 
 interface MondayCursor {
   activity_since?: string | undefined;
+  activity_after_id?: string | undefined;
   item_since?: string | undefined;
   item_page_cursor?: string | undefined;
   item_page_cursor_created_at?: string | undefined;
   item_page_cursor_expires_at?: string | undefined;
   doc_since?: string | undefined;
   doc_last_polled_at?: string | undefined;
+  /** Last observed lifecycle bucket per Monday item id. */
+  item_lifecycles?: Record<string, string> | undefined;
+}
+
+const MONDAY_ITEM_LIFECYCLE_CURSOR_CAP = 5_000;
+
+function pruneMondayItemLifecycles(
+  map: Record<string, string>,
+  keepIds: ReadonlySet<string>,
+): Record<string, string> {
+  const entries = Object.entries(map);
+  if (entries.length <= MONDAY_ITEM_LIFECYCLE_CURSOR_CAP) return map;
+  const next: Record<string, string> = {};
+  for (const id of keepIds) {
+    const value = map[id];
+    if (value) next[id] = value;
+  }
+  for (const [id, value] of entries.slice(-Math.floor(MONDAY_ITEM_LIFECYCLE_CURSOR_CAP / 2))) {
+    next[id] = value;
+  }
+  return next;
+}
+
+/** Monday status columns report GraphQL/webhook type `color` (or `status`). */
+function isMondayStatusColumnType(type: string | null | undefined): boolean {
+  return type === 'status' || type === 'color';
+}
+
+interface MondayConversationCursor {
+  update_boundary?: MondayUpdateBoundary;
+  reply_next_pages?: Record<string, number>;
+  legacy_update_page?: true;
+}
+
+interface MondayUpdateBoundary {
+  created_at: string;
+  id: string;
+}
+
+interface MondayConversationContinuation {
+  itemId: string;
+  updateId?: string;
+}
+
+interface HydratedMondayConversations {
+  item: MondayItem;
+  cursor: MondayConversationCursor;
+  continuations: MondayConversationContinuation[];
+}
+
+interface MondayConversationProgress {
+  cursorKey: string;
+  cursor: MondayConversationCursor;
+  continuations: MondayConversationContinuation[];
+  shouldPersist: boolean;
 }
 
 interface MondayGraphQLError {
@@ -230,16 +324,22 @@ const ITEM_BOARD_FIELDS = `
   columns { id title type }
 `;
 
-const ITEM_FIELDS = `
+const CONVERSATION_FIELDS = `
+  id body text_body created_at updated_at creator { id name }
+`;
+
+// Board pages carry item shells only. Asking Monday for 100 items × 100
+// updates × 100 replies materializes an unbounded response before the writer
+// can apply its event budget. Conversation bodies are hydrated per item below.
+const ITEM_SHELL_FIELDS = `
   id name updated_at url
   group { id title }
   creator { id name }
   parent_item { id name board { ${ITEM_BOARD_FIELDS} } }
   column_values {
-    id text type value
-    ... on PeopleValue { persons_and_teams { id kind } }
-  }
-  updates(limit: ${String(UPDATE_LIMIT)}) { id body created_at updated_at creator { id name } }
+      id text type value
+      ... on PeopleValue { persons_and_teams { id kind } }
+    }
   subitems {
     id name updated_at url
     group { id title }
@@ -250,8 +350,12 @@ const ITEM_FIELDS = `
       id text type value
       ... on PeopleValue { persons_and_teams { id kind } }
     }
-    updates(limit: ${String(UPDATE_LIMIT)}) { id body created_at updated_at creator { id name } }
   }
+`;
+
+const TARGETED_UPDATE_ITEM_FIELDS = `
+  ${ITEM_SHELL_FIELDS}
+  updates(ids: $updateIds) { ${CONVERSATION_FIELDS} }
 `;
 
 function buildAuthorizeUrl(input: {
@@ -649,7 +753,9 @@ function mondayColumnDisplayValue(column: NormalizedColumn): string | null {
 
 function isSemanticallyImportantMondayColumn(column: NormalizedColumn): boolean {
   if (
-    ['status', 'date', 'priority'].includes(column.type ?? '') ||
+    isMondayStatusColumnType(column.type) ||
+    column.type === 'date' ||
+    column.type === 'priority' ||
     isMondayPeopleColumnType(column.type)
   ) {
     return true;
@@ -669,7 +775,8 @@ function mondayItemColumnLines(columns: NormalizedColumn[]): string[] {
     .filter(({ column }) => !isSemanticallyImportantMondayColumn(column))
     .slice(0, 12);
   return [...importantColumns, ...genericColumns].map(
-    ({ column, value }) => `${column.type === 'status' ? 'Status' : column.title}: ${value}`,
+    ({ column, value }) =>
+      `${isMondayStatusColumnType(column.type) ? 'Status' : column.title}: ${value}`,
   );
 }
 
@@ -681,7 +788,7 @@ function mondayRecordMap(
   hierarchyDepth = kind === 'subitem' ? 1 : 0,
 ): ObjectMapping {
   const semantics = mondayItemSemantics(itemBoard, item);
-  const status = semantics.columns.find((column) => column.type === 'status');
+  const status = semantics.columns.find((column) => isMondayStatusColumnType(column.type));
   const parent = item.parent_item;
   return {
     type: 'other',
@@ -792,11 +899,18 @@ function itemEvent(
   kind: 'item' | 'subitem',
   itemBoard: MondayBoard = board,
   hierarchyDepth = kind === 'subitem' ? 1 : 0,
+  previousLifecycle: string | null = null,
 ): IntegrationEvent {
   const occurredAt = dateValue(item.updated_at);
   const semantics = mondayItemSemantics(itemBoard, item);
+  const status = mondayStatus(
+    semantics.columns.find((column) => isMondayStatusColumnType(column.type))?.text,
+  );
+  const transitioned = previousLifecycle !== null && previousLifecycle !== status;
   return {
-    dedupKey: `monday:${kind}:${board.id}:${item.id}:${occurredAt.toISOString()}`,
+    dedupKey: transitioned
+      ? `monday:${kind}:${board.id}:${item.id}:${status}:${occurredAt.toISOString()}`
+      : `monday:${kind}:${board.id}:${item.id}:${status}`,
     provider: 'monday',
     externalObjectId: item.id,
     eventType: kind === 'subitem' ? 'subitem.updated' : 'item.updated',
@@ -833,29 +947,137 @@ function updateEvent(
   itemBoard: MondayBoard = board,
   hierarchyDepth = kind === 'subitem' ? 1 : 0,
 ): IntegrationEvent {
+  const operation = mondayConversationOperationForRecord(update);
   const occurredAt = dateValue(update.updated_at ?? update.created_at);
+  const body = mondayConversationText(update);
   return {
     dedupKey: `monday:update:${item.id}:${update.id}:${occurredAt.toISOString()}`,
     provider: 'monday',
     externalObjectId: item.id,
     externalEventId: update.id,
-    eventType: 'update.created',
+    eventType: `update.${operation}`,
     occurredAt,
     actor: actor(update.creator),
-    contentText: `Monday update on ${item.name}: ${update.body ?? ''}`.trim(),
+    contentText: [`Monday update on ${item.name}`, body].filter(Boolean).join(': '),
     extra: {
       ...boardMetadata(board),
       monday_item_board_id: itemBoard.id,
       monday_item_board_name: itemBoard.name,
       monday_item_id: item.id,
+      monday_item_name: item.name,
       monday_record_kind: kind,
       monday_parent_item_id: item.parent_item?.id ?? null,
+      monday_parent_item_name: item.parent_item?.name ?? null,
       monday_hierarchy_depth: hierarchyDepth,
       monday_update_id: update.id,
+      monday_parent_update_id: null,
+      monday_conversation_kind: 'update',
+      monday_conversation_operation: operation,
       external_url: item.url ?? null,
+      ...mondayConversationMetadata(update),
     },
     objectMap: mondayRecordMap(board, item, kind, itemBoard, hierarchyDepth),
   };
+}
+
+function replyEvent(
+  board: MondayBoard,
+  item: MondayItem,
+  update: MondayUpdate,
+  reply: MondayReply,
+  kind: 'item' | 'subitem',
+  itemBoard: MondayBoard = board,
+  hierarchyDepth = kind === 'subitem' ? 1 : 0,
+): IntegrationEvent {
+  const operation = mondayConversationOperationForRecord(reply);
+  const occurredAt = dateValue(reply.updated_at ?? reply.created_at);
+  const body = mondayConversationText(reply);
+  return {
+    dedupKey: `monday:reply:${item.id}:${update.id}:${reply.id}:${occurredAt.toISOString()}`,
+    provider: 'monday',
+    externalObjectId: item.id,
+    externalEventId: reply.id,
+    eventType: `reply.${operation}`,
+    occurredAt,
+    actor: actor(reply.creator),
+    contentText: [`Monday reply on ${item.name} to update ${update.id}`, body]
+      .filter(Boolean)
+      .join(': '),
+    extra: {
+      ...boardMetadata(board),
+      monday_item_board_id: itemBoard.id,
+      monday_item_board_name: itemBoard.name,
+      monday_item_id: item.id,
+      monday_item_name: item.name,
+      monday_record_kind: kind,
+      monday_parent_item_id: item.parent_item?.id ?? null,
+      monday_parent_item_name: item.parent_item?.name ?? null,
+      monday_hierarchy_depth: hierarchyDepth,
+      monday_update_id: update.id,
+      monday_reply_id: reply.id,
+      monday_parent_update_id: update.id,
+      monday_conversation_kind: 'reply',
+      monday_conversation_operation: operation,
+      external_url: item.url ?? null,
+      ...mondayConversationMetadata(reply),
+    },
+    objectMap: mondayRecordMap(board, item, kind, itemBoard, hierarchyDepth),
+  };
+}
+
+function mondayConversationMetadata(input: {
+  body: string;
+  text_body?: string | null;
+  created_at?: string;
+  updated_at?: string | null;
+  creator?: { id?: string; name?: string } | null;
+}): Record<string, string | null> {
+  return {
+    monday_conversation_body: input.body,
+    monday_conversation_text_body: input.text_body ?? null,
+    monday_conversation_created_at: input.created_at ?? null,
+    monday_conversation_updated_at: input.updated_at ?? null,
+    monday_conversation_author_id: input.creator?.id ?? null,
+    monday_conversation_author_name: input.creator?.name ?? null,
+  };
+}
+
+function mondayConversationText(input: { body: string; text_body?: string | null }): string | null {
+  const textBody = stringValue(input.text_body);
+  if (textBody) return textBody;
+  const body = stringValue(input.body);
+  if (!body) return null;
+  return mondayHtmlToText(body) || null;
+}
+
+function mondayConversationOperationForRecord(input: {
+  created_at?: string;
+  updated_at?: string | null;
+}): 'observed' | 'created' | 'updated' {
+  if (!input.created_at || !input.updated_at) return 'observed';
+  const createdAt = new Date(input.created_at);
+  const updatedAt = new Date(input.updated_at);
+  if (Number.isNaN(createdAt.getTime()) || Number.isNaN(updatedAt.getTime())) return 'observed';
+  if (updatedAt.getTime() === createdAt.getTime()) return 'created';
+  return updatedAt.getTime() > createdAt.getTime() ? 'updated' : 'observed';
+}
+
+function mondayHtmlToText(html: string): string {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 function docTextFromBlocks(blocks: MondayDocBlock[] | undefined): string {
@@ -939,13 +1161,15 @@ function mondayWebhookOccurredAt(event: Record<string, unknown>): Date {
   return new Date();
 }
 
-function mondayWebhookEventType(rawType: string, isSubitem = false): string {
+function mondayWebhookEventType(rawType: string, isSubitem = false, isReply = false): string {
   if (rawType === 'create_pulse' || rawType === 'create_item') {
     return isSubitem ? 'subitem.created' : 'item.created';
   }
-  if (rawType === 'create_update') return 'update.created';
-  if (rawType === 'edit_update') return 'update.updated';
-  if (rawType === 'delete_update') return 'update.deleted';
+  if (rawType === 'create_update' || rawType === 'create_subitem_update') {
+    return isReply ? 'reply.created' : 'update.created';
+  }
+  if (rawType === 'edit_update') return isReply ? 'reply.updated' : 'update.updated';
+  if (rawType === 'delete_update') return isReply ? 'reply.deleted' : 'update.deleted';
   if (rawType === 'create_subitem') return 'subitem.created';
   if (rawType.includes('status')) return 'status.changed';
   if (rawType.includes('column')) return 'column.changed';
@@ -954,6 +1178,89 @@ function mondayWebhookEventType(rawType: string, isSubitem = false): string {
   if (rawType === 'item_deleted') return 'item.deleted';
   if (rawType === 'item_restored') return 'item.restored';
   return rawType || 'item.updated';
+}
+
+/**
+ * Only status-column webhooks should derive lifecycle buckets from `value`.
+ * Owner/priority/date/rename payloads often stringify to text that
+ * `mondayStatus` misreads as `open`, which would mint the wrong dedup key
+ * and overwrite artifact status during reconciliation.
+ *
+ * Monday status columns report `columnType: "color"` in webhook payloads
+ * (fixtures + docs); custom ids/titles like `phase`/`Phase` still count.
+ */
+function isMondayStatusColumnWebhook(event: Record<string, unknown>): boolean {
+  const rawType = stringValue(event.type) ?? '';
+  if (rawType.includes('status')) return true;
+  const columnType = stringValue(event.columnType);
+  if (isMondayStatusColumnType(columnType)) return true;
+  const columnId = stringValue(event.columnId);
+  if (columnId && /^status\b/i.test(columnId)) return true;
+  const columnTitle = stringValue(event.columnTitle);
+  return Boolean(columnTitle && /\bstatus\b/i.test(columnTitle));
+}
+
+function mondayWebhookLifecycleStatus(
+  event: Record<string, unknown>,
+  rawType: string,
+  valueText: string | null,
+): NonNullable<ObjectMapping['status']> | null {
+  if (rawType === 'item_deleted' || rawType === 'item_archived') return 'cancelled';
+  if (rawType === 'item_restored') return 'open';
+  if (isMondayStatusColumnWebhook(event)) return mondayStatus(valueText);
+  if (rawType === 'create_pulse' || rawType === 'create_item' || rawType === 'create_subitem') {
+    return 'open';
+  }
+  return null;
+}
+
+/** Dedup bucket for item webhooks — archive/delete stay distinct from open. */
+function mondayWebhookLifecycleBucket(
+  event: Record<string, unknown>,
+  rawType: string,
+  valueText: string | null,
+): string {
+  if (rawType === 'item_deleted') return 'deleted';
+  if (rawType === 'item_archived') return 'archived';
+  return mondayWebhookLifecycleStatus(event, rawType, valueText) ?? 'observed';
+}
+
+function mondayWebhookUpdateDedupKey(input: {
+  itemId: string;
+  updateId: string;
+  rawType: string;
+  triggerUuid: string | null;
+  occurredAt: Date;
+}): string {
+  const revision = input.triggerUuid ?? input.occurredAt.toISOString();
+  return `monday:update:${input.itemId}:${input.updateId}:${input.rawType}:${revision}`;
+}
+
+/**
+ * Non-lifecycle item webhooks (owner/due/rename/…) use an observed revision key
+ * so each change mints a new immutable raw_event. Duplicate deliveries reuse the
+ * same triggerUuid (or occurredAt fallback). Status/archive/create stay on
+ * lifecycle buckets; when previousValue shows a real status transition the key
+ * gains a revision so open→done→open does not collide with the first open.
+ */
+function mondayWebhookItemDedupKey(input: {
+  kind: 'item' | 'subitem';
+  boardId: string;
+  itemId: string;
+  lifecycleBucket: string;
+  previousLifecycleBucket: string | null;
+  rawType: string;
+  triggerUuid: string | null;
+  occurredAt: Date;
+}): string {
+  const revision = input.triggerUuid ?? input.occurredAt.toISOString();
+  if (input.lifecycleBucket === 'observed') {
+    return `monday:${input.kind}:${input.boardId}:${input.itemId}:observed:${input.rawType}:${revision}`;
+  }
+  if (input.previousLifecycleBucket && input.previousLifecycleBucket !== input.lifecycleBucket) {
+    return `monday:${input.kind}:${input.boardId}:${input.itemId}:${input.lifecycleBucket}:${revision}`;
+  }
+  return `monday:${input.kind}:${input.boardId}:${input.itemId}:${input.lifecycleBucket}`;
 }
 
 function mondayWebhookEvent(payload: unknown): IntegrationEvent[] {
@@ -966,7 +1273,8 @@ function mondayWebhookEvent(payload: unknown): IntegrationEvent[] {
   const parentItemId = mondayIdValue(event.parentItemId);
   const rawType = stringValue(event.type) ?? 'item.updated';
   const isSubitem = parentBoardId !== null || parentItemId !== null || rawType.includes('subitem');
-  const eventType = mondayWebhookEventType(rawType, isSubitem);
+  const replyId = mondayIdValue(event.replyId);
+  const eventType = mondayWebhookEventType(rawType, isSubitem, Boolean(replyId));
   const itemId =
     mondayIdValue(event.pulseId) ??
     mondayIdValue(event.itemId) ??
@@ -981,11 +1289,40 @@ function mondayWebhookEvent(payload: unknown): IntegrationEvent[] {
   const valueText = mondayWebhookTextValue(event.value);
   const previousValueText = mondayWebhookTextValue(event.previousValue);
   const title = itemName ?? `Monday item ${itemId}`;
+  const status = mondayWebhookLifecycleStatus(event, rawType, valueText);
+  const previousLifecycleBucket =
+    isMondayStatusColumnWebhook(event) && previousValueText
+      ? mondayStatus(previousValueText)
+      : null;
+  const kind = isSubitem ? 'subitem' : 'item';
+  const isUpdateEvent =
+    updateId !== null &&
+    (rawType === 'create_update' ||
+      rawType === 'edit_update' ||
+      rawType === 'delete_update' ||
+      eventType.startsWith('update.'));
+  const lifecycleBucket = mondayWebhookLifecycleBucket(event, rawType, valueText);
   return [
     {
-      dedupKey: triggerUuid
-        ? `monday:webhook:${triggerUuid}`
-        : `monday:webhook:${boardId}:${subscriptionId ?? 'unknown'}:${itemId}:${rawType}:${occurredAt.toISOString()}`,
+      dedupKey:
+        isUpdateEvent && updateId
+          ? mondayWebhookUpdateDedupKey({
+              itemId,
+              updateId,
+              rawType,
+              triggerUuid,
+              occurredAt,
+            })
+          : mondayWebhookItemDedupKey({
+              kind,
+              boardId,
+              itemId,
+              lifecycleBucket,
+              previousLifecycleBucket,
+              rawType,
+              triggerUuid,
+              occurredAt,
+            }),
       provider: 'monday',
       externalObjectId: updateId ? `${itemId}:update:${updateId}` : itemId,
       externalEventId: triggerUuid ?? updateId ?? subscriptionId ?? null,
@@ -1008,6 +1345,7 @@ function mondayWebhookEvent(payload: unknown): IntegrationEvent[] {
         monday_parent_item_id: parentItemId,
         monday_hierarchy_depth: isSubitem ? 1 : 0,
         monday_update_id: updateId ?? null,
+        monday_reply_id: replyId ?? null,
         monday_webhook_type: rawType,
         monday_subscription_id: subscriptionId ?? null,
         monday_trigger_uuid: triggerUuid ?? null,
@@ -1021,7 +1359,7 @@ function mondayWebhookEvent(payload: unknown): IntegrationEvent[] {
         canonicalName: `Monday record ${itemId}: ${title}`,
         displayTitle: title,
         externalId: itemId,
-        status: mondayStatus(valueText),
+        ...(status ? { status } : {}),
         metadata: {
           monday_record_kind: isSubitem ? 'subitem' : 'webhook-record',
           monday_board_id: boardId,
@@ -1032,6 +1370,18 @@ function mondayWebhookEvent(payload: unknown): IntegrationEvent[] {
           monday_hierarchy_depth: isSubitem ? 1 : 0,
         },
       },
+      ...(rawType === 'delete_update' && updateId
+        ? {
+            sourceTombstone: {
+              kind: 'monday_conversation',
+              updateId,
+              ...(replyId ? { replyId } : {}),
+              reason: replyId
+                ? 'monday_reply_deleted_at_source'
+                : 'monday_update_deleted_at_source',
+            },
+          }
+        : {}),
     },
   ];
 }
@@ -1047,6 +1397,16 @@ function mondayWebhookItemId(payload: unknown): string | null {
   return (
     mondayIdValue(event.pulseId) ?? mondayIdValue(event.itemId) ?? mondayIdValue(event.parentItemId)
   );
+}
+
+function mondayWebhookUpdateId(payload: unknown): string | null {
+  const event = recordValue(recordValue(payload)?.event);
+  return event ? mondayIdValue(event.updateId) : null;
+}
+
+function mondayWebhookReplyId(payload: unknown): string | null {
+  const event = recordValue(recordValue(payload)?.event);
+  return event ? mondayIdValue(event.replyId) : null;
 }
 
 function mondayWebhookUrl(): string {
@@ -1139,23 +1499,404 @@ async function fetchBoard(tokens: MondayTokens, boardId: string): Promise<Monday
 async function fetchItemWithBoard(
   tokens: MondayTokens,
   itemId: string,
+  updateId?: string,
 ): Promise<{ item: MondayItem; board: MondayBoard } | null> {
-  const data = await gql<{ items: MondayItem[] }>(
-    tokens,
-    `query ($itemIds: [ID!]) {
+  const query = updateId
+    ? `query ($itemIds: [ID!], $updateIds: [ID!]) {
       items(ids: $itemIds) {
-        ${ITEM_FIELDS}
+        ${TARGETED_UPDATE_ITEM_FIELDS}
         board {
           ${BOARD_FIELDS}
         }
       }
-    }`,
-    { itemIds: [itemId] },
-  );
+    }`
+    : `query ($itemIds: [ID!]) {
+      items(ids: $itemIds) {
+        ${ITEM_SHELL_FIELDS}
+        board {
+          ${BOARD_FIELDS}
+        }
+      }
+    }`;
+  const data = await gql<{ items: MondayItem[] }>(tokens, query, {
+    itemIds: [itemId],
+    ...(updateId ? { updateIds: [updateId] } : {}),
+  });
   const item = data.items[0];
   const board = item?.board ?? null;
   if (!item || !board) return null;
   return { item, board };
+}
+
+async function fetchItemUpdatesPage(
+  tokens: MondayTokens,
+  itemId: string,
+  page: number,
+): Promise<MondayUpdate[]> {
+  const data = await gql<{ items: Pick<MondayItem, 'updates'>[] }>(
+    tokens,
+    `query ($itemIds: [ID!], $limit: Int!, $page: Int!) {
+      items(ids: $itemIds) {
+        updates(limit: $limit, page: $page) {
+          ${CONVERSATION_FIELDS}
+        }
+      }
+    }`,
+    { itemIds: [itemId], limit: CONVERSATION_PAGE_LIMIT, page },
+  );
+  return data.items[0]?.updates ?? [];
+}
+
+async function fetchUpdateRepliesPage(
+  tokens: MondayTokens,
+  itemId: string,
+  updateId: string,
+  page: number,
+): Promise<MondayReply[]> {
+  const data = await gql<{ items: Pick<MondayItem, 'updates'>[] }>(
+    tokens,
+    `query ($itemIds: [ID!], $updateIds: [ID!], $limit: Int!, $page: Int!) {
+      items(ids: $itemIds) {
+        updates(ids: $updateIds) {
+          replies(limit: $limit, page: $page) { ${CONVERSATION_FIELDS} }
+        }
+      }
+    }`,
+    {
+      itemIds: [itemId],
+      updateIds: [updateId],
+      limit: CONVERSATION_PAGE_LIMIT,
+      page,
+    },
+  );
+  return data.items[0]?.updates?.[0]?.replies ?? [];
+}
+
+function positiveConversationPage(value: unknown, minimum: number): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value >= minimum
+    ? value
+    : undefined;
+}
+
+function mondayConversationCursor(value: unknown): MondayConversationCursor {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const input = value as Record<string, unknown>;
+  const replies = input.reply_next_pages;
+  const replyNextPages =
+    replies && typeof replies === 'object' && !Array.isArray(replies)
+      ? Object.fromEntries(
+          Object.entries(replies).flatMap(([updateId, page]) => {
+            const nextPage = positiveConversationPage(page, 1);
+            return nextPage ? [[updateId, nextPage]] : [];
+          }),
+        )
+      : {};
+  const updateBoundary = mondayUpdateBoundary(input.update_boundary);
+  const legacyUpdatePage = positiveConversationPage(input.update_next_page, 2);
+  return {
+    ...(updateBoundary ? { update_boundary: updateBoundary } : {}),
+    ...(Object.keys(replyNextPages).length > 0 ? { reply_next_pages: replyNextPages } : {}),
+    ...(legacyUpdatePage ? { legacy_update_page: true } : {}),
+  };
+}
+
+function hasMondayConversationCursor(cursor: MondayConversationCursor): boolean {
+  if (cursor.update_boundary || cursor.legacy_update_page) return true;
+  return Object.keys(cursor.reply_next_pages ?? {}).length > 0;
+}
+
+function mondayUpdateBoundary(value: unknown): MondayUpdateBoundary | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const input = value as Record<string, unknown>;
+  const id = stringValue(input.id);
+  const createdAt = stringValue(input.created_at);
+  if (!id || !createdAt) return undefined;
+  const createdAtDate = new Date(createdAt);
+  if (Number.isNaN(createdAtDate.getTime())) return undefined;
+  return { created_at: createdAtDate.toISOString(), id };
+}
+
+function mondayUpdateBoundaryForRecord(update: MondayUpdate): MondayUpdateBoundary {
+  const createdAt = stringValue(update.created_at);
+  const createdAtDate = createdAt ? new Date(createdAt) : null;
+  if (!createdAtDate || Number.isNaN(createdAtDate.getTime())) {
+    throw new Error(`monday_update_boundary_missing_created_at:${update.id}`);
+  }
+  return { created_at: createdAtDate.toISOString(), id: update.id };
+}
+
+function mondayUpdateBoundaryForPage(updates: MondayUpdate[]): MondayUpdateBoundary {
+  const lastUpdate = updates.at(-1);
+  if (!lastUpdate) throw new Error('monday_update_boundary_empty_page');
+  return mondayUpdateBoundaryForRecord(lastUpdate);
+}
+
+function compareMondayIds(left: string, right: string): number {
+  if (/^\d+$/u.test(left) && /^\d+$/u.test(right)) {
+    const normalizedLeft = left.replace(/^0+(?=\d)/u, '');
+    const normalizedRight = right.replace(/^0+(?=\d)/u, '');
+    return (
+      normalizedLeft.length - normalizedRight.length ||
+      normalizedLeft.localeCompare(normalizedRight)
+    );
+  }
+  return left.localeCompare(right);
+}
+
+function mondayUpdateIsOlderThanBoundary(
+  update: MondayUpdate,
+  boundary: MondayUpdateBoundary,
+): boolean {
+  const updateBoundary = mondayUpdateBoundaryForRecord(update);
+  const timestampDifference =
+    new Date(updateBoundary.created_at).getTime() - new Date(boundary.created_at).getTime();
+  return (
+    timestampDifference < 0 ||
+    (timestampDifference === 0 && compareMondayIds(updateBoundary.id, boundary.id) < 0)
+  );
+}
+
+function mondayConversationCursorKey(boardId: string, itemId: string): string {
+  return `monday.conversation:${boardId}:${itemId}`;
+}
+
+async function hydrateConversationPages<T>(input: {
+  initial: T[];
+  nextPage?: number;
+  fetchPage: (page: number) => Promise<T[]>;
+  /** Values from later pages that may be added in this raw-event write. */
+  maxAdditionalValues?: number;
+}): Promise<{ values: T[]; nextPage: number | undefined }> {
+  const values = [...input.initial];
+  let page = input.nextPage ?? (values.length === CONVERSATION_PAGE_LIMIT ? 2 : undefined);
+  if (!page) return { values, nextPage: undefined };
+
+  let remaining = input.maxAdditionalValues ?? Number.POSITIVE_INFINITY;
+  for (;;) {
+    // Every provider page contains at most this many reply events. Do not
+    // fetch a page we cannot persist whole: the saved page cursor makes the
+    // next selected-board/item continuation replay exactly that page.
+    if (remaining < CONVERSATION_PAGE_LIMIT) return { values, nextPage: page };
+    const next = await input.fetchPage(page);
+    if (next.length > remaining) return { values, nextPage: page };
+    values.push(...next);
+    if (next.length < CONVERSATION_PAGE_LIMIT) return { values, nextPage: undefined };
+    remaining -= next.length;
+    page += 1;
+  }
+}
+
+function initialConversationEventCount(
+  updates: MondayUpdate[],
+  replyNextPages: Record<string, number>,
+): number {
+  return updates.reduce(
+    (total, update) => total + 1 + (replyNextPages[update.id] ? 0 : (update.replies?.length ?? 0)),
+    0,
+  );
+}
+
+async function hydrateItemConversations(
+  tokens: MondayTokens,
+  item: MondayItem,
+  cursor: MondayConversationCursor = {},
+  options: { includeUpdatePages?: boolean; maxConversationEvents?: number } = {},
+): Promise<HydratedMondayConversations> {
+  const includeUpdatePages = options.includeUpdatePages ?? true;
+  let remaining = options.maxConversationEvents ?? MONDAY_BOARD_WRITER_EVENT_BUDGET;
+  const updateBoundaryBefore = cursor.update_boundary;
+  let replyNextPages = { ...(cursor.reply_next_pages ?? {}) };
+  const continuations: MondayConversationContinuation[] = [];
+  const hydratedUpdates: MondayUpdate[] = [];
+
+  const hydrateReplies = async (updates: MondayUpdate[]) => {
+    const initialCount = initialConversationEventCount(updates, replyNextPages);
+    if (initialCount > remaining) return false;
+    remaining -= initialCount;
+
+    for (const update of updates) {
+      const replyCursorBefore = replyNextPages[update.id];
+      const initialReplies = replyCursorBefore ? [] : (update.replies ?? []);
+      const replyPages = await hydrateConversationPages({
+        initial: initialReplies,
+        ...(replyCursorBefore
+          ? { nextPage: replyCursorBefore }
+          : update.replies === undefined
+            ? { nextPage: 1 }
+            : {}),
+        fetchPage: (page) => fetchUpdateRepliesPage(tokens, item.id, update.id, page),
+        maxAdditionalValues: remaining,
+      });
+      remaining -= replyPages.values.length - initialReplies.length;
+      if (replyPages.nextPage) {
+        replyNextPages[update.id] = replyPages.nextPage;
+        // A previous page cursor can remain unchanged when earlier records
+        // consumed this batch's writer budget. It still needs a durable job;
+        // otherwise the cursor would be saved with no recovery continuation.
+        continuations.push({ itemId: item.id, updateId: update.id });
+      } else {
+        const { [update.id]: _completedReplyCursor, ...remainingReplyNextPages } = replyNextPages;
+        replyNextPages = remainingReplyNextPages;
+      }
+      hydratedUpdates.push({ ...update, replies: replyPages.values });
+    }
+    return true;
+  };
+
+  // A selected-update continuation only advances that update's reply pages;
+  // preserve any separate item-level update boundary until its generic
+  // selected-board continuation consumes it. Legacy numeric pages are not
+  // preserved: their safe migration is a replay from the newest page.
+  let updateBoundary: MondayUpdateBoundary | undefined = includeUpdatePages
+    ? undefined
+    : updateBoundaryBefore;
+  if (!includeUpdatePages) {
+    const updates = item.updates ?? [];
+    if (!(await hydrateReplies(updates))) {
+      continuations.push(...updates.map((update) => ({ itemId: item.id, updateId: update.id })));
+    }
+  } else {
+    let page = 1;
+    let updates = item.updates;
+    let boundaryCrossed = !updateBoundaryBefore;
+    let lastCoveredBoundary = updateBoundaryBefore;
+    for (;;) {
+      // A shell has no conversation payload yet. Do not ask Monday for a
+      // 100-update page when this writer cannot persist that page whole; the
+      // exact item continuation below will hydrate it in a fresh safe budget.
+      if (updates === undefined && remaining < CONVERSATION_PAGE_LIMIT) {
+        updateBoundary = lastCoveredBoundary;
+        continuations.push({ itemId: item.id });
+        break;
+      }
+      const providerPage = updates ?? (await fetchItemUpdatesPage(tokens, item.id, page));
+      if (providerPage.length === 0) break;
+      let pageUpdates = providerPage;
+      if (!boundaryCrossed && updateBoundaryBefore) {
+        const boundaryIndex = providerPage.findIndex(
+          (update) => update.id === updateBoundaryBefore.id,
+        );
+        if (boundaryIndex >= 0) {
+          boundaryCrossed = true;
+          pageUpdates = providerPage.slice(boundaryIndex + 1);
+        } else {
+          pageUpdates = providerPage.filter((update) =>
+            mondayUpdateIsOlderThanBoundary(update, updateBoundaryBefore),
+          );
+          if (pageUpdates.length > 0) boundaryCrossed = true;
+        }
+      }
+      if (pageUpdates.length === 0) {
+        if (providerPage.length < CONVERSATION_PAGE_LIMIT) break;
+        page += 1;
+        updates = undefined;
+        continue;
+      }
+      if (!(await hydrateReplies(pageUpdates))) {
+        // Do not split an update page. A selected-update continuation can
+        // write each deferred record (and its reply history) independently,
+        // while the item cursor continues after the last covered stable
+        // update boundary.
+        continuations.push(
+          ...pageUpdates.map((update) => ({ itemId: item.id, updateId: update.id })),
+        );
+        if (providerPage.length === CONVERSATION_PAGE_LIMIT) {
+          updateBoundary = mondayUpdateBoundaryForPage(pageUpdates);
+          continuations.push({ itemId: item.id });
+        }
+        break;
+      }
+      lastCoveredBoundary = mondayUpdateBoundaryForPage(pageUpdates);
+      if (providerPage.length < CONVERSATION_PAGE_LIMIT) break;
+      page += 1;
+      if (remaining === 0) {
+        updateBoundary = lastCoveredBoundary;
+        continuations.push({ itemId: item.id });
+        break;
+      }
+      updates = undefined;
+    }
+  }
+
+  const nextCursor: MondayConversationCursor = {
+    ...(updateBoundary ? { update_boundary: updateBoundary } : {}),
+    ...(Object.keys(replyNextPages).length > 0 ? { reply_next_pages: replyNextPages } : {}),
+  };
+  return {
+    item: { ...item, updates: hydratedUpdates },
+    cursor: nextCursor,
+    continuations,
+  };
+}
+
+async function hydrateItemConversationsForSync(
+  tokens: MondayTokens,
+  boardId: string,
+  item: MondayItem,
+  ctx: SyncContext,
+  options?: { includeUpdatePages?: boolean; maxConversationEvents?: number },
+): Promise<HydratedMondayConversations & { progress: MondayConversationProgress }> {
+  const cursorKey = mondayConversationCursorKey(boardId, item.id);
+  const previous = mondayConversationCursor(await ctx.loadCursor(cursorKey));
+  const hydrated = await hydrateItemConversations(tokens, item, previous, options);
+  return {
+    ...hydrated,
+    progress: {
+      cursorKey,
+      cursor: hydrated.cursor,
+      continuations: hydrated.continuations,
+      shouldPersist:
+        hasMondayConversationCursor(previous) || hasMondayConversationCursor(hydrated.cursor),
+    },
+  };
+}
+
+async function persistMondayConversationProgress(
+  ctx: SyncContext,
+  boardId: string,
+  progress: MondayConversationProgress[],
+): Promise<void> {
+  await Promise.all(
+    progress
+      .filter((entry) => entry.shouldPersist)
+      .map(async (entry) => {
+        const continuations = mondayConversationContinuationTargets(boardId, [entry]);
+        if (continuations.length > 0 && ctx.saveCursorWithContinuations) {
+          await ctx.saveCursorWithContinuations(entry.cursorKey, entry.cursor, continuations);
+          return;
+        }
+        await ctx.saveCursor(entry.cursorKey, entry.cursor);
+      }),
+  );
+}
+
+function mondayConversationContinuationTargets(
+  boardId: string,
+  progress: MondayConversationProgress[],
+  additional: MondayConversationContinuation[] = [],
+): SyncContinuation[] {
+  const targets = new Map<string, SyncContinuation>();
+  const continuations = [...progress.flatMap((entry) => entry.continuations), ...additional];
+  for (const continuation of continuations) {
+    const externalId = [boardId, continuation.itemId, continuation.updateId]
+      .filter((value): value is string => Boolean(value))
+      .join(':');
+    targets.set(externalId, { resourceType: 'monday.item', externalId });
+  }
+  return [...targets.values()];
+}
+
+async function saveMondayCursorCheckpoint(
+  ctx: SyncContext,
+  resourceType: string,
+  cursor: unknown,
+  continuations: SyncContinuation[],
+): Promise<void> {
+  if (continuations.length > 0 && ctx.saveCursorWithContinuations) {
+    await ctx.saveCursorWithContinuations(resourceType, cursor, continuations);
+    return;
+  }
+  await ctx.saveCursor(resourceType, cursor);
 }
 
 async function fetchInitialItemsPage(
@@ -1186,7 +1927,7 @@ async function fetchInitialItemsPage(
         boards(ids: $ids) {
           items_page(limit: $limit${hierarchyScope}${queryParams}) {
             cursor
-            items { ${ITEM_FIELDS} }
+            items { ${ITEM_SHELL_FIELDS} }
           }
         }
       }`
@@ -1194,7 +1935,7 @@ async function fetchInitialItemsPage(
         boards(ids: $ids) {
           items_page(limit: $limit${hierarchyScope}) {
             cursor
-            items { ${ITEM_FIELDS} }
+            items { ${ITEM_SHELL_FIELDS} }
           }
         }
       }`;
@@ -1212,7 +1953,7 @@ async function fetchNextItemsPage(tokens: MondayTokens, cursor: string): Promise
     `query ($cursor: String!, $limit: Int!) {
       next_items_page(cursor: $cursor, limit: $limit) {
         cursor
-        items { ${ITEM_FIELDS} }
+        items { ${ITEM_SHELL_FIELDS} }
       }
     }`,
     { cursor, limit: ITEM_PAGE_LIMIT },
@@ -1375,13 +2116,21 @@ async function syncTargetedItem(
   boardId: string,
   itemId: string,
   ctx: SyncContext,
-): Promise<void> {
-  const result = await fetchItemWithBoard(tokens, itemId);
+  target?: { updateId?: string; replyId?: string; surface?: string },
+): Promise<{ resourceType: string; externalId: string }[]> {
+  const result = await fetchItemWithBoard(tokens, itemId, target?.updateId);
   if (!result) {
     await ctx.recordAudit('targeted_item_missing', { boardId, itemId });
-    return;
+    return [];
   }
-  const { board: itemBoard, item } = result;
+  const { board: itemBoard, item: sourceItem } = result;
+  const hydrated = await hydrateItemConversationsForSync(tokens, boardId, sourceItem, ctx, {
+    // An update-id webhook has already narrowed the provider response to the
+    // one update; its persisted reply cursor is still resumed below.
+    includeUpdatePages: !target?.updateId,
+    maxConversationEvents: MONDAY_BOARD_WRITER_EVENT_BUDGET - 1,
+  });
+  const item = hydrated.item;
   const parentBoard = item.parent_item?.board ?? null;
   const board =
     itemBoard.id === boardId ? itemBoard : parentBoard?.id === boardId ? parentBoard : null;
@@ -1392,25 +2141,50 @@ async function syncTargetedItem(
       parentBoardId: parentBoard?.id ?? null,
       itemId,
     });
-    return;
+    return [];
   }
   const kind = item.parent_item?.id ? 'subitem' : 'item';
-  const events = [
-    ...recordEvents(board, item, kind, itemBoard),
-    ...(kind === 'item'
-      ? (item.subitems ?? []).flatMap((subitem) =>
-          recordEvents(board, subitem, 'subitem', subitem.board ?? board),
+  const cursor = (await ctx.loadCursor(`monday.item:${boardId}:${itemId}`)) as MondayCursor;
+  let itemLifecycles = { ...(cursor.item_lifecycles ?? {}) };
+  const touchedItemIds = new Set<string>();
+  const previous = itemLifecycles[item.id] ?? null;
+  const itemEvents = recordEvents(
+    board,
+    item,
+    kind,
+    itemBoard,
+    kind === 'subitem' ? 1 : 0,
+    previous,
+  );
+  itemLifecycles[item.id] = mondayItemLifecycleStatus(itemBoard, item);
+  touchedItemIds.add(item.id);
+  const subitems =
+    kind === 'item'
+      ? await hydratedSubitemEvents(
+          tokens,
+          board,
+          item,
+          boardId,
+          ctx,
+          MONDAY_BOARD_WRITER_EVENT_BUDGET - itemEvents.length,
+          itemLifecycles,
+          touchedItemIds,
         )
-      : []),
-  ];
+      : { events: [], progress: [], continuations: [] };
+  const events = [...itemEvents, ...subitems.events];
+  itemLifecycles = pruneMondayItemLifecycles(itemLifecycles, touchedItemIds);
   await ctx.writeEvents(events);
+  const progress = [hydrated.progress, ...subitems.progress];
+  await persistMondayConversationProgress(ctx, boardId, progress);
   const latestItem = events
     .map((event) => event.occurredAt.toISOString())
     .sort()
     .at(-1);
   await ctx.saveCursor(`monday.item:${boardId}:${itemId}`, {
     item_since: latestItem ?? new Date().toISOString(),
+    item_lifecycles: itemLifecycles,
   });
+  return mondayConversationContinuationTargets(boardId, progress, subitems.continuations);
 }
 
 async function fetchDocsPage(tokens: MondayTokens, page: number): Promise<MondayDoc[]> {
@@ -1484,19 +2258,74 @@ function isSubitemsBoard(board: MondayBoard): boolean {
   return board.name.trim().toLowerCase().startsWith('subitems of ');
 }
 
+function mondayItemLifecycleStatus(itemBoard: MondayBoard, item: MondayItem): string {
+  return mondayStatus(
+    mondayItemSemantics(itemBoard, item).columns.find((column) =>
+      isMondayStatusColumnType(column.type),
+    )?.text,
+  );
+}
+
 function recordEvents(
   board: MondayBoard,
   item: MondayItem,
   kind: 'item' | 'subitem',
   itemBoard: MondayBoard = board,
   hierarchyDepth = kind === 'subitem' ? 1 : 0,
+  previousLifecycle: string | null = null,
 ): IntegrationEvent[] {
   return [
-    itemEvent(board, item, kind, itemBoard, hierarchyDepth),
-    ...(item.updates ?? []).map((update) =>
+    itemEvent(board, item, kind, itemBoard, hierarchyDepth, previousLifecycle),
+    ...(item.updates ?? []).flatMap((update) => [
       updateEvent(board, item, update, kind, itemBoard, hierarchyDepth),
-    ),
+      ...(update.replies ?? []).map((reply) =>
+        replyEvent(board, item, update, reply, kind, itemBoard, hierarchyDepth),
+      ),
+    ]),
   ];
+}
+
+async function hydratedSubitemEvents(
+  tokens: MondayTokens,
+  board: MondayBoard,
+  item: MondayItem,
+  boardId: string,
+  ctx: SyncContext,
+  maxEvents = MONDAY_BOARD_WRITER_EVENT_BUDGET,
+  itemLifecycles: Record<string, string> = {},
+  touchedItemIds: Set<string> = new Set<string>(),
+): Promise<{
+  events: IntegrationEvent[];
+  progress: MondayConversationProgress[];
+  continuations: MondayConversationContinuation[];
+}> {
+  const events: IntegrationEvent[] = [];
+  const progress: MondayConversationProgress[] = [];
+  const continuations: MondayConversationContinuation[] = [];
+  for (const subitem of item.subitems ?? []) {
+    const remaining = maxEvents - events.length;
+    if (remaining < 1) {
+      continuations.push({ itemId: subitem.id });
+      continue;
+    }
+    const hydrated = await hydrateItemConversationsForSync(tokens, boardId, subitem, ctx, {
+      maxConversationEvents: remaining - 1,
+    });
+    const subBoard = hydrated.item.board ?? board;
+    const previousSub = itemLifecycles[hydrated.item.id] ?? null;
+    const subitemEvents = recordEvents(board, hydrated.item, 'subitem', subBoard, 1, previousSub);
+    if (subitemEvents.length > remaining) {
+      // The hydrator only emits complete conversation pages, so this is a
+      // defensive fallback for future item event shapes.
+      continuations.push({ itemId: subitem.id });
+      continue;
+    }
+    itemLifecycles[hydrated.item.id] = mondayItemLifecycleStatus(subBoard, hydrated.item);
+    touchedItemIds.add(hydrated.item.id);
+    events.push(...subitemEvents);
+    progress.push(hydrated.progress);
+  }
+  return { events, progress, continuations };
 }
 
 function mondayHierarchyDepth(item: MondayItem, itemsById: Map<string, MondayItem>): number {
@@ -1527,10 +2356,12 @@ async function syncBoard(
   tokens: MondayTokens,
   boardId: string,
   cursor: MondayCursor,
-  options: { incremental: boolean },
+  options: { incremental: boolean; ctx: SyncContext },
 ): Promise<{
   events: IntegrationEvent[];
   cursor: MondayCursor;
+  conversationProgress: MondayConversationProgress[];
+  continuations: MondayConversationContinuation[];
   stats: {
     boardId: string;
     hierarchyType: string;
@@ -1540,6 +2371,7 @@ async function syncBoard(
     activityCount: number;
     eventCount: number;
     hasMoreItems: boolean;
+    hasMoreActivity: boolean;
     cursorRestarted: boolean;
   };
 }> {
@@ -1548,6 +2380,8 @@ async function syncBoard(
     return {
       events: [],
       cursor,
+      conversationProgress: [],
+      continuations: [],
       stats: {
         boardId,
         hierarchyType: 'unknown',
@@ -1557,6 +2391,7 @@ async function syncBoard(
         activityCount: 0,
         eventCount: 0,
         hasMoreItems: false,
+        hasMoreActivity: false,
         cursorRestarted: false,
       },
     };
@@ -1576,56 +2411,125 @@ async function syncBoard(
   ]);
   const items = itemBatch.items;
   const itemsById = new Map(items.map((item) => [item.id, item]));
-  const activityEvents = activityLogs.map((log) => activityEvent(board, log));
-  const itemEvents = items.flatMap((item) => {
+  const schemaEvent = boardSchemaEvent(board);
+  const activityCursorTime = cursor.activity_since
+    ? new Date(cursor.activity_since).getTime()
+    : Number.NaN;
+  const allActivityEntries = activityLogs
+    .map((log) => ({ log, event: activityEvent(board, log) }))
+    .filter(({ log, event }) => {
+      if (Number.isNaN(activityCursorTime)) return true;
+      const occurredAt = event.occurredAt.getTime();
+      if (occurredAt > activityCursorTime) return true;
+      if (occurredAt < activityCursorTime) return false;
+      return !cursor.activity_after_id || log.id.localeCompare(cursor.activity_after_id) > 0;
+    })
+    .sort(
+      (left, right) =>
+        left.event.occurredAt.getTime() - right.event.occurredAt.getTime() ||
+        left.log.id.localeCompare(right.log.id),
+    );
+  const activityEntries = allActivityEntries.slice(0, MONDAY_BOARD_WRITER_EVENT_BUDGET - 1);
+  const activityEvents = activityEntries.map(({ event }) => event);
+  const hasMoreActivity = activityEntries.length < allActivityEntries.length;
+  let itemLifecycles = { ...(cursor.item_lifecycles ?? {}) };
+  const touchedItemIds = new Set<string>();
+  const itemEvents: IntegrationEvent[] = [];
+  const conversationProgress: MondayConversationProgress[] = [];
+  const continuations: MondayConversationContinuation[] = [];
+  for (const sourceItem of items) {
+    const remaining =
+      MONDAY_BOARD_WRITER_EVENT_BUDGET - 1 - activityEvents.length - itemEvents.length;
+    if (remaining < 1) {
+      continuations.push({ itemId: sourceItem.id });
+      continue;
+    }
+    const hydrated = await hydrateItemConversationsForSync(
+      tokens,
+      boardId,
+      sourceItem,
+      options.ctx,
+      { maxConversationEvents: remaining - 1 },
+    );
+    const item = hydrated.item;
     const kind = item.parent_item?.id ? 'subitem' : 'item';
-    return [
-      ...recordEvents(
+    const itemBoard = item.board ?? board;
+    const previous = itemLifecycles[item.id] ?? null;
+    const sourceItemEvents = recordEvents(
+      board,
+      item,
+      kind,
+      itemBoard,
+      mondayHierarchyDepth(item, itemsById),
+      previous,
+    );
+    if (sourceItemEvents.length > remaining) {
+      continuations.push({ itemId: sourceItem.id });
+      continue;
+    }
+    itemEvents.push(...sourceItemEvents);
+    itemLifecycles[item.id] = mondayItemLifecycleStatus(itemBoard, item);
+    touchedItemIds.add(item.id);
+    conversationProgress.push(hydrated.progress);
+    if (board.hierarchy_type !== 'multi_level') {
+      const subitems = await hydratedSubitemEvents(
+        tokens,
         board,
         item,
-        kind,
-        item.board ?? board,
-        mondayHierarchyDepth(item, itemsById),
-      ),
-      ...(board.hierarchy_type === 'multi_level'
-        ? []
-        : (item.subitems ?? []).flatMap((subitem) =>
-            recordEvents(board, subitem, 'subitem', subitem.board ?? board, 1),
-          )),
-    ];
-  });
-  const schemaEvent = boardSchemaEvent(board);
+        boardId,
+        options.ctx,
+        MONDAY_BOARD_WRITER_EVENT_BUDGET - 1 - activityEvents.length - itemEvents.length,
+        itemLifecycles,
+        touchedItemIds,
+      );
+      itemEvents.push(...subitems.events);
+      conversationProgress.push(...subitems.progress);
+      continuations.push(...subitems.continuations);
+    }
+  }
+  itemLifecycles = pruneMondayItemLifecycles(itemLifecycles, touchedItemIds);
   const events = [schemaEvent, ...activityEvents, ...itemEvents];
   const flattenedRecords =
     board.hierarchy_type === 'multi_level'
       ? items
       : items.flatMap((item) => [item, ...(item.subitems ?? [])]);
-  const latestActivity = activityEvents
-    .map((event) => event.occurredAt.toISOString())
-    .sort()
-    .at(-1);
+  const latestActivity = activityEntries.at(-1);
   const latestItem = itemEvents
     .map((event) => event.occurredAt.toISOString())
     .sort()
     .at(-1);
   return {
     events,
+    conversationProgress,
+    continuations,
     stats: {
       boardId,
       hierarchyType: board.hierarchy_type ?? 'classic',
       parentItemCount: flattenedRecords.filter((item) => !item.parent_item?.id).length,
       subitemCount: flattenedRecords.filter((item) => Boolean(item.parent_item?.id)).length,
-      updateCount: flattenedRecords.reduce((count, item) => count + (item.updates?.length ?? 0), 0),
+      updateCount: itemEvents.filter((event) => event.extra?.monday_conversation_kind === 'update')
+        .length,
       activityCount: activityEvents.length,
       eventCount: events.length,
       hasMoreItems: Boolean(itemBatch.nextCursor),
+      hasMoreActivity,
       cursorRestarted: Boolean(itemBatch.restarted),
     },
     cursor: {
-      activity_since: latestActivity ?? cursor.activity_since ?? to,
+      activity_since: latestActivity
+        ? latestActivity.event.occurredAt.toISOString()
+        : hasMoreActivity
+          ? (cursor.activity_since ?? from)
+          : to,
+      ...(latestActivity
+        ? { activity_after_id: latestActivity.log.id }
+        : hasMoreActivity && cursor.activity_after_id
+          ? { activity_after_id: cursor.activity_after_id }
+          : {}),
       item_since: itemBatch.nextCursor
         ? cursor.item_since
         : (latestItem ?? cursor.item_since ?? to),
+      item_lifecycles: itemLifecycles,
       ...(itemBatch.nextCursor
         ? {
             item_page_cursor: itemBatch.nextCursor,
@@ -1737,16 +2641,32 @@ export const mondayProvider: IntegrationProvider = {
         )) as MondayCursor;
         const result = await syncBoard(mondayTokens, selection.externalId, cursor, {
           incremental: false,
+          ctx,
         });
         await ctx.writeEvents(result.events);
+        await persistMondayConversationProgress(
+          ctx,
+          selection.externalId,
+          result.conversationProgress,
+        );
         await ctx.recordAudit('monday_board_synced', result.stats);
-        await ctx.saveCursor(`monday.board:${selection.externalId}`, result.cursor);
-        if (result.stats.hasMoreItems) {
-          continuations.push({
-            resourceType: 'monday.board',
-            externalId: selection.externalId,
-          });
-        }
+        const boardContinuations: SyncContinuation[] = [
+          ...(result.stats.hasMoreItems || result.stats.hasMoreActivity
+            ? [{ resourceType: 'monday.board', externalId: selection.externalId }]
+            : []),
+          ...mondayConversationContinuationTargets(
+            selection.externalId,
+            result.conversationProgress,
+            result.continuations,
+          ),
+        ];
+        await saveMondayCursorCheckpoint(
+          ctx,
+          `monday.board:${selection.externalId}`,
+          result.cursor,
+          boardContinuations,
+        );
+        continuations.push(...boardContinuations);
       } catch (error) {
         rethrowMondayRateLimit(error);
         partialFailures.push(
@@ -1775,9 +2695,14 @@ export const mondayProvider: IntegrationProvider = {
   async incrementalSync({ tokens, selections, ctx, target }) {
     const mondayTokens = await ensureAccessToken(tokens as MondayTokens, ctx);
     if (target?.resourceType === 'monday.item') {
-      const [boardId, itemId] = target.externalId.split(':');
+      const [boardId, itemId, updateId, replyId] = target.externalId.split(':');
       if (boardId && itemId) {
-        await syncTargetedItem(mondayTokens, boardId, itemId, ctx);
+        const continuations = await syncTargetedItem(mondayTokens, boardId, itemId, ctx, {
+          ...(updateId ? { updateId } : {}),
+          ...(replyId ? { replyId } : {}),
+          ...(target.surface ? { surface: target.surface } : {}),
+        });
+        return continuations.length > 0 ? { continuations } : undefined;
       }
       return;
     }
@@ -1790,16 +2715,32 @@ export const mondayProvider: IntegrationProvider = {
         )) as MondayCursor;
         const result = await syncBoard(mondayTokens, selection.externalId, cursor, {
           incremental: true,
+          ctx,
         });
         await ctx.writeEvents(result.events);
+        await persistMondayConversationProgress(
+          ctx,
+          selection.externalId,
+          result.conversationProgress,
+        );
         await ctx.recordAudit('monday_board_synced', result.stats);
-        await ctx.saveCursor(`monday.board:${selection.externalId}`, result.cursor);
-        if (result.stats.hasMoreItems) {
-          continuations.push({
-            resourceType: 'monday.board',
-            externalId: selection.externalId,
-          });
-        }
+        const boardContinuations: SyncContinuation[] = [
+          ...(result.stats.hasMoreItems || result.stats.hasMoreActivity
+            ? [{ resourceType: 'monday.board', externalId: selection.externalId }]
+            : []),
+          ...mondayConversationContinuationTargets(
+            selection.externalId,
+            result.conversationProgress,
+            result.continuations,
+          ),
+        ];
+        await saveMondayCursorCheckpoint(
+          ctx,
+          `monday.board:${selection.externalId}`,
+          result.cursor,
+          boardContinuations,
+        );
+        continuations.push(...boardContinuations);
       } catch (error) {
         rethrowMondayRateLimit(error);
         partialFailures.push(
@@ -1831,14 +2772,22 @@ export const mondayProvider: IntegrationProvider = {
     const events = mondayWebhookEvent(payload);
     const boardId = mondayWebhookBoardId(payload);
     const itemId = mondayWebhookItemId(payload);
+    const updateId = mondayWebhookUpdateId(payload);
+    const replyId = mondayWebhookReplyId(payload);
     const syncTasks: TargetedSyncTask[] = [];
-    if (boardId) {
+    if (
+      boardId &&
+      events[0]?.eventType !== 'update.deleted' &&
+      events[0]?.eventType !== 'reply.deleted'
+    ) {
       syncTasks.push({
         integrationId: integration.id,
         teamId: integration.teamId,
         triggeredBy: 'webhook',
         resourceType: itemId ? 'monday.item' : 'monday.board',
-        externalId: itemId ? `${boardId}:${itemId}` : boardId,
+        externalId: itemId
+          ? [boardId, itemId, updateId, replyId].filter(Boolean).join(':')
+          : boardId,
         ...(events[0]?.eventType ? { surface: events[0].eventType } : {}),
         reason: itemId ? 'monday_item_webhook' : 'monday_board_webhook',
       });
@@ -1846,6 +2795,9 @@ export const mondayProvider: IntegrationProvider = {
     return {
       events,
       syncTasks,
+      ...(events.some((event) => event.sourceTombstone)
+        ? { syncTaskDisposition: 'handled' as const }
+        : {}),
     };
   },
 

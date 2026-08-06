@@ -166,9 +166,15 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       and deterministic/live reconciliation evals.
 - [ ] Wire workspace reconciliation into future authoritative external sync
       paths when calendar/provider imports directly update artifacts they own.
-- [ ] Design cross-source evidence reviews for generic ingest webhook events so
-      webhook evidence can combine with conversations and object-linked source
-      events before proposal generation.
+- [ ] Ship the cross-source evidence pack north star in
+      [`docs/cross-source-evidence.md`](./docs/cross-source-evidence.md): a shared
+      visibility-safe pack builder (object links first, then retrieval),
+      conversation reviews and event-local paths that cite multi-surface
+      evidence, integrations remaining pack-eligible, evals/cost caps, and
+      website copy that matches milestones. First concrete slice: design
+      cross-source evidence reviews for generic ingest webhook events so webhook
+      evidence can combine with conversations and object-linked source events
+      before proposal generation.
 
 ## Boards
 

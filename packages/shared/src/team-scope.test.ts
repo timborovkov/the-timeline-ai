@@ -39,7 +39,10 @@ import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
 import { resetSecretsKeyCacheForTests } from '#src/crypto/secrets.js';
 import { resetEnvForTests } from '#src/env.js';
 import {
+  adminCommitIntegrationSyncCheckpoint,
   adminDecryptIntegrationTokens,
+  adminMarkSynced,
+  adminRecordError,
   adminRecordTransientSyncFailure,
   adminResetTransientSyncFailures,
 } from '#src/integrations/scope.js';
@@ -550,6 +553,49 @@ describe('withTeam namespaced port', () => {
     await expect(scope.timeline.getEvent(deletedId)).resolves.toBeNull();
     await expect(scope.timeline.getEventsByIds([visibleId, deletedId])).resolves.toMatchObject([
       { id: visibleId },
+    ]);
+  });
+
+  it('hides tombstoned integration history from the resource read surface', async () => {
+    const visibleId = '00000000-0000-0000-0000-000000000111';
+    const deletedId = '00000000-0000-0000-0000-000000000112';
+    await db.insert(rawEvents).values([
+      {
+        id: visibleId,
+        teamId: TEAM_A,
+        source: 'integration',
+        contentText: 'Current Monday update',
+        occurredAt: new Date('2026-06-20T10:00:00Z'),
+        sourceMetadata: {
+          provider: 'monday',
+          integration_id: 'integration-a',
+          external_object_id: 'item-1',
+          event_type: 'update.created',
+        },
+      },
+      {
+        id: deletedId,
+        teamId: TEAM_A,
+        source: 'integration',
+        contentText: 'Deleted Monday update must never be returned',
+        occurredAt: new Date('2026-06-20T10:01:00Z'),
+        sourceMetadata: {
+          provider: 'monday',
+          integration_id: 'integration-a',
+          external_object_id: 'item-1',
+          event_type: 'update.created',
+          deleted: true,
+        },
+      },
+    ]);
+
+    const result = await withTeam(db as never, TEAM_A, USER_A).integrations.getIntegrationResource({
+      provider: 'monday',
+      externalObjectId: 'item-1',
+    });
+
+    expect(result?.history).toEqual([
+      expect.objectContaining({ id: visibleId, contentText: 'Current Monday update' }),
     ]);
   });
 
@@ -2805,6 +2851,41 @@ describe('withTeam namespaced port', () => {
       lastStatus: 'ok',
       lastError: null,
     });
+  });
+
+  it('keeps an integration unhealthy while a partial surface checkpoint is durable', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const integration = await scope.integrations.createIntegration({
+      provider: 'github',
+      displayName: 'GitHub',
+      externalAccountId: 'surface-health',
+    });
+
+    await adminRecordError(db as never, integration.id, 'Review comments are retrying');
+    await adminCommitIntegrationSyncCheckpoint(db as never, {
+      integrationId: integration.id,
+      cursors: [
+        {
+          resourceType: 'github.repo:acme/app:issue_comments',
+          cursor: { issue_comments_continuation: { page: 2, phase: 'drain' } },
+          status: { lastStatus: 'error', lastError: 'Review comments are retrying' },
+        },
+      ],
+    });
+
+    const [partialProgress] = await db
+      .select({ lastError: integrations.lastError, lastSyncedAt: integrations.lastSyncedAt })
+      .from(integrations)
+      .where(eq(integrations.id, integration.id));
+    expect(partialProgress).toMatchObject({ lastError: 'Review comments are retrying' });
+    expect(partialProgress?.lastSyncedAt).toBeNull();
+
+    await adminMarkSynced(db as never, integration.id);
+    const [complete] = await db
+      .select({ lastError: integrations.lastError })
+      .from(integrations)
+      .where(eq(integrations.id, integration.id));
+    expect(complete?.lastError).toBeNull();
   });
 
   it('preserves per-integration visibility defaults when reconnecting', async () => {

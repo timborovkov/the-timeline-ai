@@ -31,7 +31,7 @@ const SITE_DESCRIPTION =
   'Capture work from Slack, Telegram, meetings, docs, email, code, CRM, and internal tools, then generate cited updates, handoffs, digests, and answers from the evidence.';
 
 export const metadata: Metadata = {
-  title: `${SITE_NAME} — ${SITE_TAGLINE}`,
+  title: `${SITE_NAME} | ${SITE_TAGLINE}`,
   description: SITE_DESCRIPTION,
   keywords: [
     'operational memory',
@@ -49,7 +49,7 @@ export const metadata: Metadata = {
   ],
   alternates: { canonical: '/' },
   openGraph: {
-    title: `${SITE_NAME} — ${SITE_TAGLINE}`,
+    title: `${SITE_NAME} | ${SITE_TAGLINE}`,
     description:
       'Ask what changed and get a cited answer from Slack, meetings, docs, email, code, CRM, and internal tools.',
     type: 'website',
@@ -60,13 +60,13 @@ export const metadata: Metadata = {
         url: '/opengraph-image',
         width: 1200,
         height: 630,
-        alt: 'The Timeline — the work becomes the record',
+        alt: 'The Timeline, the work becomes the record',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: `${SITE_NAME} — ${SITE_TAGLINE}`,
+    title: `${SITE_NAME} | ${SITE_TAGLINE}`,
     description:
       'Ask what changed and get a cited answer from Slack, meetings, docs, email, code, CRM, and internal tools.',
     images: ['/twitter-image'],
@@ -103,7 +103,7 @@ export default async function LandingPage() {
   const isSignedIn = Boolean(session?.user);
 
   return (
-    <div className="min-h-screen bg-bg text-fg">
+    <div className="min-h-dvh bg-bg text-fg">
       <StructuredData />
       <div className="relative z-[60]">
         <LandingSkipLink />
@@ -111,6 +111,7 @@ export default async function LandingPage() {
       <TopNav isSignedIn={isSignedIn} />
       <main id="main" tabIndex={-1}>
         <Hero isSignedIn={isSignedIn} />
+        <AudienceProof />
         <Problem />
         <Solution />
         <Surfaces />
@@ -160,7 +161,7 @@ function StructuredData() {
         '@type': 'WebPage',
         '@id': pageId,
         url: siteUrl,
-        name: `${SITE_NAME} — ${SITE_TAGLINE}`,
+        name: `${SITE_NAME} | ${SITE_TAGLINE}`,
         description: SITE_DESCRIPTION,
         image: ogImageUrl,
         isPartOf: { '@id': siteId },
@@ -238,7 +239,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'What models power the agent?',
-    a: 'Chat, embeddings, and transcription run through OpenRouter via a single inference abstraction (llm.chat, llm.embed, llm.transcribe). Chat models are swappable per task. The embedding model is pinned to text-embedding-3-small at 1536 dimensions — changing it invalidates the index, so it only changes via a documented re-embed procedure.',
+    a: 'Chat, embeddings, and transcription run through OpenRouter via a single inference abstraction (llm.chat, llm.embed, llm.transcribe). Chat models are swappable per task. The embedding model is pinned to text-embedding-3-small at 1536 dimensions. Changing it invalidates the index, so it only changes via a documented re-embed procedure.',
   },
   {
     q: 'Where does my data live?',
@@ -246,7 +247,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'How are answers cited?',
-    a: 'A single raw event ("Met with John from Apple about licensing") produces multiple facts — Tim met John, the topic was licensing, the date was today — each linked back to the source event. When the agent answers a question, it surfaces inline citation chips that resolve to the raw voice memo, email, message, or document version, with the author, timestamp, and source attached. No black-box summaries.',
+    a: 'A single raw event ("Met with Priya from Northline about the launch") produces multiple facts: Tim met Priya, they discussed the launch, and each fact links back to the source event. When the agent answers a question, it surfaces inline citation chips that resolve to the raw voice memo, email, message, or document version, with the author, timestamp, and source attached. No black-box summaries.',
   },
   {
     q: 'How does privacy work inside a team?',
@@ -254,7 +255,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'Can I export my team data?',
-    a: 'Yes — full team data export is treated as a trust requirement, not a feature flag. Raw events are immutable and append-only, which makes export deterministic. The roadmap places portability ahead of growth-side features.',
+    a: 'Yes. Full team data export is treated as a trust requirement, not a feature flag. Raw events are immutable and append-only, which makes export deterministic. The roadmap places portability ahead of growth-side features.',
   },
   {
     q: 'Is The Timeline end-to-end encrypted?',
@@ -304,7 +305,7 @@ function Section({
   contentClassName?: string;
 }) {
   return (
-    <section id={id} className={cn('border-t border-border px-6 py-20 sm:py-28', className)}>
+    <section id={id} className={cn('border-t border-border px-6 py-16 sm:py-24', className)}>
       <div className={cn('mx-auto max-w-6xl', contentClassName)}>{children}</div>
     </section>
   );
@@ -318,26 +319,30 @@ function TopNav({ isSignedIn }: { isSignedIn: boolean }) {
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-bg/80 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
-        <Link href="/" aria-label="The Timeline — home" className="text-fg">
+        <Link
+          href="/"
+          aria-label="The Timeline home"
+          className="rounded-sm text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
           <Wordmark compact />
         </Link>
         <nav className="flex items-center gap-1 text-sm">
           <Link
             href="/help"
-            className="hidden px-3 py-2 text-fg-muted transition-colors hover:text-fg sm:inline"
+            className="hidden rounded-sm px-3 py-2 text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:inline"
           >
             Docs
           </Link>
           <Link
             href={CONTACT_HREF}
-            className="hidden px-3 py-2 text-fg-muted transition-colors hover:text-fg md:inline"
+            className="hidden rounded-sm px-3 py-2 text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:inline"
           >
             Contact
           </Link>
           {isSignedIn ? null : (
             <Link
               href="/sign-in"
-              className="whitespace-nowrap px-3 py-2 text-fg-muted transition-colors hover:text-fg"
+              className="whitespace-nowrap rounded-sm px-3 py-2 text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               Sign in
             </Link>
@@ -345,7 +350,14 @@ function TopNav({ isSignedIn }: { isSignedIn: boolean }) {
           <ThemeToggle className="text-fg-muted hover:text-fg" />
           <Button asChild size="sm">
             <Link href={isSignedIn ? '/app' : '/sign-up'}>
-              {isSignedIn ? 'Go to dashboard' : 'Create team'}
+              {isSignedIn ? (
+                'Go to dashboard'
+              ) : (
+                <>
+                  <span className="sm:hidden">Try</span>
+                  <span className="hidden sm:inline">Try one project</span>
+                </>
+              )}
             </Link>
           </Button>
         </nav>
@@ -356,26 +368,23 @@ function TopNav({ isSignedIn }: { isSignedIn: boolean }) {
 
 function Hero({ isSignedIn }: { isSignedIn: boolean }) {
   return (
-    <section className="px-6 pb-24 pt-16 sm:pt-24">
+    <section className="px-6 pb-16 pt-12 sm:pb-20 sm:pt-20">
       <div className="mx-auto max-w-6xl">
-        <Mono>THE TIMELINE · CITED WORK ANSWERS · AUTOMATIC UPDATES</Mono>
-        <div className="mt-8 grid gap-12 lg:grid-cols-[1.1fr_1fr] lg:items-center">
+        <Mono>THE TIMELINE / CITED WORK ANSWERS</Mono>
+        <div className="mt-7 grid gap-10 lg:grid-cols-[1.05fr_1fr] lg:items-center">
           <div>
-            <h1 className="text-4xl font-semibold leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl">
-              Ask what changed.
-              <br />
-              Get the update
-              <br />
-              with receipts.
+            <h1 className="text-[2rem] font-semibold leading-[1.02] tracking-tight text-balance sm:text-5xl lg:text-6xl">
+              <span className="block">Ask what changed.</span>
+              <span className="block">Get cited answers.</span>
             </h1>
-            <p className="mt-8 max-w-prose text-lg leading-relaxed text-fg-muted">
-              Timeline captures work from Slack, meetings, docs, email, code, CRM, and internal
-              tools, then writes cited updates, handoffs, digests, and answers automatically.
+            <p className="mt-6 max-w-[52ch] text-lg leading-relaxed text-fg-muted text-pretty">
+              Timeline turns work from Slack, meetings, docs, email, code, and CRM into cited
+              updates, handoffs, digests, and answers.
             </p>
-            <div className="mt-10 flex flex-wrap items-center gap-3">
+            <div className="mt-8 flex flex-wrap items-center gap-3">
               <Button asChild size="lg">
                 <Link href={isSignedIn ? '/app' : '/sign-up'}>
-                  {isSignedIn ? 'Go to dashboard →' : 'Try on one project →'}
+                  {isSignedIn ? 'Go to dashboard →' : 'Try one project →'}
                 </Link>
               </Button>
               <Button asChild size="lg" variant="outline">
@@ -384,22 +393,33 @@ function Hero({ isSignedIn }: { isSignedIn: boolean }) {
               {isSignedIn ? null : (
                 <Link
                   href="/sign-in"
-                  className="px-3 py-2 text-sm text-fg-muted underline-offset-4 hover:text-fg hover:underline"
+                  className="rounded-sm px-3 py-2 text-sm text-fg-muted underline-offset-4 hover:text-fg hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
                   Sign in
                 </Link>
               )}
             </div>
-            <p className="mt-10 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-              CAPTURE ONCE · ANSWER OFTEN · CITE EVERYTHING
-            </p>
           </div>
+          <div className="hidden lg:block">
+            <HeroMock />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AudienceProof() {
+  return (
+    <div className="border-t border-border px-6 pb-14 pt-10 sm:pb-16">
+      <div className="mx-auto max-w-6xl">
+        <div className="mb-10 lg:hidden">
           <HeroMock />
         </div>
         <AudienceStrip />
         <WorkSurfaceStrip />
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -424,7 +444,7 @@ const AUDIENCES = [
 
 function AudienceStrip() {
   return (
-    <div className="mt-14 grid gap-px overflow-hidden border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid gap-px overflow-hidden border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
       {AUDIENCES.map((item) => (
         <div key={item.label} className="bg-bg p-4 sm:p-5">
           <div className="font-mono text-[11px] uppercase tracking-[0.16em] text-signal">
@@ -439,7 +459,7 @@ function AudienceStrip() {
 
 function WorkSurfaceStrip() {
   return (
-    <div className="mt-14 border-y border-border py-3">
+    <div className="mt-8 border-y border-border py-3">
       <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
         <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-dim">
           Work surfaces
@@ -462,31 +482,31 @@ function HeroMock() {
   return (
     <div className="border border-border bg-surface" aria-hidden>
       <div className="border-b border-border bg-surface-2 px-4 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-muted">
-        /ASK · ACME LAUNCH · LAST 7 DAYS
+        /ASK / NORTHLINE LAUNCH / LAST 7 DAYS
       </div>
       <div className="border-b border-border bg-bg p-4">
         <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">YOU</div>
         <p className="mt-1 text-base leading-snug text-fg">
-          What changed with Acme, and what do we owe them next?
+          What changed with Northline, and what do we owe them next?
         </p>
       </div>
       <ol className="divide-y divide-border">
         <li className="grid grid-cols-[88px_1fr] gap-4 px-4 py-3 font-mono text-xs">
-          <span className="text-fg-dim">14:02 · MEET</span>
+          <span className="text-fg-dim">14:02 / MEET</span>
           <span className="font-sans text-sm text-fg">
-            Acme asked for SSO before launch; Priya agreed to confirm timeline by Friday.
+            Northline asked for SSO before launch; Priya agreed to confirm timing by Friday.
           </span>
         </li>
         <li className="grid grid-cols-[88px_1fr] gap-4 px-4 py-3 font-mono text-xs">
-          <span className="text-fg-dim">11:47 · SLACK</span>
+          <span className="text-fg-dim">11:47 / SLACK</span>
           <span className="font-sans text-sm text-fg">
             Design approved the onboarding copy; implementation unblocked.
           </span>
         </li>
         <li className="grid grid-cols-[88px_1fr] gap-4 px-4 py-3 font-mono text-xs">
-          <span className="text-fg-dim">09:15 · DOC</span>
+          <span className="text-fg-dim">09:15 / DOC</span>
           <span className="font-sans text-sm text-fg">
-            <em>Acme launch checklist</em> updated with migration owner and rollout window.
+            <em>Northline launch checklist</em> updated with migration owner and rollout window.
           </span>
         </li>
       </ol>
@@ -497,7 +517,7 @@ function HeroMock() {
         <p className="mt-2 text-sm leading-relaxed text-fg">
           SSO became the launch blocker <CitationChipStatic id="ev:1923" />. Onboarding copy was
           approved <CitationChipStatic id="ev:1924" />. Priya owns the migration checklist and owes
-          Acme a timeline by Friday <CitationChipStatic id="doc:acme-checklist" />.
+          Northline a timeline by Friday <CitationChipStatic id="doc:northline-checklist" />.
         </p>
       </div>
     </div>
@@ -507,8 +527,7 @@ function HeroMock() {
 function Problem() {
   return (
     <Section id="problem">
-      <Mono className="text-fg-muted">PROBLEM · DUPLICATE COMMUNICATION WORK</Mono>
-      <h2 className="mt-6 max-w-3xl text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
+      <h2 className="max-w-3xl text-3xl font-semibold leading-tight tracking-tight text-balance sm:text-4xl">
         Teams do the work, then separately report that the work happened.
       </h2>
 
@@ -536,8 +555,8 @@ function Problem() {
       <p className="mt-10 max-w-prose text-base leading-[1.65] text-fg-muted">
         The result is predictable. CRMs, trackers, and wikis drift because they depend on people
         re-entering reality after the fact. Half the team&apos;s decisions live in threads no one
-        can find. When someone asks <em>&ldquo;what changed with Acme?&rdquo;</em> the honest answer
-        is <em>&ldquo;let me check with three people.&rdquo;</em>
+        can find. When someone asks <em>&ldquo;what changed with Northline?&rdquo;</em> the honest
+        answer is <em>&ldquo;let me check with three people.&rdquo;</em>
       </p>
 
       <blockquote className="mt-10 max-w-2xl border-l-2 border-signal pl-5 text-lg italic leading-snug text-fg">
@@ -579,12 +598,14 @@ function BeforeAfterPanel({
 function Solution() {
   return (
     <Section id="solution">
-      <IndexStrip>CONCEPTS · CAPTURE → EVIDENCE → OPERATIONAL MEMORY</IndexStrip>
+      <h2 className="max-w-3xl text-3xl font-semibold leading-tight tracking-tight text-balance sm:text-4xl">
+        Capture once. Build durable memory.
+      </h2>
       <ConceptDiagram />
 
       <div className="mt-10 max-w-3xl border-l-2 border-signal pl-5">
-        <Mono className="text-signal">THE PAYOFF</Mono>
-        <p className="mt-4 text-lg leading-snug text-fg">
+        <p className="text-lg font-medium leading-snug text-fg">The payoff</p>
+        <p className="mt-3 text-lg leading-snug text-fg">
           Start with one real project: connect the channels and calls, let Timeline capture a week
           of work, then ask for the update. The answer becomes the entry point to project and client
           state: current, queryable, cited, and approval-backed.
@@ -610,19 +631,19 @@ const INPUTS = [
 const WORKSPACE_OUTPUTS = [
   {
     label: 'EVENT HISTORY',
-    detail: 'Who did what · when · source evidence',
+    detail: 'Who did what / when / source evidence',
     icon: '▤',
     delay: 3.0,
   },
   {
     label: 'UPDATES',
-    detail: 'Stakeholder-ready answers · cited',
+    detail: 'Stakeholder-ready answers / cited',
     icon: '⌬',
     delay: 3.45,
   },
   {
     label: 'DIGESTS',
-    detail: 'What changed · what needs attention',
+    detail: 'What changed / what needs attention',
     icon: '◷',
     delay: 3.9,
   },
@@ -634,7 +655,7 @@ const WORKSPACE_OUTPUTS = [
   },
   {
     label: 'APPROVAL-BACKED STATE',
-    detail: 'Objects · tasks · commitments · decisions',
+    detail: 'Objects / tasks / commitments / decisions',
     icon: '☑',
     delay: 4.8,
   },
@@ -643,7 +664,7 @@ const WORKSPACE_OUTPUTS = [
 function ConceptDiagram() {
   return (
     <div aria-hidden className="cdg-root mt-10 border border-border bg-bg">
-      {/* Top row: inputs · pipeline · workspace */}
+      {/* Top row: inputs, pipeline, workspace */}
       <div className="relative grid gap-px bg-border sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)]">
         {/* INPUTS */}
         <div className="relative z-[1] bg-bg p-6 sm:p-7">
@@ -670,7 +691,7 @@ function ConceptDiagram() {
         {/* PIPELINE */}
         <div className="relative z-[1] flex items-center justify-center bg-bg p-6 sm:p-7">
           <div className="inline-flex flex-col items-center gap-3 border border-border bg-surface px-6 py-5">
-            <Mono className="text-signal">EXTRACT · AGENT</Mono>
+            <Mono className="text-signal">EXTRACT / AGENT</Mono>
             <div className="font-mono text-base text-fg-muted">
               <span className="cdg-dot" style={{ animationDelay: '0s' }}>
                 ◇
@@ -683,7 +704,7 @@ function ConceptDiagram() {
               </span>
             </div>
             <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-dim">
-              llm.chat · llm.embed · llm.transcribe
+              llm.chat / llm.embed / llm.transcribe
             </span>
           </div>
         </div>
@@ -708,7 +729,7 @@ function ConceptDiagram() {
           </div>
         </div>
 
-        {/* Sweep line — sits behind content, crosses the full top row */}
+        {/* Sweep line sits behind content and crosses the full top row. */}
         <span className="cdg-sweep" />
       </div>
 
@@ -818,44 +839,54 @@ const CDG_STYLES = `
 function Surfaces() {
   return (
     <Section id="surfaces">
-      <IndexStrip>SURFACES · WORK GRAPH + EXTENSIBILITY</IndexStrip>
-      <div className="mt-10 grid gap-px overflow-hidden border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
+      <h2 className="max-w-3xl text-3xl font-semibold leading-tight tracking-tight text-balance sm:text-4xl">
+        Capture work where it happens.
+      </h2>
+      <div className="mt-10 grid gap-px overflow-hidden border border-border bg-border sm:grid-cols-2 lg:grid-cols-12">
         <SurfaceTile
+          className="lg:col-span-3"
           label="TELEGRAM"
           icon={Send}
           body="Voice memos, text, files, team groups, and /ask all land in the same cited history."
         />
         <SurfaceTile
+          className="lg:col-span-3"
           label="SLACK"
           icon={MessageCircle}
           body="DMs, bound channels, files, slash commands, and thread replies become searchable memory."
         />
         <SurfaceTile
+          className="bg-surface lg:col-span-6"
           label="MEET / ZOOM / TEAMS"
           icon={Video}
           body="Meeting bots join calls, transcribe discussion, and extract decisions, tasks, and summaries."
         />
         <SurfaceTile
+          className="lg:col-span-4"
           label="EMAIL / CALENDAR"
           icon={Mail}
           body="Forwarded mail, CCs, BCCs, scheduled work, and time-aware context sit beside chat."
         />
         <SurfaceTile
+          className="bg-surface-2/50 lg:col-span-5"
           label="NATIVE INTEGRATIONS"
           icon={GitPullRequest}
           body="GitHub, Linear, Drive, Monday.com, Slack workspace history, and Sentry sync into cited events."
         />
         <SurfaceTile
+          className="lg:col-span-3"
           label="WEB APP"
           icon={FileText}
           body="Typed notes, audio uploads, drag-drop files, approvals, and cited agent chat."
         />
         <SurfaceTile
+          className="lg:col-span-6"
           label="TEAM DRIVE"
           icon={Briefcase}
           body="Versioned folders keep uploads, edits, and document history queryable with source links."
         />
         <SurfaceTile
+          className="bg-signal-soft lg:col-span-6"
           label="MCP + INTEGRATIONS"
           icon={Wrench}
           body="First-party connectors and MCP servers extend Timeline into SaaS and internal systems."
@@ -869,13 +900,15 @@ function SurfaceTile({
   label,
   body,
   icon: Icon,
+  className,
 }: {
   label: string;
   body: string;
   icon: typeof Send;
+  className?: string;
 }) {
   return (
-    <div className="bg-bg p-5 sm:p-6">
+    <div className={cn('bg-bg p-5 sm:p-6', className)}>
       <div className="flex items-center gap-3">
         <span className="grid size-8 shrink-0 place-items-center border border-border bg-surface text-fg-muted">
           <Icon className="size-4" aria-hidden="true" />
@@ -890,27 +923,23 @@ function SurfaceTile({
 function Integrations() {
   return (
     <Section id="integrations">
-      <IndexStrip>INTEGRATIONS · KEEP YOUR CURRENT TOOLS</IndexStrip>
-      <div className="mt-10">
+      <div>
         <h2 className="max-w-3xl text-2xl font-medium tracking-tight text-fg sm:text-3xl">
           Keep the stack. Let Timeline collect the evidence around it.
         </h2>
         <p className="mt-4 max-w-3xl text-base leading-[1.6] text-fg-muted">
-          GitHub, Linear, Google Drive, Monday.com, Slack workspace history, and Sentry are native
-          integrations: PRs, issues, docs, board updates, channel decisions, errors, and releases
-          become cited events. Connect chat, meetings, docs, code, support, CRM, and internal tools.
-          Timeline turns the work already happening there into cited updates, digests, handoffs, and
-          answers. Long-tail systems plug in as{' '}
+          Native integrations bring GitHub, Linear, Google Drive, Monday.com, Slack workspace
+          history, and Sentry into the same cited event history. Connect chat, meetings, docs, code,
+          support, CRM, and internal tools. Long-tail systems plug in as{' '}
           <a
             href="https://modelcontextprotocol.io"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-fg underline-offset-4 hover:underline"
+            className="rounded-sm text-fg underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             MCP servers
           </a>
-          ; those systems become durable timeline events only when paired with native sync or custom
-          ingestion.
+          . Native sync or custom ingestion makes their results durable.
         </p>
         <IntegrationCloud />
       </div>
@@ -921,7 +950,7 @@ function Integrations() {
 function Receipts() {
   return (
     <Section id="receipts" className="bg-surface">
-      <IndexStrip>EVIDENCE · EVERY CLAIM IS CITED</IndexStrip>
+      <IndexStrip>EVIDENCE / EVERY CLAIM IS CITED</IndexStrip>
       <div className="mt-10 grid gap-10 lg:grid-cols-2">
         <div>
           <h2 className="text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
@@ -933,18 +962,18 @@ function Receipts() {
             shows exactly what was said.
           </p>
           <blockquote className="mt-8 max-w-prose border-l-2 border-signal pl-5 text-lg italic leading-snug text-fg">
-            Re-run the extraction with a better model tomorrow — the raw event never changes, the
+            Re-run the extraction with a better model tomorrow. The raw event never changes, and the
             citations always resolve.
           </blockquote>
         </div>
         <div className="border border-border bg-bg" aria-hidden>
           <div className="border-b border-border bg-surface-2 px-4 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-muted">
-            /ASK · TEAM acme
+            /ASK / TEAM northline
           </div>
           <div className="border-b border-border p-4">
             <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">YOU</div>
             <p className="mt-1 text-sm text-fg">
-              What changed with Acme, and what did we promise next?
+              What changed with Northline, and what did we promise next?
             </p>
           </div>
           <div className="p-4">
@@ -955,11 +984,11 @@ function Receipts() {
               SSO became the launch blocker in yesterday&apos;s meeting{' '}
               <CitationChipStatic id="ev:1923" />. Design approved onboarding copy in Slack{' '}
               <CitationChipStatic id="ev:1924" />. Priya owns the migration checklist update{' '}
-              <CitationChipStatic id="doc:acme-checklist" />.
+              <CitationChipStatic id="doc:northline-checklist" />.
             </p>
           </div>
           <div className="border-t border-border bg-surface-2/60 p-4 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-muted">
-            INSPECTOR · ev:1923 · MEETING · ACME · 14:02 · 0:38
+            INSPECTOR / ev:1923 / MEETING / NORTHLINE / 14:02 / 0:38
           </div>
         </div>
       </div>
@@ -970,7 +999,9 @@ function Receipts() {
 function Principles() {
   return (
     <Section id="principles">
-      <IndexStrip>PRINCIPLES · BUILT FOR THE WORK</IndexStrip>
+      <h2 className="max-w-3xl text-3xl font-semibold leading-tight tracking-tight text-balance sm:text-4xl">
+        Trust is part of the system.
+      </h2>
       <dl className="mt-10 divide-y divide-border border-y border-border">
         <PrincipleRow
           term="Raw events are immutable."
@@ -986,7 +1017,7 @@ function Principles() {
         />
         <PrincipleRow
           term="One inference layer."
-          desc="Chat, embeddings, transcription — all through a single provider abstraction. Embedding model is pinned for index integrity."
+          desc="Chat, embeddings, and transcription all use one provider abstraction. The embedding model is pinned for index integrity."
         />
       </dl>
     </Section>
@@ -1005,11 +1036,13 @@ function PrincipleRow({ term, desc }: { term: string; desc: string }) {
 function Faq() {
   return (
     <Section id="faq">
-      <IndexStrip>FAQ</IndexStrip>
+      <h2 className="max-w-3xl text-3xl font-semibold leading-tight tracking-tight text-balance sm:text-4xl">
+        Questions, answered.
+      </h2>
       <div className="mt-10 divide-y divide-border border-y border-border">
         {FAQ_ITEMS.map((item) => (
           <details key={item.q} className="group">
-            <summary className="flex cursor-pointer items-center justify-between gap-6 py-5 font-mono text-sm uppercase tracking-[0.1em] text-fg transition-colors hover:text-signal">
+            <summary className="flex cursor-pointer items-center justify-between gap-6 rounded-sm py-5 text-base font-medium text-fg transition-colors hover:text-signal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
               <span>{item.q}</span>
               <span
                 aria-hidden
@@ -1042,15 +1075,15 @@ function FinalCTA({ isSignedIn }: { isSignedIn: boolean }) {
           <div className="mt-10 flex flex-wrap items-center gap-3">
             <Button asChild size="lg">
               <Link href={isSignedIn ? '/app' : '/sign-up'}>
-                {isSignedIn ? 'Go to dashboard →' : 'Try on one project →'}
+                {isSignedIn ? 'Go to dashboard →' : 'Try one project →'}
               </Link>
             </Button>
             <Button asChild size="lg" variant="outline">
-              <a href={CONTACT_HREF}>Book a walkthrough</a>
+              <a href={CONTACT_HREF}>Contact</a>
             </Button>
           </div>
           <p className="mt-10 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-            CAPTURED · CITED · TEAM-SCOPED
+            CAPTURED / CITED / TEAM-SCOPED
           </p>
         </div>
 
@@ -1108,22 +1141,37 @@ function Footer({ isSignedIn }: { isSignedIn: boolean }) {
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
         <span className="inline-flex items-center gap-2 text-fg-dim">
           <Logo ariaHidden className="size-4" />
-          THE TIMELINE · v1 · 2026
+          THE TIMELINE
         </span>
         <nav className="flex flex-wrap items-center gap-5">
-          <Link href="/help" className="hover:text-fg">
+          <Link
+            href="/help"
+            className="rounded-sm hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
             Docs
           </Link>
-          <Link href="/terms" className="hover:text-fg">
+          <Link
+            href="/terms"
+            className="rounded-sm hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
             Terms
           </Link>
-          <Link href="/privacy" className="hover:text-fg">
+          <Link
+            href="/privacy"
+            className="rounded-sm hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
             Privacy
           </Link>
-          <Link href={CONTACT_HREF} className="hover:text-fg">
+          <Link
+            href={CONTACT_HREF}
+            className="rounded-sm hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
             Contact
           </Link>
-          <Link href={isSignedIn ? '/app' : '/sign-in'} className="hover:text-fg">
+          <Link
+            href={isSignedIn ? '/app' : '/sign-in'}
+            className="rounded-sm hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
             {isSignedIn ? 'Dashboard' : 'Sign in'}
           </Link>
         </nav>

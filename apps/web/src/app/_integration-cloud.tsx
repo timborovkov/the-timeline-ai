@@ -92,7 +92,7 @@ export function IntegrationCloud() {
         Need an internal tool? Connect any MCP-compatible server under{' '}
         <Link
           href="/app/team/mcp-servers"
-          className="underline-offset-4 hover:text-fg hover:underline"
+          className="rounded-sm underline-offset-4 hover:text-fg hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           team settings
         </Link>

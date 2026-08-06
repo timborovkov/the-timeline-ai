@@ -48,9 +48,7 @@ describe('Landing route states', () => {
     render(<LandingError error={new Error('offline')} reset={reset} />);
 
     expect(screen.getAllByRole('heading', { level: 1, name: 'Ask what changed.' })).toHaveLength(1);
-    expect(screen.getByRole('link', { name: 'The Timeline — home' }).getAttribute('href')).toBe(
-      '/',
-    );
+    expect(screen.getByRole('link', { name: 'The Timeline home' }).getAttribute('href')).toBe('/');
     const navigation = screen.getByRole('navigation', { name: 'Landing navigation' });
     expect(within(navigation).getByRole('link', { name: 'Docs' }).getAttribute('href')).toBe(
       '/help',

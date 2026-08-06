@@ -125,6 +125,8 @@ const suggestionExtractionSchema = z.object({
  * structured default without returning to the old 32k credit reservation.
  */
 const SUGGESTION_EXTRACTION_MAX_OUTPUT_TOKENS = 16_000;
+/** Hard cap for suggestion prompt input — far below the extraction model window. */
+export const SUGGESTION_PROMPT_MAX_INPUT_TOKENS = 24_000;
 
 type RawEventRow = typeof rawEvents.$inferSelect;
 
@@ -718,9 +720,6 @@ export async function processSuggestionJobForTests(
   }
 
   const env = (io.getEnv ?? getEnv)();
-  if (!env.OPENROUTER_API_KEY) {
-    throw new UnrecoverableError('suggestions: OPENROUTER_API_KEY not configured');
-  }
   const modelId = io.modelId ?? llm.TIMELINE_MODELS.extraction.id;
   const modelVersion = makeModelVersion(modelId);
   const effectiveIo: SuggestionWorkerIO = {
@@ -729,6 +728,9 @@ export async function processSuggestionJobForTests(
   };
 
   if ('scope' in data) {
+    if (!env.OPENROUTER_API_KEY) {
+      throw new UnrecoverableError('suggestions: OPENROUTER_API_KEY not configured');
+    }
     await processConversationReviewJob(deps, data, { ...effectiveIo, modelId }, modelVersion);
     return;
   }
@@ -739,6 +741,24 @@ export async function processSuggestionJobForTests(
   const row = rows[0];
   if (!row) throw new UnrecoverableError(`raw event ${rawEventId} not found`);
   if (row.teamId !== teamId) throw new UnrecoverableError(`raw event ${rawEventId} team mismatch`);
+  // Skip paths that never call the LLM before requiring OPENROUTER_API_KEY so
+  // integration / visibility / ingest-disabled jobs can settle without credentials.
+  if (row.source === 'integration') {
+    await stampSuggestionMetadata(deps.db, rawEventId, {
+      suggestions_skipped_at: new Date().toISOString(),
+      suggestions_skipped_reason: 'integration_structured_source',
+      suggestion_model_version: modelVersion,
+    });
+    return;
+  }
+  if (await ingestWebhookProposalsDisabled(deps.db, row)) {
+    await stampSuggestionMetadata(deps.db, rawEventId, {
+      suggestions_skipped_at: new Date().toISOString(),
+      suggestions_skipped_reason: 'ingest_webhook_proposals_disabled',
+      suggestion_model_version: modelVersion,
+    });
+    return;
+  }
   const identity = conversationReview.conversationIdentityForRawEvent(row);
   if (identity) {
     if (row.visibility !== 'team') {
@@ -749,16 +769,22 @@ export async function processSuggestionJobForTests(
       });
       return;
     }
+    if (!env.OPENROUTER_API_KEY) {
+      throw new UnrecoverableError('suggestions: OPENROUTER_API_KEY not configured');
+    }
     await scheduleConversationReview(deps, row, identity, effectiveIo);
     return;
   }
-  if (await ingestWebhookProposalsDisabled(deps.db, row)) {
+  if (row.visibility !== 'team') {
     await stampSuggestionMetadata(deps.db, rawEventId, {
       suggestions_skipped_at: new Date().toISOString(),
-      suggestions_skipped_reason: 'ingest_webhook_proposals_disabled',
+      suggestions_skipped_reason: `visibility=${row.visibility}`,
       suggestion_model_version: modelVersion,
     });
     return;
+  }
+  if (!env.OPENROUTER_API_KEY) {
+    throw new UnrecoverableError('suggestions: OPENROUTER_API_KEY not configured');
   }
   await runSuggestionExtraction(deps, {
     anchor: row,
@@ -2399,6 +2425,14 @@ async function runSuggestionExtraction(
     });
     return 0;
   }
+  if (row.source === 'integration') {
+    await stampSuggestionMetadata(deps.db, rawEventId, {
+      suggestions_skipped_at: new Date().toISOString(),
+      suggestions_skipped_reason: 'integration_structured_source',
+      suggestion_model_version: modelVersion,
+    });
+    return 0;
+  }
   if (!args.conversation && meta.suggestion_model_version === modelVersion) return 0;
 
   const hasSettledExtraction = extractionSettled(meta);
@@ -2472,7 +2506,7 @@ async function runSuggestionExtraction(
       ),
     )
     .orderBy(desc(objectNotes.updatedAt))
-    .limit(40);
+    .limit(15);
 
   const memberRows = await deps.db
     .select({ userId: teamMembers.userId, name: users.name, email: users.email })
@@ -2513,7 +2547,7 @@ async function runSuggestionExtraction(
 
   const calendarRows = await scope.calendar.listCalendarEvents({
     ...calendarContextRange(row.occurredAt),
-    limit: 40,
+    limit: 20,
   });
   const pendingCalendarRows = await deps.db
     .select({
@@ -2540,8 +2574,8 @@ async function runSuggestionExtraction(
   const boardDetails = (
     await Promise.all(
       (await scope.boards.listBoards())
-        .slice(0, 8)
-        .map((board) => scope.boards.getBoard(board.id, { itemLimit: 20 })),
+        .slice(0, 4)
+        .map((board) => scope.boards.getBoard(board.id, { itemLimit: 10 })),
     )
   ).filter((board) => board !== null);
 
@@ -2556,8 +2590,8 @@ async function runSuggestionExtraction(
     updatedAt: entity.updatedAt,
   }));
 
-  const prompt = llm.truncateTextToTokenBudget(
-    buildPrompt({
+  const prompt = assembleSuggestionPrompt(
+    buildPromptParts({
       text,
       sourceEventId: row.id,
       occurredAt: row.occurredAt,
@@ -2573,7 +2607,7 @@ async function runSuggestionExtraction(
       })),
       projects: matchingEntityRows
         .filter((entity) => entity.type === 'project')
-        .slice(0, 100)
+        .slice(0, 40)
         .map((project) => ({
           id: project.id,
           name: project.name,
@@ -2625,7 +2659,7 @@ async function runSuggestionExtraction(
           .filter((lane) => !lane.archivedAt)
           .slice(0, 10)
           .map((lane) => ({ id: lane.id, name: lane.name })),
-        items: board.items.slice(0, 20).map((item) => ({
+        items: board.items.slice(0, 10).map((item) => ({
           id: item.id,
           objectId: item.entityId,
           objectType: item.object.type,
@@ -2647,7 +2681,7 @@ async function runSuggestionExtraction(
       conversationWindow: args.conversation?.window ?? null,
       linkedContext: args.conversation?.linkedContext ?? [],
     }),
-    llm.inputTokenBudgetFor(llm.TIMELINE_MODELS.extraction),
+    SUGGESTION_PROMPT_MAX_INPUT_TOKENS,
   );
 
   const chatStructured = io.chatStructured ?? llm.chatStructured;
@@ -3403,7 +3437,47 @@ function recordFromUnknown(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function buildPrompt(args: {
+interface SuggestionPromptParts {
+  workspace: string;
+  evidence: string;
+  anchor: string;
+}
+
+/**
+ * Prefer dropping fat workspace dump over evidence/anchor. Anchor is reserved
+ * first, then evidence, then workspace fills the remaining token budget.
+ */
+function assembleSuggestionPrompt(parts: SuggestionPromptParts, maxTokens: number): string {
+  const estimate = llm.estimateTextTokens;
+  const truncate = llm.truncateTextToTokenBudget;
+  const separatorTokens = estimate('\n\n');
+  let anchor = parts.anchor;
+  let evidence = parts.evidence;
+  let workspace = parts.workspace;
+
+  const anchorTokens = estimate(anchor);
+  if (anchorTokens + 2 * separatorTokens >= maxTokens) {
+    anchor = truncate(anchor, Math.max(1, maxTokens - 2 * separatorTokens));
+    return anchor;
+  }
+
+  const evidenceBudget = maxTokens - anchorTokens - 2 * separatorTokens;
+  if (estimate(evidence) > evidenceBudget) {
+    evidence = truncate(evidence, Math.max(1, evidenceBudget));
+  }
+
+  const evidenceTokens = estimate(evidence);
+  const workspaceBudget = maxTokens - anchorTokens - evidenceTokens - 2 * separatorTokens;
+  if (workspaceBudget <= 0) {
+    return [evidence, anchor].filter(Boolean).join('\n\n');
+  }
+  if (estimate(workspace) > workspaceBudget) {
+    workspace = truncate(workspace, workspaceBudget);
+  }
+  return [workspace, evidence, anchor].filter(Boolean).join('\n\n');
+}
+
+function buildPromptParts(args: {
   text: string;
   sourceEventId: string;
   occurredAt: Date;
@@ -3475,8 +3549,8 @@ function buildPrompt(args: {
   authorUserId: string | null;
   conversationWindow: conversationReview.ConversationEvidenceEvent[] | null;
   linkedContext: conversationReview.ConversationLinkedContextEvent[];
-}): string {
-  return [
+}): SuggestionPromptParts {
+  const workspace = [
     `Workspace timezone: ${args.workspaceTime.timezone}`,
     `Current workspace date: ${args.workspaceTime.today}`,
     `Source event occurred at: ${args.occurredAt.toISOString()}`,
@@ -3508,7 +3582,7 @@ function buildPrompt(args: {
       (note) =>
         `- note:${note.id} object:${note.entityId} ${note.entityType} "${note.entityName}" ${truncate(
           note.body,
-          500,
+          220,
         )}`,
     ),
     '',
@@ -3558,7 +3632,9 @@ function buildPrompt(args: {
     '',
     '# Existing facts from this event',
     ...args.facts.map((f) => `- ${f}`),
-    '',
+  ].join('\n');
+
+  const evidence = [
     args.conversationWindow ? '# Conversation evidence window' : '# Recent context',
     ...(args.conversationWindow
       ? args.conversationWindow.map(
@@ -3569,7 +3645,7 @@ function buildPrompt(args: {
               r.authorUserId,
               args.members,
               r.id,
-            )}] ${fenceExternalContent(truncate(r.contentText, 700), {
+            )}] ${fenceExternalContent(truncate(r.contentText, 280), {
               source: 'raw-event-conversation-window',
               eventId: r.id,
             })}`,
@@ -3582,7 +3658,7 @@ function buildPrompt(args: {
             r.authorUserId,
             args.members,
             r.id,
-          )}] ${fenceExternalContent(truncate(r.text ?? '', 500), {
+          )}] ${fenceExternalContent(truncate(r.text ?? '', 220), {
             source: 'raw-event-context',
             eventId: r.id,
           })}`;
@@ -3602,14 +3678,16 @@ function buildPrompt(args: {
                 r.id,
               )} objects=${r.linkedObjects
                 .map((object) => `${object.type}:${object.name}`)
-                .join(', ')}] ${fenceExternalContent(truncate(r.contentText, 500), {
+                .join(', ')}] ${fenceExternalContent(truncate(r.contentText, 220), {
                 source: `raw-event:${r.source}`,
                 eventId: r.id,
               })}`,
           ),
         ]
       : []),
-    '',
+  ].join('\n');
+
+  const anchor = [
     args.conversationWindow ? '# Anchor raw event' : '# Current raw event',
     `[${sourceContextForPrompt(
       args.source,
@@ -3622,6 +3700,8 @@ function buildPrompt(args: {
       eventId: args.sourceEventId,
     })}`,
   ].join('\n');
+
+  return { workspace, evidence, anchor };
 }
 
 export function startSuggestionWorker(deps: SuggestionWorkerDeps): Worker<queue.SuggestionJobData> {

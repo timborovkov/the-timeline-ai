@@ -78,6 +78,17 @@ export interface IntegrationEvent {
    * still has a stable source payload ref.
    */
   extra?: Record<string, unknown>;
+  /**
+   * A durable Monday update/reply deletion target. The writer persists it
+   * before writing the event batch, hides matching immutable source rows, and
+   * applies it to future late/stale conversation writes in this integration.
+   */
+  sourceTombstone?: {
+    kind: 'monday_conversation';
+    updateId: string;
+    replyId?: string | null;
+    reason: string;
+  };
   /** Phase 11: optional workspace object mapping. */
   objectMap?: ObjectMapping;
 }
@@ -108,6 +119,22 @@ export interface SyncContext {
     cursor: unknown,
     status?: { lastStatus?: string; lastError?: string | null },
   ): Promise<void>;
+  /**
+   * Record a cursor and the exact continuation(s) needed to resume it for the
+   * worker's final durable checkpoint transaction. Providers with
+   * expiring/provider-page cursors must use this rather than saveCursor()
+   * when a continuation is required.
+   *
+   * It remains optional only for isolated provider tests and non-worker
+   * callers that do not persist cursors. The integration worker always
+   * supplies it.
+   */
+  saveCursorWithContinuations?(
+    resourceType: string,
+    cursor: unknown,
+    continuations: SyncContinuation[],
+    status?: { lastStatus?: string; lastError?: string | null },
+  ): Promise<void>;
   /** Load the last persisted cursor for a resource. Returns `{}` when unset. */
   loadCursor(resourceType: string): Promise<unknown>;
   /**
@@ -135,10 +162,20 @@ export interface SyncPartialFailure {
   error: string;
 }
 
+export interface SyncContinuation {
+  resourceType: string;
+  externalId: string;
+  surface?: string;
+  /** Earliest safe time to resume a durable provider checkpoint. */
+  retryAt?: Date;
+  /** Bounded worker-local retry count for an integration advisory-lock miss. */
+  continuationAttempt?: number;
+}
+
 export interface SyncResult {
   partialFailures?: SyncPartialFailure[];
   /** Provider resources that must be resumed promptly before their page cursor expires. */
-  continuations?: { resourceType: string; externalId: string }[];
+  continuations?: SyncContinuation[];
 }
 
 export interface SyncTarget {
@@ -279,6 +316,98 @@ export class ProviderRateLimitError extends Error {
   }
 }
 
+interface SyncContinuationCarrier {
+  syncContinuation?: SyncContinuation;
+  syncContinuations?: SyncContinuation[];
+}
+
+function validSyncContinuation(value: unknown): SyncContinuation | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const continuation = value as Partial<SyncContinuation>;
+  if (
+    typeof continuation.resourceType !== 'string' ||
+    continuation.resourceType.length === 0 ||
+    typeof continuation.externalId !== 'string' ||
+    continuation.externalId.length === 0
+  ) {
+    return null;
+  }
+  return {
+    resourceType: continuation.resourceType,
+    externalId: continuation.externalId,
+    ...(typeof continuation.surface === 'string' && continuation.surface.length > 0
+      ? { surface: continuation.surface }
+      : {}),
+    ...(continuation.retryAt instanceof Date ? { retryAt: continuation.retryAt } : {}),
+  };
+}
+
+function dedupeSyncContinuations(continuations: readonly SyncContinuation[]): SyncContinuation[] {
+  const byTarget = new Map<string, SyncContinuation>();
+  for (const continuation of continuations) {
+    const key = [
+      continuation.resourceType,
+      continuation.externalId,
+      continuation.surface ?? '',
+    ].join('\u0000');
+    if (!byTarget.has(key)) byTarget.set(key, continuation);
+  }
+  return [...byTarget.values()];
+}
+
+/**
+ * Keep a resource checkpoint attached to a provider error so the worker can
+ * resume exactly that resource once a provider pause expires.
+ */
+export function attachSyncContinuation<T extends Error>(
+  err: T,
+  continuation: SyncContinuation,
+): T & SyncContinuationCarrier {
+  const carried = syncContinuationsFromError(err);
+  return Object.assign(err, {
+    syncContinuation: continuation,
+    syncContinuations: dedupeSyncContinuations([...carried, continuation]),
+  });
+}
+
+/**
+ * Retain every already-checkpointed resource when a later provider call throws.
+ * The singular field remains for callers that can only resume one target.
+ */
+export function attachSyncContinuations<T extends Error>(
+  err: T,
+  continuations: readonly SyncContinuation[],
+): T & SyncContinuationCarrier {
+  const carried = syncContinuationsFromError(err);
+  const all = dedupeSyncContinuations([...continuations, ...carried]);
+  const singular =
+    validSyncContinuation((err as SyncContinuationCarrier).syncContinuation) ?? all.at(-1);
+  if (singular) {
+    return Object.assign(err, {
+      syncContinuation: singular,
+      syncContinuations: all,
+    });
+  }
+  return Object.assign(err, { syncContinuations: all });
+}
+
+export function syncContinuationsFromError(err: unknown): SyncContinuation[] {
+  if (typeof err !== 'object' || err === null) return [];
+  const carrier = err as SyncContinuationCarrier;
+  const plural = Array.isArray(carrier.syncContinuations)
+    ? carrier.syncContinuations
+        .map(validSyncContinuation)
+        .filter((value): value is SyncContinuation => value !== null)
+    : [];
+  const singular = validSyncContinuation(carrier.syncContinuation);
+  return dedupeSyncContinuations([...plural, ...(singular ? [singular] : [])]);
+}
+
+export function syncContinuationFromError(err: unknown): SyncContinuation | null {
+  if (typeof err !== 'object' || err === null) return null;
+  return validSyncContinuation((err as SyncContinuationCarrier).syncContinuation);
+}
+
 export function isProviderRateLimitError(err: unknown): err is ProviderRateLimitError {
   if (err instanceof ProviderRateLimitError) return true;
   if (typeof err !== 'object' || err === null) return false;
@@ -370,6 +499,8 @@ export interface WebhookNormalizeInput {
 export interface WebhookNormalizeResult {
   events: IntegrationEvent[];
   syncTasks: TargetedSyncTask[];
+  /** The provider fully handled this delivery and an empty task list is intentional. */
+  syncTaskDisposition?: 'handled';
   ignoredReason?: string;
 }
 
