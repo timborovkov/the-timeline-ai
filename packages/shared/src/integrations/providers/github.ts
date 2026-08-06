@@ -33,11 +33,13 @@ import { childLogger } from '#src/logger.js';
 //   - Recent commits on the default branch
 //   - Workflow runs (CI state)
 //
-// Idempotency for issue/PR/workflow/release is by lifecycle buckets, not
-// `updated_at`, so title/body edits and timestamp churn reuse the raw_event.
-// Webhook lifecycle transitions (opened/reopened/closed/…) append updated_at
-// so closed→reopened mints a fresh timeline event. Commits key by SHA; reviews
-// by submitted_at; comments stay content-hashed.
+// Idempotency for issue/PR is by lifecycle buckets, not `updated_at`, so
+// title/body edits and timestamp churn reuse the raw_event. Webhook
+// transitions that can repeat (reopened/closed/…) append updated_at;
+// `opened` stays lifecycle-only so the follow-up poll does not double-ingest.
+// Releases key by lifecycle + content digest; workflow runs by conclusion +
+// run_attempt. Commits key by SHA; reviews by submitted_at; comments stay
+// content-hashed.
 
 const log = childLogger('integrations:github');
 
@@ -738,6 +740,7 @@ interface GhRelease {
   prerelease: boolean;
   published_at: string | null;
   created_at: string;
+  updated_at?: string | null;
   author: { login: string } | null;
 }
 
@@ -762,6 +765,8 @@ interface GhWorkflowRun {
   workflow_id: number;
   html_url: string;
   run_number: number;
+  /** GitHub Actions attempt counter; increments on rerun. */
+  run_attempt: number;
   event: string;
   created_at: string;
   updated_at: string;
@@ -1113,9 +1118,9 @@ function githubIssueDedupKey(
   action?: string | null,
 ): string {
   const lifecycle = githubIssueLifecycle(issue.state);
-  // Transitions (especially closed→reopened) must mint a new raw_event. Same-state
-  // edits keep the lifecycle-only key so title/body churn coalesces.
-  if (action && GITHUB_ISSUE_TRANSITION_ACTIONS.has(action)) {
+  // `opened` stays lifecycle-only so webhook + first poll share one raw_event.
+  // Later transitions (especially closed→reopened) append updated_at.
+  if (action && action !== 'opened' && GITHUB_ISSUE_TRANSITION_ACTIONS.has(action)) {
     return `github:issue:${String(issue.id)}:${lifecycle}:${issue.updated_at}`;
   }
   return `github:issue:${String(issue.id)}:${lifecycle}`;
@@ -1126,10 +1131,25 @@ function githubPullRequestDedupKey(
   action?: string | null,
 ): string {
   const lifecycle = githubPullRequestLifecycle(pr);
-  if (action && GITHUB_PR_TRANSITION_ACTIONS.has(action)) {
+  if (action && action !== 'opened' && GITHUB_PR_TRANSITION_ACTIONS.has(action)) {
     return `github:pr:${String(pr.id)}:${lifecycle}:${pr.updated_at}`;
   }
   return `github:pr:${String(pr.id)}:${lifecycle}`;
+}
+
+function githubReleaseContentDigest(
+  release: Pick<GhRelease, 'name' | 'body' | 'tag_name'>,
+): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        tag_name: release.tag_name,
+        name: release.name ?? null,
+        body: release.body ?? null,
+      }),
+    )
+    .digest('hex')
+    .slice(0, 16);
 }
 
 const GITHUB_LIFECYCLE_CURSOR_CAP = 5_000;
@@ -1574,11 +1594,12 @@ function reviewCommentToEvent(
 }
 
 function releaseToEvent(repo: string, release: GhRelease): IntegrationEvent {
-  const ts = release.published_at ?? release.created_at;
+  const ts = release.updated_at ?? release.published_at ?? release.created_at;
   const lifecycle = githubReleaseLifecycle(release);
+  const contentDigest = githubReleaseContentDigest(release);
   const externalId = `${repo}#release:${release.tag_name}`;
   return {
-    dedupKey: `github:release:${String(release.id)}:${lifecycle}`,
+    dedupKey: `github:release:${String(release.id)}:${lifecycle}:${contentDigest}`,
     provider: 'github',
     externalObjectId: externalId,
     externalEventId: ts,
@@ -1637,8 +1658,9 @@ function commitToEvent(repo: string, commit: GhCommit): IntegrationEvent {
 
 function workflowRunToEvent(repo: string, run: GhWorkflowRun): IntegrationEvent {
   const lifecycle = run.conclusion ?? run.status ?? 'updated';
+  const attempt = Number.isFinite(run.run_attempt) && run.run_attempt > 0 ? run.run_attempt : 1;
   return {
-    dedupKey: `github:workflow_run:${String(run.id)}:${lifecycle}`,
+    dedupKey: `github:workflow_run:${String(run.id)}:${lifecycle}:${String(attempt)}`,
     provider: 'github',
     externalObjectId: `${repo}#workflow_run:${String(run.id)}`,
     externalEventId: run.updated_at,
@@ -1647,7 +1669,7 @@ function workflowRunToEvent(repo: string, run: GhWorkflowRun): IntegrationEvent 
       : `workflow_run.${run.status ?? 'updated'}`,
     occurredAt: new Date(run.updated_at),
     actor: run.actor ? { externalId: run.actor.login, name: run.actor.login } : null,
-    contentText: `GitHub workflow "${run.name ?? String(run.workflow_id)}" #${String(run.run_number)} on ${repo} ${run.conclusion ?? run.status ?? 'updated'}`,
+    contentText: `GitHub workflow "${run.name ?? String(run.workflow_id)}" #${String(run.run_number)} attempt ${String(attempt)} on ${repo} ${run.conclusion ?? run.status ?? 'updated'}`,
     extra: {
       github: {
         type: 'workflow_run',
@@ -1655,6 +1677,7 @@ function workflowRunToEvent(repo: string, run: GhWorkflowRun): IntegrationEvent 
         url: run.html_url,
         status: run.status,
         conclusion: run.conclusion,
+        run_attempt: attempt,
         head_branch: run.head_branch,
         head_sha: run.head_sha,
         event: run.event,
@@ -1861,6 +1884,7 @@ function ghReleaseFromWebhook(record: Record<string, unknown>): GhRelease | null
     prerelease: boolValue(record.prerelease) ?? false,
     published_at: stringValue(record.published_at),
     created_at: createdAt,
+    updated_at: stringValue(record.updated_at),
     author: userValue(record.author),
   };
 }
@@ -1873,6 +1897,7 @@ function ghWorkflowRunFromWebhook(record: Record<string, unknown>): GhWorkflowRu
   const updatedAt = stringValue(record.updated_at);
   const headSha = stringValue(record.head_sha);
   if (!id || !workflowId || !runNumber || !htmlUrl || !updatedAt || !headSha) return null;
+  const runAttempt = numberValue(record.run_attempt);
   return {
     id,
     name: stringValue(record.name),
@@ -1883,6 +1908,7 @@ function ghWorkflowRunFromWebhook(record: Record<string, unknown>): GhWorkflowRu
     workflow_id: workflowId,
     html_url: htmlUrl,
     run_number: runNumber,
+    run_attempt: runAttempt && runAttempt > 0 ? runAttempt : 1,
     event: stringValue(record.event) ?? 'unknown',
     created_at: stringValue(record.created_at) ?? updatedAt,
     updated_at: updatedAt,

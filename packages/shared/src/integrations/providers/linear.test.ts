@@ -232,6 +232,61 @@ describe('linearProvider.handleWebhook', () => {
     expect(edited[0]?.contentText).toContain('Edited body');
   });
 
+  it('mints a new project dedup key when mutable fields change in the same state', async () => {
+    const handle = linearProvider.handleWebhook?.bind(linearProvider);
+    if (!handle) throw new Error('no handleWebhook');
+    const base = {
+      id: 'project-1',
+      name: 'Launch',
+      description: null,
+      url: 'https://linear.app/acme/project/1',
+      updatedAt: '2026-05-25T10:00:00Z',
+      state: 'started',
+      targetDate: null,
+      startDate: null,
+      lead: { id: 'user-1', name: 'Ada' },
+    };
+    const first = webhookEvents(
+      await handle({
+        integration: { teamId: 't1' } as never,
+        payload: { action: 'update', type: 'Project', data: base },
+      }),
+    );
+    const renamed = webhookEvents(
+      await handle({
+        integration: { teamId: 't1' } as never,
+        payload: {
+          action: 'update',
+          type: 'Project',
+          data: {
+            ...base,
+            name: 'Launch v2',
+            updatedAt: '2026-05-25T11:00:00Z',
+          },
+        },
+      }),
+    );
+    const renamedReplay = webhookEvents(
+      await handle({
+        integration: { teamId: 't1' } as never,
+        payload: {
+          action: 'update',
+          type: 'Project',
+          data: {
+            ...base,
+            name: 'Launch v2',
+            updatedAt: '2026-05-25T12:00:00Z',
+          },
+        },
+      }),
+    );
+    expect(first[0]?.dedupKey).toBe('linear:project:project-1:started:ba568f838fd9fc74');
+    expect(renamed[0]?.dedupKey).toBe('linear:project:project-1:started:da7486a3615aa68d');
+    expect(renamed[0]?.dedupKey).not.toBe(first[0]?.dedupKey);
+    expect(renamedReplay[0]?.dedupKey).toBe(renamed[0]?.dedupKey);
+    expect(renamed[0]?.contentText).toContain('Launch v2');
+  });
+
   it('ignores non-Issue payloads', async () => {
     const handle = linearProvider.handleWebhook?.bind(linearProvider);
     if (!handle) throw new Error('no handleWebhook');

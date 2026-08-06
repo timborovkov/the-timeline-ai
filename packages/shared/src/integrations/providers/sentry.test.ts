@@ -627,6 +627,67 @@ describe('sentryProvider', () => {
     expect(normalized.events[0]?.eventType).toBe('issue.regressed');
   });
 
+  it('prunes oversized issue_lifecycles cursors while keeping touched and recent ids', async () => {
+    const bloatedLifecycles = Object.fromEntries(
+      Array.from({ length: 5_001 }, (_, index) => [`issue-${String(index)}`, 'resolved']),
+    );
+    const loadCursor = vi
+      .fn()
+      .mockResolvedValueOnce({
+        issue_lifecycles: bloatedLifecycles,
+      })
+      .mockResolvedValue({});
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>((input) => {
+        const url = requestUrl(input);
+        if (url.includes('/issues/')) {
+          return Promise.resolve(
+            jsonResponse([
+              {
+                id: 'issue-1',
+                shortId: 'WEB-1',
+                title: 'Checkout failed',
+                status: 'unresolved',
+                level: 'error',
+                lastSeen: '2026-06-22T08:00:00Z',
+                count: '41',
+              },
+            ]),
+          );
+        }
+        return Promise.resolve(jsonResponse([]));
+      }),
+    );
+    const saveCursor = vi.fn().mockResolvedValue(undefined);
+    await sentryProvider.backfill({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'sentry.project', externalId: 'acme/web' }],
+      ctx: {
+        loadCursor,
+        saveCursor,
+        writeEvents: vi.fn().mockResolvedValue([]),
+        persistTokens: vi.fn(),
+        recordAudit: vi.fn(),
+      },
+    });
+    expect(saveCursor).toHaveBeenCalledWith(
+      'sentry.project:acme/web',
+      expect.objectContaining({
+        issue_lifecycles: expect.any(Object),
+      }),
+    );
+    const saved = saveCursor.mock.calls.find(
+      (call) => call[0] === 'sentry.project:acme/web',
+    )?.[1] as { issue_lifecycles?: Record<string, string> };
+    const lifecycles = saved.issue_lifecycles ?? {};
+    expect(Object.keys(lifecycles)).toHaveLength(2_501);
+    expect(lifecycles['issue-1']).toBe('regressed:2026-06-22T08:00:00.000Z');
+    expect(lifecycles['issue-5000']).toBe('resolved');
+    expect(lifecycles['issue-0']).toBeUndefined();
+  });
+
   it('keeps one open-issue dedup key across lastSeen and alert timestamp churn', async () => {
     vi.stubGlobal(
       'fetch',

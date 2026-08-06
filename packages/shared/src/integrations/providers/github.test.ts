@@ -465,12 +465,12 @@ describe('githubProvider.handleWebhook', () => {
     const pushEvents = push.events;
 
     expect(pullRequestEvents[0]).toMatchObject({
-      dedupKey: 'github:pr:7:open:2026-06-25T10:00:00Z',
+      dedupKey: 'github:pr:7:open',
       eventType: 'pr.updated',
       objectMap: { type: 'task', externalId: 'acme/app#7' },
     });
     expect(issueEvents[0]).toMatchObject({
-      dedupKey: 'github:issue:8:open:2026-06-25T11:00:00Z',
+      dedupKey: 'github:issue:8:open',
       eventType: 'issue.updated',
       objectMap: { type: 'task', externalId: 'acme/app#issue:8' },
     });
@@ -479,11 +479,11 @@ describe('githubProvider.handleWebhook', () => {
       eventType: 'pr.review.approved',
     });
     expect(releaseEvents[0]).toMatchObject({
-      dedupKey: 'github:release:10:published',
+      dedupKey: 'github:release:10:published:1316d0d21a1eb34a',
       eventType: 'release.published',
     });
     expect(workflowEvents[0]).toMatchObject({
-      dedupKey: 'github:workflow_run:11:success',
+      dedupKey: 'github:workflow_run:11:success:1',
       eventType: 'workflow_run.success',
     });
     expect(pushEvents[0]).toMatchObject({
@@ -672,11 +672,152 @@ describe('githubProvider.handleWebhook', () => {
       }),
     ).events[0];
 
-    expect(opened?.dedupKey).toBe('github:issue:8:open:2026-06-25T11:00:00Z');
+    expect(opened?.dedupKey).toBe('github:issue:8:open');
     expect(closed?.dedupKey).toBe('github:issue:8:closed:2026-06-25T12:00:00Z');
     expect(reopened?.dedupKey).toBe('github:issue:8:open:2026-06-25T13:00:00Z');
     expect(reopened?.dedupKey).not.toBe(opened?.dedupKey);
     expect(reopened?.eventType).toBe('issue.reopened');
+  });
+
+  it('mints a new release dedup key when published release notes change', async () => {
+    const integration = { id: 'integration-1', teamId: 'team-1' } as never;
+    const handle = githubProvider.handleWebhook?.bind(githubProvider);
+    if (!handle) throw new Error('no handleWebhook');
+    const normalize = (
+      result: Awaited<ReturnType<NonNullable<typeof githubProvider.handleWebhook>>>,
+    ) => (Array.isArray(result) ? { events: result, syncTasks: [] } : result);
+    const baseRepo = {
+      repository: { id: 1, full_name: 'acme/app', name: 'app', private: false },
+    };
+    const releaseBase = {
+      id: 10,
+      tag_name: 'v1.2.3',
+      name: 'Release',
+      html_url: 'https://github.com/acme/app/releases/tag/v1.2.3',
+      draft: false,
+      prerelease: false,
+      published_at: '2026-06-25T13:00:00Z',
+      created_at: '2026-06-25T12:55:00Z',
+      author: { login: 'alice' },
+    };
+    const published = normalize(
+      await handle({
+        integration,
+        payload: {
+          ...baseRepo,
+          action: 'published',
+          release: { ...releaseBase, body: null },
+        },
+      }),
+    ).events[0];
+    const edited = normalize(
+      await handle({
+        integration,
+        payload: {
+          ...baseRepo,
+          action: 'edited',
+          release: {
+            ...releaseBase,
+            body: 'fixed notes',
+            updated_at: '2026-06-25T14:00:00Z',
+          },
+        },
+      }),
+    ).events[0];
+    const replay = normalize(
+      await handle({
+        integration,
+        payload: {
+          ...baseRepo,
+          action: 'edited',
+          release: {
+            ...releaseBase,
+            body: 'fixed notes',
+            updated_at: '2026-06-25T14:00:00Z',
+          },
+        },
+      }),
+    ).events[0];
+
+    expect(published?.dedupKey).toBe('github:release:10:published:1316d0d21a1eb34a');
+    expect(edited?.dedupKey).toBe('github:release:10:published:d73eaaa03f1ca43d');
+    expect(edited?.dedupKey).not.toBe(published?.dedupKey);
+    expect(replay?.dedupKey).toBe(edited?.dedupKey);
+    expect(edited?.contentText).toContain('fixed notes');
+  });
+
+  it('mints a new workflow-run dedup key for each run_attempt with the same conclusion', async () => {
+    const integration = { id: 'integration-1', teamId: 'team-1' } as never;
+    const handle = githubProvider.handleWebhook?.bind(githubProvider);
+    if (!handle) throw new Error('no handleWebhook');
+    const normalize = (
+      result: Awaited<ReturnType<NonNullable<typeof githubProvider.handleWebhook>>>,
+    ) => (Array.isArray(result) ? { events: result, syncTasks: [] } : result);
+    const baseRepo = {
+      repository: { id: 1, full_name: 'acme/app', name: 'app', private: false },
+    };
+    const runBase = {
+      id: 11,
+      name: 'CI',
+      workflow_id: 1,
+      run_number: 99,
+      html_url: 'https://github.com/acme/app/actions/runs/11',
+      status: 'completed',
+      conclusion: 'failure',
+      created_at: '2026-06-25T13:00:00Z',
+      head_branch: 'main',
+      head_sha: 'sha-001',
+      event: 'push',
+      actor: { login: 'alice' },
+    };
+    const attempt1 = normalize(
+      await handle({
+        integration,
+        payload: {
+          ...baseRepo,
+          action: 'completed',
+          workflow_run: {
+            ...runBase,
+            run_attempt: 1,
+            updated_at: '2026-06-25T14:00:00Z',
+          },
+        },
+      }),
+    ).events[0];
+    const attempt3 = normalize(
+      await handle({
+        integration,
+        payload: {
+          ...baseRepo,
+          action: 'completed',
+          workflow_run: {
+            ...runBase,
+            run_attempt: 3,
+            updated_at: '2026-06-25T16:00:00Z',
+          },
+        },
+      }),
+    ).events[0];
+    const attempt3Replay = normalize(
+      await handle({
+        integration,
+        payload: {
+          ...baseRepo,
+          action: 'completed',
+          workflow_run: {
+            ...runBase,
+            run_attempt: 3,
+            updated_at: '2026-06-25T16:00:00Z',
+          },
+        },
+      }),
+    ).events[0];
+
+    expect(attempt1?.dedupKey).toBe('github:workflow_run:11:failure:1');
+    expect(attempt3?.dedupKey).toBe('github:workflow_run:11:failure:3');
+    expect(attempt3?.dedupKey).not.toBe(attempt1?.dedupKey);
+    expect(attempt3Replay?.dedupKey).toBe(attempt3?.dedupKey);
+    expect(attempt3?.contentText).toContain('attempt 3');
   });
 
   it('renders issue comments, review summaries, and inline review comments with parent evidence', async () => {
@@ -1724,11 +1865,13 @@ describe('githubProvider.incrementalSync', () => {
   function workflowRun(
     id: number,
     updatedAt: string,
+    extras: { conclusion?: string | null; run_attempt?: number } = {},
   ): {
     id: number;
     name: string | null;
     workflow_id: number;
     run_number: number;
+    run_attempt: number;
     html_url: string;
     status: string | null;
     conclusion: string | null;
@@ -1743,9 +1886,10 @@ describe('githubProvider.incrementalSync', () => {
       name: 'CI',
       workflow_id: 1,
       run_number: id,
+      run_attempt: extras.run_attempt ?? 1,
       html_url: `https://github.com/acme/app/actions/runs/${String(id)}`,
       status: 'completed',
-      conclusion: 'success',
+      conclusion: extras.conclusion === undefined ? 'success' : extras.conclusion,
       updated_at: updatedAt,
       head_branch: 'main',
       head_sha: `sha-${String(id)}`,

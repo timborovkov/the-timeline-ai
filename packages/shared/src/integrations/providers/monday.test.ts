@@ -464,7 +464,8 @@ describe('mondayProvider', () => {
     const normalized = Array.isArray(result) ? { events: result, syncTasks: [] } : result;
 
     expect(normalized?.events[0]).toMatchObject({
-      dedupKey: 'monday:item:1771812698:1771812728:observed',
+      dedupKey:
+        'monday:item:1771812698:1771812728:observed:update_column_value:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       eventType: 'column.changed',
       objectMap: {
         type: 'other',
@@ -472,6 +473,71 @@ describe('mondayProvider', () => {
       },
     });
     expect(normalized?.events[0]?.objectMap).not.toHaveProperty('status');
+  });
+
+  it('mints distinct observed revision keys for successive non-status Monday webhooks', async () => {
+    const owner = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          columnId: 'person',
+          columnType: 'multiple-person',
+          columnTitle: 'Owner',
+          value: { personsAndTeams: [{ id: 1, kind: 'person' }] },
+          type: 'update_column_value',
+          triggerTime: '2026-06-25T09:15:03.429Z',
+          triggerUuid: 'owner-trigger-1',
+        },
+      },
+    });
+    const due = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          columnId: 'date',
+          columnType: 'date',
+          columnTitle: 'Due',
+          value: { date: '2026-07-01' },
+          type: 'update_column_value',
+          triggerTime: '2026-06-25T09:16:03.429Z',
+          triggerUuid: 'due-trigger-2',
+        },
+      },
+    });
+    const ownerReplay = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          columnId: 'person',
+          columnType: 'multiple-person',
+          columnTitle: 'Owner',
+          value: { personsAndTeams: [{ id: 1, kind: 'person' }] },
+          type: 'update_column_value',
+          triggerTime: '2026-06-25T09:15:03.429Z',
+          triggerUuid: 'owner-trigger-1',
+        },
+      },
+    });
+    const ownerEvent = (Array.isArray(owner) ? owner[0] : owner?.events[0]) ?? null;
+    const dueEvent = (Array.isArray(due) ? due[0] : due?.events[0]) ?? null;
+    const replayEvent = (Array.isArray(ownerReplay) ? ownerReplay[0] : ownerReplay?.events[0]) ?? null;
+    expect(ownerEvent?.dedupKey).toBe(
+      'monday:item:1771812698:1771812728:observed:update_column_value:owner-trigger-1',
+    );
+    expect(dueEvent?.dedupKey).toBe(
+      'monday:item:1771812698:1771812728:observed:update_column_value:due-trigger-2',
+    );
+    expect(dueEvent?.dedupKey).not.toBe(ownerEvent?.dedupKey);
+    expect(replayEvent?.dedupKey).toBe(ownerEvent?.dedupKey);
   });
 
   it('keeps the same Monday item dedup key across same-lifecycle webhook churn', async () => {

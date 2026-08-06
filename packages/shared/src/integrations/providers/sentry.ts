@@ -72,6 +72,27 @@ interface SentryCursor {
   issue_lifecycles?: Record<string, string> | undefined;
 }
 
+const SENTRY_LIFECYCLE_CURSOR_CAP = 5_000;
+
+function pruneSentryIssueLifecycles(
+  map: Record<string, string>,
+  keepIds: ReadonlySet<string>,
+): Record<string, string> {
+  const entries = Object.entries(map);
+  if (entries.length <= SENTRY_LIFECYCLE_CURSOR_CAP) return map;
+  const next: Record<string, string> = {};
+  for (const id of keepIds) {
+    const value = map[id];
+    if (value) next[id] = value;
+  }
+  // Always retain a recent suffix so regression detection still works after a
+  // cap prune even when the current page only touches a handful of issues.
+  for (const [id, value] of entries.slice(-Math.floor(SENTRY_LIFECYCLE_CURSOR_CAP / 2))) {
+    next[id] = value;
+  }
+  return next;
+}
+
 function buildAuthorizeUrl(input: {
   redirectUri: string;
   state: string;
@@ -722,14 +743,17 @@ async function syncProject(
       (event) =>
         !cursor.releases_since || event.occurredAt > dateValue(cursor.releases_since, new Date(0)),
     );
-  const issueLifecycles = { ...(cursor.issue_lifecycles ?? {}) };
+  let issueLifecycles = { ...(cursor.issue_lifecycles ?? {}) };
+  const touchedIssueIds = new Set<string>();
   const issueEvents = issues.map((issue) => {
     const previous = issueLifecycles[issue.id];
     const event = issueEvent(orgSlug, projectSlug, issue, previous);
     const bucket = event.dedupKey.slice(`sentry:issue:${issue.id}:`.length);
     issueLifecycles[issue.id] = bucket;
+    touchedIssueIds.add(issue.id);
     return event;
   });
+  issueLifecycles = pruneSentryIssueLifecycles(issueLifecycles, touchedIssueIds);
   const events = [...issueEvents, ...releaseEvents];
   const latestIssue = events
     .filter((event) => event.eventType.startsWith('issue.'))

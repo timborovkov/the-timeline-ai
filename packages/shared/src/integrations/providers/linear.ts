@@ -23,8 +23,8 @@ import { childLogger } from '#src/logger.js';
 //
 // Issue idempotency is by lifecycle bucket; when a status bucket repeats
 // (started→completed→started) the key gains `updatedAt` so the reopen is a
-// new immutable raw_event. Comments key by content digest so body edits mint
-// a revision row. Projects stay on state-only keys.
+// new immutable raw_event. Comments and projects key by content digest so
+// mutable field edits mint a revision row without pure timestamp churn.
 
 const log = childLogger('integrations:linear');
 
@@ -375,12 +375,33 @@ function commentToEvent(node: LinearCommentNode): IntegrationEvent {
   };
 }
 
+function linearProjectRevisionDigest(
+  node: Pick<
+    LinearProjectNode,
+    'name' | 'description' | 'lead' | 'startDate' | 'targetDate'
+  >,
+): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        name: node.name,
+        description: node.description ?? null,
+        lead: node.lead?.id ?? null,
+        startDate: node.startDate ?? null,
+        targetDate: node.targetDate ?? null,
+      }),
+    )
+    .digest('hex')
+    .slice(0, 16);
+}
+
 function projectToEvent(node: LinearProjectNode): IntegrationEvent {
   const actor: { externalId?: string; name?: string } | null = node.lead
     ? { externalId: node.lead.id, name: node.lead.name }
     : null;
+  const revision = linearProjectRevisionDigest(node);
   return {
-    dedupKey: `linear:project:${node.id}:${node.state}`,
+    dedupKey: `linear:project:${node.id}:${node.state}:${revision}`,
     provider: 'linear',
     externalObjectId: node.id,
     externalEventId: node.updatedAt,

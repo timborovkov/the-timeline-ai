@@ -19,8 +19,9 @@ import {
 // Phase 11 — Monday.com provider.
 //
 // Idempotency for items/subitems is by lifecycle status buckets (not
-// updated_at), so column text churn reuses the raw_event. Sync and webhook
-// share the same item key family; triggerUuid stays on externalEventId only.
+// updated_at), so status churn reuses the raw_event. Sync and webhook share
+// the same status key family; triggerUuid stays on externalEventId for those.
+// Non-status webhooks (owner/due/rename) use observed:<type>:<revision>.
 // Mutable surfaces (updates, docs, board schema) include a revision
 // discriminator so edits/deletes mint a new immutable raw_event. Activity
 // logs stay per log.id.
@@ -1019,6 +1020,28 @@ function mondayWebhookUpdateDedupKey(input: {
   return `monday:update:${input.itemId}:${input.updateId}:${input.rawType}:${revision}`;
 }
 
+/**
+ * Non-lifecycle item webhooks (owner/due/rename/…) use an observed revision key
+ * so each change mints a new immutable raw_event. Duplicate deliveries reuse the
+ * same triggerUuid (or occurredAt fallback). Status/archive/create stay on
+ * lifecycle-only buckets.
+ */
+function mondayWebhookItemDedupKey(input: {
+  kind: 'item' | 'subitem';
+  boardId: string;
+  itemId: string;
+  lifecycleBucket: string;
+  rawType: string;
+  triggerUuid: string | null;
+  occurredAt: Date;
+}): string {
+  if (input.lifecycleBucket !== 'observed') {
+    return `monday:${input.kind}:${input.boardId}:${input.itemId}:${input.lifecycleBucket}`;
+  }
+  const revision = input.triggerUuid ?? input.occurredAt.toISOString();
+  return `monday:${input.kind}:${input.boardId}:${input.itemId}:observed:${input.rawType}:${revision}`;
+}
+
 function mondayWebhookEvent(payload: unknown): IntegrationEvent[] {
   const event = recordValue(recordValue(payload)?.event);
   if (!event) return [];
@@ -1064,7 +1087,15 @@ function mondayWebhookEvent(payload: unknown): IntegrationEvent[] {
               triggerUuid,
               occurredAt,
             })
-          : `monday:${kind}:${boardId}:${itemId}:${lifecycleBucket}`,
+          : mondayWebhookItemDedupKey({
+              kind,
+              boardId,
+              itemId,
+              lifecycleBucket,
+              rawType,
+              triggerUuid,
+              occurredAt,
+            }),
       provider: 'monday',
       externalObjectId: updateId ? `${itemId}:update:${updateId}` : itemId,
       externalEventId: triggerUuid ?? updateId ?? subscriptionId ?? null,
