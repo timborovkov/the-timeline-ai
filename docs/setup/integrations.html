@@ -145,7 +145,12 @@ LINEAR_WEBHOOK_SECRET=...</code></pre>
           Any team member can connect Linear from <code>/app/me/connections</code> or the native
           catalog. The member chooses which Linear teams are shared with the current Timeline team.
         </li>
-        <li>A team admin activates shared Linear teams from <code>/app/sources</code>.</li>
+        <li>
+          A team admin activates shared Linear teams from <code>/app/sources</code>. Issue and
+          project dedup keys are lifecycle-stable (status/state, not <code>updatedAt</code>), and
+          comments key by id, so description or timestamp churn reuses the same raw event instead of
+          minting another extract/embed job.
+        </li>
       </ol>
 
       <h2 id="github">GitHub</h2>
@@ -227,7 +232,10 @@ GITHUB_WEBHOOK_SECRET=...</code></pre>
           Selected GitHub sources still use slow reconciliation through the integration worker, but
           normal PR, issue, release, workflow, and push activity can arrive through signed webhooks
           first. When installation-token config is present, repo hydration uses the GitHub App
-          installation quota instead of spending the connecting user's OAuth token quota.
+          installation quota instead of spending the connecting user's OAuth token quota. Issue, PR,
+          workflow-run, and release dedup keys are lifecycle-stable (not
+          <code>updated_at</code>), so title/body edits reuse the same raw event; commits still key
+          by SHA and review/comment events keep their existing identity rules.
         </li>
       </ol>
 
@@ -306,7 +314,10 @@ MONDAY_WEBHOOK_SECRET=...</code></pre>
           daily cursor. Agent retrieval resolves the visible provider- and selection-eligible event
           IDs in Postgres before semantic search, so historical helper-board events never consume
           the semantic result budget. Candidate filtering is capped at 10,000 visible events and
-          reports truncation instead of issuing an unbounded sequence of vector searches.
+          reports truncation instead of issuing an unbounded sequence of vector searches. Item and
+          subitem dedup keys are lifecycle-stable (status bucket, not <code>updated_at</code>), and
+          sync/webhook share that same key family so column text or trigger UUID churn reuses the
+          raw event; updates, docs, and board-schema events key by stable ids.
         </li>
         <li>
           Timeline pins monday API version <code>2026-04</code>. Board pagination cursors are
@@ -398,8 +409,11 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
         <li>
           Connect Sentry from the native catalog, share selected projects from
           <code>/app/me/connections</code>, and activate them from <code>/app/sources</code>.
-          Timeline imports issue updates, resolved issues, and releases as cited events; Sentry
-          issues map to cited incident evidence.
+          Timeline imports issue lifecycle changes (open / resolved / ignored) and releases as cited
+          events; Sentry issues map to cited incident evidence. Dedup keys are issue-plus-lifecycle
+          (not <code>lastSeen</code>), so repeated error occurrences and noisy issue-alert
+          timestamps reuse the same raw event instead of minting a new extract/embed job on every
+          bump.
         </li>
         <li>
           For Sentry issue alert, issue lifecycle, and release webhooks, point the Sentry
@@ -407,7 +421,9 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
           <code>https://thetimeline.cc/api/webhooks/sentry</code>. Timeline verifies
           <code>Sentry-Hook-Signature</code> with <code>SENTRY_INTEGRATION_CLIENT_SECRET</code>,
           persists the delivery, and lets <code>webhook-delivery</code> process direct events or
-          targeted reconciliation for the selected organization/project targets.
+          targeted reconciliation for the selected organization/project targets. Alert
+          <code>triggered</code> deliveries for an already-open issue coalesce onto the same open
+          dedup key; reconciliation can still refresh incident evidence without another LLM pass.
         </li>
       </ol>
 

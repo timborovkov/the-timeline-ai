@@ -115,7 +115,7 @@ describe('linearProvider.handleWebhook', () => {
     );
     expect(events).toHaveLength(1);
     const evt = expectFirst(events);
-    expect(evt.dedupKey).toBe('linear:issue:LIN-1:2026-05-25T10:00:00Z');
+    expect(evt.dedupKey).toBe('linear:issue:LIN-1:in_progress:eb3d518df1b2898e');
     expect(evt.eventType).toBe('issue.updated');
     expect(evt.actor?.name).toBe('Alice');
     expect(evt.objectMap).toMatchObject({
@@ -130,6 +130,199 @@ describe('linearProvider.handleWebhook', () => {
         linear_team_key: 'ENG',
       },
     });
+  });
+
+  it('keeps the same issue dedup key across same-content updatedAt churn', async () => {
+    const handle = linearProvider.handleWebhook?.bind(linearProvider);
+    if (!handle) throw new Error('no handleWebhook');
+    const baseData = {
+      id: 'LIN-1',
+      identifier: 'ENG-42',
+      title: 'Wire Phase 11',
+      description: null,
+      url: 'https://linear.app/acme/issue/ENG-42',
+      updatedAt: '2026-05-25T10:00:00Z',
+      state: { name: 'In Progress', type: 'started' },
+      assignee: { id: 'u1', name: 'Alice', email: null },
+      team: { id: 't1', key: 'ENG' },
+    };
+    const first = webhookEvents(
+      await handle({
+        integration: { teamId: 't1' } as never,
+        payload: { action: 'update', type: 'Issue', data: baseData },
+      }),
+    );
+    const second = webhookEvents(
+      await handle({
+        integration: { teamId: 't1' } as never,
+        payload: {
+          action: 'update',
+          type: 'Issue',
+          data: {
+            ...baseData,
+            updatedAt: '2026-05-25T11:00:00Z',
+          },
+        },
+      }),
+    );
+    expect(first[0]?.dedupKey).toBe('linear:issue:LIN-1:in_progress:eb3d518df1b2898e');
+    expect(second[0]?.dedupKey).toBe(first[0]?.dedupKey);
+  });
+
+  it('mints a new issue dedup key when same-state title or assignee fields change', async () => {
+    const handle = linearProvider.handleWebhook?.bind(linearProvider);
+    if (!handle) throw new Error('no handleWebhook');
+    const baseData = {
+      id: 'LIN-1',
+      identifier: 'ENG-42',
+      title: 'Wire Phase 11',
+      description: null,
+      url: 'https://linear.app/acme/issue/ENG-42',
+      updatedAt: '2026-05-25T10:00:00Z',
+      state: { name: 'In Progress', type: 'started' },
+      assignee: { id: 'u1', name: 'Alice', email: null },
+      team: { id: 't1', key: 'ENG' },
+    };
+    const first = webhookEvents(
+      await handle({
+        integration: { teamId: 't1' } as never,
+        payload: { action: 'update', type: 'Issue', data: baseData },
+      }),
+    );
+    const edited = webhookEvents(
+      await handle({
+        integration: { teamId: 't1' } as never,
+        payload: {
+          action: 'update',
+          type: 'Issue',
+          data: {
+            ...baseData,
+            title: 'Wire Phase 11 (edited)',
+            updatedAt: '2026-05-25T11:00:00Z',
+          },
+        },
+      }),
+    );
+    expect(first[0]?.dedupKey).toBe('linear:issue:LIN-1:in_progress:eb3d518df1b2898e');
+    expect(edited[0]?.dedupKey).toBe('linear:issue:LIN-1:in_progress:0e863386cb49efc2');
+    expect(edited[0]?.dedupKey).not.toBe(first[0]?.dedupKey);
+    expect(edited[0]?.contentText).toContain('edited');
+  });
+
+  it('mints a transition dedup key when a Linear issue returns to a prior status bucket', async () => {
+    const handle = linearProvider.handleWebhook?.bind(linearProvider);
+    if (!handle) throw new Error('no handleWebhook');
+    const baseData = {
+      id: 'LIN-1',
+      identifier: 'ENG-42',
+      title: 'Wire Phase 11',
+      description: null,
+      url: 'https://linear.app/acme/issue/ENG-42',
+      updatedAt: '2026-05-25T12:00:00Z',
+      state: { id: 'state-started', name: 'In Progress', type: 'started' },
+      assignee: { id: 'u1', name: 'Alice', email: null },
+      team: { id: 't1', key: 'ENG' },
+    };
+    const restarted = webhookEvents(
+      await handle({
+        integration: { teamId: 't1' } as never,
+        payload: {
+          action: 'update',
+          type: 'Issue',
+          data: baseData,
+          updatedFrom: { stateId: 'state-completed' },
+        },
+      }),
+    );
+    expect(restarted[0]?.dedupKey).toBe('linear:issue:LIN-1:in_progress:2026-05-25T12:00:00Z');
+  });
+
+  it('mints a new comment dedup key when the body changes', async () => {
+    const handle = linearProvider.handleWebhook?.bind(linearProvider);
+    if (!handle) throw new Error('no handleWebhook');
+    const base = {
+      id: 'C-1',
+      body: 'First draft',
+      url: 'https://linear.app/acme/issue/ENG-42#comment-C-1',
+      updatedAt: '2026-05-25T10:00:00Z',
+      user: { id: 'u1', name: 'Alice', email: null },
+      issue: { id: 'LIN-1', identifier: 'ENG-42', title: 'Wire Phase 11' },
+    };
+    const first = webhookEvents(
+      await handle({
+        integration: { teamId: 't1' } as never,
+        payload: { action: 'create', type: 'Comment', data: base },
+      }),
+    );
+    const edited = webhookEvents(
+      await handle({
+        integration: { teamId: 't1' } as never,
+        payload: {
+          action: 'update',
+          type: 'Comment',
+          data: { ...base, body: 'Edited body', updatedAt: '2026-05-25T11:00:00Z' },
+        },
+      }),
+    );
+    expect(first[0]?.dedupKey).toMatch(/^linear:comment:C-1:[a-f0-9]{16}$/);
+    expect(edited[0]?.dedupKey).toMatch(/^linear:comment:C-1:[a-f0-9]{16}$/);
+    expect(edited[0]?.dedupKey).not.toBe(first[0]?.dedupKey);
+    expect(edited[0]?.contentText).toContain('Edited body');
+  });
+
+  it('mints a new project dedup key when mutable fields change in the same state', async () => {
+    const handle = linearProvider.handleWebhook?.bind(linearProvider);
+    if (!handle) throw new Error('no handleWebhook');
+    const base = {
+      id: 'project-1',
+      name: 'Launch',
+      description: null,
+      url: 'https://linear.app/acme/project/1',
+      updatedAt: '2026-05-25T10:00:00Z',
+      state: 'started',
+      targetDate: null,
+      startDate: null,
+      lead: { id: 'user-1', name: 'Ada' },
+    };
+    const first = webhookEvents(
+      await handle({
+        integration: { teamId: 't1' } as never,
+        payload: { action: 'update', type: 'Project', data: base },
+      }),
+    );
+    const renamed = webhookEvents(
+      await handle({
+        integration: { teamId: 't1' } as never,
+        payload: {
+          action: 'update',
+          type: 'Project',
+          data: {
+            ...base,
+            name: 'Launch v2',
+            updatedAt: '2026-05-25T11:00:00Z',
+          },
+        },
+      }),
+    );
+    const renamedReplay = webhookEvents(
+      await handle({
+        integration: { teamId: 't1' } as never,
+        payload: {
+          action: 'update',
+          type: 'Project',
+          data: {
+            ...base,
+            name: 'Launch v2',
+            updatedAt: '2026-05-25T12:00:00Z',
+          },
+        },
+      }),
+    );
+    expect(first[0]?.dedupKey).toBe('linear:project:project-1:started:ba568f838fd9fc74');
+    expect(renamed[0]?.dedupKey).toBe('linear:project:project-1:started:da7486a3615aa68d');
+    expect(renamed[0]?.dedupKey).not.toBe(first[0]?.dedupKey);
+    expect(renamedReplay[0]?.dedupKey).toBe(renamed[0]?.dedupKey);
+    expect(renamed[0]?.contentText).toContain('Launch v2');
   });
 
   it('ignores non-Issue payloads', async () => {
@@ -335,6 +528,10 @@ describe('linearProvider.incrementalSync', () => {
     );
     expect(ctx.saveCursor).toHaveBeenCalledWith('linear.issues', {
       updated_after: '2026-06-20T11:00:00.000Z',
+      issue_statuses: {
+        'issue-1': 'in_progress',
+        'issue-2': 'in_progress',
+      },
     });
     expect(ctx.saveCursor).toHaveBeenCalledWith('linear.comments', {
       updated_after: '2026-06-20T13:00:00.000Z',

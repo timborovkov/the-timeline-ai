@@ -50,6 +50,8 @@ interface TestGithubCursor {
   commit_gap_until?: string;
   last_polled_at?: string;
   github_conditional?: Record<string, { etag?: string; lastModified?: string }>;
+  issue_lifecycles?: Record<string, 'open' | 'closed'>;
+  pr_lifecycles?: Record<string, 'open' | 'merged' | 'closed'>;
 }
 
 describe('githubProvider.startOAuth', () => {
@@ -463,12 +465,12 @@ describe('githubProvider.handleWebhook', () => {
     const pushEvents = push.events;
 
     expect(pullRequestEvents[0]).toMatchObject({
-      dedupKey: 'github:pr:7:2026-06-25T10:00:00Z',
+      dedupKey: 'github:pr:7:open',
       eventType: 'pr.updated',
       objectMap: { type: 'task', externalId: 'acme/app#7' },
     });
     expect(issueEvents[0]).toMatchObject({
-      dedupKey: 'github:issue:8:2026-06-25T11:00:00Z',
+      dedupKey: 'github:issue:8:open',
       eventType: 'issue.updated',
       objectMap: { type: 'task', externalId: 'acme/app#issue:8' },
     });
@@ -477,11 +479,11 @@ describe('githubProvider.handleWebhook', () => {
       eventType: 'pr.review.approved',
     });
     expect(releaseEvents[0]).toMatchObject({
-      dedupKey: 'github:release:10:2026-06-25T13:00:00Z',
+      dedupKey: 'github:release:10:published:1316d0d21a1eb34a',
       eventType: 'release.published',
     });
     expect(workflowEvents[0]).toMatchObject({
-      dedupKey: 'github:workflow_run:11:2026-06-25T14:00:00Z',
+      dedupKey: 'github:workflow_run:11:success:1',
       eventType: 'workflow_run.success',
     });
     expect(pushEvents[0]).toMatchObject({
@@ -498,6 +500,324 @@ describe('githubProvider.handleWebhook', () => {
         reason: 'github_repo_webhook',
       },
     ]);
+  });
+
+  it('keeps issue and PR dedup keys stable across same-lifecycle updated_at churn', async () => {
+    const integration = { id: 'integration-1', teamId: 'team-1' } as never;
+    const handle = githubProvider.handleWebhook?.bind(githubProvider);
+    if (!handle) throw new Error('no handleWebhook');
+    const normalize = (
+      result: Awaited<ReturnType<NonNullable<typeof githubProvider.handleWebhook>>>,
+    ) => (Array.isArray(result) ? { events: result, syncTasks: [] } : result);
+    const baseRepo = {
+      repository: { id: 1, full_name: 'acme/app', name: 'app', private: false },
+    };
+
+    const issueFirst = normalize(
+      await handle({
+        integration,
+        payload: {
+          ...baseRepo,
+          action: 'edited',
+          issue: {
+            id: 8,
+            number: 8,
+            title: 'Bug report',
+            body: null,
+            html_url: 'https://github.com/acme/app/issues/8',
+            state: 'open',
+            updated_at: '2026-06-25T11:00:00Z',
+            user: { login: 'bob' },
+          },
+        },
+      }),
+    ).events[0];
+    const issueSecond = normalize(
+      await handle({
+        integration,
+        payload: {
+          ...baseRepo,
+          action: 'edited',
+          issue: {
+            id: 8,
+            number: 8,
+            title: 'Bug report (edited)',
+            body: 'more detail',
+            html_url: 'https://github.com/acme/app/issues/8',
+            state: 'open',
+            updated_at: '2026-06-25T12:00:00Z',
+            user: { login: 'bob' },
+          },
+        },
+      }),
+    ).events[0];
+    const prFirst = normalize(
+      await handle({
+        integration,
+        payload: {
+          ...baseRepo,
+          action: 'edited',
+          pull_request: {
+            id: 7,
+            number: 7,
+            title: 'Add webhook ingestion',
+            body: 'Webhook body',
+            html_url: 'https://github.com/acme/app/pull/7',
+            state: 'open',
+            merged_at: null,
+            updated_at: '2026-06-25T10:00:00Z',
+            user: { login: 'alice' },
+            base: { ref: 'main' },
+            head: { ref: 'webhooks' },
+          },
+        },
+      }),
+    ).events[0];
+    const prSecond = normalize(
+      await handle({
+        integration,
+        payload: {
+          ...baseRepo,
+          action: 'edited',
+          pull_request: {
+            id: 7,
+            number: 7,
+            title: 'Add webhook ingestion (edited)',
+            body: 'Webhook body v2',
+            html_url: 'https://github.com/acme/app/pull/7',
+            state: 'open',
+            merged_at: null,
+            updated_at: '2026-06-25T10:30:00Z',
+            user: { login: 'alice' },
+            base: { ref: 'main' },
+            head: { ref: 'webhooks' },
+          },
+        },
+      }),
+    ).events[0];
+
+    expect(issueFirst?.dedupKey).toBe('github:issue:8:open');
+    expect(issueSecond?.dedupKey).toBe(issueFirst?.dedupKey);
+    expect(prFirst?.dedupKey).toBe('github:pr:7:open');
+    expect(prSecond?.dedupKey).toBe(prFirst?.dedupKey);
+    expect(issueSecond?.contentText).toContain('edited');
+    expect(prSecond?.contentText).toContain('edited');
+  });
+
+  it('mints a new issue dedup key when a closed issue is reopened', async () => {
+    const integration = { id: 'integration-1', teamId: 'team-1' } as never;
+    const handle = githubProvider.handleWebhook?.bind(githubProvider);
+    if (!handle) throw new Error('no handleWebhook');
+    const normalize = (
+      result: Awaited<ReturnType<NonNullable<typeof githubProvider.handleWebhook>>>,
+    ) => (Array.isArray(result) ? { events: result, syncTasks: [] } : result);
+    const baseRepo = {
+      repository: { id: 1, full_name: 'acme/app', name: 'app', private: false },
+    };
+    const opened = normalize(
+      await handle({
+        integration,
+        payload: {
+          ...baseRepo,
+          action: 'opened',
+          issue: {
+            id: 8,
+            number: 8,
+            title: 'Bug report',
+            body: null,
+            html_url: 'https://github.com/acme/app/issues/8',
+            state: 'open',
+            updated_at: '2026-06-25T11:00:00Z',
+            user: { login: 'bob' },
+          },
+        },
+      }),
+    ).events[0];
+    const closed = normalize(
+      await handle({
+        integration,
+        payload: {
+          ...baseRepo,
+          action: 'closed',
+          issue: {
+            id: 8,
+            number: 8,
+            title: 'Bug report',
+            body: null,
+            html_url: 'https://github.com/acme/app/issues/8',
+            state: 'closed',
+            updated_at: '2026-06-25T12:00:00Z',
+            user: { login: 'bob' },
+          },
+        },
+      }),
+    ).events[0];
+    const reopened = normalize(
+      await handle({
+        integration,
+        payload: {
+          ...baseRepo,
+          action: 'reopened',
+          issue: {
+            id: 8,
+            number: 8,
+            title: 'Bug report',
+            body: null,
+            html_url: 'https://github.com/acme/app/issues/8',
+            state: 'open',
+            updated_at: '2026-06-25T13:00:00Z',
+            user: { login: 'bob' },
+          },
+        },
+      }),
+    ).events[0];
+
+    expect(opened?.dedupKey).toBe('github:issue:8:open');
+    expect(closed?.dedupKey).toBe('github:issue:8:closed:2026-06-25T12:00:00Z');
+    expect(reopened?.dedupKey).toBe('github:issue:8:open:2026-06-25T13:00:00Z');
+    expect(reopened?.dedupKey).not.toBe(opened?.dedupKey);
+    expect(reopened?.eventType).toBe('issue.reopened');
+  });
+
+  it('mints a new release dedup key when published release notes change', async () => {
+    const integration = { id: 'integration-1', teamId: 'team-1' } as never;
+    const handle = githubProvider.handleWebhook?.bind(githubProvider);
+    if (!handle) throw new Error('no handleWebhook');
+    const normalize = (
+      result: Awaited<ReturnType<NonNullable<typeof githubProvider.handleWebhook>>>,
+    ) => (Array.isArray(result) ? { events: result, syncTasks: [] } : result);
+    const baseRepo = {
+      repository: { id: 1, full_name: 'acme/app', name: 'app', private: false },
+    };
+    const releaseBase = {
+      id: 10,
+      tag_name: 'v1.2.3',
+      name: 'Release',
+      html_url: 'https://github.com/acme/app/releases/tag/v1.2.3',
+      draft: false,
+      prerelease: false,
+      published_at: '2026-06-25T13:00:00Z',
+      created_at: '2026-06-25T12:55:00Z',
+      author: { login: 'alice' },
+    };
+    const published = normalize(
+      await handle({
+        integration,
+        payload: {
+          ...baseRepo,
+          action: 'published',
+          release: { ...releaseBase, body: null },
+        },
+      }),
+    ).events[0];
+    const edited = normalize(
+      await handle({
+        integration,
+        payload: {
+          ...baseRepo,
+          action: 'edited',
+          release: {
+            ...releaseBase,
+            body: 'fixed notes',
+            updated_at: '2026-06-25T14:00:00Z',
+          },
+        },
+      }),
+    ).events[0];
+    const replay = normalize(
+      await handle({
+        integration,
+        payload: {
+          ...baseRepo,
+          action: 'edited',
+          release: {
+            ...releaseBase,
+            body: 'fixed notes',
+            updated_at: '2026-06-25T14:00:00Z',
+          },
+        },
+      }),
+    ).events[0];
+
+    expect(published?.dedupKey).toBe('github:release:10:published:1316d0d21a1eb34a');
+    expect(edited?.dedupKey).toBe('github:release:10:published:d73eaaa03f1ca43d');
+    expect(edited?.dedupKey).not.toBe(published?.dedupKey);
+    expect(replay?.dedupKey).toBe(edited?.dedupKey);
+    expect(edited?.contentText).toContain('fixed notes');
+  });
+
+  it('mints a new workflow-run dedup key for each run_attempt with the same conclusion', async () => {
+    const integration = { id: 'integration-1', teamId: 'team-1' } as never;
+    const handle = githubProvider.handleWebhook?.bind(githubProvider);
+    if (!handle) throw new Error('no handleWebhook');
+    const normalize = (
+      result: Awaited<ReturnType<NonNullable<typeof githubProvider.handleWebhook>>>,
+    ) => (Array.isArray(result) ? { events: result, syncTasks: [] } : result);
+    const baseRepo = {
+      repository: { id: 1, full_name: 'acme/app', name: 'app', private: false },
+    };
+    const runBase = {
+      id: 11,
+      name: 'CI',
+      workflow_id: 1,
+      run_number: 99,
+      html_url: 'https://github.com/acme/app/actions/runs/11',
+      status: 'completed',
+      conclusion: 'failure',
+      created_at: '2026-06-25T13:00:00Z',
+      head_branch: 'main',
+      head_sha: 'sha-001',
+      event: 'push',
+      actor: { login: 'alice' },
+    };
+    const attempt1 = normalize(
+      await handle({
+        integration,
+        payload: {
+          ...baseRepo,
+          action: 'completed',
+          workflow_run: {
+            ...runBase,
+            run_attempt: 1,
+            updated_at: '2026-06-25T14:00:00Z',
+          },
+        },
+      }),
+    ).events[0];
+    const attempt3 = normalize(
+      await handle({
+        integration,
+        payload: {
+          ...baseRepo,
+          action: 'completed',
+          workflow_run: {
+            ...runBase,
+            run_attempt: 3,
+            updated_at: '2026-06-25T16:00:00Z',
+          },
+        },
+      }),
+    ).events[0];
+    const attempt3Replay = normalize(
+      await handle({
+        integration,
+        payload: {
+          ...baseRepo,
+          action: 'completed',
+          workflow_run: {
+            ...runBase,
+            run_attempt: 3,
+            updated_at: '2026-06-25T16:00:00Z',
+          },
+        },
+      }),
+    ).events[0];
+
+    expect(attempt1?.dedupKey).toBe('github:workflow_run:11:failure:1');
+    expect(attempt3?.dedupKey).toBe('github:workflow_run:11:failure:3');
+    expect(attempt3?.dedupKey).not.toBe(attempt1?.dedupKey);
+    expect(attempt3Replay?.dedupKey).toBe(attempt3?.dedupKey);
+    expect(attempt3?.contentText).toContain('attempt 3');
   });
 
   it('renders issue comments, review summaries, and inline review comments with parent evidence', async () => {
@@ -1545,11 +1865,13 @@ describe('githubProvider.incrementalSync', () => {
   function workflowRun(
     id: number,
     updatedAt: string,
+    extras: { conclusion?: string | null; run_attempt?: number } = {},
   ): {
     id: number;
     name: string | null;
     workflow_id: number;
     run_number: number;
+    run_attempt: number;
     html_url: string;
     status: string | null;
     conclusion: string | null;
@@ -1564,9 +1886,10 @@ describe('githubProvider.incrementalSync', () => {
       name: 'CI',
       workflow_id: 1,
       run_number: id,
+      run_attempt: extras.run_attempt ?? 1,
       html_url: `https://github.com/acme/app/actions/runs/${String(id)}`,
       status: 'completed',
-      conclusion: 'success',
+      conclusion: extras.conclusion === undefined ? 'success' : extras.conclusion,
       updated_at: updatedAt,
       head_branch: 'main',
       head_sha: `sha-${String(id)}`,
@@ -4127,6 +4450,134 @@ describe('githubProvider.incrementalSync', () => {
     expect(savedCursor(saveCursor, 'github.repo:acme/app:issues')).toMatchObject({
       issues_since: '2026-06-10T13:08:00Z',
     });
+  });
+
+  it('mints a polling reopen dedup key when issue lifecycle history shows closed→open', async () => {
+    const fetchMock = vi.fn<typeof fetch>((input) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.pathname.endsWith('/issues')) {
+        return Promise.resolve(
+          jsonResponse([
+            {
+              id: 8,
+              number: 8,
+              title: 'Bug report',
+              body: null,
+              html_url: 'https://github.com/acme/app/issues/8',
+              state: 'open',
+              updated_at: '2026-06-25T13:00:00Z',
+              user: { login: 'bob' },
+            },
+          ]),
+        );
+      }
+      if (url.pathname.endsWith('/commits')) return Promise.resolve(jsonResponse([]));
+      const base = emptyGithubFetch(input);
+      return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
+    });
+    globalThis.fetch = fetchMock;
+    const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
+    const saveCursor = vi.fn().mockResolvedValue(undefined);
+
+    await githubProvider.incrementalSync({
+      integration: {} as never,
+      tokens: { access_token: 'gho_token' },
+      selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+      ctx: {
+        writeEvents,
+        recordAudit: vi.fn(),
+        saveCursor,
+        loadCursor: vi.fn((resourceType: string) =>
+          Promise.resolve(
+            resourceType === 'github.repo:acme/app:issues'
+              ? {
+                  issues_since: '2026-06-25T12:00:00Z',
+                  issue_lifecycles: { '8': 'closed' },
+                }
+              : resourceType === 'github.repo:acme/app:releases' ||
+                  resourceType === 'github.repo:acme/app:workflow_runs'
+                ? { last_polled_at: new Date().toISOString() }
+                : {},
+          ),
+        ),
+        persistTokens: vi.fn(),
+      },
+    });
+
+    const issueEvents = writeEvents.mock.calls
+      .flatMap(([events]) => events)
+      .filter((event) => event.dedupKey.startsWith('github:issue:8:'));
+    expect(issueEvents[0]?.dedupKey).toBe('github:issue:8:open:2026-06-25T13:00:00Z');
+    expect(issueEvents[0]?.eventType).toBe('issue.reopened');
+    expect(savedCursor(saveCursor, 'github.repo:acme/app:issues')).toMatchObject({
+      issue_lifecycles: { '8': 'open' },
+    });
+  });
+
+  it('retains a recent lifecycle suffix when pruning oversized issue cursors', async () => {
+    const bloatedLifecycles = Object.fromEntries(
+      Array.from({ length: 5_001 }, (_, index) => [String(index), 'closed' as const]),
+    );
+    const fetchMock = vi.fn<typeof fetch>((input) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.pathname.endsWith('/issues')) {
+        return Promise.resolve(
+          jsonResponse([
+            {
+              id: 8,
+              number: 8,
+              title: 'Bug report',
+              body: null,
+              html_url: 'https://github.com/acme/app/issues/8',
+              state: 'open',
+              updated_at: '2026-06-25T13:00:00Z',
+              user: { login: 'bob' },
+            },
+          ]),
+        );
+      }
+      if (url.pathname.endsWith('/commits')) return Promise.resolve(jsonResponse([]));
+      const base = emptyGithubFetch(input);
+      return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
+    });
+    globalThis.fetch = fetchMock;
+    const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
+    const saveCursor = vi.fn().mockResolvedValue(undefined);
+
+    await githubProvider.incrementalSync({
+      integration: {} as never,
+      tokens: { access_token: 'gho_token' },
+      selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+      ctx: {
+        writeEvents,
+        recordAudit: vi.fn(),
+        saveCursor,
+        loadCursor: vi.fn((resourceType: string) =>
+          Promise.resolve(
+            resourceType === 'github.repo:acme/app:issues'
+              ? {
+                  issues_since: '2026-06-25T12:00:00Z',
+                  issue_lifecycles: bloatedLifecycles,
+                }
+              : resourceType === 'github.repo:acme/app:releases' ||
+                  resourceType === 'github.repo:acme/app:workflow_runs'
+                ? { last_polled_at: new Date().toISOString() }
+                : {},
+          ),
+        ),
+        persistTokens: vi.fn(),
+      },
+    });
+
+    const lifecycles = savedCursor(saveCursor, 'github.repo:acme/app:issues')?.issue_lifecycles;
+    expect(Object.keys(lifecycles ?? {})).toHaveLength(2_501);
+    expect(lifecycles?.['8']).toBe('open');
+    expect(lifecycles?.['5000']).toBe('closed');
+    expect(lifecycles?.['0']).toBeUndefined();
   });
 
   it('uses issue ETags to skip unchanged issue reconciliation by since query', async () => {

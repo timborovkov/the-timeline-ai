@@ -330,9 +330,10 @@ describe('mondayProvider', () => {
     const normalized = Array.isArray(result) ? { events: result, syncTasks: [] } : result;
 
     expect(normalized?.events[0]).toMatchObject({
-      dedupKey: 'monday:webhook:645fc8d8709d35718f1ae00ceded91e9',
+      dedupKey: 'monday:item:1771812698:1771812728:done:645fc8d8709d35718f1ae00ceded91e9',
       eventType: 'column.changed',
       externalObjectId: '1771812728',
+      externalEventId: '645fc8d8709d35718f1ae00ceded91e9',
       objectMap: {
         type: 'other',
         externalId: '1771812728',
@@ -342,6 +343,7 @@ describe('mondayProvider', () => {
         monday_board_id: '1771812698',
         monday_item_id: '1771812728',
         monday_subscription_id: '73760484',
+        monday_trigger_uuid: '645fc8d8709d35718f1ae00ceded91e9',
       },
     });
     expect(normalized?.events[0]?.contentText).toContain('Column: Status');
@@ -356,6 +358,307 @@ describe('mondayProvider', () => {
         reason: 'monday_item_webhook',
       },
     ]);
+  });
+
+  it('mints revision keys for Monday update edit/delete webhooks', async () => {
+    const created = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          userId: 9603417,
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          updateId: 55,
+          type: 'create_update',
+          triggerTime: '2026-06-25T09:15:03.429Z',
+          subscriptionId: 73760484,
+          triggerUuid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        },
+      },
+    });
+    const edited = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          userId: 9603417,
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          updateId: 55,
+          type: 'edit_update',
+          triggerTime: '2026-06-25T09:20:03.429Z',
+          subscriptionId: 73760484,
+          triggerUuid: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        },
+      },
+    });
+    const createdEvents = Array.isArray(created) ? created : (created?.events ?? []);
+    const editedEvents = Array.isArray(edited) ? edited : (edited?.events ?? []);
+    expect(createdEvents[0]?.dedupKey).toBe(
+      'monday:update:1771812728:55:create_update:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    );
+    expect(editedEvents[0]?.dedupKey).toBe(
+      'monday:update:1771812728:55:edit_update:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    );
+    expect(editedEvents[0]?.dedupKey).not.toBe(createdEvents[0]?.dedupKey);
+  });
+
+  it('uses distinct lifecycle buckets for Monday archive and delete webhooks', async () => {
+    const archived = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          userId: 9603417,
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          type: 'item_archived',
+          triggerTime: '2026-06-25T09:15:03.429Z',
+          subscriptionId: 73760484,
+          triggerUuid: 'cccccccccccccccccccccccccccccccc',
+        },
+      },
+    });
+    const deleted = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          userId: 9603417,
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          type: 'item_deleted',
+          triggerTime: '2026-06-25T09:16:03.429Z',
+          subscriptionId: 73760484,
+          triggerUuid: 'dddddddddddddddddddddddddddddddd',
+        },
+      },
+    });
+    const archivedEvents = Array.isArray(archived) ? archived : (archived?.events ?? []);
+    const deletedEvents = Array.isArray(deleted) ? deleted : (deleted?.events ?? []);
+    expect(archivedEvents[0]?.dedupKey).toBe('monday:item:1771812698:1771812728:archived');
+    expect(deletedEvents[0]?.dedupKey).toBe('monday:item:1771812698:1771812728:deleted');
+    expect(archivedEvents[0]?.objectMap).toMatchObject({ status: 'cancelled' });
+    expect(deletedEvents[0]?.objectMap).toMatchObject({ status: 'cancelled' });
+  });
+
+  it('does not derive lifecycle status from non-status Monday column webhooks', async () => {
+    const result = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          userId: 9603417,
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          columnId: 'person',
+          columnType: 'multiple-person',
+          columnTitle: 'Owner',
+          value: { personsAndTeams: [{ id: 1, kind: 'person' }] },
+          previousValue: null,
+          type: 'update_column_value',
+          triggerTime: '2026-06-25T09:15:03.429Z',
+          subscriptionId: 73760484,
+          triggerUuid: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        },
+      },
+    });
+    const normalized = Array.isArray(result) ? { events: result, syncTasks: [] } : result;
+
+    expect(normalized?.events[0]).toMatchObject({
+      dedupKey:
+        'monday:item:1771812698:1771812728:observed:update_column_value:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      eventType: 'column.changed',
+      objectMap: {
+        type: 'other',
+        externalId: '1771812728',
+      },
+    });
+    expect(normalized?.events[0]?.objectMap).not.toHaveProperty('status');
+  });
+
+  it('mints distinct observed revision keys for successive non-status Monday webhooks', async () => {
+    const owner = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          columnId: 'person',
+          columnType: 'multiple-person',
+          columnTitle: 'Owner',
+          value: { personsAndTeams: [{ id: 1, kind: 'person' }] },
+          type: 'update_column_value',
+          triggerTime: '2026-06-25T09:15:03.429Z',
+          triggerUuid: 'owner-trigger-1',
+        },
+      },
+    });
+    const due = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          columnId: 'date',
+          columnType: 'date',
+          columnTitle: 'Due',
+          value: { date: '2026-07-01' },
+          type: 'update_column_value',
+          triggerTime: '2026-06-25T09:16:03.429Z',
+          triggerUuid: 'due-trigger-2',
+        },
+      },
+    });
+    const ownerReplay = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          columnId: 'person',
+          columnType: 'multiple-person',
+          columnTitle: 'Owner',
+          value: { personsAndTeams: [{ id: 1, kind: 'person' }] },
+          type: 'update_column_value',
+          triggerTime: '2026-06-25T09:15:03.429Z',
+          triggerUuid: 'owner-trigger-1',
+        },
+      },
+    });
+    const ownerEvent = (Array.isArray(owner) ? owner[0] : owner?.events[0]) ?? null;
+    const dueEvent = (Array.isArray(due) ? due[0] : due?.events[0]) ?? null;
+    const replayEvent =
+      (Array.isArray(ownerReplay) ? ownerReplay[0] : ownerReplay?.events[0]) ?? null;
+    expect(ownerEvent?.dedupKey).toBe(
+      'monday:item:1771812698:1771812728:observed:update_column_value:owner-trigger-1',
+    );
+    expect(dueEvent?.dedupKey).toBe(
+      'monday:item:1771812698:1771812728:observed:update_column_value:due-trigger-2',
+    );
+    expect(dueEvent?.dedupKey).not.toBe(ownerEvent?.dedupKey);
+    expect(replayEvent?.dedupKey).toBe(ownerEvent?.dedupKey);
+  });
+
+  it('coalesces duplicate Monday status webhook deliveries with the same triggerUuid', async () => {
+    const payload = {
+      event: {
+        userId: 9603417,
+        boardId: 1771812698,
+        pulseId: 1771812728,
+        pulseName: 'Launch checklist',
+        columnId: 'status',
+        columnType: 'color',
+        columnTitle: 'Status',
+        value: { label: 'Done' },
+        previousValue: { label: 'Working on it' },
+        type: 'update_column_value',
+        triggerTime: '2026-06-25T09:15:03.429Z',
+        subscriptionId: 73760484,
+        triggerUuid: '645fc8d8709d35718f1ae00ceded91e9',
+      },
+    };
+    const first = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload,
+    });
+    const replay = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload,
+    });
+    const firstEvent = (Array.isArray(first) ? first[0] : first?.events[0]) ?? null;
+    const replayEvent = (Array.isArray(replay) ? replay[0] : replay?.events[0]) ?? null;
+    expect(firstEvent?.dedupKey).toBe(
+      'monday:item:1771812698:1771812728:done:645fc8d8709d35718f1ae00ceded91e9',
+    );
+    expect(replayEvent?.dedupKey).toBe(firstEvent?.dedupKey);
+  });
+
+  it('recognizes renamed Monday status columns that report columnType color', async () => {
+    const result = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          columnId: 'phase',
+          columnType: 'color',
+          columnTitle: 'Phase',
+          value: { label: 'Done' },
+          previousValue: { label: 'Working on it' },
+          type: 'update_column_value',
+          triggerTime: '2026-06-25T09:15:03.429Z',
+          triggerUuid: 'phase-status-trigger',
+        },
+      },
+    });
+    const event = (Array.isArray(result) ? result[0] : result?.events[0]) ?? null;
+    expect(event?.dedupKey).toBe('monday:item:1771812698:1771812728:done:phase-status-trigger');
+    expect(event?.objectMap).toMatchObject({ status: 'done' });
+  });
+
+  it('mints a distinct Monday dedup key when a lifecycle status bucket repeats', async () => {
+    const toDone = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          columnId: 'status',
+          columnType: 'color',
+          columnTitle: 'Status',
+          value: { label: 'Done' },
+          previousValue: { label: 'Working on it' },
+          type: 'update_column_value',
+          triggerTime: '2026-06-25T09:15:03.429Z',
+          triggerUuid: 'to-done-1',
+        },
+      },
+    });
+    const reopen = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          columnId: 'status',
+          columnType: 'color',
+          columnTitle: 'Status',
+          value: { label: 'Working on it' },
+          previousValue: { label: 'Done' },
+          type: 'update_column_value',
+          triggerTime: '2026-06-25T10:15:03.429Z',
+          triggerUuid: 'reopen-2',
+        },
+      },
+    });
+    const firstOpen = await mondayProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      payload: {
+        event: {
+          boardId: 1771812698,
+          pulseId: 1771812728,
+          pulseName: 'Launch checklist',
+          type: 'create_pulse',
+          triggerTime: '2026-06-25T08:15:03.429Z',
+          triggerUuid: 'create-0',
+        },
+      },
+    });
+    const doneEvent = (Array.isArray(toDone) ? toDone[0] : toDone?.events[0]) ?? null;
+    const reopenEvent = (Array.isArray(reopen) ? reopen[0] : reopen?.events[0]) ?? null;
+    const createEvent = (Array.isArray(firstOpen) ? firstOpen[0] : firstOpen?.events[0]) ?? null;
+    expect(createEvent?.dedupKey).toBe('monday:item:1771812698:1771812728:open');
+    expect(doneEvent?.dedupKey).toBe('monday:item:1771812698:1771812728:done:to-done-1');
+    expect(reopenEvent?.dedupKey).toBe('monday:item:1771812698:1771812728:in_progress:reopen-2');
+    expect(reopenEvent?.dedupKey).not.toBe(createEvent?.dedupKey);
   });
 
   it('routes classic subitem webhooks through the selected parent board', async () => {
@@ -2152,6 +2455,7 @@ describe('mondayProvider', () => {
     });
     expect(ctx.saveCursor).toHaveBeenCalledWith('monday.item:board-1:item-1', {
       item_since: '2026-06-20T10:05:00.000Z',
+      item_lifecycles: { 'item-1': 'done' },
     });
     expect(fetch).toHaveBeenCalledTimes(1);
   });
@@ -4105,6 +4409,7 @@ describe('mondayProvider', () => {
     });
     expect(ctx.saveCursor).toHaveBeenCalledWith('monday.item:board-1:item-1', {
       item_since: '2026-06-20T10:08:00.000Z',
+      item_lifecycles: { 'item-1': 'open' },
     });
   });
 

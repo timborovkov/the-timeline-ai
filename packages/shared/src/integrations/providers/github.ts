@@ -32,6 +32,14 @@ import { childLogger } from '#src/logger.js';
 //   - Releases
 //   - Recent commits on the default branch
 //   - Workflow runs (CI state)
+//
+// Idempotency for issue/PR is by lifecycle buckets, not `updated_at`, so
+// title/body edits and timestamp churn reuse the raw_event. Webhook
+// transitions that can repeat (reopened/closed/…) append updated_at;
+// `opened` stays lifecycle-only so the follow-up poll does not double-ingest.
+// Releases key by lifecycle + content digest; workflow runs by conclusion +
+// run_attempt. Commits key by SHA; reviews by submitted_at; comments stay
+// content-hashed.
 
 const log = childLogger('integrations:github');
 
@@ -732,6 +740,7 @@ interface GhRelease {
   prerelease: boolean;
   published_at: string | null;
   created_at: string;
+  updated_at?: string | null;
   author: { login: string } | null;
 }
 
@@ -756,6 +765,8 @@ interface GhWorkflowRun {
   workflow_id: number;
   html_url: string;
   run_number: number;
+  /** GitHub Actions attempt counter; increments on rerun. */
+  run_attempt: number;
   event: string;
   created_at: string;
   updated_at: string;
@@ -795,6 +806,16 @@ interface RepoCursor {
   last_polled_at?: string;
   /** Conditional GET validators by stable request key. */
   github_conditional?: Record<string, GithubConditionalValidator>;
+  /**
+   * Last observed issue lifecycle per GitHub issue id. Used so polling can mint
+   * transition discriminators (e.g. closed→open) without a webhook action.
+   */
+  issue_lifecycles?: Record<string, 'open' | 'closed'>;
+  /**
+   * Last observed pull-request lifecycle per GitHub PR id. Same role as
+   * `issue_lifecycles` for open/closed/merged polling transitions.
+   */
+  pr_lifecycles?: Record<string, 'open' | 'merged' | 'closed'>;
 }
 
 const MAX_SYNC_PAGES = 20;
@@ -1057,7 +1078,122 @@ function githubWorkItemContentText(
     .join('\n\n');
 }
 
-function prToEvent(repo: string, pr: GhPullRequest): IntegrationEvent {
+function githubIssueLifecycle(state: string): 'open' | 'closed' {
+  return state === 'closed' ? 'closed' : 'open';
+}
+
+function githubPullRequestLifecycle(
+  pr: Pick<GhPullRequest, 'state' | 'merged_at'>,
+): 'open' | 'merged' | 'closed' {
+  if (pr.merged_at) return 'merged';
+  return pr.state === 'closed' ? 'closed' : 'open';
+}
+
+function githubReleaseLifecycle(
+  release: Pick<GhRelease, 'draft' | 'prerelease'>,
+): 'draft' | 'prerelease' | 'published' {
+  if (release.draft) return 'draft';
+  if (release.prerelease) return 'prerelease';
+  return 'published';
+}
+
+/** Webhook actions that change issue/PR lifecycle identity (not title/body churn). */
+const GITHUB_ISSUE_TRANSITION_ACTIONS = new Set([
+  'opened',
+  'reopened',
+  'closed',
+  'deleted',
+  'transferred',
+]);
+const GITHUB_PR_TRANSITION_ACTIONS = new Set([
+  'opened',
+  'reopened',
+  'closed',
+  'ready_for_review',
+  'converted_to_draft',
+]);
+
+function githubIssueDedupKey(
+  issue: Pick<GhIssue, 'id' | 'state' | 'updated_at'>,
+  action?: string | null,
+): string {
+  const lifecycle = githubIssueLifecycle(issue.state);
+  // `opened` stays lifecycle-only so webhook + first poll share one raw_event.
+  // Later transitions (especially closed→reopened) append updated_at.
+  if (action && action !== 'opened' && GITHUB_ISSUE_TRANSITION_ACTIONS.has(action)) {
+    return `github:issue:${String(issue.id)}:${lifecycle}:${issue.updated_at}`;
+  }
+  return `github:issue:${String(issue.id)}:${lifecycle}`;
+}
+
+function githubPullRequestDedupKey(
+  pr: Pick<GhPullRequest, 'id' | 'state' | 'merged_at' | 'updated_at'>,
+  action?: string | null,
+): string {
+  const lifecycle = githubPullRequestLifecycle(pr);
+  if (action && action !== 'opened' && GITHUB_PR_TRANSITION_ACTIONS.has(action)) {
+    return `github:pr:${String(pr.id)}:${lifecycle}:${pr.updated_at}`;
+  }
+  return `github:pr:${String(pr.id)}:${lifecycle}`;
+}
+
+function githubReleaseContentDigest(
+  release: Pick<GhRelease, 'name' | 'body' | 'tag_name'>,
+): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        tag_name: release.tag_name,
+        name: release.name ?? null,
+        body: release.body ?? null,
+      }),
+    )
+    .digest('hex')
+    .slice(0, 16);
+}
+
+const GITHUB_LIFECYCLE_CURSOR_CAP = 5_000;
+
+function pruneLifecycleMap<T extends string>(
+  map: Record<string, T> | undefined,
+  keepIds: ReadonlySet<string>,
+): Record<string, T> | undefined {
+  if (!map) return undefined;
+  const entries = Object.entries(map);
+  if (entries.length <= GITHUB_LIFECYCLE_CURSOR_CAP) return map;
+  const next: Record<string, T> = {};
+  for (const id of keepIds) {
+    const value = map[id];
+    if (value) next[id] = value;
+  }
+  // Always retain a recent suffix so polling can still detect close/reopen
+  // transitions after a cap prune, even when the current page keeps many ids.
+  for (const [id, value] of entries.slice(-Math.floor(GITHUB_LIFECYCLE_CURSOR_CAP / 2))) {
+    next[id] = value;
+  }
+  return next;
+}
+
+/** Infer a webhook-equivalent transition action from polling lifecycle history. */
+function githubSyncIssueTransitionAction(
+  previous: 'open' | 'closed' | undefined,
+  current: 'open' | 'closed',
+): string | null {
+  if (!previous || previous === current) return null;
+  if (current === 'closed') return 'closed';
+  return 'reopened';
+}
+
+function githubSyncPullRequestTransitionAction(
+  previous: 'open' | 'merged' | 'closed' | undefined,
+  current: 'open' | 'merged' | 'closed',
+): string | null {
+  if (!previous || previous === current) return null;
+  if (current === 'open') return 'reopened';
+  return 'closed';
+}
+
+function prToEvent(repo: string, pr: GhPullRequest, action?: string | null): IntegrationEvent {
   const eventType = pr.merged_at ? 'pr.merged' : pr.state === 'closed' ? 'pr.closed' : 'pr.updated';
   const status: 'open' | 'done' | 'cancelled' = pr.merged_at
     ? 'done'
@@ -1066,7 +1202,7 @@ function prToEvent(repo: string, pr: GhPullRequest): IntegrationEvent {
       : 'open';
   const externalId = `${repo}#${String(pr.number)}`;
   return {
-    dedupKey: `github:pr:${String(pr.id)}:${pr.updated_at}`,
+    dedupKey: githubPullRequestDedupKey(pr, action),
     provider: 'github',
     externalObjectId: externalId,
     externalEventId: pr.updated_at,
@@ -1103,15 +1239,24 @@ function prToEvent(repo: string, pr: GhPullRequest): IntegrationEvent {
   };
 }
 
-function issueToEvent(repo: string, issue: GhIssue): IntegrationEvent | null {
+function issueToEvent(
+  repo: string,
+  issue: GhIssue,
+  action?: string | null,
+): IntegrationEvent | null {
   if (issue.pull_request) return null;
   const externalId = `${repo}#issue:${String(issue.number)}`;
   return {
-    dedupKey: `github:issue:${String(issue.id)}:${issue.updated_at}`,
+    dedupKey: githubIssueDedupKey(issue, action),
     provider: 'github',
     externalObjectId: externalId,
     externalEventId: issue.updated_at,
-    eventType: issue.state === 'closed' ? 'issue.closed' : 'issue.updated',
+    eventType:
+      action === 'reopened'
+        ? 'issue.reopened'
+        : issue.state === 'closed'
+          ? 'issue.closed'
+          : 'issue.updated',
     occurredAt: new Date(issue.updated_at),
     actor: issue.user ? { externalId: issue.user.login, name: issue.user.login } : null,
     contentText: githubWorkItemContentText(
@@ -1447,10 +1592,12 @@ function reviewCommentToEvent(
 }
 
 function releaseToEvent(repo: string, release: GhRelease): IntegrationEvent {
-  const ts = release.published_at ?? release.created_at;
+  const ts = release.updated_at ?? release.published_at ?? release.created_at;
+  const lifecycle = githubReleaseLifecycle(release);
+  const contentDigest = githubReleaseContentDigest(release);
   const externalId = `${repo}#release:${release.tag_name}`;
   return {
-    dedupKey: `github:release:${String(release.id)}:${ts}`,
+    dedupKey: `github:release:${String(release.id)}:${lifecycle}:${contentDigest}`,
     provider: 'github',
     externalObjectId: externalId,
     externalEventId: ts,
@@ -1508,8 +1655,10 @@ function commitToEvent(repo: string, commit: GhCommit): IntegrationEvent {
 }
 
 function workflowRunToEvent(repo: string, run: GhWorkflowRun): IntegrationEvent {
+  const lifecycle = run.conclusion ?? run.status ?? 'updated';
+  const attempt = Number.isFinite(run.run_attempt) && run.run_attempt > 0 ? run.run_attempt : 1;
   return {
-    dedupKey: `github:workflow_run:${String(run.id)}:${run.updated_at}`,
+    dedupKey: `github:workflow_run:${String(run.id)}:${lifecycle}:${String(attempt)}`,
     provider: 'github',
     externalObjectId: `${repo}#workflow_run:${String(run.id)}`,
     externalEventId: run.updated_at,
@@ -1518,7 +1667,7 @@ function workflowRunToEvent(repo: string, run: GhWorkflowRun): IntegrationEvent 
       : `workflow_run.${run.status ?? 'updated'}`,
     occurredAt: new Date(run.updated_at),
     actor: run.actor ? { externalId: run.actor.login, name: run.actor.login } : null,
-    contentText: `GitHub workflow "${run.name ?? String(run.workflow_id)}" #${String(run.run_number)} on ${repo} ${run.conclusion ?? run.status ?? 'updated'}`,
+    contentText: `GitHub workflow "${run.name ?? String(run.workflow_id)}" #${String(run.run_number)} attempt ${String(attempt)} on ${repo} ${run.conclusion ?? run.status ?? 'updated'}`,
     extra: {
       github: {
         type: 'workflow_run',
@@ -1526,6 +1675,7 @@ function workflowRunToEvent(repo: string, run: GhWorkflowRun): IntegrationEvent 
         url: run.html_url,
         status: run.status,
         conclusion: run.conclusion,
+        run_attempt: attempt,
         head_branch: run.head_branch,
         head_sha: run.head_sha,
         event: run.event,
@@ -1732,6 +1882,7 @@ function ghReleaseFromWebhook(record: Record<string, unknown>): GhRelease | null
     prerelease: boolValue(record.prerelease) ?? false,
     published_at: stringValue(record.published_at),
     created_at: createdAt,
+    updated_at: stringValue(record.updated_at),
     author: userValue(record.author),
   };
 }
@@ -1744,6 +1895,7 @@ function ghWorkflowRunFromWebhook(record: Record<string, unknown>): GhWorkflowRu
   const updatedAt = stringValue(record.updated_at);
   const headSha = stringValue(record.head_sha);
   if (!id || !workflowId || !runNumber || !htmlUrl || !updatedAt || !headSha) return null;
+  const runAttempt = numberValue(record.run_attempt);
   return {
     id,
     name: stringValue(record.name),
@@ -1754,6 +1906,7 @@ function ghWorkflowRunFromWebhook(record: Record<string, unknown>): GhWorkflowRu
     workflow_id: workflowId,
     html_url: htmlUrl,
     run_number: runNumber,
+    run_attempt: runAttempt && runAttempt > 0 ? runAttempt : 1,
     event: stringValue(record.event) ?? 'unknown',
     created_at: stringValue(record.created_at) ?? updatedAt,
     updated_at: updatedAt,
@@ -1807,13 +1960,14 @@ function githubWebhookEvents(payload: unknown): IntegrationEvent[] {
   const comment = recordValue(record.comment);
   const release = recordValue(record.release);
   const workflowRun = recordValue(record.workflow_run);
+  const webhookAction = stringValue(record.action);
   if (pr) {
     const event = ghPrFromWebhook(pr);
-    if (event) events.push(prToEvent(repo, event));
+    if (event) events.push(prToEvent(repo, event, webhookAction));
   }
   if (issue) {
     const event = ghIssueFromWebhook(issue);
-    const normalized = event ? issueToEvent(repo, event) : null;
+    const normalized = event ? issueToEvent(repo, event, webhookAction) : null;
     if (normalized) events.push(normalized);
     const issueComment = event && comment ? ghIssueCommentFromWebhook(comment, event) : null;
     const commentEvent = issueComment
@@ -1961,7 +2115,22 @@ async function syncPullRequestsSurface(
         if (prs.length === 0) break;
         const filtered = prs.filter((p) => p.updated_at > prsSince);
         if (filtered.length > 0) {
-          await ctx.writeEvents(filtered.map((pr) => prToEvent(repo, pr)));
+          const lifecycles = { ...(next.pr_lifecycles ?? {}) };
+          await ctx.writeEvents(
+            filtered.map((pr) => {
+              const lifecycle = githubPullRequestLifecycle(pr);
+              const previous = lifecycles[String(pr.id)];
+              const action = githubSyncPullRequestTransitionAction(previous, lifecycle);
+              lifecycles[String(pr.id)] = lifecycle;
+              return prToEvent(repo, pr, action);
+            }),
+          );
+          const prunedPrLifecycles = pruneLifecycleMap(
+            lifecycles,
+            new Set(filtered.map((pr) => String(pr.id))),
+          );
+          if (prunedPrLifecycles) next.pr_lifecycles = prunedPrLifecycles;
+          else delete next.pr_lifecycles;
           for (const pr of filtered) {
             next.prs_since = maxIso(next.prs_since, pr.updated_at);
             next.since = maxIso(next.since, pr.updated_at);
@@ -2068,12 +2237,26 @@ async function syncIssuesSurface(
           ? conditional.data
           : await ghGet<GhIssue[]>(tokens, path, budget);
       if (issues.length === 0) break;
+      const lifecycles = { ...(next.issue_lifecycles ?? {}) };
       const issueEvents = issues
-        .map((i) => issueToEvent(repo, i))
+        .map((i) => {
+          if (i.pull_request) return null;
+          const lifecycle = githubIssueLifecycle(i.state);
+          const previous = lifecycles[String(i.id)];
+          const action = githubSyncIssueTransitionAction(previous, lifecycle);
+          lifecycles[String(i.id)] = lifecycle;
+          return issueToEvent(repo, i, action);
+        })
         .filter((e): e is IntegrationEvent => e !== null);
       if (issueEvents.length > 0) {
         await ctx.writeEvents(issueEvents);
       }
+      const prunedIssueLifecycles = pruneLifecycleMap(
+        lifecycles,
+        new Set(issues.filter((i) => !i.pull_request).map((i) => String(i.id))),
+      );
+      if (prunedIssueLifecycles) next.issue_lifecycles = prunedIssueLifecycles;
+      else delete next.issue_lifecycles;
       for (const i of issues) {
         next.issues_since = maxIso(next.issues_since, i.updated_at);
         next.since = maxIso(next.since, i.updated_at);

@@ -19,7 +19,7 @@ export interface TimelineModelConfig {
 
 export const TIMELINE_MODELS = {
   extraction: {
-    id: 'z-ai/glm-5.2',
+    id: 'deepseek/deepseek-v4-flash-0731',
     provider: 'openrouter',
     contextWindowTokens: 1_048_576,
     capabilities: ['chat', 'structured', 'tools'],
@@ -31,19 +31,19 @@ export const TIMELINE_MODELS = {
     capabilities: ['chat', 'structured', 'tools'],
   },
   agent: {
-    id: 'z-ai/glm-5.2',
+    id: 'deepseek/deepseek-v4-flash-0731',
     provider: 'openrouter',
     contextWindowTokens: 1_048_576,
     capabilities: ['chat', 'structured', 'tools'],
   },
   summarization: {
-    id: 'deepseek/deepseek-v4-flash',
+    id: 'deepseek/deepseek-v4-flash-0731',
     provider: 'openrouter',
     contextWindowTokens: 1_048_576,
     capabilities: ['chat', 'structured', 'tools'],
   },
   taskCategorization: {
-    id: 'deepseek/deepseek-v4-flash',
+    id: 'deepseek/deepseek-v4-flash-0731',
     provider: 'openrouter',
     contextWindowTokens: 1_048_576,
     capabilities: ['chat', 'structured'],
