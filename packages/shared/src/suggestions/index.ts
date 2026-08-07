@@ -6080,47 +6080,6 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       await validateEvidenceVisible((input.evidence ?? []).map((ev) => ev.rawEventId));
       const objectTypeByTargetId = await objectTypesForItems(input.items);
       const evidenceIds = Array.from(new Set((input.evidence ?? []).map((ev) => ev.rawEventId)));
-      const evidenceVersionRows =
-        evidenceIds.length > 0
-          ? await db
-              .select({
-                id: rawEvents.id,
-                contentText: rawEvents.contentText,
-                occurredAt: rawEvents.occurredAt,
-              })
-              .from(rawEvents)
-              .where(
-                and(
-                  inArray(rawEvents.id, evidenceIds),
-                  eq(rawEvents.teamId, teamId),
-                  rawEventIsActive(),
-                ),
-              )
-          : [];
-      if (evidenceVersionRows.length !== evidenceIds.length) {
-        throw new Error('Suggestion evidence changed while the proposal was being generated');
-      }
-      const evidenceFingerprintsById = Object.fromEntries(
-        evidenceVersionRows.map((event) => {
-          const currentFingerprint = evidenceContentFingerprint(event);
-          const suppliedEvidence = input.evidence?.find(
-            (candidate) => candidate.rawEventId === event.id,
-          );
-          const snapshotFingerprint = recordFromUnknown(
-            suppliedEvidence?.metadata,
-          ).evidence_content_fingerprint;
-          if (
-            typeof snapshotFingerprint === 'string' &&
-            snapshotFingerprint !== currentFingerprint
-          ) {
-            throw new Error('Suggestion evidence changed while the proposal was being generated');
-          }
-          return [
-            event.id,
-            typeof snapshotFingerprint === 'string' ? snapshotFingerprint : currentFingerprint,
-          ];
-        }),
-      );
       const evidenceIdSet = new Set(evidenceIds);
       for (const item of input.items) {
         if (item.evidenceRawEventIds?.some((rawEventId) => !evidenceIdSet.has(rawEventId))) {
@@ -6277,6 +6236,65 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             : input.dedupeKey;
 
       const result = await db.transaction(async (tx) => {
+        const evidenceVersionRows =
+          evidenceIds.length > 0
+            ? await tx
+                .select({
+                  id: rawEvents.id,
+                  contentText: rawEvents.contentText,
+                  occurredAt: rawEvents.occurredAt,
+                })
+                .from(rawEvents)
+                .where(
+                  and(
+                    inArray(rawEvents.id, evidenceIds),
+                    eq(rawEvents.teamId, teamId),
+                    rawEventIsActive(),
+                  ),
+                )
+                .for('update')
+            : [];
+        if (evidenceVersionRows.length !== evidenceIds.length) {
+          throw new Error('Suggestion evidence changed while the proposal was being generated');
+        }
+        const evidenceFingerprintsById = Object.fromEntries(
+          evidenceVersionRows.map((event) => {
+            const currentFingerprint = evidenceContentFingerprint(event);
+            const suppliedEvidence = input.evidence?.find(
+              (candidate) => candidate.rawEventId === event.id,
+            );
+            const snapshotFingerprint = recordFromUnknown(
+              suppliedEvidence?.metadata,
+            ).evidence_content_fingerprint;
+            if (
+              typeof snapshotFingerprint === 'string' &&
+              snapshotFingerprint !== currentFingerprint
+            ) {
+              throw new Error('Suggestion evidence changed while the proposal was being generated');
+            }
+            return [
+              event.id,
+              typeof snapshotFingerprint === 'string' ? snapshotFingerprint : currentFingerprint,
+            ];
+          }),
+        );
+        const lockedPredecessorItems =
+          actionableChangedPackItemIds.length > 0
+            ? await tx
+                .select({ id: agentSuggestionItems.id })
+                .from(agentSuggestionItems)
+                .where(
+                  and(
+                    inArray(agentSuggestionItems.id, actionableChangedPackItemIds),
+                    inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
+                  ),
+                )
+                .for('update')
+            : [];
+        if (lockedPredecessorItems.length !== actionableChangedPackItemIds.length) {
+          throw new Error('Suggestion evidence revision changed concurrently; retry');
+        }
+
         const [run] = await tx
           .insert(reconciliationRuns)
           .values({
@@ -6841,6 +6859,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                 )
                 .returning()
             : [];
+        if (supersededItems.length !== actionableChangedPackItemIds.length) {
+          throw new Error('Suggestion evidence revision changed concurrently; retry');
+        }
         for (const supersededItem of supersededItems) {
           await writeProjectedOutputStatusForItem(
             tx,

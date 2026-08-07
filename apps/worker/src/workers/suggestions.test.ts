@@ -16,7 +16,7 @@ import {
   reconciliationRuns,
   type Db,
 } from '@timeline/db';
-import { conversationReview, suggestions } from '@timeline/shared';
+import { conversationReview, evidencePacks, llm, suggestions } from '@timeline/shared';
 import { resetEnvForTests } from '@timeline/shared/env';
 import { RECONCILIATION_PLANNER_PROMPT_VERSION } from '@timeline/shared/reconciliation/planner';
 import { withTeam } from '@timeline/shared/team-scope';
@@ -26,6 +26,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
 import {
+  assembleSuggestionPrompt,
   fallbackBundles,
   processSuggestionJobForTests,
   SUGGESTION_PROMPT_MAX_INPUT_TOKENS,
@@ -688,6 +689,23 @@ describe('processSuggestionJobForTests', () => {
     });
   });
 
+  it('reserves prompt budget for the full enforced evidence pack', () => {
+    const rawEventId = '99999999-6677-4677-8677-667766776677';
+    const prompt = assembleSuggestionPrompt(
+      {
+        workspace: '# Workspace\n' + 'w'.repeat(20_000),
+        evidence: '# Related evidence\n' + 'e'.repeat(20_000),
+        anchor: '# Current event\n' + 'a'.repeat(120_000),
+        requiredEvidence: `# Cross-source evidence pack\nraw_event_id=${rawEventId}`,
+      },
+      SUGGESTION_PROMPT_MAX_INPUT_TOKENS,
+    );
+
+    expect(prompt).toContain('# Cross-source evidence pack');
+    expect(prompt).toContain(rawEventId);
+    expect(llm.estimateTextTokens(prompt)).toBeLessThanOrEqual(SUGGESTION_PROMPT_MAX_INPUT_TOKENS);
+  });
+
   it('rejects evidence tombstoned while enforced extraction is running', async () => {
     const rawEventId = '99999999-6767-4676-8676-676767676767';
     await seedRawEvent(db as never, {
@@ -731,6 +749,136 @@ describe('processSuggestionJobForTests', () => {
           getEnv: () => envWithEvidenceMode('enforced'),
           chatStructured: chat,
           modelId: MODEL_ID,
+        },
+      ),
+    ).rejects.toThrow('Suggestion evidence must reference visible events in this team');
+    await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 0, items: 0 });
+  });
+
+  it('rejects an uncited selected pack row tombstoned during extraction', async () => {
+    const rawEventId = '99999999-6788-4788-8788-678867886788';
+    const supportRawEventId = '99999999-6799-4799-8799-679967996799';
+    const anchorText = 'Owner committed to send the Acme proposal.';
+    const supportText = 'The signed delivery date is next Tuesday.';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      source: 'ingest_webhook',
+      text: anchorText,
+      sourceMetadata: { proposal_generation_enabled: true },
+    });
+    await seedRawEvent(db as never, {
+      id: supportRawEventId,
+      source: 'email',
+      text: supportText,
+    });
+    const pack = {
+      version: evidencePacks.EVIDENCE_PACK_VERSION,
+      policyVersion: evidencePacks.EVIDENCE_PACK_POLICIES.proposal.version,
+      fingerprint: 'f'.repeat(64),
+      purpose: 'proposal',
+      audience: {
+        visibility: 'team',
+        visibilityOwnerUserId: null,
+        visibilityUserIds: null,
+      },
+      items: [
+        {
+          rawEventId,
+          surface: 'Webhook',
+          source: 'ingest_webhook',
+          role: 'core',
+          contentText: anchorText,
+          contentFingerprint: suggestions.suggestionDedupeKey({
+            contentText: anchorText,
+            occurredAt: REFERENCE_DATE.toISOString(),
+          }),
+          occurredAt: REFERENCE_DATE,
+          authorUserId: OWNER_ID,
+          sourceMetadata: { proposal_generation_enabled: true },
+          relationshipSignals: [{ kind: 'anchor', strength: 'hard' }],
+          sourceRefs: [{ source: 'ingest_webhook', rawEventId }],
+          rank: 1,
+          rankReasons: ['protected_core'],
+          visibility: {
+            visibility: 'team',
+            visibilityOwnerUserId: null,
+            visibilityUserIds: null,
+          },
+          truncated: false,
+          truncationReason: null,
+        },
+        {
+          rawEventId: supportRawEventId,
+          surface: 'Email',
+          source: 'email',
+          role: 'supporting',
+          contentText: supportText,
+          contentFingerprint: suggestions.suggestionDedupeKey({
+            contentText: supportText,
+            occurredAt: REFERENCE_DATE.toISOString(),
+          }),
+          occurredAt: REFERENCE_DATE,
+          authorUserId: OWNER_ID,
+          sourceMetadata: {},
+          relationshipSignals: [{ kind: 'artifact_association', strength: 'hard' }],
+          sourceRefs: [{ source: 'email', rawEventId: supportRawEventId }],
+          rank: 2,
+          rankReasons: ['direct_artifact_relationship'],
+          visibility: {
+            visibility: 'team',
+            visibilityOwnerUserId: null,
+            visibilityUserIds: null,
+          },
+          truncated: false,
+          truncationReason: null,
+        },
+      ],
+      metrics: {
+        candidateCount: 2,
+        selectedCount: 2,
+        surfaceCount: 2,
+        estimatedTokens: 25,
+        truncated: false,
+        omissionReasons: {},
+        buildDurationMs: 0,
+      },
+    } satisfies evidencePacks.EvidencePack;
+    const chat = vi.fn().mockImplementation(async () => {
+      await db
+        .update(rawEvents)
+        .set({ sourceMetadata: { deleted: true } })
+        .where(eq(rawEvents.id, supportRawEventId));
+      return {
+        model: MODEL_ID,
+        object: {
+          bundles: [
+            {
+              title: 'Send the Acme proposal',
+              confidence: 'high',
+              items: [
+                {
+                  operation: 'create',
+                  targetKind: 'task',
+                  title: 'Send the Acme proposal',
+                  proposedPayload: { canonicalName: 'Send the Acme proposal' },
+                  evidenceRawEventIds: [rawEventId],
+                },
+              ],
+            },
+          ],
+        },
+      };
+    });
+
+    await expect(
+      processSuggestionJobForTests(
+        { db: db as never },
+        { rawEventId, teamId: TEAM_ID },
+        {
+          getEnv: () => envWithEvidenceMode('enforced'),
+          chatStructured: chat,
+          modelId: MODEL_ID,
+          buildEvidencePack: vi.fn().mockResolvedValue(pack),
         },
       ),
     ).rejects.toThrow('Suggestion evidence must reference visible events in this team');

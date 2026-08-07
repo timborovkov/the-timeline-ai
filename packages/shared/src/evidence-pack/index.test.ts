@@ -1,4 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
+import { rawEvents } from '@timeline/db';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -409,7 +411,7 @@ describe('buildEvidencePack', () => {
     expect(pack.metrics.omissionReasons).toMatchObject({ candidate_limit: 1 });
   });
 
-  it('prefers a new evidence surface before more same-surface evidence', async () => {
+  it('applies recency before source diversity', async () => {
     const db = drizzle(pg);
     for (const rawEventId of [ANCHOR_ID, SUPPORT_ID, SLACK_NEW_ID, SLACK_OLD_ID]) {
       await reconcileArtifactEvidence(db as never, {
@@ -432,10 +434,61 @@ describe('buildEvidencePack', () => {
     expect(pack.items.map((item) => item.rawEventId)).toEqual([
       ANCHOR_ID,
       SLACK_NEW_ID,
-      SUPPORT_ID,
       SLACK_OLD_ID,
+      SUPPORT_ID,
     ]);
-    expect(pack.items[2]?.rankReasons).toContain('source_diversity');
+    expect(pack.items[3]?.rankReasons).toContain('source_diversity');
+  });
+
+  it('backfills a smaller ranked candidate when a larger candidate exceeds the token budget', async () => {
+    const db = drizzle(pg);
+    const extraCoreIds = Array.from(
+      { length: 22 },
+      (_, index) => `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+    );
+    await db
+      .update(rawEvents)
+      .set({ contentText: 'a'.repeat(1_040) })
+      .where(eq(rawEvents.id, ANCHOR_ID));
+    await db.insert(rawEvents).values(
+      extraCoreIds.map((id, index) => ({
+        id,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        visibilityOwnerUserId: USER_ID,
+        source: 'web' as const,
+        contentText: String.fromCharCode(98 + (index % 20)).repeat(1_040),
+        occurredAt: new Date(`2026-07-${String(index + 1).padStart(2, '0')}T10:00:00Z`),
+        visibility: 'team' as const,
+        sourceMetadata: {},
+      })),
+    );
+    await db
+      .update(rawEvents)
+      .set({ occurredAt: new Date('2026-08-01T14:00:00Z') })
+      .where(eq(rawEvents.id, LONG_SUPPORT_ID));
+    for (const rawEventId of [ANCHOR_ID, LONG_SUPPORT_ID, SUPPORT_ID]) {
+      await reconcileArtifactEvidence(db as never, {
+        teamId: TEAM_ID,
+        artifactType: 'project',
+        canonicalName: 'Acme launch',
+        status: 'active',
+        rawEventId,
+        role: 'discussion',
+        strength: 'hard',
+        anchors: [{ type: 'canonical_url', value: 'https://acme.test/launch', strength: 'hard' }],
+      });
+    }
+
+    const pack = await buildEvidencePack(withTeam(db as never, TEAM_ID, USER_ID), {
+      purpose: 'proposal',
+      anchorRawEventIds: [ANCHOR_ID, ...extraCoreIds],
+    });
+
+    expect(pack.items.map((item) => item.rawEventId)).toContain(SUPPORT_ID);
+    expect(pack.items.map((item) => item.rawEventId)).not.toContain(LONG_SUPPORT_ID);
+    expect(pack.metrics.omissionReasons).toMatchObject({ token_budget: 1 });
+    expect(pack.metrics.estimatedTokens).toBeLessThanOrEqual(6_000);
   });
 
   it('discovers supporting evidence through every cluster attached to an anchor', async () => {

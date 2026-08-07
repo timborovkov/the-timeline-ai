@@ -121,7 +121,14 @@ up to 8 supporting events and 4 supporting events per surface,
 scans no more than 500 eligible candidates, and reserves no more than 6,000
 estimated input tokens inside the existing suggestion prompt budget. Core
 evidence is allocated before supporting evidence. The result records every
-truncation and omission reason.
+truncation and omission reason. A supporting candidate that does not fit the
+remaining token budget is omitted without ending selection; lower-ranked
+candidates remain eligible when they fit the remaining budget.
+
+In enforced mode, the rendered pack is a required prompt section. The prompt
+assembler reserves its complete token cost before allocating the optional
+current-event, related-context, and workspace sections, so an oversized source
+event cannot truncate the pack out of the model input.
 
 Hard object relationships have no global age cutoff. The bounded candidate
 pool, relationship strength, authority, recency, and diversity policy control
@@ -134,13 +141,15 @@ the supplied pack. The worker rejects a bundle with unknown, inaccessible, or
 empty item citations. Enforced mode does not fall back to post-hoc lexical quote
 matching.
 
-The suggestion stores the union of selected evidence in the existing bundle
-evidence rows. Each item stores its selected IDs in metadata, and its
+The suggestion stores every selected pack row in the existing bundle evidence
+rows, including selected rows that no returned item cites. Each item stores its
+cited IDs in metadata, and its
 reconciliation output `sourceRefs` is the authoritative per-item citation set.
 The suggestion and reconciliation run store the pack version, policy version,
 fingerprint, metrics, and truncation state. This does not require a new table.
-Each selected item also carries a content-and-occurrence snapshot fingerprint.
-Persistence compares that fingerprint with the current row and retries the
+Each selected pack row also carries a content-and-occurrence snapshot
+fingerprint. Persistence locks and revalidates every selected raw-event row in
+the proposal transaction before writing any derived state. It retries the
 proposal when mutable calendar evidence changes while the model is running.
 
 A rebuild that changes the fingerprint creates a new proposal revision and
@@ -205,9 +214,12 @@ inferred after generation from lexical overlap. Evidence ranking becomes
 repeatable and observable. Provider state can support Timeline-owned proposals
 without losing its own authority model.
 
-When mutable evidence changes a pack fingerprint, Timeline creates the
-replacement approval and supersedes its predecessor in one transaction. A
-failed replacement therefore leaves the prior actionable approval intact.
+When mutable evidence changes a pack fingerprint, Timeline locks the expected
+actionable predecessor items, creates the replacement approval, and supersedes
+its predecessor in one transaction. A competing revision aborts when that
+predecessor set has already changed. A failed replacement therefore leaves the
+prior actionable approval intact, and concurrent rebuilds cannot leave two
+actionable replacements.
 
 The first implementation adds a shared module, consumer adapters, stricter
 model output validation, proposal revision behavior, per-item evidence display,

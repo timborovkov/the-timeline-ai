@@ -450,15 +450,20 @@ export async function buildEvidencePack(
     return (
       bSignal - aSignal ||
       authority ||
+      b.occurredAt.getTime() - a.occurredAt.getTime() ||
       diversity ||
       semantic ||
-      b.occurredAt.getTime() - a.occurredAt.getTime() ||
       a.rawEventId.localeCompare(b.rawEventId)
     );
   };
   const perSurface = new Map<string, number>();
   const selectedSupporting: EvidencePackItem[] = [];
   const remaining = [...supporting];
+  let estimatedTokens = coreItems.reduce(
+    (total, item) => total + Math.ceil(item.contentText.length / 4),
+    0,
+  );
+  let tokenBudgetOmissionCount = 0;
   while (remaining.length > 0 && selectedSupporting.length < policy.maxSupportingEvents) {
     const selectedSurfaces = new Set(perSurface.keys());
     remaining.sort((a, b) => compareSupporting(a, b, selectedSurfaces));
@@ -468,6 +473,11 @@ export async function buildEvidencePack(
     if (eligibleIndex < 0) break;
     const [item] = remaining.splice(eligibleIndex, 1);
     if (!item) break;
+    const itemTokens = Math.ceil(item.contentText.length / 4);
+    if (estimatedTokens + itemTokens > policy.maxEstimatedTokens) {
+      tokenBudgetOmissionCount += 1;
+      continue;
+    }
     const count = perSurface.get(item.surface) ?? 0;
     selectedSupporting.push({
       ...item,
@@ -479,6 +489,7 @@ export async function buildEvidencePack(
           : []),
       ],
     });
+    estimatedTokens += itemTokens;
     perSurface.set(item.surface, count + 1);
   }
 
@@ -494,19 +505,15 @@ export async function buildEvidencePack(
   if (surfaceLimitCount > 0) omissionReasons.surface_limit = surfaceLimitCount;
   const supportingLimitCount = remaining.length - surfaceLimitCount;
   if (supportingLimitCount > 0) omissionReasons.supporting_limit = supportingLimitCount;
+  if (tokenBudgetOmissionCount > 0) {
+    omissionReasons.token_budget = tokenBudgetOmissionCount;
+  }
   const contentLimitCount = rawItems.filter((item) => item.truncated).length;
   if (contentLimitCount > 0) omissionReasons.content_limit = contentLimitCount;
-  const selected: EvidencePackItem[] = [];
-  let estimatedTokens = 0;
-  for (const item of [...coreItems, ...selectedSupporting]) {
-    const itemTokens = Math.ceil(item.contentText.length / 4);
-    if (item.role === 'supporting' && estimatedTokens + itemTokens > policy.maxEstimatedTokens) {
-      omissionReasons.token_budget = (omissionReasons.token_budget ?? 0) + 1;
-      continue;
-    }
-    estimatedTokens += itemTokens;
-    selected.push({ ...item, rank: selected.length + 1 });
-  }
+  const selected = [...coreItems, ...selectedSupporting].map((item, index) => ({
+    ...item,
+    rank: index + 1,
+  }));
   const audience = audienceFor(selected);
   const metrics: EvidencePackMetrics = {
     candidateCount: rawItems.length,

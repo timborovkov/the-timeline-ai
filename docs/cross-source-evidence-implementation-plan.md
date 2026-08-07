@@ -342,7 +342,9 @@ transitive-path rejection, duplicate paths to one event, and candidate overflow.
 3. Reserve core evidence, then apply the 8-event supporting cap and 4-event
    per-surface cap.
 4. Apply a deterministic content/token estimator and the 6,000-token pack
-   budget without raising the 24,000-token suggestion limit.
+   budget without raising the 24,000-token suggestion limit. Continue through
+   ranked candidates after an oversized candidate so smaller eligible evidence
+   can backfill the remaining budget.
 5. Preserve raw references while returning bounded content excerpts for prompt
    rendering. Record item and pack truncation reasons.
 6. Compute the fingerprint from normalized anchor/core IDs, selected ordered
@@ -387,8 +389,10 @@ with model-selected, validated item citations.
    Never call it as an enforced-mode fallback.
 5. Extend `SuggestionItemInput` with selected evidence IDs and validate that
    each is contained in the suggestion's bundle evidence union.
-6. Store the union in `agent_suggestion_evidence`, selected IDs in item metadata,
-   and exact per-item citations in each reconciliation output's `sourceRefs`.
+6. Store every selected pack row in `agent_suggestion_evidence`, cited IDs in
+   item metadata, and exact per-item citations in each reconciliation output's
+   `sourceRefs`. Reserve the complete enforced pack in the prompt budget before
+   optional current-event and workspace context.
 7. Store pack version, policy version, fingerprint, metrics, build time, and
    truncation state in suggestion metadata and reconciliation run metrics.
 8. Preserve source authority when a pack contains provider-owned direct state
@@ -418,10 +422,12 @@ misleading actionable approval.
 2. When the fingerprint changes, create a new revision and supersede the prior
    items and reconciliation outputs with a pack-change reason in the same
    transaction, leaving the prior approval actionable if replacement creation
-   rolls back.
+   rolls back. Lock the expected actionable predecessor set and abort a
+   competing revision if that set changed.
 3. Do not describe append-only bundle evidence as the current selection.
 4. Revalidate every selected source reference on approval hydration and
-   acceptance.
+   acceptance. During proposal persistence, lock every selected raw-event row
+   and compare its snapshot fingerprint inside the write transaction.
 5. Supersede an item when required evidence is deleted, tombstoned, or no longer
    visible. Reuse the existing `superseded` state rather than adding a `stale`
    enum in the first implementation.

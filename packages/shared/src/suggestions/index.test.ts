@@ -224,6 +224,49 @@ describe('suggestion scope', () => {
     ]);
   });
 
+  it('keeps exactly one actionable revision when evidence revisions race', async () => {
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: 'Owner committed to the concurrent follow-up.',
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+      visibility: 'team',
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const create = (fingerprint: string) =>
+      scope.suggestions.createOrMergeSuggestionBundle({
+        source: 'background' as const,
+        title: 'Create concurrent follow-up task',
+        dedupeKey: 'concurrent-pack-revision',
+        metadata: { evidence_pack_fingerprint: fingerprint },
+        evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }],
+        items: [
+          {
+            operation: 'create' as const,
+            targetKind: 'task' as const,
+            title: 'Concurrent follow-up',
+            dedupeKey: 'concurrent-pack-revision:item',
+            proposedPayload: { canonicalName: 'Concurrent follow-up' },
+            evidenceRawEventIds: [TEAM_RAW_EVENT_ID],
+          },
+        ],
+      });
+
+    await create('a'.repeat(64));
+    const results = await Promise.allSettled([create('b'.repeat(64)), create('c'.repeat(64))]);
+    expect(results.some((result) => result.status === 'fulfilled')).toBe(true);
+
+    const statuses = await db
+      .select({ status: agentSuggestionItems.status })
+      .from(agentSuggestionItems);
+    expect(statuses.filter((item) => item.status === 'pending')).toHaveLength(1);
+    expect(statuses.filter((item) => item.status === 'superseded').length).toBeGreaterThanOrEqual(
+      1,
+    );
+  });
+
   it('keeps the prior approval actionable when replacement creation rolls back', async () => {
     await db.insert(rawEvents).values({
       id: TEAM_RAW_EVENT_ID,

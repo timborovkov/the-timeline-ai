@@ -160,6 +160,10 @@ Cross-source proposal behavior is shipped for a source path only when:
 - visible-but-changed evidence blocks acceptance; inaccessible or tombstoned
   evidence hides the derived proposal and any direct acceptance attempt
   supersedes it;
+- proposal persistence locks and snapshot-validates every selected pack row,
+  and competing evidence revisions cannot leave two actionable replacements;
+- the enforced pack is reserved inside the prompt budget before optional source
+  and workspace context;
 - deterministic, live, privacy, authority, quality, latency, and cost gates pass;
 - rollback monitoring is active; and
 - product copy names only the source paths that meet those conditions.

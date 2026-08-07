@@ -310,9 +310,8 @@ function evidenceForPackBundle(
     }
     for (const id of ids) citedIds.add(id);
   }
-  return [...citedIds].map((rawEventId) => {
-    const item = packItems.get(rawEventId);
-    if (!item) throw new Error('suggestions: cited evidence disappeared from the pack');
+  return pack.items.map((item) => {
+    const rawEventId = item.rawEventId;
     return {
       rawEventId,
       quote: truncate(item.contentText, 500),
@@ -323,6 +322,7 @@ function evidenceForPackBundle(
         evidence_pack_rank: item.rank,
         evidence_surface: item.surface,
         evidence_content_fingerprint: item.contentFingerprint,
+        evidence_pack_cited: citedIds.has(rawEventId),
       },
     };
   });
@@ -2730,9 +2730,7 @@ async function runSuggestionExtraction(
     linkedContext: evidencePackEnforced ? [] : (args.conversation?.linkedContext ?? []),
   });
   if (evidencePackEnforced && evidencePack) {
-    promptParts.evidence = [promptParts.evidence, evidencePackPrompt(evidencePack, memberRows)]
-      .filter(Boolean)
-      .join('\n\n');
+    promptParts.requiredEvidence = evidencePackPrompt(evidencePack, memberRows);
   }
   const prompt = assembleSuggestionPrompt(promptParts, SUGGESTION_PROMPT_MAX_INPUT_TOKENS);
 
@@ -3517,20 +3515,50 @@ function recordFromUnknown(value: unknown): Record<string, unknown> {
     : {};
 }
 
-interface SuggestionPromptParts {
+export interface SuggestionPromptParts {
   workspace: string;
   evidence: string;
   anchor: string;
+  requiredEvidence?: string;
 }
 
 /**
  * Prefer dropping fat workspace dump over evidence/anchor. Anchor is reserved
  * first, then evidence, then workspace fills the remaining token budget.
  */
-function assembleSuggestionPrompt(parts: SuggestionPromptParts, maxTokens: number): string {
+export function assembleSuggestionPrompt(parts: SuggestionPromptParts, maxTokens: number): string {
   const estimate = llm.estimateTextTokens;
   const truncate = llm.truncateTextToTokenBudget;
   const separatorTokens = estimate('\n\n');
+
+  if (parts.requiredEvidence) {
+    const requiredTokens = estimate(parts.requiredEvidence);
+    if (requiredTokens > maxTokens) {
+      throw new Error('suggestions: enforced evidence pack exceeds the prompt token budget');
+    }
+    const selected = {
+      workspace: '',
+      evidence: '',
+      requiredEvidence: parts.requiredEvidence,
+      anchor: '',
+    };
+    let remainingTokens = maxTokens - requiredTokens;
+    const addOptional = (key: 'workspace' | 'evidence' | 'anchor', value: string) => {
+      if (!value || remainingTokens <= separatorTokens) return;
+      const budget = remainingTokens - separatorTokens;
+      const fitted = estimate(value) > budget ? truncate(value, budget) : value;
+      if (!fitted) return;
+      selected[key] = fitted;
+      remainingTokens -= separatorTokens + estimate(fitted);
+    };
+    addOptional('anchor', parts.anchor);
+    addOptional('evidence', parts.evidence);
+    addOptional('workspace', parts.workspace);
+    return [selected.workspace, selected.evidence, selected.requiredEvidence, selected.anchor]
+      .filter(Boolean)
+      .join('\n\n');
+  }
+
   let anchor = parts.anchor;
   let evidence = parts.evidence;
   let workspace = parts.workspace;
