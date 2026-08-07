@@ -2023,6 +2023,7 @@ function toBundle(
     sourceMetadata?: unknown;
     senderTimelineName?: string | null;
   })[],
+  packEvidenceChanged = false,
 ): SuggestionBundle {
   const hydratedEvidence: SuggestionEvidence[] = evidence.map((ev) => {
     const context = suggestionEvidenceSourceContext(ev.source ?? null, ev.sourceMetadata);
@@ -2105,8 +2106,9 @@ function toBundle(
         supersededByItemId: item.supersededByItemId,
         supersededReason: item.supersededReason,
         evidence: itemEvidence,
-        evidenceStatus:
-          evidenceIds.length === 0
+        evidenceStatus: packEvidenceChanged
+          ? ('stale' as const)
+          : evidenceIds.length === 0
             ? ('legacy' as const)
             : itemEvidence.length === evidenceIds.length && !evidenceChanged
               ? ('current' as const)
@@ -3065,6 +3067,17 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
               }),
           )
         : false;
+      const packEvidenceChanged = isPackBacked
+        ? suggestionEvidence.some((event) => {
+            const expectedFingerprint = recordFromUnknown(
+              event.metadata,
+            ).evidence_content_fingerprint;
+            return (
+              typeof expectedFingerprint === 'string' &&
+              expectedFingerprint !== evidenceContentFingerprint(event)
+            );
+          })
+        : false;
       const hasUnavailableEvidence = isPackBacked
         ? persistedEvidenceIds.length === 0 ||
           persistedEvidenceIds.some((id) => !visibleEvidenceIds.has(id)) ||
@@ -3072,7 +3085,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         : suggestionItems.some((item) =>
             itemEvidenceRawEventIds(item.metadata).some((id) => !visibleEvidenceIds.has(id)),
           );
-      return hasUnavailableEvidence ? [] : [toBundle(row, suggestionItems, suggestionEvidence)];
+      return hasUnavailableEvidence
+        ? []
+        : [toBundle(row, suggestionItems, suggestionEvidence, packEvidenceChanged)];
     });
   }
 
@@ -6827,7 +6842,14 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                   rawEventId: ev.rawEventId,
                   quote: ev.quote ?? null,
                   metadata: suggestionEvidenceMetadata(
-                    ev.metadata,
+                    {
+                      ...(ev.metadata ?? {}),
+                      ...(incomingEvidencePackFingerprint && evidenceFingerprintsById[ev.rawEventId]
+                        ? {
+                            evidence_content_fingerprint: evidenceFingerprintsById[ev.rawEventId],
+                          }
+                        : {}),
+                    },
                     projectionContext.sourceRefs,
                     ev.rawEventId,
                   ),
@@ -7017,7 +7039,14 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                 rawEventId: ev.rawEventId,
                 quote: ev.quote ?? null,
                 metadata: suggestionEvidenceMetadata(
-                  ev.metadata,
+                  {
+                    ...(ev.metadata ?? {}),
+                    ...(incomingEvidencePackFingerprint && evidenceFingerprintsById[ev.rawEventId]
+                      ? {
+                          evidence_content_fingerprint: evidenceFingerprintsById[ev.rawEventId],
+                        }
+                      : {}),
+                  },
                   projectionContext.sourceRefs,
                   ev.rawEventId,
                 ),

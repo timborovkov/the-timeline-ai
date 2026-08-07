@@ -312,7 +312,9 @@ primitives without semantic-only or transitive admission.
    artifacts or objects.
 6. Union and deduplicate candidates by raw-event ID before hydration, cap the
    candidate set at 500, and record the count beyond that cap as
-   `candidate_limit` telemetry.
+   `candidate_limit` telemetry. Retain all qualifying relationship signals for
+   each admitted event and aggregate strongest strength plus any authoritative
+   association for ranking and fingerprints.
 7. Avoid per-candidate queries by batching anchors, associations, and raw-event
    hydration.
 
@@ -572,7 +574,8 @@ before enforcement.
    Retain stable content-free population fingerprints derived from immutable
    attempt IDs, with immutable provenance as the legacy fallback. Reject
    overlapping cumulative health windows instead of summing the same attempts
-   twice, even when later exports add review outcomes or eligibility labels.
+   twice, even when later exports add review outcomes or eligibility labels;
+   reject duplicate legacy identities within one population as ambiguous.
 6. Make the promotion report enforce evidence coverage, fixture success, shadow
    sample floor, zero-tolerance safety counters, p95 latency, and error rate.
    The production CLI ingests explicit redacted evidence-pack sample files and

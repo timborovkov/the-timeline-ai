@@ -314,6 +314,7 @@ describe('production reconciliation sampling report', () => {
       completedAt: '2026-07-01T10:00:01.000Z',
     });
     const samples = Array.from({ length: 200 }, (_, index) => ({
+      attemptId: `promotion-attempt-${index}`,
       mode: 'shadow' as const,
       version: 'evidence-pack-v1',
       policyVersion: 'proposal-v1',
@@ -354,6 +355,7 @@ describe('production reconciliation sampling report', () => {
       completedAt: '2026-07-01T10:00:01.000Z',
     });
     const shadow = Array.from({ length: 203 }, (_, index) => ({
+      attemptId: `shadow-gate-attempt-${index}`,
       mode: 'shadow' as const,
       version: 'evidence-pack-v1',
       policyVersion: 'proposal-v1',
@@ -415,6 +417,7 @@ describe('production reconciliation sampling report', () => {
       completedAt: '2026-07-01T10:00:01.000Z',
     });
     const samples = Array.from({ length: 201 }, (_, index) => ({
+      attemptId: `version-gate-attempt-${index}`,
       mode: 'shadow' as const,
       version: index === 200 ? 'evidence-pack-v2' : 'evidence-pack-v1',
       policyVersion: index === 200 ? 'proposal-v2' : 'proposal-v1',
@@ -459,6 +462,7 @@ describe('production reconciliation sampling report', () => {
     });
     const scatteredDays = ['01', '03', '05', '07', '09', '11', '13'];
     const samples = Array.from({ length: 200 }, (_, index) => ({
+      attemptId: `day-gate-attempt-${index}`,
       mode: 'shadow' as const,
       version: 'evidence-pack-v1',
       policyVersion: 'proposal-v1',
@@ -499,6 +503,7 @@ describe('production reconciliation sampling report', () => {
       previous.requiredEvidencePackScenarioFamilies = ['generic_webhook'];
       previous.evidencePackHealth = summarizeProductionSamplingEvidencePacks(
         Array.from({ length: 200 }, (_, index) => ({
+          attemptId: `stored-report-attempt-${index}`,
           mode: 'shadow' as const,
           version: 'evidence-pack-v1',
           policyVersion: 'proposal-v1',
@@ -524,6 +529,7 @@ describe('production reconciliation sampling report', () => {
         generatedAt: '2026-07-09T10:00:00.000Z',
         evidencePackSamples: [
           {
+            attemptId: 'stored-report-new-attempt',
             mode: 'shadow',
             version: 'evidence-pack-v1',
             policyVersion: 'proposal-v1',
@@ -640,6 +646,26 @@ describe('production reconciliation sampling report', () => {
 
     expect(() => summarizeProductionSamplingEvidencePacks([sample, sample])).toThrow(
       'duplicate attempt IDs',
+    );
+  });
+
+  it('rejects duplicate legacy attempt identities within one telemetry population', () => {
+    const sample = {
+      mode: 'shadow' as const,
+      version: 'evidence-pack-v1',
+      policyVersion: 'proposal-v1',
+      candidateCount: 2,
+      selectedCount: 2,
+      surfaceCount: 2,
+      estimatedTokens: 200,
+      buildDurationMs: 50,
+      truncated: false,
+      sampledAt: '2026-07-08T10:00:00.000Z',
+      teamKey: 'team-1',
+    };
+
+    expect(() => summarizeProductionSamplingEvidencePacks([sample, sample])).toThrow(
+      'duplicate legacy attempt identities',
     );
   });
 

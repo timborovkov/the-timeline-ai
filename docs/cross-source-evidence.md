@@ -227,7 +227,7 @@ The first enforced source path must meet all of these gates:
 - Disjoint population fingerprints across cumulative sampling reports, derived
   from immutable attempt IDs or legacy immutable attempt provenance rather than
   mutable review annotations; an overlapping report is rejected instead of
-  double-counted
+  double-counted, and duplicate legacy identities are rejected as ambiguous
 - No additional embedding or generative-model request solely for proposal-pack
   ranking
 - At most 24 protected conversation-core events, 8 supporting events, 4

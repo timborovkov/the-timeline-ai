@@ -923,6 +923,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
 
     const clusterById = new Map<string, SearchEventArtifactCluster>();
     const evidenceSeenByCluster = new Map<string, Set<string>>();
+    const candidateEventsByCluster = new Map<string, Set<string>>();
     for (const row of associationClusterMemberRows) {
       const existing = clusterById.get(row.clusterId);
       const cluster =
@@ -935,17 +936,27 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           relatedEvidence: [],
         } satisfies SearchEventArtifactCluster);
       if (!existing) clusterById.set(row.clusterId, cluster);
-      if (cluster.relatedEvidence.length >= maxRelatedEvidencePerCluster) continue;
-      const evidenceKey =
-        uniqueCandidateLimit && row.rawEventId
-          ? row.rawEventId
-          : [
-              row.rawEventId ?? '',
-              row.provider ?? '',
-              row.externalObjectId ?? '',
-              row.role,
-              row.strength,
-            ].join('\0');
+      if (uniqueCandidateLimit && row.rawEventId) {
+        const candidateEvents = candidateEventsByCluster.get(row.clusterId) ?? new Set<string>();
+        if (
+          !candidateEvents.has(row.rawEventId) &&
+          candidateEvents.size >= maxRelatedEvidencePerCluster
+        ) {
+          continue;
+        }
+        candidateEvents.add(row.rawEventId);
+        candidateEventsByCluster.set(row.clusterId, candidateEvents);
+      } else if (cluster.relatedEvidence.length >= maxRelatedEvidencePerCluster) {
+        continue;
+      }
+      const evidenceKey = [
+        row.rawEventId ?? '',
+        row.provider ?? '',
+        row.externalObjectId ?? '',
+        row.role,
+        row.strength,
+        row.associationSource,
+      ].join('\0');
       const seen = evidenceSeenByCluster.get(row.clusterId) ?? new Set<string>();
       if (seen.has(evidenceKey)) continue;
       seen.add(evidenceKey);

@@ -288,6 +288,22 @@ export function summarizeProductionSamplingEvidencePacks(
   if (new Set(explicitAttemptIds).size !== explicitAttemptIds.length) {
     throw new Error('Evidence-pack sampling contains duplicate attempt IDs');
   }
+  const legacyAttemptFingerprints = shadowAttempts.flatMap((sample) =>
+    sample.attemptId
+      ? []
+      : [
+          stableSha256Digest({
+            mode: sample.mode,
+            version: sample.version,
+            policyVersion: sample.policyVersion,
+            sampledAt: sample.sampledAt ?? null,
+            teamKey: sample.teamKey ?? null,
+          }),
+        ],
+  );
+  if (new Set(legacyAttemptFingerprints).size !== legacyAttemptFingerprints.length) {
+    throw new Error('Evidence-pack sampling contains duplicate legacy attempt identities');
+  }
   const latencies = shadowAttempts.map((sample) => sample.buildDurationMs).sort((a, b) => a - b);
   const latencyDistribution = buildLatencyDistribution(latencies);
   const errors = shadowAttempts.filter((sample) => sample.errorReason);
@@ -297,7 +313,6 @@ export function summarizeProductionSamplingEvidencePacks(
     errorReasons[reason] = (errorReasons[reason] ?? 0) + 1;
   }
   const shadowEligible = shadowAttempts.filter((sample) => sample.eligible ?? !sample.errorReason);
-  const sampleOccurrences = new Map<string, number>();
   const populationFingerprints = shadowAttempts
     .map((sample) =>
       stableSha256Digest(
@@ -312,12 +327,7 @@ export function summarizeProductionSamplingEvidencePacks(
             },
       ),
     )
-    .sort()
-    .map((sampleFingerprint) => {
-      const occurrence = sampleOccurrences.get(sampleFingerprint) ?? 0;
-      sampleOccurrences.set(sampleFingerprint, occurrence + 1);
-      return stableSha256Digest({ occurrence, sampleFingerprint });
-    });
+    .sort();
   return {
     populationFingerprints,
     sampleCount: shadowAttempts.length,

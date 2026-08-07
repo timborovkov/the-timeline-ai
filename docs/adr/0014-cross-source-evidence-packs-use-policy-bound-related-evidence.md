@@ -134,8 +134,10 @@ current-event, related-context, and workspace sections, so an oversized source
 event cannot truncate the pack out of the model input.
 
 Hard object relationships have no global age cutoff. The bounded candidate
-pool applies relationship strength, authority, and recency before its candidate
-limit, then the full ranking and diversity policy control selection.
+pool applies relationship strength, authority, and recency before its unique
+event candidate limit. Multiple associations to one admitted event retain all
+relationship signals, including any weaker authoritative signal, before the
+full ranking and diversity policy control selection.
 Same-conversation core retains its existing two-day window.
 
 ### Citations and proposal lifecycle
@@ -224,9 +226,10 @@ They also retain stable content-free population fingerprints derived from an
 immutable attempt ID, with immutable attempt provenance as the legacy fallback,
 and reject report merges with overlapping population identities. Mutable review
 outcomes, eligibility labels, and error annotations do not change that identity,
-so cumulative reports cannot double-count historical attempts. Dashboard
-persistence goes through the named team reconciliation scope, including the
-CLI's explicit trusted internal-user path.
+while ambiguous duplicate legacy identities are rejected rather than counted as
+separate attempts. Cumulative reports therefore cannot double-count historical
+attempts. Dashboard persistence goes through the named team reconciliation
+scope, including the CLI's explicit trusted internal-user path.
 Reports without evidence-pack telemetry omit pack health and promotion state.
 
 ## Consequences

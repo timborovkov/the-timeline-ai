@@ -469,6 +469,65 @@ describe('suggestion scope', () => {
     });
   });
 
+  it('marks every item stale when uncited pack evidence changes', async () => {
+    await db.insert(rawEvents).values([
+      {
+        id: TEAM_RAW_EVENT_ID,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'web',
+        contentText: 'Owner committed to the follow-up.',
+        occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+        visibility: 'team',
+      },
+      {
+        id: TEAM_SUPPORT_EVENT_ID,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'calendar',
+        contentText: 'The supporting review is scheduled for Friday.',
+        occurredAt: new Date('2026-05-27T11:00:00.000Z'),
+        visibility: 'team',
+      },
+    ]);
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const created = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Evidence-backed follow-up',
+      dedupeKey: 'changed-uncited-pack-evidence',
+      metadata: { evidence_pack_fingerprint: 'a'.repeat(64) },
+      evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }, { rawEventId: TEAM_SUPPORT_EVENT_ID }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Complete the follow-up',
+          dedupeKey: 'changed-uncited-pack-evidence:item',
+          proposedPayload: { canonicalName: 'Complete the follow-up' },
+          evidenceRawEventIds: [TEAM_RAW_EVENT_ID],
+        },
+      ],
+    });
+    await db
+      .update(rawEvents)
+      .set({
+        contentText: 'The supporting review moved to Monday.',
+        occurredAt: new Date('2026-05-30T11:00:00.000Z'),
+      })
+      .where(eq(rawEvents.id, TEAM_SUPPORT_EVENT_ID));
+
+    const [visible] = await scope.suggestions.listPendingSuggestions();
+    expect(visible?.items).toEqual([
+      expect.objectContaining({ id: created.items[0]?.id, evidenceStatus: 'stale' }),
+    ]);
+    await expect(
+      scope.suggestions.reviseTaskSuggestionItem({
+        itemId: created.items[0]?.id ?? 'missing',
+        project: { kind: 'none' },
+      }),
+    ).rejects.toThrow('Required source evidence changed after this suggestion was created.');
+  });
+
   it('marks tombstoned item evidence stale and supersedes it at acceptance', async () => {
     await db.insert(rawEvents).values({
       id: TEAM_RAW_EVENT_ID,

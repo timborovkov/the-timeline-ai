@@ -529,9 +529,15 @@ describe('buildEvidencePack', () => {
       anchors: [{ type: 'canonical_url', value: 'https://acme.test/launch', strength: 'hard' }],
     });
     for (const rawEventId of [SUPPORT_ID, SLACK_NEW_ID, SLACK_OLD_ID]) {
-      for (const [role, strength] of [
-        ['discussion', 'human'],
-        ['related_context', 'hard'],
+      for (const association of [
+        { role: 'discussion', strength: 'human' },
+        {
+          role: 'related_context',
+          strength: 'structured',
+          authoritative: true,
+          provider: 'linear',
+          externalObjectId: `linear-${rawEventId}`,
+        },
       ] as const) {
         await reconcileArtifactEvidence(db as never, {
           teamId: TEAM_ID,
@@ -539,8 +545,7 @@ describe('buildEvidencePack', () => {
           canonicalName: 'Acme launch',
           status: 'active',
           rawEventId,
-          role,
-          strength,
+          ...association,
           anchors: [{ type: 'canonical_url', value: 'https://acme.test/launch', strength: 'hard' }],
         });
       }
@@ -558,6 +563,15 @@ describe('buildEvidencePack', () => {
     );
     expect(candidateIds).toEqual(new Set([SUPPORT_ID, SLACK_NEW_ID, SLACK_OLD_ID]));
     expect(discovery.truncatedCandidateCount).toBe(0);
+    const supportSignals = Object.values(discovery.clusters).flatMap((cluster) =>
+      cluster.relatedEvidence.filter((evidence) => evidence.rawEventId === SUPPORT_ID),
+    );
+    expect(supportSignals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ strength: 'human', authoritative: false }),
+        expect.objectContaining({ strength: 'structured', authoritative: true }),
+      ]),
+    );
   });
 
   it('applies recency before source diversity', async () => {
