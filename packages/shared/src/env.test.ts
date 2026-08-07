@@ -95,6 +95,22 @@ describe('getEnv', () => {
     });
   });
 
+  it('keeps cross-source evidence disabled until an operator selects a rollout mode', () => {
+    setBaseEnv({ CROSS_SOURCE_EVIDENCE_MODE: undefined });
+    expect(getEnv().CROSS_SOURCE_EVIDENCE_MODE).toBe('off');
+
+    setBaseEnv({ CROSS_SOURCE_EVIDENCE_MODE: 'shadow' });
+    expect(getEnv().CROSS_SOURCE_EVIDENCE_MODE).toBe('shadow');
+
+    setBaseEnv({ CROSS_SOURCE_EVIDENCE_MODE: 'enforced' });
+    expect(getEnv().CROSS_SOURCE_EVIDENCE_MODE).toBe('enforced');
+  });
+
+  it('rejects unknown cross-source evidence rollout modes', () => {
+    setBaseEnv({ CROSS_SOURCE_EVIDENCE_MODE: 'enabled' });
+    expect(() => getEnv()).toThrow(/CROSS_SOURCE_EVIDENCE_MODE/);
+  });
+
   it('requires a LangSmith API key when tracing is enabled', () => {
     setBaseEnv({
       LANGSMITH_TRACING: 'true',

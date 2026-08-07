@@ -10,6 +10,10 @@ compact provider badges. Opening one hydrates its persisted transcript,
 continuing it from web appends to the same session, and archiving it causes the
 provider's next direct message to create a new session.
 
+Pack-backed approval items show their exact visible source citations beneath
+the proposed change. If a required citation becomes inaccessible, the item is
+shown as stale and cannot be accepted or revised.
+
 ## Why it exists
 
 Single user-facing surface. All UI, API routes, and server actions live here. Backend logic that other workspace packages need (DB access, LLM calls, queue dispatch) is delegated to [`@timeline/shared`](../../packages/shared/README.md) and [`@timeline/db`](../../packages/db/README.md) — this package stays focused on the request/response layer.

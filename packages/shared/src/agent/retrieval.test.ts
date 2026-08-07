@@ -112,6 +112,21 @@ function makeScope() {
           artifactCluster: null,
         },
       ]),
+      getEventsByIds: vi.fn().mockImplementation((ids: string[]) =>
+        ids.map((id) => ({
+          id,
+          source: 'slack',
+          contentText: 'Discussed Otto follow-up',
+          occurredAt: new Date('2026-06-14T09:00:00.000Z'),
+          authorUserId: null,
+          sourceMetadata: {},
+          visibility: 'team',
+          visibilityOwnerUserId: null,
+          visibilityUserIds: null,
+        })),
+      ),
+      listArtifactClusters: vi.fn().mockResolvedValue({}),
+      listEvidencePackArtifactClusters: vi.fn().mockResolvedValue({}),
     },
     boards: {
       listObjectBoardContext: vi.fn().mockResolvedValue([
@@ -152,6 +167,17 @@ describe('retrieveWorkspaceContext', () => {
       expect.objectContaining({ entityIds: [OBJECT_ID], limit: 5 }),
     );
     expect(result.recipe).toBe('object_profile');
+    expect(result.evidencePack).toMatchObject({
+      version: 'evidence-pack-v1',
+      policyVersion: 'answer-v1',
+      items: [
+        {
+          rawEventId: EVENT_ID,
+          citation: `[ev:${EVENT_ID}]`,
+          relationshipSignals: [{ kind: 'anchor', strength: 'hard' }],
+        },
+      ],
+    });
     expect(result.objects[0]).toMatchObject({
       id: OBJECT_ID,
       citation: `[ent:${OBJECT_ID}]`,
@@ -277,6 +303,20 @@ describe('retrieveWorkspaceContext', () => {
     }
   });
 
+  it('reports failed source adapters instead of silently presenting a partial packet as complete', async () => {
+    const scope = makeScope();
+    scope.documents.searchDocumentChunks = vi.fn().mockRejectedValue(new Error('provider secret'));
+
+    const result = await retrieveWorkspaceContext(scope as unknown as TeamScope, {
+      query: 'What do the documents and timeline say about Otto?',
+      includeDocuments: true,
+    });
+
+    expect(result.documents).toEqual([]);
+    expect(result.adapterFailures).toEqual([{ adapter: 'documents', errorReason: 'Error' }]);
+    expect(JSON.stringify(result)).not.toContain('provider secret');
+  });
+
   it('includes artifact cluster related evidence in event context', async () => {
     const scope = makeScope();
     const relatedEventId = '99999999-9999-4999-8999-999999999999';
@@ -299,6 +339,7 @@ describe('retrieveWorkspaceContext', () => {
               externalObjectId: '100',
               role: 'error',
               strength: 'provider',
+              associationSource: 'authoritative_provider',
               authoritative: true,
               occurredAt: '2026-06-14T09:00:00.000Z',
               snippet: 'Sentry issue TIMELINE-AI-100',
@@ -309,6 +350,7 @@ describe('retrieveWorkspaceContext', () => {
               externalObjectId: 'timborovkov/the-timeline-ai#77',
               role: 'lifecycle_update',
               strength: 'provider',
+              associationSource: 'authoritative_provider',
               authoritative: true,
               occurredAt: '2026-06-14T10:00:00.000Z',
               snippet: 'GitHub PR fixes TIMELINE-AI-100',

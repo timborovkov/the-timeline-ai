@@ -142,6 +142,13 @@ pnpm dev:seed               # optional demo team, users, events, objects, integr
           worker restarts.
         </li>
         <li>
+          Generic ingest webhook cross-source proposal evidence defaults to
+          <code>CROSS_SOURCE_EVIDENCE_MODE=off</code>. Use <code>shadow</code> to record
+          content-free pack metrics without changing proposals, or <code>enforced</code> to require
+          exact per-change citations for that adapter. Other proposal adapters remain unchanged.
+          Restart the worker after changing the mode.
+        </li>
+        <li>
           Telegram voice memos: send a voice note to the bot in a <code>/link</code>-ed DM (or bound
           group). The same flow runs: download → RustFS → enqueue → transcribe → backfill
           <code>content_text</code>.

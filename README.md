@@ -243,6 +243,9 @@ TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker task-category-bac
                           # enqueue one bounded batch when its fixed per-task cost estimate fits the guard; rerun to resume
 TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-legacy-provenance -- --team=<uuid> --fail-on-legacy
 TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-production-sampling -- --input=/tmp/eval-run --out=/tmp/reconciliation-production-sampling.json --team=<uuid> --run-kind=closed_beta --fail-on-failures
+# Promotion assessment also requires redacted pack telemetry and explicit scenario coverage:
+# --evidence-pack-samples=/tmp/redacted-pack-samples.json
+# --required-evidence-scenario=generic_webhook (repeat for every required family)
 # production sampling accepts repeated --input paths; --run-kind defaults to manual
 # and may be manual, closed_beta, or post_deploy. Use --fail-on-failures for
 # release gates that should stop on any failed sample. Repeat
@@ -250,6 +253,10 @@ TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-pr
 # that should become deterministic fixtures; reports include confirmed and
 # unconfirmed fixture-candidate counts for release review. Add --team=<uuid>
 # to persist the report as a Team → Reconciliation eval run.
+# Evidence-pack sample files may be a JSON array or {"samples": [...]} and must
+# contain content-free counts, mode/version metadata, latency, date, team key,
+# and scenario family. Supplying samples without at least one explicit required
+# scenario is rejected so an empty scenario policy cannot accidentally pass.
 # The worker process also starts a reconciliation queue consumer for
 # evidence_audit/evidence_backfill/scope_reconcile jobs when they are enqueued
 # by product or operator code. Queue payloads support optional source, limit,
@@ -298,9 +305,15 @@ server/client import boundaries.
 - [`docs/product-brief.html`](./docs/product-brief.html) — product vision,
   principles, and architecture overview.
 
-- [`docs/cross-source-evidence.md`](./docs/cross-source-evidence.md) — north-star
-  for compounding memory across chat, meetings, email, and work systems
-  (product, eng, and website messaging).
+- [`docs/cross-source-evidence.md`](./docs/cross-source-evidence.md) — implemented,
+  default-off and unshipped contract for cited memory across chat, meetings,
+  email, and work systems.
+- [`docs/cross-source-evidence-implementation-plan.md`](./docs/cross-source-evidence-implementation-plan.md)
+  — implemented sequence, file map, test matrix, rollout gates, and adapter
+  promotion milestones.
+- [`docs/adr/0013-cross-source-evidence-packs-use-policy-bound-related-evidence.md`](./docs/adr/0013-cross-source-evidence-packs-use-policy-bound-related-evidence.md)
+  — durable evidence admission, visibility, authority, citation, persistence,
+  and rollout decisions.
 
 - [`docs/captured-files.md`](./docs/captured-files.md) — captured-file vs.
   document semantics, processing rules, and follow-up implementation bar.

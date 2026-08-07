@@ -181,6 +181,33 @@ describe('production reconciliation sampling report', () => {
       confirmedFixtureCandidates: [
         { caseName: failed.caseName, packetFingerprint: failed.packetFingerprint },
       ],
+      evidencePackSamples: [
+        {
+          mode: 'shadow',
+          version: 'evidence-pack-v1',
+          policyVersion: 'proposal-v1',
+          candidateCount: 8,
+          selectedCount: 4,
+          surfaceCount: 2,
+          estimatedTokens: 900,
+          buildDurationMs: 10,
+          truncated: false,
+        },
+        {
+          mode: 'enforced',
+          version: 'evidence-pack-v1',
+          policyVersion: 'proposal-v1',
+          candidateCount: 20,
+          selectedCount: 8,
+          surfaceCount: 3,
+          estimatedTokens: 1_800,
+          buildDurationMs: 100,
+          truncated: true,
+          invalidCitationCount: 1,
+          falseLinkReviewOutcome: 'confirmed',
+          errorReason: 'candidate_failure',
+        },
+      ],
     });
 
     expect(report).toMatchObject({
@@ -210,6 +237,25 @@ describe('production reconciliation sampling report', () => {
         authorityPolicyViolations: 1,
         promptModelRegressions: 1,
         averageTimeToReconciledOutputMs: 2000,
+      },
+      evidencePackHealth: {
+        sampleCount: 2,
+        errorCount: 1,
+        errorRate: 0.5,
+        invalidCitationCount: 1,
+        confirmedFalseLinkCount: 1,
+        truncatedCount: 1,
+        candidateCount: 28,
+        selectedCount: 12,
+        surfaceCount: 5,
+        estimatedTokens: 2700,
+        latencyP50Ms: 10,
+        latencyP95Ms: 100,
+        latencyP99Ms: 100,
+        modes: ['enforced', 'shadow'],
+        versions: ['evidence-pack-v1'],
+        policyVersions: ['proposal-v1'],
+        errorReasons: { candidate_failure: 1 },
       },
     });
     expect(report.byIngestionSurface).toEqual([
@@ -243,6 +289,94 @@ describe('production reconciliation sampling report', () => {
     );
     expect(JSON.stringify(report)).not.toContain('private production packet');
     expect(JSON.stringify(report)).not.toContain('raw-sentry-1');
+    expect(report.evidencePackPromotion?.ready).toBe(false);
+    expect(report.evidencePackPromotion?.blockerCodes).toEqual(
+      expect.arrayContaining(['fixture_failure', 'shadow_sample_floor', 'safety_violation']),
+    );
+  });
+
+  it('marks evidence-pack promotion ready only after every rollout gate passes', () => {
+    const passed = buildLiveEvalArtifact({
+      testCase: BASE_CASE,
+      modelId: 'planner-v1',
+      promptVersion: 'prompt-v1',
+      prompt: 'private production packet text',
+      result: PASS_RESULT,
+      judge: PASS_JUDGE,
+      passed: true,
+      failures: [],
+      startedAt: '2026-07-01T10:00:00.000Z',
+      completedAt: '2026-07-01T10:00:01.000Z',
+    });
+    const samples = Array.from({ length: 200 }, (_, index) => ({
+      mode: 'shadow' as const,
+      version: 'evidence-pack-v1',
+      policyVersion: 'proposal-v1',
+      candidateCount: 4,
+      selectedCount: 2,
+      surfaceCount: index < 25 ? 2 : 1,
+      estimatedTokens: 400,
+      buildDurationMs: 100,
+      truncated: false,
+      sampledAt: `2026-07-${String((index % 7) + 1).padStart(2, '0')}T10:00:00.000Z`,
+      teamKey: `team-${index % 3}`,
+      scenarioFamily: 'customer_project',
+      eligible: true,
+    }));
+
+    const report = buildProductionSamplingEvalReport({
+      generatedAt: '2026-07-08T10:00:00.000Z',
+      manifests: [],
+      artifacts: [passed],
+      evidencePackSamples: samples,
+      requiredEvidencePackScenarioFamilies: ['customer_project'],
+    });
+
+    expect(report.evidencePackPromotion).toEqual({ ready: true, blockerCodes: [] });
+  });
+
+  it('requires seven consecutive shadow days for evidence-pack promotion', () => {
+    const passed = buildLiveEvalArtifact({
+      testCase: BASE_CASE,
+      modelId: 'planner-v1',
+      promptVersion: 'prompt-v1',
+      prompt: 'private production packet text',
+      result: PASS_RESULT,
+      judge: PASS_JUDGE,
+      passed: true,
+      failures: [],
+      startedAt: '2026-07-01T10:00:00.000Z',
+      completedAt: '2026-07-01T10:00:01.000Z',
+    });
+    const scatteredDays = ['01', '03', '05', '07', '09', '11', '13'];
+    const samples = Array.from({ length: 200 }, (_, index) => ({
+      mode: 'shadow' as const,
+      version: 'evidence-pack-v1',
+      policyVersion: 'proposal-v1',
+      candidateCount: 4,
+      selectedCount: 2,
+      surfaceCount: index < 25 ? 2 : 1,
+      estimatedTokens: 400,
+      buildDurationMs: 100,
+      truncated: false,
+      sampledAt: `2026-07-${scatteredDays[index % scatteredDays.length]}T10:00:00.000Z`,
+      teamKey: `team-${index % 3}`,
+      scenarioFamily: 'customer_project',
+      eligible: true,
+    }));
+
+    const report = buildProductionSamplingEvalReport({
+      generatedAt: '2026-07-14T10:00:00.000Z',
+      manifests: [],
+      artifacts: [passed],
+      evidencePackSamples: samples,
+      requiredEvidencePackScenarioFamilies: ['customer_project'],
+    });
+
+    expect(report.evidencePackPromotion).toEqual({
+      ready: false,
+      blockerCodes: ['shadow_day_floor'],
+    });
   });
 
   it('downgrades stale passed artifacts when source-ref consistency fails', () => {
@@ -606,19 +740,42 @@ describe('production reconciliation sampling report', () => {
         `${JSON.stringify({ ...previousReport, failedCount: 0 }, null, 2)}\n`,
         'utf8',
       );
+      await writeFile(
+        path.join(dir, 'malformed-evidence-health-report.json'),
+        `${JSON.stringify(
+          {
+            ...previousReport,
+            evidencePackHealth: { sampleCount: 1, errorReasons: { malformed: 'one' } },
+          },
+          null,
+          2,
+        )}\n`,
+        'utf8',
+      );
 
       const loaded = await loadProductionSamplingEvalArtifacts({
-        inputPaths: [reportPath, reportPath, path.join(dir, 'malformed-report.json')],
+        inputPaths: [
+          reportPath,
+          reportPath,
+          path.join(dir, 'malformed-report.json'),
+          path.join(dir, 'malformed-evidence-health-report.json'),
+        ],
       });
 
       expect(loaded.reports).toHaveLength(1);
       expect(loaded.artifacts).toHaveLength(0);
-      expect(loaded.ignoredFiles).toEqual([
-        {
-          path: path.join(dir, 'malformed-report.json'),
-          reason: 'not a reconciliation live artifact or production sampling report',
-        },
-      ]);
+      expect(loaded.ignoredFiles).toEqual(
+        expect.arrayContaining([
+          {
+            path: path.join(dir, 'malformed-report.json'),
+            reason: 'not a reconciliation live artifact or production sampling report',
+          },
+          {
+            path: path.join(dir, 'malformed-evidence-health-report.json'),
+            reason: 'not a reconciliation live artifact or production sampling report',
+          },
+        ]),
+      );
 
       const outputPath = path.join(dir, 'merged-report.json');
       const written = await writeProductionSamplingEvalReport({

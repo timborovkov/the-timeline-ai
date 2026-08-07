@@ -100,6 +100,13 @@
         add a separate Slack bot token variable.
       </p>
       <p>
+        Keep <code>CROSS_SOURCE_EVIDENCE_MODE=off</code> until the environment has passed its shadow
+        promotion gates. <code>shadow</code> records content-free evidence-pack metrics without
+        changing generic ingest webhook proposals; <code>enforced</code> requires exact per-change
+        citations for that adapter. Other proposal adapters remain unchanged. Changing this worker
+        setting requires a worker restart or redeploy.
+      </p>
+      <p>
         Keep <code>NODE_ENV</code> as <code>production</code> for both Railway environments. Use the
         Railway environment name and <code>SENTRY_ENVIRONMENT</code> for labels like
         <code>staging</code>; the app rejects <code>NODE_ENV=staging</code>.

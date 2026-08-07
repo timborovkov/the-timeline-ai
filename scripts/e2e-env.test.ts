@@ -42,6 +42,7 @@ function lookupPort(container: string, port: number): string | null {
       'TASK_CATEGORY_AUTO_ENQUEUE_ENABLED',
       'TASK_CATEGORY_WORKER_ENABLED',
       'TASK_CATEGORY_UI_ENABLED',
+      'CROSS_SOURCE_EVIDENCE_MODE',
     ]),
     {
       DATABASE_URL: 'postgres://timeline:timeline_dev@localhost:55432/timeline',
@@ -57,6 +58,7 @@ function lookupPort(container: string, port: number): string | null {
       TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: 'true',
       TASK_CATEGORY_WORKER_ENABLED: 'true',
       TASK_CATEGORY_UI_ENABLED: 'true',
+      CROSS_SOURCE_EVIDENCE_MODE: 'off',
     },
   );
   assert.equal(env.NO_COLOR, undefined);

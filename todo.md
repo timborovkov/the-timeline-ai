@@ -168,13 +168,20 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       paths when calendar/provider imports directly update artifacts they own.
 - [ ] Ship the cross-source evidence pack north star in
       [`docs/cross-source-evidence.md`](./docs/cross-source-evidence.md): a shared
-      visibility-safe pack builder (object links first, then retrieval),
-      conversation reviews and event-local paths that cite multi-surface
-      evidence, integrations remaining pack-eligible, evals/cost caps, and
-      website copy that matches milestones. First concrete slice: design
-      cross-source evidence reviews for generic ingest webhook events so webhook
-      evidence can combine with conversations and object-linked source events
-      before proposal generation.
+      visibility-safe pack builder with policy-bound admission, deterministic
+      ranking, exact per-item citations, conversation reviews and event-local
+      paths that eventually cite multi-surface evidence, integrations remaining
+      pack-eligible, evals/cost caps, and milestone-gated website copy. Follow
+      the [implementation plan](./docs/cross-source-evidence-implementation-plan.md)
+      and [ADR 0013](./docs/adr/0013-cross-source-evidence-packs-use-policy-bound-related-evidence.md).
+      First concrete slice: generic ingest webhook evidence combined with
+      directly related conversation and provider events before proposal
+      generation. The shared builder, Agent Ask adapter, and first generic
+      webhook slice are code-complete behind
+      `CROSS_SOURCE_EVIDENCE_MODE=off|shadow|enforced`; conversation and other
+      event-local proposal migrations remain later milestones. This item stays
+      open until those migrations plus the required shadow sample, live quality,
+      monitoring, and explicit production-enforcement gates pass.
 
 ## Boards
 

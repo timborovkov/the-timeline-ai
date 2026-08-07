@@ -144,6 +144,7 @@ S3_BUCKET_EXPORTS=timeline-exports
 AUTH_SECRET=&lt;32-byte random, generate per env&gt;
 AUTH_URL=https://thetimeline.cc
 OPENROUTER_API_KEY=&lt;openrouter key&gt;
+CROSS_SOURCE_EVIDENCE_MODE=off
 LANGSMITH_TRACING=true
 LANGSMITH_TRACING_SAMPLING_RATE=0.05
 LANGSMITH_API_KEY=&lt;langsmith key&gt;
@@ -193,6 +194,11 @@ SENTRY_INTEGRATION_CLIENT_SECRET=&lt;sentry oauth app client secret&gt;
 NODE_ENV=production
 LOG_LEVEL=info
 </code></pre>
+      <p>
+        <code>CROSS_SOURCE_EVIDENCE_MODE</code> is a worker rollout switch. Keep production at
+        <code>off</code> until generic ingest webhook shadow gates pass. Other proposal adapters do
+        not honor this switch yet. Changing it requires a worker restart or redeploy.
+      </p>
       <p>
         Copy <code>TELEGRAM_BOT_TOKEN</code> to both <code>web</code> and <code>worker</code>. The
         web service authenticates the webhook and keeps initial typing active until the

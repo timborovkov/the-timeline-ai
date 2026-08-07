@@ -6,6 +6,8 @@ email templates, the provider-neutral direct-conversation runtime, BullMQ queue
 names, the shared embedding source planner, the
 integrations module (Drive/Linear/GitHub/Monday.com/Slack/Sentry providers,
 person-owned provider connections, team resource shares, active source paths, connection attention),
+the policy-bound evidence-pack builder used by generic-webhook proposal
+citations and Agent Ask,
 the objects module, the reversible task-category classifier and state machine,
 the documents module (Phase 9 —
 folders/documents/versions/chunks scope + RustFS object-key builder + text
@@ -50,6 +52,8 @@ pnpm --filter @timeline/shared test
 ## Where it fits
 
 - DB layer: [packages/db/README.md](../db/README.md).
+- Evidence-pack product contract and rollout gates:
+  [docs/cross-source-evidence.md](../../docs/cross-source-evidence.md).
 - Documents helpers: `@timeline/shared/documents` exports the document module
   surface, and `@timeline/shared/documents/presentation` exports display-title
   and generated-filename presentation helpers used by web and worker code.

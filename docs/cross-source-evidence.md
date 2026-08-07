@@ -1,169 +1,244 @@
-# Cross-source evidence — product brief
+# Cross-source evidence product brief
 
-**Status:** north-star direction (not fully shipped)  
-**Audience:** product, eng, and website copy  
-**Last updated:** 2026-08-05
+**Status:** Implemented behind a default-off rollout switch; not shipped
 
-## The promise we sell
+**Audience:** Product, engineering, design, and website copy
 
-Timeline does not ask people to maintain another system of record. It watches
-work as it already happens — chat, meetings, email, boards, tickets, docs —
-and compiles that into cited memory and approval-backed updates.
+**Last updated:** 2026-08-06
 
-The product story on the landing page and elsewhere should be:
+Timeline's cross-source evidence direction is one operating memory backed by the
+tools where work happened. The shared builder, proposal and answer adapters,
+exact citations, revision handling, approval UI, and redacted metrics are now
+implemented, but pack-backed proposals remain disabled by default and are not
+shipped. Current product copy must describe today's behavior;
+present-tense cross-source proposal claims remain gated on each source path
+shipping.
 
-> **One memory from every surface.** A commitment in Slack, confirmed on a
-> call, tracked in Monday, and clarified by email becomes one cited record —
-> not four disconnected tools.
+## The promise
 
-That is the differentiation. Not “AI chat over your notes.” Not “another
-integration sync.” **Compounding operational memory across the tools the team
-already uses.**
+Timeline should not ask a team to maintain another system of record. It captures
+work from chat, meetings, email, documents, boards, tickets, and provider tools,
+then connects evidence that refers to the same real-world work.
 
-## Why this matters
+The target product story is:
 
-Today’s tools punish recording and then punish reporting. People discuss work
-in Slack, decide it in a meeting, track it in Monday, and confirm it by email —
-then reconstruct status by hand. Organizational memory leaks between surfaces.
+> **One memory from every surface.** A commitment in Slack, confirmed on a call,
+> tracked in Monday, and clarified by email becomes one cited record instead of
+> four disconnected histories.
 
-Timeline’s job is to close that loop: capture each surface as evidence, relate
-the evidence to the same real-world work, and propose durable changes only when
-the story is solid enough for a human to accept.
+This is not AI chat over notes or a generic integration sync. The
+differentiation is compounding operational memory across the tools a team
+already uses while preserving citations, visibility, source authority, and
+human review.
 
-## Current state (honest)
+## Current state
 
-We already accumulate knowledge into the workspace (raw events, facts, objects,
-embeddings, reconciliation). What we do **not** yet do for proposals is assemble
-a true cross-source evidence pack.
+Timeline accumulates raw events, extracted facts, workspace objects, embeddings,
+artifact associations, and reconciliation outputs. The code can build shared
+proposal and answer packs. Proposal behavior remains on the legacy path while
+`CROSS_SOURCE_EVIDENCE_MODE=off`, which is the default.
 
 | Path | What happens today |
 | --- | --- |
-| Slack / Telegram | Same chat/thread window. Other sources appear only when already object-linked, and only for disambiguation. |
-| Email / meetings / docs | Mostly event-local: one event + recent chronology + existing workspace dump. |
-| Monday / Linear / GitHub / Sentry | Structured sync → objects/reconciliation. Not a cross-source suggestion synthesizer. |
-| Agent ask | Can retrieve across sources via semantic search. Closest to the ideal for *answers*. |
+| Generic ingest webhooks | `off`: the existing event-local proposal remains unchanged. `shadow`: pack metrics only. `enforced`: recent time-only chronology is replaced by the anchor plus directly related pack evidence, and every proposed change requires exact citations. The existing proposal-generation source gate remains an inner gate. |
+| Slack, Telegram, email, meetings, and documents | Existing conversation-review and event-local proposal behavior remains unchanged regardless of the global rollout setting. These adapters must migrate and pass their own gates separately. |
+| GitHub, Linear, Monday, and Sentry | Structured events feed artifact reconciliation, associations, source references, and provider-authoritative outputs. They do not run the suggestion model. |
+| Agent Ask | Broad workspace retrieval returns a viewer-visible answer-policy pack for raw-event evidence while keeping objects, notes, tasks, boards, documents, and calendar results as typed adjacent context. Semantic matches are labeled as retrieval provenance, and partial packets disclose failed source adapters. |
 
-Proposals are still largely siloed by capture path. That is an intentional
-v1 constraint (same-source-first conversation reviews; cost and quality
-control), not the end state we sell.
+No proposal adapter is considered shipped until its shadow sample, safety,
+quality, latency, and operations gates pass and enforcement is enabled for that
+deployment.
 
-Related ADRs: [0004](./adr/0004-conversation-reviews-drive-conversational-proposals.md),
-[0005](./adr/0005-workspace-reconciliation-is-artifact-centered-and-approval-backed.md).
+## Decided target
 
-## Target architecture
-
-Treat every durable proposal as an **evidence review** over a related set of
-events, not a single-source prompt dump.
+Answers and proposals will share one bounded evidence-pack primitive with
+consumer-specific policies. They share candidate and citation semantics, not
+identical admission thresholds.
 
 ```text
-chat / meeting / email / ticket / board / doc
-        │
-        ▼
-   immutable raw evidence
-        │
-        ▼
- object-linked + retrieval-ranked
-   cross-source evidence pack
-        │
-        ├── agent answers (cite pack)
-        └── approval proposals (only if pack supports durable change)
+anchor event or conversation core
+              |
+              v
+same conversation or one-hop hard/object relationships
+              |
+              v
+visibility-safe eligible candidates
+              |
+              v
+deterministic rank, diversity, and budget policy
+              |
+              v
+       typed evidence pack
+          /          \
+ answer policy      proposal policy
+ broader recall     strict admission
 ```
 
-### Rules that stay non-negotiable
+The proposal policy admits cross-source evidence only through same-conversation
+membership or a stable, non-semantic relationship. Qualifying relationships
+include canonical artifact associations, provider or external IDs, canonical
+URLs and explicit references, and human-curated object links. A model-extracted
+fact or entity association may generate a candidate, but it cannot qualify that
+candidate by itself.
 
-1. **Cite only what the audience can see.** Visibility floors still win.
-2. **Approvals stay human-gated** for durable object/calendar/board state.
-3. **Raw source content stays immutable.** Derived memory can change; the
-   capture cannot.
-4. **Cross-source inclusion needs a relationship signal.** Start with
-   object/entity links and explicit refs; add retrieval ranking next. Do not
-   treat “same hour” or “same sender” alone as enough to propose.
-5. **Integrations remain first-class evidence**, even when they do not call the
-   suggestion LLM. Structured sync writes objects; evidence reviews should still
-   be able to *cite* those events when chat/meeting/email implies the same work.
+Semantic relevance ranks already eligible evidence. It never admits evidence
+into a proposal pack. Answer packs may admit viewer-visible semantic matches,
+but must label and cite them as retrieved evidence.
 
-### What “good” looks like
+## Product vocabulary
 
-Example: Slack says “I’ll send the Acme deck Friday.” Meeting confirms Friday
-EOD. Monday item moves to Working on it. Email attaches the draft.
+- **Anchor:** One or more immutable raw events that caused the evidence review
+- **Core evidence:** The anchor and protected same-conversation events
+- **Supporting evidence:** Directly related, visibility-safe events from the same or another surface
+- **Surface:** A source family people recognize, such as Slack, email, meetings, GitHub, Monday, or a named generic webhook
+- **Evidence pack:** A deterministic, bounded build result containing cited events, relationship reasons, ordering, budget results, and policy provenance
+- **Proposal audience:** The common audience allowed to see every selected citation and the resulting proposal
+- **Consumer policy:** The answer or proposal rules applied to the shared pack builder
+
+A pack is cross-source only when its selected citations span at least two
+surfaces. Integration event types from one provider still count as one surface.
+
+## Non-negotiable rules
+
+1. **Team isolation and visibility apply before retrieval, ranking, model input,
+   persistence, and display.** The first proposal release remains team-visible
+   only. Answer packs remain viewer-scoped.
+2. **A pack supplies evidence, not authority.** Inferred Timeline-owned memory
+   remains approval-backed. A provider may still update fields it authoritatively
+   owns under the existing reconciliation policy.
+3. **Raw source content stays immutable.** Derived associations, rankings,
+   proposals, and memory may change; captured source content does not.
+4. **Proposal relationships are direct and one-hop.** Same time, same sender,
+   semantic similarity, and transitive graph paths do not qualify evidence.
+5. **Conflicting evidence stays visible.** Newer and authoritative evidence ranks
+   higher, but unresolved material conflict produces no durable proposal.
+6. **Every proposed item names its evidence.** The model must return exact raw
+   event IDs from the supplied pack. Unknown, inaccessible, or empty selections
+   invalidate that proposal bundle.
+7. **Packs are bounded.** Core evidence is reserved before supporting evidence;
+   every omitted or truncated candidate has a recorded reason.
+8. **Provider events remain first-class evidence.** They can support a proposal
+   even when their own state update bypasses the suggestion model.
+
+## What good looks like
+
+Slack records a commitment to send the Acme deck on Friday. A meeting confirms
+Friday end of day. Monday shows the provider-owned work-item status. An email
+contains the draft.
 
 Timeline should:
 
-- keep each capture as cited evidence
-- relate them to the same Acme / deck work item
-- propose one coherent update (task/date/status) with multi-source citations
-- let a human accept once — not invent four parallel truths
+- preserve each capture as independently cited evidence;
+- relate only the events with a direct Acme deck relationship;
+- let each proposed task, date, or note cite the exact events that support it;
+- preserve Monday's authority over its own status field;
+- show unresolved conflicts instead of manufacturing confidence; and
+- group approvals according to existing target and authority rules, not because
+  the events happened to share one pack.
 
-## Website / landing messaging
+One pack may support several proposal items or reconciliation outputs. A pack
+does not imply one atomic update or one approval action.
 
-Use language like this (adapt tone per page; keep the claim):
+## Rollout
 
-**Hero / brand line**
+The implementation order is:
 
-- Capture work as it happens. Timeline turns chat, meetings, email, and tools
-  into one cited operating memory.
+1. Build the shared primitive and prove it on generic ingest webhooks.
+2. Migrate Slack and Telegram conversation reviews.
+3. Migrate event-local email, meeting, and document proposal paths.
+4. Adapt the raw-event portion of Agent Ask while retaining typed workspace
+   retrieval for objects, notes, tasks, boards, documents, and calendar state.
 
-**Supporting sentence**
+Every adapter starts disabled, runs in shadow mode, passes its own fixtures and
+negative-link cases, and earns explicit enforcement. An adapter never inherits
+readiness from another source path.
 
-- When something is discussed in Slack, decided on a call, tracked in Monday,
-  and confirmed by email, Timeline connects the evidence — then proposes the
-  update for approval.
+Cross-source proposal behavior is shipped for a source path only when:
 
-**Feature bullets**
+- enforced mode is enabled for that path;
+- the approval interface shows exact per-item multi-source citations;
+- stale or inaccessible evidence blocks acceptance;
+- deterministic, live, privacy, authority, quality, latency, and cost gates pass;
+- rollback monitoring is active; and
+- product copy names only the source paths that meet those conditions.
 
-- One evidence stream across Slack, Telegram, meetings, email, docs, and work
-  systems
-- Approval-backed memory — nothing durable becomes “true” without a review
-- Answers and digests cite the sources, not vibes
-- Integrations contribute structured state; conversations contribute intent;
-  Timeline reconciles both
+The complete sequence, file map, test matrix, and release gates are in the
+[cross-source evidence implementation plan](./cross-source-evidence-implementation-plan.md).
+The durable contract is recorded in
+[ADR 0013](./adr/0013-cross-source-evidence-packs-use-policy-bound-related-evidence.md).
 
-**Avoid claiming (until shipped)**
+## Website and landing messaging
 
-- Fully automatic CRM/project updates with no approvals
-- That every suggestion already synthesizes all sources today
-- That Timeline replaces every tracker on day one
+### Safe before pack-backed proposals ship
 
-**Safer present-tense framing while we build**
+- Timeline captures evidence from chat, meetings, email, documents, and work
+  systems in one searchable workspace.
+- Ask can retrieve cited context across connected sources.
+- Durable inferred memory remains reviewable, and provider-owned state keeps its
+  source authority.
+- Timeline is being built so directly related evidence can support the same
+  proposal without losing its source.
 
-- “Timeline is built so every surface becomes evidence for the same memory.”
-- “Ask already retrieves across sources; proposals are moving to the same
-  cross-source evidence model.”
+### Allowed after a source path ships
 
-## Implementation direction
+- Capture work as it happens. Timeline turns directly related evidence from
+  connected tools into cited updates for review.
+- When work is discussed in chat, confirmed in a meeting, tracked in a work
+  system, and clarified by email, Timeline can connect the evidence and cite it
+  under each proposed update.
 
-Order of work (product + eng):
+Copy must name the shipped scope. Do not imply that every proposal, integration,
+or historical event already participates.
 
-1. **Evidence pack primitive** — shared builder that returns ranked, visibility-
-   safe events related to an anchor (object links first, then retrieval).
-2. **Conversation reviews consume the pack** — Slack/Telegram keep the same-
-   thread core, but proposals may cite related meeting/email/integration events
-   as supporting evidence (not only disambiguation).
-3. **Event-local paths graduate** — email, meetings, and ingest webhooks use the
-   same pack instead of “one event + last N by time.”
-4. **Integrations as cited evidence** — continue structured `objectMap` /
-   reconciliation for authority; ensure those raw events are pack-eligible when
-   related work is proposed from chat/meeting/email.
-5. **Eval + cost budgets** — hard pack size / token caps; live evals that score
-   multi-source citation quality, not only single-thread extraction.
-6. **Marketing alignment** — landing, product brief, and sales one-pagers use
-   the promise above; changelog marks when pack-backed proposals ship.
+### Claims to avoid
 
-Open roadmap item: expand the existing “cross-source evidence reviews” work in
-[`todo.md`](../todo.md) beyond ingest webhooks to the full pack model.
+- Fully automatic customer relationship management or project updates without
+  authority checks or approvals
+- Every suggestion synthesizes every connected source
+- Semantic similarity alone proves that two events describe the same work
+- One evidence pack always becomes one approval
+- Timeline replaces every tracker or system of record
 
 ## Success criteria
 
-- A reviewer can open a proposal and see citations from **more than one surface**
-  when the work truly spanned them.
-- False merges stay rare: unrelated Monday noise does not ride into a Slack
-  proposal without a strong link.
-- Agent answers and Approvals share the same evidence-pack concept.
-- Website copy matches shipped behavior within one release of each milestone.
+The first enforced source path must meet all of these gates:
 
-## Non-goals for the first cut
+- 100% deterministic and committed reconciliation fixture passes
+- Every live-evaluation case passes its existing judge threshold
+- Zero visibility leaks, authority violations, unknown citations, ambiguous
+  hard-link proposals, or reviewed false merges
+- At least 200 eligible shadow pack builds across seven consecutive days and
+  three teams
+- At least 25 genuinely cross-source shadow packs, with every required scenario
+  family represented
+- No additional embedding or generative-model request solely for proposal-pack
+  ranking
+- At most 24 protected conversation-core events, 8 supporting events, 4
+  supporting events per surface, 500 scanned candidates, and 6,000
+  estimated pack tokens
+- Pack-build p95 below 1 second and error rate below 1%
+- Immediate rollback for any safety violation, or when p95 exceeds 2 seconds or
+  errors exceed 2% for 15 minutes
 
-- Semantic-only joins with no object or explicit relationship signal
-- Auto-accepting cross-source state into canonical objects
-- Replacing conversation reviews with unbounded “whole company context” dumps
-- Per-provider special-case prompt piles instead of one pack builder
+Coverage and source diversity are measured, but multi-source evidence is not
+forced. A valid anchor-only or same-source pack remains correct when no related
+cross-source evidence qualifies.
+
+## Non-goals for the first implementation
+
+- Semantic-only or transitive proposal joins
+- Private or specific-user background proposal packs
+- A durable `evidence_packs` database aggregate
+- A new model call solely to assemble or rank a pack
+- Continuous pack watchers or workspace-wide reranking on approval views
+- Replacing typed Agent Ask retrieval with raw-event packs
+- Automatic enforcement for a newly added consumer adapter
+- Per-provider prompt implementations instead of one shared builder
+
+## Related decisions and roadmap
+
+- [ADR 0004: Conversation reviews drive conversational proposals](./adr/0004-conversation-reviews-drive-conversational-proposals.md)
+- [ADR 0005: Workspace reconciliation is artifact-centered and approval-backed](./adr/0005-workspace-reconciliation-is-artifact-centered-and-approval-backed.md)
+- [ADR 0009: Generic ingest webhooks are evidence-only capture sources](./adr/0009-ingest-webhooks-are-evidence-only.md)
+- [ADR 0010: Artifact provenance is tiered and evidence-backed](./adr/0010-artifact-provenance-is-tiered-and-evidence-backed.md)
+- [Cross-source evidence roadmap item](../todo.md)

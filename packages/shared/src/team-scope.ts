@@ -83,7 +83,11 @@ import {
   type TimelineMomentPresentationCacheRecord,
   type TimelineMomentPresentationSuggestion,
 } from '#src/timeline-moments/presentation.js';
-import { normalizeVisibilityUserIds, rawEventVisibleToUser } from '#src/visibility.js';
+import {
+  normalizeVisibilityUserIds,
+  rawEventIsActive,
+  rawEventVisibleToUser,
+} from '#src/visibility.js';
 
 // Note: `teamRole` value is referenced at runtime by drizzle elsewhere; keeping
 // the value import lets us derive the union type from the enum definition.
@@ -363,6 +367,7 @@ export interface SearchEventArtifactClusterEvidence {
   externalObjectId: string | null;
   role: string;
   strength: string;
+  associationSource: string;
   authoritative: boolean;
   occurredAt: string | null;
   snippet: string | null;
@@ -547,7 +552,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  */
 export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScopeDeps = {}) {
   const visibilityFilter = rawEventVisibleToUser(userId);
-  const activeRawEventFilter = sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`;
+  const activeRawEventFilter = rawEventIsActive();
 
   let membershipPromise: Promise<TeamRole> | undefined;
 
@@ -698,6 +703,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
 
   async function hydrateArtifactClustersForVisibleEventIds(
     accessibleEventIds: string[],
+    maxRelatedEvidencePerCluster = 5,
+    maxRelatedEvidenceTotal?: number,
   ): Promise<Map<string, SearchEventArtifactCluster>> {
     if (accessibleEventIds.length === 0) return new Map();
 
@@ -746,7 +753,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     const clusterIds = [...new Set(associationEventClusterRows.map((row) => row.clusterId))];
     if (clusterIds.length === 0) return new Map();
 
-    const associationClusterMemberRows = await db
+    const associationClusterMemberQuery = db
       .select({
         clusterId: artifactClusters.id,
         artifactType: artifactClusters.artifactType,
@@ -756,6 +763,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         externalObjectId: reconciliationEvidence.externalObjectId,
         role: artifactEvidenceAssociations.role,
         strength: artifactEvidenceAssociations.strength,
+        associationSource: artifactEvidenceAssociations.associationSource,
         authoritative: sql<boolean>`${artifactEvidenceAssociations.associationSource} = 'authoritative_provider'`,
         memberMetadata: artifactEvidenceAssociations.metadata,
         occurredAt: rawEvents.occurredAt,
@@ -796,7 +804,12 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           sql<boolean>`${artifactEvidenceAssociations.associationSource} = 'authoritative_provider'`,
         ),
         desc(rawEvents.occurredAt),
+        asc(artifactClusters.id),
+        asc(rawEvents.id),
       );
+    const associationClusterMemberRows = maxRelatedEvidenceTotal
+      ? await associationClusterMemberQuery.limit(maxRelatedEvidenceTotal)
+      : await associationClusterMemberQuery;
 
     const clusterById = new Map<string, SearchEventArtifactCluster>();
     const evidenceSeenByCluster = new Map<string, Set<string>>();
@@ -812,7 +825,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           relatedEvidence: [],
         } satisfies SearchEventArtifactCluster);
       if (!existing) clusterById.set(row.clusterId, cluster);
-      if (cluster.relatedEvidence.length >= 5) continue;
+      if (cluster.relatedEvidence.length >= maxRelatedEvidencePerCluster) continue;
       const evidenceKey = [
         row.rawEventId ?? '',
         row.provider ?? '',
@@ -831,6 +844,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         externalObjectId: row.externalObjectId,
         role: row.role,
         strength: row.strength,
+        associationSource: row.associationSource,
         authoritative: row.authoritative,
         occurredAt: row.occurredAt?.toISOString() ?? null,
         snippet: row.contentText?.slice(0, 180) ?? null,
@@ -854,6 +868,21 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     const accessibleEvents = await getEventsByIdsImpl(ids);
     const clusterByEventId = await hydrateArtifactClustersForVisibleEventIds(
       accessibleEvents.map((event) => event.id),
+    );
+    return Object.fromEntries(clusterByEventId);
+  }
+
+  async function listEvidencePackArtifactClusters(
+    rawEventIds: string[],
+    maxCandidates = 500,
+  ): Promise<Record<string, SearchEventArtifactCluster>> {
+    const ids = [...new Set(rawEventIds.filter((id) => UUID_RE.test(id)))];
+    if (ids.length === 0) return {};
+    const accessibleEvents = await getEventsByIdsImpl(ids);
+    const clusterByEventId = await hydrateArtifactClustersForVisibleEventIds(
+      accessibleEvents.map((event) => event.id),
+      Math.min(Math.max(maxCandidates, 1), 500),
+      Math.min(Math.max(maxCandidates, 1), 500),
     );
     return Object.fromEntries(clusterByEventId);
   }
@@ -2796,6 +2825,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       listImpactItems: listTimelineImpactItems,
 
       listArtifactClusters: listTimelineArtifactClusters,
+
+      listEvidencePackArtifactClusters,
 
       listSourceFacets,
 

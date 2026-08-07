@@ -11,13 +11,18 @@
  *   --run-kind=closed_beta|post_deploy|manual
  *   --fail-on-failures    Exit 1 when the report contains any failed sample.
  *   --confirm-fixture=<caseName>:<packetFingerprint>   Repeatable confirmed fixture candidate.
+ *   --evidence-pack-samples=/path/to/redacted-samples.json   Repeatable sample input.
+ *   --required-evidence-scenario=<name>   Repeatable required promotion scenario family.
  */
+import { readFile } from 'node:fs/promises';
 import { loadEnvFile } from 'node:process';
 import { pathToFileURL } from 'node:url';
 
 import { closeDb, getDb, type Db } from '@timeline/db';
 import {
+  parseProductionSamplingEvidencePackSamples,
   writeProductionSamplingEvalReport,
+  type ProductionSamplingEvidencePackSample,
   type ProductionSamplingRunKind,
 } from '@timeline/shared/reconciliation/production-sampling';
 
@@ -30,6 +35,8 @@ export interface Args {
   runKind: ProductionSamplingRunKind;
   failOnFailures: boolean;
   confirmedFixtureCandidates: { caseName: string; packetFingerprint: string }[];
+  evidencePackSamplePaths: string[];
+  requiredEvidencePackScenarioFamilies: string[];
 }
 
 export interface ReconciliationProductionSamplingCliDeps {
@@ -37,6 +44,7 @@ export interface ReconciliationProductionSamplingCliDeps {
   db?: Db;
   write?: (text: string) => void;
   setExitCode?: (code: number) => void;
+  loadEvidencePackSamples?: (paths: string[]) => Promise<ProductionSamplingEvidencePackSample[]>;
 }
 
 export class ReconciliationProductionSamplingUsageError extends Error {
@@ -53,6 +61,8 @@ export function parseArgs(argv = process.argv.slice(2)): Args {
   let runKind: ProductionSamplingRunKind = 'manual';
   let failOnFailures = false;
   const confirmedFixtureCandidates: { caseName: string; packetFingerprint: string }[] = [];
+  const evidencePackSamplePaths: string[] = [];
+  const requiredEvidencePackScenarioFamilies: string[] = [];
 
   for (const arg of argv) {
     if (arg === '--') {
@@ -82,6 +92,14 @@ export function parseArgs(argv = process.argv.slice(2)): Args {
       confirmedFixtureCandidates.push(
         parseConfirmedFixture(arg.slice('--confirm-fixture='.length)),
       );
+    } else if (arg.startsWith('--evidence-pack-samples=')) {
+      const value = arg.slice('--evidence-pack-samples='.length).trim();
+      if (!value) throwUsage('Empty --evidence-pack-samples value');
+      evidencePackSamplePaths.push(value);
+    } else if (arg.startsWith('--required-evidence-scenario=')) {
+      const value = arg.slice('--required-evidence-scenario='.length).trim();
+      if (!value) throwUsage('Empty --required-evidence-scenario value');
+      requiredEvidencePackScenarioFamilies.push(value);
     } else {
       throwUsage(`Unknown argument: ${arg}`);
     }
@@ -89,6 +107,9 @@ export function parseArgs(argv = process.argv.slice(2)): Args {
 
   if (inputPaths.length === 0) throwUsage('Missing --input=<artifact directory or file>');
   if (!outputPath) throwUsage('Missing --out=<report.json>');
+  if (evidencePackSamplePaths.length > 0 && requiredEvidencePackScenarioFamilies.length === 0) {
+    throwUsage('Evidence-pack promotion samples require at least one --required-evidence-scenario');
+  }
 
   return {
     inputPaths,
@@ -97,6 +118,8 @@ export function parseArgs(argv = process.argv.slice(2)): Args {
     runKind,
     failOnFailures,
     confirmedFixtureCandidates,
+    evidencePackSamplePaths,
+    requiredEvidencePackScenarioFamilies: [...new Set(requiredEvidencePackScenarioFamilies)].sort(),
   };
 }
 
@@ -118,7 +141,31 @@ function parseConfirmedFixture(value: string): { caseName: string; packetFingerp
 }
 
 function usage(): string {
-  return 'Usage: reconciliation-production-sampling --input=<artifact-dir-or-json> [--input=<more>] --out=<report.json> [--team=<uuid>] [--run-kind=closed_beta|post_deploy|manual] [--fail-on-failures] [--confirm-fixture=<caseName>:<packetFingerprint>]';
+  return 'Usage: reconciliation-production-sampling --input=<artifact-dir-or-json> [--input=<more>] --out=<report.json> [--team=<uuid>] [--run-kind=closed_beta|post_deploy|manual] [--fail-on-failures] [--confirm-fixture=<caseName>:<packetFingerprint>] [--evidence-pack-samples=<redacted-samples.json> --required-evidence-scenario=<name>]';
+}
+
+async function loadEvidencePackSamples(
+  paths: readonly string[],
+): Promise<ProductionSamplingEvidencePackSample[]> {
+  const samples: ProductionSamplingEvidencePackSample[] = [];
+  for (const inputPath of paths) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(await readFile(inputPath, 'utf8')) as unknown;
+    } catch (error) {
+      throw new ReconciliationProductionSamplingUsageError(
+        `Could not read evidence-pack samples from ${inputPath}: ${error instanceof Error ? error.name : 'unknown error'}`,
+      );
+    }
+    try {
+      samples.push(...parseProductionSamplingEvidencePackSamples(parsed));
+    } catch (error) {
+      throw new ReconciliationProductionSamplingUsageError(
+        `Invalid evidence-pack samples in ${inputPath}: ${error instanceof Error ? error.message : 'unknown error'}`,
+      );
+    }
+  }
+  return samples;
 }
 
 export async function runReconciliationProductionSamplingCli(
@@ -126,6 +173,9 @@ export async function runReconciliationProductionSamplingCli(
   deps: ReconciliationProductionSamplingCliDeps = {},
 ): Promise<void> {
   const writeReport = deps.writeReport ?? writeProductionSamplingEvalReport;
+  const evidencePackSamples = await (deps.loadEvidencePackSamples ?? loadEvidencePackSamples)(
+    args.evidencePackSamplePaths,
+  );
   const write = deps.write ?? console.log;
   const setExitCode = deps.setExitCode ?? ((code: number) => (process.exitCode = code));
   if (args.teamId && !deps.db) {
@@ -138,6 +188,10 @@ export async function runReconciliationProductionSamplingCli(
     outputPath: args.outputPath,
     runKind: args.runKind,
     confirmedFixtureCandidates: args.confirmedFixtureCandidates,
+    ...(evidencePackSamples.length > 0 ? { evidencePackSamples } : {}),
+    ...(args.requiredEvidencePackScenarioFamilies.length > 0
+      ? { requiredEvidencePackScenarioFamilies: args.requiredEvidencePackScenarioFamilies }
+      : {}),
     ...(args.teamId && deps.db ? { teamId: args.teamId, db: deps.db } : {}),
   });
 
@@ -154,6 +208,7 @@ export async function runReconciliationProductionSamplingCli(
         fixtureCandidateCount: written.report.fixtureCandidateCount,
         confirmedFixtureCandidateCount: written.report.confirmedFixtureCandidateCount,
         unconfirmedFixtureCandidateCount: written.report.unconfirmedFixtureCandidateCount,
+        evidencePackPromotion: written.report.evidencePackPromotion ?? null,
         runId: written.runId ?? null,
         ignoredFiles: written.loaded.ignoredFiles,
       },
@@ -161,7 +216,12 @@ export async function runReconciliationProductionSamplingCli(
       2,
     ),
   );
-  if (args.failOnFailures && written.report.failedCount > 0) setExitCode(1);
+  if (
+    args.failOnFailures &&
+    (written.report.failedCount > 0 || written.report.evidencePackPromotion?.ready === false)
+  ) {
+    setExitCode(1);
+  }
 }
 
 async function main(): Promise<void> {

@@ -69,6 +69,20 @@ interface SuggestionItem {
   supersededByItemId?: string | null;
   supersededReason?: string | null;
   calendarResolutionHint?: CalendarResolutionHint | null;
+  evidence?: SuggestionEvidence[];
+  evidenceStatus?: 'legacy' | 'current' | 'stale';
+}
+
+interface SuggestionEvidence {
+  rawEventId: string;
+  quote: string | null;
+  occurredAt: string | null;
+  source: string | null;
+  senderName?: string | null;
+  senderHandle?: string | null;
+  senderTimelineName?: string | null;
+  conversationName?: string | null;
+  metadata?: Record<string, unknown>;
 }
 
 interface CalendarResolutionEvent {
@@ -104,17 +118,7 @@ interface SuggestionBundle {
   metadata?: Record<string, unknown>;
   createdAt: string;
   items: SuggestionItem[];
-  evidence: {
-    rawEventId: string;
-    quote: string | null;
-    occurredAt: string | null;
-    source: string | null;
-    senderName?: string | null;
-    senderHandle?: string | null;
-    senderTimelineName?: string | null;
-    conversationName?: string | null;
-    metadata?: Record<string, unknown>;
-  }[];
+  evidence: SuggestionEvidence[];
 }
 
 type ApprovalAction = (
@@ -669,7 +673,11 @@ export function ApprovalsClient({
   );
   const bulkAcceptSuggestions = visibleSuggestions.flatMap((bundle) => {
     const itemIds = bundle.items.reduce<string[]>((ids, item) => {
-      if (isActionableSuggestionStatus(item.status) && item.targetKind !== 'object_merge') {
+      if (
+        isActionableSuggestionStatus(item.status) &&
+        item.targetKind !== 'object_merge' &&
+        item.evidenceStatus !== 'stale'
+      ) {
         ids.push(item.id);
       }
       return ids;
@@ -1017,7 +1025,9 @@ function ApprovalBundleRow({
   taskCategoriesEnabled: boolean;
 }) {
   const pendingItems = bundle.items.filter((item) => isActionableSuggestionStatus(item.status));
-  const bulkAcceptItems = pendingItems.filter((item) => item.targetKind !== 'object_merge');
+  const bulkAcceptItems = pendingItems.filter(
+    (item) => item.targetKind !== 'object_merge' && item.evidenceStatus !== 'stale',
+  );
   const mergeReviewCount = pendingItems.length - bulkAcceptItems.length;
   return (
     <article className="border-t border-border py-3">
@@ -1128,8 +1138,15 @@ function ApprovalItemRow({
         taskCategoriesEnabled={taskCategoriesEnabled}
       />
       {isActionableSuggestionStatus(item.status) ? (
-        <ApprovalItemActions busy={busy} item={item} pending={pending} run={run} />
+        <ApprovalItemActions
+          acceptDisabled={item.evidenceStatus === 'stale'}
+          busy={busy}
+          item={item}
+          pending={pending}
+          run={run}
+        />
       ) : null}
+      <ApprovalItemEvidence item={item} timezone={timezone} />
     </li>
   );
 }
@@ -1547,11 +1564,13 @@ function CalendarResolutionLine({
 }
 
 function ApprovalItemActions({
+  acceptDisabled,
   busy,
   item,
   pending,
   run,
 }: {
+  acceptDisabled: boolean;
   busy: boolean;
   item: SuggestionItem;
   pending: boolean;
@@ -1572,7 +1591,7 @@ function ApprovalItemActions({
             type="button"
             size="sm"
             variant="outline"
-            disabled={busy}
+            disabled={busy || acceptDisabled}
             onClick={() => {
               run(() => acceptSuggestionItemAction({ itemId: item.id }), [item.id]);
             }}
@@ -1583,7 +1602,7 @@ function ApprovalItemActions({
           <SuggestionChangeDialog
             itemId={item.id}
             title={displayText(item.title)}
-            disabled={busy}
+            disabled={busy || acceptDisabled}
           />
         </>
       )}
@@ -1600,6 +1619,65 @@ function ApprovalItemActions({
         Reject
       </Button>
     </div>
+  );
+}
+
+function ApprovalItemEvidence({ item, timezone }: { item: SuggestionItem; timezone: string }) {
+  if (item.evidenceStatus === 'stale') {
+    return (
+      <p className="md:col-span-3 text-xs text-danger" role="status">
+        This change cannot be accepted because required source evidence is no longer available.
+      </p>
+    );
+  }
+  if (!item.evidence || item.evidence.length === 0) return null;
+  const evidenceBySurface = new Map<string, NonNullable<SuggestionItem['evidence']>[number][]>();
+  for (const evidence of item.evidence) {
+    const surface = evidence.metadata?.evidence_surface;
+    const label =
+      typeof surface === 'string' && surface.trim()
+        ? surface.trim()
+        : evidenceSourceLabel(evidence.source);
+    evidenceBySurface.set(label, [...(evidenceBySurface.get(label) ?? []), evidence]);
+  }
+  return (
+    <details className="md:col-span-3 border-l border-border pl-3 text-xs">
+      <summary className="cursor-pointer text-fg-dim hover:text-fg">
+        Evidence for this change · {evidenceBySurface.size}{' '}
+        {evidenceBySurface.size === 1 ? 'source' : 'sources'}
+      </summary>
+      <div className="mt-2 grid gap-2">
+        {[...evidenceBySurface.entries()].map(([surface, evidence]) => (
+          <section key={surface} aria-label={`${surface} evidence`}>
+            <p className="text-fg-muted">
+              {surface} · {evidence.length} {evidence.length === 1 ? 'citation' : 'citations'}
+            </p>
+            <div className="grid gap-1 sm:grid-cols-2">
+              {evidence.map((ev) => (
+                <EvidenceLink
+                  key={ev.rawEventId}
+                  eventId={ev.rawEventId}
+                  previewText={ev.quote}
+                  source={ev.source}
+                  occurredAt={ev.occurredAt}
+                  className="group grid min-w-0 gap-1 py-1 text-fg-dim transition-colors hover:text-fg"
+                >
+                  <span className="inline-flex items-center gap-1.5">
+                    <ExternalLink className="size-3 shrink-0" />
+                    Evidence from {evidenceSourceContextLabel(ev)}
+                  </span>
+                  <span className="line-clamp-2 text-fg-muted group-hover:text-fg">
+                    {ev.quote
+                      ? displayText(ev.quote, { timezone })
+                      : 'Open the source event on the timeline.'}
+                  </span>
+                </EvidenceLink>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+    </details>
   );
 }
 

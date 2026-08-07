@@ -219,6 +219,8 @@ packages/
             reconciliation modules (evidence clusters, anchors, source refs,
             raw-event normalization, anchor resolution, reconciliation outputs,
             approval projection outbox, and field-scoped authority policy),
+            evidence-pack module (policy-bound, visibility-safe raw-event packs
+            for proposal citations and Agent Ask retrieval),
             mcp module (Phase 11 — JSON-RPC client, OAuth client + state JWT, SSRF guard,
             team+user-overlay scope), mcp-server module (Phase 11 outbound —
             JSON-RPC handler, bearer-key mint/verify for /api/mcp/server),

@@ -170,6 +170,154 @@ describe('suggestion scope', () => {
     expect(bundle.items).toHaveLength(1);
   });
 
+  it('creates a new revision and supersedes actionable items when the evidence pack changes', async () => {
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: 'Owner committed to the follow-up.',
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+      visibility: 'team',
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const create = (fingerprint: string) =>
+      scope.suggestions.createOrMergeSuggestionBundle({
+        source: 'background' as const,
+        title: 'Create follow-up task',
+        dedupeKey: 'pack-revision',
+        metadata: { evidence_pack_fingerprint: fingerprint },
+        evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }],
+        items: [
+          {
+            operation: 'create' as const,
+            targetKind: 'task' as const,
+            title: 'Follow up',
+            dedupeKey: 'pack-revision:item',
+            proposedPayload: { canonicalName: 'Follow up' },
+            evidenceRawEventIds: [TEAM_RAW_EVENT_ID],
+          },
+        ],
+      });
+
+    const first = await create('a'.repeat(64));
+    const second = await create('b'.repeat(64));
+
+    expect(second.id).not.toBe(first.id);
+    const rows = await db
+      .select({
+        status: agentSuggestionItems.status,
+        supersededReason: agentSuggestionItems.supersededReason,
+      })
+      .from(agentSuggestionItems)
+      .orderBy(asc(agentSuggestionItems.createdAt));
+    expect(rows).toEqual([
+      { status: 'superseded', supersededReason: 'The selected source evidence changed.' },
+      { status: 'pending', supersededReason: null },
+    ]);
+  });
+
+  it('marks item evidence stale and supersedes it at acceptance after visibility narrows', async () => {
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: 'Private commitment details.',
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+      visibility: 'team',
+    });
+    const ownerScope = withTeam(db as never, TEAM_ID, USER_ID);
+    const created = await ownerScope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Evidence-backed task',
+      dedupeKey: 'stale-pack-evidence',
+      metadata: { evidence_pack_fingerprint: 'a'.repeat(64) },
+      evidence: [{ rawEventId: TEAM_RAW_EVENT_ID, quote: 'Private commitment details.' }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Private follow-up',
+          dedupeKey: 'stale-pack-evidence:item',
+          proposedPayload: { canonicalName: 'Private follow-up' },
+          evidenceRawEventIds: [TEAM_RAW_EVENT_ID],
+        },
+      ],
+    });
+    await db
+      .update(rawEvents)
+      .set({ visibility: 'private', visibilityOwnerUserId: USER_ID })
+      .where(eq(rawEvents.id, TEAM_RAW_EVENT_ID));
+
+    const reviewerScope = withTeam(db as never, TEAM_ID, REVIEWER_ID);
+    const [visible] = await reviewerScope.suggestions.listPendingSuggestions();
+    expect(visible?.evidence).toEqual([]);
+    expect(visible?.items[0]).toMatchObject({ evidence: [], evidenceStatus: 'stale' });
+    await reviewerScope.suggestions.acceptSuggestionItem(created.items[0]?.id ?? 'missing');
+    const [item] = await db
+      .select({
+        status: agentSuggestionItems.status,
+        reason: agentSuggestionItems.supersededReason,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, created.items[0]?.id ?? 'missing'));
+    expect(item).toEqual({
+      status: 'superseded',
+      reason: 'Required source evidence is no longer available to approve.',
+    });
+  });
+
+  it('marks tombstoned item evidence stale and supersedes it at acceptance', async () => {
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: 'Commitment that was later deleted.',
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+      visibility: 'team',
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const created = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Evidence-backed task',
+      dedupeKey: 'tombstoned-pack-evidence',
+      metadata: { evidence_pack_fingerprint: 'a'.repeat(64) },
+      evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Deleted follow-up',
+          dedupeKey: 'tombstoned-pack-evidence:item',
+          proposedPayload: { canonicalName: 'Deleted follow-up' },
+          evidenceRawEventIds: [TEAM_RAW_EVENT_ID],
+        },
+      ],
+    });
+    await db
+      .update(rawEvents)
+      .set({ sourceMetadata: { deleted: true } })
+      .where(eq(rawEvents.id, TEAM_RAW_EVENT_ID));
+
+    const [visible] = await scope.suggestions.listPendingSuggestions();
+    expect(visible?.items[0]).toMatchObject({ evidence: [], evidenceStatus: 'stale' });
+    await scope.suggestions.acceptSuggestionItem(created.items[0]?.id ?? 'missing');
+
+    const [item] = await db
+      .select({
+        status: agentSuggestionItems.status,
+        reason: agentSuggestionItems.supersededReason,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, created.items[0]?.id ?? 'missing'));
+    expect(item).toEqual({
+      status: 'superseded',
+      reason: 'Required source evidence is no longer available to approve.',
+    });
+  });
+
   it('creates non-authoritative artifact cluster evidence for pending conversation suggestions', async () => {
     await db.insert(rawEvents).values({
       id: TEAM_RAW_EVENT_ID,

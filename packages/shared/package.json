@@ -322,6 +322,12 @@
       "import": "./dist/reconciliation/index.js",
       "default": "./dist/reconciliation/index.js"
     },
+    "./evidence-pack": {
+      "types": "./src/evidence-pack/index.ts",
+      "development": "./src/evidence-pack/index.ts",
+      "import": "./dist/evidence-pack/index.js",
+      "default": "./dist/evidence-pack/index.js"
+    },
     "./reconciliation/authority": {
       "types": "./src/reconciliation/authority.ts",
       "development": "./src/reconciliation/authority.ts",
