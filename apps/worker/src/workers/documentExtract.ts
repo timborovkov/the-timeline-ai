@@ -13,21 +13,23 @@ import {
 } from '@timeline/shared';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, eq, sql } from 'drizzle-orm';
-import mammoth from 'mammoth';
 
-import { captureWorkerJobFailure } from '#src/monitoring.js';
 import {
-  type NativePdfExtractResult,
-  PDF_NATIVE_MODEL,
-  shouldAcceptNativePdf,
-} from '#src/workers/pdfNativeExtract.js';
-import { processPdfNativeOffThread } from '#src/workers/pdfNativeExtractRuntime.js';
+  ANYDOC_SANDBOX_MODEL,
+  extractOfficeForDocument,
+  extractPdfForDocument,
+  resolveAnydocFormatHint,
+  shouldAcceptSandboxPdfText,
+  type SandboxPdfExtractResult,
+} from '#src/document-ingestion/pdf-extraction.js';
+import { isDaytonaNotConfiguredError } from '#src/document-ingestion/types.js';
+import { captureWorkerJobFailure } from '#src/monitoring.js';
 
 export {
-  PDF_NATIVE_MODEL,
-  shouldAcceptNativePdf,
-  type NativePdfExtractResult,
-} from '#src/workers/pdfNativeExtract.js';
+  ANYDOC_SANDBOX_MODEL,
+  shouldAcceptSandboxPdfText,
+  type SandboxPdfExtractResult,
+} from '#src/document-ingestion/pdf-extraction.js';
 
 const log = childLogger('worker:document-extract');
 
@@ -51,8 +53,8 @@ export interface DocumentExtractIO {
   enqueueEmbed: (data: queue.EmbedJobData) => Promise<void>;
   /**
    * Gate for vision/OpenRouter. Called only when a route needs
-   * `extractFromMedia` (images, scanned/mixed PDFs). Text, DOCX, and
-   * accepted native PDFs must succeed without OpenRouter.
+   * `extractFromMedia` (images, sparse PDFs). Text, office anydoc, and
+   * accepted sandbox PDFs must succeed without OpenRouter.
    */
   requireEnv: () => void;
   /**
@@ -60,25 +62,28 @@ export interface DocumentExtractIO {
    * to `llm.extractTextFromMedia` (OpenRouter vision model). Tests inject
    * a fake so they can exercise the routing without hitting OpenRouter.
    */
-  extractFromMedia: (input: { body: Buffer; mediaType: string; filename: string }) => Promise<{
+  extractFromMedia: (input: {
+    body: Buffer;
+    mediaType: string;
+    filename: string;
+    pageImages?: Buffer[];
+  }) => Promise<{
     text: string;
     suggestedTitle?: string;
     visualDescription?: string;
     model: string;
   }>;
   /**
-   * Native DOCX text extraction via mammoth. Splitting this out from
-   * the worker body lets tests assert routing without needing a real
-   * .docx payload. Defaults to `mammoth.extractRawText`.
+   * Office text extraction (docx/pptx/xlsx/…). Production uses Daytona
+   * anydoc; in-process mammoth is only for DOCUMENT_EXTRACT_ALLOW_INPROCESS
+   * on DOCX.
    */
-  extractDocx: (body: Buffer) => Promise<{ text: string }>;
+  extractOffice: (body: Buffer, formatHint: string) => Promise<{ text: string; model?: string }>;
   /**
-   * Native PDF classify + markdown via pdf-inspector. Defaults to an
-   * off-thread `processPdf` so the napi package is never imported at
-   * worker startup (unsupported platforms fall back to vision). Tests
-   * inject fakes to assert accept/reject routing without the binary.
+   * Isolated PDF text extract (Daytona anydoc + optional page PNGs).
+   * Tests inject fakes to assert accept/reject routing.
    */
-  extractPdfNative: (body: Buffer) => Promise<NativePdfExtractResult>;
+  extractPdfSandbox: (body: Buffer) => Promise<SandboxPdfExtractResult>;
 }
 
 function defaultIO(): DocumentExtractIO {
@@ -98,18 +103,17 @@ function defaultIO(): DocumentExtractIO {
         body: input.body,
         mediaType: input.mediaType,
         filename: input.filename,
+        ...(input.pageImages && input.pageImages.length > 0
+          ? { pageImages: input.pageImages }
+          : {}),
       });
     },
-    async extractDocx(body) {
-      // mammoth.extractRawText drops styles + structure but keeps reading
-      // order — best fit for retrieval. Pass-through warnings array is
-      // ignored; mammoth surfaces things like "unrecognised paragraph
-      // style" which don't change the text.
-      const result = await mammoth.extractRawText({ buffer: body });
-      return { text: result.value };
+    async extractOffice(body, formatHint) {
+      const result = await extractOfficeForDocument(body, formatHint);
+      return { text: result.text, model: `${ANYDOC_SANDBOX_MODEL}+${result.method}` };
     },
-    extractPdfNative(body) {
-      return processPdfNativeOffThread(body);
+    extractPdfSandbox(body) {
+      return extractPdfForDocument(body);
     },
   };
 }
@@ -117,7 +121,7 @@ function defaultIO(): DocumentExtractIO {
 // Code-version tag stamped on every successful extraction so the
 // `redocument-extract` script can re-drive jobs whose chunking policy
 // predates a change.
-const EXTRACT_CODE_VERSION = '2026-08-a';
+const EXTRACT_CODE_VERSION = '2026-08-c';
 
 // Cap on document size we will pull into memory for processing. Above
 // this, the worker stamps the version as 'failed' with a clear message
@@ -131,8 +135,8 @@ const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
  *   2. Load version + document; bail unrecoverably on mismatch / missing.
  *   3. Download the blob from RustFS (or defer oversized versions).
  *   4. Route by content type → text:
- *        text/* → UTF-8; DOCX → mammoth; TextBased PDF → pdf-inspector;
- *        scanned/mixed PDF + images → vision OCR.
+ *        text/* → UTF-8; office → Daytona anydoc; PDF → Daytona anydoc
+ *        (sparse → vision on page PNGs); images → vision.
  *   5. chunkText() to a uniform ~800/120 budget.
  *   6. Insert document_chunks rows + enqueue an embed job per chunk.
  *   7. Stamp version status = 'chunked' (embed promotes to 'embedded').
@@ -188,7 +192,7 @@ export async function processDocumentExtractJob(
 ): Promise<DocumentExtractResult> {
   const { documentVersionId, teamId, targetCollection } = data;
   // OpenRouter is gated lazily inside routeContentToText only when a
-  // vision path is taken. Text / DOCX / accepted native PDFs work without it.
+  // vision path is taken. Text / DOCX / accepted sandbox PDFs work without it.
 
   const lockKey = sql`hashtextextended(${documentVersionId}, 0)`;
 
@@ -370,7 +374,8 @@ export async function processDocumentExtractJob(
       .set({ processingStatus: 'failed', processingError: message.slice(0, 500) })
       .where(eq(documentVersions.id, version.id));
     // UnrecoverableError stops BullMQ retries (unsupported MIME, missing
-    // vision key). Transient LLM / mammoth errors still retry.
+    // vision key, Daytona misconfiguration). Transient LLM / sandbox errors
+    // still retry.
     throw err;
   }
 
@@ -508,9 +513,10 @@ export function startDocumentExtractWorker(
  * Routes:
  *   - text/*, json, xml, recognised text-ish extensions → utf-8 read +
  *     NUL-byte heuristic against accidentally treating binary as text.
- *   - DOCX (Office Open XML) → `io.extractDocx` (mammoth raw-text).
- *   - application/pdf → native pdf-inspector when TextBased + confident;
- *     otherwise vision OCR via `io.extractFromMedia`.
+ *   - Office (doc/docx/pptx/xlsx/odt/rtf/epub/…) → `io.extractOffice`
+ *     (Daytona anydoc). No vision fallback.
+ *   - application/pdf → Daytona anydoc when text is dense; otherwise
+ *     vision OCR on rendered page PNGs (or full PDF).
  *   - image/* → `io.extractFromMedia` (vision LLM via OpenRouter).
  *   - Anything else → `{ failure }` with an honest reason string. Two
  *     failure modes the caller must distinguish:
@@ -525,7 +531,7 @@ type RouteResult =
 
 async function extractViaVision(
   io: DocumentExtractIO,
-  input: { body: Buffer; mediaType: string; filename: string },
+  input: { body: Buffer; mediaType: string; filename: string; pageImages?: Buffer[] },
 ): Promise<RouteResult> {
   io.requireEnv();
   const result = await io.extractFromMedia(input);
@@ -536,29 +542,54 @@ async function routePdfContent(
   input: { body: Buffer; name: string },
   io: DocumentExtractIO,
 ): Promise<RouteResult> {
-  let native: NativePdfExtractResult | null = null;
+  const sparseChars = getEnv().DOCUMENT_EXTRACT_SPARSE_TEXT_CHARS;
+  let sandbox: SandboxPdfExtractResult;
   try {
-    native = await io.extractPdfNative(input.body);
+    sandbox = await io.extractPdfSandbox(input.body);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    log.warn(
-      { err: message, filename: input.name },
-      'native PDF extract failed; falling back to vision',
-    );
+    // Missing Daytona is permanent. Transient Daytona/infra failures must
+    // rethrow for BullMQ retry — do not permanently OCR via vision and mark
+    // the version chunked on a sandbox blip.
+    if (isDaytonaNotConfiguredError(err)) {
+      return { failure: err.message };
+    }
+    throw err;
   }
-  if (native && shouldAcceptNativePdf(native)) {
-    const markdown = native.markdown?.trim() ?? '';
+  if (shouldAcceptSandboxPdfText(sandbox, sparseChars)) {
     return {
-      representations: [{ kind: 'source_text', text: markdown }],
-      model: PDF_NATIVE_MODEL,
-      ...(native.title ? { suggestedTitle: native.title } : {}),
+      representations: [{ kind: 'source_text', text: sandbox.text.trim() }],
+      model: `${ANYDOC_SANDBOX_MODEL}+${sandbox.method}`,
+      ...(sandbox.title ? { suggestedTitle: sandbox.title } : {}),
     };
   }
+  // Only pass page PNGs when they cover the whole document. A capped prefix
+  // (DOCUMENT_EXTRACT_MAX_VISION_PAGES < pageCount) would OCR a truncated
+  // subset and mark the version chunked — fall back to full-PDF vision.
+  const pageImagesForVision = completeSandboxPageImages(sandbox);
   return extractViaVision(io, {
     body: input.body,
     mediaType: 'application/pdf',
     filename: input.name,
+    ...(pageImagesForVision ? { pageImages: pageImagesForVision } : {}),
   });
+}
+
+/** Exported for unit tests. */
+export function completeSandboxPageImages(
+  sandbox: SandboxPdfExtractResult | null,
+): Buffer[] | undefined {
+  if (!sandbox || sandbox.pageImages.length === 0) return undefined;
+  if (sandbox.pageCount > sandbox.pageImages.length) {
+    log.warn(
+      {
+        pageCount: sandbox.pageCount,
+        pageImageCount: sandbox.pageImages.length,
+      },
+      'sandbox pageImages truncated vs pageCount; using full PDF for vision',
+    );
+    return undefined;
+  }
+  return sandbox.pageImages;
 }
 
 async function routeContentToText(
@@ -591,20 +622,31 @@ async function routeContentToText(
     }
     return { representations: [{ kind: 'source_text', text }] };
   }
-  // DOCX (Office Open XML) — native extraction via mammoth. Note: the
-  // MIME for .docx is the full ms-office identifier. Old-school .doc
-  // (binary BIFF) is NOT mammoth's domain and remains unsupported.
-  if (
-    ct === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-    /\.docx$/i.test(input.name)
-  ) {
-    const { text } = await io.extractDocx(input.body);
-    return { representations: [{ kind: 'source_text', text }] };
-  }
-  // PDFs: prefer native pdf-inspector for TextBased docs; vision for
-  // scanned/mixed/unreliable extractions (and when native throws).
+  // PDF first so the sparse → vision path stays dedicated.
   if (ct === 'application/pdf' || /\.pdf$/i.test(input.name)) {
     return routePdfContent(input, io);
+  }
+  // Office / anydoc formats (docx, pptx, xlsx, odt, rtf, epub, legacy .doc, …).
+  // No vision fallback. CSV stays on the UTF-8 branch above.
+  const anydocFormat = resolveAnydocFormatHint(ct, input.name);
+  if (anydocFormat && anydocFormat !== 'pdf') {
+    try {
+      const { text, model } = await io.extractOffice(input.body, anydocFormat);
+      if (!text.trim()) {
+        return { failure: `anydoc produced empty text for format=${anydocFormat}` };
+      }
+      return {
+        representations: [{ kind: 'source_text', text }],
+        ...(model ? { model } : {}),
+      };
+    } catch (err: unknown) {
+      // Misconfiguration is permanent. Sandbox/infra failures must rethrow
+      // so BullMQ can retry (claim logic re-accepts `failed` → extracting).
+      if (isDaytonaNotConfiguredError(err)) {
+        return { failure: err.message };
+      }
+      throw err;
+    }
   }
   // Image extension fallback matches the PDF/DOCX behaviour above: when
   // RustFS loses the explicit Content-Type on PUT we still route the

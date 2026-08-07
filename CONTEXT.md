@@ -834,11 +834,12 @@ A model-generated description of what a visual captured file or document page
 shows, distinct from faithful source-text extraction. Visual descriptions make
 images, screenshots, scans, and visually meaningful PDFs queryable as context
 without pretending the description is source-authored text. Current processing
-extracts text-based PDFs locally via pdf-inspector, sends scanned/mixed PDFs and
-images through vision OCR, and defers only oversized captured files; future
-processing can tune depth by intent so unpromoted conversational captures
-receive a cheaper preview pass until promotion, targeted inspection, or explicit
-user intent warrants deeper analysis. Persisted visual descriptions should be
+extracts office/PDF bytes in Daytona sandboxes (Firecrawl anydoc; sparse PDFs
+render via pypdfium2), sends sparse PDF page images and images through vision OCR in the
+document-extract orchestrator, and defers only oversized captured files; future processing can
+tune depth by intent so unpromoted conversational captures receive a cheaper
+preview pass until promotion, targeted inspection, or explicit user intent
+warrants deeper analysis. Persisted visual descriptions should be
 neutral observations about what is visible; business interpretation belongs in
 agent answers or workspace suggestions, not in the extracted representation
 itself.

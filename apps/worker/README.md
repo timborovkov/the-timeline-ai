@@ -1,7 +1,8 @@
 # @timeline/worker
 
 BullMQ workers for the async processing pipeline: durable direct conversation
-agents, transcribe, extract, embed, document-extract, meeting-finalize,
+agents, transcribe, extract, embed, document-extract (also as a dedicated
+`WORKER_MODE=document-extract` / Daytona sandbox service — ADR 0013), meeting-finalize,
 task-category classification, overdue-scan, integrations, maintenance, and
 exports. One Node entry point starts the queue workers from the same codebase.
 
@@ -26,7 +27,10 @@ From the repo root:
 
 ```bash
 pnpm --filter @timeline/worker dev          # all workers, watch mode
+pnpm --filter @timeline/worker dev:extract  # document-extract only (WORKER_MODE=document-extract)
 pnpm --filter @timeline/worker build
+pnpm --filter @timeline/worker start:extract
+pnpm --filter @timeline/worker create-document-extract-snapshot  # Daytona snapshot ensure (content-hash; --force to rebuild)
 pnpm --filter @timeline/worker reextract -- --team=<teamId>
 pnpm --filter @timeline/worker reembed   -- --team=<teamId> --target-collection=events_v2
 pnpm --filter @timeline/worker resuggest -- --team=<teamId> [--since=2026-06-01] [--until=2026-06-04] [--source=all|telegram|slack] [--limit=N] [--all] [--dry-run]
@@ -72,6 +76,27 @@ Production starts the combined worker entry point (see [docs/railway.html](../..
 ```bash
 NODE_ENV=production node apps/worker/dist/index.js
 ```
+
+Document extract (ADR 0013) runs in Daytona sandboxes coordinated by the separate Railway
+`document-extract-orchestrator` service:
+
+```bash
+NODE_ENV=production WORKER_MODE=document-extract node apps/worker/dist/extract-main.js
+```
+
+Set `DOCUMENT_EXTRACT_ENABLED=false` on the main worker when
+`document-extract-orchestrator` owns the queue. Configure that Railway service to use
+`/apps/worker/railway.extract.json` as its custom config path.
+Locally, prefer `DAYTONA_API_KEY` + `dev:extract`. Only set
+`DOCUMENT_EXTRACT_ALLOW_INPROCESS=true` for offline/dev without Daytona (never in production).
+
+Daytona snapshots are content-hashed (`timeline-document-extract-<hash>` from
+`document-extract-sandbox/**`). Leave `DAYTONA_SNAPSHOT` unset (or `auto`) to
+resolve the hash at runtime, or pin the name CI prints. Boot ensure
+(`DAYTONA_SNAPSHOT_ENSURE=true`, default) creates the snapshot once if missing;
+it does not rebuild on every restart. Details:
+[docs/adr/0013-daytona-document-extract.md](../../docs/adr/0013-daytona-document-extract.md)
+and [document-extract-sandbox/README.md](document-extract-sandbox/README.md).
 
 ## Where it fits
 

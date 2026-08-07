@@ -1,4 +1,4 @@
-# Cross-source evidence packs use policy-bound related evidence
+# ADR 0014 — Cross-source evidence packs use policy-bound related evidence
 
 ## Status
 

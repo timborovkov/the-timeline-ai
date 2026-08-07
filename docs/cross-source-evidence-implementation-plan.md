@@ -19,7 +19,7 @@ existing `withTeam` workspace port, artifact reconciliation, suggestion worker,
 Agent Ask retrieval, and approval UI.
 
 **Durable decision:**
-[ADR 0013](./adr/0013-cross-source-evidence-packs-use-policy-bound-related-evidence.md).
+[ADR 0014](./adr/0014-cross-source-evidence-packs-use-policy-bound-related-evidence.md).
 **Product contract:** [Cross-source evidence](./cross-source-evidence.md).
 
 ## Implementation state

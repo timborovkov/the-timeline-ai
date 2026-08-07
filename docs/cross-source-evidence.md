@@ -4,7 +4,7 @@
 
 **Audience:** Product, engineering, design, and website copy
 
-**Last updated:** 2026-08-06
+**Last updated:** 2026-08-07
 
 Timeline's cross-source evidence direction is one operating memory backed by the
 tools where work happened. The shared builder, proposal and answer adapters,
@@ -165,7 +165,7 @@ Cross-source proposal behavior is shipped for a source path only when:
 The complete sequence, file map, test matrix, and release gates are in the
 [cross-source evidence implementation plan](./cross-source-evidence-implementation-plan.md).
 The durable contract is recorded in
-[ADR 0013](./adr/0013-cross-source-evidence-packs-use-policy-bound-related-evidence.md).
+[ADR 0014](./adr/0014-cross-source-evidence-packs-use-policy-bound-related-evidence.md).
 
 ## Website and landing messaging
 

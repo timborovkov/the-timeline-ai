@@ -51,6 +51,10 @@ RUN addgroup --system --gid 1001 nodejs \
  && adduser --system --uid 1001 worker
 
 COPY --from=deployer --chown=worker:nodejs /prod/worker ./
+# Content-hash snapshot resolution + Image bake need the sandbox sources even
+# when turbo prune / pnpm deploy omit unreferenced trees. Copy from pruner
+# (full repo) rather than prune output.
+COPY --from=pruner --chown=worker:nodejs /app/apps/worker/document-extract-sandbox ./document-extract-sandbox
 
 USER worker
 

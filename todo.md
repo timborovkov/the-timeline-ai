@@ -48,7 +48,7 @@ records:
       target, recovery-kind, and outcome metadata.
 - [ ] Add per-team monthly vision-spend caps and a dashboard. Vision OCR is much
       more expensive than text extraction; text-based PDFs now extract locally
-      via pdf-inspector, but scanned/mixed PDFs and images still need a clear
+      via Daytona sandbox text extract, but scanned/mixed PDFs and images still need a clear
       budget guardrail before heavy dogfooding.
 - [ ] Add dogfood document content: contracts, deal docs, internal guides,
       policies, office rules, onboarding docs, and customer notes.
@@ -173,7 +173,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       paths that eventually cite multi-surface evidence, integrations remaining
       pack-eligible, evals/cost caps, and milestone-gated website copy. Follow
       the [implementation plan](./docs/cross-source-evidence-implementation-plan.md)
-      and [ADR 0013](./docs/adr/0013-cross-source-evidence-packs-use-policy-bound-related-evidence.md).
+      and [ADR 0014](./docs/adr/0014-cross-source-evidence-packs-use-policy-bound-related-evidence.md).
       First concrete slice: generic ingest webhook evidence combined with
       directly related conversation and provider events before proposal
       generation. The shared builder, Agent Ask adapter, and first generic

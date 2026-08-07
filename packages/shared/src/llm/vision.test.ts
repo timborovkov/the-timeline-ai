@@ -126,8 +126,31 @@ describe('extractTextFromMedia', () => {
         { model },
       ),
     ).rejects.toThrow(/unsupported mediaType/);
-    // The DOCX path must use a native extractor (mammoth) not the vision
-    // LLM — vision-on-Office-XML costs more and produces lossier output.
+    // DOCX is extracted in a Daytona sandbox (anydoc), not via vision.
+  });
+
+  it('sends sparse PDF pageImages as PNG parts (not a PDF file part)', async () => {
+    const { model, calls } = makeCapturingModel(
+      'SUGGESTED_TITLE:\nScan\n\nSOURCE_TEXT:\npage ocr\n\nVISUAL_DESCRIPTION:\nTwo pages.',
+    );
+    const result = await extractTextFromMedia(
+      {
+        body: Buffer.from('%PDF-1.4'),
+        mediaType: 'application/pdf',
+        filename: 'scan.pdf',
+        pageImages: [Buffer.from('png-a'), Buffer.from('png-b')],
+      },
+      { model },
+    );
+    expect(result.text).toBe('page ocr');
+    const userMsg = calls[0]?.prompt.find((m: { role: string }) => m.role === 'user');
+    if (!userMsg) throw new Error('no user message');
+    // ai-sdk may normalise ImagePart → type:'file' with image mediaType.
+    const parts = userMsg.content as { type: string; mediaType?: string }[];
+    const pngParts = parts.filter((p) => p.mediaType === 'image/png');
+    const pdfParts = parts.filter((p) => p.mediaType === 'application/pdf');
+    expect(pngParts).toHaveLength(2);
+    expect(pdfParts).toHaveLength(0);
   });
 
   it('caps maxOutputTokens to bound cost (default 8000, overridable)', async () => {

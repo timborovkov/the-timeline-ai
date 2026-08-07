@@ -77,10 +77,10 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
         Flash 0731 for long-context structured output, tools, and reasoning at a lower OpenRouter
         unit cost than DeepSeek V4 Pro or the previous GLM 5.2 pin. DeepSeek V4 Pro remains the
         structured fallback when the primary route fails. The vision/OCR route uses a model that
-        advertises image and file input because scanned or mixed PDF uploads and images are sent as
-        file or image parts; text-based PDFs extract locally via
-        <code>@firecrawl/pdf-inspector</code> and do not call OpenRouter. Transcription uses a
-        dedicated audio-to-transcription model through OpenRouter's JSON audio endpoint.
+        advertises image and file input because sparse PDF page images and image uploads are sent as
+        image or file parts; dense text PDFs and office files extract inside Daytona sandboxes
+        (anydoc) and do not call OpenRouter. Transcription uses a dedicated audio-to-transcription
+        model through OpenRouter's JSON audio endpoint.
       </p>
       <p>
         The embedding model remains special: changing it or its dimensions invalidates the current

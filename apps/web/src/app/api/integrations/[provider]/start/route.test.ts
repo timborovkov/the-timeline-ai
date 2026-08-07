@@ -13,6 +13,7 @@ vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam
 vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: vi.fn() }));
 vi.mock('@timeline/shared/env', () => ({
   getEnv: () => ({ AUTH_SECRET: 'test-auth-secret-at-least-sixteen-characters' }),
+  requireAuthSecret: () => 'test-auth-secret-at-least-sixteen-characters',
 }));
 vi.mock('@timeline/shared/integrations', () => ({ getProvider: fakes.getProvider }));
 vi.mock('@timeline/shared/logger', () => ({
