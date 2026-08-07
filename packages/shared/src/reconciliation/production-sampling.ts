@@ -288,32 +288,31 @@ export function buildProductionSamplingEvalReport(
 export function summarizeProductionSamplingEvidencePacks(
   samples: readonly ProductionSamplingEvidencePackSample[],
 ): ProductionSamplingEvidencePackHealth {
-  const latencies = samples.map((sample) => sample.buildDurationMs).sort((a, b) => a - b);
-  const errors = samples.filter((sample) => sample.errorReason);
+  const shadowAttempts = samples.filter((sample) => sample.mode === 'shadow');
+  const latencies = shadowAttempts.map((sample) => sample.buildDurationMs).sort((a, b) => a - b);
+  const errors = shadowAttempts.filter((sample) => sample.errorReason);
   const errorReasons: Record<string, number> = {};
   for (const sample of errors) {
     const reason = sample.errorReason ?? 'unknown';
     errorReasons[reason] = (errorReasons[reason] ?? 0) + 1;
   }
-  const shadowEligible = samples.filter(
-    (sample) => sample.mode === 'shadow' && (sample.eligible ?? !sample.errorReason),
-  );
+  const shadowEligible = shadowAttempts.filter((sample) => sample.eligible ?? !sample.errorReason);
   return {
-    sampleCount: samples.length,
+    sampleCount: shadowAttempts.length,
     errorCount: errors.length,
-    errorRate: samples.length > 0 ? errors.length / samples.length : null,
-    invalidCitationCount: samples.reduce(
+    errorRate: shadowAttempts.length > 0 ? errors.length / shadowAttempts.length : null,
+    invalidCitationCount: shadowAttempts.reduce(
       (total, sample) => total + (sample.invalidCitationCount ?? 0),
       0,
     ),
-    confirmedFalseLinkCount: samples.filter(
+    confirmedFalseLinkCount: shadowAttempts.filter(
       (sample) => sample.falseLinkReviewOutcome === 'confirmed',
     ).length,
-    truncatedCount: samples.filter((sample) => sample.truncated).length,
-    candidateCount: samples.reduce((total, sample) => total + sample.candidateCount, 0),
-    selectedCount: samples.reduce((total, sample) => total + sample.selectedCount, 0),
-    surfaceCount: samples.reduce((total, sample) => total + sample.surfaceCount, 0),
-    estimatedTokens: samples.reduce((total, sample) => total + sample.estimatedTokens, 0),
+    truncatedCount: shadowAttempts.filter((sample) => sample.truncated).length,
+    candidateCount: shadowAttempts.reduce((total, sample) => total + sample.candidateCount, 0),
+    selectedCount: shadowAttempts.reduce((total, sample) => total + sample.selectedCount, 0),
+    surfaceCount: shadowAttempts.reduce((total, sample) => total + sample.surfaceCount, 0),
+    estimatedTokens: shadowAttempts.reduce((total, sample) => total + sample.estimatedTokens, 0),
     latencyP50Ms: percentile(latencies, 0.5),
     latencyP95Ms: percentile(latencies, 0.95),
     latencyP99Ms: percentile(latencies, 0.99),
@@ -323,19 +322,19 @@ export function summarizeProductionSamplingEvidencePacks(
     errorReasons,
     shadowEligibleSampleCount: shadowEligible.length,
     crossSourceSampleCount: shadowEligible.filter((sample) => sample.surfaceCount > 1).length,
-    rankingModelCallCount: samples.reduce(
+    rankingModelCallCount: shadowAttempts.reduce(
       (total, sample) => total + (sample.rankingModelCallCount ?? 0),
       0,
     ),
-    ambiguousLinkCount: samples.reduce(
+    ambiguousLinkCount: shadowAttempts.reduce(
       (total, sample) => total + (sample.ambiguousLinkCount ?? 0),
       0,
     ),
-    visibilityViolationCount: samples.reduce(
+    visibilityViolationCount: shadowAttempts.reduce(
       (total, sample) => total + (sample.visibilityViolationCount ?? 0),
       0,
     ),
-    authorityViolationCount: samples.reduce(
+    authorityViolationCount: shadowAttempts.reduce(
       (total, sample) => total + (sample.authorityViolationCount ?? 0),
       0,
     ),
@@ -469,7 +468,10 @@ export async function writeProductionSamplingEvalReport(
   );
   report.requiredEvidencePackScenarioFamilies = requiredEvidencePackScenarioFamilies;
   if (input.evidencePackSamples) {
-    report.evidencePackHealth = summarizeProductionSamplingEvidencePacks(input.evidencePackSamples);
+    report.evidencePackHealth = mergeEvidencePackHealth([
+      ...(report.evidencePackHealth ? [report.evidencePackHealth] : []),
+      summarizeProductionSamplingEvidencePacks(input.evidencePackSamples),
+    ]);
   }
   if ((report.evidencePackHealth?.sampleCount ?? 0) > 0) {
     report.evidencePackPromotion = assessEvidencePackPromotion(

@@ -257,6 +257,9 @@ TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-pr
 # contain content-free counts, mode/version metadata, latency, date, team key,
 # and scenario family. Supplying samples without at least one explicit required
 # scenario is rejected so an empty scenario policy cannot accidentally pass.
+# Promotion health, latency, and error gates use shadow attempts only. When a
+# prior report and fresh sample file are supplied together, their redacted
+# health summaries are merged rather than replacing historical violations.
 # The worker process also starts a reconciliation queue consumer for
 # evidence_audit/evidence_backfill/scope_reconcile jobs when they are enqueued
 # by product or operator code. Queue payloads support optional source, limit,

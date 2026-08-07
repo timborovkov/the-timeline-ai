@@ -2964,9 +2964,15 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       existing.push(ev);
       evidenceBySuggestion.set(ev.suggestionId, existing);
     }
-    return rows.map((row) =>
-      toBundle(row, itemsBySuggestion.get(row.id) ?? [], evidenceBySuggestion.get(row.id) ?? []),
-    );
+    return rows.flatMap((row) => {
+      const suggestionItems = itemsBySuggestion.get(row.id) ?? [];
+      const suggestionEvidence = evidenceBySuggestion.get(row.id) ?? [];
+      const visibleEvidenceIds = new Set(suggestionEvidence.map((item) => item.rawEventId));
+      const hasUnavailableEvidence = suggestionItems.some((item) =>
+        itemEvidenceRawEventIds(item.metadata).some((id) => !visibleEvidenceIds.has(id)),
+      );
+      return hasUnavailableEvidence ? [] : [toBundle(row, suggestionItems, suggestionEvidence)];
+    });
   }
 
   function preserveProposalTargetPayload(

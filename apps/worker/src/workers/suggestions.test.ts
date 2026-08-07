@@ -559,6 +559,19 @@ describe('processSuggestionJobForTests', () => {
       (event?.sourceMetadata as { cross_source_evidence_pack?: { fingerprint?: string } })
         .cross_source_evidence_pack?.fingerprint,
     ).toMatch(/^[a-f0-9]{64}$/);
+    const [suggestion] = await db
+      .select({ metadata: agentSuggestions.metadata })
+      .from(agentSuggestions)
+      .limit(1);
+    const suggestionMetadata = suggestion?.metadata as
+      | {
+          cross_source_evidence_mode?: string;
+          shadow_evidence_pack_fingerprint?: string;
+        }
+      | undefined;
+    expect(suggestionMetadata?.cross_source_evidence_mode).toBe('shadow');
+    expect(suggestionMetadata?.shadow_evidence_pack_fingerprint).toMatch(/^[a-f0-9]{64}$/);
+    expect(suggestion?.metadata).not.toHaveProperty('evidence_pack_fingerprint');
     await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 1, items: 2 });
   });
 

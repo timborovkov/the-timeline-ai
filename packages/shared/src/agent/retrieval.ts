@@ -58,6 +58,7 @@ export interface WorkspaceContextAdapterFailure {
     | 'entity_profile'
     | 'notes'
     | 'timeline_events'
+    | 'evidence_pack'
     | 'boards'
     | 'documents'
     | 'calendar';
@@ -188,39 +189,41 @@ export async function retrieveWorkspaceContext(
         updated_at: objectDetail.summary.generatedAt?.toISOString() ?? null,
       }
     : null;
-  const evidencePack =
-    events.length > 0
-      ? await buildEvidencePack(scope, {
-          purpose: 'answer',
-          anchorRawEventIds: events.map((event) => event.eventId),
-          semanticRawEventIds: events.map((event) => event.eventId),
-        })
-          .then((pack) => ({
-            status: 'complete' as const,
-            version: pack.version,
-            policyVersion: pack.policyVersion,
-            fingerprint: pack.fingerprint,
-            items: pack.items.map((item) => ({
-              rawEventId: item.rawEventId,
-              citation: artifactRefCitation({ kind: 'timeline_event', id: item.rawEventId }),
-              surface: item.surface,
+  let evidencePack: WorkspaceContextResult['evidencePack'] = null;
+  if (events.length > 0) {
+    try {
+      const pack = await buildEvidencePack(scope, {
+        purpose: 'answer',
+        anchorRawEventIds: events.map((event) => event.eventId),
+        semanticRawEventIds: events.map((event) => event.eventId),
+      });
+      evidencePack = {
+        status: 'complete',
+        version: pack.version,
+        policyVersion: pack.policyVersion,
+        fingerprint: pack.fingerprint,
+        items: pack.items.map((item) => ({
+          rawEventId: item.rawEventId,
+          citation: artifactRefCitation({ kind: 'timeline_event', id: item.rawEventId }),
+          surface: item.surface,
+          source: item.source,
+          role: item.role,
+          occurredAt: item.occurredAt.toISOString(),
+          snippet:
+            fenceExternalContent(item.contentText, {
               source: item.source,
-              role: item.role,
-              occurredAt: item.occurredAt.toISOString(),
-              snippet:
-                fenceExternalContent(item.contentText, {
-                  source: item.source,
-                  eventId: item.rawEventId,
-                }) ?? '',
-              relationshipSignals: item.relationshipSignals,
-            })),
-            metrics: pack.metrics,
-          }))
-          .catch((error: unknown) => ({
-            status: 'failed' as const,
-            errorReason: error instanceof Error ? error.name : 'evidence_pack_failure',
-          }))
-      : null;
+              eventId: item.rawEventId,
+            }) ?? '',
+          relationshipSignals: item.relationshipSignals,
+        })),
+        metrics: pack.metrics,
+      };
+    } catch (error) {
+      const errorReason = error instanceof Error ? error.name : 'evidence_pack_failure';
+      adapterFailures.push({ adapter: 'evidence_pack', errorReason });
+      evidencePack = { status: 'failed', errorReason };
+    }
+  }
   const objects = [
     ...objectCandidates.map((object) => ({
       id: object.id,

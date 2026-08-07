@@ -21,6 +21,8 @@ const SUPPORT_ID = '00000000-0000-0000-0000-000000000103';
 const LONG_SUPPORT_ID = '00000000-0000-0000-0000-000000000104';
 const SLACK_NEW_ID = '00000000-0000-0000-0000-000000000105';
 const SLACK_OLD_ID = '00000000-0000-0000-0000-000000000106';
+const CALENDAR_ID = '00000000-0000-0000-0000-000000000107';
+const EMPTY_SUPPORT_ID = '00000000-0000-0000-0000-000000000108';
 const OTHER_TEAM_EVENT_ID = '00000000-0000-0000-0000-000000000201';
 
 describe('buildEvidencePack', () => {
@@ -48,6 +50,8 @@ describe('buildEvidencePack', () => {
         ('${LONG_SUPPORT_ID}', '${TEAM_ID}', '${USER_ID}', '${USER_ID}', 'email', repeat('bounded evidence ', 100), '2026-08-01T08:00:00Z', 'team', '{}'::jsonb),
         ('${SLACK_NEW_ID}', '${TEAM_ID}', '${USER_ID}', '${USER_ID}', 'slack', 'Newest Slack evidence', '2026-08-01T13:00:00Z', 'team', '{}'::jsonb),
         ('${SLACK_OLD_ID}', '${TEAM_ID}', '${USER_ID}', '${USER_ID}', 'slack', 'Older Slack evidence', '2026-08-01T12:00:00Z', 'team', '{}'::jsonb),
+        ('${CALENDAR_ID}', '${TEAM_ID}', '${USER_ID}', '${USER_ID}', 'calendar', 'Customer review is August 12 at 10:00.', '2026-08-12T10:00:00Z', 'team', '{}'::jsonb),
+        ('${EMPTY_SUPPORT_ID}', '${TEAM_ID}', '${USER_ID}', '${USER_ID}', 'email', '   ', '2026-08-01T07:00:00Z', 'team', '{}'::jsonb),
         ('${OTHER_TEAM_EVENT_ID}', '${OTHER_TEAM_ID}', '${OTHER_USER_ID}', '${OTHER_USER_ID}', 'web', 'Other team event', '2026-08-01T12:00:00Z', 'team', '{}'::jsonb);
     `);
   }, 60_000);
@@ -92,6 +96,28 @@ describe('buildEvidencePack', () => {
       },
     });
     expect(first.fingerprint).toBe(second.fingerprint);
+  });
+
+  it('changes the fingerprint when mutable calendar evidence changes', async () => {
+    const db = drizzle(pg);
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const first = await buildEvidencePack(scope, {
+      purpose: 'answer',
+      anchorRawEventIds: [CALENDAR_ID],
+    });
+
+    await pg.exec(`
+      UPDATE raw_events
+      SET content_text = 'Customer review moved to August 13 at 14:00.',
+          occurred_at = '2026-08-13T14:00:00Z'
+      WHERE id = '${CALENDAR_ID}';
+    `);
+    const second = await buildEvidencePack(scope, {
+      purpose: 'answer',
+      anchorRawEventIds: [CALENDAR_ID],
+    });
+
+    expect(second.fingerprint).not.toBe(first.fingerprint);
   });
 
   it('fails closed when any required proposal anchor is inaccessible', async () => {
@@ -205,6 +231,30 @@ describe('buildEvidencePack', () => {
     });
 
     expect(pack.items.map((item) => item.rawEventId)).toEqual([ANCHOR_ID]);
+  });
+
+  it('omits supporting events that contain no usable evidence', async () => {
+    const db = drizzle(pg);
+    for (const rawEventId of [ANCHOR_ID, EMPTY_SUPPORT_ID]) {
+      await reconcileArtifactEvidence(db as never, {
+        teamId: TEAM_ID,
+        artifactType: 'project',
+        canonicalName: 'Acme launch',
+        status: 'active',
+        rawEventId,
+        role: 'discussion',
+        strength: 'hard',
+        anchors: [{ type: 'canonical_url', value: 'https://acme.test/launch', strength: 'hard' }],
+      });
+    }
+
+    const pack = await buildEvidencePack(withTeam(db as never, TEAM_ID, USER_ID), {
+      purpose: 'proposal',
+      anchorRawEventIds: [ANCHOR_ID],
+    });
+
+    expect(pack.items.map((item) => item.rawEventId)).toEqual([ANCHOR_ID]);
+    expect(pack.metrics.omissionReasons).toMatchObject({ empty_content: 1 });
   });
 
   it('records a machine-readable reason when evidence content is truncated', async () => {

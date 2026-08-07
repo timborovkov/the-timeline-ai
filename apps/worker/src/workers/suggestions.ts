@@ -290,9 +290,15 @@ function evidenceForPackBundle(
   const citedIds = new Set<string>();
   for (const item of bundle.items) {
     const ids = item.evidenceRawEventIds ?? [];
-    if (ids.length === 0 || ids.some((id) => !packItems.has(id))) {
+    if (
+      ids.length === 0 ||
+      ids.some((id) => {
+        const packItem = packItems.get(id);
+        return !packItem || packItem.contentText.trim().length === 0;
+      })
+    ) {
       throw new Error(
-        'suggestions: every enforced evidence-pack item must cite accessible raw event ids from the pack',
+        'suggestions: every enforced evidence-pack item must cite accessible raw event ids from the pack that contain non-empty content',
       );
     }
     for (const id of ids) citedIds.add(id);
@@ -2866,7 +2872,9 @@ async function runSuggestionExtraction(
               cross_source_evidence_mode: evidencePackMode,
               evidence_pack_version: evidencePack.version,
               evidence_pack_policy_version: evidencePack.policyVersion,
-              evidence_pack_fingerprint: evidencePack.fingerprint,
+              ...(evidencePackEnforced
+                ? { evidence_pack_fingerprint: evidencePack.fingerprint }
+                : { shadow_evidence_pack_fingerprint: evidencePack.fingerprint }),
               evidence_pack_metrics: evidencePack.metrics,
             }
           : {}),

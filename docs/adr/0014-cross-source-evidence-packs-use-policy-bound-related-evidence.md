@@ -53,7 +53,8 @@ artifact-cluster anchors. Its output contains:
 - relationship provenance and deterministic rank reasons;
 - visibility and audience information;
 - policy, builder, and budget versions;
-- a stable fingerprint over build inputs and selected evidence; and
+- a stable fingerprint over build inputs and the selected model-visible
+  evidence state, including content and occurrence time; and
 - candidate, selection, source-diversity, truncation, token, and latency metrics.
 
 ### Proposal admission
@@ -135,8 +136,10 @@ fingerprint, metrics, and truncation state. This does not require a new table.
 A rebuild that changes the fingerprint creates a new proposal revision and
 supersedes the old item and output. It does not append evidence to an old
 proposal and call the accumulated set current. Display and acceptance revalidate
-every selected citation. Deleted, tombstoned, or newly inaccessible required
-evidence supersedes the proposal and requires a rebuild.
+every selected citation. A proposal with deleted, tombstoned, or newly
+inaccessible required evidence is hidden because its derived fields may contain
+source details; any direct acceptance attempt supersedes it and requires a
+rebuild.
 
 The builder has no continuous watcher. Existing suggestion,
 conversation-review, and reconciliation triggers build new packs as qualifying
@@ -164,10 +167,11 @@ identifiers, or provider payloads.
 
 A server-side `CROSS_SOURCE_EVIDENCE_MODE` setting controls `off`, `shadow`, and
 `enforced` behavior and defaults to `off`. Shadow mode builds and measures packs
-without changing model input or creating pack-derived output. Enforced mode uses
-the pack. The generic webhook's existing proposal-generation setting remains an
-inner source gate. Changing the global mode requires a worker restart or
-redeploy.
+without changing model input or creating pack-derived output. Its fingerprint
+is telemetry only and never enters the metadata field that activates proposal
+revision handling. Enforced mode uses the pack. The generic webhook's existing
+proposal-generation setting remains an inner source gate. Changing the global
+mode requires a worker restart or redeploy.
 
 The first rollout is environment-scoped and starts with generic ingest
 webhooks. Later milestones cover conversation reviews, other event-local paths,

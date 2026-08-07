@@ -157,7 +157,9 @@ Cross-source proposal behavior is shipped for a source path only when:
 
 - enforced mode is enabled for that path;
 - the approval interface shows exact per-item multi-source citations;
-- stale or inaccessible evidence blocks acceptance;
+- visible-but-changed evidence blocks acceptance; inaccessible or tombstoned
+  evidence hides the derived proposal and any direct acceptance attempt
+  supersedes it;
 - deterministic, live, privacy, authority, quality, latency, and cost gates pass;
 - rollback monitoring is active; and
 - product copy names only the source paths that meet those conditions.

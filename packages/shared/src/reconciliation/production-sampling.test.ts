@@ -241,23 +241,23 @@ describe('production reconciliation sampling report', () => {
         averageTimeToReconciledOutputMs: 2000,
       },
       evidencePackHealth: {
-        sampleCount: 2,
-        errorCount: 1,
-        errorRate: 0.5,
-        invalidCitationCount: 1,
-        confirmedFalseLinkCount: 1,
-        truncatedCount: 1,
-        candidateCount: 28,
-        selectedCount: 12,
-        surfaceCount: 5,
-        estimatedTokens: 2700,
+        sampleCount: 1,
+        errorCount: 0,
+        errorRate: 0,
+        invalidCitationCount: 0,
+        confirmedFalseLinkCount: 0,
+        truncatedCount: 0,
+        candidateCount: 8,
+        selectedCount: 4,
+        surfaceCount: 2,
+        estimatedTokens: 900,
         latencyP50Ms: 10,
-        latencyP95Ms: 100,
-        latencyP99Ms: 100,
+        latencyP95Ms: 10,
+        latencyP99Ms: 10,
         modes: ['enforced', 'shadow'],
         versions: ['evidence-pack-v1'],
         policyVersions: ['proposal-v1'],
-        errorReasons: { candidate_failure: 1 },
+        errorReasons: {},
       },
     });
     expect(report.byIngestionSurface).toEqual([
@@ -335,6 +335,67 @@ describe('production reconciliation sampling report', () => {
     });
 
     expect(report.evidencePackPromotion).toEqual({ ready: true, blockerCodes: [] });
+  });
+
+  it('does not let non-shadow samples dilute shadow error and latency gates', () => {
+    const passed = buildLiveEvalArtifact({
+      testCase: BASE_CASE,
+      modelId: 'planner-v1',
+      promptVersion: 'prompt-v1',
+      prompt: 'private production packet text',
+      result: PASS_RESULT,
+      judge: PASS_JUDGE,
+      passed: true,
+      failures: [],
+      startedAt: '2026-07-01T10:00:00.000Z',
+      completedAt: '2026-07-01T10:00:01.000Z',
+    });
+    const shadow = Array.from({ length: 203 }, (_, index) => ({
+      mode: 'shadow' as const,
+      version: 'evidence-pack-v1',
+      policyVersion: 'proposal-v1',
+      candidateCount: 4,
+      selectedCount: 2,
+      surfaceCount: 2,
+      estimatedTokens: 400,
+      buildDurationMs: 1_200,
+      truncated: false,
+      sampledAt: `2026-07-${String((index % 7) + 1).padStart(2, '0')}T10:00:00.000Z`,
+      teamKey: `team-${index % 3}`,
+      scenarioFamily: 'customer_project',
+      eligible: index >= 3,
+      errorReason: index < 3 ? 'candidate_failure' : null,
+    }));
+    const off = Array.from({ length: 1_000 }, () => ({
+      mode: 'off' as const,
+      version: 'evidence-pack-v1',
+      policyVersion: 'proposal-v1',
+      candidateCount: 0,
+      selectedCount: 0,
+      surfaceCount: 0,
+      estimatedTokens: 0,
+      buildDurationMs: 0,
+      truncated: false,
+    }));
+
+    const report = buildProductionSamplingEvalReport({
+      generatedAt: '2026-07-08T10:00:00.000Z',
+      manifests: [],
+      artifacts: [passed],
+      evidencePackSamples: [...shadow, ...off],
+      requiredEvidencePackScenarioFamilies: ['customer_project'],
+    });
+
+    expect(report.evidencePackHealth).toMatchObject({
+      sampleCount: 203,
+      errorCount: 3,
+      errorRate: 3 / 203,
+      latencyP95Ms: 1_200,
+    });
+    expect(report.evidencePackPromotion?.blockerCodes).toEqual([
+      'pack_error_rate',
+      'pack_latency_p95',
+    ]);
   });
 
   it('requires seven consecutive shadow days for evidence-pack promotion', () => {
@@ -415,9 +476,33 @@ describe('production reconciliation sampling report', () => {
         inputPaths: [inputPath],
         outputPath: path.join(dir, 'next.json'),
         generatedAt: '2026-07-09T10:00:00.000Z',
+        evidencePackSamples: [
+          {
+            mode: 'shadow',
+            version: 'evidence-pack-v1',
+            policyVersion: 'proposal-v1',
+            candidateCount: 2,
+            selectedCount: 2,
+            surfaceCount: 2,
+            estimatedTokens: 200,
+            buildDurationMs: 50,
+            truncated: false,
+            sampledAt: '2026-07-08T10:00:00.000Z',
+            teamKey: 'team-3',
+            scenarioFamily: 'generic_webhook',
+            eligible: true,
+          },
+        ],
       });
 
       expect(written.report.requiredEvidencePackScenarioFamilies).toEqual(['generic_webhook']);
+      expect(written.report.evidencePackHealth?.sampleCount).toBe(201);
+      expect(written.report.evidencePackHealth?.shadowTeamKeys).toEqual([
+        'team-0',
+        'team-1',
+        'team-2',
+        'team-3',
+      ]);
       expect(written.report.evidencePackPromotion?.blockerCodes).not.toContain(
         'scenario_policy_missing',
       );

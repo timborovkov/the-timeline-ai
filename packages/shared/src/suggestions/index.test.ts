@@ -251,9 +251,8 @@ describe('suggestion scope', () => {
       .where(eq(rawEvents.id, TEAM_RAW_EVENT_ID));
 
     const reviewerScope = withTeam(db as never, TEAM_ID, REVIEWER_ID);
-    const [visible] = await reviewerScope.suggestions.listPendingSuggestions();
-    expect(visible?.evidence).toEqual([]);
-    expect(visible?.items[0]).toMatchObject({ evidence: [], evidenceStatus: 'stale' });
+    await expect(reviewerScope.suggestions.listPendingSuggestions()).resolves.toEqual([]);
+    await expect(reviewerScope.suggestions.getSuggestion(created.id)).resolves.toBeNull();
     await reviewerScope.suggestions.acceptSuggestionItem(created.items[0]?.id ?? 'missing');
     const [item] = await db
       .select({
@@ -301,8 +300,8 @@ describe('suggestion scope', () => {
       .set({ sourceMetadata: { deleted: true } })
       .where(eq(rawEvents.id, TEAM_RAW_EVENT_ID));
 
-    const [visible] = await scope.suggestions.listPendingSuggestions();
-    expect(visible?.items[0]).toMatchObject({ evidence: [], evidenceStatus: 'stale' });
+    await expect(scope.suggestions.listPendingSuggestions()).resolves.toEqual([]);
+    await expect(scope.suggestions.getSuggestion(created.id)).resolves.toBeNull();
     await scope.suggestions.acceptSuggestionItem(created.items[0]?.id ?? 'missing');
 
     const [item] = await db

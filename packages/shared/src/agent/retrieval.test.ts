@@ -321,6 +321,22 @@ describe('retrieveWorkspaceContext', () => {
     expect(JSON.stringify(result)).not.toContain('provider secret');
   });
 
+  it('reports evidence-pack failures as an incomplete retrieval adapter', async () => {
+    const scope = makeScope();
+    scope.timeline.getEventsByIds = vi.fn().mockRejectedValue(new Error('private pack failure'));
+
+    const result = await retrieveWorkspaceContext(scope as unknown as TeamScope, {
+      query: 'What happened in the timeline last week?',
+    });
+
+    expect(result.evidencePack).toEqual({ status: 'failed', errorReason: 'Error' });
+    expect(result.adapterFailures).toContainEqual({
+      adapter: 'evidence_pack',
+      errorReason: 'Error',
+    });
+    expect(JSON.stringify(result)).not.toContain('private pack failure');
+  });
+
   it('includes artifact cluster related evidence in event context', async () => {
     const scope = makeScope();
     const relatedEventId = '99999999-9999-4999-8999-999999999999';

@@ -186,6 +186,8 @@ function fingerprintFor(pack: Omit<EvidencePack, 'fingerprint'>): string {
       rawEventId: item.rawEventId,
       role: item.role,
       surface: item.surface,
+      contentText: item.contentText,
+      occurredAt: item.occurredAt.toISOString(),
       signals: item.relationshipSignals,
       truncated: item.truncated,
       truncationReason: item.truncationReason,
@@ -229,6 +231,12 @@ export async function buildEvidencePack(
     const event = coreEventById.get(id);
     return event ? [event] : [];
   });
+  if (coreEvents.some((event) => !event.contentText?.trim())) {
+    throw new EvidencePackError(
+      'inaccessible_anchor',
+      'required evidence anchors are missing or inaccessible',
+    );
+  }
 
   const clusters = await scope.timeline.listEvidencePackArtifactClusters(
     coreIds,
@@ -267,9 +275,13 @@ export async function buildEvidencePack(
     (event, index, all) => all.findIndex((candidate) => candidate.id === event.id) === index,
   );
 
-  const rawItems = events.map((event) => {
+  const emptySupportingCount = supportingEvents.filter(
+    (event) => !event.contentText?.trim(),
+  ).length;
+  const rawItems = events.flatMap((event) => {
     const core = coreSet.has(event.id);
     const originalContent = event.contentText?.trim() ?? '';
+    if (!originalContent) return [];
     const maxChars = core ? Math.min(4_000, maxCoreChars) : 1_000;
     const contentText = originalContent.slice(0, maxChars);
     const relationshipSignals: EvidenceRelationshipSignal[] = core
@@ -283,36 +295,38 @@ export async function buildEvidencePack(
         ]
       : (relatedSignals.get(event.id) ?? []);
     const truncated = contentText.length < originalContent.length;
-    return {
-      rawEventId: event.id,
-      surface: evidenceSurface(event.source, event.sourceMetadata),
-      source: event.source,
-      role: core ? ('core' as const) : ('supporting' as const),
-      contentText,
-      occurredAt: event.occurredAt,
-      authorUserId: event.authorUserId,
-      sourceMetadata: event.sourceMetadata,
-      relationshipSignals,
-      sourceRefs: [{ source: event.source, rawEventId: event.id }],
-      rank: 0,
-      rankReasons: core
-        ? ['protected_core']
-        : [
-            'direct_artifact_relationship',
-            ...(relationshipSignals.some((signal) => signal.authoritative)
-              ? ['authoritative_source']
-              : []),
-          ],
-      visibility: {
-        visibility: event.visibility,
-        visibilityOwnerUserId:
-          event.visibilityOwnerUserId ??
-          (event.visibility === 'private' ? event.authorUserId : null),
-        visibilityUserIds: event.visibilityUserIds,
-      },
-      truncated,
-      truncationReason: truncated ? 'content_limit' : null,
-    } satisfies EvidencePackItem;
+    return [
+      {
+        rawEventId: event.id,
+        surface: evidenceSurface(event.source, event.sourceMetadata),
+        source: event.source,
+        role: core ? ('core' as const) : ('supporting' as const),
+        contentText,
+        occurredAt: event.occurredAt,
+        authorUserId: event.authorUserId,
+        sourceMetadata: event.sourceMetadata,
+        relationshipSignals,
+        sourceRefs: [{ source: event.source, rawEventId: event.id }],
+        rank: 0,
+        rankReasons: core
+          ? ['protected_core']
+          : [
+              'direct_artifact_relationship',
+              ...(relationshipSignals.some((signal) => signal.authoritative)
+                ? ['authoritative_source']
+                : []),
+            ],
+        visibility: {
+          visibility: event.visibility,
+          visibilityOwnerUserId:
+            event.visibilityOwnerUserId ??
+            (event.visibility === 'private' ? event.authorUserId : null),
+          visibilityUserIds: event.visibilityUserIds,
+        },
+        truncated,
+        truncationReason: truncated ? 'content_limit' : null,
+      } satisfies EvidencePackItem,
+    ];
   });
 
   const coreItems = rawItems.filter((item) => item.role === 'core');
@@ -373,6 +387,7 @@ export async function buildEvidencePack(
 
   const omissionReasons: Record<string, number> = {};
   if (excludedByVisibility > 0) omissionReasons.visibility = excludedByVisibility;
+  if (emptySupportingCount > 0) omissionReasons.empty_content = emptySupportingCount;
   const surfaceLimitCount = remaining.filter(
     (item) => (perSurface.get(item.surface) ?? 0) >= policy.maxSupportingEventsPerSurface,
   ).length;

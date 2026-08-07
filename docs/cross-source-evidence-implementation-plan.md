@@ -51,8 +51,8 @@ The first milestone ships pack-backed generic ingest webhook proposals:
 4. The proposal model selects exact evidence IDs for each proposed item.
 5. Existing suggestion and reconciliation records persist pack provenance and
    per-item source references without a schema migration.
-6. Approvals display per-item citations and block stale or inaccessible
-   evidence.
+6. Approvals display per-item citations, block visible-but-changed evidence,
+   and hide proposals backed by inaccessible evidence.
 7. Operators can run the builder in `off`, `shadow`, or `enforced` mode.
 
 ### Later milestones
@@ -185,7 +185,8 @@ machine-readable reason.
 - Every persisted proposal item has at least one exact source reference.
 - New pack fingerprints supersede prior proposal revisions instead of silently
   accumulating evidence.
-- Tombstoned, deleted, or newly inaccessible evidence blocks acceptance.
+- Tombstoned, deleted, or newly inaccessible evidence hides the derived
+  proposal; a direct acceptance attempt supersedes it.
 
 ### Boundedness and determinism
 
@@ -343,7 +344,10 @@ transitive-path rejection, duplicate paths to one event, and candidate overflow.
 5. Preserve raw references while returning bounded content excerpts for prompt
    rendering. Record item and pack truncation reasons.
 6. Compute the fingerprint from normalized anchor/core IDs, selected ordered
-   IDs, policy and builder versions, relationship reasons, and truncation state.
+   IDs, model-visible content and occurrence time, policy and builder versions,
+   relationship reasons, and truncation state. This ensures a permitted
+   calendar refresh creates a new proposal revision even when its IDs are
+   unchanged.
 7. Return metrics for candidate and selected counts, surfaces, relationship
    classes, token estimates, duration, and omissions without evidence text.
 
@@ -415,7 +419,10 @@ misleading actionable approval.
 5. Supersede an item when required evidence is deleted, tombstoned, or no longer
    visible. Reuse the existing `superseded` state rather than adding a `stale`
    enum in the first implementation.
-6. Keep acceptance idempotent when revalidation races with a newer revision.
+6. Do not return a derived proposal when any of its required evidence is no
+   longer visible to the viewer; its title and payload may contain source
+   details that must not survive a visibility narrowing.
+7. Keep acceptance idempotent when revalidation races with a newer revision.
 
 **Verification:** Tests cover unchanged rebuilds, changed fingerprints,
 supersession, tombstones, visibility narrowing, stale acceptance races, output
@@ -483,8 +490,9 @@ support while keeping implementation details out of the default view.
 3. Preserve the bundle evidence summary as contextual evidence.
 4. Keep raw IDs, fingerprints, ranks, relationship strengths, payload refs, and
    visibility internals inside `TechnicalDetails` or explicit audit views.
-5. Disable acceptance and show a clear stale state when required item evidence
-   fails revalidation.
+5. Show a clear stale state and disable acceptance when visible evidence changed
+   after proposal creation. Hide the proposal when required evidence is no
+   longer visible or active.
 6. Preserve keyboard navigation, focus behavior, screen-reader labels, and
    narrow-screen layout.
 
@@ -523,12 +531,14 @@ before enforcement.
    token estimate, build latency, error reason, and truncation reason.
 4. Store aggregates only. Keep evidence text and provider payloads out of
    metrics and logs.
-5. Add p50, p95, and p99 pack latency and error-rate reporting instead of relying
-   on average end-to-end reconciliation time.
+5. Add p50, p95, and p99 pack latency and error-rate reporting over shadow
+   attempts instead of relying on average end-to-end reconciliation time or
+   allowing `off`/`enforced` samples to dilute the rollout gates.
 6. Make the promotion report enforce evidence coverage, fixture success, shadow
    sample floor, zero-tolerance safety counters, p95 latency, and error rate.
    The production CLI ingests explicit redacted evidence-pack sample files and
-   requires repeatable scenario-family flags; it rejects sample assessment when
+   merges fresh summaries with any loaded historical report health. It requires
+   repeatable scenario-family flags; it rejects sample assessment when
    the required-family policy is omitted and counts a seven-day gate only when
    those UTC dates are consecutive.
 7. Document the operational rollback command and owner. Changing the mode
