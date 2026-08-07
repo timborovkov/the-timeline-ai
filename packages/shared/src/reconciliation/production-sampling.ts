@@ -61,6 +61,7 @@ export interface ProductionSamplingEvidencePackHealth {
   selectedCount: number;
   surfaceCount: number;
   estimatedTokens: number;
+  latencyDistribution: { latencyMs: number; count: number }[];
   latencyP50Ms: number | null;
   latencyP95Ms: number | null;
   latencyP99Ms: number | null;
@@ -274,9 +275,9 @@ export function buildProductionSamplingEvalReport(
     requiredEvidencePackScenarioFamilies: uniqueSorted(
       input.requiredEvidencePackScenarioFamilies ?? [],
     ),
-    evidencePackHealth: summarizeProductionSamplingEvidencePacks(input.evidencePackSamples ?? []),
   };
-  if ((input.evidencePackSamples?.length ?? 0) > 0) {
+  if (input.evidencePackSamples !== undefined) {
+    report.evidencePackHealth = summarizeProductionSamplingEvidencePacks(input.evidencePackSamples);
     report.evidencePackPromotion = assessEvidencePackPromotion(
       report,
       input.requiredEvidencePackScenarioFamilies ?? [],
@@ -290,6 +291,7 @@ export function summarizeProductionSamplingEvidencePacks(
 ): ProductionSamplingEvidencePackHealth {
   const shadowAttempts = samples.filter((sample) => sample.mode === 'shadow');
   const latencies = shadowAttempts.map((sample) => sample.buildDurationMs).sort((a, b) => a - b);
+  const latencyDistribution = buildLatencyDistribution(latencies);
   const errors = shadowAttempts.filter((sample) => sample.errorReason);
   const errorReasons: Record<string, number> = {};
   for (const sample of errors) {
@@ -313,9 +315,10 @@ export function summarizeProductionSamplingEvidencePacks(
     selectedCount: shadowAttempts.reduce((total, sample) => total + sample.selectedCount, 0),
     surfaceCount: shadowAttempts.reduce((total, sample) => total + sample.surfaceCount, 0),
     estimatedTokens: shadowAttempts.reduce((total, sample) => total + sample.estimatedTokens, 0),
-    latencyP50Ms: percentile(latencies, 0.5),
-    latencyP95Ms: percentile(latencies, 0.95),
-    latencyP99Ms: percentile(latencies, 0.99),
+    latencyDistribution,
+    latencyP50Ms: percentileFromLatencyDistribution(latencyDistribution, 0.5),
+    latencyP95Ms: percentileFromLatencyDistribution(latencyDistribution, 0.95),
+    latencyP99Ms: percentileFromLatencyDistribution(latencyDistribution, 0.99),
     modes: uniqueSorted(samples.map((sample) => sample.mode)),
     versions: uniqueSorted(samples.map((sample) => sample.version)),
     policyVersions: uniqueSorted(samples.map((sample) => sample.policyVersion)),
@@ -418,9 +421,41 @@ function longestConsecutiveDayStreak(days: readonly string[]): number {
   return longest;
 }
 
-function percentile(sorted: readonly number[], quantile: number): number | null {
-  if (sorted.length === 0) return null;
-  return sorted[Math.max(0, Math.ceil(sorted.length * quantile) - 1)] ?? null;
+function buildLatencyDistribution(
+  latencies: readonly number[],
+): ProductionSamplingEvidencePackHealth['latencyDistribution'] {
+  const counts = new Map<number, number>();
+  for (const latency of latencies) counts.set(latency, (counts.get(latency) ?? 0) + 1);
+  return [...counts.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([latencyMs, count]) => ({ latencyMs, count }));
+}
+
+function mergeLatencyDistributions(
+  distributions: readonly ProductionSamplingEvidencePackHealth['latencyDistribution'][],
+): ProductionSamplingEvidencePackHealth['latencyDistribution'] {
+  const counts = new Map<number, number>();
+  for (const bucket of distributions.flat()) {
+    counts.set(bucket.latencyMs, (counts.get(bucket.latencyMs) ?? 0) + bucket.count);
+  }
+  return [...counts.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([latencyMs, count]) => ({ latencyMs, count }));
+}
+
+function percentileFromLatencyDistribution(
+  distribution: readonly { latencyMs: number; count: number }[],
+  quantile: number,
+): number | null {
+  const sampleCount = distribution.reduce((total, bucket) => total + bucket.count, 0);
+  if (sampleCount === 0) return null;
+  const target = Math.max(1, Math.ceil(sampleCount * quantile));
+  let cumulativeCount = 0;
+  for (const bucket of distribution) {
+    cumulativeCount += bucket.count;
+    if (cumulativeCount >= target) return bucket.latencyMs;
+  }
+  return distribution.at(-1)?.latencyMs ?? null;
 }
 
 export async function loadProductionSamplingEvalArtifacts(
@@ -600,10 +635,13 @@ function mergeProductionSamplingEvalReports(
     requiredEvidencePackScenarioFamilies: uniqueSorted(
       reports.flatMap((report) => report.requiredEvidencePackScenarioFamilies ?? []),
     ),
-    evidencePackHealth: mergeEvidencePackHealth(
-      reports.flatMap((report) => (report.evidencePackHealth ? [report.evidencePackHealth] : [])),
-    ),
   };
+  const evidencePackHealth = reports.flatMap((candidate) =>
+    candidate.evidencePackHealth ? [candidate.evidencePackHealth] : [],
+  );
+  if (evidencePackHealth.length > 0) {
+    report.evidencePackHealth = mergeEvidencePackHealth(evidencePackHealth);
+  }
   if (
     (report.evidencePackHealth?.versions.length ?? 0) > 0 ||
     (report.requiredEvidencePackScenarioFamilies?.length ?? 0) > 0
@@ -627,10 +665,9 @@ function mergeEvidencePackHealth(
       errorReasons[reason] = (errorReasons[reason] ?? 0) + count;
     }
   }
-  const maxLatency = (field: 'latencyP50Ms' | 'latencyP95Ms' | 'latencyP99Ms') => {
-    const values = health.flatMap((item) => (item[field] === null ? [] : [item[field]]));
-    return values.length > 0 ? Math.max(...values) : null;
-  };
+  const latencyDistribution = mergeLatencyDistributions(
+    health.map((item) => item.latencyDistribution),
+  );
   return {
     sampleCount,
     errorCount,
@@ -645,9 +682,10 @@ function mergeEvidencePackHealth(
     selectedCount: health.reduce((total, item) => total + item.selectedCount, 0),
     surfaceCount: health.reduce((total, item) => total + item.surfaceCount, 0),
     estimatedTokens: health.reduce((total, item) => total + item.estimatedTokens, 0),
-    latencyP50Ms: maxLatency('latencyP50Ms'),
-    latencyP95Ms: maxLatency('latencyP95Ms'),
-    latencyP99Ms: maxLatency('latencyP99Ms'),
+    latencyDistribution,
+    latencyP50Ms: percentileFromLatencyDistribution(latencyDistribution, 0.5),
+    latencyP95Ms: percentileFromLatencyDistribution(latencyDistribution, 0.95),
+    latencyP99Ms: percentileFromLatencyDistribution(latencyDistribution, 0.99),
     modes: uniqueSorted(health.flatMap((item) => item.modes)),
     versions: uniqueSorted(health.flatMap((item) => item.versions)),
     policyVersions: uniqueSorted(health.flatMap((item) => item.policyVersions)),
@@ -1241,6 +1279,13 @@ function isProductionSamplingEvidencePackHealth(
   const record = asRecord(value);
   const nullableNonNegativeNumber = (candidate: unknown) =>
     candidate === null || (isFiniteNumber(candidate) && candidate >= 0);
+  const latencyDistribution: unknown[] = Array.isArray(record?.latencyDistribution)
+    ? record.latencyDistribution
+    : [];
+  const latencySampleCount = latencyDistribution.reduce<number>((total, bucket) => {
+    const count = asRecord(bucket)?.count;
+    return total + (typeof count === 'number' ? count : 0);
+  }, 0);
   return (
     !!record &&
     [
@@ -1264,6 +1309,9 @@ function isProductionSamplingEvidencePackHealth(
     nullableNonNegativeNumber(record.latencyP50Ms) &&
     nullableNonNegativeNumber(record.latencyP95Ms) &&
     nullableNonNegativeNumber(record.latencyP99Ms) &&
+    Array.isArray(record.latencyDistribution) &&
+    latencyDistribution.every(isProductionSamplingLatencyBucket) &&
+    latencySampleCount === record.sampleCount &&
     isStringArray(record.modes) &&
     isStringArray(record.versions) &&
     isStringArray(record.policyVersions) &&
@@ -1271,6 +1319,17 @@ function isProductionSamplingEvidencePackHealth(
     isStringArray(record.shadowDays) &&
     isStringArray(record.shadowTeamKeys) &&
     isStringArray(record.scenarioFamilies)
+  );
+}
+
+function isProductionSamplingLatencyBucket(value: unknown): boolean {
+  const record = asRecord(value);
+  return (
+    !!record &&
+    isFiniteNumber(record.latencyMs) &&
+    record.latencyMs >= 0 &&
+    isNonNegativeInteger(record.count) &&
+    record.count > 0
   );
 }
 

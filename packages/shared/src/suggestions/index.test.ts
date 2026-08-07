@@ -202,10 +202,12 @@ describe('suggestion scope', () => {
 
     const first = await create('a'.repeat(64));
     const second = await create('b'.repeat(64));
+    const secondRetry = await create('b'.repeat(64));
     const third = await create('a'.repeat(64));
     const fourth = await create('b'.repeat(64));
 
     expect(second.id).not.toBe(first.id);
+    expect(secondRetry.id).toBe(second.id);
     expect(new Set([first.id, second.id, third.id, fourth.id]).size).toBe(4);
     const rows = await db
       .select({

@@ -618,7 +618,7 @@ describe('processSuggestionJobForTests', () => {
     await seedRawEvent(db as never, {
       id: rawEventId,
       source: 'ingest_webhook',
-      text: 'Owner committed to send the Acme proposal next Tuesday.',
+      text: 'Owner committed to send the Acme proposal next Tuesday.\n',
       sourceMetadata: {
         ingest_webhook_name: 'Acme delivery',
         proposal_generation_enabled: true,

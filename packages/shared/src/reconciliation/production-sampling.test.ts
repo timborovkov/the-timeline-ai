@@ -251,6 +251,7 @@ describe('production reconciliation sampling report', () => {
         selectedCount: 4,
         surfaceCount: 2,
         estimatedTokens: 900,
+        latencyDistribution: [{ latencyMs: 10, count: 1 }],
         latencyP50Ms: 10,
         latencyP95Ms: 10,
         latencyP99Ms: 10,
@@ -528,7 +529,7 @@ describe('production reconciliation sampling report', () => {
             selectedCount: 2,
             surfaceCount: 2,
             estimatedTokens: 200,
-            buildDurationMs: 50,
+            buildDurationMs: 1_200,
             truncated: false,
             sampledAt: '2026-07-08T10:00:00.000Z',
             teamKey: 'team-3',
@@ -540,6 +541,7 @@ describe('production reconciliation sampling report', () => {
 
       expect(written.report.requiredEvidencePackScenarioFamilies).toEqual(['generic_webhook']);
       expect(written.report.evidencePackHealth?.sampleCount).toBe(201);
+      expect(written.report.evidencePackHealth?.latencyP95Ms).toBe(50);
       expect(written.report.evidencePackHealth?.shadowTeamKeys).toEqual([
         'team-0',
         'team-1',
@@ -582,6 +584,33 @@ describe('production reconciliation sampling report', () => {
       expect(written.report.evidencePackPromotion?.blockerCodes).toEqual(
         expect.arrayContaining(['shadow_sample_floor', 'shadow_day_floor', 'shadow_team_floor']),
       );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('omits evidence-pack health from reports without evidence-pack telemetry', async () => {
+    const report = buildProductionSamplingEvalReport({
+      generatedAt: '2026-07-09T10:00:00.000Z',
+      manifests: [],
+      artifacts: [],
+    });
+    expect(report).not.toHaveProperty('evidencePackHealth');
+    expect(report).not.toHaveProperty('evidencePackPromotion');
+
+    const dir = await mkdtemp(path.join(tmpdir(), 'timeline-no-evidence-pack-'));
+    try {
+      const inputPath = path.join(dir, 'input.json');
+      await writeFile(inputPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
+      const written = await writeProductionSamplingEvalReport({
+        inputPaths: [inputPath],
+        outputPath: path.join(dir, 'output.json'),
+        generatedAt: '2026-07-10T10:00:00.000Z',
+      });
+
+      expect(written.loaded.reports).toHaveLength(1);
+      expect(written.report).not.toHaveProperty('evidencePackHealth');
+      expect(written.report).not.toHaveProperty('evidencePackPromotion');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

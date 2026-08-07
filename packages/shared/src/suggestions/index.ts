@@ -1117,7 +1117,7 @@ function evidenceContentFingerprints(metadata: unknown): Record<string, string> 
 
 function evidenceContentFingerprint(row: { contentText: string | null; occurredAt: Date }): string {
   return suggestionDedupeKey({
-    contentText: row.contentText,
+    contentText: row.contentText?.trim() ?? null,
     occurredAt: row.occurredAt.toISOString(),
   });
 }
@@ -6200,6 +6200,18 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
               ),
             )
         : [];
+      const matchingActivePackSuggestion = packRevisionCandidates.find((candidate) => {
+        const fingerprint = recordFromUnknown(candidate.metadata).evidence_pack_fingerprint;
+        return (
+          fingerprint === incomingEvidencePackFingerprint &&
+          (candidate.status === 'pending' || candidate.status === 'partially_resolved')
+        );
+      });
+      if (matchingActivePackSuggestion) {
+        const loaded = await loadBundle(matchingActivePackSuggestion.id);
+        if (!loaded) throw new Error('Suggestion was not visible after creation');
+        return loaded;
+      }
       const changedPackSuggestions = packRevisionCandidates.filter((candidate) => {
         const fingerprint = recordFromUnknown(candidate.metadata).evidence_pack_fingerprint;
         return typeof fingerprint === 'string' && fingerprint !== incomingEvidencePackFingerprint;

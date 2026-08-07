@@ -538,7 +538,10 @@ before enforcement.
    metrics and logs.
 5. Add p50, p95, and p99 pack latency and error-rate reporting over shadow
    attempts instead of relying on average end-to-end reconciliation time or
-   allowing `off`/`enforced` samples to dilute the rollout gates.
+   allowing `off`/`enforced` samples to dilute the rollout gates. Retain a
+   content-free latency distribution in report health so historical and fresh
+   samples produce true cumulative percentiles when merged. Omit pack health
+   and promotion state entirely when a report has no pack telemetry.
 6. Make the promotion report enforce evidence coverage, fixture success, shadow
    sample floor, zero-tolerance safety counters, p95 latency, and error rate.
    The production CLI ingests explicit redacted evidence-pack sample files and
@@ -746,6 +749,11 @@ Keep changes independently reviewable in this order:
 8. eval and promotion tooling;
 9. webhook enforcement;
 10. one later adapter per change.
+
+The first slice also includes a data-only migration for associations created
+before canonical shared links were classified as hard evidence. It upgrades
+those legacy rows and deduplicates them when a hard-anchor row already exists;
+no pack table or durable pack lifecycle is introduced.
 
 Do not combine later consumer migrations with the first webhook slice. Do not
 enable enforcement in the same change that introduces unreviewed pack-building

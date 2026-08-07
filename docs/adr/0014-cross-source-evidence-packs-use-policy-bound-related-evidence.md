@@ -185,6 +185,9 @@ and Agent Ask. Every adapter has its own fixtures, negative-link tests,
 visibility tests, shadow evidence, and explicit enforcement gate.
 Promotion evidence must contain exactly one builder version and one policy
 version; changing either version requires a fresh qualifying shadow population.
+Sampling reports retain a content-free latency distribution so merged reports
+recompute cumulative p50, p95, and p99 values instead of merging percentiles.
+Reports without evidence-pack telemetry omit pack health and promotion state.
 
 ## Consequences
 
@@ -195,8 +198,11 @@ without losing its own authority model.
 
 The first implementation adds a shared module, consumer adapters, stricter
 model output validation, proposal revision behavior, per-item evidence display,
-and rollout telemetry. It does not require a database migration, a durable pack
-lifecycle, a new model call, or private background proposals.
+and rollout telemetry. A data migration upgrades existing unambiguous
+canonical-URL shared-link associations from semantic model candidates to hard
+anchors and removes a legacy duplicate when the hard association already
+exists. The implementation does not require a durable pack lifecycle, a new
+model call, or private background proposals.
 
 Strict admission reduces recall compared with open semantic retrieval. This is
 intentional for durable proposals. Answer policies can use broader recall while
