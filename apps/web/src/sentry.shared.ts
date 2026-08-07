@@ -17,6 +17,9 @@ const BROWSER_EXTENSION_FRAME_PREFIXES = [
 
 const METAMASK_ERROR_PATTERNS = [/Failed to connect to MetaMask/i, /MetaMask extension not found/i];
 
+const ANTIFINGERPRINT_BRIDGE_REJECTION_RE =
+  /Object Not Found Matching Id:\d+,\s*MethodName:update,\s*ParamCount:4/i;
+
 const FORMDATA_PARSE_ERROR_RE = /Failed to parse body as FormData/i;
 
 interface StackFrameLike {
@@ -65,6 +68,17 @@ export function scrubSentryBreadcrumbEvent(breadcrumb: Breadcrumb): Breadcrumb {
 export function shouldDropBrowserExtensionEvent(event: ErrorEvent): boolean {
   const parsed = event as ErrorEventWithExceptions;
   const exceptionValues = parsed.exception?.values ?? [];
+
+  if (
+    exceptionValues.some(
+      (value) =>
+        value.type === 'UnhandledRejection' &&
+        Boolean(value.value && ANTIFINGERPRINT_BRIDGE_REJECTION_RE.test(value.value)),
+    )
+  ) {
+    return true;
+  }
+
   const messages = [
     parsed.message,
     parsed.logentry?.message,
