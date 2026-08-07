@@ -84,10 +84,15 @@ Locally, prefer `DAYTONA_API_KEY` + `dev:extract`. Only set
 `DOCUMENT_EXTRACT_ALLOW_INPROCESS=true` for offline/dev without Daytona (never in production).
 
 Daytona snapshots are content-hashed (`timeline-document-extract-<hash>` from
-`document-extract-sandbox/**`). Leave `DAYTONA_SNAPSHOT` unset (or `auto`) to
-resolve the hash at runtime, or pin the name CI prints. Boot ensure
+`document-extract-sandbox/**`). Set `DAYTONA_SNAPSHOT=auto` on Railway so the
+deployed code resolves its matching hash. Boot ensure
 (`DAYTONA_SNAPSHOT_ENSURE=true`, default) creates the snapshot once if missing;
-it does not rebuild on every restart. Details:
+it does not rebuild on every restart. Push CI ensures snapshots but never
+deletes them. Cleanup is a manual workflow dispatch or CLI maintenance action:
+set `DAYTONA_ACTIVE_SNAPSHOTS` to every hash used by a deployed production or
+staging extractor, then run `cleanup-document-extract-snapshots`. It preserves
+that deployed inventory plus the current and two rollback hashes, and skips any
+snapshot referenced by a Daytona sandbox. Details:
 [docs/adr/0013-daytona-document-extract.md](../../docs/adr/0013-daytona-document-extract.md)
 and [document-extract-sandbox/README.md](document-extract-sandbox/README.md).
 
