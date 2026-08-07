@@ -188,7 +188,7 @@ export async function runReconciliationProductionSamplingCli(
     outputPath: args.outputPath,
     runKind: args.runKind,
     confirmedFixtureCandidates: args.confirmedFixtureCandidates,
-    ...(evidencePackSamples.length > 0 ? { evidencePackSamples } : {}),
+    ...(args.evidencePackSamplePaths.length > 0 ? { evidencePackSamples } : {}),
     ...(args.requiredEvidencePackScenarioFamilies.length > 0
       ? { requiredEvidencePackScenarioFamilies: args.requiredEvidencePackScenarioFamilies }
       : {}),

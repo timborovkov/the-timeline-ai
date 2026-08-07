@@ -118,15 +118,22 @@ function makeScope() {
           source: 'slack',
           contentText: 'Discussed Otto follow-up',
           occurredAt: new Date('2026-06-14T09:00:00.000Z'),
-          authorUserId: null,
-          sourceMetadata: {},
+          authorUserId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          sourceMetadata: {
+            slack_sender_id: 'U-MIKU',
+            slack_sender_name: 'Miku',
+            slack_channel_name: 'pilot-delivery',
+          },
           visibility: 'team',
           visibilityOwnerUserId: null,
           visibilityUserIds: null,
         })),
       ),
       listArtifactClusters: vi.fn().mockResolvedValue({}),
-      listEvidencePackArtifactClusters: vi.fn().mockResolvedValue({}),
+      listEvidencePackArtifactClusters: vi.fn().mockResolvedValue({
+        clusters: {},
+        truncatedCandidateCount: 0,
+      }),
     },
     boards: {
       listObjectBoardContext: vi.fn().mockResolvedValue([
@@ -182,6 +189,12 @@ describe('retrieveWorkspaceContext', () => {
         },
       ],
     });
+    expect(
+      (result.evidencePack as { items: { senderContext: string }[] }).items[0]?.senderContext,
+    ).toContain('"senderName":"Miku"');
+    expect(
+      (result.evidencePack as { items: { senderContext: string }[] }).items[0]?.senderContext,
+    ).toContain('"timelineAuthorUserId":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"');
     expect(result.objects[0]).toMatchObject({
       id: OBJECT_ID,
       citation: `[ent:${OBJECT_ID}]`,

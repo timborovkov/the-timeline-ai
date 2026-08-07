@@ -277,8 +277,8 @@ describe('buildEvidencePack', () => {
     });
     const listEvidencePackArtifactClusters = vi.fn(() => {
       const ids = reverse ? ['cluster-b', 'cluster-a'] : ['cluster-a', 'cluster-b'];
-      return Promise.resolve(
-        Object.fromEntries(
+      return Promise.resolve({
+        clusters: Object.fromEntries(
           ids.map((id) => [
             id,
             {
@@ -290,7 +290,8 @@ describe('buildEvidencePack', () => {
             },
           ]),
         ),
-      );
+        truncatedCandidateCount: 0,
+      });
     });
     const scope = {
       ...actualScope,
@@ -339,6 +340,73 @@ describe('buildEvidencePack', () => {
       truncationReason: 'content_limit',
     });
     expect(pack.metrics.omissionReasons).toMatchObject({ content_limit: 1 });
+  });
+
+  it('changes the fingerprint when full content changes beyond the visible prefix', async () => {
+    const db = drizzle(pg);
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await pg.exec(`
+      UPDATE raw_events
+      SET content_text = repeat('a', 5000)
+      WHERE id = '${CALENDAR_ID}';
+    `);
+    const first = await buildEvidencePack(scope, {
+      purpose: 'answer',
+      anchorRawEventIds: [CALENDAR_ID],
+    });
+
+    await pg.exec(`
+      UPDATE raw_events
+      SET content_text = repeat('a', 4999) || 'b'
+      WHERE id = '${CALENDAR_ID}';
+    `);
+    const second = await buildEvidencePack(scope, {
+      purpose: 'answer',
+      anchorRawEventIds: [CALENDAR_ID],
+    });
+
+    expect(first.items[0]?.contentText).toBe(second.items[0]?.contentText);
+    expect(first.items[0]?.contentFingerprint).not.toBe(second.items[0]?.contentFingerprint);
+    expect(first.fingerprint).not.toBe(second.fingerprint);
+  });
+
+  it('reports candidate-limit truncation before pack selection', async () => {
+    const db = drizzle(pg);
+    for (const rawEventId of [ANCHOR_ID, SUPPORT_ID, SLACK_NEW_ID]) {
+      await reconcileArtifactEvidence(db as never, {
+        teamId: TEAM_ID,
+        artifactType: 'project',
+        canonicalName: 'Acme launch',
+        status: 'active',
+        rawEventId,
+        role: 'discussion',
+        strength: 'hard',
+        anchors: [{ type: 'canonical_url', value: 'https://acme.test/launch', strength: 'hard' }],
+      });
+    }
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const discovery = await scope.timeline.listEvidencePackArtifactClusters([ANCHOR_ID], 1);
+    expect(discovery.truncatedCandidateCount).toBe(1);
+
+    const actualDiscovery = scope.timeline.listEvidencePackArtifactClusters;
+    const limitedScope = {
+      ...scope,
+      timeline: {
+        ...scope.timeline,
+        listEvidencePackArtifactClusters: vi.fn(
+          async (rawEventIds: string[], maxCandidates?: number) => {
+            const result = await actualDiscovery(rawEventIds, maxCandidates ?? 500);
+            return { ...result, truncatedCandidateCount: 1 };
+          },
+        ),
+      },
+    };
+    const pack = await buildEvidencePack(limitedScope, {
+      purpose: 'proposal',
+      anchorRawEventIds: [ANCHOR_ID],
+    });
+    expect(pack.metrics.truncated).toBe(true);
+    expect(pack.metrics.omissionReasons).toMatchObject({ candidate_limit: 1 });
   });
 
   it('prefers a new evidence surface before more same-surface evidence', async () => {

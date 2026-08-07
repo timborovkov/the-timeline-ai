@@ -369,8 +369,8 @@ describe('production reconciliation sampling report', () => {
     }));
     const off = Array.from({ length: 1_000 }, () => ({
       mode: 'off' as const,
-      version: 'evidence-pack-v1',
-      policyVersion: 'proposal-v1',
+      version: 'evidence-pack-v2',
+      policyVersion: 'proposal-v2',
       candidateCount: 0,
       selectedCount: 0,
       surfaceCount: 0,

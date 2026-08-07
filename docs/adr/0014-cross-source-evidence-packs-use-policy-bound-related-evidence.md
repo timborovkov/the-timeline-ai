@@ -55,8 +55,14 @@ artifact-cluster anchors. Its output contains:
 - visibility and audience information;
 - policy, builder, and budget versions;
 - a stable fingerprint over build inputs and the selected model-visible
-  evidence state, including content and occurrence time; and
+  evidence state, including the full normalized content fingerprint and
+  occurrence time even when displayed content is truncated; and
 - candidate, selection, source-diversity, truncation, token, and latency metrics.
+
+Candidate discovery fetches a bounded unique set and records an explicit
+`candidate_limit` omission count when qualifying evidence exists beyond that
+bound. Both answer and proposal consumers receive fenced sender context for
+each row so first-person statements retain their speaker.
 
 ### Proposal admission
 
@@ -184,7 +190,10 @@ webhooks. Later milestones cover conversation reviews, other event-local paths,
 and Agent Ask. Every adapter has its own fixtures, negative-link tests,
 visibility tests, shadow evidence, and explicit enforcement gate.
 Promotion evidence must contain exactly one builder version and one policy
-version; changing either version requires a fresh qualifying shadow population.
+version within the shadow population; `off` and `enforced` samples do not affect
+that version gate. Changing either version requires a fresh qualifying shadow
+population. An explicitly supplied empty telemetry export is still assessed
+and fails the shadow-population gates.
 Sampling reports retain a content-free latency distribution so merged reports
 recompute cumulative p50, p95, and p99 values instead of merging percentiles.
 Reports without evidence-pack telemetry omit pack health and promotion state.
@@ -195,6 +204,10 @@ Proposal citations become model-selected and item-specific instead of being
 inferred after generation from lexical overlap. Evidence ranking becomes
 repeatable and observable. Provider state can support Timeline-owned proposals
 without losing its own authority model.
+
+When mutable evidence changes a pack fingerprint, Timeline creates the
+replacement approval and supersedes its predecessor in one transaction. A
+failed replacement therefore leaves the prior actionable approval intact.
 
 The first implementation adds a shared module, consumer adapters, stricter
 model output validation, proposal revision behavior, per-item evidence display,

@@ -4099,7 +4099,13 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     const rows = await db
       .select({ id: rawEvents.id })
       .from(rawEvents)
-      .where(and(inArray(rawEvents.id, ids), rawEventVisibilityPredicate(teamId, userId)));
+      .where(
+        and(
+          inArray(rawEvents.id, ids),
+          rawEventVisibilityPredicate(teamId, userId),
+          rawEventIsActive(),
+        ),
+      );
     if (rows.length !== ids.length) {
       throw new Error('Suggestion evidence must reference visible events in this team');
     }
@@ -6083,8 +6089,17 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                 occurredAt: rawEvents.occurredAt,
               })
               .from(rawEvents)
-              .where(and(inArray(rawEvents.id, evidenceIds), eq(rawEvents.teamId, teamId)))
+              .where(
+                and(
+                  inArray(rawEvents.id, evidenceIds),
+                  eq(rawEvents.teamId, teamId),
+                  rawEventIsActive(),
+                ),
+              )
           : [];
+      if (evidenceVersionRows.length !== evidenceIds.length) {
+        throw new Error('Suggestion evidence changed while the proposal was being generated');
+      }
       const evidenceFingerprintsById = Object.fromEntries(
         evidenceVersionRows.map((event) => {
           const currentFingerprint = evidenceContentFingerprint(event);
@@ -6219,20 +6234,23 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       const actionableChangedPackSuggestions = changedPackSuggestions.filter(
         (candidate) => candidate.status === 'pending' || candidate.status === 'partially_resolved',
       );
-      for (const candidate of actionableChangedPackSuggestions) {
-        const candidateItems = await db
-          .select({ id: agentSuggestionItems.id })
-          .from(agentSuggestionItems)
-          .where(
-            and(
-              eq(agentSuggestionItems.suggestionId, candidate.id),
-              inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
-            ),
-          );
-        for (const item of candidateItems) {
-          await supersedeItem(item.id, null, 'The selected source evidence changed.');
-        }
-      }
+      const actionableChangedPackSuggestionIds = actionableChangedPackSuggestions.map(
+        (candidate) => candidate.id,
+      );
+      const actionableChangedPackItemIds =
+        actionableChangedPackSuggestionIds.length > 0
+          ? (
+              await db
+                .select({ id: agentSuggestionItems.id })
+                .from(agentSuggestionItems)
+                .where(
+                  and(
+                    inArray(agentSuggestionItems.suggestionId, actionableChangedPackSuggestionIds),
+                    inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
+                  ),
+                )
+            ).map((item) => item.id)
+          : [];
       const evidencePackChanged = actionableChangedPackSuggestions.length > 0;
       if (existing?.status === 'superseded' && !evidencePackChanged) {
         const existingItems = await db
@@ -6611,7 +6629,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             )
             .onConflictDoNothing();
 
-          return { row: resolvedSuggestion, changed: false };
+          return { row: resolvedSuggestion, changed: false, supersededItems: [] };
         }
         const insertSuggestion = async (candidateDedupeKey: string) => {
           const [row] = await tx
@@ -6652,10 +6670,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             )
             .limit(1);
           if (resolvedDuplicate?.status === 'accepted') {
-            return { row: resolvedDuplicate, changed: false };
+            return { row: resolvedDuplicate, changed: false, supersededItems: [] };
           }
           if (resolvedDuplicate?.status === 'superseded') {
-            return { row: resolvedDuplicate, changed: false };
+            return { row: resolvedDuplicate, changed: false, supersededItems: [] };
           }
           if (resolvedDuplicate?.status === 'rejected') {
             for (let attempt = 1; attempt <= 10; attempt += 1) {
@@ -6674,7 +6692,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                 )
                 .limit(1);
               if (reofferDuplicate?.status === 'accepted') {
-                return { row: reofferDuplicate, changed: false };
+                return { row: reofferDuplicate, changed: false, supersededItems: [] };
               }
               if (reofferDuplicate?.status !== 'rejected') break;
             }
@@ -6802,8 +6820,48 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           )
           .onConflictDoNothing();
 
-        return { row: inserted, changed: true };
+        const supersededItems =
+          actionableChangedPackItemIds.length > 0
+            ? await tx
+                .update(agentSuggestionItems)
+                .set({
+                  status: 'superseded',
+                  supersededByItemId: null,
+                  supersededReason: 'The selected source evidence changed.',
+                  resolvedAt: now,
+                  resolvedByUserId: null,
+                  updatedAt: now,
+                  failureReason: null,
+                })
+                .where(
+                  and(
+                    inArray(agentSuggestionItems.id, actionableChangedPackItemIds),
+                    inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
+                  ),
+                )
+                .returning()
+            : [];
+        for (const supersededItem of supersededItems) {
+          await writeProjectedOutputStatusForItem(
+            tx,
+            supersededItem,
+            'superseded',
+            {
+              projection_superseded_reason: 'The selected source evidence changed.',
+              superseded_by_item_id: null,
+            },
+            'superseded',
+          );
+        }
+        for (const suggestionId of new Set(supersededItems.map((item) => item.suggestionId))) {
+          await refreshBundleStatus(suggestionId, undefined, tx);
+        }
+
+        return { row: inserted, changed: true, supersededItems };
       });
+      for (const supersededItem of result.supersededItems) {
+        await supersedeRelationshipDependents(supersededItem);
+      }
       if (result.changed) {
         await reconcileNewSuggestionItems(result.row.id);
         await notifySuggestion(result.row);

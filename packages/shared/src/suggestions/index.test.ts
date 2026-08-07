@@ -224,6 +224,80 @@ describe('suggestion scope', () => {
     ]);
   });
 
+  it('keeps the prior approval actionable when replacement creation rolls back', async () => {
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: 'Owner committed to the atomic follow-up.',
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+      visibility: 'team',
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const create = (fingerprint: string) =>
+      scope.suggestions.createOrMergeSuggestionBundle({
+        source: 'background' as const,
+        title: 'Create atomic follow-up task',
+        dedupeKey: 'atomic-pack-revision',
+        metadata: { evidence_pack_fingerprint: fingerprint },
+        evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }],
+        items: [
+          {
+            operation: 'create' as const,
+            targetKind: 'task' as const,
+            title: 'Atomic follow-up',
+            dedupeKey: 'atomic-pack-revision:item',
+            proposedPayload: { canonicalName: 'Atomic follow-up' },
+            evidenceRawEventIds: [TEAM_RAW_EVENT_ID],
+          },
+        ],
+      });
+
+    const first = await create('a'.repeat(64));
+    await pg.exec(`
+      CREATE FUNCTION fail_pack_revision_insert() RETURNS trigger AS $$
+      BEGIN
+        IF NEW.dedupe_key LIKE 'atomic-pack-revision:evidence:%' THEN
+          RAISE EXCEPTION 'injected pack revision failure';
+        END IF;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+      CREATE TRIGGER fail_pack_revision_insert_trg
+      BEFORE INSERT ON agent_suggestions
+      FOR EACH ROW EXECUTE FUNCTION fail_pack_revision_insert();
+    `);
+    try {
+      await expect(create('b'.repeat(64))).rejects.toThrow();
+      const [firstItem] = await db
+        .select({ status: agentSuggestionItems.status })
+        .from(agentSuggestionItems)
+        .where(eq(agentSuggestionItems.suggestionId, first.id));
+      expect(firstItem?.status).toBe('pending');
+    } finally {
+      await pg.exec(`
+        DROP TRIGGER fail_pack_revision_insert_trg ON agent_suggestions;
+        DROP FUNCTION fail_pack_revision_insert();
+      `);
+    }
+
+    const replacement = await create('b'.repeat(64));
+    expect(replacement.id).not.toBe(first.id);
+    const statuses = await db
+      .select({
+        suggestionId: agentSuggestionItems.suggestionId,
+        status: agentSuggestionItems.status,
+      })
+      .from(agentSuggestionItems);
+    expect(statuses).toEqual(
+      expect.arrayContaining([
+        { suggestionId: first.id, status: 'superseded' },
+        { suggestionId: replacement.id, status: 'pending' },
+      ]),
+    );
+  });
+
   it('marks item evidence stale and supersedes it at acceptance after visibility narrows', async () => {
     await db.insert(rawEvents).values({
       id: TEAM_RAW_EVENT_ID,

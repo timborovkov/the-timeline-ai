@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import type { SourceRef, VisibilityEnvelope } from '#src/reconciliation/index.js';
 import type { SearchEventArtifactClusterEvidence, TeamScope } from '#src/team-scope.js';
 
+import { fenceExternalContent } from '#src/agent/external-content.js';
 import { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 import { intersectVisibilityEnvelopes } from '#src/visibility.js';
 
@@ -124,6 +125,77 @@ function metadataString(value: unknown, key: string): string | null {
   return typeof field === 'string' && field.trim() ? field.trim() : null;
 }
 
+function metadataPerson(value: unknown): { name: string | null; email: string | null } {
+  const record = metadataObject(value);
+  const name = typeof record.name === 'string' ? record.name.trim() || null : null;
+  const email = typeof record.email === 'string' ? record.email.trim() || null : null;
+  return { name, email };
+}
+
+export function evidenceSourceContextForPrompt(
+  source: string,
+  sourceMetadata: unknown,
+  authorUserId: string | null,
+  members: readonly { userId: string; name: string | null; email: string | null }[],
+  eventId: string,
+): string {
+  const metadata = metadataObject(sourceMetadata);
+  let senderName: string | null = null;
+  let senderHandle: string | null = null;
+  let conversationName: string | null = null;
+
+  if (source === 'telegram') {
+    senderName = metadataString(metadata, 'tg_sender_name');
+    const username = metadataString(metadata, 'tg_username');
+    senderHandle = username ? `@${username.replace(/^@/, '')}` : null;
+    conversationName =
+      metadataString(metadata, 'tg_chat_title') ?? metadataString(metadata, 'tg_chat_id');
+  } else if (source === 'slack') {
+    senderName = metadataString(metadata, 'slack_sender_name');
+    senderHandle = metadataString(metadata, 'slack_sender_id');
+    conversationName =
+      metadataString(metadata, 'slack_channel_name') ??
+      metadataString(metadata, 'slack_channel_id');
+  } else if (source === 'email') {
+    const forwarded = metadataObject(metadata.forwarded_from);
+    const forwardedPerson = metadataPerson(forwarded.from ?? metadata.forwarded_from);
+    const directPerson = metadataPerson(metadata.from);
+    senderName =
+      forwardedPerson.name ??
+      forwardedPerson.email ??
+      directPerson.name ??
+      directPerson.email ??
+      metadataString(metadata, 'from_name') ??
+      metadataString(metadata, 'from_email') ??
+      metadataString(metadata, 'sender_email');
+    senderHandle =
+      forwardedPerson.email ??
+      directPerson.email ??
+      metadataString(metadata, 'from_email') ??
+      metadataString(metadata, 'sender_email');
+    conversationName = metadataString(metadata, 'subject');
+  }
+
+  const member = authorUserId
+    ? members.find((candidate) => candidate.userId === authorUserId)
+    : undefined;
+  return (
+    fenceExternalContent(
+      JSON.stringify({
+        source,
+        senderName,
+        senderHandle,
+        conversationName,
+        timelineAuthorUserId: authorUserId,
+        verifiedTimelineMemberId: member?.userId ?? null,
+        verifiedTimelineMemberName: member?.name ?? null,
+        verifiedTimelineMemberEmail: member?.email ?? null,
+      }),
+      { source: 'raw-event-source-context', eventId },
+    ) ?? ''
+  );
+}
+
 export function evidenceSurface(source: string, sourceMetadata: unknown): string {
   if (source === 'ingest_webhook') {
     return metadataString(sourceMetadata, 'ingest_webhook_name') ?? 'Ingest webhook';
@@ -206,7 +278,7 @@ function fingerprintFor(pack: Omit<EvidencePack, 'fingerprint'>): string {
       rawEventId: item.rawEventId,
       role: item.role,
       surface: item.surface,
-      contentText: item.contentText,
+      contentFingerprint: item.contentFingerprint,
       occurredAt: item.occurredAt.toISOString(),
       signals: canonicalRelationshipSignals(item.relationshipSignals),
       truncated: item.truncated,
@@ -258,10 +330,11 @@ export async function buildEvidencePack(
     );
   }
 
-  const clusters = await scope.timeline.listEvidencePackArtifactClusters(
+  const clusterDiscovery = await scope.timeline.listEvidencePackArtifactClusters(
     coreIds,
     policy.maxCandidates,
   );
+  const clusters = clusterDiscovery.clusters;
   const relatedSignals = new Map<string, EvidenceRelationshipSignal[]>();
   for (const cluster of Object.values(clusters)) {
     for (const evidence of cluster.relatedEvidence) {
@@ -410,6 +483,9 @@ export async function buildEvidencePack(
   }
 
   const omissionReasons: Record<string, number> = {};
+  if (clusterDiscovery.truncatedCandidateCount > 0) {
+    omissionReasons.candidate_limit = clusterDiscovery.truncatedCandidateCount;
+  }
   if (excludedByVisibility > 0) omissionReasons.visibility = excludedByVisibility;
   if (emptySupportingCount > 0) omissionReasons.empty_content = emptySupportingCount;
   const surfaceLimitCount = remaining.filter(

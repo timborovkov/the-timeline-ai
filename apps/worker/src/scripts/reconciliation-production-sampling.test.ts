@@ -93,6 +93,45 @@ describe('reconciliation production sampling script', () => {
     ).toThrow('require at least one --required-evidence-scenario');
   });
 
+  it('passes an explicitly supplied empty evidence-pack sample set', async () => {
+    const writeReport = vi.fn().mockResolvedValue({
+      path: '/tmp/report.json',
+      report: {
+        runKind: 'closed_beta',
+        manifestCount: 0,
+        sampleCount: 0,
+        passedCount: 0,
+        failedCount: 0,
+        passRate: null,
+        fixtureCandidateCount: 0,
+        confirmedFixtureCandidateCount: 0,
+        unconfirmedFixtureCandidateCount: 0,
+        evidencePackPromotion: { ready: false, blockerCodes: ['shadow_sample_floor'] },
+      },
+      loaded: { ignoredFiles: [] },
+    });
+    const setExitCode = vi.fn();
+
+    await runReconciliationProductionSamplingCli(
+      parseArgs([
+        '--input=/tmp/run',
+        '--out=/tmp/report.json',
+        '--fail-on-failures',
+        '--evidence-pack-samples=/tmp/empty-pack-samples.json',
+        '--required-evidence-scenario=generic_webhook',
+      ]),
+      {
+        writeReport,
+        loadEvidencePackSamples: vi.fn().mockResolvedValue([]),
+        write: () => undefined,
+        setExitCode,
+      },
+    );
+
+    expect(writeReport).toHaveBeenCalledWith(expect.objectContaining({ evidencePackSamples: [] }));
+    expect(setExitCode).toHaveBeenCalledWith(1);
+  });
+
   it('throws a typed usage error for invalid run kinds', () => {
     expect(() =>
       parseArgs(['--input=/tmp/run', '--out=/tmp/report.json', '--run-kind=nightly']),

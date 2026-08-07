@@ -3,7 +3,11 @@ import type { TeamScope } from '#src/team-scope.js';
 import { fenceExternalContent } from '#src/agent/external-content.js';
 import { searchAppGuide } from '#src/app-guide.js';
 import { artifactRefCitation, parseCitations } from '#src/citation.js';
-import { buildEvidencePack, type EvidencePackMetrics } from '#src/evidence-pack/index.js';
+import {
+  buildEvidencePack,
+  evidenceSourceContextForPrompt,
+  type EvidencePackMetrics,
+} from '#src/evidence-pack/index.js';
 import { type ObjectSummarySourceRef, sourceRefCitation } from '#src/objects/summaries.js';
 
 export type RetrievalRecipe =
@@ -209,6 +213,13 @@ export async function retrieveWorkspaceContext(
           source: item.source,
           role: item.role,
           occurredAt: item.occurredAt.toISOString(),
+          senderContext: evidenceSourceContextForPrompt(
+            item.source,
+            item.sourceMetadata,
+            item.authorUserId,
+            [],
+            item.rawEventId,
+          ),
           snippet:
             fenceExternalContent(item.contentText, {
               source: item.source,

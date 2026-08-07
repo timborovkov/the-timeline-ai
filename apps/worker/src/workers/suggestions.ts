@@ -275,7 +275,7 @@ function evidencePackPrompt(
     'For every proposed item, return evidenceRawEventIds with one or more exact raw event UUIDs from this pack. Cite only rows that directly support that item.',
     ...pack.items.map(
       (item) =>
-        `- [raw_event_id=${item.rawEventId} role=${item.role} surface=${JSON.stringify(item.surface)} occurred_at=${item.occurredAt.toISOString()}] sender_context=${sourceContextForPrompt(
+        `- [raw_event_id=${item.rawEventId} role=${item.role} surface=${JSON.stringify(item.surface)} occurred_at=${item.occurredAt.toISOString()}] sender_context=${evidencePacks.evidenceSourceContextForPrompt(
           item.source,
           item.sourceMetadata,
           item.authorUserId,
@@ -328,20 +328,6 @@ function evidenceForPackBundle(
   });
 }
 
-function metadataText(metadata: unknown, key: string): string | null {
-  const value = recordFromUnknown(metadata)[key];
-  if (typeof value !== 'string' && typeof value !== 'number') return null;
-  const text = String(value).trim();
-  return text.length > 0 ? text : null;
-}
-
-function metadataPerson(value: unknown): { name: string | null; email: string | null } {
-  const record = recordFromUnknown(value);
-  const name = typeof record.name === 'string' ? record.name.trim() || null : null;
-  const email = typeof record.email === 'string' ? record.email.trim() || null : null;
-  return { name, email };
-}
-
 function sourceContextForPrompt(
   source: string,
   sourceMetadata: unknown,
@@ -349,55 +335,12 @@ function sourceContextForPrompt(
   members: { userId: string; name: string | null; email: string | null }[],
   eventId: string,
 ): string {
-  const metadata = recordFromUnknown(sourceMetadata);
-  let senderName: string | null = null;
-  let senderHandle: string | null = null;
-  let conversationName: string | null = null;
-
-  if (source === 'telegram') {
-    senderName = metadataText(metadata, 'tg_sender_name');
-    const username = metadataText(metadata, 'tg_username');
-    senderHandle = username ? `@${username.replace(/^@/, '')}` : null;
-    conversationName =
-      metadataText(metadata, 'tg_chat_title') ?? metadataText(metadata, 'tg_chat_id');
-  } else if (source === 'slack') {
-    senderName = metadataText(metadata, 'slack_sender_name');
-    conversationName =
-      metadataText(metadata, 'slack_channel_name') ?? metadataText(metadata, 'slack_channel_id');
-  } else if (source === 'email') {
-    const forwarded = recordFromUnknown(metadata.forwarded_from);
-    const forwardedPerson = metadataPerson(forwarded.from ?? metadata.forwarded_from);
-    const directPerson = metadataPerson(metadata.from);
-    senderName =
-      forwardedPerson.name ??
-      forwardedPerson.email ??
-      directPerson.name ??
-      directPerson.email ??
-      metadataText(metadata, 'from_name') ??
-      metadataText(metadata, 'from_email') ??
-      metadataText(metadata, 'sender_email');
-    senderHandle =
-      forwardedPerson.email ??
-      directPerson.email ??
-      metadataText(metadata, 'from_email') ??
-      metadataText(metadata, 'sender_email');
-    conversationName = metadataText(metadata, 'subject');
-  }
-
-  const member = authorUserId
-    ? members.find((candidate) => candidate.userId === authorUserId)
-    : undefined;
-  return fenceExternalContent(
-    JSON.stringify({
-      source,
-      senderName,
-      senderHandle,
-      conversationName,
-      verifiedTimelineMemberId: member?.userId ?? null,
-      verifiedTimelineMemberName: member?.name ?? null,
-      verifiedTimelineMemberEmail: member?.email ?? null,
-    }),
-    { source: 'raw-event-source-context', eventId },
+  return evidencePacks.evidenceSourceContextForPrompt(
+    source,
+    sourceMetadata,
+    authorUserId,
+    members,
+    eventId,
   );
 }
 

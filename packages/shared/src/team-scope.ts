@@ -707,6 +707,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     maxRelatedEvidenceTotal?: number,
     uniqueCandidateLimit?: number,
     returnClustersById = false,
+    candidateLimitState?: { truncatedCount: number },
   ): Promise<Map<string, SearchEventArtifactCluster>> {
     if (accessibleEventIds.length === 0) return new Map();
 
@@ -755,53 +756,62 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     const clusterIds = [...new Set(associationEventClusterRows.map((row) => row.clusterId))];
     if (clusterIds.length === 0) return new Map();
 
-    const eligibleCandidateIds = uniqueCandidateLimit
-      ? (
-          await db
-            .select({ rawEventId: rawEvents.id })
-            .from(artifactEvidenceAssociations)
-            .innerJoin(
-              artifactClusters,
-              and(
-                eq(artifactClusters.id, artifactEvidenceAssociations.clusterId),
-                eq(artifactClusters.teamId, teamId),
-              ),
-            )
-            .innerJoin(
-              reconciliationEvidence,
-              and(
-                eq(reconciliationEvidence.id, artifactEvidenceAssociations.evidenceId),
-                eq(reconciliationEvidence.teamId, teamId),
-              ),
-            )
-            .leftJoin(
-              rawEvents,
-              and(eq(rawEvents.id, associationRawEventId), eq(rawEvents.teamId, teamId)),
-            )
-            .where(
-              and(
-                eq(artifactEvidenceAssociations.teamId, teamId),
-                inArray(artifactEvidenceAssociations.clusterId, clusterIds),
-                notInArray(rawEvents.id, accessibleEventIds),
-                ne(artifactEvidenceAssociations.associationSource, 'model_candidate'),
-                ne(artifactEvidenceAssociations.strength, 'semantic'),
-                isNull(artifactClusters.archivedAt),
-                associationVisibilityFilter,
-                visibilityFilter,
-                activeRawEventFilter,
-              ),
-            )
-            .groupBy(rawEvents.id)
-            .orderBy(
-              desc(
-                sql<number>`MAX(CASE WHEN ${artifactEvidenceAssociations.associationSource} = 'authoritative_provider' THEN 1 ELSE 0 END)`,
-              ),
-              desc(sql<Date>`MAX(${rawEvents.occurredAt})`),
-              asc(rawEvents.id),
-            )
-            .limit(uniqueCandidateLimit)
-        ).flatMap((row) => row.rawEventId ?? [])
+    const eligibleCandidateRows = uniqueCandidateLimit
+      ? await db
+          .select({
+            rawEventId: rawEvents.id,
+            totalCount: sql<number>`COUNT(*) OVER()`,
+          })
+          .from(artifactEvidenceAssociations)
+          .innerJoin(
+            artifactClusters,
+            and(
+              eq(artifactClusters.id, artifactEvidenceAssociations.clusterId),
+              eq(artifactClusters.teamId, teamId),
+            ),
+          )
+          .innerJoin(
+            reconciliationEvidence,
+            and(
+              eq(reconciliationEvidence.id, artifactEvidenceAssociations.evidenceId),
+              eq(reconciliationEvidence.teamId, teamId),
+            ),
+          )
+          .leftJoin(
+            rawEvents,
+            and(eq(rawEvents.id, associationRawEventId), eq(rawEvents.teamId, teamId)),
+          )
+          .where(
+            and(
+              eq(artifactEvidenceAssociations.teamId, teamId),
+              inArray(artifactEvidenceAssociations.clusterId, clusterIds),
+              notInArray(rawEvents.id, accessibleEventIds),
+              ne(artifactEvidenceAssociations.associationSource, 'model_candidate'),
+              ne(artifactEvidenceAssociations.strength, 'semantic'),
+              isNull(artifactClusters.archivedAt),
+              associationVisibilityFilter,
+              visibilityFilter,
+              activeRawEventFilter,
+            ),
+          )
+          .groupBy(rawEvents.id)
+          .orderBy(
+            desc(
+              sql<number>`MAX(CASE WHEN ${artifactEvidenceAssociations.associationSource} = 'authoritative_provider' THEN 1 ELSE 0 END)`,
+            ),
+            desc(sql<Date>`MAX(${rawEvents.occurredAt})`),
+            asc(rawEvents.id),
+          )
+          .limit(uniqueCandidateLimit)
       : null;
+    if (candidateLimitState) {
+      candidateLimitState.truncatedCount = Math.max(
+        0,
+        (eligibleCandidateRows?.[0]?.totalCount ?? 0) - (uniqueCandidateLimit ?? 0),
+      );
+    }
+    const eligibleCandidateIds =
+      eligibleCandidateRows?.flatMap((row) => row.rawEventId ?? []) ?? null;
 
     const associationClusterMemberQuery = db
       .select({
@@ -932,18 +942,26 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
   async function listEvidencePackArtifactClusters(
     rawEventIds: string[],
     maxCandidates = 500,
-  ): Promise<Record<string, SearchEventArtifactCluster>> {
+  ): Promise<{
+    clusters: Record<string, SearchEventArtifactCluster>;
+    truncatedCandidateCount: number;
+  }> {
     const ids = [...new Set(rawEventIds.filter((id) => UUID_RE.test(id)))];
-    if (ids.length === 0) return {};
+    if (ids.length === 0) return { clusters: {}, truncatedCandidateCount: 0 };
     const accessibleEvents = await getEventsByIdsImpl(ids);
+    const candidateLimitState = { truncatedCount: 0 };
     const clusterByEventId = await hydrateArtifactClustersForVisibleEventIds(
       accessibleEvents.map((event) => event.id),
       Math.min(Math.max(maxCandidates, 1), 500),
       undefined,
       Math.min(Math.max(maxCandidates, 1), 500),
       true,
+      candidateLimitState,
     );
-    return Object.fromEntries(clusterByEventId);
+    return {
+      clusters: Object.fromEntries(clusterByEventId),
+      truncatedCandidateCount: candidateLimitState.truncatedCount,
+    };
   }
 
   /**

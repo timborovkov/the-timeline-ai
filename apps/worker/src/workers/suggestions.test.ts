@@ -688,6 +688,55 @@ describe('processSuggestionJobForTests', () => {
     });
   });
 
+  it('rejects evidence tombstoned while enforced extraction is running', async () => {
+    const rawEventId = '99999999-6767-4676-8676-676767676767';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      source: 'ingest_webhook',
+      text: 'Owner committed to send the Acme proposal.',
+      sourceMetadata: { proposal_generation_enabled: true },
+    });
+    const chat = vi.fn().mockImplementation(async () => {
+      await db
+        .update(rawEvents)
+        .set({ sourceMetadata: { proposal_generation_enabled: true, deleted: true } })
+        .where(eq(rawEvents.id, rawEventId));
+      return {
+        model: MODEL_ID,
+        object: {
+          bundles: [
+            {
+              title: 'Send the Acme proposal',
+              confidence: 'high',
+              items: [
+                {
+                  operation: 'create',
+                  targetKind: 'task',
+                  title: 'Send the Acme proposal',
+                  proposedPayload: { canonicalName: 'Send the Acme proposal' },
+                  evidenceRawEventIds: [rawEventId],
+                },
+              ],
+            },
+          ],
+        },
+      };
+    });
+
+    await expect(
+      processSuggestionJobForTests(
+        { db: db as never },
+        { rawEventId, teamId: TEAM_ID },
+        {
+          getEnv: () => envWithEvidenceMode('enforced'),
+          chatStructured: chat,
+          modelId: MODEL_ID,
+        },
+      ),
+    ).rejects.toThrow('Suggestion evidence must reference visible events in this team');
+    await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 0, items: 0 });
+  });
+
   it('keeps non-webhook proposal adapters on legacy behavior when the global mode is enforced', async () => {
     const rawEventId = '99999999-6767-4767-8767-676767676767';
     await seedRawEvent(db as never, {

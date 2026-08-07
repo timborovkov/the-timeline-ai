@@ -310,8 +310,9 @@ primitives without semantic-only or transitive admission.
    semantic score.
 5. Stop after one relationship hop. Do not recursively traverse related
    artifacts or objects.
-6. Union and deduplicate candidates by raw-event ID before hydration and cap the
-   candidate set at 500.
+6. Union and deduplicate candidates by raw-event ID before hydration, cap the
+   candidate set at 500, and record the count beyond that cap as
+   `candidate_limit` telemetry.
 7. Avoid per-candidate queries by batching anchors, associations, and raw-event
    hydration.
 
@@ -345,10 +346,10 @@ transitive-path rejection, duplicate paths to one event, and candidate overflow.
 5. Preserve raw references while returning bounded content excerpts for prompt
    rendering. Record item and pack truncation reasons.
 6. Compute the fingerprint from normalized anchor/core IDs, selected ordered
-   IDs, model-visible content and occurrence time, policy and builder versions,
-   relationship reasons, and truncation state. This ensures a permitted
-   calendar refresh creates a new proposal revision even when its IDs are
-   unchanged.
+   IDs, the full normalized content fingerprint and occurrence time, policy and
+   builder versions, relationship reasons, and truncation state. This ensures a
+   permitted calendar refresh creates a new proposal revision even when its IDs
+   or bounded visible prefix are unchanged.
 7. Return metrics for candidate and selected counts, surfaces, relationship
    classes, token estimates, duration, and omissions without evidence text.
 
@@ -415,7 +416,9 @@ misleading actionable approval.
 
 1. Compare incoming and pending pack fingerprints before merging a suggestion.
 2. When the fingerprint changes, create a new revision and supersede the prior
-   items and reconciliation outputs with a pack-change reason.
+   items and reconciliation outputs with a pack-change reason in the same
+   transaction, leaving the prior approval actionable if replacement creation
+   rolls back.
 3. Do not describe append-only bundle evidence as the current selection.
 4. Revalidate every selected source reference on approval hydration and
    acceptance.
@@ -541,7 +544,9 @@ before enforcement.
    allowing `off`/`enforced` samples to dilute the rollout gates. Retain a
    content-free latency distribution in report health so historical and fresh
    samples produce true cumulative percentiles when merged. Omit pack health
-   and promotion state entirely when a report has no pack telemetry.
+   and promotion state entirely when a report has no pack telemetry. Derive
+   builder and policy version gates from shadow attempts only, while an
+   explicitly supplied empty sample export remains an assessed, failing input.
 6. Make the promotion report enforce evidence coverage, fixture success, shadow
    sample floor, zero-tolerance safety counters, p95 latency, and error rate.
    The production CLI ingests explicit redacted evidence-pack sample files and
