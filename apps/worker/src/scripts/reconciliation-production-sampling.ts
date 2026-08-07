@@ -25,8 +25,10 @@ import {
   type ProductionSamplingEvidencePackSample,
   type ProductionSamplingRunKind,
 } from '@timeline/shared/reconciliation/production-sampling';
+import { withTeam } from '@timeline/shared/team-scope';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 
 export interface Args {
   inputPaths: string[];
@@ -183,6 +185,10 @@ export async function runReconciliationProductionSamplingCli(
       'Persisting production sampling requires a database connection',
     );
   }
+  const reconciliationScope =
+    args.teamId && deps.db
+      ? withTeam(deps.db, args.teamId, ZERO_UUID, { skipMembershipCheck: true }).reconciliation
+      : null;
   const written = await writeReport({
     inputPaths: args.inputPaths,
     outputPath: args.outputPath,
@@ -192,7 +198,11 @@ export async function runReconciliationProductionSamplingCli(
     ...(args.requiredEvidencePackScenarioFamilies.length > 0
       ? { requiredEvidencePackScenarioFamilies: args.requiredEvidencePackScenarioFamilies }
       : {}),
-    ...(args.teamId && deps.db ? { teamId: args.teamId, db: deps.db } : {}),
+    ...(reconciliationScope
+      ? {
+          persistReport: (input) => reconciliationScope.recordProductionSamplingEvalReport(input),
+        }
+      : {}),
   });
 
   write(

@@ -94,6 +94,9 @@ Candidate discovery, hydration, ranking, model input, persistence, and display
 all use team- and viewer-scoped access. Qdrant filtering does not replace
 Postgres visibility hydration. The first proposal implementation accepts only
 team-visible evidence. Answer packs remain viewer-scoped.
+Private answer evidence preserves both users authorized by raw-event semantics
+when the explicit visibility owner differs from the event author; pack audience
+intersection must not discard a viewer who can read every selected row.
 
 The pack never grants write authority. It only supplies evidence. Timeline-owned
 inferred memory remains human-gated. Provider-owned lifecycle and field updates
@@ -162,6 +165,11 @@ proposal with deleted, tombstoned, or newly
 inaccessible required evidence is hidden because its derived fields may contain
 source details; any direct acceptance attempt supersedes it and requires a
 rebuild.
+Acceptance also revalidates that every row still supports the proposal's full
+projection audience, not only the accepting actor. Pack-backed application runs
+inside the same team-scoped transaction that locks those evidence rows, so a
+calendar refresh, tombstone, or visibility change cannot race between the final
+check and the durable workspace mutation.
 
 All source-controlled display fields rendered into model prompts, including
 surface labels derived from integration or ingest-webhook metadata, use the
@@ -212,6 +220,11 @@ population. An explicitly supplied empty telemetry export is still assessed
 and fails the shadow-population gates.
 Sampling reports retain a content-free latency distribution so merged reports
 recompute cumulative p50, p95, and p99 values instead of merging percentiles.
+They also retain stable content-free population fingerprints and reject report
+merges with overlapping population identities, preventing cumulative reports
+from double-counting historical attempts. Dashboard persistence goes through
+the named team reconciliation scope, including the CLI's explicit trusted
+internal-user path.
 Reports without evidence-pack telemetry omit pack health and promotion state.
 
 ## Consequences
@@ -235,6 +248,13 @@ canonical-URL shared-link associations from semantic model candidates to hard
 anchors and removes a legacy duplicate when the hard association already
 exists. The implementation does not require a durable pack lifecycle, a new
 model call, or private background proposals.
+
+Pack-backed acceptance commits the approval and its canonical mutation in the
+same transaction while the selected evidence rows remain locked. Application
+failure rolls that transaction back; a fresh compare-and-set transaction then
+records the item as retryable `failed` without overwriting a concurrent reviewer
+action. Embedding, indexing, and queue effects are collected during application
+and dispatched only after the database commit.
 
 Strict admission reduces recall compared with open semantic retrieval. This is
 intentional for durable proposals. Answer policies can use broader recall while

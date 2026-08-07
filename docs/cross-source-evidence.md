@@ -160,8 +160,13 @@ Cross-source proposal behavior is shipped for a source path only when:
 - visible-but-changed evidence blocks acceptance; inaccessible or tombstoned
   evidence hides the derived proposal and any direct acceptance attempt
   supersedes it;
-- proposal persistence locks and snapshot-validates every selected pack row,
-  and competing evidence revisions cannot leave two actionable replacements;
+- proposal persistence and acceptance lock and snapshot-validate every selected
+  pack row, revalidate the proposal's full audience, and hold those locks
+  through the team-scoped application transaction so competing evidence
+  revisions cannot leave two actionable replacements or race a durable write;
+- the canonical change and accepted approval commit atomically; an application
+  error rolls both back before a fresh transaction records a retryable failed
+  approval, while indexing and queue follow-ups run only after commit;
 - the enforced pack is reserved inside the prompt budget before optional source
   and workspace context;
 - deterministic, live, privacy, authority, quality, latency, and cost gates pass;
@@ -219,6 +224,8 @@ The first enforced source path must meet all of these gates:
   family represented
 - One builder version and one proposal-policy version across the qualifying
   population; a version change starts a fresh promotion window
+- Disjoint population fingerprints across cumulative sampling reports; an
+  overlapping report is rejected instead of double-counted
 - No additional embedding or generative-model request solely for proposal-pack
   ranking
 - At most 24 protected conversation-core events, 8 supporting events, 4

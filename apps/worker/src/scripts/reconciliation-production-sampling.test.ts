@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { WriteProductionSamplingEvalReportInput } from '@timeline/shared/reconciliation/production-sampling';
+
 import {
   parseArgs,
   ReconciliationProductionSamplingUsageError,
@@ -202,7 +204,7 @@ describe('reconciliation production sampling script', () => {
     });
   });
 
-  it('passes the database and team when dashboard ingestion is requested', async () => {
+  it('passes a team-scoped persistence callback when dashboard ingestion is requested', async () => {
     const writes: string[] = [];
     const db = {} as never;
     const writeReport = vi.fn().mockResolvedValue({
@@ -236,14 +238,16 @@ describe('reconciliation production sampling script', () => {
       },
     );
 
-    expect(writeReport).toHaveBeenCalledWith({
+    const reportInput = writeReport.mock.calls[0]?.[0] as
+      | WriteProductionSamplingEvalReportInput
+      | undefined;
+    expect(reportInput).toMatchObject({
       inputPaths: ['/tmp/run'],
       outputPath: '/tmp/report.json',
       runKind: 'post_deploy',
       confirmedFixtureCandidates: [],
-      teamId: '11111111-1111-4111-8111-111111111111',
-      db,
     });
+    expect(typeof reportInput?.persistReport).toBe('function');
     expect(JSON.parse(writes[0] ?? '{}')).toMatchObject({
       runId: 'production-sampling-run-1',
       failedCount: 0,

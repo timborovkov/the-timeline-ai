@@ -342,7 +342,7 @@ describe('suggestion scope', () => {
     );
   });
 
-  it('marks item evidence stale and supersedes it at acceptance after visibility narrows', async () => {
+  it('rejects a team approval when its evidence narrows to the accepting owner', async () => {
     await db.insert(rawEvents).values({
       id: TEAM_RAW_EVENT_ID,
       teamId: TEAM_ID,
@@ -375,10 +375,25 @@ describe('suggestion scope', () => {
       .set({ visibility: 'private', visibilityOwnerUserId: USER_ID })
       .where(eq(rawEvents.id, TEAM_RAW_EVENT_ID));
 
-    const reviewerScope = withTeam(db as never, TEAM_ID, REVIEWER_ID);
-    await expect(reviewerScope.suggestions.listPendingSuggestions()).resolves.toEqual([]);
-    await expect(reviewerScope.suggestions.getSuggestion(created.id)).resolves.toBeNull();
-    await reviewerScope.suggestions.acceptSuggestionItem(created.items[0]?.id ?? 'missing');
+    await expect(ownerScope.suggestions.listPendingSuggestions()).resolves.toEqual([]);
+    await expect(ownerScope.suggestions.getSuggestion(created.id)).resolves.toBeNull();
+    await expect(ownerScope.suggestions.getApprovalItemCounts()).resolves.toEqual({
+      pending: 0,
+      failed: 0,
+    });
+    await expect(
+      ownerScope.suggestions.reviseSuggestionItem({
+        itemId: created.items[0]?.id ?? 'missing',
+        feedback: 'Make the title shorter.',
+      }),
+    ).rejects.toThrow('Required source evidence no longer supports this approval audience.');
+    await expect(
+      ownerScope.suggestions.reviseTaskSuggestionItem({
+        itemId: created.items[0]?.id ?? 'missing',
+        project: { kind: 'none' },
+      }),
+    ).rejects.toThrow('Required source evidence no longer supports this approval audience.');
+    await ownerScope.suggestions.acceptSuggestionItem(created.items[0]?.id ?? 'missing');
     const [item] = await db
       .select({
         status: agentSuggestionItems.status,
@@ -388,7 +403,7 @@ describe('suggestion scope', () => {
       .where(eq(agentSuggestionItems.id, created.items[0]?.id ?? 'missing'));
     expect(item).toEqual({
       status: 'superseded',
-      reason: 'Required source evidence is no longer available to approve.',
+      reason: 'Required source evidence no longer supports this approval audience.',
     });
   });
 
@@ -555,6 +570,68 @@ describe('suggestion scope', () => {
       status: 'superseded',
       reason: 'Required source evidence changed after this suggestion was created.',
     });
+  });
+
+  it('holds mutable pack evidence stable through acceptance application', async () => {
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'calendar',
+      contentText: 'Customer review is August 12 at 10:00.',
+      occurredAt: new Date('2026-08-12T10:00:00.000Z'),
+      visibility: 'team',
+    });
+    const baseScope = withTeam(db as never, TEAM_ID, USER_ID);
+    const created = await baseScope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Prepare for the customer review',
+      dedupeKey: 'acceptance-calendar-race',
+      metadata: { evidence_pack_fingerprint: 'a'.repeat(64) },
+      evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare customer review notes',
+          dedupeKey: 'acceptance-calendar-race:item',
+          proposedPayload: { canonicalName: 'Prepare customer review notes' },
+          evidenceRawEventIds: [TEAM_RAW_EVENT_ID],
+        },
+      ],
+    });
+    const acceptingScope = withTeam(db as never, TEAM_ID, USER_ID, {
+      beforeSuggestionApply: async () => {
+        await db
+          .update(rawEvents)
+          .set({
+            contentText: 'Customer review moved to August 13 at 14:00.',
+            occurredAt: new Date('2026-08-13T14:00:00.000Z'),
+          })
+          .where(eq(rawEvents.id, TEAM_RAW_EVENT_ID));
+      },
+    });
+
+    await expect(
+      acceptingScope.suggestions.acceptSuggestionItem(created.items[0]?.id ?? 'missing'),
+    ).resolves.toBe(true);
+
+    const [item] = await db
+      .select({
+        status: agentSuggestionItems.status,
+        reason: agentSuggestionItems.supersededReason,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, created.items[0]?.id ?? 'missing'));
+    expect(item).toEqual({
+      status: 'superseded',
+      reason: 'Required source evidence changed after this suggestion was created.',
+    });
+    const createdTasks = await db
+      .select({ id: entities.id })
+      .from(entities)
+      .where(eq(entities.canonicalName, 'Prepare customer review notes'));
+    expect(createdTasks).toEqual([]);
   });
 
   it('rejects a proposal when evidence changes after its snapshot was built', async () => {
@@ -6392,11 +6469,22 @@ describe('suggestion scope', () => {
   });
 
   it('stores a readable failure reason for calendar creates missing a time range', async () => {
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: 'DFK pilot discussion needs to be scheduled.',
+      occurredAt: new Date('2026-08-01T10:00:00.000Z'),
+      visibility: 'team',
+    });
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
       source: 'background',
       title: 'DFK pilot discussion',
       dedupeKey: 'calendar-create-missing-range',
+      metadata: { evidence_pack_fingerprint: 'a'.repeat(64) },
+      evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }],
       items: [
         {
           operation: 'create',
@@ -6406,6 +6494,7 @@ describe('suggestion scope', () => {
           proposedPayload: {
             description: 'Proposed pilot discussion with DFK.',
           },
+          evidenceRawEventIds: [TEAM_RAW_EVENT_ID],
         },
       ],
     });
@@ -6429,6 +6518,30 @@ describe('suggestion scope', () => {
       failure_reason:
         'Calendar proposal is missing a start or end time. Reject it or revise the source details before accepting.',
     });
+
+    const eventsAfterFailure = await pg.query<{ count: string }>(
+      `SELECT count(*)::text FROM calendar_events WHERE team_id = '${TEAM_ID}' AND title = 'DFK pilot discussion'`,
+    );
+    expect(eventsAfterFailure.rows[0]?.count).toBe('0');
+
+    await db
+      .update(agentSuggestionItems)
+      .set({
+        proposedPayload: {
+          title: 'DFK pilot discussion',
+          start: '2026-08-14T10:00:00.000Z',
+          end: '2026-08-14T11:00:00.000Z',
+          visibility: 'team',
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(agentSuggestionItems.id, itemId ?? ''));
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+    const eventsAfterRetry = await pg.query<{ count: string }>(
+      `SELECT count(*)::text FROM calendar_events WHERE team_id = '${TEAM_ID}' AND title = 'DFK pilot discussion'`,
+    );
+    expect(eventsAfterRetry.rows[0]?.count).toBe('1');
   });
 
   it('treats blank optional object update fields as absent values', async () => {

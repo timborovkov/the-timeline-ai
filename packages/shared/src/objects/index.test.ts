@@ -1610,8 +1610,8 @@ describe('object scope — notes and suggestions', () => {
     expect(initialAssociationRows).toEqual([
       expect.objectContaining({
         role: 'related_context',
-        strength: 'semantic',
-        associationSource: 'model_candidate',
+        strength: 'hard',
+        associationSource: 'hard_anchor',
       }),
     ]);
     await db.insert(artifactClusterMembers).values({

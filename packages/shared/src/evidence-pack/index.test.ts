@@ -26,6 +26,7 @@ const SLACK_NEW_ID = '00000000-0000-0000-0000-000000000105';
 const SLACK_OLD_ID = '00000000-0000-0000-0000-000000000106';
 const CALENDAR_ID = '00000000-0000-0000-0000-000000000107';
 const EMPTY_SUPPORT_ID = '00000000-0000-0000-0000-000000000108';
+const SECOND_PRIVATE_ID = '00000000-0000-0000-0000-000000000109';
 const OTHER_TEAM_EVENT_ID = '00000000-0000-0000-0000-000000000201';
 
 describe('buildEvidencePack', () => {
@@ -149,6 +150,41 @@ describe('buildEvidencePack', () => {
     });
   });
 
+  it('preserves both the author and explicit owner in private evidence audiences', async () => {
+    const db = drizzle(pg);
+    await db
+      .update(rawEvents)
+      .set({ visibilityOwnerUserId: OTHER_USER_ID })
+      .where(eq(rawEvents.id, PRIVATE_ID));
+    await db.insert(rawEvents).values({
+      id: SECOND_PRIVATE_ID,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      visibilityOwnerUserId: USER_ID,
+      source: 'email',
+      contentText: 'A second private Acme note',
+      occurredAt: new Date('2026-08-01T12:00:00Z'),
+      visibility: 'private',
+      sourceMetadata: {},
+    });
+
+    const pack = await buildEvidencePack(withTeam(db as never, TEAM_ID, USER_ID), {
+      purpose: 'answer',
+      anchorRawEventIds: [PRIVATE_ID, SECOND_PRIVATE_ID],
+    });
+
+    expect(pack.items[0]?.visibility).toEqual({
+      visibility: 'specific_users',
+      visibilityOwnerUserId: null,
+      visibilityUserIds: [USER_ID, OTHER_USER_ID].sort(),
+    });
+    expect(pack.audience).toEqual({
+      visibility: 'private',
+      visibilityOwnerUserId: USER_ID,
+      visibilityUserIds: null,
+    });
+  });
+
   it('admits one-hop hard-linked evidence while excluding non-team supporting rows', async () => {
     const db = drizzle(pg);
     await reconcileArtifactEvidence(db as never, {
@@ -198,6 +234,61 @@ describe('buildEvidencePack', () => {
       ],
     });
     expect(pack.metrics.omissionReasons).toMatchObject({ visibility: 1 });
+  });
+
+  it('does not qualify supporting evidence through a semantic-only anchor association', async () => {
+    const db = drizzle(pg);
+    for (const rawEventId of [ANCHOR_ID, SUPPORT_ID]) {
+      await reconcileArtifactEvidence(db as never, {
+        teamId: TEAM_ID,
+        artifactType: 'project',
+        canonicalName: 'Acme launch',
+        status: 'active',
+        rawEventId,
+        role: 'discussion',
+        strength: 'hard',
+        anchors: [{ type: 'canonical_url', value: 'https://acme.test/launch', strength: 'hard' }],
+      });
+    }
+    await pg.exec(`
+      UPDATE artifact_evidence_associations
+      SET strength = 'semantic', association_source = 'model_candidate'
+      WHERE team_id = '${TEAM_ID}' AND raw_event_id = '${ANCHOR_ID}';
+    `);
+
+    const pack = await buildEvidencePack(withTeam(db as never, TEAM_ID, USER_ID), {
+      purpose: 'proposal',
+      anchorRawEventIds: [ANCHOR_ID],
+    });
+
+    expect(pack.items.map((item) => item.rawEventId)).toEqual([ANCHOR_ID]);
+  });
+
+  it('lets a private-event author discover hard-linked answer evidence when owner differs', async () => {
+    const db = drizzle(pg);
+    await db
+      .update(rawEvents)
+      .set({ visibilityOwnerUserId: OTHER_USER_ID })
+      .where(eq(rawEvents.id, PRIVATE_ID));
+    for (const rawEventId of [PRIVATE_ID, SUPPORT_ID]) {
+      await reconcileArtifactEvidence(db as never, {
+        teamId: TEAM_ID,
+        artifactType: 'project',
+        canonicalName: 'Private Acme launch',
+        status: 'active',
+        rawEventId,
+        role: 'discussion',
+        strength: 'hard',
+        anchors: [{ type: 'canonical_url', value: 'https://acme.test/private', strength: 'hard' }],
+      });
+    }
+
+    const pack = await buildEvidencePack(withTeam(db as never, TEAM_ID, USER_ID), {
+      purpose: 'answer',
+      anchorRawEventIds: [PRIVATE_ID],
+    });
+
+    expect(pack.items.map((item) => item.rawEventId)).toContain(SUPPORT_ID);
   });
 
   it('rejects model-candidate associations even when their stored strength is structured', async () => {

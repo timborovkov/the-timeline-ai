@@ -1,8 +1,6 @@
 import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { type Db, reconciliationRuns } from '@timeline/db';
-
 import type { LiveEvalArtifact, LiveEvalRunManifest } from '#src/reconciliation/live-artifacts.js';
 
 import { summarizeLiveEvalManifestCases } from '#src/reconciliation/live-artifact-manifest-summary.js';
@@ -51,6 +49,7 @@ export interface ProductionSamplingEvidencePackSample {
 }
 
 export interface ProductionSamplingEvidencePackHealth {
+  populationFingerprints?: string[];
   sampleCount: number;
   errorCount: number;
   errorRate: number | null;
@@ -108,8 +107,7 @@ export interface WriteProductionSamplingEvalReportInput extends Omit<
   inputPaths: string[];
   outputPath: string;
   generatedAt?: string;
-  db?: DbOrTx;
-  teamId?: string;
+  persistReport?: (input: RecordProductionSamplingEvalReportInput) => Promise<string>;
 }
 
 export interface WrittenProductionSamplingEvalReport {
@@ -170,17 +168,12 @@ export interface ProductionSamplingEvalReport {
 }
 
 export interface RecordProductionSamplingEvalReportInput {
-  db: DbOrTx;
-  teamId: string;
   report: ProductionSamplingEvalReport;
   outputPath?: string;
   ignoredFiles?: ProductionSamplingIgnoredArtifactFile[];
 }
 
-type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
-type DbOrTx = Db | DbTx;
-
-const PRODUCTION_SAMPLING_RUN_ENGINE_VERSION = 'production-sampling-report-v2';
+export const PRODUCTION_SAMPLING_RUN_ENGINE_VERSION = 'production-sampling-report-v2';
 
 interface ClassifiedSample {
   artifact: LiveEvalArtifact;
@@ -299,7 +292,17 @@ export function summarizeProductionSamplingEvidencePacks(
     errorReasons[reason] = (errorReasons[reason] ?? 0) + 1;
   }
   const shadowEligible = shadowAttempts.filter((sample) => sample.eligible ?? !sample.errorReason);
+  const sampleOccurrences = new Map<string, number>();
+  const populationFingerprints = shadowAttempts
+    .map((sample) => stableSha256Digest(sample))
+    .sort()
+    .map((sampleFingerprint) => {
+      const occurrence = sampleOccurrences.get(sampleFingerprint) ?? 0;
+      sampleOccurrences.set(sampleFingerprint, occurrence + 1);
+      return stableSha256Digest({ occurrence, sampleFingerprint });
+    });
   return {
+    populationFingerprints,
     sampleCount: shadowAttempts.length,
     errorCount: errors.length,
     errorRate: shadowAttempts.length > 0 ? errors.length / shadowAttempts.length : null,
@@ -529,16 +532,13 @@ export async function writeProductionSamplingEvalReport(
   const outputPath = path.resolve(input.outputPath);
   await mkdir(path.dirname(outputPath), { recursive: true });
   await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
-  const runId =
-    input.db && input.teamId
-      ? await recordProductionSamplingEvalReport({
-          db: input.db,
-          teamId: input.teamId,
-          report,
-          outputPath,
-          ignoredFiles: loaded.ignoredFiles,
-        })
-      : undefined;
+  const runId = input.persistReport
+    ? await input.persistReport({
+        report,
+        outputPath,
+        ignoredFiles: loaded.ignoredFiles,
+      })
+    : undefined;
 
   return {
     path: outputPath,
@@ -657,6 +657,20 @@ function mergeProductionSamplingEvalReports(
 function mergeEvidencePackHealth(
   health: readonly ProductionSamplingEvidencePackHealth[],
 ): ProductionSamplingEvidencePackHealth {
+  if (health.length > 1 && health.some((item) => !item.populationFingerprints)) {
+    throw new Error('Cannot merge evidence-pack health without population fingerprints');
+  }
+  const populationFingerprints: string[] = [];
+  const seenPopulations = new Set<string>();
+  for (const item of health) {
+    for (const fingerprint of item.populationFingerprints ?? []) {
+      if (seenPopulations.has(fingerprint)) {
+        throw new Error('Cannot merge overlapping evidence-pack health populations');
+      }
+      seenPopulations.add(fingerprint);
+      populationFingerprints.push(fingerprint);
+    }
+  }
   const sampleCount = health.reduce((total, item) => total + item.sampleCount, 0);
   const errorCount = health.reduce((total, item) => total + item.errorCount, 0);
   const errorReasons: Record<string, number> = {};
@@ -669,6 +683,7 @@ function mergeEvidencePackHealth(
     health.map((item) => item.latencyDistribution),
   );
   return {
+    populationFingerprints: populationFingerprints.sort(),
     sampleCount,
     errorCount,
     errorRate: sampleCount > 0 ? errorCount / sampleCount : null,
@@ -709,46 +724,6 @@ function mergeEvidencePackHealth(
     shadowTeamKeys: uniqueSorted(health.flatMap((item) => item.shadowTeamKeys)),
     scenarioFamilies: uniqueSorted(health.flatMap((item) => item.scenarioFamilies)),
   };
-}
-
-export async function recordProductionSamplingEvalReport(
-  input: RecordProductionSamplingEvalReportInput,
-): Promise<string> {
-  const now = new Date(input.report.generatedAt);
-  const completedAt = Number.isNaN(now.getTime()) ? new Date() : now;
-  const metrics = productionSamplingRunMetrics(input);
-  const [run] = await input.db
-    .insert(reconciliationRuns)
-    .values({
-      teamId: input.teamId,
-      trigger: 'eval',
-      scope: `production_sampling:${input.report.runKind}`,
-      status: 'completed',
-      inputFingerprint: productionSamplingRunFingerprint(input.teamId, input.report),
-      engineVersion: PRODUCTION_SAMPLING_RUN_ENGINE_VERSION,
-      modelVersions: input.report.modelVersions,
-      startedAt: completedAt,
-      completedAt,
-      metrics,
-    })
-    .onConflictDoUpdate({
-      target: [
-        reconciliationRuns.teamId,
-        reconciliationRuns.inputFingerprint,
-        reconciliationRuns.engineVersion,
-      ],
-      set: {
-        status: 'completed',
-        startedAt: completedAt,
-        completedAt,
-        errorCode: null,
-        modelVersions: input.report.modelVersions,
-        metrics,
-      },
-    })
-    .returning({ id: reconciliationRuns.id });
-  if (!run) throw new Error('Failed to record production sampling reconciliation run');
-  return run.id;
 }
 
 function classifySample(input: {
@@ -1084,7 +1059,7 @@ function sum<T>(items: T[], value: (item: T) => number): number {
   return items.reduce((total, item) => total + value(item), 0);
 }
 
-function productionSamplingRunMetrics(input: RecordProductionSamplingEvalReportInput) {
+export function productionSamplingRunMetrics(input: RecordProductionSamplingEvalReportInput) {
   const report = input.report;
   return {
     mode: 'production_sampling',
@@ -1110,7 +1085,7 @@ function productionSamplingRunMetrics(input: RecordProductionSamplingEvalReportI
   };
 }
 
-function productionSamplingRunFingerprint(
+export function productionSamplingRunFingerprint(
   teamId: string,
   report: ProductionSamplingEvalReport,
 ): string {
@@ -1312,6 +1287,10 @@ function isProductionSamplingEvidencePackHealth(
     Array.isArray(record.latencyDistribution) &&
     latencyDistribution.every(isProductionSamplingLatencyBucket) &&
     latencySampleCount === record.sampleCount &&
+    (record.populationFingerprints === undefined ||
+      (isStringArray(record.populationFingerprints) &&
+        record.populationFingerprints.length === record.sampleCount &&
+        new Set(record.populationFingerprints).size === record.populationFingerprints.length)) &&
     isStringArray(record.modes) &&
     isStringArray(record.versions) &&
     isStringArray(record.policyVersions) &&

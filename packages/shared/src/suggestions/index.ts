@@ -183,6 +183,18 @@ class ExpectedSuggestionApplyFailure extends Error {
   }
 }
 
+class TransactionalSuggestionApplyFailure extends Error {
+  constructor(
+    readonly claimedItem: typeof agentSuggestionItems.$inferSelect,
+    readonly preClaimUpdatedAt: Date,
+    readonly failureReason: string,
+    readonly applyError: unknown,
+  ) {
+    super(failureReason, { cause: applyError });
+    this.name = 'TransactionalSuggestionApplyFailure';
+  }
+}
+
 function errorCode(err: unknown): unknown {
   return err && typeof err === 'object' ? (err as { code?: unknown }).code : undefined;
 }
@@ -324,6 +336,13 @@ export interface SuggestionScopeDeps {
   chatStructured?: typeof defaultChatStructured;
   /** Test/instrumentation seam invoked after an acceptance is claimed but before it is applied. */
   beforeApplyItem?: (itemId: string) => Promise<void>;
+  acceptanceEvidenceLocked?: boolean;
+  createAcceptanceTransactionScope?: (
+    tx: DbTx,
+    postCommitEffects: (() => void | Promise<void>)[],
+  ) => {
+    acceptSuggestionItem: (itemId: string) => Promise<boolean>;
+  };
 }
 
 export interface SuggestionItemInput {
@@ -1722,6 +1741,35 @@ function rawEventVisibilityPredicate(teamId: string, userId: string) {
   return and(eq(rawEvents.teamId, teamId), rawEventVisibleToUser(userId));
 }
 
+function rawEventSupportsAudience(
+  event: {
+    visibility: 'team' | 'private' | 'specific_users';
+    authorUserId: string | null;
+    visibilityOwnerUserId: string | null;
+    visibilityUserIds: string[] | null;
+  },
+  audience: {
+    visibility: 'team' | 'private' | 'specific_users';
+    visibilityOwnerUserId: string | null;
+    visibilityUserIds: string[] | null;
+  },
+): boolean {
+  if (audience.visibility === 'team') return event.visibility === 'team';
+  const audienceUserIds =
+    audience.visibility === 'private'
+      ? audience.visibilityOwnerUserId
+        ? [audience.visibilityOwnerUserId]
+        : []
+      : (audience.visibilityUserIds ?? []);
+  if (audienceUserIds.length === 0) return false;
+  if (event.visibility === 'team') return true;
+  const eventUserIds =
+    event.visibility === 'private'
+      ? [event.authorUserId, event.visibilityOwnerUserId].filter((id): id is string => !!id)
+      : (event.visibilityUserIds ?? []);
+  return audienceUserIds.every((id) => eventUserIds.includes(id));
+}
+
 function reconciliationOutputVisibilityPredicate(teamId: string, userId: string) {
   const visibleEnvelope = or(
     eq(reconciliationOutputs.visibility, 'team'),
@@ -2915,6 +2963,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           contentText: rawEvents.contentText,
           source: rawEvents.source,
           sourceMetadata: rawEvents.sourceMetadata,
+          authorUserId: rawEvents.authorUserId,
+          visibility: rawEvents.visibility,
+          visibilityOwnerUserId: rawEvents.visibilityOwnerUserId,
+          visibilityUserIds: rawEvents.visibilityUserIds,
           senderTimelineName: users.name,
         })
         .from(agentSuggestionEvidence)
@@ -2989,9 +3041,20 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       const isPackBacked =
         typeof recordFromUnknown(row.metadata).evidence_pack_fingerprint === 'string';
       const persistedEvidenceIds = persistedEvidenceIdsBySuggestion.get(row.id) ?? [];
+      const packAudienceMismatch = isPackBacked
+        ? suggestionEvidence.some(
+            (event) =>
+              !rawEventSupportsAudience(event, {
+                visibility: row.visibility,
+                visibilityOwnerUserId: row.visibilityOwnerUserId,
+                visibilityUserIds: row.visibilityUserIds,
+              }),
+          )
+        : false;
       const hasUnavailableEvidence = isPackBacked
         ? persistedEvidenceIds.length === 0 ||
-          persistedEvidenceIds.some((id) => !visibleEvidenceIds.has(id))
+          persistedEvidenceIds.some((id) => !visibleEvidenceIds.has(id)) ||
+          packAudienceMismatch
         : suggestionItems.some((item) =>
             itemEvidenceRawEventIds(item.metadata).some((id) => !visibleEvidenceIds.has(id)),
           );
@@ -3694,12 +3757,18 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
   ): Promise<string | null> {
     if (item.status !== 'pending' && item.status !== 'failed') return null;
     const [parentSuggestion] = await db
-      .select({ metadata: agentSuggestions.metadata })
+      .select({
+        metadata: agentSuggestions.metadata,
+        visibility: agentSuggestions.visibility,
+        visibilityOwnerUserId: agentSuggestions.visibilityOwnerUserId,
+        visibilityUserIds: agentSuggestions.visibilityUserIds,
+      })
       .from(agentSuggestions)
       .where(and(eq(agentSuggestions.id, item.suggestionId), eq(agentSuggestions.teamId, teamId)))
       .limit(1);
     if (
-      typeof recordFromUnknown(parentSuggestion?.metadata).evidence_pack_fingerprint === 'string'
+      parentSuggestion &&
+      typeof recordFromUnknown(parentSuggestion.metadata).evidence_pack_fingerprint === 'string'
     ) {
       const storedPackEvidence = await db
         .select({
@@ -3714,28 +3783,47 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           ),
         );
       const storedPackEvidenceIds = storedPackEvidence.map((evidence) => evidence.rawEventId);
+      const packEvidenceQuery = db
+        .select({
+          id: rawEvents.id,
+          contentText: rawEvents.contentText,
+          occurredAt: rawEvents.occurredAt,
+          authorUserId: rawEvents.authorUserId,
+          visibility: rawEvents.visibility,
+          visibilityOwnerUserId: rawEvents.visibilityOwnerUserId,
+          visibilityUserIds: rawEvents.visibilityUserIds,
+        })
+        .from(rawEvents)
+        .where(
+          and(
+            inArray(rawEvents.id, storedPackEvidenceIds),
+            rawEventVisibilityPredicate(teamId, userId),
+            rawEventIsActive(),
+          ),
+        );
       const visiblePackEvidence =
-        storedPackEvidenceIds.length > 0
-          ? await db
-              .select({
-                id: rawEvents.id,
-                contentText: rawEvents.contentText,
-                occurredAt: rawEvents.occurredAt,
-              })
-              .from(rawEvents)
-              .where(
-                and(
-                  inArray(rawEvents.id, storedPackEvidenceIds),
-                  rawEventVisibilityPredicate(teamId, userId),
-                  rawEventIsActive(),
-                ),
-              )
-          : [];
+        storedPackEvidenceIds.length === 0
+          ? []
+          : deps.acceptanceEvidenceLocked
+            ? await packEvidenceQuery.for('update')
+            : await packEvidenceQuery;
       if (
         storedPackEvidenceIds.length === 0 ||
         visiblePackEvidence.length !== storedPackEvidenceIds.length
       ) {
         return 'Required source evidence is no longer available to approve.';
+      }
+      if (
+        visiblePackEvidence.some(
+          (event) =>
+            !rawEventSupportsAudience(event, {
+              visibility: parentSuggestion.visibility,
+              visibilityOwnerUserId: parentSuggestion.visibilityOwnerUserId,
+              visibilityUserIds: parentSuggestion.visibilityUserIds,
+            }),
+        )
+      ) {
+        return 'Required source evidence no longer supports this approval audience.';
       }
       const expectedFingerprints = new Map(
         storedPackEvidence.flatMap((evidence) => {
@@ -5287,6 +5375,31 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .limit(1);
     const row = rows[0];
     if (!row) return false;
+    const isPackBacked =
+      typeof recordFromUnknown(row.suggestion.metadata).evidence_pack_fingerprint === 'string';
+    const acceptanceTransactionScope = deps.createAcceptanceTransactionScope;
+    if (isPackBacked && !deps.acceptanceEvidenceLocked && acceptanceTransactionScope) {
+      await deps.beforeApplyItem?.(itemId);
+      try {
+        const postCommitEffects: (() => void | Promise<void>)[] = [];
+        const accepted = await db.transaction((tx) =>
+          acceptanceTransactionScope(tx, postCommitEffects).acceptSuggestionItem(itemId),
+        );
+        for (const effect of postCommitEffects) await effect();
+        return accepted;
+      } catch (error) {
+        if (!(error instanceof TransactionalSuggestionApplyFailure)) throw error;
+        const outcome = await recordRolledBackApplyFailure(error);
+        if (outcome === 'lost_race') return false;
+        if (outcome === 'superseded') return true;
+        if (isExpectedApplyFailure(error.applyError)) {
+          throw new ExpectedSuggestionApplyFailure(error.failureReason, {
+            cause: error.applyError,
+          });
+        }
+        throw error.applyError;
+      }
+    }
     const staleReason = await staleActionableItemReason(row.item);
     if (staleReason) {
       const superseded = await supersedeItem(itemId, null, staleReason);
@@ -5330,6 +5443,14 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       resultId = await applyItem(claimed);
     } catch (err) {
       const failureReason = suggestionApplyFailureReason(err);
+      if (deps.acceptanceEvidenceLocked) {
+        throw new TransactionalSuggestionApplyFailure(
+          claimed,
+          row.item.updatedAt,
+          failureReason,
+          err,
+        );
+      }
       const recordedFailure = await db.transaction(async (tx) => {
         const [failed] = await tx
           .update(agentSuggestionItems)
@@ -5408,6 +5529,55 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       op: 'accept',
     });
     return true;
+  }
+
+  async function recordRolledBackApplyFailure(
+    failure: TransactionalSuggestionApplyFailure,
+  ): Promise<'failed' | 'superseded' | 'lost_race'> {
+    const failed = await db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(agentSuggestionItems)
+        .set({
+          status: 'failed',
+          failureReason: failure.failureReason,
+          resolvedAt: null,
+          resolvedByUserId: null,
+          metadata: sql`${agentSuggestionItems.metadata} - ${ACCEPTANCE_ATTEMPT_METADATA_KEY} - ${ACCEPTANCE_STARTED_AT_METADATA_KEY}`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(agentSuggestionItems.id, failure.claimedItem.id),
+            eq(agentSuggestionItems.teamId, teamId),
+            isNull(agentSuggestionItems.resolvedAt),
+            inArray(agentSuggestionItems.status, ['pending', 'failed']),
+            eq(agentSuggestionItems.updatedAt, failure.preClaimUpdatedAt),
+          ),
+        )
+        .returning();
+      if (!updated) return null;
+      await writeProjectedOutputStatusForItem(tx, updated, 'failed', {
+        projection_failure_reason: failure.failureReason,
+      });
+      return updated;
+    });
+    if (!failed) return 'lost_race';
+    await refreshBundleStatus(failed.suggestionId, userId);
+    const staleReason = await staleActionableItemReason(failed);
+    if (staleReason && (await supersedeItem(failed.id, null, staleReason))) {
+      await reconcileStaleActionableItemsBestEffort({
+        suggestionItemId: failed.id,
+        suggestionId: failed.suggestionId,
+        op: 'accept_failure',
+      });
+      return 'superseded';
+    }
+    await reconcileStaleActionableItemsBestEffort({
+      suggestionItemId: failed.id,
+      suggestionId: failed.suggestionId,
+      op: 'accept_failure',
+    });
+    return 'failed';
   }
 
   async function acceptObjectMergeSuggestionItem(input: {
@@ -6329,6 +6499,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                   id: rawEvents.id,
                   contentText: rawEvents.contentText,
                   occurredAt: rawEvents.occurredAt,
+                  authorUserId: rawEvents.authorUserId,
+                  visibility: rawEvents.visibility,
+                  visibilityOwnerUserId: rawEvents.visibilityOwnerUserId,
+                  visibilityUserIds: rawEvents.visibilityUserIds,
                 })
                 .from(rawEvents)
                 .where(
@@ -6342,6 +6516,19 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             : [];
         if (evidenceVersionRows.length !== evidenceIds.length) {
           throw new Error('Suggestion evidence changed while the proposal was being generated');
+        }
+        if (
+          incomingEvidencePackFingerprint &&
+          evidenceVersionRows.some(
+            (event) =>
+              !rawEventSupportsAudience(event, {
+                visibility,
+                visibilityOwnerUserId,
+                visibilityUserIds: input.visibilityUserIds ?? null,
+              }),
+          )
+        ) {
+          throw new Error('Suggestion evidence no longer supports the proposal audience');
         }
         const evidenceFingerprintsById = Object.fromEntries(
           evidenceVersionRows.map((event) => {
@@ -6994,26 +7181,31 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     async getApprovalItemCounts(): Promise<ApprovalItemCounts> {
       await ensureMember();
       await recoverInterruptedTaskCreateAcceptances();
-      const rows = await db
-        .select({
-          pending: sql<number>`COUNT(*) FILTER (
-            WHERE ${agentSuggestionItems.status} = 'pending'
-              AND ${agentSuggestions.status} IN ('pending', 'partially_resolved')
-          )::int`,
-          failed: sql<number>`COUNT(*) FILTER (WHERE ${agentSuggestionItems.status} = 'failed')::int`,
-        })
-        .from(agentSuggestionItems)
-        .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+      const suggestionRows = await db
+        .select()
+        .from(agentSuggestions)
         .where(
           and(
-            eq(agentSuggestionItems.teamId, teamId),
             suggestionVisibilityPredicate(teamId, userId),
-            inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
+            or(pendingItemExistsPredicate(), failedItemExistsPredicate()),
           ),
         );
+      const visibleBundles = await hydrateBundles(suggestionRows);
       return {
-        pending: rows[0]?.pending ?? 0,
-        failed: rows[0]?.failed ?? 0,
+        pending: visibleBundles.reduce(
+          (count, bundle) =>
+            count +
+            bundle.items.filter(
+              (item) =>
+                item.status === 'pending' &&
+                (bundle.status === 'pending' || bundle.status === 'partially_resolved'),
+            ).length,
+          0,
+        ),
+        failed: visibleBundles.reduce(
+          (count, bundle) => count + bundle.items.filter((item) => item.status === 'failed').length,
+          0,
+        ),
       };
     },
 
@@ -7158,6 +7350,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           )
           .limit(1);
         if (!row || row.item.targetKind === 'object_merge') return null;
+        const staleReason = await staleActionableItemReason(row.item);
+        if (staleReason) throw new Error(staleReason);
 
         const bundle = await loadBundle(row.suggestion.id);
         const evidence = (bundle?.evidence ?? []).slice(0, 10).map((entry) => ({
@@ -7305,6 +7499,25 @@ ${JSON.stringify(evidence)}`,
         | { kind: 'create'; projectName: string };
     }): Promise<boolean> {
       await ensureMember();
+      const [preflight] = await db
+        .select({ item: agentSuggestionItems })
+        .from(agentSuggestionItems)
+        .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+        .where(
+          and(
+            eq(agentSuggestionItems.id, input.itemId),
+            eq(agentSuggestionItems.targetKind, 'task'),
+            eq(agentSuggestionItems.operation, 'create'),
+            inArray(agentSuggestionItems.status, ['pending', 'failed']),
+            isNull(agentSuggestionItems.resolvedAt),
+            suggestionVisibilityPredicate(teamId, userId),
+          ),
+        )
+        .limit(1);
+      if (!preflight) return false;
+      const staleReason = await staleActionableItemReason(preflight.item);
+      if (staleReason) throw new Error(staleReason);
+
       return db.transaction(async (tx) => {
         const [row] = await tx
           .select({ item: agentSuggestionItems })

@@ -515,6 +515,12 @@ export interface TeamScopeDeps {
   chatStructured?: typeof chatStructured;
   /** Test/instrumentation seam for pausing a claimed suggestion before application. */
   beforeSuggestionApply?: (itemId: string) => Promise<void>;
+  /** Internal marker for a suggestion acceptance running inside its evidence-lock transaction. */
+  suggestionAcceptanceEvidenceLocked?: boolean;
+  /** Internal collector for effects that must run only after an outer transaction commits. */
+  postCommitEffects?: (() => void | Promise<void>)[];
+  /** Root client used by deferred effects after a transaction-bound scope commits. */
+  postCommitDb?: Db;
   /**
    * Skip the team-membership check on first query. Set only by trusted
    * callers that have already authenticated the team boundary via some
@@ -534,6 +540,8 @@ export interface TeamScopeCore {
   requireMembership: (minRole?: TeamRole) => Promise<TeamRole>;
   requireTeamMember: (otherUserId: string) => Promise<void>;
   isTeamMember: (otherUserId: string) => Promise<boolean>;
+  postCommitEffects?: (() => void | Promise<void>)[];
+  postCommitDb?: Db;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -690,10 +698,16 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     visibilityUserIds:
       | typeof artifactEvidenceAssociations.visibilityUserIds
       | typeof artifactEvidenceAssociations.visibilityFloorUserIds;
+    authorUserId?: typeof rawEvents.authorUserId;
   }) {
     return or(
       eq(row.visibility, 'team'),
-      and(eq(row.visibility, 'private'), eq(row.visibilityOwnerUserId, userId)),
+      and(
+        eq(row.visibility, 'private'),
+        row.authorUserId
+          ? or(eq(row.visibilityOwnerUserId, userId), eq(row.authorUserId, userId))
+          : eq(row.visibilityOwnerUserId, userId),
+      ),
       and(
         eq(row.visibility, 'specific_users'),
         sql`COALESCE(${userId}::uuid = ANY(${row.visibilityUserIds}), false)`,
@@ -717,11 +731,13 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         visibility: artifactEvidenceAssociations.visibility,
         visibilityOwnerUserId: artifactEvidenceAssociations.visibilityOwnerUserId,
         visibilityUserIds: artifactEvidenceAssociations.visibilityUserIds,
+        authorUserId: rawEvents.authorUserId,
       }),
       visibilityEnvelopeVisibleToUser({
         visibility: artifactEvidenceAssociations.visibilityFloor,
         visibilityOwnerUserId: artifactEvidenceAssociations.visibilityFloorOwnerUserId,
         visibilityUserIds: artifactEvidenceAssociations.visibilityFloorUserIds,
+        authorUserId: rawEvents.authorUserId,
       }),
     );
 
@@ -745,10 +761,20 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           eq(artifactClusters.teamId, teamId),
         ),
       )
+      .leftJoin(
+        rawEvents,
+        and(eq(rawEvents.id, associationRawEventId), eq(rawEvents.teamId, teamId)),
+      )
       .where(
         and(
           eq(artifactEvidenceAssociations.teamId, teamId),
           inArray(associationRawEventId, accessibleEventIds),
+          ...(uniqueCandidateLimit
+            ? [
+                ne(artifactEvidenceAssociations.associationSource, 'model_candidate'),
+                ne(artifactEvidenceAssociations.strength, 'semantic'),
+              ]
+            : []),
           associationVisibilityFilter,
           isNull(artifactClusters.archivedAt),
         ),
@@ -1621,6 +1647,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     userId,
     ensureMember,
     requireTeamMember,
+    ...(deps.postCommitEffects ? { postCommitEffects: deps.postCommitEffects } : {}),
   });
 
   const auditScope = createAuditScope({
@@ -1650,6 +1677,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     requireMembership: ensureMember,
     requireTeamMember,
     isTeamMember,
+    ...(deps.postCommitEffects ? { postCommitEffects: deps.postCommitEffects } : {}),
+    ...(deps.postCommitDb ? { postCommitDb: deps.postCommitDb } : {}),
   };
 
   async function listEvents(
@@ -2640,6 +2669,16 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     calendar: calendarScope,
     ...(deps.chatStructured ? { chatStructured: deps.chatStructured } : {}),
     ...(deps.beforeSuggestionApply ? { beforeApplyItem: deps.beforeSuggestionApply } : {}),
+    acceptanceEvidenceLocked: deps.suggestionAcceptanceEvidenceLocked ?? false,
+    createAcceptanceTransactionScope: (tx, postCommitEffects) => {
+      const { beforeSuggestionApply: _beforeSuggestionApply, ...transactionDeps } = deps;
+      return withTeam(tx as unknown as Db, teamId, userId, {
+        ...transactionDeps,
+        suggestionAcceptanceEvidenceLocked: true,
+        postCommitEffects,
+        postCommitDb: deps.postCommitDb ?? db,
+      }).suggestions;
+    },
   });
   const pinScope = createPinScope({
     db,

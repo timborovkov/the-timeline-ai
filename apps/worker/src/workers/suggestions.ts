@@ -595,6 +595,26 @@ async function stampSuggestionMetadata(
     .where(eq(rawEvents.id, rawEventId));
 }
 
+async function stampEvidencePackFailure(
+  db: Db,
+  rawEventId: string,
+  mode: 'shadow' | 'enforced',
+  errorReason: 'prompt_budget' | 'citation_validation',
+  pack: evidencePacks.EvidencePack,
+): Promise<void> {
+  await stampSuggestionMetadata(db, rawEventId, {
+    cross_source_evidence_pack: {
+      mode,
+      status: 'failed',
+      error_reason: errorReason,
+      version: pack.version,
+      policy_version: pack.policyVersion,
+      fingerprint: pack.fingerprint,
+      metrics: pack.metrics,
+    },
+  });
+}
+
 async function ingestWebhookProposalsDisabled(db: Db, row: RawEventRow): Promise<boolean> {
   if (row.source !== 'ingest_webhook') return false;
   const metadata = (row.sourceMetadata ?? {}) as Record<string, unknown>;
@@ -2738,7 +2758,21 @@ async function runSuggestionExtraction(
   if (evidencePackEnforced && evidencePack) {
     promptParts.requiredEvidence = evidencePackPrompt(evidencePack, memberRows);
   }
-  const prompt = assembleSuggestionPrompt(promptParts, SUGGESTION_PROMPT_MAX_INPUT_TOKENS);
+  let prompt: string;
+  try {
+    prompt = assembleSuggestionPrompt(promptParts, SUGGESTION_PROMPT_MAX_INPUT_TOKENS);
+  } catch (error) {
+    if (evidencePackEnforced && evidencePack) {
+      await stampEvidencePackFailure(
+        deps.db,
+        rawEventId,
+        evidencePackMode,
+        'prompt_budget',
+        evidencePack,
+      );
+    }
+    throw error;
+  }
 
   const chatStructured = io.chatStructured ?? llm.chatStructured;
   const evidenceCitationSystem = evidencePackEnforced
@@ -2785,6 +2819,23 @@ async function runSuggestionExtraction(
       .map((project) => ({ id: project.id, name: project.name, aliases: project.aliases })),
     io,
   });
+  let enforcedEvidenceByBundle: suggestions.SuggestionEvidenceInput[][] | null = null;
+  if (evidencePackEnforced && evidencePack) {
+    try {
+      enforcedEvidenceByBundle = bundles.map((bundle) =>
+        evidenceForPackBundle(bundle, evidencePack),
+      );
+    } catch (error) {
+      await stampEvidencePackFailure(
+        deps.db,
+        rawEventId,
+        evidencePackMode,
+        'citation_validation',
+        evidencePack,
+      );
+      throw error;
+    }
+  }
   const objectTypeById = new Map(entityRows.map((entity) => [entity.id, entity.type]));
   const proposalSourceRefs = uniqueSourceRefs(
     args.conversation
@@ -2803,7 +2854,7 @@ async function runSuggestionExtraction(
     : null;
 
   let proposalsCreated = 0;
-  for (const bundle of bundles) {
+  for (const [bundleIndex, bundle] of bundles.entries()) {
     if (bundle.items.length === 0) continue;
     if (
       args.conversation &&
@@ -2818,14 +2869,13 @@ async function runSuggestionExtraction(
       items: args.conversation ? null : bundle.items,
     });
     const evidence =
-      evidencePackEnforced && evidencePack
-        ? evidenceForPackBundle(bundle, evidencePack)
-        : minimalEvidenceForBundle({
-            bundle,
-            fallbackRawEventId: rawEventId,
-            fallbackText: text,
-            window: args.conversation?.window ?? null,
-          });
+      enforcedEvidenceByBundle?.[bundleIndex] ??
+      minimalEvidenceForBundle({
+        bundle,
+        fallbackRawEventId: rawEventId,
+        fallbackText: text,
+        window: args.conversation?.window ?? null,
+      });
     const suggestion = await scope.suggestions.createOrMergeSuggestionBundle({
       source: 'background',
       title: bundle.title,

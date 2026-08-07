@@ -1299,95 +1299,97 @@ function TaskApprovalPayload({
           AI-proposed category; accepting applies it only if context still matches.
         </p>
       ) : null}
-      <details className="group border-l border-border pl-2">
-        <summary className="inline-flex cursor-pointer items-center gap-1 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim hover:text-fg">
-          <Pencil className="size-3" /> Edit proposal
-        </summary>
-        <div className="mt-2 grid gap-2">
-          {taskCategoriesEnabled ? (
+      {item.evidenceStatus !== 'stale' ? (
+        <details className="group border-l border-border pl-2">
+          <summary className="inline-flex cursor-pointer items-center gap-1 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim hover:text-fg">
+            <Pencil className="size-3" /> Edit proposal
+          </summary>
+          <div className="mt-2 grid gap-2">
+            {taskCategoriesEnabled ? (
+              <label className="grid gap-1 text-xs text-fg-muted">
+                Category
+                <select
+                  aria-label={`Category for ${item.title}`}
+                  value={
+                    categoryMode === 'manual' && category
+                      ? category
+                      : category
+                        ? 'suggested'
+                        : 'automatic'
+                  }
+                  disabled={saving}
+                  onChange={(event) => {
+                    revise({ category: event.currentTarget.value as TaskCategory | 'automatic' });
+                  }}
+                  className="h-8 rounded-sm border border-border bg-bg px-2 text-xs text-fg"
+                >
+                  {category && categoryMode !== 'manual' ? (
+                    <option value="suggested" disabled>
+                      AI suggestion — {taskCategoryLabel(category)}
+                    </option>
+                  ) : null}
+                  <option value="automatic">Automatic after accept</option>
+                  {TASK_CATEGORY_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             <label className="grid gap-1 text-xs text-fg-muted">
-              Category
-              <select
-                aria-label={`Category for ${item.title}`}
-                value={
-                  categoryMode === 'manual' && category
-                    ? category
-                    : category
-                      ? 'suggested'
-                      : 'automatic'
-                }
+              Find or name a project
+              <input
+                type="search"
+                value={query}
                 disabled={saving}
                 onChange={(event) => {
-                  revise({ category: event.currentTarget.value as TaskCategory | 'automatic' });
+                  setQuery(event.currentTarget.value);
                 }}
+                placeholder="Search projects or type a new name"
                 className="h-8 rounded-sm border border-border bg-bg px-2 text-xs text-fg"
-              >
-                {category && categoryMode !== 'manual' ? (
-                  <option value="suggested" disabled>
-                    AI suggestion — {taskCategoryLabel(category)}
-                  </option>
-                ) : null}
-                <option value="automatic">Automatic after accept</option>
-                {TASK_CATEGORY_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
-          ) : null}
-          <label className="grid gap-1 text-xs text-fg-muted">
-            Find or name a project
-            <input
-              type="search"
-              value={query}
-              disabled={saving}
-              onChange={(event) => {
-                setQuery(event.currentTarget.value);
-              }}
-              placeholder="Search projects or type a new name"
-              className="h-8 rounded-sm border border-border bg-bg px-2 text-xs text-fg"
-            />
-          </label>
-          {query.trim() ? (
-            <div className="flex flex-wrap gap-1">
-              {projects.map((project) => (
+            {query.trim() ? (
+              <div className="flex flex-wrap gap-1">
+                {projects.map((project) => (
+                  <button
+                    key={project.id}
+                    type="button"
+                    disabled={saving}
+                    onClick={() => {
+                      revise({ project: { kind: 'existing', projectId: project.id } });
+                    }}
+                    className="rounded-sm border border-border px-2 py-1 text-xs text-fg hover:border-signal"
+                  >
+                    Use {displayText(project.label)}
+                  </button>
+                ))}
                 <button
-                  key={project.id}
                   type="button"
                   disabled={saving}
                   onClick={() => {
-                    revise({ project: { kind: 'existing', projectId: project.id } });
+                    revise({ project: { kind: 'create', projectName: query.trim() } });
                   }}
                   className="rounded-sm border border-border px-2 py-1 text-xs text-fg hover:border-signal"
                 >
-                  Use {displayText(project.label)}
+                  Create “{displayText(query.trim())}”
                 </button>
-              ))}
-              <button
-                type="button"
-                disabled={saving}
-                onClick={() => {
-                  revise({ project: { kind: 'create', projectName: query.trim() } });
-                }}
-                className="rounded-sm border border-border px-2 py-1 text-xs text-fg hover:border-signal"
-              >
-                Create “{displayText(query.trim())}”
-              </button>
-            </div>
-          ) : null}
-          <button
-            type="button"
-            disabled={saving}
-            onClick={() => {
-              revise({ project: { kind: 'none' } });
-            }}
-            className="w-fit font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim hover:text-danger"
-          >
-            No project
-          </button>
-        </div>
-      </details>
+              </div>
+            ) : null}
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => {
+                revise({ project: { kind: 'none' } });
+              }}
+              className="w-fit font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim hover:text-danger"
+            >
+              No project
+            </button>
+          </div>
+        </details>
+      ) : null}
       {error ? <p className="text-xs text-danger">{error}</p> : null}
       {item.failureReason ? (
         <p className="text-xs text-danger">{displayText(item.failureReason)}</p>

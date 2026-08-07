@@ -434,6 +434,9 @@ misleading actionable approval.
    and compare its activity, viewer visibility, and snapshot fingerprint inside
    the write transaction. This includes selected supporting rows that no item
    cites directly.
+   At acceptance, hold those locks through the team-scoped application
+   transaction and require every row to continue supporting the proposal's full
+   projection audience, not merely the accepting actor.
 5. Supersede an item when required evidence is deleted, tombstoned, or no longer
    visible. Reuse the existing `superseded` state rather than adding a `stale`
    enum in the first implementation.
@@ -441,10 +444,17 @@ misleading actionable approval.
    longer visible to the viewer; its title and payload may contain source
    details that must not survive a visibility narrowing.
 7. Keep acceptance idempotent when revalidation races with a newer revision.
+8. Apply the canonical mutation and accepted approval in one transaction. If
+   application fails, roll that transaction back and record the retryable
+   failed approval through a compare-and-set in a fresh transaction so a
+   concurrent reviewer action is never overwritten.
+9. Collect embedding, indexing, and queue follow-ups during transactional
+   application and dispatch them only after commit.
 
 **Verification:** Tests cover unchanged rebuilds, changed fingerprints,
 supersession, tombstones, visibility narrowing, stale acceptance races, output
-dedupe, and bundle status refresh.
+dedupe, bundle status refresh, durable failed state after application rollback,
+successful corrected retry, and post-commit follow-up dispatch.
 
 ### Task 7: Integrate generic ingest webhooks behind rollout modes
 
@@ -559,13 +569,17 @@ before enforcement.
    and promotion state entirely when a report has no pack telemetry. Derive
    builder and policy version gates from shadow attempts only, while an
    explicitly supplied empty sample export remains an assessed, failing input.
+   Retain stable content-free population fingerprints and reject overlapping
+   cumulative health windows instead of summing the same attempts twice.
 6. Make the promotion report enforce evidence coverage, fixture success, shadow
    sample floor, zero-tolerance safety counters, p95 latency, and error rate.
    The production CLI ingests explicit redacted evidence-pack sample files and
    merges fresh summaries with any loaded historical report health. It requires
    repeatable scenario-family flags; it rejects sample assessment when
    the required-family policy is omitted and counts a seven-day gate only when
-   those UTC dates are consecutive.
+   those UTC dates are consecutive. Persist dashboard runs only through the
+   named team reconciliation scope with explicit trusted internal-user
+   semantics for the CLI.
 7. Document the operational rollback command and owner. Changing the mode
    requires a restart or redeploy.
 

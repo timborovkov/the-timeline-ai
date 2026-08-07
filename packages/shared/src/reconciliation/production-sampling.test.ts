@@ -23,9 +23,11 @@ import {
   summarizeProductionSamplingEvidencePacks,
   writeProductionSamplingEvalReport,
 } from '#src/reconciliation/production-sampling.js';
+import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
+const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 const BASE_CASE: DeterministicEvalCase = {
   name: 'customer-project-email-monday-sentry',
   scenarioFamily: 'customer_project',
@@ -551,6 +553,58 @@ describe('production reconciliation sampling report', () => {
       expect(written.report.evidencePackPromotion?.blockerCodes).not.toContain(
         'scenario_policy_missing',
       );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects overlapping cumulative evidence-pack health populations', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'timeline-overlapping-pack-health-'));
+    try {
+      const sharedSample = {
+        mode: 'shadow' as const,
+        version: 'evidence-pack-v1',
+        policyVersion: 'proposal-v1',
+        candidateCount: 2,
+        selectedCount: 2,
+        surfaceCount: 2,
+        estimatedTokens: 200,
+        buildDurationMs: 50,
+        truncated: false,
+        sampledAt: '2026-07-08T10:00:00.000Z',
+        teamKey: 'team-1',
+        scenarioFamily: 'generic_webhook',
+        eligible: true,
+      };
+      const firstReport = buildProductionSamplingEvalReport({
+        generatedAt: '2026-07-08T10:00:00.000Z',
+        manifests: [],
+        artifacts: [],
+        evidencePackSamples: [
+          sharedSample,
+          { ...sharedSample, sampledAt: '2026-07-08T11:00:00.000Z' },
+        ],
+      });
+      const overlappingReport = buildProductionSamplingEvalReport({
+        generatedAt: '2026-07-08T12:00:00.000Z',
+        manifests: [],
+        artifacts: [],
+        evidencePackSamples: [
+          sharedSample,
+          { ...sharedSample, sampledAt: '2026-07-08T12:00:00.000Z' },
+        ],
+      });
+      const firstPath = path.join(dir, 'first.json');
+      const overlappingPath = path.join(dir, 'overlapping.json');
+      await writeFile(firstPath, `${JSON.stringify(firstReport, null, 2)}\n`, 'utf8');
+      await writeFile(overlappingPath, `${JSON.stringify(overlappingReport, null, 2)}\n`, 'utf8');
+
+      await expect(
+        writeProductionSamplingEvalReport({
+          inputPaths: [firstPath, overlappingPath],
+          outputPath: path.join(dir, 'merged.json'),
+        }),
+      ).rejects.toThrow('overlapping evidence-pack health populations');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -1160,21 +1214,22 @@ describe('production reconciliation sampling report', () => {
       await writeFile(path.join(dir, 'ignored.json'), '{"schemaVersion":1}\n', 'utf8');
 
       const outputPath = path.join(dir, 'reports', 'production-sampling-report.json');
+      const reconciliationScope = withTeam(db as never, TEAM_ID, ZERO_UUID, {
+        skipMembershipCheck: true,
+      }).reconciliation;
       const written = await writeProductionSamplingEvalReport({
         inputPaths: [dir],
         outputPath,
         generatedAt: '2026-06-29T10:06:00.000Z',
         runKind: 'closed_beta',
-        db: db as never,
-        teamId: TEAM_ID,
+        persistReport: (input) => reconciliationScope.recordProductionSamplingEvalReport(input),
       });
       const secondWrite = await writeProductionSamplingEvalReport({
         inputPaths: [dir],
         outputPath,
         generatedAt: '2026-06-29T10:06:00.000Z',
         runKind: 'closed_beta',
-        db: db as never,
-        teamId: TEAM_ID,
+        persistReport: (input) => reconciliationScope.recordProductionSamplingEvalReport(input),
       });
 
       expect(secondWrite.runId).toBe(written.runId);

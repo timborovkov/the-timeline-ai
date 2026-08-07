@@ -105,6 +105,7 @@ export interface CalendarScopeDeps {
   userId: string;
   ensureMember: (role?: 'member' | 'admin' | 'owner') => Promise<unknown>;
   requireTeamMember: (otherUserId: string) => Promise<void>;
+  postCommitEffects?: (() => void | Promise<void>)[];
 }
 
 export interface CalendarEventRow {
@@ -378,6 +379,11 @@ async function tombstoneLinkedRawEventsForCalendarEventIds(
 
 export function createCalendarScope(deps: CalendarScopeDeps) {
   const { db, teamId, userId, ensureMember, requireTeamMember } = deps;
+
+  async function runOrDeferPostCommit(effect: () => void | Promise<void>): Promise<void> {
+    if (deps.postCommitEffects) deps.postCommitEffects.push(effect);
+    else await effect();
+  }
 
   // Read visibility: returns ALL private events (any user) so the
   // application layer can redact them to "Busy" blocks. Without this,
@@ -702,7 +708,9 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
       });
 
       if (created.visibility === 'team') {
-        await enqueueCalendarEventEmbeddings(teamId, [created.id, ...materializedIds]);
+        await runOrDeferPostCommit(() =>
+          enqueueCalendarEventEmbeddings(teamId, [created.id, ...materializedIds]),
+        );
       }
 
       return created;
@@ -1282,16 +1290,9 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
       const materializedIds = 'materializedIds' in result ? (result.materializedIds ?? []) : [];
       const deletedOccurrenceIds =
         'deletedOccurrenceIds' in result ? (result.deletedOccurrenceIds ?? []) : [];
-      if (result.qdrantAction === 'embed') {
-        await enqueueCalendarEventEmbeddings(teamId, [result.event.id, ...materializedIds]);
-      } else if (result.qdrantAction === 'delete') {
-        await deleteCalendarEventPointsForIds(teamId, [result.event.id, ...materializedIds]);
-      }
-      if (deletedOccurrenceIds.length > 0) {
-        await deleteCalendarEventPointsForIds(teamId, deletedOccurrenceIds);
-      }
+      let rematerialized: { materializedIds: string[]; deletedIds: string[] } | null = null;
       if ('rematerialize' in result && result.rematerialize) {
-        const rematerialized = await db.transaction(async (tx) => {
+        rematerialized = await db.transaction(async (tx) => {
           const rows = await tx
             .select()
             .from(calendarEvents)
@@ -1301,18 +1302,30 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           if (!parent) return { materializedIds: [], deletedIds: [] };
           return rematerializeParent(tx, parent);
         });
-        await deleteCalendarEventPointsForIds(teamId, rematerialized.deletedIds);
-        if (result.event.visibility === 'team') {
-          await enqueueCalendarEventEmbeddings(teamId, rematerialized.materializedIds);
-        }
       }
       const cancelledProposalEventIds =
         'cancelledProposalEventIds' in result ? (result.cancelledProposalEventIds ?? []) : [];
-      if (cancelledProposalEventIds.length > 0) {
-        await Promise.all(
-          cancelledProposalEventIds.map((eventId) => deleteCalendarEventPoints(teamId, eventId)),
-        );
-      }
+      await runOrDeferPostCommit(async () => {
+        if (result.qdrantAction === 'embed') {
+          await enqueueCalendarEventEmbeddings(teamId, [result.event.id, ...materializedIds]);
+        } else if (result.qdrantAction === 'delete') {
+          await deleteCalendarEventPointsForIds(teamId, [result.event.id, ...materializedIds]);
+        }
+        if (deletedOccurrenceIds.length > 0) {
+          await deleteCalendarEventPointsForIds(teamId, deletedOccurrenceIds);
+        }
+        if (rematerialized) {
+          await deleteCalendarEventPointsForIds(teamId, rematerialized.deletedIds);
+          if (result.event.visibility === 'team') {
+            await enqueueCalendarEventEmbeddings(teamId, rematerialized.materializedIds);
+          }
+        }
+        if (cancelledProposalEventIds.length > 0) {
+          await Promise.all(
+            cancelledProposalEventIds.map((eventId) => deleteCalendarEventPoints(teamId, eventId)),
+          );
+        }
+      });
 
       return { ...result.event, changedFields: result.changedFields };
     },
@@ -1560,7 +1573,9 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
       });
 
       if (deleted) {
-        await deleteCalendarEventPointsForIds(teamId, deleted.deletedEventIds);
+        await runOrDeferPostCommit(() =>
+          deleteCalendarEventPointsForIds(teamId, deleted.deletedEventIds),
+        );
       }
 
       return Boolean(deleted);

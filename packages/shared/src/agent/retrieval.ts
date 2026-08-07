@@ -209,7 +209,11 @@ export async function retrieveWorkspaceContext(
         items: pack.items.map((item) => ({
           rawEventId: item.rawEventId,
           citation: artifactRefCitation({ kind: 'timeline_event', id: item.rawEventId }),
-          surface: item.surface,
+          surface:
+            fenceExternalContent(item.surface, {
+              source: 'evidence-pack-surface',
+              eventId: item.rawEventId,
+            }) ?? '',
           source: item.source,
           role: item.role,
           occurredAt: item.occurredAt.toISOString(),

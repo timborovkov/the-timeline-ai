@@ -216,6 +216,38 @@ export function evidenceSurface(source: string, sourceMetadata: unknown): string
   return labels[source] ?? source;
 }
 
+function evidenceVisibility(event: {
+  visibility: VisibilityEnvelope['visibility'];
+  visibilityOwnerUserId: string | null;
+  visibilityUserIds: string[] | null;
+  authorUserId: string | null;
+}): VisibilityEnvelope {
+  if (event.visibility !== 'private') {
+    return {
+      visibility: event.visibility,
+      visibilityOwnerUserId: null,
+      visibilityUserIds: event.visibility === 'specific_users' ? event.visibilityUserIds : null,
+    };
+  }
+  const allowedUserIds = [
+    ...new Set(
+      [event.visibilityOwnerUserId, event.authorUserId].filter((id): id is string => !!id),
+    ),
+  ].sort();
+  if (allowedUserIds.length <= 1) {
+    return {
+      visibility: 'private',
+      visibilityOwnerUserId: allowedUserIds[0] ?? null,
+      visibilityUserIds: null,
+    };
+  }
+  return {
+    visibility: 'specific_users',
+    visibilityOwnerUserId: null,
+    visibilityUserIds: allowedUserIds,
+  };
+}
+
 function strengthRank(strength: string): number {
   return { human: 5, hard: 4, provider: 3, structured: 2, semantic: 0 }[strength] ?? 1;
 }
@@ -413,13 +445,7 @@ export async function buildEvidencePack(
                 ? ['authoritative_source']
                 : []),
             ],
-        visibility: {
-          visibility: event.visibility,
-          visibilityOwnerUserId:
-            event.visibilityOwnerUserId ??
-            (event.visibility === 'private' ? event.authorUserId : null),
-          visibilityUserIds: event.visibilityUserIds,
-        },
+        visibility: evidenceVisibility(event),
         truncated,
         truncationReason: truncated ? 'content_limit' : null,
       } satisfies EvidencePackItem,

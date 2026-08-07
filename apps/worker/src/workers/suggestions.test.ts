@@ -954,6 +954,19 @@ describe('processSuggestionJobForTests', () => {
       ),
     ).rejects.toThrow('must cite accessible raw event ids from the pack');
     await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 0, items: 0 });
+    const [event] = await db
+      .select({ sourceMetadata: rawEvents.sourceMetadata })
+      .from(rawEvents)
+      .where(eq(rawEvents.id, rawEventId));
+    expect(event?.sourceMetadata).toMatchObject({
+      cross_source_evidence_pack: {
+        mode: 'enforced',
+        status: 'failed',
+        error_reason: 'citation_validation',
+        version: 'evidence-pack-v1',
+        policy_version: 'proposal-v1',
+      },
+    });
   });
 
   it('creates deduped object cleanup merge and archive suggestions across manual and daily scans', async () => {

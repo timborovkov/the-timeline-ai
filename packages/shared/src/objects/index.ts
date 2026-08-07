@@ -255,6 +255,11 @@ function fireAndForgetEmbed(fn: () => Promise<void>, context: Record<string, unk
   });
 }
 
+function runOrDeferPostCommit(scope: TeamScopeCore, effect: () => void): void {
+  if (scope.postCommitEffects) scope.postCommitEffects.push(effect);
+  else effect();
+}
+
 function enqueueTaskCategoryBestEffort(
   data: embedQueue.TaskCategoryJobData,
   context: Record<string, unknown>,
@@ -4321,42 +4326,45 @@ export async function createObject(
   // separate connection) sees the row. Two points per object: the workspace
   // narrative ('object' scope) and the entity disambiguation text ('entity'
   // scope) — different retrieval modes share the row.
-  fireAndForgetEmbed(() => embedQueue.enqueueObjectEmbedJob(scope.teamId, txResult.object.id), {
-    teamId: scope.teamId,
-    objectId: txResult.object.id,
-    op: 'createObject',
-  });
-  fireAndForgetEmbed(() => embedQueue.enqueueEntityEmbedJob(scope.teamId, txResult.object.id), {
-    teamId: scope.teamId,
-    entityId: txResult.object.id,
-    op: 'createObject',
-  });
-  refreshObjectAndLinkedParentSummaries(db, scope, txResult.object, {
-    teamId: scope.teamId,
-    op: 'createObject',
-  });
-  fireAndForgetEmbed(() => afterDueDateCalendarSync(scope.teamId, txResult.dueDateCalendarSync), {
-    teamId: scope.teamId,
-    op: 'createObjectDueDateCalendar',
-  });
-  if (txResult.requestedCategoryHash) {
-    const inputHash = txResult.requestedCategoryHash;
-    fireAndForgetEmbed(
-      async () => {
-        await embedQueue.enqueueTaskCategoryJob({
+  runOrDeferPostCommit(scope, () => {
+    const effectsDb = scope.postCommitDb ?? db;
+    fireAndForgetEmbed(() => embedQueue.enqueueObjectEmbedJob(scope.teamId, txResult.object.id), {
+      teamId: scope.teamId,
+      objectId: txResult.object.id,
+      op: 'createObject',
+    });
+    fireAndForgetEmbed(() => embedQueue.enqueueEntityEmbedJob(scope.teamId, txResult.object.id), {
+      teamId: scope.teamId,
+      entityId: txResult.object.id,
+      op: 'createObject',
+    });
+    refreshObjectAndLinkedParentSummaries(effectsDb, scope, txResult.object, {
+      teamId: scope.teamId,
+      op: 'createObject',
+    });
+    fireAndForgetEmbed(() => afterDueDateCalendarSync(scope.teamId, txResult.dueDateCalendarSync), {
+      teamId: scope.teamId,
+      op: 'createObjectDueDateCalendar',
+    });
+    if (txResult.requestedCategoryHash) {
+      const inputHash = txResult.requestedCategoryHash;
+      fireAndForgetEmbed(
+        async () => {
+          await embedQueue.enqueueTaskCategoryJob({
+            teamId: scope.teamId,
+            taskId: txResult.object.id,
+            inputHash,
+            trigger: 'create',
+          });
+        },
+        {
           teamId: scope.teamId,
           taskId: txResult.object.id,
-          inputHash,
-          trigger: 'create',
-        });
-      },
-      {
-        teamId: scope.teamId,
-        taskId: txResult.object.id,
-        op: 'createObject:taskCategory',
-      },
-    );
-  }
+          op: 'createObject:taskCategory',
+        },
+      );
+    }
+  });
   return txResult.object;
 }
 
@@ -4797,6 +4805,7 @@ export async function updateObject(
   });
 
   const runPostCommitEffects = () => {
+    const effectsDb = scope.postCommitDb ?? db;
     // Re-embed object + entity on every update — the narrative text bakes in
     // status/stage/owner/etc., so any patch can shift the vector. Skip when
     // the patch was a no-op (no actual changes).
@@ -4826,7 +4835,7 @@ export async function updateObject(
           op: 'updateObject',
         });
       }
-      refreshObjectAndLinkedParentSummaries(db, scope, txResult.object, {
+      refreshObjectAndLinkedParentSummaries(effectsDb, scope, txResult.object, {
         teamId: scope.teamId,
         op: 'updateObject',
       });
@@ -4852,7 +4861,8 @@ export async function updateObject(
       'updateObject',
     );
   };
-  if (options?.postCommitEffects) options.postCommitEffects.push(runPostCommitEffects);
+  const postCommitEffects = options?.postCommitEffects ?? scope.postCommitEffects;
+  if (postCommitEffects) postCommitEffects.push(runPostCommitEffects);
   else runPostCommitEffects();
   return { object: txResult.object, changedFields: txResult.changedFields };
 }
@@ -5000,8 +5010,9 @@ export async function archiveSuggestionCreatedObjectIfUnadopted(
 ): Promise<'archived' | 'adopted' | 'missing'> {
   await scope.requireMembership();
   if (!UUID_RE.test(suggestionItemId)) throw new Error('Invalid suggestion item id');
-  const postCommitEffects = options?.postCommitEffects ?? [];
-  const runsOwnPostCommitEffects = options?.postCommitEffects === undefined;
+  const postCommitEffects = options?.postCommitEffects ?? scope.postCommitEffects ?? [];
+  const runsOwnPostCommitEffects =
+    options?.postCommitEffects === undefined && scope.postCommitEffects === undefined;
   const outcome = await (options?.transactionClient ?? db).transaction(async (tx) => {
     const [created] = await tx
       .select({
@@ -5054,7 +5065,7 @@ export async function archiveSuggestionCreatedObjectIfUnadopted(
     return 'archived' as const;
   });
   if (runsOwnPostCommitEffects) {
-    for (const effect of postCommitEffects) effect();
+    for (const effect of postCommitEffects) await effect();
   }
   return outcome;
 }
@@ -5800,14 +5811,17 @@ export async function addRelationship(
     return row;
   });
   if (result) {
-    for (const objectId of [endpoints.fromEntityId, endpoints.toEntityId]) {
-      void fireAndForgetObjectSummaryRefresh(db, scope, objectId, {
-        teamId: scope.teamId,
-        objectId,
-        relationshipId: result.id,
-        op: 'addRelationship',
-      });
-    }
+    runOrDeferPostCommit(scope, () => {
+      const effectsDb = scope.postCommitDb ?? db;
+      for (const objectId of [endpoints.fromEntityId, endpoints.toEntityId]) {
+        void fireAndForgetObjectSummaryRefresh(effectsDb, scope, objectId, {
+          teamId: scope.teamId,
+          objectId,
+          relationshipId: result.id,
+          op: 'addRelationship',
+        });
+      }
+    });
   }
   return result;
 }
@@ -6171,8 +6185,9 @@ export async function setTaskProject(
   });
 
   const runPostCommitEffects = () => {
+    const effectsDb = scope.postCommitDb ?? db;
     for (const objectId of new Set(result.touchedIds)) {
-      void fireAndForgetObjectSummaryRefresh(db, scope, objectId, {
+      void fireAndForgetObjectSummaryRefresh(effectsDb, scope, objectId, {
         teamId: scope.teamId,
         objectId,
         taskId,
@@ -6191,7 +6206,8 @@ export async function setTaskProject(
       );
     }
   };
-  if (options?.postCommitEffects) options.postCommitEffects.push(runPostCommitEffects);
+  const postCommitEffects = options?.postCommitEffects ?? scope.postCommitEffects;
+  if (postCommitEffects) postCommitEffects.push(runPostCommitEffects);
   else runPostCommitEffects();
   return { changed: result.changed, project: result.project, touchedIds: result.touchedIds };
 }
@@ -7331,16 +7347,19 @@ export async function createNote(
     return { id: noteId };
   });
 
-  fireAndForgetEmbed(() => embedQueue.enqueueObjectNoteEmbedJob(scope.teamId, result.id), {
-    teamId: scope.teamId,
-    noteId: result.id,
-    op: 'createNote',
-  });
-  void fireAndForgetObjectSummaryRefresh(db, scope, input.entityId, {
-    teamId: scope.teamId,
-    objectId: input.entityId,
-    noteId: result.id,
-    op: 'createNote',
+  runOrDeferPostCommit(scope, () => {
+    const effectsDb = scope.postCommitDb ?? db;
+    fireAndForgetEmbed(() => embedQueue.enqueueObjectNoteEmbedJob(scope.teamId, result.id), {
+      teamId: scope.teamId,
+      noteId: result.id,
+      op: 'createNote',
+    });
+    void fireAndForgetObjectSummaryRefresh(effectsDb, scope, input.entityId, {
+      teamId: scope.teamId,
+      objectId: input.entityId,
+      noteId: result.id,
+      op: 'createNote',
+    });
   });
   return result;
 }
@@ -7719,16 +7738,19 @@ export async function createIdentityFacet(
     return row;
   });
 
-  fireAndForgetEmbed(() => embedQueue.enqueueObjectEmbedJob(scope.teamId, input.entityId), {
-    teamId: scope.teamId,
-    entityId: input.entityId,
-    op: 'createIdentityFacet',
-  });
-  void fireAndForgetObjectSummaryRefresh(db, scope, input.entityId, {
-    teamId: scope.teamId,
-    objectId: input.entityId,
-    identityFacetId: result.id,
-    op: 'createIdentityFacet',
+  runOrDeferPostCommit(scope, () => {
+    const effectsDb = scope.postCommitDb ?? db;
+    fireAndForgetEmbed(() => embedQueue.enqueueObjectEmbedJob(scope.teamId, input.entityId), {
+      teamId: scope.teamId,
+      entityId: input.entityId,
+      op: 'createIdentityFacet',
+    });
+    void fireAndForgetObjectSummaryRefresh(effectsDb, scope, input.entityId, {
+      teamId: scope.teamId,
+      objectId: input.entityId,
+      identityFacetId: result.id,
+      op: 'createIdentityFacet',
+    });
   });
   return result;
 }
@@ -7848,16 +7870,19 @@ export async function updateNote(
   });
 
   if (updated?.changed) {
-    fireAndForgetEmbed(() => embedQueue.enqueueObjectNoteEmbedJob(scope.teamId, input.noteId), {
-      teamId: scope.teamId,
-      noteId: input.noteId,
-      op: 'updateNote',
-    });
-    void fireAndForgetObjectSummaryRefresh(db, scope, updated.entityId, {
-      teamId: scope.teamId,
-      objectId: updated.entityId,
-      noteId: input.noteId,
-      op: 'updateNote',
+    runOrDeferPostCommit(scope, () => {
+      const effectsDb = scope.postCommitDb ?? db;
+      fireAndForgetEmbed(() => embedQueue.enqueueObjectNoteEmbedJob(scope.teamId, input.noteId), {
+        teamId: scope.teamId,
+        noteId: input.noteId,
+        op: 'updateNote',
+      });
+      void fireAndForgetObjectSummaryRefresh(effectsDb, scope, updated.entityId, {
+        teamId: scope.teamId,
+        objectId: updated.entityId,
+        noteId: input.noteId,
+        op: 'updateNote',
+      });
     });
   }
   return Boolean(updated);
