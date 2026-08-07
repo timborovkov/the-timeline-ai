@@ -2,8 +2,8 @@ name: Publish document-extract Daytona snapshot
 
 # When sandbox scripts/deps (or the Image recipe module) change, ensure a
 # content-hashed snapshot exists in Daytona. Railway uses
-# DAYTONA_SNAPSHOT=auto to resolve the matching hash, and this workflow keeps
-# that hash plus two rollback snapshots. See docs/adr/0013-daytona-document-extract.md.
+# DAYTONA_SNAPSHOT=auto to resolve the matching hash. Destructive retention is
+# manual and requires all deployed hashes. See docs/adr/0013-daytona-document-extract.md.
 
 on:
   push:
@@ -15,6 +15,11 @@ on:
       - 'apps/worker/scripts/cleanup-document-extract-snapshots.ts'
       - '.github/workflows/publish-document-extract-snapshot.yml'
   workflow_dispatch:
+    inputs:
+      deployed_snapshots:
+        description: 'Comma-separated snapshots used by every deployed production/staging extractor; blank skips cleanup'
+        required: false
+        type: string
 
 concurrency:
   group: document-extract-daytona-snapshot
@@ -72,12 +77,14 @@ jobs:
           fi
           pnpm --filter @timeline/worker create-document-extract-snapshot
 
-      - name: Retain current and two rollback snapshots
+      - name: Retain deployed, current, and rollback snapshots
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.deployed_snapshots != '' }}
         env:
           DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
           DAYTONA_API_URL: ${{ vars.DAYTONA_API_URL }}
           DAYTONA_TARGET: ${{ vars.DAYTONA_TARGET }}
           DAYTONA_SNAPSHOT: auto
+          DAYTONA_ACTIVE_SNAPSHOTS: ${{ inputs.deployed_snapshots }}
         run: pnpm --filter @timeline/worker cleanup-document-extract-snapshots -- --retain=3
 
       - name: Summarize
@@ -91,4 +98,6 @@ jobs:
             echo "\`\`\`"
             echo "DAYTONA_SNAPSHOT=${{ steps.name.outputs.snapshot_name }}"
             echo "\`\`\`"
+            echo ""
+            echo "Retention runs only for a manual dispatch that supplies every deployed snapshot hash."
           } >> "$GITHUB_STEP_SUMMARY"

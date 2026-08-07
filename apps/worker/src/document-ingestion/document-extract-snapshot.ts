@@ -251,16 +251,24 @@ export async function ensureDocumentExtractSnapshot(options?: {
   return { name: snapshotName, created: true, contentHash };
 }
 
-/** Delete unused old content-hashed snapshots while preserving a rollback window. */
+/** Delete old content-hashed snapshots while preserving deployed hashes and a rollback window. */
 export async function pruneDocumentExtractSnapshots(options: {
   currentName: string;
+  deployedSnapshotNames: string[];
   retain: number;
   daytona: Daytona;
 }): Promise<PruneDocumentExtractSnapshotsResult> {
-  const { currentName, retain, daytona } = options;
+  const { currentName, deployedSnapshotNames, retain, daytona } = options;
   const hashedNamePattern = new RegExp(`^${DOCUMENT_EXTRACT_SNAPSHOT_PREFIX}-[a-f0-9]{12}$`);
   if (!hashedNamePattern.test(currentName)) {
     throw new Error(`refusing to prune with non-hashed current snapshot: ${currentName}`);
+  }
+  if (deployedSnapshotNames.length === 0) {
+    throw new Error('at least one deployed snapshot is required before pruning');
+  }
+  const invalidDeployedName = deployedSnapshotNames.find((name) => !hashedNamePattern.test(name));
+  if (invalidDeployedName) {
+    throw new Error(`refusing to prune with non-hashed deployed snapshot: ${invalidDeployedName}`);
   }
   if (!Number.isInteger(retain) || retain < 1) {
     throw new Error('snapshot retention must be a positive integer');
@@ -285,11 +293,17 @@ export async function pruneDocumentExtractSnapshots(options: {
   if (!hashedSnapshots.some((snapshot) => snapshot.name === currentName)) {
     throw new Error(`current snapshot was not returned by Daytona: ${currentName}`);
   }
+  const availableNames = new Set(hashedSnapshots.map((snapshot) => snapshot.name));
+  const missingDeployedName = deployedSnapshotNames.find((name) => !availableNames.has(name));
+  if (missingDeployedName) {
+    throw new Error(`deployed snapshot was not returned by Daytona: ${missingDeployedName}`);
+  }
   const protectedNames = new Set([currentName]);
   for (const snapshot of hashedSnapshots) {
     if (protectedNames.size >= retain) break;
     protectedNames.add(snapshot.name);
   }
+  for (const deployedName of deployedSnapshotNames) protectedNames.add(deployedName);
 
   const deleted: string[] = [];
   const skippedInUse: string[] = [];

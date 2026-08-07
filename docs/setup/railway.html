@@ -91,9 +91,15 @@
         <code>REDIS_URL</code>, and S3 document-bucket variables. Set
         <code>DAYTONA_SNAPSHOT=auto</code> so each deployed extractor resolves its matching content
         hash. <code>DAYTONA_SNAPSHOT_ENSURE=true</code> (default) create-once if missing; it does
-        not rebuild every restart. Snapshot publish CI retains the current hash plus two rollback
-        hashes and deletes an older hash only when no Daytona sandbox references it. Do
-        <strong>not</strong> set <code>SECRETS_ENCRYPTION_KEY</code>, Auth secrets, or
+        not rebuild every restart. Push CI never deletes snapshots: idle deployed extractors have no
+        persistent Daytona sandbox to reveal the hash they still need. For manual cleanup, pass
+        every production/staging deployed hash as the workflow's
+        <code>deployed_snapshots</code> input (or <code>DAYTONA_ACTIVE_SNAPSHOTS</code> locally).
+        Collect each hash from that environment's successful orchestrator startup log entry (<code
+          >document-extract Daytona snapshot ensured</code
+        >) before dispatching cleanup. Cleanup keeps those hashes plus the current and two rollback
+        hashes, and skips any snapshot referenced by a sandbox. Do <strong>not</strong> set
+        <code>DAYTONA_ACTIVE_SNAPSHOTS</code>, <code>SECRETS_ENCRYPTION_KEY</code>, Auth secrets, or
         Telegram/Slack/integration OAuth tokens on <code>document-extract-orchestrator</code>. On
         the main <code>worker</code>, set <code>DOCUMENT_EXTRACT_ENABLED=false</code> so only
         <code>document-extract-orchestrator</code> consumes that queue. Local/CI ensure:

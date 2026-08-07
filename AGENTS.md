@@ -150,6 +150,14 @@ Treat this file as an operating contract for agents, not a loose README.
   identifier/count report; the command must never delete captured raw events.
   Apply-mode backfill and webhook follow-ups are durable: rerun the same apply
   command to resume any failed step without repeating one already completed.
+- **Daytona snapshot cleanup requires deployed-hash protection.** Run
+  `pnpm --filter @timeline/worker cleanup-document-extract-snapshots -- --retain=3`
+  only with `DAYTONA_ACTIVE_SNAPSHOTS` listing every snapshot used by a deployed
+  production or staging extractor. Cleanup retains those deployed hashes plus
+  the current and two rollback hashes, skips sandbox-referenced snapshots, and
+  must fail closed when the deployed inventory is missing or stale. Push CI may
+  ensure snapshots, but must not delete them without that external deployment
+  inventory.
 - **Use the repo's canonical import paths.** In `apps/web/src`, use the `@/`
   alias for source imports and exports instead of relative paths (`../`,
   `./foo`). The only expected relative side-effect import there is local CSS,

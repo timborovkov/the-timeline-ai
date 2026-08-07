@@ -221,6 +221,7 @@ describe('pruneDocumentExtractSnapshots', () => {
 
     const result = await pruneDocumentExtractSnapshots({
       currentName,
+      deployedSnapshotNames: [currentName],
       retain: 3,
       daytona: daytona as never,
     });
@@ -262,10 +263,92 @@ describe('pruneDocumentExtractSnapshots', () => {
     await expect(
       pruneDocumentExtractSnapshots({
         currentName: `${DOCUMENT_EXTRACT_SNAPSHOT_PREFIX}-aaaaaaaaaaaa`,
+        deployedSnapshotNames: [`${DOCUMENT_EXTRACT_SNAPSHOT_PREFIX}-aaaaaaaaaaaa`],
         retain: 3,
         daytona: daytona as never,
       }),
     ).rejects.toThrow('current snapshot was not returned by Daytona');
     expect(deleteFn).not.toHaveBeenCalled();
+  });
+
+  it('fails closed without a deployed snapshot inventory', async () => {
+    const deleteFn = vi.fn();
+    const daytona = {
+      snapshot: { list: vi.fn(), delete: deleteFn },
+      list: vi.fn(),
+    };
+
+    await expect(
+      pruneDocumentExtractSnapshots({
+        currentName: `${DOCUMENT_EXTRACT_SNAPSHOT_PREFIX}-aaaaaaaaaaaa`,
+        deployedSnapshotNames: [],
+        retain: 3,
+        daytona: daytona as never,
+      }),
+    ).rejects.toThrow('at least one deployed snapshot is required');
+    expect(daytona.snapshot.list).not.toHaveBeenCalled();
+    expect(deleteFn).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when a declared deployed snapshot is absent', async () => {
+    const currentName = `${DOCUMENT_EXTRACT_SNAPSHOT_PREFIX}-aaaaaaaaaaaa`;
+    const missingName = `${DOCUMENT_EXTRACT_SNAPSHOT_PREFIX}-bbbbbbbbbbbb`;
+    const deleteFn = vi.fn();
+    const daytona = {
+      snapshot: {
+        list: vi.fn().mockResolvedValue({
+          items: [{ name: currentName, createdAt: '2026-08-05' }],
+          page: 1,
+          totalPages: 1,
+        }),
+        delete: deleteFn,
+      },
+      list: vi.fn(),
+    };
+
+    await expect(
+      pruneDocumentExtractSnapshots({
+        currentName,
+        deployedSnapshotNames: [missingName],
+        retain: 3,
+        daytona: daytona as never,
+      }),
+    ).rejects.toThrow(`deployed snapshot was not returned by Daytona: ${missingName}`);
+    expect(deleteFn).not.toHaveBeenCalled();
+  });
+
+  it('preserves every deployed snapshot even when it is older than the rollback window', async () => {
+    const currentName = `${DOCUMENT_EXTRACT_SNAPSHOT_PREFIX}-aaaaaaaaaaaa`;
+    const deployedName = `${DOCUMENT_EXTRACT_SNAPSHOT_PREFIX}-dddddddddddd`;
+    const staleName = `${DOCUMENT_EXTRACT_SNAPSHOT_PREFIX}-eeeeeeeeeeee`;
+    const snapshots = [
+      { name: currentName, createdAt: '2026-08-05' },
+      { name: `${DOCUMENT_EXTRACT_SNAPSHOT_PREFIX}-bbbbbbbbbbbb`, createdAt: '2026-08-04' },
+      { name: `${DOCUMENT_EXTRACT_SNAPSHOT_PREFIX}-cccccccccccc`, createdAt: '2026-08-03' },
+      { name: deployedName, createdAt: '2026-08-02' },
+      { name: staleName, createdAt: '2026-08-01' },
+    ];
+    const deleteFn = vi.fn();
+    const daytona = {
+      snapshot: {
+        list: vi.fn().mockResolvedValue({ items: snapshots, page: 1, totalPages: 1 }),
+        delete: deleteFn,
+      },
+      list: vi.fn().mockImplementation(async function* () {
+        await Promise.resolve();
+      }),
+    };
+
+    const result = await pruneDocumentExtractSnapshots({
+      currentName,
+      deployedSnapshotNames: [deployedName],
+      retain: 3,
+      daytona: daytona as never,
+    });
+
+    expect(result.kept).toContain(deployedName);
+    expect(result.deleted).toEqual([staleName]);
+    expect(deleteFn).toHaveBeenCalledOnce();
+    expect(deleteFn).toHaveBeenCalledWith(snapshots[4]);
   });
 });

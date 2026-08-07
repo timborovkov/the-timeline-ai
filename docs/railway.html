@@ -147,9 +147,18 @@
         <code>document-extract-sandbox/</code> for each deployed revision. Do
         <strong>not</strong> set <code>SECRETS_ENCRYPTION_KEY</code>, Auth secrets, or
         Telegram/Slack/integration OAuth tokens on <code>document-extract-orchestrator</code>.
-        Snapshot lifecycle (CI ensure, current + two rollback hashes retained, sandbox-aware
-        pruning, and optional boot create-once): ADR 0013 and
+        Snapshot lifecycle (CI ensure, manual deployed-hash-aware retention, sandbox-aware pruning,
+        and optional boot create-once): ADR 0013 and
         <code>pnpm --filter @timeline/worker create-document-extract-snapshot</code>.
+      </p>
+      <p>
+        Push CI never prunes snapshots because an idle deployed extractor has no persistent Daytona
+        sandbox reference. Use the snapshot workflow's manual <code>deployed_snapshots</code> input
+        only after collecting the active hash from every production/staging extractor's successful
+        <code>document-extract Daytona snapshot ensured</code> startup log. The cleanup keeps those
+        deployed hashes plus the current and two rollback hashes and fails closed when the inventory
+        is absent or stale. Do not set <code>DAYTONA_ACTIVE_SNAPSHOTS</code> as a Railway service
+        variable; it is a maintenance-command input only.
       </p>
       <p>
         Extract startup checks the raw environment against a strict credential-thin allowlist.
