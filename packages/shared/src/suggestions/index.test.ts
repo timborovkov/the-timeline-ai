@@ -202,8 +202,11 @@ describe('suggestion scope', () => {
 
     const first = await create('a'.repeat(64));
     const second = await create('b'.repeat(64));
+    const third = await create('a'.repeat(64));
+    const fourth = await create('b'.repeat(64));
 
     expect(second.id).not.toBe(first.id);
+    expect(new Set([first.id, second.id, third.id, fourth.id]).size).toBe(4);
     const rows = await db
       .select({
         status: agentSuggestionItems.status,
@@ -212,6 +215,8 @@ describe('suggestion scope', () => {
       .from(agentSuggestionItems)
       .orderBy(asc(agentSuggestionItems.createdAt));
     expect(rows).toEqual([
+      { status: 'superseded', supersededReason: 'The selected source evidence changed.' },
+      { status: 'superseded', supersededReason: 'The selected source evidence changed.' },
       { status: 'superseded', supersededReason: 'The selected source evidence changed.' },
       { status: 'pending', supersededReason: null },
     ]);

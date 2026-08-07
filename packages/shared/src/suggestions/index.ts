@@ -6204,8 +6204,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         const fingerprint = recordFromUnknown(candidate.metadata).evidence_pack_fingerprint;
         return typeof fingerprint === 'string' && fingerprint !== incomingEvidencePackFingerprint;
       });
-      for (const candidate of changedPackSuggestions) {
-        if (candidate.status !== 'pending' && candidate.status !== 'partially_resolved') continue;
+      const actionableChangedPackSuggestions = changedPackSuggestions.filter(
+        (candidate) => candidate.status === 'pending' || candidate.status === 'partially_resolved',
+      );
+      for (const candidate of actionableChangedPackSuggestions) {
         const candidateItems = await db
           .select({ id: agentSuggestionItems.id })
           .from(agentSuggestionItems)
@@ -6219,7 +6221,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           await supersedeItem(item.id, null, 'The selected source evidence changed.');
         }
       }
-      const evidencePackChanged = changedPackSuggestions.length > 0;
+      const evidencePackChanged = actionableChangedPackSuggestions.length > 0;
       if (existing?.status === 'superseded' && !evidencePackChanged) {
         const existingItems = await db
           .select({ dedupeKey: agentSuggestionItems.dedupeKey })
@@ -6234,7 +6236,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       }
       const dedupeKey =
         evidencePackChanged && incomingEvidencePackFingerprint
-          ? `${input.dedupeKey}:evidence:${incomingEvidencePackFingerprint}`
+          ? `${input.dedupeKey}:evidence:${incomingEvidencePackFingerprint}:${suggestionDedupeKey(
+              actionableChangedPackSuggestions.map((candidate) => candidate.id).sort(),
+            )}`
           : existing &&
               (existing.status === 'accepted' ||
                 existing.status === 'rejected' ||
@@ -6313,7 +6317,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             operation: item.operation,
             targetId: item.targetId ?? null,
             targetIdentity: incomingEvidencePackFingerprint
-              ? `${item.dedupeKey}:evidence:${incomingEvidencePackFingerprint}`
+              ? `${item.dedupeKey}:evidence:${incomingEvidencePackFingerprint}:revision:${dedupeKey}`
               : item.dedupeKey,
             sourceRefs: itemProjectionContext.sourceRefs,
             authorityPolicyVersion: RECONCILIATION_APPROVAL_POLICY_VERSION,

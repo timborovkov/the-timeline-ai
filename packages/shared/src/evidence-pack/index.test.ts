@@ -3,6 +3,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { reconcileArtifactEvidence } from '#src/artifacts/index.js';
+import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
 import { buildEvidencePack } from '#src/evidence-pack/index.js';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
@@ -395,5 +396,26 @@ describe('buildEvidencePack', () => {
     expect(pack.items.map((item) => item.rawEventId)).toEqual(
       expect.arrayContaining([ANCHOR_ID, SUPPORT_ID, SLACK_NEW_ID]),
     );
+  });
+
+  it('admits supporting evidence linked by an ordinary canonical URL', async () => {
+    const db = drizzle(pg);
+    for (const rawEventId of [ANCHOR_ID, SUPPORT_ID]) {
+      await reconcileLinkArtifactsForRawEvent(db as never, {
+        teamId: TEAM_ID,
+        rawEventId,
+        text: 'Review https://example.com/acme-launch?utm_source=timeline',
+      });
+    }
+
+    const pack = await buildEvidencePack(withTeam(db as never, TEAM_ID, USER_ID), {
+      purpose: 'proposal',
+      anchorRawEventIds: [ANCHOR_ID],
+    });
+
+    expect(pack.items.map((item) => item.rawEventId)).toEqual([ANCHOR_ID, SUPPORT_ID]);
+    expect(pack.items[1]?.relationshipSignals).toEqual([
+      expect.objectContaining({ kind: 'artifact_association', strength: 'hard' }),
+    ]);
   });
 });
