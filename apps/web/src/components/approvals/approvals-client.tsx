@@ -958,6 +958,10 @@ function PageBulkActions({
     (sum, suggestion) => sum + suggestion.itemIds.length,
     0,
   );
+  const visibleActionableItemCount = bulkRejectSuggestions.reduce(
+    (sum, suggestion) => sum + suggestion.itemIds.length,
+    0,
+  );
   return (
     <div className="flex flex-wrap items-center justify-end gap-2">
       {canAccept && mergeReviewItemCount > 0 ? (
@@ -996,7 +1000,7 @@ function PageBulkActions({
           }}
         >
           <CheckCheck className="size-4" />
-          {mergeReviewItemCount > 0
+          {bulkAcceptItemCount < visibleActionableItemCount
             ? `Accept ${bulkAcceptItemCount} visible`
             : 'Accept all visible'}
         </Button>

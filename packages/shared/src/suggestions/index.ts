@@ -62,6 +62,7 @@ import {
   type EvidenceRole,
   type EvidenceStrength,
 } from '#src/artifacts/index.js';
+import { calendarEventMutationLockKey } from '#src/calendar/locking.js';
 import { chatStructured as defaultChatStructured } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
 import { OBJECT_TYPES } from '#src/objects/index.js';
@@ -3785,6 +3786,15 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     item: typeof agentSuggestionItems.$inferSelect,
   ): Promise<string | null> {
     if (item.status !== 'pending' && item.status !== 'failed') return null;
+    if (
+      deps.acceptanceEvidenceLocked &&
+      item.targetKind === 'calendar_event' &&
+      item.targetId &&
+      UUID_RE.test(item.targetId)
+    ) {
+      const mutationLockKey = calendarEventMutationLockKey(teamId, item.targetId);
+      await db.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${mutationLockKey}, 0))`);
+    }
     const [parentSuggestion] = await db
       .select({
         metadata: agentSuggestions.metadata,
@@ -6429,98 +6439,97 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           ? { evidence_pack: evidencePackMetrics }
           : {}),
       };
-      const existingRows = await db
-        .select({
-          id: agentSuggestions.id,
-          status: agentSuggestions.status,
-          metadata: agentSuggestions.metadata,
-        })
-        .from(agentSuggestions)
-        .where(
-          and(eq(agentSuggestions.teamId, teamId), eq(agentSuggestions.dedupeKey, input.dedupeKey)),
-        )
-        .limit(1);
-      const existing = existingRows[0];
-      const packRevisionCandidates = incomingEvidencePackFingerprint
-        ? await db
-            .select({
-              id: agentSuggestions.id,
-              status: agentSuggestions.status,
-              metadata: agentSuggestions.metadata,
-            })
-            .from(agentSuggestions)
-            .where(
-              and(
-                eq(agentSuggestions.teamId, teamId),
-                or(
-                  eq(agentSuggestions.dedupeKey, input.dedupeKey),
-                  sql`${agentSuggestions.metadata} ->> 'evidence_pack_base_dedupe_key' = ${input.dedupeKey}`,
-                ),
-              ),
-            )
-        : [];
-      const matchingActivePackSuggestion = packRevisionCandidates.find((candidate) => {
-        const fingerprint = recordFromUnknown(candidate.metadata).evidence_pack_fingerprint;
-        return (
-          fingerprint === incomingEvidencePackFingerprint &&
-          (candidate.status === 'pending' || candidate.status === 'partially_resolved')
-        );
-      });
-      if (matchingActivePackSuggestion) {
-        const loaded = await loadBundle(matchingActivePackSuggestion.id);
-        if (!loaded) throw new Error('Suggestion was not visible after creation');
-        return loaded;
-      }
-      const changedPackSuggestions = packRevisionCandidates.filter((candidate) => {
-        const fingerprint = recordFromUnknown(candidate.metadata).evidence_pack_fingerprint;
-        return typeof fingerprint === 'string' && fingerprint !== incomingEvidencePackFingerprint;
-      });
-      const actionableChangedPackSuggestions = changedPackSuggestions.filter(
-        (candidate) => candidate.status === 'pending' || candidate.status === 'partially_resolved',
-      );
-      const actionableChangedPackSuggestionIds = actionableChangedPackSuggestions.map(
-        (candidate) => candidate.id,
-      );
-      const actionableChangedPackItemIds =
-        actionableChangedPackSuggestionIds.length > 0
-          ? (
-              await db
-                .select({ id: agentSuggestionItems.id })
-                .from(agentSuggestionItems)
-                .where(
-                  and(
-                    inArray(agentSuggestionItems.suggestionId, actionableChangedPackSuggestionIds),
-                    inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
-                  ),
-                )
-            ).map((item) => item.id)
-          : [];
-      const evidencePackChanged = actionableChangedPackSuggestions.length > 0;
-      if (existing?.status === 'superseded' && !evidencePackChanged) {
-        const existingItems = await db
-          .select({ dedupeKey: agentSuggestionItems.dedupeKey })
-          .from(agentSuggestionItems)
-          .where(eq(agentSuggestionItems.suggestionId, existing.id));
-        const existingItemDedupeKeys = new Set(existingItems.map((item) => item.dedupeKey));
-        if (input.items.every((item) => existingItemDedupeKeys.has(item.dedupeKey))) {
-          const loaded = await loadBundle(existing.id);
-          if (!loaded) throw new Error('Suggestion was not visible after creation');
-          return loaded;
-        }
-      }
-      const dedupeKey =
-        evidencePackChanged && incomingEvidencePackFingerprint
-          ? `${input.dedupeKey}:evidence:${incomingEvidencePackFingerprint}:${suggestionDedupeKey(
-              actionableChangedPackSuggestions.map((candidate) => candidate.id).sort(),
-            )}`
-          : existing &&
-              (existing.status === 'accepted' ||
-                existing.status === 'rejected' ||
-                existing.status === 'superseded')
-            ? correctionDedupeKey
-            : input.dedupeKey;
-
       const result = await db.transaction(async (tx) => {
+        if (incomingEvidencePackFingerprint) {
+          const revisionLockKey = `suggestion-pack-revision:${teamId}:${input.dedupeKey}`;
+          await tx.execute(
+            sql`SELECT pg_advisory_xact_lock(hashtextextended(${revisionLockKey}, 0))`,
+          );
+        }
+        const [existing] = await tx
+          .select()
+          .from(agentSuggestions)
+          .where(
+            and(
+              eq(agentSuggestions.teamId, teamId),
+              eq(agentSuggestions.dedupeKey, input.dedupeKey),
+            ),
+          )
+          .limit(1);
+        const packRevisionCandidates = incomingEvidencePackFingerprint
+          ? await tx
+              .select()
+              .from(agentSuggestions)
+              .where(
+                and(
+                  eq(agentSuggestions.teamId, teamId),
+                  or(
+                    eq(agentSuggestions.dedupeKey, input.dedupeKey),
+                    sql`${agentSuggestions.metadata} ->> 'evidence_pack_base_dedupe_key' = ${input.dedupeKey}`,
+                  ),
+                ),
+              )
+          : [];
+        const matchingActivePackSuggestion = packRevisionCandidates.find((candidate) => {
+          const fingerprint = recordFromUnknown(candidate.metadata).evidence_pack_fingerprint;
+          return (
+            fingerprint === incomingEvidencePackFingerprint &&
+            (candidate.status === 'pending' || candidate.status === 'partially_resolved')
+          );
+        });
+        if (matchingActivePackSuggestion) {
+          return { row: matchingActivePackSuggestion, changed: false, supersededItems: [] };
+        }
+        const actionableChangedPackSuggestions = packRevisionCandidates.filter((candidate) => {
+          const fingerprint = recordFromUnknown(candidate.metadata).evidence_pack_fingerprint;
+          return (
+            typeof fingerprint === 'string' &&
+            fingerprint !== incomingEvidencePackFingerprint &&
+            (candidate.status === 'pending' || candidate.status === 'partially_resolved')
+          );
+        });
+        const actionableChangedPackSuggestionIds = actionableChangedPackSuggestions.map(
+          (candidate) => candidate.id,
+        );
+        const actionableChangedPackItemIds =
+          actionableChangedPackSuggestionIds.length > 0
+            ? (
+                await tx
+                  .select({ id: agentSuggestionItems.id })
+                  .from(agentSuggestionItems)
+                  .where(
+                    and(
+                      inArray(
+                        agentSuggestionItems.suggestionId,
+                        actionableChangedPackSuggestionIds,
+                      ),
+                      inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
+                    ),
+                  )
+              ).map((item) => item.id)
+            : [];
+        const evidencePackChanged = actionableChangedPackSuggestions.length > 0;
+        if (existing?.status === 'superseded' && !evidencePackChanged) {
+          const existingItems = await tx
+            .select({ dedupeKey: agentSuggestionItems.dedupeKey })
+            .from(agentSuggestionItems)
+            .where(eq(agentSuggestionItems.suggestionId, existing.id));
+          const existingItemDedupeKeys = new Set(existingItems.map((item) => item.dedupeKey));
+          if (input.items.every((item) => existingItemDedupeKeys.has(item.dedupeKey))) {
+            return { row: existing, changed: false, supersededItems: [] };
+          }
+        }
+        const dedupeKey =
+          evidencePackChanged && incomingEvidencePackFingerprint
+            ? `${input.dedupeKey}:evidence:${incomingEvidencePackFingerprint}:${suggestionDedupeKey(
+                actionableChangedPackSuggestions.map((candidate) => candidate.id).sort(),
+              )}`
+            : existing &&
+                (existing.status === 'accepted' ||
+                  existing.status === 'rejected' ||
+                  existing.status === 'superseded')
+              ? correctionDedupeKey
+              : input.dedupeKey;
         const evidenceVersionRows =
           evidenceIds.length > 0
             ? await tx

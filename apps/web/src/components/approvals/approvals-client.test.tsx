@@ -1838,6 +1838,67 @@ describe('ApprovalsClient', () => {
     });
   });
 
+  it('labels bulk accept with the eligible count when a stale non-merge row is visible', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-actions',
+            source: 'background',
+            status: 'pending',
+            title: 'Customer actions',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-task-1',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Send renewal packet',
+                description: null,
+                proposedPayload: { canonicalName: 'Send renewal packet' },
+                evidenceStatus: 'current',
+                failureReason: null,
+              },
+              {
+                id: 'item-task-2',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Prepare renewal summary',
+                description: null,
+                proposedPayload: { canonicalName: 'Prepare renewal summary' },
+                evidenceStatus: 'current',
+                failureReason: null,
+              },
+              {
+                id: 'item-stale',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Use refreshed customer context',
+                description: null,
+                proposedPayload: { canonicalName: 'Use refreshed customer context' },
+                evidenceStatus: 'stale',
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Accept 2 visible');
+    expect(html).not.toContain('Accept all visible');
+  });
+
   it('restores failed bulk rows before refreshing their final server status', async () => {
     const user = userEvent.setup();
     fakes.acceptVisibleSuggestionsAction.mockResolvedValue({

@@ -164,6 +164,8 @@ Cross-source proposal behavior is shipped for a source path only when:
   pack row, revalidate the proposal's full audience, and hold those locks
   through the team-scoped application transaction so competing evidence
   revisions cannot leave two actionable replacements or race a durable write;
+  first-time revisions serialize on their base identity, and calendar targets
+  serialize before their linked raw evidence to preserve mutation lock order;
 - the canonical change and accepted approval commit atomically; an application
   error rolls both back before a fresh transaction records a retryable failed
   approval, while indexing and queue follow-ups run only after commit;
@@ -218,10 +220,11 @@ The first enforced source path must meet all of these gates:
 - Every live-evaluation case passes its existing judge threshold
 - Zero visibility leaks, authority violations, unknown citations, ambiguous
   hard-link proposals, or reviewed false merges
-- At least 200 eligible shadow pack builds across seven consecutive days and
-  three teams
+- At least 200 successful, eligible shadow pack builds across seven consecutive
+  days and three teams; a failed attempt never counts toward eligibility
 - At least 25 genuinely cross-source shadow packs, with every required scenario
-  family represented
+  family represented; telemetry must satisfy surface count ≤ selected count ≤
+  candidate count
 - One builder version and one proposal-policy version across the qualifying
   population; a version change starts a fresh promotion window
 - Disjoint population fingerprints across cumulative sampling reports, derived

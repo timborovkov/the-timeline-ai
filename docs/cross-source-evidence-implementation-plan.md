@@ -428,8 +428,10 @@ misleading actionable approval.
 2. When the fingerprint changes, create a new revision and supersede the prior
    items and reconciliation outputs with a pack-change reason in the same
    transaction, leaving the prior approval actionable if replacement creation
-   rolls back. Lock the expected actionable predecessor set and abort a
-   competing revision if that set changed.
+   rolls back. Serialize revision creation on the team and base dedupe identity
+   before re-reading revision candidates, including when no predecessor exists.
+   Lock the expected actionable predecessor set and abort a competing revision
+   if that set changed.
 3. Do not describe append-only bundle evidence as the current selection.
 4. Revalidate every selected source reference on approval hydration and
    acceptance. During proposal persistence, lock every selected raw-event row
@@ -438,7 +440,9 @@ misleading actionable approval.
    cites directly.
    At acceptance, hold those locks through the team-scoped application
    transaction and require every row to continue supporting the proposal's full
-   projection audience, not merely the accepting actor.
+   projection audience, not merely the accepting actor. For calendar targets,
+   acquire the shared calendar-mutation lock before raw-event evidence locks so
+   acceptance and direct calendar edits use the same order.
 5. Supersede an item when required evidence is deleted, tombstoned, or no longer
    visible. Reuse the existing `superseded` state rather than adding a `stale`
    enum in the first implementation.
@@ -576,6 +580,9 @@ before enforcement.
    overlapping cumulative health windows instead of summing the same attempts
    twice, even when later exports add review outcomes or eligibility labels;
    reject duplicate legacy identities within one population as ambiguous.
+   Require successful completion before an attempt counts as eligible, even
+   when telemetry carries `eligible: true`, and validate
+   `surfaceCount <= selectedCount <= candidateCount` before assessment.
 6. Make the promotion report enforce evidence coverage, fixture success, shadow
    sample floor, zero-tolerance safety counters, p95 latency, and error rate.
    The production CLI ingests explicit redacted evidence-pack sample files and
@@ -608,8 +615,8 @@ agreed release gates pass.
 
 1. Pass the evidence coverage audit for the enabled source path.
 2. Run shadow mode for at least seven consecutive days and collect at least 200
-   eligible packs across three teams, including 25 cross-source packs and every
-   required scenario family.
+   successful, eligible packs across three teams, including 25 valid
+   cross-source packs and every required scenario family.
 3. Review cross-source samples and confirm zero visibility leaks, authority
    violations, unknown citations, ambiguous-link proposals, and false merges.
 4. Confirm pack-build p95 below 1 second, error rate below 1%, no extra model

@@ -268,6 +268,66 @@ describe('suggestion scope', () => {
     );
   });
 
+  it('serializes first-time evidence pack revisions with different fingerprints', async () => {
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'calendar',
+      contentText: 'Owner committed to the first-time concurrent follow-up.',
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+      visibility: 'team',
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const create = (fingerprint: string) =>
+      scope.suggestions.createOrMergeSuggestionBundle({
+        source: 'background' as const,
+        title: 'Create first-time concurrent follow-up task',
+        dedupeKey: 'first-time-concurrent-pack-revision',
+        metadata: { evidence_pack_fingerprint: fingerprint },
+        evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }],
+        items: [
+          {
+            operation: 'create' as const,
+            targetKind: 'task' as const,
+            title: 'First-time concurrent follow-up',
+            dedupeKey: 'first-time-concurrent-pack-revision:item',
+            proposedPayload: { canonicalName: 'First-time concurrent follow-up' },
+            evidenceRawEventIds: [TEAM_RAW_EVENT_ID],
+          },
+        ],
+      });
+
+    const [first, second] = await Promise.all([create('a'.repeat(64)), create('b'.repeat(64))]);
+
+    expect(first.id).not.toBe(second.id);
+    const suggestions = await db
+      .select({ id: agentSuggestions.id, metadata: agentSuggestions.metadata })
+      .from(agentSuggestions);
+    expect(suggestions).toHaveLength(2);
+    expect(
+      new Set(
+        suggestions.map((suggestion) =>
+          String((suggestion.metadata as Record<string, unknown>).evidence_pack_fingerprint),
+        ),
+      ),
+    ).toEqual(new Set(['a'.repeat(64), 'b'.repeat(64)]));
+    const items = await db
+      .select({
+        suggestionId: agentSuggestionItems.suggestionId,
+        status: agentSuggestionItems.status,
+      })
+      .from(agentSuggestionItems);
+    expect(items.filter((item) => item.status === 'pending')).toHaveLength(1);
+    expect(items.filter((item) => item.status === 'superseded')).toHaveLength(1);
+    const evidence = await db
+      .select({ suggestionId: agentSuggestionEvidence.suggestionId })
+      .from(agentSuggestionEvidence);
+    expect(new Set(evidence.map((row) => row.suggestionId))).toEqual(
+      new Set(suggestions.map((suggestion) => suggestion.id)),
+    );
+  });
+
   it('keeps the prior approval actionable when replacement creation rolls back', async () => {
     await db.insert(rawEvents).values({
       id: TEAM_RAW_EVENT_ID,

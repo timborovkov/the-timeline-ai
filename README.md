@@ -257,7 +257,9 @@ TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-pr
 # contain content-free counts, mode/version metadata, latency, date, team key,
 # and scenario family. Supplying samples without at least one explicit required
 # scenario is rejected so an empty scenario policy cannot accidentally pass.
-# Promotion health, latency, and error gates use shadow attempts only. When a
+# Promotion health, latency, and error gates use shadow attempts only. Failed
+# attempts never count as eligible, even if an export marks them eligible, and
+# sample counts must satisfy surfaceCount <= selectedCount <= candidateCount. When a
 # prior report and fresh sample file are supplied together, their redacted
 # health summaries are merged rather than replacing historical violations.
 # Each summarized population carries a content-free fingerprint; cumulative

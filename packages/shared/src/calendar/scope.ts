@@ -8,6 +8,7 @@ import {
 } from '@timeline/db';
 import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 
+import { calendarEventMutationLockKey } from '#src/calendar/locking.js';
 import {
   buildCalendarSourcePayloadMetadata,
   buildCalendarTimelineText,
@@ -819,6 +820,10 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
       await ensureMember();
 
       const result = await db.transaction(async (tx) => {
+        const mutationLockKey = calendarEventMutationLockKey(teamId, id);
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended(${mutationLockKey}, 0))`,
+        );
         const existing = await tx
           .select()
           .from(calendarEvents)
@@ -1337,6 +1342,10 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
       await ensureMember();
 
       const deleted = await db.transaction(async (tx) => {
+        const mutationLockKey = calendarEventMutationLockKey(teamId, id);
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended(${mutationLockKey}, 0))`,
+        );
         const existing = await tx
           .select()
           .from(calendarEvents)

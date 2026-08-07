@@ -20,6 +20,7 @@ import {
   assessEvidencePackPromotion,
   buildProductionSamplingEvalReport,
   loadProductionSamplingEvalArtifacts,
+  parseProductionSamplingEvidencePackSamples,
   summarizeProductionSamplingEvidencePacks,
   writeProductionSamplingEvalReport,
 } from '#src/reconciliation/production-sampling.js';
@@ -401,6 +402,60 @@ describe('production reconciliation sampling report', () => {
       'pack_error_rate',
       'pack_latency_p95',
     ]);
+  });
+
+  it('does not count failed attempts as eligible when telemetry marks them eligible', () => {
+    const health = summarizeProductionSamplingEvidencePacks([
+      {
+        attemptId: 'failed-but-annotated-eligible',
+        mode: 'shadow',
+        version: 'evidence-pack-v1',
+        policyVersion: 'proposal-v1',
+        candidateCount: 4,
+        selectedCount: 2,
+        surfaceCount: 2,
+        estimatedTokens: 400,
+        buildDurationMs: 100,
+        truncated: false,
+        eligible: true,
+        errorReason: 'candidate_failure',
+        sampledAt: '2026-07-01T10:00:00.000Z',
+        teamKey: 'team-1',
+        scenarioFamily: 'customer_project',
+      },
+    ]);
+
+    expect(health).toMatchObject({
+      sampleCount: 1,
+      errorCount: 1,
+      shadowEligibleSampleCount: 0,
+      crossSourceSampleCount: 0,
+      shadowDays: [],
+      shadowTeamKeys: [],
+      scenarioFamilies: [],
+    });
+  });
+
+  it('rejects impossible evidence-pack count relationships', () => {
+    const sample = {
+      attemptId: 'impossible-counts',
+      mode: 'shadow' as const,
+      version: 'evidence-pack-v1',
+      policyVersion: 'proposal-v1',
+      candidateCount: 1,
+      selectedCount: 1,
+      surfaceCount: 2,
+      estimatedTokens: 200,
+      buildDurationMs: 50,
+      truncated: false,
+    };
+
+    expect(() => parseProductionSamplingEvidencePackSamples([sample])).toThrow(
+      'Expected an evidence-pack sample array',
+    );
+    expect(() => summarizeProductionSamplingEvidencePacks([sample])).toThrow(
+      'surfaceCount <= selectedCount <= candidateCount',
+    );
   });
 
   it('blocks promotion when builder or policy versions are mixed', () => {

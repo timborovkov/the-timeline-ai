@@ -161,8 +161,11 @@ evidence changes while the model is running.
 
 A rebuild that changes the fingerprint creates a new proposal revision and
 supersedes the old item and output. It does not append evidence to an old
-proposal and call the accumulated set current. Display and acceptance revalidate
-every selected pack row, including supporting rows that no item cites. A
+proposal and call the accumulated set current. Revision creation takes a
+transaction-scoped lock on the team and base dedupe identity before it re-reads
+candidate revisions, including the first revision where no predecessor row can
+be locked. Display and acceptance revalidate every selected pack row, including
+supporting rows that no item cites. A
 proposal with deleted, tombstoned, or newly
 inaccessible required evidence is hidden because its derived fields may contain
 source details; any direct acceptance attempt supersedes it and requires a
@@ -228,7 +231,9 @@ and reject report merges with overlapping population identities. Mutable review
 outcomes, eligibility labels, and error annotations do not change that identity,
 while ambiguous duplicate legacy identities are rejected rather than counted as
 separate attempts. Cumulative reports therefore cannot double-count historical
-attempts. Dashboard persistence goes through the named team reconciliation
+attempts. A shadow attempt must also complete without an error before it counts
+as eligible, and reported pack counts must satisfy surface count ≤ selected
+count ≤ candidate count. Dashboard persistence goes through the named team reconciliation
 scope, including the CLI's explicit trusted internal-user path.
 Reports without evidence-pack telemetry omit pack health and promotion state.
 
@@ -244,7 +249,8 @@ actionable predecessor items, creates the replacement approval, and supersedes
 its predecessor in one transaction. A competing revision aborts when that
 predecessor set has already changed. A failed replacement therefore leaves the
 prior actionable approval intact, and concurrent rebuilds cannot leave two
-actionable replacements.
+actionable replacements. A base-identity advisory lock also serializes two
+first-time builders before either predecessor exists.
 
 The first implementation adds a shared module, consumer adapters, stricter
 model output validation, proposal revision behavior, per-item evidence display,
@@ -259,7 +265,9 @@ same transaction while the selected evidence rows remain locked. Application
 failure rolls that transaction back; a fresh compare-and-set transaction then
 records the item as retryable `failed` without overwriting a concurrent reviewer
 action. Embedding, indexing, and queue effects are collected during application
-and dispatched only after the database commit.
+and dispatched only after the database commit. Calendar acceptance and direct
+calendar mutations share a target advisory lock acquired before linked raw-event
+locks, preventing opposite row-lock orders.
 
 Strict admission reduces recall compared with open semantic retrieval. This is
 intentional for durable proposals. Answer policies can use broader recall while

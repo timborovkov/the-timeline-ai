@@ -284,6 +284,11 @@ export function summarizeProductionSamplingEvidencePacks(
   samples: readonly ProductionSamplingEvidencePackSample[],
 ): ProductionSamplingEvidencePackHealth {
   const shadowAttempts = samples.filter((sample) => sample.mode === 'shadow');
+  if (shadowAttempts.some((sample) => !hasConsistentEvidencePackCounts(sample))) {
+    throw new Error(
+      'Evidence-pack sampling counts must satisfy surfaceCount <= selectedCount <= candidateCount',
+    );
+  }
   const explicitAttemptIds = shadowAttempts.flatMap((sample) => sample.attemptId ?? []);
   if (new Set(explicitAttemptIds).size !== explicitAttemptIds.length) {
     throw new Error('Evidence-pack sampling contains duplicate attempt IDs');
@@ -306,13 +311,19 @@ export function summarizeProductionSamplingEvidencePacks(
   }
   const latencies = shadowAttempts.map((sample) => sample.buildDurationMs).sort((a, b) => a - b);
   const latencyDistribution = buildLatencyDistribution(latencies);
-  const errors = shadowAttempts.filter((sample) => sample.errorReason);
+  const errors = shadowAttempts.filter(
+    (sample) => sample.errorReason !== undefined && sample.errorReason !== null,
+  );
   const errorReasons: Record<string, number> = {};
   for (const sample of errors) {
     const reason = sample.errorReason ?? 'unknown';
     errorReasons[reason] = (errorReasons[reason] ?? 0) + 1;
   }
-  const shadowEligible = shadowAttempts.filter((sample) => sample.eligible ?? !sample.errorReason);
+  const shadowEligible = shadowAttempts.filter(
+    (sample) =>
+      (sample.errorReason === undefined || sample.errorReason === null) &&
+      (sample.eligible ?? true),
+  );
   const populationFingerprints = shadowAttempts
     .map((sample) =>
       stableSha256Digest(
@@ -1359,6 +1370,7 @@ function isProductionSamplingEvidencePackSample(
     ['candidateCount', 'selectedCount', 'surfaceCount', 'estimatedTokens'].every((field) =>
       isNonNegativeInteger(record[field]),
     ) &&
+    hasConsistentEvidencePackCounts(record) &&
     isFiniteNumber(record.buildDurationMs) &&
     record.buildDurationMs >= 0 &&
     typeof record.truncated === 'boolean' &&
@@ -1376,6 +1388,18 @@ function isProductionSamplingEvidencePackSample(
     (record.teamKey === undefined || isNonEmptyString(record.teamKey)) &&
     (record.scenarioFamily === undefined || isNonEmptyString(record.scenarioFamily)) &&
     (record.eligible === undefined || typeof record.eligible === 'boolean')
+  );
+}
+
+function hasConsistentEvidencePackCounts(
+  sample: Record<string, unknown> | ProductionSamplingEvidencePackSample,
+): boolean {
+  return (
+    isNonNegativeInteger(sample.surfaceCount) &&
+    isNonNegativeInteger(sample.selectedCount) &&
+    isNonNegativeInteger(sample.candidateCount) &&
+    sample.surfaceCount <= sample.selectedCount &&
+    sample.selectedCount <= sample.candidateCount
   );
 }
 
