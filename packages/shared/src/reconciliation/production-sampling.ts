@@ -26,6 +26,7 @@ export interface ProductionSamplingEvalReportInput {
 }
 
 export interface ProductionSamplingEvidencePackSample {
+  attemptId?: string;
   mode: 'off' | 'shadow' | 'enforced';
   version: string;
   policyVersion: string;
@@ -283,6 +284,10 @@ export function summarizeProductionSamplingEvidencePacks(
   samples: readonly ProductionSamplingEvidencePackSample[],
 ): ProductionSamplingEvidencePackHealth {
   const shadowAttempts = samples.filter((sample) => sample.mode === 'shadow');
+  const explicitAttemptIds = shadowAttempts.flatMap((sample) => sample.attemptId ?? []);
+  if (new Set(explicitAttemptIds).size !== explicitAttemptIds.length) {
+    throw new Error('Evidence-pack sampling contains duplicate attempt IDs');
+  }
   const latencies = shadowAttempts.map((sample) => sample.buildDurationMs).sort((a, b) => a - b);
   const latencyDistribution = buildLatencyDistribution(latencies);
   const errors = shadowAttempts.filter((sample) => sample.errorReason);
@@ -294,7 +299,19 @@ export function summarizeProductionSamplingEvidencePacks(
   const shadowEligible = shadowAttempts.filter((sample) => sample.eligible ?? !sample.errorReason);
   const sampleOccurrences = new Map<string, number>();
   const populationFingerprints = shadowAttempts
-    .map((sample) => stableSha256Digest(sample))
+    .map((sample) =>
+      stableSha256Digest(
+        sample.attemptId
+          ? { attemptId: sample.attemptId }
+          : {
+              mode: sample.mode,
+              version: sample.version,
+              policyVersion: sample.policyVersion,
+              sampledAt: sample.sampledAt ?? null,
+              teamKey: sample.teamKey ?? null,
+            },
+      ),
+    )
     .sort()
     .map((sampleFingerprint) => {
       const occurrence = sampleOccurrences.get(sampleFingerprint) ?? 0;
@@ -1325,6 +1342,7 @@ function isProductionSamplingEvidencePackSample(
     'authorityViolationCount',
   ];
   return (
+    (record.attemptId === undefined || isNonEmptyString(record.attemptId)) &&
     (record.mode === 'off' || record.mode === 'shadow' || record.mode === 'enforced') &&
     isNonEmptyString(record.version) &&
     isNonEmptyString(record.policyVersion) &&

@@ -562,6 +562,7 @@ describe('production reconciliation sampling report', () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'timeline-overlapping-pack-health-'));
     try {
       const sharedSample = {
+        attemptId: 'shadow-attempt-1',
         mode: 'shadow' as const,
         version: 'evidence-pack-v1',
         policyVersion: 'proposal-v1',
@@ -582,7 +583,11 @@ describe('production reconciliation sampling report', () => {
         artifacts: [],
         evidencePackSamples: [
           sharedSample,
-          { ...sharedSample, sampledAt: '2026-07-08T11:00:00.000Z' },
+          {
+            ...sharedSample,
+            attemptId: 'shadow-attempt-2',
+            sampledAt: '2026-07-08T11:00:00.000Z',
+          },
         ],
       });
       const overlappingReport = buildProductionSamplingEvalReport({
@@ -590,8 +595,17 @@ describe('production reconciliation sampling report', () => {
         manifests: [],
         artifacts: [],
         evidencePackSamples: [
-          sharedSample,
-          { ...sharedSample, sampledAt: '2026-07-08T12:00:00.000Z' },
+          {
+            ...sharedSample,
+            eligible: false,
+            errorReason: 'annotated after the first export',
+            falseLinkReviewOutcome: 'confirmed' as const,
+          },
+          {
+            ...sharedSample,
+            attemptId: 'shadow-attempt-3',
+            sampledAt: '2026-07-08T12:00:00.000Z',
+          },
         ],
       });
       const firstPath = path.join(dir, 'first.json');
@@ -608,6 +622,25 @@ describe('production reconciliation sampling report', () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+
+  it('rejects duplicate immutable attempt IDs within one telemetry population', () => {
+    const sample = {
+      attemptId: 'duplicate-attempt',
+      mode: 'shadow' as const,
+      version: 'evidence-pack-v1',
+      policyVersion: 'proposal-v1',
+      candidateCount: 2,
+      selectedCount: 2,
+      surfaceCount: 2,
+      estimatedTokens: 200,
+      buildDurationMs: 50,
+      truncated: false,
+    };
+
+    expect(() => summarizeProductionSamplingEvidencePacks([sample, sample])).toThrow(
+      'duplicate attempt IDs',
+    );
   });
 
   it('assesses an explicit telemetry file even when it has no shadow samples', async () => {

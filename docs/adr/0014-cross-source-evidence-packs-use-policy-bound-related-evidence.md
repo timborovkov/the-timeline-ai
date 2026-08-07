@@ -220,11 +220,13 @@ population. An explicitly supplied empty telemetry export is still assessed
 and fails the shadow-population gates.
 Sampling reports retain a content-free latency distribution so merged reports
 recompute cumulative p50, p95, and p99 values instead of merging percentiles.
-They also retain stable content-free population fingerprints and reject report
-merges with overlapping population identities, preventing cumulative reports
-from double-counting historical attempts. Dashboard persistence goes through
-the named team reconciliation scope, including the CLI's explicit trusted
-internal-user path.
+They also retain stable content-free population fingerprints derived from an
+immutable attempt ID, with immutable attempt provenance as the legacy fallback,
+and reject report merges with overlapping population identities. Mutable review
+outcomes, eligibility labels, and error annotations do not change that identity,
+so cumulative reports cannot double-count historical attempts. Dashboard
+persistence goes through the named team reconciliation scope, including the
+CLI's explicit trusted internal-user path.
 Reports without evidence-pack telemetry omit pack health and promotion state.
 
 ## Consequences

@@ -22,7 +22,21 @@ import {
   users,
   type Db,
 } from '@timeline/db';
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  exists,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  or,
+  sql,
+} from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 
 import type { BoardScope } from '#src/boards/index.js';
@@ -7181,31 +7195,105 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     async getApprovalItemCounts(): Promise<ApprovalItemCounts> {
       await ensureMember();
       await recoverInterruptedTaskCreateAcceptances();
-      const suggestionRows = await db
-        .select()
-        .from(agentSuggestions)
+      const countEvidence = alias(agentSuggestionEvidence, 'approval_count_evidence');
+      const countEvent = alias(rawEvents, 'approval_count_event');
+      const hasPackEvidence = exists(
+        db
+          .select({ id: countEvidence.id })
+          .from(countEvidence)
+          .where(
+            and(
+              eq(countEvidence.teamId, teamId),
+              eq(countEvidence.suggestionId, agentSuggestions.id),
+            ),
+          ),
+      );
+      const eventSupportsSuggestionAudience = or(
+        and(eq(agentSuggestions.visibility, 'team'), eq(countEvent.visibility, 'team')),
+        and(
+          eq(agentSuggestions.visibility, 'private'),
+          isNotNull(agentSuggestions.visibilityOwnerUserId),
+          or(
+            eq(countEvent.visibility, 'team'),
+            and(
+              eq(countEvent.visibility, 'private'),
+              or(
+                eq(countEvent.authorUserId, agentSuggestions.visibilityOwnerUserId),
+                eq(countEvent.visibilityOwnerUserId, agentSuggestions.visibilityOwnerUserId),
+              ),
+            ),
+            and(
+              eq(countEvent.visibility, 'specific_users'),
+              sql`COALESCE(${agentSuggestions.visibilityOwnerUserId}::uuid = ANY(${countEvent.visibilityUserIds}), false)`,
+            ),
+          ),
+        ),
+        and(
+          eq(agentSuggestions.visibility, 'specific_users'),
+          sql`cardinality(COALESCE(${agentSuggestions.visibilityUserIds}, ARRAY[]::uuid[])) > 0`,
+          or(
+            eq(countEvent.visibility, 'team'),
+            and(
+              eq(countEvent.visibility, 'private'),
+              sql`COALESCE(${agentSuggestions.visibilityUserIds}, ARRAY[]::uuid[]) <@ ARRAY_REMOVE(ARRAY[${countEvent.authorUserId}, ${countEvent.visibilityOwnerUserId}]::uuid[], NULL)`,
+            ),
+            and(
+              eq(countEvent.visibility, 'specific_users'),
+              sql`COALESCE(${agentSuggestions.visibilityUserIds}, ARRAY[]::uuid[]) <@ COALESCE(${countEvent.visibilityUserIds}, ARRAY[]::uuid[])`,
+            ),
+          ),
+        ),
+      );
+      const hasInvalidPackEvidence = exists(
+        db
+          .select({ id: countEvidence.id })
+          .from(countEvidence)
+          .leftJoin(
+            countEvent,
+            and(eq(countEvent.id, countEvidence.rawEventId), eq(countEvent.teamId, teamId)),
+          )
+          .where(
+            and(
+              eq(countEvidence.teamId, teamId),
+              eq(countEvidence.suggestionId, agentSuggestions.id),
+              or(
+                isNull(countEvent.id),
+                sql`COALESCE(${countEvent.sourceMetadata} ->> 'deleted', 'false') = 'true'`,
+                sql`NOT (${eventSupportsSuggestionAudience})`,
+              ),
+            ),
+          ),
+      );
+      const packEvidenceIsAvailable = or(
+        sql`COALESCE(jsonb_typeof(${agentSuggestions.metadata} -> 'evidence_pack_fingerprint') <> 'string', true)`,
+        and(hasPackEvidence, sql`NOT (${hasInvalidPackEvidence})`),
+      );
+      const countRows = await db
+        .select({
+          status: agentSuggestionItems.status,
+          count: sql<number>`COUNT(*)::int`,
+        })
+        .from(agentSuggestionItems)
+        .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
         .where(
           and(
+            eq(agentSuggestionItems.teamId, teamId),
             suggestionVisibilityPredicate(teamId, userId),
-            or(pendingItemExistsPredicate(), failedItemExistsPredicate()),
+            isNull(agentSuggestionItems.resolvedAt),
+            or(
+              and(
+                eq(agentSuggestionItems.status, 'pending'),
+                inArray(agentSuggestions.status, ['pending', 'partially_resolved']),
+              ),
+              eq(agentSuggestionItems.status, 'failed'),
+            ),
+            packEvidenceIsAvailable,
           ),
-        );
-      const visibleBundles = await hydrateBundles(suggestionRows);
+        )
+        .groupBy(agentSuggestionItems.status);
       return {
-        pending: visibleBundles.reduce(
-          (count, bundle) =>
-            count +
-            bundle.items.filter(
-              (item) =>
-                item.status === 'pending' &&
-                (bundle.status === 'pending' || bundle.status === 'partially_resolved'),
-            ).length,
-          0,
-        ),
-        failed: visibleBundles.reduce(
-          (count, bundle) => count + bundle.items.filter((item) => item.status === 'failed').length,
-          0,
-        ),
+        pending: countRows.find((row) => row.status === 'pending')?.count ?? 0,
+        failed: countRows.find((row) => row.status === 'failed')?.count ?? 0,
       };
     },
 

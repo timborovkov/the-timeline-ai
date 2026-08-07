@@ -224,8 +224,10 @@ The first enforced source path must meet all of these gates:
   family represented
 - One builder version and one proposal-policy version across the qualifying
   population; a version change starts a fresh promotion window
-- Disjoint population fingerprints across cumulative sampling reports; an
-  overlapping report is rejected instead of double-counted
+- Disjoint population fingerprints across cumulative sampling reports, derived
+  from immutable attempt IDs or legacy immutable attempt provenance rather than
+  mutable review annotations; an overlapping report is rejected instead of
+  double-counted
 - No additional embedding or generative-model request solely for proposal-pack
   ranking
 - At most 24 protected conversation-core events, 8 supporting events, 4

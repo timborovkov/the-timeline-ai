@@ -569,8 +569,10 @@ before enforcement.
    and promotion state entirely when a report has no pack telemetry. Derive
    builder and policy version gates from shadow attempts only, while an
    explicitly supplied empty sample export remains an assessed, failing input.
-   Retain stable content-free population fingerprints and reject overlapping
-   cumulative health windows instead of summing the same attempts twice.
+   Retain stable content-free population fingerprints derived from immutable
+   attempt IDs, with immutable provenance as the legacy fallback. Reject
+   overlapping cumulative health windows instead of summing the same attempts
+   twice, even when later exports add review outcomes or eligibility labels.
 6. Make the promotion report enforce evidence coverage, fixture success, shadow
    sample floor, zero-tolerance safety counters, p95 latency, and error rate.
    The production CLI ingests explicit redacted evidence-pack sample files and

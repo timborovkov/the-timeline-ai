@@ -516,6 +516,50 @@ describe('buildEvidencePack', () => {
     expect(pack.metrics.omissionReasons).toMatchObject({ candidate_limit: 1 });
   });
 
+  it('applies the candidate cap to unique events instead of association signals', async () => {
+    const db = drizzle(pg);
+    await reconcileArtifactEvidence(db as never, {
+      teamId: TEAM_ID,
+      artifactType: 'project',
+      canonicalName: 'Acme launch',
+      status: 'active',
+      rawEventId: ANCHOR_ID,
+      role: 'discussion',
+      strength: 'hard',
+      anchors: [{ type: 'canonical_url', value: 'https://acme.test/launch', strength: 'hard' }],
+    });
+    for (const rawEventId of [SUPPORT_ID, SLACK_NEW_ID, SLACK_OLD_ID]) {
+      for (const [role, strength] of [
+        ['discussion', 'human'],
+        ['related_context', 'hard'],
+      ] as const) {
+        await reconcileArtifactEvidence(db as never, {
+          teamId: TEAM_ID,
+          artifactType: 'project',
+          canonicalName: 'Acme launch',
+          status: 'active',
+          rawEventId,
+          role,
+          strength,
+          anchors: [{ type: 'canonical_url', value: 'https://acme.test/launch', strength: 'hard' }],
+        });
+      }
+    }
+
+    const discovery = await withTeam(
+      db as never,
+      TEAM_ID,
+      USER_ID,
+    ).timeline.listEvidencePackArtifactClusters([ANCHOR_ID], 3);
+    const candidateIds = new Set(
+      Object.values(discovery.clusters).flatMap((cluster) =>
+        cluster.relatedEvidence.flatMap((evidence) => evidence.rawEventId ?? []),
+      ),
+    );
+    expect(candidateIds).toEqual(new Set([SUPPORT_ID, SLACK_NEW_ID, SLACK_OLD_ID]));
+    expect(discovery.truncatedCandidateCount).toBe(0);
+  });
+
   it('applies recency before source diversity', async () => {
     const db = drizzle(pg);
     for (const rawEventId of [ANCHOR_ID, SUPPORT_ID, SLACK_NEW_ID, SLACK_OLD_ID]) {

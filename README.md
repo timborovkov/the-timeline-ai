@@ -261,7 +261,8 @@ TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-pr
 # prior report and fresh sample file are supplied together, their redacted
 # health summaries are merged rather than replacing historical violations.
 # Each summarized population carries a content-free fingerprint; cumulative
-# inputs with an overlapping population are rejected rather than double-counted.
+# inputs with an overlapping population are rejected rather than double-counted;
+# sample exports should retain their immutable attemptId when later review annotations change.
 # Explicit telemetry with zero shadow attempts still produces a failed
 # assessment, and mixed builder/policy versions block promotion until a fresh
 # single-version shadow population qualifies.

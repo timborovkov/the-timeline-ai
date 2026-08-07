@@ -847,6 +847,13 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     }
     const eligibleCandidateIds =
       eligibleCandidateRows?.flatMap((row) => row.rawEventId ?? []) ?? null;
+    const associationStrengthRank = sql<number>`CASE ${artifactEvidenceAssociations.strength}
+      WHEN 'human' THEN 5
+      WHEN 'hard' THEN 4
+      WHEN 'provider' THEN 3
+      WHEN 'structured' THEN 2
+      ELSE 0
+    END`;
 
     const associationClusterMemberQuery = db
       .select({
@@ -902,6 +909,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         ),
       )
       .orderBy(
+        ...(uniqueCandidateLimit ? [desc(associationStrengthRank)] : []),
         desc(
           sql<boolean>`${artifactEvidenceAssociations.associationSource} = 'authoritative_provider'`,
         ),
@@ -928,13 +936,16 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         } satisfies SearchEventArtifactCluster);
       if (!existing) clusterById.set(row.clusterId, cluster);
       if (cluster.relatedEvidence.length >= maxRelatedEvidencePerCluster) continue;
-      const evidenceKey = [
-        row.rawEventId ?? '',
-        row.provider ?? '',
-        row.externalObjectId ?? '',
-        row.role,
-        row.strength,
-      ].join('\0');
+      const evidenceKey =
+        uniqueCandidateLimit && row.rawEventId
+          ? row.rawEventId
+          : [
+              row.rawEventId ?? '',
+              row.provider ?? '',
+              row.externalObjectId ?? '',
+              row.role,
+              row.strength,
+            ].join('\0');
       const seen = evidenceSeenByCluster.get(row.clusterId) ?? new Set<string>();
       if (seen.has(evidenceKey)) continue;
       seen.add(evidenceKey);
