@@ -1,5 +1,6 @@
 import type { TeamScope } from '#src/team-scope.js';
 
+import { fenceExternalContent } from '#src/agent/external-content.js';
 import { searchAppGuide } from '#src/app-guide.js';
 import { artifactRefCitation, parseCitations } from '#src/citation.js';
 import { buildEvidencePack, type EvidencePackMetrics } from '#src/evidence-pack/index.js';
@@ -206,7 +207,11 @@ export async function retrieveWorkspaceContext(
               source: item.source,
               role: item.role,
               occurredAt: item.occurredAt.toISOString(),
-              snippet: item.contentText,
+              snippet:
+                fenceExternalContent(item.contentText, {
+                  source: item.source,
+                  eventId: item.rawEventId,
+                }) ?? '',
               relationshipSignals: item.relationshipSignals,
             })),
             metrics: pack.metrics,

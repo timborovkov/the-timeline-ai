@@ -1105,6 +1105,23 @@ function itemEvidenceRawEventIds(metadata: unknown): string[] {
   ];
 }
 
+function evidenceContentFingerprints(metadata: unknown): Record<string, string> {
+  const value = recordFromUnknown(metadata).evidence_content_fingerprints;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, string] => UUID_RE.test(entry[0]) && typeof entry[1] === 'string',
+    ),
+  );
+}
+
+function evidenceContentFingerprint(row: { contentText: string | null; occurredAt: Date }): string {
+  return suggestionDedupeKey({
+    contentText: row.contentText,
+    occurredAt: row.occurredAt.toISOString(),
+  });
+}
+
 function sourceRefValidationMetadata(sourceRefs: SourceRef[]): SourceRefValidationMetadata {
   const validation = validateSourceRefs(sourceRefs);
   if (!validation.ok) {
@@ -1939,6 +1956,7 @@ function toBundle(
   items: (typeof agentSuggestionItems.$inferSelect)[],
   evidence: (typeof agentSuggestionEvidence.$inferSelect & {
     occurredAt?: Date | null;
+    contentText?: string | null;
     source?: string | null;
     sourceMetadata?: unknown;
     senderTimelineName?: string | null;
@@ -1963,6 +1981,21 @@ function toBundle(
   const evidenceByRawEventId = new Map(
     hydratedEvidence.map((item) => [item.rawEventId, item] as const),
   );
+  const currentEvidenceFingerprintByRawEventId = new Map(
+    evidence.flatMap((item) =>
+      item.occurredAt
+        ? [
+            [
+              item.rawEventId,
+              evidenceContentFingerprint({
+                contentText: item.contentText ?? null,
+                occurredAt: item.occurredAt,
+              }),
+            ] as const,
+          ]
+        : [],
+    ),
+  );
   return {
     id: row.id,
     source: row.source,
@@ -1986,6 +2019,12 @@ function toBundle(
         const match = evidenceByRawEventId.get(id);
         return match ? [match] : [];
       });
+      const expectedFingerprints = evidenceContentFingerprints(item.metadata);
+      const evidenceChanged = evidenceIds.some(
+        (id) =>
+          expectedFingerprints[id] &&
+          expectedFingerprints[id] !== currentEvidenceFingerprintByRawEventId.get(id),
+      );
       return {
         id: item.id,
         status: item.status,
@@ -2007,7 +2046,7 @@ function toBundle(
         evidenceStatus:
           evidenceIds.length === 0
             ? ('legacy' as const)
-            : itemEvidence.length === evidenceIds.length
+            : itemEvidence.length === evidenceIds.length && !evidenceChanged
               ? ('current' as const)
               : ('stale' as const),
       };
@@ -2873,6 +2912,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           metadata: agentSuggestionEvidence.metadata,
           createdAt: agentSuggestionEvidence.createdAt,
           occurredAt: rawEvents.occurredAt,
+          contentText: rawEvents.contentText,
           source: rawEvents.source,
           sourceMetadata: rawEvents.sourceMetadata,
           senderTimelineName: users.name,
@@ -3625,8 +3665,13 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (item.status !== 'pending' && item.status !== 'failed') return null;
     const requiredEvidenceIds = itemEvidenceRawEventIds(item.metadata);
     if (requiredEvidenceIds.length > 0) {
+      const expectedFingerprints = evidenceContentFingerprints(item.metadata);
       const visibleEvidence = await db
-        .select({ id: rawEvents.id })
+        .select({
+          id: rawEvents.id,
+          contentText: rawEvents.contentText,
+          occurredAt: rawEvents.occurredAt,
+        })
         .from(rawEvents)
         .where(
           and(
@@ -3637,6 +3682,15 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         );
       if (visibleEvidence.length !== requiredEvidenceIds.length) {
         return 'Required source evidence is no longer available to approve.';
+      }
+      if (
+        visibleEvidence.some(
+          (event) =>
+            expectedFingerprints[event.id] &&
+            expectedFingerprints[event.id] !== evidenceContentFingerprint(event),
+        )
+      ) {
+        return 'Required source evidence changed after this suggestion was created.';
       }
     }
     const missingTargetReason = missingRequiredTargetReason(item);
@@ -6014,6 +6068,20 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       await validateEvidenceVisible((input.evidence ?? []).map((ev) => ev.rawEventId));
       const objectTypeByTargetId = await objectTypesForItems(input.items);
       const evidenceIds = Array.from(new Set((input.evidence ?? []).map((ev) => ev.rawEventId)));
+      const evidenceVersionRows =
+        evidenceIds.length > 0
+          ? await db
+              .select({
+                id: rawEvents.id,
+                contentText: rawEvents.contentText,
+                occurredAt: rawEvents.occurredAt,
+              })
+              .from(rawEvents)
+              .where(and(inArray(rawEvents.id, evidenceIds), eq(rawEvents.teamId, teamId)))
+          : [];
+      const evidenceFingerprintsById = Object.fromEntries(
+        evidenceVersionRows.map((event) => [event.id, evidenceContentFingerprint(event)]),
+      );
       const evidenceIdSet = new Set(evidenceIds);
       for (const item of input.items) {
         if (item.evidenceRawEventIds?.some((rawEventId) => !evidenceIdSet.has(rawEventId))) {
@@ -6430,7 +6498,16 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                   resolvedByUserId: userId,
                   metadata: {
                     ...(item.evidenceRawEventIds
-                      ? { evidence_raw_event_ids: item.evidenceRawEventIds }
+                      ? {
+                          evidence_raw_event_ids: item.evidenceRawEventIds,
+                          evidence_content_fingerprints: Object.fromEntries(
+                            item.evidenceRawEventIds.flatMap((id) =>
+                              evidenceFingerprintsById[id]
+                                ? [[id, evidenceFingerprintsById[id]]]
+                                : [],
+                            ),
+                          ),
+                        }
                       : {}),
                     reconciliation_run_id: run.id,
                     reconciliation_output_id: suppressedOutput?.id ?? null,
@@ -6603,7 +6680,16 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                 proposedPayload: item.proposedPayload,
                 metadata: {
                   ...(item.evidenceRawEventIds
-                    ? { evidence_raw_event_ids: item.evidenceRawEventIds }
+                    ? {
+                        evidence_raw_event_ids: item.evidenceRawEventIds,
+                        evidence_content_fingerprints: Object.fromEntries(
+                          item.evidenceRawEventIds.flatMap((id) =>
+                            evidenceFingerprintsById[id]
+                              ? [[id, evidenceFingerprintsById[id]]]
+                              : [],
+                          ),
+                        ),
+                      }
                     : {}),
                   reconciliation_run_id: run.id,
                   reconciliation_output_id: outputIdByItemDedupeKey.get(item.dedupeKey) ?? null,

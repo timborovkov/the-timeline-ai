@@ -174,7 +174,11 @@ describe('retrieveWorkspaceContext', () => {
         {
           rawEventId: EVENT_ID,
           citation: `[ev:${EVENT_ID}]`,
-          relationshipSignals: [{ kind: 'anchor', strength: 'hard' }],
+          snippet: `<external_content source="slack" event_id="${EVENT_ID}">Discussed Otto follow-up</external_content>`,
+          relationshipSignals: [
+            { kind: 'anchor', strength: 'hard' },
+            { kind: 'semantic_retrieval', strength: 'semantic' },
+          ],
         },
       ],
     });

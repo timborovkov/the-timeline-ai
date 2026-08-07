@@ -43,7 +43,7 @@ describe('buildEvidencePack', () => {
         (id, team_id, author_user_id, visibility_owner_user_id, source, content_text, occurred_at, visibility, source_metadata)
       VALUES
         ('${ANCHOR_ID}', '${TEAM_ID}', '${USER_ID}', '${USER_ID}', 'ingest_webhook', 'Acme launch webhook', '2026-08-01T10:00:00Z', 'team', '{"ingest_webhook_name":"Acme delivery"}'::jsonb),
-        ('${PRIVATE_ID}', '${TEAM_ID}', '${USER_ID}', '${USER_ID}', 'email', 'Private Acme note', '2026-08-01T11:00:00Z', 'private', '{}'::jsonb),
+        ('${PRIVATE_ID}', '${TEAM_ID}', '${USER_ID}', NULL, 'email', 'Private Acme note', '2026-08-01T11:00:00Z', 'private', '{}'::jsonb),
         ('${SUPPORT_ID}', '${TEAM_ID}', '${USER_ID}', '${USER_ID}', 'email', 'The signed Acme launch date is August 12.', '2026-08-01T09:00:00Z', 'team', '{}'::jsonb),
         ('${LONG_SUPPORT_ID}', '${TEAM_ID}', '${USER_ID}', '${USER_ID}', 'email', repeat('bounded evidence ', 100), '2026-08-01T08:00:00Z', 'team', '{}'::jsonb),
         ('${SLACK_NEW_ID}', '${TEAM_ID}', '${USER_ID}', '${USER_ID}', 'slack', 'Newest Slack evidence', '2026-08-01T13:00:00Z', 'team', '{}'::jsonb),
@@ -104,6 +104,20 @@ describe('buildEvidencePack', () => {
         anchorRawEventIds: [PRIVATE_ID, OTHER_TEAM_EVENT_ID],
       }),
     ).rejects.toThrow('required evidence anchors are missing or inaccessible');
+  });
+
+  it('uses the author as the audience owner for visible legacy private events', async () => {
+    const db = drizzle(pg);
+    const pack = await buildEvidencePack(withTeam(db as never, TEAM_ID, USER_ID), {
+      purpose: 'answer',
+      anchorRawEventIds: [PRIVATE_ID],
+      semanticRawEventIds: [PRIVATE_ID],
+    });
+
+    expect(pack.audience).toMatchObject({
+      visibility: 'private',
+      visibilityOwnerUserId: USER_ID,
+    });
   });
 
   it('admits one-hop hard-linked evidence while excluding non-team supporting rows', async () => {
@@ -247,5 +261,33 @@ describe('buildEvidencePack', () => {
       SLACK_OLD_ID,
     ]);
     expect(pack.items[2]?.rankReasons).toContain('source_diversity');
+  });
+
+  it('discovers supporting evidence through every cluster attached to an anchor', async () => {
+    const db = drizzle(pg);
+    const link = async (rawEventId: string, canonicalName: string, url: string) =>
+      reconcileArtifactEvidence(db as never, {
+        teamId: TEAM_ID,
+        artifactType: 'project',
+        canonicalName,
+        status: 'active',
+        rawEventId,
+        role: 'discussion',
+        strength: 'hard',
+        anchors: [{ type: 'canonical_url', value: url, strength: 'hard' }],
+      });
+    await link(ANCHOR_ID, 'Acme launch', 'https://acme.test/launch');
+    await link(SUPPORT_ID, 'Acme launch', 'https://acme.test/launch');
+    await link(ANCHOR_ID, 'Acme renewal', 'https://acme.test/renewal');
+    await link(SLACK_NEW_ID, 'Acme renewal', 'https://acme.test/renewal');
+
+    const pack = await buildEvidencePack(withTeam(db as never, TEAM_ID, USER_ID), {
+      purpose: 'proposal',
+      anchorRawEventIds: [ANCHOR_ID],
+    });
+
+    expect(pack.items.map((item) => item.rawEventId)).toEqual(
+      expect.arrayContaining([ANCHOR_ID, SUPPORT_ID, SLACK_NEW_ID]),
+    );
   });
 });

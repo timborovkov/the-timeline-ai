@@ -163,6 +163,7 @@ export interface ProductionSamplingEvalReport {
   confirmedFixtureCandidateCount: number;
   unconfirmedFixtureCandidateCount: number;
   fixtureCandidates: ProductionSamplingFixtureCandidate[];
+  requiredEvidencePackScenarioFamilies?: string[];
   evidencePackHealth?: ProductionSamplingEvidencePackHealth;
   evidencePackPromotion?: ProductionSamplingEvidencePackPromotion;
 }
@@ -270,6 +271,9 @@ export function buildProductionSamplingEvalReport(
     confirmedFixtureCandidateCount,
     unconfirmedFixtureCandidateCount: fixtureCandidates.length - confirmedFixtureCandidateCount,
     fixtureCandidates,
+    requiredEvidencePackScenarioFamilies: uniqueSorted(
+      input.requiredEvidencePackScenarioFamilies ?? [],
+    ),
     evidencePackHealth: summarizeProductionSamplingEvidencePacks(input.evidencePackSamples ?? []),
   };
   if ((input.evidencePackSamples?.length ?? 0) > 0) {
@@ -370,6 +374,7 @@ export function assessEvidencePackPromotion(
   }
   if (!health || health.shadowTeamKeys.length < 3) blockers.push('shadow_team_floor');
   if (!health || health.crossSourceSampleCount < 25) blockers.push('cross_source_sample_floor');
+  if (requiredScenarioFamilies.length === 0) blockers.push('scenario_policy_missing');
   if (
     !health ||
     requiredScenarioFamilies.some((family) => !health.scenarioFamilies.includes(family))
@@ -456,13 +461,20 @@ export async function writeProductionSamplingEvalReport(
     reportInput.confirmedFixtureCandidates = input.confirmedFixtureCandidates;
   }
   const report = buildProductionSamplingReportFromLoaded(reportInput);
+  const requiredEvidencePackScenarioFamilies = uniqueSorted(
+    input.requiredEvidencePackScenarioFamilies ??
+      loaded.reports.flatMap(
+        (loadedReport) => loadedReport.requiredEvidencePackScenarioFamilies ?? [],
+      ),
+  );
+  report.requiredEvidencePackScenarioFamilies = requiredEvidencePackScenarioFamilies;
   if (input.evidencePackSamples) {
     report.evidencePackHealth = summarizeProductionSamplingEvidencePacks(input.evidencePackSamples);
   }
   if ((report.evidencePackHealth?.sampleCount ?? 0) > 0) {
     report.evidencePackPromotion = assessEvidencePackPromotion(
       report,
-      input.requiredEvidencePackScenarioFamilies ?? [],
+      requiredEvidencePackScenarioFamilies,
     );
   } else {
     delete report.evidencePackPromotion;
@@ -573,12 +585,18 @@ function mergeProductionSamplingEvalReports(
     confirmedFixtureCandidateCount,
     unconfirmedFixtureCandidateCount: fixtureCandidates.length - confirmedFixtureCandidateCount,
     fixtureCandidates,
+    requiredEvidencePackScenarioFamilies: uniqueSorted(
+      reports.flatMap((report) => report.requiredEvidencePackScenarioFamilies ?? []),
+    ),
     evidencePackHealth: mergeEvidencePackHealth(
       reports.flatMap((report) => (report.evidencePackHealth ? [report.evidencePackHealth] : [])),
     ),
   };
   if ((report.evidencePackHealth?.sampleCount ?? 0) > 0) {
-    report.evidencePackPromotion = assessEvidencePackPromotion(report);
+    report.evidencePackPromotion = assessEvidencePackPromotion(
+      report,
+      report.requiredEvidencePackScenarioFamilies ?? [],
+    );
   }
   return report;
 }
@@ -1192,6 +1210,8 @@ function isProductionSamplingEvalReport(value: unknown): value is ProductionSamp
     isNonNegativeInteger(record.unconfirmedFixtureCandidateCount) &&
     Array.isArray(record.fixtureCandidates) &&
     record.fixtureCandidates.every(isProductionSamplingFixtureCandidate) &&
+    (record.requiredEvidencePackScenarioFamilies === undefined ||
+      isStringArray(record.requiredEvidencePackScenarioFamilies)) &&
     (record.evidencePackHealth === undefined ||
       isProductionSamplingEvidencePackHealth(record.evidencePackHealth)) &&
     (record.evidencePackPromotion === undefined ||

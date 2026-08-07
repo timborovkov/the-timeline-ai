@@ -17,8 +17,10 @@ import {
   type LiveEvalModelResult,
 } from '#src/reconciliation/live-artifacts.js';
 import {
+  assessEvidencePackPromotion,
   buildProductionSamplingEvalReport,
   loadProductionSamplingEvalArtifacts,
+  summarizeProductionSamplingEvidencePacks,
   writeProductionSamplingEvalReport,
 } from '#src/reconciliation/production-sampling.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
@@ -377,6 +379,51 @@ describe('production reconciliation sampling report', () => {
       ready: false,
       blockerCodes: ['shadow_day_floor'],
     });
+  });
+
+  it('preserves required scenario policy when reassessing a stored report', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'timeline-promotion-policy-'));
+    try {
+      const previous = buildProductionSamplingEvalReport({
+        generatedAt: '2026-07-08T10:00:00.000Z',
+        manifests: [],
+        artifacts: [],
+      });
+      previous.requiredEvidencePackScenarioFamilies = ['generic_webhook'];
+      previous.evidencePackHealth = summarizeProductionSamplingEvidencePacks(
+        Array.from({ length: 200 }, (_, index) => ({
+          mode: 'shadow' as const,
+          version: 'evidence-pack-v1',
+          policyVersion: 'proposal-v1',
+          candidateCount: 2,
+          selectedCount: 2,
+          surfaceCount: index < 25 ? 2 : 1,
+          estimatedTokens: 200,
+          buildDurationMs: 50,
+          truncated: false,
+          sampledAt: `2026-07-${String((index % 7) + 1).padStart(2, '0')}T10:00:00.000Z`,
+          teamKey: `team-${index % 3}`,
+          scenarioFamily: 'generic_webhook',
+          eligible: true,
+        })),
+      );
+      previous.evidencePackPromotion = assessEvidencePackPromotion(previous, ['generic_webhook']);
+      const inputPath = path.join(dir, 'previous.json');
+      await writeFile(inputPath, `${JSON.stringify(previous, null, 2)}\n`, 'utf8');
+
+      const written = await writeProductionSamplingEvalReport({
+        inputPaths: [inputPath],
+        outputPath: path.join(dir, 'next.json'),
+        generatedAt: '2026-07-09T10:00:00.000Z',
+      });
+
+      expect(written.report.requiredEvidencePackScenarioFamilies).toEqual(['generic_webhook']);
+      expect(written.report.evidencePackPromotion?.blockerCodes).not.toContain(
+        'scenario_policy_missing',
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it('downgrades stale passed artifacts when source-ref consistency fails', () => {

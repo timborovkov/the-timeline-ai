@@ -318,6 +318,59 @@ describe('suggestion scope', () => {
     });
   });
 
+  it('supersedes an approval when mutable calendar evidence changes', async () => {
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'calendar',
+      contentText: 'Customer review is August 12 at 10:00.',
+      occurredAt: new Date('2026-08-12T10:00:00.000Z'),
+      visibility: 'team',
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const created = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Prepare for customer review',
+      dedupeKey: 'refreshed-calendar-evidence',
+      metadata: { evidence_pack_fingerprint: 'a'.repeat(64) },
+      evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare review notes',
+          dedupeKey: 'refreshed-calendar-evidence:item',
+          proposedPayload: { canonicalName: 'Prepare review notes' },
+          evidenceRawEventIds: [TEAM_RAW_EVENT_ID],
+        },
+      ],
+    });
+    await db
+      .update(rawEvents)
+      .set({
+        contentText: 'Customer review moved to August 13 at 14:00.',
+        occurredAt: new Date('2026-08-13T14:00:00.000Z'),
+      })
+      .where(eq(rawEvents.id, TEAM_RAW_EVENT_ID));
+
+    const [visible] = await scope.suggestions.listPendingSuggestions();
+    expect(visible?.items[0]).toMatchObject({ evidenceStatus: 'stale' });
+    await scope.suggestions.acceptSuggestionItem(created.items[0]?.id ?? 'missing');
+
+    const [item] = await db
+      .select({
+        status: agentSuggestionItems.status,
+        reason: agentSuggestionItems.supersededReason,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, created.items[0]?.id ?? 'missing'));
+    expect(item).toEqual({
+      status: 'superseded',
+      reason: 'Required source evidence changed after this suggestion was created.',
+    });
+  });
+
   it('creates non-authoritative artifact cluster evidence for pending conversation suggestions', async () => {
     await db.insert(rawEvents).values({
       id: TEAM_RAW_EVENT_ID,

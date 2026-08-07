@@ -277,6 +277,9 @@ export async function buildEvidencePack(
           anchorSet.has(event.id)
             ? { kind: 'anchor', strength: 'hard' }
             : { kind: 'conversation_core', strength: 'hard' },
+          ...(semanticSet.has(event.id)
+            ? [{ kind: 'semantic_retrieval' as const, strength: 'semantic' as const }]
+            : []),
         ]
       : (relatedSignals.get(event.id) ?? []);
     const truncated = contentText.length < originalContent.length;
@@ -302,7 +305,9 @@ export async function buildEvidencePack(
           ],
       visibility: {
         visibility: event.visibility,
-        visibilityOwnerUserId: event.visibilityOwnerUserId,
+        visibilityOwnerUserId:
+          event.visibilityOwnerUserId ??
+          (event.visibility === 'private' ? event.authorUserId : null),
         visibilityUserIds: event.visibilityUserIds,
       },
       truncated,
