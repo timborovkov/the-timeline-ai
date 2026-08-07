@@ -65,7 +65,10 @@ SLACK_SIGNING_SECRET=
             <li>Short description: <code>Ask the Timeline AI</code></li>
             <li>Usage hint: <code>[question]</code></li>
             <li>
-              Answers use plain text so Slack does not surface raw citation ids or Markdown markers.
+              Answers use the shared external-chat profile: concise plain text by default, with no
+              raw Timeline citation ids, Markdown markers, or source footer. An explicit request for
+              a full breakdown can expand within the external reply limit; use web chat for rich,
+              clickable evidence links.
             </li>
             <li>
               Leave <strong>Escape channels, users, and links sent to your app</strong> unchecked.

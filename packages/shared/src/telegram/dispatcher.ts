@@ -1025,6 +1025,7 @@ async function runAskInner(input: RunAskInput): Promise<void> {
         db: input.db,
         teamId: input.teamId,
         userId: input.userId ?? TEAM_BOT_ACTOR_USER_ID,
+        deliverySurface: 'telegram',
         userName: input.userName,
         trustedTeamActor: input.trustedTeamActor,
         question,

@@ -332,7 +332,8 @@ Legend:
 - `pnpm test:eval` runs the fast deterministic shared agent/retrieval eval
   slice, including dashboard chat route action/HITL selection and persisted
   observability, dispatcher-level Slack/Telegram `/ask` delivery through the
-  real non-browser `askAgent` wrapper, object-summary source-ref/visibility
+  real non-browser `askAgent` wrapper, web-rich versus external-chat presentation
+  (including a broad weekly-plan comparison), object-summary source-ref/visibility
   coverage, and a worker-level background proposal eval for visibility-safe
   conversation reviews.
 - `pnpm test:agent-eval:live` runs an opt-in live OpenRouter `askAgent` eval
@@ -936,7 +937,8 @@ tests and evals carry the branch coverage and model/tool behavior.
   - Chat eval fixtures include timeline retrieval/citation, provider-filtered
     integration retrieval, document chunk retrieval/citation, meeting transcript
     chunk retrieval/citation, dashboard action/HITL selection, Slack/Telegram
-    ask-surface delivery, background proposal generation, durable
+    ask-surface delivery, web-rich versus ID-free concise external presentation,
+    background proposal generation, durable
     task/calendar state, failed-tool honesty, and private/specific-user/team
     fences.
 - Test command target:

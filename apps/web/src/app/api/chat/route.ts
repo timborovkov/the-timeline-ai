@@ -831,11 +831,13 @@ export async function POST(req: Request): Promise<Response> {
     scope.timeline.currentUserIdentityContext(),
   ]);
   const currentDate = new Date();
+  const presentation = agent.resolveAgentPresentation('web');
   const baseSystem = agent.buildSystemPrompt({
     teamName,
     userName,
     currentUser,
     currentDate,
+    presentation,
     workspaceTime: time.workspaceTimeContext(calendarSettings.defaultTimezone, currentDate),
   });
   const contextPrompt = dashboardContextPrompt(parsed.data.dashboardContext);
@@ -956,6 +958,7 @@ export async function POST(req: Request): Promise<Response> {
     },
     onFinish: (e) => {
       const modelAttribution = llm.streamChatModelAttribution(e, modelId);
+      const answerText = 'text' in e && typeof e.text === 'string' ? e.text : '';
       const toolObservability = agent.summarizeAgentToolObservations({
         observations: toolObservations,
         selection: {
@@ -973,7 +976,12 @@ export async function POST(req: Request): Promise<Response> {
           teamId: active.teamId,
           userId: session.user.id,
           sessionId: sessionId ?? null,
+          presentation,
           ...modelAttribution,
+          rawChars: answerText.length,
+          deliveredChars: answerText.length,
+          removedReferences: 0,
+          truncated: false,
           usage: e.usage,
           toolObservability,
         },
@@ -1007,7 +1015,7 @@ export async function POST(req: Request): Promise<Response> {
       turnsToPersist.push({
         role: 'assistant',
         content: {
-          text: 'text' in e && typeof e.text === 'string' ? e.text : null,
+          text: answerText || null,
           tool_calls: 'toolCalls' in e ? e.toolCalls : undefined,
           tool_observability: toolObservability,
           finish_reason: 'finishReason' in e ? e.finishReason : undefined,

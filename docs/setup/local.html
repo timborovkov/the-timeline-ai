@@ -49,7 +49,7 @@ ln -sf ../../.env apps/web/.env
         The rest of the defaults already match <code>docker-compose.yml</code>. When you use
         <code>docker compose --profile app up</code>, Compose forwards
         <code>TELEGRAM_BOT_TOKEN</code> and <code>SECRETS_ENCRYPTION_KEY</code> to the worker so
-        Telegram and Slack direct-agent replies work in the production-parity profile.
+        Telegram and Slack direct-agent replies use the production-parity external-chat profile.
       </p>
       <p>
         <code>TURNSTILE_SITE_KEY</code>, <code>TURNSTILE_SECRET_KEY</code>, and

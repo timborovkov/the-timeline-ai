@@ -10,6 +10,11 @@ compact provider badges. Opening one hydrates its persisted transcript,
 continuing it from web appends to the same session, and archiving it causes the
 provider's next direct message to create a new session.
 
+Presentation follows the current delivery surface rather than the session's
+origin. Prior Telegram or Slack turns remain their exact compact transcript;
+new turns sent from web use the rich profile with full clickable citations and
+no external-chat output cap.
+
 ## Why it exists
 
 Single user-facing surface. All UI, API routes, and server actions live here. Backend logic that other workspace packages need (DB access, LLM calls, queue dispatch) is delegated to [`@timeline/shared`](../../packages/shared/README.md) and [`@timeline/db`](../../packages/db/README.md) — this package stays focused on the request/response layer.

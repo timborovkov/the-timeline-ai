@@ -79,10 +79,13 @@ const MONDAY_INTEGRATION_ID = '66666666-6666-4666-8666-666666666666';
 type Db = ReturnType<typeof drizzle>;
 
 function askLiveAgent(
-  input: Parameters<typeof askAgent>[0],
+  input: Omit<Parameters<typeof askAgent>[0], 'deliverySurface'>,
   deps: Parameters<typeof askAgent>[1] = {},
 ) {
-  return askAgent(input, { currentDate: LIVE_EVAL_CURRENT_DATE, ...deps });
+  return askAgent(
+    { ...input, deliverySurface: 'telegram' },
+    { currentDate: LIVE_EVAL_CURRENT_DATE, ...deps },
+  );
 }
 
 async function seed(pg: PGlite): Promise<void> {

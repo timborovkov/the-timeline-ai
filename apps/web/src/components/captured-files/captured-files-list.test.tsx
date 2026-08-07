@@ -249,9 +249,10 @@ describe('CapturedFilesList', () => {
       'Could not promote this captured file. It remains unchanged. Check your connection, then try again.',
     );
 
-    const title = within(dialog).getByRole('textbox', { name: 'Title' });
+    const liveDialog = screen.getByRole('dialog', { name: 'Promote to Documents' });
+    const title = within(liveDialog).getByRole('textbox', { name: 'Title' });
     await user.clear(title);
-    await user.click(within(dialog).getByRole('button', { name: 'Promote' }));
+    await user.click(within(liveDialog).getByRole('button', { name: 'Promote' }));
 
     expect(screen.getByText('Enter a title before promoting this file.')).toBeTruthy();
     expect(

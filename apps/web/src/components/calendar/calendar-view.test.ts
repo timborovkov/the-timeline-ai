@@ -475,7 +475,9 @@ describe('CalendarView recurrence and tentative UI', () => {
     expect(document.activeElement).toBe(screen.getByLabelText('Title'));
     expect(fakes.createCalendarEventAction).not.toHaveBeenCalled();
 
-    await user.type(screen.getByLabelText('Title'), 'Private launch review');
+    fireEvent.change(screen.getByLabelText('Title'), {
+      target: { value: 'Private launch review' },
+    });
     await user.click(screen.getByLabelText('Ada Lovelace'));
     await user.click(screen.getByLabelText('Grace Hopper'));
     await user.selectOptions(screen.getByLabelText('Show as'), 'tentative');

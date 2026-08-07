@@ -21,6 +21,13 @@ answer. Set `TELEGRAM_BOT_TOKEN` on the worker for Telegram typing and replies;
 Slack tokens are decrypted from installed workspace records with the same
 `SECRETS_ENCRYPTION_KEY` configured on web.
 
+The worker resolves presentation from the current delivery surface. Only
+literal `web` uses the rich cited profile; Telegram, Slack, and every future
+conversation provider default to compact plain text with internal Timeline
+references removed. New delivery adapters inherit that policy through the
+shared conversation runtime and must not add provider-specific answer prompts
+or citation sanitizers.
+
 ## How to use
 
 From the repo root:

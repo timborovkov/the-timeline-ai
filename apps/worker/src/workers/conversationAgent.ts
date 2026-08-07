@@ -67,11 +67,25 @@ async function deliverCached(
 ): Promise<void> {
   if (turn.status === 'cancelled') return;
   if (!turn.answerText) throw new Error('Cached conversation turn has no answer');
+  const presentation = agent.resolveAgentPresentation(turn.surface);
+  const presented = agent.formatAgentAnswerForPresentation(turn.answerText, presentation);
+  log.info(
+    {
+      event: 'conversation_agent_answer_presented',
+      ...turnLogContext(turn),
+      presentation,
+      rawChars: turn.answerText.length,
+      deliveredChars: presented.text.length,
+      removedReferences: presented.removedReferences,
+      truncated: presented.truncated,
+    },
+    'conversation answer presentation resolved',
+  );
   try {
     if (turn.status === 'failed' || turn.status === 'timed_out') {
-      await adapter.deliverFailure(turn.answerText);
+      await adapter.deliverFailure(presented.text);
     } else {
-      await adapter.deliverAnswer(turn.answerText);
+      await adapter.deliverAnswer(presented.text);
     }
     await scope.markDelivered(turn.id);
   } catch (err) {
@@ -197,6 +211,7 @@ export async function processConversationAgentJob(
           db: deps.db,
           teamId: turn.teamId,
           userId: turn.userId,
+          deliverySurface: turn.surface,
           question: turn.questionText,
           priorMessages: history,
         },
@@ -237,9 +252,13 @@ export async function processConversationAgentJob(
       return { turnId: turn.id, status: 'failed' };
     }
 
+    const presented = agent.formatAgentAnswerForPresentation(
+      result.answer,
+      agent.resolveAgentPresentation(turn.surface),
+    );
     const stored = await scope.storeAnswer({
       turnId: turn.id,
-      answer: result.answer,
+      answer: presented.text,
       ...(result.requestedModelId ? { requestedModelId: result.requestedModelId } : {}),
       ...(result.responseModelId ? { responseModelId: result.responseModelId } : {}),
       ...(toolObservability ? { toolObservability } : {}),

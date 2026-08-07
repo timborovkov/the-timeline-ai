@@ -90,7 +90,9 @@ This is a pnpm/Turborepo monorepo.
 Telegram and Slack direct text share one durable agent runtime: private,
 bounded sessions are visible in web chat history, while explicit notes and all
 attachments remain capture. Groups and channels stay ingestion-first unless
-someone uses `/ask` or mentions Timeline. See
+someone uses `/ask` or mentions Timeline. Web chat keeps thorough answers with
+clickable evidence; every external chat provider defaults to concise plain text
+without internal Timeline IDs. See
 [ADR 0012](docs/adr/0012-direct-chat-surfaces-share-one-agent-runtime.md).
 
 The two most important boundaries are:

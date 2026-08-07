@@ -461,6 +461,8 @@ export interface StreamChatInput<TTools extends ToolSet> {
   model?: string;
   /** Hard cap on tool-call rounds. Defaults to `DEFAULT_AGENT_MAX_STEPS`. */
   maxSteps?: number;
+  /** Optional completion-token ceiling for the current presentation surface. */
+  maxOutputTokens?: number;
   /** Forwarded to streamText.onFinish for usage/audit logging. */
   onFinish?: Parameters<typeof streamText>[0]['onFinish'];
   /** Forwarded to streamText.onError for provider/stream failures. */
@@ -514,6 +516,7 @@ export function streamChat<TTools extends ToolSet>(
       },
     }),
   };
+  if (input.maxOutputTokens !== undefined) args.maxOutputTokens = input.maxOutputTokens;
   if (input.onFinish) args.onFinish = input.onFinish;
   if (input.onError) {
     args.onError = (event) => {

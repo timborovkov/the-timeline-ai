@@ -549,12 +549,15 @@ _Avoid_: Connector when the surface is first-party
 A private, provider-backed conversation between one verified Timeline user and
 the agent. Plain text is an agent turn, history is private to that user and
 team, and the insertion-ordered persisted transcript is available in web chat
-history. Voice, files, images, and other attachments remain source capture
-rather than agent prompts. Switching the active team or losing membership
-archives the old provider session and starts a new conversation without leaving
-the provider route blocked on stale state. The provider route is revalidated
-while the conversation is locked, and a cached answer remains the active turn
-until provider delivery or cancellation so replies cannot arrive out of order.
+history. Presentation follows the current delivery surface: external providers
+receive compact plain text without internal Timeline references, while a new
+turn continued in web chat receives the rich cited profile. Voice, files,
+images, and other attachments remain source capture rather than agent prompts.
+Switching the active team or losing membership archives the old provider
+session and starts a new conversation without leaving the provider route
+blocked on stale state. The provider route is revalidated while the
+conversation is locked, and a cached answer remains the active turn until
+provider delivery or cancellation so replies cannot arrive out of order.
 _Avoid_: DM Capture when the user sent ordinary text to the agent
 
 **Explicit Chat Note**:
