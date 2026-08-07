@@ -260,6 +260,9 @@ TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-pr
 # Promotion health, latency, and error gates use shadow attempts only. When a
 # prior report and fresh sample file are supplied together, their redacted
 # health summaries are merged rather than replacing historical violations.
+# Explicit telemetry with zero shadow attempts still produces a failed
+# assessment, and mixed builder/policy versions block promotion until a fresh
+# single-version shadow population qualifies.
 # The worker process also starts a reconciliation queue consumer for
 # evidence_audit/evidence_backfill/scope_reconcile jobs when they are enqueued
 # by product or operator code. Queue payloads support optional source, limit,

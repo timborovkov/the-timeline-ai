@@ -1,6 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { reconcileArtifactEvidence } from '#src/artifacts/index.js';
 import { buildEvidencePack } from '#src/evidence-pack/index.js';
@@ -255,6 +255,62 @@ describe('buildEvidencePack', () => {
 
     expect(pack.items.map((item) => item.rawEventId)).toEqual([ANCHOR_ID]);
     expect(pack.metrics.omissionReasons).toMatchObject({ empty_content: 1 });
+  });
+
+  it('canonicalizes duplicate relationship signals before fingerprinting', async () => {
+    const db = drizzle(pg);
+    const actualScope = withTeam(db as never, TEAM_ID, USER_ID);
+    let reverse = false;
+    const evidence = (clusterId: string) => ({
+      rawEventId: SUPPORT_ID,
+      source: 'email' as const,
+      provider: null,
+      externalObjectId: null,
+      role: 'document',
+      strength: 'hard',
+      associationSource: 'manual',
+      authoritative: false,
+      occurredAt: '2026-08-01T09:00:00.000Z',
+      snippet: 'The signed Acme launch date is August 12.',
+      clusterId,
+    });
+    const listEvidencePackArtifactClusters = vi.fn(() => {
+      const ids = reverse ? ['cluster-b', 'cluster-a'] : ['cluster-a', 'cluster-b'];
+      return Promise.resolve(
+        Object.fromEntries(
+          ids.map((id) => [
+            id,
+            {
+              id,
+              artifactType: 'project' as const,
+              canonicalName: 'Acme launch',
+              status: 'active',
+              relatedEvidence: id === 'cluster-a' ? [evidence(id), evidence(id)] : [evidence(id)],
+            },
+          ]),
+        ),
+      );
+    });
+    const scope = {
+      ...actualScope,
+      timeline: { ...actualScope.timeline, listEvidencePackArtifactClusters },
+    };
+
+    const first = await buildEvidencePack(scope, {
+      purpose: 'proposal',
+      anchorRawEventIds: [ANCHOR_ID],
+    });
+    reverse = true;
+    const second = await buildEvidencePack(scope, {
+      purpose: 'proposal',
+      anchorRawEventIds: [ANCHOR_ID],
+    });
+
+    expect(first.items[1]?.relationshipSignals.map((signal) => signal.clusterId)).toEqual([
+      'cluster-a',
+      'cluster-b',
+    ]);
+    expect(second.fingerprint).toBe(first.fingerprint);
   });
 
   it('records a machine-readable reason when evidence content is truncated', async () => {

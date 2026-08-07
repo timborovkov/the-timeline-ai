@@ -6086,7 +6086,25 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
               .where(and(inArray(rawEvents.id, evidenceIds), eq(rawEvents.teamId, teamId)))
           : [];
       const evidenceFingerprintsById = Object.fromEntries(
-        evidenceVersionRows.map((event) => [event.id, evidenceContentFingerprint(event)]),
+        evidenceVersionRows.map((event) => {
+          const currentFingerprint = evidenceContentFingerprint(event);
+          const suppliedEvidence = input.evidence?.find(
+            (candidate) => candidate.rawEventId === event.id,
+          );
+          const snapshotFingerprint = recordFromUnknown(
+            suppliedEvidence?.metadata,
+          ).evidence_content_fingerprint;
+          if (
+            typeof snapshotFingerprint === 'string' &&
+            snapshotFingerprint !== currentFingerprint
+          ) {
+            throw new Error('Suggestion evidence changed while the proposal was being generated');
+          }
+          return [
+            event.id,
+            typeof snapshotFingerprint === 'string' ? snapshotFingerprint : currentFingerprint,
+          ];
+        }),
       );
       const evidenceIdSet = new Set(evidenceIds);
       for (const item of input.items) {

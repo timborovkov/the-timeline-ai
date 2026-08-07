@@ -398,6 +398,49 @@ describe('production reconciliation sampling report', () => {
     ]);
   });
 
+  it('blocks promotion when builder or policy versions are mixed', () => {
+    const passed = buildLiveEvalArtifact({
+      testCase: BASE_CASE,
+      modelId: 'planner-v1',
+      promptVersion: 'prompt-v1',
+      prompt: 'private production packet text',
+      result: PASS_RESULT,
+      judge: PASS_JUDGE,
+      passed: true,
+      failures: [],
+      startedAt: '2026-07-01T10:00:00.000Z',
+      completedAt: '2026-07-01T10:00:01.000Z',
+    });
+    const samples = Array.from({ length: 201 }, (_, index) => ({
+      mode: 'shadow' as const,
+      version: index === 200 ? 'evidence-pack-v2' : 'evidence-pack-v1',
+      policyVersion: index === 200 ? 'proposal-v2' : 'proposal-v1',
+      candidateCount: 4,
+      selectedCount: 2,
+      surfaceCount: 2,
+      estimatedTokens: 400,
+      buildDurationMs: 100,
+      truncated: false,
+      sampledAt: `2026-07-${String((index % 7) + 1).padStart(2, '0')}T10:00:00.000Z`,
+      teamKey: `team-${index % 3}`,
+      scenarioFamily: 'customer_project',
+      eligible: true,
+    }));
+
+    const report = buildProductionSamplingEvalReport({
+      generatedAt: '2026-07-08T10:00:00.000Z',
+      manifests: [],
+      artifacts: [passed],
+      evidencePackSamples: samples,
+      requiredEvidencePackScenarioFamilies: ['customer_project'],
+    });
+
+    expect(report.evidencePackPromotion?.blockerCodes).toEqual([
+      'pack_policy_version_mixed',
+      'pack_version_mixed',
+    ]);
+  });
+
   it('requires seven consecutive shadow days for evidence-pack promotion', () => {
     const passed = buildLiveEvalArtifact({
       testCase: BASE_CASE,
@@ -505,6 +548,39 @@ describe('production reconciliation sampling report', () => {
       ]);
       expect(written.report.evidencePackPromotion?.blockerCodes).not.toContain(
         'scenario_policy_missing',
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('assesses an explicit telemetry file even when it has no shadow samples', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'timeline-zero-shadow-'));
+    try {
+      const written = await writeProductionSamplingEvalReport({
+        inputPaths: [],
+        outputPath: path.join(dir, 'report.json'),
+        generatedAt: '2026-07-09T10:00:00.000Z',
+        evidencePackSamples: [
+          {
+            mode: 'off',
+            version: 'evidence-pack-v1',
+            policyVersion: 'proposal-v1',
+            candidateCount: 0,
+            selectedCount: 0,
+            surfaceCount: 0,
+            estimatedTokens: 0,
+            buildDurationMs: 0,
+            truncated: false,
+          },
+        ],
+        requiredEvidencePackScenarioFamilies: ['generic_webhook'],
+      });
+
+      expect(written.report.evidencePackHealth?.sampleCount).toBe(0);
+      expect(written.report.evidencePackPromotion?.ready).toBe(false);
+      expect(written.report.evidencePackPromotion?.blockerCodes).toEqual(
+        expect.arrayContaining(['shadow_sample_floor', 'shadow_day_floor', 'shadow_team_floor']),
       );
     } finally {
       await rm(dir, { recursive: true, force: true });

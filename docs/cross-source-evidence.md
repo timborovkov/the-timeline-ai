@@ -40,7 +40,7 @@ proposal and answer packs. Proposal behavior remains on the legacy path while
 
 | Path | What happens today |
 | --- | --- |
-| Generic ingest webhooks | `off`: the existing event-local proposal remains unchanged. `shadow`: pack metrics only. `enforced`: recent time-only chronology is replaced by the anchor plus directly related pack evidence, and every proposed change requires exact citations. The existing proposal-generation source gate remains an inner gate. |
+| Generic ingest webhooks | `off`: the existing event-local proposal remains unchanged. `shadow`: pack metrics only; pack failures are recorded without interrupting legacy extraction. `enforced`: recent time-only chronology is replaced by the anchor plus directly related pack evidence, and every proposed change requires exact citations. The existing proposal-generation source gate remains an inner gate. |
 | Slack, Telegram, email, meetings, and documents | Existing conversation-review and event-local proposal behavior remains unchanged regardless of the global rollout setting. These adapters must migrate and pass their own gates separately. |
 | GitHub, Linear, Monday, and Sentry | Structured events feed artifact reconciliation, associations, source references, and provider-authoritative outputs. They do not run the suggestion model. |
 | Agent Ask | Broad workspace retrieval returns a viewer-visible answer-policy pack for raw-event evidence while keeping objects, notes, tasks, boards, documents, and calendar results as typed adjacent context. Semantic matches are labeled as retrieval provenance, and partial packets disclose failed source adapters. |
@@ -213,6 +213,8 @@ The first enforced source path must meet all of these gates:
   three teams
 - At least 25 genuinely cross-source shadow packs, with every required scenario
   family represented
+- One builder version and one proposal-policy version across the qualifying
+  population; a version change starts a fresh promotion window
 - No additional embedding or generative-model request solely for proposal-pack
   ranking
 - At most 24 protected conversation-core events, 8 supporting events, 4

@@ -211,7 +211,8 @@ machine-readable reason.
 
 - `off` preserves current behavior and does not build packs.
 - `shadow` builds packs and records content-free metrics without changing model
-  input or user-visible output.
+  input or user-visible output. A shadow build failure is recorded and falls
+  back to the unchanged legacy extraction path.
 - `enforced` uses pack evidence and exact citation validation.
 - Any safety violation is a promotion blocker and rollback trigger.
 - Pack p95 remains below 1 second and errors below 1% before promotion.
@@ -374,8 +375,10 @@ with model-selected, validated item citations.
 1. Add `evidenceRawEventIds` with at least one and no more than the 32 selected
    pack events to each pack-backed suggestion item in the structured model
    schema.
-2. Render pack item IDs beside fenced external content. Tell the model to cite
-   only IDs in the pack and produce no item when material conflict is unresolved.
+2. Render pack item IDs beside fenced external content and fenced sender
+   identity context so first-person statements retain their source attribution.
+   Tell the model to cite only IDs in the pack and produce no item when material
+   conflict is unresolved.
 3. Validate every returned ID against the visible pack. Reject an affected
    bundle with a structured reason when an ID is unknown, inaccessible, empty,
    duplicated incorrectly, or outside the selected pack.
@@ -458,8 +461,10 @@ without changing native-provider authority.
    the pack to the prompt or create pack-derived output.
 5. In `enforced`, render the pack and require exact item citations.
 6. Return a valid anchor-only pack when no supporting evidence qualifies.
-7. Fail closed and retry when candidate discovery or required visibility
-   hydration fails. Do not treat a failed adapter as an empty complete pack.
+7. In `enforced`, fail closed and retry when candidate discovery or required
+   visibility hydration fails. In `shadow`, record the content-free failure and
+   continue through legacy extraction. Do not treat a failed adapter as an
+   empty complete pack.
 8. Add structured no-action and invalid-citation reason codes to worker metrics
    and redacted logs.
 

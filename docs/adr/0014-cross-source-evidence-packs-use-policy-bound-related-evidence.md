@@ -50,6 +50,7 @@ artifact-cluster anchors. Its output contains:
 
 - protected core events and ranked supporting events;
 - the normalized surface and immutable raw-event reference for each item;
+- fenced sender identity context for first-person attribution;
 - relationship provenance and deterministic rank reasons;
 - visibility and audience information;
 - policy, builder, and budget versions;
@@ -132,6 +133,9 @@ evidence rows. Each item stores its selected IDs in metadata, and its
 reconciliation output `sourceRefs` is the authoritative per-item citation set.
 The suggestion and reconciliation run store the pack version, policy version,
 fingerprint, metrics, and truncation state. This does not require a new table.
+Each selected item also carries a content-and-occurrence snapshot fingerprint.
+Persistence compares that fingerprint with the current row and retries the
+proposal when mutable calendar evidence changes while the model is running.
 
 A rebuild that changes the fingerprint creates a new proposal revision and
 supersedes the old item and output. It does not append evidence to an old
@@ -153,10 +157,12 @@ The builder does not hide contrary evidence. Newer and authoritative evidence
 ranks higher, and the proposal model must produce no durable proposal when a
 material conflict remains unresolved.
 
-Proposal building fails closed when an adapter, visibility hydration, citation
-validation, or required retrieval step fails. It records a content-free reason
-and uses the existing worker retry policy. Answer consumers may continue with
-available evidence only when they disclose the missing source.
+Enforced proposal building fails closed when an adapter, visibility hydration,
+citation validation, or required retrieval step fails. It records a
+content-free reason and uses the existing worker retry policy. Shadow mode
+records the failure but preserves legacy extraction because it must not change
+proposal availability. Answer consumers may continue with available evidence
+only when they disclose the missing source.
 
 Operational logs and metrics may contain IDs, counts, surfaces, relationship
 categories, ranks, token estimates, latency, truncation reasons, fingerprints,
@@ -177,6 +183,8 @@ The first rollout is environment-scoped and starts with generic ingest
 webhooks. Later milestones cover conversation reviews, other event-local paths,
 and Agent Ask. Every adapter has its own fixtures, negative-link tests,
 visibility tests, shadow evidence, and explicit enforcement gate.
+Promotion evidence must contain exactly one builder version and one policy
+version; changing either version requires a fresh qualifying shadow population.
 
 ## Consequences
 

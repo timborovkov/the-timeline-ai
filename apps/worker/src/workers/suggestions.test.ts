@@ -575,6 +575,44 @@ describe('processSuggestionJobForTests', () => {
     await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 1, items: 2 });
   });
 
+  it('records a shadow pack failure and preserves legacy proposal extraction', async () => {
+    const rawEventId = '99999999-5656-4565-8565-565656565656';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      source: 'ingest_webhook',
+      text: "I'll send the Acme proposal next Tuesday",
+      sourceMetadata: { proposal_generation_enabled: true },
+    });
+    const chat = emptyModel();
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      {
+        getEnv: () => envWithEvidenceMode('shadow'),
+        chatStructured: chat,
+        modelId: MODEL_ID,
+        buildEvidencePack: vi.fn().mockRejectedValue(new Error('private query failure')),
+      },
+    );
+
+    const call = chat.mock.calls[0]?.[0] as { prompt: string } | undefined;
+    expect(call?.prompt).not.toContain('# Cross-source evidence pack');
+    const [event] = await db
+      .select({ sourceMetadata: rawEvents.sourceMetadata })
+      .from(rawEvents)
+      .where(eq(rawEvents.id, rawEventId));
+    expect(event?.sourceMetadata).toMatchObject({
+      cross_source_evidence_pack: {
+        mode: 'shadow',
+        status: 'failed',
+        error_reason: 'Error',
+      },
+    });
+    expect(JSON.stringify(event?.sourceMetadata)).not.toContain('private query failure');
+    await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 1, items: 2 });
+  });
+
   it('requires and persists exact per-item evidence ids in enforced mode', async () => {
     const rawEventId = '99999999-6666-4666-8666-666666666666';
     await seedRawEvent(db as never, {
@@ -620,6 +658,8 @@ describe('processSuggestionJobForTests', () => {
     const call = chat.mock.calls[0]?.[0] as { prompt: string; system: string } | undefined;
     expect(call?.prompt).toContain('# Cross-source evidence pack');
     expect(call?.prompt).toContain(rawEventId);
+    expect(call?.prompt).toContain('sender_context=<external_content');
+    expect(call?.prompt).toContain(`"verifiedTimelineMemberId":"${OWNER_ID}"`);
     expect(call?.system).toContain('evidenceRawEventIds');
     const [item] = await db
       .select({ metadata: agentSuggestionItems.metadata })

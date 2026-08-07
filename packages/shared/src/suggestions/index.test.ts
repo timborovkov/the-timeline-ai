@@ -370,6 +370,50 @@ describe('suggestion scope', () => {
     });
   });
 
+  it('rejects a proposal when evidence changes after its snapshot was built', async () => {
+    const occurredAt = new Date('2026-08-12T10:00:00.000Z');
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'calendar',
+      contentText: 'Customer review moved to August 13 at 14:00.',
+      occurredAt: new Date('2026-08-13T14:00:00.000Z'),
+      visibility: 'team',
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+
+    await expect(
+      scope.suggestions.createOrMergeSuggestionBundle({
+        source: 'background',
+        title: 'Prepare for customer review',
+        dedupeKey: 'calendar-snapshot-race',
+        evidence: [
+          {
+            rawEventId: TEAM_RAW_EVENT_ID,
+            metadata: {
+              evidence_content_fingerprint: suggestionDedupeKey({
+                contentText: 'Customer review is August 12 at 10:00.',
+                occurredAt: occurredAt.toISOString(),
+              }),
+            },
+          },
+        ],
+        items: [
+          {
+            operation: 'create',
+            targetKind: 'task',
+            title: 'Prepare review notes',
+            dedupeKey: 'calendar-snapshot-race:item',
+            proposedPayload: { canonicalName: 'Prepare review notes' },
+            evidenceRawEventIds: [TEAM_RAW_EVENT_ID],
+          },
+        ],
+      }),
+    ).rejects.toThrow('evidence changed while the proposal was being generated');
+    await expect(scope.suggestions.listPendingSuggestions()).resolves.toEqual([]);
+  });
+
   it('creates non-authoritative artifact cluster evidence for pending conversation suggestions', async () => {
     await db.insert(rawEvents).values({
       id: TEAM_RAW_EVENT_ID,

@@ -373,6 +373,8 @@ export function assessEvidencePackPromotion(
   }
   if (!health || health.shadowTeamKeys.length < 3) blockers.push('shadow_team_floor');
   if (!health || health.crossSourceSampleCount < 25) blockers.push('cross_source_sample_floor');
+  if (health?.versions.length !== 1) blockers.push('pack_version_mixed');
+  if (health?.policyVersions.length !== 1) blockers.push('pack_policy_version_mixed');
   if (requiredScenarioFamilies.length === 0) blockers.push('scenario_policy_missing');
   if (
     !health ||
@@ -473,7 +475,15 @@ export async function writeProductionSamplingEvalReport(
       summarizeProductionSamplingEvidencePacks(input.evidencePackSamples),
     ]);
   }
-  if ((report.evidencePackHealth?.sampleCount ?? 0) > 0) {
+  const hasEvidencePackAssessment =
+    input.evidencePackSamples !== undefined ||
+    loaded.reports.some(
+      (loadedReport) =>
+        loadedReport.evidencePackHealth !== undefined ||
+        loadedReport.evidencePackPromotion !== undefined ||
+        (loadedReport.requiredEvidencePackScenarioFamilies?.length ?? 0) > 0,
+    );
+  if (hasEvidencePackAssessment) {
     report.evidencePackPromotion = assessEvidencePackPromotion(
       report,
       requiredEvidencePackScenarioFamilies,
@@ -594,7 +604,10 @@ function mergeProductionSamplingEvalReports(
       reports.flatMap((report) => (report.evidencePackHealth ? [report.evidencePackHealth] : [])),
     ),
   };
-  if ((report.evidencePackHealth?.sampleCount ?? 0) > 0) {
+  if (
+    (report.evidencePackHealth?.versions.length ?? 0) > 0 ||
+    (report.requiredEvidencePackScenarioFamilies?.length ?? 0) > 0
+  ) {
     report.evidencePackPromotion = assessEvidencePackPromotion(
       report,
       report.requiredEvidencePackScenarioFamilies ?? [],

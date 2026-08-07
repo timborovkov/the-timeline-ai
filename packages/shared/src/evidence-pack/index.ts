@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import type { SourceRef, VisibilityEnvelope } from '#src/reconciliation/index.js';
 import type { SearchEventArtifactClusterEvidence, TeamScope } from '#src/team-scope.js';
 
+import { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 import { intersectVisibilityEnvelopes } from '#src/visibility.js';
 
 export const EVIDENCE_PACK_VERSION = 'evidence-pack-v1';
@@ -62,6 +63,7 @@ export interface EvidencePackItem {
   source: string;
   role: EvidencePackRole;
   contentText: string;
+  contentFingerprint: string;
   occurredAt: Date;
   authorUserId: string | null;
   sourceMetadata: unknown;
@@ -168,6 +170,24 @@ function candidateSignal(
   };
 }
 
+function canonicalRelationshipSignals(
+  signals: readonly EvidenceRelationshipSignal[],
+): EvidenceRelationshipSignal[] {
+  const byKey = new Map<string, EvidenceRelationshipSignal>();
+  for (const signal of signals) {
+    const key = JSON.stringify([
+      signal.kind,
+      signal.strength,
+      signal.clusterId ?? null,
+      signal.authoritative ?? null,
+    ]);
+    byKey.set(key, signal);
+  }
+  return [...byKey.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([, signal]) => signal);
+}
+
 function audienceFor(items: EvidencePackItem[]): VisibilityEnvelope {
   try {
     return intersectVisibilityEnvelopes(items.map((item) => item.visibility));
@@ -188,7 +208,7 @@ function fingerprintFor(pack: Omit<EvidencePack, 'fingerprint'>): string {
       surface: item.surface,
       contentText: item.contentText,
       occurredAt: item.occurredAt.toISOString(),
-      signals: item.relationshipSignals,
+      signals: canonicalRelationshipSignals(item.relationshipSignals),
       truncated: item.truncated,
       truncationReason: item.truncationReason,
     })),
@@ -293,7 +313,7 @@ export async function buildEvidencePack(
             ? [{ kind: 'semantic_retrieval' as const, strength: 'semantic' as const }]
             : []),
         ]
-      : (relatedSignals.get(event.id) ?? []);
+      : canonicalRelationshipSignals(relatedSignals.get(event.id) ?? []);
     const truncated = contentText.length < originalContent.length;
     return [
       {
@@ -302,6 +322,10 @@ export async function buildEvidencePack(
         source: event.source,
         role: core ? ('core' as const) : ('supporting' as const),
         contentText,
+        contentFingerprint: suggestionDedupeKey({
+          contentText: originalContent,
+          occurredAt: event.occurredAt.toISOString(),
+        }),
         occurredAt: event.occurredAt,
         authorUserId: event.authorUserId,
         sourceMetadata: event.sourceMetadata,

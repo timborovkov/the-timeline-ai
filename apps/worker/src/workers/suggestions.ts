@@ -73,6 +73,7 @@ interface SuggestionWorkerIO {
   classifyTaskCategory?: typeof taskCategories.classifyTaskCategory;
   taskCategoryClassificationEnabled?: boolean;
   evidencePackMode?: 'off' | 'shadow' | 'enforced';
+  buildEvidencePack?: typeof evidencePacks.buildEvidencePack;
 }
 
 const suggestionItemSchema = z
@@ -264,20 +265,26 @@ function fenceExternalContent(
   return `<external_content source="${fenceAttr(attrs.source)}" event_id="${fenceAttr(attrs.eventId)}">${sanitized}</external_content>`;
 }
 
-function evidencePackPrompt(pack: evidencePacks.EvidencePack): string {
+function evidencePackPrompt(
+  pack: evidencePacks.EvidencePack,
+  members: { userId: string; name: string | null; email: string | null }[],
+): string {
   return [
     '# Cross-source evidence pack',
     `Pack version=${pack.version} policy=${pack.policyVersion} fingerprint=${pack.fingerprint}`,
     'For every proposed item, return evidenceRawEventIds with one or more exact raw event UUIDs from this pack. Cite only rows that directly support that item.',
     ...pack.items.map(
       (item) =>
-        `- [raw_event_id=${item.rawEventId} role=${item.role} surface=${JSON.stringify(item.surface)} occurred_at=${item.occurredAt.toISOString()}] ${fenceExternalContent(
-          item.contentText,
-          {
-            source: `evidence-pack:${item.source}`,
-            eventId: item.rawEventId,
-          },
-        )}`,
+        `- [raw_event_id=${item.rawEventId} role=${item.role} surface=${JSON.stringify(item.surface)} occurred_at=${item.occurredAt.toISOString()}] sender_context=${sourceContextForPrompt(
+          item.source,
+          item.sourceMetadata,
+          item.authorUserId,
+          members,
+          item.rawEventId,
+        )} content=${fenceExternalContent(item.contentText, {
+          source: `evidence-pack:${item.source}`,
+          eventId: item.rawEventId,
+        })}`,
     ),
   ].join('\n');
 }
@@ -315,6 +322,7 @@ function evidenceForPackBundle(
         evidence_pack_role: item.role,
         evidence_pack_rank: item.rank,
         evidence_surface: item.surface,
+        evidence_content_fingerprint: item.contentFingerprint,
       },
     };
   });
@@ -2584,14 +2592,31 @@ async function runSuggestionExtraction(
   });
   const evidencePackMode = row.source === 'ingest_webhook' ? (io.evidencePackMode ?? 'off') : 'off';
   const evidencePackEnforced = evidencePackMode === 'enforced';
-  const evidencePack =
-    evidencePackMode !== 'off'
-      ? await evidencePacks.buildEvidencePack(scope, {
-          purpose: 'proposal',
-          anchorRawEventIds: [rawEventId],
-          coreRawEventIds: args.conversation?.window.map((event) => event.id) ?? [],
-        })
-      : null;
+  let evidencePack: evidencePacks.EvidencePack | null = null;
+  if (evidencePackMode !== 'off') {
+    try {
+      evidencePack = await (io.buildEvidencePack ?? evidencePacks.buildEvidencePack)(scope, {
+        purpose: 'proposal',
+        anchorRawEventIds: [rawEventId],
+        coreRawEventIds: args.conversation?.window.map((event) => event.id) ?? [],
+      });
+    } catch (error) {
+      const errorReason =
+        error instanceof evidencePacks.EvidencePackError
+          ? error.code
+          : error instanceof Error
+            ? error.name
+            : 'evidence_pack_failure';
+      await stampSuggestionMetadata(deps.db, rawEventId, {
+        cross_source_evidence_pack: {
+          mode: evidencePackMode,
+          status: 'failed',
+          error_reason: errorReason,
+        },
+      });
+      if (evidencePackEnforced) throw error;
+    }
+  }
   if (evidencePack) {
     await stampSuggestionMetadata(deps.db, rawEventId, {
       cross_source_evidence_pack: {
@@ -2762,7 +2787,7 @@ async function runSuggestionExtraction(
     linkedContext: evidencePackEnforced ? [] : (args.conversation?.linkedContext ?? []),
   });
   if (evidencePackEnforced && evidencePack) {
-    promptParts.evidence = [promptParts.evidence, evidencePackPrompt(evidencePack)]
+    promptParts.evidence = [promptParts.evidence, evidencePackPrompt(evidencePack, memberRows)]
       .filter(Boolean)
       .join('\n\n');
   }
