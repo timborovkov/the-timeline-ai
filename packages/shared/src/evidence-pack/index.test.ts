@@ -374,7 +374,11 @@ describe('buildEvidencePack', () => {
 
   it('reports candidate-limit truncation before pack selection', async () => {
     const db = drizzle(pg);
-    for (const rawEventId of [ANCHOR_ID, SUPPORT_ID, SLACK_NEW_ID]) {
+    for (const [rawEventId, strength] of [
+      [ANCHOR_ID, 'hard'],
+      [SUPPORT_ID, 'human'],
+      [SLACK_NEW_ID, 'structured'],
+    ] as const) {
       await reconcileArtifactEvidence(db as never, {
         teamId: TEAM_ID,
         artifactType: 'project',
@@ -382,13 +386,23 @@ describe('buildEvidencePack', () => {
         status: 'active',
         rawEventId,
         role: 'discussion',
-        strength: 'hard',
+        strength,
         anchors: [{ type: 'canonical_url', value: 'https://acme.test/launch', strength: 'hard' }],
       });
     }
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const discovery = await scope.timeline.listEvidencePackArtifactClusters([ANCHOR_ID], 1);
     expect(discovery.truncatedCandidateCount).toBe(1);
+    expect(
+      Object.values(discovery.clusters).flatMap((cluster) =>
+        cluster.relatedEvidence.map((evidence) => evidence.rawEventId),
+      ),
+    ).toContain(SUPPORT_ID);
+    expect(
+      Object.values(discovery.clusters).flatMap((cluster) =>
+        cluster.relatedEvidence.map((evidence) => evidence.rawEventId),
+      ),
+    ).not.toContain(SLACK_NEW_ID);
 
     const actualDiscovery = scope.timeline.listEvidencePackArtifactClusters;
     const limitedScope = {

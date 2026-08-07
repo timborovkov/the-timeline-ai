@@ -57,6 +57,7 @@ const OTHER_USER_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
 const OTHER_RAW_EVENT_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 const TEAM_RAW_EVENT_ID = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+const TEAM_SUPPORT_EVENT_ID = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
 const ORIGINAL_ENV = { ...process.env };
 
 function adjudicationStub(object: {
@@ -378,6 +379,68 @@ describe('suggestion scope', () => {
     await expect(reviewerScope.suggestions.listPendingSuggestions()).resolves.toEqual([]);
     await expect(reviewerScope.suggestions.getSuggestion(created.id)).resolves.toBeNull();
     await reviewerScope.suggestions.acceptSuggestionItem(created.items[0]?.id ?? 'missing');
+    const [item] = await db
+      .select({
+        status: agentSuggestionItems.status,
+        reason: agentSuggestionItems.supersededReason,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, created.items[0]?.id ?? 'missing'));
+    expect(item).toEqual({
+      status: 'superseded',
+      reason: 'Required source evidence is no longer available to approve.',
+    });
+  });
+
+  it('hides and supersedes a pack when an uncited selected row becomes unavailable', async () => {
+    await db.insert(rawEvents).values([
+      {
+        id: TEAM_RAW_EVENT_ID,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'web',
+        contentText: 'Owner committed to the follow-up.',
+        occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+        visibility: 'team',
+      },
+      {
+        id: TEAM_SUPPORT_EVENT_ID,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'calendar',
+        contentText: 'The supporting review is scheduled for Friday.',
+        occurredAt: new Date('2026-05-27T11:00:00.000Z'),
+        visibility: 'team',
+      },
+    ]);
+    const ownerScope = withTeam(db as never, TEAM_ID, USER_ID);
+    const created = await ownerScope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Evidence-backed follow-up',
+      dedupeKey: 'uncited-pack-evidence',
+      metadata: { evidence_pack_fingerprint: 'a'.repeat(64) },
+      evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }, { rawEventId: TEAM_SUPPORT_EVENT_ID }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Complete the follow-up',
+          dedupeKey: 'uncited-pack-evidence:item',
+          proposedPayload: { canonicalName: 'Complete the follow-up' },
+          evidenceRawEventIds: [TEAM_RAW_EVENT_ID],
+        },
+      ],
+    });
+    await db
+      .update(rawEvents)
+      .set({ visibility: 'private', visibilityOwnerUserId: USER_ID })
+      .where(eq(rawEvents.id, TEAM_SUPPORT_EVENT_ID));
+
+    const reviewerScope = withTeam(db as never, TEAM_ID, REVIEWER_ID);
+    await expect(reviewerScope.suggestions.listPendingSuggestions()).resolves.toEqual([]);
+    await expect(reviewerScope.suggestions.getSuggestion(created.id)).resolves.toBeNull();
+    await reviewerScope.suggestions.acceptSuggestionItem(created.items[0]?.id ?? 'missing');
+
     const [item] = await db
       .select({
         status: agentSuggestionItems.status,

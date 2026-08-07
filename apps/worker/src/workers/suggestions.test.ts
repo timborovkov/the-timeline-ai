@@ -659,6 +659,9 @@ describe('processSuggestionJobForTests', () => {
     const call = chat.mock.calls[0]?.[0] as { prompt: string; system: string } | undefined;
     expect(call?.prompt).toContain('# Cross-source evidence pack');
     expect(call?.prompt).toContain(rawEventId);
+    expect(call?.prompt).toContain(
+      `surface=<external_content source="evidence-pack-surface" event_id="${rawEventId}">Acme delivery</external_content>`,
+    );
     expect(call?.prompt).toContain('sender_context=<external_content');
     expect(call?.prompt).toContain(`"verifiedTimelineMemberId":"${OWNER_ID}"`);
     expect(call?.system).toContain('evidenceRawEventIds');

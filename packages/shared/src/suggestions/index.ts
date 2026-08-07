@@ -2892,7 +2892,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
   ): Promise<SuggestionBundle[]> {
     if (rows.length === 0) return [];
     const ids = rows.map((row) => row.id);
-    const [items, evidence] = await Promise.all([
+    const [items, evidence, persistedEvidenceRefs] = await Promise.all([
       db
         .select()
         .from(agentSuggestionItems)
@@ -2929,6 +2929,18 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         .leftJoin(users, eq(users.id, rawEvents.authorUserId))
         .where(inArray(agentSuggestionEvidence.suggestionId, ids))
         .orderBy(asc(agentSuggestionEvidence.suggestionId), asc(agentSuggestionEvidence.createdAt)),
+      db
+        .select({
+          suggestionId: agentSuggestionEvidence.suggestionId,
+          rawEventId: agentSuggestionEvidence.rawEventId,
+        })
+        .from(agentSuggestionEvidence)
+        .where(
+          and(
+            eq(agentSuggestionEvidence.teamId, teamId),
+            inArray(agentSuggestionEvidence.suggestionId, ids),
+          ),
+        ),
     ]);
     const payloads = items.map((item) => recordFromUnknown(item.proposedPayload));
     const [boardLabels, entityNamesById] = await Promise.all([
@@ -2964,13 +2976,25 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       existing.push(ev);
       evidenceBySuggestion.set(ev.suggestionId, existing);
     }
+    const persistedEvidenceIdsBySuggestion = new Map<string, string[]>();
+    for (const ref of persistedEvidenceRefs) {
+      const existing = persistedEvidenceIdsBySuggestion.get(ref.suggestionId) ?? [];
+      existing.push(ref.rawEventId);
+      persistedEvidenceIdsBySuggestion.set(ref.suggestionId, existing);
+    }
     return rows.flatMap((row) => {
       const suggestionItems = itemsBySuggestion.get(row.id) ?? [];
       const suggestionEvidence = evidenceBySuggestion.get(row.id) ?? [];
       const visibleEvidenceIds = new Set(suggestionEvidence.map((item) => item.rawEventId));
-      const hasUnavailableEvidence = suggestionItems.some((item) =>
-        itemEvidenceRawEventIds(item.metadata).some((id) => !visibleEvidenceIds.has(id)),
-      );
+      const isPackBacked =
+        typeof recordFromUnknown(row.metadata).evidence_pack_fingerprint === 'string';
+      const persistedEvidenceIds = persistedEvidenceIdsBySuggestion.get(row.id) ?? [];
+      const hasUnavailableEvidence = isPackBacked
+        ? persistedEvidenceIds.length === 0 ||
+          persistedEvidenceIds.some((id) => !visibleEvidenceIds.has(id))
+        : suggestionItems.some((item) =>
+            itemEvidenceRawEventIds(item.metadata).some((id) => !visibleEvidenceIds.has(id)),
+          );
       return hasUnavailableEvidence ? [] : [toBundle(row, suggestionItems, suggestionEvidence)];
     });
   }
@@ -3669,6 +3693,68 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     item: typeof agentSuggestionItems.$inferSelect,
   ): Promise<string | null> {
     if (item.status !== 'pending' && item.status !== 'failed') return null;
+    const [parentSuggestion] = await db
+      .select({ metadata: agentSuggestions.metadata })
+      .from(agentSuggestions)
+      .where(and(eq(agentSuggestions.id, item.suggestionId), eq(agentSuggestions.teamId, teamId)))
+      .limit(1);
+    if (
+      typeof recordFromUnknown(parentSuggestion?.metadata).evidence_pack_fingerprint === 'string'
+    ) {
+      const storedPackEvidence = await db
+        .select({
+          rawEventId: agentSuggestionEvidence.rawEventId,
+          metadata: agentSuggestionEvidence.metadata,
+        })
+        .from(agentSuggestionEvidence)
+        .where(
+          and(
+            eq(agentSuggestionEvidence.suggestionId, item.suggestionId),
+            eq(agentSuggestionEvidence.teamId, teamId),
+          ),
+        );
+      const storedPackEvidenceIds = storedPackEvidence.map((evidence) => evidence.rawEventId);
+      const visiblePackEvidence =
+        storedPackEvidenceIds.length > 0
+          ? await db
+              .select({
+                id: rawEvents.id,
+                contentText: rawEvents.contentText,
+                occurredAt: rawEvents.occurredAt,
+              })
+              .from(rawEvents)
+              .where(
+                and(
+                  inArray(rawEvents.id, storedPackEvidenceIds),
+                  rawEventVisibilityPredicate(teamId, userId),
+                  rawEventIsActive(),
+                ),
+              )
+          : [];
+      if (
+        storedPackEvidenceIds.length === 0 ||
+        visiblePackEvidence.length !== storedPackEvidenceIds.length
+      ) {
+        return 'Required source evidence is no longer available to approve.';
+      }
+      const expectedFingerprints = new Map(
+        storedPackEvidence.flatMap((evidence) => {
+          const fingerprint = recordFromUnknown(evidence.metadata).evidence_content_fingerprint;
+          return typeof fingerprint === 'string'
+            ? ([[evidence.rawEventId, fingerprint]] as const)
+            : [];
+        }),
+      );
+      if (
+        visiblePackEvidence.some(
+          (event) =>
+            expectedFingerprints.get(event.id) &&
+            expectedFingerprints.get(event.id) !== evidenceContentFingerprint(event),
+        )
+      ) {
+        return 'Required source evidence changed after this suggestion was created.';
+      }
+    }
     const requiredEvidenceIds = itemEvidenceRawEventIds(item.metadata);
     if (requiredEvidenceIds.length > 0) {
       const expectedFingerprints = evidenceContentFingerprints(item.metadata);
@@ -6248,7 +6334,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                 .where(
                   and(
                     inArray(rawEvents.id, evidenceIds),
-                    eq(rawEvents.teamId, teamId),
+                    rawEventVisibilityPredicate(teamId, userId),
                     rawEventIsActive(),
                   ),
                 )

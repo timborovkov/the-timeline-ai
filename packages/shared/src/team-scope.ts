@@ -797,6 +797,15 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           .groupBy(rawEvents.id)
           .orderBy(
             desc(
+              sql<number>`MAX(CASE ${artifactEvidenceAssociations.strength}
+                WHEN 'human' THEN 5
+                WHEN 'hard' THEN 4
+                WHEN 'provider' THEN 3
+                WHEN 'structured' THEN 2
+                ELSE 0
+              END)`,
+            ),
+            desc(
               sql<number>`MAX(CASE WHEN ${artifactEvidenceAssociations.associationSource} = 'authoritative_provider' THEN 1 ELSE 0 END)`,
             ),
             desc(sql<Date>`MAX(${rawEvents.occurredAt})`),

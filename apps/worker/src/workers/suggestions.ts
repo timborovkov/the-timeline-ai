@@ -275,7 +275,13 @@ function evidencePackPrompt(
     'For every proposed item, return evidenceRawEventIds with one or more exact raw event UUIDs from this pack. Cite only rows that directly support that item.',
     ...pack.items.map(
       (item) =>
-        `- [raw_event_id=${item.rawEventId} role=${item.role} surface=${JSON.stringify(item.surface)} occurred_at=${item.occurredAt.toISOString()}] sender_context=${evidencePacks.evidenceSourceContextForPrompt(
+        `- [raw_event_id=${item.rawEventId} role=${item.role} surface=${fenceExternalContent(
+          item.surface,
+          {
+            source: 'evidence-pack-surface',
+            eventId: item.rawEventId,
+          },
+        )} occurred_at=${item.occurredAt.toISOString()}] sender_context=${evidencePacks.evidenceSourceContextForPrompt(
           item.source,
           item.sourceMetadata,
           item.authorUserId,

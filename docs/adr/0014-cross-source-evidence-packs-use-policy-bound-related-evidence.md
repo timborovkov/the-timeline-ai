@@ -131,8 +131,9 @@ current-event, related-context, and workspace sections, so an oversized source
 event cannot truncate the pack out of the model input.
 
 Hard object relationships have no global age cutoff. The bounded candidate
-pool, relationship strength, authority, recency, and diversity policy control
-selection. Same-conversation core retains its existing two-day window.
+pool applies relationship strength, authority, and recency before its candidate
+limit, then the full ranking and diversity policy control selection.
+Same-conversation core retains its existing two-day window.
 
 ### Citations and proposal lifecycle
 
@@ -148,17 +149,23 @@ reconciliation output `sourceRefs` is the authoritative per-item citation set.
 The suggestion and reconciliation run store the pack version, policy version,
 fingerprint, metrics, and truncation state. This does not require a new table.
 Each selected pack row also carries a content-and-occurrence snapshot
-fingerprint. Persistence locks and revalidates every selected raw-event row in
-the proposal transaction before writing any derived state. It retries the
-proposal when mutable calendar evidence changes while the model is running.
+fingerprint. Persistence locks and revalidates the activity, viewer visibility,
+and snapshot of every selected raw-event row in the proposal transaction before
+writing any derived state. It retries the proposal when mutable calendar
+evidence changes while the model is running.
 
 A rebuild that changes the fingerprint creates a new proposal revision and
 supersedes the old item and output. It does not append evidence to an old
 proposal and call the accumulated set current. Display and acceptance revalidate
-every selected citation. A proposal with deleted, tombstoned, or newly
+every selected pack row, including supporting rows that no item cites. A
+proposal with deleted, tombstoned, or newly
 inaccessible required evidence is hidden because its derived fields may contain
 source details; any direct acceptance attempt supersedes it and requires a
 rebuild.
+
+All source-controlled display fields rendered into model prompts, including
+surface labels derived from integration or ingest-webhook metadata, use the
+same external-content trust boundary as evidence text and sender context.
 
 The builder has no continuous watcher. Existing suggestion,
 conversation-review, and reconciliation triggers build new packs as qualifying

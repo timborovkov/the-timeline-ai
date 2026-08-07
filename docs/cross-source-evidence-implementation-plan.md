@@ -337,6 +337,9 @@ transitive-path rejection, duplicate paths to one event, and candidate overflow.
 1. Rank core status, relationship provenance, source authority, recency, source
    diversity, optional stored-vector relevance, occurrence time, and raw-event
    ID in that order.
+   Apply relationship strength, authority, and recency before truncating the
+   bounded discovery population so the pre-limit query cannot discard stronger
+   evidence in favor of merely newer evidence.
 2. Use an existing stored anchor vector only. Skip semantic ranking when it is
    unavailable.
 3. Reserve core evidence, then apply the 8-event supporting cap and 4-event
@@ -380,6 +383,7 @@ with model-selected, validated item citations.
    schema.
 2. Render pack item IDs beside fenced external content and fenced sender
    identity context so first-person statements retain their source attribution.
+   Fence source-controlled surface labels through the same trust boundary.
    Tell the model to cite only IDs in the pack and produce no item when material
    conflict is unresolved.
 3. Validate every returned ID against the visible pack. Reject an affected
@@ -427,7 +431,9 @@ misleading actionable approval.
 3. Do not describe append-only bundle evidence as the current selection.
 4. Revalidate every selected source reference on approval hydration and
    acceptance. During proposal persistence, lock every selected raw-event row
-   and compare its snapshot fingerprint inside the write transaction.
+   and compare its activity, viewer visibility, and snapshot fingerprint inside
+   the write transaction. This includes selected supporting rows that no item
+   cites directly.
 5. Supersede an item when required evidence is deleted, tombstoned, or no longer
    visible. Reuse the existing `superseded` state rather than adding a `stale`
    enum in the first implementation.
