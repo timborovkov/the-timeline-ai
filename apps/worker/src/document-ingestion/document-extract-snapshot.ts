@@ -117,6 +117,13 @@ export interface EnsureDocumentExtractSnapshotResult {
   contentHash: string;
 }
 
+export interface PruneDocumentExtractSnapshotsResult {
+  currentName: string;
+  kept: string[];
+  deleted: string[];
+  skippedInUse: string[];
+}
+
 export interface DocumentExtractSnapshotDaytonaConfig {
   apiKey: string;
   apiUrl?: string;
@@ -242,4 +249,71 @@ export async function ensureDocumentExtractSnapshot(options?: {
   }
 
   return { name: snapshotName, created: true, contentHash };
+}
+
+/** Delete unused old content-hashed snapshots while preserving a rollback window. */
+export async function pruneDocumentExtractSnapshots(options: {
+  currentName: string;
+  retain: number;
+  daytona: Daytona;
+}): Promise<PruneDocumentExtractSnapshotsResult> {
+  const { currentName, retain, daytona } = options;
+  const hashedNamePattern = new RegExp(`^${DOCUMENT_EXTRACT_SNAPSHOT_PREFIX}-[a-f0-9]{12}$`);
+  if (!hashedNamePattern.test(currentName)) {
+    throw new Error(`refusing to prune with non-hashed current snapshot: ${currentName}`);
+  }
+  if (!Number.isInteger(retain) || retain < 1) {
+    throw new Error('snapshot retention must be a positive integer');
+  }
+
+  const snapshots: Awaited<ReturnType<Daytona['snapshot']['list']>>['items'] = [];
+  let pageNumber = 1;
+  let totalPages: number;
+  do {
+    const page = await daytona.snapshot.list(pageNumber, 100);
+    snapshots.push(...page.items);
+    totalPages = page.totalPages;
+    pageNumber += 1;
+  } while (pageNumber <= totalPages);
+
+  const hashedSnapshots = snapshots
+    .filter((snapshot) => hashedNamePattern.test(snapshot.name))
+    .sort((a, b) => {
+      const createdDelta = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      return createdDelta || a.name.localeCompare(b.name);
+    });
+  if (!hashedSnapshots.some((snapshot) => snapshot.name === currentName)) {
+    throw new Error(`current snapshot was not returned by Daytona: ${currentName}`);
+  }
+  const protectedNames = new Set([currentName]);
+  for (const snapshot of hashedSnapshots) {
+    if (protectedNames.size >= retain) break;
+    protectedNames.add(snapshot.name);
+  }
+
+  const deleted: string[] = [];
+  const skippedInUse: string[] = [];
+  for (const snapshot of hashedSnapshots) {
+    if (protectedNames.has(snapshot.name)) continue;
+    let inUse = false;
+    for await (const _sandbox of daytona.list({ snapshots: [snapshot.name] })) {
+      inUse = true;
+      break;
+    }
+    if (inUse) {
+      skippedInUse.push(snapshot.name);
+      continue;
+    }
+    await daytona.snapshot.delete(snapshot);
+    deleted.push(snapshot.name);
+  }
+
+  return {
+    currentName,
+    kept: hashedSnapshots
+      .filter((snapshot) => protectedNames.has(snapshot.name))
+      .map((snapshot) => snapshot.name),
+    deleted,
+    skippedInUse,
+  };
 }

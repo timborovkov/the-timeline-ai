@@ -84,10 +84,12 @@ Locally, prefer `DAYTONA_API_KEY` + `dev:extract`. Only set
 `DOCUMENT_EXTRACT_ALLOW_INPROCESS=true` for offline/dev without Daytona (never in production).
 
 Daytona snapshots are content-hashed (`timeline-document-extract-<hash>` from
-`document-extract-sandbox/**`). Leave `DAYTONA_SNAPSHOT` unset (or `auto`) to
-resolve the hash at runtime, or pin the name CI prints. Boot ensure
+`document-extract-sandbox/**`). Set `DAYTONA_SNAPSHOT=auto` on Railway so the
+deployed code resolves its matching hash. Boot ensure
 (`DAYTONA_SNAPSHOT_ENSURE=true`, default) creates the snapshot once if missing;
-it does not rebuild on every restart. Details:
+it does not rebuild on every restart. After publishing, CI keeps the current
+snapshot plus two rollback snapshots and removes older hashes only when no
+Daytona sandbox references them. Details:
 [docs/adr/0013-daytona-document-extract.md](../../docs/adr/0013-daytona-document-extract.md)
 and [document-extract-sandbox/README.md](document-extract-sandbox/README.md).
 
