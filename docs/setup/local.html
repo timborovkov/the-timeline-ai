@@ -189,7 +189,9 @@ TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-pr
 # and may be manual, closed_beta, or post_deploy. Use --fail-on-failures for
 # release gates that should stop on any failed sample. Repeat
 # --confirm-fixture=&lt;caseName&gt;:&lt;packetFingerprint&gt; for reviewed failed samples
-# that should become deterministic fixtures.
+# that should become deterministic fixtures. Team-persisted runs retain the
+# required scenario policy and promotion blockers; Team → Reconciliation shows
+# promotion readiness separately from fixture failures.
 # pnpm dev also starts the reconciliation queue consumer for enqueued
 # evidence_audit/evidence_backfill/scope_reconcile jobs. Admins can enqueue
 # source-scoped audit/backfill and repair scoped team/object/cluster evidence

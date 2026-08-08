@@ -137,7 +137,11 @@ aggregate live artifacts into pass-rate, miss, visibility, authority, and
 fixture-candidate metrics; artifact writing and loading reject malformed or
 empty redacted source refs, malformed or inconsistent manifest summaries,
 malformed judge metadata, malformed expected-count maps, and manifest paths
-outside the run directory before they contribute to release metrics.
+outside the run directory before they contribute to release metrics. Loaded
+evidence-pack aggregates must preserve attempt, error, eligibility,
+cross-source, and pack-count relationships before merging. Persisted sampling
+runs retain the required scenario policy plus promotion readiness and blocker
+codes for the reconciliation dashboard.
 
 ## Quick Start
 
@@ -259,9 +263,14 @@ TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-pr
 # scenario is rejected so an empty scenario policy cannot accidentally pass.
 # Promotion health, latency, and error gates use shadow attempts only. Failed
 # attempts never count as eligible, even if an export marks them eligible, and
-# sample counts must satisfy surfaceCount <= selectedCount <= candidateCount. When a
-# prior report and fresh sample file are supplied together, their redacted
-# health summaries are merged rather than replacing historical violations.
+# sample counts must satisfy surfaceCount <= selectedCount <= candidateCount.
+# Loaded aggregate reports must also satisfy crossSource <= eligible <= sample,
+# matching error totals/rates, and ordered aggregate pack counts before they can
+# merge. When a prior report and fresh sample file are supplied together, their
+# redacted health summaries are merged rather than replacing historical
+# violations. Persisted team runs retain scenario policy and promotion blocker
+# codes, which the reconciliation dashboard displays separately from fixture
+# failures.
 # Each summarized population carries a content-free fingerprint; cumulative
 # inputs with an overlapping population are rejected rather than double-counted;
 # sample exports should retain their immutable attemptId when later review annotations change,

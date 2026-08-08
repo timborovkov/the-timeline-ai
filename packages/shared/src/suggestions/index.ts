@@ -62,7 +62,11 @@ import {
   type EvidenceRole,
   type EvidenceStrength,
 } from '#src/artifacts/index.js';
-import { calendarEventMutationLockKey } from '#src/calendar/locking.js';
+import {
+  calendarEventMutationLockKey,
+  calendarEventMutationTargetId,
+  type CalendarRecurrenceEditMode,
+} from '#src/calendar/locking.js';
 import { chatStructured as defaultChatStructured } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
 import { OBJECT_TYPES } from '#src/objects/index.js';
@@ -3792,7 +3796,20 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       item.targetId &&
       UUID_RE.test(item.targetId)
     ) {
-      const mutationLockKey = calendarEventMutationLockKey(teamId, item.targetId);
+      const target = await calendar.getCalendarEvent(item.targetId);
+      const requestedMode = recordFromUnknown(item.proposedPayload).recurrenceEditMode;
+      const recurrenceEditMode: CalendarRecurrenceEditMode | undefined =
+        requestedMode === 'single' ||
+        requestedMode === 'series' ||
+        requestedMode === 'this_and_future'
+          ? requestedMode
+          : undefined;
+      const mutationTargetId = calendarEventMutationTargetId(
+        item.targetId,
+        target?.recurringParentId ?? null,
+        recurrenceEditMode,
+      );
+      const mutationLockKey = calendarEventMutationLockKey(teamId, mutationTargetId);
       await db.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${mutationLockKey}, 0))`);
     }
     const [parentSuggestion] = await db

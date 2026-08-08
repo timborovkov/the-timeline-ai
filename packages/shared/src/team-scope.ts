@@ -505,6 +505,13 @@ export interface TeamScopeDeps {
     vector: number[],
     opts: SearchOpts,
   ) => Promise<SearchHit[]>;
+  /** Test seam for evidence-pack relevance from vectors already stored in Qdrant. */
+  qdrantStoredEventSearch?: (
+    teamId: string,
+    userId: string,
+    queryEventIds: string[],
+    candidateEventIds: string[],
+  ) => Promise<SearchHit[]>;
   /** Test seam for sender-scoped semantic search batching. */
   senderSearchEventIdBatchSize?: number;
   /** Inject raw-event embedding enqueue. Keeping this dependency lazy avoids
@@ -2974,6 +2981,46 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       listArtifactClusters: listTimelineArtifactClusters,
 
       listEvidencePackArtifactClusters,
+
+      async rankEvidencePackSupportByStoredVectors(
+        anchorRawEventIds: string[],
+        candidateRawEventIds: string[],
+      ): Promise<{ rawEventId: string; score: number }[]> {
+        await ensureMember();
+        const anchors = [...new Set(anchorRawEventIds.filter((id) => UUID_RE.test(id)))];
+        const candidates = [...new Set(candidateRawEventIds.filter((id) => UUID_RE.test(id)))];
+        if (anchors.length === 0 || candidates.length === 0) return [];
+        const searchFn =
+          deps.qdrantStoredEventSearch ??
+          ((tId: string, uId: string, queryIds: string[], candidateIds: string[]) =>
+            getQdrantClient().searchByStoredEventVectors(tId, uId, queryIds, candidateIds));
+        try {
+          const hits = await searchFn(teamId, userId, anchors, candidates);
+          const candidateSet = new Set(candidates);
+          const scores = new Map<string, number>();
+          for (const hit of hits) {
+            if (hit.payload.team_id !== teamId) continue;
+            const rawEventId = hit.payload.event_id;
+            if (!rawEventId || !candidateSet.has(rawEventId) || !Number.isFinite(hit.score)) {
+              continue;
+            }
+            const previous = scores.get(rawEventId) ?? Number.NEGATIVE_INFINITY;
+            if (hit.score > previous) scores.set(rawEventId, hit.score);
+          }
+          return [...scores.entries()]
+            .map(([rawEventId, score]) => ({ rawEventId, score }))
+            .sort(
+              (left, right) =>
+                right.score - left.score || left.rawEventId.localeCompare(right.rawEventId),
+            );
+        } catch (err) {
+          log.warn(
+            { err, teamId, anchorCount: anchors.length, candidateCount: candidates.length },
+            'stored-vector evidence-pack ranking failed',
+          );
+          return [];
+        }
+      },
 
       listSourceFacets,
 

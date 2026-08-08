@@ -1,6 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
 import { rawEvents } from '@timeline/db';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -234,6 +234,58 @@ describe('buildEvidencePack', () => {
       ],
     });
     expect(pack.metrics.omissionReasons).toMatchObject({ visibility: 1 });
+  });
+
+  it('uses stored-vector relevance to break proposal-support ties without admitting new candidates', async () => {
+    const db = drizzle(pg);
+    await db
+      .update(rawEvents)
+      .set({ occurredAt: new Date('2026-08-01T09:00:00Z') })
+      .where(inArray(rawEvents.id, [SUPPORT_ID, LONG_SUPPORT_ID]));
+    for (const rawEventId of [ANCHOR_ID, SUPPORT_ID, LONG_SUPPORT_ID]) {
+      await reconcileArtifactEvidence(db as never, {
+        teamId: TEAM_ID,
+        artifactType: 'project',
+        canonicalName: 'Acme launch',
+        status: 'active',
+        rawEventId,
+        role: 'discussion',
+        strength: 'hard',
+        authoritative: false,
+        anchors: [{ type: 'canonical_url', value: 'https://acme.test/launch', strength: 'hard' }],
+      });
+    }
+    const actualScope = withTeam(db as never, TEAM_ID, USER_ID);
+    const rankEvidencePackSupportByStoredVectors = vi.fn().mockResolvedValue([
+      { rawEventId: LONG_SUPPORT_ID, score: 0.9 },
+      { rawEventId: SUPPORT_ID, score: 0.2 },
+      { rawEventId: SLACK_NEW_ID, score: 1 },
+    ]);
+    const scope = {
+      ...actualScope,
+      timeline: { ...actualScope.timeline, rankEvidencePackSupportByStoredVectors },
+    };
+
+    const pack = await buildEvidencePack(scope, {
+      purpose: 'proposal',
+      anchorRawEventIds: [ANCHOR_ID],
+    });
+
+    expect(rankEvidencePackSupportByStoredVectors).toHaveBeenCalledWith(
+      [ANCHOR_ID],
+      expect.arrayContaining([SUPPORT_ID, LONG_SUPPORT_ID]),
+    );
+    expect(pack.items.map((item) => item.rawEventId)).toEqual([
+      ANCHOR_ID,
+      LONG_SUPPORT_ID,
+      SUPPORT_ID,
+    ]);
+    expect(pack.items.map((item) => item.rawEventId)).not.toContain(SLACK_NEW_ID);
+    expect(pack.items[1]?.rankReasons).toContain('semantic_relevance');
+    expect(pack.items[1]?.relationshipSignals).toContainEqual({
+      kind: 'semantic_retrieval',
+      strength: 'semantic',
+    });
   });
 
   it('does not qualify supporting evidence through a semantic-only anchor association', async () => {

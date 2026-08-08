@@ -342,8 +342,10 @@ transitive-path rejection, duplicate paths to one event, and candidate overflow.
    Apply relationship strength, authority, and recency before truncating the
    bounded discovery population so the pre-limit query cannot discard stronger
    evidence in favor of merely newer evidence.
-2. Use an existing stored anchor vector only. Skip semantic ranking when it is
-   unavailable.
+2. Average current-model vectors already stored for visible anchor events, and
+   run a team-and-viewer-filtered search restricted to directly qualified
+   candidate IDs. Skip semantic ranking when no stored anchor vector is
+   available; never make a new embedding request for proposal ranking.
 3. Reserve core evidence, then apply the 8-event supporting cap and 4-event
    per-surface cap.
 4. Apply a deterministic content/token estimator and the 6,000-token pack
@@ -442,7 +444,9 @@ misleading actionable approval.
    transaction and require every row to continue supporting the proposal's full
    projection audience, not merely the accepting actor. For calendar targets,
    acquire the shared calendar-mutation lock before raw-event evidence locks so
-   acceptance and direct calendar edits use the same order.
+   acceptance and direct calendar edits use the same order. Resolve occurrence
+   `series` and `this_and_future` mutations to the canonical recurring parent
+   before acquiring that shared lock.
 5. Supersede an item when required evidence is deleted, tombstoned, or no longer
    visible. Reuse the existing `superseded` state rather than adding a `stale`
    enum in the first implementation.
@@ -583,6 +587,11 @@ before enforcement.
    Require successful completion before an attempt counts as eligible, even
    when telemetry carries `eligible: true`, and validate
    `surfaceCount <= selectedCount <= candidateCount` before assessment.
+   Apply equivalent invariants to loaded aggregate health before merging:
+   cross-source count cannot exceed eligible count, eligible/error/truncation
+   counts cannot exceed total attempts, error reasons and rate must match the
+   error count, and aggregate surface/selected/candidate counts must remain
+   ordered.
 6. Make the promotion report enforce evidence coverage, fixture success, shadow
    sample floor, zero-tolerance safety counters, p95 latency, and error rate.
    The production CLI ingests explicit redacted evidence-pack sample files and
@@ -591,7 +600,9 @@ before enforcement.
    the required-family policy is omitted and counts a seven-day gate only when
    those UTC dates are consecutive. Persist dashboard runs only through the
    named team reconciliation scope with explicit trusted internal-user
-   semantics for the CLI.
+   semantics for the CLI. Persist the required scenario-family policy and the
+   complete promotion result with blocker codes, and display promotion readiness
+   independently from fixture failure count in the reconciliation run history.
 7. Document the operational rollback command and owner. Changing the mode
    requires a restart or redeploy.
 

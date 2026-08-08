@@ -21,6 +21,7 @@ import {
   buildProductionSamplingEvalReport,
   loadProductionSamplingEvalArtifacts,
   parseProductionSamplingEvidencePackSamples,
+  productionSamplingRunMetrics,
   summarizeProductionSamplingEvidencePacks,
   writeProductionSamplingEvalReport,
 } from '#src/reconciliation/production-sampling.js';
@@ -1157,6 +1158,39 @@ describe('production reconciliation sampling report', () => {
         )}\n`,
         'utf8',
       );
+      const validHealth = summarizeProductionSamplingEvidencePacks([
+        {
+          attemptId: 'attempt-1',
+          mode: 'shadow',
+          version: 'evidence-pack-v1',
+          policyVersion: 'proposal-v1',
+          candidateCount: 1,
+          selectedCount: 1,
+          surfaceCount: 1,
+          estimatedTokens: 10,
+          buildDurationMs: 25,
+          truncated: false,
+          sampledAt: '2026-06-29T10:00:00.000Z',
+          teamKey: 'team-key',
+          scenarioFamily: 'customer_project',
+        },
+      ]);
+      await writeFile(
+        path.join(dir, 'inflated-evidence-health-report.json'),
+        `${JSON.stringify(
+          {
+            ...previousReport,
+            evidencePackHealth: {
+              ...validHealth,
+              shadowEligibleSampleCount: 200,
+              crossSourceSampleCount: 25,
+            },
+          },
+          null,
+          2,
+        )}\n`,
+        'utf8',
+      );
 
       const loaded = await loadProductionSamplingEvalArtifacts({
         inputPaths: [
@@ -1164,6 +1198,7 @@ describe('production reconciliation sampling report', () => {
           reportPath,
           path.join(dir, 'malformed-report.json'),
           path.join(dir, 'malformed-evidence-health-report.json'),
+          path.join(dir, 'inflated-evidence-health-report.json'),
         ],
       });
 
@@ -1177,6 +1212,10 @@ describe('production reconciliation sampling report', () => {
           },
           {
             path: path.join(dir, 'malformed-evidence-health-report.json'),
+            reason: 'not a reconciliation live artifact or production sampling report',
+          },
+          {
+            path: path.join(dir, 'inflated-evidence-health-report.json'),
             reason: 'not a reconciliation live artifact or production sampling report',
           },
         ]),
@@ -1213,6 +1252,27 @@ describe('production reconciliation sampling report', () => {
     } finally {
       await rm(dir, { force: true, recursive: true });
     }
+  });
+
+  it('persists evidence-pack promotion policy and blockers in durable run metrics', () => {
+    const report = buildProductionSamplingEvalReport({
+      runKind: 'closed_beta',
+      generatedAt: '2026-06-29T10:06:00.000Z',
+      manifests: [],
+      artifacts: [],
+      evidencePackSamples: [],
+      requiredEvidencePackScenarioFamilies: ['customer_project'],
+    });
+
+    const metrics = productionSamplingRunMetrics({ report });
+    expect(metrics).toMatchObject({
+      failed_count: 0,
+      required_evidence_pack_scenario_families: ['customer_project'],
+      evidence_pack_promotion: {
+        ready: false,
+      },
+    });
+    expect(metrics.evidence_pack_promotion?.blockerCodes).toContain('shadow_sample_floor');
   });
 
   it('writes a production sampling report from one or more live artifact directories', async () => {

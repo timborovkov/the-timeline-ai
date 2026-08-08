@@ -82,8 +82,12 @@ fact or entity association may generate a candidate, but it cannot qualify that
 candidate by itself.
 
 Semantic relevance ranks already eligible evidence. It never admits evidence
-into a proposal pack. Answer packs may admit viewer-visible semantic matches,
-but must label and cite them as retrieved evidence.
+into a proposal pack. Proposal ranking averages the current-model vectors
+already stored for visible anchor events, then searches only the directly
+qualified candidate IDs through the team-and-viewer Qdrant filter. Missing
+stored vectors skip this tie-breaker; they never trigger a new embedding or
+model call. Answer packs may admit viewer-visible semantic matches, but must
+label and cite them as retrieved evidence.
 
 ## Product vocabulary
 
@@ -166,6 +170,8 @@ Cross-source proposal behavior is shipped for a source path only when:
   revisions cannot leave two actionable replacements or race a durable write;
   first-time revisions serialize on their base identity, and calendar targets
   serialize before their linked raw evidence to preserve mutation lock order;
+  occurrence-level `series` and `this_and_future` mutations lock the canonical
+  recurring parent shared by direct edits and approval acceptance;
 - the canonical change and accepted approval commit atomically; an application
   error rolls both back before a fresh transaction records a retryable failed
   approval, while indexing and queue follow-ups run only after commit;
@@ -231,6 +237,10 @@ The first enforced source path must meet all of these gates:
   from immutable attempt IDs or legacy immutable attempt provenance rather than
   mutable review annotations; an overlapping report is rejected instead of
   double-counted, and duplicate legacy identities are rejected as ambiguous
+- Loaded aggregate health must preserve the same count relationships as raw
+  samples, including cross-source ≤ eligible ≤ total attempts, errors ≤ total,
+  error-reason totals and error rate matching the error count, and aggregate
+  surface ≤ selected ≤ candidate counts
 - No additional embedding or generative-model request solely for proposal-pack
   ranking
 - At most 24 protected conversation-core events, 8 supporting events, 4

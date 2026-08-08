@@ -175,6 +175,12 @@ export interface QdrantClient {
     queryVector: number[],
     opts?: SearchOpts,
   ): Promise<SearchHit[]>;
+  searchByStoredEventVectors(
+    teamId: string,
+    userId: string,
+    queryEventIds: string[],
+    candidateEventIds: string[],
+  ): Promise<SearchHit[]>;
   deletePoints(ids: string[], opts?: DeletePointsOpts): Promise<void>;
   deletePointsForSource(input: {
     teamId: string;
@@ -593,6 +599,73 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     }));
   }
 
+  async function searchByStoredEventVectors(
+    teamId: string,
+    userId: string,
+    queryEventIds: string[],
+    candidateEventIds: string[],
+  ): Promise<SearchHit[]> {
+    if (!teamId) throw new Error('Qdrant stored-vector search requires teamId');
+    if (!userId) throw new Error('Qdrant stored-vector search requires userId');
+    const uniqueQueryIds = [...new Set(queryEventIds)];
+    const uniqueCandidateIds = [...new Set(candidateEventIds)];
+    if (uniqueQueryIds.length === 0 || uniqueCandidateIds.length === 0) return [];
+    await ensureCollection();
+
+    const res = await request(
+      'POST',
+      `/collections/${encodeURIComponent(collection)}/points/scroll`,
+      {
+        filter: {
+          must: [
+            { key: 'team_id', match: { value: teamId } },
+            { key: 'embedding_model', match: { value: TIMELINE_MODELS.embedding.id } },
+            { key: 'source_scope', match: { value: 'event' } },
+            { key: 'source_id', match: { any: uniqueQueryIds } },
+            { key: 'chunk_index', match: { value: 0 } },
+          ],
+        },
+        limit: uniqueQueryIds.length,
+        with_payload: true,
+        with_vector: true,
+      },
+    );
+    if (res.status !== 200) {
+      throw new Error(
+        `Qdrant stored-vector lookup failed: ${String(res.status)} ${JSON.stringify(res.data)}`,
+      );
+    }
+    const body = (res.data ?? {}) as {
+      result?: {
+        points?: { vector?: unknown; payload?: QdrantPayload }[];
+      };
+    };
+    const vectors = (body.result?.points ?? []).flatMap((point) => {
+      if (point.payload?.team_id !== teamId) return [];
+      if (!Array.isArray(point.vector)) return [];
+      if (
+        point.vector.length !== vectorSize ||
+        !point.vector.every(
+          (value): value is number => typeof value === 'number' && Number.isFinite(value),
+        )
+      ) {
+        return [];
+      }
+      return [point.vector];
+    });
+    if (vectors.length === 0) return [];
+    const centroid = Array.from(
+      { length: vectorSize },
+      (_, index) =>
+        vectors.reduce((total, vector) => total + (vector[index] ?? 0), 0) / vectors.length,
+    );
+    return search(teamId, userId, centroid, {
+      eventIds: uniqueCandidateIds,
+      sourceKind: ['raw_event', 'integration_event', 'calendar_event'],
+      limit: uniqueCandidateIds.length,
+    });
+  }
+
   async function deletePoints(ids: string[], opts: DeletePointsOpts = {}): Promise<void> {
     if (ids.length === 0) return;
     await ensureCollection();
@@ -795,6 +868,7 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     ensureCollection,
     upsertVector,
     search,
+    searchByStoredEventVectors,
     deletePoints,
     deletePointsForSource,
     deletePointsForSourceFromChunk,

@@ -751,6 +751,11 @@ function RunMetricSummary({ metrics }: { metrics: unknown }) {
   }
   if (mode === 'production_sampling') {
     const failedCount = numberMetric(record.failed_count);
+    const promotion = jsonRecord(record.evidence_pack_promotion);
+    const promotionReady = booleanMetric(promotion?.ready);
+    const promotionBlockers = Array.isArray(promotion?.blockerCodes)
+      ? promotion.blockerCodes.filter((value): value is string => typeof value === 'string')
+      : [];
     return (
       <div className="mt-2 flex flex-wrap gap-2">
         <RunMetricBadge label="samples" value={numberMetric(record.sample_count)} />
@@ -761,6 +766,15 @@ function RunMetricSummary({ metrics }: { metrics: unknown }) {
           <span>failed</span>
           <span className="tabular-nums">{(failedCount ?? 0).toLocaleString()}</span>
         </Badge>
+        {promotionReady !== null ? (
+          <Badge
+            variant={promotionReady ? 'outline' : 'destructive'}
+            className="rounded-sm"
+            title={promotionBlockers.join(', ') || undefined}
+          >
+            promotion {promotionReady ? 'ready' : 'blocked'}
+          </Badge>
+        ) : null}
         <RunMetricBadge
           label="unconfirmed fixtures"
           value={numberMetric(record.unconfirmed_fixture_candidate_count)}

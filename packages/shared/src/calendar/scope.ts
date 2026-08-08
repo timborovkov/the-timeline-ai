@@ -8,7 +8,11 @@ import {
 } from '@timeline/db';
 import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 
-import { calendarEventMutationLockKey } from '#src/calendar/locking.js';
+import {
+  calendarEventMutationLockKey,
+  calendarEventMutationTargetId,
+  type CalendarRecurrenceEditMode,
+} from '#src/calendar/locking.js';
 import {
   buildCalendarSourcePayloadMetadata,
   buildCalendarTimelineText,
@@ -39,7 +43,7 @@ import { validateVisibilityUserIds } from '#src/visibility.js';
 type Visibility = 'private' | 'team' | 'specific_users';
 type CalendarShowAs = 'busy' | 'free' | 'tentative';
 type CalendarEventSource = 'internal' | 'google' | 'caldav';
-type RecurrenceEditMode = 'single' | 'series' | 'this_and_future';
+type RecurrenceEditMode = CalendarRecurrenceEditMode;
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
 type CalendarQdrantAction = 'embed' | 'delete' | null;
@@ -404,6 +408,34 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
     OR ${calendarEvents.createdByUserId} = ${userId}::uuid
     OR (${calendarEvents.visibility} = 'specific_users' AND ${userId}::uuid = ANY(${calendarEvents.visibilityUserIds}))
   )`;
+
+  async function lockCalendarEventMutation(
+    tx: DbTx,
+    eventId: string,
+    recurrenceEditMode?: RecurrenceEditMode,
+  ): Promise<boolean> {
+    const [target] = await tx
+      .select({ recurringParentId: calendarEvents.recurringParentId })
+      .from(calendarEvents)
+      .where(
+        and(
+          eq(calendarEvents.id, eventId),
+          eq(calendarEvents.teamId, teamId),
+          isNull(calendarEvents.deletedAt),
+          calendarWriteVisibility,
+        ),
+      )
+      .limit(1);
+    if (!target) return false;
+    const mutationTargetId = calendarEventMutationTargetId(
+      eventId,
+      target.recurringParentId,
+      recurrenceEditMode,
+    );
+    const mutationLockKey = calendarEventMutationLockKey(teamId, mutationTargetId);
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${mutationLockKey}, 0))`);
+    return true;
+  }
 
   function redactIfNeeded(row: CalendarEventRow): CalendarEventWithRedaction {
     if (row.visibility === 'private' && row.createdByUserId !== userId) {
@@ -820,10 +852,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
       await ensureMember();
 
       const result = await db.transaction(async (tx) => {
-        const mutationLockKey = calendarEventMutationLockKey(teamId, id);
-        await tx.execute(
-          sql`SELECT pg_advisory_xact_lock(hashtextextended(${mutationLockKey}, 0))`,
-        );
+        if (!(await lockCalendarEventMutation(tx, id, patch.recurrenceEditMode))) return null;
         const existing = await tx
           .select()
           .from(calendarEvents)
@@ -1342,10 +1371,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
       await ensureMember();
 
       const deleted = await db.transaction(async (tx) => {
-        const mutationLockKey = calendarEventMutationLockKey(teamId, id);
-        await tx.execute(
-          sql`SELECT pg_advisory_xact_lock(hashtextextended(${mutationLockKey}, 0))`,
-        );
+        if (!(await lockCalendarEventMutation(tx, id, opts.recurrenceEditMode))) return false;
         const existing = await tx
           .select()
           .from(calendarEvents)

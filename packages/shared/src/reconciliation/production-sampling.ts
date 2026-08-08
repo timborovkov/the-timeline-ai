@@ -1120,6 +1120,8 @@ export function productionSamplingRunMetrics(input: RecordProductionSamplingEval
     by_scenario_family: report.byScenarioFamily,
     totals: report.totals,
     evidence_pack_health: report.evidencePackHealth ?? null,
+    required_evidence_pack_scenario_families: report.requiredEvidencePackScenarioFamilies ?? [],
+    evidence_pack_promotion: report.evidencePackPromotion ?? null,
   };
 }
 
@@ -1136,6 +1138,8 @@ export function productionSamplingRunFingerprint(
     sampleCount: report.sampleCount,
     passedCount: report.passedCount,
     failedCount: report.failedCount,
+    requiredEvidencePackScenarioFamilies: report.requiredEvidencePackScenarioFamilies ?? [],
+    evidencePackPromotion: report.evidencePackPromotion ?? null,
     fixtureCandidates: report.fixtureCandidates.map((candidate) => ({
       caseName: candidate.caseName,
       packetFingerprint: candidate.packetFingerprint,
@@ -1299,7 +1303,7 @@ function isProductionSamplingEvidencePackHealth(
     const count = asRecord(bucket)?.count;
     return total + (typeof count === 'number' ? count : 0);
   }, 0);
-  return (
+  const hasValidShape =
     !!record &&
     [
       'sampleCount',
@@ -1335,7 +1339,30 @@ function isProductionSamplingEvidencePackHealth(
     isNonNegativeIntegerRecord(record.errorReasons) &&
     isStringArray(record.shadowDays) &&
     isStringArray(record.shadowTeamKeys) &&
-    isStringArray(record.scenarioFamilies)
+    isStringArray(record.scenarioFamilies);
+  if (!hasValidShape) return false;
+
+  const health = record as unknown as ProductionSamplingEvidencePackHealth;
+  const errorReasonCount = Object.values(health.errorReasons).reduce(
+    (total, count) => total + count,
+    0,
+  );
+  return (
+    health.errorCount <= health.sampleCount &&
+    health.confirmedFalseLinkCount <= health.sampleCount &&
+    health.truncatedCount <= health.sampleCount &&
+    health.shadowEligibleSampleCount <= health.sampleCount &&
+    health.crossSourceSampleCount <= health.shadowEligibleSampleCount &&
+    health.surfaceCount <= health.selectedCount &&
+    health.selectedCount <= health.candidateCount &&
+    health.shadowDays.length <= health.shadowEligibleSampleCount &&
+    health.shadowTeamKeys.length <= health.shadowEligibleSampleCount &&
+    health.scenarioFamilies.length <= health.shadowEligibleSampleCount &&
+    errorReasonCount === health.errorCount &&
+    sameNullableNumber(
+      health.errorRate,
+      health.sampleCount > 0 ? health.errorCount / health.sampleCount : null,
+    )
   );
 }
 

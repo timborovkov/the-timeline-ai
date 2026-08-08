@@ -127,7 +127,10 @@
         promotion gates. <code>shadow</code> records content-free evidence-pack metrics without
         changing generic ingest webhook proposals; <code>enforced</code> requires exact per-change
         citations for that adapter. Other proposal adapters remain unchanged. Changing this worker
-        setting requires a worker restart or redeploy.
+        setting requires a worker restart or redeploy. Sampling runs persisted with
+        <code>--team</code> retain the required scenario policy and promotion blocker codes; check
+        the promotion badge in Team → Reconciliation rather than treating zero fixture failures as
+        rollout readiness.
       </p>
       <p>
         Keep <code>NODE_ENV</code> as <code>production</code> for both Railway environments. Use the

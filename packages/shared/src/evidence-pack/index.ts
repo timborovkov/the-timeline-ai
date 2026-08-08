@@ -378,6 +378,17 @@ export async function buildEvidencePack(
     }
   }
   const semanticSet = new Set(input.purpose === 'answer' ? (input.semanticRawEventIds ?? []) : []);
+  const semanticScores = new Map<string, number>();
+  if (input.purpose === 'proposal' && relatedSignals.size > 0) {
+    const storedRelevance = await scope.timeline.rankEvidencePackSupportByStoredVectors(anchors, [
+      ...relatedSignals.keys(),
+    ]);
+    for (const { rawEventId, score } of storedRelevance) {
+      if (!relatedSignals.has(rawEventId)) continue;
+      semanticSet.add(rawEventId);
+      semanticScores.set(rawEventId, score);
+    }
+  }
   for (const rawEventId of semanticSet) {
     if (coreIds.includes(rawEventId)) continue;
     const signals = relatedSignals.get(rawEventId) ?? [];
@@ -471,8 +482,10 @@ export async function buildEvidencePack(
     const diversity =
       Number(!selectedSurfaces.has(b.surface)) - Number(!selectedSurfaces.has(a.surface));
     const semantic =
-      Number(b.relationshipSignals.some((signal) => signal.kind === 'semantic_retrieval')) -
-      Number(a.relationshipSignals.some((signal) => signal.kind === 'semantic_retrieval'));
+      (semanticScores.get(b.rawEventId) ??
+        Number(b.relationshipSignals.some((signal) => signal.kind === 'semantic_retrieval'))) -
+      (semanticScores.get(a.rawEventId) ??
+        Number(a.relationshipSignals.some((signal) => signal.kind === 'semantic_retrieval')));
     return (
       bSignal - aSignal ||
       authority ||

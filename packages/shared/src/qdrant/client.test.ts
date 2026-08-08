@@ -28,6 +28,9 @@ function makeFetcher(
   fetcher: typeof fetch;
   calls: CapturedCall[];
   setSearchResult: (hits: { id: string; score: number; payload: QdrantPayload }[]) => void;
+  setStoredVectorResult: (
+    points: { id: string; vector: number[]; payload: QdrantPayload }[],
+  ) => void;
 } {
   const calls: CapturedCall[] = [];
   let collectionExists = initial.collectionExists ?? false;
@@ -35,6 +38,7 @@ function makeFetcher(
   let teamIndexIsTenant = initial.teamIndexIsTenant ?? teamIndexExists;
   const collectionVectorSize = initial.vectorSize ?? TIMELINE_MODELS.embedding.embeddingDimensions;
   let searchResult: { id: string; score: number; payload: QdrantPayload }[] = [];
+  let storedVectorResult: { id: string; vector: number[]; payload: QdrantPayload }[] | null = null;
 
   const fetcher: typeof fetch = (input, init) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -98,6 +102,7 @@ function makeFetcher(
           JSON.stringify({
             result: {
               points: searchResult.map((hit) => ({ id: hit.id, payload: hit.payload })),
+              ...(storedVectorResult ? { points: storedVectorResult } : {}),
               next_page_offset: null,
             },
           }),
@@ -113,6 +118,9 @@ function makeFetcher(
     calls,
     setSearchResult: (hits) => {
       searchResult = hits;
+    },
+    setStoredVectorResult: (points) => {
+      storedVectorResult = points;
     },
   };
 }
@@ -328,6 +336,62 @@ describe('createQdrantClient', () => {
     const body = search.body as { filter: { must: { key: string; match: { value: string } }[] } };
     const teamFilter = body.filter.must.find((m) => m.key === 'team_id');
     expect(teamFilter).toEqual({ key: 'team_id', match: { value: 'team-A' } });
+  });
+
+  it('ranks candidates from team-filtered stored event vectors without embedding', async () => {
+    const { fetcher, calls, setSearchResult, setStoredVectorResult } = makeFetcher({
+      collectionExists: true,
+      vectorSize: 4,
+    });
+    setStoredVectorResult([
+      { id: 'anchor-point', vector: [1, 0, 0, 0], payload: samplePayload },
+      {
+        id: 'anchor-point-2',
+        vector: [0, 1, 0, 0],
+        payload: { ...samplePayload, event_id: 'ev-2', source_id: 'ev-2' },
+      },
+    ]);
+    setSearchResult([
+      {
+        id: 'candidate-point',
+        score: 0.9,
+        payload: { ...samplePayload, event_id: 'candidate-1', source_id: 'candidate-1' },
+      },
+    ]);
+    const client = createQdrantClient({ fetcher, vectorSize: 4 });
+
+    await expect(
+      client.searchByStoredEventVectors('team-A', 'user-1', ['ev-1', 'ev-2'], ['candidate-1']),
+    ).resolves.toMatchObject([{ score: 0.9 }]);
+
+    const scroll = calls.find((call) => call.url.endsWith('/points/scroll'));
+    const scrollBody = scroll?.body as {
+      filter?: { must?: unknown[] };
+      with_vector?: boolean;
+    };
+    expect(scrollBody.with_vector).toBe(true);
+    expect(scrollBody.filter?.must).toEqual(
+      expect.arrayContaining([
+        { key: 'team_id', match: { value: 'team-A' } },
+        { key: 'source_scope', match: { value: 'event' } },
+        { key: 'source_id', match: { any: ['ev-1', 'ev-2'] } },
+        { key: 'chunk_index', match: { value: 0 } },
+      ]),
+    );
+    const search = calls.find((call) => call.url.endsWith('/points/search'));
+    const searchBody = search?.body as {
+      vector?: number[];
+      filter?: { must?: unknown[] };
+      limit?: number;
+    };
+    expect(searchBody.vector).toEqual([0.5, 0.5, 0, 0]);
+    expect(searchBody.filter?.must).toEqual(
+      expect.arrayContaining([
+        { key: 'team_id', match: { value: 'team-A' } },
+        { key: 'event_id', match: { any: ['candidate-1'] } },
+      ]),
+    );
+    expect(searchBody.limit).toBe(1);
   });
 
   it('search filter includes the per-user visibility branches (must+should default semantic)', async () => {

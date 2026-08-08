@@ -83,8 +83,10 @@ time, lexical overlap, semantic similarity, and transitive graph paths do not
 qualify an event.
 
 Semantic relevance may rank candidates after they qualify. Proposal building
-uses an existing stored anchor vector when available. If no stored vector is
-available, it skips semantic ranking instead of making a new embedding request.
+averages current-model vectors already stored for the visible anchor events and
+searches only the directly qualified candidate IDs through Qdrant's team and
+viewer filters. If no stored anchor vector is available, it skips semantic
+ranking instead of making a new embedding request.
 Answer packs may admit viewer-visible semantic matches because answers do not
 change durable state, but their citations retain the retrieval provenance.
 
@@ -233,8 +235,13 @@ while ambiguous duplicate legacy identities are rejected rather than counted as
 separate attempts. Cumulative reports therefore cannot double-count historical
 attempts. A shadow attempt must also complete without an error before it counts
 as eligible, and reported pack counts must satisfy surface count ≤ selected
-count ≤ candidate count. Dashboard persistence goes through the named team reconciliation
-scope, including the CLI's explicit trusted internal-user path.
+count ≤ candidate count. Loaded aggregate health is rejected unless
+cross-source ≤ eligible ≤ total attempts, error counts and reasons match their
+rate, and the aggregate pack counts preserve the same ordering. Dashboard
+persistence goes through the named team reconciliation scope, including the
+CLI's explicit trusted internal-user path, and retains both the required
+scenario policy and the promotion result/blocker codes so a
+zero-fixture-failure run can still show as promotion-blocked.
 Reports without evidence-pack telemetry omit pack health and promotion state.
 
 ## Consequences
@@ -266,8 +273,10 @@ failure rolls that transaction back; a fresh compare-and-set transaction then
 records the item as retryable `failed` without overwriting a concurrent reviewer
 action. Embedding, indexing, and queue effects are collected during application
 and dispatched only after the database commit. Calendar acceptance and direct
-calendar mutations share a target advisory lock acquired before linked raw-event
-locks, preventing opposite row-lock orders.
+calendar mutations share a target advisory lock acquired before linked
+raw-event locks, preventing opposite row-lock orders. For an occurrence-wide
+`series` or `this_and_future` mutation, both paths resolve that target to the
+canonical recurring parent before acquiring the lock.
 
 Strict admission reduces recall compared with open semantic retrieval. This is
 intentional for durable proposals. Answer policies can use broader recall while
