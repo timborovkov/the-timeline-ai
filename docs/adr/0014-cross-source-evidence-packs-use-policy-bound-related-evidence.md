@@ -91,8 +91,11 @@ Semantic relevance may rank candidates after they qualify. Proposal building
 averages current-model vectors already stored for the visible anchor events and
 searches only the directly qualified candidate IDs through Qdrant's team and
 viewer filters. Raw-event citation identity resolves vectors across raw,
-integration, and calendar-event point scopes. If no stored anchor vector is
-available, it skips semantic ranking instead of making a new embedding request.
+integration, and calendar-event point scopes. The search reserves one result
+slot per eligible point kind for each candidate, then collapses duplicate
+points by raw-event ID before ranking unique candidates. If no stored anchor
+vector is available, it skips semantic ranking instead of making a new
+embedding request.
 Answer packs may admit viewer-visible semantic matches because answers do not
 change durable state, but their citations retain the retrieval provenance.
 
@@ -289,7 +292,9 @@ and dispatched only after the database commit. Calendar acceptance and direct
 calendar mutations share advisory locks acquired before linked raw-event locks,
 preventing opposite row-lock orders. Pack acceptance acquires its target and
 every calendar event represented by selected evidence as one stable sorted lock
-set. For an occurrence-wide `series` or `this_and_future` mutation, both paths
+set. Object and task updates also include the target's own due-date mirror in
+that set, preventing cross-cited mirrors from taking opposite locks. For an
+occurrence-wide `series` or `this_and_future` mutation, both paths
 resolve that target to the canonical recurring parent; evidence-owned
 occurrences cover both occurrence and parent identities. Direct whole-series
 updates retain the lock through occurrence tombstoning and rematerialization in

@@ -349,7 +349,9 @@ transitive-path rejection, duplicate paths to one event, and candidate overflow.
 2. Average current-model vectors already stored for visible anchor events, and
    run a team-and-viewer-filtered search restricted to directly qualified
    candidate IDs. Resolve raw, integration, and calendar-event points through
-   their shared raw-event citation ID. Skip semantic ranking when no stored
+   their shared raw-event citation ID. Request enough result slots for every
+   eligible point kind per candidate, then deduplicate by raw-event ID before
+   applying unique-candidate ranking. Skip semantic ranking when no stored
    anchor vector is available; never make a new embedding request for proposal
    ranking.
 3. Reserve core evidence, then apply the 8-event supporting cap and 4-event
@@ -459,8 +461,10 @@ misleading actionable approval.
    both occurrence and parent mutation identities. Keep direct whole-series
    parent updates and occurrence rematerialization in that same locked
    transaction. For object and task updates, lock the entity target before
-   selected evidence so task due-date mirrors follow the same entity-first
-   order as ordinary object mutations.
+   selected evidence, and include the target's own due-date mirror plus any
+   evidence-owned calendar events in one stable sorted calendar lock set. This
+   preserves ordinary entity-first mutation order and prevents two cross-cited
+   mirrors from taking opposite locks.
 5. Supersede an item when required evidence is deleted, tombstoned, or no longer
    visible. Reuse the existing `superseded` state rather than adding a `stale`
    enum in the first implementation.

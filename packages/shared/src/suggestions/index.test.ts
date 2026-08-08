@@ -824,7 +824,7 @@ describe('suggestion scope', () => {
     );
   });
 
-  it('locks a task target before its due-date mirror evidence row', async () => {
+  it('prelocks a task due-date mirror with cross-cited mirror evidence', async () => {
     const transactionQueries: Parameters<Transaction['query']>[] = [];
     const runTransaction = pg.transaction.bind(pg);
     const transaction = vi
@@ -848,13 +848,25 @@ describe('suggestion scope', () => {
       dueAt: new Date('2026-08-12T10:00:00.000Z'),
       actor: { kind: 'user', userId: USER_ID },
     });
-    const mirror = await pg.query<{ start_at_raw_event_id: string }>(
-      `SELECT start_at_raw_event_id::text
+    const supportingTask = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Support due-date review',
+      dueAt: new Date('2026-08-13T10:00:00.000Z'),
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const targetMirror = await pg.query<{ id: string }>(
+      `SELECT id::text
        FROM calendar_events
        WHERE team_id = '${TEAM_ID}'
          AND metadata ->> 'entity_id' = '${task.id}'`,
     );
-    const evidenceRawEventId = mirror.rows[0]?.start_at_raw_event_id ?? '';
+    const evidenceMirror = await pg.query<{ id: string; start_at_raw_event_id: string }>(
+      `SELECT id::text, start_at_raw_event_id::text
+       FROM calendar_events
+       WHERE team_id = '${TEAM_ID}'
+         AND metadata ->> 'entity_id' = '${supportingTask.id}'`,
+    );
+    const evidenceRawEventId = evidenceMirror.rows[0]?.start_at_raw_event_id ?? '';
     const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
       source: 'background',
       title: 'Move task from its calendar mirror',
@@ -891,10 +903,22 @@ describe('suggestion scope', () => {
         statement.includes('for update') &&
         params?.includes(evidenceRawEventId),
     );
+    const acquiredLockKeys = transactionQueries.flatMap((call) => {
+      const [statement, params] = call;
+      return typeof statement === 'string' && statement.includes('pg_advisory_xact_lock')
+        ? [String(params?.[0])]
+        : [];
+    });
     transaction.mockRestore();
     expect(entityLockIndex).toBeGreaterThanOrEqual(0);
     expect(evidenceLockIndex).toBeGreaterThanOrEqual(0);
     expect(entityLockIndex).toBeLessThan(evidenceLockIndex);
+    expect(acquiredLockKeys.slice(0, 2)).toEqual(
+      [
+        calendarEventMutationLockKey(TEAM_ID, targetMirror.rows[0]?.id ?? ''),
+        calendarEventMutationLockKey(TEAM_ID, evidenceMirror.rows[0]?.id ?? ''),
+      ].sort(),
+    );
   });
 
   it('rejects a proposal when evidence changes after its snapshot was built', async () => {

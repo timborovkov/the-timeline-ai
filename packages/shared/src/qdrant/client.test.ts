@@ -396,7 +396,26 @@ describe('createQdrantClient', () => {
         { key: 'event_id', match: { any: ['candidate-1'] } },
       ]),
     );
-    expect(searchBody.limit).toBe(1);
+    expect(searchBody.limit).toBe(3);
+  });
+
+  it('requests enough stored-vector hits for every candidate event point kind', async () => {
+    const { fetcher, calls, setStoredVectorResult } = makeFetcher({
+      collectionExists: true,
+      vectorSize: 4,
+    });
+    setStoredVectorResult([{ id: 'anchor-point', vector: [1, 0, 0, 0], payload: samplePayload }]);
+    const client = createQdrantClient({ fetcher, vectorSize: 4 });
+
+    await client.searchByStoredEventVectors(
+      'team-A',
+      'user-1',
+      ['ev-1'],
+      ['candidate-1', 'candidate-2'],
+    );
+
+    const search = calls.find((call) => call.url.endsWith('/points/search'));
+    expect((search?.body as { limit?: number }).limit).toBe(6);
   });
 
   it('search filter includes the per-user visibility branches (must+should default semantic)', async () => {

@@ -34,6 +34,12 @@ export type SourceKind =
   | 'integration_event'
   | 'calendar_event';
 
+const STORED_EVENT_SOURCE_KINDS: SourceKind[] = [
+  'raw_event',
+  'integration_event',
+  'calendar_event',
+];
+
 export interface QdrantPayload {
   team_id: string;
   /**
@@ -625,7 +631,7 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
               should: [
                 {
                   key: 'source_kind',
-                  match: { any: ['raw_event', 'integration_event', 'calendar_event'] },
+                  match: { any: STORED_EVENT_SOURCE_KINDS },
                 },
                 {
                   must: [{ is_empty: { key: 'source_kind' } }, { is_empty: { key: 'fact_id' } }],
@@ -677,8 +683,8 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     );
     return search(teamId, userId, centroid, {
       eventIds: uniqueCandidateIds,
-      sourceKind: ['raw_event', 'integration_event', 'calendar_event'],
-      limit: uniqueCandidateIds.length,
+      sourceKind: STORED_EVENT_SOURCE_KINDS,
+      limit: uniqueCandidateIds.length * STORED_EVENT_SOURCE_KINDS.length,
     });
   }
 

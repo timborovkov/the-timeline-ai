@@ -3794,8 +3794,28 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
     const targetIsCalendar =
       item.targetKind === 'calendar_event' && item.targetId !== null && UUID_RE.test(item.targetId);
+    const targetHasDueDateMirror =
+      item.operation !== 'create' &&
+      (item.targetKind === 'object' || item.targetKind === 'task') &&
+      item.targetId !== null &&
+      UUID_RE.test(item.targetId);
     const calendarEventIds = new Set<string>();
     if (targetIsCalendar && item.targetId) calendarEventIds.add(item.targetId);
+
+    if (targetHasDueDateMirror && item.targetId) {
+      const dueDateMirrors = await db
+        .select({ id: calendarEvents.id })
+        .from(calendarEvents)
+        .where(
+          and(
+            eq(calendarEvents.teamId, teamId),
+            sql`${calendarEvents.metadata} ->> 'kind' = 'due_date'`,
+            sql`${calendarEvents.metadata} ->> 'source' = 'object'`,
+            sql`${calendarEvents.metadata} ->> 'entity_id' = ${item.targetId}`,
+          ),
+        );
+      for (const mirror of dueDateMirrors) calendarEventIds.add(mirror.id);
+    }
 
     if (evidenceRawEventIds.length > 0) {
       const calendarEvidence = await db

@@ -87,7 +87,9 @@ already stored for visible anchor events, then searches only the directly
 qualified candidate IDs through the team-and-viewer Qdrant filter. Missing
 stored vectors skip this tie-breaker; they never trigger a new embedding or
 model call. Stored-vector lookup follows the anchor raw-event ID across raw,
-integration, and calendar-event point scopes. Answer packs may admit
+integration, and calendar-event point scopes, requests capacity for every
+eligible point kind, then collapses duplicate points by raw-event ID before
+ranking unique candidates. Answer packs may admit
 viewer-visible semantic matches, but must label and cite them as retrieved
 evidence.
 
@@ -175,8 +177,9 @@ Cross-source proposal behavior is shipped for a source path only when:
   revisions cannot leave two actionable replacements or race a durable write;
   first-time revisions serialize on their base identity, and calendar targets
   serialize before their linked raw evidence to preserve mutation lock order;
-  object and task targets likewise lock before selected evidence so a task's
-  due-date calendar mirror cannot invert the normal entity-to-mirror order;
+  object and task targets likewise lock before selected evidence, while their
+  own due-date mirror and evidence-owned calendar events join the same stable
+  sorted calendar lock set so cross-cited mirrors cannot deadlock;
   occurrence-level `series` and `this_and_future` mutations lock the canonical
   recurring parent shared by direct edits and approval acceptance, and direct
   whole-series edits hold that lock until occurrence rematerialization commits;
