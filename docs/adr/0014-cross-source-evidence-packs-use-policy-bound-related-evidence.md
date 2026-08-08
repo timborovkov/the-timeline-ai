@@ -300,9 +300,10 @@ resolve that target to the canonical recurring parent; evidence-owned
 occurrences cover both occurrence and parent identities. Direct whole-series
 updates retain the lock through occurrence tombstoning and rematerialization in
 the same transaction. Object and task acceptance locks the target entity before
-selected evidence, while board-item-update acceptance resolves and locks its
-team-scoped board-item target first, matching ordinary target-to-due-date-mirror
-mutation order.
+selected evidence. Board-membership acceptance locks its referenced entity and
+affected board, while board-item-update acceptance resolves and locks its
+team-scoped board-item target and affected board, matching ordinary
+target-to-due-date-mirror mutation order.
 
 Strict admission reduces recall compared with open semantic retrieval. This is
 intentional for durable proposals. Answer policies can use broader recall while

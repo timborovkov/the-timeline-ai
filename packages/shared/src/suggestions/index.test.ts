@@ -1016,6 +1016,13 @@ describe('suggestion scope', () => {
         statement.includes('for update') &&
         params?.includes(evidenceRawEventId),
     );
+    const boardLockIndex = transactionQueries.findIndex(
+      ([statement, params]) =>
+        typeof statement === 'string' &&
+        statement.includes('from "boards"') &&
+        statement.includes('for update') &&
+        params?.includes(board.id),
+    );
     const acquiredLockKeys = transactionQueries.flatMap((call) => {
       const [statement, params] = call;
       return typeof statement === 'string' && statement.includes('pg_advisory_xact_lock')
@@ -1024,11 +1031,104 @@ describe('suggestion scope', () => {
     });
     transaction.mockRestore();
     expect(boardItemLockIndex).toBeGreaterThanOrEqual(0);
+    expect(boardLockIndex).toBeGreaterThanOrEqual(0);
     expect(evidenceLockIndex).toBeGreaterThanOrEqual(0);
-    expect(boardItemLockIndex).toBeLessThan(evidenceLockIndex);
+    expect(boardItemLockIndex).toBeLessThan(boardLockIndex);
+    expect(boardLockIndex).toBeLessThan(evidenceLockIndex);
     expect(acquiredLockKeys[0]).toBe(
       calendarEventMutationLockKey(TEAM_ID, mirror.rows[0]?.id ?? ''),
     );
+  });
+
+  it('locks board-membership entity and board targets before due-date evidence', async () => {
+    const transactionQueries: Parameters<Transaction['query']>[] = [];
+    const runTransaction = pg.transaction.bind(pg);
+    const transaction = vi
+      .spyOn(pg, 'transaction')
+      .mockImplementation(<T>(callback: (tx: Transaction) => Promise<T>) =>
+        runTransaction(async (tx) => {
+          const query = vi.spyOn(tx, 'query');
+          try {
+            return await callback(tx);
+          } finally {
+            transactionQueries.push(...query.mock.calls);
+            query.mockRestore();
+          }
+        }),
+      );
+    const observedDb = drizzle(pg);
+    const scope = withTeam(observedDb as never, TEAM_ID, USER_ID);
+    const board = await scope.boards.createBoard({
+      name: 'Evidence-backed membership board',
+      templateKind: 'task_board',
+      lanes: [{ name: 'Todo', kind: 'active' }],
+    });
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Join board from due-date evidence',
+      dueAt: new Date('2026-08-12T10:00:00.000Z'),
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const mirror = await pg.query<{ start_at_raw_event_id: string }>(
+      `SELECT start_at_raw_event_id::text
+       FROM calendar_events
+       WHERE team_id = '${TEAM_ID}'
+         AND metadata ->> 'source' = 'object'
+         AND metadata ->> 'entity_id' = '${task.id}'`,
+    );
+    const evidenceRawEventId = mirror.rows[0]?.start_at_raw_event_id ?? '';
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Add task to board from due-date evidence',
+      dedupeKey: 'board-membership-target-lock-order',
+      metadata: { evidence_pack_fingerprint: 'a'.repeat(64) },
+      evidence: [{ rawEventId: evidenceRawEventId }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'board_membership',
+          title: 'Add evidence-backed task to board',
+          dedupeKey: 'board-membership-target-lock-order:item',
+          proposedPayload: {
+            boardId: board.id,
+            entityId: task.id,
+            laneId: board.lanes[0]?.id ?? null,
+          },
+          evidenceRawEventIds: [evidenceRawEventId],
+        },
+      ],
+    });
+    transactionQueries.length = 0;
+
+    await scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '');
+
+    const entityLockIndex = transactionQueries.findIndex(
+      ([statement, params]) =>
+        typeof statement === 'string' &&
+        statement.includes('from "entities"') &&
+        statement.includes('for update') &&
+        params?.includes(task.id),
+    );
+    const boardLockIndex = transactionQueries.findIndex(
+      ([statement, params]) =>
+        typeof statement === 'string' &&
+        statement.includes('from "boards"') &&
+        statement.includes('for update') &&
+        params?.includes(board.id),
+    );
+    const evidenceLockIndex = transactionQueries.findIndex(
+      ([statement, params]) =>
+        typeof statement === 'string' &&
+        statement.includes('from "raw_events"') &&
+        statement.includes('for update') &&
+        params?.includes(evidenceRawEventId),
+    );
+    transaction.mockRestore();
+    expect(entityLockIndex).toBeGreaterThanOrEqual(0);
+    expect(boardLockIndex).toBeGreaterThanOrEqual(0);
+    expect(evidenceLockIndex).toBeGreaterThanOrEqual(0);
+    expect(entityLockIndex).toBeLessThan(boardLockIndex);
+    expect(boardLockIndex).toBeLessThan(evidenceLockIndex);
   });
 
   it('rejects a proposal when evidence changes after its snapshot was built', async () => {

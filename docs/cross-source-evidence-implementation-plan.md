@@ -461,12 +461,13 @@ misleading actionable approval.
    both occurrence and parent mutation identities. Keep direct whole-series
    parent updates and occurrence rematerialization in that same locked
    transaction. For object and task updates, lock the entity target before
-   selected evidence; for board-item updates, resolve and lock the team-scoped
-   board-item target first. Include every object or board-item due-date mirror
-   owned by an object/task target plus any evidence-owned calendar events in one
-   stable sorted calendar lock set. This preserves ordinary target-first
-   mutation order and prevents two cross-cited mirrors from taking opposite
-   locks.
+   selected evidence. For board memberships, lock the referenced existing
+   entity and affected board; for board-item updates, resolve and lock the
+   team-scoped board item and affected board. Include every object or board-item
+   due-date mirror owned by an object/task target plus any evidence-owned
+   calendar events in one stable sorted calendar lock set. This preserves
+   ordinary target-first mutation order and prevents two cross-cited mirrors
+   from taking opposite locks.
 5. Supersede an item when required evidence is deleted, tombstoned, or no longer
    visible. Reuse the existing `superseded` state rather than adding a `stale`
    enum in the first implementation.
@@ -831,9 +832,11 @@ Keep changes independently reviewable in this order:
 10. one later adapter per change.
 
 The first slice also includes a data-only migration for associations created
-before canonical shared links were classified as hard evidence. It upgrades
-those legacy rows and deduplicates them when a hard-anchor row already exists;
-no pack table or durable pack lifecycle is introduced.
+before canonical shared links received their current relationship strengths. It
+upgrades ordinary canonical links to hard evidence, preserves structured
+strength for recognized provider-object links, and deduplicates each when its
+matching canonical association already exists; no pack table or durable pack
+lifecycle is introduced.
 
 Do not combine later consumer migrations with the first webhook slice. Do not
 enable enforcement in the same change that introduces unreviewed pack-building

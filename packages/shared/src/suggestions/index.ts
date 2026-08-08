@@ -3881,9 +3881,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
   async function lockAcceptanceMutationTarget(
     item: typeof agentSuggestionItems.$inferSelect,
   ): Promise<void> {
-    if (!deps.acceptanceEvidenceLocked || item.operation === 'create') return;
+    if (!deps.acceptanceEvidenceLocked) return;
 
     if (
+      item.operation !== 'create' &&
       (item.targetKind === 'object' || item.targetKind === 'task') &&
       item.targetId &&
       UUID_RE.test(item.targetId)
@@ -3896,14 +3897,37 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       return;
     }
 
-    if (item.targetKind !== 'board_item_update') return;
-    const parsed = boardItemUpdatePayload.safeParse(item.proposedPayload);
-    if (!parsed.success) return;
-    await db
-      .select({ id: boardItems.id })
-      .from(boardItems)
-      .where(and(eq(boardItems.id, parsed.data.boardItemId), eq(boardItems.teamId, teamId)))
-      .for('update');
+    if (item.targetKind === 'board_membership') {
+      const parsed = boardMembershipPayload.safeParse(item.proposedPayload);
+      if (!parsed.success) return;
+      await db
+        .select({ id: entities.id })
+        .from(entities)
+        .where(and(eq(entities.id, parsed.data.entityId), eq(entities.teamId, teamId)))
+        .for('update');
+      await db
+        .select({ id: boardsTable.id })
+        .from(boardsTable)
+        .where(and(eq(boardsTable.id, parsed.data.boardId), eq(boardsTable.teamId, teamId)))
+        .for('update');
+      return;
+    }
+
+    if (item.targetKind === 'board_item_update') {
+      const parsed = boardItemUpdatePayload.safeParse(item.proposedPayload);
+      if (!parsed.success) return;
+      const [target] = await db
+        .select({ id: boardItems.id, boardId: boardItems.boardId })
+        .from(boardItems)
+        .where(and(eq(boardItems.id, parsed.data.boardItemId), eq(boardItems.teamId, teamId)))
+        .for('update');
+      if (!target) return;
+      await db
+        .select({ id: boardsTable.id })
+        .from(boardsTable)
+        .where(and(eq(boardsTable.id, target.boardId), eq(boardsTable.teamId, teamId)))
+        .for('update');
+    }
   }
 
   async function staleActionableItemReason(
