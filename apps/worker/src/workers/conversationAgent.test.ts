@@ -100,6 +100,10 @@ describe('conversation agent worker', () => {
     ).resolves.toEqual({ turnId, status: 'delivered' });
 
     expect(delivery.deliverAnswer).toHaveBeenCalledWith('The durable answer');
+    expect(askAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ deliverySurface: 'telegram' }),
+      expect.any(Object),
+    );
     const turns = await db.select().from(chatSurfaceTurns).where(eq(chatSurfaceTurns.id, turnId));
     expect(turns[0]).toMatchObject({
       status: 'delivered',
@@ -123,7 +127,7 @@ describe('conversation agent worker', () => {
     const delivery = adapter({ deliverAnswer });
     const askAgent = vi.fn().mockResolvedValue({
       ok: true,
-      answer: 'Paid once',
+      answer: 'Paid once [ev:abcd1234]',
       truncated: false,
     }) as typeof agent.askAgent;
     const deps = {
@@ -142,6 +146,36 @@ describe('conversation agent worker', () => {
 
     expect(askAgent).toHaveBeenCalledOnce();
     expect(deliverAnswer).toHaveBeenCalledTimes(2);
+    expect(deliverAnswer).toHaveBeenNthCalledWith(1, 'Paid once');
+    expect(deliverAnswer).toHaveBeenNthCalledWith(2, 'Paid once');
+  });
+
+  it('terminally fails a cached answer that becomes empty after presentation', async () => {
+    const turnId = await createTurn('event-empty-presented-cache');
+    const scope = withTeam(db, TEAM_ID, USER_ID).conversations;
+    await scope.claimTurn(turnId);
+    await scope.storeAnswer({ turnId, answer: '[ev:abcd1234]' });
+    const delivery = adapter();
+    const askAgent = vi.fn() as unknown as typeof agent.askAgent;
+
+    await expect(
+      processConversationAgentJob(
+        {
+          db,
+          askAgent,
+          createDeliveryAdapter: () => Promise.resolve(delivery),
+        },
+        jobData(turnId),
+      ),
+    ).resolves.toEqual({ turnId, status: 'delivered_cached' });
+
+    expect(askAgent).not.toHaveBeenCalled();
+    expect(delivery.deliverAnswer).not.toHaveBeenCalled();
+    expect(delivery.deliverFailure).toHaveBeenCalledWith(
+      conversationSurfaces.CONVERSATION_AGENT_FAILURE_MESSAGE,
+    );
+    const turns = await db.select().from(chatSurfaceTurns).where(eq(chatSurfaceTurns.id, turnId));
+    expect(turns[0]?.deliveredAt).toBeInstanceOf(Date);
   });
 
   it('does not deliver a cached answer after the provider session is reset', async () => {

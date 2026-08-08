@@ -253,6 +253,14 @@ text; citations remain mono and lime. Tool execution is collapsed. Pinned
 objects always have a human label. Prompts handed off from Home are stored
 briefly in team-scoped session storage and never in the URL.
 
+The web Ask surface is the rich research view: answers may be thorough and use
+sections, lists, or tables, while inline citations remain inspectable links to
+evidence. External chat delivery uses the same retrieval and grounding but a
+compact plain-text presentation, normally one short paragraph or three to five
+bullets. Telegram, Slack, and future external chat providers never expose
+Timeline citation syntax, raw-event IDs, or generic source footers. Explicit
+requests for more detail may expand within the provider-safe reply limit.
+
 ### Work and settings
 
 Work pages share one subnavigation and lead with the task at hand, not a grid of

@@ -21,6 +21,7 @@ import { resetEnvForTests } from '#src/env.js';
 import { resetMeetingBotProviderForTests } from '#src/meeting-bots/index.js';
 import { createTelegramConversationDeliveryAdapter } from '#src/telegram/conversation-adapter.js';
 import {
+  formatCachedTelegramAskAnswer,
   handleUpdate,
   parseCommand,
   startTelegramTypingHeartbeat,
@@ -299,6 +300,12 @@ describe('startTelegramTypingHeartbeat', () => {
     await Promise.resolve();
 
     expect(sendChatAction).toHaveBeenCalledOnce();
+  });
+});
+
+describe('cached Telegram ask presentation', () => {
+  it('reformats pre-policy cached answers before retry delivery', () => {
+    expect(formatCachedTelegramAskAnswer('Paid answer [ev:abcd1234]')).toBe('Paid answer');
   });
 });
 

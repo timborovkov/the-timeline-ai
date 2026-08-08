@@ -8,9 +8,10 @@ describe('buildSystemPrompt', () => {
       teamName: 'AuditAI',
       userName: 'Tim',
       currentDate: new Date('2026-07-24T12:00:00.000Z'),
+      presentation: 'external_chat',
     });
 
-    expect(AGENT_PROMPT_VERSION).toBe('agent-v19-2026-07');
+    expect(AGENT_PROMPT_VERSION).toBe('agent-v20-2026-08');
     expect(prompt).toContain("the event's sender is the speaker");
     expect(prompt).toContain('For a forwarded email, the original forwarded sender is the speaker');
     expect(prompt).toContain('A mention/tag identifies an addressee, not the speaker.');
@@ -24,5 +25,20 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain(
       'If they are correcting an accepted/current object, calendar event, or board item',
     );
+    expect(prompt).toContain('PRESENTATION FOR EXTERNAL CHAT');
+    expect(prompt).toContain('about 120 words');
+  });
+
+  it('gives web chat rich source-linked presentation instructions', () => {
+    const prompt = buildSystemPrompt({
+      teamName: 'AuditAI',
+      userName: 'Tim',
+      currentDate: new Date('2026-08-07T12:00:00.000Z'),
+      presentation: 'web_rich',
+    });
+
+    expect(prompt).toContain('PRESENTATION FOR WEB CHAT');
+    expect(prompt).toContain('complete, source-linked answer');
+    expect(prompt).not.toContain('about 120 words');
   });
 });

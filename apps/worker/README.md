@@ -11,8 +11,9 @@ exports. One Node entry point starts the queue workers from the same codebase.
 Long-running, retry-prone work (audio transcription, LLM extraction, vector embedding) belongs off the request path. Railway runs the worker service separately from web so backlogs do not block requests.
 
 The `conversation-agent` worker also keeps Telegram/Slack webhook lifetimes
-short. It runs one paid model execution per durable turn, persists the answer
-before external delivery, and retries delivery from cache. Each job carries the
+short. It runs the shared tool-using agent once per durable turn, applies the
+external profile through a no-tool final-answer pass, persists the answer before
+external delivery, and retries delivery from cache. Each job carries the
 turn UUID plus its team/user scope, and the worker claims it only through that
 `withTeam` conversation scope. Its 90-second deadline includes progress
 startup, history loading, and model execution; retained failed queue jobs can
@@ -20,6 +21,14 @@ be replaced for cached or still-queued recovery without repeating a paid
 answer. Set `TELEGRAM_BOT_TOKEN` on the worker for Telegram typing and replies;
 Slack tokens are decrypted from installed workspace records with the same
 `SECRETS_ENCRYPTION_KEY` configured on web.
+
+The worker resolves presentation from the current delivery surface. Only
+literal `web` uses the rich cited profile; Telegram, Slack, and every future
+conversation provider default to compact plain text with internal Timeline
+references removed. The 900-token generation ceiling applies only to the
+no-tool final-answer pass, leaving tool-call arguments uncapped. New delivery
+adapters inherit that policy through the shared conversation runtime and must
+not add provider-specific answer prompts or citation sanitizers.
 
 ## How to use
 
@@ -91,10 +100,15 @@ Locally, prefer `DAYTONA_API_KEY` + `dev:extract`. Only set
 `DOCUMENT_EXTRACT_ALLOW_INPROCESS=true` for offline/dev without Daytona (never in production).
 
 Daytona snapshots are content-hashed (`timeline-document-extract-<hash>` from
-`document-extract-sandbox/**`). Leave `DAYTONA_SNAPSHOT` unset (or `auto`) to
-resolve the hash at runtime, or pin the name CI prints. Boot ensure
+`document-extract-sandbox/**`). Set `DAYTONA_SNAPSHOT=auto` on Railway so the
+deployed code resolves its matching hash. Boot ensure
 (`DAYTONA_SNAPSHOT_ENSURE=true`, default) creates the snapshot once if missing;
-it does not rebuild on every restart. Details:
+it does not rebuild on every restart. Push CI ensures snapshots but never
+deletes them. Cleanup is a manual workflow dispatch or CLI maintenance action:
+set `DAYTONA_ACTIVE_SNAPSHOTS` to every hash used by a deployed production or
+staging extractor, then run `cleanup-document-extract-snapshots`. It preserves
+that deployed inventory plus the current and two rollback hashes, and skips any
+snapshot referenced by a Daytona sandbox. Details:
 [docs/adr/0013-daytona-document-extract.md](../../docs/adr/0013-daytona-document-extract.md)
 and [document-extract-sandbox/README.md](document-extract-sandbox/README.md).
 

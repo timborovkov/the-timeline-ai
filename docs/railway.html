@@ -142,13 +142,23 @@
         <code>document-extract-orchestrator</code> consumes that queue. On
         <code>document-extract-orchestrator</code>, set <code>WORKER_MODE=document-extract</code>,
         <code>DAYTONA_API_KEY</code>, <code>OPENROUTER_API_KEY</code>, <code>DATABASE_URL</code>,
-        <code>REDIS_URL</code>, and S3 document-bucket variables. Optionally pin
-        <code>DAYTONA_SNAPSHOT=timeline-document-extract-&lt;hash&gt;</code> (leave unset /
-        <code>auto</code> to resolve the content hash from <code>document-extract-sandbox/</code>).
-        Do <strong>not</strong> set <code>SECRETS_ENCRYPTION_KEY</code>, Auth secrets, or
+        <code>REDIS_URL</code>, and S3 document-bucket variables. Set
+        <code>DAYTONA_SNAPSHOT=auto</code> to resolve the content hash from
+        <code>document-extract-sandbox/</code> for each deployed revision. Do
+        <strong>not</strong> set <code>SECRETS_ENCRYPTION_KEY</code>, Auth secrets, or
         Telegram/Slack/integration OAuth tokens on <code>document-extract-orchestrator</code>.
-        Snapshot lifecycle (CI ensure + optional boot create-once): ADR 0013 and
+        Snapshot lifecycle (CI ensure, manual deployed-hash-aware retention, sandbox-aware pruning,
+        and optional boot create-once): ADR 0013 and
         <code>pnpm --filter @timeline/worker create-document-extract-snapshot</code>.
+      </p>
+      <p>
+        Push CI never prunes snapshots because an idle deployed extractor has no persistent Daytona
+        sandbox reference. Use the snapshot workflow's manual <code>deployed_snapshots</code> input
+        only after collecting the active hash from every production/staging extractor's successful
+        <code>document-extract Daytona snapshot ensured</code> startup log. The cleanup keeps those
+        deployed hashes plus the current and two rollback hashes and fails closed when the inventory
+        is absent or stale. Do not set <code>DAYTONA_ACTIVE_SNAPSHOTS</code> as a Railway service
+        variable; it is a maintenance-command input only.
       </p>
       <p>
         Extract startup checks the raw environment against a strict credential-thin allowlist.
@@ -253,7 +263,7 @@ DOCUMENT_EXTRACT_ENABLED=true
 DAYTONA_API_KEY=&lt;daytona api key&gt;
 DAYTONA_API_URL=https://app.daytona.io/api
 DAYTONA_TARGET=us
-DAYTONA_SNAPSHOT=timeline-document-extract-&lt;hash-or-auto&gt;
+DAYTONA_SNAPSHOT=auto
 DAYTONA_SNAPSHOT_ENSURE=true
 DOCUMENT_EXTRACT_SPARSE_TEXT_CHARS=500
 DOCUMENT_EXTRACT_MAX_VISION_PAGES=20

@@ -104,7 +104,12 @@ A new provider supplies:
 6. a delivery adapter for acknowledgement, progress, answer, and failure.
 
 It reuses the existing session-link and turn tables, queue, history limits,
-timeout, idempotency, transcript persistence, and web chat history.
+timeout, idempotency, transcript persistence, web chat history, and shared
+agent-presentation policy. The current delivery surface controls presentation:
+only Timeline web chat receives the rich cited profile; every external chat
+provider, including an unknown future surface value, receives the compact
+plain-text profile with internal Timeline references removed. Provider adapters
+must not implement their own citation stripping or answer-length prompt.
 
 ## Consequences
 
@@ -112,6 +117,20 @@ Direct text changes from implicit capture to agent-first behavior on Telegram
 and Slack. Users who want a note use `/note` on Telegram or
 `/timeline note` on Slack. Provider-created conversations appear in web chat
 history with a provider marker and can continue there.
+
+Web chat remains the thorough, source-linked research surface. External chat
+answers use the same visibility rules, retrieval tools, grounding requirements,
+and tool-call budget, but default to about 120 words and never expose internal
+Timeline citation or raw-event IDs. The shared runtime leaves every tool-using
+model step uncapped, then runs the external profile's 900-token ceiling only on
+a separate no-tool final-answer pass. If that presentation-only pass fails,
+returns empty, or is erased by deterministic formatting after a completed tool
+run, the formatter delivers the grounded draft and retains its model attribution
+instead of falsely reporting that the turn failed. Both the
+durable turn ledger and Telegram's legacy Redis answer cache reapply the
+formatter on delivery retry, so replies created before this policy are also
+safe to send; a legacy answer that becomes empty after formatting is delivered
+once as a canonical failure instead of retrying an empty provider message.
 
 The worker needs Telegram's bot token because Telegram replies and typing
 heartbeats now outlive the webhook request. Slack worker delivery reconstructs

@@ -25,6 +25,7 @@ const fakes = vi.hoisted(() => ({
   fakeGetCalendarSettings: vi.fn(),
   fakeListCalendarEvents: vi.fn(),
   fakeBuildSystemPrompt: vi.fn(),
+  fakeResolveAgentPresentation: vi.fn(),
   fakeBuildAgentTools: vi.fn(),
   fakeBuildMcpTools: vi.fn(),
   fakeInstrumentAgentTools: vi.fn(),
@@ -83,6 +84,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
 vi.mock('@timeline/shared/agent', () => ({
   AGENT_PROMPT_VERSION: 'test-prompt-v1',
   buildSystemPrompt: fakes.fakeBuildSystemPrompt,
+  resolveAgentPresentation: fakes.fakeResolveAgentPresentation,
   buildAgentTools: fakes.fakeBuildAgentTools,
   buildMcpTools: fakes.fakeBuildMcpTools,
   instrumentAgentTools: fakes.fakeInstrumentAgentTools,
@@ -243,6 +245,7 @@ beforeEach(() => {
   ]);
   fakes.fakeWorkspaceTimeContext.mockReturnValue('Tallinn time');
   fakes.fakeBuildSystemPrompt.mockReturnValue('system prompt');
+  fakes.fakeResolveAgentPresentation.mockReturnValue('web_rich');
   fakes.fakeBuildAgentTools.mockReturnValue({ search_timeline: { type: 'native' } });
   fakes.fakeBuildMcpTools.mockResolvedValue({ external_tool: { type: 'mcp' } });
   fakes.fakeInstrumentAgentTools.mockImplementation((tools: unknown) => tools);
@@ -386,6 +389,7 @@ describe('POST /api/chat', () => {
       expect.objectContaining({
         teamName: 'Team From Scope',
         userName: 'Tim',
+        presentation: 'web_rich',
         currentUser: {
           userId: USER_ID,
           role: 'member',
@@ -408,6 +412,11 @@ describe('POST /api/chat', () => {
         maxSteps: 20,
       }),
     );
+    expect(fakes.fakeResolveAgentPresentation).toHaveBeenCalledWith('web');
+    const streamInput = fakes.fakeStreamChat.mock.calls.at(-1)?.[0] as
+      | { maxOutputTokens?: number }
+      | undefined;
+    expect(streamInput).not.toHaveProperty('maxOutputTokens');
     expect(fakes.fakeBuildMcpTools).not.toHaveBeenCalled();
   });
 

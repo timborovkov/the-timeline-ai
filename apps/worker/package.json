@@ -31,6 +31,7 @@
     "task-category-backfill": "NODE_OPTIONS=--conditions=development tsx src/scripts/task-category-backfill.ts",
     "create-document-extract-snapshot": "NODE_OPTIONS=--conditions=development tsx scripts/create-document-extract-snapshot.ts",
     "ensure-document-extract-snapshot": "NODE_OPTIONS=--conditions=development tsx scripts/create-document-extract-snapshot.ts",
+    "cleanup-document-extract-snapshots": "NODE_OPTIONS=--conditions=development tsx scripts/cleanup-document-extract-snapshots.ts",
     "dev:extract": "NODE_OPTIONS=--conditions=development WORKER_MODE=document-extract tsx watch src/extract-main.ts",
     "start:extract": "WORKER_MODE=document-extract node dist/extract-main.js",
     "lint": "eslint src",

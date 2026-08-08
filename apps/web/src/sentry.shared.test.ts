@@ -102,6 +102,42 @@ describe('Sentry web config helpers', () => {
     expect(scrubSentryEvent(event)).toBe(event);
   });
 
+  it('drops browser-injected antifingerprint promise rejections', () => {
+    const event = {
+      exception: {
+        values: [
+          {
+            type: 'UnhandledRejection',
+            value:
+              'Non-Error promise rejection captured with value: Object Not Found Matching Id:1, MethodName:update, ParamCount:4',
+          },
+        ],
+      },
+    } as unknown as ErrorEvent;
+
+    expect(shouldDropBrowserExtensionEvent(event)).toBe(true);
+    expect(scrubSentryEvent(event)).toBeNull();
+  });
+
+  it('keeps application errors that contain the antifingerprint bridge message', () => {
+    const event = {
+      exception: {
+        values: [
+          {
+            type: 'Error',
+            value: 'Object Not Found Matching Id:1, MethodName:update, ParamCount:4',
+            stacktrace: {
+              frames: [{ filename: '/app/settings/page.js', lineno: 18, in_app: true }],
+            },
+          },
+        ],
+      },
+    } as unknown as ErrorEvent;
+
+    expect(shouldDropBrowserExtensionEvent(event)).toBe(false);
+    expect(scrubSentryEvent(event)).toBe(event);
+  });
+
   it('drops malformed multipart FormData parse errors on not-found', () => {
     const event = {
       transaction: 'POST /_not-found/page',

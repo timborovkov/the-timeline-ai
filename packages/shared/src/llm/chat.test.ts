@@ -1187,6 +1187,40 @@ describe('resolveAgentModelId', () => {
 });
 
 describe('streamChat', () => {
+  it('forwards an explicit output-token ceiling to the AI SDK', async () => {
+    let maxOutputTokens: number | undefined;
+    const model = new MockLanguageModelV3({
+      doStream: ((options: { maxOutputTokens?: number }) => {
+        maxOutputTokens = options.maxOutputTokens;
+        return Promise.resolve({
+          stream: new ReadableStream({
+            start(controller) {
+              controller.enqueue({
+                type: 'finish',
+                finishReason: 'stop',
+                usage: { inputTokens: 1, outputTokens: 0, totalTokens: 1 },
+              });
+              controller.close();
+            },
+          }),
+        });
+      }) as never,
+    });
+
+    const result = streamChat(
+      {
+        system: 'sys',
+        messages: [{ role: 'user', content: 'hi' }],
+        tools: {},
+        maxOutputTokens: 900,
+      },
+      { model },
+    );
+    await result.consumeStream();
+
+    expect(maxOutputTokens).toBe(900);
+  });
+
   it('configures OpenRouter model fallbacks for agent streams', async () => {
     let providerOptions: unknown;
     const model = new MockLanguageModelV3({

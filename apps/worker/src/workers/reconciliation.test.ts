@@ -1,4 +1,3 @@
-import { PGlite } from '@electric-sql/pglite';
 import {
   type Db,
   agentSuggestionItems,
@@ -12,11 +11,16 @@ import {
   reconciliationRuns,
 } from '@timeline/db';
 import { type queue } from '@timeline/shared';
+import {
+  createResettablePGliteTestDb,
+  type ResettablePGliteTestDb,
+} from '@timeline/shared/test/pglite';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { applyDbMigrations } from '#src/test/pglite.js';
+import type { PGlite } from '@electric-sql/pglite';
+
 import {
   processReconciliationJob,
   type ReconciliationWorkerResult,
@@ -26,13 +30,10 @@ const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '22222222-2222-4222-8222-222222222222';
 const OTHER_USER_ID = '33333333-3333-4333-8333-333333333333';
 
-let pg: PGlite;
+let testDb: ResettablePGliteTestDb;
 let db: ReturnType<typeof drizzle>;
 
-beforeEach(async () => {
-  pg = new PGlite();
-  await applyDbMigrations(pg);
-  db = drizzle(pg);
+async function seedWorkspace(pg: PGlite): Promise<void> {
   await pg.exec(`
     INSERT INTO teams (id, slug, name) VALUES ('${TEAM_ID}', 'reconcile-worker', 'Reconcile Worker');
     INSERT INTO users (id, email) VALUES ('${USER_ID}', 'owner@example.com');
@@ -40,10 +41,19 @@ beforeEach(async () => {
     INSERT INTO team_members (team_id, user_id, role) VALUES ('${TEAM_ID}', '${USER_ID}', 'owner');
     INSERT INTO team_members (team_id, user_id, role) VALUES ('${TEAM_ID}', '${OTHER_USER_ID}', 'member');
   `);
+}
+
+beforeAll(async () => {
+  testDb = await createResettablePGliteTestDb(seedWorkspace);
+  db = drizzle(testDb.pg);
+}, 240_000);
+
+beforeEach(async () => {
+  await testDb.reset();
 });
 
-afterEach(async () => {
-  await pg.close();
+afterAll(async () => {
+  await testDb.close();
 });
 
 async function seedEmailRawEvent(

@@ -1,14 +1,18 @@
 import { randomUUID } from 'node:crypto';
 
-import { PGlite } from '@electric-sql/pglite';
 import { type Db, documentChunks, documents, documentVersions, rawEvents } from '@timeline/db';
 import { email, withTeam, type queue as queueNS } from '@timeline/shared';
+import {
+  createResettablePGliteTestDb,
+  type ResettablePGliteTestDb,
+} from '@timeline/shared/test/pglite';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { PGlite } from '@electric-sql/pglite';
 
 import { DaytonaNotConfiguredError } from '#src/document-ingestion/types.js';
-import { applyDbMigrations } from '#src/test/pglite.js';
 import {
   type DocumentExtractIO,
   type SandboxPdfExtractResult,
@@ -42,6 +46,8 @@ type AnyDb = Db;
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+let testDb: ResettablePGliteTestDb;
+let db: AnyDb;
 
 async function seedTeam(pg: PGlite): Promise<void> {
   await pg.exec(`INSERT INTO teams (id, slug, name) VALUES ('${TEAM_ID}', 't', 'Test Team');`);
@@ -72,7 +78,7 @@ const DEFAULT_SANDBOX_PDF_SPARSE: SandboxPdfExtractResult = {
   pageImages: [Buffer.from('fake-png')],
 };
 
-async function makeHarness(
+function makeHarness(
   blobBody: string | Buffer,
   opts: {
     visionResponse?: string;
@@ -83,10 +89,7 @@ async function makeHarness(
     sandboxPdfThrows?: Error;
   } = {},
 ): Promise<Harness> {
-  const pg = new PGlite();
-  await applyDbMigrations(pg);
-  await seedTeam(pg);
-  const db = drizzle(pg) as unknown as AnyDb;
+  const pg = testDb.pg;
   // vi.fn signatures kept sync — eslint flags `async` without `await` as
   // useless. Wrap in Promise.resolve so the surface matches the interface
   // (which returns a Promise) without an empty async function.
@@ -129,7 +132,7 @@ async function makeHarness(
     extractOffice,
     extractPdfSandbox,
   };
-  return {
+  return Promise.resolve({
     pg,
     db,
     fetchBlob,
@@ -139,7 +142,7 @@ async function makeHarness(
     extractPdfSandbox,
     requireEnv,
     io,
-  };
+  });
 }
 
 /**
@@ -254,13 +257,20 @@ function inboundEmailPayload(messageId: string) {
 
 // `h` is assigned at the top of every `it`. We declare it as `Harness`
 // (not `| undefined`) so individual tests don't need to narrow it on each
-// access. The afterEach unconditionally closes; the previous tests have
-// always assigned a fresh harness by the time we reach this hook (BullMQ
-// errors would surface on the worker before its teardown).
+// access.
 let h: Harness = undefined as unknown as Harness;
 
-afterEach(async () => {
-  await h.pg.close();
+beforeAll(async () => {
+  testDb = await createResettablePGliteTestDb(seedTeam);
+  db = drizzle(testDb.pg) as unknown as AnyDb;
+}, 240_000);
+
+beforeEach(async () => {
+  await testDb.reset();
+});
+
+afterAll(async () => {
+  await testDb.close();
 });
 
 describe('processDocumentExtractJob — happy path', () => {
@@ -756,7 +766,7 @@ describe('processDocumentExtractJob — content-type routing', () => {
     ];
     for (const [index, sandboxPdf] of rejectCases.entries()) {
       if (index > 0) {
-        await h.pg.close();
+        await testDb.reset();
       }
       h = await makeHarness('%PDF bytes', {
         visionResponse: `vision for ${sandboxPdf.method}`,

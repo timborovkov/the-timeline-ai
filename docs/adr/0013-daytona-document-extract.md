@@ -67,7 +67,14 @@ authored by a trusted teammate.
    an Image recipe revision constant. CI publishes/ensures that snapshot when
    those paths change; extract-main may create-once if missing
    (`DAYTONA_SNAPSHOT_ENSURE`, default true) but must not rebuild on every
-   restart. Explicit `DAYTONA_SNAPSHOT` still overrides the hash pin.
+   restart. Railway uses `DAYTONA_SNAPSHOT=auto` so deployed code and snapshot
+   inputs cannot drift. Push CI never deletes snapshots because idle deployed
+   extractors have no persistent Daytona sandbox reference. Cleanup is an
+   explicit maintenance action that requires the snapshot hash used by every
+   deployed production and staging extractor. It retains those deployed hashes
+   plus the current hash and two rollback hashes, and deletes only exact
+   content-hashed names that have no Daytona sandbox references. Legacy and
+   unrelated snapshots are never deletion targets.
 
 ## Snapshot operations
 
@@ -78,12 +85,13 @@ authored by a trusted teammate.
 | Ensure (idempotent) | Local once, CI on sandbox changes, optional extract boot | `pnpm --filter @timeline/worker create-document-extract-snapshot` (alias: `ensure-document-extract-snapshot`) |
 | Force rebuild | Corruption / debugging | same script with `--force` |
 | CI publish | Push to `main`/`staging` touching sandbox or snapshot recipe | `.github/workflows/publish-document-extract-snapshot.yml` when repo variable `DAYTONA_SNAPSHOT_PUBLISH=true` and secret `DAYTONA_API_KEY` |
+| Manual retention | Workflow dispatch / operator maintenance after inspecting all Railway environments | Set `DAYTONA_ACTIVE_SNAPSHOTS` to every deployed hash, then run `pnpm --filter @timeline/worker cleanup-document-extract-snapshots -- --retain=3`; missing/stale inventory fails closed |
 | Boot ensure | extract-main start | If `DAYTONA_SNAPSHOT_ENSURE=true` (default) and `DAYTONA_API_KEY` set: get-or-create once |
 
-Recommended Railway pin after CI (or leave unset / `auto` so the worker resolves the hash from the shipped sandbox directory):
+Recommended Railway setting (the worker resolves the hash from the shipped sandbox directory):
 
 ```bash
-DAYTONA_SNAPSHOT=timeline-document-extract-<hash>
+DAYTONA_SNAPSHOT=auto
 ```
 
 ## Non-goals
@@ -102,8 +110,10 @@ DAYTONA_SNAPSHOT=timeline-document-extract-<hash>
 - The orchestrator still has DB write + S3 read + OpenRouter; compromise is
   narrower than full worker secret theft but not zero.
 - Operators set `DAYTONA_*` on `document-extract-orchestrator`. Snapshot drift is avoided
-  by content-hash names + CI ensure; first boot without a published snapshot
-  may be slow when boot ensure creates it. Sandbox/deps changes (including
+  by content-hash names + `DAYTONA_SNAPSHOT=auto`; first boot without a published snapshot
+  may be slow when boot ensure creates it. Manual retention keeps the current
+  and two rollback hashes plus every explicitly declared deployed hash and any
+  snapshot referenced by a sandbox. Sandbox/deps changes (including
   anydoc, pypdfium2, or Pillow pins) require a new content-hashed snapshot.
 - Document product behavior (chunking, embed fan-out, failed/retry UX, 25 MiB
   cap) stays the same; only the trust boundary and format coverage move.

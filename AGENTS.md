@@ -150,6 +150,14 @@ Treat this file as an operating contract for agents, not a loose README.
   identifier/count report; the command must never delete captured raw events.
   Apply-mode backfill and webhook follow-ups are durable: rerun the same apply
   command to resume any failed step without repeating one already completed.
+- **Daytona snapshot cleanup requires deployed-hash protection.** Run
+  `pnpm --filter @timeline/worker cleanup-document-extract-snapshots -- --retain=3`
+  only with `DAYTONA_ACTIVE_SNAPSHOTS` listing every snapshot used by a deployed
+  production or staging extractor. Cleanup retains those deployed hashes plus
+  the current and two rollback hashes, skips sandbox-referenced snapshots, and
+  must fail closed when the deployed inventory is missing or stale. Push CI may
+  ensure snapshots, but must not delete them without that external deployment
+  inventory.
 - **Use the repo's canonical import paths.** In `apps/web/src`, use the `@/`
   alias for source imports and exports instead of relative paths (`../`,
   `./foo`). The only expected relative side-effect import there is local CSS,
@@ -177,6 +185,15 @@ Treat this file as an operating contract for agents, not a loose README.
   before the agent sees it (Rule 8 of the system prompt). Same for
   integration event snippets surfaced via `search_integration_events`.
   A new tool that surfaces external content MUST wrap it.
+- **Agent presentation follows the current delivery surface.** Literal web
+  delivery uses the rich cited profile. Telegram, Slack, and every future
+  external chat provider use the shared compact plain-text profile; internal
+  Timeline citation syntax and raw-event IDs are removed before persistence
+  and the formatter is reapplied idempotently before cached delivery. New
+  provider adapters must reuse this policy rather than adding provider-specific
+  answer prompts or citation sanitizers. The external output-token ceiling is
+  applied only in a no-tool final-answer pass; retrieval, visibility, grounding,
+  and tool-call budgets remain unchanged.
 - **Outbound MCP bearer keys see only `team`-visibility events.** The
   `/api/mcp/server` handler uses `withTeam(db, teamId, ZERO_UUID,
   { skipMembershipCheck: true })`. The zero-UUID can't match
@@ -234,7 +251,8 @@ packages/
             windows for proposal generation),
             conversation-surfaces module (provider-neutral direct-chat
             sessions, durable turn ledger, bounded history, Telegram/Slack
-            delivery adapters, and conversation-agent queue),
+            delivery adapters, shared web-rich/external-chat agent presentation,
+            and conversation-agent queue),
             onboarding module (Phase 13 — team-level tutorial completion +
             per-user dismissal), job-recovery module (Phase 13 — team-scoped
             retry/dismiss for failed product jobs), slack module (Phase 12 —
