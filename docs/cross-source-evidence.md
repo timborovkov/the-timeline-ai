@@ -43,7 +43,7 @@ proposal and answer packs. Proposal behavior remains on the legacy path while
 | Generic ingest webhooks | `off`: the existing event-local proposal remains unchanged. `shadow`: pack metrics only; pack failures are recorded without interrupting legacy extraction. `enforced`: recent time-only chronology is replaced by the anchor plus directly related pack evidence, and every proposed change requires exact citations. The existing proposal-generation source gate remains an inner gate. |
 | Slack, Telegram, email, meetings, and documents | Existing conversation-review and event-local proposal behavior remains unchanged regardless of the global rollout setting. These adapters must migrate and pass their own gates separately. |
 | GitHub, Linear, Monday, and Sentry | Structured events feed artifact reconciliation, associations, source references, and provider-authoritative outputs. They do not run the suggestion model. |
-| Agent Ask | Broad workspace retrieval returns a viewer-visible answer-policy pack for raw-event evidence while keeping objects, notes, tasks, boards, documents, and calendar results as typed adjacent context. Semantic matches are labeled as retrieval provenance, and partial packets disclose failed source adapters. |
+| Agent Ask | Broad workspace retrieval returns a viewer-visible answer-policy pack for raw-event evidence while keeping objects, notes, tasks, boards, documents, and calendar results as typed adjacent context. Semantic matches are labeled as retrieval provenance, pack-only citations are included in the packet's top-level reference index, and partial packets disclose failed source adapters. |
 
 No proposal adapter is considered shipped until its shadow sample, safety,
 quality, latency, and operations gates pass and enforcement is enabled for that
@@ -86,8 +86,10 @@ into a proposal pack. Proposal ranking averages the current-model vectors
 already stored for visible anchor events, then searches only the directly
 qualified candidate IDs through the team-and-viewer Qdrant filter. Missing
 stored vectors skip this tie-breaker; they never trigger a new embedding or
-model call. Answer packs may admit viewer-visible semantic matches, but must
-label and cite them as retrieved evidence.
+model call. Stored-vector lookup follows the anchor raw-event ID across raw,
+integration, and calendar-event point scopes. Answer packs may admit
+viewer-visible semantic matches, but must label and cite them as retrieved
+evidence.
 
 ## Product vocabulary
 
@@ -241,7 +243,8 @@ The first enforced source path must meet all of these gates:
 - Loaded aggregate health must preserve the same count relationships as raw
   samples, including cross-source ≤ eligible ≤ total attempts, errors ≤ total,
   error-reason totals and error rate matching the error count, and aggregate
-  surface ≤ selected ≤ candidate counts
+  surface ≤ selected ≤ candidate counts; mode values must be recognized and
+  nonzero shadow eligibility requires a shadow population
 - No additional embedding or generative-model request solely for proposal-pack
   ranking
 - At most 24 protected conversation-core events, 8 supporting events, 4

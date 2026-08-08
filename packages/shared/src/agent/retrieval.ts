@@ -408,7 +408,10 @@ function objectCitation(type: string, id: string): string {
 
 function collectRefs(result: Omit<WorkspaceContextResult, 'refs'>): string[] {
   const refs = new Set<string>();
+  const evidencePackItems =
+    result.evidencePack?.status === 'complete' ? result.evidencePack.items : [];
   for (const group of [
+    evidencePackItems,
     result.objects,
     result.notes,
     result.events,

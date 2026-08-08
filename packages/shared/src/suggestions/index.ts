@@ -3786,17 +3786,48 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return null;
   }
 
-  async function staleActionableItemReason(
+  async function lockCalendarAcceptanceTargets(
     item: typeof agentSuggestionItems.$inferSelect,
-  ): Promise<string | null> {
-    if (item.status !== 'pending' && item.status !== 'failed') return null;
-    if (
-      deps.acceptanceEvidenceLocked &&
-      item.targetKind === 'calendar_event' &&
-      item.targetId &&
-      UUID_RE.test(item.targetId)
-    ) {
-      const target = await calendar.getCalendarEvent(item.targetId);
+    evidenceRawEventIds: string[],
+  ): Promise<void> {
+    if (!deps.acceptanceEvidenceLocked) return;
+
+    const targetIsCalendar =
+      item.targetKind === 'calendar_event' && item.targetId !== null && UUID_RE.test(item.targetId);
+    const calendarEventIds = new Set<string>();
+    if (targetIsCalendar && item.targetId) calendarEventIds.add(item.targetId);
+
+    if (evidenceRawEventIds.length > 0) {
+      const calendarEvidence = await db
+        .select({ sourceMetadata: rawEvents.sourceMetadata })
+        .from(rawEvents)
+        .where(
+          and(
+            eq(rawEvents.teamId, teamId),
+            eq(rawEvents.source, 'calendar'),
+            inArray(rawEvents.id, evidenceRawEventIds),
+          ),
+        );
+      for (const evidence of calendarEvidence) {
+        const calendarEventId = recordFromUnknown(evidence.sourceMetadata).calendar_event_id;
+        if (typeof calendarEventId === 'string' && UUID_RE.test(calendarEventId)) {
+          calendarEventIds.add(calendarEventId);
+        }
+      }
+    }
+
+    if (calendarEventIds.size === 0) return;
+    const calendarRows = await db
+      .select({ id: calendarEvents.id, recurringParentId: calendarEvents.recurringParentId })
+      .from(calendarEvents)
+      .where(
+        and(eq(calendarEvents.teamId, teamId), inArray(calendarEvents.id, [...calendarEventIds])),
+      );
+    const calendarRowsById = new Map(calendarRows.map((row) => [row.id, row]));
+    const mutationTargetIds = new Set<string>();
+
+    if (targetIsCalendar && item.targetId) {
+      const target = calendarRowsById.get(item.targetId);
       const requestedMode = recordFromUnknown(item.proposedPayload).recurrenceEditMode;
       const recurrenceEditMode: CalendarRecurrenceEditMode | undefined =
         requestedMode === 'single' ||
@@ -3804,14 +3835,33 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         requestedMode === 'this_and_future'
           ? requestedMode
           : undefined;
-      const mutationTargetId = calendarEventMutationTargetId(
-        item.targetId,
-        target?.recurringParentId ?? null,
-        recurrenceEditMode,
+      mutationTargetIds.add(
+        calendarEventMutationTargetId(
+          item.targetId,
+          target?.recurringParentId ?? null,
+          recurrenceEditMode,
+        ),
       );
-      const mutationLockKey = calendarEventMutationLockKey(teamId, mutationTargetId);
+    }
+
+    for (const calendarEventId of calendarEventIds) {
+      const row = calendarRowsById.get(calendarEventId);
+      mutationTargetIds.add(calendarEventId);
+      if (row?.recurringParentId) mutationTargetIds.add(row.recurringParentId);
+    }
+
+    const mutationLockKeys = [...mutationTargetIds]
+      .map((targetId) => calendarEventMutationLockKey(teamId, targetId))
+      .sort();
+    for (const mutationLockKey of mutationLockKeys) {
       await db.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${mutationLockKey}, 0))`);
     }
+  }
+
+  async function staleActionableItemReason(
+    item: typeof agentSuggestionItems.$inferSelect,
+  ): Promise<string | null> {
+    if (item.status !== 'pending' && item.status !== 'failed') return null;
     const [parentSuggestion] = await db
       .select({
         metadata: agentSuggestions.metadata,
@@ -3839,6 +3889,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           ),
         );
       const storedPackEvidenceIds = storedPackEvidence.map((evidence) => evidence.rawEventId);
+      await lockCalendarAcceptanceTargets(item, storedPackEvidenceIds);
       const packEvidenceQuery = db
         .select({
           id: rawEvents.id,

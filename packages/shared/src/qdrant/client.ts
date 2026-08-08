@@ -620,12 +620,22 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
           must: [
             { key: 'team_id', match: { value: teamId } },
             { key: 'embedding_model', match: { value: TIMELINE_MODELS.embedding.id } },
-            { key: 'source_scope', match: { value: 'event' } },
-            { key: 'source_id', match: { any: uniqueQueryIds } },
+            { key: 'event_id', match: { any: uniqueQueryIds } },
+            {
+              should: [
+                {
+                  key: 'source_kind',
+                  match: { any: ['raw_event', 'integration_event', 'calendar_event'] },
+                },
+                {
+                  must: [{ is_empty: { key: 'source_kind' } }, { is_empty: { key: 'fact_id' } }],
+                },
+              ],
+            },
             { key: 'chunk_index', match: { value: 0 } },
           ],
         },
-        limit: uniqueQueryIds.length,
+        limit: uniqueQueryIds.length * 2,
         with_payload: true,
         with_vector: true,
       },
@@ -640,19 +650,25 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
         points?: { vector?: unknown; payload?: QdrantPayload }[];
       };
     };
-    const vectors = (body.result?.points ?? []).flatMap((point) => {
-      if (point.payload?.team_id !== teamId) return [];
-      if (!Array.isArray(point.vector)) return [];
+    const vectorsByEventId = new Map<string, number[]>();
+    for (const point of body.result?.points ?? []) {
+      if (point.payload?.team_id !== teamId) continue;
+      const eventId = point.payload.event_id;
+      if (!eventId || !uniqueQueryIds.includes(eventId)) continue;
+      if (!Array.isArray(point.vector)) continue;
       if (
         point.vector.length !== vectorSize ||
         !point.vector.every(
           (value): value is number => typeof value === 'number' && Number.isFinite(value),
         )
       ) {
-        return [];
+        continue;
       }
-      return [point.vector];
-    });
+      if (!vectorsByEventId.has(eventId) || point.payload.source_kind === 'calendar_event') {
+        vectorsByEventId.set(eventId, point.vector);
+      }
+    }
+    const vectors = [...vectorsByEventId.values()];
     if (vectors.length === 0) return [];
     const centroid = Array.from(
       { length: vectorSize },

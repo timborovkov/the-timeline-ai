@@ -348,7 +348,13 @@ describe('createQdrantClient', () => {
       {
         id: 'anchor-point-2',
         vector: [0, 1, 0, 0],
-        payload: { ...samplePayload, event_id: 'ev-2', source_id: 'ev-2' },
+        payload: {
+          ...samplePayload,
+          event_id: 'ev-2',
+          source_kind: 'calendar_event',
+          source_scope: 'calendar_event',
+          source_id: 'calendar-event-2',
+        },
       },
     ]);
     setSearchResult([
@@ -373,8 +379,7 @@ describe('createQdrantClient', () => {
     expect(scrollBody.filter?.must).toEqual(
       expect.arrayContaining([
         { key: 'team_id', match: { value: 'team-A' } },
-        { key: 'source_scope', match: { value: 'event' } },
-        { key: 'source_id', match: { any: ['ev-1', 'ev-2'] } },
+        { key: 'event_id', match: { any: ['ev-1', 'ev-2'] } },
         { key: 'chunk_index', match: { value: 0 } },
       ]),
     );

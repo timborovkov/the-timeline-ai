@@ -1191,6 +1191,21 @@ describe('production reconciliation sampling report', () => {
         )}\n`,
         'utf8',
       );
+      await writeFile(
+        path.join(dir, 'non-shadow-eligible-health-report.json'),
+        `${JSON.stringify(
+          {
+            ...previousReport,
+            evidencePackHealth: {
+              ...validHealth,
+              modes: ['enforced'],
+            },
+          },
+          null,
+          2,
+        )}\n`,
+        'utf8',
+      );
 
       const loaded = await loadProductionSamplingEvalArtifacts({
         inputPaths: [
@@ -1199,6 +1214,7 @@ describe('production reconciliation sampling report', () => {
           path.join(dir, 'malformed-report.json'),
           path.join(dir, 'malformed-evidence-health-report.json'),
           path.join(dir, 'inflated-evidence-health-report.json'),
+          path.join(dir, 'non-shadow-eligible-health-report.json'),
         ],
       });
 
@@ -1216,6 +1232,10 @@ describe('production reconciliation sampling report', () => {
           },
           {
             path: path.join(dir, 'inflated-evidence-health-report.json'),
+            reason: 'not a reconciliation live artifact or production sampling report',
+          },
+          {
+            path: path.join(dir, 'non-shadow-eligible-health-report.json'),
             reason: 'not a reconciliation live artifact or production sampling report',
           },
         ]),

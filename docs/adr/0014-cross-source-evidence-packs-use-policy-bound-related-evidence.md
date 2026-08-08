@@ -85,8 +85,9 @@ qualify an event.
 Semantic relevance may rank candidates after they qualify. Proposal building
 averages current-model vectors already stored for the visible anchor events and
 searches only the directly qualified candidate IDs through Qdrant's team and
-viewer filters. If no stored anchor vector is available, it skips semantic
-ranking instead of making a new embedding request.
+viewer filters. Raw-event citation identity resolves vectors across raw,
+integration, and calendar-event point scopes. If no stored anchor vector is
+available, it skips semantic ranking instead of making a new embedding request.
 Answer packs may admit viewer-visible semantic matches because answers do not
 change durable state, but their citations retain the retrieval provenance.
 
@@ -155,6 +156,8 @@ cited IDs in metadata, and its
 reconciliation output `sourceRefs` is the authoritative per-item citation set.
 The suggestion and reconciliation run store the pack version, policy version,
 fingerprint, metrics, and truncation state. This does not require a new table.
+Answer packets also include citations introduced only by answer-pack supporting
+evidence in their bounded top-level reference index.
 Each selected pack row also carries a content-and-occurrence snapshot
 fingerprint. Persistence locks and revalidates the activity, viewer visibility,
 and snapshot of every selected raw-event row in the proposal transaction before
@@ -237,7 +240,8 @@ attempts. A shadow attempt must also complete without an error before it counts
 as eligible, and reported pack counts must satisfy surface count ≤ selected
 count ≤ candidate count. Loaded aggregate health is rejected unless
 cross-source ≤ eligible ≤ total attempts, error counts and reasons match their
-rate, and the aggregate pack counts preserve the same ordering. Dashboard
+rate, the aggregate pack counts preserve the same ordering, mode values are
+recognized, and nonzero shadow eligibility has a shadow population. Dashboard
 persistence goes through the named team reconciliation scope, including the
 CLI's explicit trusted internal-user path, and retains both the required
 scenario policy and the promotion result/blocker codes so a
@@ -273,10 +277,12 @@ failure rolls that transaction back; a fresh compare-and-set transaction then
 records the item as retryable `failed` without overwriting a concurrent reviewer
 action. Embedding, indexing, and queue effects are collected during application
 and dispatched only after the database commit. Calendar acceptance and direct
-calendar mutations share a target advisory lock acquired before linked
-raw-event locks, preventing opposite row-lock orders. For an occurrence-wide
-`series` or `this_and_future` mutation, both paths resolve that target to the
-canonical recurring parent before acquiring the lock. Direct whole-series
+calendar mutations share advisory locks acquired before linked raw-event locks,
+preventing opposite row-lock orders. Pack acceptance acquires its target and
+every calendar event represented by selected evidence as one stable sorted lock
+set. For an occurrence-wide `series` or `this_and_future` mutation, both paths
+resolve that target to the canonical recurring parent; evidence-owned
+occurrences cover both occurrence and parent identities. Direct whole-series
 updates retain the lock through occurrence tombstoning and rematerialization in
 the same transaction.
 

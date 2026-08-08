@@ -344,8 +344,10 @@ transitive-path rejection, duplicate paths to one event, and candidate overflow.
    evidence in favor of merely newer evidence.
 2. Average current-model vectors already stored for visible anchor events, and
    run a team-and-viewer-filtered search restricted to directly qualified
-   candidate IDs. Skip semantic ranking when no stored anchor vector is
-   available; never make a new embedding request for proposal ranking.
+   candidate IDs. Resolve raw, integration, and calendar-event points through
+   their shared raw-event citation ID. Skip semantic ranking when no stored
+   anchor vector is available; never make a new embedding request for proposal
+   ranking.
 3. Reserve core evidence, then apply the 8-event supporting cap and 4-event
    per-surface cap.
 4. Apply a deterministic content/token estimator and the 6,000-token pack
@@ -443,11 +445,13 @@ misleading actionable approval.
    At acceptance, hold those locks through the team-scoped application
    transaction and require every row to continue supporting the proposal's full
    projection audience, not merely the accepting actor. For calendar targets,
-   acquire the shared calendar-mutation lock before raw-event evidence locks so
-   acceptance and direct calendar edits use the same order. Resolve occurrence
-   `series` and `this_and_future` mutations to the canonical recurring parent
-   before acquiring that shared lock. Keep direct whole-series parent updates
-   and occurrence rematerialization in that same locked transaction.
+   acquire a stable sorted set of shared calendar-mutation locks for the target
+   and every calendar event represented by selected evidence before raw-event
+   evidence locks. Resolve occurrence `series` and `this_and_future` mutations
+   to the canonical recurring parent, while evidence-owned occurrences cover
+   both occurrence and parent mutation identities. Keep direct whole-series
+   parent updates and occurrence rematerialization in that same locked
+   transaction.
 5. Supersede an item when required evidence is deleted, tombstoned, or no longer
    visible. Reuse the existing `superseded` state rather than adding a `stale`
    enum in the first implementation.
@@ -592,7 +596,8 @@ before enforcement.
    cross-source count cannot exceed eligible count, eligible/error/truncation
    counts cannot exceed total attempts, error reasons and rate must match the
    error count, and aggregate surface/selected/candidate counts must remain
-   ordered.
+   ordered. Reject unknown mode values and any nonzero shadow eligibility whose
+   aggregate population does not include shadow mode.
 6. Make the promotion report enforce evidence coverage, fixture success, shadow
    sample floor, zero-tolerance safety counters, p95 latency, and error rate.
    The production CLI ingests explicit redacted evidence-pack sample files and
@@ -719,7 +724,8 @@ workspace context into raw evidence.
 2. Allow viewer-visible semantic matches to enter answer packs with explicit
    semantic-retrieval provenance.
 3. Keep object, note, task, board, document, and calendar results as typed
-   adjacent context with their existing citations.
+   adjacent context with their existing citations, and include citations added
+   only by the answer pack in the packet's bounded top-level reference index.
 4. Allow partial answers only when the response discloses a failed source
    adapter.
 5. Preserve required-source behavior when a person explicitly names a source.

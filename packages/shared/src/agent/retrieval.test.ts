@@ -6,6 +6,7 @@ import { retrieveWorkspaceContext } from '#src/agent/retrieval.js';
 
 const OBJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const EVENT_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const SUPPORT_EVENT_ID = 'abababab-abab-4bab-8bab-abababababab';
 const NOTE_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const BOARD_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const BOARD_ITEM_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
@@ -266,6 +267,53 @@ describe('retrieveWorkspaceContext', () => {
       route_id: 'team/invites',
       citation: '[route:team/invites]',
     });
+  });
+
+  it('includes evidence-pack-only citations in the top-level refs', async () => {
+    const scope = makeScope();
+    scope.timeline.listEvidencePackArtifactClusters.mockResolvedValue({
+      clusters: {
+        'cluster-support': {
+          id: 'cluster-support',
+          artifactType: 'project',
+          canonicalName: 'AuditAI pilot',
+          status: 'active',
+          relatedEvidence: [
+            {
+              rawEventId: SUPPORT_EVENT_ID,
+              source: 'email',
+              provider: null,
+              externalObjectId: null,
+              role: 'document',
+              strength: 'hard',
+              associationSource: 'manual',
+              authoritative: false,
+              occurredAt: '2026-06-14T08:00:00.000Z',
+              snippet: 'The signed pilot scope includes Otto.',
+              clusterId: 'cluster-support',
+            },
+          ],
+        },
+      },
+      truncatedCandidateCount: 0,
+    });
+
+    const result = await retrieveWorkspaceContext(scope as unknown as TeamScope, {
+      query: 'What do we know about Otto Silventola?',
+      limit: 5,
+    });
+
+    expect(
+      result.evidencePack?.status === 'complete' &&
+        result.evidencePack.items.some(
+          (item) =>
+            typeof item === 'object' &&
+            item !== null &&
+            'rawEventId' in item &&
+            item.rawEventId === SUPPORT_EVENT_ID,
+        ),
+    ).toBe(true);
+    expect(result.refs).toContain(`[ev:${SUPPORT_EVENT_ID}]`);
   });
 
   it('classifies timeline-evidence questions using event-centric phrasing', async () => {

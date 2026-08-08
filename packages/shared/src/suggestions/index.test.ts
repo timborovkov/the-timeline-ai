@@ -20,8 +20,9 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as QueueModule from '#src/queue/queues.js';
-import type { PGlite } from '@electric-sql/pglite';
+import type { PGlite, Transaction } from '@electric-sql/pglite';
 
+import { calendarEventMutationLockKey } from '#src/calendar/locking.js';
 import { resetEnvForTests } from '#src/env.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { suggestionDedupeKey } from '#src/suggestions/index.js';
@@ -751,6 +752,76 @@ describe('suggestion scope', () => {
       .from(entities)
       .where(eq(entities.canonicalName, 'Prepare customer review notes'));
     expect(createdTasks).toEqual([]);
+  });
+
+  it('locks every pack-involved calendar target in stable order before evidence rows', async () => {
+    const transactionQueries: Parameters<Transaction['query']>[] = [];
+    const runTransaction = pg.transaction.bind(pg);
+    const transaction = vi
+      .spyOn(pg, 'transaction')
+      .mockImplementation(<T>(callback: (tx: Transaction) => Promise<T>) =>
+        runTransaction(async (tx) => {
+          const query = vi.spyOn(tx, 'query');
+          try {
+            return await callback(tx);
+          } finally {
+            transactionQueries.push(...query.mock.calls);
+            query.mockRestore();
+          }
+        }),
+      );
+    const observedDb = drizzle(pg);
+    const scope = withTeam(observedDb as never, TEAM_ID, USER_ID);
+    const target = await scope.calendar.createCalendarEvent({
+      title: 'Target review',
+      startAt: new Date('2026-08-12T10:00:00.000Z'),
+      endAt: new Date('2026-08-12T11:00:00.000Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+    });
+    const evidenceOwner = await scope.calendar.createCalendarEvent({
+      title: 'Supporting review',
+      startAt: new Date('2026-08-13T10:00:00.000Z'),
+      endAt: new Date('2026-08-13T11:00:00.000Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+    });
+    const evidenceRawEventId = evidenceOwner.startAtRawEventId ?? '';
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Update target from supporting calendar evidence',
+      dedupeKey: 'cross-pack-calendar-lock-order',
+      metadata: { evidence_pack_fingerprint: 'a'.repeat(64) },
+      evidence: [{ rawEventId: evidenceRawEventId }],
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'calendar_event',
+          targetId: target.id,
+          title: 'Rename target review',
+          dedupeKey: 'cross-pack-calendar-lock-order:item',
+          proposedPayload: { title: 'Renamed target review' },
+          evidenceRawEventIds: [evidenceRawEventId],
+        },
+      ],
+    });
+    transactionQueries.length = 0;
+
+    await scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '');
+
+    const acquiredLockKeys = transactionQueries.flatMap((call) => {
+      const [statement, params] = call;
+      return typeof statement === 'string' && statement.includes('pg_advisory_xact_lock')
+        ? [String(params?.[0])]
+        : [];
+    });
+    transaction.mockRestore();
+    expect(acquiredLockKeys.slice(0, 2)).toEqual(
+      [
+        calendarEventMutationLockKey(TEAM_ID, target.id),
+        calendarEventMutationLockKey(TEAM_ID, evidenceOwner.id),
+      ].sort(),
+    );
   });
 
   it('rejects a proposal when evidence changes after its snapshot was built', async () => {

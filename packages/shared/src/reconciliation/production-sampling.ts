@@ -1334,6 +1334,7 @@ function isProductionSamplingEvidencePackHealth(
         record.populationFingerprints.length === record.sampleCount &&
         new Set(record.populationFingerprints).size === record.populationFingerprints.length)) &&
     isStringArray(record.modes) &&
+    record.modes.every((mode) => ['off', 'shadow', 'enforced'].includes(mode)) &&
     isStringArray(record.versions) &&
     isStringArray(record.policyVersions) &&
     isNonNegativeIntegerRecord(record.errorReasons) &&
@@ -1352,6 +1353,7 @@ function isProductionSamplingEvidencePackHealth(
     health.confirmedFalseLinkCount <= health.sampleCount &&
     health.truncatedCount <= health.sampleCount &&
     health.shadowEligibleSampleCount <= health.sampleCount &&
+    (health.shadowEligibleSampleCount === 0 || health.modes.includes('shadow')) &&
     health.crossSourceSampleCount <= health.shadowEligibleSampleCount &&
     health.surfaceCount <= health.selectedCount &&
     health.selectedCount <= health.candidateCount &&
