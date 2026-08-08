@@ -223,17 +223,22 @@ export async function runAskAgentEval(
 }
 
 export function makeAskAgentTextModel(
-  text: string,
+  text: string | ((options: unknown, call: number) => string),
   capture?: (opts: unknown) => void,
 ): LanguageModel {
+  let call = 0;
   return new MockLanguageModelV3({
     doStream: ((opts: unknown) => {
+      call += 1;
       capture?.(opts);
+      const responseText = typeof text === 'function' ? text(opts, call) : text;
       return Promise.resolve({
         stream: new ReadableStream({
           start(controller) {
             controller.enqueue({ type: 'text-start', id: '1' });
-            if (text.length > 0) controller.enqueue({ type: 'text-delta', id: '1', delta: text });
+            if (responseText.length > 0) {
+              controller.enqueue({ type: 'text-delta', id: '1', delta: responseText });
+            }
             controller.enqueue({ type: 'text-end', id: '1' });
             controller.enqueue({
               type: 'finish',

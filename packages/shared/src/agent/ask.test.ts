@@ -573,6 +573,31 @@ describe('askAgent', () => {
     expect(web).toMatchObject({ ok: true, answer: detailedAnswer, truncated: false });
   });
 
+  it('falls back to the completed draft when only external presentation fails', async () => {
+    const draft = `Pinned the launch plan [ev:${EVENT_ID}].`;
+
+    for (const finalizerFailure of ['throws', 'empty'] as const) {
+      const result = await askAgent(
+        {
+          db: db as never,
+          teamId: TEAM_ID,
+          userId: USER_ID,
+          deliverySurface: 'telegram',
+          question: 'Pin the launch plan.',
+        },
+        {
+          model: makeAskAgentTextModel((_options, call) => {
+            if (call === 1) return draft;
+            if (finalizerFailure === 'throws') throw new Error('presentation model unavailable');
+            return '';
+          }),
+        },
+      );
+
+      expect(result).toMatchObject({ ok: true, answer: 'Pinned the launch plan.' });
+    }
+  });
+
   it('can use provider-backed custom MCP tools in the askAgent loop', async () => {
     const calls: unknown[] = [];
     fakes.connectForTeam.mockResolvedValueOnce({

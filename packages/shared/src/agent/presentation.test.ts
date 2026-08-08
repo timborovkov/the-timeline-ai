@@ -77,6 +77,25 @@ describe('formatAgentAnswerForPresentation', () => {
     });
   });
 
+  it('preserves ordinary command labels and third-party event URLs', () => {
+    const vendorUrl = 'https://vendor.example/session?event=eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    const answer = [
+      'Run task:build before deploying.',
+      'Open route:/health to verify it.',
+      `Join ${vendorUrl}.`,
+      'Timeline evidence ev:a74b9875 is internal.',
+    ].join('\n');
+
+    expect(formatAgentAnswerForPresentation(answer, 'external_chat').text).toBe(
+      [
+        'Run task:build before deploying.',
+        'Open route:/health to verify it.',
+        `Join ${vendorUrl}.`,
+        'Timeline evidence is internal.',
+      ].join('\n'),
+    );
+  });
+
   it('removes raw-event ids and links but preserves provider identifiers', () => {
     const answer = [
       'Raw event eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee supports the launch.',

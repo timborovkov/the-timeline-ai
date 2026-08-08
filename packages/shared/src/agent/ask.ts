@@ -368,28 +368,44 @@ export async function askAgent(
     if (draft.length === 0) {
       return { ok: false, error: 'failed' };
     }
-    const text =
-      presentationPolicy.maxOutputTokens === undefined
-        ? draft
-        : await streamChat(
-            {
-              system: `${presentationPolicy.system}\n\n${EXTERNAL_CHAT_FINAL_ANSWER_INSTRUCTIONS}`,
-              messages: [
-                {
-                  role: 'user',
-                  content: `Original request:\n${input.question}\n\nDraft answer:\n${draft}`,
-                },
-              ],
-              tools: {},
-              maxSteps: 1,
-              maxOutputTokens: presentationPolicy.maxOutputTokens,
-              ...(deps.abortSignal ? { abortSignal: deps.abortSignal } : {}),
-              onFinish: (event) => {
-                Object.assign(modelAttribution, streamChatModelAttribution(event));
+    let text = draft;
+    if (presentationPolicy.maxOutputTokens !== undefined) {
+      try {
+        const finalAnswer = await streamChat(
+          {
+            system: `${presentationPolicy.system}\n\n${EXTERNAL_CHAT_FINAL_ANSWER_INSTRUCTIONS}`,
+            messages: [
+              {
+                role: 'user',
+                content: `Original request:\n${input.question}\n\nDraft answer:\n${draft}`,
               },
+            ],
+            tools: {},
+            maxSteps: 1,
+            maxOutputTokens: presentationPolicy.maxOutputTokens,
+            ...(deps.abortSignal ? { abortSignal: deps.abortSignal } : {}),
+            onFinish: (event) => {
+              Object.assign(modelAttribution, streamChatModelAttribution(event));
             },
-            deps,
-          ).text;
+          },
+          deps,
+        ).text;
+        if (finalAnswer.trim().length > 0) {
+          text = finalAnswer;
+        } else {
+          log.warn(
+            { teamId: input.teamId, presentation, draftChars: draft.length },
+            'external answer presentation returned empty; using completed draft',
+          );
+        }
+      } catch (err) {
+        const safeError = deps.sanitizeError?.(err) ?? err;
+        log.warn(
+          { err: safeError, teamId: input.teamId, presentation, draftChars: draft.length },
+          'external answer presentation failed; using completed draft',
+        );
+      }
+    }
     const observability = summarizeAgentToolObservations({ observations: toolObservations });
     deps.onTurnObservability?.(observability);
     const trimmed = text.trim();

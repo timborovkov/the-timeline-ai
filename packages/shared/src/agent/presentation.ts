@@ -25,19 +25,22 @@ Give a complete, source-linked answer. Use clear sections, bullets, or tables wh
 
 const RESIDUAL_TIMELINE_REFERENCE_RE =
   /\[(?:board-item|ev|ent|note|cal|board|task|fact|rel|chg|doc|route):[^\]\r\n]{1,256}\]/gi;
+const RAW_EVENT_ID = '[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}';
+const TIMELINE_REFERENCE_ID = `(?:${RAW_EVENT_ID}|[0-9a-f]{8})`;
 const UNBALANCED_OPEN_TIMELINE_REFERENCE_RE =
   /\[(?:board-item|ev|ent|note|cal|board|task|fact|rel|chg|doc|route):[^\s\[\],.!?;)]+/gi;
 const UNBALANCED_CLOSE_TIMELINE_REFERENCE_RE =
   /(?<![\w[])(?:board-item|ev|ent|note|cal|board|task|fact|rel|chg|doc|route):[^\s\[\],.!?;)]+\]/gi;
-const NAKED_TIMELINE_REFERENCE_RE =
-  /(?<![\w[:])(?:board-item|ev|ent|note|cal|board|task|fact|rel|chg|doc|route):[^\s\[\],.!?;)]+/gi;
-const RAW_EVENT_ID = '[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}';
+const NAKED_TIMELINE_REFERENCE_RE = new RegExp(
+  `(?<![\\w[:])(?:(?:board-item|ev|ent|note|cal|board|task|fact|rel|chg):${TIMELINE_REFERENCE_ID}|doc:${TIMELINE_REFERENCE_ID}#v\\d+:chunk:${TIMELINE_REFERENCE_ID}|route:[a-z][a-z0-9_/-]{0,80})`,
+  'gi',
+);
 const RAW_EVENT_REFERENCE_RE = new RegExp(
   `\\braw[ _-]*event(?:[ _-]*id)?\\s*[:=#-]?\\s*${RAW_EVENT_ID}\\b`,
   'gi',
 );
 const RAW_EVENT_URL_RE = new RegExp(
-  `(?:https?:\\/\\/|\\/)[^\\s)\\]]{0,512}(?:#ev-|[?&](?:event|eventId|rawEventId)=)${RAW_EVENT_ID}\\b`,
+  `(?:https?:\\/\\/(?:[a-z0-9-]+\\.)*thetimeline\\.cc(?::\\d+)?|\\/)[^\\s)\\]]{0,512}#ev-${RAW_EVENT_ID}\\b`,
   'gi',
 );
 const REMOVED_REFERENCE_MARKER = '\uE000';

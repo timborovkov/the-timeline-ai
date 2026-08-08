@@ -14,6 +14,10 @@ import {
 import { and, asc, desc, eq, isNull, ne, sql } from 'drizzle-orm';
 
 import { askAgent, TEAM_BOT_ACTOR_USER_ID, type AskAgentDeps } from '#src/agent/ask.js';
+import {
+  formatAgentAnswerForPresentation,
+  resolveAgentPresentation,
+} from '#src/agent/presentation.js';
 import { type AgentToolErrorReporter } from '#src/agent/tools.js';
 import { redactConversationError } from '#src/conversation-surfaces/privacy.js';
 import { acceptDirectAgentTurn } from '#src/conversation-surfaces/runtime.js';
@@ -1168,6 +1172,11 @@ async function clearPendingAnswer(updateId: number): Promise<void> {
   await conn.del(askAnswerKey(updateId));
 }
 
+export function formatCachedTelegramAskAnswer(text: string): string {
+  const presented = formatAgentAnswerForPresentation(text, resolveAgentPresentation('telegram'));
+  return presented.text || "Couldn't answer that — try again.";
+}
+
 /**
  * On a dedup-hit, attempt to deliver any answer the first attempt paid for
  * but failed to send. Cached entries are removed on successful delivery so
@@ -1187,7 +1196,10 @@ async function deliverPendingAnswer(
     return;
   }
   if (!text) return;
-  const delivered = await sendWithRetry(tg, { chat_id: chatId, text });
+  const delivered = await sendWithRetry(tg, {
+    chat_id: chatId,
+    text: formatCachedTelegramAskAnswer(text),
+  });
   if (delivered) {
     await clearPendingAnswer(updateId).catch(() => undefined);
   }
