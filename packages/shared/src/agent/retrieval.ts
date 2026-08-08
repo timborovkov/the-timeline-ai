@@ -196,6 +196,7 @@ export async function retrieveWorkspaceContext(
   let evidencePack: WorkspaceContextResult['evidencePack'] = null;
   if (events.length > 0) {
     try {
+      const members = await scope.timeline.listMembers();
       const pack = await buildEvidencePack(scope, {
         purpose: 'answer',
         anchorRawEventIds: events.map((event) => event.eventId),
@@ -221,7 +222,7 @@ export async function retrieveWorkspaceContext(
             item.source,
             item.sourceMetadata,
             item.authorUserId,
-            [],
+            members,
             item.rawEventId,
           ),
           snippet:

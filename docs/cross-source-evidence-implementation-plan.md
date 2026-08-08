@@ -393,6 +393,9 @@ with model-selected, validated item citations.
    schema.
 2. Render pack item IDs beside fenced external content and fenced sender
    identity context so first-person statements retain their source attribution.
+   Resolve the current team member list through the team scope and match
+   `authorUserId` before rendering verified Timeline member fields, including
+   for answer packs whose source metadata has no provider sender fields.
    Fence source-controlled surface labels through the same trust boundary.
    Tell the model to cite only IDs in the pack and produce no item when material
    conflict is unresolved.
@@ -594,7 +597,10 @@ before enforcement.
    attempt IDs, with immutable provenance as the legacy fallback. Reject
    overlapping cumulative health windows instead of summing the same attempts
    twice, even when later exports add review outcomes or eligibility labels;
-   reject duplicate legacy identities within one population as ambiguous.
+   reject duplicate legacy identities within one population as ambiguous. Keep
+   one pre-fingerprint legacy aggregate loadable and preserve the absent field
+   when rewriting it; do not fabricate an empty fingerprint array, and reject
+   combining that untracked aggregate with another health population.
    Require successful completion before an attempt counts as eligible, even
    when telemetry carries `eligible: true`; also require that every eligible
    attempt has its own sample timestamp, team key, and scenario family. Validate

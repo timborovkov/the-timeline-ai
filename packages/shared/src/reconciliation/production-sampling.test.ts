@@ -660,6 +660,54 @@ describe('production reconciliation sampling report', () => {
     }
   });
 
+  it('preserves absent population fingerprints when rewriting one legacy report', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'timeline-legacy-pack-health-'));
+    try {
+      const previous = buildProductionSamplingEvalReport({
+        generatedAt: '2026-07-08T10:00:00.000Z',
+        manifests: [],
+        artifacts: [],
+        evidencePackSamples: [
+          {
+            attemptId: 'legacy-attempt-1',
+            mode: 'shadow',
+            version: 'evidence-pack-v1',
+            policyVersion: 'proposal-v1',
+            candidateCount: 2,
+            selectedCount: 2,
+            surfaceCount: 2,
+            estimatedTokens: 200,
+            buildDurationMs: 50,
+            truncated: false,
+            sampledAt: '2026-07-08T10:00:00.000Z',
+            teamKey: 'team-1',
+            scenarioFamily: 'generic_webhook',
+            eligible: true,
+          },
+        ],
+      });
+      if (!previous.evidencePackHealth) throw new Error('expected evidence-pack health');
+      delete previous.evidencePackHealth.populationFingerprints;
+      const inputPath = path.join(dir, 'legacy.json');
+      const outputPath = path.join(dir, 'rewritten.json');
+      await writeFile(inputPath, `${JSON.stringify(previous, null, 2)}\n`, 'utf8');
+
+      const written = await writeProductionSamplingEvalReport({
+        inputPaths: [inputPath],
+        outputPath,
+        generatedAt: '2026-07-09T10:00:00.000Z',
+      });
+
+      expect(written.loaded.reports).toHaveLength(1);
+      expect(written.report.evidencePackHealth).not.toHaveProperty('populationFingerprints');
+      const reloaded = await loadProductionSamplingEvalArtifacts({ inputPaths: [outputPath] });
+      expect(reloaded.reports).toHaveLength(1);
+      expect(reloaded.ignoredFiles).toEqual([]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('rejects overlapping cumulative evidence-pack health populations', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'timeline-overlapping-pack-health-'));
     try {

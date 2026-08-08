@@ -670,7 +670,10 @@ _Avoid_: Author when the sender is not a verified Timeline user
 **Sender Context**:
 Sender, conversation, and thread information that helps interpret a captured
 message. Sender context belongs in source metadata and must be available to
-retrieval and extraction, not only to timeline display.
+retrieval and extraction, not only to timeline display. Evidence consumers
+match a raw event's author user ID against the current team member list before
+adding verified Timeline member identity; provider sender metadata remains the
+source attribution when no current member matches.
 _Avoid_: Display-only metadata
 
 **Conversation Evidence Window**:

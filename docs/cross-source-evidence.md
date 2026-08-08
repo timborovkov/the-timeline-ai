@@ -246,7 +246,10 @@ The first enforced source path must meet all of these gates:
 - Disjoint population fingerprints across cumulative sampling reports, derived
   from immutable attempt IDs or legacy immutable attempt provenance rather than
   mutable review annotations; an overlapping report is rejected instead of
-  double-counted, and duplicate legacy identities are rejected as ambiguous
+  double-counted, and duplicate legacy identities are rejected as ambiguous. A
+  single pre-fingerprint legacy aggregate remains loadable and is rewritten
+  with the field absent rather than a fabricated empty population, but cannot
+  be combined with another health aggregate until its population is traceable
 - Loaded aggregate health must preserve the same count relationships as raw
   samples, including cross-source ≤ eligible ≤ total attempts, errors ≤ total,
   error-reason totals and error rate matching the error count, and aggregate

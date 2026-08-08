@@ -141,9 +141,12 @@ empty redacted source refs, malformed or inconsistent manifest summaries,
 malformed judge metadata, malformed expected-count maps, and manifest paths
 outside the run directory before they contribute to release metrics. Loaded
 evidence-pack aggregates must preserve attempt, error, eligibility,
-cross-source, and pack-count relationships before merging. Persisted sampling
-runs retain the required scenario policy plus promotion readiness and blocker
-codes for the reconciliation dashboard.
+cross-source, and pack-count relationships before merging. A single legacy
+aggregate without population fingerprints remains loadable and is rewritten
+without inventing identities, but it cannot enter a cumulative merge until its
+population is traceable. Persisted sampling runs retain the required scenario
+policy plus promotion readiness and blocker codes for the reconciliation
+dashboard.
 
 ## Quick Start
 

@@ -702,6 +702,9 @@ function mergeEvidencePackHealth(
     throw new Error('Cannot merge evidence-pack health without population fingerprints');
   }
   const populationFingerprints: string[] = [];
+  const hasPopulationFingerprints = health.every(
+    (item) => item.populationFingerprints !== undefined,
+  );
   const seenPopulations = new Set<string>();
   for (const item of health) {
     for (const fingerprint of item.populationFingerprints ?? []) {
@@ -724,7 +727,7 @@ function mergeEvidencePackHealth(
     health.map((item) => item.latencyDistribution),
   );
   return {
-    populationFingerprints: populationFingerprints.sort(),
+    ...(hasPopulationFingerprints ? { populationFingerprints: populationFingerprints.sort() } : {}),
     sampleCount,
     errorCount,
     errorRate: sampleCount > 0 ? errorCount / sampleCount : null,

@@ -64,7 +64,10 @@ artifact-cluster anchors. Its output contains:
 Candidate discovery fetches a bounded unique set and records an explicit
 `candidate_limit` omission count when qualifying evidence exists beyond that
 bound. Both answer and proposal consumers receive fenced sender context for
-each row so first-person statements retain their speaker.
+each row so first-person statements retain their speaker. Consumers load the
+current team member list through the team scope and match `authorUserId` before
+adding verified Timeline member identity, including when an answer-pack event
+has no provider-specific sender metadata.
 
 ### Proposal admission
 
@@ -238,7 +241,10 @@ and reject report merges with overlapping population identities. Mutable review
 outcomes, eligibility labels, and error annotations do not change that identity,
 while ambiguous duplicate legacy identities are rejected rather than counted as
 separate attempts. Cumulative reports therefore cannot double-count historical
-attempts. A shadow attempt must also complete without an error and carry its own
+attempts. One pre-fingerprint legacy aggregate remains loadable and retains an
+absent fingerprint field when rewritten; it cannot be merged with another
+health population until its attempts are traceable. A shadow attempt must also
+complete without an error and carry its own
 sample timestamp, team key, and scenario family before it counts as eligible,
 and reported pack counts must satisfy surface count ≤ selected count ≤ candidate
 count. Loaded aggregate health is rejected unless

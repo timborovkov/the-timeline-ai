@@ -71,6 +71,13 @@ function makeScope() {
       }),
     },
     timeline: {
+      listMembers: vi.fn().mockResolvedValue([
+        {
+          userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          name: 'Ada Timeline',
+          email: 'ada@timeline.dev',
+        },
+      ]),
       getEntity: vi.fn().mockResolvedValue({
         facts: [
           {
@@ -197,6 +204,9 @@ describe('retrieveWorkspaceContext', () => {
     expect(
       (result.evidencePack as { items: { senderContext: string }[] }).items[0]?.senderContext,
     ).toContain('"timelineAuthorUserId":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"');
+    expect(
+      (result.evidencePack as { items: { senderContext: string }[] }).items[0]?.senderContext,
+    ).toContain('"verifiedTimelineMemberName":"Ada Timeline"');
     expect(result.objects[0]).toMatchObject({
       id: OBJECT_ID,
       citation: `[ent:${OBJECT_ID}]`,
