@@ -446,7 +446,8 @@ misleading actionable approval.
    acquire the shared calendar-mutation lock before raw-event evidence locks so
    acceptance and direct calendar edits use the same order. Resolve occurrence
    `series` and `this_and_future` mutations to the canonical recurring parent
-   before acquiring that shared lock.
+   before acquiring that shared lock. Keep direct whole-series parent updates
+   and occurrence rematerialization in that same locked transaction.
 5. Supersede an item when required evidence is deleted, tombstoned, or no longer
    visible. Reuse the existing `superseded` state rather than adding a `stale`
    enum in the first implementation.

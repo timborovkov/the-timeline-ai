@@ -729,6 +729,26 @@ describe('calendar scope', () => {
     expect(afterSecondMaterialize).toHaveLength(5);
   });
 
+  it('keeps whole-series rematerialization in the calendar mutation transaction', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const parent = await scope.calendar.createCalendarEvent({
+      title: 'Daily call',
+      startAt: new Date('2026-07-01T16:00:00Z'),
+      endAt: new Date('2026-07-01T16:30:00Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+      rrule: 'FREQ=DAILY;COUNT=3',
+    });
+    const transaction = vi.spyOn(db, 'transaction');
+
+    await scope.calendar.updateCalendarEvent(parent.id, {
+      title: 'Daily planning',
+      recurrenceEditMode: 'series',
+    });
+
+    expect(transaction).toHaveBeenCalledTimes(1);
+  });
+
   it('treats single-scope edits on recurring parents as series edits', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const parent = await scope.calendar.createCalendarEvent({

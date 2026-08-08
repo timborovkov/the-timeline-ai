@@ -171,7 +171,8 @@ Cross-source proposal behavior is shipped for a source path only when:
   first-time revisions serialize on their base identity, and calendar targets
   serialize before their linked raw evidence to preserve mutation lock order;
   occurrence-level `series` and `this_and_future` mutations lock the canonical
-  recurring parent shared by direct edits and approval acceptance;
+  recurring parent shared by direct edits and approval acceptance, and direct
+  whole-series edits hold that lock until occurrence rematerialization commits;
 - the canonical change and accepted approval commit atomically; an application
   error rolls both back before a fresh transaction records a retryable failed
   approval, while indexing and queue follow-ups run only after commit;

@@ -276,7 +276,9 @@ and dispatched only after the database commit. Calendar acceptance and direct
 calendar mutations share a target advisory lock acquired before linked
 raw-event locks, preventing opposite row-lock orders. For an occurrence-wide
 `series` or `this_and_future` mutation, both paths resolve that target to the
-canonical recurring parent before acquiring the lock.
+canonical recurring parent before acquiring the lock. Direct whole-series
+updates retain the lock through occurrence tombstoning and rematerialization in
+the same transaction.
 
 Strict admission reduces recall compared with open semantic retrieval. This is
 intentional for durable proposals. Answer policies can use broader recall while

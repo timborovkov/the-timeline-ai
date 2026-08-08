@@ -115,7 +115,9 @@
         not recreate the original 16:00 row for that date.
       </p>
       <p>
-        Whole-series edits update the parent and rematerialize active child rows. A
+        Whole-series edits update the parent and rematerialize active child rows. A shared series
+        lock remains held until both changes commit, so concurrent approval or direct edits cannot
+        interleave with the rebuild. A
         <code>this_and_future</code> edit ends the old parent before the changed occurrence, creates
         a new parent for the future schedule, preserves finite <code>COUNT</code> semantics where
         applicable, and rematerializes the new window.

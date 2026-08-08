@@ -1298,25 +1298,29 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           qdrantAction = newVis === 'team' ? 'embed' : 'delete';
         }
 
+        const rematerialized =
+          recurrenceMode === 'series' &&
+          !row.recurringParentId &&
+          (changedFields.has('title') ||
+            changedFields.has('description') ||
+            changedFields.has('startAt') ||
+            changedFields.has('endAt') ||
+            changedFields.has('timezone') ||
+            changedFields.has('allDay') ||
+            changedFields.has('location') ||
+            changedFields.has('visibility') ||
+            changedFields.has('visibilityUserIds') ||
+            changedFields.has('showAs') ||
+            changedFields.has('rrule'))
+            ? await rematerializeParent(tx, updated as CalendarEventRow)
+            : null;
+
         return {
           event: redactIfNeeded(updated as CalendarEventRow),
           changedFields: [...changedFields],
           qdrantAction,
           cancelledProposalEventIds,
-          rematerialize:
-            recurrenceMode === 'series' &&
-            !row.recurringParentId &&
-            (changedFields.has('title') ||
-              changedFields.has('description') ||
-              changedFields.has('startAt') ||
-              changedFields.has('endAt') ||
-              changedFields.has('timezone') ||
-              changedFields.has('allDay') ||
-              changedFields.has('location') ||
-              changedFields.has('visibility') ||
-              changedFields.has('visibilityUserIds') ||
-              changedFields.has('showAs') ||
-              changedFields.has('rrule')),
+          rematerialized,
         };
       });
 
@@ -1324,19 +1328,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
       const materializedIds = 'materializedIds' in result ? (result.materializedIds ?? []) : [];
       const deletedOccurrenceIds =
         'deletedOccurrenceIds' in result ? (result.deletedOccurrenceIds ?? []) : [];
-      let rematerialized: { materializedIds: string[]; deletedIds: string[] } | null = null;
-      if ('rematerialize' in result && result.rematerialize) {
-        rematerialized = await db.transaction(async (tx) => {
-          const rows = await tx
-            .select()
-            .from(calendarEvents)
-            .where(eq(calendarEvents.id, result.event.id))
-            .limit(1);
-          const parent = rows[0] as CalendarEventRow | undefined;
-          if (!parent) return { materializedIds: [], deletedIds: [] };
-          return rematerializeParent(tx, parent);
-        });
-      }
+      const rematerialized = 'rematerialized' in result ? (result.rematerialized ?? null) : null;
       const cancelledProposalEventIds =
         'cancelledProposalEventIds' in result ? (result.cancelledProposalEventIds ?? []) : [];
       await runOrDeferPostCommit(async () => {
