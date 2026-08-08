@@ -347,7 +347,7 @@ export async function askAgent(
     ...(input.priorMessages ?? []),
     { role: 'user', content: input.question },
   ];
-  const modelAttribution: Partial<StreamChatModelAttribution> = {};
+  const draftModelAttribution: Partial<StreamChatModelAttribution> = {};
 
   try {
     const result = streamChat(
@@ -358,7 +358,7 @@ export async function askAgent(
         maxSteps: input.maxSteps ?? DEFAULT_AGENT_MAX_STEPS,
         ...(deps.abortSignal ? { abortSignal: deps.abortSignal } : {}),
         onFinish: (event) => {
-          Object.assign(modelAttribution, streamChatModelAttribution(event));
+          Object.assign(draftModelAttribution, streamChatModelAttribution(event));
         },
       },
       deps,
@@ -369,8 +369,11 @@ export async function askAgent(
       return { ok: false, error: 'failed' };
     }
     let text = draft;
+    let modelAttribution = draftModelAttribution;
+    let presented: ReturnType<typeof formatAgentAnswerForPresentation> | undefined;
     if (presentationPolicy.maxOutputTokens !== undefined) {
       try {
+        const presentationModelAttribution: Partial<StreamChatModelAttribution> = {};
         const finalAnswer = await streamChat(
           {
             system: `${presentationPolicy.system}\n\n${EXTERNAL_CHAT_FINAL_ANSWER_INSTRUCTIONS}`,
@@ -385,13 +388,28 @@ export async function askAgent(
             maxOutputTokens: presentationPolicy.maxOutputTokens,
             ...(deps.abortSignal ? { abortSignal: deps.abortSignal } : {}),
             onFinish: (event) => {
-              Object.assign(modelAttribution, streamChatModelAttribution(event));
+              Object.assign(presentationModelAttribution, streamChatModelAttribution(event));
             },
           },
           deps,
         ).text;
         if (finalAnswer.trim().length > 0) {
-          text = finalAnswer;
+          const candidate = formatAgentAnswerForPresentation(finalAnswer.trim(), presentation);
+          if (candidate.text.length > 0) {
+            text = finalAnswer;
+            presented = candidate;
+            modelAttribution = presentationModelAttribution;
+          } else {
+            log.warn(
+              {
+                teamId: input.teamId,
+                presentation,
+                draftChars: draft.length,
+                removedReferences: candidate.removedReferences,
+              },
+              'external answer presentation removed final answer; using completed draft',
+            );
+          }
         } else {
           log.warn(
             { teamId: input.teamId, presentation, draftChars: draft.length },
@@ -412,7 +430,7 @@ export async function askAgent(
     if (trimmed.length === 0) {
       return { ok: false, error: 'failed' };
     }
-    const presented = formatAgentAnswerForPresentation(trimmed, presentation);
+    presented ??= formatAgentAnswerForPresentation(trimmed, presentation);
     if (presented.text.length === 0) {
       return { ok: false, error: 'failed' };
     }

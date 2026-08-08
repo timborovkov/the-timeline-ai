@@ -28,9 +28,10 @@ inspectable citations and the model's normal output budget. Every external chat
 surface defaults to concise plain text and deterministic removal of internal
 Timeline references before persistence and delivery. Its 900-token ceiling is
 isolated to a no-tool final-answer pass, so retrieval and mutation arguments
-retain the normal agent budget. If that presentation pass fails, the completed
-grounded draft still goes through deterministic external formatting and is
-delivered without internal references.
+retain the normal agent budget. If that presentation pass fails, returns empty,
+or contains only removable internal material, the completed grounded draft and
+its model attribution are retained; the draft still goes through deterministic
+external formatting before delivery.
 
 ## How to use
 

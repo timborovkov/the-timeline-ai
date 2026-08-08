@@ -225,6 +225,7 @@ export async function runAskAgentEval(
 export function makeAskAgentTextModel(
   text: string | ((options: unknown, call: number) => string),
   capture?: (opts: unknown) => void,
+  responseModelId?: string | ((call: number) => string),
 ): LanguageModel {
   let call = 0;
   return new MockLanguageModelV3({
@@ -235,6 +236,11 @@ export function makeAskAgentTextModel(
       return Promise.resolve({
         stream: new ReadableStream({
           start(controller) {
+            const resolvedResponseModelId =
+              typeof responseModelId === 'function' ? responseModelId(call) : responseModelId;
+            if (resolvedResponseModelId) {
+              controller.enqueue({ type: 'response-metadata', modelId: resolvedResponseModelId });
+            }
             controller.enqueue({ type: 'text-start', id: '1' });
             if (responseText.length > 0) {
               controller.enqueue({ type: 'text-delta', id: '1', delta: responseText });

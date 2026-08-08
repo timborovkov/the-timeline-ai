@@ -123,9 +123,10 @@ answers use the same visibility rules, retrieval tools, grounding requirements,
 and tool-call budget, but default to about 120 words and never expose internal
 Timeline citation or raw-event IDs. The shared runtime leaves every tool-using
 model step uncapped, then runs the external profile's 900-token ceiling only on
-a separate no-tool final-answer pass. If that presentation-only pass fails or
-returns empty after a completed tool run, the deterministic formatter delivers
-the grounded draft instead of falsely reporting that the turn failed. Both the
+a separate no-tool final-answer pass. If that presentation-only pass fails,
+returns empty, or is erased by deterministic formatting after a completed tool
+run, the formatter delivers the grounded draft and retains its model attribution
+instead of falsely reporting that the turn failed. Both the
 durable turn ledger and Telegram's legacy Redis answer cache reapply the
 formatter on delivery retry, so replies created before this policy are also
 safe to send; a legacy answer that becomes empty after formatting is delivered

@@ -576,7 +576,7 @@ describe('askAgent', () => {
   it('falls back to the completed draft when only external presentation fails', async () => {
     const draft = `Pinned the launch plan [ev:${EVENT_ID}].`;
 
-    for (const finalizerFailure of ['throws', 'empty'] as const) {
+    for (const finalizerFailure of ['throws', 'empty', 'stripped'] as const) {
       const result = await askAgent(
         {
           db: db as never,
@@ -586,15 +586,24 @@ describe('askAgent', () => {
           question: 'Pin the launch plan.',
         },
         {
-          model: makeAskAgentTextModel((_options, call) => {
-            if (call === 1) return draft;
-            if (finalizerFailure === 'throws') throw new Error('presentation model unavailable');
-            return '';
-          }),
+          model: makeAskAgentTextModel(
+            (_options, call) => {
+              if (call === 1) return draft;
+              if (finalizerFailure === 'throws') throw new Error('presentation model unavailable');
+              if (finalizerFailure === 'stripped') return `[ev:${EVENT_ID}]`;
+              return '';
+            },
+            undefined,
+            (call) => (call === 1 ? 'draft-model' : 'presentation-model'),
+          ),
         },
       );
 
-      expect(result).toMatchObject({ ok: true, answer: 'Pinned the launch plan.' });
+      expect(result).toMatchObject({
+        ok: true,
+        answer: 'Pinned the launch plan.',
+        responseModelId: 'draft-model',
+      });
     }
   });
 
