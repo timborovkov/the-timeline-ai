@@ -177,9 +177,10 @@ Cross-source proposal behavior is shipped for a source path only when:
   revisions cannot leave two actionable replacements or race a durable write;
   first-time revisions serialize on their base identity, and calendar targets
   serialize before their linked raw evidence to preserve mutation lock order;
-  object and task targets likewise lock before selected evidence, while their
-  own due-date mirror and evidence-owned calendar events join the same stable
-  sorted calendar lock set so cross-cited mirrors cannot deadlock;
+  object, task, and board-item targets likewise lock before selected evidence,
+  while every target-owned object or board-item due-date mirror and every
+  evidence-owned calendar event joins the same stable sorted calendar lock set
+  so cross-cited mirrors cannot deadlock;
   occurrence-level `series` and `this_and_future` mutations lock the canonical
   recurring parent shared by direct edits and approval acceptance, and direct
   whole-series edits hold that lock until occurrence rematerialization commits;

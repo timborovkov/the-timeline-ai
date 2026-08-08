@@ -461,10 +461,12 @@ misleading actionable approval.
    both occurrence and parent mutation identities. Keep direct whole-series
    parent updates and occurrence rematerialization in that same locked
    transaction. For object and task updates, lock the entity target before
-   selected evidence, and include the target's own due-date mirror plus any
-   evidence-owned calendar events in one stable sorted calendar lock set. This
-   preserves ordinary entity-first mutation order and prevents two cross-cited
-   mirrors from taking opposite locks.
+   selected evidence; for board-item updates, resolve and lock the team-scoped
+   board-item target first. Include every object or board-item due-date mirror
+   owned by an object/task target plus any evidence-owned calendar events in one
+   stable sorted calendar lock set. This preserves ordinary target-first
+   mutation order and prevents two cross-cited mirrors from taking opposite
+   locks.
 5. Supersede an item when required evidence is deleted, tombstoned, or no longer
    visible. Reuse the existing `superseded` state rather than adding a `stale`
    enum in the first implementation.

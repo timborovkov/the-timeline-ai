@@ -1632,7 +1632,8 @@ function ApprovalItemEvidence({ item, timezone }: { item: SuggestionItem; timezo
   if (item.evidenceStatus === 'stale') {
     return (
       <p className="md:col-span-3 text-xs text-danger" role="status">
-        This change cannot be accepted because required source evidence is no longer available.
+        Required source evidence changed after this proposal was created. Regenerate the proposal
+        before accepting this change.
       </p>
     );
   }

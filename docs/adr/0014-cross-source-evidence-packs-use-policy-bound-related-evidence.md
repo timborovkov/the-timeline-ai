@@ -292,14 +292,17 @@ and dispatched only after the database commit. Calendar acceptance and direct
 calendar mutations share advisory locks acquired before linked raw-event locks,
 preventing opposite row-lock orders. Pack acceptance acquires its target and
 every calendar event represented by selected evidence as one stable sorted lock
-set. Object and task updates also include the target's own due-date mirror in
-that set, preventing cross-cited mirrors from taking opposite locks. For an
+set. Object and task updates also include all of the target's object and
+board-item due-date mirrors in that set, preventing cross-cited mirrors from
+taking opposite locks. For an
 occurrence-wide `series` or `this_and_future` mutation, both paths
 resolve that target to the canonical recurring parent; evidence-owned
 occurrences cover both occurrence and parent identities. Direct whole-series
 updates retain the lock through occurrence tombstoning and rematerialization in
 the same transaction. Object and task acceptance locks the target entity before
-selected evidence, matching ordinary entity-to-due-date-mirror mutation order.
+selected evidence, while board-item-update acceptance resolves and locks its
+team-scoped board-item target first, matching ordinary target-to-due-date-mirror
+mutation order.
 
 Strict admission reduces recall compared with open semantic retrieval. This is
 intentional for durable proposals. Answer policies can use broader recall while

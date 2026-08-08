@@ -824,7 +824,7 @@ describe('suggestion scope', () => {
     );
   });
 
-  it('prelocks a task due-date mirror with cross-cited mirror evidence', async () => {
+  it('prelocks every task-owned due-date mirror with cross-cited mirror evidence', async () => {
     const transactionQueries: Parameters<Transaction['query']>[] = [];
     const runTransaction = pg.transaction.bind(pg);
     const transaction = vi
@@ -848,17 +848,29 @@ describe('suggestion scope', () => {
       dueAt: new Date('2026-08-12T10:00:00.000Z'),
       actor: { kind: 'user', userId: USER_ID },
     });
+    const board = await scope.boards.createBoard({
+      name: 'Due-date review board',
+      templateKind: 'task_board',
+      lanes: [{ name: 'Todo', kind: 'active' }],
+    });
+    await scope.boards.addBoardItem(board.id, {
+      entityId: task.id,
+      laneId: board.lanes[0]?.id ?? null,
+      dueAt: new Date('2026-08-14T10:00:00.000Z'),
+      actor: { kind: 'user', userId: USER_ID },
+    });
     const supportingTask = await scope.objects.createObject({
       type: 'task',
       canonicalName: 'Support due-date review',
       dueAt: new Date('2026-08-13T10:00:00.000Z'),
       actor: { kind: 'user', userId: USER_ID },
     });
-    const targetMirror = await pg.query<{ id: string }>(
-      `SELECT id::text
+    const targetMirrors = await pg.query<{ id: string; source: string }>(
+      `SELECT id::text, metadata ->> 'source' AS source
        FROM calendar_events
        WHERE team_id = '${TEAM_ID}'
-         AND metadata ->> 'entity_id' = '${task.id}'`,
+         AND metadata ->> 'entity_id' = '${task.id}'
+       ORDER BY source`,
     );
     const evidenceMirror = await pg.query<{ id: string; start_at_raw_event_id: string }>(
       `SELECT id::text, start_at_raw_event_id::text
@@ -913,11 +925,109 @@ describe('suggestion scope', () => {
     expect(entityLockIndex).toBeGreaterThanOrEqual(0);
     expect(evidenceLockIndex).toBeGreaterThanOrEqual(0);
     expect(entityLockIndex).toBeLessThan(evidenceLockIndex);
-    expect(acquiredLockKeys.slice(0, 2)).toEqual(
+    expect(targetMirrors.rows.map((row) => row.source)).toEqual(['board_item', 'object']);
+    expect(acquiredLockKeys.slice(0, 3)).toEqual(
       [
-        calendarEventMutationLockKey(TEAM_ID, targetMirror.rows[0]?.id ?? ''),
+        ...targetMirrors.rows.map((mirror) => calendarEventMutationLockKey(TEAM_ID, mirror.id)),
         calendarEventMutationLockKey(TEAM_ID, evidenceMirror.rows[0]?.id ?? ''),
       ].sort(),
+    );
+  });
+
+  it('locks a pack-backed board item target before its due-date evidence row', async () => {
+    const transactionQueries: Parameters<Transaction['query']>[] = [];
+    const runTransaction = pg.transaction.bind(pg);
+    const transaction = vi
+      .spyOn(pg, 'transaction')
+      .mockImplementation(<T>(callback: (tx: Transaction) => Promise<T>) =>
+        runTransaction(async (tx) => {
+          const query = vi.spyOn(tx, 'query');
+          try {
+            return await callback(tx);
+          } finally {
+            transactionQueries.push(...query.mock.calls);
+            query.mockRestore();
+          }
+        }),
+      );
+    const observedDb = drizzle(pg);
+    const scope = withTeam(observedDb as never, TEAM_ID, USER_ID);
+    const board = await scope.boards.createBoard({
+      name: 'Pack-backed board',
+      templateKind: 'task_board',
+      lanes: [{ name: 'Todo', kind: 'active' }],
+    });
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Review board-item evidence',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const boardItem = await scope.boards.addBoardItem(board.id, {
+      entityId: task.id,
+      laneId: board.lanes[0]?.id ?? null,
+      dueAt: new Date('2026-08-12T10:00:00.000Z'),
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const mirror = await pg.query<{ id: string; start_at_raw_event_id: string }>(
+      `SELECT id::text, start_at_raw_event_id::text
+       FROM calendar_events
+       WHERE team_id = '${TEAM_ID}'
+         AND metadata ->> 'source' = 'board_item'
+         AND metadata ->> 'board_item_id' = '${boardItem.id}'`,
+    );
+    const evidenceRawEventId = mirror.rows[0]?.start_at_raw_event_id ?? '';
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Update board item from its due-date evidence',
+      dedupeKey: 'board-item-target-lock-order',
+      metadata: { evidence_pack_fingerprint: 'a'.repeat(64) },
+      evidence: [{ rawEventId: evidenceRawEventId }],
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'board_item_update',
+          targetId: boardItem.id,
+          title: 'Add the evidence review next step',
+          dedupeKey: 'board-item-target-lock-order:item',
+          proposedPayload: {
+            boardItemId: boardItem.id,
+            field: 'nextStep',
+            newValue: 'Review current source evidence',
+          },
+          evidenceRawEventIds: [evidenceRawEventId],
+        },
+      ],
+    });
+    transactionQueries.length = 0;
+
+    await scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '');
+
+    const boardItemLockIndex = transactionQueries.findIndex(
+      ([statement, params]) =>
+        typeof statement === 'string' &&
+        statement.includes('from "board_items"') &&
+        statement.includes('for update') &&
+        params?.includes(boardItem.id),
+    );
+    const evidenceLockIndex = transactionQueries.findIndex(
+      ([statement, params]) =>
+        typeof statement === 'string' &&
+        statement.includes('from "raw_events"') &&
+        statement.includes('for update') &&
+        params?.includes(evidenceRawEventId),
+    );
+    const acquiredLockKeys = transactionQueries.flatMap((call) => {
+      const [statement, params] = call;
+      return typeof statement === 'string' && statement.includes('pg_advisory_xact_lock')
+        ? [String(params?.[0])]
+        : [];
+    });
+    transaction.mockRestore();
+    expect(boardItemLockIndex).toBeGreaterThanOrEqual(0);
+    expect(evidenceLockIndex).toBeGreaterThanOrEqual(0);
+    expect(boardItemLockIndex).toBeLessThan(evidenceLockIndex);
+    expect(acquiredLockKeys[0]).toBe(
+      calendarEventMutationLockKey(TEAM_ID, mirror.rows[0]?.id ?? ''),
     );
   });
 

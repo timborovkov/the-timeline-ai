@@ -275,7 +275,7 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('Evidence for this change · 1 source');
     expect(html).toContain('Owner committed to send the Acme proposal.');
     expect(html).toContain(
-      'This change cannot be accepted because required source evidence is no longer available.',
+      'Required source evidence changed after this proposal was created. Regenerate the proposal before accepting this change.',
     );
   });
 

@@ -3794,7 +3794,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
     const targetIsCalendar =
       item.targetKind === 'calendar_event' && item.targetId !== null && UUID_RE.test(item.targetId);
-    const targetHasDueDateMirror =
+    const targetHasDueDateMirrors =
       item.operation !== 'create' &&
       (item.targetKind === 'object' || item.targetKind === 'task') &&
       item.targetId !== null &&
@@ -3802,7 +3802,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     const calendarEventIds = new Set<string>();
     if (targetIsCalendar && item.targetId) calendarEventIds.add(item.targetId);
 
-    if (targetHasDueDateMirror && item.targetId) {
+    if (targetHasDueDateMirrors && item.targetId) {
       const dueDateMirrors = await db
         .select({ id: calendarEvents.id })
         .from(calendarEvents)
@@ -3810,7 +3810,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           and(
             eq(calendarEvents.teamId, teamId),
             sql`${calendarEvents.metadata} ->> 'kind' = 'due_date'`,
-            sql`${calendarEvents.metadata} ->> 'source' = 'object'`,
+            sql`${calendarEvents.metadata} ->> 'source' IN ('object', 'board_item')`,
             sql`${calendarEvents.metadata} ->> 'entity_id' = ${item.targetId}`,
           ),
         );
@@ -3878,22 +3878,31 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
   }
 
-  async function lockAcceptanceObjectTarget(
+  async function lockAcceptanceMutationTarget(
     item: typeof agentSuggestionItems.$inferSelect,
   ): Promise<void> {
+    if (!deps.acceptanceEvidenceLocked || item.operation === 'create') return;
+
     if (
-      !deps.acceptanceEvidenceLocked ||
-      item.operation === 'create' ||
-      (item.targetKind !== 'object' && item.targetKind !== 'task') ||
-      !item.targetId ||
-      !UUID_RE.test(item.targetId)
+      (item.targetKind === 'object' || item.targetKind === 'task') &&
+      item.targetId &&
+      UUID_RE.test(item.targetId)
     ) {
+      await db
+        .select({ id: entities.id })
+        .from(entities)
+        .where(and(eq(entities.id, item.targetId), eq(entities.teamId, teamId)))
+        .for('update');
       return;
     }
+
+    if (item.targetKind !== 'board_item_update') return;
+    const parsed = boardItemUpdatePayload.safeParse(item.proposedPayload);
+    if (!parsed.success) return;
     await db
-      .select({ id: entities.id })
-      .from(entities)
-      .where(and(eq(entities.id, item.targetId), eq(entities.teamId, teamId)))
+      .select({ id: boardItems.id })
+      .from(boardItems)
+      .where(and(eq(boardItems.id, parsed.data.boardItemId), eq(boardItems.teamId, teamId)))
       .for('update');
   }
 
@@ -3928,7 +3937,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           ),
         );
       const storedPackEvidenceIds = storedPackEvidence.map((evidence) => evidence.rawEventId);
-      await lockAcceptanceObjectTarget(item);
+      await lockAcceptanceMutationTarget(item);
       await lockCalendarAcceptanceTargets(item, storedPackEvidenceIds);
       const packEvidenceQuery = db
         .select({
