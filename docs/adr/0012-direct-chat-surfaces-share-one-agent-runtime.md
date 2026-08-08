@@ -121,8 +121,12 @@ history with a provider marker and can continue there.
 Web chat remains the thorough, source-linked research surface. External chat
 answers use the same visibility rules, retrieval tools, grounding requirements,
 and tool-call budget, but default to about 120 words and never expose internal
-Timeline citation or raw-event IDs. A delivery retry reapplies the formatter to
-the cached answer, so replies created before this policy are also safe to send.
+Timeline citation or raw-event IDs. The shared runtime leaves every tool-using
+model step uncapped, then runs the external profile's 900-token ceiling only on
+a separate no-tool final-answer pass. A delivery retry reapplies the formatter
+to the cached answer, so replies created before this policy are also safe to
+send; a legacy answer that becomes empty after formatting is delivered once as
+a canonical failure instead of retrying an empty provider message.
 
 The worker needs Telegram's bot token because Telegram replies and typing
 heartbeats now outlive the webhook request. Slack worker delivery reconstructs

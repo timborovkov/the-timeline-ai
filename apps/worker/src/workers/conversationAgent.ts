@@ -69,23 +69,28 @@ async function deliverCached(
   if (!turn.answerText) throw new Error('Cached conversation turn has no answer');
   const presentation = agent.resolveAgentPresentation(turn.surface);
   const presented = agent.formatAgentAnswerForPresentation(turn.answerText, presentation);
+  const presentationFailed = presented.text.length === 0;
+  const deliveryText = presentationFailed
+    ? conversationSurfaces.CONVERSATION_AGENT_FAILURE_MESSAGE
+    : presented.text;
   log.info(
     {
       event: 'conversation_agent_answer_presented',
       ...turnLogContext(turn),
       presentation,
       rawChars: turn.answerText.length,
-      deliveredChars: presented.text.length,
+      deliveredChars: deliveryText.length,
       removedReferences: presented.removedReferences,
       truncated: presented.truncated,
+      presentationFailed,
     },
     'conversation answer presentation resolved',
   );
   try {
-    if (turn.status === 'failed' || turn.status === 'timed_out') {
-      await adapter.deliverFailure(presented.text);
+    if (presentationFailed || turn.status === 'failed' || turn.status === 'timed_out') {
+      await adapter.deliverFailure(deliveryText);
     } else {
-      await adapter.deliverAnswer(presented.text);
+      await adapter.deliverAnswer(deliveryText);
     }
     await scope.markDelivered(turn.id);
   } catch (err) {

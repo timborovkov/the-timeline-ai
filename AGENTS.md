@@ -191,8 +191,9 @@ Treat this file as an operating contract for agents, not a loose README.
   Timeline citation syntax and raw-event IDs are removed before persistence
   and the formatter is reapplied idempotently before cached delivery. New
   provider adapters must reuse this policy rather than adding provider-specific
-  answer prompts or citation sanitizers. Retrieval, visibility, grounding, and
-  tool-call budgets remain unchanged.
+  answer prompts or citation sanitizers. The external output-token ceiling is
+  applied only in a no-tool final-answer pass; retrieval, visibility, grounding,
+  and tool-call budgets remain unchanged.
 - **Outbound MCP bearer keys see only `team`-visibility events.** The
   `/api/mcp/server` handler uses `withTeam(db, teamId, ZERO_UUID,
   { skipMembershipCheck: true })`. The zero-UUID can't match

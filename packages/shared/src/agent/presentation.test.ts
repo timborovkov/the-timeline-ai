@@ -77,12 +77,39 @@ describe('formatAgentAnswerForPresentation', () => {
     });
   });
 
-  it('removes prose-labelled internal event ids but preserves provider identifiers', () => {
-    const answer =
-      'Raw event_id: eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee supports GitHub #347 and Linear ENG-42 (EV ID a74b9875).';
+  it('removes raw-event ids and links but preserves provider identifiers', () => {
+    const answer = [
+      'Raw event eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee supports the launch.',
+      'Raw event ID: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa confirms the date.',
+      'See https://thetimeline.cc/#ev-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb for context.',
+      'Sentry event ID: a74b9875, EV ID deadbeef, GitHub #347, and Linear ENG-42 must survive.',
+    ].join('\n');
 
     expect(formatAgentAnswerForPresentation(answer, 'external_chat').text).toBe(
-      'Supports GitHub #347 and Linear ENG-42.',
+      [
+        'supports the launch.',
+        'confirms the date.',
+        'See for context.',
+        'Sentry event ID: a74b9875, EV ID deadbeef, GitHub #347, and Linear ENG-42 must survive.',
+      ].join('\n'),
+    );
+  });
+
+  it('preserves command case, code tokens, and indentation during plain-text cleanup', () => {
+    const answer = [
+      '```sh',
+      'pnpm validate',
+      '```',
+      'Return `[]`.',
+      'Use `AND`.',
+      '  nested',
+      '  SELECT  value [ev:abcd1234] FROM table',
+    ].join('\n');
+
+    expect(formatAgentAnswerForPresentation(answer, 'external_chat').text).toBe(
+      ['pnpm validate', 'Return [].', 'Use AND.', '  nested', '  SELECT  value FROM table'].join(
+        '\n',
+      ),
     );
   });
 
@@ -103,6 +130,17 @@ describe('formatAgentAnswerForPresentation', () => {
 
     expect(formatted.text.length).toBeLessThanOrEqual(EXTERNAL_CHAT_MAX_CHARACTERS);
     expect(formatted.text.endsWith('…')).toBe(true);
+    expect(formatted.truncated).toBe(true);
+  });
+
+  it('uses the character cap when the last line boundary is distant', () => {
+    const formatted = formatAgentAnswerForPresentation(
+      `Plan\n${'a'.repeat(EXTERNAL_CHAT_MAX_CHARACTERS + 500)}`,
+      'external_chat',
+    );
+
+    expect(formatted.text.startsWith('Plan\naaaaa')).toBe(true);
+    expect(formatted.text.length).toBe(EXTERNAL_CHAT_MAX_CHARACTERS);
     expect(formatted.truncated).toBe(true);
   });
 });

@@ -260,7 +260,7 @@ describe('askAgent', () => {
           },
         },
         model: makeAskAgentTextModel('No integration events were returned.', (opts) => {
-          capturedJson = JSON.stringify(opts);
+          capturedJson ||= JSON.stringify(opts);
         }),
       },
     );
@@ -284,7 +284,7 @@ describe('askAgent', () => {
       },
       {
         model: makeAskAgentTextModel('No visible resource.', (opts) => {
-          capturedJson = JSON.stringify(opts);
+          capturedJson ||= JSON.stringify(opts);
         }),
       },
     );
@@ -320,7 +320,7 @@ describe('askAgent', () => {
           },
         },
         model: makeAskAgentTextModel('No answer.', (opts) => {
-          capturedJson = JSON.stringify(opts);
+          capturedJson ||= JSON.stringify(opts);
         }),
       },
     );
@@ -335,13 +335,13 @@ describe('askAgent', () => {
   });
 
   it('wires the team prompt, user message, and tools into the injected model', async () => {
-    let captured: {
+    const captured: {
       system?: string;
       prompt?: unknown;
       tools?: Record<string, unknown>;
       stopWhen?: unknown;
       maxOutputTokens?: number;
-    } = {};
+    }[] = [];
     const result = await askAgent(
       {
         db: db as never,
@@ -354,7 +354,7 @@ describe('askAgent', () => {
       },
       {
         model: makeAskAgentTextModel('Acme has a renewal due Friday.', (opts) => {
-          captured = opts as typeof captured;
+          captured.push(opts as (typeof captured)[number]);
         }),
       },
     );
@@ -364,7 +364,7 @@ describe('askAgent', () => {
       answer: 'Acme has a renewal due Friday.',
       truncated: false,
     });
-    const capturedJson = JSON.stringify(captured);
+    const capturedJson = JSON.stringify(captured[0]);
     expect(capturedJson).toContain('Ask Agent Team');
     expect(capturedJson).toContain('Ada');
     expect(capturedJson).toContain('What do we know about Acme?');
@@ -376,7 +376,10 @@ describe('askAgent', () => {
     );
     expect(capturedJson).toContain('canary phrases');
     expect(capturedJson).toContain('PRESENTATION FOR EXTERNAL CHAT');
-    expect(captured.maxOutputTokens).toBe(900);
+    expect(captured).toHaveLength(2);
+    expect(captured[0]?.maxOutputTokens).toBeUndefined();
+    expect(captured[1]?.maxOutputTokens).toBe(900);
+    expect(captured[1]?.tools).toBeUndefined();
   });
 
   it('uses the supplied eval clock in workspace time context and requires named retrieval surfaces', async () => {
@@ -392,7 +395,7 @@ describe('askAgent', () => {
       {
         currentDate: new Date('2026-07-01T12:00:00.000Z'),
         model: makeAskAgentTextModel('No answer.', (opts) => {
-          capturedJson = JSON.stringify(opts);
+          capturedJson ||= JSON.stringify(opts);
         }),
       },
     );
@@ -638,7 +641,10 @@ describe('askAgent', () => {
       { provider: 'sentry', externalObjectId: 'sentry-issue-100' },
       USER_ID,
     );
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(3);
+    expect((calls[0] as { maxOutputTokens?: number }).maxOutputTokens).toBeUndefined();
+    expect((calls[1] as { maxOutputTokens?: number }).maxOutputTokens).toBeUndefined();
+    expect(calls[2]).toEqual(expect.objectContaining({ maxOutputTokens: 900, tools: undefined }));
     const secondCall = JSON.stringify(calls[1]);
     expect(secondCall).toContain('<external_content source=\\"mcp:Ops MCP\\"');
     expect(secondCall).toContain('TIMELINE-AI-100');

@@ -11,8 +11,9 @@ exports. One Node entry point starts the queue workers from the same codebase.
 Long-running, retry-prone work (audio transcription, LLM extraction, vector embedding) belongs off the request path. Railway runs the worker service separately from web so backlogs do not block requests.
 
 The `conversation-agent` worker also keeps Telegram/Slack webhook lifetimes
-short. It runs one paid model execution per durable turn, persists the answer
-before external delivery, and retries delivery from cache. Each job carries the
+short. It runs the shared tool-using agent once per durable turn, applies the
+external profile through a no-tool final-answer pass, persists the answer before
+external delivery, and retries delivery from cache. Each job carries the
 turn UUID plus its team/user scope, and the worker claims it only through that
 `withTeam` conversation scope. Its 90-second deadline includes progress
 startup, history loading, and model execution; retained failed queue jobs can
@@ -24,9 +25,10 @@ Slack tokens are decrypted from installed workspace records with the same
 The worker resolves presentation from the current delivery surface. Only
 literal `web` uses the rich cited profile; Telegram, Slack, and every future
 conversation provider default to compact plain text with internal Timeline
-references removed. New delivery adapters inherit that policy through the
-shared conversation runtime and must not add provider-specific answer prompts
-or citation sanitizers.
+references removed. The 900-token generation ceiling applies only to the
+no-tool final-answer pass, leaving tool-call arguments uncapped. New delivery
+adapters inherit that policy through the shared conversation runtime and must
+not add provider-specific answer prompts or citation sanitizers.
 
 ## How to use
 

@@ -4,6 +4,7 @@ export type AgentPresentationProfile = 'web_rich' | 'external_chat';
 
 export const EXTERNAL_CHAT_MAX_OUTPUT_TOKENS = 900;
 export const EXTERNAL_CHAT_MAX_CHARACTERS = 4096;
+const EXTERNAL_CHAT_LINE_BOUNDARY_WINDOW = 256;
 
 export interface AgentPresentationInstructions {
   system: string;
@@ -30,8 +31,16 @@ const UNBALANCED_CLOSE_TIMELINE_REFERENCE_RE =
   /(?<![\w[])(?:board-item|ev|ent|note|cal|board|task|fact|rel|chg|doc|route):[^\s\[\],.!?;)]+\]/gi;
 const NAKED_TIMELINE_REFERENCE_RE =
   /(?<![\w[:])(?:board-item|ev|ent|note|cal|board|task|fact|rel|chg|doc|route):[^\s\[\],.!?;)]+/gi;
-const PROSE_EVENT_ID_RE =
-  /\b(?:(?:raw[ _-]*)?event|ev)[ _-]*id\s*[:=#-]?\s*(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}|[0-9a-f]{8,32})\b/gi;
+const RAW_EVENT_ID = '[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}';
+const RAW_EVENT_REFERENCE_RE = new RegExp(
+  `\\braw[ _-]*event(?:[ _-]*id)?\\s*[:=#-]?\\s*${RAW_EVENT_ID}\\b`,
+  'gi',
+);
+const RAW_EVENT_URL_RE = new RegExp(
+  `(?:https?:\\/\\/|\\/)[^\\s)\\]]{0,512}(?:#ev-|[?&](?:event|eventId|rawEventId)=)${RAW_EVENT_ID}\\b`,
+  'gi',
+);
+const REMOVED_REFERENCE_MARKER = '\uE000';
 const HOSTILE_INSTRUCTION_RE =
   /\b(ignore (?:prior|previous) instructions|act as|forget (?:the )?rules|reveal (?:your )?prompt|system prompt)\b/i;
 
@@ -70,30 +79,62 @@ function stripTimelineReferences(text: string): { text: string; removedReference
   const parts = parseCitations(text);
   let removedReferences = parts.filter((part) => part.type !== 'text').length;
   let withoutReferences = parts
-    .flatMap((part) => (part.type === 'text' ? [part.value] : []))
+    .map((part) => (part.type === 'text' ? part.value : REMOVED_REFERENCE_MARKER))
     .join('');
 
   withoutReferences = withoutReferences.replace(RESIDUAL_TIMELINE_REFERENCE_RE, () => {
     removedReferences += 1;
-    return '';
+    return REMOVED_REFERENCE_MARKER;
   });
   withoutReferences = withoutReferences.replace(UNBALANCED_OPEN_TIMELINE_REFERENCE_RE, () => {
     removedReferences += 1;
-    return '';
+    return REMOVED_REFERENCE_MARKER;
   });
   withoutReferences = withoutReferences.replace(UNBALANCED_CLOSE_TIMELINE_REFERENCE_RE, () => {
     removedReferences += 1;
-    return '';
+    return REMOVED_REFERENCE_MARKER;
   });
   withoutReferences = withoutReferences.replace(NAKED_TIMELINE_REFERENCE_RE, () => {
     removedReferences += 1;
-    return '';
+    return REMOVED_REFERENCE_MARKER;
   });
-  withoutReferences = withoutReferences.replace(PROSE_EVENT_ID_RE, () => {
+  withoutReferences = withoutReferences.replace(RAW_EVENT_REFERENCE_RE, () => {
     removedReferences += 1;
-    return '';
+    return REMOVED_REFERENCE_MARKER;
+  });
+  withoutReferences = withoutReferences.replace(RAW_EVENT_URL_RE, () => {
+    removedReferences += 1;
+    return REMOVED_REFERENCE_MARKER;
   });
   return { text: withoutReferences, removedReferences };
+}
+
+function cleanRemovedReferenceArtifacts(line: string): string {
+  if (!line.includes(REMOVED_REFERENCE_MARKER)) return line.trimEnd();
+
+  const leadingWhitespace = /^[ \t]*/.exec(line)?.[0] ?? '';
+  const content = line.slice(leadingWhitespace.length);
+  const marker = REMOVED_REFERENCE_MARKER;
+  const cleaned = content
+    .replace(new RegExp(`\\(\\s*(?:${marker}\\s*)+\\)`, 'g'), marker)
+    .replace(new RegExp(`\\[\\s*(?:${marker}\\s*)+\\]`, 'g'), marker)
+    .replace(new RegExp(`\\{\\s*(?:${marker}\\s*)+\\}`, 'g'), marker)
+    .replace(
+      new RegExp(`[ \\t]+\\b(?:and|or)[ \\t]+(?=(?:${marker}[ \\t]*)+(?:[.,!?;:]|$))`, 'gi'),
+      '',
+    )
+    .replace(
+      new RegExp(`[ \\t]*(?:${marker}[ \\t]*)+`, 'g'),
+      (match: string, offset: number, source: string) => {
+        const before = source[offset - 1];
+        const after = source[offset + match.length];
+        if (!before || !after || /[([{]/.test(before) || /[.,!?;:)\]}]/.test(after)) return '';
+        return ' ';
+      },
+    )
+    .trimEnd();
+
+  return `${leadingWhitespace}${cleaned}`;
 }
 
 function plainTextForExternalChat(text: string): string {
@@ -110,27 +151,20 @@ function plainTextForExternalChat(text: string): string {
       .replace(/^>\s?/gm, ''),
   )
     .split('\n')
-    .map((line) =>
-      line
-        .replace(/[ \t]+/g, ' ')
-        .replace(/\(\s*\)|\[\s*\]|\{\s*\}/g, '')
-        .replace(/\s+\b(?:and|or)\s*(?=[.,!?;:]|$)/gi, '')
-        .replace(/[ \t]+([.,!?;:])/g, '$1')
-        .trimEnd(),
-    )
+    .map(cleanRemovedReferenceArtifacts)
     .filter((line) => !/^\s*[-*+]\s*[.,!?;:]?\s*$/.test(line))
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 
-  return plain ? plain.charAt(0).toUpperCase() + plain.slice(1) : plain;
+  return plain;
 }
 
 function truncateExternalAnswer(text: string): { text: string; truncated: boolean } {
   if (text.length <= EXTERNAL_CHAT_MAX_CHARACTERS) return { text, truncated: false };
   const end = EXTERNAL_CHAT_MAX_CHARACTERS - 1;
   const lineBoundary = text.lastIndexOf('\n', end);
-  const cutAt = lineBoundary > 0 ? lineBoundary : end;
+  const cutAt = lineBoundary >= end - EXTERNAL_CHAT_LINE_BOUNDARY_WINDOW ? lineBoundary : end;
   return { text: `${text.slice(0, cutAt).trimEnd()}…`, truncated: true };
 }
 

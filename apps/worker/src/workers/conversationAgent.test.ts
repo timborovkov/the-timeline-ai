@@ -150,6 +150,34 @@ describe('conversation agent worker', () => {
     expect(deliverAnswer).toHaveBeenNthCalledWith(2, 'Paid once');
   });
 
+  it('terminally fails a cached answer that becomes empty after presentation', async () => {
+    const turnId = await createTurn('event-empty-presented-cache');
+    const scope = withTeam(db, TEAM_ID, USER_ID).conversations;
+    await scope.claimTurn(turnId);
+    await scope.storeAnswer({ turnId, answer: '[ev:abcd1234]' });
+    const delivery = adapter();
+    const askAgent = vi.fn() as unknown as typeof agent.askAgent;
+
+    await expect(
+      processConversationAgentJob(
+        {
+          db,
+          askAgent,
+          createDeliveryAdapter: () => Promise.resolve(delivery),
+        },
+        jobData(turnId),
+      ),
+    ).resolves.toEqual({ turnId, status: 'delivered_cached' });
+
+    expect(askAgent).not.toHaveBeenCalled();
+    expect(delivery.deliverAnswer).not.toHaveBeenCalled();
+    expect(delivery.deliverFailure).toHaveBeenCalledWith(
+      conversationSurfaces.CONVERSATION_AGENT_FAILURE_MESSAGE,
+    );
+    const turns = await db.select().from(chatSurfaceTurns).where(eq(chatSurfaceTurns.id, turnId));
+    expect(turns[0]?.deliveredAt).toBeInstanceOf(Date);
+  });
+
   it('does not deliver a cached answer after the provider session is reset', async () => {
     const turnId = await createTurn('event-reset-after-answer');
     const deliverAnswer = vi.fn().mockRejectedValueOnce(new Error('provider unavailable'));

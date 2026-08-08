@@ -25,8 +25,10 @@ Putting both behind a single package keeps the rules enforceable.
 
 Agent presentation is also centralized here. Literal web delivery keeps rich,
 inspectable citations and the model's normal output budget. Every external chat
-surface defaults to concise plain text, a 900-token ceiling, and deterministic
-removal of internal Timeline references before persistence and delivery.
+surface defaults to concise plain text and deterministic removal of internal
+Timeline references before persistence and delivery. Its 900-token ceiling is
+isolated to a no-tool final-answer pass, so retrieval and mutation arguments
+retain the normal agent budget.
 
 ## How to use
 
