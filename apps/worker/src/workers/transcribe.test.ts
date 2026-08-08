@@ -5,7 +5,7 @@ import { handleUpdate, type TelegramApi } from '@timeline/shared/telegram';
 import { UnrecoverableError } from 'bullmq';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { processSuggestionJobForTests } from '#src/workers/suggestions.js';
@@ -94,14 +94,18 @@ describe('processTranscribeJobForTests', () => {
   let pg: PGlite;
   let db: ReturnType<typeof drizzle>;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     pg = new PGlite();
     await applyDbMigrations(pg);
-    await seed(pg);
     db = drizzle(pg);
-  }, 20_000);
+  }, 240_000);
 
-  afterEach(async () => {
+  beforeEach(async () => {
+    await pg.exec('TRUNCATE TABLE teams, users CASCADE;');
+    await seed(pg);
+  });
+
+  afterAll(async () => {
     await pg.close();
   });
 

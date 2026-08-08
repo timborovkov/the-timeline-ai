@@ -2,8 +2,9 @@
 
 Cross-package code: the `withTeam` team workspace port, the single `llm`
 inference layer, Qdrant + S3 wrappers, Telegram dispatch, shared messaging and
-email templates, the provider-neutral direct-conversation runtime, BullMQ queue
-names, the shared embedding source planner, the
+email templates, the provider-neutral direct-conversation runtime and
+surface-aware agent presentation policy, BullMQ queue names, the shared
+embedding source planner, the
 integrations module (Drive/Linear/GitHub/Monday.com/Slack/Sentry providers,
 person-owned provider connections, team resource shares, active source paths, connection attention),
 the objects module, the reversible task-category classifier and state machine,
@@ -21,6 +22,16 @@ Two hard rules in this repo route through this package:
 2. **One inference layer.** App and worker code call `llm.chatStructured()`, `llm.streamChat()`, `llm.embed()`, `llm.embedMany()`, `llm.transcribeAudio()`, and `llm.extractTextFromMedia()` — never the OpenAI or OpenRouter SDK directly. Swapping providers or pinning a model happens here, once.
 
 Putting both behind a single package keeps the rules enforceable.
+
+Agent presentation is also centralized here. Literal web delivery keeps rich,
+inspectable citations and the model's normal output budget. Every external chat
+surface defaults to concise plain text and deterministic removal of internal
+Timeline references before persistence and delivery. Its 900-token ceiling is
+isolated to a no-tool final-answer pass, so retrieval and mutation arguments
+retain the normal agent budget. If that presentation pass fails, returns empty,
+or contains only removable internal material, the completed grounded draft and
+its model attribution are retained; the draft still goes through deterministic
+external formatting before delivery.
 
 ## How to use
 

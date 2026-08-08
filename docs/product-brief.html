@@ -134,8 +134,10 @@
         include things they don't want broadcast verbatim. Visibility lives on the event.
       </div>
       <div class="principle">
-        <b>The agent's answers are auditable.</b> Every fact the agent surfaces links back to the
-        raw event(s) it came from. No black-box summaries.
+        <b>The agent's answers are auditable.</b> Every fact remains grounded in the raw event(s) it
+        came from. Web chat exposes those references as clickable evidence; compact external-chat
+        delivery hides internal reference syntax without weakening the underlying trace. No
+        black-box summaries.
       </div>
       <div class="principle">
         <b>Re-processability is non-negotiable.</b> Extraction prompts and models will improve.
@@ -279,10 +281,12 @@
           <strong>Agent chat.</strong> Natural-language queries over the timeline and document base.
           Tool-use pattern: agent queries Qdrant for semantic context, queries Postgres for
           structured filters and document versions, synthesizes an answer with event/document
-          citations. Available with citation UI in the web app at <code>/app/chat</code>. Telegram
-          and Slack direct text share one durable worker-backed runtime, bounded private history, a
-          90-second deadline, and cached delivery; their sessions also appear in web chat history.
-          Group/channel invocations remain stateless and deliver plain text for chat readability.
+          citations. The web app at <code>/app/chat</code> is the thorough research surface with
+          clickable evidence and the full answer budget. Telegram and Slack direct text share one
+          durable worker-backed runtime, bounded private history, a 90-second deadline, and cached
+          delivery; their sessions also appear in web chat history. Every current and future
+          external chat provider inherits concise plain-text delivery without internal Timeline ids.
+          Group/channel invocations remain stateless and use the same external-chat profile.
         </li>
       </ul>
 

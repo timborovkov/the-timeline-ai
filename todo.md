@@ -216,6 +216,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       retrieval/tool traces, `SearchHit` fixtures, answer synthesis, non-browser
       `askAgent` model scripts, ask turn-observability capture, and dispatcher-level
       Slack/Telegram `/ask` surface evals that run the real `askAgent` pipeline,
+      including fail-closed external presentation versus rich cited web output,
       dashboard chat route action/HITL tool-selection and persisted-observability
       evals, object-summary source-ref/visibility checks, plus a worker-level
       background proposal eval for visibility-safe conversation reviews.

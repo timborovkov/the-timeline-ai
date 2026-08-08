@@ -176,7 +176,10 @@ curl -F "url=https://&lt;ngrok-id&gt;.ngrok-free.app/api/telegram/webhook" \
           question. Agent turns are limited to 10 per user per minute, one at a time per DM, and 90
           seconds. Answers are persisted before Telegram delivery, so a delivery retry does not pay
           for a second model run. If the original prompt is deleted before the worker finishes,
-          Telegram sends the cached answer as a normal message instead of dropping it.
+          Telegram sends the cached answer as a normal message instead of dropping it. Replies use
+          the shared external-chat profile: concise plain text by default, without raw Timeline
+          citation ids or a source footer. Ask explicitly for a full breakdown when needed, or
+          continue the conversation in web chat for rich, clickable evidence links.
         </li>
         <li>
           Shared URLs in captured text are normalized into non-authoritative artifact evidence. The

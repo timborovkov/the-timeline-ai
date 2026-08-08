@@ -974,6 +974,7 @@ describe('Slack dispatcher routing', () => {
       expect.objectContaining({
         teamId: TEAM_A,
         userId: '00000000-0000-0000-0000-000000000000',
+        deliverySurface: 'slack',
         trustedTeamActor: true,
         question: 'what changed?',
       }),
@@ -1467,6 +1468,7 @@ describe('Slack dispatcher routing', () => {
       expect.objectContaining({
         teamId: TEAM_A,
         userId: '00000000-0000-0000-0000-000000000000',
+        deliverySurface: 'slack',
         trustedTeamActor: true,
         question: 'what changed?',
       }),
