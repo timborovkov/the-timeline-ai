@@ -83,8 +83,11 @@ The first milestone ships pack-backed generic ingest webhook proposals:
 ### Surface
 
 A surface is the source family people recognize. Slack, Telegram, email,
-meetings, GitHub, Linear, Monday, Sentry, and each named generic webhook are
-distinct surfaces. Multiple event types from one provider remain one surface.
+meetings, GitHub, Linear, Monday, Sentry, and each immutable generic-webhook ID
+are distinct surfaces. Multiple event types from one provider remain one
+surface. Mutable webhook names are display labels, never quota, diversity, or
+promotion identities. Legacy webhook rows without IDs collapse into one
+conservative surface rather than earning promotion credit from mutable labels.
 
 ### Relationship classes
 
@@ -118,6 +121,7 @@ interface BuildEvidencePackInput {
 
 interface EvidencePackItem {
   rawEventId: string;
+  surfaceKey: string;
   surface: string;
   role: 'core' | 'supporting';
   contentText: string;
@@ -451,7 +455,9 @@ misleading actionable approval.
    to the canonical recurring parent, while evidence-owned occurrences cover
    both occurrence and parent mutation identities. Keep direct whole-series
    parent updates and occurrence rematerialization in that same locked
-   transaction.
+   transaction. For object and task updates, lock the entity target before
+   selected evidence so task due-date mirrors follow the same entity-first
+   order as ordinary object mutations.
 5. Supersede an item when required evidence is deleted, tombstoned, or no longer
    visible. Reuse the existing `superseded` state rather than adding a `stale`
    enum in the first implementation.
@@ -590,7 +596,8 @@ before enforcement.
    twice, even when later exports add review outcomes or eligibility labels;
    reject duplicate legacy identities within one population as ambiguous.
    Require successful completion before an attempt counts as eligible, even
-   when telemetry carries `eligible: true`, and validate
+   when telemetry carries `eligible: true`; also require that every eligible
+   attempt has its own sample timestamp, team key, and scenario family. Validate
    `surfaceCount <= selectedCount <= candidateCount` before assessment.
    Apply equivalent invariants to loaded aggregate health before merging:
    cross-source count cannot exceed eligible count, eligible/error/truncation

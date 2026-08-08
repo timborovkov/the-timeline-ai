@@ -102,6 +102,97 @@ describe('buildEvidencePack', () => {
     expect(first.fingerprint).toBe(second.fingerprint);
   });
 
+  it('keys webhook diversity by immutable id while retaining current display names', async () => {
+    const db = drizzle(pg);
+    const renamedWebhookEventId = '00000000-0000-0000-0000-000000000110';
+    const sameNameOtherWebhookEventId = '00000000-0000-0000-0000-000000000111';
+    const legacyWebhookEventIds = [
+      '00000000-0000-0000-0000-000000000112',
+      '00000000-0000-0000-0000-000000000113',
+    ];
+    await db
+      .update(rawEvents)
+      .set({
+        sourceMetadata: {
+          ingest_webhook_id: 'webhook-acme',
+          ingest_webhook_name: 'Acme delivery',
+        },
+      })
+      .where(eq(rawEvents.id, ANCHOR_ID));
+    await db.insert(rawEvents).values([
+      {
+        id: renamedWebhookEventId,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        visibilityOwnerUserId: USER_ID,
+        source: 'ingest_webhook',
+        contentText: 'Later event after the webhook was renamed',
+        occurredAt: new Date('2026-08-01T11:00:00.000Z'),
+        visibility: 'team',
+        sourceMetadata: {
+          ingest_webhook_id: 'webhook-acme',
+          ingest_webhook_name: 'Customer delivery',
+        },
+      },
+      {
+        id: sameNameOtherWebhookEventId,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        visibilityOwnerUserId: USER_ID,
+        source: 'ingest_webhook',
+        contentText: 'Event from a different webhook with the same name',
+        occurredAt: new Date('2026-08-01T12:00:00.000Z'),
+        visibility: 'team',
+        sourceMetadata: {
+          ingest_webhook_id: 'webhook-beta',
+          ingest_webhook_name: 'Customer delivery',
+        },
+      },
+      ...legacyWebhookEventIds.map((id, index) => ({
+        id,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        visibilityOwnerUserId: USER_ID,
+        source: 'ingest_webhook' as const,
+        contentText: `Legacy webhook event ${index + 1}`,
+        occurredAt: new Date(`2026-08-01T1${index + 3}:00:00.000Z`),
+        visibility: 'team' as const,
+        sourceMetadata: { ingest_webhook_name: `Legacy webhook ${index + 1}` },
+      })),
+    ]);
+
+    const pack = await buildEvidencePack(withTeam(db as never, TEAM_ID, USER_ID), {
+      purpose: 'answer',
+      anchorRawEventIds: [ANCHOR_ID],
+      semanticRawEventIds: [
+        renamedWebhookEventId,
+        sameNameOtherWebhookEventId,
+        ...legacyWebhookEventIds,
+      ],
+    });
+
+    expect(pack.items.find((item) => item.rawEventId === ANCHOR_ID)).toMatchObject({
+      surfaceKey: 'ingest_webhook:webhook-acme',
+      surface: 'Acme delivery',
+    });
+    expect(pack.items.find((item) => item.rawEventId === renamedWebhookEventId)).toMatchObject({
+      surfaceKey: 'ingest_webhook:webhook-acme',
+      surface: 'Customer delivery',
+    });
+    expect(
+      pack.items.find((item) => item.rawEventId === sameNameOtherWebhookEventId),
+    ).toMatchObject({
+      surfaceKey: 'ingest_webhook:webhook-beta',
+      surface: 'Customer delivery',
+    });
+    expect(
+      pack.items
+        .filter((item) => legacyWebhookEventIds.includes(item.rawEventId))
+        .map((item) => item.surfaceKey),
+    ).toEqual(['ingest_webhook:legacy', 'ingest_webhook:legacy']);
+    expect(pack.metrics.surfaceCount).toBe(3);
+  });
+
   it('changes the fingerprint when mutable calendar evidence changes', async () => {
     const db = drizzle(pg);
     const scope = withTeam(db as never, TEAM_ID, USER_ID);

@@ -3858,6 +3858,25 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
   }
 
+  async function lockAcceptanceObjectTarget(
+    item: typeof agentSuggestionItems.$inferSelect,
+  ): Promise<void> {
+    if (
+      !deps.acceptanceEvidenceLocked ||
+      item.operation === 'create' ||
+      (item.targetKind !== 'object' && item.targetKind !== 'task') ||
+      !item.targetId ||
+      !UUID_RE.test(item.targetId)
+    ) {
+      return;
+    }
+    await db
+      .select({ id: entities.id })
+      .from(entities)
+      .where(and(eq(entities.id, item.targetId), eq(entities.teamId, teamId)))
+      .for('update');
+  }
+
   async function staleActionableItemReason(
     item: typeof agentSuggestionItems.$inferSelect,
   ): Promise<string | null> {
@@ -3889,6 +3908,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           ),
         );
       const storedPackEvidenceIds = storedPackEvidence.map((evidence) => evidence.rawEventId);
+      await lockAcceptanceObjectTarget(item);
       await lockCalendarAcceptanceTargets(item, storedPackEvidenceIds);
       const packEvidenceQuery = db
         .select({

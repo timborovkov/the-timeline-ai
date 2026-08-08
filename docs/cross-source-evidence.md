@@ -96,7 +96,10 @@ evidence.
 - **Anchor:** One or more immutable raw events that caused the evidence review
 - **Core evidence:** The anchor and protected same-conversation events
 - **Supporting evidence:** Directly related, visibility-safe events from the same or another surface
-- **Surface:** A source family people recognize, such as Slack, email, meetings, GitHub, Monday, or a named generic webhook
+- **Surface:** A source family people recognize, such as Slack, email, meetings,
+  GitHub, Monday, or one immutable generic-webhook identity; mutable webhook
+  names remain display labels only, and legacy webhook rows without IDs collapse
+  conservatively into one surface
 - **Evidence pack:** A deterministic, bounded build result containing cited events, relationship reasons, ordering, budget results, and policy provenance
 - **Proposal audience:** The common audience allowed to see every selected citation and the resulting proposal
 - **Consumer policy:** The answer or proposal rules applied to the shared pack builder
@@ -172,6 +175,8 @@ Cross-source proposal behavior is shipped for a source path only when:
   revisions cannot leave two actionable replacements or race a durable write;
   first-time revisions serialize on their base identity, and calendar targets
   serialize before their linked raw evidence to preserve mutation lock order;
+  object and task targets likewise lock before selected evidence so a task's
+  due-date calendar mirror cannot invert the normal entity-to-mirror order;
   occurrence-level `series` and `this_and_future` mutations lock the canonical
   recurring parent shared by direct edits and approval acceptance, and direct
   whole-series edits hold that lock until occurrence rematerialization commits;
@@ -230,7 +235,9 @@ The first enforced source path must meet all of these gates:
 - Zero visibility leaks, authority violations, unknown citations, ambiguous
   hard-link proposals, or reviewed false merges
 - At least 200 successful, eligible shadow pack builds across seven consecutive
-  days and three teams; a failed attempt never counts toward eligibility
+  days and three teams; every eligible attempt carries its own sample time,
+  team key, and scenario family, and a failed or incomplete attempt never counts
+  toward eligibility
 - At least 25 genuinely cross-source shadow packs, with every required scenario
   family represented; telemetry must satisfy surface count ≤ selected count ≤
   candidate count

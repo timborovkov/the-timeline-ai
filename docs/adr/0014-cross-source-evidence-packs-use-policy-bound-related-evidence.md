@@ -49,7 +49,9 @@ team and viewer scope, a consumer policy, and optional conversation, object, or
 artifact-cluster anchors. Its output contains:
 
 - protected core events and ranked supporting events;
-- the normalized surface and immutable raw-event reference for each item;
+- the immutable surface key, display label, and immutable raw-event reference
+  for each item; generic-webhook keys use webhook IDs rather than mutable names,
+  while legacy rows without IDs collapse into one conservative surface;
 - fenced sender identity context for first-person attribution;
 - relationship provenance and deterministic rank reasons;
 - visibility and audience information;
@@ -236,9 +238,10 @@ and reject report merges with overlapping population identities. Mutable review
 outcomes, eligibility labels, and error annotations do not change that identity,
 while ambiguous duplicate legacy identities are rejected rather than counted as
 separate attempts. Cumulative reports therefore cannot double-count historical
-attempts. A shadow attempt must also complete without an error before it counts
-as eligible, and reported pack counts must satisfy surface count ≤ selected
-count ≤ candidate count. Loaded aggregate health is rejected unless
+attempts. A shadow attempt must also complete without an error and carry its own
+sample timestamp, team key, and scenario family before it counts as eligible,
+and reported pack counts must satisfy surface count ≤ selected count ≤ candidate
+count. Loaded aggregate health is rejected unless
 cross-source ≤ eligible ≤ total attempts, error counts and reasons match their
 rate, the aggregate pack counts preserve the same ordering, mode values are
 recognized, and nonzero shadow eligibility has a shadow population. Dashboard
@@ -284,7 +287,8 @@ set. For an occurrence-wide `series` or `this_and_future` mutation, both paths
 resolve that target to the canonical recurring parent; evidence-owned
 occurrences cover both occurrence and parent identities. Direct whole-series
 updates retain the lock through occurrence tombstoning and rematerialization in
-the same transaction.
+the same transaction. Object and task acceptance locks the target entity before
+selected evidence, matching ordinary entity-to-due-date-mirror mutation order.
 
 Strict admission reduces recall compared with open semantic retrieval. This is
 intentional for durable proposals. Answer policies can use broader recall while

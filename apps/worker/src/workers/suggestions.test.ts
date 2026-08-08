@@ -787,6 +787,7 @@ describe('processSuggestionJobForTests', () => {
       items: [
         {
           rawEventId,
+          surfaceKey: 'ingest_webhook:legacy',
           surface: 'Webhook',
           source: 'ingest_webhook',
           role: 'core',
@@ -812,6 +813,7 @@ describe('processSuggestionJobForTests', () => {
         },
         {
           rawEventId: supportRawEventId,
+          surfaceKey: 'email',
           surface: 'Email',
           source: 'email',
           role: 'supporting',

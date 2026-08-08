@@ -717,9 +717,10 @@ _Avoid_: Team, approvers
 
 **Source Surface**:
 The source family a person recognizes, such as Slack, email, meetings, GitHub,
-Monday, or one named generic webhook. Several event types from one provider are
-one surface. A pack is cross-source only when selected citations span at least
-two surfaces.
+Monday, or one immutable generic-webhook identity. Several event types from one
+provider are one surface. Webhook names are display labels only; legacy webhook
+rows without IDs collapse conservatively into one surface. A pack is
+cross-source only when selected citations span at least two surfaces.
 _Avoid_: Event type, ingestion path, integration category
 
 **Conversation Review**:

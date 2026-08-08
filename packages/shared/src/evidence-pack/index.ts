@@ -60,6 +60,7 @@ export interface EvidenceRelationshipSignal {
 
 export interface EvidencePackItem {
   rawEventId: string;
+  surfaceKey: string;
   surface: string;
   source: string;
   role: EvidencePackRole;
@@ -216,6 +217,18 @@ export function evidenceSurface(source: string, sourceMetadata: unknown): string
   return labels[source] ?? source;
 }
 
+function evidenceSurfaceKey(source: string, sourceMetadata: unknown): string {
+  if (source === 'ingest_webhook') {
+    const webhookId = metadataString(sourceMetadata, 'ingest_webhook_id');
+    if (webhookId) return `ingest_webhook:${webhookId}`;
+    return 'ingest_webhook:legacy';
+  }
+  if (source === 'integration') {
+    return `integration:${metadataString(sourceMetadata, 'provider') ?? 'unknown'}`;
+  }
+  return source;
+}
+
 function evidenceVisibility(event: {
   visibility: VisibilityEnvelope['visibility'];
   visibilityOwnerUserId: string | null;
@@ -309,6 +322,7 @@ function fingerprintFor(pack: Omit<EvidencePack, 'fingerprint'>): string {
     items: pack.items.map((item) => ({
       rawEventId: item.rawEventId,
       role: item.role,
+      surfaceKey: item.surfaceKey,
       surface: item.surface,
       contentFingerprint: item.contentFingerprint,
       occurredAt: item.occurredAt.toISOString(),
@@ -434,6 +448,7 @@ export async function buildEvidencePack(
     return [
       {
         rawEventId: event.id,
+        surfaceKey: evidenceSurfaceKey(event.source, event.sourceMetadata),
         surface: evidenceSurface(event.source, event.sourceMetadata),
         source: event.source,
         role: core ? ('core' as const) : ('supporting' as const),
@@ -480,7 +495,7 @@ export async function buildEvidencePack(
       Number(b.relationshipSignals.some((signal) => signal.authoritative)) -
       Number(a.relationshipSignals.some((signal) => signal.authoritative));
     const diversity =
-      Number(!selectedSurfaces.has(b.surface)) - Number(!selectedSurfaces.has(a.surface));
+      Number(!selectedSurfaces.has(b.surfaceKey)) - Number(!selectedSurfaces.has(a.surfaceKey));
     const semantic =
       (semanticScores.get(b.rawEventId) ??
         Number(b.relationshipSignals.some((signal) => signal.kind === 'semantic_retrieval'))) -
@@ -507,7 +522,7 @@ export async function buildEvidencePack(
     const selectedSurfaces = new Set(perSurface.keys());
     remaining.sort((a, b) => compareSupporting(a, b, selectedSurfaces));
     const eligibleIndex = remaining.findIndex(
-      (item) => (perSurface.get(item.surface) ?? 0) < policy.maxSupportingEventsPerSurface,
+      (item) => (perSurface.get(item.surfaceKey) ?? 0) < policy.maxSupportingEventsPerSurface,
     );
     if (eligibleIndex < 0) break;
     const [item] = remaining.splice(eligibleIndex, 1);
@@ -517,7 +532,7 @@ export async function buildEvidencePack(
       tokenBudgetOmissionCount += 1;
       continue;
     }
-    const count = perSurface.get(item.surface) ?? 0;
+    const count = perSurface.get(item.surfaceKey) ?? 0;
     selectedSupporting.push({
       ...item,
       rankReasons: [
@@ -529,7 +544,7 @@ export async function buildEvidencePack(
       ],
     });
     estimatedTokens += itemTokens;
-    perSurface.set(item.surface, count + 1);
+    perSurface.set(item.surfaceKey, count + 1);
   }
 
   const omissionReasons: Record<string, number> = {};
@@ -539,7 +554,7 @@ export async function buildEvidencePack(
   if (excludedByVisibility > 0) omissionReasons.visibility = excludedByVisibility;
   if (emptySupportingCount > 0) omissionReasons.empty_content = emptySupportingCount;
   const surfaceLimitCount = remaining.filter(
-    (item) => (perSurface.get(item.surface) ?? 0) >= policy.maxSupportingEventsPerSurface,
+    (item) => (perSurface.get(item.surfaceKey) ?? 0) >= policy.maxSupportingEventsPerSurface,
   ).length;
   if (surfaceLimitCount > 0) omissionReasons.surface_limit = surfaceLimitCount;
   const supportingLimitCount = remaining.length - surfaceLimitCount;
@@ -557,7 +572,7 @@ export async function buildEvidencePack(
   const metrics: EvidencePackMetrics = {
     candidateCount: rawItems.length,
     selectedCount: selected.length,
-    surfaceCount: new Set(selected.map((item) => item.surface)).size,
+    surfaceCount: new Set(selected.map((item) => item.surfaceKey)).size,
     estimatedTokens,
     truncated: Object.keys(omissionReasons).length > 0 || selected.some((item) => item.truncated),
     omissionReasons,

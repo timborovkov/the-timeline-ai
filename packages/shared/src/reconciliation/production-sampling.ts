@@ -322,7 +322,10 @@ export function summarizeProductionSamplingEvidencePacks(
   const shadowEligible = shadowAttempts.filter(
     (sample) =>
       (sample.errorReason === undefined || sample.errorReason === null) &&
-      (sample.eligible ?? true),
+      (sample.eligible ?? true) &&
+      sample.sampledAt !== undefined &&
+      sample.teamKey !== undefined &&
+      sample.scenarioFamily !== undefined,
   );
   const populationFingerprints = shadowAttempts
     .map((sample) =>

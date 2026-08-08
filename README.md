@@ -260,12 +260,15 @@ TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-pr
 # unconfirmed fixture-candidate counts for release review. Add --team=<uuid>
 # to persist the report as a Team → Reconciliation eval run.
 # Evidence-pack sample files may be a JSON array or {"samples": [...]} and must
-# contain content-free counts, mode/version metadata, latency, date, team key,
-# and scenario family. Supplying samples without at least one explicit required
-# scenario is rejected so an empty scenario policy cannot accidentally pass.
-# Promotion health, latency, and error gates use shadow attempts only. Failed
-# attempts never count as eligible, even if an export marks them eligible, and
-# sample counts must satisfy surfaceCount <= selectedCount <= candidateCount.
+# contain content-free counts, mode/version metadata, and latency. Every attempt
+# counted as eligible must also carry its own date, team key, and scenario
+# family; incomplete attempts remain in health/error metrics but cannot advance
+# promotion. Supplying samples without at least one explicit required scenario
+# is rejected so an empty scenario policy cannot accidentally pass.
+# Promotion health, latency, and error gates use shadow attempts only. Failed or
+# provenance-incomplete attempts never count as eligible, even if an
+# export marks them eligible, and sample counts must satisfy
+# surfaceCount <= selectedCount <= candidateCount.
 # Loaded aggregate reports must also satisfy crossSource <= eligible <= sample,
 # matching error totals/rates, and ordered aggregate pack counts before they can
 # merge. When a prior report and fresh sample file are supplied together, their

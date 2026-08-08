@@ -194,7 +194,7 @@ describe('processExtractJobForTests', () => {
       expect.objectContaining({
         rawEventId,
         role: 'related_context',
-        strength: 'semantic',
+        strength: 'hard',
         visibilityFloor: 'team',
       }),
     ]);

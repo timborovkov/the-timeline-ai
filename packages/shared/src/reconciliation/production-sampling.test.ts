@@ -437,6 +437,46 @@ describe('production reconciliation sampling report', () => {
     });
   });
 
+  it('requires complete provenance on every eligible shadow attempt', () => {
+    const complete = {
+      attemptId: 'complete-provenance',
+      mode: 'shadow' as const,
+      version: 'evidence-pack-v1',
+      policyVersion: 'proposal-v1',
+      candidateCount: 4,
+      selectedCount: 2,
+      surfaceCount: 2,
+      estimatedTokens: 400,
+      buildDurationMs: 100,
+      truncated: false,
+      sampledAt: '2026-07-01T10:00:00.000Z',
+      teamKey: 'team-1',
+      scenarioFamily: 'customer_project',
+      eligible: true,
+    };
+    const missingDate = { ...complete, attemptId: 'missing-date' };
+    const missingTeam = { ...complete, attemptId: 'missing-team' };
+    const missingScenario = { ...complete, attemptId: 'missing-scenario' };
+    Reflect.deleteProperty(missingDate, 'sampledAt');
+    Reflect.deleteProperty(missingTeam, 'teamKey');
+    Reflect.deleteProperty(missingScenario, 'scenarioFamily');
+    const health = summarizeProductionSamplingEvidencePacks([
+      complete,
+      missingDate,
+      missingTeam,
+      missingScenario,
+    ]);
+
+    expect(health).toMatchObject({
+      sampleCount: 4,
+      shadowEligibleSampleCount: 1,
+      crossSourceSampleCount: 1,
+      shadowDays: ['2026-07-01'],
+      shadowTeamKeys: ['team-1'],
+      scenarioFamilies: ['customer_project'],
+    });
+  });
+
   it('rejects impossible evidence-pack count relationships', () => {
     const sample = {
       attemptId: 'impossible-counts',

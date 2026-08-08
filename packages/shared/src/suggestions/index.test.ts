@@ -824,6 +824,79 @@ describe('suggestion scope', () => {
     );
   });
 
+  it('locks a task target before its due-date mirror evidence row', async () => {
+    const transactionQueries: Parameters<Transaction['query']>[] = [];
+    const runTransaction = pg.transaction.bind(pg);
+    const transaction = vi
+      .spyOn(pg, 'transaction')
+      .mockImplementation(<T>(callback: (tx: Transaction) => Promise<T>) =>
+        runTransaction(async (tx) => {
+          const query = vi.spyOn(tx, 'query');
+          try {
+            return await callback(tx);
+          } finally {
+            transactionQueries.push(...query.mock.calls);
+            query.mockRestore();
+          }
+        }),
+      );
+    const observedDb = drizzle(pg);
+    const scope = withTeam(observedDb as never, TEAM_ID, USER_ID);
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Prepare due-date review',
+      dueAt: new Date('2026-08-12T10:00:00.000Z'),
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const mirror = await pg.query<{ start_at_raw_event_id: string }>(
+      `SELECT start_at_raw_event_id::text
+       FROM calendar_events
+       WHERE team_id = '${TEAM_ID}'
+         AND metadata ->> 'entity_id' = '${task.id}'`,
+    );
+    const evidenceRawEventId = mirror.rows[0]?.start_at_raw_event_id ?? '';
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Move task from its calendar mirror',
+      dedupeKey: 'task-due-date-mirror-lock-order',
+      metadata: { evidence_pack_fingerprint: 'a'.repeat(64) },
+      evidence: [{ rawEventId: evidenceRawEventId }],
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'task',
+          targetId: task.id,
+          title: 'Move due date',
+          dedupeKey: 'task-due-date-mirror-lock-order:item',
+          proposedPayload: { dueAt: '2026-08-13T10:00:00.000Z' },
+          evidenceRawEventIds: [evidenceRawEventId],
+        },
+      ],
+    });
+    transactionQueries.length = 0;
+
+    await scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '');
+
+    const entityLockIndex = transactionQueries.findIndex(
+      ([statement, params]) =>
+        typeof statement === 'string' &&
+        statement.includes('from "entities"') &&
+        statement.includes('for update') &&
+        params?.includes(task.id),
+    );
+    const evidenceLockIndex = transactionQueries.findIndex(
+      ([statement, params]) =>
+        typeof statement === 'string' &&
+        statement.includes('from "raw_events"') &&
+        statement.includes('for update') &&
+        params?.includes(evidenceRawEventId),
+    );
+    transaction.mockRestore();
+    expect(entityLockIndex).toBeGreaterThanOrEqual(0);
+    expect(evidenceLockIndex).toBeGreaterThanOrEqual(0);
+    expect(entityLockIndex).toBeLessThan(evidenceLockIndex);
+  });
+
   it('rejects a proposal when evidence changes after its snapshot was built', async () => {
     const occurredAt = new Date('2026-08-12T10:00:00.000Z');
     await db.insert(rawEvents).values({
