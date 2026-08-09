@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { WriteProductionSamplingEvalReportInput } from '@timeline/shared/reconciliation/production-sampling';
+
 import {
   parseArgs,
   ReconciliationProductionSamplingUsageError,
@@ -27,7 +29,109 @@ describe('reconciliation production sampling script', () => {
         { caseName: 'customer-project-email', packetFingerprint: 'abc123' },
         { caseName: 'incident-response', packetFingerprint: 'def456' },
       ],
+      evidencePackSamplePaths: [],
+      requiredEvidencePackScenarioFamilies: [],
     });
+  });
+
+  it('passes redacted evidence-pack samples and required promotion scenarios', async () => {
+    const sample = {
+      mode: 'shadow' as const,
+      version: 'evidence-pack-v1',
+      policyVersion: 'proposal-v1',
+      candidateCount: 2,
+      selectedCount: 2,
+      surfaceCount: 2,
+      estimatedTokens: 200,
+      buildDurationMs: 50,
+      truncated: false,
+    };
+    const writeReport = vi.fn().mockResolvedValue({
+      path: '/tmp/report.json',
+      report: {
+        runKind: 'closed_beta',
+        manifestCount: 1,
+        sampleCount: 1,
+        passedCount: 1,
+        failedCount: 0,
+        passRate: 1,
+        fixtureCandidateCount: 0,
+        confirmedFixtureCandidateCount: 0,
+        unconfirmedFixtureCandidateCount: 0,
+      },
+      loaded: { ignoredFiles: [] },
+    });
+    const loadEvidencePackSamples = vi.fn().mockResolvedValue([sample]);
+
+    await runReconciliationProductionSamplingCli(
+      parseArgs([
+        '--input=/tmp/run',
+        '--out=/tmp/report.json',
+        '--run-kind=closed_beta',
+        '--evidence-pack-samples=/tmp/redacted-pack-samples.json',
+        '--required-evidence-scenario=generic_webhook',
+      ]),
+      { writeReport, loadEvidencePackSamples, write: () => undefined },
+    );
+
+    expect(loadEvidencePackSamples).toHaveBeenCalledWith(['/tmp/redacted-pack-samples.json']);
+    expect(writeReport).toHaveBeenCalledWith({
+      inputPaths: ['/tmp/run'],
+      outputPath: '/tmp/report.json',
+      runKind: 'closed_beta',
+      confirmedFixtureCandidates: [],
+      evidencePackSamples: [sample],
+      requiredEvidencePackScenarioFamilies: ['generic_webhook'],
+    });
+  });
+
+  it('requires explicit scenario coverage when promotion samples are supplied', () => {
+    expect(() =>
+      parseArgs([
+        '--input=/tmp/run',
+        '--out=/tmp/report.json',
+        '--evidence-pack-samples=/tmp/redacted-pack-samples.json',
+      ]),
+    ).toThrow('require at least one --required-evidence-scenario');
+  });
+
+  it('passes an explicitly supplied empty evidence-pack sample set', async () => {
+    const writeReport = vi.fn().mockResolvedValue({
+      path: '/tmp/report.json',
+      report: {
+        runKind: 'closed_beta',
+        manifestCount: 0,
+        sampleCount: 0,
+        passedCount: 0,
+        failedCount: 0,
+        passRate: null,
+        fixtureCandidateCount: 0,
+        confirmedFixtureCandidateCount: 0,
+        unconfirmedFixtureCandidateCount: 0,
+        evidencePackPromotion: { ready: false, blockerCodes: ['shadow_sample_floor'] },
+      },
+      loaded: { ignoredFiles: [] },
+    });
+    const setExitCode = vi.fn();
+
+    await runReconciliationProductionSamplingCli(
+      parseArgs([
+        '--input=/tmp/run',
+        '--out=/tmp/report.json',
+        '--fail-on-failures',
+        '--evidence-pack-samples=/tmp/empty-pack-samples.json',
+        '--required-evidence-scenario=generic_webhook',
+      ]),
+      {
+        writeReport,
+        loadEvidencePackSamples: vi.fn().mockResolvedValue([]),
+        write: () => undefined,
+        setExitCode,
+      },
+    );
+
+    expect(writeReport).toHaveBeenCalledWith(expect.objectContaining({ evidencePackSamples: [] }));
+    expect(setExitCode).toHaveBeenCalledWith(1);
   });
 
   it('throws a typed usage error for invalid run kinds', () => {
@@ -100,7 +204,7 @@ describe('reconciliation production sampling script', () => {
     });
   });
 
-  it('passes the database and team when dashboard ingestion is requested', async () => {
+  it('passes a team-scoped persistence callback when dashboard ingestion is requested', async () => {
     const writes: string[] = [];
     const db = {} as never;
     const writeReport = vi.fn().mockResolvedValue({
@@ -134,18 +238,51 @@ describe('reconciliation production sampling script', () => {
       },
     );
 
-    expect(writeReport).toHaveBeenCalledWith({
+    const reportInput = writeReport.mock.calls[0]?.[0] as
+      | WriteProductionSamplingEvalReportInput
+      | undefined;
+    expect(reportInput).toMatchObject({
       inputPaths: ['/tmp/run'],
       outputPath: '/tmp/report.json',
       runKind: 'post_deploy',
       confirmedFixtureCandidates: [],
-      teamId: '11111111-1111-4111-8111-111111111111',
-      db,
     });
+    expect(typeof reportInput?.persistReport).toBe('function');
     expect(JSON.parse(writes[0] ?? '{}')).toMatchObject({
       runId: 'production-sampling-run-1',
       failedCount: 0,
       unconfirmedFixtureCandidateCount: 0,
     });
+  });
+
+  it('sets exit code when promotion gates are blocked even if eval samples pass', async () => {
+    const exitCodes: number[] = [];
+    const writeReport = vi.fn().mockResolvedValue({
+      path: '/tmp/report.json',
+      report: {
+        runKind: 'closed_beta',
+        manifestCount: 1,
+        sampleCount: 1,
+        passedCount: 1,
+        failedCount: 0,
+        passRate: 1,
+        fixtureCandidateCount: 0,
+        confirmedFixtureCandidateCount: 0,
+        unconfirmedFixtureCandidateCount: 0,
+        evidencePackPromotion: { ready: false, blockerCodes: ['shadow_sample_floor'] },
+      },
+      loaded: { ignoredFiles: [] },
+    });
+
+    await runReconciliationProductionSamplingCli(
+      parseArgs(['--input=/tmp/run', '--out=/tmp/report.json', '--fail-on-failures']),
+      {
+        writeReport,
+        write: () => undefined,
+        setExitCode: (code) => exitCodes.push(code),
+      },
+    );
+
+    expect(exitCodes).toEqual([1]);
   });
 });

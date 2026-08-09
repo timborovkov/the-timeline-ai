@@ -1,8 +1,6 @@
 import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { type Db, reconciliationRuns } from '@timeline/db';
-
 import type { LiveEvalArtifact, LiveEvalRunManifest } from '#src/reconciliation/live-artifacts.js';
 
 import { summarizeLiveEvalManifestCases } from '#src/reconciliation/live-artifact-manifest-summary.js';
@@ -23,6 +21,68 @@ export interface ProductionSamplingEvalReportInput {
   runKind?: ProductionSamplingRunKind;
   latencies?: ProductionSamplingLatency[];
   confirmedFixtureCandidates?: { caseName: string; packetFingerprint: string }[];
+  evidencePackSamples?: ProductionSamplingEvidencePackSample[];
+  requiredEvidencePackScenarioFamilies?: string[];
+}
+
+export interface ProductionSamplingEvidencePackSample {
+  attemptId?: string;
+  mode: 'off' | 'shadow' | 'enforced';
+  version: string;
+  policyVersion: string;
+  candidateCount: number;
+  selectedCount: number;
+  surfaceCount: number;
+  estimatedTokens: number;
+  buildDurationMs: number;
+  truncated: boolean;
+  invalidCitationCount?: number;
+  falseLinkReviewOutcome?: 'confirmed' | 'rejected' | 'unreviewed';
+  errorReason?: string | null;
+  sampledAt?: string;
+  teamKey?: string;
+  scenarioFamily?: string;
+  eligible?: boolean;
+  rankingModelCallCount?: number;
+  ambiguousLinkCount?: number;
+  visibilityViolationCount?: number;
+  authorityViolationCount?: number;
+}
+
+export interface ProductionSamplingEvidencePackHealth {
+  populationFingerprints?: string[];
+  sampleCount: number;
+  errorCount: number;
+  errorRate: number | null;
+  invalidCitationCount: number;
+  confirmedFalseLinkCount: number;
+  truncatedCount: number;
+  candidateCount: number;
+  selectedCount: number;
+  surfaceCount: number;
+  estimatedTokens: number;
+  latencyDistribution: { latencyMs: number; count: number }[];
+  latencyP50Ms: number | null;
+  latencyP95Ms: number | null;
+  latencyP99Ms: number | null;
+  modes: string[];
+  versions: string[];
+  policyVersions: string[];
+  errorReasons: Record<string, number>;
+  shadowEligibleSampleCount: number;
+  crossSourceSampleCount: number;
+  rankingModelCallCount: number;
+  ambiguousLinkCount: number;
+  visibilityViolationCount: number;
+  authorityViolationCount: number;
+  shadowDays: string[];
+  shadowTeamKeys: string[];
+  scenarioFamilies: string[];
+}
+
+export interface ProductionSamplingEvidencePackPromotion {
+  ready: boolean;
+  blockerCodes: string[];
 }
 
 export interface ProductionSamplingIgnoredArtifactFile {
@@ -48,8 +108,7 @@ export interface WriteProductionSamplingEvalReportInput extends Omit<
   inputPaths: string[];
   outputPath: string;
   generatedAt?: string;
-  db?: DbOrTx;
-  teamId?: string;
+  persistReport?: (input: RecordProductionSamplingEvalReportInput) => Promise<string>;
 }
 
 export interface WrittenProductionSamplingEvalReport {
@@ -104,20 +163,18 @@ export interface ProductionSamplingEvalReport {
   confirmedFixtureCandidateCount: number;
   unconfirmedFixtureCandidateCount: number;
   fixtureCandidates: ProductionSamplingFixtureCandidate[];
+  requiredEvidencePackScenarioFamilies?: string[];
+  evidencePackHealth?: ProductionSamplingEvidencePackHealth;
+  evidencePackPromotion?: ProductionSamplingEvidencePackPromotion;
 }
 
 export interface RecordProductionSamplingEvalReportInput {
-  db: DbOrTx;
-  teamId: string;
   report: ProductionSamplingEvalReport;
   outputPath?: string;
   ignoredFiles?: ProductionSamplingIgnoredArtifactFile[];
 }
 
-type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
-type DbOrTx = Db | DbTx;
-
-const PRODUCTION_SAMPLING_RUN_ENGINE_VERSION = 'production-sampling-report-v2';
+export const PRODUCTION_SAMPLING_RUN_ENGINE_VERSION = 'production-sampling-report-v2';
 
 interface ClassifiedSample {
   artifact: LiveEvalArtifact;
@@ -182,7 +239,7 @@ export function buildProductionSamplingEvalReport(
     (candidate) => candidate.confirmed,
   ).length;
 
-  return {
+  const report: ProductionSamplingEvalReport = {
     schemaVersion: 2,
     runKind: input.runKind ?? 'manual',
     generatedAt: input.generatedAt,
@@ -209,7 +266,240 @@ export function buildProductionSamplingEvalReport(
     confirmedFixtureCandidateCount,
     unconfirmedFixtureCandidateCount: fixtureCandidates.length - confirmedFixtureCandidateCount,
     fixtureCandidates,
+    requiredEvidencePackScenarioFamilies: uniqueSorted(
+      input.requiredEvidencePackScenarioFamilies ?? [],
+    ),
   };
+  if (input.evidencePackSamples !== undefined) {
+    report.evidencePackHealth = summarizeProductionSamplingEvidencePacks(input.evidencePackSamples);
+    report.evidencePackPromotion = assessEvidencePackPromotion(
+      report,
+      input.requiredEvidencePackScenarioFamilies ?? [],
+    );
+  }
+  return report;
+}
+
+export function summarizeProductionSamplingEvidencePacks(
+  samples: readonly ProductionSamplingEvidencePackSample[],
+): ProductionSamplingEvidencePackHealth {
+  const shadowAttempts = samples.filter((sample) => sample.mode === 'shadow');
+  if (shadowAttempts.some((sample) => !hasConsistentEvidencePackCounts(sample))) {
+    throw new Error(
+      'Evidence-pack sampling counts must satisfy surfaceCount <= selectedCount <= candidateCount',
+    );
+  }
+  const explicitAttemptIds = shadowAttempts.flatMap((sample) => sample.attemptId ?? []);
+  if (new Set(explicitAttemptIds).size !== explicitAttemptIds.length) {
+    throw new Error('Evidence-pack sampling contains duplicate attempt IDs');
+  }
+  const legacyAttemptFingerprints = shadowAttempts.flatMap((sample) =>
+    sample.attemptId
+      ? []
+      : [
+          stableSha256Digest({
+            mode: sample.mode,
+            version: sample.version,
+            policyVersion: sample.policyVersion,
+            sampledAt: sample.sampledAt ?? null,
+            teamKey: sample.teamKey ?? null,
+          }),
+        ],
+  );
+  if (new Set(legacyAttemptFingerprints).size !== legacyAttemptFingerprints.length) {
+    throw new Error('Evidence-pack sampling contains duplicate legacy attempt identities');
+  }
+  const latencies = shadowAttempts.map((sample) => sample.buildDurationMs).sort((a, b) => a - b);
+  const latencyDistribution = buildLatencyDistribution(latencies);
+  const errors = shadowAttempts.filter(
+    (sample) => sample.errorReason !== undefined && sample.errorReason !== null,
+  );
+  const errorReasons: Record<string, number> = {};
+  for (const sample of errors) {
+    const reason = sample.errorReason ?? 'unknown';
+    errorReasons[reason] = (errorReasons[reason] ?? 0) + 1;
+  }
+  const shadowEligible = shadowAttempts.filter(
+    (sample) =>
+      (sample.errorReason === undefined || sample.errorReason === null) &&
+      (sample.eligible ?? true) &&
+      sample.sampledAt !== undefined &&
+      sample.teamKey !== undefined &&
+      sample.scenarioFamily !== undefined,
+  );
+  const populationFingerprints = shadowAttempts
+    .map((sample) =>
+      stableSha256Digest(
+        sample.attemptId
+          ? { attemptId: sample.attemptId }
+          : {
+              mode: sample.mode,
+              version: sample.version,
+              policyVersion: sample.policyVersion,
+              sampledAt: sample.sampledAt ?? null,
+              teamKey: sample.teamKey ?? null,
+            },
+      ),
+    )
+    .sort();
+  return {
+    populationFingerprints,
+    sampleCount: shadowAttempts.length,
+    errorCount: errors.length,
+    errorRate: shadowAttempts.length > 0 ? errors.length / shadowAttempts.length : null,
+    invalidCitationCount: shadowAttempts.reduce(
+      (total, sample) => total + (sample.invalidCitationCount ?? 0),
+      0,
+    ),
+    confirmedFalseLinkCount: shadowAttempts.filter(
+      (sample) => sample.falseLinkReviewOutcome === 'confirmed',
+    ).length,
+    truncatedCount: shadowAttempts.filter((sample) => sample.truncated).length,
+    candidateCount: shadowAttempts.reduce((total, sample) => total + sample.candidateCount, 0),
+    selectedCount: shadowAttempts.reduce((total, sample) => total + sample.selectedCount, 0),
+    surfaceCount: shadowAttempts.reduce((total, sample) => total + sample.surfaceCount, 0),
+    estimatedTokens: shadowAttempts.reduce((total, sample) => total + sample.estimatedTokens, 0),
+    latencyDistribution,
+    latencyP50Ms: percentileFromLatencyDistribution(latencyDistribution, 0.5),
+    latencyP95Ms: percentileFromLatencyDistribution(latencyDistribution, 0.95),
+    latencyP99Ms: percentileFromLatencyDistribution(latencyDistribution, 0.99),
+    modes: uniqueSorted(samples.map((sample) => sample.mode)),
+    versions: uniqueSorted(shadowAttempts.map((sample) => sample.version)),
+    policyVersions: uniqueSorted(shadowAttempts.map((sample) => sample.policyVersion)),
+    errorReasons,
+    shadowEligibleSampleCount: shadowEligible.length,
+    crossSourceSampleCount: shadowEligible.filter((sample) => sample.surfaceCount > 1).length,
+    rankingModelCallCount: shadowAttempts.reduce(
+      (total, sample) => total + (sample.rankingModelCallCount ?? 0),
+      0,
+    ),
+    ambiguousLinkCount: shadowAttempts.reduce(
+      (total, sample) => total + (sample.ambiguousLinkCount ?? 0),
+      0,
+    ),
+    visibilityViolationCount: shadowAttempts.reduce(
+      (total, sample) => total + (sample.visibilityViolationCount ?? 0),
+      0,
+    ),
+    authorityViolationCount: shadowAttempts.reduce(
+      (total, sample) => total + (sample.authorityViolationCount ?? 0),
+      0,
+    ),
+    shadowDays: uniqueSorted(
+      shadowEligible.flatMap((sample) => {
+        const day = sample.sampledAt?.slice(0, 10);
+        return day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? [day] : [];
+      }),
+    ),
+    shadowTeamKeys: uniqueSorted(shadowEligible.flatMap((sample) => sample.teamKey ?? [])),
+    scenarioFamilies: uniqueSorted(shadowEligible.flatMap((sample) => sample.scenarioFamily ?? [])),
+  };
+}
+
+export function parseProductionSamplingEvidencePackSamples(
+  value: unknown,
+): ProductionSamplingEvidencePackSample[] {
+  const record = asRecord(value);
+  const samples = Array.isArray(value) ? value : record?.samples;
+  if (!Array.isArray(samples) || !samples.every(isProductionSamplingEvidencePackSample)) {
+    throw new TypeError('Expected an evidence-pack sample array or an object containing samples');
+  }
+  return samples;
+}
+
+export function assessEvidencePackPromotion(
+  report: Pick<ProductionSamplingEvalReport, 'passRate' | 'totals' | 'evidencePackHealth'>,
+  requiredScenarioFamilies: readonly string[] = [],
+): ProductionSamplingEvidencePackPromotion {
+  const health = report.evidencePackHealth;
+  const blockers: string[] = [];
+  if (report.passRate !== 1) blockers.push('fixture_failure');
+  if (!health || health.shadowEligibleSampleCount < 200) blockers.push('shadow_sample_floor');
+  if (!health || longestConsecutiveDayStreak(health.shadowDays) < 7) {
+    blockers.push('shadow_day_floor');
+  }
+  if (!health || health.shadowTeamKeys.length < 3) blockers.push('shadow_team_floor');
+  if (!health || health.crossSourceSampleCount < 25) blockers.push('cross_source_sample_floor');
+  if (health?.versions.length !== 1) blockers.push('pack_version_mixed');
+  if (health?.policyVersions.length !== 1) blockers.push('pack_policy_version_mixed');
+  if (requiredScenarioFamilies.length === 0) blockers.push('scenario_policy_missing');
+  if (
+    !health ||
+    requiredScenarioFamilies.some((family) => !health.scenarioFamilies.includes(family))
+  ) {
+    blockers.push('scenario_coverage');
+  }
+  if (
+    report.totals.citationFailures > 0 ||
+    report.totals.visibilityFailures > 0 ||
+    report.totals.authorityPolicyViolations > 0 ||
+    (health?.invalidCitationCount ?? 0) > 0 ||
+    (health?.confirmedFalseLinkCount ?? 0) > 0 ||
+    (health?.ambiguousLinkCount ?? 0) > 0 ||
+    (health?.visibilityViolationCount ?? 0) > 0 ||
+    (health?.authorityViolationCount ?? 0) > 0
+  ) {
+    blockers.push('safety_violation');
+  }
+  if ((health?.rankingModelCallCount ?? 0) > 0) blockers.push('ranking_model_call');
+  if ((health?.latencyP95Ms ?? Number.POSITIVE_INFINITY) >= 1_000) {
+    blockers.push('pack_latency_p95');
+  }
+  if ((health?.errorRate ?? Number.POSITIVE_INFINITY) >= 0.01) {
+    blockers.push('pack_error_rate');
+  }
+  return { ready: blockers.length === 0, blockerCodes: uniqueSorted(blockers) };
+}
+
+function longestConsecutiveDayStreak(days: readonly string[]): number {
+  let longest = 0;
+  let current = 0;
+  let previous: number | null = null;
+  for (const day of uniqueSorted([...days])) {
+    const timestamp = Date.parse(`${day}T00:00:00.000Z`);
+    if (!Number.isFinite(timestamp)) continue;
+    current = previous !== null && timestamp - previous === 86_400_000 ? current + 1 : 1;
+    longest = Math.max(longest, current);
+    previous = timestamp;
+  }
+  return longest;
+}
+
+function buildLatencyDistribution(
+  latencies: readonly number[],
+): ProductionSamplingEvidencePackHealth['latencyDistribution'] {
+  const counts = new Map<number, number>();
+  for (const latency of latencies) counts.set(latency, (counts.get(latency) ?? 0) + 1);
+  return [...counts.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([latencyMs, count]) => ({ latencyMs, count }));
+}
+
+function mergeLatencyDistributions(
+  distributions: readonly ProductionSamplingEvidencePackHealth['latencyDistribution'][],
+): ProductionSamplingEvidencePackHealth['latencyDistribution'] {
+  const counts = new Map<number, number>();
+  for (const bucket of distributions.flat()) {
+    counts.set(bucket.latencyMs, (counts.get(bucket.latencyMs) ?? 0) + bucket.count);
+  }
+  return [...counts.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([latencyMs, count]) => ({ latencyMs, count }));
+}
+
+function percentileFromLatencyDistribution(
+  distribution: readonly { latencyMs: number; count: number }[],
+  quantile: number,
+): number | null {
+  const sampleCount = distribution.reduce((total, bucket) => total + bucket.count, 0);
+  if (sampleCount === 0) return null;
+  const target = Math.max(1, Math.ceil(sampleCount * quantile));
+  let cumulativeCount = 0;
+  for (const bucket of distribution) {
+    cumulativeCount += bucket.count;
+    if (cumulativeCount >= target) return bucket.latencyMs;
+  }
+  return distribution.at(-1)?.latencyMs ?? null;
 }
 
 export async function loadProductionSamplingEvalArtifacts(
@@ -251,19 +541,45 @@ export async function writeProductionSamplingEvalReport(
     reportInput.confirmedFixtureCandidates = input.confirmedFixtureCandidates;
   }
   const report = buildProductionSamplingReportFromLoaded(reportInput);
+  const requiredEvidencePackScenarioFamilies = uniqueSorted(
+    input.requiredEvidencePackScenarioFamilies ??
+      loaded.reports.flatMap(
+        (loadedReport) => loadedReport.requiredEvidencePackScenarioFamilies ?? [],
+      ),
+  );
+  report.requiredEvidencePackScenarioFamilies = requiredEvidencePackScenarioFamilies;
+  if (input.evidencePackSamples) {
+    report.evidencePackHealth = mergeEvidencePackHealth([
+      ...(report.evidencePackHealth ? [report.evidencePackHealth] : []),
+      summarizeProductionSamplingEvidencePacks(input.evidencePackSamples),
+    ]);
+  }
+  const hasEvidencePackAssessment =
+    input.evidencePackSamples !== undefined ||
+    loaded.reports.some(
+      (loadedReport) =>
+        loadedReport.evidencePackHealth !== undefined ||
+        loadedReport.evidencePackPromotion !== undefined ||
+        (loadedReport.requiredEvidencePackScenarioFamilies?.length ?? 0) > 0,
+    );
+  if (hasEvidencePackAssessment) {
+    report.evidencePackPromotion = assessEvidencePackPromotion(
+      report,
+      requiredEvidencePackScenarioFamilies,
+    );
+  } else {
+    delete report.evidencePackPromotion;
+  }
   const outputPath = path.resolve(input.outputPath);
   await mkdir(path.dirname(outputPath), { recursive: true });
   await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
-  const runId =
-    input.db && input.teamId
-      ? await recordProductionSamplingEvalReport({
-          db: input.db,
-          teamId: input.teamId,
-          report,
-          outputPath,
-          ignoredFiles: loaded.ignoredFiles,
-        })
-      : undefined;
+  const runId = input.persistReport
+    ? await input.persistReport({
+        report,
+        outputPath,
+        ignoredFiles: loaded.ignoredFiles,
+      })
+    : undefined;
 
   return {
     path: outputPath,
@@ -330,7 +646,7 @@ function mergeProductionSamplingEvalReports(
   const passedCount = sum(reports, (report) => report.passedCount);
   const failedCount = sum(reports, (report) => report.failedCount);
 
-  return {
+  const report: ProductionSamplingEvalReport = {
     schemaVersion: 2,
     runKind: input.runKind,
     generatedAt: input.generatedAt,
@@ -357,47 +673,101 @@ function mergeProductionSamplingEvalReports(
     confirmedFixtureCandidateCount,
     unconfirmedFixtureCandidateCount: fixtureCandidates.length - confirmedFixtureCandidateCount,
     fixtureCandidates,
+    requiredEvidencePackScenarioFamilies: uniqueSorted(
+      reports.flatMap((report) => report.requiredEvidencePackScenarioFamilies ?? []),
+    ),
   };
+  const evidencePackHealth = reports.flatMap((candidate) =>
+    candidate.evidencePackHealth ? [candidate.evidencePackHealth] : [],
+  );
+  if (evidencePackHealth.length > 0) {
+    report.evidencePackHealth = mergeEvidencePackHealth(evidencePackHealth);
+  }
+  if (
+    (report.evidencePackHealth?.versions.length ?? 0) > 0 ||
+    (report.requiredEvidencePackScenarioFamilies?.length ?? 0) > 0
+  ) {
+    report.evidencePackPromotion = assessEvidencePackPromotion(
+      report,
+      report.requiredEvidencePackScenarioFamilies ?? [],
+    );
+  }
+  return report;
 }
 
-export async function recordProductionSamplingEvalReport(
-  input: RecordProductionSamplingEvalReportInput,
-): Promise<string> {
-  const now = new Date(input.report.generatedAt);
-  const completedAt = Number.isNaN(now.getTime()) ? new Date() : now;
-  const metrics = productionSamplingRunMetrics(input);
-  const [run] = await input.db
-    .insert(reconciliationRuns)
-    .values({
-      teamId: input.teamId,
-      trigger: 'eval',
-      scope: `production_sampling:${input.report.runKind}`,
-      status: 'completed',
-      inputFingerprint: productionSamplingRunFingerprint(input.teamId, input.report),
-      engineVersion: PRODUCTION_SAMPLING_RUN_ENGINE_VERSION,
-      modelVersions: input.report.modelVersions,
-      startedAt: completedAt,
-      completedAt,
-      metrics,
-    })
-    .onConflictDoUpdate({
-      target: [
-        reconciliationRuns.teamId,
-        reconciliationRuns.inputFingerprint,
-        reconciliationRuns.engineVersion,
-      ],
-      set: {
-        status: 'completed',
-        startedAt: completedAt,
-        completedAt,
-        errorCode: null,
-        modelVersions: input.report.modelVersions,
-        metrics,
-      },
-    })
-    .returning({ id: reconciliationRuns.id });
-  if (!run) throw new Error('Failed to record production sampling reconciliation run');
-  return run.id;
+function mergeEvidencePackHealth(
+  health: readonly ProductionSamplingEvidencePackHealth[],
+): ProductionSamplingEvidencePackHealth {
+  if (health.length > 1 && health.some((item) => !item.populationFingerprints)) {
+    throw new Error('Cannot merge evidence-pack health without population fingerprints');
+  }
+  const populationFingerprints: string[] = [];
+  const hasPopulationFingerprints = health.every(
+    (item) => item.populationFingerprints !== undefined,
+  );
+  const seenPopulations = new Set<string>();
+  for (const item of health) {
+    for (const fingerprint of item.populationFingerprints ?? []) {
+      if (seenPopulations.has(fingerprint)) {
+        throw new Error('Cannot merge overlapping evidence-pack health populations');
+      }
+      seenPopulations.add(fingerprint);
+      populationFingerprints.push(fingerprint);
+    }
+  }
+  const sampleCount = health.reduce((total, item) => total + item.sampleCount, 0);
+  const errorCount = health.reduce((total, item) => total + item.errorCount, 0);
+  const errorReasons: Record<string, number> = {};
+  for (const item of health) {
+    for (const [reason, count] of Object.entries(item.errorReasons)) {
+      errorReasons[reason] = (errorReasons[reason] ?? 0) + count;
+    }
+  }
+  const latencyDistribution = mergeLatencyDistributions(
+    health.map((item) => item.latencyDistribution),
+  );
+  return {
+    ...(hasPopulationFingerprints ? { populationFingerprints: populationFingerprints.sort() } : {}),
+    sampleCount,
+    errorCount,
+    errorRate: sampleCount > 0 ? errorCount / sampleCount : null,
+    invalidCitationCount: health.reduce((total, item) => total + item.invalidCitationCount, 0),
+    confirmedFalseLinkCount: health.reduce(
+      (total, item) => total + item.confirmedFalseLinkCount,
+      0,
+    ),
+    truncatedCount: health.reduce((total, item) => total + item.truncatedCount, 0),
+    candidateCount: health.reduce((total, item) => total + item.candidateCount, 0),
+    selectedCount: health.reduce((total, item) => total + item.selectedCount, 0),
+    surfaceCount: health.reduce((total, item) => total + item.surfaceCount, 0),
+    estimatedTokens: health.reduce((total, item) => total + item.estimatedTokens, 0),
+    latencyDistribution,
+    latencyP50Ms: percentileFromLatencyDistribution(latencyDistribution, 0.5),
+    latencyP95Ms: percentileFromLatencyDistribution(latencyDistribution, 0.95),
+    latencyP99Ms: percentileFromLatencyDistribution(latencyDistribution, 0.99),
+    modes: uniqueSorted(health.flatMap((item) => item.modes)),
+    versions: uniqueSorted(health.flatMap((item) => item.versions)),
+    policyVersions: uniqueSorted(health.flatMap((item) => item.policyVersions)),
+    errorReasons,
+    shadowEligibleSampleCount: health.reduce(
+      (total, item) => total + item.shadowEligibleSampleCount,
+      0,
+    ),
+    crossSourceSampleCount: health.reduce((total, item) => total + item.crossSourceSampleCount, 0),
+    rankingModelCallCount: health.reduce((total, item) => total + item.rankingModelCallCount, 0),
+    ambiguousLinkCount: health.reduce((total, item) => total + item.ambiguousLinkCount, 0),
+    visibilityViolationCount: health.reduce(
+      (total, item) => total + item.visibilityViolationCount,
+      0,
+    ),
+    authorityViolationCount: health.reduce(
+      (total, item) => total + item.authorityViolationCount,
+      0,
+    ),
+    shadowDays: uniqueSorted(health.flatMap((item) => item.shadowDays)),
+    shadowTeamKeys: uniqueSorted(health.flatMap((item) => item.shadowTeamKeys)),
+    scenarioFamilies: uniqueSorted(health.flatMap((item) => item.scenarioFamilies)),
+  };
 }
 
 function classifySample(input: {
@@ -733,7 +1103,7 @@ function sum<T>(items: T[], value: (item: T) => number): number {
   return items.reduce((total, item) => total + value(item), 0);
 }
 
-function productionSamplingRunMetrics(input: RecordProductionSamplingEvalReportInput) {
+export function productionSamplingRunMetrics(input: RecordProductionSamplingEvalReportInput) {
   const report = input.report;
   return {
     mode: 'production_sampling',
@@ -755,10 +1125,13 @@ function productionSamplingRunMetrics(input: RecordProductionSamplingEvalReportI
     by_ingestion_surface: report.byIngestionSurface,
     by_scenario_family: report.byScenarioFamily,
     totals: report.totals,
+    evidence_pack_health: report.evidencePackHealth ?? null,
+    required_evidence_pack_scenario_families: report.requiredEvidencePackScenarioFamilies ?? [],
+    evidence_pack_promotion: report.evidencePackPromotion ?? null,
   };
 }
 
-function productionSamplingRunFingerprint(
+export function productionSamplingRunFingerprint(
   teamId: string,
   report: ProductionSamplingEvalReport,
 ): string {
@@ -771,6 +1144,8 @@ function productionSamplingRunFingerprint(
     sampleCount: report.sampleCount,
     passedCount: report.passedCount,
     failedCount: report.failedCount,
+    requiredEvidencePackScenarioFamilies: report.requiredEvidencePackScenarioFamilies ?? [],
+    evidencePackPromotion: report.evidencePackPromotion ?? null,
     fixtureCandidates: report.fixtureCandidates.map((candidate) => ({
       caseName: candidate.caseName,
       packetFingerprint: candidate.packetFingerprint,
@@ -911,8 +1286,163 @@ function isProductionSamplingEvalReport(value: unknown): value is ProductionSamp
     isNonNegativeInteger(record.unconfirmedFixtureCandidateCount) &&
     Array.isArray(record.fixtureCandidates) &&
     record.fixtureCandidates.every(isProductionSamplingFixtureCandidate) &&
+    (record.requiredEvidencePackScenarioFamilies === undefined ||
+      isStringArray(record.requiredEvidencePackScenarioFamilies)) &&
+    (record.evidencePackHealth === undefined ||
+      isProductionSamplingEvidencePackHealth(record.evidencePackHealth)) &&
+    (record.evidencePackPromotion === undefined ||
+      isProductionSamplingEvidencePackPromotion(record.evidencePackPromotion)) &&
     hasConsistentProductionSamplingReportSummary(report)
   );
+}
+
+function isProductionSamplingEvidencePackHealth(
+  value: unknown,
+): value is ProductionSamplingEvidencePackHealth {
+  const record = asRecord(value);
+  const nullableNonNegativeNumber = (candidate: unknown) =>
+    candidate === null || (isFiniteNumber(candidate) && candidate >= 0);
+  const latencyDistribution: unknown[] = Array.isArray(record?.latencyDistribution)
+    ? record.latencyDistribution
+    : [];
+  const latencySampleCount = latencyDistribution.reduce<number>((total, bucket) => {
+    const count = asRecord(bucket)?.count;
+    return total + (typeof count === 'number' ? count : 0);
+  }, 0);
+  const hasValidShape =
+    !!record &&
+    [
+      'sampleCount',
+      'errorCount',
+      'invalidCitationCount',
+      'confirmedFalseLinkCount',
+      'truncatedCount',
+      'candidateCount',
+      'selectedCount',
+      'surfaceCount',
+      'estimatedTokens',
+      'shadowEligibleSampleCount',
+      'crossSourceSampleCount',
+      'rankingModelCallCount',
+      'ambiguousLinkCount',
+      'visibilityViolationCount',
+      'authorityViolationCount',
+    ].every((field) => isNonNegativeInteger(record[field])) &&
+    nullableNonNegativeNumber(record.errorRate) &&
+    nullableNonNegativeNumber(record.latencyP50Ms) &&
+    nullableNonNegativeNumber(record.latencyP95Ms) &&
+    nullableNonNegativeNumber(record.latencyP99Ms) &&
+    Array.isArray(record.latencyDistribution) &&
+    latencyDistribution.every(isProductionSamplingLatencyBucket) &&
+    latencySampleCount === record.sampleCount &&
+    (record.populationFingerprints === undefined ||
+      (isStringArray(record.populationFingerprints) &&
+        record.populationFingerprints.length === record.sampleCount &&
+        new Set(record.populationFingerprints).size === record.populationFingerprints.length)) &&
+    isStringArray(record.modes) &&
+    record.modes.every((mode) => ['off', 'shadow', 'enforced'].includes(mode)) &&
+    isStringArray(record.versions) &&
+    isStringArray(record.policyVersions) &&
+    isNonNegativeIntegerRecord(record.errorReasons) &&
+    isStringArray(record.shadowDays) &&
+    isStringArray(record.shadowTeamKeys) &&
+    isStringArray(record.scenarioFamilies);
+  if (!hasValidShape) return false;
+
+  const health = record as unknown as ProductionSamplingEvidencePackHealth;
+  const errorReasonCount = Object.values(health.errorReasons).reduce(
+    (total, count) => total + count,
+    0,
+  );
+  return (
+    health.errorCount <= health.sampleCount &&
+    health.confirmedFalseLinkCount <= health.sampleCount &&
+    health.truncatedCount <= health.sampleCount &&
+    health.shadowEligibleSampleCount <= health.sampleCount &&
+    (health.shadowEligibleSampleCount === 0 || health.modes.includes('shadow')) &&
+    health.crossSourceSampleCount <= health.shadowEligibleSampleCount &&
+    health.surfaceCount <= health.selectedCount &&
+    health.selectedCount <= health.candidateCount &&
+    health.shadowDays.length <= health.shadowEligibleSampleCount &&
+    health.shadowTeamKeys.length <= health.shadowEligibleSampleCount &&
+    health.scenarioFamilies.length <= health.shadowEligibleSampleCount &&
+    errorReasonCount === health.errorCount &&
+    sameNullableNumber(
+      health.errorRate,
+      health.sampleCount > 0 ? health.errorCount / health.sampleCount : null,
+    )
+  );
+}
+
+function isProductionSamplingLatencyBucket(value: unknown): boolean {
+  const record = asRecord(value);
+  return (
+    !!record &&
+    isFiniteNumber(record.latencyMs) &&
+    record.latencyMs >= 0 &&
+    isNonNegativeInteger(record.count) &&
+    record.count > 0
+  );
+}
+
+function isProductionSamplingEvidencePackSample(
+  value: unknown,
+): value is ProductionSamplingEvidencePackSample {
+  const record = asRecord(value);
+  if (!record) return false;
+  const optionalCountFields = [
+    'invalidCitationCount',
+    'rankingModelCallCount',
+    'ambiguousLinkCount',
+    'visibilityViolationCount',
+    'authorityViolationCount',
+  ];
+  return (
+    (record.attemptId === undefined || isNonEmptyString(record.attemptId)) &&
+    (record.mode === 'off' || record.mode === 'shadow' || record.mode === 'enforced') &&
+    isNonEmptyString(record.version) &&
+    isNonEmptyString(record.policyVersion) &&
+    ['candidateCount', 'selectedCount', 'surfaceCount', 'estimatedTokens'].every((field) =>
+      isNonNegativeInteger(record[field]),
+    ) &&
+    hasConsistentEvidencePackCounts(record) &&
+    isFiniteNumber(record.buildDurationMs) &&
+    record.buildDurationMs >= 0 &&
+    typeof record.truncated === 'boolean' &&
+    optionalCountFields.every(
+      (field) => record[field] === undefined || isNonNegativeInteger(record[field]),
+    ) &&
+    (record.falseLinkReviewOutcome === undefined ||
+      record.falseLinkReviewOutcome === 'confirmed' ||
+      record.falseLinkReviewOutcome === 'rejected' ||
+      record.falseLinkReviewOutcome === 'unreviewed') &&
+    (record.errorReason === undefined ||
+      record.errorReason === null ||
+      typeof record.errorReason === 'string') &&
+    (record.sampledAt === undefined || isNonEmptyString(record.sampledAt)) &&
+    (record.teamKey === undefined || isNonEmptyString(record.teamKey)) &&
+    (record.scenarioFamily === undefined || isNonEmptyString(record.scenarioFamily)) &&
+    (record.eligible === undefined || typeof record.eligible === 'boolean')
+  );
+}
+
+function hasConsistentEvidencePackCounts(
+  sample: Record<string, unknown> | ProductionSamplingEvidencePackSample,
+): boolean {
+  return (
+    isNonNegativeInteger(sample.surfaceCount) &&
+    isNonNegativeInteger(sample.selectedCount) &&
+    isNonNegativeInteger(sample.candidateCount) &&
+    sample.surfaceCount <= sample.selectedCount &&
+    sample.selectedCount <= sample.candidateCount
+  );
+}
+
+function isProductionSamplingEvidencePackPromotion(
+  value: unknown,
+): value is ProductionSamplingEvidencePackPromotion {
+  const record = asRecord(value);
+  return !!record && typeof record.ready === 'boolean' && isStringArray(record.blockerCodes);
 }
 
 function isProductionSamplingRunKind(value: unknown): value is ProductionSamplingRunKind {
@@ -1059,6 +1589,11 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 function isStringNumberRecord(value: unknown): boolean {
+  const record = asRecord(value);
+  return !!record && Object.values(record).every(isNonNegativeInteger);
+}
+
+function isNonNegativeIntegerRecord(value: unknown): boolean {
   const record = asRecord(value);
   return !!record && Object.values(record).every(isNonNegativeInteger);
 }

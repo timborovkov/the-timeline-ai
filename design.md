@@ -205,6 +205,15 @@ operable. Opening the evidence inspector shows a human source summary first.
 Exact timestamps, ownership/visibility internals, source IDs, payloads, and raw
 provider data sit inside the inspector’s `TechnicalDetails`.
 
+Pack-backed approvals show a compact “Evidence for this change · N sources”
+disclosure beneath each proposed item, using source, sender, timestamp, bounded
+excerpt, and a source-event link. Bundle evidence remains contextual. Raw IDs,
+pack fingerprints, ranks, relationship strengths, and visibility internals stay
+out of the default view. If visible required evidence changed after proposal
+creation, show a plain-language stale warning, disable Accept and Change, and
+keep Reject available. If required evidence is no longer visible or active, do
+not render the derived proposal at all.
+
 ## Surface examples
 
 ### Home

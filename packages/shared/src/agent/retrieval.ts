@@ -1,7 +1,13 @@
 import type { TeamScope } from '#src/team-scope.js';
 
+import { fenceExternalContent } from '#src/agent/external-content.js';
 import { searchAppGuide } from '#src/app-guide.js';
 import { artifactRefCitation, parseCitations } from '#src/citation.js';
+import {
+  buildEvidencePack,
+  evidenceSourceContextForPrompt,
+  type EvidencePackMetrics,
+} from '#src/evidence-pack/index.js';
 import { type ObjectSummarySourceRef, sourceRefCitation } from '#src/objects/summaries.js';
 
 export type RetrievalRecipe =
@@ -35,10 +41,53 @@ export interface WorkspaceContextResult {
   calendarEvents: unknown[];
   documents: unknown[];
   routes: unknown[];
+  adapterFailures: WorkspaceContextAdapterFailure[];
+  evidencePack:
+    | {
+        status: 'complete';
+        version: string;
+        policyVersion: string;
+        fingerprint: string;
+        items: unknown[];
+        metrics: EvidencePackMetrics;
+      }
+    | { status: 'failed'; errorReason: string }
+    | null;
+}
+
+export interface WorkspaceContextAdapterFailure {
+  adapter:
+    | 'object_search'
+    | 'object_detail'
+    | 'entity_profile'
+    | 'notes'
+    | 'timeline_events'
+    | 'evidence_pack'
+    | 'boards'
+    | 'documents'
+    | 'calendar';
+  errorReason: string;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MILLIS_PER_DAY = 24 * 60 * 60 * 1000;
+
+async function recoverAdapter<T>(
+  failures: WorkspaceContextAdapterFailure[],
+  adapter: WorkspaceContextAdapterFailure['adapter'],
+  promise: Promise<T>,
+  fallback: T,
+): Promise<T> {
+  try {
+    return await promise;
+  } catch (error) {
+    failures.push({
+      adapter,
+      errorReason: error instanceof Error ? error.name : 'unknown_error',
+    });
+    return fallback;
+  }
+}
 
 export async function retrieveWorkspaceContext(
   scope: TeamScope,
@@ -49,44 +98,86 @@ export async function retrieveWorkspaceContext(
   const limit = Math.min(Math.max(input.limit ?? 5, 1), 10);
   const routes =
     recipe === 'product_guide' ? searchAppGuide(query, limit) : searchAppGuide(query, 2);
+  const adapterFailures: WorkspaceContextAdapterFailure[] = [];
 
   const objectCandidates = input.objectId
     ? []
-    : await scope.objects.searchObjects({ query, limit, archived: false }).catch(() => []);
+    : await recoverAdapter(
+        adapterFailures,
+        'object_search',
+        scope.objects.searchObjects({ query, limit, archived: false }),
+        [],
+      );
   const primaryObjectId = input.objectId ?? objectCandidates[0]?.id;
 
   const [objectDetail, entityProfile, notes, events, boardContext, documents, calendarEvents] =
     await Promise.all([
-      primaryObjectId ? scope.objects.getObject(primaryObjectId).catch(() => null) : null,
       primaryObjectId
-        ? scope.timeline
-            .getEntity(primaryObjectId, { factLimit: 12, coOccurringLimit: 8 })
-            .catch(() => null)
+        ? recoverAdapter(
+            adapterFailures,
+            'object_detail',
+            scope.objects.getObject(primaryObjectId),
+            null,
+          )
         : null,
       primaryObjectId
-        ? scope.timeline
-            .searchObjectNotes({ query, objectId: primaryObjectId, limit })
-            .catch(() => [])
-        : scope.timeline.searchObjectNotes({ query, limit: Math.min(limit, 5) }).catch(() => []),
-      scope.timeline
-        .searchEvents({
+        ? recoverAdapter(
+            adapterFailures,
+            'entity_profile',
+            scope.timeline.getEntity(primaryObjectId, { factLimit: 12, coOccurringLimit: 8 }),
+            null,
+          )
+        : null,
+      primaryObjectId
+        ? recoverAdapter(
+            adapterFailures,
+            'notes',
+            scope.timeline.searchObjectNotes({ query, objectId: primaryObjectId, limit }),
+            [],
+          )
+        : recoverAdapter(
+            adapterFailures,
+            'notes',
+            scope.timeline.searchObjectNotes({ query, limit: Math.min(limit, 5) }),
+            [],
+          ),
+      recoverAdapter(
+        adapterFailures,
+        'timeline_events',
+        scope.timeline.searchEvents({
           query,
           ...(primaryObjectId ? { entityIds: [primaryObjectId] } : {}),
           limit: Math.min(limit, 8),
-        })
-        .catch(() => []),
-      primaryObjectId ? scope.boards.listObjectBoardContext(primaryObjectId).catch(() => []) : [],
+        }),
+        [],
+      ),
+      primaryObjectId
+        ? recoverAdapter(
+            adapterFailures,
+            'boards',
+            scope.boards.listObjectBoardContext(primaryObjectId),
+            [],
+          )
+        : [],
       input.includeDocuments || recipe === 'document_knowledge'
-        ? scope.documents.searchDocumentChunks({ query, limit: Math.min(limit, 5) }).catch(() => [])
+        ? recoverAdapter(
+            adapterFailures,
+            'documents',
+            scope.documents.searchDocumentChunks({ query, limit: Math.min(limit, 5) }),
+            [],
+          )
         : [],
       input.includeCalendar || recipe === 'calendar'
-        ? scope.calendar
-            .listCalendarEvents({
+        ? recoverAdapter(
+            adapterFailures,
+            'calendar',
+            scope.calendar.listCalendarEvents({
               from: new Date(Date.now() - 14 * MILLIS_PER_DAY),
               to: new Date(Date.now() + 30 * MILLIS_PER_DAY),
               limit: Math.min(limit, 10),
-            })
-            .catch(() => [])
+            }),
+            [],
+          )
         : [],
     ]);
 
@@ -102,6 +193,53 @@ export async function retrieveWorkspaceContext(
         updated_at: objectDetail.summary.generatedAt?.toISOString() ?? null,
       }
     : null;
+  let evidencePack: WorkspaceContextResult['evidencePack'] = null;
+  if (events.length > 0) {
+    try {
+      const members = await scope.timeline.listMembers();
+      const pack = await buildEvidencePack(scope, {
+        purpose: 'answer',
+        anchorRawEventIds: events.map((event) => event.eventId),
+        semanticRawEventIds: events.map((event) => event.eventId),
+      });
+      evidencePack = {
+        status: 'complete',
+        version: pack.version,
+        policyVersion: pack.policyVersion,
+        fingerprint: pack.fingerprint,
+        items: pack.items.map((item) => ({
+          rawEventId: item.rawEventId,
+          citation: artifactRefCitation({ kind: 'timeline_event', id: item.rawEventId }),
+          surface:
+            fenceExternalContent(item.surface, {
+              source: 'evidence-pack-surface',
+              eventId: item.rawEventId,
+            }) ?? '',
+          source: item.source,
+          role: item.role,
+          occurredAt: item.occurredAt.toISOString(),
+          senderContext: evidenceSourceContextForPrompt(
+            item.source,
+            item.sourceMetadata,
+            item.authorUserId,
+            members,
+            item.rawEventId,
+          ),
+          snippet:
+            fenceExternalContent(item.contentText, {
+              source: item.source,
+              eventId: item.rawEventId,
+            }) ?? '',
+          relationshipSignals: item.relationshipSignals,
+        })),
+        metrics: pack.metrics,
+      };
+    } catch (error) {
+      const errorReason = error instanceof Error ? error.name : 'evidence_pack_failure';
+      adapterFailures.push({ adapter: 'evidence_pack', errorReason });
+      evidencePack = { status: 'failed', errorReason };
+    }
+  }
   const objects = [
     ...objectCandidates.map((object) => ({
       id: object.id,
@@ -233,6 +371,10 @@ export async function retrieveWorkspaceContext(
       minimum_role: route.minRole,
       score: route.score,
     })),
+    adapterFailures: adapterFailures.sort((left, right) =>
+      left.adapter.localeCompare(right.adapter),
+    ),
+    evidencePack,
   };
   result.refs = collectRefs(result);
   return result;
@@ -267,7 +409,10 @@ function objectCitation(type: string, id: string): string {
 
 function collectRefs(result: Omit<WorkspaceContextResult, 'refs'>): string[] {
   const refs = new Set<string>();
+  const evidencePackItems =
+    result.evidencePack?.status === 'complete' ? result.evidencePack.items : [];
   for (const group of [
+    evidencePackItems,
     result.objects,
     result.notes,
     result.events,

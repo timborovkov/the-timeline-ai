@@ -139,7 +139,14 @@ aggregate live artifacts into pass-rate, miss, visibility, authority, and
 fixture-candidate metrics; artifact writing and loading reject malformed or
 empty redacted source refs, malformed or inconsistent manifest summaries,
 malformed judge metadata, malformed expected-count maps, and manifest paths
-outside the run directory before they contribute to release metrics.
+outside the run directory before they contribute to release metrics. Loaded
+evidence-pack aggregates must preserve attempt, error, eligibility,
+cross-source, and pack-count relationships before merging. A single legacy
+aggregate without population fingerprints remains loadable and is rewritten
+without inventing identities, but it cannot enter a cumulative merge until its
+population is traceable. Persisted sampling runs retain the required scenario
+policy plus promotion readiness and blocker codes for the reconciliation
+dashboard.
 
 ## Quick Start
 
@@ -245,6 +252,9 @@ TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker task-category-bac
                           # enqueue one bounded batch when its fixed per-task cost estimate fits the guard; rerun to resume
 TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-legacy-provenance -- --team=<uuid> --fail-on-legacy
 TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-production-sampling -- --input=/tmp/eval-run --out=/tmp/reconciliation-production-sampling.json --team=<uuid> --run-kind=closed_beta --fail-on-failures
+# Promotion assessment also requires redacted pack telemetry and explicit scenario coverage:
+# --evidence-pack-samples=/tmp/redacted-pack-samples.json
+# --required-evidence-scenario=generic_webhook (repeat for every required family)
 # production sampling accepts repeated --input paths; --run-kind defaults to manual
 # and may be manual, closed_beta, or post_deploy. Use --fail-on-failures for
 # release gates that should stop on any failed sample. Repeat
@@ -252,6 +262,30 @@ TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-pr
 # that should become deterministic fixtures; reports include confirmed and
 # unconfirmed fixture-candidate counts for release review. Add --team=<uuid>
 # to persist the report as a Team → Reconciliation eval run.
+# Evidence-pack sample files may be a JSON array or {"samples": [...]} and must
+# contain content-free counts, mode/version metadata, and latency. Every attempt
+# counted as eligible must also carry its own date, team key, and scenario
+# family; incomplete attempts remain in health/error metrics but cannot advance
+# promotion. Supplying samples without at least one explicit required scenario
+# is rejected so an empty scenario policy cannot accidentally pass.
+# Promotion health, latency, and error gates use shadow attempts only. Failed or
+# provenance-incomplete attempts never count as eligible, even if an
+# export marks them eligible, and sample counts must satisfy
+# surfaceCount <= selectedCount <= candidateCount.
+# Loaded aggregate reports must also satisfy crossSource <= eligible <= sample,
+# matching error totals/rates, and ordered aggregate pack counts before they can
+# merge. When a prior report and fresh sample file are supplied together, their
+# redacted health summaries are merged rather than replacing historical
+# violations. Persisted team runs retain scenario policy and promotion blocker
+# codes, which the reconciliation dashboard displays separately from fixture
+# failures.
+# Each summarized population carries a content-free fingerprint; cumulative
+# inputs with an overlapping population are rejected rather than double-counted;
+# sample exports should retain their immutable attemptId when later review annotations change,
+# and duplicate legacy identities are rejected as ambiguous.
+# Explicit telemetry with zero shadow attempts still produces a failed
+# assessment, and mixed builder/policy versions block promotion until a fresh
+# single-version shadow population qualifies.
 # The worker process also starts a reconciliation queue consumer for
 # evidence_audit/evidence_backfill/scope_reconcile jobs when they are enqueued
 # by product or operator code. Queue payloads support optional source, limit,
@@ -300,9 +334,15 @@ server/client import boundaries.
 - [`docs/product-brief.html`](./docs/product-brief.html) — product vision,
   principles, and architecture overview.
 
-- [`docs/cross-source-evidence.md`](./docs/cross-source-evidence.md) — north-star
-  for compounding memory across chat, meetings, email, and work systems
-  (product, eng, and website messaging).
+- [`docs/cross-source-evidence.md`](./docs/cross-source-evidence.md) — implemented,
+  default-off and unshipped contract for cited memory across chat, meetings,
+  email, and work systems.
+- [`docs/cross-source-evidence-implementation-plan.md`](./docs/cross-source-evidence-implementation-plan.md)
+  — implemented sequence, file map, test matrix, rollout gates, and adapter
+  promotion milestones.
+- [`docs/adr/0014-cross-source-evidence-packs-use-policy-bound-related-evidence.md`](./docs/adr/0014-cross-source-evidence-packs-use-policy-bound-related-evidence.md)
+  — durable evidence admission, visibility, authority, citation, persistence,
+  and rollout decisions.
 
 - [`docs/captured-files.md`](./docs/captured-files.md) — captured-file vs.
   document semantics, processing rules, and follow-up implementation bar.

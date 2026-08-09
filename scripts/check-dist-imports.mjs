@@ -1,5 +1,17 @@
 const checks = [
   {
+    name: '@timeline/shared evidence pack',
+    run: async () => {
+      const evidencePack = await import('@timeline/shared/evidence-pack');
+      if (evidencePack.EVIDENCE_PACK_VERSION !== 'evidence-pack-v1') {
+        throw new Error('Evidence-pack version export is missing or incorrect');
+      }
+      if (evidencePack.EVIDENCE_PACK_POLICIES.proposal.maxSupportingEvents !== 8) {
+        throw new Error('Evidence-pack proposal policy export is missing or incorrect');
+      }
+    },
+  },
+  {
     name: '@timeline/shared conversation surfaces',
     run: async () => {
       const conversations = await import('@timeline/shared/conversation-surfaces');

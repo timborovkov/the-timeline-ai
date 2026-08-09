@@ -69,6 +69,20 @@ interface SuggestionItem {
   supersededByItemId?: string | null;
   supersededReason?: string | null;
   calendarResolutionHint?: CalendarResolutionHint | null;
+  evidence?: SuggestionEvidence[];
+  evidenceStatus?: 'legacy' | 'current' | 'stale';
+}
+
+interface SuggestionEvidence {
+  rawEventId: string;
+  quote: string | null;
+  occurredAt: string | null;
+  source: string | null;
+  senderName?: string | null;
+  senderHandle?: string | null;
+  senderTimelineName?: string | null;
+  conversationName?: string | null;
+  metadata?: Record<string, unknown>;
 }
 
 interface CalendarResolutionEvent {
@@ -104,17 +118,7 @@ interface SuggestionBundle {
   metadata?: Record<string, unknown>;
   createdAt: string;
   items: SuggestionItem[];
-  evidence: {
-    rawEventId: string;
-    quote: string | null;
-    occurredAt: string | null;
-    source: string | null;
-    senderName?: string | null;
-    senderHandle?: string | null;
-    senderTimelineName?: string | null;
-    conversationName?: string | null;
-    metadata?: Record<string, unknown>;
-  }[];
+  evidence: SuggestionEvidence[];
 }
 
 type ApprovalAction = (
@@ -669,7 +673,11 @@ export function ApprovalsClient({
   );
   const bulkAcceptSuggestions = visibleSuggestions.flatMap((bundle) => {
     const itemIds = bundle.items.reduce<string[]>((ids, item) => {
-      if (isActionableSuggestionStatus(item.status) && item.targetKind !== 'object_merge') {
+      if (
+        isActionableSuggestionStatus(item.status) &&
+        item.targetKind !== 'object_merge' &&
+        item.evidenceStatus !== 'stale'
+      ) {
         ids.push(item.id);
       }
       return ids;
@@ -950,6 +958,10 @@ function PageBulkActions({
     (sum, suggestion) => sum + suggestion.itemIds.length,
     0,
   );
+  const visibleActionableItemCount = bulkRejectSuggestions.reduce(
+    (sum, suggestion) => sum + suggestion.itemIds.length,
+    0,
+  );
   return (
     <div className="flex flex-wrap items-center justify-end gap-2">
       {canAccept && mergeReviewItemCount > 0 ? (
@@ -988,7 +1000,7 @@ function PageBulkActions({
           }}
         >
           <CheckCheck className="size-4" />
-          {mergeReviewItemCount > 0
+          {bulkAcceptItemCount < visibleActionableItemCount
             ? `Accept ${bulkAcceptItemCount} visible`
             : 'Accept all visible'}
         </Button>
@@ -1017,7 +1029,9 @@ function ApprovalBundleRow({
   taskCategoriesEnabled: boolean;
 }) {
   const pendingItems = bundle.items.filter((item) => isActionableSuggestionStatus(item.status));
-  const bulkAcceptItems = pendingItems.filter((item) => item.targetKind !== 'object_merge');
+  const bulkAcceptItems = pendingItems.filter(
+    (item) => item.targetKind !== 'object_merge' && item.evidenceStatus !== 'stale',
+  );
   const mergeReviewCount = pendingItems.length - bulkAcceptItems.length;
   return (
     <article className="border-t border-border py-3">
@@ -1128,8 +1142,15 @@ function ApprovalItemRow({
         taskCategoriesEnabled={taskCategoriesEnabled}
       />
       {isActionableSuggestionStatus(item.status) ? (
-        <ApprovalItemActions busy={busy} item={item} pending={pending} run={run} />
+        <ApprovalItemActions
+          acceptDisabled={item.evidenceStatus === 'stale'}
+          busy={busy}
+          item={item}
+          pending={pending}
+          run={run}
+        />
       ) : null}
+      <ApprovalItemEvidence item={item} timezone={timezone} />
     </li>
   );
 }
@@ -1282,95 +1303,97 @@ function TaskApprovalPayload({
           AI-proposed category; accepting applies it only if context still matches.
         </p>
       ) : null}
-      <details className="group border-l border-border pl-2">
-        <summary className="inline-flex cursor-pointer items-center gap-1 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim hover:text-fg">
-          <Pencil className="size-3" /> Edit proposal
-        </summary>
-        <div className="mt-2 grid gap-2">
-          {taskCategoriesEnabled ? (
+      {item.evidenceStatus !== 'stale' ? (
+        <details className="group border-l border-border pl-2">
+          <summary className="inline-flex cursor-pointer items-center gap-1 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim hover:text-fg">
+            <Pencil className="size-3" /> Edit proposal
+          </summary>
+          <div className="mt-2 grid gap-2">
+            {taskCategoriesEnabled ? (
+              <label className="grid gap-1 text-xs text-fg-muted">
+                Category
+                <select
+                  aria-label={`Category for ${item.title}`}
+                  value={
+                    categoryMode === 'manual' && category
+                      ? category
+                      : category
+                        ? 'suggested'
+                        : 'automatic'
+                  }
+                  disabled={saving}
+                  onChange={(event) => {
+                    revise({ category: event.currentTarget.value as TaskCategory | 'automatic' });
+                  }}
+                  className="h-8 rounded-sm border border-border bg-bg px-2 text-xs text-fg"
+                >
+                  {category && categoryMode !== 'manual' ? (
+                    <option value="suggested" disabled>
+                      AI suggestion — {taskCategoryLabel(category)}
+                    </option>
+                  ) : null}
+                  <option value="automatic">Automatic after accept</option>
+                  {TASK_CATEGORY_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             <label className="grid gap-1 text-xs text-fg-muted">
-              Category
-              <select
-                aria-label={`Category for ${item.title}`}
-                value={
-                  categoryMode === 'manual' && category
-                    ? category
-                    : category
-                      ? 'suggested'
-                      : 'automatic'
-                }
+              Find or name a project
+              <input
+                type="search"
+                value={query}
                 disabled={saving}
                 onChange={(event) => {
-                  revise({ category: event.currentTarget.value as TaskCategory | 'automatic' });
+                  setQuery(event.currentTarget.value);
                 }}
+                placeholder="Search projects or type a new name"
                 className="h-8 rounded-sm border border-border bg-bg px-2 text-xs text-fg"
-              >
-                {category && categoryMode !== 'manual' ? (
-                  <option value="suggested" disabled>
-                    AI suggestion — {taskCategoryLabel(category)}
-                  </option>
-                ) : null}
-                <option value="automatic">Automatic after accept</option>
-                {TASK_CATEGORY_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
-          ) : null}
-          <label className="grid gap-1 text-xs text-fg-muted">
-            Find or name a project
-            <input
-              type="search"
-              value={query}
-              disabled={saving}
-              onChange={(event) => {
-                setQuery(event.currentTarget.value);
-              }}
-              placeholder="Search projects or type a new name"
-              className="h-8 rounded-sm border border-border bg-bg px-2 text-xs text-fg"
-            />
-          </label>
-          {query.trim() ? (
-            <div className="flex flex-wrap gap-1">
-              {projects.map((project) => (
+            {query.trim() ? (
+              <div className="flex flex-wrap gap-1">
+                {projects.map((project) => (
+                  <button
+                    key={project.id}
+                    type="button"
+                    disabled={saving}
+                    onClick={() => {
+                      revise({ project: { kind: 'existing', projectId: project.id } });
+                    }}
+                    className="rounded-sm border border-border px-2 py-1 text-xs text-fg hover:border-signal"
+                  >
+                    Use {displayText(project.label)}
+                  </button>
+                ))}
                 <button
-                  key={project.id}
                   type="button"
                   disabled={saving}
                   onClick={() => {
-                    revise({ project: { kind: 'existing', projectId: project.id } });
+                    revise({ project: { kind: 'create', projectName: query.trim() } });
                   }}
                   className="rounded-sm border border-border px-2 py-1 text-xs text-fg hover:border-signal"
                 >
-                  Use {displayText(project.label)}
+                  Create “{displayText(query.trim())}”
                 </button>
-              ))}
-              <button
-                type="button"
-                disabled={saving}
-                onClick={() => {
-                  revise({ project: { kind: 'create', projectName: query.trim() } });
-                }}
-                className="rounded-sm border border-border px-2 py-1 text-xs text-fg hover:border-signal"
-              >
-                Create “{displayText(query.trim())}”
-              </button>
-            </div>
-          ) : null}
-          <button
-            type="button"
-            disabled={saving}
-            onClick={() => {
-              revise({ project: { kind: 'none' } });
-            }}
-            className="w-fit font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim hover:text-danger"
-          >
-            No project
-          </button>
-        </div>
-      </details>
+              </div>
+            ) : null}
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => {
+                revise({ project: { kind: 'none' } });
+              }}
+              className="w-fit font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim hover:text-danger"
+            >
+              No project
+            </button>
+          </div>
+        </details>
+      ) : null}
       {error ? <p className="text-xs text-danger">{error}</p> : null}
       {item.failureReason ? (
         <p className="text-xs text-danger">{displayText(item.failureReason)}</p>
@@ -1547,11 +1570,13 @@ function CalendarResolutionLine({
 }
 
 function ApprovalItemActions({
+  acceptDisabled,
   busy,
   item,
   pending,
   run,
 }: {
+  acceptDisabled: boolean;
   busy: boolean;
   item: SuggestionItem;
   pending: boolean;
@@ -1572,7 +1597,7 @@ function ApprovalItemActions({
             type="button"
             size="sm"
             variant="outline"
-            disabled={busy}
+            disabled={busy || acceptDisabled}
             onClick={() => {
               run(() => acceptSuggestionItemAction({ itemId: item.id }), [item.id]);
             }}
@@ -1583,7 +1608,7 @@ function ApprovalItemActions({
           <SuggestionChangeDialog
             itemId={item.id}
             title={displayText(item.title)}
-            disabled={busy}
+            disabled={busy || acceptDisabled}
           />
         </>
       )}
@@ -1600,6 +1625,66 @@ function ApprovalItemActions({
         Reject
       </Button>
     </div>
+  );
+}
+
+function ApprovalItemEvidence({ item, timezone }: { item: SuggestionItem; timezone: string }) {
+  if (item.evidenceStatus === 'stale') {
+    return (
+      <p className="md:col-span-3 text-xs text-danger" role="status">
+        Required source evidence changed after this proposal was created. Regenerate the proposal
+        before accepting this change.
+      </p>
+    );
+  }
+  if (!item.evidence || item.evidence.length === 0) return null;
+  const evidenceBySurface = new Map<string, NonNullable<SuggestionItem['evidence']>[number][]>();
+  for (const evidence of item.evidence) {
+    const surface = evidence.metadata?.evidence_surface;
+    const label =
+      typeof surface === 'string' && surface.trim()
+        ? surface.trim()
+        : evidenceSourceLabel(evidence.source);
+    evidenceBySurface.set(label, [...(evidenceBySurface.get(label) ?? []), evidence]);
+  }
+  return (
+    <details className="md:col-span-3 border-l border-border pl-3 text-xs">
+      <summary className="cursor-pointer text-fg-dim hover:text-fg">
+        Evidence for this change · {evidenceBySurface.size}{' '}
+        {evidenceBySurface.size === 1 ? 'source' : 'sources'}
+      </summary>
+      <div className="mt-2 grid gap-2">
+        {[...evidenceBySurface.entries()].map(([surface, evidence]) => (
+          <section key={surface} aria-label={`${surface} evidence`}>
+            <p className="text-fg-muted">
+              {surface} · {evidence.length} {evidence.length === 1 ? 'citation' : 'citations'}
+            </p>
+            <div className="grid gap-1 sm:grid-cols-2">
+              {evidence.map((ev) => (
+                <EvidenceLink
+                  key={ev.rawEventId}
+                  eventId={ev.rawEventId}
+                  previewText={ev.quote}
+                  source={ev.source}
+                  occurredAt={ev.occurredAt}
+                  className="group grid min-w-0 gap-1 py-1 text-fg-dim transition-colors hover:text-fg"
+                >
+                  <span className="inline-flex items-center gap-1.5">
+                    <ExternalLink className="size-3 shrink-0" />
+                    Evidence from {evidenceSourceContextLabel(ev)}
+                  </span>
+                  <span className="line-clamp-2 text-fg-muted group-hover:text-fg">
+                    {ev.quote
+                      ? displayText(ev.quote, { timezone })
+                      : 'Open the source event on the timeline.'}
+                  </span>
+                </EvidenceLink>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+    </details>
   );
 }
 

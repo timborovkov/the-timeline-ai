@@ -1704,7 +1704,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
 
     retrieve_workspace_context: tool({
       description:
-        'Read-only retrieval planner/fusion tool. Use first for broad questions like "what do we know about X?", object/person/company profiles, task/board/calendar/document context, or when current route context implies a target object. Returns a compact context packet with typed citations across objects, notes, timeline events, tasks, boards, calendar, documents, and route guides.',
+        'Read-only retrieval planner/fusion tool. Use first for broad questions like "what do we know about X?", object/person/company profiles, task/board/calendar/document context, or when current route context implies a target object. Returns a compact context packet with typed citations across objects, notes, timeline events, tasks, boards, calendar, documents, and route guides. If adapterFailures is non-empty, disclose those unavailable sources and do not imply the packet is complete.',
       inputSchema: retrieveWorkspaceContextInput,
       execute: async (raw) =>
         runSafe('retrieve_workspace_context', async () => {

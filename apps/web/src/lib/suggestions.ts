@@ -26,10 +26,23 @@ type SerializableCalendarResolutionHint =
 
 type SerializableSuggestionItem = Omit<
   SuggestionBundle['items'][number],
-  'calendarResolutionHint'
+  'calendarResolutionHint' | 'evidence'
 > & {
   calendarResolutionHint?: SerializableCalendarResolutionHint | null;
+  evidence?: SerializableSuggestionEvidence[];
 };
+
+interface SerializableSuggestionEvidence {
+  rawEventId: string;
+  quote: string | null;
+  source: string | null;
+  occurredAt: string | null;
+  senderName: string | null;
+  senderHandle: string | null;
+  senderTimelineName: string | null;
+  conversationName: string | null;
+  metadata: Record<string, unknown>;
+}
 
 interface SerializableSuggestionBundle {
   id: string;
@@ -42,17 +55,23 @@ interface SerializableSuggestionBundle {
   metadata: Record<string, unknown>;
   createdAt: string;
   items: SerializableSuggestionItem[];
-  evidence: {
-    rawEventId: string;
-    quote: string | null;
-    source: string | null;
-    occurredAt: string | null;
-    senderName: string | null;
-    senderHandle: string | null;
-    senderTimelineName: string | null;
-    conversationName: string | null;
-    metadata: Record<string, unknown>;
-  }[];
+  evidence: SerializableSuggestionEvidence[];
+}
+
+function serializeSuggestionEvidence(
+  ev: SuggestionBundle['evidence'][number],
+): SerializableSuggestionEvidence {
+  return {
+    rawEventId: ev.rawEventId,
+    quote: ev.quote,
+    source: ev.source,
+    occurredAt: ev.occurredAt?.toISOString() ?? null,
+    senderName: ev.senderName,
+    senderHandle: ev.senderHandle,
+    senderTimelineName: ev.senderTimelineName,
+    conversationName: ev.conversationName,
+    metadata: ev.metadata,
+  };
 }
 
 export function serializeSuggestionBundle(bundle: SuggestionBundle): SerializableSuggestionBundle {
@@ -69,18 +88,9 @@ export function serializeSuggestionBundle(bundle: SuggestionBundle): Serializabl
     items: bundle.items.map((item) => ({
       ...item,
       calendarResolutionHint: serializeCalendarResolutionHint(item.calendarResolutionHint),
+      evidence: item.evidence?.map(serializeSuggestionEvidence),
     })),
-    evidence: bundle.evidence.map((ev) => ({
-      rawEventId: ev.rawEventId,
-      quote: ev.quote,
-      source: ev.source,
-      occurredAt: ev.occurredAt?.toISOString() ?? null,
-      senderName: ev.senderName,
-      senderHandle: ev.senderHandle,
-      senderTimelineName: ev.senderTimelineName,
-      conversationName: ev.conversationName,
-      metadata: ev.metadata,
-    })),
+    evidence: bundle.evidence.map(serializeSuggestionEvidence),
   };
 }
 

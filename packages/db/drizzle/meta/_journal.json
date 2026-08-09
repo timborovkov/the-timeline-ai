@@ -470,6 +470,13 @@
       "when": 1795654320000,
       "tag": "0066_monday_conversation_tombstones",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1795654380000,
+      "tag": "0067_canonical_link_evidence_strength",
+      "breakpoints": true
     }
   ]
 }

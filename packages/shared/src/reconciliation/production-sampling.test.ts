@@ -17,13 +17,19 @@ import {
   type LiveEvalModelResult,
 } from '#src/reconciliation/live-artifacts.js';
 import {
+  assessEvidencePackPromotion,
   buildProductionSamplingEvalReport,
   loadProductionSamplingEvalArtifacts,
+  parseProductionSamplingEvidencePackSamples,
+  productionSamplingRunMetrics,
+  summarizeProductionSamplingEvidencePacks,
   writeProductionSamplingEvalReport,
 } from '#src/reconciliation/production-sampling.js';
+import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
+const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 const BASE_CASE: DeterministicEvalCase = {
   name: 'customer-project-email-monday-sentry',
   scenarioFamily: 'customer_project',
@@ -181,6 +187,33 @@ describe('production reconciliation sampling report', () => {
       confirmedFixtureCandidates: [
         { caseName: failed.caseName, packetFingerprint: failed.packetFingerprint },
       ],
+      evidencePackSamples: [
+        {
+          mode: 'shadow',
+          version: 'evidence-pack-v1',
+          policyVersion: 'proposal-v1',
+          candidateCount: 8,
+          selectedCount: 4,
+          surfaceCount: 2,
+          estimatedTokens: 900,
+          buildDurationMs: 10,
+          truncated: false,
+        },
+        {
+          mode: 'enforced',
+          version: 'evidence-pack-v1',
+          policyVersion: 'proposal-v1',
+          candidateCount: 20,
+          selectedCount: 8,
+          surfaceCount: 3,
+          estimatedTokens: 1_800,
+          buildDurationMs: 100,
+          truncated: true,
+          invalidCitationCount: 1,
+          falseLinkReviewOutcome: 'confirmed',
+          errorReason: 'candidate_failure',
+        },
+      ],
     });
 
     expect(report).toMatchObject({
@@ -210,6 +243,26 @@ describe('production reconciliation sampling report', () => {
         authorityPolicyViolations: 1,
         promptModelRegressions: 1,
         averageTimeToReconciledOutputMs: 2000,
+      },
+      evidencePackHealth: {
+        sampleCount: 1,
+        errorCount: 0,
+        errorRate: 0,
+        invalidCitationCount: 0,
+        confirmedFalseLinkCount: 0,
+        truncatedCount: 0,
+        candidateCount: 8,
+        selectedCount: 4,
+        surfaceCount: 2,
+        estimatedTokens: 900,
+        latencyDistribution: [{ latencyMs: 10, count: 1 }],
+        latencyP50Ms: 10,
+        latencyP95Ms: 10,
+        latencyP99Ms: 10,
+        modes: ['enforced', 'shadow'],
+        versions: ['evidence-pack-v1'],
+        policyVersions: ['proposal-v1'],
+        errorReasons: {},
       },
     });
     expect(report.byIngestionSurface).toEqual([
@@ -243,6 +296,581 @@ describe('production reconciliation sampling report', () => {
     );
     expect(JSON.stringify(report)).not.toContain('private production packet');
     expect(JSON.stringify(report)).not.toContain('raw-sentry-1');
+    expect(report.evidencePackPromotion?.ready).toBe(false);
+    expect(report.evidencePackPromotion?.blockerCodes).toEqual(
+      expect.arrayContaining(['fixture_failure', 'shadow_sample_floor', 'safety_violation']),
+    );
+  });
+
+  it('marks evidence-pack promotion ready only after every rollout gate passes', () => {
+    const passed = buildLiveEvalArtifact({
+      testCase: BASE_CASE,
+      modelId: 'planner-v1',
+      promptVersion: 'prompt-v1',
+      prompt: 'private production packet text',
+      result: PASS_RESULT,
+      judge: PASS_JUDGE,
+      passed: true,
+      failures: [],
+      startedAt: '2026-07-01T10:00:00.000Z',
+      completedAt: '2026-07-01T10:00:01.000Z',
+    });
+    const samples = Array.from({ length: 200 }, (_, index) => ({
+      attemptId: `promotion-attempt-${index}`,
+      mode: 'shadow' as const,
+      version: 'evidence-pack-v1',
+      policyVersion: 'proposal-v1',
+      candidateCount: 4,
+      selectedCount: 2,
+      surfaceCount: index < 25 ? 2 : 1,
+      estimatedTokens: 400,
+      buildDurationMs: 100,
+      truncated: false,
+      sampledAt: `2026-07-${String((index % 7) + 1).padStart(2, '0')}T10:00:00.000Z`,
+      teamKey: `team-${index % 3}`,
+      scenarioFamily: 'customer_project',
+      eligible: true,
+    }));
+
+    const report = buildProductionSamplingEvalReport({
+      generatedAt: '2026-07-08T10:00:00.000Z',
+      manifests: [],
+      artifacts: [passed],
+      evidencePackSamples: samples,
+      requiredEvidencePackScenarioFamilies: ['customer_project'],
+    });
+
+    expect(report.evidencePackPromotion).toEqual({ ready: true, blockerCodes: [] });
+  });
+
+  it('does not let non-shadow samples dilute shadow error and latency gates', () => {
+    const passed = buildLiveEvalArtifact({
+      testCase: BASE_CASE,
+      modelId: 'planner-v1',
+      promptVersion: 'prompt-v1',
+      prompt: 'private production packet text',
+      result: PASS_RESULT,
+      judge: PASS_JUDGE,
+      passed: true,
+      failures: [],
+      startedAt: '2026-07-01T10:00:00.000Z',
+      completedAt: '2026-07-01T10:00:01.000Z',
+    });
+    const shadow = Array.from({ length: 203 }, (_, index) => ({
+      attemptId: `shadow-gate-attempt-${index}`,
+      mode: 'shadow' as const,
+      version: 'evidence-pack-v1',
+      policyVersion: 'proposal-v1',
+      candidateCount: 4,
+      selectedCount: 2,
+      surfaceCount: 2,
+      estimatedTokens: 400,
+      buildDurationMs: 1_200,
+      truncated: false,
+      sampledAt: `2026-07-${String((index % 7) + 1).padStart(2, '0')}T10:00:00.000Z`,
+      teamKey: `team-${index % 3}`,
+      scenarioFamily: 'customer_project',
+      eligible: index >= 3,
+      errorReason: index < 3 ? 'candidate_failure' : null,
+    }));
+    const off = Array.from({ length: 1_000 }, () => ({
+      mode: 'off' as const,
+      version: 'evidence-pack-v2',
+      policyVersion: 'proposal-v2',
+      candidateCount: 0,
+      selectedCount: 0,
+      surfaceCount: 0,
+      estimatedTokens: 0,
+      buildDurationMs: 0,
+      truncated: false,
+    }));
+
+    const report = buildProductionSamplingEvalReport({
+      generatedAt: '2026-07-08T10:00:00.000Z',
+      manifests: [],
+      artifacts: [passed],
+      evidencePackSamples: [...shadow, ...off],
+      requiredEvidencePackScenarioFamilies: ['customer_project'],
+    });
+
+    expect(report.evidencePackHealth).toMatchObject({
+      sampleCount: 203,
+      errorCount: 3,
+      errorRate: 3 / 203,
+      latencyP95Ms: 1_200,
+    });
+    expect(report.evidencePackPromotion?.blockerCodes).toEqual([
+      'pack_error_rate',
+      'pack_latency_p95',
+    ]);
+  });
+
+  it('does not count failed attempts as eligible when telemetry marks them eligible', () => {
+    const health = summarizeProductionSamplingEvidencePacks([
+      {
+        attemptId: 'failed-but-annotated-eligible',
+        mode: 'shadow',
+        version: 'evidence-pack-v1',
+        policyVersion: 'proposal-v1',
+        candidateCount: 4,
+        selectedCount: 2,
+        surfaceCount: 2,
+        estimatedTokens: 400,
+        buildDurationMs: 100,
+        truncated: false,
+        eligible: true,
+        errorReason: 'candidate_failure',
+        sampledAt: '2026-07-01T10:00:00.000Z',
+        teamKey: 'team-1',
+        scenarioFamily: 'customer_project',
+      },
+    ]);
+
+    expect(health).toMatchObject({
+      sampleCount: 1,
+      errorCount: 1,
+      shadowEligibleSampleCount: 0,
+      crossSourceSampleCount: 0,
+      shadowDays: [],
+      shadowTeamKeys: [],
+      scenarioFamilies: [],
+    });
+  });
+
+  it('requires complete provenance on every eligible shadow attempt', () => {
+    const complete = {
+      attemptId: 'complete-provenance',
+      mode: 'shadow' as const,
+      version: 'evidence-pack-v1',
+      policyVersion: 'proposal-v1',
+      candidateCount: 4,
+      selectedCount: 2,
+      surfaceCount: 2,
+      estimatedTokens: 400,
+      buildDurationMs: 100,
+      truncated: false,
+      sampledAt: '2026-07-01T10:00:00.000Z',
+      teamKey: 'team-1',
+      scenarioFamily: 'customer_project',
+      eligible: true,
+    };
+    const missingDate = { ...complete, attemptId: 'missing-date' };
+    const missingTeam = { ...complete, attemptId: 'missing-team' };
+    const missingScenario = { ...complete, attemptId: 'missing-scenario' };
+    Reflect.deleteProperty(missingDate, 'sampledAt');
+    Reflect.deleteProperty(missingTeam, 'teamKey');
+    Reflect.deleteProperty(missingScenario, 'scenarioFamily');
+    const health = summarizeProductionSamplingEvidencePacks([
+      complete,
+      missingDate,
+      missingTeam,
+      missingScenario,
+    ]);
+
+    expect(health).toMatchObject({
+      sampleCount: 4,
+      shadowEligibleSampleCount: 1,
+      crossSourceSampleCount: 1,
+      shadowDays: ['2026-07-01'],
+      shadowTeamKeys: ['team-1'],
+      scenarioFamilies: ['customer_project'],
+    });
+  });
+
+  it('rejects impossible evidence-pack count relationships', () => {
+    const sample = {
+      attemptId: 'impossible-counts',
+      mode: 'shadow' as const,
+      version: 'evidence-pack-v1',
+      policyVersion: 'proposal-v1',
+      candidateCount: 1,
+      selectedCount: 1,
+      surfaceCount: 2,
+      estimatedTokens: 200,
+      buildDurationMs: 50,
+      truncated: false,
+    };
+
+    expect(() => parseProductionSamplingEvidencePackSamples([sample])).toThrow(
+      'Expected an evidence-pack sample array',
+    );
+    expect(() => summarizeProductionSamplingEvidencePacks([sample])).toThrow(
+      'surfaceCount <= selectedCount <= candidateCount',
+    );
+  });
+
+  it('blocks promotion when builder or policy versions are mixed', () => {
+    const passed = buildLiveEvalArtifact({
+      testCase: BASE_CASE,
+      modelId: 'planner-v1',
+      promptVersion: 'prompt-v1',
+      prompt: 'private production packet text',
+      result: PASS_RESULT,
+      judge: PASS_JUDGE,
+      passed: true,
+      failures: [],
+      startedAt: '2026-07-01T10:00:00.000Z',
+      completedAt: '2026-07-01T10:00:01.000Z',
+    });
+    const samples = Array.from({ length: 201 }, (_, index) => ({
+      attemptId: `version-gate-attempt-${index}`,
+      mode: 'shadow' as const,
+      version: index === 200 ? 'evidence-pack-v2' : 'evidence-pack-v1',
+      policyVersion: index === 200 ? 'proposal-v2' : 'proposal-v1',
+      candidateCount: 4,
+      selectedCount: 2,
+      surfaceCount: 2,
+      estimatedTokens: 400,
+      buildDurationMs: 100,
+      truncated: false,
+      sampledAt: `2026-07-${String((index % 7) + 1).padStart(2, '0')}T10:00:00.000Z`,
+      teamKey: `team-${index % 3}`,
+      scenarioFamily: 'customer_project',
+      eligible: true,
+    }));
+
+    const report = buildProductionSamplingEvalReport({
+      generatedAt: '2026-07-08T10:00:00.000Z',
+      manifests: [],
+      artifacts: [passed],
+      evidencePackSamples: samples,
+      requiredEvidencePackScenarioFamilies: ['customer_project'],
+    });
+
+    expect(report.evidencePackPromotion?.blockerCodes).toEqual([
+      'pack_policy_version_mixed',
+      'pack_version_mixed',
+    ]);
+  });
+
+  it('requires seven consecutive shadow days for evidence-pack promotion', () => {
+    const passed = buildLiveEvalArtifact({
+      testCase: BASE_CASE,
+      modelId: 'planner-v1',
+      promptVersion: 'prompt-v1',
+      prompt: 'private production packet text',
+      result: PASS_RESULT,
+      judge: PASS_JUDGE,
+      passed: true,
+      failures: [],
+      startedAt: '2026-07-01T10:00:00.000Z',
+      completedAt: '2026-07-01T10:00:01.000Z',
+    });
+    const scatteredDays = ['01', '03', '05', '07', '09', '11', '13'];
+    const samples = Array.from({ length: 200 }, (_, index) => ({
+      attemptId: `day-gate-attempt-${index}`,
+      mode: 'shadow' as const,
+      version: 'evidence-pack-v1',
+      policyVersion: 'proposal-v1',
+      candidateCount: 4,
+      selectedCount: 2,
+      surfaceCount: index < 25 ? 2 : 1,
+      estimatedTokens: 400,
+      buildDurationMs: 100,
+      truncated: false,
+      sampledAt: `2026-07-${scatteredDays[index % scatteredDays.length]}T10:00:00.000Z`,
+      teamKey: `team-${index % 3}`,
+      scenarioFamily: 'customer_project',
+      eligible: true,
+    }));
+
+    const report = buildProductionSamplingEvalReport({
+      generatedAt: '2026-07-14T10:00:00.000Z',
+      manifests: [],
+      artifacts: [passed],
+      evidencePackSamples: samples,
+      requiredEvidencePackScenarioFamilies: ['customer_project'],
+    });
+
+    expect(report.evidencePackPromotion).toEqual({
+      ready: false,
+      blockerCodes: ['shadow_day_floor'],
+    });
+  });
+
+  it('preserves required scenario policy when reassessing a stored report', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'timeline-promotion-policy-'));
+    try {
+      const previous = buildProductionSamplingEvalReport({
+        generatedAt: '2026-07-08T10:00:00.000Z',
+        manifests: [],
+        artifacts: [],
+      });
+      previous.requiredEvidencePackScenarioFamilies = ['generic_webhook'];
+      previous.evidencePackHealth = summarizeProductionSamplingEvidencePacks(
+        Array.from({ length: 200 }, (_, index) => ({
+          attemptId: `stored-report-attempt-${index}`,
+          mode: 'shadow' as const,
+          version: 'evidence-pack-v1',
+          policyVersion: 'proposal-v1',
+          candidateCount: 2,
+          selectedCount: 2,
+          surfaceCount: index < 25 ? 2 : 1,
+          estimatedTokens: 200,
+          buildDurationMs: 50,
+          truncated: false,
+          sampledAt: `2026-07-${String((index % 7) + 1).padStart(2, '0')}T10:00:00.000Z`,
+          teamKey: `team-${index % 3}`,
+          scenarioFamily: 'generic_webhook',
+          eligible: true,
+        })),
+      );
+      previous.evidencePackPromotion = assessEvidencePackPromotion(previous, ['generic_webhook']);
+      const inputPath = path.join(dir, 'previous.json');
+      await writeFile(inputPath, `${JSON.stringify(previous, null, 2)}\n`, 'utf8');
+
+      const written = await writeProductionSamplingEvalReport({
+        inputPaths: [inputPath],
+        outputPath: path.join(dir, 'next.json'),
+        generatedAt: '2026-07-09T10:00:00.000Z',
+        evidencePackSamples: [
+          {
+            attemptId: 'stored-report-new-attempt',
+            mode: 'shadow',
+            version: 'evidence-pack-v1',
+            policyVersion: 'proposal-v1',
+            candidateCount: 2,
+            selectedCount: 2,
+            surfaceCount: 2,
+            estimatedTokens: 200,
+            buildDurationMs: 1_200,
+            truncated: false,
+            sampledAt: '2026-07-08T10:00:00.000Z',
+            teamKey: 'team-3',
+            scenarioFamily: 'generic_webhook',
+            eligible: true,
+          },
+        ],
+      });
+
+      expect(written.report.requiredEvidencePackScenarioFamilies).toEqual(['generic_webhook']);
+      expect(written.report.evidencePackHealth?.sampleCount).toBe(201);
+      expect(written.report.evidencePackHealth?.latencyP95Ms).toBe(50);
+      expect(written.report.evidencePackHealth?.shadowTeamKeys).toEqual([
+        'team-0',
+        'team-1',
+        'team-2',
+        'team-3',
+      ]);
+      expect(written.report.evidencePackPromotion?.blockerCodes).not.toContain(
+        'scenario_policy_missing',
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('preserves absent population fingerprints when rewriting one legacy report', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'timeline-legacy-pack-health-'));
+    try {
+      const previous = buildProductionSamplingEvalReport({
+        generatedAt: '2026-07-08T10:00:00.000Z',
+        manifests: [],
+        artifacts: [],
+        evidencePackSamples: [
+          {
+            attemptId: 'legacy-attempt-1',
+            mode: 'shadow',
+            version: 'evidence-pack-v1',
+            policyVersion: 'proposal-v1',
+            candidateCount: 2,
+            selectedCount: 2,
+            surfaceCount: 2,
+            estimatedTokens: 200,
+            buildDurationMs: 50,
+            truncated: false,
+            sampledAt: '2026-07-08T10:00:00.000Z',
+            teamKey: 'team-1',
+            scenarioFamily: 'generic_webhook',
+            eligible: true,
+          },
+        ],
+      });
+      if (!previous.evidencePackHealth) throw new Error('expected evidence-pack health');
+      delete previous.evidencePackHealth.populationFingerprints;
+      const inputPath = path.join(dir, 'legacy.json');
+      const outputPath = path.join(dir, 'rewritten.json');
+      await writeFile(inputPath, `${JSON.stringify(previous, null, 2)}\n`, 'utf8');
+
+      const written = await writeProductionSamplingEvalReport({
+        inputPaths: [inputPath],
+        outputPath,
+        generatedAt: '2026-07-09T10:00:00.000Z',
+      });
+
+      expect(written.loaded.reports).toHaveLength(1);
+      expect(written.report.evidencePackHealth).not.toHaveProperty('populationFingerprints');
+      const reloaded = await loadProductionSamplingEvalArtifacts({ inputPaths: [outputPath] });
+      expect(reloaded.reports).toHaveLength(1);
+      expect(reloaded.ignoredFiles).toEqual([]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects overlapping cumulative evidence-pack health populations', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'timeline-overlapping-pack-health-'));
+    try {
+      const sharedSample = {
+        attemptId: 'shadow-attempt-1',
+        mode: 'shadow' as const,
+        version: 'evidence-pack-v1',
+        policyVersion: 'proposal-v1',
+        candidateCount: 2,
+        selectedCount: 2,
+        surfaceCount: 2,
+        estimatedTokens: 200,
+        buildDurationMs: 50,
+        truncated: false,
+        sampledAt: '2026-07-08T10:00:00.000Z',
+        teamKey: 'team-1',
+        scenarioFamily: 'generic_webhook',
+        eligible: true,
+      };
+      const firstReport = buildProductionSamplingEvalReport({
+        generatedAt: '2026-07-08T10:00:00.000Z',
+        manifests: [],
+        artifacts: [],
+        evidencePackSamples: [
+          sharedSample,
+          {
+            ...sharedSample,
+            attemptId: 'shadow-attempt-2',
+            sampledAt: '2026-07-08T11:00:00.000Z',
+          },
+        ],
+      });
+      const overlappingReport = buildProductionSamplingEvalReport({
+        generatedAt: '2026-07-08T12:00:00.000Z',
+        manifests: [],
+        artifacts: [],
+        evidencePackSamples: [
+          {
+            ...sharedSample,
+            eligible: false,
+            errorReason: 'annotated after the first export',
+            falseLinkReviewOutcome: 'confirmed' as const,
+          },
+          {
+            ...sharedSample,
+            attemptId: 'shadow-attempt-3',
+            sampledAt: '2026-07-08T12:00:00.000Z',
+          },
+        ],
+      });
+      const firstPath = path.join(dir, 'first.json');
+      const overlappingPath = path.join(dir, 'overlapping.json');
+      await writeFile(firstPath, `${JSON.stringify(firstReport, null, 2)}\n`, 'utf8');
+      await writeFile(overlappingPath, `${JSON.stringify(overlappingReport, null, 2)}\n`, 'utf8');
+
+      await expect(
+        writeProductionSamplingEvalReport({
+          inputPaths: [firstPath, overlappingPath],
+          outputPath: path.join(dir, 'merged.json'),
+        }),
+      ).rejects.toThrow('overlapping evidence-pack health populations');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects duplicate immutable attempt IDs within one telemetry population', () => {
+    const sample = {
+      attemptId: 'duplicate-attempt',
+      mode: 'shadow' as const,
+      version: 'evidence-pack-v1',
+      policyVersion: 'proposal-v1',
+      candidateCount: 2,
+      selectedCount: 2,
+      surfaceCount: 2,
+      estimatedTokens: 200,
+      buildDurationMs: 50,
+      truncated: false,
+    };
+
+    expect(() => summarizeProductionSamplingEvidencePacks([sample, sample])).toThrow(
+      'duplicate attempt IDs',
+    );
+  });
+
+  it('rejects duplicate legacy attempt identities within one telemetry population', () => {
+    const sample = {
+      mode: 'shadow' as const,
+      version: 'evidence-pack-v1',
+      policyVersion: 'proposal-v1',
+      candidateCount: 2,
+      selectedCount: 2,
+      surfaceCount: 2,
+      estimatedTokens: 200,
+      buildDurationMs: 50,
+      truncated: false,
+      sampledAt: '2026-07-08T10:00:00.000Z',
+      teamKey: 'team-1',
+    };
+
+    expect(() => summarizeProductionSamplingEvidencePacks([sample, sample])).toThrow(
+      'duplicate legacy attempt identities',
+    );
+  });
+
+  it('assesses an explicit telemetry file even when it has no shadow samples', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'timeline-zero-shadow-'));
+    try {
+      const written = await writeProductionSamplingEvalReport({
+        inputPaths: [],
+        outputPath: path.join(dir, 'report.json'),
+        generatedAt: '2026-07-09T10:00:00.000Z',
+        evidencePackSamples: [
+          {
+            mode: 'off',
+            version: 'evidence-pack-v1',
+            policyVersion: 'proposal-v1',
+            candidateCount: 0,
+            selectedCount: 0,
+            surfaceCount: 0,
+            estimatedTokens: 0,
+            buildDurationMs: 0,
+            truncated: false,
+          },
+        ],
+        requiredEvidencePackScenarioFamilies: ['generic_webhook'],
+      });
+
+      expect(written.report.evidencePackHealth?.sampleCount).toBe(0);
+      expect(written.report.evidencePackPromotion?.ready).toBe(false);
+      expect(written.report.evidencePackPromotion?.blockerCodes).toEqual(
+        expect.arrayContaining(['shadow_sample_floor', 'shadow_day_floor', 'shadow_team_floor']),
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('omits evidence-pack health from reports without evidence-pack telemetry', async () => {
+    const report = buildProductionSamplingEvalReport({
+      generatedAt: '2026-07-09T10:00:00.000Z',
+      manifests: [],
+      artifacts: [],
+    });
+    expect(report).not.toHaveProperty('evidencePackHealth');
+    expect(report).not.toHaveProperty('evidencePackPromotion');
+
+    const dir = await mkdtemp(path.join(tmpdir(), 'timeline-no-evidence-pack-'));
+    try {
+      const inputPath = path.join(dir, 'input.json');
+      await writeFile(inputPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
+      const written = await writeProductionSamplingEvalReport({
+        inputPaths: [inputPath],
+        outputPath: path.join(dir, 'output.json'),
+        generatedAt: '2026-07-10T10:00:00.000Z',
+      });
+
+      expect(written.loaded.reports).toHaveLength(1);
+      expect(written.report).not.toHaveProperty('evidencePackHealth');
+      expect(written.report).not.toHaveProperty('evidencePackPromotion');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it('downgrades stale passed artifacts when source-ref consistency fails', () => {
@@ -606,19 +1234,100 @@ describe('production reconciliation sampling report', () => {
         `${JSON.stringify({ ...previousReport, failedCount: 0 }, null, 2)}\n`,
         'utf8',
       );
+      await writeFile(
+        path.join(dir, 'malformed-evidence-health-report.json'),
+        `${JSON.stringify(
+          {
+            ...previousReport,
+            evidencePackHealth: { sampleCount: 1, errorReasons: { malformed: 'one' } },
+          },
+          null,
+          2,
+        )}\n`,
+        'utf8',
+      );
+      const validHealth = summarizeProductionSamplingEvidencePacks([
+        {
+          attemptId: 'attempt-1',
+          mode: 'shadow',
+          version: 'evidence-pack-v1',
+          policyVersion: 'proposal-v1',
+          candidateCount: 1,
+          selectedCount: 1,
+          surfaceCount: 1,
+          estimatedTokens: 10,
+          buildDurationMs: 25,
+          truncated: false,
+          sampledAt: '2026-06-29T10:00:00.000Z',
+          teamKey: 'team-key',
+          scenarioFamily: 'customer_project',
+        },
+      ]);
+      await writeFile(
+        path.join(dir, 'inflated-evidence-health-report.json'),
+        `${JSON.stringify(
+          {
+            ...previousReport,
+            evidencePackHealth: {
+              ...validHealth,
+              shadowEligibleSampleCount: 200,
+              crossSourceSampleCount: 25,
+            },
+          },
+          null,
+          2,
+        )}\n`,
+        'utf8',
+      );
+      await writeFile(
+        path.join(dir, 'non-shadow-eligible-health-report.json'),
+        `${JSON.stringify(
+          {
+            ...previousReport,
+            evidencePackHealth: {
+              ...validHealth,
+              modes: ['enforced'],
+            },
+          },
+          null,
+          2,
+        )}\n`,
+        'utf8',
+      );
 
       const loaded = await loadProductionSamplingEvalArtifacts({
-        inputPaths: [reportPath, reportPath, path.join(dir, 'malformed-report.json')],
+        inputPaths: [
+          reportPath,
+          reportPath,
+          path.join(dir, 'malformed-report.json'),
+          path.join(dir, 'malformed-evidence-health-report.json'),
+          path.join(dir, 'inflated-evidence-health-report.json'),
+          path.join(dir, 'non-shadow-eligible-health-report.json'),
+        ],
       });
 
       expect(loaded.reports).toHaveLength(1);
       expect(loaded.artifacts).toHaveLength(0);
-      expect(loaded.ignoredFiles).toEqual([
-        {
-          path: path.join(dir, 'malformed-report.json'),
-          reason: 'not a reconciliation live artifact or production sampling report',
-        },
-      ]);
+      expect(loaded.ignoredFiles).toEqual(
+        expect.arrayContaining([
+          {
+            path: path.join(dir, 'malformed-report.json'),
+            reason: 'not a reconciliation live artifact or production sampling report',
+          },
+          {
+            path: path.join(dir, 'malformed-evidence-health-report.json'),
+            reason: 'not a reconciliation live artifact or production sampling report',
+          },
+          {
+            path: path.join(dir, 'inflated-evidence-health-report.json'),
+            reason: 'not a reconciliation live artifact or production sampling report',
+          },
+          {
+            path: path.join(dir, 'non-shadow-eligible-health-report.json'),
+            reason: 'not a reconciliation live artifact or production sampling report',
+          },
+        ]),
+      );
 
       const outputPath = path.join(dir, 'merged-report.json');
       const written = await writeProductionSamplingEvalReport({
@@ -651,6 +1360,27 @@ describe('production reconciliation sampling report', () => {
     } finally {
       await rm(dir, { force: true, recursive: true });
     }
+  });
+
+  it('persists evidence-pack promotion policy and blockers in durable run metrics', () => {
+    const report = buildProductionSamplingEvalReport({
+      runKind: 'closed_beta',
+      generatedAt: '2026-06-29T10:06:00.000Z',
+      manifests: [],
+      artifacts: [],
+      evidencePackSamples: [],
+      requiredEvidencePackScenarioFamilies: ['customer_project'],
+    });
+
+    const metrics = productionSamplingRunMetrics({ report });
+    expect(metrics).toMatchObject({
+      failed_count: 0,
+      required_evidence_pack_scenario_families: ['customer_project'],
+      evidence_pack_promotion: {
+        ready: false,
+      },
+    });
+    expect(metrics.evidence_pack_promotion?.blockerCodes).toContain('shadow_sample_floor');
   });
 
   it('writes a production sampling report from one or more live artifact directories', async () => {
@@ -766,21 +1496,22 @@ describe('production reconciliation sampling report', () => {
       await writeFile(path.join(dir, 'ignored.json'), '{"schemaVersion":1}\n', 'utf8');
 
       const outputPath = path.join(dir, 'reports', 'production-sampling-report.json');
+      const reconciliationScope = withTeam(db as never, TEAM_ID, ZERO_UUID, {
+        skipMembershipCheck: true,
+      }).reconciliation;
       const written = await writeProductionSamplingEvalReport({
         inputPaths: [dir],
         outputPath,
         generatedAt: '2026-06-29T10:06:00.000Z',
         runKind: 'closed_beta',
-        db: db as never,
-        teamId: TEAM_ID,
+        persistReport: (input) => reconciliationScope.recordProductionSamplingEvalReport(input),
       });
       const secondWrite = await writeProductionSamplingEvalReport({
         inputPaths: [dir],
         outputPath,
         generatedAt: '2026-06-29T10:06:00.000Z',
         runKind: 'closed_beta',
-        db: db as never,
-        teamId: TEAM_ID,
+        persistReport: (input) => reconciliationScope.recordProductionSamplingEvalReport(input),
       });
 
       expect(secondWrite.runId).toBe(written.runId);

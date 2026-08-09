@@ -429,7 +429,7 @@ describe('withTeam namespaced port', () => {
       expect.objectContaining({
         rawEventId: event.id,
         role: 'related_context',
-        strength: 'semantic',
+        strength: 'hard',
         visibilityFloor: 'team',
       }),
     ]);

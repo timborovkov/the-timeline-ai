@@ -642,8 +642,11 @@ _Avoid_: Automation permission, write access
 **Event-Local Proposal**:
 An approval-backed suggestion generated primarily from one raw event plus its
 available extracted facts, recent context, and existing workspace state. Event-
-local proposals are useful for ingest webhooks, but they are not the same as a
-cross-source evidence review.
+local proposals remain the default. Generic ingest webhooks are the first
+adapter to honor cross-source evidence mode; in enforced mode, the anchor and
+directly related pack evidence replace time-only raw chronology while typed
+workspace state remains adjacent context. Other event-local adapters keep their
+legacy behavior until their own rollout milestones.
 _Avoid_: Full-context proposal, automatic synthesis
 
 **Event Visibility**:
@@ -667,7 +670,10 @@ _Avoid_: Author when the sender is not a verified Timeline user
 **Sender Context**:
 Sender, conversation, and thread information that helps interpret a captured
 message. Sender context belongs in source metadata and must be available to
-retrieval and extraction, not only to timeline display.
+retrieval and extraction, not only to timeline display. Evidence consumers
+match a raw event's author user ID against the current team member list before
+adding verified Timeline member identity; provider sender metadata remains the
+source attribution when no current member matches.
 _Avoid_: Display-only metadata
 
 **Conversation Evidence Window**:
@@ -678,6 +684,47 @@ same source conversation and may include cross-source linked context only when
 there is a strong relationship signal; every cited event must be visible to
 the audience that receives the answer or proposal.
 _Avoid_: Single-message evidence, chat history dump
+
+**Evidence Pack**:
+A deterministic, bounded set of visibility-safe raw events related to one or
+more anchor events. The pack records core and supporting evidence, normalized
+source surfaces, relationship provenance, ordering, budget decisions, and
+policy version. It is a build result used by answers or proposals, not a new
+canonical workspace object or source of write authority.
+_Avoid_: Context dump, prompt context, evidence bundle
+
+**Core Evidence**:
+The anchor events and protected same-conversation events that define an evidence
+review. Core evidence receives budget priority over supporting evidence.
+_Avoid_: Primary truth, authoritative evidence
+
+**Supporting Evidence**:
+A directly related, visibility-safe raw event admitted through a stable
+one-hop relationship to the anchor or core. Supporting evidence may reinforce,
+refine, supersede, or contradict the anchor.
+_Avoid_: Similar event, nearby context
+
+**Evidence Pack Policy**:
+The consumer-specific admission, ranking, visibility, and budget rules applied
+by the shared evidence-pack builder. Proposal policy requires direct
+non-semantic relationships; answer policy may admit viewer-visible semantic
+matches because answers do not change durable state.
+_Avoid_: Retrieval mode, confidence setting
+
+**Proposal Audience**:
+The common audience allowed to see every selected citation and the resulting
+approval-backed proposal. Evidence visibility is intersected before model input,
+persistence, display, and acceptance; source evidence never broadens to fit a
+proposal.
+_Avoid_: Team, approvers
+
+**Source Surface**:
+The source family a person recognizes, such as Slack, email, meetings, GitHub,
+Monday, or one immutable generic-webhook identity. Several event types from one
+provider are one surface. Webhook names are display labels only; legacy webhook
+rows without IDs collapse conservatively into one surface. A pack is
+cross-source only when selected citations span at least two surfaces.
+_Avoid_: Event type, ingestion path, integration category
 
 **Conversation Review**:
 An ongoing review of a source conversation that re-evaluates durable

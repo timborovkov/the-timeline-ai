@@ -10,6 +10,10 @@ compact provider badges. Opening one hydrates its persisted transcript,
 continuing it from web appends to the same session, and archiving it causes the
 provider's next direct message to create a new session.
 
+Pack-backed approval items show their exact visible source citations beneath
+the proposed change. If a required citation becomes inaccessible, the item is
+shown as stale and cannot be accepted or revised.
+
 Presentation follows the current delivery surface rather than the session's
 origin. Prior Telegram or Slack turns remain their exact compact transcript;
 new turns sent from web use the rich profile with full clickable citations and

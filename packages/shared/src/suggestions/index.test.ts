@@ -20,8 +20,9 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as QueueModule from '#src/queue/queues.js';
-import type { PGlite } from '@electric-sql/pglite';
+import type { PGlite, Transaction } from '@electric-sql/pglite';
 
+import { calendarEventMutationLockKey } from '#src/calendar/locking.js';
 import { resetEnvForTests } from '#src/env.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { suggestionDedupeKey } from '#src/suggestions/index.js';
@@ -57,6 +58,7 @@ const OTHER_USER_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
 const OTHER_RAW_EVENT_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 const TEAM_RAW_EVENT_ID = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+const TEAM_SUPPORT_EVENT_ID = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
 const ORIGINAL_ENV = { ...process.env };
 
 function adjudicationStub(object: {
@@ -168,6 +170,1009 @@ describe('suggestion scope', () => {
 
     expect(bundle.visibilityOwnerUserId).toBeNull();
     expect(bundle.items).toHaveLength(1);
+  });
+
+  it('creates a new revision and supersedes actionable items when the evidence pack changes', async () => {
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: 'Owner committed to the follow-up.',
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+      visibility: 'team',
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const create = (fingerprint: string) =>
+      scope.suggestions.createOrMergeSuggestionBundle({
+        source: 'background' as const,
+        title: 'Create follow-up task',
+        dedupeKey: 'pack-revision',
+        metadata: { evidence_pack_fingerprint: fingerprint },
+        evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }],
+        items: [
+          {
+            operation: 'create' as const,
+            targetKind: 'task' as const,
+            title: 'Follow up',
+            dedupeKey: 'pack-revision:item',
+            proposedPayload: { canonicalName: 'Follow up' },
+            evidenceRawEventIds: [TEAM_RAW_EVENT_ID],
+          },
+        ],
+      });
+
+    const first = await create('a'.repeat(64));
+    const second = await create('b'.repeat(64));
+    const secondRetry = await create('b'.repeat(64));
+    const third = await create('a'.repeat(64));
+    const fourth = await create('b'.repeat(64));
+
+    expect(second.id).not.toBe(first.id);
+    expect(secondRetry.id).toBe(second.id);
+    expect(new Set([first.id, second.id, third.id, fourth.id]).size).toBe(4);
+    const rows = await db
+      .select({
+        status: agentSuggestionItems.status,
+        supersededReason: agentSuggestionItems.supersededReason,
+      })
+      .from(agentSuggestionItems)
+      .orderBy(asc(agentSuggestionItems.createdAt));
+    expect(rows).toEqual([
+      { status: 'superseded', supersededReason: 'The selected source evidence changed.' },
+      { status: 'superseded', supersededReason: 'The selected source evidence changed.' },
+      { status: 'superseded', supersededReason: 'The selected source evidence changed.' },
+      { status: 'pending', supersededReason: null },
+    ]);
+  });
+
+  it('keeps exactly one actionable revision when evidence revisions race', async () => {
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: 'Owner committed to the concurrent follow-up.',
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+      visibility: 'team',
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const create = (fingerprint: string) =>
+      scope.suggestions.createOrMergeSuggestionBundle({
+        source: 'background' as const,
+        title: 'Create concurrent follow-up task',
+        dedupeKey: 'concurrent-pack-revision',
+        metadata: { evidence_pack_fingerprint: fingerprint },
+        evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }],
+        items: [
+          {
+            operation: 'create' as const,
+            targetKind: 'task' as const,
+            title: 'Concurrent follow-up',
+            dedupeKey: 'concurrent-pack-revision:item',
+            proposedPayload: { canonicalName: 'Concurrent follow-up' },
+            evidenceRawEventIds: [TEAM_RAW_EVENT_ID],
+          },
+        ],
+      });
+
+    await create('a'.repeat(64));
+    const results = await Promise.allSettled([create('b'.repeat(64)), create('c'.repeat(64))]);
+    expect(results.some((result) => result.status === 'fulfilled')).toBe(true);
+
+    const statuses = await db
+      .select({ status: agentSuggestionItems.status })
+      .from(agentSuggestionItems);
+    expect(statuses.filter((item) => item.status === 'pending')).toHaveLength(1);
+    expect(statuses.filter((item) => item.status === 'superseded').length).toBeGreaterThanOrEqual(
+      1,
+    );
+  });
+
+  it('serializes first-time evidence pack revisions with different fingerprints', async () => {
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'calendar',
+      contentText: 'Owner committed to the first-time concurrent follow-up.',
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+      visibility: 'team',
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const create = (fingerprint: string) =>
+      scope.suggestions.createOrMergeSuggestionBundle({
+        source: 'background' as const,
+        title: 'Create first-time concurrent follow-up task',
+        dedupeKey: 'first-time-concurrent-pack-revision',
+        metadata: { evidence_pack_fingerprint: fingerprint },
+        evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }],
+        items: [
+          {
+            operation: 'create' as const,
+            targetKind: 'task' as const,
+            title: 'First-time concurrent follow-up',
+            dedupeKey: 'first-time-concurrent-pack-revision:item',
+            proposedPayload: { canonicalName: 'First-time concurrent follow-up' },
+            evidenceRawEventIds: [TEAM_RAW_EVENT_ID],
+          },
+        ],
+      });
+
+    const [first, second] = await Promise.all([create('a'.repeat(64)), create('b'.repeat(64))]);
+
+    expect(first.id).not.toBe(second.id);
+    const suggestions = await db
+      .select({ id: agentSuggestions.id, metadata: agentSuggestions.metadata })
+      .from(agentSuggestions);
+    expect(suggestions).toHaveLength(2);
+    expect(
+      new Set(
+        suggestions.map((suggestion) =>
+          String((suggestion.metadata as Record<string, unknown>).evidence_pack_fingerprint),
+        ),
+      ),
+    ).toEqual(new Set(['a'.repeat(64), 'b'.repeat(64)]));
+    const items = await db
+      .select({
+        suggestionId: agentSuggestionItems.suggestionId,
+        status: agentSuggestionItems.status,
+      })
+      .from(agentSuggestionItems);
+    expect(items.filter((item) => item.status === 'pending')).toHaveLength(1);
+    expect(items.filter((item) => item.status === 'superseded')).toHaveLength(1);
+    const evidence = await db
+      .select({ suggestionId: agentSuggestionEvidence.suggestionId })
+      .from(agentSuggestionEvidence);
+    expect(new Set(evidence.map((row) => row.suggestionId))).toEqual(
+      new Set(suggestions.map((suggestion) => suggestion.id)),
+    );
+  });
+
+  it('keeps the prior approval actionable when replacement creation rolls back', async () => {
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: 'Owner committed to the atomic follow-up.',
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+      visibility: 'team',
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const create = (fingerprint: string) =>
+      scope.suggestions.createOrMergeSuggestionBundle({
+        source: 'background' as const,
+        title: 'Create atomic follow-up task',
+        dedupeKey: 'atomic-pack-revision',
+        metadata: { evidence_pack_fingerprint: fingerprint },
+        evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }],
+        items: [
+          {
+            operation: 'create' as const,
+            targetKind: 'task' as const,
+            title: 'Atomic follow-up',
+            dedupeKey: 'atomic-pack-revision:item',
+            proposedPayload: { canonicalName: 'Atomic follow-up' },
+            evidenceRawEventIds: [TEAM_RAW_EVENT_ID],
+          },
+        ],
+      });
+
+    const first = await create('a'.repeat(64));
+    await pg.exec(`
+      CREATE FUNCTION fail_pack_revision_insert() RETURNS trigger AS $$
+      BEGIN
+        IF NEW.dedupe_key LIKE 'atomic-pack-revision:evidence:%' THEN
+          RAISE EXCEPTION 'injected pack revision failure';
+        END IF;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+      CREATE TRIGGER fail_pack_revision_insert_trg
+      BEFORE INSERT ON agent_suggestions
+      FOR EACH ROW EXECUTE FUNCTION fail_pack_revision_insert();
+    `);
+    try {
+      await expect(create('b'.repeat(64))).rejects.toThrow();
+      const [firstItem] = await db
+        .select({ status: agentSuggestionItems.status })
+        .from(agentSuggestionItems)
+        .where(eq(agentSuggestionItems.suggestionId, first.id));
+      expect(firstItem?.status).toBe('pending');
+    } finally {
+      await pg.exec(`
+        DROP TRIGGER fail_pack_revision_insert_trg ON agent_suggestions;
+        DROP FUNCTION fail_pack_revision_insert();
+      `);
+    }
+
+    const replacement = await create('b'.repeat(64));
+    expect(replacement.id).not.toBe(first.id);
+    const statuses = await db
+      .select({
+        suggestionId: agentSuggestionItems.suggestionId,
+        status: agentSuggestionItems.status,
+      })
+      .from(agentSuggestionItems);
+    expect(statuses).toEqual(
+      expect.arrayContaining([
+        { suggestionId: first.id, status: 'superseded' },
+        { suggestionId: replacement.id, status: 'pending' },
+      ]),
+    );
+  });
+
+  it('rejects a team approval when its evidence narrows to the accepting owner', async () => {
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: 'Private commitment details.',
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+      visibility: 'team',
+    });
+    const ownerScope = withTeam(db as never, TEAM_ID, USER_ID);
+    const created = await ownerScope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Evidence-backed task',
+      dedupeKey: 'stale-pack-evidence',
+      metadata: { evidence_pack_fingerprint: 'a'.repeat(64) },
+      evidence: [{ rawEventId: TEAM_RAW_EVENT_ID, quote: 'Private commitment details.' }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Private follow-up',
+          dedupeKey: 'stale-pack-evidence:item',
+          proposedPayload: { canonicalName: 'Private follow-up' },
+          evidenceRawEventIds: [TEAM_RAW_EVENT_ID],
+        },
+      ],
+    });
+    await db
+      .update(rawEvents)
+      .set({ visibility: 'private', visibilityOwnerUserId: USER_ID })
+      .where(eq(rawEvents.id, TEAM_RAW_EVENT_ID));
+
+    await expect(ownerScope.suggestions.listPendingSuggestions()).resolves.toEqual([]);
+    await expect(ownerScope.suggestions.getSuggestion(created.id)).resolves.toBeNull();
+    await expect(ownerScope.suggestions.getApprovalItemCounts()).resolves.toEqual({
+      pending: 0,
+      failed: 0,
+    });
+    await expect(
+      ownerScope.suggestions.reviseSuggestionItem({
+        itemId: created.items[0]?.id ?? 'missing',
+        feedback: 'Make the title shorter.',
+      }),
+    ).rejects.toThrow('Required source evidence no longer supports this approval audience.');
+    await expect(
+      ownerScope.suggestions.reviseTaskSuggestionItem({
+        itemId: created.items[0]?.id ?? 'missing',
+        project: { kind: 'none' },
+      }),
+    ).rejects.toThrow('Required source evidence no longer supports this approval audience.');
+    await ownerScope.suggestions.acceptSuggestionItem(created.items[0]?.id ?? 'missing');
+    const [item] = await db
+      .select({
+        status: agentSuggestionItems.status,
+        reason: agentSuggestionItems.supersededReason,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, created.items[0]?.id ?? 'missing'));
+    expect(item).toEqual({
+      status: 'superseded',
+      reason: 'Required source evidence no longer supports this approval audience.',
+    });
+  });
+
+  it('hides and supersedes a pack when an uncited selected row becomes unavailable', async () => {
+    await db.insert(rawEvents).values([
+      {
+        id: TEAM_RAW_EVENT_ID,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'web',
+        contentText: 'Owner committed to the follow-up.',
+        occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+        visibility: 'team',
+      },
+      {
+        id: TEAM_SUPPORT_EVENT_ID,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'calendar',
+        contentText: 'The supporting review is scheduled for Friday.',
+        occurredAt: new Date('2026-05-27T11:00:00.000Z'),
+        visibility: 'team',
+      },
+    ]);
+    const ownerScope = withTeam(db as never, TEAM_ID, USER_ID);
+    const created = await ownerScope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Evidence-backed follow-up',
+      dedupeKey: 'uncited-pack-evidence',
+      metadata: { evidence_pack_fingerprint: 'a'.repeat(64) },
+      evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }, { rawEventId: TEAM_SUPPORT_EVENT_ID }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Complete the follow-up',
+          dedupeKey: 'uncited-pack-evidence:item',
+          proposedPayload: { canonicalName: 'Complete the follow-up' },
+          evidenceRawEventIds: [TEAM_RAW_EVENT_ID],
+        },
+      ],
+    });
+    await db
+      .update(rawEvents)
+      .set({ visibility: 'private', visibilityOwnerUserId: USER_ID })
+      .where(eq(rawEvents.id, TEAM_SUPPORT_EVENT_ID));
+
+    const reviewerScope = withTeam(db as never, TEAM_ID, REVIEWER_ID);
+    await expect(reviewerScope.suggestions.listPendingSuggestions()).resolves.toEqual([]);
+    await expect(reviewerScope.suggestions.getSuggestion(created.id)).resolves.toBeNull();
+    await reviewerScope.suggestions.acceptSuggestionItem(created.items[0]?.id ?? 'missing');
+
+    const [item] = await db
+      .select({
+        status: agentSuggestionItems.status,
+        reason: agentSuggestionItems.supersededReason,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, created.items[0]?.id ?? 'missing'));
+    expect(item).toEqual({
+      status: 'superseded',
+      reason: 'Required source evidence is no longer available to approve.',
+    });
+  });
+
+  it('marks every item stale when uncited pack evidence changes', async () => {
+    await db.insert(rawEvents).values([
+      {
+        id: TEAM_RAW_EVENT_ID,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'web',
+        contentText: 'Owner committed to the follow-up.',
+        occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+        visibility: 'team',
+      },
+      {
+        id: TEAM_SUPPORT_EVENT_ID,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'calendar',
+        contentText: 'The supporting review is scheduled for Friday.',
+        occurredAt: new Date('2026-05-27T11:00:00.000Z'),
+        visibility: 'team',
+      },
+    ]);
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const created = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Evidence-backed follow-up',
+      dedupeKey: 'changed-uncited-pack-evidence',
+      metadata: { evidence_pack_fingerprint: 'a'.repeat(64) },
+      evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }, { rawEventId: TEAM_SUPPORT_EVENT_ID }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Complete the follow-up',
+          dedupeKey: 'changed-uncited-pack-evidence:item',
+          proposedPayload: { canonicalName: 'Complete the follow-up' },
+          evidenceRawEventIds: [TEAM_RAW_EVENT_ID],
+        },
+      ],
+    });
+    await db
+      .update(rawEvents)
+      .set({
+        contentText: 'The supporting review moved to Monday.',
+        occurredAt: new Date('2026-05-30T11:00:00.000Z'),
+      })
+      .where(eq(rawEvents.id, TEAM_SUPPORT_EVENT_ID));
+
+    const [visible] = await scope.suggestions.listPendingSuggestions();
+    expect(visible?.items).toEqual([
+      expect.objectContaining({ id: created.items[0]?.id, evidenceStatus: 'stale' }),
+    ]);
+    await expect(
+      scope.suggestions.reviseTaskSuggestionItem({
+        itemId: created.items[0]?.id ?? 'missing',
+        project: { kind: 'none' },
+      }),
+    ).rejects.toThrow('Required source evidence changed after this suggestion was created.');
+  });
+
+  it('marks tombstoned item evidence stale and supersedes it at acceptance', async () => {
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: 'Commitment that was later deleted.',
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+      visibility: 'team',
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const created = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Evidence-backed task',
+      dedupeKey: 'tombstoned-pack-evidence',
+      metadata: { evidence_pack_fingerprint: 'a'.repeat(64) },
+      evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Deleted follow-up',
+          dedupeKey: 'tombstoned-pack-evidence:item',
+          proposedPayload: { canonicalName: 'Deleted follow-up' },
+          evidenceRawEventIds: [TEAM_RAW_EVENT_ID],
+        },
+      ],
+    });
+    await db
+      .update(rawEvents)
+      .set({ sourceMetadata: { deleted: true } })
+      .where(eq(rawEvents.id, TEAM_RAW_EVENT_ID));
+
+    await expect(scope.suggestions.listPendingSuggestions()).resolves.toEqual([]);
+    await expect(scope.suggestions.getSuggestion(created.id)).resolves.toBeNull();
+    await scope.suggestions.acceptSuggestionItem(created.items[0]?.id ?? 'missing');
+
+    const [item] = await db
+      .select({
+        status: agentSuggestionItems.status,
+        reason: agentSuggestionItems.supersededReason,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, created.items[0]?.id ?? 'missing'));
+    expect(item).toEqual({
+      status: 'superseded',
+      reason: 'Required source evidence is no longer available to approve.',
+    });
+  });
+
+  it('supersedes an approval when mutable calendar evidence changes', async () => {
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'calendar',
+      contentText: 'Customer review is August 12 at 10:00.',
+      occurredAt: new Date('2026-08-12T10:00:00.000Z'),
+      visibility: 'team',
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const created = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Prepare for customer review',
+      dedupeKey: 'refreshed-calendar-evidence',
+      metadata: { evidence_pack_fingerprint: 'a'.repeat(64) },
+      evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare review notes',
+          dedupeKey: 'refreshed-calendar-evidence:item',
+          proposedPayload: { canonicalName: 'Prepare review notes' },
+          evidenceRawEventIds: [TEAM_RAW_EVENT_ID],
+        },
+      ],
+    });
+    await db
+      .update(rawEvents)
+      .set({
+        contentText: 'Customer review moved to August 13 at 14:00.',
+        occurredAt: new Date('2026-08-13T14:00:00.000Z'),
+      })
+      .where(eq(rawEvents.id, TEAM_RAW_EVENT_ID));
+
+    const [visible] = await scope.suggestions.listPendingSuggestions();
+    expect(visible?.items[0]).toMatchObject({ evidenceStatus: 'stale' });
+    await scope.suggestions.acceptSuggestionItem(created.items[0]?.id ?? 'missing');
+
+    const [item] = await db
+      .select({
+        status: agentSuggestionItems.status,
+        reason: agentSuggestionItems.supersededReason,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, created.items[0]?.id ?? 'missing'));
+    expect(item).toEqual({
+      status: 'superseded',
+      reason: 'Required source evidence changed after this suggestion was created.',
+    });
+  });
+
+  it('holds mutable pack evidence stable through acceptance application', async () => {
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'calendar',
+      contentText: 'Customer review is August 12 at 10:00.',
+      occurredAt: new Date('2026-08-12T10:00:00.000Z'),
+      visibility: 'team',
+    });
+    const baseScope = withTeam(db as never, TEAM_ID, USER_ID);
+    const created = await baseScope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Prepare for the customer review',
+      dedupeKey: 'acceptance-calendar-race',
+      metadata: { evidence_pack_fingerprint: 'a'.repeat(64) },
+      evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare customer review notes',
+          dedupeKey: 'acceptance-calendar-race:item',
+          proposedPayload: { canonicalName: 'Prepare customer review notes' },
+          evidenceRawEventIds: [TEAM_RAW_EVENT_ID],
+        },
+      ],
+    });
+    const acceptingScope = withTeam(db as never, TEAM_ID, USER_ID, {
+      beforeSuggestionApply: async () => {
+        await db
+          .update(rawEvents)
+          .set({
+            contentText: 'Customer review moved to August 13 at 14:00.',
+            occurredAt: new Date('2026-08-13T14:00:00.000Z'),
+          })
+          .where(eq(rawEvents.id, TEAM_RAW_EVENT_ID));
+      },
+    });
+
+    await expect(
+      acceptingScope.suggestions.acceptSuggestionItem(created.items[0]?.id ?? 'missing'),
+    ).resolves.toBe(true);
+
+    const [item] = await db
+      .select({
+        status: agentSuggestionItems.status,
+        reason: agentSuggestionItems.supersededReason,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, created.items[0]?.id ?? 'missing'));
+    expect(item).toEqual({
+      status: 'superseded',
+      reason: 'Required source evidence changed after this suggestion was created.',
+    });
+    const createdTasks = await db
+      .select({ id: entities.id })
+      .from(entities)
+      .where(eq(entities.canonicalName, 'Prepare customer review notes'));
+    expect(createdTasks).toEqual([]);
+  });
+
+  it('locks every pack-involved calendar target in stable order before evidence rows', async () => {
+    const transactionQueries: Parameters<Transaction['query']>[] = [];
+    const runTransaction = pg.transaction.bind(pg);
+    const transaction = vi
+      .spyOn(pg, 'transaction')
+      .mockImplementation(<T>(callback: (tx: Transaction) => Promise<T>) =>
+        runTransaction(async (tx) => {
+          const query = vi.spyOn(tx, 'query');
+          try {
+            return await callback(tx);
+          } finally {
+            transactionQueries.push(...query.mock.calls);
+            query.mockRestore();
+          }
+        }),
+      );
+    const observedDb = drizzle(pg);
+    const scope = withTeam(observedDb as never, TEAM_ID, USER_ID);
+    const target = await scope.calendar.createCalendarEvent({
+      title: 'Target review',
+      startAt: new Date('2026-08-12T10:00:00.000Z'),
+      endAt: new Date('2026-08-12T11:00:00.000Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+    });
+    const evidenceOwner = await scope.calendar.createCalendarEvent({
+      title: 'Supporting review',
+      startAt: new Date('2026-08-13T10:00:00.000Z'),
+      endAt: new Date('2026-08-13T11:00:00.000Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+    });
+    const evidenceRawEventId = evidenceOwner.startAtRawEventId ?? '';
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Update target from supporting calendar evidence',
+      dedupeKey: 'cross-pack-calendar-lock-order',
+      metadata: { evidence_pack_fingerprint: 'a'.repeat(64) },
+      evidence: [{ rawEventId: evidenceRawEventId }],
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'calendar_event',
+          targetId: target.id,
+          title: 'Rename target review',
+          dedupeKey: 'cross-pack-calendar-lock-order:item',
+          proposedPayload: { title: 'Renamed target review' },
+          evidenceRawEventIds: [evidenceRawEventId],
+        },
+      ],
+    });
+    transactionQueries.length = 0;
+
+    await scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '');
+
+    const acquiredLockKeys = transactionQueries.flatMap((call) => {
+      const [statement, params] = call;
+      return typeof statement === 'string' && statement.includes('pg_advisory_xact_lock')
+        ? [String(params?.[0])]
+        : [];
+    });
+    transaction.mockRestore();
+    expect(acquiredLockKeys.slice(0, 2)).toEqual(
+      [
+        calendarEventMutationLockKey(TEAM_ID, target.id),
+        calendarEventMutationLockKey(TEAM_ID, evidenceOwner.id),
+      ].sort(),
+    );
+  });
+
+  it('prelocks every task-owned due-date mirror with cross-cited mirror evidence', async () => {
+    const transactionQueries: Parameters<Transaction['query']>[] = [];
+    const runTransaction = pg.transaction.bind(pg);
+    const transaction = vi
+      .spyOn(pg, 'transaction')
+      .mockImplementation(<T>(callback: (tx: Transaction) => Promise<T>) =>
+        runTransaction(async (tx) => {
+          const query = vi.spyOn(tx, 'query');
+          try {
+            return await callback(tx);
+          } finally {
+            transactionQueries.push(...query.mock.calls);
+            query.mockRestore();
+          }
+        }),
+      );
+    const observedDb = drizzle(pg);
+    const scope = withTeam(observedDb as never, TEAM_ID, USER_ID);
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Prepare due-date review',
+      dueAt: new Date('2026-08-12T10:00:00.000Z'),
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const board = await scope.boards.createBoard({
+      name: 'Due-date review board',
+      templateKind: 'task_board',
+      lanes: [{ name: 'Todo', kind: 'active' }],
+    });
+    await scope.boards.addBoardItem(board.id, {
+      entityId: task.id,
+      laneId: board.lanes[0]?.id ?? null,
+      dueAt: new Date('2026-08-14T10:00:00.000Z'),
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const supportingTask = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Support due-date review',
+      dueAt: new Date('2026-08-13T10:00:00.000Z'),
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const targetMirrors = await pg.query<{ id: string; source: string }>(
+      `SELECT id::text, metadata ->> 'source' AS source
+       FROM calendar_events
+       WHERE team_id = '${TEAM_ID}'
+         AND metadata ->> 'entity_id' = '${task.id}'
+       ORDER BY source`,
+    );
+    const evidenceMirror = await pg.query<{ id: string; start_at_raw_event_id: string }>(
+      `SELECT id::text, start_at_raw_event_id::text
+       FROM calendar_events
+       WHERE team_id = '${TEAM_ID}'
+         AND metadata ->> 'entity_id' = '${supportingTask.id}'`,
+    );
+    const evidenceRawEventId = evidenceMirror.rows[0]?.start_at_raw_event_id ?? '';
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Move task from its calendar mirror',
+      dedupeKey: 'task-due-date-mirror-lock-order',
+      metadata: { evidence_pack_fingerprint: 'a'.repeat(64) },
+      evidence: [{ rawEventId: evidenceRawEventId }],
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'task',
+          targetId: task.id,
+          title: 'Move due date',
+          dedupeKey: 'task-due-date-mirror-lock-order:item',
+          proposedPayload: { dueAt: '2026-08-13T10:00:00.000Z' },
+          evidenceRawEventIds: [evidenceRawEventId],
+        },
+      ],
+    });
+    transactionQueries.length = 0;
+
+    await scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '');
+
+    const entityLockIndex = transactionQueries.findIndex(
+      ([statement, params]) =>
+        typeof statement === 'string' &&
+        statement.includes('from "entities"') &&
+        statement.includes('for update') &&
+        params?.includes(task.id),
+    );
+    const evidenceLockIndex = transactionQueries.findIndex(
+      ([statement, params]) =>
+        typeof statement === 'string' &&
+        statement.includes('from "raw_events"') &&
+        statement.includes('for update') &&
+        params?.includes(evidenceRawEventId),
+    );
+    const acquiredLockKeys = transactionQueries.flatMap((call) => {
+      const [statement, params] = call;
+      return typeof statement === 'string' && statement.includes('pg_advisory_xact_lock')
+        ? [String(params?.[0])]
+        : [];
+    });
+    transaction.mockRestore();
+    expect(entityLockIndex).toBeGreaterThanOrEqual(0);
+    expect(evidenceLockIndex).toBeGreaterThanOrEqual(0);
+    expect(entityLockIndex).toBeLessThan(evidenceLockIndex);
+    expect(targetMirrors.rows.map((row) => row.source)).toEqual(['board_item', 'object']);
+    expect(acquiredLockKeys.slice(0, 3)).toEqual(
+      [
+        ...targetMirrors.rows.map((mirror) => calendarEventMutationLockKey(TEAM_ID, mirror.id)),
+        calendarEventMutationLockKey(TEAM_ID, evidenceMirror.rows[0]?.id ?? ''),
+      ].sort(),
+    );
+  });
+
+  it('locks a pack-backed board item target before its due-date evidence row', async () => {
+    const transactionQueries: Parameters<Transaction['query']>[] = [];
+    const runTransaction = pg.transaction.bind(pg);
+    const transaction = vi
+      .spyOn(pg, 'transaction')
+      .mockImplementation(<T>(callback: (tx: Transaction) => Promise<T>) =>
+        runTransaction(async (tx) => {
+          const query = vi.spyOn(tx, 'query');
+          try {
+            return await callback(tx);
+          } finally {
+            transactionQueries.push(...query.mock.calls);
+            query.mockRestore();
+          }
+        }),
+      );
+    const observedDb = drizzle(pg);
+    const scope = withTeam(observedDb as never, TEAM_ID, USER_ID);
+    const board = await scope.boards.createBoard({
+      name: 'Pack-backed board',
+      templateKind: 'task_board',
+      lanes: [{ name: 'Todo', kind: 'active' }],
+    });
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Review board-item evidence',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const boardItem = await scope.boards.addBoardItem(board.id, {
+      entityId: task.id,
+      laneId: board.lanes[0]?.id ?? null,
+      dueAt: new Date('2026-08-12T10:00:00.000Z'),
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const mirror = await pg.query<{ id: string; start_at_raw_event_id: string }>(
+      `SELECT id::text, start_at_raw_event_id::text
+       FROM calendar_events
+       WHERE team_id = '${TEAM_ID}'
+         AND metadata ->> 'source' = 'board_item'
+         AND metadata ->> 'board_item_id' = '${boardItem.id}'`,
+    );
+    const evidenceRawEventId = mirror.rows[0]?.start_at_raw_event_id ?? '';
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Update board item from its due-date evidence',
+      dedupeKey: 'board-item-target-lock-order',
+      metadata: { evidence_pack_fingerprint: 'a'.repeat(64) },
+      evidence: [{ rawEventId: evidenceRawEventId }],
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'board_item_update',
+          targetId: boardItem.id,
+          title: 'Add the evidence review next step',
+          dedupeKey: 'board-item-target-lock-order:item',
+          proposedPayload: {
+            boardItemId: boardItem.id,
+            field: 'nextStep',
+            newValue: 'Review current source evidence',
+          },
+          evidenceRawEventIds: [evidenceRawEventId],
+        },
+      ],
+    });
+    transactionQueries.length = 0;
+
+    await scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '');
+
+    const boardItemLockIndex = transactionQueries.findIndex(
+      ([statement, params]) =>
+        typeof statement === 'string' &&
+        statement.includes('from "board_items"') &&
+        statement.includes('for update') &&
+        params?.includes(boardItem.id),
+    );
+    const evidenceLockIndex = transactionQueries.findIndex(
+      ([statement, params]) =>
+        typeof statement === 'string' &&
+        statement.includes('from "raw_events"') &&
+        statement.includes('for update') &&
+        params?.includes(evidenceRawEventId),
+    );
+    const boardLockIndex = transactionQueries.findIndex(
+      ([statement, params]) =>
+        typeof statement === 'string' &&
+        statement.includes('from "boards"') &&
+        statement.includes('for update') &&
+        params?.includes(board.id),
+    );
+    const acquiredLockKeys = transactionQueries.flatMap((call) => {
+      const [statement, params] = call;
+      return typeof statement === 'string' && statement.includes('pg_advisory_xact_lock')
+        ? [String(params?.[0])]
+        : [];
+    });
+    transaction.mockRestore();
+    expect(boardItemLockIndex).toBeGreaterThanOrEqual(0);
+    expect(boardLockIndex).toBeGreaterThanOrEqual(0);
+    expect(evidenceLockIndex).toBeGreaterThanOrEqual(0);
+    expect(boardItemLockIndex).toBeLessThan(boardLockIndex);
+    expect(boardLockIndex).toBeLessThan(evidenceLockIndex);
+    expect(acquiredLockKeys[0]).toBe(
+      calendarEventMutationLockKey(TEAM_ID, mirror.rows[0]?.id ?? ''),
+    );
+  });
+
+  it('locks board-membership entity and board targets before due-date evidence', async () => {
+    const transactionQueries: Parameters<Transaction['query']>[] = [];
+    const runTransaction = pg.transaction.bind(pg);
+    const transaction = vi
+      .spyOn(pg, 'transaction')
+      .mockImplementation(<T>(callback: (tx: Transaction) => Promise<T>) =>
+        runTransaction(async (tx) => {
+          const query = vi.spyOn(tx, 'query');
+          try {
+            return await callback(tx);
+          } finally {
+            transactionQueries.push(...query.mock.calls);
+            query.mockRestore();
+          }
+        }),
+      );
+    const observedDb = drizzle(pg);
+    const scope = withTeam(observedDb as never, TEAM_ID, USER_ID);
+    const board = await scope.boards.createBoard({
+      name: 'Evidence-backed membership board',
+      templateKind: 'task_board',
+      lanes: [{ name: 'Todo', kind: 'active' }],
+    });
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Join board from due-date evidence',
+      dueAt: new Date('2026-08-12T10:00:00.000Z'),
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const mirror = await pg.query<{ start_at_raw_event_id: string }>(
+      `SELECT start_at_raw_event_id::text
+       FROM calendar_events
+       WHERE team_id = '${TEAM_ID}'
+         AND metadata ->> 'source' = 'object'
+         AND metadata ->> 'entity_id' = '${task.id}'`,
+    );
+    const evidenceRawEventId = mirror.rows[0]?.start_at_raw_event_id ?? '';
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Add task to board from due-date evidence',
+      dedupeKey: 'board-membership-target-lock-order',
+      metadata: { evidence_pack_fingerprint: 'a'.repeat(64) },
+      evidence: [{ rawEventId: evidenceRawEventId }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'board_membership',
+          title: 'Add evidence-backed task to board',
+          dedupeKey: 'board-membership-target-lock-order:item',
+          proposedPayload: {
+            boardId: board.id,
+            entityId: task.id,
+            laneId: board.lanes[0]?.id ?? null,
+          },
+          evidenceRawEventIds: [evidenceRawEventId],
+        },
+      ],
+    });
+    transactionQueries.length = 0;
+
+    await scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '');
+
+    const entityLockIndex = transactionQueries.findIndex(
+      ([statement, params]) =>
+        typeof statement === 'string' &&
+        statement.includes('from "entities"') &&
+        statement.includes('for update') &&
+        params?.includes(task.id),
+    );
+    const boardLockIndex = transactionQueries.findIndex(
+      ([statement, params]) =>
+        typeof statement === 'string' &&
+        statement.includes('from "boards"') &&
+        statement.includes('for update') &&
+        params?.includes(board.id),
+    );
+    const evidenceLockIndex = transactionQueries.findIndex(
+      ([statement, params]) =>
+        typeof statement === 'string' &&
+        statement.includes('from "raw_events"') &&
+        statement.includes('for update') &&
+        params?.includes(evidenceRawEventId),
+    );
+    transaction.mockRestore();
+    expect(entityLockIndex).toBeGreaterThanOrEqual(0);
+    expect(boardLockIndex).toBeGreaterThanOrEqual(0);
+    expect(evidenceLockIndex).toBeGreaterThanOrEqual(0);
+    expect(entityLockIndex).toBeLessThan(boardLockIndex);
+    expect(boardLockIndex).toBeLessThan(evidenceLockIndex);
+  });
+
+  it('rejects a proposal when evidence changes after its snapshot was built', async () => {
+    const occurredAt = new Date('2026-08-12T10:00:00.000Z');
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'calendar',
+      contentText: 'Customer review moved to August 13 at 14:00.',
+      occurredAt: new Date('2026-08-13T14:00:00.000Z'),
+      visibility: 'team',
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+
+    await expect(
+      scope.suggestions.createOrMergeSuggestionBundle({
+        source: 'background',
+        title: 'Prepare for customer review',
+        dedupeKey: 'calendar-snapshot-race',
+        evidence: [
+          {
+            rawEventId: TEAM_RAW_EVENT_ID,
+            metadata: {
+              evidence_content_fingerprint: suggestionDedupeKey({
+                contentText: 'Customer review is August 12 at 10:00.',
+                occurredAt: occurredAt.toISOString(),
+              }),
+            },
+          },
+        ],
+        items: [
+          {
+            operation: 'create',
+            targetKind: 'task',
+            title: 'Prepare review notes',
+            dedupeKey: 'calendar-snapshot-race:item',
+            proposedPayload: { canonicalName: 'Prepare review notes' },
+            evidenceRawEventIds: [TEAM_RAW_EVENT_ID],
+          },
+        ],
+      }),
+    ).rejects.toThrow('evidence changed while the proposal was being generated');
+    await expect(scope.suggestions.listPendingSuggestions()).resolves.toEqual([]);
   });
 
   it('creates non-authoritative artifact cluster evidence for pending conversation suggestions', async () => {
@@ -5961,11 +6966,22 @@ describe('suggestion scope', () => {
   });
 
   it('stores a readable failure reason for calendar creates missing a time range', async () => {
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: 'DFK pilot discussion needs to be scheduled.',
+      occurredAt: new Date('2026-08-01T10:00:00.000Z'),
+      visibility: 'team',
+    });
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
       source: 'background',
       title: 'DFK pilot discussion',
       dedupeKey: 'calendar-create-missing-range',
+      metadata: { evidence_pack_fingerprint: 'a'.repeat(64) },
+      evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }],
       items: [
         {
           operation: 'create',
@@ -5975,6 +6991,7 @@ describe('suggestion scope', () => {
           proposedPayload: {
             description: 'Proposed pilot discussion with DFK.',
           },
+          evidenceRawEventIds: [TEAM_RAW_EVENT_ID],
         },
       ],
     });
@@ -5998,6 +7015,30 @@ describe('suggestion scope', () => {
       failure_reason:
         'Calendar proposal is missing a start or end time. Reject it or revise the source details before accepting.',
     });
+
+    const eventsAfterFailure = await pg.query<{ count: string }>(
+      `SELECT count(*)::text FROM calendar_events WHERE team_id = '${TEAM_ID}' AND title = 'DFK pilot discussion'`,
+    );
+    expect(eventsAfterFailure.rows[0]?.count).toBe('0');
+
+    await db
+      .update(agentSuggestionItems)
+      .set({
+        proposedPayload: {
+          title: 'DFK pilot discussion',
+          start: '2026-08-14T10:00:00.000Z',
+          end: '2026-08-14T11:00:00.000Z',
+          visibility: 'team',
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(agentSuggestionItems.id, itemId ?? ''));
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+    const eventsAfterRetry = await pg.query<{ count: string }>(
+      `SELECT count(*)::text FROM calendar_events WHERE team_id = '${TEAM_ID}' AND title = 'DFK pilot discussion'`,
+    );
+    expect(eventsAfterRetry.rows[0]?.count).toBe('1');
   });
 
   it('treats blank optional object update fields as absent values', async () => {

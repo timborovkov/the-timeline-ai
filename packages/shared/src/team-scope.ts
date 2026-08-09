@@ -36,7 +36,7 @@ import {
   users,
   visibilityDefaultSource,
 } from '@timeline/db';
-import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, notInArray, or, sql } from 'drizzle-orm';
 
 import type { chatStructured } from '#src/llm/chat.js';
 import type { TimelineMomentLookupPlan } from '#src/timeline-moments/index.js';
@@ -83,7 +83,11 @@ import {
   type TimelineMomentPresentationCacheRecord,
   type TimelineMomentPresentationSuggestion,
 } from '#src/timeline-moments/presentation.js';
-import { normalizeVisibilityUserIds, rawEventVisibleToUser } from '#src/visibility.js';
+import {
+  normalizeVisibilityUserIds,
+  rawEventIsActive,
+  rawEventVisibleToUser,
+} from '#src/visibility.js';
 
 // Note: `teamRole` value is referenced at runtime by drizzle elsewhere; keeping
 // the value import lets us derive the union type from the enum definition.
@@ -363,6 +367,7 @@ export interface SearchEventArtifactClusterEvidence {
   externalObjectId: string | null;
   role: string;
   strength: string;
+  associationSource: string;
   authoritative: boolean;
   occurredAt: string | null;
   snippet: string | null;
@@ -500,6 +505,13 @@ export interface TeamScopeDeps {
     vector: number[],
     opts: SearchOpts,
   ) => Promise<SearchHit[]>;
+  /** Test seam for evidence-pack relevance from vectors already stored in Qdrant. */
+  qdrantStoredEventSearch?: (
+    teamId: string,
+    userId: string,
+    queryEventIds: string[],
+    candidateEventIds: string[],
+  ) => Promise<SearchHit[]>;
   /** Test seam for sender-scoped semantic search batching. */
   senderSearchEventIdBatchSize?: number;
   /** Inject raw-event embedding enqueue. Keeping this dependency lazy avoids
@@ -510,6 +522,12 @@ export interface TeamScopeDeps {
   chatStructured?: typeof chatStructured;
   /** Test/instrumentation seam for pausing a claimed suggestion before application. */
   beforeSuggestionApply?: (itemId: string) => Promise<void>;
+  /** Internal marker for a suggestion acceptance running inside its evidence-lock transaction. */
+  suggestionAcceptanceEvidenceLocked?: boolean;
+  /** Internal collector for effects that must run only after an outer transaction commits. */
+  postCommitEffects?: (() => void | Promise<void>)[];
+  /** Root client used by deferred effects after a transaction-bound scope commits. */
+  postCommitDb?: Db;
   /**
    * Skip the team-membership check on first query. Set only by trusted
    * callers that have already authenticated the team boundary via some
@@ -529,6 +547,8 @@ export interface TeamScopeCore {
   requireMembership: (minRole?: TeamRole) => Promise<TeamRole>;
   requireTeamMember: (otherUserId: string) => Promise<void>;
   isTeamMember: (otherUserId: string) => Promise<boolean>;
+  postCommitEffects?: (() => void | Promise<void>)[];
+  postCommitDb?: Db;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -547,7 +567,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  */
 export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScopeDeps = {}) {
   const visibilityFilter = rawEventVisibleToUser(userId);
-  const activeRawEventFilter = sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`;
+  const activeRawEventFilter = rawEventIsActive();
 
   let membershipPromise: Promise<TeamRole> | undefined;
 
@@ -685,10 +705,16 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     visibilityUserIds:
       | typeof artifactEvidenceAssociations.visibilityUserIds
       | typeof artifactEvidenceAssociations.visibilityFloorUserIds;
+    authorUserId?: typeof rawEvents.authorUserId;
   }) {
     return or(
       eq(row.visibility, 'team'),
-      and(eq(row.visibility, 'private'), eq(row.visibilityOwnerUserId, userId)),
+      and(
+        eq(row.visibility, 'private'),
+        row.authorUserId
+          ? or(eq(row.visibilityOwnerUserId, userId), eq(row.authorUserId, userId))
+          : eq(row.visibilityOwnerUserId, userId),
+      ),
       and(
         eq(row.visibility, 'specific_users'),
         sql`COALESCE(${userId}::uuid = ANY(${row.visibilityUserIds}), false)`,
@@ -698,6 +724,11 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
 
   async function hydrateArtifactClustersForVisibleEventIds(
     accessibleEventIds: string[],
+    maxRelatedEvidencePerCluster = 5,
+    maxRelatedEvidenceTotal?: number,
+    uniqueCandidateLimit?: number,
+    returnClustersById = false,
+    candidateLimitState?: { truncatedCount: number },
   ): Promise<Map<string, SearchEventArtifactCluster>> {
     if (accessibleEventIds.length === 0) return new Map();
 
@@ -707,11 +738,13 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         visibility: artifactEvidenceAssociations.visibility,
         visibilityOwnerUserId: artifactEvidenceAssociations.visibilityOwnerUserId,
         visibilityUserIds: artifactEvidenceAssociations.visibilityUserIds,
+        authorUserId: rawEvents.authorUserId,
       }),
       visibilityEnvelopeVisibleToUser({
         visibility: artifactEvidenceAssociations.visibilityFloor,
         visibilityOwnerUserId: artifactEvidenceAssociations.visibilityFloorOwnerUserId,
         visibilityUserIds: artifactEvidenceAssociations.visibilityFloorUserIds,
+        authorUserId: rawEvents.authorUserId,
       }),
     );
 
@@ -735,10 +768,20 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           eq(artifactClusters.teamId, teamId),
         ),
       )
+      .leftJoin(
+        rawEvents,
+        and(eq(rawEvents.id, associationRawEventId), eq(rawEvents.teamId, teamId)),
+      )
       .where(
         and(
           eq(artifactEvidenceAssociations.teamId, teamId),
           inArray(associationRawEventId, accessibleEventIds),
+          ...(uniqueCandidateLimit
+            ? [
+                ne(artifactEvidenceAssociations.associationSource, 'model_candidate'),
+                ne(artifactEvidenceAssociations.strength, 'semantic'),
+              ]
+            : []),
           associationVisibilityFilter,
           isNull(artifactClusters.archivedAt),
         ),
@@ -746,7 +789,80 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     const clusterIds = [...new Set(associationEventClusterRows.map((row) => row.clusterId))];
     if (clusterIds.length === 0) return new Map();
 
-    const associationClusterMemberRows = await db
+    const eligibleCandidateRows = uniqueCandidateLimit
+      ? await db
+          .select({
+            rawEventId: rawEvents.id,
+            totalCount: sql<number>`COUNT(*) OVER()`,
+          })
+          .from(artifactEvidenceAssociations)
+          .innerJoin(
+            artifactClusters,
+            and(
+              eq(artifactClusters.id, artifactEvidenceAssociations.clusterId),
+              eq(artifactClusters.teamId, teamId),
+            ),
+          )
+          .innerJoin(
+            reconciliationEvidence,
+            and(
+              eq(reconciliationEvidence.id, artifactEvidenceAssociations.evidenceId),
+              eq(reconciliationEvidence.teamId, teamId),
+            ),
+          )
+          .leftJoin(
+            rawEvents,
+            and(eq(rawEvents.id, associationRawEventId), eq(rawEvents.teamId, teamId)),
+          )
+          .where(
+            and(
+              eq(artifactEvidenceAssociations.teamId, teamId),
+              inArray(artifactEvidenceAssociations.clusterId, clusterIds),
+              notInArray(rawEvents.id, accessibleEventIds),
+              ne(artifactEvidenceAssociations.associationSource, 'model_candidate'),
+              ne(artifactEvidenceAssociations.strength, 'semantic'),
+              isNull(artifactClusters.archivedAt),
+              associationVisibilityFilter,
+              visibilityFilter,
+              activeRawEventFilter,
+            ),
+          )
+          .groupBy(rawEvents.id)
+          .orderBy(
+            desc(
+              sql<number>`MAX(CASE ${artifactEvidenceAssociations.strength}
+                WHEN 'human' THEN 5
+                WHEN 'hard' THEN 4
+                WHEN 'provider' THEN 3
+                WHEN 'structured' THEN 2
+                ELSE 0
+              END)`,
+            ),
+            desc(
+              sql<number>`MAX(CASE WHEN ${artifactEvidenceAssociations.associationSource} = 'authoritative_provider' THEN 1 ELSE 0 END)`,
+            ),
+            desc(sql<Date>`MAX(${rawEvents.occurredAt})`),
+            asc(rawEvents.id),
+          )
+          .limit(uniqueCandidateLimit)
+      : null;
+    if (candidateLimitState) {
+      candidateLimitState.truncatedCount = Math.max(
+        0,
+        (eligibleCandidateRows?.[0]?.totalCount ?? 0) - (uniqueCandidateLimit ?? 0),
+      );
+    }
+    const eligibleCandidateIds =
+      eligibleCandidateRows?.flatMap((row) => row.rawEventId ?? []) ?? null;
+    const associationStrengthRank = sql<number>`CASE ${artifactEvidenceAssociations.strength}
+      WHEN 'human' THEN 5
+      WHEN 'hard' THEN 4
+      WHEN 'provider' THEN 3
+      WHEN 'structured' THEN 2
+      ELSE 0
+    END`;
+
+    const associationClusterMemberQuery = db
       .select({
         clusterId: artifactClusters.id,
         artifactType: artifactClusters.artifactType,
@@ -756,6 +872,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         externalObjectId: reconciliationEvidence.externalObjectId,
         role: artifactEvidenceAssociations.role,
         strength: artifactEvidenceAssociations.strength,
+        associationSource: artifactEvidenceAssociations.associationSource,
         authoritative: sql<boolean>`${artifactEvidenceAssociations.associationSource} = 'authoritative_provider'`,
         memberMetadata: artifactEvidenceAssociations.metadata,
         occurredAt: rawEvents.occurredAt,
@@ -785,6 +902,13 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         and(
           eq(artifactEvidenceAssociations.teamId, teamId),
           inArray(artifactEvidenceAssociations.clusterId, clusterIds),
+          ...(eligibleCandidateIds ? [inArray(rawEvents.id, eligibleCandidateIds)] : []),
+          ...(uniqueCandidateLimit
+            ? [
+                ne(artifactEvidenceAssociations.associationSource, 'model_candidate'),
+                ne(artifactEvidenceAssociations.strength, 'semantic'),
+              ]
+            : []),
           isNull(artifactClusters.archivedAt),
           associationVisibilityFilter,
           visibilityFilter,
@@ -792,14 +916,21 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         ),
       )
       .orderBy(
+        ...(uniqueCandidateLimit ? [desc(associationStrengthRank)] : []),
         desc(
           sql<boolean>`${artifactEvidenceAssociations.associationSource} = 'authoritative_provider'`,
         ),
         desc(rawEvents.occurredAt),
+        asc(artifactClusters.id),
+        asc(rawEvents.id),
       );
+    const associationClusterMemberRows = maxRelatedEvidenceTotal
+      ? await associationClusterMemberQuery.limit(maxRelatedEvidenceTotal)
+      : await associationClusterMemberQuery;
 
     const clusterById = new Map<string, SearchEventArtifactCluster>();
     const evidenceSeenByCluster = new Map<string, Set<string>>();
+    const candidateEventsByCluster = new Map<string, Set<string>>();
     for (const row of associationClusterMemberRows) {
       const existing = clusterById.get(row.clusterId);
       const cluster =
@@ -812,13 +943,26 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           relatedEvidence: [],
         } satisfies SearchEventArtifactCluster);
       if (!existing) clusterById.set(row.clusterId, cluster);
-      if (cluster.relatedEvidence.length >= 5) continue;
+      if (uniqueCandidateLimit && row.rawEventId) {
+        const candidateEvents = candidateEventsByCluster.get(row.clusterId) ?? new Set<string>();
+        if (
+          !candidateEvents.has(row.rawEventId) &&
+          candidateEvents.size >= maxRelatedEvidencePerCluster
+        ) {
+          continue;
+        }
+        candidateEvents.add(row.rawEventId);
+        candidateEventsByCluster.set(row.clusterId, candidateEvents);
+      } else if (cluster.relatedEvidence.length >= maxRelatedEvidencePerCluster) {
+        continue;
+      }
       const evidenceKey = [
         row.rawEventId ?? '',
         row.provider ?? '',
         row.externalObjectId ?? '',
         row.role,
         row.strength,
+        row.associationSource,
       ].join('\0');
       const seen = evidenceSeenByCluster.get(row.clusterId) ?? new Set<string>();
       if (seen.has(evidenceKey)) continue;
@@ -831,6 +975,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         externalObjectId: row.externalObjectId,
         role: row.role,
         strength: row.strength,
+        associationSource: row.associationSource,
         authoritative: row.authoritative,
         occurredAt: row.occurredAt?.toISOString() ?? null,
         snippet: row.contentText?.slice(0, 180) ?? null,
@@ -843,7 +988,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       const cluster = clusterById.get(row.clusterId);
       if (cluster) clusterByEventId.set(row.rawEventId, cluster);
     }
-    return clusterByEventId;
+    return returnClustersById ? clusterById : clusterByEventId;
   }
 
   async function listTimelineArtifactClusters(
@@ -856,6 +1001,31 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       accessibleEvents.map((event) => event.id),
     );
     return Object.fromEntries(clusterByEventId);
+  }
+
+  async function listEvidencePackArtifactClusters(
+    rawEventIds: string[],
+    maxCandidates = 500,
+  ): Promise<{
+    clusters: Record<string, SearchEventArtifactCluster>;
+    truncatedCandidateCount: number;
+  }> {
+    const ids = [...new Set(rawEventIds.filter((id) => UUID_RE.test(id)))];
+    if (ids.length === 0) return { clusters: {}, truncatedCandidateCount: 0 };
+    const accessibleEvents = await getEventsByIdsImpl(ids);
+    const candidateLimitState = { truncatedCount: 0 };
+    const clusterByEventId = await hydrateArtifactClustersForVisibleEventIds(
+      accessibleEvents.map((event) => event.id),
+      Math.min(Math.max(maxCandidates, 1), 500),
+      undefined,
+      Math.min(Math.max(maxCandidates, 1), 500),
+      true,
+      candidateLimitState,
+    );
+    return {
+      clusters: Object.fromEntries(clusterByEventId),
+      truncatedCandidateCount: candidateLimitState.truncatedCount,
+    };
   }
 
   /**
@@ -1506,6 +1676,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     userId,
     ensureMember,
     requireTeamMember,
+    ...(deps.postCommitEffects ? { postCommitEffects: deps.postCommitEffects } : {}),
   });
 
   const auditScope = createAuditScope({
@@ -1535,6 +1706,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     requireMembership: ensureMember,
     requireTeamMember,
     isTeamMember,
+    ...(deps.postCommitEffects ? { postCommitEffects: deps.postCommitEffects } : {}),
+    ...(deps.postCommitDb ? { postCommitDb: deps.postCommitDb } : {}),
   };
 
   async function listEvents(
@@ -2525,6 +2698,16 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     calendar: calendarScope,
     ...(deps.chatStructured ? { chatStructured: deps.chatStructured } : {}),
     ...(deps.beforeSuggestionApply ? { beforeApplyItem: deps.beforeSuggestionApply } : {}),
+    acceptanceEvidenceLocked: deps.suggestionAcceptanceEvidenceLocked ?? false,
+    createAcceptanceTransactionScope: (tx, postCommitEffects) => {
+      const { beforeSuggestionApply: _beforeSuggestionApply, ...transactionDeps } = deps;
+      return withTeam(tx as unknown as Db, teamId, userId, {
+        ...transactionDeps,
+        suggestionAcceptanceEvidenceLocked: true,
+        postCommitEffects,
+        postCommitDb: deps.postCommitDb ?? db,
+      }).suggestions;
+    },
   });
   const pinScope = createPinScope({
     db,
@@ -2796,6 +2979,48 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       listImpactItems: listTimelineImpactItems,
 
       listArtifactClusters: listTimelineArtifactClusters,
+
+      listEvidencePackArtifactClusters,
+
+      async rankEvidencePackSupportByStoredVectors(
+        anchorRawEventIds: string[],
+        candidateRawEventIds: string[],
+      ): Promise<{ rawEventId: string; score: number }[]> {
+        await ensureMember();
+        const anchors = [...new Set(anchorRawEventIds.filter((id) => UUID_RE.test(id)))];
+        const candidates = [...new Set(candidateRawEventIds.filter((id) => UUID_RE.test(id)))];
+        if (anchors.length === 0 || candidates.length === 0) return [];
+        const searchFn =
+          deps.qdrantStoredEventSearch ??
+          ((tId: string, uId: string, queryIds: string[], candidateIds: string[]) =>
+            getQdrantClient().searchByStoredEventVectors(tId, uId, queryIds, candidateIds));
+        try {
+          const hits = await searchFn(teamId, userId, anchors, candidates);
+          const candidateSet = new Set(candidates);
+          const scores = new Map<string, number>();
+          for (const hit of hits) {
+            if (hit.payload.team_id !== teamId) continue;
+            const rawEventId = hit.payload.event_id;
+            if (!rawEventId || !candidateSet.has(rawEventId) || !Number.isFinite(hit.score)) {
+              continue;
+            }
+            const previous = scores.get(rawEventId) ?? Number.NEGATIVE_INFINITY;
+            if (hit.score > previous) scores.set(rawEventId, hit.score);
+          }
+          return [...scores.entries()]
+            .map(([rawEventId, score]) => ({ rawEventId, score }))
+            .sort(
+              (left, right) =>
+                right.score - left.score || left.rawEventId.localeCompare(right.rawEventId),
+            );
+        } catch (err) {
+          log.warn(
+            { err, teamId, anchorCount: anchors.length, candidateCount: candidates.length },
+            'stored-vector evidence-pack ranking failed',
+          );
+          return [];
+        }
+      },
 
       listSourceFacets,
 

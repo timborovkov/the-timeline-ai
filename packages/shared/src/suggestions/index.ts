@@ -22,7 +22,21 @@ import {
   users,
   type Db,
 } from '@timeline/db';
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  exists,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  or,
+  sql,
+} from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 
 import type { BoardScope } from '#src/boards/index.js';
@@ -48,6 +62,11 @@ import {
   type EvidenceRole,
   type EvidenceStrength,
 } from '#src/artifacts/index.js';
+import {
+  calendarEventMutationLockKey,
+  calendarEventMutationTargetId,
+  type CalendarRecurrenceEditMode,
+} from '#src/calendar/locking.js';
 import { chatStructured as defaultChatStructured } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
 import { OBJECT_TYPES } from '#src/objects/index.js';
@@ -66,7 +85,11 @@ import {
   type TaskCategory,
 } from '#src/task-categories/types.js';
 import { localDateFromInstant, localDateSpanToUtcRange } from '#src/time/index.js';
-import { rawEventVisibleToUser } from '#src/visibility.js';
+import {
+  intersectVisibilityEnvelopes,
+  rawEventIsActive,
+  rawEventVisibleToUser,
+} from '#src/visibility.js';
 
 export { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 
@@ -179,6 +202,18 @@ class ExpectedSuggestionApplyFailure extends Error {
   }
 }
 
+class TransactionalSuggestionApplyFailure extends Error {
+  constructor(
+    readonly claimedItem: typeof agentSuggestionItems.$inferSelect,
+    readonly preClaimUpdatedAt: Date,
+    readonly failureReason: string,
+    readonly applyError: unknown,
+  ) {
+    super(failureReason, { cause: applyError });
+    this.name = 'TransactionalSuggestionApplyFailure';
+  }
+}
+
 function errorCode(err: unknown): unknown {
   return err && typeof err === 'object' ? (err as { code?: unknown }).code : undefined;
 }
@@ -196,46 +231,10 @@ function errorMessageIncludes(err: unknown, value: string): boolean {
 }
 
 function mostRestrictiveProjectionVisibility(envelopes: VisibilityEnvelope[]): VisibilityEnvelope {
-  let allowedUserIds: string[] | null = null;
-  let includesPrivateEnvelope = false;
-
-  for (const envelope of envelopes) {
-    if (envelope.visibility === 'team') continue;
-    let envelopeUserIds: string[];
-    if (envelope.visibility === 'private') {
-      includesPrivateEnvelope = true;
-      if (!envelope.visibilityOwnerUserId) {
-        throw new Error('Approval projection has private evidence without a visible owner');
-      }
-      envelopeUserIds = [envelope.visibilityOwnerUserId];
-    } else {
-      envelopeUserIds = normalizedStringSet(envelope.visibilityUserIds ?? []);
-    }
-
-    allowedUserIds =
-      allowedUserIds === null
-        ? envelopeUserIds
-        : allowedUserIds.filter((id) => envelopeUserIds.includes(id));
-  }
-
-  if (allowedUserIds === null) {
-    return { visibility: 'team', visibilityOwnerUserId: null, visibilityUserIds: null };
-  }
-  if (allowedUserIds.length === 0) {
-    throw new Error('Approval projection evidence has no common visible audience');
-  }
-  if (includesPrivateEnvelope && allowedUserIds.length === 1) {
-    return {
-      visibility: 'private',
-      visibilityOwnerUserId: allowedUserIds[0] ?? null,
-      visibilityUserIds: null,
-    };
-  }
-  return {
-    visibility: 'specific_users',
-    visibilityOwnerUserId: null,
-    visibilityUserIds: allowedUserIds,
-  };
+  return intersectVisibilityEnvelopes(envelopes, {
+    missingPrivateOwner: 'Approval projection has private evidence without a visible owner',
+    emptyAudience: 'Approval projection evidence has no common visible audience',
+  });
 }
 
 function reconciliationOutputIdsFromItem(item: typeof agentSuggestionItems.$inferSelect): string[] {
@@ -356,6 +355,13 @@ export interface SuggestionScopeDeps {
   chatStructured?: typeof defaultChatStructured;
   /** Test/instrumentation seam invoked after an acceptance is claimed but before it is applied. */
   beforeApplyItem?: (itemId: string) => Promise<void>;
+  acceptanceEvidenceLocked?: boolean;
+  createAcceptanceTransactionScope?: (
+    tx: DbTx,
+    postCommitEffects: (() => void | Promise<void>)[],
+  ) => {
+    acceptSuggestionItem: (itemId: string) => Promise<boolean>;
+  };
 }
 
 export interface SuggestionItemInput {
@@ -366,6 +372,7 @@ export interface SuggestionItemInput {
   description?: string | null;
   dedupeKey: string;
   proposedPayload: Record<string, unknown>;
+  evidenceRawEventIds?: string[];
 }
 
 function missingRequiredTargetReason(
@@ -441,6 +448,8 @@ export interface SuggestionItem {
   supersededByItemId: string | null;
   supersededReason: string | null;
   calendarResolutionHint?: CalendarResolutionHint | null;
+  evidence?: SuggestionEvidence[];
+  evidenceStatus?: 'legacy' | 'current' | 'stale';
 }
 
 export type RevisedSuggestionItem = Pick<
@@ -1124,6 +1133,33 @@ function stringArrayFromUnknown(value: unknown): string[] {
     : [];
 }
 
+function itemEvidenceRawEventIds(metadata: unknown): string[] {
+  return [
+    ...new Set(
+      stringArrayFromUnknown(recordFromUnknown(metadata).evidence_raw_event_ids).filter((id) =>
+        UUID_RE.test(id),
+      ),
+    ),
+  ];
+}
+
+function evidenceContentFingerprints(metadata: unknown): Record<string, string> {
+  const value = recordFromUnknown(metadata).evidence_content_fingerprints;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, string] => UUID_RE.test(entry[0]) && typeof entry[1] === 'string',
+    ),
+  );
+}
+
+function evidenceContentFingerprint(row: { contentText: string | null; occurredAt: Date }): string {
+  return suggestionDedupeKey({
+    contentText: row.contentText?.trim() ?? null,
+    occurredAt: row.occurredAt.toISOString(),
+  });
+}
+
 function sourceRefValidationMetadata(sourceRefs: SourceRef[]): SourceRefValidationMetadata {
   const validation = validateSourceRefs(sourceRefs);
   if (!validation.ok) {
@@ -1724,6 +1760,35 @@ function rawEventVisibilityPredicate(teamId: string, userId: string) {
   return and(eq(rawEvents.teamId, teamId), rawEventVisibleToUser(userId));
 }
 
+function rawEventSupportsAudience(
+  event: {
+    visibility: 'team' | 'private' | 'specific_users';
+    authorUserId: string | null;
+    visibilityOwnerUserId: string | null;
+    visibilityUserIds: string[] | null;
+  },
+  audience: {
+    visibility: 'team' | 'private' | 'specific_users';
+    visibilityOwnerUserId: string | null;
+    visibilityUserIds: string[] | null;
+  },
+): boolean {
+  if (audience.visibility === 'team') return event.visibility === 'team';
+  const audienceUserIds =
+    audience.visibility === 'private'
+      ? audience.visibilityOwnerUserId
+        ? [audience.visibilityOwnerUserId]
+        : []
+      : (audience.visibilityUserIds ?? []);
+  if (audienceUserIds.length === 0) return false;
+  if (event.visibility === 'team') return true;
+  const eventUserIds =
+    event.visibility === 'private'
+      ? [event.authorUserId, event.visibilityOwnerUserId].filter((id): id is string => !!id)
+      : (event.visibilityUserIds ?? []);
+  return audienceUserIds.every((id) => eventUserIds.includes(id));
+}
+
 function reconciliationOutputVisibilityPredicate(teamId: string, userId: string) {
   const visibleEnvelope = or(
     eq(reconciliationOutputs.visibility, 'team'),
@@ -1958,11 +2023,47 @@ function toBundle(
   items: (typeof agentSuggestionItems.$inferSelect)[],
   evidence: (typeof agentSuggestionEvidence.$inferSelect & {
     occurredAt?: Date | null;
+    contentText?: string | null;
     source?: string | null;
     sourceMetadata?: unknown;
     senderTimelineName?: string | null;
   })[],
+  packEvidenceChanged = false,
 ): SuggestionBundle {
+  const hydratedEvidence: SuggestionEvidence[] = evidence.map((ev) => {
+    const context = suggestionEvidenceSourceContext(ev.source ?? null, ev.sourceMetadata);
+    return {
+      id: ev.id,
+      rawEventId: ev.rawEventId,
+      quote: ev.quote,
+      occurredAt: ev.occurredAt ?? null,
+      source: ev.source ?? null,
+      ...context,
+      senderTimelineName: ev.senderTimelineName ?? null,
+      metadata:
+        ev.metadata && typeof ev.metadata === 'object'
+          ? (ev.metadata as Record<string, unknown>)
+          : {},
+    };
+  });
+  const evidenceByRawEventId = new Map(
+    hydratedEvidence.map((item) => [item.rawEventId, item] as const),
+  );
+  const currentEvidenceFingerprintByRawEventId = new Map(
+    evidence.flatMap((item) =>
+      item.occurredAt
+        ? [
+            [
+              item.rawEventId,
+              evidenceContentFingerprint({
+                contentText: item.contentText ?? null,
+                occurredAt: item.occurredAt,
+              }),
+            ] as const,
+          ]
+        : [],
+    ),
+  );
   return {
     id: row.id,
     source: row.source,
@@ -1980,40 +2081,46 @@ function toBundle(
         : {},
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
-    items: items.map((item) => ({
-      id: item.id,
-      status: item.status,
-      operation: item.operation,
-      targetKind: item.targetKind,
-      targetId: item.targetId,
-      resultId: item.resultId,
-      title: item.title,
-      description: item.description,
-      proposedPayload: item.proposedPayload as Record<string, unknown>,
-      metadata:
-        item.metadata && typeof item.metadata === 'object'
-          ? (item.metadata as Record<string, unknown>)
-          : {},
-      failureReason: item.failureReason,
-      supersededByItemId: item.supersededByItemId,
-      supersededReason: item.supersededReason,
-    })),
-    evidence: evidence.map((ev) => {
-      const context = suggestionEvidenceSourceContext(ev.source ?? null, ev.sourceMetadata);
+    items: items.map((item) => {
+      const evidenceIds = itemEvidenceRawEventIds(item.metadata);
+      const itemEvidence = evidenceIds.flatMap((id) => {
+        const match = evidenceByRawEventId.get(id);
+        return match ? [match] : [];
+      });
+      const expectedFingerprints = evidenceContentFingerprints(item.metadata);
+      const evidenceChanged = evidenceIds.some(
+        (id) =>
+          expectedFingerprints[id] &&
+          expectedFingerprints[id] !== currentEvidenceFingerprintByRawEventId.get(id),
+      );
       return {
-        id: ev.id,
-        rawEventId: ev.rawEventId,
-        quote: ev.quote,
-        occurredAt: ev.occurredAt ?? null,
-        source: ev.source ?? null,
-        ...context,
-        senderTimelineName: ev.senderTimelineName ?? null,
+        id: item.id,
+        status: item.status,
+        operation: item.operation,
+        targetKind: item.targetKind,
+        targetId: item.targetId,
+        resultId: item.resultId,
+        title: item.title,
+        description: item.description,
+        proposedPayload: item.proposedPayload as Record<string, unknown>,
         metadata:
-          ev.metadata && typeof ev.metadata === 'object'
-            ? (ev.metadata as Record<string, unknown>)
+          item.metadata && typeof item.metadata === 'object'
+            ? (item.metadata as Record<string, unknown>)
             : {},
+        failureReason: item.failureReason,
+        supersededByItemId: item.supersededByItemId,
+        supersededReason: item.supersededReason,
+        evidence: itemEvidence,
+        evidenceStatus: packEvidenceChanged
+          ? ('stale' as const)
+          : evidenceIds.length === 0
+            ? ('legacy' as const)
+            : itemEvidence.length === evidenceIds.length && !evidenceChanged
+              ? ('current' as const)
+              : ('stale' as const),
       };
     }),
+    evidence: hydratedEvidence,
   };
 }
 
@@ -2854,7 +2961,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
   ): Promise<SuggestionBundle[]> {
     if (rows.length === 0) return [];
     const ids = rows.map((row) => row.id);
-    const [items, evidence] = await Promise.all([
+    const [items, evidence, persistedEvidenceRefs] = await Promise.all([
       db
         .select()
         .from(agentSuggestionItems)
@@ -2874,15 +2981,39 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           metadata: agentSuggestionEvidence.metadata,
           createdAt: agentSuggestionEvidence.createdAt,
           occurredAt: rawEvents.occurredAt,
+          contentText: rawEvents.contentText,
           source: rawEvents.source,
           sourceMetadata: rawEvents.sourceMetadata,
+          authorUserId: rawEvents.authorUserId,
+          visibility: rawEvents.visibility,
+          visibilityOwnerUserId: rawEvents.visibilityOwnerUserId,
+          visibilityUserIds: rawEvents.visibilityUserIds,
           senderTimelineName: users.name,
         })
         .from(agentSuggestionEvidence)
-        .leftJoin(rawEvents, eq(rawEvents.id, agentSuggestionEvidence.rawEventId))
+        .innerJoin(
+          rawEvents,
+          and(
+            eq(rawEvents.id, agentSuggestionEvidence.rawEventId),
+            rawEventVisibilityPredicate(teamId, userId),
+            rawEventIsActive(),
+          ),
+        )
         .leftJoin(users, eq(users.id, rawEvents.authorUserId))
         .where(inArray(agentSuggestionEvidence.suggestionId, ids))
         .orderBy(asc(agentSuggestionEvidence.suggestionId), asc(agentSuggestionEvidence.createdAt)),
+      db
+        .select({
+          suggestionId: agentSuggestionEvidence.suggestionId,
+          rawEventId: agentSuggestionEvidence.rawEventId,
+        })
+        .from(agentSuggestionEvidence)
+        .where(
+          and(
+            eq(agentSuggestionEvidence.teamId, teamId),
+            inArray(agentSuggestionEvidence.suggestionId, ids),
+          ),
+        ),
     ]);
     const payloads = items.map((item) => recordFromUnknown(item.proposedPayload));
     const [boardLabels, entityNamesById] = await Promise.all([
@@ -2918,9 +3049,51 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       existing.push(ev);
       evidenceBySuggestion.set(ev.suggestionId, existing);
     }
-    return rows.map((row) =>
-      toBundle(row, itemsBySuggestion.get(row.id) ?? [], evidenceBySuggestion.get(row.id) ?? []),
-    );
+    const persistedEvidenceIdsBySuggestion = new Map<string, string[]>();
+    for (const ref of persistedEvidenceRefs) {
+      const existing = persistedEvidenceIdsBySuggestion.get(ref.suggestionId) ?? [];
+      existing.push(ref.rawEventId);
+      persistedEvidenceIdsBySuggestion.set(ref.suggestionId, existing);
+    }
+    return rows.flatMap((row) => {
+      const suggestionItems = itemsBySuggestion.get(row.id) ?? [];
+      const suggestionEvidence = evidenceBySuggestion.get(row.id) ?? [];
+      const visibleEvidenceIds = new Set(suggestionEvidence.map((item) => item.rawEventId));
+      const isPackBacked =
+        typeof recordFromUnknown(row.metadata).evidence_pack_fingerprint === 'string';
+      const persistedEvidenceIds = persistedEvidenceIdsBySuggestion.get(row.id) ?? [];
+      const packAudienceMismatch = isPackBacked
+        ? suggestionEvidence.some(
+            (event) =>
+              !rawEventSupportsAudience(event, {
+                visibility: row.visibility,
+                visibilityOwnerUserId: row.visibilityOwnerUserId,
+                visibilityUserIds: row.visibilityUserIds,
+              }),
+          )
+        : false;
+      const packEvidenceChanged = isPackBacked
+        ? suggestionEvidence.some((event) => {
+            const expectedFingerprint = recordFromUnknown(
+              event.metadata,
+            ).evidence_content_fingerprint;
+            return (
+              typeof expectedFingerprint === 'string' &&
+              expectedFingerprint !== evidenceContentFingerprint(event)
+            );
+          })
+        : false;
+      const hasUnavailableEvidence = isPackBacked
+        ? persistedEvidenceIds.length === 0 ||
+          persistedEvidenceIds.some((id) => !visibleEvidenceIds.has(id)) ||
+          packAudienceMismatch
+        : suggestionItems.some((item) =>
+            itemEvidenceRawEventIds(item.metadata).some((id) => !visibleEvidenceIds.has(id)),
+          );
+      return hasUnavailableEvidence
+        ? []
+        : [toBundle(row, suggestionItems, suggestionEvidence, packEvidenceChanged)];
+    });
   }
 
   function preserveProposalTargetPayload(
@@ -3613,10 +3786,273 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return null;
   }
 
+  async function lockCalendarAcceptanceTargets(
+    item: typeof agentSuggestionItems.$inferSelect,
+    evidenceRawEventIds: string[],
+  ): Promise<void> {
+    if (!deps.acceptanceEvidenceLocked) return;
+
+    const targetIsCalendar =
+      item.targetKind === 'calendar_event' && item.targetId !== null && UUID_RE.test(item.targetId);
+    const targetHasDueDateMirrors =
+      item.operation !== 'create' &&
+      (item.targetKind === 'object' || item.targetKind === 'task') &&
+      item.targetId !== null &&
+      UUID_RE.test(item.targetId);
+    const calendarEventIds = new Set<string>();
+    if (targetIsCalendar && item.targetId) calendarEventIds.add(item.targetId);
+
+    if (targetHasDueDateMirrors && item.targetId) {
+      const dueDateMirrors = await db
+        .select({ id: calendarEvents.id })
+        .from(calendarEvents)
+        .where(
+          and(
+            eq(calendarEvents.teamId, teamId),
+            sql`${calendarEvents.metadata} ->> 'kind' = 'due_date'`,
+            sql`${calendarEvents.metadata} ->> 'source' IN ('object', 'board_item')`,
+            sql`${calendarEvents.metadata} ->> 'entity_id' = ${item.targetId}`,
+          ),
+        );
+      for (const mirror of dueDateMirrors) calendarEventIds.add(mirror.id);
+    }
+
+    if (evidenceRawEventIds.length > 0) {
+      const calendarEvidence = await db
+        .select({ sourceMetadata: rawEvents.sourceMetadata })
+        .from(rawEvents)
+        .where(
+          and(
+            eq(rawEvents.teamId, teamId),
+            eq(rawEvents.source, 'calendar'),
+            inArray(rawEvents.id, evidenceRawEventIds),
+          ),
+        );
+      for (const evidence of calendarEvidence) {
+        const calendarEventId = recordFromUnknown(evidence.sourceMetadata).calendar_event_id;
+        if (typeof calendarEventId === 'string' && UUID_RE.test(calendarEventId)) {
+          calendarEventIds.add(calendarEventId);
+        }
+      }
+    }
+
+    if (calendarEventIds.size === 0) return;
+    const calendarRows = await db
+      .select({ id: calendarEvents.id, recurringParentId: calendarEvents.recurringParentId })
+      .from(calendarEvents)
+      .where(
+        and(eq(calendarEvents.teamId, teamId), inArray(calendarEvents.id, [...calendarEventIds])),
+      );
+    const calendarRowsById = new Map(calendarRows.map((row) => [row.id, row]));
+    const mutationTargetIds = new Set<string>();
+
+    if (targetIsCalendar && item.targetId) {
+      const target = calendarRowsById.get(item.targetId);
+      const requestedMode = recordFromUnknown(item.proposedPayload).recurrenceEditMode;
+      const recurrenceEditMode: CalendarRecurrenceEditMode | undefined =
+        requestedMode === 'single' ||
+        requestedMode === 'series' ||
+        requestedMode === 'this_and_future'
+          ? requestedMode
+          : undefined;
+      mutationTargetIds.add(
+        calendarEventMutationTargetId(
+          item.targetId,
+          target?.recurringParentId ?? null,
+          recurrenceEditMode,
+        ),
+      );
+    }
+
+    for (const calendarEventId of calendarEventIds) {
+      const row = calendarRowsById.get(calendarEventId);
+      mutationTargetIds.add(calendarEventId);
+      if (row?.recurringParentId) mutationTargetIds.add(row.recurringParentId);
+    }
+
+    const mutationLockKeys = [...mutationTargetIds]
+      .map((targetId) => calendarEventMutationLockKey(teamId, targetId))
+      .sort();
+    for (const mutationLockKey of mutationLockKeys) {
+      await db.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${mutationLockKey}, 0))`);
+    }
+  }
+
+  async function lockAcceptanceMutationTarget(
+    item: typeof agentSuggestionItems.$inferSelect,
+  ): Promise<void> {
+    if (!deps.acceptanceEvidenceLocked) return;
+
+    if (
+      item.operation !== 'create' &&
+      (item.targetKind === 'object' || item.targetKind === 'task') &&
+      item.targetId &&
+      UUID_RE.test(item.targetId)
+    ) {
+      await db
+        .select({ id: entities.id })
+        .from(entities)
+        .where(and(eq(entities.id, item.targetId), eq(entities.teamId, teamId)))
+        .for('update');
+      return;
+    }
+
+    if (item.targetKind === 'board_membership') {
+      const parsed = boardMembershipPayload.safeParse(item.proposedPayload);
+      if (!parsed.success) return;
+      await db
+        .select({ id: entities.id })
+        .from(entities)
+        .where(and(eq(entities.id, parsed.data.entityId), eq(entities.teamId, teamId)))
+        .for('update');
+      await db
+        .select({ id: boardsTable.id })
+        .from(boardsTable)
+        .where(and(eq(boardsTable.id, parsed.data.boardId), eq(boardsTable.teamId, teamId)))
+        .for('update');
+      return;
+    }
+
+    if (item.targetKind === 'board_item_update') {
+      const parsed = boardItemUpdatePayload.safeParse(item.proposedPayload);
+      if (!parsed.success) return;
+      const [target] = await db
+        .select({ id: boardItems.id, boardId: boardItems.boardId })
+        .from(boardItems)
+        .where(and(eq(boardItems.id, parsed.data.boardItemId), eq(boardItems.teamId, teamId)))
+        .for('update');
+      if (!target) return;
+      await db
+        .select({ id: boardsTable.id })
+        .from(boardsTable)
+        .where(and(eq(boardsTable.id, target.boardId), eq(boardsTable.teamId, teamId)))
+        .for('update');
+    }
+  }
+
   async function staleActionableItemReason(
     item: typeof agentSuggestionItems.$inferSelect,
   ): Promise<string | null> {
     if (item.status !== 'pending' && item.status !== 'failed') return null;
+    const [parentSuggestion] = await db
+      .select({
+        metadata: agentSuggestions.metadata,
+        visibility: agentSuggestions.visibility,
+        visibilityOwnerUserId: agentSuggestions.visibilityOwnerUserId,
+        visibilityUserIds: agentSuggestions.visibilityUserIds,
+      })
+      .from(agentSuggestions)
+      .where(and(eq(agentSuggestions.id, item.suggestionId), eq(agentSuggestions.teamId, teamId)))
+      .limit(1);
+    if (
+      parentSuggestion &&
+      typeof recordFromUnknown(parentSuggestion.metadata).evidence_pack_fingerprint === 'string'
+    ) {
+      const storedPackEvidence = await db
+        .select({
+          rawEventId: agentSuggestionEvidence.rawEventId,
+          metadata: agentSuggestionEvidence.metadata,
+        })
+        .from(agentSuggestionEvidence)
+        .where(
+          and(
+            eq(agentSuggestionEvidence.suggestionId, item.suggestionId),
+            eq(agentSuggestionEvidence.teamId, teamId),
+          ),
+        );
+      const storedPackEvidenceIds = storedPackEvidence.map((evidence) => evidence.rawEventId);
+      await lockAcceptanceMutationTarget(item);
+      await lockCalendarAcceptanceTargets(item, storedPackEvidenceIds);
+      const packEvidenceQuery = db
+        .select({
+          id: rawEvents.id,
+          contentText: rawEvents.contentText,
+          occurredAt: rawEvents.occurredAt,
+          authorUserId: rawEvents.authorUserId,
+          visibility: rawEvents.visibility,
+          visibilityOwnerUserId: rawEvents.visibilityOwnerUserId,
+          visibilityUserIds: rawEvents.visibilityUserIds,
+        })
+        .from(rawEvents)
+        .where(
+          and(
+            inArray(rawEvents.id, storedPackEvidenceIds),
+            rawEventVisibilityPredicate(teamId, userId),
+            rawEventIsActive(),
+          ),
+        );
+      const visiblePackEvidence =
+        storedPackEvidenceIds.length === 0
+          ? []
+          : deps.acceptanceEvidenceLocked
+            ? await packEvidenceQuery.for('update')
+            : await packEvidenceQuery;
+      if (
+        storedPackEvidenceIds.length === 0 ||
+        visiblePackEvidence.length !== storedPackEvidenceIds.length
+      ) {
+        return 'Required source evidence is no longer available to approve.';
+      }
+      if (
+        visiblePackEvidence.some(
+          (event) =>
+            !rawEventSupportsAudience(event, {
+              visibility: parentSuggestion.visibility,
+              visibilityOwnerUserId: parentSuggestion.visibilityOwnerUserId,
+              visibilityUserIds: parentSuggestion.visibilityUserIds,
+            }),
+        )
+      ) {
+        return 'Required source evidence no longer supports this approval audience.';
+      }
+      const expectedFingerprints = new Map(
+        storedPackEvidence.flatMap((evidence) => {
+          const fingerprint = recordFromUnknown(evidence.metadata).evidence_content_fingerprint;
+          return typeof fingerprint === 'string'
+            ? ([[evidence.rawEventId, fingerprint]] as const)
+            : [];
+        }),
+      );
+      if (
+        visiblePackEvidence.some(
+          (event) =>
+            expectedFingerprints.get(event.id) &&
+            expectedFingerprints.get(event.id) !== evidenceContentFingerprint(event),
+        )
+      ) {
+        return 'Required source evidence changed after this suggestion was created.';
+      }
+    }
+    const requiredEvidenceIds = itemEvidenceRawEventIds(item.metadata);
+    if (requiredEvidenceIds.length > 0) {
+      const expectedFingerprints = evidenceContentFingerprints(item.metadata);
+      const visibleEvidence = await db
+        .select({
+          id: rawEvents.id,
+          contentText: rawEvents.contentText,
+          occurredAt: rawEvents.occurredAt,
+        })
+        .from(rawEvents)
+        .where(
+          and(
+            inArray(rawEvents.id, requiredEvidenceIds),
+            rawEventVisibilityPredicate(teamId, userId),
+            rawEventIsActive(),
+          ),
+        );
+      if (visibleEvidence.length !== requiredEvidenceIds.length) {
+        return 'Required source evidence is no longer available to approve.';
+      }
+      if (
+        visibleEvidence.some(
+          (event) =>
+            expectedFingerprints[event.id] &&
+            expectedFingerprints[event.id] !== evidenceContentFingerprint(event),
+        )
+      ) {
+        return 'Required source evidence changed after this suggestion was created.';
+      }
+    }
     const missingTargetReason = missingRequiredTargetReason(item);
     if (missingTargetReason) return missingTargetReason;
     if (item.targetKind === 'object' || item.targetKind === 'task') {
@@ -4017,7 +4453,13 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     const rows = await db
       .select({ id: rawEvents.id })
       .from(rawEvents)
-      .where(and(inArray(rawEvents.id, ids), rawEventVisibilityPredicate(teamId, userId)));
+      .where(
+        and(
+          inArray(rawEvents.id, ids),
+          rawEventVisibilityPredicate(teamId, userId),
+          rawEventIsActive(),
+        ),
+      );
     if (rows.length !== ids.length) {
       throw new Error('Suggestion evidence must reference visible events in this team');
     }
@@ -5113,6 +5555,31 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .limit(1);
     const row = rows[0];
     if (!row) return false;
+    const isPackBacked =
+      typeof recordFromUnknown(row.suggestion.metadata).evidence_pack_fingerprint === 'string';
+    const acceptanceTransactionScope = deps.createAcceptanceTransactionScope;
+    if (isPackBacked && !deps.acceptanceEvidenceLocked && acceptanceTransactionScope) {
+      await deps.beforeApplyItem?.(itemId);
+      try {
+        const postCommitEffects: (() => void | Promise<void>)[] = [];
+        const accepted = await db.transaction((tx) =>
+          acceptanceTransactionScope(tx, postCommitEffects).acceptSuggestionItem(itemId),
+        );
+        for (const effect of postCommitEffects) await effect();
+        return accepted;
+      } catch (error) {
+        if (!(error instanceof TransactionalSuggestionApplyFailure)) throw error;
+        const outcome = await recordRolledBackApplyFailure(error);
+        if (outcome === 'lost_race') return false;
+        if (outcome === 'superseded') return true;
+        if (isExpectedApplyFailure(error.applyError)) {
+          throw new ExpectedSuggestionApplyFailure(error.failureReason, {
+            cause: error.applyError,
+          });
+        }
+        throw error.applyError;
+      }
+    }
     const staleReason = await staleActionableItemReason(row.item);
     if (staleReason) {
       const superseded = await supersedeItem(itemId, null, staleReason);
@@ -5156,6 +5623,14 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       resultId = await applyItem(claimed);
     } catch (err) {
       const failureReason = suggestionApplyFailureReason(err);
+      if (deps.acceptanceEvidenceLocked) {
+        throw new TransactionalSuggestionApplyFailure(
+          claimed,
+          row.item.updatedAt,
+          failureReason,
+          err,
+        );
+      }
       const recordedFailure = await db.transaction(async (tx) => {
         const [failed] = await tx
           .update(agentSuggestionItems)
@@ -5234,6 +5709,55 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       op: 'accept',
     });
     return true;
+  }
+
+  async function recordRolledBackApplyFailure(
+    failure: TransactionalSuggestionApplyFailure,
+  ): Promise<'failed' | 'superseded' | 'lost_race'> {
+    const failed = await db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(agentSuggestionItems)
+        .set({
+          status: 'failed',
+          failureReason: failure.failureReason,
+          resolvedAt: null,
+          resolvedByUserId: null,
+          metadata: sql`${agentSuggestionItems.metadata} - ${ACCEPTANCE_ATTEMPT_METADATA_KEY} - ${ACCEPTANCE_STARTED_AT_METADATA_KEY}`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(agentSuggestionItems.id, failure.claimedItem.id),
+            eq(agentSuggestionItems.teamId, teamId),
+            isNull(agentSuggestionItems.resolvedAt),
+            inArray(agentSuggestionItems.status, ['pending', 'failed']),
+            eq(agentSuggestionItems.updatedAt, failure.preClaimUpdatedAt),
+          ),
+        )
+        .returning();
+      if (!updated) return null;
+      await writeProjectedOutputStatusForItem(tx, updated, 'failed', {
+        projection_failure_reason: failure.failureReason,
+      });
+      return updated;
+    });
+    if (!failed) return 'lost_race';
+    await refreshBundleStatus(failed.suggestionId, userId);
+    const staleReason = await staleActionableItemReason(failed);
+    if (staleReason && (await supersedeItem(failed.id, null, staleReason))) {
+      await reconcileStaleActionableItemsBestEffort({
+        suggestionItemId: failed.id,
+        suggestionId: failed.suggestionId,
+        op: 'accept_failure',
+      });
+      return 'superseded';
+    }
+    await reconcileStaleActionableItemsBestEffort({
+      suggestionItemId: failed.id,
+      suggestionId: failed.suggestionId,
+      op: 'accept_failure',
+    });
+    return 'failed';
   }
 
   async function acceptObjectMergeSuggestionItem(input: {
@@ -5992,6 +6516,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       await validateEvidenceVisible((input.evidence ?? []).map((ev) => ev.rawEventId));
       const objectTypeByTargetId = await objectTypesForItems(input.items);
       const evidenceIds = Array.from(new Set((input.evidence ?? []).map((ev) => ev.rawEventId)));
+      const evidenceIdSet = new Set(evidenceIds);
+      for (const item of input.items) {
+        if (item.evidenceRawEventIds?.some((rawEventId) => !evidenceIdSet.has(rawEventId))) {
+          throw new Error('Suggestion item evidence must be included in bundle evidence');
+        }
+      }
       const normalizedItems = await Promise.all(
         input.items.map((item) => normalizeSuggestionItemForStorage(item, objectTypeByTargetId)),
       );
@@ -6003,19 +6533,36 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         visibilityUserIds: input.visibilityUserIds ?? null,
         evidenceIds,
       });
-      const projectionOutputEnvelope = {
-        sourceRefs: projectionContext.sourceRefs,
-        sourcePayloadRefs: projectionContext.sourcePayloadRefs,
-        visibility: projectionContext.visibility.visibility,
-        visibilityOwnerUserId: projectionContext.visibility.visibilityOwnerUserId,
-        visibilityUserIds: projectionContext.visibility.visibilityUserIds,
-        visibilityFloor: projectionContext.visibility.visibility,
-        visibilityFloorOwnerUserId: projectionContext.visibility.visibilityOwnerUserId,
-        visibilityFloorUserIds: projectionContext.visibility.visibilityUserIds,
-      };
+      const itemProjectionContexts = new Map(
+        await Promise.all(
+          normalizedItems.map(async (item) => {
+            const itemEvidenceIds = Array.from(new Set(item.evidenceRawEventIds ?? []));
+            return [
+              item.dedupeKey,
+              itemEvidenceIds.length > 0
+                ? await buildApprovalProjectionContext({
+                    source: input.source,
+                    dedupeKey: item.dedupeKey,
+                    visibility,
+                    visibilityOwnerUserId,
+                    visibilityUserIds: input.visibilityUserIds ?? null,
+                    evidenceIds: itemEvidenceIds,
+                  })
+                : projectionContext,
+            ] as const;
+          }),
+        ),
+      );
       const sourceRefValidation = sourceRefValidationMetadata(projectionContext.sourceRefs);
+      const incomingEvidencePackFingerprint =
+        typeof input.metadata?.evidence_pack_fingerprint === 'string'
+          ? input.metadata.evidence_pack_fingerprint
+          : null;
       const metadata = {
         ...(input.metadata ?? {}),
+        ...(incomingEvidencePackFingerprint
+          ? { evidence_pack_base_dedupe_key: input.dedupeKey }
+          : {}),
         reconciliation_projection_version: RECONCILIATION_APPROVAL_PROJECTION_VERSION,
         reconciliation_source_ref_validation: sourceRefValidation,
       };
@@ -6025,35 +6572,181 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         items: normalizedItems,
         evidence: input.evidence?.map((ev) => ev.rawEventId) ?? [],
       })}`;
-      const existingRows = await db
-        .select({ id: agentSuggestions.id, status: agentSuggestions.status })
-        .from(agentSuggestions)
-        .where(
-          and(eq(agentSuggestions.teamId, teamId), eq(agentSuggestions.dedupeKey, input.dedupeKey)),
-        )
-        .limit(1);
-      const existing = existingRows[0];
-      if (existing?.status === 'superseded') {
-        const existingItems = await db
-          .select({ dedupeKey: agentSuggestionItems.dedupeKey })
-          .from(agentSuggestionItems)
-          .where(eq(agentSuggestionItems.suggestionId, existing.id));
-        const existingItemDedupeKeys = new Set(existingItems.map((item) => item.dedupeKey));
-        if (input.items.every((item) => existingItemDedupeKeys.has(item.dedupeKey))) {
-          const loaded = await loadBundle(existing.id);
-          if (!loaded) throw new Error('Suggestion was not visible after creation');
-          return loaded;
-        }
-      }
-      const dedupeKey =
-        existing &&
-        (existing.status === 'accepted' ||
-          existing.status === 'rejected' ||
-          existing.status === 'superseded')
-          ? correctionDedupeKey
-          : input.dedupeKey;
-
+      const evidencePackMetrics = recordFromUnknown(input.metadata?.evidence_pack_metrics);
+      const runMetrics = {
+        item_count: normalizedItems.length,
+        evidence_count: evidenceIds.length,
+        ...(Object.keys(evidencePackMetrics).length > 0
+          ? { evidence_pack: evidencePackMetrics }
+          : {}),
+      };
       const result = await db.transaction(async (tx) => {
+        if (incomingEvidencePackFingerprint) {
+          const revisionLockKey = `suggestion-pack-revision:${teamId}:${input.dedupeKey}`;
+          await tx.execute(
+            sql`SELECT pg_advisory_xact_lock(hashtextextended(${revisionLockKey}, 0))`,
+          );
+        }
+        const [existing] = await tx
+          .select()
+          .from(agentSuggestions)
+          .where(
+            and(
+              eq(agentSuggestions.teamId, teamId),
+              eq(agentSuggestions.dedupeKey, input.dedupeKey),
+            ),
+          )
+          .limit(1);
+        const packRevisionCandidates = incomingEvidencePackFingerprint
+          ? await tx
+              .select()
+              .from(agentSuggestions)
+              .where(
+                and(
+                  eq(agentSuggestions.teamId, teamId),
+                  or(
+                    eq(agentSuggestions.dedupeKey, input.dedupeKey),
+                    sql`${agentSuggestions.metadata} ->> 'evidence_pack_base_dedupe_key' = ${input.dedupeKey}`,
+                  ),
+                ),
+              )
+          : [];
+        const matchingActivePackSuggestion = packRevisionCandidates.find((candidate) => {
+          const fingerprint = recordFromUnknown(candidate.metadata).evidence_pack_fingerprint;
+          return (
+            fingerprint === incomingEvidencePackFingerprint &&
+            (candidate.status === 'pending' || candidate.status === 'partially_resolved')
+          );
+        });
+        if (matchingActivePackSuggestion) {
+          return { row: matchingActivePackSuggestion, changed: false, supersededItems: [] };
+        }
+        const actionableChangedPackSuggestions = packRevisionCandidates.filter((candidate) => {
+          const fingerprint = recordFromUnknown(candidate.metadata).evidence_pack_fingerprint;
+          return (
+            typeof fingerprint === 'string' &&
+            fingerprint !== incomingEvidencePackFingerprint &&
+            (candidate.status === 'pending' || candidate.status === 'partially_resolved')
+          );
+        });
+        const actionableChangedPackSuggestionIds = actionableChangedPackSuggestions.map(
+          (candidate) => candidate.id,
+        );
+        const actionableChangedPackItemIds =
+          actionableChangedPackSuggestionIds.length > 0
+            ? (
+                await tx
+                  .select({ id: agentSuggestionItems.id })
+                  .from(agentSuggestionItems)
+                  .where(
+                    and(
+                      inArray(
+                        agentSuggestionItems.suggestionId,
+                        actionableChangedPackSuggestionIds,
+                      ),
+                      inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
+                    ),
+                  )
+              ).map((item) => item.id)
+            : [];
+        const evidencePackChanged = actionableChangedPackSuggestions.length > 0;
+        if (existing?.status === 'superseded' && !evidencePackChanged) {
+          const existingItems = await tx
+            .select({ dedupeKey: agentSuggestionItems.dedupeKey })
+            .from(agentSuggestionItems)
+            .where(eq(agentSuggestionItems.suggestionId, existing.id));
+          const existingItemDedupeKeys = new Set(existingItems.map((item) => item.dedupeKey));
+          if (input.items.every((item) => existingItemDedupeKeys.has(item.dedupeKey))) {
+            return { row: existing, changed: false, supersededItems: [] };
+          }
+        }
+        const dedupeKey =
+          evidencePackChanged && incomingEvidencePackFingerprint
+            ? `${input.dedupeKey}:evidence:${incomingEvidencePackFingerprint}:${suggestionDedupeKey(
+                actionableChangedPackSuggestions.map((candidate) => candidate.id).sort(),
+              )}`
+            : existing &&
+                (existing.status === 'accepted' ||
+                  existing.status === 'rejected' ||
+                  existing.status === 'superseded')
+              ? correctionDedupeKey
+              : input.dedupeKey;
+        const evidenceVersionRows =
+          evidenceIds.length > 0
+            ? await tx
+                .select({
+                  id: rawEvents.id,
+                  contentText: rawEvents.contentText,
+                  occurredAt: rawEvents.occurredAt,
+                  authorUserId: rawEvents.authorUserId,
+                  visibility: rawEvents.visibility,
+                  visibilityOwnerUserId: rawEvents.visibilityOwnerUserId,
+                  visibilityUserIds: rawEvents.visibilityUserIds,
+                })
+                .from(rawEvents)
+                .where(
+                  and(
+                    inArray(rawEvents.id, evidenceIds),
+                    rawEventVisibilityPredicate(teamId, userId),
+                    rawEventIsActive(),
+                  ),
+                )
+                .for('update')
+            : [];
+        if (evidenceVersionRows.length !== evidenceIds.length) {
+          throw new Error('Suggestion evidence changed while the proposal was being generated');
+        }
+        if (
+          incomingEvidencePackFingerprint &&
+          evidenceVersionRows.some(
+            (event) =>
+              !rawEventSupportsAudience(event, {
+                visibility,
+                visibilityOwnerUserId,
+                visibilityUserIds: input.visibilityUserIds ?? null,
+              }),
+          )
+        ) {
+          throw new Error('Suggestion evidence no longer supports the proposal audience');
+        }
+        const evidenceFingerprintsById = Object.fromEntries(
+          evidenceVersionRows.map((event) => {
+            const currentFingerprint = evidenceContentFingerprint(event);
+            const suppliedEvidence = input.evidence?.find(
+              (candidate) => candidate.rawEventId === event.id,
+            );
+            const snapshotFingerprint = recordFromUnknown(
+              suppliedEvidence?.metadata,
+            ).evidence_content_fingerprint;
+            if (
+              typeof snapshotFingerprint === 'string' &&
+              snapshotFingerprint !== currentFingerprint
+            ) {
+              throw new Error('Suggestion evidence changed while the proposal was being generated');
+            }
+            return [
+              event.id,
+              typeof snapshotFingerprint === 'string' ? snapshotFingerprint : currentFingerprint,
+            ];
+          }),
+        );
+        const lockedPredecessorItems =
+          actionableChangedPackItemIds.length > 0
+            ? await tx
+                .select({ id: agentSuggestionItems.id })
+                .from(agentSuggestionItems)
+                .where(
+                  and(
+                    inArray(agentSuggestionItems.id, actionableChangedPackItemIds),
+                    inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
+                  ),
+                )
+                .for('update')
+            : [];
+        if (lockedPredecessorItems.length !== actionableChangedPackItemIds.length) {
+          throw new Error('Suggestion evidence revision changed concurrently; retry');
+        }
+
         const [run] = await tx
           .insert(reconciliationRuns)
           .values({
@@ -6068,10 +6761,11 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
               dedupeKey,
               itemDedupeKeys: normalizedItems.map((item) => item.dedupeKey).sort(),
               sourceRefs: projectionContext.sourceRefs,
+              evidencePackFingerprint: incomingEvidencePackFingerprint,
             }),
             engineVersion: RECONCILIATION_APPROVAL_PROJECTION_VERSION,
             completedAt: new Date(),
-            metrics: { item_count: normalizedItems.length, evidence_count: evidenceIds.length },
+            metrics: runMetrics,
           })
           .onConflictDoUpdate({
             target: [
@@ -6082,7 +6776,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             set: {
               status: 'completed',
               completedAt: new Date(),
-              metrics: { item_count: normalizedItems.length, evidence_count: evidenceIds.length },
+              metrics: runMetrics,
             },
           })
           .returning();
@@ -6091,6 +6785,18 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         const outputRows: ProjectionOutputRow[] = [];
         const suppressedOutputRows: SuppressedProjectionOutputRow[] = [];
         for (const item of normalizedItems) {
+          const itemProjectionContext =
+            itemProjectionContexts.get(item.dedupeKey) ?? projectionContext;
+          const itemProjectionOutputEnvelope = {
+            sourceRefs: itemProjectionContext.sourceRefs,
+            sourcePayloadRefs: itemProjectionContext.sourcePayloadRefs,
+            visibility: itemProjectionContext.visibility.visibility,
+            visibilityOwnerUserId: itemProjectionContext.visibility.visibilityOwnerUserId,
+            visibilityUserIds: itemProjectionContext.visibility.visibilityUserIds,
+            visibilityFloor: itemProjectionContext.visibility.visibility,
+            visibilityFloorOwnerUserId: itemProjectionContext.visibility.visibilityOwnerUserId,
+            visibilityFloorUserIds: itemProjectionContext.visibility.visibilityUserIds,
+          };
           const outputPayload = {
             projection: 'agent_suggestions',
             suggestion_dedupe_key: dedupeKey,
@@ -6110,8 +6816,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             targetKind: item.targetKind,
             operation: item.operation,
             targetId: item.targetId ?? null,
-            targetIdentity: item.dedupeKey,
-            sourceRefs: projectionContext.sourceRefs,
+            targetIdentity: incomingEvidencePackFingerprint
+              ? `${item.dedupeKey}:evidence:${incomingEvidencePackFingerprint}:revision:${dedupeKey}`
+              : item.dedupeKey,
+            sourceRefs: itemProjectionContext.sourceRefs,
             authorityPolicyVersion: RECONCILIATION_APPROVAL_POLICY_VERSION,
             plannerVersion: RECONCILIATION_APPROVAL_PLANNER_VERSION,
           });
@@ -6132,7 +6840,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
               },
               confidence: input.confidence ?? 'medium',
               requiresApproval: true,
-              ...projectionOutputEnvelope,
+              ...itemProjectionOutputEnvelope,
               dedupeKey: outputDedupeKey,
               status: 'approval_created',
             })
@@ -6147,7 +6855,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                   policy_version: RECONCILIATION_APPROVAL_POLICY_VERSION,
                 },
                 confidence: input.confidence ?? 'medium',
-                ...projectionOutputEnvelope,
+                ...itemProjectionOutputEnvelope,
                 updatedAt: new Date(),
               },
               where: sql`${reconciliationOutputs.status} NOT IN ('applied', 'rejected', 'superseded')`,
@@ -6284,7 +6992,14 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                   rawEventId: ev.rawEventId,
                   quote: ev.quote ?? null,
                   metadata: suggestionEvidenceMetadata(
-                    ev.metadata,
+                    {
+                      ...(ev.metadata ?? {}),
+                      ...(incomingEvidencePackFingerprint && evidenceFingerprintsById[ev.rawEventId]
+                        ? {
+                            evidence_content_fingerprint: evidenceFingerprintsById[ev.rawEventId],
+                          }
+                        : {}),
+                    },
                     projectionContext.sourceRefs,
                     ev.rawEventId,
                   ),
@@ -6317,6 +7032,18 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                   resolvedAt: now,
                   resolvedByUserId: userId,
                   metadata: {
+                    ...(item.evidenceRawEventIds
+                      ? {
+                          evidence_raw_event_ids: item.evidenceRawEventIds,
+                          evidence_content_fingerprints: Object.fromEntries(
+                            item.evidenceRawEventIds.flatMap((id) =>
+                              evidenceFingerprintsById[id]
+                                ? [[id, evidenceFingerprintsById[id]]]
+                                : [],
+                            ),
+                          ),
+                        }
+                      : {}),
                     reconciliation_run_id: run.id,
                     reconciliation_output_id: suppressedOutput?.id ?? null,
                     ...(suppressedOutput?.clusterId
@@ -6379,7 +7106,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             )
             .onConflictDoNothing();
 
-          return { row: resolvedSuggestion, changed: false };
+          return { row: resolvedSuggestion, changed: false, supersededItems: [] };
         }
         const insertSuggestion = async (candidateDedupeKey: string) => {
           const [row] = await tx
@@ -6420,10 +7147,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             )
             .limit(1);
           if (resolvedDuplicate?.status === 'accepted') {
-            return { row: resolvedDuplicate, changed: false };
+            return { row: resolvedDuplicate, changed: false, supersededItems: [] };
           }
           if (resolvedDuplicate?.status === 'superseded') {
-            return { row: resolvedDuplicate, changed: false };
+            return { row: resolvedDuplicate, changed: false, supersededItems: [] };
           }
           if (resolvedDuplicate?.status === 'rejected') {
             for (let attempt = 1; attempt <= 10; attempt += 1) {
@@ -6442,7 +7169,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                 )
                 .limit(1);
               if (reofferDuplicate?.status === 'accepted') {
-                return { row: reofferDuplicate, changed: false };
+                return { row: reofferDuplicate, changed: false, supersededItems: [] };
               }
               if (reofferDuplicate?.status !== 'rejected') break;
             }
@@ -6462,7 +7189,14 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                 rawEventId: ev.rawEventId,
                 quote: ev.quote ?? null,
                 metadata: suggestionEvidenceMetadata(
-                  ev.metadata,
+                  {
+                    ...(ev.metadata ?? {}),
+                    ...(incomingEvidencePackFingerprint && evidenceFingerprintsById[ev.rawEventId]
+                      ? {
+                          evidence_content_fingerprint: evidenceFingerprintsById[ev.rawEventId],
+                        }
+                      : {}),
+                  },
                   projectionContext.sourceRefs,
                   ev.rawEventId,
                 ),
@@ -6487,6 +7221,18 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                 dedupeKey: item.dedupeKey,
                 proposedPayload: item.proposedPayload,
                 metadata: {
+                  ...(item.evidenceRawEventIds
+                    ? {
+                        evidence_raw_event_ids: item.evidenceRawEventIds,
+                        evidence_content_fingerprints: Object.fromEntries(
+                          item.evidenceRawEventIds.flatMap((id) =>
+                            evidenceFingerprintsById[id]
+                              ? [[id, evidenceFingerprintsById[id]]]
+                              : [],
+                          ),
+                        ),
+                      }
+                    : {}),
                   reconciliation_run_id: run.id,
                   reconciliation_output_id: outputIdByItemDedupeKey.get(item.dedupeKey) ?? null,
                   ...(outputRowByItemDedupeKey.get(item.dedupeKey)?.clusterId
@@ -6558,8 +7304,51 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           )
           .onConflictDoNothing();
 
-        return { row: inserted, changed: true };
+        const supersededItems =
+          actionableChangedPackItemIds.length > 0
+            ? await tx
+                .update(agentSuggestionItems)
+                .set({
+                  status: 'superseded',
+                  supersededByItemId: null,
+                  supersededReason: 'The selected source evidence changed.',
+                  resolvedAt: now,
+                  resolvedByUserId: null,
+                  updatedAt: now,
+                  failureReason: null,
+                })
+                .where(
+                  and(
+                    inArray(agentSuggestionItems.id, actionableChangedPackItemIds),
+                    inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
+                  ),
+                )
+                .returning()
+            : [];
+        if (supersededItems.length !== actionableChangedPackItemIds.length) {
+          throw new Error('Suggestion evidence revision changed concurrently; retry');
+        }
+        for (const supersededItem of supersededItems) {
+          await writeProjectedOutputStatusForItem(
+            tx,
+            supersededItem,
+            'superseded',
+            {
+              projection_superseded_reason: 'The selected source evidence changed.',
+              superseded_by_item_id: null,
+            },
+            'superseded',
+          );
+        }
+        for (const suggestionId of new Set(supersededItems.map((item) => item.suggestionId))) {
+          await refreshBundleStatus(suggestionId, undefined, tx);
+        }
+
+        return { row: inserted, changed: true, supersededItems };
       });
+      for (const supersededItem of result.supersededItems) {
+        await supersedeRelationshipDependents(supersededItem);
+      }
       if (result.changed) {
         await reconcileNewSuggestionItems(result.row.id);
         await notifySuggestion(result.row);
@@ -6585,13 +7374,83 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     async getApprovalItemCounts(): Promise<ApprovalItemCounts> {
       await ensureMember();
       await recoverInterruptedTaskCreateAcceptances();
-      const rows = await db
+      const countEvidence = alias(agentSuggestionEvidence, 'approval_count_evidence');
+      const countEvent = alias(rawEvents, 'approval_count_event');
+      const hasPackEvidence = exists(
+        db
+          .select({ id: countEvidence.id })
+          .from(countEvidence)
+          .where(
+            and(
+              eq(countEvidence.teamId, teamId),
+              eq(countEvidence.suggestionId, agentSuggestions.id),
+            ),
+          ),
+      );
+      const eventSupportsSuggestionAudience = or(
+        and(eq(agentSuggestions.visibility, 'team'), eq(countEvent.visibility, 'team')),
+        and(
+          eq(agentSuggestions.visibility, 'private'),
+          isNotNull(agentSuggestions.visibilityOwnerUserId),
+          or(
+            eq(countEvent.visibility, 'team'),
+            and(
+              eq(countEvent.visibility, 'private'),
+              or(
+                eq(countEvent.authorUserId, agentSuggestions.visibilityOwnerUserId),
+                eq(countEvent.visibilityOwnerUserId, agentSuggestions.visibilityOwnerUserId),
+              ),
+            ),
+            and(
+              eq(countEvent.visibility, 'specific_users'),
+              sql`COALESCE(${agentSuggestions.visibilityOwnerUserId}::uuid = ANY(${countEvent.visibilityUserIds}), false)`,
+            ),
+          ),
+        ),
+        and(
+          eq(agentSuggestions.visibility, 'specific_users'),
+          sql`cardinality(COALESCE(${agentSuggestions.visibilityUserIds}, ARRAY[]::uuid[])) > 0`,
+          or(
+            eq(countEvent.visibility, 'team'),
+            and(
+              eq(countEvent.visibility, 'private'),
+              sql`COALESCE(${agentSuggestions.visibilityUserIds}, ARRAY[]::uuid[]) <@ ARRAY_REMOVE(ARRAY[${countEvent.authorUserId}, ${countEvent.visibilityOwnerUserId}]::uuid[], NULL)`,
+            ),
+            and(
+              eq(countEvent.visibility, 'specific_users'),
+              sql`COALESCE(${agentSuggestions.visibilityUserIds}, ARRAY[]::uuid[]) <@ COALESCE(${countEvent.visibilityUserIds}, ARRAY[]::uuid[])`,
+            ),
+          ),
+        ),
+      );
+      const hasInvalidPackEvidence = exists(
+        db
+          .select({ id: countEvidence.id })
+          .from(countEvidence)
+          .leftJoin(
+            countEvent,
+            and(eq(countEvent.id, countEvidence.rawEventId), eq(countEvent.teamId, teamId)),
+          )
+          .where(
+            and(
+              eq(countEvidence.teamId, teamId),
+              eq(countEvidence.suggestionId, agentSuggestions.id),
+              or(
+                isNull(countEvent.id),
+                sql`COALESCE(${countEvent.sourceMetadata} ->> 'deleted', 'false') = 'true'`,
+                sql`NOT (${eventSupportsSuggestionAudience})`,
+              ),
+            ),
+          ),
+      );
+      const packEvidenceIsAvailable = or(
+        sql`COALESCE(jsonb_typeof(${agentSuggestions.metadata} -> 'evidence_pack_fingerprint') <> 'string', true)`,
+        and(hasPackEvidence, sql`NOT (${hasInvalidPackEvidence})`),
+      );
+      const countRows = await db
         .select({
-          pending: sql<number>`COUNT(*) FILTER (
-            WHERE ${agentSuggestionItems.status} = 'pending'
-              AND ${agentSuggestions.status} IN ('pending', 'partially_resolved')
-          )::int`,
-          failed: sql<number>`COUNT(*) FILTER (WHERE ${agentSuggestionItems.status} = 'failed')::int`,
+          status: agentSuggestionItems.status,
+          count: sql<number>`COUNT(*)::int`,
         })
         .from(agentSuggestionItems)
         .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
@@ -6599,12 +7458,21 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           and(
             eq(agentSuggestionItems.teamId, teamId),
             suggestionVisibilityPredicate(teamId, userId),
-            inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
+            isNull(agentSuggestionItems.resolvedAt),
+            or(
+              and(
+                eq(agentSuggestionItems.status, 'pending'),
+                inArray(agentSuggestions.status, ['pending', 'partially_resolved']),
+              ),
+              eq(agentSuggestionItems.status, 'failed'),
+            ),
+            packEvidenceIsAvailable,
           ),
-        );
+        )
+        .groupBy(agentSuggestionItems.status);
       return {
-        pending: rows[0]?.pending ?? 0,
-        failed: rows[0]?.failed ?? 0,
+        pending: countRows.find((row) => row.status === 'pending')?.count ?? 0,
+        failed: countRows.find((row) => row.status === 'failed')?.count ?? 0,
       };
     },
 
@@ -6749,6 +7617,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           )
           .limit(1);
         if (!row || row.item.targetKind === 'object_merge') return null;
+        const staleReason = await staleActionableItemReason(row.item);
+        if (staleReason) throw new Error(staleReason);
 
         const bundle = await loadBundle(row.suggestion.id);
         const evidence = (bundle?.evidence ?? []).slice(0, 10).map((entry) => ({
@@ -6896,6 +7766,25 @@ ${JSON.stringify(evidence)}`,
         | { kind: 'create'; projectName: string };
     }): Promise<boolean> {
       await ensureMember();
+      const [preflight] = await db
+        .select({ item: agentSuggestionItems })
+        .from(agentSuggestionItems)
+        .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+        .where(
+          and(
+            eq(agentSuggestionItems.id, input.itemId),
+            eq(agentSuggestionItems.targetKind, 'task'),
+            eq(agentSuggestionItems.operation, 'create'),
+            inArray(agentSuggestionItems.status, ['pending', 'failed']),
+            isNull(agentSuggestionItems.resolvedAt),
+            suggestionVisibilityPredicate(teamId, userId),
+          ),
+        )
+        .limit(1);
+      if (!preflight) return false;
+      const staleReason = await staleActionableItemReason(preflight.item);
+      if (staleReason) throw new Error(staleReason);
+
       return db.transaction(async (tx) => {
         const [row] = await tx
           .select({ item: agentSuggestionItems })

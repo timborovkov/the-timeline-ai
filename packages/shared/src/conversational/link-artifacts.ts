@@ -273,7 +273,7 @@ export async function reconcileLinkArtifactsForRawEvent(
       provider: link.provider,
       externalObjectId: link.providerObjectId,
       role: 'related_context',
-      strength: link.providerObjectId ? 'structured' : 'semantic',
+      strength: link.providerObjectId ? 'structured' : 'hard',
       authoritative: false,
       anchors: anchorsForLink(link),
       metadata: {

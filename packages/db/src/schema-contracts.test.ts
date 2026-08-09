@@ -126,6 +126,86 @@ describe('database schema contracts', () => {
     ]);
   });
 
+  it('backfills canonical shared-link associations at their current strengths', async () => {
+    const migrationPg = new PGlite();
+    try {
+      await applyMigrations(migrationPg, {
+        throughFile: '0066_monday_conversation_tombstones.sql',
+      });
+      await seedBase(migrationPg);
+      const rawEventId = '99999999-9999-4999-8999-999999999940';
+      const clusterId = '99999999-9999-4999-8999-999999999941';
+      const convertedEvidenceId = '99999999-9999-4999-8999-999999999942';
+      const deduplicatedEvidenceId = '99999999-9999-4999-8999-999999999943';
+      const providerConvertedEvidenceId = '99999999-9999-4999-8999-999999999944';
+      const providerDeduplicatedEvidenceId = '99999999-9999-4999-8999-999999999945';
+      await migrationPg.exec(`
+        INSERT INTO raw_events (id, team_id, author_user_id, source, content_text)
+        VALUES ('${rawEventId}', '${TEAM_ID}', '${OWNER_ID}', 'web', 'Shared canonical link');
+
+        INSERT INTO artifact_clusters
+          (id, team_id, artifact_cluster_kind, artifact_type, canonical_name, status)
+        VALUES
+          ('${clusterId}', '${TEAM_ID}', 'document', 'document', 'Shared launch brief', 'active');
+
+        INSERT INTO reconciliation_evidence
+          (id, team_id, raw_event_id, source, event_type, occurred_at, content_digest, normalizer_version, dedupe_key)
+        VALUES
+          ('${convertedEvidenceId}', '${TEAM_ID}', '${rawEventId}', 'web', 'shared_link', now(), 'converted', 'v1', 'converted-evidence'),
+          ('${deduplicatedEvidenceId}', '${TEAM_ID}', '${rawEventId}', 'web', 'shared_link', now(), 'deduplicated', 'v1', 'deduplicated-evidence'),
+          ('${providerConvertedEvidenceId}', '${TEAM_ID}', '${rawEventId}', 'web', 'shared_link', now(), 'provider-converted', 'v1', 'provider-converted-evidence'),
+          ('${providerDeduplicatedEvidenceId}', '${TEAM_ID}', '${rawEventId}', 'web', 'shared_link', now(), 'provider-deduplicated', 'v1', 'provider-deduplicated-evidence');
+
+        INSERT INTO artifact_evidence_associations
+          (team_id, cluster_id, evidence_id, raw_event_id, role, strength, association_source, metadata, dedupe_key)
+        VALUES
+          ('${TEAM_ID}', '${clusterId}', '${convertedEvidenceId}', '${rawEventId}', 'related_context', 'semantic', 'model_candidate', '{"source_kind":"shared_link","canonical_url":"https://example.test/brief"}'::jsonb, 'legacy-converted'),
+          ('${TEAM_ID}', '${clusterId}', '${deduplicatedEvidenceId}', '${rawEventId}', 'related_context', 'semantic', 'model_candidate', '{"source_kind":"shared_link","canonical_url":"https://example.test/brief"}'::jsonb, 'legacy-duplicate'),
+          ('${TEAM_ID}', '${clusterId}', '${deduplicatedEvidenceId}', '${rawEventId}', 'related_context', 'hard', 'hard_anchor', '{"source_kind":"shared_link","canonical_url":"https://example.test/brief"}'::jsonb, 'canonical-existing'),
+          ('${TEAM_ID}', '${clusterId}', '${providerConvertedEvidenceId}', '${rawEventId}', 'related_context', 'semantic', 'model_candidate', '{"source_kind":"shared_link","canonical_url":"https://github.com/timborovkov/the-timeline-ai/pull/338","provider_object_id":"timborovkov/the-timeline-ai#338"}'::jsonb, 'legacy-provider-converted'),
+          ('${TEAM_ID}', '${clusterId}', '${providerDeduplicatedEvidenceId}', '${rawEventId}', 'related_context', 'semantic', 'model_candidate', '{"source_kind":"shared_link","canonical_url":"https://github.com/timborovkov/the-timeline-ai/pull/338","provider_object_id":"timborovkov/the-timeline-ai#338"}'::jsonb, 'legacy-provider-duplicate'),
+          ('${TEAM_ID}', '${clusterId}', '${providerDeduplicatedEvidenceId}', '${rawEventId}', 'related_context', 'structured', 'structured_anchor', '{"source_kind":"shared_link","canonical_url":"https://github.com/timborovkov/the-timeline-ai/pull/338","provider_object_id":"timborovkov/the-timeline-ai#338"}'::jsonb, 'canonical-provider-existing');
+      `);
+
+      await applyMigrationFile(migrationPg, '0067_canonical_link_evidence_strength.sql');
+
+      const associations = await migrationPg.query<{
+        evidence_id: string;
+        strength: string;
+        association_source: string;
+      }>(`
+        SELECT evidence_id, strength::text, association_source::text
+        FROM artifact_evidence_associations
+        WHERE cluster_id = '${clusterId}'
+        ORDER BY evidence_id
+      `);
+      expect(associations.rows).toEqual([
+        {
+          evidence_id: convertedEvidenceId,
+          strength: 'hard',
+          association_source: 'hard_anchor',
+        },
+        {
+          evidence_id: deduplicatedEvidenceId,
+          strength: 'hard',
+          association_source: 'hard_anchor',
+        },
+        {
+          evidence_id: providerConvertedEvidenceId,
+          strength: 'structured',
+          association_source: 'structured_anchor',
+        },
+        {
+          evidence_id: providerDeduplicatedEvidenceId,
+          strength: 'structured',
+          association_source: 'structured_anchor',
+        },
+      ]);
+    } finally {
+      await migrationPg.close();
+    }
+  });
+
   it('backfills legacy board and object pins into one ordered personal collection', async () => {
     const migrationPg = new PGlite();
     try {

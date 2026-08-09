@@ -230,6 +230,7 @@ const baseSchema = z.object({
   TASK_CATEGORY_WORKER_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
   TASK_CATEGORY_BACKFILL_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
   TASK_CATEGORY_UI_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
+  CROSS_SOURCE_EVIDENCE_MODE: z.enum(['off', 'shadow', 'enforced']).default('off'),
   E2E_DETERMINISTIC_EMBEDDINGS: z.preprocess(booleanString, z.boolean().default(false)),
 
   // LangSmith LLM observability (optional)

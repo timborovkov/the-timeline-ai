@@ -56,6 +56,13 @@ The suggestion worker normalizes lifecycle status aliases into the target artifa
 (`in progress` → `doing` for tasks/follow-ups, but `active` for projects), proposes
 cross-artifact lifecycle updates only when evidence resolves to one artifact, and supersedes stale
 pending lifecycle approvals while preserving unrelated approval items in the same bundle.
+Cross-source proposal evidence is controlled by
+`CROSS_SOURCE_EVIDENCE_MODE=off|shadow|enforced` and defaults to `off`. Shadow
+mode records content-free pack metrics without changing the prompt; enforced
+mode requires exact per-item raw-event citations for generic ingest webhook
+proposals. Conversation reviews and other event-local adapters remain on their
+legacy paths until they pass separate rollout gates. Restart the worker after
+changing the mode.
 `dedupe-approvals` defaults to dry-run and supersedes stale duplicate active or retryable approval
 items only when workspace reconciliation can identify a survivor. Apply mode also copies duplicate
 evidence and records merge history/adjudication metadata on the surviving approval, and can use AI

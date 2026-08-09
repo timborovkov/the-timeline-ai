@@ -1,5 +1,6 @@
+import { reconciliationRuns, type Db } from '@timeline/db';
+
 import type { TeamRole, TeamScopeCore } from '#src/team-scope.js';
-import type { Db } from '@timeline/db';
 
 import {
   getReconciliationClusterDetail,
@@ -8,6 +9,12 @@ import {
   type ReconciliationDashboardRunHistoryInput,
   type ReconciliationDashboardSnapshot,
 } from '#src/reconciliation/dashboard.js';
+import {
+  PRODUCTION_SAMPLING_RUN_ENGINE_VERSION,
+  productionSamplingRunFingerprint,
+  productionSamplingRunMetrics,
+  type RecordProductionSamplingEvalReportInput,
+} from '#src/reconciliation/production-sampling.js';
 
 interface ReconciliationScopeDeps {
   db: Db;
@@ -20,6 +27,46 @@ export function createReconciliationScope(deps: ReconciliationScopeDeps) {
   }
 
   return {
+    async recordProductionSamplingEvalReport(
+      input: RecordProductionSamplingEvalReportInput,
+    ): Promise<string> {
+      await deps.scope.requireMembership();
+      const generatedAt = new Date(input.report.generatedAt);
+      const completedAt = Number.isNaN(generatedAt.getTime()) ? new Date() : generatedAt;
+      const metrics = productionSamplingRunMetrics(input);
+      const [run] = await deps.db
+        .insert(reconciliationRuns)
+        .values({
+          teamId: deps.scope.teamId,
+          trigger: 'eval',
+          scope: `production_sampling:${input.report.runKind}`,
+          status: 'completed',
+          inputFingerprint: productionSamplingRunFingerprint(deps.scope.teamId, input.report),
+          engineVersion: PRODUCTION_SAMPLING_RUN_ENGINE_VERSION,
+          modelVersions: input.report.modelVersions,
+          startedAt: completedAt,
+          completedAt,
+          metrics,
+        })
+        .onConflictDoUpdate({
+          target: [
+            reconciliationRuns.teamId,
+            reconciliationRuns.inputFingerprint,
+            reconciliationRuns.engineVersion,
+          ],
+          set: {
+            status: 'completed',
+            startedAt: completedAt,
+            completedAt,
+            errorCode: null,
+            modelVersions: input.report.modelVersions,
+            metrics,
+          },
+        })
+        .returning({ id: reconciliationRuns.id });
+      if (!run) throw new Error('Failed to record production sampling reconciliation run');
+      return run.id;
+    },
     async getDashboardSnapshot(
       input: { rawEventLimit?: number; runHistory?: ReconciliationDashboardRunHistoryInput } = {},
     ): Promise<ReconciliationDashboardSnapshot> {

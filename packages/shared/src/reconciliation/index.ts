@@ -29,10 +29,7 @@ export type {
   ProductionSamplingRunKind,
   RecordProductionSamplingEvalReportInput,
 } from '#src/reconciliation/production-sampling.js';
-export {
-  buildProductionSamplingEvalReport,
-  recordProductionSamplingEvalReport,
-} from '#src/reconciliation/production-sampling.js';
+export { buildProductionSamplingEvalReport } from '#src/reconciliation/production-sampling.js';
 export {
   inlineSourceSnapshotMetadata,
   payloadDigestFromMetadata,

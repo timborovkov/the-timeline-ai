@@ -146,6 +146,7 @@ export function buildE2eEnv(input: Env = process.env, options: BuildE2eEnvOption
   env.TASK_CATEGORY_AUTO_ENQUEUE_ENABLED ??= 'true';
   env.TASK_CATEGORY_WORKER_ENABLED ??= 'true';
   env.TASK_CATEGORY_UI_ENABLED ??= 'true';
+  env.CROSS_SOURCE_EVIDENCE_MODE ??= 'off';
   env.OPENROUTER_API_KEY ??= 'e2e-deterministic-chat';
   env.QDRANT_URL ??= qdrantPort ? localUrl(qdrantPort) : 'http://qdrant.e2e.invalid';
   env.QDRANT_API_KEY ??= 'dev_qdrant_key';

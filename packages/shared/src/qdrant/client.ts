@@ -34,6 +34,12 @@ export type SourceKind =
   | 'integration_event'
   | 'calendar_event';
 
+const STORED_EVENT_SOURCE_KINDS: SourceKind[] = [
+  'raw_event',
+  'integration_event',
+  'calendar_event',
+];
+
 export interface QdrantPayload {
   team_id: string;
   /**
@@ -174,6 +180,12 @@ export interface QdrantClient {
     userId: string,
     queryVector: number[],
     opts?: SearchOpts,
+  ): Promise<SearchHit[]>;
+  searchByStoredEventVectors(
+    teamId: string,
+    userId: string,
+    queryEventIds: string[],
+    candidateEventIds: string[],
   ): Promise<SearchHit[]>;
   deletePoints(ids: string[], opts?: DeletePointsOpts): Promise<void>;
   deletePointsForSource(input: {
@@ -593,6 +605,89 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     }));
   }
 
+  async function searchByStoredEventVectors(
+    teamId: string,
+    userId: string,
+    queryEventIds: string[],
+    candidateEventIds: string[],
+  ): Promise<SearchHit[]> {
+    if (!teamId) throw new Error('Qdrant stored-vector search requires teamId');
+    if (!userId) throw new Error('Qdrant stored-vector search requires userId');
+    const uniqueQueryIds = [...new Set(queryEventIds)];
+    const uniqueCandidateIds = [...new Set(candidateEventIds)];
+    if (uniqueQueryIds.length === 0 || uniqueCandidateIds.length === 0) return [];
+    await ensureCollection();
+
+    const res = await request(
+      'POST',
+      `/collections/${encodeURIComponent(collection)}/points/scroll`,
+      {
+        filter: {
+          must: [
+            { key: 'team_id', match: { value: teamId } },
+            { key: 'embedding_model', match: { value: TIMELINE_MODELS.embedding.id } },
+            { key: 'event_id', match: { any: uniqueQueryIds } },
+            {
+              should: [
+                {
+                  key: 'source_kind',
+                  match: { any: STORED_EVENT_SOURCE_KINDS },
+                },
+                {
+                  must: [{ is_empty: { key: 'source_kind' } }, { is_empty: { key: 'fact_id' } }],
+                },
+              ],
+            },
+            { key: 'chunk_index', match: { value: 0 } },
+          ],
+        },
+        limit: uniqueQueryIds.length * 2,
+        with_payload: true,
+        with_vector: true,
+      },
+    );
+    if (res.status !== 200) {
+      throw new Error(
+        `Qdrant stored-vector lookup failed: ${String(res.status)} ${JSON.stringify(res.data)}`,
+      );
+    }
+    const body = (res.data ?? {}) as {
+      result?: {
+        points?: { vector?: unknown; payload?: QdrantPayload }[];
+      };
+    };
+    const vectorsByEventId = new Map<string, number[]>();
+    for (const point of body.result?.points ?? []) {
+      if (point.payload?.team_id !== teamId) continue;
+      const eventId = point.payload.event_id;
+      if (!eventId || !uniqueQueryIds.includes(eventId)) continue;
+      if (!Array.isArray(point.vector)) continue;
+      if (
+        point.vector.length !== vectorSize ||
+        !point.vector.every(
+          (value): value is number => typeof value === 'number' && Number.isFinite(value),
+        )
+      ) {
+        continue;
+      }
+      if (!vectorsByEventId.has(eventId) || point.payload.source_kind === 'calendar_event') {
+        vectorsByEventId.set(eventId, point.vector);
+      }
+    }
+    const vectors = [...vectorsByEventId.values()];
+    if (vectors.length === 0) return [];
+    const centroid = Array.from(
+      { length: vectorSize },
+      (_, index) =>
+        vectors.reduce((total, vector) => total + (vector[index] ?? 0), 0) / vectors.length,
+    );
+    return search(teamId, userId, centroid, {
+      eventIds: uniqueCandidateIds,
+      sourceKind: STORED_EVENT_SOURCE_KINDS,
+      limit: uniqueCandidateIds.length * STORED_EVENT_SOURCE_KINDS.length,
+    });
+  }
+
   async function deletePoints(ids: string[], opts: DeletePointsOpts = {}): Promise<void> {
     if (ids.length === 0) return;
     await ensureCollection();
@@ -795,6 +890,7 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     ensureCollection,
     upsertVector,
     search,
+    searchByStoredEventVectors,
     deletePoints,
     deletePointsForSource,
     deletePointsForSourceFromChunk,

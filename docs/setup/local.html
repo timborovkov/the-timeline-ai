@@ -142,6 +142,13 @@ pnpm dev:seed               # optional demo team, users, events, objects, integr
           worker restarts.
         </li>
         <li>
+          Generic ingest webhook cross-source proposal evidence defaults to
+          <code>CROSS_SOURCE_EVIDENCE_MODE=off</code>. Use <code>shadow</code> to record
+          content-free pack metrics without changing proposals, or <code>enforced</code> to require
+          exact per-change citations for that adapter. Other proposal adapters remain unchanged.
+          Restart the worker after changing the mode.
+        </li>
+        <li>
           Telegram voice memos: send a voice note to the bot in a <code>/link</code>-ed DM (or bound
           group). The same flow runs: download → RustFS → enqueue → transcribe → backfill
           <code>content_text</code>.
@@ -182,7 +189,9 @@ TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-pr
 # and may be manual, closed_beta, or post_deploy. Use --fail-on-failures for
 # release gates that should stop on any failed sample. Repeat
 # --confirm-fixture=&lt;caseName&gt;:&lt;packetFingerprint&gt; for reviewed failed samples
-# that should become deterministic fixtures.
+# that should become deterministic fixtures. Team-persisted runs retain the
+# required scenario policy and promotion blockers; Team → Reconciliation shows
+# promotion readiness separately from fixture failures.
 # pnpm dev also starts the reconciliation queue consumer for enqueued
 # evidence_audit/evidence_backfill/scope_reconcile jobs. Admins can enqueue
 # source-scoped audit/backfill and repair scoped team/object/cluster evidence

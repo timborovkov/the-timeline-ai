@@ -79,6 +79,8 @@ describe('ReconciliationDashboardPage', () => {
     expect(html).toContain('Legacy provenance');
     expect(html).toContain('object source_event_id');
     expect(html).toContain('production_sampling:closed_beta');
+    expect(html).toContain('promotion blocked');
+    expect(html).toContain('shadow_sample_floor');
     expect(html).toContain('unconfirmed fixtures');
     expect(html).toContain('Run history');
     expect(html).toContain('Showing page 1 of 1');
@@ -280,6 +282,10 @@ function sampleDashboard(input: { runHistory?: RunHistoryFixture } = {}) {
             run_kind: 'closed_beta',
             sample_count: 7,
             failed_count: 1,
+            evidence_pack_promotion: {
+              ready: false,
+              blockerCodes: ['shadow_sample_floor'],
+            },
             fixture_candidate_count: 1,
             confirmed_fixture_candidate_count: 0,
             unconfirmed_fixture_candidate_count: 1,

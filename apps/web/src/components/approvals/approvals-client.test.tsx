@@ -215,6 +215,124 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('Evidence from Mikael (Miku, @mikael) in Founders on Telegram');
   });
 
+  it('renders exact evidence beneath each change and blocks stale evidence acceptance', () => {
+    const evidence = {
+      rawEventId: EVENT_ID,
+      quote: 'Owner committed to send the Acme proposal.',
+      occurredAt: '2026-07-23T10:00:00.000Z',
+      source: 'ingest_webhook',
+      senderName: 'Owner',
+      senderHandle: null,
+      senderTimelineName: 'Owner',
+      conversationName: 'Acme delivery',
+    };
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-item-evidence',
+            source: 'background',
+            status: 'pending',
+            title: 'Acme follow-up',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-07-23T10:00:00.000Z',
+            evidence: [evidence],
+            items: [
+              {
+                id: 'item-current-evidence',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Send the Acme proposal',
+                description: null,
+                proposedPayload: { canonicalName: 'Send the Acme proposal' },
+                failureReason: null,
+                evidence: [evidence],
+                evidenceStatus: 'current',
+              },
+              {
+                id: 'item-stale-evidence',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Book the Acme review',
+                description: null,
+                proposedPayload: { canonicalName: 'Book the Acme review' },
+                failureReason: null,
+                evidence: [],
+                evidenceStatus: 'stale',
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Evidence for this change · 1 source');
+    expect(html).toContain('Owner committed to send the Acme proposal.');
+    expect(html).toContain(
+      'Required source evidence changed after this proposal was created. Regenerate the proposal before accepting this change.',
+    );
+  });
+
+  it('groups item citations by normalized evidence surface', () => {
+    const evidence = [
+      {
+        rawEventId: EVENT_ID,
+        quote: 'The delivery date is August 12.',
+        occurredAt: '2026-07-23T10:00:00.000Z',
+        source: 'ingest_webhook',
+        metadata: { evidence_surface: 'Acme delivery' },
+      },
+      {
+        rawEventId: '77777777-7777-4777-8777-777777777778',
+        quote: 'The owner confirmed the delivery date.',
+        occurredAt: '2026-07-23T10:05:00.000Z',
+        source: 'ingest_webhook',
+        metadata: { evidence_surface: 'Acme delivery' },
+      },
+    ];
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-grouped-evidence',
+            source: 'background',
+            status: 'pending',
+            title: 'Acme delivery',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-07-23T10:00:00.000Z',
+            evidence,
+            items: [
+              {
+                id: 'item-grouped-evidence',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Confirm Acme delivery',
+                description: null,
+                proposedPayload: { canonicalName: 'Confirm Acme delivery' },
+                failureReason: null,
+                evidence,
+                evidenceStatus: 'current',
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Evidence for this change · 1 source');
+    expect(html).toContain('Acme delivery · 2 citations');
+  });
+
   it('keeps every processing record reachable for multi-cluster bundles', () => {
     const firstClusterId = '22222222-2222-4222-8222-222222222222';
     const secondClusterId = '33333333-3333-4333-8333-333333333333';
@@ -1718,6 +1836,67 @@ describe('ApprovalsClient', () => {
         },
       ],
     });
+  });
+
+  it('labels bulk accept with the eligible count when a stale non-merge row is visible', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-actions',
+            source: 'background',
+            status: 'pending',
+            title: 'Customer actions',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-task-1',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Send renewal packet',
+                description: null,
+                proposedPayload: { canonicalName: 'Send renewal packet' },
+                evidenceStatus: 'current',
+                failureReason: null,
+              },
+              {
+                id: 'item-task-2',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Prepare renewal summary',
+                description: null,
+                proposedPayload: { canonicalName: 'Prepare renewal summary' },
+                evidenceStatus: 'current',
+                failureReason: null,
+              },
+              {
+                id: 'item-stale',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Use refreshed customer context',
+                description: null,
+                proposedPayload: { canonicalName: 'Use refreshed customer context' },
+                evidenceStatus: 'stale',
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Accept 2 visible');
+    expect(html).not.toContain('Accept all visible');
   });
 
   it('restores failed bulk rows before refreshing their final server status', async () => {

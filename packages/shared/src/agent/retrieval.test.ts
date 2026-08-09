@@ -6,6 +6,7 @@ import { retrieveWorkspaceContext } from '#src/agent/retrieval.js';
 
 const OBJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const EVENT_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const SUPPORT_EVENT_ID = 'abababab-abab-4bab-8bab-abababababab';
 const NOTE_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const BOARD_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const BOARD_ITEM_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
@@ -70,6 +71,13 @@ function makeScope() {
       }),
     },
     timeline: {
+      listMembers: vi.fn().mockResolvedValue([
+        {
+          userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          name: 'Ada Timeline',
+          email: 'ada@timeline.dev',
+        },
+      ]),
       getEntity: vi.fn().mockResolvedValue({
         facts: [
           {
@@ -112,6 +120,28 @@ function makeScope() {
           artifactCluster: null,
         },
       ]),
+      getEventsByIds: vi.fn().mockImplementation((ids: string[]) =>
+        ids.map((id) => ({
+          id,
+          source: 'slack',
+          contentText: 'Discussed Otto follow-up',
+          occurredAt: new Date('2026-06-14T09:00:00.000Z'),
+          authorUserId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          sourceMetadata: {
+            slack_sender_id: 'U-MIKU',
+            slack_sender_name: 'Miku',
+            slack_channel_name: 'pilot-delivery',
+          },
+          visibility: 'team',
+          visibilityOwnerUserId: null,
+          visibilityUserIds: null,
+        })),
+      ),
+      listArtifactClusters: vi.fn().mockResolvedValue({}),
+      listEvidencePackArtifactClusters: vi.fn().mockResolvedValue({
+        clusters: {},
+        truncatedCandidateCount: 0,
+      }),
     },
     boards: {
       listObjectBoardContext: vi.fn().mockResolvedValue([
@@ -152,6 +182,31 @@ describe('retrieveWorkspaceContext', () => {
       expect.objectContaining({ entityIds: [OBJECT_ID], limit: 5 }),
     );
     expect(result.recipe).toBe('object_profile');
+    expect(result.evidencePack).toMatchObject({
+      version: 'evidence-pack-v1',
+      policyVersion: 'answer-v1',
+      items: [
+        {
+          rawEventId: EVENT_ID,
+          citation: `[ev:${EVENT_ID}]`,
+          surface: `<external_content source="evidence-pack-surface" event_id="${EVENT_ID}">Slack</external_content>`,
+          snippet: `<external_content source="slack" event_id="${EVENT_ID}">Discussed Otto follow-up</external_content>`,
+          relationshipSignals: [
+            { kind: 'anchor', strength: 'hard' },
+            { kind: 'semantic_retrieval', strength: 'semantic' },
+          ],
+        },
+      ],
+    });
+    expect(
+      (result.evidencePack as { items: { senderContext: string }[] }).items[0]?.senderContext,
+    ).toContain('"senderName":"Miku"');
+    expect(
+      (result.evidencePack as { items: { senderContext: string }[] }).items[0]?.senderContext,
+    ).toContain('"timelineAuthorUserId":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"');
+    expect(
+      (result.evidencePack as { items: { senderContext: string }[] }).items[0]?.senderContext,
+    ).toContain('"verifiedTimelineMemberName":"Ada Timeline"');
     expect(result.objects[0]).toMatchObject({
       id: OBJECT_ID,
       citation: `[ent:${OBJECT_ID}]`,
@@ -224,6 +279,53 @@ describe('retrieveWorkspaceContext', () => {
     });
   });
 
+  it('includes evidence-pack-only citations in the top-level refs', async () => {
+    const scope = makeScope();
+    scope.timeline.listEvidencePackArtifactClusters.mockResolvedValue({
+      clusters: {
+        'cluster-support': {
+          id: 'cluster-support',
+          artifactType: 'project',
+          canonicalName: 'AuditAI pilot',
+          status: 'active',
+          relatedEvidence: [
+            {
+              rawEventId: SUPPORT_EVENT_ID,
+              source: 'email',
+              provider: null,
+              externalObjectId: null,
+              role: 'document',
+              strength: 'hard',
+              associationSource: 'manual',
+              authoritative: false,
+              occurredAt: '2026-06-14T08:00:00.000Z',
+              snippet: 'The signed pilot scope includes Otto.',
+              clusterId: 'cluster-support',
+            },
+          ],
+        },
+      },
+      truncatedCandidateCount: 0,
+    });
+
+    const result = await retrieveWorkspaceContext(scope as unknown as TeamScope, {
+      query: 'What do we know about Otto Silventola?',
+      limit: 5,
+    });
+
+    expect(
+      result.evidencePack?.status === 'complete' &&
+        result.evidencePack.items.some(
+          (item) =>
+            typeof item === 'object' &&
+            item !== null &&
+            'rawEventId' in item &&
+            item.rawEventId === SUPPORT_EVENT_ID,
+        ),
+    ).toBe(true);
+    expect(result.refs).toContain(`[ev:${SUPPORT_EVENT_ID}]`);
+  });
+
   it('classifies timeline-evidence questions using event-centric phrasing', async () => {
     const scope = makeScope();
 
@@ -277,6 +379,36 @@ describe('retrieveWorkspaceContext', () => {
     }
   });
 
+  it('reports failed source adapters instead of silently presenting a partial packet as complete', async () => {
+    const scope = makeScope();
+    scope.documents.searchDocumentChunks = vi.fn().mockRejectedValue(new Error('provider secret'));
+
+    const result = await retrieveWorkspaceContext(scope as unknown as TeamScope, {
+      query: 'What do the documents and timeline say about Otto?',
+      includeDocuments: true,
+    });
+
+    expect(result.documents).toEqual([]);
+    expect(result.adapterFailures).toEqual([{ adapter: 'documents', errorReason: 'Error' }]);
+    expect(JSON.stringify(result)).not.toContain('provider secret');
+  });
+
+  it('reports evidence-pack failures as an incomplete retrieval adapter', async () => {
+    const scope = makeScope();
+    scope.timeline.getEventsByIds = vi.fn().mockRejectedValue(new Error('private pack failure'));
+
+    const result = await retrieveWorkspaceContext(scope as unknown as TeamScope, {
+      query: 'What happened in the timeline last week?',
+    });
+
+    expect(result.evidencePack).toEqual({ status: 'failed', errorReason: 'Error' });
+    expect(result.adapterFailures).toContainEqual({
+      adapter: 'evidence_pack',
+      errorReason: 'Error',
+    });
+    expect(JSON.stringify(result)).not.toContain('private pack failure');
+  });
+
   it('includes artifact cluster related evidence in event context', async () => {
     const scope = makeScope();
     const relatedEventId = '99999999-9999-4999-8999-999999999999';
@@ -299,6 +431,7 @@ describe('retrieveWorkspaceContext', () => {
               externalObjectId: '100',
               role: 'error',
               strength: 'provider',
+              associationSource: 'authoritative_provider',
               authoritative: true,
               occurredAt: '2026-06-14T09:00:00.000Z',
               snippet: 'Sentry issue TIMELINE-AI-100',
@@ -309,6 +442,7 @@ describe('retrieveWorkspaceContext', () => {
               externalObjectId: 'timborovkov/the-timeline-ai#77',
               role: 'lifecycle_update',
               strength: 'provider',
+              associationSource: 'authoritative_provider',
               authoritative: true,
               occurredAt: '2026-06-14T10:00:00.000Z',
               snippet: 'GitHub PR fixes TIMELINE-AI-100',

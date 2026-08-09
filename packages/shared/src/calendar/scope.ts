@@ -9,6 +9,11 @@ import {
 import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 
 import {
+  calendarEventMutationLockKey,
+  calendarEventMutationTargetId,
+  type CalendarRecurrenceEditMode,
+} from '#src/calendar/locking.js';
+import {
   buildCalendarSourcePayloadMetadata,
   buildCalendarTimelineText,
   insertCalendarRawEvents,
@@ -38,7 +43,7 @@ import { validateVisibilityUserIds } from '#src/visibility.js';
 type Visibility = 'private' | 'team' | 'specific_users';
 type CalendarShowAs = 'busy' | 'free' | 'tentative';
 type CalendarEventSource = 'internal' | 'google' | 'caldav';
-type RecurrenceEditMode = 'single' | 'series' | 'this_and_future';
+type RecurrenceEditMode = CalendarRecurrenceEditMode;
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
 type CalendarQdrantAction = 'embed' | 'delete' | null;
@@ -105,6 +110,7 @@ export interface CalendarScopeDeps {
   userId: string;
   ensureMember: (role?: 'member' | 'admin' | 'owner') => Promise<unknown>;
   requireTeamMember: (otherUserId: string) => Promise<void>;
+  postCommitEffects?: (() => void | Promise<void>)[];
 }
 
 export interface CalendarEventRow {
@@ -379,6 +385,11 @@ async function tombstoneLinkedRawEventsForCalendarEventIds(
 export function createCalendarScope(deps: CalendarScopeDeps) {
   const { db, teamId, userId, ensureMember, requireTeamMember } = deps;
 
+  async function runOrDeferPostCommit(effect: () => void | Promise<void>): Promise<void> {
+    if (deps.postCommitEffects) deps.postCommitEffects.push(effect);
+    else await effect();
+  }
+
   // Read visibility: returns ALL private events (any user) so the
   // application layer can redact them to "Busy" blocks. Without this,
   // private events are filtered out entirely and teammates see no
@@ -397,6 +408,34 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
     OR ${calendarEvents.createdByUserId} = ${userId}::uuid
     OR (${calendarEvents.visibility} = 'specific_users' AND ${userId}::uuid = ANY(${calendarEvents.visibilityUserIds}))
   )`;
+
+  async function lockCalendarEventMutation(
+    tx: DbTx,
+    eventId: string,
+    recurrenceEditMode?: RecurrenceEditMode,
+  ): Promise<boolean> {
+    const [target] = await tx
+      .select({ recurringParentId: calendarEvents.recurringParentId })
+      .from(calendarEvents)
+      .where(
+        and(
+          eq(calendarEvents.id, eventId),
+          eq(calendarEvents.teamId, teamId),
+          isNull(calendarEvents.deletedAt),
+          calendarWriteVisibility,
+        ),
+      )
+      .limit(1);
+    if (!target) return false;
+    const mutationTargetId = calendarEventMutationTargetId(
+      eventId,
+      target.recurringParentId,
+      recurrenceEditMode,
+    );
+    const mutationLockKey = calendarEventMutationLockKey(teamId, mutationTargetId);
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${mutationLockKey}, 0))`);
+    return true;
+  }
 
   function redactIfNeeded(row: CalendarEventRow): CalendarEventWithRedaction {
     if (row.visibility === 'private' && row.createdByUserId !== userId) {
@@ -702,7 +741,9 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
       });
 
       if (created.visibility === 'team') {
-        await enqueueCalendarEventEmbeddings(teamId, [created.id, ...materializedIds]);
+        await runOrDeferPostCommit(() =>
+          enqueueCalendarEventEmbeddings(teamId, [created.id, ...materializedIds]),
+        );
       }
 
       return created;
@@ -811,6 +852,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
       await ensureMember();
 
       const result = await db.transaction(async (tx) => {
+        if (!(await lockCalendarEventMutation(tx, id, patch.recurrenceEditMode))) return null;
         const existing = await tx
           .select()
           .from(calendarEvents)
@@ -1256,25 +1298,29 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           qdrantAction = newVis === 'team' ? 'embed' : 'delete';
         }
 
+        const rematerialized =
+          recurrenceMode === 'series' &&
+          !row.recurringParentId &&
+          (changedFields.has('title') ||
+            changedFields.has('description') ||
+            changedFields.has('startAt') ||
+            changedFields.has('endAt') ||
+            changedFields.has('timezone') ||
+            changedFields.has('allDay') ||
+            changedFields.has('location') ||
+            changedFields.has('visibility') ||
+            changedFields.has('visibilityUserIds') ||
+            changedFields.has('showAs') ||
+            changedFields.has('rrule'))
+            ? await rematerializeParent(tx, updated as CalendarEventRow)
+            : null;
+
         return {
           event: redactIfNeeded(updated as CalendarEventRow),
           changedFields: [...changedFields],
           qdrantAction,
           cancelledProposalEventIds,
-          rematerialize:
-            recurrenceMode === 'series' &&
-            !row.recurringParentId &&
-            (changedFields.has('title') ||
-              changedFields.has('description') ||
-              changedFields.has('startAt') ||
-              changedFields.has('endAt') ||
-              changedFields.has('timezone') ||
-              changedFields.has('allDay') ||
-              changedFields.has('location') ||
-              changedFields.has('visibility') ||
-              changedFields.has('visibilityUserIds') ||
-              changedFields.has('showAs') ||
-              changedFields.has('rrule')),
+          rematerialized,
         };
       });
 
@@ -1282,37 +1328,30 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
       const materializedIds = 'materializedIds' in result ? (result.materializedIds ?? []) : [];
       const deletedOccurrenceIds =
         'deletedOccurrenceIds' in result ? (result.deletedOccurrenceIds ?? []) : [];
-      if (result.qdrantAction === 'embed') {
-        await enqueueCalendarEventEmbeddings(teamId, [result.event.id, ...materializedIds]);
-      } else if (result.qdrantAction === 'delete') {
-        await deleteCalendarEventPointsForIds(teamId, [result.event.id, ...materializedIds]);
-      }
-      if (deletedOccurrenceIds.length > 0) {
-        await deleteCalendarEventPointsForIds(teamId, deletedOccurrenceIds);
-      }
-      if ('rematerialize' in result && result.rematerialize) {
-        const rematerialized = await db.transaction(async (tx) => {
-          const rows = await tx
-            .select()
-            .from(calendarEvents)
-            .where(eq(calendarEvents.id, result.event.id))
-            .limit(1);
-          const parent = rows[0] as CalendarEventRow | undefined;
-          if (!parent) return { materializedIds: [], deletedIds: [] };
-          return rematerializeParent(tx, parent);
-        });
-        await deleteCalendarEventPointsForIds(teamId, rematerialized.deletedIds);
-        if (result.event.visibility === 'team') {
-          await enqueueCalendarEventEmbeddings(teamId, rematerialized.materializedIds);
-        }
-      }
+      const rematerialized = 'rematerialized' in result ? (result.rematerialized ?? null) : null;
       const cancelledProposalEventIds =
         'cancelledProposalEventIds' in result ? (result.cancelledProposalEventIds ?? []) : [];
-      if (cancelledProposalEventIds.length > 0) {
-        await Promise.all(
-          cancelledProposalEventIds.map((eventId) => deleteCalendarEventPoints(teamId, eventId)),
-        );
-      }
+      await runOrDeferPostCommit(async () => {
+        if (result.qdrantAction === 'embed') {
+          await enqueueCalendarEventEmbeddings(teamId, [result.event.id, ...materializedIds]);
+        } else if (result.qdrantAction === 'delete') {
+          await deleteCalendarEventPointsForIds(teamId, [result.event.id, ...materializedIds]);
+        }
+        if (deletedOccurrenceIds.length > 0) {
+          await deleteCalendarEventPointsForIds(teamId, deletedOccurrenceIds);
+        }
+        if (rematerialized) {
+          await deleteCalendarEventPointsForIds(teamId, rematerialized.deletedIds);
+          if (result.event.visibility === 'team') {
+            await enqueueCalendarEventEmbeddings(teamId, rematerialized.materializedIds);
+          }
+        }
+        if (cancelledProposalEventIds.length > 0) {
+          await Promise.all(
+            cancelledProposalEventIds.map((eventId) => deleteCalendarEventPoints(teamId, eventId)),
+          );
+        }
+      });
 
       return { ...result.event, changedFields: result.changedFields };
     },
@@ -1324,6 +1363,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
       await ensureMember();
 
       const deleted = await db.transaction(async (tx) => {
+        if (!(await lockCalendarEventMutation(tx, id, opts.recurrenceEditMode))) return false;
         const existing = await tx
           .select()
           .from(calendarEvents)
@@ -1560,7 +1600,9 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
       });
 
       if (deleted) {
-        await deleteCalendarEventPointsForIds(teamId, deleted.deletedEventIds);
+        await runOrDeferPostCommit(() =>
+          deleteCalendarEventPointsForIds(teamId, deleted.deletedEventIds),
+        );
       }
 
       return Boolean(deleted);
