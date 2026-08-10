@@ -542,6 +542,20 @@ describe('accept-visible suggestions action', () => {
 });
 
 describe('reject-visible suggestions action', () => {
+  it('classifies reject-all-visible as bulk even when only one item is actionable', async () => {
+    await expect(
+      rejectVisibleSuggestionsAction({
+        suggestions: [{ suggestionId: SUGGESTION_ID, itemIds: [ITEM_ID] }],
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      '33333333-3333-4333-8333-333333333333',
+      'approval_decision_submitted',
+      expect.objectContaining({ decision: 'rejected', itemCount: 1, isBulk: true }),
+    );
+  });
+
   it('rejects visible suggestion groups and revalidates every approval-dependent surface', async () => {
     const secondItemId = '44444444-4444-4444-8444-444444444444';
 

@@ -220,7 +220,7 @@ export async function rejectVisibleSuggestionsAction(input: unknown): Promise<Ac
       const failedItemIds = itemIds.filter((_, index) => results[index] === false);
       const failed = failedItemIds.length;
       revalidateSuggestionSurfaces();
-      if (failed === 0) trackApprovalDecision(r, 'rejected', itemIds.length);
+      if (failed === 0) trackApprovalDecision(r, 'rejected', itemIds.length, true);
       return failed > 0
         ? { error: `${failed} item(s) failed to reject`, failedItemIds }
         : { ok: true };
