@@ -4174,7 +4174,12 @@ describe('suggestion scope', () => {
     await scope.objects.archiveObject(pendingTarget.id, { kind: 'user', userId: USER_ID });
     await scope.objects.archiveObject(failedTarget.id, { kind: 'user', userId: USER_ID });
 
-    await expect(scope.suggestions.acceptSuggestionItem(pendingItemId)).resolves.toBe(true);
+    await expect(
+      scope.suggestions.acceptSelected({
+        suggestionId: bundle.id,
+        itemIds: [pendingItemId],
+      }),
+    ).resolves.toEqual({ accepted: 0, failed: 0, failedItemIds: [] });
 
     const loaded = await scope.suggestions.getSuggestion(bundle.id);
     expect(loaded).toMatchObject({ status: 'superseded' });

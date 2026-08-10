@@ -703,7 +703,15 @@ export async function mergeObjectsAction(input: unknown): Promise<ActionState> {
           });
       if (!result) return { error: 'Merge suggestion is no longer pending.' };
       const survivorId = 'survivor' in result ? result.survivor.id : result.survivorId;
-      if (!parsed.data.suggestionItemId) {
+      if (parsed.data.suggestionItemId) {
+        trackProductEventBestEffort(r.userId, 'approval_decision_submitted', {
+          teamId: r.teamId,
+          userId: r.userId,
+          decision: 'accepted',
+          itemCount: 1,
+          isBulk: false,
+        });
+      } else {
         await reconcileCanonicalChangeBestEffort('reconcile_object_merge', async () => {
           await r.scope.suggestions.reconcileObjectMerge({
             survivorId,

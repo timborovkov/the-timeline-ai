@@ -46,6 +46,7 @@ const fakes = vi.hoisted(() => ({
   fakeWithTeam: vi.fn(),
   fakeCheckRateLimit: vi.fn(),
   fakeGetEnv: vi.fn(),
+  trackProductEventBestEffort: vi.fn(),
   fakeObjects: {
     createObject: vi.fn(),
     getObject: vi.fn(),
@@ -104,6 +105,9 @@ vi.mock('@/lib/action-scope', async () => {
   };
 });
 vi.mock('next/cache', () => ({ revalidatePath: fakes.fakeRevalidatePath }));
+vi.mock('@/lib/analytics', () => ({
+  trackProductEventBestEffort: fakes.trackProductEventBestEffort,
+}));
 vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.fakeReportCaughtError }));
 vi.mock('@/lib/db', () => ({ db: { transaction: fakes.fakeTransaction } }));
 vi.mock('@timeline/shared/team-scope', () => ({ withTeam: fakes.fakeWithTeam }));
@@ -797,6 +801,17 @@ describe('object CRUD actions', () => {
       mergedIds: [OTHER_OBJECT_ID],
     });
     expect(fakes.fakeSuggestions.reconcileObjectMerge).not.toHaveBeenCalled();
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      USER_ID,
+      'approval_decision_submitted',
+      {
+        teamId: '11111111-1111-4111-8111-111111111111',
+        userId: USER_ID,
+        decision: 'accepted',
+        itemCount: 1,
+        isBulk: false,
+      },
+    );
     expectWorkRevalidated();
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/approvals');
   });

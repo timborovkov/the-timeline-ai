@@ -360,7 +360,7 @@ export interface SuggestionScopeDeps {
     tx: DbTx,
     postCommitEffects: (() => void | Promise<void>)[],
   ) => {
-    acceptSuggestionItem: (itemId: string) => Promise<boolean>;
+    acceptSuggestionItemWithOutcome: (itemId: string) => Promise<'accepted' | 'superseded' | null>;
   };
 }
 
@@ -5538,7 +5538,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return targetId;
   }
 
-  async function acceptSuggestionItem(itemId: string): Promise<boolean> {
+  async function acceptSuggestionItemWithOutcome(
+    itemId: string,
+  ): Promise<'accepted' | 'superseded' | null> {
     await ensureMember();
     await recoverInterruptedTaskCreateAcceptances();
     const rows = await db
@@ -5554,7 +5556,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       )
       .limit(1);
     const row = rows[0];
-    if (!row) return false;
+    if (!row) return null;
     const isPackBacked =
       typeof recordFromUnknown(row.suggestion.metadata).evidence_pack_fingerprint === 'string';
     const acceptanceTransactionScope = deps.createAcceptanceTransactionScope;
@@ -5562,16 +5564,16 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       await deps.beforeApplyItem?.(itemId);
       try {
         const postCommitEffects: (() => void | Promise<void>)[] = [];
-        const accepted = await db.transaction((tx) =>
-          acceptanceTransactionScope(tx, postCommitEffects).acceptSuggestionItem(itemId),
+        const outcome = await db.transaction((tx) =>
+          acceptanceTransactionScope(tx, postCommitEffects).acceptSuggestionItemWithOutcome(itemId),
         );
         for (const effect of postCommitEffects) await effect();
-        return accepted;
+        return outcome;
       } catch (error) {
         if (!(error instanceof TransactionalSuggestionApplyFailure)) throw error;
         const outcome = await recordRolledBackApplyFailure(error);
-        if (outcome === 'lost_race') return false;
-        if (outcome === 'superseded') return true;
+        if (outcome === 'lost_race') return null;
+        if (outcome === 'superseded') return 'superseded';
         if (isExpectedApplyFailure(error.applyError)) {
           throw new ExpectedSuggestionApplyFailure(error.failureReason, {
             cause: error.applyError,
@@ -5590,7 +5592,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           op: 'accept_stale',
         });
       }
-      return superseded;
+      return superseded ? 'superseded' : null;
     }
     const acceptanceAttemptId = randomUUID();
     const acceptanceStartedAt = new Date();
@@ -5615,7 +5617,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         ),
       )
       .returning();
-    if (!claimed) return false;
+    if (!claimed) return null;
     let resultId: string | null;
     const stopHeartbeat = startAcceptanceHeartbeat(itemId, acceptanceAttemptId);
     try {
@@ -5650,7 +5652,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         });
         return true;
       });
-      if (!recordedFailure) return false;
+      if (!recordedFailure) return null;
       await refreshBundleStatus(row.suggestion.id, userId);
       const staleReason = await staleActionableItemReason({ ...claimed, status: 'failed' });
       if (staleReason && (await supersedeItem(itemId, null, staleReason))) {
@@ -5659,7 +5661,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           suggestionId: row.suggestion.id,
           op: 'accept_failure',
         });
-        return true;
+        return 'superseded';
       }
       await reconcileStaleActionableItemsBestEffort({
         suggestionItemId: itemId,
@@ -5699,7 +5701,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       if (current?.status === 'rejected' || current?.status === 'superseded') {
         await archiveRejectedSuggestionCreateResult(claimed);
       }
-      return false;
+      return null;
     }
     await refreshBundleStatus(row.suggestion.id, userId);
     await reconcileAcceptedItemBestEffort({ ...claimed, resultId });
@@ -5708,7 +5710,11 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       suggestionId: row.suggestion.id,
       op: 'accept',
     });
-    return true;
+    return 'accepted';
+  }
+
+  async function acceptSuggestionItem(itemId: string): Promise<boolean> {
+    return (await acceptSuggestionItemWithOutcome(itemId)) !== null;
   }
 
   async function recordRolledBackApplyFailure(
@@ -7478,6 +7484,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
     acceptSuggestionItem,
 
+    acceptSuggestionItemWithOutcome,
+
     acceptObjectMergeSuggestionItem,
 
     reconcileCanonicalChange,
@@ -7552,8 +7560,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         ),
       )) {
         try {
-          if (await acceptSuggestionItem(item.id)) accepted += 1;
-          else failedItemIds.push(item.id);
+          const outcome = await acceptSuggestionItemWithOutcome(item.id);
+          if (outcome === 'accepted') accepted += 1;
+          else if (outcome === null) failedItemIds.push(item.id);
         } catch {
           failedItemIds.push(item.id);
         }
@@ -7582,8 +7591,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       )) {
         processedItemIds.add(item.id);
         try {
-          if (await acceptSuggestionItem(item.id)) accepted += 1;
-          else failedItemIds.push(item.id);
+          const outcome = await acceptSuggestionItemWithOutcome(item.id);
+          if (outcome === 'accepted') accepted += 1;
+          else if (outcome === null) failedItemIds.push(item.id);
         } catch {
           failedItemIds.push(item.id);
         }

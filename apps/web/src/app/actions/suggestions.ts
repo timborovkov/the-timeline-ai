@@ -17,6 +17,7 @@ function trackApprovalDecision(
   resolved: { teamId: string; userId: string },
   decision: 'accepted' | 'rejected' | 'revised',
   itemCount: number,
+  isBulk = itemCount > 1,
 ): void {
   if (itemCount < 1) return;
   trackProductEventBestEffort(resolved.userId, 'approval_decision_submitted', {
@@ -24,7 +25,7 @@ function trackApprovalDecision(
     userId: resolved.userId,
     decision,
     itemCount,
-    isBulk: itemCount > 1,
+    isBulk,
   });
 }
 
@@ -64,9 +65,9 @@ export async function acceptSuggestionItemAction(input: unknown): Promise<Action
     const r = await resolveScope();
     if (!r.ok) return { error: r.error };
     try {
-      const ok = await r.scope.suggestions.acceptSuggestionItem(parsed.data.itemId);
-      if (!ok) return { error: 'Suggestion item no longer pending' };
-      trackApprovalDecision(r, 'accepted', 1);
+      const outcome = await r.scope.suggestions.acceptSuggestionItemWithOutcome(parsed.data.itemId);
+      if (!outcome) return { error: 'Suggestion item no longer pending' };
+      if (outcome === 'accepted') trackApprovalDecision(r, 'accepted', 1);
       revalidateSuggestionSurfaces();
       return { ok: true };
     } catch (err) {
@@ -254,7 +255,7 @@ export async function acceptAllSuggestionAction(input: unknown): Promise<ActionS
           })
         : await r.scope.suggestions.acceptAll(parsed.data.suggestionId);
       revalidateSuggestionSurfaces();
-      if (result.failed === 0) trackApprovalDecision(r, 'accepted', result.accepted);
+      if (result.failed === 0) trackApprovalDecision(r, 'accepted', result.accepted, true);
       return result.failed > 0
         ? { error: `${result.failed} item(s) failed to apply`, failedItemIds: result.failedItemIds }
         : { ok: true };
@@ -310,7 +311,7 @@ export async function acceptVisibleSuggestionsAction(input: unknown): Promise<Ac
       revalidateSuggestionSurfaces();
       if (failed === 0) {
         const accepted = results.reduce((sum, result) => sum + result.accepted, 0);
-        trackApprovalDecision(r, 'accepted', accepted);
+        trackApprovalDecision(r, 'accepted', accepted, true);
       }
       return failed > 0
         ? { error: `${failed} item(s) failed to apply`, failedItemIds }
