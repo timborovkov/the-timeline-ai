@@ -21,6 +21,7 @@ const fakes = vi.hoisted(() => ({
   fakeResolveScope: vi.fn(),
   fakeRevalidatePath: vi.fn(),
   fakeReportCaughtError: vi.fn(),
+  trackProductEventBestEffort: vi.fn(),
   fakeSuggestions: {
     acceptSuggestionItem: vi.fn(),
     rejectSuggestionItem: vi.fn(),
@@ -40,6 +41,9 @@ vi.mock('@/lib/action-scope', async () => {
   };
 });
 vi.mock('next/cache', () => ({ revalidatePath: fakes.fakeRevalidatePath }));
+vi.mock('@/lib/analytics', () => ({
+  trackProductEventBestEffort: fakes.trackProductEventBestEffort,
+}));
 vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.fakeReportCaughtError }));
 
 const ITEM_ID = '11111111-1111-4111-8111-111111111111';
@@ -60,6 +64,7 @@ beforeEach(() => {
   fakes.fakeResolveScope.mockResolvedValue({
     ok: true,
     scope: { suggestions: fakes.fakeSuggestions },
+    teamId: '44444444-4444-4444-8444-444444444444',
     userId: '33333333-3333-4333-8333-333333333333',
   });
   fakes.fakeSuggestions.acceptSuggestionItem.mockResolvedValue(true);
@@ -166,6 +171,17 @@ describe('suggestion item actions', () => {
     await expect(acceptSuggestionItemAction({ itemId: ITEM_ID })).resolves.toEqual({ ok: true });
 
     expect(fakes.fakeSuggestions.acceptSuggestionItem).toHaveBeenCalledWith(ITEM_ID);
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      '33333333-3333-4333-8333-333333333333',
+      'approval_decision_submitted',
+      {
+        teamId: '44444444-4444-4444-8444-444444444444',
+        userId: '33333333-3333-4333-8333-333333333333',
+        decision: 'accepted',
+        itemCount: 1,
+        isBulk: false,
+      },
+    );
     expectSuggestionSurfacesRevalidated();
   });
 
@@ -173,6 +189,11 @@ describe('suggestion item actions', () => {
     await expect(rejectSuggestionItemAction({ itemId: ITEM_ID })).resolves.toEqual({ ok: true });
 
     expect(fakes.fakeSuggestions.rejectSuggestionItem).toHaveBeenCalledWith(ITEM_ID);
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      '33333333-3333-4333-8333-333333333333',
+      'approval_decision_submitted',
+      expect.objectContaining({ decision: 'rejected', itemCount: 1, isBulk: false }),
+    );
     expectSuggestionSurfacesRevalidated();
   });
 
@@ -197,6 +218,11 @@ describe('suggestion item actions', () => {
       itemId: ITEM_ID,
       feedback: 'Miku made this promise, not Tim.',
     });
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      '33333333-3333-4333-8333-333333333333',
+      'approval_decision_submitted',
+      expect.objectContaining({ decision: 'revised', itemCount: 1, isBulk: false }),
+    );
     expectSuggestionSurfacesRevalidated();
   });
 
@@ -214,6 +240,11 @@ describe('suggestion item actions', () => {
       category: 'design',
       project: { kind: 'create', projectName: 'Faba website redesign' },
     });
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      '33333333-3333-4333-8333-333333333333',
+      'approval_decision_submitted',
+      expect.objectContaining({ decision: 'revised', itemCount: 1, isBulk: false }),
+    );
     expectSuggestionSurfacesRevalidated();
   });
 
@@ -227,6 +258,7 @@ describe('suggestion item actions', () => {
     await expect(rejectSuggestionItemAction({ itemId: ITEM_ID })).resolves.toEqual({
       error: 'Suggestion item no longer pending',
     });
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
   });
 
   it('identifies accept failures so clients can move the row to Failed', async () => {
@@ -330,6 +362,11 @@ describe('accept-all suggestion action', () => {
 
     expect(fakes.fakeSuggestions.acceptAll).toHaveBeenCalledWith(SUGGESTION_ID);
     expect(fakes.fakeSuggestions.acceptSelected).not.toHaveBeenCalled();
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      '33333333-3333-4333-8333-333333333333',
+      'approval_decision_submitted',
+      expect.objectContaining({ decision: 'accepted', itemCount: 2, isBulk: true }),
+    );
     expectSuggestionSurfacesRevalidated();
   });
 
@@ -356,6 +393,7 @@ describe('accept-all suggestion action', () => {
       itemIds: [ITEM_ID, secondItemId],
     });
     expect(fakes.fakeSuggestions.acceptAll).not.toHaveBeenCalled();
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
     expectSuggestionSurfacesRevalidated();
   });
 
@@ -370,6 +408,17 @@ describe('accept-all suggestion action', () => {
       error: '2 item(s) failed to apply',
       failedItemIds: [ITEM_ID, '44444444-4444-4444-8444-444444444444'],
     });
+    expectSuggestionSurfacesRevalidated();
+  });
+
+  it('does not emit an approval event when no item was changed', async () => {
+    fakes.fakeSuggestions.acceptAll.mockResolvedValue({ accepted: 0, failed: 0 });
+
+    await expect(acceptAllSuggestionAction({ suggestionId: SUGGESTION_ID })).resolves.toEqual({
+      ok: true,
+    });
+
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
     expectSuggestionSurfacesRevalidated();
   });
 
@@ -399,6 +448,11 @@ describe('accept-visible suggestions action', () => {
     });
     expect(fakes.fakeSuggestions.acceptSuggestionItem).not.toHaveBeenCalled();
     expect(fakes.fakeSuggestions.acceptAll).not.toHaveBeenCalled();
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      '33333333-3333-4333-8333-333333333333',
+      'approval_decision_submitted',
+      expect.objectContaining({ decision: 'accepted', itemCount: 2, isBulk: true }),
+    );
     expectSuggestionSurfacesRevalidated();
   });
 
@@ -489,6 +543,11 @@ describe('reject-visible suggestions action', () => {
     expect(fakes.fakeSuggestions.acceptSuggestionItem).not.toHaveBeenCalled();
     expect(fakes.fakeSuggestions.acceptAll).not.toHaveBeenCalled();
     expect(fakes.fakeSuggestions.acceptSelected).not.toHaveBeenCalled();
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      '33333333-3333-4333-8333-333333333333',
+      'approval_decision_submitted',
+      expect.objectContaining({ decision: 'rejected', itemCount: 2, isBulk: true }),
+    );
     expectSuggestionSurfacesRevalidated();
   });
 

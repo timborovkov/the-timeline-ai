@@ -10,6 +10,7 @@ describe('product analytics contract', () => {
   it('documents every event as no-PII', () => {
     expect(Object.keys(PRODUCT_EVENT_METADATA).sort()).toEqual(
       [
+        'approval_decision_submitted',
         'agent_answer_generated',
         'capture_created',
         'chat_message_sent',

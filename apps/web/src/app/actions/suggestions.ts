@@ -5,12 +5,28 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import { type ActionState, resolveScope, uuidSchema } from '@/lib/action-scope';
+import { trackProductEventBestEffort } from '@/lib/analytics';
 import { publicActionError } from '@/lib/public-error';
 import { runSentryServerAction } from '@/lib/sentry-action';
 
 const EXPECTED_SUGGESTION_APPLY_FAILURE_CODE = 'TIMELINE_EXPECTED_SUGGESTION_APPLY_FAILURE';
 const MAX_VISIBLE_ACCEPT_ITEMS = 500;
 const MAX_VISIBLE_REJECT_ITEMS = 500;
+
+function trackApprovalDecision(
+  resolved: { teamId: string; userId: string },
+  decision: 'accepted' | 'rejected' | 'revised',
+  itemCount: number,
+): void {
+  if (itemCount < 1) return;
+  trackProductEventBestEffort(resolved.userId, 'approval_decision_submitted', {
+    teamId: resolved.teamId,
+    userId: resolved.userId,
+    decision,
+    itemCount,
+    isBulk: itemCount > 1,
+  });
+}
 
 function revalidateSuggestionSurfaces() {
   revalidatePath('/app', 'layout');
@@ -50,6 +66,7 @@ export async function acceptSuggestionItemAction(input: unknown): Promise<Action
     try {
       const ok = await r.scope.suggestions.acceptSuggestionItem(parsed.data.itemId);
       if (!ok) return { error: 'Suggestion item no longer pending' };
+      trackApprovalDecision(r, 'accepted', 1);
       revalidateSuggestionSurfaces();
       return { ok: true };
     } catch (err) {
@@ -82,6 +99,7 @@ export async function rejectSuggestionItemAction(input: unknown): Promise<Action
     try {
       const ok = await r.scope.suggestions.rejectSuggestionItem(parsed.data.itemId);
       if (!ok) return { error: 'Suggestion item no longer pending' };
+      trackApprovalDecision(r, 'rejected', 1);
       revalidateSuggestionSurfaces();
       return { ok: true };
     } catch (err) {
@@ -110,6 +128,7 @@ export async function reviseSuggestionItemAction(input: unknown): Promise<Action
     try {
       const revisedItem = await r.scope.suggestions.reviseSuggestionItem(parsed.data);
       if (!revisedItem) return { error: 'Proposal is no longer editable' };
+      trackApprovalDecision(r, 'revised', 1);
       revalidateSuggestionSurfaces();
       return { ok: true, revisedItem };
     } catch (err) {
@@ -145,6 +164,7 @@ export async function reviseTaskSuggestionItemAction(input: unknown): Promise<Ac
     try {
       const ok = await r.scope.suggestions.reviseTaskSuggestionItem(parsed.data);
       if (!ok) return { error: 'Task proposal is no longer editable' };
+      trackApprovalDecision(r, 'revised', 1);
       revalidateSuggestionSurfaces();
       return { ok: true };
     } catch (err) {
@@ -199,6 +219,7 @@ export async function rejectVisibleSuggestionsAction(input: unknown): Promise<Ac
       const failedItemIds = itemIds.filter((_, index) => results[index] === false);
       const failed = failedItemIds.length;
       revalidateSuggestionSurfaces();
+      if (failed === 0) trackApprovalDecision(r, 'rejected', itemIds.length);
       return failed > 0
         ? { error: `${failed} item(s) failed to reject`, failedItemIds }
         : { ok: true };
@@ -233,6 +254,7 @@ export async function acceptAllSuggestionAction(input: unknown): Promise<ActionS
           })
         : await r.scope.suggestions.acceptAll(parsed.data.suggestionId);
       revalidateSuggestionSurfaces();
+      if (result.failed === 0) trackApprovalDecision(r, 'accepted', result.accepted);
       return result.failed > 0
         ? { error: `${result.failed} item(s) failed to apply`, failedItemIds: result.failedItemIds }
         : { ok: true };
@@ -286,6 +308,10 @@ export async function acceptVisibleSuggestionsAction(input: unknown): Promise<Ac
       const failed = results.reduce((sum, result) => sum + result.failed, 0);
       const failedItemIds = [...new Set(results.flatMap((result) => result.failedItemIds ?? []))];
       revalidateSuggestionSurfaces();
+      if (failed === 0) {
+        const accepted = results.reduce((sum, result) => sum + result.accepted, 0);
+        trackApprovalDecision(r, 'accepted', accepted);
+      }
       return failed > 0
         ? { error: `${failed} item(s) failed to apply`, failedItemIds }
         : { ok: true };
