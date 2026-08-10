@@ -48,8 +48,17 @@ const log = childLogger('agent:tools');
 
 export type AgentToolErrorReporter = (err: unknown, context: { tool: string }) => void;
 
+export interface AgentApprovalDecisionObservation {
+  decision: 'accepted' | 'rejected' | 'revised';
+  itemCount: number;
+  isBulk: boolean;
+}
+
+export type AgentApprovalDecisionReporter = (observation: AgentApprovalDecisionObservation) => void;
+
 export interface AgentToolOptions {
   onToolError?: AgentToolErrorReporter | undefined;
+  onApprovalDecision?: AgentApprovalDecisionReporter | undefined;
   sanitizeError?: ((err: unknown) => unknown) | undefined;
   readOnly?: boolean | undefined;
   db?: Db | undefined;
@@ -2343,6 +2352,13 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         runSafe('revise_suggestion', async () => {
           const input = reviseSuggestionInput.parse(raw);
           const updated = await scope.suggestions.reviseSuggestionItem(input);
+          if (updated) {
+            options.onApprovalDecision?.({
+              decision: 'revised',
+              itemCount: 1,
+              isBulk: false,
+            });
+          }
           return updated
             ? {
                 ok: true,

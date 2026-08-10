@@ -850,6 +850,15 @@ export async function POST(req: Request): Promise<Response> {
   });
   const nativeTools = agent.buildAgentTools(scope, {
     onToolError: reportChatAgentToolError,
+    onApprovalDecision: ({ decision, itemCount, isBulk }) => {
+      trackProductEventBestEffort(session.user.id, 'approval_decision_submitted', {
+        teamId: active.teamId,
+        userId: session.user.id,
+        decision,
+        itemCount,
+        isBulk,
+      });
+    },
     allowPinMutations: hasExplicitPinMutationIntent(latestQuestion),
   });
   const nativeToolNames = selectedNativeToolNames(toolSelection.groups);

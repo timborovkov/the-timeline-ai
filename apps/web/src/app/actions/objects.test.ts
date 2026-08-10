@@ -1052,6 +1052,30 @@ describe('object relationship, note, notification, and suggestion actions', () =
       userId: USER_ID,
     });
     expect(fakes.fakeObjects.rejectObjectChange).toHaveBeenCalledWith(CHANGE_ID);
+    expect(fakes.trackProductEventBestEffort).toHaveBeenNthCalledWith(
+      1,
+      USER_ID,
+      'approval_decision_submitted',
+      {
+        teamId: '11111111-1111-4111-8111-111111111111',
+        userId: USER_ID,
+        decision: 'accepted',
+        itemCount: 1,
+        isBulk: false,
+      },
+    );
+    expect(fakes.trackProductEventBestEffort).toHaveBeenNthCalledWith(
+      2,
+      USER_ID,
+      'approval_decision_submitted',
+      {
+        teamId: '11111111-1111-4111-8111-111111111111',
+        userId: USER_ID,
+        decision: 'rejected',
+        itemCount: 1,
+        isBulk: false,
+      },
+    );
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/inbox');
     expectWorkRevalidated();
   });

@@ -4,6 +4,7 @@ import * as rateLimit from '@timeline/shared/rate-limit';
 import { getAudioBucket, getDocumentsBucket, getS3Client, putObject } from '@timeline/shared/s3';
 import * as telegram from '@timeline/shared/telegram';
 
+import { trackProductEventBestEffort } from '@/lib/analytics';
 import { db } from '@/lib/db';
 import { requireRedisQueue } from '@/lib/queue';
 import { reportCaughtError, reportHandledEvent } from '@/lib/sentry-report';
@@ -169,6 +170,17 @@ export async function POST(req: Request): Promise<Response> {
     const deps: Parameters<typeof telegram.handleUpdate>[0] = {
       db,
       tg: api,
+      agentDeps: {
+        onApprovalDecision: ({ teamId, userId, decision, itemCount, isBulk }) => {
+          trackProductEventBestEffort(userId, 'approval_decision_submitted', {
+            teamId,
+            userId,
+            decision,
+            itemCount,
+            isBulk,
+          });
+        },
+      },
       onAgentToolError(err, context) {
         reportCaughtError(err, {
           surface: 'background',

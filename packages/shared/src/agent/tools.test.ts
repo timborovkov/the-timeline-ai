@@ -2267,7 +2267,8 @@ describe('buildAgentTools — team isolation', () => {
   it('revises a visible unresolved proposal without claiming canonical mutation', async () => {
     const scope = makeFakeScope();
     scope.suggestions.reviseSuggestionItem.mockResolvedValue(true);
-    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const onApprovalDecision = vi.fn();
+    const tools = buildAgentTools(scope as unknown as TeamScope, { onApprovalDecision });
     const exec = tools.revise_suggestion?.execute as (
       input: unknown,
       opts: unknown,
@@ -2291,6 +2292,33 @@ describe('buildAgentTools — team isolation', () => {
       itemId: '11111111-1111-4111-8111-111111111111',
       feedback: 'Miku made this promise, not Tim.',
     });
+    expect(onApprovalDecision).toHaveBeenCalledWith({
+      decision: 'revised',
+      itemCount: 1,
+      isBulk: false,
+    });
+  });
+
+  it('does not report an approval revision when the proposal is no longer editable', async () => {
+    const scope = makeFakeScope();
+    scope.suggestions.reviseSuggestionItem.mockResolvedValue(false);
+    const onApprovalDecision = vi.fn();
+    const tools = buildAgentTools(scope as unknown as TeamScope, { onApprovalDecision });
+    const exec = tools.revise_suggestion?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    await expect(
+      exec(
+        {
+          itemId: '11111111-1111-4111-8111-111111111111',
+          feedback: 'Miku made this promise, not Tim.',
+        },
+        {},
+      ),
+    ).resolves.toMatchObject({ ok: false });
+    expect(onApprovalDecision).not.toHaveBeenCalled();
   });
 
   it('uses the trusted clock for fixture-relative calendar and time defaults', async () => {
