@@ -13,7 +13,12 @@ import {
   resolveAgentPresentation,
 } from '#src/agent/presentation.js';
 import { AGENT_PROMPT_VERSION, buildSystemPrompt } from '#src/agent/system-prompt.js';
-import { buildAgentTools, buildMcpTools, type AgentToolErrorReporter } from '#src/agent/tools.js';
+import {
+  buildAgentTools,
+  buildMcpTools,
+  type AgentApprovalDecisionObservation,
+  type AgentToolErrorReporter,
+} from '#src/agent/tools.js';
 import { getEnv } from '#src/env.js';
 import {
   DEFAULT_AGENT_MAX_STEPS,
@@ -63,6 +68,9 @@ export type AskAgentResult =
 
 export interface AskAgentDeps extends ChatDeps {
   onToolError?: AgentToolErrorReporter | undefined;
+  onApprovalDecision?:
+    | ((observation: AgentApprovalDecisionObservation & { teamId: string; userId: string }) => void)
+    | undefined;
   onAgentError?: ((err: unknown) => void) | undefined;
   /** Redacts private request/provider details before logs or error callbacks. */
   sanitizeError?: ((err: unknown) => unknown) | undefined;
@@ -290,6 +298,14 @@ export async function askAgent(
   });
   const nativeTools = buildAgentTools(scope, {
     onToolError: deps.onToolError,
+    onApprovalDecision: deps.onApprovalDecision
+      ? (observation) =>
+          deps.onApprovalDecision?.({
+            ...observation,
+            teamId: input.teamId,
+            userId: input.userId,
+          })
+      : undefined,
     sanitizeError: deps.sanitizeError,
     readOnly: input.trustedTeamActor,
     currentDate,

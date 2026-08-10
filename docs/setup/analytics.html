@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Analytics setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-02</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-08-10</span></div>
       <blockquote>
         <p>PostHog Cloud EU is the default product analytics and feature flag service.</p>
       </blockquote>
@@ -39,6 +39,12 @@ NEXT_PUBLIC_POSTHOG_HOST=https://eu.i.posthog.com
         Allowed payloads: stable user/team/object IDs, enum-like sources/types/statuses, counts,
         durations, booleans, and model IDs. Disallowed payloads: emails, names, prompts, generated
         answers, transcripts, document text, filenames, cookies, auth headers, and uploaded content.
+      </p>
+      <p>
+        Approval analytics are action-grained: one successful single, revision, or bulk reviewer
+        action emits one <code>approval_decision_submitted</code> event. The item count describes a
+        bulk action; generated proposals and their individual internal lifecycle changes are not
+        emitted as product events.
       </p>
 
       <h2 id="flags">3. Feature flags</h2>

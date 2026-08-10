@@ -106,6 +106,13 @@ export interface ProductEventPayloads {
     taskId: string;
     hasProject: boolean;
   };
+  approval_decision_submitted: {
+    teamId: string;
+    userId: string;
+    decision: 'accepted' | 'rejected' | 'revised';
+    itemCount: number;
+    isBulk: boolean;
+  };
   onboarding_step_completed: {
     teamId: string;
     userId: string;
@@ -226,6 +233,12 @@ export const PRODUCT_EVENT_METADATA: Record<ProductEventName, EventMetadata> = {
   task_project_changed: {
     owner: 'product',
     trigger: 'A teammate sets, replaces, or removes a task primary project.',
+    pii: 'none',
+    retention: 'PostHog project default retention.',
+  },
+  approval_decision_submitted: {
+    owner: 'product',
+    trigger: 'A reviewer successfully accepts, rejects, or revises one or more approval items.',
     pii: 'none',
     retention: 'PostHog project default retention.',
   },

@@ -3,6 +3,7 @@ import { getAudioBucket, getDocumentsBucket, getS3Client, putObject } from '@tim
 
 import type * as slack from '@timeline/shared/slack';
 
+import { trackProductEventBestEffort } from '@/lib/analytics';
 import { requireRedisQueue } from '@/lib/queue';
 
 export function slackIngestDeps() {
@@ -17,6 +18,17 @@ export function slackIngestDeps() {
   const audioReady = s3Ready && Boolean(env.S3_BUCKET_AUDIO);
   const documentsReady = s3Ready && Boolean(env.S3_BUCKET_DOCUMENTS);
   return {
+    agentDeps: {
+      onApprovalDecision: ({ teamId, userId, decision, itemCount, isBulk }) => {
+        trackProductEventBestEffort(userId, 'approval_decision_submitted', {
+          teamId,
+          userId,
+          decision,
+          itemCount,
+          isBulk,
+        });
+      },
+    },
     audio: audioReady
       ? {
           async upload(input: { key: string; body: Buffer; contentType: string }) {

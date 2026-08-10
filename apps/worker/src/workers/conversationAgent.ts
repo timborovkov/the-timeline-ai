@@ -10,6 +10,7 @@ import {
 } from '@timeline/shared';
 import { Worker, type Job } from 'bullmq';
 
+import { trackProductEventBestEffort } from '#src/analytics.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 
 const log = childLogger('worker:conversation-agent');
@@ -223,6 +224,15 @@ export async function processConversationAgentJob(
         {
           abortSignal: abortController.signal,
           sanitizeError: conversationSurfaces.redactConversationError,
+          onApprovalDecision: ({ teamId, userId, decision, itemCount, isBulk }) => {
+            trackProductEventBestEffort(userId, 'approval_decision_submitted', {
+              teamId,
+              userId,
+              decision,
+              itemCount,
+              isBulk,
+            });
+          },
           onTurnObservability: (value) => {
             toolObservability = value;
           },
