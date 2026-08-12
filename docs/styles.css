@@ -213,6 +213,55 @@ a:hover {
   text-decoration-color: var(--border-strong);
 }
 
+.github-source-badge {
+  display: inline-flex;
+  min-height: 2.5rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--fg);
+  font-family: 'Commit Mono', ui-monospace, monospace;
+  font-size: 0.7rem;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  text-decoration: none;
+  text-transform: uppercase;
+  transition:
+    color 80ms ease-out,
+    background-color 80ms ease-out,
+    border-color 80ms ease-out,
+    transform 80ms ease-out;
+}
+.github-source-badge:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+  color: var(--signal);
+  text-decoration: none;
+}
+.github-source-badge:active {
+  transform: scale(0.96);
+}
+.github-source-badge:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+.github-source-badge svg {
+  width: 1rem;
+  height: 1rem;
+  fill: currentColor;
+}
+@media (prefers-reduced-motion: reduce) {
+  .github-source-badge {
+    transition: none;
+  }
+  .github-source-badge:active {
+    transform: none;
+  }
+}
+
 em {
   font-style: italic;
 }

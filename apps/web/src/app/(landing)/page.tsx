@@ -18,6 +18,7 @@ import type { ReactNode } from 'react';
 import { LandingSkipLink } from '@/app/(landing)/_landing-skip-link';
 import { IntegrationCloud } from '@/app/_integration-cloud';
 import { Logo, Wordmark } from '@/components/brand/logo';
+import { GitHubSourceLink } from '@/components/github-source-link';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Button } from '@/components/ui/button';
 import { auth } from '@/lib/auth';
@@ -327,6 +328,7 @@ function TopNav({ isSignedIn }: { isSignedIn: boolean }) {
           <Wordmark compact />
         </Link>
         <nav className="flex items-center gap-1 text-sm">
+          <GitHubSourceLink compact />
           <Link
             href="/help"
             className="hidden rounded-sm px-3 py-2 text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:inline"
@@ -370,7 +372,10 @@ function Hero({ isSignedIn }: { isSignedIn: boolean }) {
   return (
     <section className="px-6 pb-16 pt-12 sm:pb-20 sm:pt-20">
       <div className="mx-auto max-w-6xl">
-        <Mono>THE TIMELINE / CITED WORK ANSWERS</Mono>
+        <div className="flex flex-wrap items-center gap-3">
+          <GitHubSourceLink />
+          <Mono>THE TIMELINE / CITED WORK ANSWERS</Mono>
+        </div>
         <div className="mt-7 grid gap-10 lg:grid-cols-[1.05fr_1fr] lg:items-center">
           <div>
             <h1 className="text-[2rem] font-semibold leading-[1.02] tracking-tight text-balance sm:text-5xl lg:text-6xl">

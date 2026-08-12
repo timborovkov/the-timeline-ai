@@ -323,7 +323,9 @@ nav, concise hero with proof mock, audience and source proof, problem
 before/after, concept diagram, surfaces, integrations, cited receipts,
 principles, FAQ, and final CTA. Mono index strips and uppercase section labels
 are reserved for the hero, evidence, and final CTA so the page does not repeat
-the same heading rhythm in every section. Legal pages use the shared public
+the same heading rhythm in every section. The landing hero and public
+navigation link directly to the project's source on GitHub; the public help
+shell and developer docs repeat that path. Legal pages use the shared public
 shell at reading width (65–70ch).
 Help uses the same public shell at wide width with a sidebar nav. Its overview
 is one searchable, single-column guide directory rather than repeating the

@@ -27,6 +27,8 @@ describe('LandingPage', () => {
     expect(html.match(/<header\b/g)).toHaveLength(1);
     expect(html.match(/<footer\b/g)).toHaveLength(1);
     expect(html).toContain('aria-label="The Timeline home"');
+    expect(html).toContain('https://github.com/timborovkov/the-timeline-ai');
+    expect(html).toContain('Source on GitHub');
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('Ask what changed.');
     expect(html).toContain('Get cited answers.');

@@ -89,6 +89,12 @@ describe('getEnv', () => {
     expect(getEnv().AUTH_URL).toBe('https://timeline.example.com');
   });
 
+  it('treats an empty optional Recall transcript webhook URL as unset', () => {
+    setBaseEnv({ RECALL_TRANSCRIPT_WEBHOOK_URL: '' });
+
+    expect(getEnv().RECALL_TRANSCRIPT_WEBHOOK_URL).toBeUndefined();
+  });
+
   it('keeps the legacy invite sender env var available for transactional email fallback', () => {
     setBaseEnv({
       INVITE_EMAIL_FROM: 'Timeline <invites@example.test>',

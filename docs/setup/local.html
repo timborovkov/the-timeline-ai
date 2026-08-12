@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Local development</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-18</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-08-12</span></div>
       <p class="tldr">
         Bring up the full Timeline stack on your machine with Docker Compose for infra and
         <code>pnpm dev</code> for app + worker hot reload.
@@ -72,10 +72,19 @@ docker compose ps           # all services should be "healthy"
 
       <p>Install deps, run migrations, and optionally seed demo data:</p>
       <pre><code>pnpm install
+set -a
+. ./.env
+set +a
+
 pnpm db:generate            # only if you changed schema
 pnpm db:migrate
 pnpm dev:seed               # optional demo team, users, events, objects, integrations, reconciliation provenance
 </code></pre>
+      <p>
+        Exporting the root environment is required for the database and worker commands. The root
+        <code>pnpm dev</code> script runs Turbo in loose env mode so those exported values reach the
+        worker; Next.js reads the same values through <code>apps/web/.env</code>.
+      </p>
       <p>
         <code>pnpm dev:seed</code> only runs against local database hosts unless you set an explicit
         override, and it requires <code>AUTH_SECRET</code>, <code>DATABASE_URL</code>, and
