@@ -1,3 +1,4 @@
+import * as integrationsLib from '@timeline/shared/integrations/registry';
 import Link from 'next/link';
 
 import type { Metadata } from 'next';
@@ -135,24 +136,28 @@ const AUDIENCES = [
   },
 ] as const;
 
-const NATIVE_CONNECTORS = [
-  'GitHub',
-  'Linear',
-  'Google Drive',
-  'Monday.com',
-  'Slack',
-  'Sentry',
-] as const;
-
 export default async function LandingPage() {
   const session = await auth();
   const isSignedIn = Boolean(session?.user);
+  const nativeConnectors: string[] = [];
+  const availableNativeConnectors: string[] = [];
+  const unconfiguredNativeConnectors: string[] = [];
+  for (const connector of integrationsLib.listCatalog()) {
+    if (connector.kind !== 'native' || connector.ingestStatus !== 'implemented') continue;
+    nativeConnectors.push(connector.label);
+    if (connector.status === 'native_available') availableNativeConnectors.push(connector.label);
+    if (connector.status === 'native_unconfigured') {
+      unconfiguredNativeConnectors.push(connector.label);
+    }
+  }
 
   return (
     <div className={styles.page} data-home-root>
-      <StructuredData />
+      <StructuredData nativeConnectors={nativeConnectors} />
       <HomeMotion />
-      <LandingSkipLink />
+      <div className={styles.skipLayer}>
+        <LandingSkipLink />
+      </div>
       <div className={styles.progress} aria-hidden="true">
         <span />
       </div>
@@ -163,7 +168,10 @@ export default async function LandingPage() {
         <ChronologyScene />
         <AnswerScene />
         <AudienceScene />
-        <TrustScene />
+        <TrustScene
+          availableNativeConnectors={availableNativeConnectors}
+          unconfiguredNativeConnectors={unconfiguredNativeConnectors}
+        />
         <CtaScene isSignedIn={isSignedIn} />
       </main>
       <Footer isSignedIn={isSignedIn} />
@@ -171,7 +179,7 @@ export default async function LandingPage() {
   );
 }
 
-function StructuredData() {
+function StructuredData({ nativeConnectors }: { nativeConnectors: string[] }) {
   const legalContactEmail = getLegalContactEmail();
   const siteUrl = getSiteUrl();
   const orgId = new URL('/#organization', siteUrl).toString();
@@ -220,7 +228,7 @@ function StructuredData() {
         featureList: [
           'Chronological project history from captured work',
           'Cited answers linked to immutable source events',
-          'Native ingestion for GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry',
+          `Built-in native ingestion adapters for ${nativeConnectors.join(', ')}`,
           'Meeting transcript, document, message, and email capture',
           'Team-scoped storage with per-event visibility',
         ],
@@ -528,7 +536,13 @@ function AudienceScene() {
   );
 }
 
-function TrustScene() {
+function TrustScene({
+  availableNativeConnectors,
+  unconfiguredNativeConnectors,
+}: {
+  availableNativeConnectors: string[];
+  unconfiguredNativeConnectors: string[];
+}) {
   return (
     <section
       id="trust"
@@ -571,13 +585,19 @@ function TrustScene() {
             name the boundary instead of blurring it.
           </p>
           <div className={styles.nativeConnectors}>
-            <span>Native ingestion</span>
-            <ul>
-              {NATIVE_CONNECTORS.map((connector) => (
-                <li key={connector}>{connector}</li>
-              ))}
-            </ul>
+            <span>Native ingestion / available on this deployment</span>
+            {availableNativeConnectors.length > 0 ? (
+              <ConnectorList connectors={availableNativeConnectors} />
+            ) : (
+              <p className={styles.connectorEmpty}>No native OAuth connectors are configured.</p>
+            )}
           </div>
+          {unconfiguredNativeConnectors.length > 0 ? (
+            <div className={styles.nativeConnectors}>
+              <span>Implemented / awaiting deployment configuration</span>
+              <ConnectorList connectors={unconfiguredNativeConnectors} />
+            </div>
+          ) : null}
           <dl className={styles.connectorTiers}>
             <div>
               <dt>MCP access</dt>
@@ -594,6 +614,16 @@ function TrustScene() {
         </aside>
       </div>
     </section>
+  );
+}
+
+function ConnectorList({ connectors }: { connectors: string[] }) {
+  return (
+    <ul>
+      {connectors.map((connector) => (
+        <li key={connector}>{connector}</li>
+      ))}
+    </ul>
   );
 }
 

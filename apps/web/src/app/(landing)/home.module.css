@@ -17,6 +17,11 @@
   isolation: isolate;
 }
 
+.skipLayer {
+  position: relative;
+  z-index: 90;
+}
+
 :global(.dark) .page {
   --home-ink: oklch(0.13 0.008 135);
   --home-panel: oklch(0.165 0.009 135);
@@ -1022,6 +1027,13 @@
   text-transform: uppercase;
 }
 
+.connectorEmpty {
+  margin-top: 0.9rem;
+  color: var(--home-muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
 .connectorTiers {
   margin-bottom: 1.5rem;
 }
@@ -1153,6 +1165,124 @@
   color: var(--home-dim) !important;
 }
 
+.recoveryScene {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(25rem, 1fr);
+  gap: clamp(3rem, 8vw, 9rem);
+  align-items: center;
+  min-height: calc(100svh - 12rem);
+  padding-block: clamp(5rem, 10vw, 9rem);
+}
+
+.recoveryCopy {
+  min-width: 0;
+}
+
+.recoveryTitle {
+  max-width: 8ch;
+  margin-block: 1.5rem 2rem;
+  font-size: clamp(3.8rem, 7.5vw, 7.5rem);
+  font-weight: 600;
+  line-height: 0.84;
+  letter-spacing: -0.075em;
+  text-wrap: balance;
+}
+
+.recoveryTitle em {
+  color: var(--home-signal);
+  font-family:
+    Iowan Old Style,
+    Baskerville,
+    'Times New Roman',
+    serif;
+  font-weight: 400;
+}
+
+.recoveryCopy > p {
+  max-width: 36rem;
+  color: var(--home-muted);
+  font-size: clamp(0.95rem, 1.2vw, 1.15rem);
+  line-height: 1.65;
+}
+
+.loadingSequence,
+.errorPanel {
+  min-width: 0;
+  border: 1px solid var(--home-line-strong);
+  background: var(--home-panel);
+}
+
+.loadingSequence {
+  position: relative;
+  display: grid;
+  gap: 2rem;
+  padding: clamp(1.25rem, 4vw, 3.5rem);
+  overflow: hidden;
+}
+
+.loadingSignals {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.5rem;
+}
+
+.loadingSignals span {
+  display: grid;
+  gap: 1rem;
+  min-height: 6.5rem;
+  align-content: space-between;
+  padding: 0.75rem;
+  border: 1px solid var(--home-line);
+  color: var(--home-paper);
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.loadingSignals small {
+  color: var(--home-signal);
+}
+
+.loadingChronology {
+  height: 1px;
+  background: var(--home-line-strong);
+  transform-origin: left;
+}
+
+.loadingAnswer {
+  display: grid;
+  gap: 0.65rem;
+  min-height: 11rem;
+  align-content: center;
+  padding: 1.5rem;
+  border-left: 2px solid var(--home-signal);
+  background: var(--home-ink);
+}
+
+.loadingAnswer span {
+  display: block;
+  height: 0.7rem;
+  background: var(--home-line-strong);
+}
+
+.loadingAnswer span:nth-child(2) {
+  width: 84%;
+}
+
+.loadingAnswer span:nth-child(3) {
+  width: 58%;
+}
+
+.errorPanel {
+  padding: clamp(1rem, 3vw, 2rem);
+}
+
+.errorPanel > div {
+  border-color: var(--home-line-strong);
+  background: var(--home-ink);
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .progress span {
     transition: transform 90ms linear;
@@ -1220,6 +1350,44 @@
   .motionReady .visible .sourceFragment {
     transform: rotate(0);
   }
+
+  .loadingSignals span {
+    animation: recoverySignal 1.8s ease-in-out infinite alternate;
+  }
+
+  .loadingSignals span:nth-child(2) {
+    animation-delay: 150ms;
+  }
+
+  .loadingSignals span:nth-child(3) {
+    animation-delay: 300ms;
+  }
+
+  .loadingSignals span:nth-child(4) {
+    animation-delay: 450ms;
+  }
+
+  .loadingChronology {
+    animation: recoveryChronology 1.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  }
+}
+
+@keyframes recoverySignal {
+  to {
+    border-color: var(--home-signal);
+    transform: translateY(-0.25rem);
+  }
+}
+
+@keyframes recoveryChronology {
+  0% {
+    transform: scaleX(0);
+  }
+
+  70%,
+  100% {
+    transform: scaleX(1);
+  }
 }
 
 @keyframes evidenceDash {
@@ -1251,6 +1419,7 @@
   }
 
   .claimScene,
+  .recoveryScene,
   .sourceStage,
   .answerLayout,
   .trustLayout {
@@ -1260,6 +1429,11 @@
   .claimScene {
     min-height: auto;
     padding-top: 6rem;
+  }
+
+  .recoveryScene {
+    grid-template-columns: 1fr;
+    min-height: auto;
   }
 
   .observatory {
@@ -1333,6 +1507,14 @@
 
   .heroTitle {
     font-size: clamp(4rem, 22vw, 6.3rem);
+  }
+
+  .recoveryTitle {
+    font-size: clamp(3.7rem, 19vw, 5.6rem);
+  }
+
+  .loadingSignals {
+    grid-template-columns: repeat(2, 1fr);
   }
 
   .heroActions {

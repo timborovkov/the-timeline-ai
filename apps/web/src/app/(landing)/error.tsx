@@ -1,6 +1,7 @@
 'use client';
 
 import { LandingRecoveryShell } from '@/app/(landing)/_landing-recovery-shell';
+import styles from '@/app/(landing)/home.module.css';
 import { ErrorState } from '@/components/error-state';
 
 export default function LandingError({
@@ -12,19 +13,20 @@ export default function LandingError({
 }) {
   return (
     <LandingRecoveryShell>
-      <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6 sm:py-20">
-        <header className="border-l-2 border-signal pl-5 sm:pl-6">
-          <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-            The Timeline
-          </p>
-          <h1 className="mt-4 text-4xl font-semibold leading-[1.05] tracking-tight sm:text-5xl">
-            Ask what changed.
+      <section className={`${styles.scene} ${styles.recoveryScene}`}>
+        <header className={styles.recoveryCopy}>
+          <div className={styles.sceneIndex}>
+            <span>00 / 07</span>
+            <span>Evidence interrupted</span>
+          </div>
+          <h1 className={styles.recoveryTitle}>
+            The record did not <em>resolve.</em>
           </h1>
-          <p className="mt-5 max-w-prose text-base leading-[1.65] text-fg-muted">
-            Cited updates, handoffs, digests, and answers from the work already happening.
+          <p>
+            The source material is unchanged. Retry this public view to reconstruct the chronology.
           </p>
         </header>
-        <div className="mt-10">
+        <div className={styles.errorPanel}>
           <ErrorState
             title="Unable to load The Timeline"
             description="This failed load did not change any account or workspace data. Check your connection, then try again."
@@ -32,7 +34,7 @@ export default function LandingError({
             reset={reset}
           />
         </div>
-      </div>
+      </section>
     </LandingRecoveryShell>
   );
 }

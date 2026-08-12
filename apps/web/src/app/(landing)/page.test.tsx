@@ -5,9 +5,10 @@ import userEvent from '@testing-library/user-event';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const fakes = vi.hoisted(() => ({ auth: vi.fn() }));
+const fakes = vi.hoisted(() => ({ auth: vi.fn(), listCatalog: vi.fn() }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
+vi.mock('@timeline/shared/integrations/registry', () => ({ listCatalog: fakes.listCatalog }));
 
 const { default: LandingPage } = await import('@/app/(landing)/page');
 
@@ -19,6 +20,14 @@ describe('LandingPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fakes.auth.mockResolvedValue(null);
+    fakes.listCatalog.mockReturnValue(
+      ['GitHub', 'Linear', 'Google Drive', 'Monday.com', 'Slack', 'Sentry'].map((label, index) => ({
+        kind: 'native',
+        ingestStatus: 'implemented',
+        label,
+        status: index < 2 ? 'native_available' : 'native_unconfigured',
+      })),
+    );
   });
 
   it('server-renders the seven-scene evidence narrative in order', async () => {
@@ -64,6 +73,8 @@ describe('LandingPage', () => {
     }
 
     expect(html).toContain('Native ingestion');
+    expect(html).toContain('Native ingestion / available on this deployment');
+    expect(html).toContain('Implemented / awaiting deployment configuration');
     expect(html).toContain('MCP access');
     expect(html).toContain('Future connector pages remain unindexed');
     expect(html).not.toContain('href="/integrations');
@@ -96,5 +107,6 @@ describe('LandingPage', () => {
 
     expect(main.tabIndex).toBe(-1);
     expect(document.activeElement).toBe(main);
+    expect(skipLink.className).toContain('focus:z-[90]');
   });
 });
