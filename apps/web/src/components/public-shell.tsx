@@ -3,6 +3,7 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { Wordmark } from '@/components/brand/logo';
+import { GitHubSourceLink } from '@/components/github-source-link';
 import { SkipLink } from '@/components/skip-link';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Button } from '@/components/ui/button';
@@ -36,6 +37,7 @@ export function PublicShell({
             <Wordmark compact />
           </Link>
           <nav aria-label="Public" className="flex items-center gap-1 text-sm">
+            <GitHubSourceLink compact />
             <Link
               href="/help"
               className="hidden rounded-sm px-3 py-2 text-fg-muted outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:block"

@@ -336,7 +336,7 @@ const baseSchema = z.object({
   RECALL_API_KEY: z.string().optional(),
   RECALL_BASE_URL: z.url().default('https://us-west-2.recall.ai/api/v1'),
   RECALL_STATUS_WEBHOOK_SECRET: z.string().optional(),
-  RECALL_TRANSCRIPT_WEBHOOK_URL: z.url().optional(),
+  RECALL_TRANSCRIPT_WEBHOOK_URL: z.preprocess(emptyStringAsUnset, z.url().optional()),
   /**
    * Recall recording-media retention for meeting bots.
    *

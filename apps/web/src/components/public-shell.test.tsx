@@ -16,5 +16,7 @@ describe('PublicShell', () => {
     expect(html.indexOf('href="#main"')).toBeLessThan(html.indexOf('href="/"'));
     expect(html).toContain('<main id="main">Public content</main>');
     expect(html).toContain('min-h-dvh');
+    expect(html).toContain('href="https://github.com/timborovkov/the-timeline-ai"');
+    expect(html).toContain('Source on GitHub');
   });
 });

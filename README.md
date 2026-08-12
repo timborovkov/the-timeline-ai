@@ -5,379 +5,131 @@
 <h1 align="center">The Timeline</h1>
 
 <p align="center">
-  Capture work as it happens, then generate cited updates, digests, handoffs, and answers.
+  Turn everyday work into cited answers, updates, digests, and handoffs.
 </p>
 
-The Timeline is an evidence-derived operating record for teams that should not
-have to manually report on work they already did. It accepts messy real-world
-inputs — notes, voice memos, email, Slack, Telegram, documents, meetings, and
-integration events — and turns them into an auditable event history of raw
-events, extracted facts, artifact clusters, workspace objects, calendar
-entries, approvals, and searchable documents.
+<p align="center">
+  <a href="https://thetimeline.cc">Website</a> ·
+  <a href="https://thetimeline.cc/help">Help</a> ·
+  <a href="https://github.com/timborovkov/the-timeline-ai">GitHub</a> ·
+  <a href="./docs/setup/local.html">Local setup</a> ·
+  <a href="./docs/index.html">Developer docs</a>
+</p>
 
-The work becomes the record: updates, daily digests, handoffs, stakeholder
-answers, project memory, and account context are generated from evidence
-instead of being rewritten by hand. Captured source content remains immutable,
-derived calendar mirror rows can refresh when their calendar event changes,
-derived facts can be reprocessed as extraction improves, and citations point
-back to the source material instead of hiding behind black-box summaries.
+The Timeline captures work from Slack, Telegram, meetings, email, documents,
+calendar events, and connected tools. It keeps the original evidence, derives
+structured workspace memory, and answers questions with citations back to the
+source.
 
-## What You Can Build With It
+## What it does
 
-- A searchable team activity archive with source-level citations.
-- Cited updates, daily digests, and handoff briefs generated from the work your
-  team already did.
-- Global search across app pages, timeline events, documents, objects, tasks,
-  boards, calendar events, and integration setup surfaces.
-- Personal, ordered pins across objects and tasks, boards, documents and
-  captured files, meetings, calendar series, and grouped timeline moments,
-  with a compact Home preview and complete Work manager.
-- A chat interface that can answer questions across events, documents,
-  meetings, calendar rows, and connected tools.
-- Lightweight CRM, project, task, and decision tracking derived from everyday
-  communication.
-- Work artifact reconciliation that can connect bug reports, Sentry issues,
-  GitHub PRs, shared links, contracts, deals, clients, decisions, and events
-  through cited evidence without letting every related source mutate canonical
-  status.
-- Contact extraction that records emails, phone numbers, and conservative
-  labeled addresses on raw-event metadata; accepted email/phone memory appears
-  as person identity facets instead of standalone artifact objects.
-- Team document search with versioned uploads, chunked embeddings, inline
-  document citations, PDF/image/audio previews, and a captured-file inbox for
-  promoting Telegram/Slack evidence into curated knowledge.
-- Silent, consent-gated meeting transcript capture for Google Meet, Microsoft
-  Teams, and Zoom.
-- Read-only team calendar subscription feeds for viewing Timeline events in a
-  default calendar app.
-- Slack, Telegram, email, meetings, documents, calendar, native
-  GitHub/Linear/Google Drive/Monday.com/Slack workspace/Sentry sync, project
-  tools, code systems, support queues, account systems, and internal tools
-  flowing into cited timeline evidence.
-- Generic ingest webhooks for arbitrary external evidence that should land in
-  Timeline without becoming authoritative provider state.
-- Custom MCP servers that give the agent live access to long-tail tools; successful
-  tool results are captured as private integration evidence for reconciliation.
-- An outbound MCP server so tools like Claude Desktop and Cursor can query
-  team-level workspace context across bundled timeline moments, raw events,
-  objects, tasks, boards, calendar, documents, and integrations.
+- Captures notes, messages, voice memos, files, meetings, and integration events.
+- Searches across events, documents, tasks, projects, people, companies, and calendars.
+- Produces cited answers, status updates, daily digests, and handoff briefs.
+- Turns durable facts and decisions into approval-backed workspace changes.
+- Connects GitHub, Linear, Google Drive, Monday.com, Slack, Sentry, and custom MCP servers.
+- Enforces team isolation and per-event visibility at the data layer.
 
-## Project Status
+The project is under active development. The full local stack works today, but
+APIs and migrations may change before a stable release.
 
-The core product is active and usable for local development: web app, workers,
-capture surfaces, document drive, meetings, integrations, MCP, approvals,
-calendar, onboarding, job recovery, tests, and deployment docs are in place.
-Public help, Terms of Use, and Privacy Policy pages are also served from the web
-app; email/password signup is Turnstile-protected, and signed-in users must
-accept the current legal versions before entering `/app`.
+## Quick start
 
-The repo is still moving quickly, but the README is written as an entry point
-for contributors and operators rather than as a phase log. For the detailed
-product rationale and implementation history, start with the docs below.
-
-## Architecture
-
-This is a pnpm/Turborepo monorepo.
-
-| Path | Purpose |
-| --- | --- |
-| `apps/web` | Next.js app, public docs, auth, server actions, UI, API routes, and inbound webhooks. |
-| `apps/worker` | BullMQ workers for direct conversation agents, transcription, extraction, embeddings, meetings, integrations, reconciliation, MCP health, object summaries, daily digest, team export, and maintenance jobs. Also the credential-thin `document-extract` service (`WORKER_MODE=document-extract`, Daytona sandboxes — see `docs/adr/0013-daytona-document-extract.md`). |
-| `packages/db` | Drizzle schema, migrations, and database package exports. |
-| `packages/shared` | Team-scoped data access, personal pins, LLM wrapper, Qdrant/S3 wrappers, queues, integrations, artifact/workspace reconciliation, calendar, documents, meetings, objects, MCP, and other shared domain modules. |
-| `docs` | Product, setup, architecture, and deployment documentation. |
-
-Telegram and Slack direct text share one durable agent runtime: private,
-bounded sessions are visible in web chat history, while explicit notes and all
-attachments remain capture. Groups and channels stay ingestion-first unless
-someone uses `/ask` or mentions Timeline. Web chat keeps thorough answers with
-clickable evidence; every external chat provider defaults to concise plain text
-without internal Timeline IDs. See
-[ADR 0012](docs/adr/0012-direct-chat-surfaces-share-one-agent-runtime.md).
-
-The two most important boundaries are:
-
-- **Team isolation:** Postgres access flows through `withTeam(db, teamId,
-  userId)` in `@timeline/shared`; Qdrant searches are filtered by `team_id`.
-- **One inference layer:** app and worker code call `llm.chatStructured()`,
-  `llm.streamChat()`, `llm.embed()`, `llm.embedMany()`, `llm.transcribeAudio()`, and
-  `llm.extractTextFromMedia()` from `@timeline/shared`.
-
-The package root re-exports the reconciliation namespace, and the
-`@timeline/shared/reconciliation` subpath exports the shared source-ref
-validation, visibility-floor checks, replay-safe dedupe-key builders,
-artifact-cluster kind constants, and core reconciliation helpers.
-The reconciliation schema also includes an output-owned projection outbox so
-approval UI rows can be rebuilt or repaired from `reconciliation_outputs`.
-The `@timeline/shared/reconciliation/eval-manifests` subpath exports typed
-surface and scenario coverage manifests for scheduled eval/reporting runners.
-The `@timeline/shared/reconciliation/authority` subpath exports the field-scoped
-authority policy that decides whether evidence can produce a direct write, an
-approval bundle, an observed association, or a no-action block.
-The `@timeline/shared/reconciliation/planner` subpath exports the shared
-structured planner prompt/schema used by live reconciliation evals and
-proposal planning metadata for conversation reviews and raw-event batches.
-The `@timeline/shared/reconciliation/normalization` subpath exports raw-event
-and integration-event normalizers used by the capture surfaces. The
-`@timeline/shared/reconciliation/resolver` subpath exports the anchor-based
-evidence-to-cluster association resolver. The
-`@timeline/shared/reconciliation/backfill` subpath exports the historical
-evidence coverage audit and backfill helpers used by the worker
-`reconciliation-evidence` command and the queue-backed reconciliation worker;
-audit reports include a `releaseGate` that can fail release runs on missing
-evidence or non-allowlisted degraded replay rows.
-The `@timeline/shared/reconciliation/dashboard` subpath exports the admin
-dashboard snapshot used by Team → Reconciliation to inspect evidence coverage,
-run logs, output status, projection outbox health, association counts, conflict
-attention, provider/source diagnostics, approval acceptance health, and
-viewer-visibility-filtered dashboard counts plus cluster drilldowns. It also
-exports the legacy-provenance cutover audit used by the worker
-`reconciliation-legacy-provenance` command.
-The `@timeline/shared/reconciliation/production-sampling` subpath exports the
-redacted production-sampling artifact loader and report writer used to
-aggregate live artifacts into pass-rate, miss, visibility, authority, and
-fixture-candidate metrics; artifact writing and loading reject malformed or
-empty redacted source refs, malformed or inconsistent manifest summaries,
-malformed judge metadata, malformed expected-count maps, and manifest paths
-outside the run directory before they contribute to release metrics. Loaded
-evidence-pack aggregates must preserve attempt, error, eligibility,
-cross-source, and pack-count relationships before merging. A single legacy
-aggregate without population fingerprints remains loadable and is rewritten
-without inventing identities, but it cannot enter a cumulative merge until its
-population is traceable. Persisted sampling runs retain the required scenario
-policy plus promotion readiness and blocker codes for the reconciliation
-dashboard.
-
-## Quick Start
-
-Prerequisites:
-
-- Node 24+
-- pnpm 11.8+
-- Docker Desktop or a compatible Docker runtime
+Requirements: Node.js 24+, pnpm 11.8+, and Docker.
 
 ```bash
+git clone https://github.com/timborovkov/the-timeline-ai.git
+cd the-timeline-ai
+pnpm install
+
 cp .env.example .env
 ln -sf ../../.env apps/web/.env
+```
 
-# Fill required local secrets.
-openssl rand -base64 32 # AUTH_SECRET
-openssl rand -base64 32 # SECRETS_ENCRYPTION_KEY
+Generate `AUTH_SECRET` and `SECRETS_ENCRYPTION_KEY`, then add them to `.env`:
 
+```bash
+openssl rand -base64 32
+```
+
+Start the infrastructure, migrate the database, seed the demo workspace, and
+run the app:
+
+```bash
 docker compose up -d
-pnpm install
+
+set -a
+. ./.env
+set +a
+
 pnpm db:migrate
 pnpm dev:seed
 pnpm dev
 ```
 
-Open <http://localhost:3000>.
+Open <http://localhost:3000> and sign in with:
 
-### Dev Seed
+| Email | Password |
+| --- | --- |
+| `owner@timeline.dev` | `timeline-dev` |
+| `member@timeline.dev` | `timeline-dev` |
 
-`pnpm dev:seed` loads `.env`, refuses production and non-local database hosts by
-default, and creates a deterministic local demo workspace. Run it after
-migrations, or run `pnpm dev:wipe && pnpm dev:seed` when you want a fresh local
-database with the seed data. If reserved demo emails, slugs, or UUIDs already
-belong to different local rows, the seed exits with a clear conflict instead of
-rewiring the graph.
-Seeded objects now keep canonical `source_event_id` empty and carry demo
-provenance through reconciliation evidence, associations, and applied outputs.
-
-Seeded account credentials:
-
-| Role | Email | Password |
-| --- | --- | --- |
-| Owner | `owner@timeline.dev` | `timeline-dev` |
-| Member | `member@timeline.dev` | `timeline-dev` |
-
-Seeded workspace data:
-
-- Team: `Acme Labs` (`acme-labs`) with inbound email
-  `acme-labs@inbound.timeline.dev`.
-- Events: manual web note, inbound email, Slack message, meeting transcript,
-  Linear issue update, bundled GitHub PR/review activity, and a bundled GitHub
-  CI workflow burst so the default timeline demonstrates moments instead of
-  single-event rows only.
-- Objects: Project Atlas, vendor appendix task, transcript-only meeting-bot
-  decision, Acme Labs company, and Mika Product person.
-- Board: `Atlas Launch` with Todo, Doing, and Done lanes.
-- Message preferences: daily digest email disabled for both demo users so local
-  workers do not need outbound email configured.
-- Integrations: disabled fake GitHub and Linear provider connections, resource
-  shares, selections, sync cursors, and audit rows.
-
-The seeded provider credentials are intentionally fake, disabled for sync, and
-encrypted through the normal `SECRETS_ENCRYPTION_KEY` flow before storage:
+The seeded provider credentials are fake, encrypted, and disabled for sync:
 
 | Provider | Access token | Refresh token |
 | --- | --- | --- |
 | GitHub | `gho_dev_seed_access_token_123` | `ghr_dev_seed_refresh_token_123` |
 | Linear | `lin_api_dev_seed_access_token_456` | `lin_refresh_dev_seed_refresh_token_456` |
 
-For the full walkthrough, see
-[`docs/setup/local.html`](./docs/setup/local.html).
+For environment details and troubleshooting, read the
+[local development guide](./docs/setup/local.html).
 
-## Useful Commands
+## Architecture
+
+The Timeline is a pnpm/Turborepo monorepo:
+
+| Path | Purpose |
+| --- | --- |
+| `apps/web` | Next.js web app, public pages, API routes, auth, and webhooks |
+| `apps/worker` | BullMQ workers for capture, extraction, agents, sync, and maintenance |
+| `packages/db` | Drizzle schema, migrations, and database exports |
+| `packages/shared` | Team-scoped data access, inference, storage, integrations, and domain modules |
+| `docs` | Product, architecture, setup, and deployment documentation |
+
+The core services are Postgres, Redis, Qdrant, and S3-compatible object storage.
+Model calls go through OpenRouter behind a shared inference layer.
+
+Two boundaries are non-negotiable:
+
+- Every Postgres query uses the team-scoped data layer, and every Qdrant query filters by `team_id`.
+- Source-ingested raw events are immutable. Derived facts can be rebuilt; the evidence cannot.
+
+## Development
 
 ```bash
-pnpm dev                  # Next.js app + worker in watch mode
-pnpm validate             # format check, typecheck, lint, knip
-pnpm test                 # unit and integration tests (package suites run sequentially)
-pnpm test:e2e-env         # deterministic E2E env/port contract check
-pnpm test:eval            # fast deterministic agent, dashboard chat, retrieval, summary, and proposal evals
-AGENT_LIVE_ENV_FILE=/path/.env pnpm test:agent-eval:live
-                          # opt-in live LLM askAgent durable-state + provider/document/meeting/MCP synthesis eval
-SUGGESTIONS_LIVE_ENV_FILE=/path/.env pnpm test:suggestions-eval:live
-                          # opt-in live LLM suggestion worker extraction/projection eval
-TRANSCRIBE_LIVE_ENV_FILE=/path/.env pnpm test:transcribe-eval:live
-                          # opt-in live OpenRouter speech transcription worker finalization eval
-TASK_CATEGORY_LIVE_ENV_FILE=/path/.env pnpm test:task-category-eval:live
-                          # opt-in 120-case live task-category classifier gate + confusion matrix
-pnpm test:reconciliation-eval       # deterministic reconciliation domain/eval matrix
-pnpm test:reconciliation-eval:live  # opt-in live LLM planner+judge matrix; set RECONCILIATION_LIVE_ENV_FILE=/path/.env when needed
-# optional: set RECONCILIATION_LIVE_ARTIFACT_DIR=/tmp/eval-run for one exact output dir,
-# or RECONCILIATION_LIVE_ARTIFACT_ROOT_DIR=eval-runs/reconciliation for timestamped run folders
-# optional: set RECONCILIATION_LIVE_CALL_TIMEOUT_MS=90000 to tune each live planner/judge call timeout
-# optional: set RECONCILIATION_LIVE_MAX_ATTEMPTS=3 to retry transient planner,
-# judge, and judge-consistency failures
-pnpm test:dist-imports    # build db/shared and import compiled runtime modules with Node
-pnpm --filter @timeline/worker reconciliation-evidence -- --team=<uuid> --mode=audit
-pnpm --filter @timeline/worker reconciliation-evidence -- --team=<uuid> --mode=audit --fail-on-release-gate
-# optional: repeat --allow-degraded-source=<event_source> for known historical degraded replay rows
-pnpm --filter @timeline/worker reconciliation-evidence -- --team=<uuid> --mode=backfill --dry-run --page-size=500
-TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker task-category-backfill -- --team-id=<uuid> --limit=500
-                          # dry-run task-category candidates, token estimate, and projected cost
-TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker task-category-backfill -- --team-id=<uuid> --limit=500 --enqueue --max-cost-usd=0.10
-                          # enqueue one bounded batch when its fixed per-task cost estimate fits the guard; rerun to resume
-TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-legacy-provenance -- --team=<uuid> --fail-on-legacy
-TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-production-sampling -- --input=/tmp/eval-run --out=/tmp/reconciliation-production-sampling.json --team=<uuid> --run-kind=closed_beta --fail-on-failures
-# Promotion assessment also requires redacted pack telemetry and explicit scenario coverage:
-# --evidence-pack-samples=/tmp/redacted-pack-samples.json
-# --required-evidence-scenario=generic_webhook (repeat for every required family)
-# production sampling accepts repeated --input paths; --run-kind defaults to manual
-# and may be manual, closed_beta, or post_deploy. Use --fail-on-failures for
-# release gates that should stop on any failed sample. Repeat
-# --confirm-fixture=<caseName>:<packetFingerprint> for reviewed failed samples
-# that should become deterministic fixtures; reports include confirmed and
-# unconfirmed fixture-candidate counts for release review. Add --team=<uuid>
-# to persist the report as a Team → Reconciliation eval run.
-# Evidence-pack sample files may be a JSON array or {"samples": [...]} and must
-# contain content-free counts, mode/version metadata, and latency. Every attempt
-# counted as eligible must also carry its own date, team key, and scenario
-# family; incomplete attempts remain in health/error metrics but cannot advance
-# promotion. Supplying samples without at least one explicit required scenario
-# is rejected so an empty scenario policy cannot accidentally pass.
-# Promotion health, latency, and error gates use shadow attempts only. Failed or
-# provenance-incomplete attempts never count as eligible, even if an
-# export marks them eligible, and sample counts must satisfy
-# surfaceCount <= selectedCount <= candidateCount.
-# Loaded aggregate reports must also satisfy crossSource <= eligible <= sample,
-# matching error totals/rates, and ordered aggregate pack counts before they can
-# merge. When a prior report and fresh sample file are supplied together, their
-# redacted health summaries are merged rather than replacing historical
-# violations. Persisted team runs retain scenario policy and promotion blocker
-# codes, which the reconciliation dashboard displays separately from fixture
-# failures.
-# Each summarized population carries a content-free fingerprint; cumulative
-# inputs with an overlapping population are rejected rather than double-counted;
-# sample exports should retain their immutable attemptId when later review annotations change,
-# and duplicate legacy identities are rejected as ambiguous.
-# Explicit telemetry with zero shadow attempts still produces a failed
-# assessment, and mixed builder/policy versions block promotion until a fresh
-# single-version shadow population qualifies.
-# The worker process also starts a reconciliation queue consumer for
-# evidence_audit/evidence_backfill/scope_reconcile jobs when they are enqueued
-# by product or operator code. Queue payloads support optional source, limit,
-# pageSize, dryRun, missingOnly, and scoped repair controls. Completed
-# audit/backfill jobs persist reconciliation_runs metrics, including
-# release-gate failures for audit runs.
-# Admins can run missing-only source-scoped backfill dry-runs from
-# /app/team/reconciliation in the web app, and can repair scoped
-# team/object/cluster evidence, association graph rows, observed association outputs,
-# and approval projections from the same dashboard.
-# The worker also consumes durable `conversation-agent` turns for Telegram and
-# Slack DMs. TELEGRAM_BOT_TOKEN must be present on worker as well as web; Slack
-# tokens remain encrypted per installed workspace and require the shared
-# SECRETS_ENCRYPTION_KEY on both processes.
-pnpm e2e                  # Playwright core journey tests (requires 4 GiB free disk space)
-pnpm run doctor           # React Doctor scan for React/Next health regressions
-pnpm canary:integrations  # secret-safe live provider OAuth/LLM+transcription/Postmark/Telegram/Slack/Recall + optional signed capture canaries
-pnpm canary:integrations:strict
-                           # fail on any skipped or warning live provider canary
-pnpm repair:monday -- --env-file=/path/to/.env --team-id=<uuid> --user-id=<uuid>
-                           # dry-run stale Monday helper-board repair; add --apply after review
-pnpm dev:seed             # seed local demo data with disabled fake integrations and reconciliation provenance
-pnpm --filter @timeline/worker timeline-moment-presentations -- \
-  --team=<uuid> [--since=YYYY-MM-DD] [--until=YYYY-MM-DD] \
-  [--source=all|telegram|slack|integration|email|meeting|calendar|document|ingest_webhook|system] \
-  [--max-events=500] [--limit=100] [--user=<uuid>] [--all] [--enqueue|--dry-run]
-                          # dry-run/prewarm missing AI presentation cache jobs for timeline moments
-pnpm db:generate          # generate Drizzle migrations after schema changes
-pnpm db:migrate           # apply database migrations
-pnpm check:web-bundle     # inspect built Next server chunks
+pnpm dev          # run the web app and workers with the exported local env
+pnpm validate     # formatting, TypeScript, ESLint, and Knip
+pnpm test         # unit and integration tests
+pnpm run doctor   # React Doctor
 ```
 
-`pnpm validate` is the main static pre-merge gate. Run tests separately with the
-smallest command that proves the behavior you changed: `pnpm test`, a
-package-filtered Vitest command, `pnpm test:e2e-env`, `pnpm test:eval`,
-`pnpm test:reconciliation-eval`, `pnpm test:dist-imports`, or an e2e command.
-GitHub PR CI intentionally does not run `pnpm build` or `pnpm check:web-bundle`;
-TypeScript compilation, linting, formatting, Knip, reconciliation evals, and
-the compiled-package import smoke check are the required CI proof. Run broader
-tests, build, and bundle hygiene checks manually when a change touches
-behavior, production bundling, deployment output, agent/retrieval quality, or
-server/client import boundaries.
+Run the nearest targeted test for your change. Changes to shared exports,
+agent behavior, or reconciliation have additional gates documented in
+[AGENTS.md](./AGENTS.md).
 
 ## Documentation
 
-- [`docs/product-brief.html`](./docs/product-brief.html) — product vision,
-  principles, and architecture overview.
-
-- [`docs/cross-source-evidence.md`](./docs/cross-source-evidence.md) — implemented,
-  default-off and unshipped contract for cited memory across chat, meetings,
-  email, and work systems.
-- [`docs/cross-source-evidence-implementation-plan.md`](./docs/cross-source-evidence-implementation-plan.md)
-  — implemented sequence, file map, test matrix, rollout gates, and adapter
-  promotion milestones.
-- [`docs/adr/0014-cross-source-evidence-packs-use-policy-bound-related-evidence.md`](./docs/adr/0014-cross-source-evidence-packs-use-policy-bound-related-evidence.md)
-  — durable evidence admission, visibility, authority, citation, persistence,
-  and rollout decisions.
-
-- [`docs/captured-files.md`](./docs/captured-files.md) — captured-file vs.
-  document semantics, processing rules, and follow-up implementation bar.
-
-- [`docs/native-provider-template.md`](./docs/native-provider-template.md) —
-  implementation checklist and skeleton for adding native providers on the
-  shared policy, webhook, budget, and reconciliation path.
-- [`docs/calendar.html`](./docs/calendar.html) — approval-backed calendar
-  suggestions, recurrence, occurrence exceptions, and tentative slots.
-- [`docs/setup/local.html`](./docs/setup/local.html) — complete local setup.
-- [`docs/index.html`](./docs/index.html) — documentation index.
-- [`design.md`](./design.md) — UI design system and product interaction model.
-- [`todo.md`](./todo.md) — phased build plan and remaining work.
-- [`TEST_TODO.md`](./TEST_TODO.md) — current test coverage map and expansion plan.
-- [`docs/adr/`](./docs/adr/) — durable architecture decisions.
-
-Setup guides for external services live under [`docs/setup`](./docs/setup/):
-Telegram, Slack, OpenRouter, LangSmith, Postmark transactional/inbound email,
-Recall.ai meeting bots, PostHog analytics, Sentry, Railway, third-party
-integrations including ingest webhooks, and Timeline-as-MCP-server.
+- [Documentation index](./docs/index.html)
+- [Product brief](./docs/product-brief.html)
+- [Local development](./docs/setup/local.html)
+- [Integrations and custom MCP servers](./docs/setup/integrations.html)
+- [Railway deployment](./docs/railway.html)
+- [Architecture decisions](./docs/adr/)
+- [Design system](./design.md)
+- [Roadmap](./todo.md)
 
 ## Contributing
 
-This project values changes that keep the system auditable, team-scoped, and
-operable. Before opening a change, please:
-
-- Keep captured source-ingested raw event content immutable; derived calendar
-  mirror rows may refresh from their owning calendar event.
-- Route team data access through the scoped modules from `withTeam`.
-- Keep direct provider calls behind the shared inference and integration layers.
-- Encrypt integration secrets at rest through the shared secrets helpers.
-- Fence external MCP and integration content before it reaches the agent.
-- Run `pnpm validate` before handing work back.
-
-For UI work, follow the Quiet Archive v3 contract in [`design.md`](./design.md):
-human meaning leads, while internal identifiers and raw payloads stay inside
-explicit technical disclosures. For setup or operational changes, update the
-relevant docs in the same change.
+Issues and pull requests are welcome. Please keep changes team-scoped,
+preserve raw evidence, update affected docs, and run `pnpm validate`,
+`pnpm run doctor`, and the relevant tests before opening a pull request.
