@@ -17,12 +17,12 @@ export function GitHubSourceLink({
       aria-label={compact ? 'The Timeline source code on GitHub' : undefined}
       className={cn(
         'inline-flex min-h-10 items-center justify-center gap-2 rounded-sm border border-border bg-bg px-3 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted transition-[color,background-color,border-color,transform] duration-[80ms] ease-out hover:border-border-strong hover:bg-surface hover:text-fg active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg motion-reduce:transition-none motion-reduce:active:scale-100',
-        compact && 'px-2.5 lg:px-3',
+        compact && 'size-10 px-0',
         className,
       )}
     >
       <GitHubMark />
-      <span className={cn(compact && 'hidden lg:inline')}>Source on GitHub</span>
+      {compact ? null : <span>Source on GitHub</span>}
     </a>
   );
 }
