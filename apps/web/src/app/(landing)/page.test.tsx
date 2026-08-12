@@ -21,30 +21,54 @@ describe('LandingPage', () => {
     fakes.auth.mockResolvedValue(null);
   });
 
-  it('keeps the archive marketing structure with problem, principles, and cited evidence', async () => {
+  it('server-renders the seven-scene evidence narrative in order', async () => {
     const html = renderToStaticMarkup(await LandingPage());
 
-    expect(html.match(/<header\b/g)).toHaveLength(1);
     expect(html.match(/<footer\b/g)).toHaveLength(1);
     expect(html).toContain('aria-label="The Timeline home"');
     expect(html).toContain('https://github.com/timborovkov/the-timeline-ai');
     expect(html).toContain('aria-label="The Timeline source code on GitHub"');
     expect(html.match(/>Source on GitHub</g)).toHaveLength(1);
     expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(html).toContain('Ask what changed.');
-    expect(html).toContain('Get cited answers.');
-    expect(html).toContain('Teams do the work, then separately report that the work happened.');
-    expect(html).toContain('Capture once. Build durable memory.');
-    expect(html).toContain('Trust is part of the system.');
-    expect(html).toContain('Questions, answered.');
-    expect(html).toContain('EVIDENCE / EVERY CLAIM IS CITED');
-    expect(html).toContain('WITHOUT TIMELINE');
-    expect(html).toContain('WITH TIMELINE');
-    expect(html).toContain('linear-gradient');
-    expect(html).not.toMatch(/[—–]/);
-    expect(html).not.toContain('ACME');
-    expect(html).not.toContain('Acme');
-    expect(html).not.toContain('aria-label="Public"');
+    expect(html).toContain('The work <em>becomes</em> the record.');
+
+    const scenes = [
+      '01-claim',
+      '02-sources',
+      '03-chronology',
+      '04-answer',
+      '05-audience',
+      '06-trust',
+      '07-cta',
+    ];
+    let previousIndex = -1;
+    for (const scene of scenes) {
+      const sceneIndex = html.indexOf(`data-scene="${scene}"`);
+      expect(sceneIndex).toBeGreaterThan(previousIndex);
+      previousIndex = sceneIndex;
+    }
+
+    expect(html).toContain('Northline / Last 7 days');
+    expect(html).toContain('Launch is waiting on SSO. Everything else moved.');
+    expect(html).toContain('Evidence behind this answer');
+    expect(html).toContain('href="#northline-source-01"');
+    expect(html).toContain('Source 01: Slack approval');
+    expect(html).not.toContain('aria-hidden="true" data-home-root');
+  });
+
+  it('states connector capabilities without linking to unbuilt acquisition pages', async () => {
+    const html = renderToStaticMarkup(await LandingPage());
+
+    for (const connector of ['GitHub', 'Linear', 'Google Drive', 'Monday.com', 'Slack', 'Sentry']) {
+      expect(html).toContain(connector);
+    }
+
+    expect(html).toContain('Native ingestion');
+    expect(html).toContain('MCP access');
+    expect(html).toContain('Future connector pages remain unindexed');
+    expect(html).not.toContain('href="/integrations');
+    expect(html).not.toContain('href="/guides');
+    expect(html).not.toContain('href="/record');
   });
 
   it('keeps the marketing page browsable for signed-in users with dashboard CTAs', async () => {
@@ -56,6 +80,7 @@ describe('LandingPage', () => {
     expect(html).toContain('href="/app"');
     expect(html).not.toContain('Create team');
     expect(html).not.toContain('href="/sign-in"');
+    expect(html).not.toContain('href="/sign-up"');
   });
 
   it('moves keyboard focus to main when the landing skip link is activated', async () => {

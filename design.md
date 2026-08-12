@@ -96,7 +96,8 @@ Both families are self-hosted with `next/font/local`.
 | Role | Font and size |
 | --- | --- |
 | Page title | Switzer 600, 24px |
-| Marketing hero | Switzer 600, 32px mobile / 48px tablet / 60px desktop |
+| Auth and help marketing hero | Switzer 600, 32px mobile / 48px tablet / 60px desktop |
+| Public acquisition display | Switzer 600, 64px mobile / fluid up to 150px desktop |
 | Section heading | Switzer 600, 16px |
 | Body and controls | Switzer 400–600, 14px |
 | Secondary metadata | Switzer 400, 12px |
@@ -318,15 +319,27 @@ shared due-date vocabulary above.
 
 ### Marketing and public pages
 
-The public landing page keeps the archive marketing structure: sticky landing
-nav, concise hero with proof mock, audience and source proof, problem
-before/after, concept diagram, surfaces, integrations, cited receipts,
-principles, FAQ, and final CTA. Mono index strips and uppercase section labels
-are reserved for the hero, evidence, and final CTA so the page does not repeat
-the same heading rhythm in every section. The landing hero and public
-navigation link directly to the project's source on GitHub; the public help
-shell and developer docs repeat that path. Legal pages use the shared public
-shell at reading width (65–70ch).
+The public landing page is an editorial, seven-scene acquisition narrative:
+claim, sources, chronology, cited answer, audience fit, trust, and one-project
+CTA. Its signature Northline sequence shows work fragments entering, settling
+onto a chronological rail, and resolving into an answer with tangible source
+links. Substantive copy and diagrams are server-rendered; a small client motion
+controller may progressively reveal scenes and show scroll progress.
+
+Public pages may use oversized Switzer display type, denser Commit Mono source
+metadata, a near-black evidence-instrument canvas, and more cinematic spacing
+than the authenticated Quiet Archive. Motion must explain provenance or
+hierarchy, use transforms and opacity, and opt in only under
+`prefers-reduced-motion: no-preference`; the default HTML is a complete static
+narrative. Public pages still use one lime signal, hairline structure, and no
+decorative AI gradients. Connector references distinguish native ingestion
+(GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry), live MCP access,
+and planned support. Planned destinations stay unlinked and unindexed until
+real.
+
+The landing hero and public navigation link directly to the project's source
+on GitHub; the public help shell and developer docs repeat that path. Legal
+pages use the shared public shell at reading width (65–70ch).
 Help uses the same public shell at wide width with a sidebar nav. Its overview
 is one searchable, single-column guide directory rather than repeating the
 same destinations in category lists and card grids. Guide and support pages
@@ -346,8 +359,9 @@ UUIDs, raw IDs, refs, and JSON remain closed inside `TechnicalDetails`.
 - Empty states use sentence case, one explanation, and one action.
 - All screens work at 320px, tablet, desktop, dark mode, and 200% zoom without
   document-level horizontal scrolling.
-- Motion is minimal-functional: 80ms hover, 120ms overlay transitions, and no
-  page transitions. `prefers-reduced-motion` disables non-essential animation.
+- Authenticated-product motion is minimal-functional: 80ms hover, 120ms overlay
+  transitions, and no page transitions. Public acquisition motion follows the
+  transform/opacity and reduced-motion contract above.
 
 ## Accessibility
 
@@ -394,3 +408,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-07-27 | Cross-surface chat history badges | Makes Telegram and Slack transcripts recognizable without changing ordinary web sessions. |
 | 2026-08-05 | Taste v2 landing evolution | Tightens the hero, varies section rhythm, and adds tactile states while preserving Quiet Archive tokens and IA. |
 | 2026-08-05 | Searchable public help directory | Removes repeated guide grids and makes task-level help discoverable from one calm index. |
+| 2026-08-12 | Editorial public acquisition system | Lets visitors watch evidence become chronology and a cited answer while the authenticated product remains Quiet Archive. |
