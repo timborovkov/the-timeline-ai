@@ -342,7 +342,8 @@ describe('getEnv', () => {
       MISE_CACHE_DIR: '/mise/cache',
       MISE_CONFIG_DIR: '/mise/config',
       MISE_INSTALLS_DIR: '/mise/installs',
-      RAILPACK_VERSION: '0.35.0',
+      RAILPACK_VERSION: '0.36.1',
+      RAILPACK_BUILT_AT: '1786542631',
       __MISE_SHIM: 'node',
       __MISE_DIFF: 'mise-diff',
     });
@@ -370,6 +371,7 @@ describe('isAllowedDocumentExtractProcessEnvKey', () => {
     expect(isAllowedDocumentExtractProcessEnvKey('S3_SECRET_ACCESS_KEY')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('RAILWAY_ENVIRONMENT')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('RAILPACK_VERSION')).toBe(true);
+    expect(isAllowedDocumentExtractProcessEnvKey('RAILPACK_BUILT_AT')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('MISE_DATA_DIR')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('__MISE_SHIM')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('CI')).toBe(true);
@@ -381,5 +383,6 @@ describe('isAllowedDocumentExtractProcessEnvKey', () => {
     expect(isAllowedDocumentExtractProcessEnvKey('SLACK_CANARY_BOT_TOKEN')).toBe(false);
     expect(isAllowedDocumentExtractProcessEnvKey('MCP_PREREGISTERED_X_CLIENT_SECRET')).toBe(false);
     expect(isAllowedDocumentExtractProcessEnvKey('AUTH_SECRET')).toBe(false);
+    expect(isAllowedDocumentExtractProcessEnvKey('RAILPACK_FUTURE_SECRET')).toBe(false);
   });
 });
