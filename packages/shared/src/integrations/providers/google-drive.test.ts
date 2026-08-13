@@ -71,7 +71,12 @@ describe('googleDriveProvider', () => {
       'https://timeline.test/api/integrations/google-drive/callback',
     );
     expect(url.searchParams.get('state')).toBe('state-token');
-    expect(url.searchParams.get('scope')).toContain('drive.readonly');
+    expect(url.searchParams.get('scope')?.split(' ')).toEqual([
+      'openid',
+      'email',
+      'https://www.googleapis.com/auth/drive.readonly',
+      'https://www.googleapis.com/auth/drive.metadata.readonly',
+    ]);
     expect(url.searchParams.get('access_type')).toBe('offline');
   });
 

@@ -76,6 +76,9 @@ describe('connector content manifest', () => {
     const limitations = slack.limitations.join(' ');
     expect(limitations).toContain('looks back 14 days');
     expect(limitations).toContain('new replies whose thread root is older than that window');
+    expect(limitations).toContain('at most 25 history pages, or 5,000 messages');
+    expect(limitations).toContain('without persisting a continuation for an unprocessed gap');
+    expect(limitations).toContain('can be omitted and later age out of the lookback');
     expect(limitations).toContain('remain the first-observed snapshot');
     expect(limitations).toContain('first 2,000 replies returned');
     expect(limitations).toContain('replies beyond that cap remain absent');
@@ -115,6 +118,9 @@ describe('connector content manifest', () => {
       'Initial default-branch commit history is capped at 2,000 commits',
     );
     expect(githubClaims).toContain('2,000 pull requests per state');
+    expect(githubClaims).toContain('2,000 combined issue-endpoint entries');
+    expect(githubClaims).toContain('issues endpoint mixes issues and pull requests');
+    expect(githubClaims).toContain('PRs consume the shared 2,000-entry scan budget');
     expect(githubClaims).toContain('2,000 review summaries per pull request');
     expect(githubClaims).toContain(
       'Issue and inline-review comment surfaces use a separate continuation',
@@ -154,6 +160,10 @@ describe('connector content manifest', () => {
     expect(monday.limitations.join(' ')).toContain('first default response page');
     expect(monday.limitations.join(' ')).toContain('does not paginate the activity log');
     expect(monday.limitations.join(' ')).toContain('lag Monday.com by up to 24 hours');
+    expect(monday.limitations.join(' ')).toContain(
+      'Scheduled Monday.com board reconciliation runs every hour',
+    );
+    expect(monday.limitations.join(' ')).toContain('remain stale for nearly an hour');
     expect(monday.limitations.join(' ')).toContain('10,000 boards and 2,500 WorkDocs');
     expect(monday.limitations.join(' ')).toContain('WorkDoc refresh reads at most 10,000 blocks');
     expect(monday.limitations.join(' ')).toContain('does not persist a block-page continuation');
@@ -274,6 +284,9 @@ describe('connector content manifest', () => {
     expect(publicClaims).toContain(
       'does not currently provision a customer-configurable Drive push channel',
     );
+    expect(publicClaims).toContain('15-minute scheduled reconciliation policy');
+    expect(publicClaims).toContain('evaluated by the worker’s five-minute integration tick');
+    expect(publicClaims).toContain('roughly that interval plus scheduling delay');
     expect(publicClaims).not.toContain(
       'an optional push channel can signal faster incremental sync',
     );

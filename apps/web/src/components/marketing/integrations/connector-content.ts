@@ -168,6 +168,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Slack file shares contribute the title, filename, MIME type, and private source URL. This native history path does not download or inspect attachment bodies.',
       'Native workspace ingestion reconciles selected channels hourly; it is not a real-time mirror of every workspace event.',
       'After the initial history backfill, reconciliation looks back 14 days. Edits and reactions on older messages—and new replies whose thread root is older than that window—may not be observed.',
+      'Each incremental channel scan reads at most 25 history pages, or 5,000 messages at the requested page size, inside that 14-day window. The current recent scan advances to the newest returned message without persisting a continuation for an unprocessed gap, so activity beyond the page cap can be omitted and later age out of the lookback.',
       'A single Slack thread is capped at the first 2,000 replies returned. The current sync does not persist a reply-page continuation, so replies beyond that cap remain absent on later runs.',
       'A reaction row is immutable, keyed by message plus emoji, and uses the source message timestamp rather than the time someone reacted. Later users or count changes for an already captured emoji do not update that row, so its count and user list remain the first-observed snapshot.',
       'The source picker returns at most 2,000 non-archived channels, but does not preserve Slack’s membership flag. A listed public channel still requires the bot to be invited, private channels without the app are absent, and channels beyond the listing cap cannot be selected.',
@@ -286,7 +287,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     limitations: [
       'A published GitHub release is publication evidence, not proof of a production deployment. This connector does not ingest GitHub deployment or environment records.',
       'Initial default-branch commit history is capped at 2,000 commits. If a repository has more, older commits are omitted and the current backfill does not resume past that cap.',
-      'Other bounded GitHub scans also stop without continuing past 2,000 pull requests per state, issues, releases, or workflow runs per surface, and 2,000 review summaries per pull request. Issue and inline-review comment surfaces use a separate continuation path.',
+      'Other bounded GitHub scans also stop without continuing past 2,000 pull requests per state, 2,000 combined issue-endpoint entries, 2,000 releases or workflow runs per surface, and 2,000 review summaries per pull request. GitHub’s issues endpoint mixes issues and pull requests; Timeline filters PR entries only after fetching, so PRs consume the shared 2,000-entry scan budget and can leave fewer genuine issues. Issue and inline-review comment surfaces use a separate continuation path.',
       'The source picker lists at most 2,000 organizations and the 2,000 most recently updated repositories available to the OAuth user. Older repositories outside that window cannot be chosen as individual fixed-scope sources.',
       'An organization source also expands at most its 2,000 most recently updated repositories. Older repositories beyond that cap are omitted even when the GitHub App installation has all-repository access.',
       'For an organization scope, install the GitHub App for all repositories you expect Timeline to capture. A repository visible to the OAuth user but excluded from a selected-repositories App installation can be selected yet fail to sync.',
@@ -524,7 +525,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Connect Google Drive with a person-owned OAuth connection.',
       'Choose My Drive root or one or more shared drives that person can share.',
       'Have a Timeline team admin activate the shared sources.',
-      'Let the first successful reconciliation establish the Drive changes cursor, then use cursor-based reconciliation to process later changes. Timeline does not currently provision a customer-configurable Drive push channel.',
+      'Let the first successful reconciliation establish the Drive changes cursor, then use the 15-minute scheduled reconciliation policy to process later changes. Timeline does not currently provision a customer-configurable Drive push channel.',
     ],
     permissions: [
       'The connection sees only files the authorizing Google account is allowed to read.',
@@ -534,6 +535,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     ],
     limitations: [
       'Activation only queues the first sync; it does not persist a Drive cursor. A cursor is requested when reconciliation runs and saved only as that work progresses, so capture effectively begins at the cursor used by the first successful reconciliation. Changes made between activation and that cursor can precede it and are never returned. Untouched files that already existed are not enumerated or imported.',
+      'Scheduled Drive reconciliation becomes due every 15 minutes and is evaluated by the worker’s five-minute integration tick. Without an operator-registered push channel, a supported post-cursor file change can remain absent for roughly that interval plus scheduling delay.',
       'Versions are sync-observed snapshots, not a copy of every Drive edit. If a file changes multiple times before reconciliation, Timeline downloads the current body and may not preserve the intermediate wording.',
       'The source picker exposes My Drive root and up to the first 100 shared drives returned by Google; the current listing does not paginate beyond that first page or offer arbitrary individual subfolders.',
       'My Drive root is not isolated from shared drives in the current change filter. If root is active, an accessible shared-drive file change can be captured with its metadata and supported body even when that shared drive was not separately activated.',
@@ -642,7 +644,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Connect a Monday.com account through Timeline’s OAuth app flow.',
       'Choose the boards and WorkDocs to share; classic helper boards for subitems stay hidden because the parent selection already includes them.',
       'Have a Timeline team admin activate the shared sources.',
-      'Timeline provisions board webhooks when allowed and continues reconciliation independently for history and recovery.',
+      'Timeline provisions board webhooks when allowed and continues hourly reconciliation independently for history and recovery.',
     ],
     permissions: [
       'Timeline requests read scopes for boards, users, updates, WorkDocs, and account metadata.',
@@ -652,6 +654,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     ],
     limitations: [
       'Initial board activity-log backfill requests the preceding 30 days but reads only Monday.com’s first default response page. Additional activity inside that window is omitted because the current sync does not paginate the activity log; older changes are also not imported.',
+      'Scheduled Monday.com board reconciliation runs every hour. When a webhook is missing or missed and no targeted sync wakes the source, supported board changes can remain stale for nearly an hour.',
       'Selected WorkDocs refresh on a daily reconciliation interval, not through board webhooks. Their captured content can therefore lag Monday.com by up to 24 hours.',
       'The source picker lists at most 10,000 boards and 2,500 WorkDocs. Resources beyond those caps cannot be selected.',
       'A WorkDoc refresh reads at most 10,000 blocks. Blocks beyond that limit are omitted on every daily refresh because the current extractor does not persist a block-page continuation.',
@@ -674,7 +677,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       {
         question: 'What if webhook setup fails?',
         answer:
-          'Timeline marks webhook delivery as degraded while reconciliation continues for activated sources. Admins can still run a manual sync while permissions are fixed.',
+          'Timeline marks webhook delivery as degraded while hourly reconciliation continues for activated board sources. Supported board changes can remain stale for nearly an hour, and admins can still run a manual sync while permissions are fixed.',
       },
       {
         question: 'Will Timeline change our boards?',

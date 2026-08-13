@@ -78,8 +78,11 @@
         <li>Enable the Google Drive API for the project.</li>
         <li>
           Ensure the OAuth consent screen allows these scopes:
-          <code>https://www.googleapis.com/auth/drive.readonly</code> and
+          <code>openid</code>, <code>email</code>,
+          <code>https://www.googleapis.com/auth/drive.readonly</code>, and
           <code>https://www.googleapis.com/auth/drive.metadata.readonly</code>.
+          <code>openid</code> supplies the stable Google subject identifier used to reconnect the
+          same account; <code>email</code> supplies its display label.
         </li>
         <li>Copy the OAuth client id and client secret from the credential details page.</li>
         <li>
