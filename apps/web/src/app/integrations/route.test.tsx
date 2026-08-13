@@ -86,7 +86,7 @@ describe('public integration routes', () => {
     });
     expect(github.title).toBe('GitHub integration for cited release history');
     expect(github.alternates).toEqual({ canonical: '/integrations/github' });
-    expect(github.robots).toEqual({ index: true, follow: true });
+    expect(github.robots).toBeUndefined();
 
     expect(metadata.alternates).toEqual({ canonical: '/integrations' });
     expect(metadata.title).toBe('Native integrations');

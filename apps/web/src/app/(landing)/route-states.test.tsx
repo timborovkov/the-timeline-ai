@@ -22,12 +22,15 @@ describe('Landing route states', () => {
     const html = renderToStaticMarkup(<LandingLoading />);
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(html).toContain('<h1 class="sr-only">Ask what changed.</h1>');
+    expect(html).toContain('The work <em>becomes</em> the record.');
+    expect(html).toContain('Gathering evidence');
+    expect(html).toContain('Slack');
+    expect(html).toContain('Meeting');
+    expect(html).toContain('GitHub');
+    expect(html).toContain('Drive');
     expect(html).toContain('aria-live="polite"');
     expect(html.indexOf('aria-live="polite"')).toBeLessThan(html.indexOf('aria-busy="true"'));
     expect(html).toContain('aria-label="The Timeline loading placeholder"');
-    expect(html).toContain('sm:grid-cols-2');
-    expect(html).toContain('lg:grid-cols-[1.1fr_1fr]');
     expect(html).toContain('href="/help"');
     expect(html).toContain('href="/help/support"');
 
@@ -47,10 +50,13 @@ describe('Landing route states', () => {
 
     render(<LandingError error={new Error('offline')} reset={reset} />);
 
-    expect(screen.getAllByRole('heading', { level: 1, name: 'Ask what changed.' })).toHaveLength(1);
+    expect(
+      screen.getAllByRole('heading', { level: 1, name: 'The record did not resolve.' }),
+    ).toHaveLength(1);
+    expect(screen.getByText('Evidence interrupted')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'The Timeline home' }).getAttribute('href')).toBe('/');
     const navigation = screen.getByRole('navigation', { name: 'Landing navigation' });
-    expect(within(navigation).getByRole('link', { name: 'Docs' }).getAttribute('href')).toBe(
+    expect(within(navigation).getByRole('link', { name: 'Help' }).getAttribute('href')).toBe(
       '/help',
     );
     expect(within(navigation).getByRole('link', { name: 'Contact' }).getAttribute('href')).toBe(
@@ -88,19 +94,18 @@ describe('Landing route states', () => {
 
     expect(main.tabIndex).toBe(-1);
     expect(document.activeElement).toBe(main);
+    expect(skipLink.className).toContain('focus:z-[90]');
   });
 
   it('ships responsive recovery navigation constraints and layers the skip link above the sticky header', () => {
     const html = renderToStaticMarkup(<LandingLoading />);
 
-    expect(html).toContain('relative z-[60]');
-    expect(html).toContain('sticky top-0 z-50');
-    expect(html).toContain('gap-2 px-3 sm:gap-4 sm:px-6');
-    expect(html).toContain('shrink-0');
-    expect(html).toContain('size-5 sm:hidden');
-    expect(html).toContain('hidden sm:inline-flex');
-    expect(html).toContain('hidden rounded-sm px-3 py-2');
-    expect(html).toContain('sm:inline');
+    expect(html).toContain('focus:z-[90]');
+    expect(html).toContain('How it works');
+    expect(html).toContain('Example answer');
+    expect(html).toContain('For teams');
+    expect(html).toContain('aria-label="The Timeline source code on GitHub"');
+    expect(html).toContain('aria-label="Landing navigation"');
     expect(html).toContain('href="/help/support"');
     expect(html).not.toContain('href="/sign-in"');
     expect(html).not.toContain('href="/sign-up"');

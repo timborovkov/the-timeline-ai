@@ -4,8 +4,9 @@ import type { Metadata } from 'next';
 
 import { CONNECTORS, findConnector } from '@/components/marketing/integrations/connector-content';
 import { ConnectorPage } from '@/components/marketing/integrations/connector-page';
+import { findConnectorPublicDocument } from '@/components/marketing/integrations/connector-public-documents';
 import { auth } from '@/lib/auth';
-import { publicMetadata } from '@/lib/public-metadata';
+import { metadataForPublicDocument } from '@/lib/public-site';
 
 interface ConnectorPageProps {
   params: Promise<{ slug: string }>;
@@ -22,12 +23,7 @@ export async function generateMetadata({ params }: ConnectorPageProps): Promise<
   const connector = findConnector(slug);
   if (!connector) return {};
 
-  return publicMetadata({
-    title: connector.seoTitle,
-    description: connector.seoDescription,
-    path: `/integrations/${connector.slug}`,
-    robots: { index: true, follow: true },
-  });
+  return metadataForPublicDocument(findConnectorPublicDocument(connector));
 }
 
 export default async function NativeConnectorPage({ params }: ConnectorPageProps) {

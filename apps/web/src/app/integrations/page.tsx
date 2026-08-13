@@ -1,16 +1,9 @@
-import type { Metadata } from 'next';
-
+import { INTEGRATION_DIRECTORY_DOCUMENT } from '@/components/marketing/integrations/connector-public-documents';
 import { IntegrationDirectory } from '@/components/marketing/integrations/integration-directory';
 import { auth } from '@/lib/auth';
-import { publicMetadata } from '@/lib/public-metadata';
+import { metadataForPublicDocument } from '@/lib/public-site';
 
-export const metadata: Metadata = publicMetadata({
-  title: 'Native integrations',
-  description:
-    'Explore native Timeline integrations for Slack, GitHub, Linear, Google Drive, Monday.com, and Sentry, with an honest view of records, permissions, and limitations.',
-  path: '/integrations',
-  robots: { index: true, follow: true },
-});
+export const metadata = metadataForPublicDocument(INTEGRATION_DIRECTORY_DOCUMENT);
 
 export default async function IntegrationsPage() {
   const session = await auth();

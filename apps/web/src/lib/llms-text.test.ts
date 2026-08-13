@@ -1,7 +1,14 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
+import type { PublicDocument } from '@/lib/public-site';
+
 import { HELP_PAGES } from '@/lib/help-content';
 import { buildLlmsFullTxt, buildLlmsTxt } from '@/lib/llms-text';
+import {
+  createPublicDocumentRegistry,
+  definePublicDocuments,
+  PUBLIC_DOCUMENT_REGISTRY,
+} from '@/lib/public-site';
 
 const ENV_BACKUP = { ...process.env };
 
@@ -41,4 +48,79 @@ describe('llms text files', () => {
       expect(text).toContain(page.description);
     }
   });
+
+  it('escapes contributed labels and summaries without reading the deployment environment', () => {
+    const registry = createPublicDocumentRegistry(
+      definePublicDocuments('escaping-test', [
+        testDocument({
+          canonicalPath: '/safe-guide',
+          title: 'Safe guide',
+          llms: {
+            section: 'primary',
+            order: 1,
+            label: 'Guide [one] \\ path',
+            summary: 'Use <script>globalThis.evil()</script> safely.',
+          },
+        }),
+      ]),
+    );
+
+    process.env.AUTH_URL = 'https://wrong.example';
+    const text = buildLlmsTxt({ registry, siteUrl: 'https://canonical.example/base' });
+
+    expect(text).toContain(
+      '[Guide \\[one\\] \\\\ path](https://canonical.example/safe-guide): Use &lt;script&gt;globalThis.evil()&lt;/script&gt; safely.',
+    );
+    expect(text).not.toContain('wrong.example');
+  });
+
+  it('renders integration and Record contributions in both LLM documents', () => {
+    const registry = createPublicDocumentRegistry(
+      definePublicDocuments('existing-public-documents', PUBLIC_DOCUMENT_REGISTRY.all()),
+      definePublicDocuments('discovery-contributions', [
+        testDocument({
+          canonicalPath: '/record/why-citations-matter',
+          kind: 'record',
+          title: 'Why citations matter',
+          llms: {
+            section: 'the-record',
+            order: 1,
+            summary: 'An editorial note about evidence-backed answers.',
+          },
+        }),
+      ]),
+    );
+
+    const compact = buildLlmsTxt({ registry, siteUrl: 'https://thetimeline.cc' });
+    const full = buildLlmsFullTxt({ registry, siteUrl: 'https://thetimeline.cc' });
+
+    expect(compact).toContain('## Integrations');
+    expect(compact).toContain(
+      '[GitHub integration](https://thetimeline.cc/integrations/github): Sync GitHub pull requests, issues, reviews, comments, commits, releases, and workflow runs into a cited chronology with The Timeline.',
+    );
+    expect(compact).toContain('## The Record');
+    expect(compact).toContain(
+      '[Why citations matter](https://thetimeline.cc/record/why-citations-matter): An editorial note about evidence-backed answers.',
+    );
+    expect(full).toContain('## Integrations');
+    expect(full).toContain('URL: https://thetimeline.cc/integrations/github');
+    expect(full).toContain('## The Record');
+    expect(full).toContain('URL: https://thetimeline.cc/record/why-citations-matter');
+  });
 });
+
+function testDocument(overrides: Partial<PublicDocument>): PublicDocument {
+  return {
+    canonicalPath: '/test',
+    kind: 'guide',
+    title: 'Test',
+    description: 'Test public document.',
+    indexability: 'index',
+    dates: { modified: '2026-08-12', reviewed: '2026-08-12' },
+    capability: { kind: 'current-product' },
+    sitemap: false,
+    structuredData: [],
+    llms: false,
+    ...overrides,
+  };
+}

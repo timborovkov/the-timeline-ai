@@ -9,7 +9,7 @@ afterEach(() => {
 });
 
 describe('robots', () => {
-  it('disallows APIs while leaving noindexed HTML routes crawlable', () => {
+  it('allows public content while protecting APIs, authenticated routes, and token routes', () => {
     process.env.AUTH_URL = 'https://thetimeline.cc/';
 
     const config = robots();
@@ -18,11 +18,15 @@ describe('robots', () => {
     expect(config.sitemap).toBe('https://thetimeline.cc/sitemap.xml');
     for (const rule of rules) {
       const disallow = Array.isArray(rule.disallow) ? rule.disallow : [rule.disallow];
-      expect(disallow).toEqual(['/api/']);
+      expect(rule.allow).toBe('/');
+      expect(disallow).toEqual(['/api/', '/app$', '/app/', '/accept-invite/', '/verify-email/']);
+      expect(disallow).not.toContain('/help');
+      expect(disallow).not.toContain('/help/contact');
+      expect(disallow).not.toContain('/legal/accept');
+      expect(disallow).not.toContain('/privacy');
       expect(disallow).not.toContain('/sign-in');
       expect(disallow).not.toContain('/sign-up');
-      expect(disallow).not.toContain('/accept-invite/');
-      expect(disallow).not.toContain('/app/');
+      expect(disallow).not.toContain('/terms');
     }
   });
 });

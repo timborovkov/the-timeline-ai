@@ -40,7 +40,7 @@ export interface ConnectorContent {
   logo: string;
   lightLogoTileInDarkMode: boolean;
   capability: 'Native integration';
-  lastReviewed: string;
+  lastReviewed: `${number}-${number}-${number}`;
   captureStatement: string;
   providerStatement: string;
   diagram: {
@@ -76,7 +76,7 @@ export interface ConnectorRouteSummary {
   description: string;
 }
 
-const LAST_REVIEWED = '2026-08-12';
+const LAST_REVIEWED = '2026-08-13' as const;
 
 export const CONNECTORS: readonly ConnectorContent[] = [
   {

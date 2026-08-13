@@ -16,7 +16,7 @@ export function LandingSkipLink() {
     <a
       href="#main"
       onClick={focusLandingMain}
-      className="fixed left-3 top-3 sr-only rounded-sm border border-border-strong bg-surface p-3 text-sm text-fg focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:p-3"
+      className="fixed left-3 top-3 sr-only rounded-sm border border-border-strong bg-surface p-3 text-sm text-fg focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[90] focus:p-3"
     >
       Skip to main content
     </a>
