@@ -1,5 +1,6 @@
 import type { PublicDocument } from '@/lib/public-site/types';
 
+import { CAPTURE_SURFACES } from '@/components/marketing/integrations/capture-surface-content';
 import {
   CONNECTORS,
   type ConnectorContent,
@@ -9,11 +10,11 @@ import { definePublicDocuments } from '@/lib/public-site/registry';
 export const INTEGRATION_DIRECTORY_DOCUMENT = {
   canonicalPath: '/integrations',
   kind: 'product',
-  title: 'Native integrations',
+  title: 'Integrations and capture surfaces',
   description:
-    'Explore native Timeline integrations for Slack, GitHub, Linear, Google Drive, Monday.com, and Sentry, with an honest view of records, permissions, and limitations.',
+    'Explore Telegram, Slack, email, meeting, and webhook capture alongside native Timeline record sync for GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry.',
   indexability: 'index',
-  dates: { modified: '2026-08-13', reviewed: '2026-08-13' },
+  dates: { modified: '2026-08-14', reviewed: '2026-08-14' },
   capability: { kind: 'current-product' },
   sitemap: { changeFrequency: 'weekly', priority: 0.9 },
   structuredData: [{ type: 'collection-page' }],
@@ -21,16 +22,20 @@ export const INTEGRATION_DIRECTORY_DOCUMENT = {
     section: 'integrations',
     order: 0,
     summary:
-      'Directory of six native ingestion connectors, with capability tiers, permissions, setup, and honest limits.',
-    fullSummary: 'Native integration directory and capability-tier reference.',
+      'Directory of first-party capture surfaces and six native provider-record connectors, with capability tiers, setup, and honest limits.',
+    fullSummary: 'Integration, capture-surface, and capability-tier reference.',
     sections: [
       {
-        title: 'Native ingestion',
+        title: 'First-party capture',
+        body: CAPTURE_SURFACES.map((surface) => surface.name).join(', '),
+      },
+      {
+        title: 'Provider record sync',
         body: CONNECTORS.map((connector) => connector.name).join(', '),
       },
       {
         title: 'Capability boundary',
-        body: 'Native integrations create durable cited events. MCP access provides live tools without passive ingestion, and planned native support cannot be connected yet.',
+        body: 'First-party capture accepts deliberately routed conversations and payloads. Native integrations sync selected provider records into durable cited events. MCP access provides live tools without passive ingestion, and planned native support cannot be connected yet.',
       },
     ],
   },

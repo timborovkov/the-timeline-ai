@@ -23,12 +23,15 @@ describe('public integration routes', () => {
     const text = html.replace(/<[^>]+>/gu, '');
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(html).toContain('Six first-party ingestion paths');
-    expect(html).toContain('Native ingestion');
+    expect(text).toContain('Connect the places where the work already happens');
+    expect(html).toContain('Start where the conversation already happens');
+    expect(html).toContain('Sync structured provider records');
+    expect(html).toContain('First-party capture');
+    expect(html).toContain('Provider record sync');
     expect(html).toContain('MCP access');
     expect(html).toContain('Planned native support');
-    expect(html).toContain('Native ingestion implemented');
-    expect(html).toContain('selection and webhook boundaries');
+    expect(html).toContain('Six native connectors implemented');
+    expect(html).toContain('reconciliation, and webhook boundaries');
     expect(html).toContain('Live access');
     expect(html).toContain('Not available yet');
     expect(html).not.toContain('Indexable');
@@ -37,6 +40,15 @@ describe('public integration routes', () => {
     expect(html).toContain('Slack example shows that journey from conversation to chronology');
     expect(html.match(/Illustrative example — not customer data/g)).toHaveLength(1);
     expect(html).toContain('href="/integrations/slack"');
+    expect(text).toContain('Telegram');
+    expect(text).toContain('Slack conversations');
+    expect(text).toContain('Forward, CC, or BCC');
+    expect(text).toContain('Google Meet · Microsoft Teams · Zoom');
+    expect(text).toContain('Ingest webhooks');
+    expect(text).toContain('evidence-only sources');
+    expect(text).toContain('separate from the Slack history connector below');
+    expect(text).toContain('Start with Telegram');
+    expect(text).toContain('Start with Meeting transcripts');
     expect(html).toMatch(/aria-current="page"[^>]*href="\/integrations"/u);
     expect(html).toContain('href="/record"');
     expect(html).not.toContain('href="/integrations/notion"');
@@ -45,15 +57,31 @@ describe('public integration routes', () => {
     expect(html).toContain('text-[3rem]');
     expect(html).toContain('sm:text-[clamp(3.5rem,5vw,5.5rem)]');
     expect(html).not.toContain('7.5vw');
-    expect(html).toContain('Native integrations');
+    expect(html).toContain('First-party capture');
     expect(html).toContain('Capability tiers');
-    expect(text).toContain('02/Proof');
+    expect(text).toContain('02/Provider record sync');
+    expect(text).toContain('03/Proof');
     expect(html).not.toMatch(/font-mono[^>]*>Integrations \/ capability directory/u);
     expect(html).not.toContain('Available now');
     expect(html).toContain('motion-safe:group-hover:translate-x-1');
     expect(html).not.toContain('01 / Native');
     expect(html).not.toContain('03 / Tiers');
-    expect(html.match(/dark:bg-white/g)).toHaveLength(3);
+    expect(html.match(/dark:bg-white/g)).toHaveLength(5);
+  });
+
+  it('routes signed-in visitors to each implemented capture setup', async () => {
+    fakes.auth.mockResolvedValue({ user: { id: 'user-1' } });
+
+    const html = renderToStaticMarkup(await IntegrationsPage());
+
+    expect(html).toContain('href="/app/sources"');
+    expect(html).toContain('href="/app/team/telegram"');
+    expect(html).toContain('href="/app/team/slack"');
+    expect(html).toContain('href="/app/team?section=email"');
+    expect(html).toContain('href="/app/meetings"');
+    expect(html).toContain('Link Telegram');
+    expect(html).toContain('Install Slack');
+    expect(html).toContain('Create a webhook');
   });
 
   it.each(['slack', 'sentry'])('renders a light dark-mode logo tile for %s', async (slug) => {
@@ -118,6 +146,6 @@ describe('public integration routes', () => {
     expect(github.robots).toBeUndefined();
 
     expect(metadata.alternates).toEqual({ canonical: '/integrations' });
-    expect(metadata.title).toBe('Native integrations');
+    expect(metadata.title).toBe('Integrations and capture surfaces');
   });
 });

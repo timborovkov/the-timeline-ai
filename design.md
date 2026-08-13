@@ -350,6 +350,14 @@ and planned support. Planned destinations stay unlinked and unindexed until
 real. The landing claim owns the largest display scale. Integration directory
 and connector-detail titles use a subordinate, capped display scale so long
 provider headlines preserve the first viewport's explanation and evidence.
+The integration directory leads with implemented first-party capture surfaces:
+Telegram and Slack conversation capture, forward/CC/BCC email, consent-gated
+Google Meet/Microsoft Teams/Zoom transcripts, and named textual ingest webhooks.
+It then presents the six native provider-record connectors separately. Slack
+appears in both groups because conversational capture and selected-channel
+history sync are distinct contracts; public copy must say so. Generic ingest
+webhooks are evidence-only, meeting capture stores transcripts rather than raw
+audio, and implemented surfaces may still require workspace or provider setup.
 
 Every public shell uses the landing masthead as one full-width chrome component,
 with the same warm public palette, wordmark position, active state, GitHub and
