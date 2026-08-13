@@ -125,6 +125,7 @@ agent behavior, or reconciliation have additional gates documented in
 - [Integrations and custom MCP servers](./docs/setup/integrations.html)
 - [Railway deployment](./docs/railway.html)
 - [Architecture decisions](./docs/adr/)
+- [Public document registry](./docs/public-site-registry.md)
 - [Design system](./design.md)
 - [Roadmap](./todo.md)
 
