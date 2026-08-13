@@ -152,6 +152,13 @@ describe('connector content manifest', () => {
     expect(linear.limitations.join(' ')).toContain(
       '2,500 issues, 2,500 comments, and 2,500 projects across the complete selected-team set',
     );
+    expect(linear.limitations.join(' ')).toContain('every incremental recovery pass');
+    expect(linear.limitations.join(' ')).toContain(
+      'advances that surface’s updated-at cursor to the newest fetched timestamp',
+    );
+    expect(linear.limitations.join(' ')).toContain(
+      'overflowed older changes are not revisited and can be permanently absent',
+    );
     expect(linear.limitations.join(' ')).toContain('runs every six hours');
     expect(linear.limitations.join(' ')).toContain(
       'retains issue status for at most 5,000 issue IDs',

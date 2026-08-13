@@ -411,7 +411,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     ],
     limitations: [
       'The first sync captures current issue and project fields, not their earlier field transitions. Status, assignee, priority, and project-change history begins when Timeline starts observing the selected team.',
-      'Initial history is capped separately at 2,500 issues, 2,500 comments, and 2,500 projects across the complete selected-team set, not per team. A high-volume team can crowd older records from another selected team out of a surface; omitted records are not resumed by the current incremental cursor.',
+      'Initial history and every incremental recovery pass are each capped separately at 2,500 issues, 2,500 comments, and 2,500 projects across the complete selected-team set, not per team. A high-volume team can crowd older records or changes from another selected team out of a surface. After a capped incremental batch, Timeline advances that surface’s updated-at cursor to the newest fetched timestamp without persisting a page continuation, so overflowed older changes are not revisited and can be permanently absent.',
       'Scheduled Linear reconciliation runs every six hours. Without webhook delivery, supported issue, comment, and project changes can remain stale for nearly six hours.',
       'The Linear source picker lists at most the first 2,000 teams returned by the API; teams beyond that cap cannot be selected.',
       'Without webhook delivery, reconciliation can miss a move between Linear workflow states that normalize to the same Timeline bucket, such as Backlog to Todo or In Progress to In Review, when no other captured field changes.',
