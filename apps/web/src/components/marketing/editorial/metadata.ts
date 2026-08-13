@@ -6,140 +6,98 @@ import {
   RECORD_ROUTE,
   type EditorialGuide,
 } from '@/components/marketing/editorial/content';
+import { findEditorialPublicDocument } from '@/components/marketing/editorial/public-documents';
+import { metadataForPublicDocument } from '@/lib/public-site/metadata';
+import {
+  buildPublicStructuredData,
+  type PublicStructuredDataGraph,
+} from '@/lib/public-site/structured-data';
 import { getSiteUrl } from '@/lib/site-url';
 
 const SITE_NAME = 'The Timeline';
-const SOCIAL_IMAGE = '/opengraph-image';
 
 export function createRecordMetadata(): Metadata {
-  const title = `${EDITORIAL_PUBLICATION_NAME}: field notes on operational memory`;
-  const description =
-    'Evidence-led essays, playbooks, dossiers, and product notes about turning scattered work into cited operational memory.';
-
-  return createEditorialMetadata({ title, description, path: RECORD_ROUTE, type: 'website' });
+  return createEditorialMetadata(findEditorialPublicDocument(RECORD_ROUTE), 'website');
 }
 
 export function createGuideMetadata(guide: EditorialGuide): Metadata {
-  return createEditorialMetadata({
-    title: guide.title,
-    description: guide.summary,
-    path: guide.route,
-    type: 'article',
-  });
+  return createEditorialMetadata(findEditorialPublicDocument(guide.route), 'article');
 }
 
-function createEditorialMetadata(input: {
-  title: string;
-  description: string;
-  path: string;
-  type: 'website' | 'article';
-}): Metadata {
-  const openGraph: Metadata['openGraph'] = {
-    title: input.title,
-    description: input.description,
-    type: input.type,
-    siteName: SITE_NAME,
-    url: input.path,
-    images: [
-      {
-        url: SOCIAL_IMAGE,
-        width: 1200,
-        height: 630,
-        alt: `${input.title} by ${SITE_NAME}`,
-      },
-    ],
-  };
-
+function createEditorialMetadata(
+  document: ReturnType<typeof findEditorialPublicDocument>,
+  type: 'website' | 'article',
+): Metadata {
+  const metadata = metadataForPublicDocument(document);
   return {
-    title: input.title,
-    description: input.description,
-    alternates: { canonical: input.path },
-    openGraph,
-    twitter: {
-      card: 'summary_large_image',
-      title: input.title,
-      description: input.description,
-      images: [SOCIAL_IMAGE],
-    },
+    ...metadata,
+    openGraph: { ...metadata.openGraph, type },
     robots: {
-      index: true,
-      follow: true,
-      googleBot: { index: true, follow: true, 'max-snippet': -1 },
+      index: document.indexability === 'index',
+      follow: document.indexability === 'index',
+      googleBot: {
+        index: document.indexability === 'index',
+        follow: document.indexability === 'index',
+        'max-snippet': -1,
+      },
     },
   };
 }
 
-export function buildRecordStructuredData(): Record<string, unknown> {
+export function buildRecordStructuredData(): PublicStructuredDataGraph {
   const siteUrl = getSiteUrl();
-  const recordUrl = absoluteUrl(RECORD_ROUTE, siteUrl);
+  const data = buildPublicStructuredData(findEditorialPublicDocument(RECORD_ROUTE), siteUrl);
+  const collection = data['@graph'].find((node) => node['@type'] === 'CollectionPage');
 
-  return {
-    '@context': 'https://schema.org',
-    '@graph': [
-      {
-        '@type': 'CollectionPage',
-        '@id': `${recordUrl}#publication`,
-        url: recordUrl,
-        name: EDITORIAL_PUBLICATION_NAME,
-        description:
-          'Evidence-led essays, playbooks, dossiers, and product notes about operational memory.',
-        isPartOf: {
-          '@type': 'WebSite',
-          '@id': `${siteUrl}/#website`,
-          name: SITE_NAME,
-        },
-        publisher: organization(siteUrl),
-        hasPart: EDITORIAL_GUIDES.map((guide) => ({
-          '@type': 'Article',
-          url: absoluteUrl(guide.route, siteUrl),
-          headline: guide.title,
-          description: guide.machineSummary,
-          articleSection: guide.typeLabel,
-        })),
+  if (collection) {
+    Object.assign(collection, {
+      name: EDITORIAL_PUBLICATION_NAME,
+      isPartOf: {
+        '@type': 'WebSite',
+        '@id': `${siteUrl}/#website`,
+        name: SITE_NAME,
       },
-      breadcrumbList(siteUrl, [
-        { name: 'Home', path: '/' },
-        { name: EDITORIAL_PUBLICATION_NAME, path: RECORD_ROUTE },
-      ]),
-    ],
-  };
-}
-
-export function buildGuideStructuredData(guide: EditorialGuide): Record<string, unknown> {
-  const siteUrl = getSiteUrl();
-  const guideUrl = absoluteUrl(guide.route, siteUrl);
-
-  return {
-    '@context': 'https://schema.org',
-    '@graph': [
-      {
+      publisher: organization(siteUrl),
+      hasPart: EDITORIAL_GUIDES.map((guide) => ({
         '@type': 'Article',
-        '@id': `${guideUrl}#article`,
-        url: guideUrl,
-        mainEntityOfPage: guideUrl,
+        url: absoluteUrl(guide.route, siteUrl),
         headline: guide.title,
         description: guide.machineSummary,
         articleSection: guide.typeLabel,
-        author: organization(siteUrl),
-        publisher: organization(siteUrl),
-        isPartOf: {
-          '@type': 'CollectionPage',
-          '@id': `${absoluteUrl(RECORD_ROUTE, siteUrl)}#publication`,
-          name: EDITORIAL_PUBLICATION_NAME,
-        },
-        about: guide.topics.map((topic) => ({ '@type': 'Thing', name: topic })),
-        mentions: guide.nativeConnectors.map((connector) => ({
-          '@type': 'SoftwareApplication',
-          name: connector,
-        })),
+      })),
+    });
+  }
+
+  return data;
+}
+
+export function buildGuideStructuredData(guide: EditorialGuide): PublicStructuredDataGraph {
+  const siteUrl = getSiteUrl();
+  const guideUrl = absoluteUrl(guide.route, siteUrl);
+  const data = buildPublicStructuredData(findEditorialPublicDocument(guide.route), siteUrl);
+  const article = data['@graph'].find((node) => node['@type'] === 'TechArticle');
+
+  if (article) {
+    Object.assign(article, {
+      mainEntityOfPage: guideUrl,
+      headline: guide.title,
+      articleSection: guide.typeLabel,
+      author: organization(siteUrl),
+      publisher: organization(siteUrl),
+      isPartOf: {
+        '@type': 'CollectionPage',
+        '@id': `${absoluteUrl(RECORD_ROUTE, siteUrl)}#webpage`,
+        name: EDITORIAL_PUBLICATION_NAME,
       },
-      breadcrumbList(siteUrl, [
-        { name: 'Home', path: '/' },
-        { name: EDITORIAL_PUBLICATION_NAME, path: RECORD_ROUTE },
-        { name: guide.shortTitle, path: guide.route },
-      ]),
-    ],
-  };
+      about: guide.topics.map((topic) => ({ '@type': 'Thing', name: topic })),
+      mentions: guide.nativeConnectors.map((connector) => ({
+        '@type': 'SoftwareApplication',
+        name: connector,
+      })),
+    });
+  }
+
+  return data;
 }
 
 function organization(siteUrl: string) {
@@ -148,21 +106,6 @@ function organization(siteUrl: string) {
     '@id': `${siteUrl}/#organization`,
     name: SITE_NAME,
     url: siteUrl,
-  };
-}
-
-function breadcrumbList(
-  siteUrl: string,
-  items: readonly { name: string; path: string }[],
-): Record<string, unknown> {
-  return {
-    '@type': 'BreadcrumbList',
-    itemListElement: items.map((item, index) => ({
-      '@type': 'ListItem',
-      position: index + 1,
-      name: item.name,
-      item: absoluteUrl(item.path, siteUrl),
-    })),
   };
 }
 

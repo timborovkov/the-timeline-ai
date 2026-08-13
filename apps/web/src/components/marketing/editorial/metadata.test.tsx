@@ -40,14 +40,18 @@ describe('editorial metadata', () => {
     expect(html).toContain('"hasPart"');
   });
 
-  it.each(EDITORIAL_GUIDES)('builds Article and BreadcrumbList data for $route', (guide) => {
-    const html = renderToStaticMarkup(
-      <EditorialStructuredData data={buildGuideStructuredData(guide)} />,
-    );
+  it.each(EDITORIAL_GUIDES)(
+    'builds TechArticle, BreadcrumbList, and FAQ data for $route',
+    (guide) => {
+      const html = renderToStaticMarkup(
+        <EditorialStructuredData data={buildGuideStructuredData(guide)} />,
+      );
 
-    expect(html).toContain('"@type":"Article"');
-    expect(html).toContain('"@type":"BreadcrumbList"');
-    expect(html).toContain(guide.title);
-    expect(html).toContain(guide.route);
-  });
+      expect(html).toContain('"@type":"TechArticle"');
+      expect(html).toContain('"@type":"BreadcrumbList"');
+      expect(html).toContain('"@type":"FAQPage"');
+      expect(html).toContain(guide.title);
+      expect(html).toContain(guide.route);
+    },
+  );
 });
