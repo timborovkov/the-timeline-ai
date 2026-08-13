@@ -34,6 +34,15 @@ describe('public integration routes', () => {
     expect(html).toContain('02 / Proof');
     expect(html).not.toContain('01 / Native');
     expect(html).not.toContain('03 / Tiers');
+    expect(html.match(/dark:bg-white/g)).toHaveLength(3);
+  });
+
+  it.each(['slack', 'sentry'])('renders a light dark-mode logo tile for %s', async (slug) => {
+    const html = renderToStaticMarkup(
+      await connectorRoute.default({ params: Promise.resolve({ slug }) }),
+    );
+
+    expect(html).toContain('dark:bg-white');
   });
 
   it('renders provider-specific truth, evidence, limitations, FAQs, and a single h1', async () => {

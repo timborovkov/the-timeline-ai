@@ -55,6 +55,14 @@ describe('connector content manifest', () => {
     }
   });
 
+  it('keeps fixed dark provider marks legible on dark surfaces', () => {
+    expect(
+      CONNECTORS.filter((connector) => connector.lightLogoTileInDarkMode).map(
+        (connector) => connector.slug,
+      ),
+    ).toEqual(['slack', 'github', 'sentry']);
+  });
+
   it('resolves known connectors and rejects non-published slugs', () => {
     expect(findConnector('google-drive')?.providerId).toBe('google_drive');
     expect(findConnector('notion')).toBeUndefined();
@@ -115,6 +123,8 @@ describe('connector content manifest', () => {
     );
     expect(monday.limitations.join(' ')).toContain('lag Monday.com by up to 24 hours');
     expect(monday.limitations.join(' ')).toContain('10,000 boards and 2,500 WorkDocs');
+    expect(monday.limitations.join(' ')).toContain('WorkDoc refresh reads at most 10,000 blocks');
+    expect(monday.limitations.join(' ')).toContain('does not persist a block-page continuation');
     expect(monday.limitations.join(' ')).toContain(
       'user-created board with that prefix can therefore be hidden',
     );

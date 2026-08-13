@@ -72,7 +72,7 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div
-                        className={`grid size-12 place-items-center rounded-md border border-border bg-surface ${connector.slug === 'github' ? 'dark:bg-white' : ''}`}
+                        className={`grid size-12 place-items-center rounded-md border border-border bg-surface ${connector.lightLogoTileInDarkMode ? 'dark:bg-white' : ''}`}
                       >
                         <Image
                           src={connector.logo}

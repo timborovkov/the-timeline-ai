@@ -60,7 +60,7 @@ function ConnectorHero({
           <div>
             <div className="mb-7 flex items-center gap-4">
               <div
-                className={`grid size-14 place-items-center rounded-md border border-border bg-surface sm:size-16 ${connector.slug === 'github' ? 'dark:bg-white' : ''}`}
+                className={`grid size-14 place-items-center rounded-md border border-border bg-surface sm:size-16 ${connector.lightLogoTileInDarkMode ? 'dark:bg-white' : ''}`}
               >
                 <Image
                   src={connector.logo}

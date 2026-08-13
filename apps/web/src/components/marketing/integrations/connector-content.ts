@@ -38,6 +38,7 @@ export interface ConnectorContent {
   seoTitle: string;
   seoDescription: string;
   logo: string;
+  lightLogoTileInDarkMode: boolean;
   capability: 'Native integration';
   lastReviewed: string;
   captureStatement: string;
@@ -90,6 +91,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     seoDescription:
       'Sync selected Slack channels, threads, file-share metadata, reactions, and edits into The Timeline, then ask questions with citations back to the conversation.',
     logo: '/connectors/slack.svg',
+    lightLogoTileInDarkMode: true,
     capability: 'Native integration',
     lastReviewed: LAST_REVIEWED,
     captureStatement:
@@ -207,6 +209,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     seoDescription:
       'Sync GitHub pull requests, issues, reviews, comments, commits, releases, and workflow runs into a cited chronology with The Timeline.',
     logo: '/connectors/github.svg',
+    lightLogoTileInDarkMode: true,
     capability: 'Native integration',
     lastReviewed: LAST_REVIEWED,
     captureStatement:
@@ -327,6 +330,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     seoDescription:
       'Sync Linear issues, comments, status, assignee, priority, and project changes into The Timeline for cited project updates and answers.',
     logo: '/connectors/linear.svg',
+    lightLogoTileInDarkMode: false,
     capability: 'Native integration',
     lastReviewed: LAST_REVIEWED,
     captureStatement:
@@ -442,6 +446,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     seoDescription:
       'Capture sync-observed Google Drive file states in The Timeline for cited cross-tool answers and versioned evidence, with explicit source-scope limitations.',
     logo: '/connectors/google-drive.svg',
+    lightLogoTileInDarkMode: false,
     capability: 'Native integration',
     lastReviewed: LAST_REVIEWED,
     captureStatement:
@@ -563,6 +568,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     seoDescription:
       'Sync Monday.com boards, records, subitems, updates, columns, replies, and WorkDocs into The Timeline as cited operational evidence.',
     logo: '/connectors/monday.svg',
+    lightLogoTileInDarkMode: false,
     capability: 'Native integration',
     lastReviewed: LAST_REVIEWED,
     captureStatement:
@@ -604,7 +610,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Owners, statuses, due fields, and other column activity',
       'Item updates and threaded replies',
       'Record lifecycle and deletion observations',
-      'Selected WorkDocs and document updates',
+      'Selected WorkDocs and document updates within the block-ingestion cap',
     ],
     recipes: [
       {
@@ -639,6 +645,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Initial board activity-log backfill covers the preceding 30 days. Older owner, status, due-field, and other activity-log changes are not imported.',
       'Selected WorkDocs refresh on a daily reconciliation interval, not through board webhooks. Their captured content can therefore lag Monday.com by up to 24 hours.',
       'The source picker lists at most 10,000 boards and 2,500 WorkDocs. Resources beyond those caps cannot be selected.',
+      'A WorkDoc refresh reads at most 10,000 blocks. Blocks beyond that limit are omitted on every daily refresh because the current extractor does not persist a block-page continuation.',
       'When Monday omits both board type fields, helper-board detection falls back to a name beginning with “Subitems of”. An ordinary user-created board with that prefix can therefore be hidden from the picker.',
       'Missing webhook scopes degrades prompt delivery, but selected-source reconciliation continues more slowly.',
       'Timeline does not edit board values, run automations, assign people, or replace Monday.com workflows.',
@@ -679,6 +686,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     seoDescription:
       'Sync selected Sentry issue lifecycle, alerts, and releases into The Timeline, then trace incidents across Sentry, GitHub, and Slack with citations.',
     logo: '/connectors/sentry.svg',
+    lightLogoTileInDarkMode: true,
     capability: 'Native integration',
     lastReviewed: LAST_REVIEWED,
     captureStatement:
