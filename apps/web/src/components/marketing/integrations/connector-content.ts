@@ -86,7 +86,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     hero: 'Turn selected Slack history into cited operational memory.',
     intro:
       'Timeline preserves the messages, threads, files, reactions, and edits you choose, then places them beside work from other systems. Ask what was decided and inspect the conversation behind the answer.',
-    seoTitle: 'Slack integration for cited team answers | The Timeline',
+    seoTitle: 'Slack integration for cited team answers',
     seoDescription:
       'Sync selected Slack channels, threads, files, reactions, and edits into The Timeline, then ask questions with citations back to the conversation.',
     logo: '/connectors/slack.svg',
@@ -199,7 +199,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     hero: 'Connect the plan, review, merge, release, and CI evidence.',
     intro:
       'Timeline turns selected repository activity into a chronological, citable record. Follow work from issue through review and release without treating a pull request title as the whole story.',
-    seoTitle: 'GitHub integration for cited release history | The Timeline',
+    seoTitle: 'GitHub integration for cited release history',
     seoDescription:
       'Sync GitHub pull requests, issues, reviews, comments, commits, releases, and workflow runs into a cited chronology with The Timeline.',
     logo: '/connectors/github.svg',
@@ -311,7 +311,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     hero: 'See why work moved, not only which status changed.',
     intro:
       'Timeline captures selected Linear teams as cited history, including issue context, comments, priority, ownership, status, and project changes. Connect plans to the conversations and code that made them real.',
-    seoTitle: 'Linear integration for cited project history | The Timeline',
+    seoTitle: 'Linear integration for cited project history',
     seoDescription:
       'Sync Linear issues, comments, status, assignee, priority, and project changes into The Timeline for cited project updates and answers.',
     logo: '/connectors/linear.svg',
@@ -422,10 +422,10 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     eyebrow: 'File change becomes durable evidence',
     hero: 'Turn new Drive changes into cited document evidence.',
     intro:
-      'Timeline watches an activated My Drive root or shared drive for file changes and removals. When a supported file changes, Timeline stores its current content as a versioned document so later answers can cite the state it observed.',
-    seoTitle: 'Google Drive integration for cited document answers | The Timeline',
+      'Timeline watches an activated My Drive root or shared drive for new file changes. When a supported file changes, Timeline stores its current content as a versioned document so later answers can cite the state it observed.',
+    seoTitle: 'Google Drive integration for cited document answers',
     seoDescription:
-      'Capture new file changes and removals from an activated My Drive root or shared drive in The Timeline for cited cross-tool answers and document history.',
+      'Capture new file changes from an activated My Drive root or shared drive in The Timeline for cited cross-tool answers and document history.',
     logo: '/connectors/google-drive.svg',
     capability: 'Native integration',
     lastReviewed: LAST_REVIEWED,
@@ -468,7 +468,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     capturedRecords: [
       'New file changes under an activated My Drive root',
       'New file changes inside activated shared drives',
-      'File removal observations',
+      'Drive removal tombstones with a file ID and removal time',
       'File names, MIME types, modification times, owners, and source links',
       'Supported changed-file content up to the ingestion limit',
       'Timeline document versions created from supported changed content',
@@ -498,13 +498,14 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     ],
     permissions: [
       'The connection sees only files the authorizing Google account is allowed to read.',
-      'A team receives changes only from the My Drive root or shared drives deliberately shared and activated.',
+      'For files that still exist, Timeline admits changes only when their parent tree or shared-drive ID matches a deliberately activated source.',
       'Non-owners cannot use Timeline to browse the connection owner’s unshared Drive resources.',
       'OAuth credentials are encrypted at rest; Timeline’s own team and event visibility rules still apply after capture.',
     ],
     limitations: [
       'Initial activation starts from Drive’s current changes cursor; it does not enumerate or import untouched files that already existed.',
       'The source picker exposes My Drive root and shared drives, not arbitrary individual subfolders.',
+      'Drive removal tombstones do not include parent information. Timeline may therefore record a file ID and removal time for a deleted file elsewhere in the connected account, even when that area was not activated; no file body is present in that tombstone.',
       'Files over 20 MB and unsupported Google-native formats still produce change metadata, but their bodies are not added to the document library.',
       'Timeline does not ingest Drive comments or Activity history, edit files, change sharing settings, or replace Google Docs collaboration.',
     ],
@@ -522,7 +523,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       {
         question: 'What happens if a file is removed?',
         answer:
-          'Timeline records the observed removal while retaining previously captured evidence according to its immutable event-history model.',
+          'Timeline records the Drive tombstone while retaining previously captured evidence according to its immutable event-history model. Because Drive omits parent information from removal tombstones, the current sync can record a deleted file’s ID and removal time even when its former area was not activated; the tombstone contains no file body.',
       },
       {
         question: 'Does Timeline write changes back to Drive?',
@@ -540,7 +541,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     hero: 'Follow records, subitems, updates, columns, and WorkDocs as one chronology.',
     intro:
       'Timeline captures selected Monday.com boards and WorkDocs without reducing them to status snapshots. See the updates, replies, owners, columns, and nested work that explain how an operational record changed.',
-    seoTitle: 'Monday.com integration for cited board history | The Timeline',
+    seoTitle: 'Monday.com integration for cited board history',
     seoDescription:
       'Sync Monday.com boards, records, subitems, updates, columns, replies, and WorkDocs into The Timeline as cited operational evidence.',
     logo: '/connectors/monday.svg',
@@ -653,7 +654,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     hero: 'Trace what broke, what changed, and how the fix was confirmed.',
     intro:
       'Timeline turns selected Sentry issue lifecycle and release activity into incident evidence. Put open, resolved, ignored, alert, and release records beside the code and conversations needed to explain impact and recovery.',
-    seoTitle: 'Sentry integration for cited incident history | The Timeline',
+    seoTitle: 'Sentry integration for cited incident history',
     seoDescription:
       'Sync selected Sentry issue lifecycle, alerts, and releases into The Timeline, then trace incidents across Sentry, GitHub, and Slack with citations.',
     logo: '/connectors/sentry.svg',

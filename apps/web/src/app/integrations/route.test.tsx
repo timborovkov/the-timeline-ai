@@ -27,6 +27,7 @@ describe('public integration routes', () => {
     expect(html).toContain('Noindex');
     expect(html).toContain('href="/integrations/slack"');
     expect(html).not.toContain('href="/integrations/notion"');
+    expect(html).toContain('compact');
   });
 
   it('renders provider-specific truth, evidence, limitations, FAQs, and a single h1', async () => {
@@ -53,10 +54,11 @@ describe('public integration routes', () => {
     const github = await connectorRoute.generateMetadata({
       params: Promise.resolve({ slug: 'github' }),
     });
-    expect(github.title).toBe('GitHub integration for cited release history | The Timeline');
+    expect(github.title).toBe('GitHub integration for cited release history');
     expect(github.alternates).toEqual({ canonical: '/integrations/github' });
     expect(github.robots).toEqual({ index: true, follow: true });
 
     expect(metadata.alternates).toEqual({ canonical: '/integrations' });
+    expect(metadata.title).toBe('Native integrations');
   });
 });

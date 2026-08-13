@@ -81,5 +81,10 @@ describe('connector content manifest', () => {
     expect(publicClaims).toContain('shared drives');
     expect(publicClaims).toContain('current changes cursor');
     expect(publicClaims).toContain('does not ingest Drive comments or Activity history');
+    expect(publicClaims).not.toContain(
+      'A team receives changes only from the My Drive root or shared drives',
+    );
+    expect(publicClaims).toContain('Drive removal tombstones do not include parent information');
+    expect(publicClaims).toContain('even when that area was not activated');
   });
 });
