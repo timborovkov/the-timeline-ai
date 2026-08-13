@@ -26,7 +26,7 @@ const KEYWORDS = [
 
 const CONTRIBUTED_LLM_SECTIONS = [
   { section: 'integrations', heading: 'Integrations' },
-  { section: 'the-record', heading: 'The Record' },
+  { section: 'the-record', heading: 'How Timeline works' },
 ] as const;
 
 function link(

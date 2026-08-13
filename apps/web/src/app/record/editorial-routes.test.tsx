@@ -28,19 +28,16 @@ const GUIDE_PAGES = [
 ] as const;
 
 describe('editorial routes', () => {
-  it('renders the publication index with one h1 and only published content forms', () => {
+  it('renders one plain-language how-it-works index without publication taxonomy', () => {
     const html = renderToStaticMarkup(<RecordPage />);
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(html).toContain('The Record');
+    expect(html).toContain('How Timeline turns scattered work into a cited answer.');
     expect(html).toMatch(
       /<h2[^>]*>The review date and owner are set; pricing is still unresolved\.<\/h2>/,
     );
-    expect(html).toContain('Start with a direct answer');
-    expect(html).toContain('Playbooks');
-    expect(html).toContain('Dossiers');
-    expect(html).not.toContain('provisional public name');
-    expect(html).not.toContain('Product notes');
+    expect(html).toContain('Start with the answer');
+    expect(html).not.toMatch(/Publication|Edition 00|Playbooks|Dossiers|field guide/u);
     for (const guide of EDITORIAL_GUIDES) {
       expect(html).toContain(`href="${guide.route}"`);
       expect(html).toContain(guide.title);
@@ -54,16 +51,17 @@ describe('editorial routes', () => {
 
       expect(html.match(/<h1\b/g)).toHaveLength(1);
       expect(html).toContain(guide.title);
-      expect(html).toContain('The direct answer');
-      expect(html).toContain('Build the answer in inspectable stages.');
-      expect(html).toContain('Provenance map');
+      expect(html).toContain('Start with the answer');
+      expect(html).toContain('Build the answer step by step.');
+      expect(html).toContain('See the evidence path');
       expect(html).toContain(`>${guide.diagram.answerTitle}</h3>`);
-      expect(html).toContain('Source boundaries');
-      expect(html).toContain('Limitations to keep visible');
+      expect(html).toContain('What each source contributes');
+      expect(html).toContain('What this cannot prove');
       expect(html).toContain('Illustrative example / not customer data');
       expect(html).toContain('application/ld+json');
       expect(html).toContain('href="/sign-in"');
       expect(html).toContain('aria-label="Breadcrumb"');
+      expect(html).not.toMatch(/Publication|Edition 00|field notes|field guide/u);
       for (const connector of guide.nativeConnectors) {
         const slug = connector
           .toLowerCase()
@@ -92,6 +90,7 @@ describe('editorial routes', () => {
     expect(recordShell).toContain('href="/integrations"');
     expect(guideShell).toContain('href="/help"');
     expect(recordShell).toContain('data-public-header="true"');
+    expect(recordShell).toContain('How it works');
     expect(guideShell).toContain('>Try one project</a>');
     expect(recordShell.match(/aria-current="page"[^>]*href="\/record"/g)).not.toBeNull();
     expect(guideShell.match(/aria-current="page"[^>]*href="\/record"/g)).not.toBeNull();

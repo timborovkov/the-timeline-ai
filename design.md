@@ -357,12 +357,12 @@ palette in dark mode, while each page group keeps its own content structure.
 Auth-neutral loading and error boundaries keep the same masthead but omit
 account actions rather than guessing the visitor's session state.
 The masthead exposes the same four primary destinations in the same order:
-Product (`/`), Integrations (`/integrations`), Guides (`/record`), and Help
-(`/help`). Desktop headers show them directly, compact widths use a native menu
-disclosure, and footers repeat them for recovery at the end of a page. The
+Product (`/`), Integrations (`/integrations`), How it works (`/record`), and
+Help (`/help`). Desktop headers show them directly, compact widths use a native
+menu disclosure, and footers repeat them for recovery at the end of a page. The
 current destination uses `aria-current="page"`. Native connector labels on the
 landing page link to their integration detail pages, while native source badges
-in editorial guides link back to the same provider truth. The landing hero and
+in public walkthroughs link back to the same provider truth. The landing hero and
 public navigation also link directly to the project's source on GitHub; the
 public help shell and developer docs repeat that path. Legal pages use the
 shared public shell at reading width (65–70ch).
@@ -372,10 +372,11 @@ same destinations in category lists and card grids. Guide and support pages
 provide a visible route back to all guides; article bodies may optionally
 constrain to a reading measure without forcing the shell narrow.
 
-The Record is the finalized name of the public editorial publication. Its index
-advertises only formats represented by published work: playbooks for repeatable
-cross-tool workflows and dossiers for evidence-led reconstruction. New formats
-appear in the index only when at least one substantive item ships in that form.
+`/record` is the plain-language explanation of how Timeline works. It shows the
+source-to-chronology-to-answer loop once, then links to a small set of substantive
+cross-tool walkthroughs. Walkthroughs remain indexable for specific questions,
+but public navigation and page copy do not ask visitors to learn an editorial
+publication, edition, playbook, or dossier taxonomy.
 
 ### Administrator dashboards
 
@@ -442,6 +443,7 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-12 | Editorial public acquisition system | Lets visitors watch evidence become chronology and a cited answer while the authenticated product remains Quiet Archive. |
 | 2026-08-13 | Acme evidence narrative | Clarifies cited versus merely connected signals, pairs connectors with chronology, and replays each evidence diagram while it is in view. |
 | 2026-08-13 | Connected public navigation | Gives every acquisition, integration, guide, help, and legal page a consistent route through the public site. |
-| 2026-08-13 | Finalized public content system | Replaces concept notes and disconnected mock stories with The Record, current published formats, registry-backed capability tiers, and one disclosed Acme demo corpus. |
+| 2026-08-13 | Finalized public content system | Replaces concept notes and disconnected mock stories with a plain-language how-it-works overview, substantive walkthroughs, registry-backed capability tiers, and one disclosed Acme demo corpus. |
 | 2026-08-13 | Unified public masthead and canvas | Makes the landing masthead and warm public palette identical across integrations, editorial, help, legal, and recovery routes without changing authenticated Quiet Archive. |
 | 2026-08-13 | Subordinate integration title scale | Keeps long directory and provider headlines editorial without letting them crowd the explanation and evidence out of the first viewport. |
+| 2026-08-13 | Plain-language how-it-works surface | Replaces the publication taxonomy and split-column guide template with one compact product explanation and readable walkthroughs. |

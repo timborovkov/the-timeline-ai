@@ -1,55 +1,20 @@
 .canvas {
-  position: relative;
-  isolation: isolate;
-  overflow: clip;
-  background:
-    linear-gradient(
-        90deg,
-        transparent 49.9%,
-        color-mix(in oklch, var(--border) 45%, transparent) 50%,
-        transparent 50.1%
-      )
-      center / min(92rem, 94vw) 100% no-repeat,
-    var(--bg);
-}
-
-.canvas::before {
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  content: '';
-  opacity: 0.28;
-  background-image: radial-gradient(
-    circle at center,
-    color-mix(in oklch, var(--fg-dim) 32%, transparent) 0.6px,
-    transparent 0.7px
-  );
-  background-size: 7px 7px;
-  mask-image: linear-gradient(to bottom, black, transparent 38rem);
-}
-
-.serifAccent {
-  color: var(--signal);
-  font-family: Georgia, 'Times New Roman', serif;
-  font-style: italic;
-  font-weight: 400;
-  letter-spacing: -0.055em;
+  background: var(--bg);
 }
 
 .displayTitle {
-  max-width: 12ch;
+  max-width: 15ch;
   text-wrap: balance;
-  font-size: clamp(2.5rem, 6vw, 3.75rem);
+  font-size: clamp(2.75rem, 5vw, 4.75rem);
   font-weight: 600;
   line-height: 0.95;
   letter-spacing: -0.055em;
 }
 
 .guideTitle {
-  max-width: 16ch;
+  max-width: 20ch;
   text-wrap: balance;
-  font-size: clamp(2.5rem, 6vw, 3.75rem);
+  font-size: clamp(2.5rem, 4.5vw, 4.25rem);
   font-weight: 600;
   line-height: 0.95;
   letter-spacing: -0.055em;
@@ -57,8 +22,8 @@
 
 .heroGrid {
   display: grid;
-  grid-template-columns: minmax(0, 1.04fr) minmax(22rem, 0.96fr);
-  gap: clamp(2.5rem, 6vw, 7rem);
+  grid-template-columns: minmax(0, 1fr) minmax(22rem, 0.92fr);
+  gap: clamp(2.5rem, 5vw, 5rem);
   align-items: center;
 }
 
@@ -79,7 +44,7 @@
 .provenanceStage {
   position: relative;
   overflow: hidden;
-  min-height: 38rem;
+  min-height: 30rem;
   border: 1px solid var(--border);
   border-radius: 6px;
   background:
@@ -187,25 +152,6 @@
   font-size: 0.625rem;
 }
 
-.editorialCard {
-  position: relative;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: color-mix(in oklch, var(--surface) 82%, transparent);
-}
-
-.editorialCard::after {
-  position: absolute;
-  inset: auto -10% -58% auto;
-  width: 54%;
-  aspect-ratio: 1;
-  border: 1px solid color-mix(in oklch, var(--border-strong) 68%, transparent);
-  border-radius: 50%;
-  content: '';
-  pointer-events: none;
-}
-
 .workflowStep {
   position: relative;
 }
@@ -240,8 +186,9 @@
 .promptBlock {
   position: relative;
   overflow: hidden;
-  background: var(--fg);
-  color: var(--bg);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
 }
 
 .promptBlock::before {
@@ -255,27 +202,6 @@
   box-shadow:
     0 0 0 5rem color-mix(in oklch, var(--signal) 7%, transparent),
     0 0 0 11rem color-mix(in oklch, var(--signal) 4%, transparent);
-}
-
-.ctaStage {
-  position: relative;
-  overflow: hidden;
-  background: radial-gradient(circle at 78% 34%, var(--signal-soft), transparent 26%), var(--fg);
-  color: var(--bg);
-}
-
-.ctaStage::after {
-  position: absolute;
-  right: -8rem;
-  bottom: -15rem;
-  width: 32rem;
-  aspect-ratio: 1;
-  border: 1px solid color-mix(in oklch, var(--signal) 48%, transparent);
-  border-radius: 50%;
-  content: '';
-  box-shadow:
-    0 0 0 4rem color-mix(in oklch, var(--signal) 7%, transparent),
-    0 0 0 9rem color-mix(in oklch, var(--signal) 4%, transparent);
 }
 
 .readingMeasure {
@@ -309,17 +235,6 @@
 
   .provenanceReveal[data-revealed='true'] .answerCard {
     animation: answer-emphasize 120ms cubic-bezier(0.25, 1, 0.5, 1) 150ms;
-  }
-
-  .editorialCard {
-    transition:
-      transform 80ms cubic-bezier(0.25, 1, 0.5, 1),
-      border-color 80ms ease;
-  }
-
-  .editorialCard:hover {
-    border-color: var(--border-strong);
-    transform: translateY(-3px);
   }
 }
 
@@ -359,15 +274,11 @@
   }
 
   .provenanceStage {
-    min-height: 33rem;
+    min-height: 28rem;
   }
 }
 
 @media (max-width: 47.999rem) {
-  .canvas {
-    background: var(--bg);
-  }
-
   .displayTitle,
   .guideTitle {
     max-width: none;

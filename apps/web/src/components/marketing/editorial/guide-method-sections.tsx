@@ -10,9 +10,9 @@ export function GuideMethodSections({ guide }: { guide: EditorialGuide }) {
   return (
     <>
       <section className="border-y border-border bg-surface/45">
-        <div className="mx-auto max-w-[94rem] px-4 py-16 sm:px-6 sm:py-20 lg:px-10">
-          <EditorialSectionHeading title="The sources play different roles. Preserve that difference." />
-          <div className={`${styles.readingMeasure} mt-10 ml-auto space-y-6 text-base leading-8`}>
+        <div className="mx-auto max-w-5xl px-4 py-14 sm:px-6 sm:py-16">
+          <EditorialSectionHeading title="Why this needs more than one source" />
+          <div className={`${styles.readingMeasure} mt-6 space-y-5 text-base leading-8`}>
             {guide.context.map((paragraph) => (
               <p key={paragraph}>{paragraph}</p>
             ))}
@@ -20,12 +20,12 @@ export function GuideMethodSections({ guide }: { guide: EditorialGuide }) {
         </div>
       </section>
 
-      <section className="mx-auto max-w-[94rem] px-4 py-16 sm:px-6 sm:py-24 lg:px-10">
+      <section className="mx-auto max-w-5xl px-4 py-14 sm:px-6 sm:py-20">
         <EditorialSectionHeading
-          title="Build the answer in inspectable stages."
-          intro="Each stage produces an artifact you can review before the next layer adds interpretation."
+          title="Build the answer step by step."
+          intro="Each step leaves something concrete to inspect before the next layer adds interpretation."
         />
-        <ol className="mt-12 ml-auto grid max-w-4xl gap-10">
+        <ol className="mt-10 grid gap-9">
           {guide.workflow.map((step) => (
             <li
               key={step.index}
@@ -50,21 +50,21 @@ export function GuideMethodSections({ guide }: { guide: EditorialGuide }) {
       </section>
 
       <section className="border-y border-border bg-surface/55">
-        <div className="mx-auto max-w-[94rem] px-4 py-16 sm:px-6 sm:py-24 lg:px-10">
+        <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-20">
           <EditorialSectionHeading
-            index="03 / Provenance map"
-            title="Watch the evidence become chronology, then an answer."
+            index="Evidence example"
+            title="See the evidence path"
             intro="The example is illustrative. Its purpose is to make the provenance pattern visible, not to imply customer data or a guaranteed conclusion."
           />
-          <div className="mt-12">
+          <div className="mt-10">
             <ProvenanceDiagram diagram={guide.diagram} />
           </div>
         </div>
       </section>
 
-      <section className="mx-auto max-w-[94rem] px-4 py-16 sm:px-6 sm:py-24 lg:px-10">
-        <EditorialSectionHeading title="Ask for a result that can admit uncertainty." />
-        <div className={`${styles.promptBlock} mt-12 rounded-md p-6 sm:p-10 lg:ml-[28%]`}>
+      <section className="mx-auto max-w-5xl px-4 py-14 sm:px-6 sm:py-20">
+        <EditorialSectionHeading title="Ask a question with clear edges" />
+        <div className={`${styles.promptBlock} mt-8 rounded-md p-6 sm:p-9`}>
           <div className="relative z-10">
             <p className="font-mono text-[0.65rem] tracking-[0.14em] text-signal uppercase">
               Prompt pattern / Adapt the brackets
@@ -81,10 +81,10 @@ export function GuideMethodSections({ guide }: { guide: EditorialGuide }) {
       </section>
 
       <section className="border-y border-border bg-surface/45">
-        <div className="mx-auto max-w-[94rem] px-4 py-16 sm:px-6 sm:py-24 lg:px-10">
+        <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-20">
           <EditorialSectionHeading
-            index="05 / Source boundaries"
-            title="Know exactly what each connector contributes."
+            index="Source boundaries"
+            title="What each source contributes"
             intro="These guides describe native ingestion. They do not relabel MCP access or planned support as native capability."
           />
           <div

@@ -1,12 +1,10 @@
-import { ArrowRight, BookOpen, FileSearch } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 
 import type { Metadata } from 'next';
 
 import {
-  EDITORIAL_CONTENT_TYPES,
   EDITORIAL_GUIDES,
-  EDITORIAL_PUBLICATION_NAME,
   findEditorialGuideByRoute,
   GUIDE_ROUTES,
 } from '@/components/marketing/editorial/content';
@@ -22,126 +20,103 @@ import { ProvenanceDiagram } from '@/components/marketing/editorial/provenance-d
 
 export const metadata: Metadata = createRecordMetadata();
 
-const TYPE_ICONS = {
-  playbook: BookOpen,
-  dossier: FileSearch,
-} as const;
-
 export default function RecordPage() {
   const featuredGuide = findEditorialGuideByRoute(GUIDE_ROUTES.slackAndDrive);
 
   return (
     <main id="main" tabIndex={-1}>
       <EditorialStructuredData data={buildRecordStructuredData()} />
-      <section className="mx-auto max-w-[94rem] px-4 pt-16 pb-20 sm:px-6 sm:pt-24 sm:pb-28 lg:px-10 lg:pt-32">
-        <div className={styles.heroGrid}>
-          <div>
-            <EditorialKicker>Publication / Field notes / Edition 001</EditorialKicker>
-            <h1 className={`${styles.displayTitle} mt-7`}>
-              {EDITORIAL_PUBLICATION_NAME} <span className={styles.serifAccent}>keeps</span> the
-              receipts.
-            </h1>
-            <p className="mt-8 max-w-2xl text-lg leading-8 text-fg-muted sm:text-xl">
-              Practical playbooks and evidence-led dossiers for turning scattered work into
-              chronology, then cited operational memory.
-            </p>
-            <p className="mt-5 max-w-xl text-sm leading-7 text-fg-dim">
-              Start with a direct answer, then inspect the workflow, source boundaries, limitations,
-              and citations that make it defensible.
-            </p>
-          </div>
-          <ProvenanceDiagram diagram={featuredGuide.diagram} answerHeadingLevel={2} />
-        </div>
-      </section>
-
-      <section className="border-y border-border bg-surface/50">
-        <div className="mx-auto max-w-[94rem] px-4 py-16 sm:px-6 sm:py-24 lg:px-10">
-          <EditorialSectionHeading
-            index="01 / The desk"
-            title="Two formats for turning source evidence into a useful answer."
-            intro="Playbooks give you a repeatable workflow. Dossiers reconstruct one project or incident without hiding uncertainty."
-          />
-          <div className="mt-12 grid gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-2">
-            {EDITORIAL_CONTENT_TYPES.map((type) => {
-              const Icon = TYPE_ICONS[type.id];
-              return (
-                <section key={type.id} className="min-h-64 bg-bg p-6 sm:p-7">
-                  <div className="flex items-center justify-between gap-4">
-                    <span className="font-mono text-[0.65rem] tracking-[0.13em] text-signal uppercase">
-                      {type.index}
+      <section className="border-b border-border">
+        <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
+          <div className={styles.heroGrid}>
+            <div>
+              <EditorialKicker>How it works</EditorialKicker>
+              <h1 className={`${styles.displayTitle} mt-6`}>
+                How Timeline turns scattered work into a cited answer.
+              </h1>
+              <p className="mt-7 max-w-2xl text-lg leading-8 text-fg-muted sm:text-xl">
+                Timeline captures selected records from the tools your team already uses, orders
+                them by time, and answers with links back to the evidence.
+              </p>
+              <ol className="mt-9 max-w-xl border-t border-border">
+                {[
+                  'Capture only the sources your team selects.',
+                  'Preserve each record and its source.',
+                  'Answer with chronology, citations, and visible gaps.',
+                ].map((step, index) => (
+                  <li
+                    key={step}
+                    className="grid grid-cols-[2rem_1fr] gap-4 border-b border-border py-3 text-sm leading-6"
+                  >
+                    <span className="font-mono text-[0.65rem] text-signal">
+                      {String(index + 1).padStart(2, '0')}
                     </span>
-                    <Icon aria-hidden="true" className="size-5 text-fg-dim" />
-                  </div>
-                  <h2 className="mt-14 text-2xl font-semibold tracking-[-0.035em]">{type.label}</h2>
-                  <p className="mt-4 text-sm leading-7 text-fg-muted">{type.description}</p>
-                </section>
-              );
-            })}
+                    <span>{step}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+            <ProvenanceDiagram diagram={featuredGuide.diagram} answerHeadingLevel={2} />
           </div>
         </div>
       </section>
 
-      <section className="mx-auto max-w-[94rem] px-4 py-16 sm:px-6 sm:py-24 lg:px-10">
+      <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
         <EditorialSectionHeading
-          index="02 / First edition"
-          title="Three questions that cross the tools where work actually happened."
-          intro="Every guide leads with a direct answer, then opens the workflow, provenance map, source boundaries, limitations, and query contract."
+          index="Practical walkthroughs"
+          title="Start with a question your team already knows how to verify."
+          intro="These examples show the method on three common cross-tool questions. The sources stay distinct, and every conclusion keeps its evidence attached."
         />
-        <div className="mt-12 grid gap-6 lg:grid-cols-12">
+        <div className="mt-10 border-y border-border">
           {EDITORIAL_GUIDES.map((guide, index) => (
-            <article
+            <Link
               key={guide.route}
-              className={`${styles.editorialCard} ${index === 0 ? 'lg:col-span-7' : index === 1 ? 'lg:col-span-5' : 'lg:col-span-12'} p-6 sm:p-8`}
+              href={guide.route}
+              className="group grid gap-5 border-b border-border px-1 py-8 outline-none last:border-b-0 hover:bg-surface/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset sm:px-5 md:grid-cols-[2.5rem_minmax(0,1fr)_auto] md:items-center"
             >
-              <div className="relative z-10 flex h-full min-h-80 flex-col">
-                <div className="flex flex-wrap items-center justify-between gap-4">
-                  <p className="font-mono text-[0.65rem] tracking-[0.12em] text-signal uppercase">
-                    {guide.issue} / {guide.typeLabel}
-                  </p>
-                  <p className="font-mono text-[0.62rem] tracking-[0.08em] text-fg-dim uppercase">
-                    {guide.nativeConnectors.join(' + ')}
-                  </p>
-                </div>
-                <h2
-                  className={`${index === 2 ? 'max-w-5xl text-3xl sm:text-5xl' : 'max-w-2xl text-3xl sm:text-4xl'} mt-14 text-balance font-semibold tracking-[-0.045em]`}
-                >
+              <span className="font-mono text-[0.68rem] text-signal">
+                {String(index + 1).padStart(2, '0')}
+              </span>
+              <div>
+                <p className="font-mono text-[0.62rem] tracking-[0.1em] text-fg-dim uppercase">
+                  {guide.nativeConnectors.join(' + ')}
+                </p>
+                <h2 className="mt-3 max-w-3xl text-balance text-2xl font-semibold tracking-[-0.035em] sm:text-3xl">
                   {guide.title}
                 </h2>
-                <p className="mt-5 max-w-3xl text-sm leading-7 text-fg-muted sm:text-base">
+                <p className="mt-3 max-w-3xl text-sm leading-7 text-fg-muted sm:text-base">
                   {guide.summary}
                 </p>
-                <Link
-                  href={guide.route}
-                  className="group mt-auto inline-flex w-fit items-center gap-3 rounded-sm pt-10 font-semibold outline-none hover:text-signal focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-4"
-                >
-                  Read the field guide
-                  <ArrowRight
-                    aria-hidden="true"
-                    className="size-4 motion-safe:transition-transform motion-safe:group-hover:translate-x-1"
-                  />
-                </Link>
               </div>
-            </article>
+              <span className="inline-flex items-center gap-2 text-sm font-semibold md:justify-self-end">
+                Read walkthrough
+                <ArrowRight
+                  aria-hidden="true"
+                  className="size-4 motion-safe:transition-transform motion-safe:group-hover:translate-x-1"
+                />
+              </span>
+            </Link>
           ))}
         </div>
       </section>
 
-      <section className={`${styles.ctaStage} mx-auto max-w-[94rem] px-6 py-16 sm:px-10 sm:py-24`}>
-        <div className="relative z-10 max-w-4xl">
-          <EditorialKicker>The editorial contract / Answer first</EditorialKicker>
-          <h2 className="mt-6 text-balance text-4xl font-semibold tracking-[-0.05em] sm:text-5xl lg:text-6xl">
-            Useful before persuasive. Cited before certain.
-          </h2>
-          <p className="mt-7 max-w-2xl text-base leading-8 opacity-72 sm:text-lg">
-            The publication does not invent performance claims, customer stories, or capability. It
-            shows what the system can inspect, where the evidence ends, and which judgment still
-            belongs to a person.
-          </p>
+      <section className="border-y border-border bg-surface">
+        <div className="mx-auto grid max-w-6xl gap-8 px-4 py-16 sm:px-6 sm:py-20 lg:grid-cols-[1fr_auto] lg:items-end">
+          <div>
+            <EditorialKicker>Start with the answer</EditorialKicker>
+            <h2 className="mt-5 max-w-3xl text-balance text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">
+              Try one real question before connecting everything.
+            </h2>
+            <p className="mt-5 max-w-2xl text-base leading-7 text-fg-muted sm:text-lg">
+              Use one project, the smallest useful source set, and a question whose answer you can
+              check against the original work.
+            </p>
+          </div>
           <Link
             href={featuredGuide.route}
-            className="mt-9 inline-flex min-h-12 items-center gap-8 rounded-sm bg-signal px-5 font-semibold text-signal-fg outline-none hover:brightness-95 focus-visible:ring-2 focus-visible:ring-bg focus-visible:ring-offset-2 focus-visible:ring-offset-fg"
+            className="inline-flex min-h-12 items-center gap-6 rounded-sm bg-signal px-5 font-semibold text-signal-fg outline-none hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
           >
-            Start with cross-tool search
+            Open the first walkthrough
             <ArrowRight aria-hidden="true" className="size-4" />
           </Link>
         </div>

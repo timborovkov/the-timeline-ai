@@ -63,7 +63,7 @@ export function buildRecordStructuredData(): PublicStructuredDataGraph {
         url: absoluteUrl(guide.route, siteUrl),
         headline: guide.title,
         description: guide.machineSummary,
-        articleSection: guide.typeLabel,
+        articleSection: EDITORIAL_PUBLICATION_NAME,
       })),
     });
   }
@@ -81,7 +81,7 @@ export function buildGuideStructuredData(guide: EditorialGuide): PublicStructure
     Object.assign(article, {
       mainEntityOfPage: guideUrl,
       headline: guide.title,
-      articleSection: guide.typeLabel,
+      articleSection: EDITORIAL_PUBLICATION_NAME,
       author: organization(siteUrl),
       publisher: organization(siteUrl),
       isPartOf: {

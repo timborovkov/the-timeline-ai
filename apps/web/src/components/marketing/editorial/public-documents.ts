@@ -1,7 +1,6 @@
 import type { PublicDocument } from '@/lib/public-site/types';
 
 import {
-  EDITORIAL_CONTENT_TYPES,
   EDITORIAL_GUIDES,
   EDITORIAL_PUBLICATION_NAME,
   RECORD_ROUTE,
@@ -14,9 +13,9 @@ const EDITORIAL_REVIEW_DATE = '2026-08-13' as const;
 const recordDocument = {
   canonicalPath: RECORD_ROUTE,
   kind: 'record',
-  title: `${EDITORIAL_PUBLICATION_NAME}: field notes on operational memory`,
+  title: EDITORIAL_PUBLICATION_NAME,
   description:
-    'Practical playbooks and evidence-led dossiers about turning scattered work into cited operational memory.',
+    'See how Timeline turns selected records from connected tools into chronology and cited answers.',
   indexability: 'index',
   dates: { modified: EDITORIAL_REVIEW_DATE, reviewed: EDITORIAL_REVIEW_DATE },
   capability: { kind: 'current-product' },
@@ -36,16 +35,16 @@ const recordDocument = {
     order: 0,
     label: EDITORIAL_PUBLICATION_NAME,
     summary:
-      'Practical playbooks and evidence-led dossiers about turning scattered work into cited operational memory.',
+      'See how Timeline turns selected records from connected tools into chronology and cited answers.',
     sections: [
       {
-        title: 'Published formats',
-        body: 'The current edition contains two formats, each with a distinct editorial purpose.',
-        items: EDITORIAL_CONTENT_TYPES.map((type) => `${type.label}: ${type.description}`),
+        title: 'Questions covered',
+        body: 'Three detailed walkthroughs apply the same cited-answer method to common cross-tool questions.',
+        items: EDITORIAL_GUIDES.map((guide) => `${guide.title}: ${guide.machineSummary}`),
       },
       {
-        title: 'Editorial method',
-        body: 'Every guide leads with a direct answer, then exposes the workflow, provenance map, source boundaries, limitations, and query contract behind it.',
+        title: 'Method',
+        body: 'Each walkthrough starts with the answer, then exposes the workflow, evidence path, source boundaries, limitations, and query contract behind it.',
       },
     ],
   },

@@ -109,13 +109,13 @@ describe('llms text files', () => {
     expect(compact).toContain(
       '[GitHub integration](https://thetimeline.cc/integrations/github): Capture GitHub activity as cited timeline evidence.',
     );
-    expect(compact).toContain('## The Record');
+    expect(compact).toContain('## How Timeline works');
     expect(compact).toContain(
       '[Why citations matter](https://thetimeline.cc/record/why-citations-matter): An editorial note about evidence-backed answers.',
     );
     expect(full).toContain('## Integrations');
     expect(full).toContain('URL: https://thetimeline.cc/integrations/github');
-    expect(full).toContain('## The Record');
+    expect(full).toContain('## How Timeline works');
     expect(full).toContain('URL: https://thetimeline.cc/record/why-citations-matter');
   });
 });

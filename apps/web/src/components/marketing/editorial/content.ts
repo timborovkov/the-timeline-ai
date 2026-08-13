@@ -1,7 +1,6 @@
 import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
 
-/** The finalized name of Timeline's public editorial publication. */
-export const EDITORIAL_PUBLICATION_NAME = 'The Record';
+export const EDITORIAL_PUBLICATION_NAME = 'How Timeline works';
 
 export const RECORD_ROUTE = '/record' as const;
 
@@ -20,17 +19,9 @@ export const GUIDE_ROUTES = {
   sentryReleaseIncidents: '/guides/connect-sentry-incidents-to-releases-discussions-and-fixes',
 } as const;
 
-type EditorialContentType = 'playbook' | 'dossier';
 export type GuideRoute = (typeof GUIDE_ROUTES)[keyof typeof GUIDE_ROUTES];
 type GuideSlug = GuideRoute extends `/guides/${infer Slug}` ? Slug : never;
 type NativeEditorialProvider = (typeof NATIVE_EDITORIAL_PROVIDERS)[number];
-
-export interface EditorialContentTypeDefinition {
-  id: EditorialContentType;
-  label: string;
-  index: string;
-  description: string;
-}
 
 interface EditorialSourceBoundary {
   provider: NativeEditorialProvider;
@@ -70,9 +61,6 @@ interface EditorialFaq {
 export interface EditorialGuide {
   slug: GuideSlug;
   route: GuideRoute;
-  type: EditorialContentType;
-  typeLabel: string;
-  issue: string;
   title: string;
   shortTitle: string;
   summary: string;
@@ -104,30 +92,10 @@ export interface EditorialGuide {
   };
 }
 
-export const EDITORIAL_CONTENT_TYPES: readonly EditorialContentTypeDefinition[] = [
-  {
-    id: 'playbook',
-    label: 'Playbooks',
-    index: '01',
-    description:
-      'Answer-first workflows for recurring questions that cross tools, teams, and reporting lines.',
-  },
-  {
-    id: 'dossier',
-    label: 'Dossiers',
-    index: '02',
-    description:
-      'Evidence-led reconstructions of projects, incidents, launches, and the decisions around them.',
-  },
-] as const;
-
 export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
   {
     slug: 'search-slack-and-google-drive-together',
     route: GUIDE_ROUTES.slackAndDrive,
-    type: 'playbook',
-    typeLabel: 'Cross-tool search playbook',
-    issue: 'Edition 001',
     title: 'How to search Slack and Google Drive together',
     shortTitle: 'Search Slack and Drive together',
     summary:
@@ -246,9 +214,6 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
   {
     slug: 'weekly-engineering-updates-from-slack-linear-and-github',
     route: GUIDE_ROUTES.weeklyEngineeringUpdates,
-    type: 'playbook',
-    typeLabel: 'Engineering reporting playbook',
-    issue: 'Edition 002',
     title: 'How to create weekly engineering and project updates from Slack, Linear, and GitHub',
     shortTitle: 'Build weekly engineering updates',
     summary:
@@ -379,9 +344,6 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
   {
     slug: 'connect-sentry-incidents-to-releases-discussions-and-fixes',
     route: GUIDE_ROUTES.sentryReleaseIncidents,
-    type: 'dossier',
-    typeLabel: 'Incident reconstruction dossier',
-    issue: 'Edition 003',
     title: 'How to connect Sentry incidents to releases, discussions, and fixes',
     shortTitle: 'Connect incidents to releases and fixes',
     summary:
@@ -527,15 +489,15 @@ export const EDITORIAL_MACHINE_SUMMARIES = [
   {
     route: RECORD_ROUTE,
     title: EDITORIAL_PUBLICATION_NAME,
-    kind: 'publication-index',
+    kind: 'how-it-works',
     summary:
-      'The Timeline publication for practical playbooks and evidence-led dossiers about turning scattered work into cited operational memory.',
+      'A practical explanation of how Timeline turns selected source records into chronology and cited answers, with three detailed cross-tool walkthroughs.',
     topics: ['operational memory', 'evidence', 'cited answers', 'cross-tool workflows'],
   },
   ...EDITORIAL_GUIDES.map((guide) => ({
     route: guide.route,
     title: guide.title,
-    kind: guide.type,
+    kind: 'walkthrough',
     summary: guide.machineSummary,
     topics: [...guide.topics],
     nativeConnectors: [...guide.nativeConnectors],

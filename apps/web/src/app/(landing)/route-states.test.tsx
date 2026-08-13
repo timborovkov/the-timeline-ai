@@ -103,7 +103,7 @@ describe('Landing route states', () => {
     expect(html).toContain('focus:z-[90]');
     expect(html).toContain('>Product</a>');
     expect(html).toContain('>Integrations</a>');
-    expect(html).toContain('>Guides</a>');
+    expect(html).toContain('>How it works</a>');
     expect(html).toContain('>Help</a>');
     expect(html).toContain('aria-label="The Timeline source code on GitHub"');
     expect(html).toContain('aria-label="Public navigation"');

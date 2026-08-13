@@ -3,7 +3,6 @@ import Link from 'next/link';
 
 import type { ReactNode } from 'react';
 
-import { EDITORIAL_PUBLICATION_NAME } from '@/components/marketing/editorial/content';
 import styles from '@/components/marketing/editorial/editorial.module.css';
 import { PublicHeader } from '@/components/public-header';
 import { PublicNavigationItems } from '@/components/public-navigation';
@@ -26,11 +25,11 @@ export function EditorialShell({
         <div className="mx-auto grid max-w-[94rem] gap-8 px-4 py-10 sm:px-6 md:grid-cols-[1fr_auto] md:items-end lg:px-10">
           <div>
             <p className="font-mono text-[0.68rem] tracking-[0.14em] text-signal uppercase">
-              {EDITORIAL_PUBLICATION_NAME} / Field notes on cited work
+              How Timeline works
             </p>
             <p className="mt-3 max-w-xl text-sm text-fg-muted">
-              Field notes from The Timeline on evidence, operational memory, and the work behind
-              cited answers.
+              Practical walkthroughs for turning selected source records into chronological, cited
+              answers.
             </p>
           </div>
           <div className="grid gap-4 text-sm md:justify-items-end">

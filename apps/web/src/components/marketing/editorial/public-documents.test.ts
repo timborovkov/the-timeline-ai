@@ -41,7 +41,7 @@ describe('editorial public documents', () => {
     const compact = buildLlmsTxt({ registry: PUBLIC_DOCUMENT_REGISTRY, siteUrl: SITE_URL });
     const full = buildLlmsFullTxt({ registry: PUBLIC_DOCUMENT_REGISTRY, siteUrl: SITE_URL });
 
-    expect(compact).toContain('## The Record');
+    expect(compact).toContain('## How Timeline works');
     expect(compact).toContain(`[${EDITORIAL_PUBLICATION_NAME}](${SITE_URL}${RECORD_ROUTE})`);
     for (const guide of EDITORIAL_GUIDES) {
       const firstBoundary = guide.boundaries.at(0);
