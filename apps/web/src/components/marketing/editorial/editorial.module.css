@@ -3,11 +3,11 @@
 }
 
 .displayTitle {
-  max-width: 15ch;
+  max-width: 18ch;
   text-wrap: balance;
-  font-size: clamp(2.75rem, 5vw, 4.75rem);
+  font-size: clamp(3rem, 5vw, 4.75rem);
   font-weight: 600;
-  line-height: 0.95;
+  line-height: 0.92;
   letter-spacing: -0.055em;
 }
 

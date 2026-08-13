@@ -8,7 +8,7 @@ import {
 } from '@/components/marketing/editorial/content';
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
-const EDITORIAL_REVIEW_DATE = '2026-08-13' as const;
+const EDITORIAL_REVIEW_DATE = '2026-08-14' as const;
 
 const recordDocument = {
   canonicalPath: RECORD_ROUTE,

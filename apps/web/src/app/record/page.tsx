@@ -20,48 +20,70 @@ import { ProvenanceDiagram } from '@/components/marketing/editorial/provenance-d
 
 export const metadata: Metadata = createRecordMetadata();
 
+const RECORD_STEPS = [
+  {
+    title: 'Capture',
+    body: 'Choose the conversations, documents, and workspaces that belong in Timeline.',
+  },
+  {
+    title: 'Order',
+    body: 'Keep every record attached to its source, author, and time as one chronology forms.',
+  },
+  {
+    title: 'Answer',
+    body: 'Ask across that history and inspect the citations, uncertainty, and missing evidence.',
+  },
+] as const;
+
 export default function RecordPage() {
   const featuredGuide = findEditorialGuideByRoute(GUIDE_ROUTES.slackAndDrive);
-
   return (
     <main id="main" tabIndex={-1}>
       <EditorialStructuredData data={buildRecordStructuredData()} />
-      <section className="border-b border-border">
-        <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
-          <div className={styles.heroGrid}>
-            <div>
-              <EditorialKicker>How it works</EditorialKicker>
-              <h1 className={`${styles.displayTitle} mt-6`}>
-                How Timeline turns scattered work into a cited answer.
-              </h1>
-              <p className="mt-7 max-w-2xl text-lg leading-8 text-fg-muted sm:text-xl">
-                Timeline captures selected records from the tools your team already uses, orders
-                them by time, and answers with links back to the evidence.
-              </p>
-              <ol className="mt-9 max-w-xl border-t border-border">
-                {[
-                  'Capture only the sources your team selects.',
-                  'Preserve each record and its source.',
-                  'Answer with chronology, citations, and visible gaps.',
-                ].map((step, index) => (
-                  <li
-                    key={step}
-                    className="grid grid-cols-[2rem_1fr] gap-4 border-b border-border py-3 text-sm leading-6"
-                  >
-                    <span className="font-mono text-[0.65rem] text-signal">
-                      {String(index + 1).padStart(2, '0')}
-                    </span>
-                    <span>{step}</span>
-                  </li>
-                ))}
-              </ol>
-            </div>
+      <section data-record-hero className="border-b border-border">
+        <div className="mx-auto max-w-[82rem] px-4 pt-16 pb-14 sm:px-6 sm:pt-24 sm:pb-20">
+          <EditorialKicker>How it works</EditorialKicker>
+          <div className="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1.35fr)_minmax(20rem,0.65fr)] lg:items-end lg:gap-16">
+            <h1 className={styles.displayTitle}>From scattered work to a cited answer.</h1>
+            <p className="max-w-xl text-lg leading-8 text-fg-muted sm:text-xl">
+              Timeline captures selected records from the tools your team already uses, orders them
+              by time, and answers with links back to the evidence.
+            </p>
+          </div>
+
+          <ol
+            data-record-steps
+            className="mt-12 grid border-y border-border md:grid-cols-3 md:divide-x md:divide-border"
+          >
+            {RECORD_STEPS.map((step, index) => (
+              <li key={step.title} className="py-6 md:px-7 md:py-8 md:first:pl-0 md:last:pr-0">
+                <div className="flex items-baseline gap-4">
+                  <span className="font-mono text-[0.68rem] tracking-[0.12em] text-signal">
+                    {String(index + 1).padStart(2, '0')}
+                  </span>
+                  <h2 className="text-xl font-semibold tracking-[-0.025em]">{step.title}</h2>
+                </div>
+                <p className="mt-3 max-w-sm pl-9 text-sm leading-6 text-fg-muted">{step.body}</p>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      <section data-record-evidence className="border-b border-border bg-surface/45">
+        <div className="mx-auto max-w-[82rem] px-4 py-14 sm:px-6 sm:py-20">
+          <EditorialSectionHeading
+            index="Evidence path"
+            title="Watch three records become one answer."
+            intro="This illustrative example keeps every source distinct, places the records in time, and cites the evidence behind the conclusion."
+          />
+          <div className="mt-10">
             <ProvenanceDiagram diagram={featuredGuide.diagram} answerHeadingLevel={2} />
           </div>
         </div>
       </section>
 
-      <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
+      <section className="mx-auto max-w-[82rem] px-4 py-14 sm:px-6 sm:py-20">
         <EditorialSectionHeading
           index="Practical walkthroughs"
           title="Start with a question your team already knows how to verify."

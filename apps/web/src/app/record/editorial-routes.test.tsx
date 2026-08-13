@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
@@ -32,7 +34,19 @@ describe('editorial routes', () => {
     const html = renderToStaticMarkup(<RecordPage />);
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(html).toContain('How Timeline turns scattered work into a cited answer.');
+    expect(html).toContain('From scattered work to a cited answer.');
+    expect(html).toContain('data-record-hero="true"');
+    expect(html).toContain('data-record-steps="true"');
+    expect(html).toContain('data-record-evidence="true"');
+    expect(html.indexOf('data-record-hero="true"')).toBeLessThan(
+      html.indexOf('data-record-evidence="true"'),
+    );
+    expect(html.indexOf('data-record-steps="true"')).toBeLessThan(
+      html.indexOf('data-record-evidence="true"'),
+    );
+    for (const label of ['Capture', 'Order', 'Answer']) {
+      expect(html).toMatch(new RegExp(`<h2[^>]*>${label}<\\/h2>`));
+    }
     expect(html).toMatch(
       /<h2[^>]*>The review date and owner are set; pricing is still unresolved\.<\/h2>/,
     );
@@ -42,6 +56,20 @@ describe('editorial routes', () => {
       expect(html).toContain(`href="${guide.route}"`);
       expect(html).toContain(guide.title);
     }
+  });
+
+  it('uses the shared tactile public canvas without decorative background motion', () => {
+    const styles = readFileSync(
+      new URL('../../components/public-site.module.css', import.meta.url),
+      'utf8',
+    );
+
+    expect(styles).toMatch(/\.canvas::before\s*\{[^}]*fractalNoise/s);
+    expect(styles).toMatch(/\.canvas::before\s*\{[^}]*mix-blend-mode:\s*multiply;/s);
+    expect(styles).toMatch(
+      /:global\(\.dark\) \.canvas::before\s*\{[^}]*mix-blend-mode:\s*normal;/s,
+    );
+    expect(styles).not.toMatch(/animation:/);
   });
 
   it.each(GUIDE_PAGES)(

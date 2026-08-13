@@ -334,9 +334,9 @@ stacked explanation rather than an equal-height split. Substantive copy and
 diagrams are server-rendered; a small client motion controller may progressively
 reveal scenes, replay each evidence diagram while it is in view, and show scroll
 progress. Background motion is prohibited: movement belongs to the evidence
-diagram and must explain provenance or hierarchy. The landing canvas uses the
-same subtle fixed grain in both themes, with theme-specific blending so cream
-reads like paper and near-black retains its tactile texture.
+diagram and must explain provenance or hierarchy. The shared public canvas uses
+the same subtle fixed grain in both themes, with theme-specific blending so
+cream reads like paper and near-black retains its tactile texture.
 
 Public pages may use oversized Switzer display type, denser Commit Mono source
 metadata, a near-black evidence-instrument canvas, and more cinematic spacing
@@ -376,10 +376,12 @@ provide a visible route back to all guides; article bodies may optionally
 constrain to a reading measure without forcing the shell narrow.
 
 `/record` is the plain-language explanation of how Timeline works. It shows the
-source-to-chronology-to-answer loop once, then links to a small set of substantive
-cross-tool walkthroughs. Walkthroughs remain indexable for specific questions,
-but public navigation and page copy do not ask visitors to learn an editorial
-publication, edition, playbook, or dossier taxonomy.
+source-to-chronology-to-answer loop once, then links to a small set of
+substantive cross-tool walkthroughs. Its first viewport explains the three-step
+model at a glance; the complete evidence diagram follows on a separate full-width
+stage and is never squeezed beside the hero copy. Walkthroughs remain indexable
+for specific questions, but public navigation and page copy do not ask visitors
+to learn an editorial publication, edition, playbook, or dossier taxonomy.
 
 ### Administrator dashboards
 
@@ -450,3 +452,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-13 | Unified public masthead and canvas | Makes the landing masthead and warm public palette identical across integrations, editorial, help, legal, and recovery routes without changing authenticated Quiet Archive. |
 | 2026-08-13 | Subordinate integration title scale | Keeps long directory and provider headlines editorial without letting them crowd the explanation and evidence out of the first viewport. |
 | 2026-08-13 | Plain-language how-it-works surface | Replaces the publication taxonomy and split-column guide template with one compact product explanation and readable walkthroughs. |
+| 2026-08-14 | Legible how-it-works hierarchy | Keeps the three-step explanation in the first viewport and gives the evidence diagram a separate full-width stage. |
