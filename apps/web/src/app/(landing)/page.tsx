@@ -605,7 +605,7 @@ function TrustScene({
             </div>
             <div>
               <dt>Planned</dt>
-              <dd>Future connector pages remain unindexed until the capability is real.</dd>
+              <dd>Planned connectors are labeled before launch and cannot be connected yet.</dd>
             </div>
           </dl>
           <Link href="/help" className={styles.textLink}>

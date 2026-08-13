@@ -76,7 +76,10 @@ describe('LandingPage', () => {
     expect(html).toContain('Native ingestion / available on this deployment');
     expect(html).toContain('Implemented / awaiting deployment configuration');
     expect(html).toContain('MCP access');
-    expect(html).toContain('Future connector pages remain unindexed');
+    expect(html).toContain(
+      'Planned connectors are labeled before launch and cannot be connected yet.',
+    );
+    expect(html).not.toContain('Future connector pages remain unindexed');
     expect(html).not.toContain('href="/integrations');
     expect(html).not.toContain('href="/guides');
     expect(html).not.toContain('href="/record');
