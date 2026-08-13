@@ -267,7 +267,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Connect GitHub through the configured GitHub App OAuth flow.',
       'Choose individual repositories for a fixed scope, or an organization for all accessible repositories there.',
       'Have a team admin activate the shared sources.',
-      'Use signed GitHub App webhooks for normal activity while slow reconciliation catches missed deliveries.',
+      'Use signed GitHub App webhooks for prompt activity; slow reconciliation is a bounded recovery path.',
     ],
     permissions: [
       'Timeline requests repo and read:org OAuth scopes.',
@@ -276,6 +276,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'OAuth tokens and GitHub App credentials are encrypted at rest.',
     ],
     limitations: [
+      'Commit reconciliation polls the repository default branch. A missed push webhook for commits that exist only on an unmerged non-default branch is not recovered unless those commits later reach the default branch.',
       'Missing pull-request permission can leave PR activity incomplete while other readable repository surfaces continue to sync.',
       'An organization scope is access-aware; private or SAML-protected repositories may require additional GitHub authorization.',
       'Timeline does not push code, merge pull requests, change repository settings, or replace GitHub release controls.',
@@ -299,7 +300,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       {
         question: 'How quickly does activity appear?',
         answer:
-          'Configured signed webhooks carry normal PR, issue, release, workflow, and push activity promptly. Reconciliation runs more slowly to recover anything missed.',
+          'Configured signed webhooks carry normal PR, issue, release, workflow, and push activity promptly. Reconciliation runs more slowly across repository surfaces, but commit recovery polls only the default branch, so non-default-branch-only pushes rely on webhook delivery.',
       },
     ],
     related: ['linear', 'sentry', 'slack'],
@@ -388,6 +389,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Connection tokens are encrypted at rest and team activation is separate from personal authorization.',
     ],
     limitations: [
+      'The first sync captures current issue and project fields, not their earlier field transitions. Status, assignee, priority, and project-change history begins when Timeline starts observing the selected team.',
       'Only activated teams are captured; unselected Linear work stays outside Timeline.',
       'Timeline records the work history but does not create, edit, assign, or reprioritize Linear issues through this native sync.',
       'Fields outside the supported issue, comment, and project surfaces may not appear as distinct timeline events.',
@@ -619,6 +621,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'OAuth tokens are encrypted at rest and captured events remain team-scoped.',
     ],
     limitations: [
+      'Initial board activity-log backfill covers the preceding 30 days. Older owner, status, due-field, and other activity-log changes are not imported.',
       'A user-named board beginning with “Subitems of” is not treated as a helper board; only provider-identified classic helper boards are hidden.',
       'Missing webhook scopes degrades prompt delivery, but selected-source reconciliation continues more slowly.',
       'Timeline does not edit board values, run automations, assign people, or replace Monday.com workflows.',

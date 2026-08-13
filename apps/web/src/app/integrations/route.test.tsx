@@ -29,6 +29,11 @@ describe('public integration routes', () => {
     expect(html).not.toContain('href="/integrations/notion"');
     expect(html).toContain('compact');
     expect(html).toContain('dark:bg-white');
+    expect(html).toContain('Native integrations');
+    expect(html).toContain('Capability tiers');
+    expect(html).toContain('02 / Proof');
+    expect(html).not.toContain('01 / Native');
+    expect(html).not.toContain('03 / Tiers');
   });
 
   it('renders provider-specific truth, evidence, limitations, FAQs, and a single h1', async () => {

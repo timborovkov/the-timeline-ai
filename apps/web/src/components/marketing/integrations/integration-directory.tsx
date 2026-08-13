@@ -46,9 +46,7 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
 
         <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20" aria-labelledby="native">
           <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
-            <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-              01 / Native
-            </p>
+            <SectionLabel label="Native integrations" />
             <div>
               <div className="flex flex-wrap items-end justify-between gap-4">
                 <div>
@@ -130,9 +128,7 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
 
         <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20" aria-labelledby="tiers">
           <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
-            <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-              03 / Tiers
-            </p>
+            <SectionLabel label="Capability tiers" />
             <div>
               <h2 id="tiers" className="text-3xl font-semibold tracking-tight sm:text-4xl">
                 Capability is not a marketing synonym.
@@ -194,4 +190,8 @@ function CapabilityRow({
       </span>
     </article>
   );
+}
+
+function SectionLabel({ label }: { label: string }) {
+  return <p className="text-sm font-medium text-fg-muted">{label}</p>;
 }

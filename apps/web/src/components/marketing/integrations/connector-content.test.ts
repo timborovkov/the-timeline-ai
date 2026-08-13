@@ -70,6 +70,25 @@ describe('connector content manifest', () => {
     expect(limitations).toContain('new replies whose thread root is older than that window');
   });
 
+  it('discloses native provider history and reconciliation boundaries', () => {
+    const github = findConnector('github');
+    const linear = findConnector('linear');
+    const monday = findConnector('monday');
+    if (!github || !linear || !monday) throw new Error('expected native connector content');
+
+    const githubClaims = JSON.stringify(github);
+    expect(githubClaims).toContain('polls the repository default branch');
+    expect(githubClaims).toContain('non-default-branch-only pushes rely on webhook delivery');
+    expect(githubClaims).not.toContain('recover anything missed');
+
+    expect(linear.limitations.join(' ')).toContain(
+      'history begins when Timeline starts observing the selected team',
+    );
+    expect(monday.limitations.join(' ')).toContain(
+      'Initial board activity-log backfill covers the preceding 30 days',
+    );
+  });
+
   it('keeps Google Drive claims inside the implemented change-feed boundary', () => {
     const drive = findConnector('google-drive');
     if (!drive) throw new Error('expected Google Drive connector');
