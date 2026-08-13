@@ -18,6 +18,10 @@ describe('landing route group', () => {
 
   it('keeps public-page preferences, metadata, and motion usable', () => {
     const styles = readFileSync(landingRouteFile('home.module.css'), 'utf8');
+    const motion = readFileSync(
+      new URL('../../components/marketing/home/home-motion.tsx', import.meta.url),
+      'utf8',
+    );
     const narrowViewportStart = styles.indexOf('@media (max-width: 22rem)');
     const narrowViewportEnd = styles.indexOf(
       '@media (prefers-reduced-motion: reduce)',
@@ -33,11 +37,20 @@ describe('landing route group', () => {
     expect(styles).toContain('--home-meta-size: 0.75rem');
     expect(Math.min(...remFontSizeMinimums)).toBeGreaterThanOrEqual(0.75);
     expect(styles).not.toContain('translateX(0.35rem)');
-    expect(styles).toContain('animation: evidenceDash 2.4s linear 1 forwards');
-    expect(styles).not.toMatch(/animation:\s*evidence(?:Dash|Pulse|Float)[^;]*infinite/);
-    expect(styles).toContain('animation: ambientSweep 3.8s');
+    expect(styles).toContain('animation: evidencePath 4.8s ease-in-out infinite both');
+    expect(styles).toContain('animation: chronologyDraw 1.25s');
+    expect(styles).toContain('animation: answerPanelIn 680ms');
+    expect(styles).toContain('animation: trustPathDraw 1.15s');
+    expect(styles).toContain('animation: ambientSweep 9s');
+    expect(styles).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(styles).not.toContain('stroke-dashoffset');
+    expect(styles).not.toContain(':not(.visible)');
+    expect(styles).not.toContain('.motionReady [data-home-diagram] {');
+    expect(styles).toContain('.motionReady [data-home-reveal].visible {');
+    expect(motion).toContain("'[data-home-ambient], [data-home-diagram]'");
+    expect(motion).toContain('classList.toggle(visibleClass, entry.isIntersecting)');
     expect(styles).toContain('.ambientTrace');
     expect(styles).toContain('.footer a');
-    expect(styles).toContain('color: var(--home-muted)');
+    expect(styles).toContain('color: var(--home-paper)');
   });
 });

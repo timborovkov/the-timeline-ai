@@ -11,25 +11,43 @@ export function HomeMotion() {
     const motionReadyClass = styles.motionReady;
     const visibleClass = styles.visible;
 
-    if (!root || !motionReadyClass || !visibleClass || reduceMotion.matches) return;
+    if (
+      !root ||
+      !motionReadyClass ||
+      !visibleClass ||
+      reduceMotion.matches ||
+      !('IntersectionObserver' in window)
+    ) {
+      return;
+    }
 
     root.classList.add(motionReadyClass);
 
-    const revealNodes = [
-      ...root.querySelectorAll<HTMLElement>('[data-home-reveal], [data-home-ambient]'),
+    const revealNodes = [...root.querySelectorAll<HTMLElement>('[data-home-reveal]')];
+    const activeNodes = [
+      ...root.querySelectorAll<HTMLElement>('[data-home-ambient], [data-home-diagram]'),
     ];
-    const observer = new IntersectionObserver(
+    const revealObserver = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
           if (!entry.isIntersecting) continue;
           entry.target.classList.add(visibleClass);
-          observer.unobserve(entry.target);
+          revealObserver.unobserve(entry.target);
         }
       },
       { rootMargin: '0px 0px -12% 0px', threshold: 0.08 },
     );
+    const activeObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          entry.target.classList.toggle(visibleClass, entry.isIntersecting);
+        }
+      },
+      { rootMargin: '-4% 0px -4% 0px', threshold: 0.06 },
+    );
 
-    for (const node of revealNodes) observer.observe(node);
+    for (const node of revealNodes) revealObserver.observe(node);
+    for (const node of activeNodes) activeObserver.observe(node);
 
     let frame = 0;
     const updateProgress = () => {
@@ -48,7 +66,8 @@ export function HomeMotion() {
     updateProgress();
 
     return () => {
-      observer.disconnect();
+      revealObserver.disconnect();
+      activeObserver.disconnect();
       window.removeEventListener('scroll', requestProgress);
       window.removeEventListener('resize', requestProgress);
       if (frame) window.cancelAnimationFrame(frame);

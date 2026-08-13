@@ -48,13 +48,13 @@ function getHomeDocument() {
   return document;
 }
 
-const NORTHLINE_EVENTS = [
+const ACME_EVENTS = [
   {
     id: '01',
     day: 'Monday',
     dateTime: '2026-08-03T09:14:00+03:00',
     time: '09:14',
-    source: 'Slack / #northline',
+    source: 'Slack / #acme-rollout',
     shortSource: 'Slack',
     title: 'Onboarding copy approved',
     detail: 'Design approved the onboarding copy. Implementation can continue.',
@@ -92,39 +92,71 @@ const NORTHLINE_EVENTS = [
 ] as const;
 
 const HERO_SIGNALS = [
-  ...NORTHLINE_EVENTS.map(({ time, shortSource }) => ({ time, source: shortSource })),
-  { time: '13:05', source: 'Linear' },
-  { time: '18:21', source: 'Sentry' },
+  ...ACME_EVENTS.map(({ time, shortSource }) => ({ time, source: shortSource, cited: true })),
+  { time: '13:05', source: 'Linear', cited: false },
+  { time: '18:21', source: 'Sentry', cited: false },
 ] as const;
 
 const AUDIENCES = [
   {
     index: '01',
     name: 'Client delivery',
-    outcome: 'A client-ready update with every claim attached to its source.',
+    outcome: 'Send a client-ready update with every claim attached to its source.',
+    result: 'Verifiable status',
   },
   {
     index: '02',
     name: 'Implementation',
-    outcome: 'One current handoff instead of three systems and a meeting replay.',
+    outcome: 'Recover the handoff without replaying every meeting or chasing every owner.',
+    result: 'Current handoff',
   },
   {
     index: '03',
     name: 'Product and operations',
-    outcome: 'A chronology that connects decisions to delivery.',
+    outcome: 'Connect decisions, blockers, owners, and delivery in one inspectable history.',
+    result: 'Decision trail',
   },
 ] as const;
+
+const TRUST_STEPS = [
+  {
+    index: '01',
+    title: 'Evidence arrives',
+    detail: 'Slack / #acme-rollout',
+  },
+  {
+    index: '02',
+    title: 'Original stays intact',
+    detail: 'Raw event / immutable',
+  },
+  {
+    index: '03',
+    title: 'Access is checked',
+    detail: 'Team + event visibility',
+  },
+  {
+    index: '04',
+    title: 'Answer cites the source',
+    detail: '[01] / inspectable',
+  },
+] as const;
+
+interface NativeConnector {
+  label: string;
+  state: 'available' | 'setup-required';
+}
 
 export default async function LandingPage() {
   const session = await auth();
   const isSignedIn = Boolean(session?.user);
-  const availableNativeConnectors: string[] = [];
-  const unconfiguredNativeConnectors: string[] = [];
+  const nativeConnectors: NativeConnector[] = [];
   for (const connector of integrationsLib.listCatalog()) {
     if (connector.kind !== 'native' || connector.ingestStatus !== 'implemented') continue;
-    if (connector.status === 'native_available') availableNativeConnectors.push(connector.label);
+    if (connector.status === 'native_available') {
+      nativeConnectors.push({ label: connector.label, state: 'available' });
+    }
     if (connector.status === 'native_unconfigured') {
-      unconfiguredNativeConnectors.push(connector.label);
+      nativeConnectors.push({ label: connector.label, state: 'setup-required' });
     }
   }
 
@@ -141,12 +173,9 @@ export default async function LandingPage() {
       <TopNav isSignedIn={isSignedIn} />
       <main id="main" tabIndex={-1}>
         <ClaimScene isSignedIn={isSignedIn} />
-        <ChronologyScene />
+        <ChronologyScene nativeConnectors={nativeConnectors} />
         <AnswerScene />
-        <TrustScene
-          availableNativeConnectors={availableNativeConnectors}
-          unconfiguredNativeConnectors={unconfiguredNativeConnectors}
-        />
+        <TrustScene />
         <CtaScene isSignedIn={isSignedIn} />
       </main>
       <Footer isSignedIn={isSignedIn} />
@@ -209,9 +238,11 @@ function TopNav({ isSignedIn }: { isSignedIn: boolean }) {
       <Link href="/" aria-label="The Timeline home" className={styles.brandLink}>
         <Wordmark compact />
       </Link>
-      <div className={styles.mastStatus} aria-hidden="true">
-        <span /> Every answer cited
-      </div>
+      <nav className={styles.mastLinks} aria-label="Page sections">
+        <a href="#sources">How it works</a>
+        <a href="#answer">Example answer</a>
+        <a href="#trust">For teams</a>
+      </nav>
       <nav className={styles.nav} aria-label="Public navigation">
         <GitHubSourceLink compact className={styles.githubLink} />
         <Link href="/help" className={styles.navLink}>
@@ -244,8 +275,9 @@ function ClaimScene({ isSignedIn }: { isSignedIn: boolean }) {
           The work <em>becomes</em> the record.
         </h1>
         <p className={styles.heroIntro}>
-          Your team already leaves the truth behind in messages, meetings, code, and documents.
-          Timeline turns those fragments into chronology, then answers with receipts.
+          Timeline watches the tools where a project happens—messages, meetings, code, and
+          documents—then builds one chronological history you can question. Every answer links back
+          to the work.
         </p>
         <div className={styles.heroActions}>
           <Link href={isSignedIn ? '/app' : '/sign-up'} className={styles.primaryCta}>
@@ -263,8 +295,8 @@ function ClaimScene({ isSignedIn }: { isSignedIn: boolean }) {
       <AmbientTrace />
       <div
         className={styles.observatory}
-        data-home-reveal
-        aria-label="Six connected Northline work signals converge into cited project memory"
+        data-home-diagram
+        aria-label="Four cited Acme rollout work signals converge into project memory while two other connected signals remain unused in this answer"
       >
         <svg className={styles.orbitLines} viewBox="0 0 600 600" aria-hidden="true">
           <path d="M118 116 C 205 150, 226 242, 300 300" />
@@ -286,22 +318,23 @@ function ClaimScene({ isSignedIn }: { isSignedIn: boolean }) {
             className={cn(
               styles.orbitSource,
               styles[`orbitSource${index + 1}`],
-              index > 3 && styles.orbitSourceAux,
+              !signal.cited && styles.orbitSourceAux,
             )}
           >
             <span>{signal.time}</span>
             <strong>{signal.source}</strong>
+            {signal.cited ? null : <small>Connected, not cited</small>}
           </div>
         ))}
         <p className={styles.observatoryCaption}>
-          Northline / 6 connected channels / 4 cited events
+          Example project / Acme rollout / 4 cited + 2 connected
         </p>
       </div>
     </section>
   );
 }
 
-function ChronologyScene() {
+function ChronologyScene({ nativeConnectors }: { nativeConnectors: NativeConnector[] }) {
   return (
     <section
       id="sources"
@@ -318,16 +351,16 @@ function ChronologyScene() {
             Work enters once. Time gives it <em>shape.</em>
           </>
         }
-        copy="Each fragment keeps its source, author, time, and visibility while Slack context, meetings, code, and documents settle into one inspectable Northline history."
+        copy="Each fragment keeps its source, author, time, and visibility while Slack context, meetings, code, and documents settle into one inspectable Acme rollout history."
       />
-      <div className={styles.timelineStage} data-home-reveal>
+      <div className={styles.timelineStage} data-home-diagram>
         <div className={styles.timelineHeader}>
-          <span>Northline / Last 7 days</span>
+          <span>Acme rollout / Last 7 days</span>
           <span>4 evidence items</span>
         </div>
         <ol className={styles.timelineList}>
-          {NORTHLINE_EVENTS.map((event) => (
-            <li key={event.id} id={`northline-source-${event.id}`}>
+          {ACME_EVENTS.map((event) => (
+            <li key={event.id} id={`acme-source-${event.id}`}>
               <time dateTime={event.dateTime}>
                 <span>{event.day.slice(0, 3)}</span>
                 {event.time}
@@ -364,13 +397,66 @@ function ChronologyScene() {
           </dl>
         </aside>
       </div>
+      <ConnectorRail nativeConnectors={nativeConnectors} />
     </section>
+  );
+}
+
+function ConnectorRail({ nativeConnectors }: { nativeConnectors: NativeConnector[] }) {
+  return (
+    <aside className={styles.connectorPanel} data-home-diagram aria-labelledby="connector-title">
+      <header>
+        <span className={styles.monoLabel}>Where evidence enters</span>
+        <h3 id="connector-title">Keep the tools. Connect the record.</h3>
+        <p>
+          Native ingestion creates durable Timeline evidence. MCP provides live approved tool
+          access. Planned support remains clearly labeled and unavailable until it is real.
+        </p>
+      </header>
+      <div className={styles.connectorContent}>
+        <div className={styles.nativeConnectors}>
+          <span>Native ingestion</span>
+          {nativeConnectors.length > 0 ? (
+            <ul>
+              {nativeConnectors.map((connector) => (
+                <li key={connector.label}>
+                  <strong>{connector.label}</strong>
+                  <small>
+                    {connector.state === 'available' ? 'Available here' : 'Setup required'}
+                  </small>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className={styles.connectorEmpty}>No native OAuth connectors are configured.</p>
+          )}
+        </div>
+        <dl className={styles.connectorTiers}>
+          <div>
+            <dt>MCP access</dt>
+            <dd>Live approved tool access, not passive ingestion.</dd>
+          </div>
+          <div>
+            <dt>Planned</dt>
+            <dd>Not connectable or indexed until support is real.</dd>
+          </div>
+        </dl>
+        <Link href="/help" className={styles.textLink}>
+          Read the current product guides
+        </Link>
+      </div>
+    </aside>
   );
 }
 
 function AnswerScene() {
   return (
-    <section className={styles.scene} aria-labelledby="answer-title" data-scene="03-answer">
+    <section
+      id="answer"
+      className={styles.scene}
+      aria-labelledby="answer-title"
+      data-scene="03-answer"
+    >
       <AmbientTrace />
       <SceneHeading
         number="03"
@@ -383,10 +469,10 @@ function AnswerScene() {
         }
         copy="Ask the question you normally answer by searching four tools and messaging three people."
       />
-      <div className={styles.answerLayout} data-home-reveal>
+      <div className={styles.answerLayout} data-home-diagram>
         <article className={styles.answerWindow}>
           <div className={styles.answerBar}>
-            <span>/ask / Northline</span>
+            <span>/ask / Acme rollout</span>
             <span>4 sources linked</span>
           </div>
           <div className={styles.question}>
@@ -417,9 +503,9 @@ function AnswerScene() {
             <span>4 / 4</span>
           </div>
           <ol>
-            {NORTHLINE_EVENTS.map((event) => (
+            {ACME_EVENTS.map((event) => (
               <li key={event.id}>
-                <a href={`#northline-source-${event.id}`}>
+                <a href={`#acme-source-${event.id}`}>
                   <span>[{event.id}]</span>
                   <strong>{event.title}</strong>
                   <small>
@@ -435,13 +521,7 @@ function AnswerScene() {
   );
 }
 
-function TrustScene({
-  availableNativeConnectors,
-  unconfiguredNativeConnectors,
-}: {
-  availableNativeConnectors: string[];
-  unconfiguredNativeConnectors: string[];
-}) {
+function TrustScene() {
   return (
     <section
       id="trust"
@@ -452,87 +532,62 @@ function TrustScene({
       <AmbientTrace />
       <SceneHeading
         number="04"
-        label="Fit + trust"
+        label="For teams"
         id="trust-title"
         title={
           <>
-            The answer can change. The source <em>does not.</em>
+            When the work is scattered, the answer <em>should not be.</em>
           </>
         }
-        copy="Timeline is built so a faster model can re-read the work tomorrow without rewriting what your team actually said today."
+        copy="Timeline gives client delivery, implementation, product, and operations teams one current account of what happened—without asking everyone to maintain another system."
       />
-      <div className={styles.audienceStrip} data-home-reveal aria-label="Teams Timeline serves">
-        {AUDIENCES.map((audience) => (
-          <article key={audience.name}>
-            <span>{audience.index}</span>
-            <h3>{audience.name}</h3>
-            <p>{audience.outcome}</p>
-          </article>
-        ))}
-      </div>
-      <div className={styles.trustLayout} data-home-reveal>
-        <div className={styles.trustPrinciples}>
-          <TrustRow index="01" title="Immutable raw evidence">
-            Source-ingested events remain unchanged. Derived facts can be regenerated.
-          </TrustRow>
-          <TrustRow index="02" title="Team isolation">
-            Every structured and vector query is team-scoped below the interface.
-          </TrustRow>
-          <TrustRow index="03" title="Per-event privacy">
-            Private, team, and named-person visibility follows the evidence into retrieval.
-          </TrustRow>
-          <TrustRow index="04" title="Inspectable citations">
-            Answers link back to the message, meeting, code change, or document they came from.
-          </TrustRow>
-        </div>
-
-        <aside className={styles.connectorTeaser} aria-labelledby="connector-title">
-          <span className={styles.monoLabel}>Connector truth / current</span>
-          <h3 id="connector-title">Keep the tools. Connect the record.</h3>
+      <div className={styles.fitPanel} data-home-diagram>
+        <div className={styles.fitPanelIntro}>
+          <span className={styles.monoLabel}>Three everyday jobs</span>
+          <h3>Teams that owe someone a reliable answer.</h3>
           <p>
-            Native ingestion, live MCP access, and planned support are different capabilities. We
-            name the boundary instead of blurring it.
+            When status is scattered, Timeline turns the work already happening into a brief you can
+            stand behind.
           </p>
-          <div className={styles.nativeConnectors}>
-            <span>Native ingestion / available on this deployment</span>
-            {availableNativeConnectors.length > 0 ? (
-              <ConnectorList connectors={availableNativeConnectors} />
-            ) : (
-              <p className={styles.connectorEmpty}>No native OAuth connectors are configured.</p>
-            )}
-          </div>
-          {unconfiguredNativeConnectors.length > 0 ? (
-            <div className={styles.nativeConnectors}>
-              <span>Implemented / awaiting deployment configuration</span>
-              <ConnectorList connectors={unconfiguredNativeConnectors} />
-            </div>
-          ) : null}
-          <dl className={styles.connectorTiers}>
-            <div>
-              <dt>MCP access</dt>
-              <dd>Compatible external tools can be reached live through connected MCP servers.</dd>
-            </div>
-            <div>
-              <dt>Planned</dt>
-              <dd>Planned connectors are labeled before launch and cannot be connected yet.</dd>
-            </div>
-          </dl>
-          <Link href="/help" className={styles.textLink}>
-            Read the current product guides
-          </Link>
-        </aside>
+        </div>
+        <div className={styles.audienceRail} aria-label="Teams Timeline serves">
+          {AUDIENCES.map((audience) => (
+            <article key={audience.name}>
+              <span>{audience.index}</span>
+              <h4>{audience.name}</h4>
+              <p>{audience.outcome}</p>
+              <small>{audience.result}</small>
+            </article>
+          ))}
+        </div>
+      </div>
+
+      <div className={styles.trustFlowPanel} data-home-diagram aria-labelledby="trust-flow-title">
+        <header>
+          <span className={styles.monoLabel}>How one answer stays trustworthy</span>
+          <h3 id="trust-flow-title">Every answer carries its evidence chain.</h3>
+          <p>
+            Timeline preserves source content, checks access at retrieval, and keeps the citation
+            attached to the final answer.
+          </p>
+        </header>
+        <ol className={styles.trustFlow}>
+          {TRUST_STEPS.map((step) => (
+            <li key={step.index}>
+              <span>{step.index}</span>
+              <strong>{step.title}</strong>
+              <small>{step.detail}</small>
+            </li>
+          ))}
+        </ol>
+        <div className={styles.trustFlowProof} aria-label="Timeline evidence safeguards">
+          <span>Immutable raw evidence</span>
+          <span>Team isolation</span>
+          <span>Per-event privacy</span>
+          <span>Inspectable citations</span>
+        </div>
       </div>
     </section>
-  );
-}
-
-function ConnectorList({ connectors }: { connectors: string[] }) {
-  return (
-    <ul>
-      {connectors.map((connector) => (
-        <li key={connector}>{connector}</li>
-      ))}
-    </ul>
   );
 }
 
@@ -616,30 +671,12 @@ function SceneHeading({
 
 function Citation({ id, label }: { id: string; label: string }) {
   return (
-    <a href={`#northline-source-${id}`} className={styles.citation}>
+    <a href={`#acme-source-${id}`} className={styles.citation}>
       <span aria-hidden="true">[{id}]</span>
       <span className="sr-only">
         Source {id}: {label}
       </span>
     </a>
-  );
-}
-
-function TrustRow({
-  index,
-  title,
-  children,
-}: {
-  index: string;
-  title: string;
-  children: ReactNode;
-}) {
-  return (
-    <article>
-      <span>{index}</span>
-      <h3>{title}</h3>
-      <p>{children}</p>
-    </article>
   );
 }
 

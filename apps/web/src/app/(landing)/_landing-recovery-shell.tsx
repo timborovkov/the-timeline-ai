@@ -22,9 +22,11 @@ export function LandingRecoveryShell({ children }: { children: ReactNode }) {
         <Link href="/" aria-label="The Timeline home" className={styles.brandLink}>
           <Wordmark compact />
         </Link>
-        <div className={styles.mastStatus} aria-hidden="true">
-          <span /> Every answer cited
-        </div>
+        <nav className={styles.mastLinks} aria-label="Page sections">
+          <Link href="/#sources">How it works</Link>
+          <Link href="/#answer">Example answer</Link>
+          <Link href="/#trust">For teams</Link>
+        </nav>
         <nav className={styles.nav} aria-label="Landing navigation">
           <GitHubSourceLink compact className={styles.githubLink} />
           <Link href="/help" className={styles.navLink}>

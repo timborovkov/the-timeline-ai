@@ -49,15 +49,22 @@ describe('LandingPage', () => {
       previousIndex = sceneIndex;
     }
 
-    expect(html).toContain('Northline / Last 7 days');
-    expect(html).toContain('Six connected Northline work signals');
+    expect(html).toContain('Acme rollout / Last 7 days');
+    expect(html).toContain('Four cited Acme rollout work signals');
+    expect(html).toContain('Example project / Acme rollout / 4 cited + 2 connected');
+    expect(html).toContain('Connected, not cited');
     expect(html).toContain('Linear');
     expect(html).toContain('Sentry');
-    expect(html).toContain('Every answer cited');
+    expect(html).toContain('aria-label="Page sections"');
+    expect(html).toContain('href="#answer"');
     expect(html).toContain('Launch is waiting on SSO. Everything else moved.');
     expect(html).toContain('Evidence behind this answer');
-    expect(html).toContain('href="#northline-source-01"');
+    expect(html).toContain('href="#acme-source-01"');
     expect(html).toContain('Source 01: Slack approval');
+    expect(html).toContain('Teams that owe someone a reliable answer.');
+    expect(html).toContain('Every answer carries its evidence chain.');
+    expect(html).not.toContain('Northline');
+    expect(html.match(/data-home-diagram/g)).toHaveLength(6);
     expect(html).not.toContain('↘');
     expect(html).not.toContain('02-sources');
     expect(html).not.toContain('05-audience');
@@ -91,12 +98,12 @@ describe('LandingPage', () => {
     }
 
     expect(html).toContain('Native ingestion');
-    expect(html).toContain('Native ingestion / available on this deployment');
-    expect(html).toContain('Implemented / awaiting deployment configuration');
+    expect(html).toContain('Where evidence enters');
+    expect(html).toContain('Available here');
+    expect(html).toContain('Setup required');
     expect(html).toContain('MCP access');
-    expect(html).toContain(
-      'Planned connectors are labeled before launch and cannot be connected yet.',
-    );
+    expect(html).toContain('Live approved tool access, not passive ingestion.');
+    expect(html).toContain('Not connectable or indexed until support is real.');
     expect(html).not.toContain('Future connector pages remain unindexed');
     expect(html).not.toContain('href="/integrations');
     expect(html).not.toContain('href="/guides');

@@ -321,11 +321,15 @@ shared due-date vocabulary above.
 
 The public landing page is an editorial, five-scene acquisition narrative:
 claim, evidence and chronology, cited answer, audience fit with trust, and a
-one-project CTA. Its signature Northline sequence shows connected work signals
-settling onto a chronological rail and resolving into an answer with tangible
-source links. Substantive copy and diagrams are server-rendered; a small client
-motion controller may progressively reveal scenes, run restrained ambient
-traces once as sections enter, and show scroll progress.
+one-project CTA. Its signature example project, Acme rollout, distinguishes four
+signals cited in the demonstrated answer from two connected-but-unused signals,
+then shows the cited work settling onto a chronological rail and resolving into
+an answer with tangible source links. Connector capability belongs with the
+evidence-entry scene; audience fit and the evidence chain remain a separate,
+stacked explanation rather than an equal-height split. Substantive copy and
+diagrams are server-rendered; a small client motion controller may progressively
+reveal scenes, replay each evidence diagram while it is in view, run restrained
+ambient traces, and show scroll progress.
 
 Public pages may use oversized Switzer display type, denser Commit Mono source
 metadata, a near-black evidence-instrument canvas, and more cinematic spacing
@@ -410,3 +414,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-05 | Taste v2 landing evolution | Tightens the hero, varies section rhythm, and adds tactile states while preserving Quiet Archive tokens and IA. |
 | 2026-08-05 | Searchable public help directory | Removes repeated guide grids and makes task-level help discoverable from one calm index. |
 | 2026-08-12 | Editorial public acquisition system | Lets visitors watch evidence become chronology and a cited answer while the authenticated product remains Quiet Archive. |
+| 2026-08-13 | Acme evidence narrative | Clarifies cited versus merely connected signals, pairs connectors with chronology, and replays each evidence diagram while it is in view. |
