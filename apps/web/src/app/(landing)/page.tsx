@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
 
 import { LandingSkipLink } from '@/app/(landing)/_landing-skip-link';
 import styles from '@/app/(landing)/home.module.css';
-import { Logo, Wordmark } from '@/components/brand/logo';
+import { Logo } from '@/components/brand/logo';
 import { GitHubSourceLink } from '@/components/github-source-link';
 import { HomeMotion } from '@/components/marketing/home/home-motion';
 import { findConnectorByName } from '@/components/marketing/integrations/connector-content';
@@ -14,8 +14,8 @@ import {
   PUBLIC_DEMO_DISCLOSURE,
   PUBLIC_DEMO_STORY,
 } from '@/components/marketing/public-demo-story';
-import { PublicNavigationDisclosure, PublicNavigationItems } from '@/components/public-navigation';
-import { ThemeToggle } from '@/components/theme-toggle';
+import { PublicHeader } from '@/components/public-header';
+import { PublicNavigationItems } from '@/components/public-navigation';
 import { auth } from '@/lib/auth';
 import { getLegalContactEmail } from '@/lib/legal-versions';
 import {
@@ -137,7 +137,7 @@ export default async function LandingPage() {
       <div className={styles.progress} aria-hidden="true">
         <span />
       </div>
-      <TopNav isSignedIn={isSignedIn} />
+      <PublicHeader isSignedIn={isSignedIn} currentSection="product" />
       <main id="main" tabIndex={-1}>
         <ClaimScene isSignedIn={isSignedIn} />
         <ChronologyScene nativeConnectors={nativeConnectors} />
@@ -196,37 +196,6 @@ function StructuredData() {
       type="application/ld+json"
       dangerouslySetInnerHTML={{ __html: stringifyJsonLdForHtml(graph) }}
     />
-  );
-}
-
-function TopNav({ isSignedIn }: { isSignedIn: boolean }) {
-  return (
-    <header className={styles.masthead}>
-      <Link href="/" aria-label="The Timeline home" className={styles.brandLink}>
-        <Wordmark compact />
-      </Link>
-      <nav aria-label="Public navigation">
-        <PublicNavigationItems
-          currentSection="product"
-          listClassName={styles.mastLinks}
-          itemClassName={styles.navLink}
-          activeItemClassName={styles.navLinkActive}
-        />
-      </nav>
-      <div className={styles.nav}>
-        <PublicNavigationDisclosure currentSection="product" className={styles.publicMenu} />
-        <GitHubSourceLink compact className={styles.githubLink} />
-        {isSignedIn ? null : (
-          <Link href="/sign-in" className={cn(styles.navLink, styles.signInLink)}>
-            Sign in
-          </Link>
-        )}
-        <ThemeToggle className={styles.themeToggle} />
-        <Link href={isSignedIn ? '/app' : '/sign-up'} className={styles.navCta}>
-          {isSignedIn ? 'Dashboard' : 'Try one project'}
-        </Link>
-      </div>
-    </header>
   );
 }
 

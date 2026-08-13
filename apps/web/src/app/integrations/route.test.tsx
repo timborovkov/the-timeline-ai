@@ -27,7 +27,8 @@ describe('public integration routes', () => {
     expect(html).toContain('Native ingestion');
     expect(html).toContain('MCP access');
     expect(html).toContain('Planned native support');
-    expect(html).toContain('Available now');
+    expect(html).toContain('Native ingestion implemented');
+    expect(html).toContain('selection and webhook boundaries');
     expect(html).toContain('Live access');
     expect(html).toContain('Not available yet');
     expect(html).not.toContain('Indexable');
@@ -46,7 +47,8 @@ describe('public integration routes', () => {
     expect(html).toContain('Capability tiers');
     expect(text).toContain('02/Proof');
     expect(html).not.toMatch(/font-mono[^>]*>Integrations \/ capability directory/u);
-    expect(html).not.toMatch(/font-mono[^>]*>Available now/u);
+    expect(html).not.toContain('Available now');
+    expect(html).toContain('motion-safe:group-hover:translate-x-1');
     expect(html).not.toContain('01 / Native');
     expect(html).not.toContain('03 / Tiers');
     expect(html.match(/dark:bg-white/g)).toHaveLength(3);

@@ -24,7 +24,7 @@ describe('LegalPage', () => {
       }),
     );
 
-    expect(html).toContain('Open app');
+    expect(html).toContain('Dashboard');
     expect(html).not.toContain('>Sign in<');
   });
 });

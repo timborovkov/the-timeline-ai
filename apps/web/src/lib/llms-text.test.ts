@@ -79,6 +79,17 @@ describe('llms text files', () => {
       definePublicDocuments('existing-public-documents', PUBLIC_DOCUMENT_REGISTRY.all()),
       definePublicDocuments('discovery-contributions', [
         testDocument({
+          canonicalPath: '/integrations/github',
+          kind: 'connector',
+          title: 'GitHub integration',
+          capability: { kind: 'native-ingestion', provider: 'github' },
+          llms: {
+            section: 'integrations',
+            order: 1,
+            summary: 'Capture GitHub activity as cited timeline evidence.',
+          },
+        }),
+        testDocument({
           canonicalPath: '/record/why-citations-matter',
           kind: 'record',
           title: 'Why citations matter',
@@ -96,7 +107,7 @@ describe('llms text files', () => {
 
     expect(compact).toContain('## Integrations');
     expect(compact).toContain(
-      '[GitHub integration](https://thetimeline.cc/integrations/github): Sync GitHub pull requests, issues, reviews, comments, commits, releases, and workflow runs into a cited chronology with The Timeline.',
+      '[GitHub integration](https://thetimeline.cc/integrations/github): Capture GitHub activity as cited timeline evidence.',
     );
     expect(compact).toContain('## The Record');
     expect(compact).toContain(

@@ -77,12 +77,12 @@ describe('editorial routes', () => {
 
   it('marks the publication navigation for index and guide contexts', () => {
     const recordShell = renderToStaticMarkup(
-      <EditorialShell currentSection="record">
+      <EditorialShell>
         <main id="main" />
       </EditorialShell>,
     );
     const guideShell = renderToStaticMarkup(
-      <EditorialShell currentSection="guides">
+      <EditorialShell>
         <main id="main" />
       </EditorialShell>,
     );
@@ -91,9 +91,22 @@ describe('editorial routes', () => {
     expect(guideShell).toContain('aria-label="Public navigation menu"');
     expect(recordShell).toContain('href="/integrations"');
     expect(guideShell).toContain('href="/help"');
-    expect(recordShell).toContain('Publication');
-    expect(guideShell).toContain('Guide');
+    expect(recordShell).toContain('data-public-header="true"');
+    expect(guideShell).toContain('>Try one project</a>');
     expect(recordShell.match(/aria-current="page"[^>]*href="\/record"/g)).not.toBeNull();
     expect(guideShell.match(/aria-current="page"[^>]*href="\/record"/g)).not.toBeNull();
+  });
+
+  it('routes signed-in editorial readers directly to the dashboard', () => {
+    const html = renderToStaticMarkup(
+      <EditorialShell isSignedIn>
+        <main id="main" />
+      </EditorialShell>,
+    );
+
+    expect(html).toContain('href="/app"');
+    expect(html.match(/href="\/app"/g)).toHaveLength(2);
+    expect(html).toContain('Dashboard');
+    expect(html).not.toContain('href="/sign-in"');
   });
 });

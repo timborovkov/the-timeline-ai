@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import sitemap from '@/app/sitemap';
-import { INDEXABLE_CONNECTOR_ROUTES } from '@/components/marketing/integrations/connector-content';
 import { HELP_PAGES } from '@/lib/help-content';
 import { createPublicDocumentRegistry, definePublicDocuments } from '@/lib/public-site';
 import { buildPublicSitemap } from '@/lib/public-site/sitemap';
@@ -27,8 +26,6 @@ describe('sitemap', () => {
         'https://thetimeline.cc/help/support',
         'https://thetimeline.cc/terms',
         'https://thetimeline.cc/privacy',
-        'https://thetimeline.cc/integrations',
-        ...INDEXABLE_CONNECTOR_ROUTES.map((connector) => `https://thetimeline.cc${connector.path}`),
         ...HELP_PAGES.map((page) => `https://thetimeline.cc/help/${page.slug}`),
       ]),
     );

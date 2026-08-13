@@ -346,7 +346,15 @@ decorative AI gradients. Connector references distinguish native ingestion
 and planned support. Planned destinations stay unlinked and unindexed until
 real.
 
-Every public shell exposes the same four primary destinations in the same order:
+Every public shell uses the landing masthead as one full-width chrome component,
+with the same warm public palette, wordmark position, active state, GitHub and
+theme controls, and lime account CTA. Signed-in visitors see `Dashboard`;
+signed-out visitors see `Sign in` and `Try one project`. The shared public canvas
+inherits that warm paper palette in light mode and the landing's warm near-black
+palette in dark mode, while each page group keeps its own content structure.
+Auth-neutral loading and error boundaries keep the same masthead but omit
+account actions rather than guessing the visitor's session state.
+The masthead exposes the same four primary destinations in the same order:
 Product (`/`), Integrations (`/integrations`), Guides (`/record`), and Help
 (`/help`). Desktop headers show them directly, compact widths use a native menu
 disclosure, and footers repeat them for recovery at the end of a page. The
@@ -433,3 +441,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-13 | Acme evidence narrative | Clarifies cited versus merely connected signals, pairs connectors with chronology, and replays each evidence diagram while it is in view. |
 | 2026-08-13 | Connected public navigation | Gives every acquisition, integration, guide, help, and legal page a consistent route through the public site. |
 | 2026-08-13 | Finalized public content system | Replaces concept notes and disconnected mock stories with The Record, current published formats, registry-backed capability tiers, and one disclosed Acme demo corpus. |
+| 2026-08-13 | Unified public masthead and canvas | Makes the landing masthead and warm public palette identical across integrations, editorial, help, legal, and recovery routes without changing authenticated Quiet Archive. |

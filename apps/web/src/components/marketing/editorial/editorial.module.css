@@ -29,11 +29,6 @@
   mask-image: linear-gradient(to bottom, black, transparent 38rem);
 }
 
-.masthead {
-  background: color-mix(in oklch, var(--bg) 88%, transparent);
-  backdrop-filter: blur(18px);
-}
-
 .serifAccent {
   color: var(--signal);
   font-family: Georgia, 'Times New Roman', serif;

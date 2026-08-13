@@ -18,22 +18,29 @@ describe('landing route group', () => {
 
   it('keeps public-page preferences, metadata, and motion usable', () => {
     const styles = readFileSync(landingRouteFile('home.module.css'), 'utf8');
+    const headerStyles = readFileSync(
+      new URL('../../components/public-header.module.css', import.meta.url),
+      'utf8',
+    );
     const motion = readFileSync(
       new URL('../../components/marketing/home/home-motion.tsx', import.meta.url),
       'utf8',
     );
-    const narrowViewportStart = styles.indexOf('@media (max-width: 22rem)');
-    const narrowViewportEnd = styles.indexOf(
+    const narrowViewportStart = headerStyles.indexOf('@media (max-width: 30rem)');
+    const narrowViewportEnd = headerStyles.indexOf(
       '@media (prefers-reduced-motion: reduce)',
       narrowViewportStart,
     );
-    const narrowViewportStyles = styles.slice(narrowViewportStart, narrowViewportEnd);
+    const narrowViewportStyles = headerStyles.slice(narrowViewportStart, narrowViewportEnd);
     const remFontSizeMinimums = [...styles.matchAll(/font-size:\s*(?:clamp\()?([\d.]+)rem/g)].map(
       ([, size]) => Number(size),
     );
 
     expect(narrowViewportStyles).toContain('.signInLink');
-    expect(narrowViewportStyles).not.toContain('.themeToggle');
+    expect(narrowViewportStyles).toContain('.themeToggle');
+    expect(headerStyles).toContain('grid-template-columns: 1fr auto 1fr');
+    expect(headerStyles).toContain('min-height: 4rem');
+    expect(headerStyles).toContain('@media (prefers-reduced-motion: reduce)');
     expect(styles).toContain('--home-meta-size: 0.75rem');
     expect(Math.min(...remFontSizeMinimums)).toBeGreaterThanOrEqual(0.75);
     expect(styles).not.toContain('translateX(0.35rem)');

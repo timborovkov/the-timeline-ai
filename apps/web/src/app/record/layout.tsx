@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react';
 
 import { EditorialShell } from '@/components/marketing/editorial/editorial-shell';
+import { auth } from '@/lib/auth';
 
-export default function RecordLayout({ children }: { children: ReactNode }) {
-  return <EditorialShell currentSection="record">{children}</EditorialShell>;
+export default async function RecordLayout({ children }: { children: ReactNode }) {
+  const session = await auth();
+  return <EditorialShell isSignedIn={Boolean(session?.user)}>{children}</EditorialShell>;
 }

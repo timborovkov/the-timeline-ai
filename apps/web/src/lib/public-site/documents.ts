@@ -1,7 +1,6 @@
 import type { PublicDocument } from '@/lib/public-site/types';
 
 import { EDITORIAL_PUBLIC_DOCUMENTS } from '@/components/marketing/editorial/public-documents';
-import { CONNECTOR_PUBLIC_DOCUMENTS } from '@/components/marketing/integrations/connector-public-documents';
 import { HELP_PAGES } from '@/lib/help-content';
 import { createPublicDocumentRegistry, definePublicDocuments } from '@/lib/public-site/registry';
 
@@ -218,5 +217,4 @@ export const PUBLIC_DOCUMENT_REGISTRY = createPublicDocumentRegistry(
   helpDocuments,
   publicUtilityDocuments,
   EDITORIAL_PUBLIC_DOCUMENTS,
-  CONNECTOR_PUBLIC_DOCUMENTS,
 );

@@ -40,7 +40,7 @@ describe('root route recovery states', () => {
     fakes.auth.mockResolvedValue({ user: { id: 'user-1' } });
     const html = renderToStaticMarkup(await NotFound());
 
-    expect(html).toContain('>Open app<');
+    expect(html).toContain('>Dashboard<');
     expect(html).not.toContain('>Sign in<');
   });
 

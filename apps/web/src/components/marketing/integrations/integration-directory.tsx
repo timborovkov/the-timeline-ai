@@ -57,13 +57,14 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
                     Six first-party ingestion paths
                   </h2>
                   <p className="mt-4 max-w-[62ch] text-base leading-relaxed text-fg-muted">
-                    These connectors create durable, citable Timeline events from sources your team
-                    explicitly selects.
+                    These connectors create durable, citable Timeline events from provider records
+                    visible to connected credentials. Each provider page documents its exact
+                    selection and webhook boundaries.
                   </p>
                 </div>
                 <span className="inline-flex items-center gap-2 text-sm font-medium text-fg-muted">
                   <span className="size-2 rounded-full bg-signal" aria-hidden="true" />
-                  Available now
+                  Native ingestion implemented
                 </span>
               </div>
               <div className="mt-10 grid gap-px border border-border bg-border md:grid-cols-2">
@@ -97,7 +98,7 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
                       See records become answers
                       <ArrowRight
                         aria-hidden="true"
-                        className="size-4 transition-transform group-hover:translate-x-1"
+                        className="size-4 motion-safe:transition-transform motion-safe:group-hover:translate-x-1"
                       />
                     </span>
                   </Link>
@@ -144,7 +145,7 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
                 <CapabilityRow
                   icon={Check}
                   title="Native ingestion"
-                  status="Available now"
+                  status="Implemented"
                   body={capabilityTiers.nativeProviders.join(', ')}
                   live
                 />
