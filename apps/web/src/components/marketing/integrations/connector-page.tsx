@@ -80,7 +80,7 @@ function ConnectorHero({
                 <p className="mt-1 text-sm font-semibold text-fg">{connector.name}</p>
               </div>
             </div>
-            <h1 className="max-w-[15ch] break-words text-[4rem] font-semibold leading-[0.9] tracking-[-0.065em] text-fg sm:text-[clamp(4.5rem,7.5vw,7.5rem)]">
+            <h1 className="max-w-[15ch] break-words text-balance text-[3rem] font-semibold leading-[0.95] tracking-[-0.05em] text-fg sm:text-[clamp(3.5rem,5vw,5.5rem)]">
               {connector.hero}
             </h1>
           </div>

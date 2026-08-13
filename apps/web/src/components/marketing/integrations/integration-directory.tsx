@@ -28,7 +28,7 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
           <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24 lg:py-28">
             <p className="text-sm font-medium text-fg-muted">Integrations / capability directory</p>
             <div className="mt-8 grid items-end gap-10 lg:grid-cols-[1.25fr_0.75fr]">
-              <h1 className="max-w-[13ch] break-words text-[4rem] font-semibold leading-[0.9] tracking-[-0.065em] text-fg sm:text-[clamp(4.5rem,7.5vw,7.5rem)]">
+              <h1 className="max-w-[13ch] break-words text-balance text-[3rem] font-semibold leading-[0.95] tracking-[-0.05em] text-fg sm:text-[clamp(3.5rem,5vw,5.5rem)]">
                 Connect the systems where the work already happened.
               </h1>
               <div>

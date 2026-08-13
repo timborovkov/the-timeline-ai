@@ -42,7 +42,9 @@ describe('public integration routes', () => {
     expect(html).not.toContain('href="/integrations/notion"');
     expect(html).toContain('compact');
     expect(html).toContain('dark:bg-white');
-    expect(html).toContain('text-[4rem]');
+    expect(html).toContain('text-[3rem]');
+    expect(html).toContain('sm:text-[clamp(3.5rem,5vw,5.5rem)]');
+    expect(html).not.toContain('7.5vw');
     expect(html).toContain('Native integrations');
     expect(html).toContain('Capability tiers');
     expect(text).toContain('02/Proof');
@@ -62,7 +64,9 @@ describe('public integration routes', () => {
     expect(html).toContain('dark:bg-white');
     expect(html.match(/Illustrative example — not customer data/g)).toHaveLength(2);
     expect(html).toContain('scroll-mt-12');
-    expect(html).toContain('text-[4rem]');
+    expect(html).toContain('text-[3rem]');
+    expect(html).toContain('sm:text-[clamp(3.5rem,5vw,5.5rem)]');
+    expect(html).not.toContain('7.5vw');
     expect(html).not.toContain('--record-index');
     expect(html).not.toContain('--marker-index');
   });

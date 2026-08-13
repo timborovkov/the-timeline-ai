@@ -344,7 +344,9 @@ narrative. Public pages still use one lime signal, hairline structure, and no
 decorative AI gradients. Connector references distinguish native ingestion
 (GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry), live MCP access,
 and planned support. Planned destinations stay unlinked and unindexed until
-real.
+real. The landing claim owns the largest display scale. Integration directory
+and connector-detail titles use a subordinate, capped display scale so long
+provider headlines preserve the first viewport's explanation and evidence.
 
 Every public shell uses the landing masthead as one full-width chrome component,
 with the same warm public palette, wordmark position, active state, GitHub and
@@ -442,3 +444,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-13 | Connected public navigation | Gives every acquisition, integration, guide, help, and legal page a consistent route through the public site. |
 | 2026-08-13 | Finalized public content system | Replaces concept notes and disconnected mock stories with The Record, current published formats, registry-backed capability tiers, and one disclosed Acme demo corpus. |
 | 2026-08-13 | Unified public masthead and canvas | Makes the landing masthead and warm public palette identical across integrations, editorial, help, legal, and recovery routes without changing authenticated Quiet Archive. |
+| 2026-08-13 | Subordinate integration title scale | Keeps long directory and provider headlines editorial without letting them crowd the explanation and evidence out of the first viewport. |
