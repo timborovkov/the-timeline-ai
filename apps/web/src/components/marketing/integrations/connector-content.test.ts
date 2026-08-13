@@ -150,6 +150,15 @@ describe('connector content manifest', () => {
     expect(publicClaims).not.toContain(
       'A team receives changes only from the My Drive root or shared drives',
     );
+    expect(publicClaims).not.toContain(
+      'Timeline admits changes only when their parent tree or shared-drive ID matches a deliberately activated source',
+    );
+    expect(publicClaims).toContain(
+      'Selecting My Drive root currently also admits live changes from shared drives',
+    );
+    expect(publicClaims).toContain(
+      'accessible shared-drive file change can be captured with its metadata and supported body',
+    );
     expect(publicClaims).toContain('Drive removal tombstones do not include parent information');
     expect(publicClaims).toContain('even when that area was not activated');
   });

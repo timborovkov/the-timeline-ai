@@ -427,17 +427,17 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     eyebrow: 'File change becomes durable evidence',
     hero: 'Turn new Drive changes into cited document evidence.',
     intro:
-      'Timeline watches an activated My Drive root or shared drive for new file changes. When a supported file changes, Timeline stores its current content as a versioned document so later answers can cite the state it observed.',
+      'Timeline watches admitted Google Drive changes after activation. Selecting a shared drive scopes live files to that drive; selecting My Drive root can also admit changes from shared drives the connected account can access. When a supported file changes, Timeline stores its current content as a versioned document so later answers can cite the state it observed.',
     seoTitle: 'Google Drive integration for cited document answers',
     seoDescription:
-      'Capture new file changes from an activated My Drive root or shared drive in The Timeline for cited cross-tool answers and document history.',
+      'Capture observed Google Drive file changes in The Timeline for cited cross-tool answers and document history, with explicit source-scope limitations.',
     logo: '/connectors/google-drive.svg',
     capability: 'Native integration',
     lastReviewed: LAST_REVIEWED,
     captureStatement:
-      'Timeline records new file changes from an activated My Drive root or shared drive as cited events and versions supported changed content in its document library.',
+      'Timeline records admitted new Drive file changes as cited events and versions supported changed content in its document library, subject to the source-scope boundaries disclosed below.',
     providerStatement:
-      'Google Drive remains the place where files are authored, shared, organized, and permissioned. Timeline reads selected content; it does not replace Drive collaboration or rewrite source files.',
+      'Google Drive remains the place where files are authored, shared, organized, and permissioned. Timeline reads changed content admitted by its current source rules; it does not replace Drive collaboration or rewrite source files.',
     diagram: {
       question: 'What changed in the partnership agreement?',
       records: [
@@ -473,6 +473,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     capturedRecords: [
       'New file changes under an activated My Drive root',
       'New file changes inside activated shared drives',
+      'Accessible shared-drive changes that the current sync may admit when My Drive root is active',
       'Drive removal tombstones with a file ID and removal time',
       'File names, MIME types, modification times, owners, and source links',
       'Supported changed-file content up to the ingestion limit',
@@ -503,13 +504,14 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     ],
     permissions: [
       'The connection sees only files the authorizing Google account is allowed to read.',
-      'For files that still exist, Timeline admits changes only when their parent tree or shared-drive ID matches a deliberately activated source.',
+      'Selecting a shared drive admits live changes from that drive. Selecting My Drive root currently also admits live changes from shared drives the connected account can access, even when those drives were not separately activated.',
       'Non-owners cannot use Timeline to browse the connection owner’s unshared Drive resources.',
       'OAuth credentials are encrypted at rest; Timeline’s own team and event visibility rules still apply after capture.',
     ],
     limitations: [
       'Initial activation starts from Drive’s current changes cursor; it does not enumerate or import untouched files that already existed.',
       'The source picker exposes My Drive root and shared drives, not arbitrary individual subfolders.',
+      'My Drive root is not isolated from shared drives in the current change filter. If root is active, an accessible shared-drive file change can be captured with its metadata and supported body even when that shared drive was not separately activated.',
       'Drive removal tombstones do not include parent information. Timeline may therefore record a file ID and removal time for a deleted file elsewhere in the connected account, even when that area was not activated; no file body is present in that tombstone.',
       'Files over 20 MB and unsupported Google-native formats still produce change metadata, but their bodies are not added to the document library.',
       'Timeline does not ingest Drive comments or Activity history, edit files, change sharing settings, or replace Google Docs collaboration.',
@@ -518,7 +520,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       {
         question: 'Which Google Drive sources can I activate?',
         answer:
-          'The current source picker offers My Drive root and the shared drives available to the connection owner. It does not offer arbitrary individual subfolders.',
+          'The current source picker offers My Drive root and the shared drives available to the connection owner. It does not offer arbitrary individual subfolders. A shared-drive-only selection scopes live files to that drive, but selecting My Drive root can also capture changes from other accessible shared drives under the current filter.',
       },
       {
         question: 'Can answers cite a specific document version?',
