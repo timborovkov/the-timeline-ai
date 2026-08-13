@@ -1,6 +1,6 @@
-export type CaptureSurfaceId = 'telegram' | 'slack-chat' | 'email' | 'meetings' | 'webhooks';
+type CaptureSurfaceId = 'telegram' | 'slack-chat' | 'email' | 'meetings' | 'webhooks';
 
-export type CaptureSurfaceIcon = 'telegram' | 'slack' | 'mail' | 'video' | 'webhook';
+type CaptureSurfaceIcon = 'telegram' | 'slack' | 'mail' | 'video' | 'webhook';
 
 export interface CaptureSurfaceContent {
   id: CaptureSurfaceId;
