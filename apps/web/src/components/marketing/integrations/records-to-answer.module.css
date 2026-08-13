@@ -318,7 +318,7 @@
 
 @keyframes marker-pulse {
   50% {
-    box-shadow: 0 0 0 0.28rem color-mix(in oklch, var(--signal) 24%, transparent);
+    opacity: 0.55;
     transform: scale(1.16);
   }
 }

@@ -296,6 +296,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Commit reconciliation polls the repository default branch. A missed push webhook for commits that exist only on an unmerged non-default branch is not recovered unless those commits later reach the default branch.',
       'Polling retains issue and pull-request lifecycle state for at most 5,000 IDs per map. After an older closed entry is pruned, a missed reopen webhook can be lost because polling may reuse the original immutable open key.',
       'Issue and pull-request records are first-observed snapshots within each lifecycle state. Title, body, assignee, label, or milestone edits that do not change lifecycle state reuse the existing immutable row and do not create new chronology evidence.',
+      'Release revisions are keyed by release lifecycle plus a digest of tag, name, and body, not by update time. If release content returns to a previously captured combination, Timeline reuses the earlier immutable row instead of recording the repeated value as new chronology evidence.',
       'Missing pull-request permission can leave PR activity incomplete while other readable repository surfaces continue to sync.',
       'An organization scope is access-aware; private or SAML-protected repositories may require additional GitHub authorization.',
       'Timeline does not push code, merge pull requests, change repository settings, or replace GitHub release controls.',
@@ -451,7 +452,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     eyebrow: 'File change becomes durable evidence',
     hero: 'Turn new Drive changes into cited document evidence.',
     intro:
-      'Timeline watches admitted Google Drive changes after its first successful reconciliation establishes a changes cursor. Selecting a shared drive scopes live files to that drive; selecting My Drive root can also admit changes from shared drives the connected account can access. When a supported file changes, Timeline stores its current content as a versioned document so later answers can cite the state it observed.',
+      'Timeline watches admitted Google Drive changes after its first successful reconciliation establishes a changes cursor. Selecting a shared drive scopes live files to that drive; selecting My Drive root currently admits changed files anywhere the connected account can access, including Shared with me and other shared drives. When a supported file changes, Timeline stores its current content as a versioned document so later answers can cite the state it observed.',
     seoTitle: 'Google Drive integration for cited document answers',
     seoDescription:
       'Capture sync-observed Google Drive file states in The Timeline for cited cross-tool answers and versioned evidence, with explicit source-scope limitations.',
@@ -498,7 +499,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     capturedRecords: [
       'New file changes observed under an activated My Drive root after the first successful reconciliation cursor',
       'New file changes observed inside activated shared drives after the first successful reconciliation cursor',
-      'Accessible shared-drive changes that the current sync may admit when My Drive root is active',
+      'Changed Shared with me files and accessible shared-drive files admitted when My Drive root is active',
       'Drive removal tombstones with a file ID and removal time',
       'File names, MIME types, modification times, owners, and source links',
       'Supported changed-file content up to the ingestion limit',
@@ -529,7 +530,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     ],
     permissions: [
       'The connection sees only files the authorizing Google account is allowed to read.',
-      'Selecting a shared drive admits live changes from that drive. Selecting My Drive root currently also admits live changes from shared drives the connected account can access, even when those drives were not separately activated.',
+      'Selecting a shared drive admits live changes from that drive. Selecting My Drive root currently admits any changed file the connected account can access—including Shared with me files and files in other shared drives—even when those locations were not separately activated.',
       'Non-owners cannot use Timeline to browse the connection owner’s unshared Drive resources.',
       'OAuth credentials are encrypted at rest; Timeline’s own team and event visibility rules still apply after capture.',
     ],
@@ -538,7 +539,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Scheduled Drive reconciliation becomes due every 15 minutes and is evaluated by the worker’s five-minute integration tick. Without an operator-registered push channel, a supported post-cursor file change can remain absent for roughly that interval plus scheduling delay.',
       'Versions are sync-observed snapshots, not a copy of every Drive edit. If a file changes multiple times before reconciliation, Timeline downloads the current body and may not preserve the intermediate wording.',
       'The source picker exposes My Drive root and up to the first 100 shared drives returned by Google; the current listing does not paginate beyond that first page or offer arbitrary individual subfolders.',
-      'My Drive root is not isolated from shared drives in the current change filter. If root is active, an accessible shared-drive file change can be captured with its metadata and supported body even when that shared drive was not separately activated.',
+      'My Drive root is not an ancestry boundary in the current change filter. If root is active, every non-removed file in the account-wide changes feed passes before parent inspection. A changed Shared with me file or accessible shared-drive file can therefore be captured with its metadata and supported body even when it is outside the user’s My Drive and that location was not separately activated.',
       'Drive removal tombstones do not include parent information. Timeline may therefore record a file ID and removal time for a deleted file elsewhere in the connected account, even when that area was not activated; no file body is present in that tombstone.',
       'Files over 20 MB and unsupported Google-native formats still produce change metadata, but their bodies are not added to the document library.',
       'Timeline does not ingest Drive comments or Activity history, edit files, change sharing settings, or replace Google Docs collaboration.',
@@ -547,7 +548,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       {
         question: 'Which Google Drive sources can I activate?',
         answer:
-          'The current source picker offers My Drive root and up to the first 100 shared drives returned for the connection owner. It does not paginate further or offer arbitrary individual subfolders. A shared-drive-only selection scopes live files to that drive, but selecting My Drive root can also capture changes from other accessible shared drives under the current filter.',
+          'The current source picker offers My Drive root and up to the first 100 shared drives returned for the connection owner. It does not paginate further or offer arbitrary individual subfolders. A shared-drive-only selection scopes live files to that drive, but selecting My Drive root currently admits changed files anywhere the account can access, including Shared with me and other shared drives.',
       },
       {
         question: 'Can answers cite a specific document version?',
@@ -654,7 +655,8 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     ],
     limitations: [
       'Initial board activity-log backfill requests the preceding 30 days but reads only Monday.com’s first default response page. Additional activity inside that window is omitted because the current sync does not paginate the activity log; older changes are also not imported.',
-      'Scheduled Monday.com board reconciliation runs every hour. When a webhook is missing or missed and no targeted sync wakes the source, supported board changes can remain stale for nearly an hour.',
+      'Scheduled Monday.com board reconciliation runs every hour. When a webhook is missing or missed and no targeted sync wakes the source, recoverable lifecycle changes can remain stale for nearly an hour.',
+      'Polling item keys change only when the normalized lifecycle bucket changes. If both the webhook and activity-log entry for an owner, due-date, rename, or other same-status field change are missed or omitted, hourly reconciliation reuses the original immutable row and advances its cursor, so that field-only change can remain permanently absent.',
       'Selected WorkDocs refresh on a daily reconciliation interval, not through board webhooks. Their captured content can therefore lag Monday.com by up to 24 hours.',
       'The source picker lists at most 10,000 boards and 2,500 WorkDocs. Resources beyond those caps cannot be selected.',
       'A WorkDoc refresh reads at most 10,000 blocks. Blocks beyond that limit are omitted on every daily refresh because the current extractor does not persist a block-page continuation.',
@@ -677,7 +679,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       {
         question: 'What if webhook setup fails?',
         answer:
-          'Timeline marks webhook delivery as degraded while hourly reconciliation continues for activated board sources. Supported board changes can remain stale for nearly an hour, and admins can still run a manual sync while permissions are fixed.',
+          'Timeline marks webhook delivery as degraded while hourly reconciliation continues for activated board sources. Recoverable lifecycle changes can remain stale for nearly an hour, but a same-status owner, due-date, rename, or other field-only change can be lost when its activity-log entry is also absent. Admins can still run a manual sync while permissions are fixed.',
       },
       {
         question: 'Will Timeline change our boards?',

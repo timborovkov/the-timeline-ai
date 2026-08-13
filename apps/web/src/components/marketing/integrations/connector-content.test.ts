@@ -133,6 +133,11 @@ describe('connector content manifest', () => {
     expect(githubClaims).toContain(
       'edits that do not change lifecycle state reuse the existing immutable row',
     );
+    expect(githubClaims).toContain(
+      'Release revisions are keyed by release lifecycle plus a digest',
+    );
+    expect(githubClaims).toContain('returns to a previously captured combination');
+    expect(githubClaims).toContain('reuses the earlier immutable row');
     expect(githubClaims).toContain('scheduled reconciliation runs every six hours');
     expect(githubClaims).toContain('first 100 installations returned during OAuth');
     expect(githubClaims).toContain('fall back to the connection owner’s broad OAuth token');
@@ -164,6 +169,13 @@ describe('connector content manifest', () => {
       'Scheduled Monday.com board reconciliation runs every hour',
     );
     expect(monday.limitations.join(' ')).toContain('remain stale for nearly an hour');
+    expect(monday.limitations.join(' ')).toContain(
+      'Polling item keys change only when the normalized lifecycle bucket changes',
+    );
+    expect(monday.limitations.join(' ')).toContain(
+      'owner, due-date, rename, or other same-status field change',
+    );
+    expect(monday.limitations.join(' ')).toContain('can remain permanently absent');
     expect(monday.limitations.join(' ')).toContain('10,000 boards and 2,500 WorkDocs');
     expect(monday.limitations.join(' ')).toContain('WorkDoc refresh reads at most 10,000 blocks');
     expect(monday.limitations.join(' ')).toContain('does not persist a block-page continuation');
@@ -272,11 +284,15 @@ describe('connector content manifest', () => {
       'Timeline admits changes only when their parent tree or shared-drive ID matches a deliberately activated source',
     );
     expect(publicClaims).toContain(
-      'Selecting My Drive root currently also admits live changes from shared drives',
+      'Selecting My Drive root currently admits any changed file the connected account can access',
     );
     expect(publicClaims).toContain(
-      'accessible shared-drive file change can be captured with its metadata and supported body',
+      'changed Shared with me file or accessible shared-drive file can therefore be captured',
     );
+    expect(publicClaims).toContain(
+      'every non-removed file in the account-wide changes feed passes',
+    );
+    expect(publicClaims).toContain('outside the user’s My Drive');
     expect(publicClaims).toContain('Versions are sync-observed snapshots');
     expect(publicClaims).toContain('may not preserve the intermediate wording');
     expect(publicClaims).toContain('up to the first 100 shared drives returned by Google');
