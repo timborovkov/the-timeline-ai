@@ -8,6 +8,7 @@
       "entry": [
         "src/app/**/{page,route,layout,loading,error,not-found,template,default,sitemap,robots,manifest,icon,apple-icon,opengraph-image,twitter-image}.{ts,tsx,js,jsx}",
         "src/app/actions/*.ts",
+        "src/lib/public-site/index.ts",
         "src/proxy.{ts,tsx}",
         "postcss.config.{js,mjs,cjs,ts}"
       ],
