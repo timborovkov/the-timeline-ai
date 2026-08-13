@@ -24,9 +24,7 @@ export function HomeMotion() {
     root.classList.add(motionReadyClass);
 
     const revealNodes = [...root.querySelectorAll<HTMLElement>('[data-home-reveal]')];
-    const activeNodes = [
-      ...root.querySelectorAll<HTMLElement>('[data-home-ambient], [data-home-diagram]'),
-    ];
+    const activeNodes = [...root.querySelectorAll<HTMLElement>('[data-home-diagram]')];
     const revealObserver = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {

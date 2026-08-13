@@ -69,6 +69,7 @@ describe('LandingPage', () => {
     expect(html).toContain('Every answer carries its evidence chain.');
     expect(html).not.toContain('Northline');
     expect(html.match(/data-home-diagram/g)).toHaveLength(6);
+    expect(html).not.toContain('data-home-ambient');
     expect(html).not.toContain('↘');
     expect(html).not.toContain('02-sources');
     expect(html).not.toContain('05-audience');

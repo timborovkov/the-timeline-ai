@@ -229,7 +229,6 @@ function ClaimScene({ isSignedIn }: { isSignedIn: boolean }) {
         </div>
       </div>
 
-      <AmbientTrace />
       <div
         className={styles.observatory}
         data-home-diagram
@@ -398,7 +397,6 @@ function AnswerScene() {
       aria-labelledby="answer-title"
       data-scene="03-answer"
     >
-      <AmbientTrace />
       <SceneHeading
         number="03"
         label="Cited answer"
@@ -470,7 +468,6 @@ function TrustScene() {
       aria-labelledby="trust-title"
       data-scene="04-trust"
     >
-      <AmbientTrace />
       <SceneHeading
         number="04"
         label="For teams"
@@ -572,16 +569,6 @@ function SceneIndex({ number, label }: { number: string; label: string }) {
     <div className={styles.sceneIndex}>
       <span>{number} / 05</span>
       <span>{label}</span>
-    </div>
-  );
-}
-
-function AmbientTrace() {
-  return (
-    <div className={styles.ambientTrace} data-home-ambient aria-hidden="true">
-      <span />
-      <span />
-      <span />
     </div>
   );
 }

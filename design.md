@@ -332,8 +332,11 @@ coherent across the journey. Connector capability belongs with the
 evidence-entry scene; audience fit and the evidence chain remain a separate,
 stacked explanation rather than an equal-height split. Substantive copy and
 diagrams are server-rendered; a small client motion controller may progressively
-reveal scenes, replay each evidence diagram while it is in view, run restrained
-ambient traces, and show scroll progress.
+reveal scenes, replay each evidence diagram while it is in view, and show scroll
+progress. Background motion is prohibited: movement belongs to the evidence
+diagram and must explain provenance or hierarchy. The landing canvas uses the
+same subtle fixed grain in both themes, with theme-specific blending so cream
+reads like paper and near-black retains its tactile texture.
 
 Public pages may use oversized Switzer display type, denser Commit Mono source
 metadata, a near-black evidence-instrument canvas, and more cinematic spacing

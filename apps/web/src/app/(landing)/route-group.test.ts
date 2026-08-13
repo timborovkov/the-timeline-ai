@@ -48,15 +48,22 @@ describe('landing route group', () => {
     expect(styles).toContain('animation: chronologyDraw 1.25s');
     expect(styles).toContain('animation: answerPanelIn 680ms');
     expect(styles).toContain('animation: trustPathDraw 1.15s');
-    expect(styles).toContain('animation: ambientSweep 9s');
+    expect(styles).not.toContain('ambientSweep');
     expect(styles).toContain('@media (prefers-reduced-motion: reduce)');
     expect(styles).not.toContain('stroke-dashoffset');
     expect(styles).not.toContain(':not(.visible)');
     expect(styles).not.toContain('.motionReady [data-home-diagram] {');
     expect(styles).toContain('.motionReady [data-home-reveal].visible {');
-    expect(motion).toContain("'[data-home-ambient], [data-home-diagram]'");
+    expect(motion).toContain("'[data-home-diagram]'");
+    expect(motion).not.toContain('data-home-ambient');
     expect(motion).toContain('classList.toggle(visibleClass, entry.isIntersecting)');
-    expect(styles).toContain('.ambientTrace');
+    expect(styles).not.toContain('.ambientTrace');
+    expect(styles).toMatch(
+      /\.page::before\s*\{[^}]*opacity:\s*0\.055;[^}]*mix-blend-mode:\s*multiply;/s,
+    );
+    expect(styles).toMatch(
+      /:global\(\.dark\) \.page::before\s*\{[^}]*opacity:\s*0\.035;[^}]*mix-blend-mode:\s*normal;/s,
+    );
     expect(styles).toContain('.footer a');
     expect(styles).toContain('color: var(--home-paper)');
     expect(styles).toMatch(/\.footerGithub\s*\{[^}]*border: 0 !important;/s);
