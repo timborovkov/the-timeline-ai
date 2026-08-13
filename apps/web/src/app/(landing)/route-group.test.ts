@@ -52,5 +52,6 @@ describe('landing route group', () => {
     expect(styles).toContain('.ambientTrace');
     expect(styles).toContain('.footer a');
     expect(styles).toContain('color: var(--home-paper)');
+    expect(styles).toMatch(/\.footerGithub\s*\{[^}]*border: 0 !important;/s);
   });
 });

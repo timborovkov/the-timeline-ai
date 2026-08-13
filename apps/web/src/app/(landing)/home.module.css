@@ -1308,7 +1308,7 @@
 .footerGithub {
   min-height: 2rem !important;
   width: 2rem !important;
-  border-color: var(--home-line-strong) !important;
+  border: 0 !important;
   background: transparent !important;
   color: var(--home-paper) !important;
 }
