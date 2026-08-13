@@ -14,7 +14,7 @@ export default function LandingLoading() {
       >
         <div className={styles.recoveryCopy}>
           <div className={styles.sceneIndex}>
-            <span>00 / 07</span>
+            <span>00 / 05</span>
             <span>Gathering evidence</span>
           </div>
           <h1 className={styles.recoveryTitle}>

@@ -23,7 +23,7 @@ export function LandingRecoveryShell({ children }: { children: ReactNode }) {
           <Wordmark compact />
         </Link>
         <div className={styles.mastStatus} aria-hidden="true">
-          <span /> Evidence online
+          <span /> Every answer cited
         </div>
         <nav className={styles.nav} aria-label="Landing navigation">
           <GitHubSourceLink compact className={styles.githubLink} />

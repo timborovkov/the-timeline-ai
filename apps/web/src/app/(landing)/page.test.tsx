@@ -30,7 +30,7 @@ describe('LandingPage', () => {
     );
   });
 
-  it('server-renders the seven-scene evidence narrative in order', async () => {
+  it('server-renders the five-scene evidence narrative in order', async () => {
     const html = renderToStaticMarkup(await LandingPage());
 
     expect(html.match(/<footer\b/g)).toHaveLength(1);
@@ -41,15 +41,7 @@ describe('LandingPage', () => {
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('The work <em>becomes</em> the record.');
 
-    const scenes = [
-      '01-claim',
-      '02-sources',
-      '03-chronology',
-      '04-answer',
-      '05-audience',
-      '06-trust',
-      '07-cta',
-    ];
+    const scenes = ['01-claim', '02-chronology', '03-answer', '04-trust', '05-cta'];
     let previousIndex = -1;
     for (const scene of scenes) {
       const sceneIndex = html.indexOf(`data-scene="${scene}"`);
@@ -58,10 +50,17 @@ describe('LandingPage', () => {
     }
 
     expect(html).toContain('Northline / Last 7 days');
+    expect(html).toContain('Six connected Northline work signals');
+    expect(html).toContain('Linear');
+    expect(html).toContain('Sentry');
+    expect(html).toContain('Every answer cited');
     expect(html).toContain('Launch is waiting on SSO. Everything else moved.');
     expect(html).toContain('Evidence behind this answer');
     expect(html).toContain('href="#northline-source-01"');
     expect(html).toContain('Source 01: Slack approval');
+    expect(html).not.toContain('↘');
+    expect(html).not.toContain('02-sources');
+    expect(html).not.toContain('05-audience');
     expect(html).not.toContain('aria-hidden="true" data-home-root');
   });
 
@@ -91,6 +90,7 @@ describe('LandingPage', () => {
     const html = renderToStaticMarkup(await LandingPage());
 
     expect(html).toContain('Go to dashboard');
+    expect(html).toContain('<span aria-hidden="true">→</span>');
     expect(html).toContain('href="/app"');
     expect(html).not.toContain('Create team');
     expect(html).not.toContain('href="/sign-in"');

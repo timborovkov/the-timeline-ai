@@ -319,12 +319,13 @@ shared due-date vocabulary above.
 
 ### Marketing and public pages
 
-The public landing page is an editorial, seven-scene acquisition narrative:
-claim, sources, chronology, cited answer, audience fit, trust, and one-project
-CTA. Its signature Northline sequence shows work fragments entering, settling
-onto a chronological rail, and resolving into an answer with tangible source
-links. Substantive copy and diagrams are server-rendered; a small client motion
-controller may progressively reveal scenes and show scroll progress.
+The public landing page is an editorial, five-scene acquisition narrative:
+claim, evidence and chronology, cited answer, audience fit with trust, and a
+one-project CTA. Its signature Northline sequence shows connected work signals
+settling onto a chronological rail and resolving into an answer with tangible
+source links. Substantive copy and diagrams are server-rendered; a small client
+motion controller may progressively reveal scenes, run restrained ambient
+traces once as sections enter, and show scroll progress.
 
 Public pages may use oversized Switzer display type, denser Commit Mono source
 metadata, a near-black evidence-instrument canvas, and more cinematic spacing

@@ -16,7 +16,7 @@ export default function LandingError({
       <section className={`${styles.scene} ${styles.recoveryScene}`}>
         <header className={styles.recoveryCopy}>
           <div className={styles.sceneIndex}>
-            <span>00 / 07</span>
+            <span>00 / 05</span>
             <span>Evidence interrupted</span>
           </div>
           <h1 className={styles.recoveryTitle}>

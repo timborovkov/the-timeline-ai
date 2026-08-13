@@ -101,7 +101,7 @@ describe('Landing route states', () => {
     const html = renderToStaticMarkup(<LandingLoading />);
 
     expect(html).toContain('focus:z-[90]');
-    expect(html).toContain('Evidence online');
+    expect(html).toContain('Every answer cited');
     expect(html).toContain('aria-label="The Timeline source code on GitHub"');
     expect(html).toContain('aria-label="Landing navigation"');
     expect(html).toContain('href="/help/support"');

@@ -35,5 +35,9 @@ describe('landing route group', () => {
     expect(styles).not.toContain('translateX(0.35rem)');
     expect(styles).toContain('animation: evidenceDash 2.4s linear 1 forwards');
     expect(styles).not.toMatch(/animation:\s*evidence(?:Dash|Pulse|Float)[^;]*infinite/);
+    expect(styles).toContain('animation: ambientSweep 3.8s');
+    expect(styles).toContain('.ambientTrace');
+    expect(styles).toContain('.footer a');
+    expect(styles).toContain('color: var(--home-muted)');
   });
 });

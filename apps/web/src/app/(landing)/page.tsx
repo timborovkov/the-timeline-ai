@@ -109,30 +109,27 @@ const NORTHLINE_EVENTS = [
   },
 ] as const;
 
+const HERO_SIGNALS = [
+  ...NORTHLINE_EVENTS.map(({ time, shortSource }) => ({ time, source: shortSource })),
+  { time: '13:05', source: 'Linear' },
+  { time: '18:21', source: 'Sentry' },
+] as const;
+
 const AUDIENCES = [
   {
     index: '01',
     name: 'Client delivery',
-    question: 'What changed, what is at risk, and what did we promise?',
     outcome: 'A client-ready update with every claim attached to its source.',
   },
   {
     index: '02',
     name: 'Implementation',
-    question: 'What is blocking launch across calls, tickets, and code?',
     outcome: 'One current handoff instead of three systems and a meeting replay.',
   },
   {
     index: '03',
     name: 'Product and operations',
-    question: 'What shipped, what slipped, and who owns the next move?',
     outcome: 'A chronology that connects decisions to delivery.',
-  },
-  {
-    index: '04',
-    name: 'Founder-led teams',
-    question: 'Can someone else answer without asking me first?',
-    outcome: 'Durable project memory that survives the founder leaving the room.',
   },
 ] as const;
 
@@ -164,10 +161,8 @@ export default async function LandingPage() {
       <TopNav isSignedIn={isSignedIn} />
       <main id="main" tabIndex={-1}>
         <ClaimScene isSignedIn={isSignedIn} />
-        <SourcesScene />
         <ChronologyScene />
         <AnswerScene />
-        <AudienceScene />
         <TrustScene
           availableNativeConnectors={availableNativeConnectors}
           unconfiguredNativeConnectors={unconfiguredNativeConnectors}
@@ -258,7 +253,7 @@ function TopNav({ isSignedIn }: { isSignedIn: boolean }) {
         <Wordmark compact />
       </Link>
       <div className={styles.mastStatus} aria-hidden="true">
-        <span /> Evidence online
+        <span /> Every answer cited
       </div>
       <nav className={styles.nav} aria-label="Public navigation">
         <GitHubSourceLink compact className={styles.githubLink} />
@@ -297,7 +292,7 @@ function ClaimScene({ isSignedIn }: { isSignedIn: boolean }) {
         </p>
         <div className={styles.heroActions}>
           <Link href={isSignedIn ? '/app' : '/sign-up'} className={styles.primaryCta}>
-            {isSignedIn ? 'Go to dashboard' : 'Try one real project'} <span aria-hidden>↘</span>
+            {isSignedIn ? 'Go to dashboard' : 'Try one real project'} <span aria-hidden>→</span>
           </Link>
           <a href="#sources" className={styles.textLink}>
             Watch the evidence resolve
@@ -308,16 +303,19 @@ function ClaimScene({ isSignedIn }: { isSignedIn: boolean }) {
         </div>
       </div>
 
+      <AmbientTrace />
       <div
         className={styles.observatory}
         data-home-reveal
-        aria-label="Four Northline work signals converge into cited project memory"
+        aria-label="Six connected Northline work signals converge into cited project memory"
       >
         <svg className={styles.orbitLines} viewBox="0 0 600 600" aria-hidden="true">
           <path d="M118 116 C 205 150, 226 242, 300 300" />
           <path d="M486 142 C 414 174, 390 244, 300 300" />
           <path d="M112 462 C 188 412, 226 354, 300 300" />
           <path d="M490 470 C 420 420, 388 354, 300 300" />
+          <path d="M70 300 C 170 300, 220 300, 300 300" />
+          <path d="M530 310 C 430 310, 380 304, 300 300" />
         </svg>
         <div className={styles.orbitOuter} aria-hidden="true" />
         <div className={styles.orbitInner} aria-hidden="true" />
@@ -325,73 +323,22 @@ function ClaimScene({ isSignedIn }: { isSignedIn: boolean }) {
           <Logo ariaHidden />
           <span>Cited project memory</span>
         </div>
-        {NORTHLINE_EVENTS.map((event, index) => (
-          <div key={event.id} className={cn(styles.orbitSource, styles[`orbitSource${index + 1}`])}>
-            <span>{event.time}</span>
-            <strong>{event.shortSource}</strong>
+        {HERO_SIGNALS.map((signal, index) => (
+          <div
+            key={signal.source}
+            className={cn(
+              styles.orbitSource,
+              styles[`orbitSource${index + 1}`],
+              index > 3 && styles.orbitSourceAux,
+            )}
+          >
+            <span>{signal.time}</span>
+            <strong>{signal.source}</strong>
           </div>
         ))}
-        <p className={styles.observatoryCaption}>Northline / 4 signals / 1 account of reality</p>
-      </div>
-    </section>
-  );
-}
-
-function SourcesScene() {
-  return (
-    <section
-      id="sources"
-      className={styles.scene}
-      aria-labelledby="sources-title"
-      data-scene="02-sources"
-    >
-      <SceneHeading
-        number="02"
-        label="Sources"
-        id="sources-title"
-        title={
-          <>
-            Work enters <em>as it happened.</em>
-          </>
-        }
-        copy="No separate reporting ritual. Each fragment keeps its source, author, and time before Timeline derives anything from it."
-      />
-      <div className={styles.sourceStage} data-home-reveal>
-        <div className={styles.sourceScatter}>
-          {NORTHLINE_EVENTS.map((event, index) => (
-            <article
-              key={event.id}
-              className={cn(styles.sourceFragment, styles[`sourceFragment${index + 1}`])}
-            >
-              <div className={styles.fragmentMeta}>
-                <span>{event.id}</span>
-                <time dateTime={event.dateTime}>{event.day}</time>
-              </div>
-              <strong>{event.source}</strong>
-              <p>{event.detail}</p>
-            </article>
-          ))}
-          <div className={styles.capturePoint} aria-hidden="true">
-            <span>Captured</span>
-          </div>
-        </div>
-        <aside className={styles.sourceManifest} aria-label="Source handling">
-          <span className={styles.monoLabel}>Capture contract</span>
-          <dl>
-            <div>
-              <dt>Content</dt>
-              <dd>Kept as received</dd>
-            </div>
-            <div>
-              <dt>Time</dt>
-              <dd>Placed on one chronology</dd>
-            </div>
-            <div>
-              <dt>Visibility</dt>
-              <dd>Carried into every answer</dd>
-            </div>
-          </dl>
-        </aside>
+        <p className={styles.observatoryCaption}>
+          Northline / 6 connected channels / 4 cited events
+        </p>
       </div>
     </section>
   );
@@ -399,17 +346,22 @@ function SourcesScene() {
 
 function ChronologyScene() {
   return (
-    <section className={styles.scene} aria-labelledby="chronology-title" data-scene="03-chronology">
+    <section
+      id="sources"
+      className={styles.scene}
+      aria-labelledby="chronology-title"
+      data-scene="02-chronology"
+    >
       <SceneHeading
-        number="03"
-        label="Chronology"
+        number="02"
+        label="Evidence → chronology"
         id="chronology-title"
         title={
           <>
-            Time gives the fragments <em>shape.</em>
+            Work enters once. Time gives it <em>shape.</em>
           </>
         }
-        copy="Slack context, the launch review, the merged pull request, and the checklist revision settle into one inspectable Northline history."
+        copy="Each fragment keeps its source, author, time, and visibility while Slack context, meetings, code, and documents settle into one inspectable Northline history."
       />
       <div className={styles.timelineStage} data-home-reveal>
         <div className={styles.timelineHeader}>
@@ -437,6 +389,23 @@ function ChronologyScene() {
             </li>
           ))}
         </ol>
+        <aside className={styles.chronologyContract} aria-label="Source handling">
+          <span className={styles.monoLabel}>Capture contract</span>
+          <dl>
+            <div>
+              <dt>Content</dt>
+              <dd>Kept as received</dd>
+            </div>
+            <div>
+              <dt>Time</dt>
+              <dd>Placed on one chronology</dd>
+            </div>
+            <div>
+              <dt>Visibility</dt>
+              <dd>Carried into every answer</dd>
+            </div>
+          </dl>
+        </aside>
       </div>
     </section>
   );
@@ -444,9 +413,10 @@ function ChronologyScene() {
 
 function AnswerScene() {
   return (
-    <section className={styles.scene} aria-labelledby="answer-title" data-scene="04-answer">
+    <section className={styles.scene} aria-labelledby="answer-title" data-scene="03-answer">
+      <AmbientTrace />
       <SceneHeading
-        number="04"
+        number="03"
         label="Cited answer"
         id="answer-title"
         title={
@@ -508,34 +478,6 @@ function AnswerScene() {
   );
 }
 
-function AudienceScene() {
-  return (
-    <section className={styles.scene} aria-labelledby="audience-title" data-scene="05-audience">
-      <SceneHeading
-        number="05"
-        label="Audience fit"
-        id="audience-title"
-        title={
-          <>
-            For teams where context loss becomes <em>delivery risk.</em>
-          </>
-        }
-        copy="The workflow changes. The underlying need does not: someone should be able to reconstruct reality without starting an archaeology project."
-      />
-      <div className={styles.audienceList} data-home-reveal>
-        {AUDIENCES.map((audience) => (
-          <article key={audience.name}>
-            <span>{audience.index}</span>
-            <h3>{audience.name}</h3>
-            <p>{audience.question}</p>
-            <strong>{audience.outcome}</strong>
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function TrustScene({
   availableNativeConnectors,
   unconfiguredNativeConnectors,
@@ -548,11 +490,12 @@ function TrustScene({
       id="trust"
       className={styles.scene}
       aria-labelledby="trust-title"
-      data-scene="06-trust"
+      data-scene="04-trust"
     >
+      <AmbientTrace />
       <SceneHeading
-        number="06"
-        label="Trust"
+        number="04"
+        label="Fit + trust"
         id="trust-title"
         title={
           <>
@@ -561,6 +504,15 @@ function TrustScene({
         }
         copy="Timeline is built so a faster model can re-read the work tomorrow without rewriting what your team actually said today."
       />
+      <div className={styles.audienceStrip} data-home-reveal aria-label="Teams Timeline serves">
+        {AUDIENCES.map((audience) => (
+          <article key={audience.name}>
+            <span>{audience.index}</span>
+            <h3>{audience.name}</h3>
+            <p>{audience.outcome}</p>
+          </article>
+        ))}
+      </div>
       <div className={styles.trustLayout} data-home-reveal>
         <div className={styles.trustPrinciples}>
           <TrustRow index="01" title="Immutable raw evidence">
@@ -632,10 +584,10 @@ function CtaScene({ isSignedIn }: { isSignedIn: boolean }) {
     <section
       className={cn(styles.scene, styles.ctaScene)}
       aria-labelledby="cta-title"
-      data-scene="07-cta"
+      data-scene="05-cta"
     >
       <div className={styles.ctaInner} data-home-reveal>
-        <SceneIndex number="07" label="One-project start" />
+        <SceneIndex number="05" label="One-project start" />
         <h2 id="cta-title">
           Give it one real project. <em>Ask one honest question.</em>
         </h2>
@@ -665,8 +617,18 @@ function CtaScene({ isSignedIn }: { isSignedIn: boolean }) {
 function SceneIndex({ number, label }: { number: string; label: string }) {
   return (
     <div className={styles.sceneIndex}>
-      <span>{number} / 07</span>
+      <span>{number} / 05</span>
       <span>{label}</span>
+    </div>
+  );
+}
+
+function AmbientTrace() {
+  return (
+    <div className={styles.ambientTrace} data-home-ambient aria-hidden="true">
+      <span />
+      <span />
+      <span />
     </div>
   );
 }
