@@ -12,23 +12,21 @@ import { HomeMotion } from '@/components/marketing/home/home-motion';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { auth } from '@/lib/auth';
 import { getLegalContactEmail } from '@/lib/legal-versions';
+import {
+  PUBLIC_DOCUMENT_REGISTRY,
+  buildPublicStructuredData,
+  metadataForPublicDocument,
+  stringifyJsonLdForHtml,
+} from '@/lib/public-site';
 import { getSiteUrl } from '@/lib/site-url';
 import { cn } from '@/lib/utils';
 
 const SITE_NAME = 'The Timeline';
-const SITE_TAGLINE = 'The work becomes the record';
-const SITE_DESCRIPTION =
-  'The Timeline turns work from Slack, meetings, code, and documents into a chronological project record and cited answers.';
 const CONTACT_HREF = '/help/support';
-const JSON_SCRIPT_ESCAPES: Record<string, string> = {
-  '<': '\\u003c',
-  '>': '\\u003e',
-  '&': '\\u0026',
-};
+const HOME_DOCUMENT = getHomeDocument();
 
 export const metadata: Metadata = {
-  title: `${SITE_NAME} | ${SITE_TAGLINE}`,
-  description: SITE_DESCRIPTION,
+  ...metadataForPublicDocument(HOME_DOCUMENT),
   keywords: [
     'operational memory',
     'project history',
@@ -37,34 +35,18 @@ export const metadata: Metadata = {
     'meeting transcript search',
     'team timeline',
   ],
-  alternates: { canonical: '/' },
-  openGraph: {
-    title: `${SITE_NAME} | ${SITE_TAGLINE}`,
-    description: SITE_DESCRIPTION,
-    type: 'website',
-    siteName: SITE_NAME,
-    url: '/',
-    images: [
-      {
-        url: '/opengraph-image',
-        width: 1200,
-        height: 630,
-        alt: 'The Timeline, the work becomes the record',
-      },
-    ],
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: `${SITE_NAME} | ${SITE_TAGLINE}`,
-    description: SITE_DESCRIPTION,
-    images: ['/twitter-image'],
-  },
   robots: {
     index: true,
     follow: true,
     googleBot: { index: true, follow: true, 'max-snippet': -1, 'max-image-preview': 'large' },
   },
 };
+
+function getHomeDocument() {
+  const document = PUBLIC_DOCUMENT_REGISTRY.get('/');
+  if (!document) throw new Error('The public document registry is missing the landing page');
+  return document;
+}
 
 const NORTHLINE_EVENTS = [
   {
@@ -136,12 +118,10 @@ const AUDIENCES = [
 export default async function LandingPage() {
   const session = await auth();
   const isSignedIn = Boolean(session?.user);
-  const nativeConnectors: string[] = [];
   const availableNativeConnectors: string[] = [];
   const unconfiguredNativeConnectors: string[] = [];
   for (const connector of integrationsLib.listCatalog()) {
     if (connector.kind !== 'native' || connector.ingestStatus !== 'implemented') continue;
-    nativeConnectors.push(connector.label);
     if (connector.status === 'native_available') availableNativeConnectors.push(connector.label);
     if (connector.status === 'native_unconfigured') {
       unconfiguredNativeConnectors.push(connector.label);
@@ -150,7 +130,7 @@ export default async function LandingPage() {
 
   return (
     <div className={styles.page} data-home-root>
-      <StructuredData nativeConnectors={nativeConnectors} />
+      <StructuredData />
       <HomeMotion />
       <div className={styles.skipLayer}>
         <LandingSkipLink />
@@ -174,12 +154,12 @@ export default async function LandingPage() {
   );
 }
 
-function StructuredData({ nativeConnectors }: { nativeConnectors: string[] }) {
+function StructuredData() {
   const legalContactEmail = getLegalContactEmail();
   const siteUrl = getSiteUrl();
+  const publicGraph = buildPublicStructuredData(HOME_DOCUMENT, siteUrl);
   const orgId = new URL('/#organization', siteUrl).toString();
   const siteId = new URL('/#website', siteUrl).toString();
-  const pageId = new URL('/#webpage', siteUrl).toString();
   const appId = new URL('/#software', siteUrl).toString();
   const organization: Record<string, string> = {
     '@type': 'Organization',
@@ -199,35 +179,18 @@ function StructuredData({ nativeConnectors }: { nativeConnectors: string[] }) {
         '@id': siteId,
         url: siteUrl,
         name: SITE_NAME,
-        description: SITE_DESCRIPTION,
+        description: HOME_DOCUMENT.description,
         publisher: { '@id': orgId },
       },
-      {
-        '@type': 'WebPage',
-        '@id': pageId,
-        url: siteUrl,
-        name: `${SITE_NAME} | ${SITE_TAGLINE}`,
-        description: SITE_DESCRIPTION,
-        isPartOf: { '@id': siteId },
-        about: { '@id': appId },
-      },
-      {
-        '@type': 'SoftwareApplication',
-        '@id': appId,
-        name: SITE_NAME,
-        applicationCategory: 'BusinessApplication',
-        operatingSystem: 'Web',
-        description: SITE_DESCRIPTION,
-        url: siteUrl,
-        publisher: { '@id': orgId },
-        featureList: [
-          'Chronological project history from captured work',
-          'Cited answers linked to immutable source events',
-          `Built-in native ingestion adapters for ${nativeConnectors.join(', ')}`,
-          'Meeting transcript, document, message, and email capture',
-          'Team-scoped storage with per-event visibility',
-        ],
-      },
+      ...publicGraph['@graph'].map((node) => {
+        if (node['@type'] === 'WebPage') {
+          return { ...node, isPartOf: { '@id': siteId }, about: { '@id': appId } };
+        }
+        if (node['@type'] === 'SoftwareApplication') {
+          return { ...node, '@id': appId, publisher: { '@id': orgId } };
+        }
+        return node;
+      }),
     ],
   };
 
@@ -235,15 +198,9 @@ function StructuredData({ nativeConnectors }: { nativeConnectors: string[] }) {
     // react-doctor-disable-next-line react-doctor/no-danger, react-doctor/dangerous-html-sink
     <script
       type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: stringifyJsonForHtmlScript(graph) }}
+      dangerouslySetInnerHTML={{ __html: stringifyJsonLdForHtml(graph) }}
     />
   );
-}
-
-function stringifyJsonForHtmlScript(value: unknown): string {
-  return JSON.stringify(value).replace(/[<>&]/g, (character) => {
-    return JSON_SCRIPT_ESCAPES[character] ?? character;
-  });
 }
 
 function TopNav({ isSignedIn }: { isSignedIn: boolean }) {

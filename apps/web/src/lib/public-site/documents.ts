@@ -36,19 +36,35 @@ const coreDocuments = definePublicDocuments('public-core', [
   {
     canonicalPath: '/',
     kind: 'landing',
-    title: 'The Timeline — The operations log your team can talk to',
-    description: 'Capture work as it happens and turn it into a cited, searchable team history.',
+    title: 'The Timeline | The work becomes the record',
+    description:
+      'The Timeline turns work from Slack, meetings, code, and documents into a chronological project record and cited answers.',
     indexability: 'index',
-    dates: { modified: '2026-08-12', reviewed: LAST_REVIEWED },
+    dates: { modified: '2026-08-13', reviewed: '2026-08-13' },
     capability: { kind: 'current-product' },
     sitemap: { changeFrequency: 'weekly', priority: 1 },
-    structuredData: [{ type: 'web-page' }],
+    structuredData: [
+      { type: 'web-page' },
+      {
+        type: 'software-application',
+        applicationCategory: 'BusinessApplication',
+        operatingSystem: 'Web',
+        features: [
+          'Chronological project history from captured work',
+          'Cited answers linked to immutable source events',
+          'Native ingestion for GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry',
+          'Meeting transcript, document, message, and email capture',
+          'Team-scoped storage with per-event visibility',
+        ],
+      },
+    ],
     llms: {
       section: 'primary',
       order: 10,
       label: 'Landing page',
-      summary: 'Product overview, positioning, FAQ, capture surfaces, and trust model.',
-      fullSummary: 'Product overview and FAQ.',
+      summary:
+        'Editorial product overview, cited evidence narrative, capture surfaces, and trust model.',
+      fullSummary: 'Product overview and cited evidence narrative.',
       sections: LANDING_SECTIONS,
     },
   },

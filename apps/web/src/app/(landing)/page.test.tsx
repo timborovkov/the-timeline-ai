@@ -10,7 +10,7 @@ const fakes = vi.hoisted(() => ({ auth: vi.fn(), listCatalog: vi.fn() }));
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
 vi.mock('@timeline/shared/integrations/registry', () => ({ listCatalog: fakes.listCatalog }));
 
-const { default: LandingPage } = await import('@/app/(landing)/page');
+const { default: LandingPage, metadata } = await import('@/app/(landing)/page');
 
 describe('LandingPage', () => {
   afterEach(() => {
@@ -62,6 +62,25 @@ describe('LandingPage', () => {
     expect(html).not.toContain('02-sources');
     expect(html).not.toContain('05-audience');
     expect(html).not.toContain('aria-hidden="true" data-home-root');
+
+    const jsonLd = /<script type="application\/ld\+json">(.*?)<\/script>/.exec(html)?.[1];
+    expect(jsonLd).toBeDefined();
+    const graph = JSON.parse(jsonLd ?? '{"@graph":[]}') as {
+      '@graph': Record<string, unknown>[];
+    };
+    const webPage = graph['@graph'].find((node) => node['@type'] === 'WebPage');
+    const application = graph['@graph'].find((node) => node['@type'] === 'SoftwareApplication');
+    expect(webPage).toMatchObject({
+      dateModified: '2026-08-13',
+      lastReviewed: '2026-08-13',
+    });
+    expect(application?.featureList).toContain(
+      'Native ingestion for GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry',
+    );
+    expect(metadata).toMatchObject({
+      title: 'The Timeline | The work becomes the record',
+      alternates: { canonical: '/' },
+    });
   });
 
   it('states connector capabilities without linking to unbuilt acquisition pages', async () => {

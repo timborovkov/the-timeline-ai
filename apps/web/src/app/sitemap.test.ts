@@ -39,7 +39,7 @@ describe('sitemap', () => {
     const byUrl = new Map(first.map((entry) => [entry.url, entry.lastModified]));
 
     expect(second).toEqual(first);
-    expect(byUrl.get('https://thetimeline.cc/')).toBe('2026-08-12');
+    expect(byUrl.get('https://thetimeline.cc/')).toBe('2026-08-13');
     expect(byUrl.get('https://thetimeline.cc/help')).toBe('2026-08-05');
     expect(byUrl.get('https://thetimeline.cc/terms')).toBe('2026-06-03');
     expect(first.every((entry) => typeof entry.lastModified === 'string')).toBe(true);
