@@ -16,7 +16,11 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
   if (!featuredConnector) throw new Error('Native Slack connector content is required');
 
   return (
-    <PublicShell isSignedIn={isSignedIn} footerLabel="The Timeline integrations">
+    <PublicShell
+      isSignedIn={isSignedIn}
+      footerLabel="The Timeline integrations"
+      currentSection="integrations"
+    >
       <DirectoryStructuredData />
       <main id="main" tabIndex={-1}>
         <section className="border-b border-border">

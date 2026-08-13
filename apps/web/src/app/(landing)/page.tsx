@@ -9,6 +9,8 @@ import styles from '@/app/(landing)/home.module.css';
 import { Logo, Wordmark } from '@/components/brand/logo';
 import { GitHubSourceLink } from '@/components/github-source-link';
 import { HomeMotion } from '@/components/marketing/home/home-motion';
+import { findConnectorByName } from '@/components/marketing/integrations/connector-content';
+import { PublicNavigationDisclosure, PublicNavigationItems } from '@/components/public-navigation';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { auth } from '@/lib/auth';
 import { getLegalContactEmail } from '@/lib/legal-versions';
@@ -144,6 +146,7 @@ const TRUST_STEPS = [
 interface NativeConnector {
   label: string;
   state: 'available' | 'setup-required';
+  href?: `/integrations/${string}`;
 }
 
 export default async function LandingPage() {
@@ -152,11 +155,13 @@ export default async function LandingPage() {
   const nativeConnectors: NativeConnector[] = [];
   for (const connector of integrationsLib.listCatalog()) {
     if (connector.kind !== 'native' || connector.ingestStatus !== 'implemented') continue;
+    const publicConnector = findConnectorByName(connector.label);
+    const href = publicConnector ? (`/integrations/${publicConnector.slug}` as const) : undefined;
     if (connector.status === 'native_available') {
-      nativeConnectors.push({ label: connector.label, state: 'available' });
+      nativeConnectors.push({ label: connector.label, state: 'available', href });
     }
     if (connector.status === 'native_unconfigured') {
-      nativeConnectors.push({ label: connector.label, state: 'setup-required' });
+      nativeConnectors.push({ label: connector.label, state: 'setup-required', href });
     }
   }
 
@@ -238,16 +243,17 @@ function TopNav({ isSignedIn }: { isSignedIn: boolean }) {
       <Link href="/" aria-label="The Timeline home" className={styles.brandLink}>
         <Wordmark compact />
       </Link>
-      <nav className={styles.mastLinks} aria-label="Page sections">
-        <a href="#sources">How it works</a>
-        <a href="#answer">Example answer</a>
-        <a href="#trust">For teams</a>
+      <nav aria-label="Public navigation">
+        <PublicNavigationItems
+          currentSection="product"
+          listClassName={styles.mastLinks}
+          itemClassName={styles.navLink}
+          activeItemClassName={styles.navLinkActive}
+        />
       </nav>
-      <nav className={styles.nav} aria-label="Public navigation">
+      <div className={styles.nav}>
+        <PublicNavigationDisclosure currentSection="product" className={styles.publicMenu} />
         <GitHubSourceLink compact className={styles.githubLink} />
-        <Link href="/help" className={styles.navLink}>
-          Help
-        </Link>
         {isSignedIn ? null : (
           <Link href="/sign-in" className={cn(styles.navLink, styles.signInLink)}>
             Sign in
@@ -257,7 +263,7 @@ function TopNav({ isSignedIn }: { isSignedIn: boolean }) {
         <Link href={isSignedIn ? '/app' : '/sign-up'} className={styles.navCta}>
           {isSignedIn ? 'Dashboard' : 'Try one project'}
         </Link>
-      </nav>
+      </div>
     </header>
   );
 }
@@ -420,7 +426,11 @@ function ConnectorRail({ nativeConnectors }: { nativeConnectors: NativeConnector
             <ul>
               {nativeConnectors.map((connector) => (
                 <li key={connector.label}>
-                  <strong>{connector.label}</strong>
+                  {connector.href ? (
+                    <Link href={connector.href}>{connector.label}</Link>
+                  ) : (
+                    <strong>{connector.label}</strong>
+                  )}
                   <small>
                     {connector.state === 'available' ? 'Available here' : 'Setup required'}
                   </small>
@@ -441,8 +451,8 @@ function ConnectorRail({ nativeConnectors }: { nativeConnectors: NativeConnector
             <dd>Not connectable or indexed until support is real.</dd>
           </div>
         </dl>
-        <Link href="/help" className={styles.textLink}>
-          Read the current product guides
+        <Link href="/integrations" className={styles.textLink}>
+          Explore all integrations
         </Link>
       </div>
     </aside>
@@ -690,14 +700,24 @@ function Footer({ isSignedIn }: { isSignedIn: boolean }) {
         </span>
         <span>© {year}</span>
       </div>
-      <nav aria-label="Footer navigation">
-        <GitHubSourceLink compact className={styles.footerGithub} />
-        <Link href="/help">Help</Link>
-        <Link href="/terms">Terms</Link>
-        <Link href="/privacy">Privacy</Link>
-        <Link href={CONTACT_HREF}>Contact</Link>
-        <Link href={isSignedIn ? '/app' : '/sign-in'}>{isSignedIn ? 'Dashboard' : 'Sign in'}</Link>
-      </nav>
+      <div className={styles.footerNavigation}>
+        <nav aria-label="Explore The Timeline">
+          <PublicNavigationItems
+            currentSection="product"
+            listClassName={styles.footerLinks}
+            activeItemClassName={styles.footerLinkActive}
+          />
+        </nav>
+        <nav aria-label="Support and legal">
+          <GitHubSourceLink compact className={styles.footerGithub} />
+          <Link href="/terms">Terms</Link>
+          <Link href="/privacy">Privacy</Link>
+          <Link href={CONTACT_HREF}>Contact</Link>
+          <Link href={isSignedIn ? '/app' : '/sign-in'}>
+            {isSignedIn ? 'Dashboard' : 'Sign in'}
+          </Link>
+        </nav>
+      </div>
     </footer>
   );
 }

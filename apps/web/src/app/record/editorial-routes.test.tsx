@@ -62,6 +62,13 @@ describe('editorial routes', () => {
       expect(html).toContain('application/ld+json');
       expect(html).toContain('href="/sign-in"');
       expect(html).toContain('aria-label="Breadcrumb"');
+      for (const connector of guide.nativeConnectors) {
+        const slug = connector
+          .toLowerCase()
+          .replace('google drive', 'google-drive')
+          .replace('.com', '');
+        expect(html).toContain(`href="/integrations/${slug}"`);
+      }
       expect(html).not.toMatch(/\b(?:statistic|testimonial)\b/i);
     },
   );
@@ -78,7 +85,13 @@ describe('editorial routes', () => {
       </EditorialShell>,
     );
 
-    expect(recordShell).toContain('aria-current="page"');
-    expect(guideShell).toContain('aria-current="location"');
+    expect(recordShell).toContain('aria-label="Public navigation"');
+    expect(guideShell).toContain('aria-label="Public navigation menu"');
+    expect(recordShell).toContain('href="/integrations"');
+    expect(guideShell).toContain('href="/help"');
+    expect(recordShell).toContain('Publication');
+    expect(guideShell).toContain('Guide');
+    expect(recordShell.match(/aria-current="page"[^>]*href="\/record"/g)).not.toBeNull();
+    expect(guideShell.match(/aria-current="page"[^>]*href="\/record"/g)).not.toBeNull();
   });
 });

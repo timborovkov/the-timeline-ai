@@ -18,7 +18,7 @@ export function HelpShell({ children, isSignedIn }: HelpShellProps) {
   const currentPath = usePathname();
 
   return (
-    <PublicShell isSignedIn={isSignedIn} footerLabel="The Timeline help">
+    <PublicShell isSignedIn={isSignedIn} footerLabel="The Timeline help" currentSection="help">
       <div className="mx-auto grid max-w-6xl min-w-0 gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[15rem_1fr]">
         <aside className="min-w-0 lg:sticky lg:top-20 lg:self-start">
           <nav

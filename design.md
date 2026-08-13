@@ -342,9 +342,16 @@ decorative AI gradients. Connector references distinguish native ingestion
 and planned support. Planned destinations stay unlinked and unindexed until
 real.
 
-The landing hero and public navigation link directly to the project's source
-on GitHub; the public help shell and developer docs repeat that path. Legal
-pages use the shared public shell at reading width (65–70ch).
+Every public shell exposes the same four primary destinations in the same order:
+Product (`/`), Integrations (`/integrations`), Guides (`/record`), and Help
+(`/help`). Desktop headers show them directly, compact widths use a native menu
+disclosure, and footers repeat them for recovery at the end of a page. The
+current destination uses `aria-current="page"`. Native connector labels on the
+landing page link to their integration detail pages, while native source badges
+in editorial guides link back to the same provider truth. The landing hero and
+public navigation also link directly to the project's source on GitHub; the
+public help shell and developer docs repeat that path. Legal pages use the
+shared public shell at reading width (65–70ch).
 Help uses the same public shell at wide width with a sidebar nav. Its overview
 is one searchable, single-column guide directory rather than repeating the
 same destinations in category lists and card grids. Guide and support pages
@@ -415,3 +422,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-05 | Searchable public help directory | Removes repeated guide grids and makes task-level help discoverable from one calm index. |
 | 2026-08-12 | Editorial public acquisition system | Lets visitors watch evidence become chronology and a cited answer while the authenticated product remains Quiet Archive. |
 | 2026-08-13 | Acme evidence narrative | Clarifies cited versus merely connected signals, pairs connectors with chronology, and replays each evidence diagram while it is in view. |
+| 2026-08-13 | Connected public navigation | Gives every acquisition, integration, guide, help, and legal page a consistent route through the public site. |

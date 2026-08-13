@@ -8,6 +8,7 @@ import { EditorialKicker } from '@/components/marketing/editorial/editorial-kick
 import styles from '@/components/marketing/editorial/editorial.module.css';
 import { GuideClosingSections } from '@/components/marketing/editorial/guide-closing-sections';
 import { GuideMethodSections } from '@/components/marketing/editorial/guide-method-sections';
+import { findConnectorByName } from '@/components/marketing/integrations/connector-content';
 
 export function EditorialGuidePage({ guide }: { guide: EditorialGuide }) {
   return (
@@ -53,14 +54,18 @@ export function EditorialGuidePage({ guide }: { guide: EditorialGuide }) {
                 {guide.summary}
               </p>
               <div className="mt-8 flex flex-wrap gap-2" aria-label="Native sources covered">
-                {guide.nativeConnectors.map((connector) => (
-                  <span
-                    key={connector}
-                    className="border border-border bg-surface px-3 py-2 font-mono text-[0.65rem] tracking-[0.1em] text-fg-muted uppercase"
-                  >
-                    Native / {connector}
-                  </span>
-                ))}
+                {guide.nativeConnectors.map((connectorName) => {
+                  const connector = findConnectorByName(connectorName);
+                  return connector ? (
+                    <Link
+                      key={connectorName}
+                      href={`/integrations/${connector.slug}`}
+                      className="inline-flex min-h-10 items-center border border-border bg-surface px-3 font-mono text-[0.65rem] tracking-[0.1em] text-fg-muted uppercase outline-none hover:border-border-strong hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    >
+                      Native / {connectorName}
+                    </Link>
+                  ) : null;
+                })}
               </div>
             </div>
             <aside

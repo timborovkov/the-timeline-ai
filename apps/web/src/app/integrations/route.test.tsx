@@ -27,6 +27,8 @@ describe('public integration routes', () => {
     expect(html).toContain('Planned connectors');
     expect(html).toContain('Noindex');
     expect(html).toContain('href="/integrations/slack"');
+    expect(html).toMatch(/aria-current="page"[^>]*href="\/integrations"/u);
+    expect(html).toContain('href="/record"');
     expect(html).not.toContain('href="/integrations/notion"');
     expect(html).toContain('compact');
     expect(html).toContain('dark:bg-white');

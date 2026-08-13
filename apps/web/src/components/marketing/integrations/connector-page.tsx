@@ -19,7 +19,11 @@ export function ConnectorPage({
   isSignedIn: boolean;
 }) {
   return (
-    <PublicShell isSignedIn={isSignedIn} footerLabel={`${connector.name} integration`}>
+    <PublicShell
+      isSignedIn={isSignedIn}
+      footerLabel={`${connector.name} integration`}
+      currentSection="integrations"
+    >
       <ConnectorStructuredData connector={connector} />
       <main id="main" tabIndex={-1}>
         <ConnectorHero connector={connector} isSignedIn={isSignedIn} />

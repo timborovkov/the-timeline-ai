@@ -140,6 +140,9 @@
   align-items: center;
   justify-content: center;
   gap: clamp(0.25rem, 1.2vw, 1rem);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .mastLinks a {
@@ -173,6 +176,19 @@
 
 .navLink:hover {
   color: var(--home-paper);
+}
+
+.navLinkActive {
+  background: var(--home-panel);
+  color: var(--home-paper);
+}
+
+:global(.dark) .navLinkActive {
+  background: var(--home-panel-2);
+}
+
+.publicMenu {
+  display: none;
 }
 
 .navCta {
@@ -1146,10 +1162,27 @@
   border-top: 1px solid var(--home-line);
 }
 
-.nativeConnectors strong {
+.nativeConnectors strong,
+.nativeConnectors a {
   overflow-wrap: anywhere;
+  color: var(--home-paper);
   font-size: 0.88rem;
   font-weight: 600;
+}
+
+.nativeConnectors a {
+  width: fit-content;
+  border-radius: 2px;
+  outline-offset: 4px;
+  text-decoration: none;
+}
+
+.nativeConnectors a:hover {
+  color: var(--home-signal);
+}
+
+.nativeConnectors a:focus-visible {
+  outline: 2px solid var(--home-signal);
 }
 
 .nativeConnectors small {
@@ -1281,6 +1314,26 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 1.2rem;
+}
+
+.footerNavigation {
+  flex-direction: column;
+  align-items: flex-end !important;
+  gap: 0.85rem !important;
+}
+
+.footerLinks {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 1.2rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.footerLinkActive {
+  color: var(--home-signal) !important;
 }
 
 .footer nav {
@@ -1929,6 +1982,10 @@
     display: none;
   }
 
+  .publicMenu {
+    display: block;
+  }
+
   .claimScene,
   .recoveryScene,
   .answerLayout,
@@ -2282,6 +2339,14 @@
   }
 
   .footer nav {
+    justify-content: flex-start;
+  }
+
+  .footerNavigation {
+    align-items: flex-start !important;
+  }
+
+  .footerLinks {
     justify-content: flex-start;
   }
 }

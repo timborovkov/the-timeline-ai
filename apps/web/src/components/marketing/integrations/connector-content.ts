@@ -847,3 +847,7 @@ export const CONNECTOR_DIRECTORY_SUMMARY = {
 export function findConnector(slug: string): ConnectorContent | undefined {
   return CONNECTORS.find((connector) => connector.slug === slug);
 }
+
+export function findConnectorByName(name: string): ConnectorContent | undefined {
+  return CONNECTORS.find((connector) => connector.name === name);
+}

@@ -20,4 +20,24 @@ describe('PublicShell', () => {
     expect(html).toContain('aria-label="The Timeline source code on GitHub"');
     expect(html).not.toContain('>Source on GitHub<');
   });
+
+  it('keeps every public destination available in desktop, mobile, and footer navigation', () => {
+    const html = renderToStaticMarkup(
+      <PublicShell currentSection="integrations">
+        <main id="main">Public content</main>
+      </PublicShell>,
+    );
+
+    for (const href of ['/', '/integrations', '/record', '/help']) {
+      expect(
+        html.match(new RegExp(`href="${href.replace('/', '\\/')}"`, 'gu'))?.length,
+      ).toBeGreaterThanOrEqual(3);
+    }
+    expect(html).toContain('aria-label="Public navigation"');
+    expect(html).toContain('aria-label="Public navigation menu"');
+    expect(html).toContain('aria-label="Explore The Timeline"');
+    expect(html.match(/aria-current="page"[^>]*href="\/integrations"/g)).toHaveLength(3);
+    expect(html).toContain('<summary');
+    expect(html).toContain('>Menu</span>');
+  });
 });

@@ -55,8 +55,10 @@ describe('LandingPage', () => {
     expect(html).toContain('Connected, not cited');
     expect(html).toContain('Linear');
     expect(html).toContain('Sentry');
-    expect(html).toContain('aria-label="Page sections"');
-    expect(html).toContain('href="#answer"');
+    expect(html).toContain('aria-label="Public navigation"');
+    expect(html).toContain('href="/integrations"');
+    expect(html).toContain('href="/record"');
+    expect(html).toContain('aria-label="Public navigation menu"');
     expect(html).toContain('Launch is waiting on SSO. Everything else moved.');
     expect(html).toContain('Evidence behind this answer');
     expect(html).toContain('href="#acme-source-01"');
@@ -105,7 +107,10 @@ describe('LandingPage', () => {
     expect(html).toContain('Live approved tool access, not passive ingestion.');
     expect(html).toContain('Not connectable or indexed until support is real.');
     expect(html).not.toContain('Future connector pages remain unindexed');
-    expect(html).not.toContain('href="/integrations');
+    expect(html).toContain('href="/integrations"');
+    for (const slug of ['github', 'linear', 'google-drive', 'monday', 'slack', 'sentry']) {
+      expect(html).toContain(`href="/integrations/${slug}"`);
+    }
   });
 
   it('keeps the marketing page browsable for signed-in users with dashboard CTAs', async () => {
