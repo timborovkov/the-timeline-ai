@@ -130,7 +130,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Messages in selected private channels where the bot is present',
       'Thread roots and replies',
       'File shares and file metadata',
-      'Reactions and reaction counts',
+      'First-observed reaction events with their initial count and user snapshot',
       'Message edits observed during reconciliation',
     ],
     recipes: [
@@ -166,6 +166,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Slack file shares contribute the title, filename, MIME type, and private source URL. This native history path does not download or inspect attachment bodies.',
       'Native workspace ingestion reconciles selected channels hourly; it is not a real-time mirror of every workspace event.',
       'After the initial history backfill, reconciliation looks back 14 days. Edits and reactions on older messages—and new replies whose thread root is older than that window—may not be observed.',
+      'A reaction event is immutable and keyed by message plus emoji. Later users or count changes for an already captured emoji do not update that row, so its count and user list remain the first-observed snapshot.',
       'Channels the connection owner cannot access, and private channels without the app, cannot be captured.',
       'Timeline does not send, edit, delete, archive, or administer Slack messages through this native history sync.',
     ],
@@ -245,7 +246,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Issues and lifecycle changes',
       'Issue comments and pull request conversation comments',
       'Review summaries and inline review comments',
-      'Commits and push activity',
+      'Default-branch commits within the initial-history cap, plus observed push activity',
       'Releases and GitHub Actions workflow runs',
     ],
     recipes: [
@@ -280,6 +281,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     ],
     limitations: [
       'A published GitHub release is publication evidence, not proof of a production deployment. This connector does not ingest GitHub deployment or environment records.',
+      'Initial default-branch commit history is capped at 2,000 commits. If a repository has more, older commits are omitted and the current backfill does not resume past that cap.',
       'For an organization scope, install the GitHub App for all repositories you expect Timeline to capture. A repository visible to the OAuth user but excluded from a selected-repositories App installation can be selected yet fail to sync.',
       'Commit reconciliation polls the repository default branch. A missed push webhook for commits that exist only on an unmerged non-default branch is not recovered unless those commits later reach the default branch.',
       'Missing pull-request permission can leave PR activity incomplete while other readable repository surfaces continue to sync.',
@@ -514,7 +516,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     limitations: [
       'Initial activation starts from Drive’s current changes cursor; it does not enumerate or import untouched files that already existed.',
       'Versions are sync-observed snapshots, not a copy of every Drive edit. If a file changes multiple times before reconciliation, Timeline downloads the current body and may not preserve the intermediate wording.',
-      'The source picker exposes My Drive root and shared drives, not arbitrary individual subfolders.',
+      'The source picker exposes My Drive root and up to the first 100 shared drives returned by Google; the current listing does not paginate beyond that first page or offer arbitrary individual subfolders.',
       'My Drive root is not isolated from shared drives in the current change filter. If root is active, an accessible shared-drive file change can be captured with its metadata and supported body even when that shared drive was not separately activated.',
       'Drive removal tombstones do not include parent information. Timeline may therefore record a file ID and removal time for a deleted file elsewhere in the connected account, even when that area was not activated; no file body is present in that tombstone.',
       'Files over 20 MB and unsupported Google-native formats still produce change metadata, but their bodies are not added to the document library.',
@@ -524,7 +526,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       {
         question: 'Which Google Drive sources can I activate?',
         answer:
-          'The current source picker offers My Drive root and the shared drives available to the connection owner. It does not offer arbitrary individual subfolders. A shared-drive-only selection scopes live files to that drive, but selecting My Drive root can also capture changes from other accessible shared drives under the current filter.',
+          'The current source picker offers My Drive root and up to the first 100 shared drives returned for the connection owner. It does not paginate further or offer arbitrary individual subfolders. A shared-drive-only selection scopes live files to that drive, but selecting My Drive root can also capture changes from other accessible shared drives under the current filter.',
       },
       {
         question: 'Can answers cite a specific document version?',
@@ -712,8 +714,8 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     },
     capturedRecords: [
       'Issues entering an open lifecycle state',
-      'Resolved issue lifecycle changes',
-      'Ignored issue lifecycle changes',
+      'The first captured resolved lifecycle transition per issue',
+      'The first captured ignored lifecycle transition per issue',
       'Issue alerts associated with selected projects',
       'Release creation activity',
       'Release deployment activity when supplied by Sentry',
@@ -751,6 +753,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Alert-trigger and release-deployment records are webhook-only. Reconciliation polls issues and release creation, so it cannot recover a missed alert or deployment delivery.',
       'A missed resolve or ignore webhook for a quiet issue may not be recovered because issue polling advances from last-seen occurrence time, which a state-only action does not update.',
       'Issue lifecycle webhooks use the issue’s Sentry first-seen or last-seen occurrence time. They do not preserve the later action time when someone resolves or ignores a quiet issue.',
+      'Resolved and ignored records use one immutable lifecycle key per issue. If an issue regresses and later resolves or is ignored again, the repeated closed transition does not create a new lifecycle row.',
       'Repeated occurrences of an already-open issue coalesce into the existing lifecycle evidence instead of generating a new Timeline event for every occurrence.',
       'The native connector focuses on issue lifecycle, alerts, and releases; it is not a replacement for Sentry traces, replays, dashboards, or performance analysis.',
       'Timeline does not resolve, ignore, assign, or configure alerts in Sentry through this capture path.',

@@ -68,6 +68,10 @@ describe('connector content manifest', () => {
     const limitations = slack.limitations.join(' ');
     expect(limitations).toContain('looks back 14 days');
     expect(limitations).toContain('new replies whose thread root is older than that window');
+    expect(limitations).toContain('remain the first-observed snapshot');
+    expect(slack.capturedRecords).toContain(
+      'First-observed reaction events with their initial count and user snapshot',
+    );
   });
 
   it('discloses native provider history and reconciliation boundaries', () => {
@@ -80,6 +84,9 @@ describe('connector content manifest', () => {
     expect(githubClaims).toContain('polls the repository default branch');
     expect(githubClaims).toContain('non-default-branch-only pushes rely on webhook delivery');
     expect(githubClaims).not.toContain('recover anything missed');
+    expect(githubClaims).toContain(
+      'Initial default-branch commit history is capped at 2,000 commits',
+    );
 
     expect(linear.limitations.join(' ')).toContain(
       'history begins when Timeline starts observing the selected team',
@@ -122,6 +129,7 @@ describe('connector content manifest', () => {
     expect(claims).toContain(
       'A missed resolve or ignore webhook for a quiet issue may not be recovered',
     );
+    expect(claims).toContain('repeated closed transition does not create a new lifecycle row');
     expect(claims).toContain('do not preserve the later action time');
     expect(claims).not.toContain('reconciliation recovers missed activity');
     expect(sentry.diagram.answer).toContain(
@@ -177,6 +185,8 @@ describe('connector content manifest', () => {
     );
     expect(publicClaims).toContain('Versions are sync-observed snapshots');
     expect(publicClaims).toContain('may not preserve the intermediate wording');
+    expect(publicClaims).toContain('up to the first 100 shared drives returned by Google');
+    expect(publicClaims).toContain('current listing does not paginate beyond that first page');
     expect(publicClaims).not.toContain('Timeline observes each new file modification');
     expect(publicClaims).toContain('Drive removal tombstones do not include parent information');
     expect(publicClaims).toContain('even when that area was not activated');
