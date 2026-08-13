@@ -212,18 +212,18 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     providerStatement:
       'GitHub continues to host repositories, reviews, checks, releases, access rules, and branch protection. Timeline reads authorized activity; it does not become your code host.',
     diagram: {
-      question: 'What shipped in the Northline release?',
+      question: 'What was published in the Northline release?',
       records: [
         { label: 'PR #482', detail: 'Migration retry logic approved', time: '14:08' },
         { label: 'CI #1602', detail: 'Integration suite passed', time: '14:31' },
-        { label: 'v2.8.0', detail: 'Release published to production', time: '15:06' },
+        { label: 'v2.8.0', detail: 'GitHub release published', time: '15:06' },
       ],
       answer:
-        'Release v2.8.0 shipped migration retry handling after review approval and a passing integration workflow.',
+        'GitHub release v2.8.0 published migration retry handling after review approval and a passing integration workflow.',
       citations: ['PR #482', 'Workflow #1602', 'Release v2.8.0'],
     },
     exampleQuestions: [
-      'What shipped in last week’s releases?',
+      'What did GitHub publish in last week’s releases?',
       'Which pull requests changed the migration path?',
       'What was discussed before PR #482 was approved?',
       'Which CI failures delayed the release?',
@@ -231,13 +231,14 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     scenario: {
       title: 'A release note gains its missing middle',
       situation:
-        'A customer-facing fix begins as an issue, changes during review, passes CI, and lands in a release. The tag alone cannot explain why the change mattered.',
+        'A customer-facing fix begins as an issue, changes during review, passes CI, and is included in a GitHub release. The tag alone cannot explain why the change mattered.',
       chronology: [
         'Timeline records the issue, pull request, review summary, and review conversation.',
         'Commits and workflow runs show when implementation and verification happened.',
         'The release closes the sequence, while citations preserve the route back to GitHub.',
       ],
-      result: 'The shipped-work summary reflects the full delivery path, not just merged titles.',
+      result:
+        'The GitHub release summary reflects the review and verification path without claiming when or where it was deployed.',
     },
     capturedRecords: [
       'Pull requests and lifecycle changes',
@@ -249,18 +250,19 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     ],
     recipes: [
       {
-        title: 'Plan versus shipped',
-        summary: 'Reconcile Linear issue movement with the code and release evidence.',
+        title: 'Plan versus published',
+        summary: 'Reconcile Linear issue movement with code, CI, and GitHub release publication.',
         sources: ['Linear', 'GitHub'],
       },
       {
         title: 'Incident to fix',
-        summary: 'Trace a Sentry issue through the pull request and deployment that resolved it.',
+        summary:
+          'Trace a Sentry issue through the pull request and GitHub release tied to remediation.',
         sources: ['Sentry', 'GitHub'],
       },
       {
         title: 'Release communication',
-        summary: 'Pair shipped code with the decisions that preceded it in Slack.',
+        summary: 'Pair GitHub release publication with the decisions that preceded it in Slack.',
         sources: ['Slack', 'GitHub'],
       },
     ],
@@ -277,6 +279,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'OAuth tokens and GitHub App credentials are encrypted at rest.',
     ],
     limitations: [
+      'A published GitHub release is publication evidence, not proof of a production deployment. This connector does not ingest GitHub deployment or environment records.',
       'For an organization scope, install the GitHub App for all repositories you expect Timeline to capture. A repository visible to the OAuth user but excluded from a selected-repositories App installation can be selected yet fail to sync.',
       'Commit reconciliation polls the repository default branch. A missed push webhook for commits that exist only on an unmerged non-default branch is not recovered unless those commits later reach the default branch.',
       'Missing pull-request permission can leave PR activity incomplete while other readable repository surfaces continue to sync.',
@@ -430,12 +433,12 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Timeline watches admitted Google Drive changes after activation. Selecting a shared drive scopes live files to that drive; selecting My Drive root can also admit changes from shared drives the connected account can access. When a supported file changes, Timeline stores its current content as a versioned document so later answers can cite the state it observed.',
     seoTitle: 'Google Drive integration for cited document answers',
     seoDescription:
-      'Capture observed Google Drive file changes in The Timeline for cited cross-tool answers and document history, with explicit source-scope limitations.',
+      'Capture sync-observed Google Drive file states in The Timeline for cited cross-tool answers and versioned evidence, with explicit source-scope limitations.',
     logo: '/connectors/google-drive.svg',
     capability: 'Native integration',
     lastReviewed: LAST_REVIEWED,
     captureStatement:
-      'Timeline records admitted new Drive file changes as cited events and versions supported changed content in its document library, subject to the source-scope boundaries disclosed below.',
+      'Timeline records admitted Drive changes as cited events and versions the supported file state observed at sync time, subject to the boundaries disclosed below.',
     providerStatement:
       'Google Drive remains the place where files are authored, shared, organized, and permissioned. Timeline reads changed content admitted by its current source rules; it does not replace Drive collaboration or rewrite source files.',
     diagram: {
@@ -462,10 +465,10 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     scenario: {
       title: 'The answer cites the version that mattered',
       situation:
-        'A contract changes twice after its shared drive is activated, then the signed copy is added. A later handoff must distinguish the earlier wording from the final file.',
+        'A contract state is observed during one sync, changes again before a later sync, and is followed by a signed copy. A later handoff must distinguish the states Timeline actually captured.',
       chronology: [
-        'Timeline observes each new file modification through the Drive changes feed.',
-        'Supported content is stored as a new Timeline document version beside its cited change event.',
+        'Timeline observes a changed file’s current state when reconciliation processes the Drive changes feed.',
+        'A supported state observed during a separate sync is stored as a new Timeline document version beside its cited change event.',
         'The answer cites the final captured document while keeping earlier observed versions available for inspection.',
       ],
       result: 'The handoff names the current decision without erasing how it was reached.',
@@ -477,7 +480,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Drive removal tombstones with a file ID and removal time',
       'File names, MIME types, modification times, owners, and source links',
       'Supported changed-file content up to the ingestion limit',
-      'Timeline document versions created from supported changed content',
+      'Timeline document versions created from supported file states observed at sync time',
     ],
     recipes: [
       {
@@ -510,6 +513,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     ],
     limitations: [
       'Initial activation starts from Drive’s current changes cursor; it does not enumerate or import untouched files that already existed.',
+      'Versions are sync-observed snapshots, not a copy of every Drive edit. If a file changes multiple times before reconciliation, Timeline downloads the current body and may not preserve the intermediate wording.',
       'The source picker exposes My Drive root and shared drives, not arbitrary individual subfolders.',
       'My Drive root is not isolated from shared drives in the current change filter. If root is active, an accessible shared-drive file change can be captured with its metadata and supported body even when that shared drive was not separately activated.',
       'Drive removal tombstones do not include parent information. Timeline may therefore record a file ID and removal time for a deleted file elsewhere in the connected account, even when that area was not activated; no file body is present in that tombstone.',
@@ -525,7 +529,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       {
         question: 'Can answers cite a specific document version?',
         answer:
-          'When a supported file changes after activation, Timeline stores the observed content as a document version and can cite that captured evidence. It does not import the file’s earlier Drive revision history.',
+          'When reconciliation observes a supported changed file, Timeline stores its current content as a document version and can cite that captured evidence. Separate observed sync states can become separate versions; edits between syncs may collapse into the latest body. Timeline does not import the file’s earlier Drive revision history.',
       },
       {
         question: 'What happens if a file is removed?',
@@ -626,6 +630,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     ],
     limitations: [
       'Initial board activity-log backfill covers the preceding 30 days. Older owner, status, due-field, and other activity-log changes are not imported.',
+      'Selected WorkDocs refresh on a daily reconciliation interval, not through board webhooks. Their captured content can therefore lag Monday.com by up to 24 hours.',
       'A user-named board beginning with “Subitems of” is not treated as a helper board; only provider-identified classic helper boards are hidden.',
       'Missing webhook scopes degrades prompt delivery, but selected-source reconciliation continues more slowly.',
       'Timeline does not edit board values, run automations, assign people, or replace Monday.com workflows.',
@@ -734,7 +739,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Connect Sentry using a confidential server-side OAuth application.',
       'Choose individual projects for a fixed scope or an organization for all accessible projects there.',
       'Have a Timeline team admin activate the shared sources.',
-      'Configure the signed Sentry integration webhook for issue, alert, and release delivery. Reconciliation can recover polled issue state and release creation, but not webhook-only alerts or deployment records.',
+      'Configure the signed Sentry integration webhook for issue, alert, and release delivery. Reconciliation can recover release creation and issue state only when a newer occurrence advances the polling cursor; it cannot recover webhook-only alerts or deployment records.',
     ],
     permissions: [
       'Timeline requests org:read, project:read, event:read, event:admin, and team:read.',
@@ -744,6 +749,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     ],
     limitations: [
       'Alert-trigger and release-deployment records are webhook-only. Reconciliation polls issues and release creation, so it cannot recover a missed alert or deployment delivery.',
+      'A missed resolve or ignore webhook for a quiet issue may not be recovered because issue polling advances from last-seen occurrence time, which a state-only action does not update.',
       'Issue lifecycle webhooks use the issue’s Sentry first-seen or last-seen occurrence time. They do not preserve the later action time when someone resolves or ignores a quiet issue.',
       'Repeated occurrences of an already-open issue coalesce into the existing lifecycle evidence instead of generating a new Timeline event for every occurrence.',
       'The native connector focuses on issue lifecycle, alerts, and releases; it is not a replacement for Sentry traces, replays, dashboards, or performance analysis.',

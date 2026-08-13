@@ -87,6 +87,7 @@ describe('connector content manifest', () => {
     expect(monday.limitations.join(' ')).toContain(
       'Initial board activity-log backfill covers the preceding 30 days',
     );
+    expect(monday.limitations.join(' ')).toContain('lag Monday.com by up to 24 hours');
   });
 
   it('keeps Slack attachment claims inside the metadata-only boundary', () => {
@@ -118,12 +119,27 @@ describe('connector content manifest', () => {
 
     const claims = JSON.stringify(sentry);
     expect(claims).toContain('cannot recover a missed alert or deployment delivery');
+    expect(claims).toContain(
+      'A missed resolve or ignore webhook for a quiet issue may not be recovered',
+    );
     expect(claims).toContain('do not preserve the later action time');
     expect(claims).not.toContain('reconciliation recovers missed activity');
     expect(sentry.diagram.answer).toContain(
       'does not establish when the resolution action occurred',
     );
     expect(sentry.diagram.records.map((record) => record.time)).not.toContain('16:02');
+  });
+
+  it('keeps GitHub release claims distinct from deployment evidence', () => {
+    const github = findConnector('github');
+    if (!github) throw new Error('expected GitHub connector');
+
+    const claims = JSON.stringify(github);
+    expect(claims).toContain('not proof of a production deployment');
+    expect(claims).toContain('does not ingest GitHub deployment or environment records');
+    expect(github.diagram.answer).toContain('GitHub release v2.8.0 published');
+    expect(claims).not.toContain('Release published to production');
+    expect(claims).not.toContain('What shipped in last week’s releases?');
   });
 
   it('keeps Google Drive claims inside the implemented change-feed boundary', () => {
@@ -159,6 +175,9 @@ describe('connector content manifest', () => {
     expect(publicClaims).toContain(
       'accessible shared-drive file change can be captured with its metadata and supported body',
     );
+    expect(publicClaims).toContain('Versions are sync-observed snapshots');
+    expect(publicClaims).toContain('may not preserve the intermediate wording');
+    expect(publicClaims).not.toContain('Timeline observes each new file modification');
     expect(publicClaims).toContain('Drive removal tombstones do not include parent information');
     expect(publicClaims).toContain('even when that area was not activated');
   });
