@@ -85,10 +85,10 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     eyebrow: 'Conversation becomes chronology',
     hero: 'Turn selected Slack history into cited operational memory.',
     intro:
-      'Timeline preserves the messages, threads, files, reactions, and edits you choose, then places them beside work from other systems. Ask what was decided and inspect the conversation behind the answer.',
+      'Timeline preserves the messages, threads, file-share metadata, reactions, and edits you choose, then places them beside work from other systems. Ask what was decided and inspect the conversation behind the answer.',
     seoTitle: 'Slack integration for cited team answers',
     seoDescription:
-      'Sync selected Slack channels, threads, files, reactions, and edits into The Timeline, then ask questions with citations back to the conversation.',
+      'Sync selected Slack channels, threads, file-share metadata, reactions, and edits into The Timeline, then ask questions with citations back to the conversation.',
     logo: '/connectors/slack.svg',
     capability: 'Native integration',
     lastReviewed: LAST_REVIEWED,
@@ -101,7 +101,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       records: [
         { label: '#northline', detail: 'Maya proposes a staged launch', time: '09:18' },
         { label: 'Thread reply', detail: 'Jon confirms the beta cohort', time: '10:04' },
-        { label: 'launch-risks.pdf', detail: 'Risk note shared in the thread', time: '10:27' },
+        { label: 'launch-risks.pdf', detail: 'File share recorded in the thread', time: '10:27' },
       ],
       answer:
         'The team chose a staged launch for the 18-customer beta cohort, with the migration risk reviewed before broad release.',
@@ -119,7 +119,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
         'A launch plan changes across a channel message, a long reply thread, and a shared risk document. Two days later, leadership asks for the final decision.',
       chronology: [
         'Timeline syncs the selected channel and keeps message and thread context together.',
-        'The file share and reactions become adjacent evidence, not detached search results.',
+        'The file share metadata and reactions become adjacent evidence, not detached search results.',
         'The answer resolves the decision in time order and links back to the exact Slack records.',
       ],
       result:
@@ -163,6 +163,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Previously captured evidence remains team-scoped if a connection later needs attention.',
     ],
     limitations: [
+      'Slack file shares contribute the title, filename, MIME type, and private source URL. This native history path does not download or inspect attachment bodies.',
       'Native workspace ingestion reconciles selected channels hourly; it is not a real-time mirror of every workspace event.',
       'After the initial history backfill, reconciliation looks back 14 days. Edits and reactions on older messages—and new replies whose thread root is older than that window—may not be observed.',
       'Channels the connection owner cannot access, and private channels without the app, cannot be captured.',
@@ -265,17 +266,18 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     ],
     setup: [
       'Connect GitHub through the configured GitHub App OAuth flow.',
-      'Choose individual repositories for a fixed scope, or an organization for all accessible repositories there.',
+      'Choose individual repositories for a fixed scope. Use an organization scope only when the GitHub App installation covers every repository you expect Timeline to sync.',
       'Have a team admin activate the shared sources.',
       'Use signed GitHub App webhooks for prompt activity; slow reconciliation is a bounded recovery path.',
     ],
     permissions: [
       'Timeline requests repo and read:org OAuth scopes.',
       'The GitHub App needs read access to Contents, Issues, Pull requests, Actions, and Metadata for the complete record.',
-      'Organization selection includes only repositories the connection owner and installed app can access.',
+      'Organization expansion follows the connection owner’s OAuth access, while repository sync uses the GitHub App installation token.',
       'OAuth tokens and GitHub App credentials are encrypted at rest.',
     ],
     limitations: [
+      'For an organization scope, install the GitHub App for all repositories you expect Timeline to capture. A repository visible to the OAuth user but excluded from a selected-repositories App installation can be selected yet fail to sync.',
       'Commit reconciliation polls the repository default branch. A missed push webhook for commits that exist only on an unmerged non-default branch is not recovered unless those commits later reach the default branch.',
       'Missing pull-request permission can leave PR activity incomplete while other readable repository surfaces continue to sync.',
       'An organization scope is access-aware; private or SAML-protected repositories may require additional GitHub authorization.',
@@ -285,7 +287,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       {
         question: 'Can I connect only one repository?',
         answer:
-          'Yes. Choose individual repositories for a fixed list. Organization selection is available when you want all repositories the connection can access in that organization.',
+          'Yes. Choose individual repositories for a fixed list. Organization selection expands from the connection owner’s access and should be used only when the GitHub App installation covers every repository you expect Timeline to sync.',
       },
       {
         question: 'Does Timeline capture review comments?',
@@ -671,13 +673,17 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     diagram: {
       question: 'What broke after yesterday’s deploy?',
       records: [
-        { label: 'Release web-2.8.0', detail: 'Production deploy recorded', time: '15:06' },
-        { label: 'WEB-913', detail: 'Checkout error opened', time: '15:19' },
-        { label: 'WEB-913', detail: 'Issue resolved after rollback', time: '16:02' },
+        { label: 'Release web-2.8.0', detail: 'Release creation captured', time: '15:06' },
+        { label: 'WEB-913', detail: 'Checkout error last seen', time: '15:19' },
+        {
+          label: 'WEB-913',
+          detail: 'Current status observed: resolved',
+          time: 'Source time 15:19',
+        },
       ],
       answer:
-        'Checkout failures began 13 minutes after web-2.8.0 and stopped after the rollback; WEB-913 records the incident lifecycle.',
-      citations: ['Release web-2.8.0', 'WEB-913 opened', 'WEB-913 resolved'],
+        'WEB-913 appeared after release web-2.8.0 and is now resolved; the Sentry lifecycle record does not establish when the resolution action occurred.',
+      citations: ['Release web-2.8.0', 'WEB-913 occurrence', 'WEB-913 status'],
     },
     exampleQuestions: [
       'What broke after yesterday’s deploy?',
@@ -690,7 +696,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       situation:
         'An issue opens after a deployment, the team discusses impact, a pull request rolls back the change, and Sentry records resolution.',
       chronology: [
-        'Timeline places the Sentry release and issue lifecycle in order.',
+        'Timeline places Sentry release and issue evidence beside one another while retaining Sentry’s source occurrence timestamps.',
         'Slack and GitHub evidence can fill in customer impact and remediation.',
         'The final answer cites each system without pretending any one record tells the whole story.',
       ],
@@ -726,7 +732,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Connect Sentry using a confidential server-side OAuth application.',
       'Choose individual projects for a fixed scope or an organization for all accessible projects there.',
       'Have a Timeline team admin activate the shared sources.',
-      'Configure the signed Sentry integration webhook for issue, alert, and release delivery; reconciliation recovers missed activity.',
+      'Configure the signed Sentry integration webhook for issue, alert, and release delivery. Reconciliation can recover polled issue state and release creation, but not webhook-only alerts or deployment records.',
     ],
     permissions: [
       'Timeline requests org:read, project:read, event:read, event:admin, and team:read.',
@@ -735,6 +741,8 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'These credentials are separate from the DSN used to report Timeline’s own application errors.',
     ],
     limitations: [
+      'Alert-trigger and release-deployment records are webhook-only. Reconciliation polls issues and release creation, so it cannot recover a missed alert or deployment delivery.',
+      'Issue lifecycle webhooks use the issue’s Sentry first-seen or last-seen occurrence time. They do not preserve the later action time when someone resolves or ignores a quiet issue.',
       'Repeated occurrences of an already-open issue coalesce into the existing lifecycle evidence instead of generating a new Timeline event for every occurrence.',
       'The native connector focuses on issue lifecycle, alerts, and releases; it is not a replacement for Sentry traces, replays, dashboards, or performance analysis.',
       'Timeline does not resolve, ignore, assign, or configure alerts in Sentry through this capture path.',

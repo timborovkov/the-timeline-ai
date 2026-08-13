@@ -89,6 +89,43 @@ describe('connector content manifest', () => {
     );
   });
 
+  it('keeps Slack attachment claims inside the metadata-only boundary', () => {
+    const slack = findConnector('slack');
+    if (!slack) throw new Error('expected Slack connector');
+
+    const claims = JSON.stringify(slack);
+    expect(claims).toContain('file-share metadata');
+    expect(claims).toContain('does not download or inspect attachment bodies');
+    expect(slack.intro).not.toContain('threads, files, reactions');
+    expect(slack.seoDescription).not.toContain('threads, files, reactions');
+  });
+
+  it('discloses GitHub App installation scope for organization selections', () => {
+    const github = findConnector('github');
+    if (!github) throw new Error('expected GitHub connector');
+
+    const claims = JSON.stringify(github);
+    expect(claims).toContain('installation covers every repository');
+    expect(claims).toContain('excluded from a selected-repositories App installation');
+    expect(claims).not.toContain(
+      'Organization selection includes only repositories the connection owner and installed app can access',
+    );
+  });
+
+  it('qualifies Sentry recovery and lifecycle timestamps', () => {
+    const sentry = findConnector('sentry');
+    if (!sentry) throw new Error('expected Sentry connector');
+
+    const claims = JSON.stringify(sentry);
+    expect(claims).toContain('cannot recover a missed alert or deployment delivery');
+    expect(claims).toContain('do not preserve the later action time');
+    expect(claims).not.toContain('reconciliation recovers missed activity');
+    expect(sentry.diagram.answer).toContain(
+      'does not establish when the resolution action occurred',
+    );
+    expect(sentry.diagram.records.map((record) => record.time)).not.toContain('16:02');
+  });
+
   it('keeps Google Drive claims inside the implemented change-feed boundary', () => {
     const drive = findConnector('google-drive');
     if (!drive) throw new Error('expected Google Drive connector');
