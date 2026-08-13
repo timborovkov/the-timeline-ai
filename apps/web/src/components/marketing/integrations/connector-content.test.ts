@@ -69,6 +69,8 @@ describe('connector content manifest', () => {
     expect(limitations).toContain('looks back 14 days');
     expect(limitations).toContain('new replies whose thread root is older than that window');
     expect(limitations).toContain('remain the first-observed snapshot');
+    expect(limitations).toContain('first 2,000 replies returned');
+    expect(limitations).toContain('replies beyond that cap remain absent');
     expect(slack.capturedRecords).toContain(
       'First-observed reaction events with their initial count and user snapshot',
     );
@@ -87,9 +89,17 @@ describe('connector content manifest', () => {
     expect(githubClaims).toContain(
       'Initial default-branch commit history is capped at 2,000 commits',
     );
+    expect(githubClaims).toContain('2,000 pull requests per state');
+    expect(githubClaims).toContain('2,000 review summaries per pull request');
+    expect(githubClaims).toContain(
+      'Issue and inline-review comment surfaces use a separate continuation',
+    );
 
     expect(linear.limitations.join(' ')).toContain(
       'history begins when Timeline starts observing the selected team',
+    );
+    expect(linear.limitations.join(' ')).toContain(
+      'move between Linear workflow states that normalize to the same Timeline bucket',
     );
     expect(monday.limitations.join(' ')).toContain(
       'Initial board activity-log backfill covers the preceding 30 days',
@@ -130,6 +140,8 @@ describe('connector content manifest', () => {
       'A missed resolve or ignore webhook for a quiet issue may not be recovered',
     );
     expect(claims).toContain('repeated closed transition does not create a new lifecycle row');
+    expect(claims).toContain('one immutable deployed key per release');
+    expect(claims).toContain('later deployment does not create a new row');
     expect(claims).toContain('do not preserve the later action time');
     expect(claims).not.toContain('reconciliation recovers missed activity');
     expect(sentry.diagram.answer).toContain(
@@ -187,6 +199,12 @@ describe('connector content manifest', () => {
     expect(publicClaims).toContain('may not preserve the intermediate wording');
     expect(publicClaims).toContain('up to the first 100 shared drives returned by Google');
     expect(publicClaims).toContain('current listing does not paginate beyond that first page');
+    expect(publicClaims).toContain(
+      'does not currently provision a customer-configurable Drive push channel',
+    );
+    expect(publicClaims).not.toContain(
+      'an optional push channel can signal faster incremental sync',
+    );
     expect(publicClaims).not.toContain('Timeline observes each new file modification');
     expect(publicClaims).toContain('Drive removal tombstones do not include parent information');
     expect(publicClaims).toContain('even when that area was not activated');

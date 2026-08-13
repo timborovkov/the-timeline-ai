@@ -166,6 +166,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Slack file shares contribute the title, filename, MIME type, and private source URL. This native history path does not download or inspect attachment bodies.',
       'Native workspace ingestion reconciles selected channels hourly; it is not a real-time mirror of every workspace event.',
       'After the initial history backfill, reconciliation looks back 14 days. Edits and reactions on older messages—and new replies whose thread root is older than that window—may not be observed.',
+      'A single Slack thread is capped at the first 2,000 replies returned. The current sync does not persist a reply-page continuation, so replies beyond that cap remain absent on later runs.',
       'A reaction event is immutable and keyed by message plus emoji. Later users or count changes for an already captured emoji do not update that row, so its count and user list remain the first-observed snapshot.',
       'Channels the connection owner cannot access, and private channels without the app, cannot be captured.',
       'Timeline does not send, edit, delete, archive, or administer Slack messages through this native history sync.',
@@ -282,6 +283,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     limitations: [
       'A published GitHub release is publication evidence, not proof of a production deployment. This connector does not ingest GitHub deployment or environment records.',
       'Initial default-branch commit history is capped at 2,000 commits. If a repository has more, older commits are omitted and the current backfill does not resume past that cap.',
+      'Other bounded GitHub scans also stop without continuing past 2,000 pull requests per state, issues, releases, or workflow runs per surface, and 2,000 review summaries per pull request. Issue and inline-review comment surfaces use a separate continuation path.',
       'For an organization scope, install the GitHub App for all repositories you expect Timeline to capture. A repository visible to the OAuth user but excluded from a selected-repositories App installation can be selected yet fail to sync.',
       'Commit reconciliation polls the repository default branch. A missed push webhook for commits that exist only on an unmerged non-default branch is not recovered unless those commits later reach the default branch.',
       'Missing pull-request permission can leave PR activity incomplete while other readable repository surfaces continue to sync.',
@@ -387,7 +389,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Connect Linear with a person-owned OAuth connection.',
       'Choose the Linear teams that person is allowed to share.',
       'Have a Timeline team admin activate the selected sources.',
-      'Optionally configure the signed Linear webhook; reconciliation remains the recovery path.',
+      'Configure the signed Linear webhook for exact workflow-state transitions; reconciliation is a bounded recovery path for polled snapshots.',
     ],
     permissions: [
       'Timeline requests Linear’s read scope.',
@@ -397,6 +399,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     ],
     limitations: [
       'The first sync captures current issue and project fields, not their earlier field transitions. Status, assignee, priority, and project-change history begins when Timeline starts observing the selected team.',
+      'Without webhook delivery, reconciliation can miss a move between Linear workflow states that normalize to the same Timeline bucket, such as Backlog to Todo or In Progress to In Review, when no other captured field changes.',
       'Only activated teams are captured; unselected Linear work stays outside Timeline.',
       'Timeline records the work history but does not create, edit, assign, or reprioritize Linear issues through this native sync.',
       'Fields outside the supported issue, comment, and project surfaces may not appear as distinct timeline events.',
@@ -505,7 +508,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Connect Google Drive with a person-owned OAuth connection.',
       'Choose My Drive root or one or more shared drives that person can share.',
       'Have a Timeline team admin activate the shared sources.',
-      'Let cursor-based reconciliation mirror changes; an optional push channel can signal faster incremental sync.',
+      'Use cursor-based reconciliation to process changes. Timeline does not currently provision a customer-configurable Drive push channel.',
     ],
     permissions: [
       'The connection sees only files the authorizing Google account is allowed to read.',
@@ -718,7 +721,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'The first captured ignored lifecycle transition per issue',
       'Issue alerts associated with selected projects',
       'Release creation activity',
-      'Release deployment activity when supplied by Sentry',
+      'The first captured deployment activity per Sentry release',
     ],
     recipes: [
       {
@@ -754,6 +757,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'A missed resolve or ignore webhook for a quiet issue may not be recovered because issue polling advances from last-seen occurrence time, which a state-only action does not update.',
       'Issue lifecycle webhooks use the issue’s Sentry first-seen or last-seen occurrence time. They do not preserve the later action time when someone resolves or ignores a quiet issue.',
       'Resolved and ignored records use one immutable lifecycle key per issue. If an issue regresses and later resolves or is ignored again, the repeated closed transition does not create a new lifecycle row.',
+      'Deployment records also use one immutable deployed key per release. If the same release is deployed again—for example to another environment—the later deployment does not create a new row.',
       'Repeated occurrences of an already-open issue coalesce into the existing lifecycle evidence instead of generating a new Timeline event for every occurrence.',
       'The native connector focuses on issue lifecycle, alerts, and releases; it is not a replacement for Sentry traces, replays, dashboards, or performance analysis.',
       'Timeline does not resolve, ignore, assign, or configure alerts in Sentry through this capture path.',
