@@ -288,6 +288,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Initial default-branch commit history is capped at 2,000 commits. If a repository has more, older commits are omitted and the current backfill does not resume past that cap.',
       'Other bounded GitHub scans also stop without continuing past 2,000 pull requests per state, issues, releases, or workflow runs per surface, and 2,000 review summaries per pull request. Issue and inline-review comment surfaces use a separate continuation path.',
       'The source picker lists at most 2,000 organizations and the 2,000 most recently updated repositories available to the OAuth user. Older repositories outside that window cannot be chosen as individual fixed-scope sources.',
+      'An organization source also expands at most its 2,000 most recently updated repositories. Older repositories beyond that cap are omitted even when the GitHub App installation has all-repository access.',
       'For an organization scope, install the GitHub App for all repositories you expect Timeline to capture. A repository visible to the OAuth user but excluded from a selected-repositories App installation can be selected yet fail to sync.',
       'Commit reconciliation polls the repository default branch. A missed push webhook for commits that exist only on an unmerged non-default branch is not recovered unless those commits later reach the default branch.',
       'Missing pull-request permission can leave PR activity incomplete while other readable repository surfaces continue to sync.',
@@ -298,7 +299,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       {
         question: 'Can I connect only one repository?',
         answer:
-          'Yes, when it appears in the picker’s 2,000 most recently updated repositories. Older repositories beyond that cap cannot currently be selected individually. Organization selection expands from the connection owner’s access and should be used only when the GitHub App installation covers every repository you expect Timeline to sync.',
+          'Yes, when it appears in the picker’s 2,000 most recently updated repositories. Older repositories beyond that cap cannot currently be selected individually. Organization selection also expands at most 2,000 recently updated repositories and should be used only when the GitHub App installation covers every repository you expect Timeline to sync.',
       },
       {
         question: 'Does Timeline capture review comments?',
@@ -404,6 +405,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     ],
     limitations: [
       'The first sync captures current issue and project fields, not their earlier field transitions. Status, assignee, priority, and project-change history begins when Timeline starts observing the selected team.',
+      'Initial history is capped separately at 2,500 issues, 2,500 comments, and 2,500 projects per selected team. Older records beyond a surface cap are omitted and the current incremental cursor does not resume that backfill.',
       'The Linear source picker lists at most the first 2,000 teams returned by the API; teams beyond that cap cannot be selected.',
       'Without webhook delivery, reconciliation can miss a move between Linear workflow states that normalize to the same Timeline bucket, such as Backlog to Todo or In Progress to In Review, when no other captured field changes.',
       'Only activated teams are captured; unselected Linear work stays outside Timeline.',
@@ -768,6 +770,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'A missed resolve or ignore webhook for a quiet issue may not be recovered because issue polling advances from last-seen occurrence time, which a state-only action does not update.',
       'Issue lifecycle webhooks use the issue’s Sentry first-seen or last-seen occurrence time. They do not preserve the later action time when someone resolves or ignores a quiet issue.',
       'Resolved and ignored records use one immutable lifecycle key per issue. If an issue regresses and later resolves or is ignored again, the repeated closed transition does not create a new lifecycle row.',
+      'Polling retains lifecycle state for at most 5,000 issue IDs. After an older resolved issue is pruned, a missed regression webhook can be lost because polling may reuse its original immutable open key.',
       'Deployment records also use one immutable deployed key per release. If the same release is deployed again—for example to another environment—the later deployment does not create a new row.',
       'Repeated occurrences of an already-open issue coalesce into the existing lifecycle evidence instead of generating a new Timeline event for every occurrence.',
       'The native connector focuses on issue lifecycle, alerts, and releases; it is not a replacement for Sentry traces, replays, dashboards, or performance analysis.',

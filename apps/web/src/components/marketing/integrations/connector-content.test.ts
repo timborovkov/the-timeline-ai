@@ -110,6 +110,7 @@ describe('connector content manifest', () => {
       'Issue and inline-review comment surfaces use a separate continuation',
     );
     expect(githubClaims).toContain('2,000 most recently updated repositories');
+    expect(githubClaims).toContain('organization source also expands at most its 2,000');
 
     expect(linear.limitations.join(' ')).toContain(
       'history begins when Timeline starts observing the selected team',
@@ -118,6 +119,9 @@ describe('connector content manifest', () => {
       'move between Linear workflow states that normalize to the same Timeline bucket',
     );
     expect(linear.limitations.join(' ')).toContain('first 2,000 teams returned by the API');
+    expect(linear.limitations.join(' ')).toContain(
+      '2,500 issues, 2,500 comments, and 2,500 projects per selected team',
+    );
     expect(monday.limitations.join(' ')).toContain(
       'Initial board activity-log backfill covers the preceding 30 days',
     );
@@ -165,6 +169,8 @@ describe('connector content manifest', () => {
     expect(claims).toContain('repeated closed transition does not create a new lifecycle row');
     expect(claims).toContain('one immutable deployed key per release');
     expect(claims).toContain('later deployment does not create a new row');
+    expect(claims).toContain('lifecycle state for at most 5,000 issue IDs');
+    expect(claims).toContain('missed regression webhook can be lost');
     expect(claims).toContain('do not preserve the later action time');
     expect(claims).not.toContain('reconciliation recovers missed activity');
     expect(sentry.diagram.answer).toContain(
