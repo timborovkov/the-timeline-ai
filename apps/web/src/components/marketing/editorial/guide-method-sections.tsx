@@ -87,7 +87,9 @@ export function GuideMethodSections({ guide }: { guide: EditorialGuide }) {
             title="Know exactly what each connector contributes."
             intro="These guides describe native ingestion. They do not relabel MCP access or planned support as native capability."
           />
-          <div className="mt-12 grid gap-px overflow-hidden rounded-md border border-border bg-border lg:grid-cols-3">
+          <div
+            className={`mt-12 grid gap-px overflow-hidden rounded-md border border-border bg-border ${guide.boundaries.length === 2 ? 'lg:grid-cols-2' : 'lg:grid-cols-3'}`}
+          >
             {guide.boundaries.map((boundary) => (
               <section key={boundary.provider} className="bg-bg p-6 sm:p-8">
                 <div className="flex items-center justify-between gap-4">

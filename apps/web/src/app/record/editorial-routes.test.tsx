@@ -33,6 +33,7 @@ describe('editorial routes', () => {
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('The Record');
+    expect(html).toMatch(/<h2[^>]*>The review date moved; pricing is still unresolved\.<\/h2>/);
     expect(html).toContain('a provisional public name');
     expect(html).toContain('Essays');
     expect(html).toContain('Playbooks');
@@ -54,6 +55,7 @@ describe('editorial routes', () => {
       expect(html).toContain('The direct answer');
       expect(html).toContain('Build the answer in inspectable stages.');
       expect(html).toContain('Provenance map');
+      expect(html).toContain(`>${guide.diagram.answerTitle}</h3>`);
       expect(html).toContain('Source boundaries');
       expect(html).toContain('Limitations to keep visible');
       expect(html).toContain('Example / not customer data');

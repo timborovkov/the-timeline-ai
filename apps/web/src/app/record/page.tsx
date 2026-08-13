@@ -53,7 +53,7 @@ export default function RecordPage() {
               content model.
             </p>
           </div>
-          <ProvenanceDiagram diagram={featuredGuide.diagram} />
+          <ProvenanceDiagram diagram={featuredGuide.diagram} answerHeadingLevel={2} />
         </div>
       </section>
 

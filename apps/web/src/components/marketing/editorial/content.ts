@@ -294,7 +294,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
     summary:
       'A source-aware method for compiling decisions, movement, shipped work, blockers, and next steps without flattening three systems into one status list.',
     machineSummary:
-      'Generate a weekly project or engineering update by combining selected Slack discussions, Linear issue and project activity, and GitHub pull request, review, commit, release, and workflow evidence into a cited, human-reviewed brief.',
+      'Generate a weekly project or engineering update by combining selected Slack discussions, Linear issue and project activity, and GitHub pull request, review, default-branch commit, release, and workflow evidence into a cited, human-reviewed brief.',
     topics: ['weekly update', 'engineering status', 'project reporting', 'delivery evidence'],
     nativeConnectors: ['Slack', 'Linear', 'GitHub'],
     answer: {
@@ -327,7 +327,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
       {
         index: '03',
         title: 'Assign each source a job',
-        body: 'Use Slack for decisions, risks, and commitments; Linear for issue and project movement; GitHub for pull requests, reviews, comments, commits, releases, and workflow results. Evidence can cross those roles, but the distinction prevents a merge from being mistaken for an outcome.',
+        body: 'Use Slack for decisions, risks, and commitments; Linear for issue and project movement; GitHub for pull requests, reviews, comments, default-branch commits, releases, and workflow results. Evidence can cross those roles, but the distinction prevents a merge from being mistaken for an outcome.',
         output: 'A source-aware evidence plan.',
       },
       {
@@ -396,9 +396,9 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
         provider: 'GitHub',
         role: 'Implementation and delivery evidence',
         includes:
-          'Pull requests, reviews, review comments, issues, conversation comments, commits, releases, and workflow runs from selected repositories.',
+          'Pull requests, reviews, review comments, issues, conversation comments, default-branch commits, releases, and workflow runs from selected repositories.',
         boundary:
-          'A merge or passing workflow is not automatically a production deployment, customer outcome, or completed rollout.',
+          'Native commit polling follows the repository’s default branch; feature- or release-branch commits may be absent until they reach another captured surface. A merge or passing workflow is not automatically a production deployment, customer outcome, or completed rollout.',
       },
     ],
     interpretation: {
@@ -412,6 +412,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
       'The update is only as complete as the selected channels, Linear teams, and repositories; project names narrow retrieval inside that source boundary.',
       'Timeline can show that an event occurred; it cannot infer customer impact without customer-impact evidence.',
       'Naming and linking conventions improve cross-system retrieval, but the guide does not assume automatic one-to-one issue and pull-request linkage.',
+      'Commit polling follows each selected repository’s default branch; use pull-request, release, workflow, or discussion evidence for changes that have not reached it.',
       'Late comments, delayed sync, and work recorded after the reporting cutoff belong in the next update or a clearly marked revision.',
       'A generated update remains a draft until a human owner confirms the interpretation and audience.',
     ],
@@ -456,7 +457,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
     nativeConnectors: ['Sentry', 'GitHub', 'Slack'],
     answer: {
       title: 'Anchor on the incident window, then label what the evidence actually proves.',
-      body: 'Start with the Sentry issue and the release window around its first or changed state. Pull in nearby GitHub pull requests, reviews, commits, releases, and workflow results, plus the selected Slack discussion where detection, mitigation, and follow-up were coordinated. Build a chronology first. Only call something the cause when the evidence confirms it; otherwise label it a correlation or hypothesis.',
+      body: 'Start with the captured Sentry issue update and nearby release window. Pull in nearby GitHub pull requests, reviews, default-branch commits, releases, and workflow results, plus the selected Slack discussion where detection, mitigation, and follow-up were coordinated. Build a chronology first. Only call something the cause when the evidence confirms it; otherwise label it a correlation or hypothesis.',
       checklist: [
         'Name the Sentry project, issue, release, and exact investigation window.',
         'Separate detection, suspected change, mitigation, fix, and verification.',
@@ -478,13 +479,13 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
       {
         index: '02',
         title: 'Lay out the Sentry facts',
-        body: 'Record the issue state, first or relevant observation time, recurrence or resolution state, affected-user or event counts when present, and nearby Sentry releases. Treat these as observability facts, not a root-cause conclusion.',
-        output: 'A factual detection and lifecycle spine.',
+        body: 'Record the issue state, captured last-seen time, recurrence or resolution state, affected-user or event counts when present, and nearby Sentry releases. Treat these as observability facts, not a first-observation or root-cause conclusion.',
+        output: 'A factual captured-observation and lifecycle spine.',
       },
       {
         index: '03',
         title: 'Add delivery evidence',
-        body: 'Retrieve GitHub changes in the same window: pull requests, reviews, commits, releases, and workflow runs. Look for explicit references to the issue, affected component, release version, rollback, or fix.',
+        body: 'Retrieve GitHub changes in the same window: pull requests, reviews, default-branch commits, releases, and workflow runs. Look for explicit references to the issue, affected component, release version, rollback, or fix.',
         output: 'A bounded set of candidate changes and delivery events.',
       },
       {
@@ -538,7 +539,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
       citations: ['01', '02', '03', '04'],
     },
     prompt:
-      'Build an incident chronology for Sentry issue [issue key] in [project] from [start time] to [end time]. Include Sentry issue and release evidence, nearby GitHub pull requests, commits, releases, and workflow results, and the selected Slack response discussion. Separate confirmed facts, likely links, and unknowns. Identify detection, mitigation, fix, and recovery evidence. Cite every factual claim.',
+      'Build an incident chronology for Sentry issue [issue key] in [project] from [start time] to [end time]. Include Sentry issue and release evidence, nearby GitHub pull requests, default-branch commits, releases, and workflow results, and the selected Slack response discussion. Separate confirmed facts, likely links, and unknowns. Identify detection, mitigation, fix, and recovery evidence. Cite every factual claim.',
     boundaries: [
       {
         provider: 'Sentry',
@@ -546,15 +547,15 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
         includes:
           'Issue updates, resolved or regressed states, issue counts and affected-user counts when present, and Sentry releases from selected projects.',
         boundary:
-          'This evidence does not replace Sentry event-level debugging, stack-trace analysis, or reproduction. An issue near a release is correlation, not proof of causation.',
+          'Polled issue events use Sentry’s last-seen time when present and do not preserve a separate first-seen timestamp. This evidence does not replace event-level debugging, stack-trace analysis, or reproduction; an issue near a release is correlation, not proof of causation.',
       },
       {
         provider: 'GitHub',
         role: 'Change, review, and delivery trail',
         includes:
-          'Pull requests, reviews, review comments, commits, releases, and workflow runs from selected repositories.',
+          'Pull requests, reviews, review comments, default-branch commits, releases, and workflow runs from selected repositories.',
         boundary:
-          'The selected repository history may omit infrastructure, configuration, feature-flag, or third-party changes that happened elsewhere.',
+          'Native commit polling follows the repository’s default branch. The selected history may also omit feature-branch, infrastructure, configuration, feature-flag, or third-party changes captured nowhere else.',
       },
       {
         provider: 'Slack',
@@ -573,7 +574,9 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
     },
     limitations: [
       'Timeline organizes captured evidence; it is not an application performance monitor or debugger.',
+      'Polled Sentry issues use their captured last-seen time, so the chronology cannot claim a separately preserved first observation.',
       'Temporal proximity between a release and an issue does not establish causality.',
+      'GitHub commit polling follows the selected repository’s default branch; other branch commits require pull-request, release, workflow, or discussion evidence.',
       'An incident can involve systems outside the selected Sentry projects, repositories, or Slack channels.',
       'Resolution state can reflect manual handling or a temporary symptom change; verify recovery with the evidence your team trusts.',
       'Sensitive incident channels and private evidence remain subject to the viewer’s visibility rights.',
@@ -582,7 +585,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
       {
         question: 'Can Timeline automatically identify the commit that caused an incident?',
         answer:
-          'Not as a guaranteed fact. It can place candidate changes, releases, issue activity, and discussion into one cited chronology. A confirmed causal link still needs supporting technical evidence.',
+          'Not as a guaranteed fact. It can place captured pull requests, default-branch commits, releases, issue activity, and discussion into one cited chronology. A confirmed causal link still needs supporting technical evidence, and uncaptured branch history remains outside that account.',
       },
       {
         question: 'Should every incident have a Slack channel?',

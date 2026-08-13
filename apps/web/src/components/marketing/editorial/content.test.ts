@@ -74,4 +74,17 @@ describe('editorial content model', () => {
       'Edition 003',
     ]);
   });
+
+  it('states native timing and branch boundaries in the affected guides', () => {
+    const weeklyGuide = findEditorialGuide(
+      'weekly-engineering-updates-from-slack-linear-and-github',
+    );
+    const incidentGuide = findEditorialGuide(
+      'connect-sentry-incidents-to-releases-discussions-and-fixes',
+    );
+
+    expect(JSON.stringify(weeklyGuide)).toContain('default branch');
+    expect(JSON.stringify(incidentGuide)).toContain('last-seen');
+    expect(JSON.stringify(incidentGuide)).toContain('default branch');
+  });
 });

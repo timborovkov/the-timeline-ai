@@ -3,7 +3,16 @@ import type { EditorialDiagram } from '@/components/marketing/editorial/content'
 import styles from '@/components/marketing/editorial/editorial.module.css';
 import { ProvenanceReveal } from '@/components/marketing/editorial/provenance-reveal';
 
-export function ProvenanceDiagram({ diagram }: { diagram: EditorialDiagram }) {
+export function ProvenanceDiagram({
+  diagram,
+  answerHeadingLevel = 3,
+}: {
+  diagram: EditorialDiagram;
+  answerHeadingLevel?: 2 | 3;
+}) {
+  const answerHeadingClassName =
+    'mt-8 text-balance text-2xl font-semibold tracking-[-0.035em] sm:text-3xl';
+
   return (
     <ProvenanceReveal>
       <figure className={`${styles.provenanceStage} p-4 sm:p-6 lg:p-8`}>
@@ -56,9 +65,11 @@ export function ProvenanceDiagram({ diagram }: { diagram: EditorialDiagram }) {
                 {diagram.sources.length} sources
               </span>
             </div>
-            <h3 className="mt-8 text-balance text-2xl font-semibold tracking-[-0.035em] sm:text-3xl">
-              {diagram.answerTitle}
-            </h3>
+            {answerHeadingLevel === 2 ? (
+              <h2 className={answerHeadingClassName}>{diagram.answerTitle}</h2>
+            ) : (
+              <h3 className={answerHeadingClassName}>{diagram.answerTitle}</h3>
+            )}
             <p className="mt-4 text-sm leading-7 text-fg-muted sm:text-base">
               {diagram.answerBody}{' '}
               <span className="inline-flex flex-wrap gap-1 align-middle">

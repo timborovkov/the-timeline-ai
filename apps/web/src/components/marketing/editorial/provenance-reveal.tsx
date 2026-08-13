@@ -13,7 +13,6 @@ export function ProvenanceReveal({ children }: { children: ReactNode }) {
     const container = containerRef.current;
     if (!container || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
-    container.dataset.motionReady = 'true';
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (!entry?.isIntersecting) return;
