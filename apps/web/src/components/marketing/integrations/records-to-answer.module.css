@@ -225,6 +225,19 @@
 
   .transfer {
     min-height: 2.5rem;
+  }
+
+  .transfer span {
+    top: 0;
+    right: auto;
+    bottom: 0;
+    left: 50%;
+    width: 1px;
+    height: auto;
+    transform-origin: top;
+  }
+
+  .transfer svg {
     transform: rotate(90deg);
   }
 
@@ -262,7 +275,8 @@
   }
 
   .rail i {
-    animation: marker-pulse 3.6s ease-in-out infinite;
+    animation: marker-enter 500ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-delay: calc(620ms + var(--marker-index) * 120ms);
   }
 
   .answer {
@@ -278,6 +292,12 @@
   .citations > span:hover {
     border-color: var(--signal);
     transform: translateY(-1px);
+  }
+}
+
+@media (max-width: 63.99rem) and (prefers-reduced-motion: no-preference) {
+  .transfer span {
+    animation-name: trace-enter-vertical;
   }
 }
 
@@ -303,6 +323,17 @@
   }
 }
 
+@keyframes trace-enter-vertical {
+  from {
+    opacity: 0;
+    transform: scaleY(0);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
 @keyframes answer-enter {
   from {
     opacity: 0;
@@ -314,13 +345,12 @@
   }
 }
 
-@keyframes marker-pulse {
-  0%,
-  100% {
-    opacity: 0.55;
-    transform: scale(0.85);
+@keyframes marker-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
   }
-  50% {
+  to {
     opacity: 1;
     transform: scale(1);
   }

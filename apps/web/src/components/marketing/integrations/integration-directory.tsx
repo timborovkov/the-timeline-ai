@@ -73,7 +73,9 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
                     className="group flex min-h-64 flex-col bg-bg p-6 outline-none transition-colors hover:bg-surface focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:p-8"
                   >
                     <div className="flex items-start justify-between gap-4">
-                      <div className="grid size-12 place-items-center rounded-md border border-border bg-surface">
+                      <div
+                        className={`grid size-12 place-items-center rounded-md border border-border bg-surface ${connector.slug === 'github' ? 'dark:bg-white' : ''}`}
+                      >
                         <Image
                           src={connector.logo}
                           alt=""

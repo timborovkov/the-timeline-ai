@@ -28,6 +28,7 @@ describe('public integration routes', () => {
     expect(html).toContain('href="/integrations/slack"');
     expect(html).not.toContain('href="/integrations/notion"');
     expect(html).toContain('compact');
+    expect(html).toContain('dark:bg-white');
   });
 
   it('renders provider-specific truth, evidence, limitations, FAQs, and a single h1', async () => {
@@ -46,6 +47,7 @@ describe('public integration routes', () => {
     expect(html).not.toContain('02 / Questions');
     expect(html).not.toContain('09 / Related');
     expect(html).toContain('10 / Start');
+    expect(html).toContain('dark:bg-white');
     expect(html).toContain('PR #482');
     expect(html).toContain('application/ld+json');
   });

@@ -45,8 +45,11 @@ export function RecordsToAnswer({
         <div className={styles.chronology}>
           <span className={styles.index}>Chronology</span>
           <div className={styles.rail} aria-hidden="true">
-            {connector.diagram.records.map((record) => (
-              <i key={`${record.label}-${record.time}`} />
+            {connector.diagram.records.map((record, index) => (
+              <i
+                key={`${record.label}-${record.time}`}
+                style={{ '--marker-index': index } as CSSProperties}
+              />
             ))}
           </div>
           <p>Immutable events keep their source and order.</p>

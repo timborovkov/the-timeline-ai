@@ -59,7 +59,9 @@ function ConnectorHero({
         <div className="grid items-end gap-10 lg:grid-cols-[1.3fr_0.7fr]">
           <div>
             <div className="mb-7 flex items-center gap-4">
-              <div className="grid size-14 place-items-center rounded-md border border-border bg-surface sm:size-16">
+              <div
+                className={`grid size-14 place-items-center rounded-md border border-border bg-surface sm:size-16 ${connector.slug === 'github' ? 'dark:bg-white' : ''}`}
+              >
                 <Image
                   src={connector.logo}
                   alt=""
