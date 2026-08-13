@@ -71,6 +71,13 @@ describe('connector content manifest', () => {
     expect(limitations).toContain('remain the first-observed snapshot');
     expect(limitations).toContain('first 2,000 replies returned');
     expect(limitations).toContain('replies beyond that cap remain absent');
+    expect(limitations).toContain('at most 2,000 non-archived bot-visible channels');
+    expect(slack.permissions.join(' ')).toContain(
+      'does not intersect bot access with the authorizing person’s own channel membership',
+    );
+    expect(slack.faqs.map((faq) => faq.answer).join(' ')).toContain(
+      'bot can retain access after that person leaves a channel',
+    );
     expect(slack.capturedRecords).toContain(
       'First-observed reaction events with their initial count and user snapshot',
     );
@@ -94,6 +101,7 @@ describe('connector content manifest', () => {
     expect(githubClaims).toContain(
       'Issue and inline-review comment surfaces use a separate continuation',
     );
+    expect(githubClaims).toContain('2,000 most recently updated repositories');
 
     expect(linear.limitations.join(' ')).toContain(
       'history begins when Timeline starts observing the selected team',
@@ -101,10 +109,15 @@ describe('connector content manifest', () => {
     expect(linear.limitations.join(' ')).toContain(
       'move between Linear workflow states that normalize to the same Timeline bucket',
     );
+    expect(linear.limitations.join(' ')).toContain('first 2,000 teams returned by the API');
     expect(monday.limitations.join(' ')).toContain(
       'Initial board activity-log backfill covers the preceding 30 days',
     );
     expect(monday.limitations.join(' ')).toContain('lag Monday.com by up to 24 hours');
+    expect(monday.limitations.join(' ')).toContain('10,000 boards and 2,500 WorkDocs');
+    expect(monday.limitations.join(' ')).toContain(
+      'user-created board with that prefix can therefore be hidden',
+    );
   });
 
   it('keeps Slack attachment claims inside the metadata-only boundary', () => {

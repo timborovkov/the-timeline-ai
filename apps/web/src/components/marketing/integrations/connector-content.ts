@@ -152,14 +152,14 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     ],
     setup: [
       'Connect the Slack workspace with a person-owned OAuth connection.',
-      'Choose the channels that person is allowed to share with the Timeline team.',
+      'Choose from channels returned to the Slack bot. Private-channel visibility follows bot membership rather than the authorizing person’s current membership.',
       'Have a team admin activate the shared channel sources.',
       'Let hourly reconciliation capture history; configure the separate Slack app flow for /ask and conversational capture.',
     ],
     permissions: [
       'Timeline requests channel and group read/history access, plus file, reaction, and user read access.',
-      'A private channel is readable only when the Slack app is already a member.',
-      'Connection credentials belong to the person who authorizes Slack; only explicitly shared channels can be activated by the team.',
+      'A private channel is readable when the Slack app is a member; the native connector does not intersect bot access with the authorizing person’s own channel membership.',
+      'The OAuth installation is initiated by a person, but native history sync uses the workspace bot token. Only explicitly shared bot-visible channels can be activated by the team.',
       'Previously captured evidence remains team-scoped if a connection later needs attention.',
     ],
     limitations: [
@@ -168,7 +168,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'After the initial history backfill, reconciliation looks back 14 days. Edits and reactions on older messages—and new replies whose thread root is older than that window—may not be observed.',
       'A single Slack thread is capped at the first 2,000 replies returned. The current sync does not persist a reply-page continuation, so replies beyond that cap remain absent on later runs.',
       'A reaction event is immutable and keyed by message plus emoji. Later users or count changes for an already captured emoji do not update that row, so its count and user list remain the first-observed snapshot.',
-      'Channels the connection owner cannot access, and private channels without the app, cannot be captured.',
+      'The source picker returns at most 2,000 non-archived bot-visible channels. Channels beyond that listing cap cannot be selected, and private channels without the app cannot be captured.',
       'Timeline does not send, edit, delete, archive, or administer Slack messages through this native history sync.',
     ],
     faqs: [
@@ -180,7 +180,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       {
         question: 'Can Timeline read private Slack channels?',
         answer:
-          'Only selected private channels that the authorizing person can access and where the Slack app is present.',
+          'It can read selected private channels where the Slack app is present. Access follows the bot token and is not intersected with the authorizing person’s current membership, so the bot can retain access after that person leaves a channel.',
       },
       {
         question: 'Is Slack search being replaced?',
@@ -284,6 +284,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'A published GitHub release is publication evidence, not proof of a production deployment. This connector does not ingest GitHub deployment or environment records.',
       'Initial default-branch commit history is capped at 2,000 commits. If a repository has more, older commits are omitted and the current backfill does not resume past that cap.',
       'Other bounded GitHub scans also stop without continuing past 2,000 pull requests per state, issues, releases, or workflow runs per surface, and 2,000 review summaries per pull request. Issue and inline-review comment surfaces use a separate continuation path.',
+      'The source picker lists at most 2,000 organizations and the 2,000 most recently updated repositories available to the OAuth user. Older repositories outside that window cannot be chosen as individual fixed-scope sources.',
       'For an organization scope, install the GitHub App for all repositories you expect Timeline to capture. A repository visible to the OAuth user but excluded from a selected-repositories App installation can be selected yet fail to sync.',
       'Commit reconciliation polls the repository default branch. A missed push webhook for commits that exist only on an unmerged non-default branch is not recovered unless those commits later reach the default branch.',
       'Missing pull-request permission can leave PR activity incomplete while other readable repository surfaces continue to sync.',
@@ -294,7 +295,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       {
         question: 'Can I connect only one repository?',
         answer:
-          'Yes. Choose individual repositories for a fixed list. Organization selection expands from the connection owner’s access and should be used only when the GitHub App installation covers every repository you expect Timeline to sync.',
+          'Yes, when it appears in the picker’s 2,000 most recently updated repositories. Older repositories beyond that cap cannot currently be selected individually. Organization selection expands from the connection owner’s access and should be used only when the GitHub App installation covers every repository you expect Timeline to sync.',
       },
       {
         question: 'Does Timeline capture review comments?',
@@ -399,6 +400,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     ],
     limitations: [
       'The first sync captures current issue and project fields, not their earlier field transitions. Status, assignee, priority, and project-change history begins when Timeline starts observing the selected team.',
+      'The Linear source picker lists at most the first 2,000 teams returned by the API; teams beyond that cap cannot be selected.',
       'Without webhook delivery, reconciliation can miss a move between Linear workflow states that normalize to the same Timeline bucket, such as Backlog to Todo or In Progress to In Review, when no other captured field changes.',
       'Only activated teams are captured; unselected Linear work stays outside Timeline.',
       'Timeline records the work history but does not create, edit, assign, or reprioritize Linear issues through this native sync.',
@@ -636,7 +638,8 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     limitations: [
       'Initial board activity-log backfill covers the preceding 30 days. Older owner, status, due-field, and other activity-log changes are not imported.',
       'Selected WorkDocs refresh on a daily reconciliation interval, not through board webhooks. Their captured content can therefore lag Monday.com by up to 24 hours.',
-      'A user-named board beginning with “Subitems of” is not treated as a helper board; only provider-identified classic helper boards are hidden.',
+      'The source picker lists at most 10,000 boards and 2,500 WorkDocs. Resources beyond those caps cannot be selected.',
+      'When Monday omits both board type fields, helper-board detection falls back to a name beginning with “Subitems of”. An ordinary user-created board with that prefix can therefore be hidden from the picker.',
       'Missing webhook scopes degrades prompt delivery, but selected-source reconciliation continues more slowly.',
       'Timeline does not edit board values, run automations, assign people, or replace Monday.com workflows.',
     ],
@@ -644,7 +647,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       {
         question: 'Do I select Monday.com subitem boards separately?',
         answer:
-          'No for classic helper boards. Selecting the parent board captures its subitems, so provider-identified helper boards stay out of the picker.',
+          'No for classic helper boards. Selecting the parent board captures its subitems. Timeline prefers provider type fields, but if Monday omits them, a “Subitems of” name prefix is used as a fallback and can also hide a user-created board with that prefix.',
       },
       {
         question: 'Are updates and replies captured?',
