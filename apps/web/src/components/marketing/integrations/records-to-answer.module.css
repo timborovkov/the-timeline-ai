@@ -62,7 +62,7 @@
 .record > span {
   grid-row: span 2;
   color: var(--fg-dim);
-  font-size: 0.66rem;
+  font-size: 0.75rem;
 }
 
 .record strong {
@@ -184,7 +184,7 @@
   background: var(--bg);
   color: var(--fg-muted);
   font-family: var(--font-mono);
-  font-size: 0.58rem;
+  font-size: 0.75rem;
 }
 
 .citations svg {

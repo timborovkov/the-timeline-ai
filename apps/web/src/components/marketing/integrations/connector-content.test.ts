@@ -276,6 +276,9 @@ describe('connector content manifest', () => {
     expect(promotedClaims).not.toMatch(/Drive comments|selected folders|specific folders/iu);
     expect(publicClaims).toContain('My Drive root');
     expect(publicClaims).toContain('shared drives');
+    expect(drive.permissions.join(' ')).toContain('openid and email');
+    expect(drive.permissions.join(' ')).toContain('stable subject identifier');
+    expect(drive.permissions.join(' ')).toContain('primary email labels the connection');
     expect(publicClaims).toContain('first successful reconciliation establishes a changes cursor');
     expect(publicClaims).toContain('Activation only queues the first sync');
     expect(publicClaims).toContain('does not persist a Drive cursor');
@@ -299,6 +302,13 @@ describe('connector content manifest', () => {
     expect(publicClaims).toContain(
       'every non-removed file in the account-wide changes feed passes',
     );
+    expect(publicClaims).toContain(
+      'Document-body harvest and version creation require the person who connected Drive to remain a member',
+    );
+    expect(publicClaims).toContain(
+      'change metadata continues to land and the Drive cursor still advances',
+    );
+    expect(publicClaims).toContain('intervening file states are not recovered');
     expect(publicClaims).toContain('outside the user’s My Drive');
     expect(publicClaims).toContain('Versions are sync-observed snapshots');
     expect(publicClaims).toContain('may not preserve the intermediate wording');

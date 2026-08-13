@@ -452,7 +452,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     eyebrow: 'File change becomes durable evidence',
     hero: 'Turn new Drive changes into cited document evidence.',
     intro:
-      'Timeline watches admitted Google Drive changes after its first successful reconciliation establishes a changes cursor. Selecting a shared drive scopes live files to that drive; selecting My Drive root currently admits changed files anywhere the connected account can access, including Shared with me and other shared drives. When a supported file changes, Timeline stores its current content as a versioned document so later answers can cite the state it observed.',
+      'Timeline watches admitted Google Drive changes after its first successful reconciliation establishes a changes cursor. Selecting a shared drive scopes live files to that drive; selecting My Drive root currently admits changed files anywhere the connected account can access, including Shared with me and other shared drives. When a supported file changes and the connection owner still belongs to the Timeline team, Timeline stores its current content as a versioned document so later answers can cite the state it observed.',
     seoTitle: 'Google Drive integration for cited document answers',
     seoDescription:
       'Capture sync-observed Google Drive file states in The Timeline for cited cross-tool answers and versioned evidence, with explicit source-scope limitations.',
@@ -529,6 +529,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Let the first successful reconciliation establish the Drive changes cursor, then use the 15-minute scheduled reconciliation policy to process later changes. Timeline does not currently provision a customer-configurable Drive push channel.',
     ],
     permissions: [
+      'OAuth requests read-only Drive content and metadata plus openid and email. Google’s stable subject identifier anchors the provider account identity, and its primary email labels the connection.',
       'The connection sees only files the authorizing Google account is allowed to read.',
       'Selecting a shared drive admits live changes from that drive. Selecting My Drive root currently admits any changed file the connected account can access—including Shared with me files and files in other shared drives—even when those locations were not separately activated.',
       'Non-owners cannot use Timeline to browse the connection owner’s unshared Drive resources.',
@@ -538,6 +539,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Activation only queues the first sync; it does not persist a Drive cursor. A cursor is requested when reconciliation runs and saved only as that work progresses, so capture effectively begins at the cursor used by the first successful reconciliation. Changes made between activation and that cursor can precede it and are never returned. Untouched files that already existed are not enumerated or imported.',
       'Scheduled Drive reconciliation becomes due every 15 minutes and is evaluated by the worker’s five-minute integration tick. Without an operator-registered push channel, a supported post-cursor file change can remain absent for roughly that interval plus scheduling delay.',
       'Versions are sync-observed snapshots, not a copy of every Drive edit. If a file changes multiple times before reconciliation, Timeline downloads the current body and may not preserve the intermediate wording.',
+      'Document-body harvest and version creation require the person who connected Drive to remain a member of the Timeline team. If that person leaves, change metadata continues to land and the Drive cursor still advances, but file bodies and versions are skipped. Reconnecting under a current member resumes future reported changes; intervening file states are not recovered unless Drive reports another change for the file.',
       'The source picker exposes My Drive root and up to the first 100 shared drives returned by Google; the current listing does not paginate beyond that first page or offer arbitrary individual subfolders.',
       'My Drive root is not an ancestry boundary in the current change filter. If root is active, every non-removed file in the account-wide changes feed passes before parent inspection. A changed Shared with me file or accessible shared-drive file can therefore be captured with its metadata and supported body even when it is outside the user’s My Drive and that location was not separately activated.',
       'Drive removal tombstones do not include parent information. Timeline may therefore record a file ID and removal time for a deleted file elsewhere in the connected account, even when that area was not activated; no file body is present in that tombstone.',
@@ -553,7 +555,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       {
         question: 'Can answers cite a specific document version?',
         answer:
-          'When reconciliation observes a supported changed file, Timeline stores its current content as a document version and can cite that captured evidence. Separate observed sync states can become separate versions; edits between syncs may collapse into the latest body. Timeline does not import the file’s earlier Drive revision history.',
+          'When reconciliation observes a supported changed file and the connection owner remains a Timeline team member, Timeline stores its current content as a document version and can cite that captured evidence. Separate observed sync states can become separate versions; edits between syncs may collapse into the latest body. If the connector leaves the team, metadata continues while body capture pauses, and reconnecting does not recover intervening states unless Drive reports another change. Timeline does not import the file’s earlier Drive revision history.',
       },
       {
         question: 'What happens if a file is removed?',

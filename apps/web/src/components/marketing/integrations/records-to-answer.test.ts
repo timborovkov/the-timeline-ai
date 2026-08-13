@@ -13,4 +13,12 @@ describe('records-to-answer motion contract', () => {
     expect(markerKeyframes?.groups?.body).not.toContain('box-shadow:');
     expect(styles).toContain('@media (prefers-reduced-motion: no-preference)');
   });
+
+  it('keeps provenance labels at the documented technical-value size', () => {
+    const timestamps = /\.record > span\s*\{(?<body>[\s\S]*?)\n\}/u.exec(styles);
+    const citations = /\.citations > span\s*\{(?<body>[\s\S]*?)\n\}/u.exec(styles);
+
+    expect(timestamps?.groups?.body).toContain('font-size: 0.75rem;');
+    expect(citations?.groups?.body).toContain('font-size: 0.75rem;');
+  });
 });

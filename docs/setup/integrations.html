@@ -107,6 +107,13 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
         </li>
         <li>A team admin activates shared Drive sources from <code>/app/sources</code>.</li>
         <li>
+          Document-body harvest requires the person who connected Drive to remain a member of the
+          Timeline team. If that connector leaves, integration-event metadata continues and the
+          Drive cursor advances, but file bodies and document versions are skipped. Reconnecting
+          under a current member resumes future reported changes; it does not recover intervening
+          file states unless Drive reports another change for the file.
+        </li>
+        <li>
           (Optional) Register a Drive push-notification channel for incremental sync. The channel
           <code>token</code> must be
           <code
