@@ -87,8 +87,9 @@ describe('connector content manifest', () => {
       'bot can retain access after that person leaves a channel',
     );
     expect(slack.capturedRecords).toContain(
-      'First-observed reaction events with their initial count and user snapshot',
+      'First-observed reaction aggregates anchored to message time, with their initial count and user snapshot',
     );
+    expect(limitations).toContain('uses the source message timestamp');
   });
 
   it('discloses native provider history and reconciliation boundaries', () => {
@@ -117,6 +118,9 @@ describe('connector content manifest', () => {
     expect(githubClaims).toContain(
       'edits that do not change lifecycle state reuse the existing immutable row',
     );
+    expect(githubClaims).toContain('scheduled reconciliation runs every six hours');
+    expect(githubClaims).toContain('first 100 installations returned during OAuth');
+    expect(githubClaims).toContain('fall back to the connection owner’s broad OAuth token');
 
     expect(linear.limitations.join(' ')).toContain(
       'history begins when Timeline starts observing the selected team',
@@ -126,8 +130,9 @@ describe('connector content manifest', () => {
     );
     expect(linear.limitations.join(' ')).toContain('first 2,000 teams returned by the API');
     expect(linear.limitations.join(' ')).toContain(
-      '2,500 issues, 2,500 comments, and 2,500 projects per selected team',
+      '2,500 issues, 2,500 comments, and 2,500 projects across the complete selected-team set',
     );
+    expect(linear.limitations.join(' ')).toContain('runs every six hours');
     expect(linear.limitations.join(' ')).toContain(
       'retains issue status for at most 5,000 issue IDs',
     );
@@ -135,8 +140,10 @@ describe('connector content manifest', () => {
       'fields return to a previously captured combination',
     );
     expect(monday.limitations.join(' ')).toContain(
-      'Initial board activity-log backfill covers the preceding 30 days',
+      'Initial board activity-log backfill requests the preceding 30 days',
     );
+    expect(monday.limitations.join(' ')).toContain('first default response page');
+    expect(monday.limitations.join(' ')).toContain('does not paginate the activity log');
     expect(monday.limitations.join(' ')).toContain('lag Monday.com by up to 24 hours');
     expect(monday.limitations.join(' ')).toContain('10,000 boards and 2,500 WorkDocs');
     expect(monday.limitations.join(' ')).toContain('WorkDoc refresh reads at most 10,000 blocks');
@@ -183,6 +190,9 @@ describe('connector content manifest', () => {
     expect(claims).toContain('later deployment does not create a new row');
     expect(claims).toContain('lifecycle state for at most 5,000 issue IDs');
     expect(claims).toContain('missed regression webhook can be lost');
+    expect(claims).toContain('Scheduled Sentry reconciliation runs every 24 hours');
+    expect(claims).toContain('later deliveries for another project in that installation');
+    expect(claims).toContain('bypass project-selection checks');
     expect(claims).toContain('do not preserve the later action time');
     expect(claims).not.toContain('reconciliation recovers missed activity');
     expect(sentry.diagram.answer).toContain(

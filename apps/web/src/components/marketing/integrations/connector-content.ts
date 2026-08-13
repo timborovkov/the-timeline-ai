@@ -121,7 +121,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
         'A launch plan changes across a channel message, a long reply thread, and a shared risk document. Two days later, leadership asks for the final decision.',
       chronology: [
         'Timeline syncs the selected channel and keeps message and thread context together.',
-        'The file share metadata and reactions become adjacent evidence, not detached search results.',
+        'The file share metadata and first-observed reaction aggregates become adjacent evidence; reaction rows remain anchored to the source message time.',
         'The answer resolves the decision in time order and links back to the exact Slack records.',
       ],
       result:
@@ -132,7 +132,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Messages in selected private channels where the bot is present',
       'Thread roots and replies',
       'File shares and file metadata',
-      'First-observed reaction events with their initial count and user snapshot',
+      'First-observed reaction aggregates anchored to message time, with their initial count and user snapshot',
       'Message edits observed during reconciliation',
     ],
     recipes: [
@@ -169,7 +169,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Native workspace ingestion reconciles selected channels hourly; it is not a real-time mirror of every workspace event.',
       'After the initial history backfill, reconciliation looks back 14 days. Edits and reactions on older messages—and new replies whose thread root is older than that window—may not be observed.',
       'A single Slack thread is capped at the first 2,000 replies returned. The current sync does not persist a reply-page continuation, so replies beyond that cap remain absent on later runs.',
-      'A reaction event is immutable and keyed by message plus emoji. Later users or count changes for an already captured emoji do not update that row, so its count and user list remain the first-observed snapshot.',
+      'A reaction row is immutable, keyed by message plus emoji, and uses the source message timestamp rather than the time someone reacted. Later users or count changes for an already captured emoji do not update that row, so its count and user list remain the first-observed snapshot.',
       'The source picker returns at most 2,000 non-archived bot-visible channels. Channels beyond that listing cap cannot be selected, and private channels without the app cannot be captured.',
       'Timeline does not send, edit, delete, archive, or administer Slack messages through this native history sync.',
     ],
@@ -275,12 +275,12 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Connect GitHub through the configured GitHub App OAuth flow.',
       'Choose individual repositories for a fixed scope. Use an organization scope only when the GitHub App installation covers every repository you expect Timeline to sync.',
       'Have a team admin activate the shared sources.',
-      'Use signed GitHub App webhooks for prompt activity; slow reconciliation is a bounded recovery path.',
+      'Use signed GitHub App webhooks for prompt activity; scheduled reconciliation runs every six hours as a bounded recovery path.',
     ],
     permissions: [
       'Timeline requests repo and read:org OAuth scopes.',
       'The GitHub App needs read access to Contents, Issues, Pull requests, Actions, and Metadata for the complete record.',
-      'Organization expansion follows the connection owner’s OAuth access, while repository sync uses the GitHub App installation token.',
+      'Organization expansion follows the connection owner’s OAuth access. Repository sync uses a matching GitHub App installation token when Timeline discovers one, but currently falls back to the broad OAuth token when it cannot match an installation.',
       'OAuth tokens and GitHub App credentials are encrypted at rest.',
     ],
     limitations: [
@@ -290,6 +290,8 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'The source picker lists at most 2,000 organizations and the 2,000 most recently updated repositories available to the OAuth user. Older repositories outside that window cannot be chosen as individual fixed-scope sources.',
       'An organization source also expands at most its 2,000 most recently updated repositories. Older repositories beyond that cap are omitted even when the GitHub App installation has all-repository access.',
       'For an organization scope, install the GitHub App for all repositories you expect Timeline to capture. A repository visible to the OAuth user but excluded from a selected-repositories App installation can be selected yet fail to sync.',
+      'GitHub App discovery currently inspects only the first 100 installations returned during OAuth. If Timeline cannot match a repository owner to a discovered installation, repository API reads fall back to the connection owner’s broad OAuth token instead of failing closed; an activated organization source can therefore admit OAuth-visible repositories outside the intended App installation boundary.',
+      'Scheduled GitHub reconciliation runs every six hours. Without a matching webhook or another targeted sync trigger, recoverable activity can remain stale for nearly six hours.',
       'Commit reconciliation polls the repository default branch. A missed push webhook for commits that exist only on an unmerged non-default branch is not recovered unless those commits later reach the default branch.',
       'Polling retains issue and pull-request lifecycle state for at most 5,000 IDs per map. After an older closed entry is pruned, a missed reopen webhook can be lost because polling may reuse the original immutable open key.',
       'Issue and pull-request records are first-observed snapshots within each lifecycle state. Title, body, assignee, label, or milestone edits that do not change lifecycle state reuse the existing immutable row and do not create new chronology evidence.',
@@ -316,7 +318,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       {
         question: 'How quickly does activity appear?',
         answer:
-          'Configured signed webhooks carry normal PR, issue, release, workflow, and push activity promptly. Reconciliation runs more slowly across repository surfaces, but commit recovery polls only the default branch, so non-default-branch-only pushes rely on webhook delivery.',
+          'Configured signed webhooks carry normal PR, issue, release, workflow, and push activity promptly. Scheduled reconciliation runs every six hours across repository surfaces, but commit recovery polls only the default branch, so non-default-branch-only pushes rely on webhook delivery.',
       },
     ],
     related: ['linear', 'sentry', 'slack'],
@@ -397,7 +399,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Connect Linear with a person-owned OAuth connection.',
       'Choose the Linear teams that person is allowed to share.',
       'Have a Timeline team admin activate the selected sources.',
-      'Configure the signed Linear webhook for exact workflow-state transitions; reconciliation is a bounded recovery path for polled snapshots.',
+      'Configure the signed Linear webhook for exact workflow-state transitions; scheduled reconciliation runs every six hours as a bounded recovery path for polled snapshots.',
     ],
     permissions: [
       'Timeline requests Linear’s read scope.',
@@ -407,7 +409,8 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     ],
     limitations: [
       'The first sync captures current issue and project fields, not their earlier field transitions. Status, assignee, priority, and project-change history begins when Timeline starts observing the selected team.',
-      'Initial history is capped separately at 2,500 issues, 2,500 comments, and 2,500 projects per selected team. Older records beyond a surface cap are omitted and the current incremental cursor does not resume that backfill.',
+      'Initial history is capped separately at 2,500 issues, 2,500 comments, and 2,500 projects across the complete selected-team set, not per team. A high-volume team can crowd older records from another selected team out of a surface; omitted records are not resumed by the current incremental cursor.',
+      'Scheduled Linear reconciliation runs every six hours. Without webhook delivery, supported issue, comment, and project changes can remain stale for nearly six hours.',
       'The Linear source picker lists at most the first 2,000 teams returned by the API; teams beyond that cap cannot be selected.',
       'Without webhook delivery, reconciliation can miss a move between Linear workflow states that normalize to the same Timeline bucket, such as Backlog to Todo or In Progress to In Review, when no other captured field changes.',
       'Polling retains issue status for at most 5,000 issue IDs. After pruning, a missed reopen webhook can be lost when polling regenerates the original open-state digest.',
@@ -648,7 +651,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'OAuth tokens are encrypted at rest and captured events remain team-scoped.',
     ],
     limitations: [
-      'Initial board activity-log backfill covers the preceding 30 days. Older owner, status, due-field, and other activity-log changes are not imported.',
+      'Initial board activity-log backfill requests the preceding 30 days but reads only Monday.com’s first default response page. Additional activity inside that window is omitted because the current sync does not paginate the activity log; older changes are also not imported.',
       'Selected WorkDocs refresh on a daily reconciliation interval, not through board webhooks. Their captured content can therefore lag Monday.com by up to 24 hours.',
       'The source picker lists at most 10,000 boards and 2,500 WorkDocs. Resources beyond those caps cannot be selected.',
       'A WorkDoc refresh reads at most 10,000 blocks. Blocks beyond that limit are omitted on every daily refresh because the current extractor does not persist a block-page continuation.',
@@ -687,16 +690,16 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     eyebrow: 'Issue lifecycle becomes incident context',
     hero: 'Trace what broke, what changed, and how the fix was confirmed.',
     intro:
-      'Timeline turns selected Sentry issue lifecycle and release activity into incident evidence. Put open, resolved, ignored, alert, and release records beside the code and conversations needed to explain impact and recovery.',
+      'Timeline turns Sentry issue lifecycle and release activity into incident evidence. Reconciliation follows activated sources, while the current installation-level webhook route can also admit events from other projects in the same Sentry installation after its first matching delivery.',
     seoTitle: 'Sentry integration for cited incident history',
     seoDescription:
-      'Sync selected Sentry issue lifecycle, alerts, and releases into The Timeline, then trace incidents across Sentry, GitHub, and Slack with citations.',
+      'Sync Sentry issue lifecycle, alerts, and releases into The Timeline, with explicit project-scope and recovery limits for cited incident answers.',
     logo: '/connectors/sentry.svg',
     lightLogoTileInDarkMode: true,
     capability: 'Native integration',
     lastReviewed: LAST_REVIEWED,
     captureStatement:
-      'Timeline captures lifecycle changes and release evidence from selected Sentry organizations or projects and maps issues to cited incident evidence.',
+      'Timeline reconciles activated Sentry organizations or projects and maps captured lifecycle and release evidence to cited incidents. Current installation-level webhook routing can admit events from an unselected project in the same installation after a matching webhook is remembered.',
     providerStatement:
       'Sentry remains the monitoring and error-diagnostics system. Timeline does not collect application telemetry on Sentry’s behalf or replace Sentry alerting, traces, performance views, or issue management.',
     diagram: {
@@ -736,7 +739,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Issues entering an open lifecycle state',
       'The first captured resolved lifecycle transition per issue',
       'The first captured ignored lifecycle transition per issue',
-      'Issue alerts associated with selected projects',
+      'Issue alerts delivered for the remembered Sentry installation, including the project-scope caveat below',
       'Release creation activity',
       'The first captured deployment activity per Sentry release',
     ],
@@ -759,18 +762,21 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     ],
     setup: [
       'Connect Sentry using a confidential server-side OAuth application.',
-      'Choose individual projects for a fixed scope or an organization for all accessible projects there.',
+      'Choose individual projects to scope reconciliation or an organization for all accessible projects there; review the installation-webhook limitation before treating a project choice as a strict webhook boundary.',
       'Have a Timeline team admin activate the shared sources.',
-      'Configure the signed Sentry integration webhook for issue, alert, and release delivery. Reconciliation can recover release creation and issue state only when a newer occurrence advances the polling cursor; it cannot recover webhook-only alerts or deployment records.',
+      'Configure the signed Sentry integration webhook for issue, alert, and release delivery. Daily reconciliation can recover release creation and issue state only when a newer occurrence advances the polling cursor; it cannot recover webhook-only alerts or deployment records.',
     ],
     permissions: [
       'Timeline requests org:read, project:read, event:read, event:admin, and team:read.',
       'A confidential OAuth app with a client secret is required; the current adapter does not use a PKCE-only public client.',
       'The integration sees only organizations and projects available to the authorizing Sentry account.',
+      'Activated project selections scope reconciliation, but the current remembered-installation webhook route does not recheck the organization/project selection on later deliveries.',
       'These credentials are separate from the DSN used to report Timeline’s own application errors.',
     ],
     limitations: [
       'Alert-trigger and release-deployment records are webhook-only. Reconciliation polls issues and release creation, so it cannot recover a missed alert or deployment delivery.',
+      'Scheduled Sentry reconciliation runs every 24 hours. Even a recoverable newer occurrence or release creation can remain stale for nearly a day when its webhook is missed.',
+      'After the first matching webhook stores a Sentry installation route, later deliveries for another project in that installation bypass project-selection checks and can enter the same Timeline team even when that project was not activated.',
       'A missed resolve or ignore webhook for a quiet issue may not be recovered because issue polling advances from last-seen occurrence time, which a state-only action does not update.',
       'Issue lifecycle webhooks use the issue’s Sentry first-seen or last-seen occurrence time. They do not preserve the later action time when someone resolves or ignores a quiet issue.',
       'Resolved and ignored records use one immutable lifecycle key per issue. If an issue regresses and later resolves or is ignored again, the repeated closed transition does not create a new lifecycle row.',
@@ -789,7 +795,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       {
         question: 'Can I connect only selected projects?',
         answer:
-          'Yes. Choose specific projects for a fixed list, or an organization for all projects the connection can access there.',
+          'You can choose specific projects to scope reconciliation, or an organization for all accessible projects there. That project choice is not currently a strict webhook boundary: after a matching installation route is remembered, a later delivery from another project in the same Sentry installation can also be admitted.',
       },
       {
         question: 'Is this the same as configuring a Sentry DSN?',

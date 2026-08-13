@@ -30,6 +30,7 @@ describe('public integration routes', () => {
     expect(html).not.toContain('href="/integrations/notion"');
     expect(html).toContain('compact');
     expect(html).toContain('dark:bg-white');
+    expect(html).toContain('text-[4rem]');
     expect(html).toContain('Native integrations');
     expect(html).toContain('Capability tiers');
     expect(text).toContain('02/Proof');
@@ -46,6 +47,10 @@ describe('public integration routes', () => {
     );
 
     expect(html).toContain('dark:bg-white');
+    expect(html).toContain('scroll-mt-12');
+    expect(html).toContain('text-[4rem]');
+    expect(html).not.toContain('--record-index');
+    expect(html).not.toContain('--marker-index');
   });
 
   it('renders provider-specific truth, evidence, limitations, FAQs, and a single h1', async () => {

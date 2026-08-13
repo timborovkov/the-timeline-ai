@@ -89,7 +89,16 @@
   right: 0;
   left: 0;
   height: 1px;
+  overflow: hidden;
+  background: var(--border-strong);
+  transform-origin: left;
+}
+
+.transfer span::after {
+  position: absolute;
+  inset: 0;
   background: var(--signal);
+  content: '';
   transform-origin: left;
 }
 
@@ -234,6 +243,10 @@
     transform-origin: top;
   }
 
+  .transfer span::after {
+    transform-origin: top;
+  }
+
   .transfer svg {
     transform: rotate(90deg);
   }
@@ -262,93 +275,50 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .record {
-    animation: record-enter 650ms cubic-bezier(0.22, 1, 0.36, 1) both;
-    animation-delay: calc(var(--record-index) * 140ms);
-  }
-
-  .transfer span {
-    animation: trace-enter 700ms cubic-bezier(0.22, 1, 0.36, 1) 480ms both;
+  .transfer span::after {
+    animation: trace-pass 900ms cubic-bezier(0.22, 1, 0.36, 1) 240ms both;
   }
 
   .rail i {
-    animation: marker-enter 500ms cubic-bezier(0.22, 1, 0.36, 1) both;
-    animation-delay: calc(620ms + var(--marker-index) * 120ms);
-  }
-
-  .answer {
-    animation: answer-enter 700ms cubic-bezier(0.22, 1, 0.36, 1) 760ms both;
+    animation: marker-pulse 640ms cubic-bezier(0.22, 1, 0.36, 1) 840ms both;
   }
 
   .citations > span {
-    transition:
-      border-color 160ms cubic-bezier(0.25, 1, 0.5, 1),
-      transform 160ms cubic-bezier(0.25, 1, 0.5, 1);
+    transition: border-color 80ms cubic-bezier(0.25, 1, 0.5, 1);
   }
 
   .citations > span:hover {
     border-color: var(--signal);
-    transform: translateY(-1px);
   }
 }
 
 @media (max-width: 63.99rem) and (prefers-reduced-motion: no-preference) {
-  .transfer span {
-    animation-name: trace-enter-vertical;
+  .transfer span::after {
+    animation-name: trace-pass-vertical;
   }
 }
 
-@keyframes record-enter {
+@keyframes trace-pass {
   from {
-    opacity: 0;
-    transform: translateX(-0.75rem);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@keyframes trace-enter {
-  from {
-    opacity: 0;
     transform: scaleX(0);
   }
   to {
-    opacity: 1;
     transform: scaleX(1);
   }
 }
 
-@keyframes trace-enter-vertical {
+@keyframes trace-pass-vertical {
   from {
-    opacity: 0;
     transform: scaleY(0);
   }
   to {
-    opacity: 1;
     transform: scaleY(1);
   }
 }
 
-@keyframes answer-enter {
-  from {
-    opacity: 0;
-    transform: translateX(0.75rem);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@keyframes marker-enter {
-  from {
-    opacity: 0;
-    transform: scale(0.6);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
+@keyframes marker-pulse {
+  50% {
+    box-shadow: 0 0 0 0.28rem color-mix(in oklch, var(--signal) 24%, transparent);
+    transform: scale(1.16);
   }
 }

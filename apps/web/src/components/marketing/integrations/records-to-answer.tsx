@@ -1,7 +1,6 @@
 import { ArrowRight, Link2 } from 'lucide-react';
 
 import type { ConnectorContent } from '@/components/marketing/integrations/connector-content';
-import type { CSSProperties } from 'react';
 
 import styles from '@/components/marketing/integrations/records-to-answer.module.css';
 
@@ -26,12 +25,8 @@ export function RecordsToAnswer({
       </div>
       <div className={styles.flow}>
         <div className={styles.records} aria-label={`${connector.name} source records`}>
-          {connector.diagram.records.map((record, index) => (
-            <article
-              key={`${record.label}-${record.time}`}
-              className={styles.record}
-              style={{ '--record-index': index } as CSSProperties}
-            >
+          {connector.diagram.records.map((record) => (
+            <article key={`${record.label}-${record.time}`} className={styles.record}>
               <span>{record.time}</span>
               <strong>{record.label}</strong>
               <p>{record.detail}</p>
@@ -45,11 +40,8 @@ export function RecordsToAnswer({
         <div className={styles.chronology}>
           <span className={styles.index}>Chronology</span>
           <div className={styles.rail} aria-hidden="true">
-            {connector.diagram.records.map((record, index) => (
-              <i
-                key={`${record.label}-${record.time}`}
-                style={{ '--marker-index': index } as CSSProperties}
-              />
+            {connector.diagram.records.map((record) => (
+              <i key={`${record.label}-${record.time}`} />
             ))}
           </div>
           <p>Immutable events keep their source and order.</p>

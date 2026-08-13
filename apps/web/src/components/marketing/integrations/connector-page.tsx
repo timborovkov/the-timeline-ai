@@ -75,7 +75,7 @@ function ConnectorHero({
                 <p className="mt-1 text-sm font-semibold text-fg">{connector.name}</p>
               </div>
             </div>
-            <h1 className="max-w-[15ch] text-[2.6rem] font-semibold leading-[0.98] tracking-[-0.055em] text-fg sm:text-6xl lg:text-7xl">
+            <h1 className="max-w-[15ch] break-words text-[4rem] font-semibold leading-[0.9] tracking-[-0.065em] text-fg sm:text-[clamp(4.5rem,7.5vw,7.5rem)]">
               {connector.hero}
             </h1>
           </div>
@@ -96,7 +96,7 @@ function ConnectorHero({
             </div>
           </div>
         </div>
-        <div className="mt-14 sm:mt-20" id="how-it-works">
+        <div className="mt-14 scroll-mt-12 sm:mt-20" id="how-it-works">
           <RecordsToAnswer connector={connector} />
         </div>
       </div>
