@@ -79,7 +79,16 @@ describe('connector content manifest', () => {
     expect(limitations).toContain('remain the first-observed snapshot');
     expect(limitations).toContain('first 2,000 replies returned');
     expect(limitations).toContain('replies beyond that cap remain absent');
-    expect(limitations).toContain('at most 2,000 non-archived bot-visible channels');
+    expect(limitations).toContain('at most 2,000 non-archived channels');
+    expect(slack.capturedRecords).toContain(
+      'Messages in selected public channels where the Slack app is a member',
+    );
+    expect(slack.setup.join(' ')).toContain(
+      'invite the app to every selected public or private channel before syncing',
+    );
+    expect(slack.setup.join(' ')).toContain('fail with not_in_channel');
+    expect(limitations).toContain('does not preserve Slack’s membership flag');
+    expect(limitations).toContain('A listed public channel still requires the bot to be invited');
     expect(slack.permissions.join(' ')).toContain(
       'does not intersect bot access with the authorizing person’s own channel membership',
     );
@@ -148,6 +157,12 @@ describe('connector content manifest', () => {
     expect(monday.limitations.join(' ')).toContain('10,000 boards and 2,500 WorkDocs');
     expect(monday.limitations.join(' ')).toContain('WorkDoc refresh reads at most 10,000 blocks');
     expect(monday.limitations.join(' ')).toContain('does not persist a block-page continuation');
+    expect(monday.limitations.join(' ')).toContain(
+      'last lifecycle bucket for at most 5,000 item IDs',
+    );
+    expect(monday.limitations.join(' ')).toContain(
+      'return to a previously captured status can reuse the original immutable key',
+    );
     expect(monday.limitations.join(' ')).toContain(
       'user-created board with that prefix can therefore be hidden',
     );
@@ -232,7 +247,13 @@ describe('connector content manifest', () => {
     expect(promotedClaims).not.toMatch(/Drive comments|selected folders|specific folders/iu);
     expect(publicClaims).toContain('My Drive root');
     expect(publicClaims).toContain('shared drives');
-    expect(publicClaims).toContain('current changes cursor');
+    expect(publicClaims).toContain('first successful reconciliation establishes a changes cursor');
+    expect(publicClaims).toContain('Activation only queues the first sync');
+    expect(publicClaims).toContain('does not persist a Drive cursor');
+    expect(publicClaims).toContain(
+      'Changes made between activation and that cursor can precede it',
+    );
+    expect(publicClaims).toContain('are never returned');
     expect(publicClaims).toContain('does not ingest Drive comments or Activity history');
     expect(publicClaims).not.toContain(
       'A team receives changes only from the My Drive root or shared drives',

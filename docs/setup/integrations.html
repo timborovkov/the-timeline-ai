@@ -360,11 +360,12 @@ MONDAY_WEBHOOK_SECRET=...</code></pre>
         </li>
         <li>
           Connect Slack from the native catalog, share selected channels from
-          <code>/app/me/connections</code>, then activate them from <code>/app/sources</code>.
-          Private channels require the bot to be present before Slack will expose history. The
-          worker reconciles selected channels hourly and honors Slack Web API
-          <code>Retry-After</code> responses as shared provider budget pauses instead of retrying
-          per Timeline team.
+          <code>/app/me/connections</code>, then activate them from <code>/app/sources</code>. Every
+          selected public or private channel requires the bot to be present before Slack will expose
+          history. The native picker does not currently preserve Slack's membership flag, so invite
+          the bot even when a public channel appears in the list. The worker reconciles selected
+          channels hourly and honors Slack Web API <code>Retry-After</code> responses as shared
+          provider budget pauses instead of retrying per Timeline team.
         </li>
       </ol>
 

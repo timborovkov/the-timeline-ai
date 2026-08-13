@@ -128,7 +128,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
         'Leadership gets a concise answer without asking the channel to reconstruct the conversation.',
     },
     capturedRecords: [
-      'Messages in selected public channels',
+      'Messages in selected public channels where the Slack app is a member',
       'Messages in selected private channels where the bot is present',
       'Thread roots and replies',
       'File shares and file metadata',
@@ -154,14 +154,14 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     ],
     setup: [
       'Connect the Slack workspace with a person-owned OAuth connection.',
-      'Choose from channels returned to the Slack bot. Private-channel visibility follows bot membership rather than the authorizing person’s current membership.',
+      'Choose from channels returned to the Slack bot, then invite the app to every selected public or private channel before syncing. A listed public channel can still fail with not_in_channel when the bot is not a member.',
       'Have a team admin activate the shared channel sources.',
       'Let hourly reconciliation capture history; configure the separate Slack app flow for /ask and conversational capture.',
     ],
     permissions: [
       'Timeline requests channel and group read/history access, plus file, reaction, and user read access.',
-      'A private channel is readable when the Slack app is a member; the native connector does not intersect bot access with the authorizing person’s own channel membership.',
-      'The OAuth installation is initiated by a person, but native history sync uses the workspace bot token. Only explicitly shared bot-visible channels can be activated by the team.',
+      'A selected public or private channel is readable only when the Slack app is a member; the native connector does not intersect bot access with the authorizing person’s own channel membership.',
+      'The OAuth installation is initiated by a person, but native history sync uses the workspace bot token. Only explicitly shared channels can be activated by the team, and every selected channel still requires bot membership for history reads.',
       'Previously captured evidence remains team-scoped if a connection later needs attention.',
     ],
     limitations: [
@@ -170,14 +170,14 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'After the initial history backfill, reconciliation looks back 14 days. Edits and reactions on older messages—and new replies whose thread root is older than that window—may not be observed.',
       'A single Slack thread is capped at the first 2,000 replies returned. The current sync does not persist a reply-page continuation, so replies beyond that cap remain absent on later runs.',
       'A reaction row is immutable, keyed by message plus emoji, and uses the source message timestamp rather than the time someone reacted. Later users or count changes for an already captured emoji do not update that row, so its count and user list remain the first-observed snapshot.',
-      'The source picker returns at most 2,000 non-archived bot-visible channels. Channels beyond that listing cap cannot be selected, and private channels without the app cannot be captured.',
+      'The source picker returns at most 2,000 non-archived channels, but does not preserve Slack’s membership flag. A listed public channel still requires the bot to be invited, private channels without the app are absent, and channels beyond the listing cap cannot be selected.',
       'Timeline does not send, edit, delete, archive, or administer Slack messages through this native history sync.',
     ],
     faqs: [
       {
         question: 'Does Timeline index our entire Slack workspace?',
         answer:
-          'No. A connection owner shares specific channels, and a team admin activates only the sources the team wants in Timeline.',
+          'No. A connection owner shares specific channels, a team admin activates only the sources the team wants in Timeline, and the Slack app must be a member of each selected public or private channel before history sync can read it.',
       },
       {
         question: 'Can Timeline read private Slack channels?',
@@ -450,7 +450,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     eyebrow: 'File change becomes durable evidence',
     hero: 'Turn new Drive changes into cited document evidence.',
     intro:
-      'Timeline watches admitted Google Drive changes after activation. Selecting a shared drive scopes live files to that drive; selecting My Drive root can also admit changes from shared drives the connected account can access. When a supported file changes, Timeline stores its current content as a versioned document so later answers can cite the state it observed.',
+      'Timeline watches admitted Google Drive changes after its first successful reconciliation establishes a changes cursor. Selecting a shared drive scopes live files to that drive; selecting My Drive root can also admit changes from shared drives the connected account can access. When a supported file changes, Timeline stores its current content as a versioned document so later answers can cite the state it observed.',
     seoTitle: 'Google Drive integration for cited document answers',
     seoDescription:
       'Capture sync-observed Google Drive file states in The Timeline for cited cross-tool answers and versioned evidence, with explicit source-scope limitations.',
@@ -495,8 +495,8 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       result: 'The handoff names the current decision without erasing how it was reached.',
     },
     capturedRecords: [
-      'New file changes under an activated My Drive root',
-      'New file changes inside activated shared drives',
+      'New file changes observed under an activated My Drive root after the first successful reconciliation cursor',
+      'New file changes observed inside activated shared drives after the first successful reconciliation cursor',
       'Accessible shared-drive changes that the current sync may admit when My Drive root is active',
       'Drive removal tombstones with a file ID and removal time',
       'File names, MIME types, modification times, owners, and source links',
@@ -524,7 +524,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Connect Google Drive with a person-owned OAuth connection.',
       'Choose My Drive root or one or more shared drives that person can share.',
       'Have a Timeline team admin activate the shared sources.',
-      'Use cursor-based reconciliation to process changes. Timeline does not currently provision a customer-configurable Drive push channel.',
+      'Let the first successful reconciliation establish the Drive changes cursor, then use cursor-based reconciliation to process later changes. Timeline does not currently provision a customer-configurable Drive push channel.',
     ],
     permissions: [
       'The connection sees only files the authorizing Google account is allowed to read.',
@@ -533,7 +533,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'OAuth credentials are encrypted at rest; Timeline’s own team and event visibility rules still apply after capture.',
     ],
     limitations: [
-      'Initial activation starts from Drive’s current changes cursor; it does not enumerate or import untouched files that already existed.',
+      'Activation only queues the first sync; it does not persist a Drive cursor. A cursor is requested when reconciliation runs and saved only as that work progresses, so capture effectively begins at the cursor used by the first successful reconciliation. Changes made between activation and that cursor can precede it and are never returned. Untouched files that already existed are not enumerated or imported.',
       'Versions are sync-observed snapshots, not a copy of every Drive edit. If a file changes multiple times before reconciliation, Timeline downloads the current body and may not preserve the intermediate wording.',
       'The source picker exposes My Drive root and up to the first 100 shared drives returned by Google; the current listing does not paginate beyond that first page or offer arbitrary individual subfolders.',
       'My Drive root is not isolated from shared drives in the current change filter. If root is active, an accessible shared-drive file change can be captured with its metadata and supported body even when that shared drive was not separately activated.',
@@ -655,6 +655,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Selected WorkDocs refresh on a daily reconciliation interval, not through board webhooks. Their captured content can therefore lag Monday.com by up to 24 hours.',
       'The source picker lists at most 10,000 boards and 2,500 WorkDocs. Resources beyond those caps cannot be selected.',
       'A WorkDoc refresh reads at most 10,000 blocks. Blocks beyond that limit are omitted on every daily refresh because the current extractor does not persist a block-page continuation.',
+      'Monday reconciliation retains the last lifecycle bucket for at most 5,000 item IDs. After an older item is pruned, a missed webhook and activity-log entry followed by a return to a previously captured status can reuse the original immutable key, so polling may omit that transition.',
       'When Monday omits both board type fields, helper-board detection falls back to a name beginning with “Subitems of”. An ordinary user-created board with that prefix can therefore be hidden from the picker.',
       'Missing webhook scopes degrades prompt delivery, but selected-source reconciliation continues more slowly.',
       'Timeline does not edit board values, run automations, assign people, or replace Monday.com workflows.',
