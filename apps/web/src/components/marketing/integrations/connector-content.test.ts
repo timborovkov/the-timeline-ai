@@ -33,6 +33,7 @@ describe('connector content manifest', () => {
     expect(serializedRoutes).not.toContain('notion');
     expect(serializedRoutes).not.toContain('jira');
     expect(CONNECTOR_DIRECTORY_SUMMARY.mcpAccess).toContain('Notion');
+    expect(CONNECTOR_DIRECTORY_SUMMARY.mcpAccess).not.toContain('Figma');
     expect(CONNECTOR_DIRECTORY_SUMMARY.planned.indexable).toBe(false);
   });
 
@@ -58,6 +59,15 @@ describe('connector content manifest', () => {
     expect(findConnector('google-drive')?.providerId).toBe('google_drive');
     expect(findConnector('notion')).toBeUndefined();
     expect(findConnector('planned-slack-alternative')).toBeUndefined();
+  });
+
+  it('discloses the Slack incremental reconciliation window', () => {
+    const slack = findConnector('slack');
+    if (!slack) throw new Error('expected Slack connector');
+
+    const limitations = slack.limitations.join(' ');
+    expect(limitations).toContain('looks back 14 days');
+    expect(limitations).toContain('new replies whose thread root is older than that window');
   });
 
   it('keeps Google Drive claims inside the implemented change-feed boundary', () => {

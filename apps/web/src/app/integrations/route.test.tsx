@@ -43,6 +43,9 @@ describe('public integration routes', () => {
     expect(html).toContain('What enters the Timeline');
     expect(html).toContain('Honest limitations');
     expect(html).toContain('Questions, answered');
+    expect(html).not.toContain('02 / Questions');
+    expect(html).not.toContain('09 / Related');
+    expect(html).toContain('10 / Start');
     expect(html).toContain('PR #482');
     expect(html).toContain('application/ld+json');
   });

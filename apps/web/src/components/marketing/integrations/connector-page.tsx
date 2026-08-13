@@ -148,7 +148,7 @@ function Questions({ connector }: { connector: ConnectorContent }) {
   return (
     <section className="border-b border-border py-16 sm:py-20" aria-labelledby="questions">
       <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
-        <SectionIndex index="02" label="Questions" />
+        <SectionLabel label="Questions" />
         <div>
           <h2
             id="questions"
@@ -177,7 +177,7 @@ function WorkedScenario({ connector }: { connector: ConnectorContent }) {
   return (
     <section className="border-b border-border py-16 sm:py-20" aria-labelledby="scenario">
       <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
-        <SectionIndex index="03" label="Worked scenario" />
+        <SectionLabel label="Worked scenario" />
         <div className="grid gap-8 lg:grid-cols-[0.82fr_1.18fr]">
           <div>
             <h2 id="scenario" className="text-3xl font-semibold tracking-tight sm:text-4xl">
@@ -215,7 +215,7 @@ function CapturedRecords({ connector }: { connector: ConnectorContent }) {
   return (
     <section className="border-b border-border py-16 sm:py-20" aria-labelledby="records">
       <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
-        <SectionIndex index="04" label="Captured record" />
+        <SectionLabel label="Captured records" />
         <div>
           <h2 id="records" className="text-3xl font-semibold tracking-tight sm:text-4xl">
             What enters the Timeline
@@ -240,7 +240,7 @@ function Recipes({ connector }: { connector: ConnectorContent }) {
   return (
     <section className="border-b border-border py-16 sm:py-20" aria-labelledby="recipes">
       <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
-        <SectionIndex index="05" label="Cross-tool recipes" />
+        <SectionLabel label="Cross-tool recipes" />
         <div>
           <h2 id="recipes" className="text-3xl font-semibold tracking-tight sm:text-4xl">
             Better when the silos meet
@@ -280,7 +280,7 @@ function SetupAndPrivacy({ connector }: { connector: ConnectorContent }) {
   return (
     <section className="border-b border-border py-16 sm:py-20" aria-labelledby="setup">
       <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
-        <SectionIndex index="06" label="Setup and privacy" />
+        <SectionLabel label="Setup and privacy" />
         <div className="grid gap-px border border-border bg-border lg:grid-cols-2">
           <article className="bg-bg p-6 sm:p-8">
             <Sparkles aria-hidden="true" className="size-5 text-signal" />
@@ -318,7 +318,7 @@ function Limitations({ connector }: { connector: ConnectorContent }) {
   return (
     <section className="border-b border-border py-16 sm:py-20" aria-labelledby="limitations">
       <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
-        <SectionIndex index="07" label="Boundaries" />
+        <SectionLabel label="Boundaries" />
         <div>
           <h2 id="limitations" className="text-3xl font-semibold tracking-tight sm:text-4xl">
             Honest limitations
@@ -348,7 +348,7 @@ function Faq({ connector }: { connector: ConnectorContent }) {
   return (
     <section className="border-b border-border py-16 sm:py-20" aria-labelledby="faq">
       <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
-        <SectionIndex index="08" label="FAQ" />
+        <SectionLabel label="FAQ" />
         <div>
           <h2 id="faq" className="text-3xl font-semibold tracking-tight sm:text-4xl">
             Questions, answered
@@ -382,7 +382,7 @@ function Related({ connector }: { connector: ConnectorContent }) {
   return (
     <section className="border-b border-border py-16 sm:py-20" aria-labelledby="related">
       <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
-        <SectionIndex index="09" label="Related" />
+        <SectionLabel label="Related integrations" />
         <div>
           <h2 id="related" className="text-2xl font-semibold tracking-tight">
             Continue across the work
@@ -441,4 +441,8 @@ function SectionIndex({ index, label }: { index: string; label: string }) {
       {index} / {label}
     </p>
   );
+}
+
+function SectionLabel({ label }: { label: string }) {
+  return <p className="text-sm font-medium text-fg-muted">{label}</p>;
 }

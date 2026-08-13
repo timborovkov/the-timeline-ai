@@ -164,6 +164,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     ],
     limitations: [
       'Native workspace ingestion reconciles selected channels hourly; it is not a real-time mirror of every workspace event.',
+      'After the initial history backfill, reconciliation looks back 14 days. Edits and reactions on older messages—and new replies whose thread root is older than that window—may not be observed.',
       'Channels the connection owner cannot access, and private channels without the app, cannot be captured.',
       'Timeline does not send, edit, delete, archive, or administer Slack messages through this native history sync.',
     ],
@@ -778,7 +779,7 @@ export const CONNECTOR_DIRECTORY_SUMMARY = {
   path: '/integrations' as const,
   indexable: true as const,
   native: INDEXABLE_CONNECTOR_ROUTES,
-  mcpAccess: ['Notion', 'Jira', 'Confluence', 'Figma', 'Stripe'] as const,
+  mcpAccess: ['Notion', 'Jira', 'Confluence', 'Stripe'] as const,
   planned: {
     indexable: false as const,
     routePolicy: 'Disclose the tier in the directory without publishing planned connector routes.',
