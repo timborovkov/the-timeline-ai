@@ -3,8 +3,8 @@ import Image from 'next/image';
 import Link from 'next/link';
 
 import {
-  CONNECTOR_DIRECTORY_SUMMARY,
   CONNECTORS,
+  getConnectorCapabilityTiers,
 } from '@/components/marketing/integrations/connector-content';
 import { DirectoryStructuredData } from '@/components/marketing/integrations/connector-seo';
 import { RecordsToAnswer } from '@/components/marketing/integrations/records-to-answer';
@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
   const featuredConnector = CONNECTORS.find((connector) => connector.slug === 'slack');
   if (!featuredConnector) throw new Error('Native Slack connector content is required');
+  const capabilityTiers = getConnectorCapabilityTiers();
 
   return (
     <PublicShell
@@ -115,8 +116,9 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
                   Every connector has a specific evidence story.
                 </h2>
                 <p className="mt-4 max-w-[64ch] text-base leading-relaxed text-fg-muted">
-                  Shared structure keeps the experience coherent. Provider-specific records,
-                  questions, scenarios, permissions, and limitations keep the pages useful.
+                  Start with one operating question. Timeline orders selected records by time, keeps
+                  their source attached, and cites the evidence used in the answer. This Slack
+                  example shows that journey from conversation to chronology.
                 </p>
                 <div className="mt-10">
                   <RecordsToAnswer connector={featuredConnector} compact />
@@ -131,32 +133,32 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
             <SectionLabel label="Capability tiers" />
             <div>
               <h2 id="tiers" className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                Capability is not a marketing synonym.
+                Know what each connection can do.
               </h2>
               <p className="mt-4 max-w-[64ch] text-base leading-relaxed text-fg-muted">
-                Native ingestion, live MCP access, and planned support are different capabilities.
-                This directory names each tier and publishes detailed pages only for the six native
-                integrations.
+                Native integrations store selected evidence in Timeline. MCP connections provide
+                live tool access without passive ingestion. Planned native support cannot be
+                connected yet.
               </p>
               <div className="mt-10 border-t border-border">
                 <CapabilityRow
                   icon={Check}
                   title="Native ingestion"
-                  status="Indexable"
-                  body={CONNECTORS.map((connector) => connector.name).join(', ')}
+                  status="Available now"
+                  body={capabilityTiers.nativeProviders.join(', ')}
                   live
                 />
                 <CapabilityRow
                   icon={Wrench}
                   title="MCP access"
-                  status="Live tools, not passive ingestion"
-                  body={CONNECTOR_DIRECTORY_SUMMARY.mcpAccess.join(', ')}
+                  status="Live access"
+                  body={capabilityTiers.mcpAccess.join(', ')}
                 />
                 <CapabilityRow
                   icon={CircleDotDashed}
-                  title="Planned connectors"
-                  status="Noindex"
-                  body="Disclosed as future capability without thin, indexable connector pages."
+                  title="Planned native support"
+                  status="Not available yet"
+                  body={capabilityTiers.plannedProviders.join(', ')}
                 />
               </div>
             </div>

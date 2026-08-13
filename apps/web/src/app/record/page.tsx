@@ -1,4 +1,4 @@
-import { ArrowRight, BookOpen, FileSearch, NotebookPen, ScrollText } from 'lucide-react';
+import { ArrowRight, BookOpen, FileSearch } from 'lucide-react';
 import Link from 'next/link';
 
 import type { Metadata } from 'next';
@@ -23,10 +23,8 @@ import { ProvenanceDiagram } from '@/components/marketing/editorial/provenance-d
 export const metadata: Metadata = createRecordMetadata();
 
 const TYPE_ICONS = {
-  essay: NotebookPen,
   playbook: BookOpen,
   dossier: FileSearch,
-  'product-note': ScrollText,
 } as const;
 
 export default function RecordPage() {
@@ -44,13 +42,12 @@ export default function RecordPage() {
               receipts.
             </h1>
             <p className="mt-8 max-w-2xl text-lg leading-8 text-fg-muted sm:text-xl">
-              Essays, playbooks, dossiers, and product notes about turning scattered work into
+              Practical playbooks and evidence-led dossiers for turning scattered work into
               chronology, then cited operational memory.
             </p>
             <p className="mt-5 max-w-xl text-sm leading-7 text-fg-dim">
-              “{EDITORIAL_PUBLICATION_NAME}” is a provisional public name, isolated from the
-              editorial structure so the publication can be renamed without changing its routes or
-              content model.
+              Start with a direct answer, then inspect the workflow, source boundaries, limitations,
+              and citations that make it defensible.
             </p>
           </div>
           <ProvenanceDiagram diagram={featuredGuide.diagram} answerHeadingLevel={2} />
@@ -61,10 +58,10 @@ export default function RecordPage() {
         <div className="mx-auto max-w-[94rem] px-4 py-16 sm:px-6 sm:py-24 lg:px-10">
           <EditorialSectionHeading
             index="01 / The desk"
-            title="Four forms for understanding how work becomes evidence."
-            intro="Shared publishing structure, distinct editorial purpose. Each form earns its place by answering a different kind of question."
+            title="Two formats for turning source evidence into a useful answer."
+            intro="Playbooks give you a repeatable workflow. Dossiers reconstruct one project or incident without hiding uncertainty."
           />
-          <div className="mt-12 grid gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-12 grid gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-2">
             {EDITORIAL_CONTENT_TYPES.map((type) => {
               const Icon = TYPE_ICONS[type.id];
               return (

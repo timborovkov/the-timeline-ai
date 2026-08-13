@@ -1,7 +1,6 @@
-/**
- * Keep the provisional publication name behind this single export so the
- * editorial system can be renamed without coupling its identity to routes.
- */
+import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
+
+/** The finalized name of Timeline's public editorial publication. */
 export const EDITORIAL_PUBLICATION_NAME = 'The Record';
 
 export const RECORD_ROUTE = '/record' as const;
@@ -21,7 +20,7 @@ export const GUIDE_ROUTES = {
   sentryReleaseIncidents: '/guides/connect-sentry-incidents-to-releases-discussions-and-fixes',
 } as const;
 
-type EditorialContentType = 'essay' | 'playbook' | 'dossier' | 'product-note';
+type EditorialContentType = 'playbook' | 'dossier';
 export type GuideRoute = (typeof GUIDE_ROUTES)[keyof typeof GUIDE_ROUTES];
 type GuideSlug = GuideRoute extends `/guides/${infer Slug}` ? Slug : never;
 type NativeEditorialProvider = (typeof NATIVE_EDITORIAL_PROVIDERS)[number];
@@ -107,32 +106,18 @@ export interface EditorialGuide {
 
 export const EDITORIAL_CONTENT_TYPES: readonly EditorialContentTypeDefinition[] = [
   {
-    id: 'essay',
-    label: 'Essays',
-    index: '01',
-    description:
-      'Arguments about evidence, memory, accountability, and the operating habits behind durable work.',
-  },
-  {
     id: 'playbook',
     label: 'Playbooks',
-    index: '02',
+    index: '01',
     description:
       'Answer-first workflows for recurring questions that cross tools, teams, and reporting lines.',
   },
   {
     id: 'dossier',
     label: 'Dossiers',
-    index: '03',
+    index: '02',
     description:
       'Evidence-led reconstructions of projects, incidents, launches, and the decisions around them.',
-  },
-  {
-    id: 'product-note',
-    label: 'Product notes',
-    index: '04',
-    description:
-      'Precise notes on what Timeline can do, what changed, and where the capability boundary sits.',
   },
 ] as const;
 
@@ -197,32 +182,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
         output: 'A cited answer with visible gaps, ready for human review.',
       },
     ],
-    diagram: {
-      label: 'Illustrative cross-tool query',
-      query: 'What changed in the launch brief, and what is still undecided?',
-      sources: [
-        {
-          provider: 'Slack',
-          stamp: 'Mon / 09:14',
-          signal: 'The team agrees to move the onboarding review to Friday.',
-        },
-        {
-          provider: 'Google Drive',
-          stamp: 'Tue / 15:40',
-          signal: 'The launch brief is revised with the new review date.',
-        },
-        {
-          provider: 'Slack',
-          stamp: 'Wed / 11:05',
-          signal: 'The launch owner says pricing language is still open.',
-        },
-      ],
-      chronology: ['Discussion', 'Document revision', 'Open question'],
-      answerTitle: 'The review date moved; pricing is still unresolved.',
-      answerBody:
-        'The revised brief reflects Friday as the onboarding review date. The latest project discussion still leaves pricing language open.',
-      citations: ['01', '02', '03'],
-    },
+    diagram: PUBLIC_DEMO_STORY.editorial.slackAndDrive,
     prompt:
       'For [project], review the selected Slack and Google Drive evidence from [start date] to [end date]. Tell me what changed, which source is current, what remains unresolved, and who owns the next step. Cite every factual claim and call out conflicts instead of resolving them silently.',
     boundaries: [
@@ -349,32 +309,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
         output: 'A reviewed update that can survive follow-up questions.',
       },
     ],
-    diagram: {
-      label: 'Illustrative weekly compilation',
-      query: 'What changed in Project Atlas from Monday through Friday?',
-      sources: [
-        {
-          provider: 'Linear',
-          stamp: 'Tue / 10:20',
-          signal: 'ATLAS-42 moves to Done after review.',
-        },
-        {
-          provider: 'GitHub',
-          stamp: 'Wed / 14:35',
-          signal: 'The related pull request merges; checks pass.',
-        },
-        {
-          provider: 'Slack',
-          stamp: 'Thu / 16:10',
-          signal: 'Release is held while the migration plan is reviewed.',
-        },
-      ],
-      chronology: ['Plan moved', 'Code merged', 'Release blocked'],
-      answerTitle: 'Implementation finished; release remains blocked.',
-      answerBody:
-        'The tracked issue reached Done and the related change merged with passing checks. The team has not released it because the migration plan still needs review.',
-      citations: ['01', '02', '03'],
-    },
+    diagram: PUBLIC_DEMO_STORY.editorial.weeklyEngineering,
     prompt:
       'Create the weekly update for [project] from [start date and time] through [end date and time] in [timezone]. Use selected Slack, Linear, and GitHub evidence. Return four sections: outcomes, decisions, blockers, and next commitments. Distinguish issue completion, merge, release, and verified outcome. Cite every claim, list source mismatches, and say when evidence is missing.',
     boundaries: [
@@ -507,37 +442,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
         output: 'A cited handoff or post-incident dossier.',
       },
     ],
-    diagram: {
-      label: 'Illustrative incident reconstruction',
-      query: 'What changed before API-91 appeared, and what evidence confirms the fix?',
-      sources: [
-        {
-          provider: 'GitHub',
-          stamp: '14:05',
-          signal: 'A release containing the retry change is published.',
-        },
-        {
-          provider: 'Sentry',
-          stamp: '14:22',
-          signal: 'API-91 moves into an active issue state after the release.',
-        },
-        {
-          provider: 'Slack',
-          stamp: '14:47',
-          signal: 'Responders reproduce the failure and choose a rollback.',
-        },
-        {
-          provider: 'Sentry',
-          stamp: '15:31',
-          signal: 'The issue is resolved after the rollback window.',
-        },
-      ],
-      chronology: ['Release', 'Detection', 'Mitigation decision', 'Resolution'],
-      answerTitle: 'The release is correlated; the rollback strengthens the case.',
-      answerBody:
-        'The issue appeared after the release and resolved after the rollback. That sequence supports a likely connection, but the final account should cite the reproduced failure or code-level explanation before calling the release the confirmed cause.',
-      citations: ['01', '02', '03', '04'],
-    },
+    diagram: PUBLIC_DEMO_STORY.editorial.sentryIncident,
     prompt:
       'Build an incident chronology for Sentry issue [issue key] in [project] from [start time] to [end time]. Include Sentry issue and release evidence, nearby GitHub pull requests, default-branch commits, releases, and workflow results, and the selected Slack response discussion. Separate confirmed facts, likely links, and unknowns. Identify detection, mitigation, fix, and recovery evidence. Cite every factual claim.',
     boundaries: [
@@ -624,7 +529,7 @@ export const EDITORIAL_MACHINE_SUMMARIES = [
     title: EDITORIAL_PUBLICATION_NAME,
     kind: 'publication-index',
     summary:
-      'The Timeline publication for evidence-led essays, playbooks, dossiers, and product notes about turning scattered work into cited operational memory.',
+      'The Timeline publication for practical playbooks and evidence-led dossiers about turning scattered work into cited operational memory.',
     topics: ['operational memory', 'evidence', 'cited answers', 'cross-tool workflows'],
   },
   ...EDITORIAL_GUIDES.map((guide) => ({

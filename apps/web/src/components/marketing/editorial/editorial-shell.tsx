@@ -67,7 +67,7 @@ export function EditorialShell({
         <div className="mx-auto grid max-w-[94rem] gap-8 px-4 py-10 sm:px-6 md:grid-cols-[1fr_auto] md:items-end lg:px-10">
           <div>
             <p className="font-mono text-[0.68rem] tracking-[0.14em] text-signal uppercase">
-              {EDITORIAL_PUBLICATION_NAME} / A provisional name
+              {EDITORIAL_PUBLICATION_NAME} / Field notes on cited work
             </p>
             <p className="mt-3 max-w-xl text-sm text-fg-muted">
               Field notes from The Timeline on evidence, operational memory, and the work behind

@@ -10,6 +10,10 @@ import { Logo, Wordmark } from '@/components/brand/logo';
 import { GitHubSourceLink } from '@/components/github-source-link';
 import { HomeMotion } from '@/components/marketing/home/home-motion';
 import { findConnectorByName } from '@/components/marketing/integrations/connector-content';
+import {
+  PUBLIC_DEMO_DISCLOSURE,
+  PUBLIC_DEMO_STORY,
+} from '@/components/marketing/public-demo-story';
 import { PublicNavigationDisclosure, PublicNavigationItems } from '@/components/public-navigation';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { auth } from '@/lib/auth';
@@ -50,53 +54,11 @@ function getHomeDocument() {
   return document;
 }
 
-const ACME_EVENTS = [
-  {
-    id: '01',
-    day: 'Monday',
-    dateTime: '2026-08-03T09:14:00+03:00',
-    time: '09:14',
-    source: 'Slack / #acme-rollout',
-    shortSource: 'Slack',
-    title: 'Onboarding copy approved',
-    detail: 'Design approved the onboarding copy. Implementation can continue.',
-  },
-  {
-    id: '02',
-    day: 'Tuesday',
-    dateTime: '2026-08-04T11:40:00+03:00',
-    time: '11:40',
-    source: 'Meeting / launch review',
-    shortSource: 'Meeting',
-    title: 'SSO named as the blocker',
-    detail: 'The launch review confirmed SSO is the only remaining launch blocker.',
-  },
-  {
-    id: '03',
-    day: 'Wednesday',
-    dateTime: '2026-08-05T15:22:00+03:00',
-    time: '15:22',
-    source: 'GitHub / PR #482',
-    shortSource: 'GitHub',
-    title: 'Migration callback merged',
-    detail: 'The migration callback merged and passed CI.',
-  },
-  {
-    id: '04',
-    day: 'Thursday',
-    dateTime: '2026-08-06T17:08:00+03:00',
-    time: '17:08',
-    source: 'Google Drive / migration checklist',
-    shortSource: 'Drive',
-    title: 'Owner and review date recorded',
-    detail: 'Priya owns the migration checklist. The next review is due Friday.',
-  },
-] as const;
+const ACME_EVENTS = PUBLIC_DEMO_STORY.landing.events;
 
 const HERO_SIGNALS = [
   ...ACME_EVENTS.map(({ time, shortSource }) => ({ time, source: shortSource, cited: true })),
-  { time: '13:05', source: 'Linear', cited: false },
-  { time: '18:21', source: 'Sentry', cited: false },
+  ...PUBLIC_DEMO_STORY.landing.connectedSignals.map((signal) => ({ ...signal, cited: false })),
 ] as const;
 
 const AUDIENCES = [
@@ -333,7 +295,7 @@ function ClaimScene({ isSignedIn }: { isSignedIn: boolean }) {
           </div>
         ))}
         <p className={styles.observatoryCaption}>
-          Example project / Acme rollout / 4 cited + 2 connected
+          {PUBLIC_DEMO_DISCLOSURE} / Acme rollout / 4 cited + 2 connected
         </p>
       </div>
     </section>
@@ -448,7 +410,7 @@ function ConnectorRail({ nativeConnectors }: { nativeConnectors: NativeConnector
           </div>
           <div>
             <dt>Planned</dt>
-            <dd>Not connectable or indexed until support is real.</dd>
+            <dd>Not connectable until native support is available.</dd>
           </div>
         </dl>
         <Link href="/integrations" className={styles.textLink}>
@@ -496,7 +458,7 @@ function AnswerScene() {
               Onboarding copy was approved <Citation id="01" label="Slack approval" /> and the
               migration callback merged <Citation id="03" label="GitHub pull request" />. SSO is
               still the launch blocker <Citation id="02" label="launch review meeting" />. Priya
-              owns the migration checklist, due for review Friday{' '}
+              Shah owns the migration checklist, due for review Friday{' '}
               <Citation id="04" label="Google Drive checklist" />.
             </p>
           </div>

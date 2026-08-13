@@ -28,17 +28,19 @@ const GUIDE_PAGES = [
 ] as const;
 
 describe('editorial routes', () => {
-  it('renders the publication index with one h1 and all content forms', () => {
+  it('renders the publication index with one h1 and only published content forms', () => {
     const html = renderToStaticMarkup(<RecordPage />);
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('The Record');
-    expect(html).toMatch(/<h2[^>]*>The review date moved; pricing is still unresolved\.<\/h2>/);
-    expect(html).toContain('a provisional public name');
-    expect(html).toContain('Essays');
+    expect(html).toMatch(
+      /<h2[^>]*>The review date and owner are set; pricing is still unresolved\.<\/h2>/,
+    );
+    expect(html).toContain('Start with a direct answer');
     expect(html).toContain('Playbooks');
     expect(html).toContain('Dossiers');
-    expect(html).toContain('Product notes');
+    expect(html).not.toContain('provisional public name');
+    expect(html).not.toContain('Product notes');
     for (const guide of EDITORIAL_GUIDES) {
       expect(html).toContain(`href="${guide.route}"`);
       expect(html).toContain(guide.title);
@@ -58,7 +60,7 @@ describe('editorial routes', () => {
       expect(html).toContain(`>${guide.diagram.answerTitle}</h3>`);
       expect(html).toContain('Source boundaries');
       expect(html).toContain('Limitations to keep visible');
-      expect(html).toContain('Example / not customer data');
+      expect(html).toContain('Illustrative example / not customer data');
       expect(html).toContain('application/ld+json');
       expect(html).toContain('href="/sign-in"');
       expect(html).toContain('aria-label="Breadcrumb"');

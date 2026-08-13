@@ -1,3 +1,9 @@
+import { listCatalog } from '@timeline/shared/integrations/registry';
+
+import type { CatalogEntry } from '@timeline/shared/integrations/registry';
+
+import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
+
 export const CONNECTOR_SLUGS = [
   'slack',
   'github',
@@ -77,6 +83,7 @@ export interface ConnectorRouteSummary {
 }
 
 const LAST_REVIEWED = '2026-08-13' as const;
+const DEMO_CONNECTORS = PUBLIC_DEMO_STORY.connectors;
 
 export const CONNECTORS: readonly ConnectorContent[] = [
   {
@@ -98,35 +105,14 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Timeline captures history from selected channels as immutable, citable events. Its separate Slack conversation mode handles direct agent chats, explicit capture, /ask, and @Timeline replies.',
     providerStatement:
       'Slack remains the place where messages are sent, channels are managed, and workspace permissions are administered. Timeline does not replace or modify those Slack workflows.',
-    diagram: {
-      question: 'What did we decide about the Northline launch?',
-      records: [
-        { label: '#northline', detail: 'Maya proposes a staged launch', time: '09:18' },
-        { label: 'Thread reply', detail: 'Jon confirms the beta cohort', time: '10:04' },
-        { label: 'launch-risks.pdf', detail: 'File share recorded in the thread', time: '10:27' },
-      ],
-      answer:
-        'The team chose a staged launch for the 18-customer beta cohort, with the migration risk reviewed before broad release.',
-      citations: ['Slack message', 'Thread reply', 'Shared file'],
-    },
+    diagram: DEMO_CONNECTORS.slack.diagram,
     exampleQuestions: [
       'What did the team decide about pricing last week?',
       'Which customer promises are still open in #accounts?',
       'Summarize the launch discussion and link every source.',
       'What changed after the incident thread started?',
     ],
-    scenario: {
-      title: 'A decision stops disappearing into a thread',
-      situation:
-        'A launch plan changes across a channel message, a long reply thread, and a shared risk document. Two days later, leadership asks for the final decision.',
-      chronology: [
-        'Timeline syncs the selected channel and keeps message and thread context together.',
-        'The file share metadata and first-observed reaction aggregates become adjacent evidence; reaction rows remain anchored to the source message time.',
-        'The answer resolves the decision in time order and links back to the exact Slack records.',
-      ],
-      result:
-        'Leadership gets a concise answer without asking the channel to reconstruct the conversation.',
-    },
+    scenario: DEMO_CONNECTORS.slack.scenario,
     capturedRecords: [
       'Messages in selected public channels where the Slack app is a member',
       'Messages in selected private channels where the bot is present',
@@ -217,35 +203,14 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Timeline captures selected repository activity as immutable evidence and can map synced issues and pull requests to human-readable work items.',
     providerStatement:
       'GitHub continues to host repositories, reviews, checks, releases, access rules, and branch protection. Timeline reads authorized activity; it does not become your code host.',
-    diagram: {
-      question: 'What was published in the Northline release?',
-      records: [
-        { label: 'PR #482', detail: 'Migration retry logic approved', time: '14:08' },
-        { label: 'CI #1602', detail: 'Integration suite passed', time: '14:31' },
-        { label: 'v2.8.0', detail: 'GitHub release published', time: '15:06' },
-      ],
-      answer:
-        'GitHub release v2.8.0 published migration retry handling after review approval and a passing integration workflow.',
-      citations: ['PR #482', 'Workflow #1602', 'Release v2.8.0'],
-    },
+    diagram: DEMO_CONNECTORS.github.diagram,
     exampleQuestions: [
       'What did GitHub publish in last week’s releases?',
       'Which pull requests changed the migration path?',
       'What was discussed before PR #482 was approved?',
       'Which CI failures delayed the release?',
     ],
-    scenario: {
-      title: 'A release note gains its missing middle',
-      situation:
-        'A customer-facing fix begins as an issue, changes during review, passes CI, and is included in a GitHub release. The tag alone cannot explain why the change mattered.',
-      chronology: [
-        'Timeline records the issue, pull request, review summary, and review conversation.',
-        'Commits and workflow runs show when implementation and verification happened.',
-        'The release closes the sequence, while citations preserve the route back to GitHub.',
-      ],
-      result:
-        'The GitHub release summary reflects the review and verification path without claiming when or where it was deployed.',
-    },
+    scenario: DEMO_CONNECTORS.github.scenario,
     capturedRecords: [
       'Pull requests and first-observed snapshots within each lifecycle state',
       'Issues and first-observed snapshots within each lifecycle state',
@@ -344,34 +309,14 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Timeline captures activity from selected Linear teams and treats synced issues and projects as evidence-backed work artifacts.',
     providerStatement:
       'Linear remains the system for creating, prioritizing, assigning, and moving issues and projects. Timeline does not replace Linear planning or mutate its records through this integration.',
-    diagram: {
-      question: 'Why did the Northline launch move to Friday?',
-      records: [
-        { label: 'ENG-241', detail: 'Priority raised to urgent', time: 'Mon' },
-        { label: 'Issue comment', detail: 'Migration test needs one more run', time: 'Tue' },
-        { label: 'Project update', detail: 'Target date moved to Friday', time: 'Wed' },
-      ],
-      answer:
-        'The launch moved to Friday after ENG-241 became urgent and the migration test required another validation run.',
-      citations: ['ENG-241', 'Issue comment', 'Project update'],
-    },
+    diagram: DEMO_CONNECTORS.linear.diagram,
     exampleQuestions: [
       'Which ENG issues did the team complete this week?',
       'Why did the launch project move dates?',
       'What high-priority work is still blocked?',
       'Which issue comments changed the implementation plan?',
     ],
-    scenario: {
-      title: 'A status change gets a reason',
-      situation:
-        'A project date changes after an urgent issue and a detailed comment. The weekly update needs the cause, not a list of fields that changed.',
-      chronology: [
-        'Timeline records the issue state, priority, assignee, and comment context.',
-        'Project changes land in the same chronology as the issue evidence.',
-        'A cited answer explains the dependency that caused the schedule change.',
-      ],
-      result: 'The update tells a coherent story while Linear stays authoritative for the plan.',
-    },
+    scenario: DEMO_CONNECTORS.linear.scenario,
     capturedRecords: [
       'Issues, titles, descriptions, identifiers, and lifecycle changes',
       'Issue comments and distinct observed comment bodies',
@@ -464,38 +409,14 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Timeline records admitted Drive changes as cited events and versions the supported file state observed at sync time, subject to the boundaries disclosed below.',
     providerStatement:
       'Google Drive remains the place where files are authored, shared, organized, and permissioned. Timeline reads changed content admitted by its current source rules; it does not replace Drive collaboration or rewrite source files.',
-    diagram: {
-      question: 'What changed in the partnership agreement?',
-      records: [
-        { label: 'Agreement.docx', detail: 'File modification observed', time: '11:02' },
-        { label: 'Captured version', detail: 'Current content stored in Timeline', time: '11:04' },
-        {
-          label: 'Signed agreement.pdf',
-          detail: 'Final copy added to the shared drive',
-          time: '14:15',
-        },
-      ],
-      answer:
-        'The changed agreement uses a 30-day termination notice, and the signed PDF added later reflects the same final language.',
-      citations: ['Agreement.docx', 'Captured version', 'Signed agreement.pdf'],
-    },
+    diagram: DEMO_CONNECTORS.googleDrive.diagram,
     exampleQuestions: [
       'Summarize the latest partnership agreement.',
       'What changed between the last two launch plans?',
       'Which document supports the pricing decision?',
       'Which files changed in the client shared drive this week?',
     ],
-    scenario: {
-      title: 'The answer cites the version that mattered',
-      situation:
-        'A contract state is observed during one sync, changes again before a later sync, and is followed by a signed copy. A later handoff must distinguish the states Timeline actually captured.',
-      chronology: [
-        'Timeline observes a changed file’s current state when reconciliation processes the Drive changes feed.',
-        'A supported state observed during a separate sync is stored as a new Timeline document version beside its cited change event.',
-        'The answer cites the final captured document while keeping earlier observed versions available for inspection.',
-      ],
-      result: 'The handoff names the current decision without erasing how it was reached.',
-    },
+    scenario: DEMO_CONNECTORS.googleDrive.scenario,
     capturedRecords: [
       'New file changes observed under an activated My Drive root after the first successful reconciliation cursor',
       'New file changes observed inside activated shared drives after the first successful reconciliation cursor',
@@ -589,35 +510,14 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Timeline captures selected boards, nested records, conversations, schema, and WorkDocs as immutable, citable history.',
     providerStatement:
       'Monday.com remains the place where boards, automations, columns, assignments, and WorkDocs are managed. Timeline does not replace or control the board.',
-    diagram: {
-      question: 'Why is the implementation record at risk?',
-      records: [
-        { label: 'Launch board', detail: 'Owner changed to Priya', time: '08:42' },
-        { label: 'Subitem update', detail: 'Data import blocked on mapping', time: '09:17' },
-        { label: 'WorkDoc', detail: 'Cutover plan adds fallback path', time: '12:06' },
-      ],
-      answer:
-        'The implementation is at risk because data mapping blocks the import; Priya now owns the recovery path documented in the cutover plan.',
-      citations: ['Board record', 'Subitem update', 'Cutover WorkDoc'],
-    },
+    diagram: DEMO_CONNECTORS.monday.diagram,
     exampleQuestions: [
       'Which launch-board records changed this week?',
       'Why did this implementation move to at risk?',
       'Which subitems are blocking the parent record?',
       'What did the latest WorkDoc change about the plan?',
     ],
-    scenario: {
-      title: 'A board row becomes a traceable operating story',
-      situation:
-        'A parent record changes owner while a nested subitem describes a blocker and a WorkDoc revises the fallback. The status column alone misses the connection.',
-      chronology: [
-        'Timeline records board schema and record changes with their human labels.',
-        'Subitems, updates, and threaded replies stay connected to the selected parent board.',
-        'The WorkDoc joins the evidence sequence and supports the final answer.',
-      ],
-      result:
-        'The team sees the current risk, ownership, and recovery plan in one cited narrative.',
-    },
+    scenario: DEMO_CONNECTORS.monday.scenario,
     capturedRecords: [
       'Selected boards and board schema',
       'Items, subitems, and multi-level descendants supported by the board',
@@ -710,39 +610,14 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Timeline reconciles activated Sentry organizations or projects and maps captured lifecycle and release evidence to cited incidents. Current installation-level webhook routing can admit events from an unselected project in the same installation after a matching webhook is remembered.',
     providerStatement:
       'Sentry remains the monitoring and error-diagnostics system. Timeline does not collect application telemetry on Sentry’s behalf or replace Sentry alerting, traces, performance views, or issue management.',
-    diagram: {
-      question: 'What broke after yesterday’s deploy?',
-      records: [
-        { label: 'Release web-2.8.0', detail: 'Release creation captured', time: '15:06' },
-        { label: 'WEB-913', detail: 'Checkout error last seen', time: '15:19' },
-        {
-          label: 'WEB-913',
-          detail: 'Current status observed: resolved',
-          time: 'Source time 15:19',
-        },
-      ],
-      answer:
-        'WEB-913 appeared after release web-2.8.0 and is now resolved; the Sentry lifecycle record does not establish when the resolution action occurred.',
-      citations: ['Release web-2.8.0', 'WEB-913 occurrence', 'WEB-913 status'],
-    },
+    diagram: DEMO_CONNECTORS.sentry.diagram,
     exampleQuestions: [
       'What broke after yesterday’s deploy?',
       'Which open issues affected checkout this week?',
-      'What release preceded WEB-913?',
+      'What release preceded ACME-913?',
       'How was the incident resolved, and where is the code change?',
     ],
-    scenario: {
-      title: 'An alert becomes a complete incident narrative',
-      situation:
-        'An issue opens after a deployment, the team discusses impact, a pull request rolls back the change, and Sentry records resolution.',
-      chronology: [
-        'Timeline places Sentry release and issue evidence beside one another while retaining Sentry’s source occurrence timestamps.',
-        'Slack and GitHub evidence can fill in customer impact and remediation.',
-        'The final answer cites each system without pretending any one record tells the whole story.',
-      ],
-      result:
-        'The incident review starts from a sourced narrative instead of manual timestamp matching.',
-    },
+    scenario: DEMO_CONNECTORS.sentry.scenario,
     capturedRecords: [
       'Issues entering an open lifecycle state',
       'The first captured resolved lifecycle transition per issue',
@@ -837,12 +712,35 @@ export const CONNECTOR_DIRECTORY_SUMMARY = {
   path: '/integrations' as const,
   indexable: true as const,
   native: INDEXABLE_CONNECTOR_ROUTES,
-  mcpAccess: ['Notion', 'Jira', 'Confluence', 'Stripe'] as const,
   planned: {
     indexable: false as const,
     routePolicy: 'Disclose the tier in the directory without publishing planned connector routes.',
   },
 };
+
+export function getConnectorCapabilityTiers(catalog: readonly CatalogEntry[] = listCatalog()): {
+  nativeProviders: string[];
+  mcpAccess: string[];
+  plannedProviders: string[];
+} {
+  const tiers = {
+    nativeProviders: [] as string[],
+    mcpAccess: [] as string[],
+    plannedProviders: [] as string[],
+  };
+
+  for (const entry of catalog) {
+    if (entry.kind === 'native' && entry.ingestStatus === 'implemented') {
+      tiers.nativeProviders.push(entry.label);
+    }
+    if (entry.kind === 'mcp' && entry.status === 'mcp_available') {
+      tiers.mcpAccess.push(entry.label);
+    }
+    if (entry.status === 'coming_soon') tiers.plannedProviders.push(entry.label);
+  }
+
+  return tiers;
+}
 
 export function findConnector(slug: string): ConnectorContent | undefined {
   return CONNECTORS.find((connector) => connector.slug === slug);

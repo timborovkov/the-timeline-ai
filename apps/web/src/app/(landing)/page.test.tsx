@@ -51,7 +51,9 @@ describe('LandingPage', () => {
 
     expect(html).toContain('Acme rollout / Last 7 days');
     expect(html).toContain('Four cited Acme rollout work signals');
-    expect(html).toContain('Example project / Acme rollout / 4 cited + 2 connected');
+    expect(html).toContain(
+      'Illustrative example — not customer data / Acme rollout / 4 cited + 2 connected',
+    );
     expect(html).toContain('Connected, not cited');
     expect(html).toContain('Linear');
     expect(html).toContain('Sentry');
@@ -105,7 +107,7 @@ describe('LandingPage', () => {
     expect(html).toContain('Setup required');
     expect(html).toContain('MCP access');
     expect(html).toContain('Live approved tool access, not passive ingestion.');
-    expect(html).toContain('Not connectable or indexed until support is real.');
+    expect(html).toContain('Not connectable until native support is available.');
     expect(html).not.toContain('Future connector pages remain unindexed');
     expect(html).toContain('href="/integrations"');
     for (const slug of ['github', 'linear', 'google-drive', 'monday', 'slack', 'sentry']) {

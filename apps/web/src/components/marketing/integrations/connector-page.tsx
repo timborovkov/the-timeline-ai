@@ -8,6 +8,7 @@ import {
 } from '@/components/marketing/integrations/connector-content';
 import { ConnectorStructuredData } from '@/components/marketing/integrations/connector-seo';
 import { RecordsToAnswer } from '@/components/marketing/integrations/records-to-answer';
+import { PUBLIC_DEMO_DISCLOSURE } from '@/components/marketing/public-demo-story';
 import { PublicShell } from '@/components/public-shell';
 import { Button } from '@/components/ui/button';
 
@@ -180,6 +181,9 @@ function WorkedScenario({ connector }: { connector: ConnectorContent }) {
         <SectionLabel label="Worked scenario" />
         <div className="grid gap-8 lg:grid-cols-[0.82fr_1.18fr]">
           <div>
+            <p className="mb-4 font-mono text-[0.65rem] tracking-[0.12em] text-fg-dim uppercase">
+              {PUBLIC_DEMO_DISCLOSURE}
+            </p>
             <h2 id="scenario" className="text-3xl font-semibold tracking-tight sm:text-4xl">
               {connector.scenario.title}
             </h2>
@@ -320,8 +324,7 @@ function Limitations({ connector }: { connector: ConnectorContent }) {
             Honest limitations
           </h2>
           <p className="mt-4 max-w-[62ch] text-base leading-relaxed text-fg-muted">
-            Useful acquisition pages should make the boundary visible before setup, not bury it in a
-            footnote.
+            Review these capture and recovery boundaries before connecting your account.
           </p>
           <ul className="mt-8 border-t border-border">
             {connector.limitations.map((limitation) => (

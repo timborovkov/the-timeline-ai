@@ -5,8 +5,13 @@ import {
   CONNECTOR_SLUGS,
   CONNECTORS,
   findConnector,
+  getConnectorCapabilityTiers,
   INDEXABLE_CONNECTOR_ROUTES,
 } from '@/components/marketing/integrations/connector-content';
+import {
+  PUBLIC_DEMO_DISCLOSURE,
+  PUBLIC_DEMO_STORY,
+} from '@/components/marketing/public-demo-story';
 
 describe('connector content manifest', () => {
   it('exports exactly the six implemented native connector routes for public indexing', () => {
@@ -29,12 +34,33 @@ describe('connector content manifest', () => {
   });
 
   it('keeps MCP and planned tiers out of the canonical connector route export', () => {
+    const capabilityTiers = getConnectorCapabilityTiers();
     const serializedRoutes = JSON.stringify(INDEXABLE_CONNECTOR_ROUTES);
     expect(serializedRoutes).not.toContain('notion');
     expect(serializedRoutes).not.toContain('jira');
-    expect(CONNECTOR_DIRECTORY_SUMMARY.mcpAccess).toContain('Notion');
-    expect(CONNECTOR_DIRECTORY_SUMMARY.mcpAccess).not.toContain('Figma');
+    expect(capabilityTiers.mcpAccess).toContain('Notion');
+    expect(capabilityTiers.mcpAccess).toContain('Figma');
+    expect(capabilityTiers.nativeProviders).toEqual([
+      'GitHub',
+      'Linear',
+      'Google Drive',
+      'Monday.com',
+      'Slack',
+      'Sentry',
+    ]);
+    expect(capabilityTiers.plannedProviders).toContain('HubSpot');
     expect(CONNECTOR_DIRECTORY_SUMMARY.planned.indexable).toBe(false);
+  });
+
+  it('uses one explicitly fictional Acme corpus across every provider example', () => {
+    expect(PUBLIC_DEMO_DISCLOSURE).toBe('Illustrative example — not customer data');
+    expect(PUBLIC_DEMO_STORY.organization).toBe('Acme');
+
+    for (const connector of CONNECTORS) {
+      const example = JSON.stringify({ diagram: connector.diagram, scenario: connector.scenario });
+      expect(example).toContain('Acme');
+      expect(example).not.toMatch(/Northline|Project Atlas|API-91|WEB-913/u);
+    }
   });
 
   it('requires curated provider-specific substance on every native page', () => {

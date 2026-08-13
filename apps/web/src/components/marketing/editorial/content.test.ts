@@ -26,13 +26,8 @@ describe('editorial content model', () => {
     expect(EDITORIAL_MACHINE_SUMMARIES.every((entry) => entry.summary.length > 80)).toBe(true);
   });
 
-  it('defines all four publication forms and three substantial guides', () => {
-    expect(EDITORIAL_CONTENT_TYPES.map((type) => type.id)).toEqual([
-      'essay',
-      'playbook',
-      'dossier',
-      'product-note',
-    ]);
+  it('publishes only the two formats represented by three substantial guides', () => {
+    expect(EDITORIAL_CONTENT_TYPES.map((type) => type.id)).toEqual(['playbook', 'dossier']);
     expect(EDITORIAL_GUIDES).toHaveLength(3);
 
     for (const guide of EDITORIAL_GUIDES) {
@@ -67,7 +62,8 @@ describe('editorial content model', () => {
     }
   });
 
-  it('keeps edition labels independent from the provisional publication name', () => {
+  it('keeps stable edition labels under the finalized publication name', () => {
+    expect(EDITORIAL_PUBLICATION_NAME).toBe('The Record');
     expect(EDITORIAL_GUIDES.map((guide) => guide.issue)).toEqual([
       'Edition 001',
       'Edition 002',

@@ -30,7 +30,7 @@ export const INTEGRATION_DIRECTORY_DOCUMENT = {
       },
       {
         title: 'Capability boundary',
-        body: 'Native integrations create durable cited events. MCP access provides live tools without passive ingestion, and planned connectors remain unindexed until real.',
+        body: 'Native integrations create durable cited events. MCP access provides live tools without passive ingestion, and planned native support cannot be connected yet.',
       },
     ],
   },

@@ -324,7 +324,11 @@ claim, evidence and chronology, cited answer, audience fit with trust, and a
 one-project CTA. Its signature example project, Acme rollout, distinguishes four
 signals cited in the demonstrated answer from two connected-but-unused signals,
 then shows the cited work settling onto a chronological rail and resolving into
-an answer with tangible source links. Connector capability belongs with the
+an answer with tangible source links. Acme rollout is the canonical fictional
+public demo corpus across landing, connector, and guide examples; every rendered
+example states that it is illustrative and not customer data. Provider pages may
+show distinct slices, but people, identifiers, records, and outcomes stay
+coherent across the journey. Connector capability belongs with the
 evidence-entry scene; audience fit and the evidence chain remain a separate,
 stacked explanation rather than an equal-height split. Substantive copy and
 diagrams are server-rendered; a small client motion controller may progressively
@@ -357,6 +361,11 @@ is one searchable, single-column guide directory rather than repeating the
 same destinations in category lists and card grids. Guide and support pages
 provide a visible route back to all guides; article bodies may optionally
 constrain to a reading measure without forcing the shell narrow.
+
+The Record is the finalized name of the public editorial publication. Its index
+advertises only formats represented by published work: playbooks for repeatable
+cross-tool workflows and dossiers for evidence-led reconstruction. New formats
+appear in the index only when at least one substantive item ships in that form.
 
 ### Administrator dashboards
 
@@ -423,3 +432,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-12 | Editorial public acquisition system | Lets visitors watch evidence become chronology and a cited answer while the authenticated product remains Quiet Archive. |
 | 2026-08-13 | Acme evidence narrative | Clarifies cited versus merely connected signals, pairs connectors with chronology, and replays each evidence diagram while it is in view. |
 | 2026-08-13 | Connected public navigation | Gives every acquisition, integration, guide, help, and legal page a consistent route through the public site. |
+| 2026-08-13 | Finalized public content system | Replaces concept notes and disconnected mock stories with The Record, current published formats, registry-backed capability tiers, and one disclosed Acme demo corpus. |

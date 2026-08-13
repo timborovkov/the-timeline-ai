@@ -16,7 +16,7 @@ const recordDocument = {
   kind: 'record',
   title: `${EDITORIAL_PUBLICATION_NAME}: field notes on operational memory`,
   description:
-    'Evidence-led essays, playbooks, dossiers, and product notes about turning scattered work into cited operational memory.',
+    'Practical playbooks and evidence-led dossiers about turning scattered work into cited operational memory.',
   indexability: 'index',
   dates: { modified: EDITORIAL_REVIEW_DATE, reviewed: EDITORIAL_REVIEW_DATE },
   capability: { kind: 'current-product' },
@@ -36,11 +36,11 @@ const recordDocument = {
     order: 0,
     label: EDITORIAL_PUBLICATION_NAME,
     summary:
-      'Evidence-led essays, playbooks, dossiers, and product notes about turning scattered work into cited operational memory.',
+      'Practical playbooks and evidence-led dossiers about turning scattered work into cited operational memory.',
     sections: [
       {
-        title: 'Publication formats',
-        body: 'The publication uses four formats, each with a distinct editorial purpose.',
+        title: 'Published formats',
+        body: 'The current edition contains two formats, each with a distinct editorial purpose.',
         items: EDITORIAL_CONTENT_TYPES.map((type) => `${type.label}: ${type.description}`),
       },
       {

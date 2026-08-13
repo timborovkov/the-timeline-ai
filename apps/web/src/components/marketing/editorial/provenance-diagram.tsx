@@ -21,7 +21,7 @@ export function ProvenanceDiagram({
             {diagram.label}
           </span>
           <span className="font-mono text-[0.65rem] tracking-[0.08em] text-fg-dim uppercase">
-            Example / not customer data
+            Illustrative example / not customer data
           </span>
         </figcaption>
         <div className="relative z-10 mt-6 rounded-md border border-border bg-bg/90 p-4">

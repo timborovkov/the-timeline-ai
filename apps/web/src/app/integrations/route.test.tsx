@@ -3,6 +3,8 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { CONNECTOR_SLUGS } from '@/components/marketing/integrations/connector-content';
+
 const fakes = vi.hoisted(() => ({ auth: vi.fn() }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
@@ -24,8 +26,15 @@ describe('public integration routes', () => {
     expect(html).toContain('Six first-party ingestion paths');
     expect(html).toContain('Native ingestion');
     expect(html).toContain('MCP access');
-    expect(html).toContain('Planned connectors');
-    expect(html).toContain('Noindex');
+    expect(html).toContain('Planned native support');
+    expect(html).toContain('Available now');
+    expect(html).toContain('Live access');
+    expect(html).toContain('Not available yet');
+    expect(html).not.toContain('Indexable');
+    expect(html).not.toContain('Noindex');
+    expect(html).not.toContain('Shared structure keeps the experience coherent');
+    expect(html).toContain('Slack example shows that journey from conversation to chronology');
+    expect(html.match(/Illustrative example — not customer data/g)).toHaveLength(1);
     expect(html).toContain('href="/integrations/slack"');
     expect(html).toMatch(/aria-current="page"[^>]*href="\/integrations"/u);
     expect(html).toContain('href="/record"');
@@ -49,10 +58,22 @@ describe('public integration routes', () => {
     );
 
     expect(html).toContain('dark:bg-white');
+    expect(html.match(/Illustrative example — not customer data/g)).toHaveLength(2);
     expect(html).toContain('scroll-mt-12');
     expect(html).toContain('text-[4rem]');
     expect(html).not.toContain('--record-index');
     expect(html).not.toContain('--marker-index');
+  });
+
+  it.each(CONNECTOR_SLUGS)('discloses the canonical fictional example on %s', async (slug) => {
+    const html = renderToStaticMarkup(
+      await connectorRoute.default({ params: Promise.resolve({ slug }) }),
+    );
+
+    expect(html.match(/<h1\b/g)).toHaveLength(1);
+    expect(html.match(/Illustrative example — not customer data/g)).toHaveLength(2);
+    expect(html).toContain('Acme');
+    expect(html).not.toMatch(/Northline|Project Atlas|API-91|WEB-913/u);
   });
 
   it('renders provider-specific truth, evidence, limitations, FAQs, and a single h1', async () => {
