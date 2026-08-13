@@ -24,10 +24,8 @@
 
 .index {
   color: var(--fg-dim);
-  font-family: var(--font-mono);
-  font-size: 0.67rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font-size: 0.72rem;
+  font-weight: 600;
 }
 
 .flow {
@@ -64,7 +62,6 @@
 .record > span {
   grid-row: span 2;
   color: var(--fg-dim);
-  font-family: var(--font-mono);
   font-size: 0.66rem;
 }
 

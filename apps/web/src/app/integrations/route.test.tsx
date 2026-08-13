@@ -18,6 +18,7 @@ describe('public integration routes', () => {
 
   it('renders the directory with one heading and an accurate capability tier boundary', async () => {
     const html = renderToStaticMarkup(await IntegrationsPage());
+    const text = html.replace(/<[^>]+>/gu, '');
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('Six first-party ingestion paths');
@@ -31,7 +32,9 @@ describe('public integration routes', () => {
     expect(html).toContain('dark:bg-white');
     expect(html).toContain('Native integrations');
     expect(html).toContain('Capability tiers');
-    expect(html).toContain('02 / Proof');
+    expect(text).toContain('02/Proof');
+    expect(html).not.toMatch(/font-mono[^>]*>Integrations \/ capability directory/u);
+    expect(html).not.toMatch(/font-mono[^>]*>Available now/u);
     expect(html).not.toContain('01 / Native');
     expect(html).not.toContain('03 / Tiers');
     expect(html.match(/dark:bg-white/g)).toHaveLength(3);
@@ -49,10 +52,13 @@ describe('public integration routes', () => {
     const html = renderToStaticMarkup(
       await connectorRoute.default({ params: Promise.resolve({ slug: 'github' }) }),
     );
+    const text = html.replace(/<[^>]+>/gu, '');
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('Native integration');
     expect(html).toContain('Last reviewed');
+    expect(html).not.toMatch(/font-mono[^>]*>06 native integrations/u);
+    expect(html).not.toMatch(/font-mono[^>]*>Last reviewed/u);
     expect(html).toContain('Timeline captures');
     expect(html).toContain('GitHub remains');
     expect(html).toContain('What enters the Timeline');
@@ -60,7 +66,7 @@ describe('public integration routes', () => {
     expect(html).toContain('Questions, answered');
     expect(html).not.toContain('02 / Questions');
     expect(html).not.toContain('09 / Related');
-    expect(html).toContain('10 / Start');
+    expect(text).toContain('10/Start');
     expect(html).toContain('dark:bg-white');
     expect(html).toContain('PR #482');
     expect(html).toContain('application/ld+json');

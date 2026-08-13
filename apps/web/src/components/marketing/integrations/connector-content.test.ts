@@ -111,6 +111,12 @@ describe('connector content manifest', () => {
     );
     expect(githubClaims).toContain('2,000 most recently updated repositories');
     expect(githubClaims).toContain('organization source also expands at most its 2,000');
+    expect(githubClaims).toContain('lifecycle state for at most 5,000 IDs per map');
+    expect(githubClaims).toContain('missed reopen webhook can be lost');
+    expect(githubClaims).toContain('first-observed snapshots within each lifecycle state');
+    expect(githubClaims).toContain(
+      'edits that do not change lifecycle state reuse the existing immutable row',
+    );
 
     expect(linear.limitations.join(' ')).toContain(
       'history begins when Timeline starts observing the selected team',
@@ -121,6 +127,12 @@ describe('connector content manifest', () => {
     expect(linear.limitations.join(' ')).toContain('first 2,000 teams returned by the API');
     expect(linear.limitations.join(' ')).toContain(
       '2,500 issues, 2,500 comments, and 2,500 projects per selected team',
+    );
+    expect(linear.limitations.join(' ')).toContain(
+      'retains issue status for at most 5,000 issue IDs',
+    );
+    expect(linear.limitations.join(' ')).toContain(
+      'fields return to a previously captured combination',
     );
     expect(monday.limitations.join(' ')).toContain(
       'Initial board activity-log backfill covers the preceding 30 days',

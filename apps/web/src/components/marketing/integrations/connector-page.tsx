@@ -52,7 +52,7 @@ function ConnectorHero({
       <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24 lg:py-28">
         <Link
           href="/integrations"
-          className="mb-10 inline-flex min-h-10 items-center rounded-sm font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+          className="mb-10 inline-flex min-h-10 items-center rounded-sm text-sm font-medium text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
         >
           06 native integrations / {connector.name}
         </Link>
@@ -71,9 +71,7 @@ function ConnectorHero({
                 />
               </div>
               <div>
-                <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-                  {connector.eyebrow}
-                </p>
+                <p className="text-sm font-medium text-fg-muted">{connector.eyebrow}</p>
                 <p className="mt-1 text-sm font-semibold text-fg">{connector.name}</p>
               </div>
             </div>
@@ -120,21 +118,17 @@ function TruthBoundary({ connector }: { connector: ConnectorContent }) {
               <span className="size-2 rounded-full bg-signal" aria-hidden="true" />
               {connector.capability}
             </span>
-            <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+            <span className="text-sm text-fg-dim">
               Last reviewed <time dateTime={connector.lastReviewed}>{connector.lastReviewed}</time>
             </span>
           </div>
           <div className="grid gap-px border border-border bg-border sm:grid-cols-2">
             <article className="bg-bg p-6 sm:p-8">
-              <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-                Timeline captures
-              </span>
+              <span className="text-sm font-medium text-fg-dim">Timeline captures</span>
               <p className="mt-4 text-base leading-relaxed text-fg">{connector.captureStatement}</p>
             </article>
             <article className="bg-surface p-6 sm:p-8">
-              <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-                {connector.name} remains
-              </span>
+              <span className="text-sm font-medium text-fg-dim">{connector.name} remains</span>
               <p className="mt-4 text-base leading-relaxed text-fg-muted">
                 {connector.providerStatement}
               </p>
@@ -201,9 +195,7 @@ function WorkedScenario({ connector }: { connector: ConnectorContent }) {
               ))}
             </ol>
             <div className="mt-10 border-l-2 border-signal bg-signal-soft p-5">
-              <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-                Result
-              </span>
+              <span className="text-sm font-medium text-fg-dim">Result</span>
               <p className="mt-2 font-semibold text-fg">{connector.scenario.result}</p>
             </div>
           </div>
@@ -263,9 +255,7 @@ function Recipes({ connector }: { connector: ConnectorContent }) {
                           +
                         </span>
                       ) : null}
-                      <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-fg">
-                        {source}
-                      </span>
+                      <span className="text-xs font-medium text-fg">{source}</span>
                     </span>
                   ))}
                 </div>
@@ -361,7 +351,7 @@ function Faq({ connector }: { connector: ConnectorContent }) {
                 <summary className="flex min-h-16 cursor-pointer list-none items-center justify-between gap-6 rounded-sm py-4 text-base font-semibold text-fg outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg [&::-webkit-details-marker]:hidden">
                   {faq.question}
                   <span
-                    className="font-mono text-lg font-normal text-fg-dim group-open:rotate-45"
+                    className="text-lg font-normal text-fg-dim group-open:rotate-45"
                     aria-hidden="true"
                   >
                     +
@@ -439,8 +429,10 @@ function FinalCta({ connector, isSignedIn }: { connector: ConnectorContent; isSi
 
 function SectionIndex({ index, label }: { index: string; label: string }) {
   return (
-    <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-      {index} / {label}
+    <p className="flex items-baseline gap-1.5 text-sm font-medium text-fg-muted">
+      <span className="font-mono text-[11px] text-fg-dim">{index}</span>
+      <span aria-hidden="true">/</span>
+      <span>{label}</span>
     </p>
   );
 }

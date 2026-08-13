@@ -21,9 +21,7 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
       <main id="main" tabIndex={-1}>
         <section className="border-b border-border">
           <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24 lg:py-28">
-            <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-              Integrations / capability directory
-            </p>
+            <p className="text-sm font-medium text-fg-muted">Integrations / capability directory</p>
             <div className="mt-8 grid items-end gap-10 lg:grid-cols-[1.25fr_0.75fr]">
               <h1 className="max-w-[13ch] text-[2.8rem] font-semibold leading-[0.98] tracking-[-0.055em] text-fg sm:text-6xl lg:text-7xl">
                 Connect the systems where the work already happened.
@@ -58,7 +56,7 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
                     explicitly selects.
                   </p>
                 </div>
-                <span className="inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-muted">
+                <span className="inline-flex items-center gap-2 text-sm font-medium text-fg-muted">
                   <span className="size-2 rounded-full bg-signal" aria-hidden="true" />
                   Available now
                 </span>
@@ -107,9 +105,7 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
         <section className="border-y border-border bg-surface">
           <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
             <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
-              <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-                02 / Proof
-              </p>
+              <SectionIndex index="02" label="Proof" />
               <div>
                 <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
                   Every connector has a specific evidence story.
@@ -185,13 +181,21 @@ function CapabilityRow({
       <Icon aria-hidden="true" className={live ? 'size-4 text-signal' : 'size-4 text-fg-dim'} />
       <h3 className="font-semibold text-fg">{title}</h3>
       <p className="text-sm leading-relaxed text-fg-muted">{body}</p>
-      <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-fg-dim">
-        {status}
-      </span>
+      <span className="text-xs font-medium text-fg-dim">{status}</span>
     </article>
   );
 }
 
 function SectionLabel({ label }: { label: string }) {
   return <p className="text-sm font-medium text-fg-muted">{label}</p>;
+}
+
+function SectionIndex({ index, label }: { index: string; label: string }) {
+  return (
+    <p className="flex items-baseline gap-1.5 text-sm font-medium text-fg-muted">
+      <span className="font-mono text-[11px] text-fg-dim">{index}</span>
+      <span aria-hidden="true">/</span>
+      <span>{label}</span>
+    </p>
+  );
 }
