@@ -1,0 +1,411 @@
+.canvas {
+  position: relative;
+  isolation: isolate;
+  overflow: clip;
+  background:
+    linear-gradient(
+        90deg,
+        transparent 49.9%,
+        color-mix(in oklch, var(--border) 45%, transparent) 50%,
+        transparent 50.1%
+      )
+      center / min(92rem, 94vw) 100% no-repeat,
+    var(--bg);
+}
+
+.canvas::before {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  content: '';
+  opacity: 0.28;
+  background-image: radial-gradient(
+    circle at center,
+    color-mix(in oklch, var(--fg-dim) 32%, transparent) 0.6px,
+    transparent 0.7px
+  );
+  background-size: 7px 7px;
+  mask-image: linear-gradient(to bottom, black, transparent 38rem);
+}
+
+.masthead {
+  background: color-mix(in oklch, var(--bg) 88%, transparent);
+  backdrop-filter: blur(18px);
+}
+
+.serifAccent {
+  color: var(--signal);
+  font-family: Georgia, 'Times New Roman', serif;
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: -0.055em;
+}
+
+.displayTitle {
+  max-width: 12ch;
+  text-wrap: balance;
+  font-size: clamp(2.5rem, 6vw, 3.75rem);
+  font-weight: 600;
+  line-height: 0.95;
+  letter-spacing: -0.055em;
+}
+
+.guideTitle {
+  max-width: 16ch;
+  text-wrap: balance;
+  font-size: clamp(2.5rem, 6vw, 3.75rem);
+  font-weight: 600;
+  line-height: 0.95;
+  letter-spacing: -0.055em;
+}
+
+.heroGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.04fr) minmax(22rem, 0.96fr);
+  gap: clamp(2.5rem, 6vw, 7rem);
+  align-items: center;
+}
+
+.indexRule {
+  position: relative;
+}
+
+.indexRule::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -1px;
+  width: 1px;
+  content: '';
+  background: linear-gradient(to bottom, var(--signal), var(--border) 42%, transparent);
+}
+
+.provenanceStage {
+  position: relative;
+  overflow: hidden;
+  min-height: 38rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background:
+    linear-gradient(color-mix(in oklch, var(--border) 52%, transparent) 1px, transparent 1px),
+    linear-gradient(
+      90deg,
+      color-mix(in oklch, var(--border) 52%, transparent) 1px,
+      transparent 1px
+    ),
+    var(--surface);
+  background-size: 3rem 3rem;
+  contain: paint;
+}
+
+.provenanceStage::before {
+  position: absolute;
+  inset: -28% -45% auto auto;
+  width: 88%;
+  aspect-ratio: 1;
+  border: 1px solid color-mix(in oklch, var(--signal) 35%, transparent);
+  border-radius: 50%;
+  content: '';
+  box-shadow:
+    0 0 0 4rem color-mix(in oklch, var(--signal) 4%, transparent),
+    0 0 0 9rem color-mix(in oklch, var(--signal) 2%, transparent);
+}
+
+.sourceStack {
+  position: relative;
+  z-index: 2;
+}
+
+.sourceCard {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: color-mix(in oklch, var(--bg) 91%, transparent);
+}
+
+.sourceCard::after {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 1px);
+  width: clamp(1.1rem, 3vw, 3.4rem);
+  height: 1px;
+  content: '';
+  background: var(--border-strong);
+  transform-origin: left;
+}
+
+.chronologyRail {
+  position: relative;
+  z-index: 2;
+  min-width: 1px;
+  background: var(--border-strong);
+}
+
+.chronologyRail::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+  background: var(--signal);
+  transform-origin: top;
+}
+
+.railNode {
+  position: absolute;
+  left: 50%;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--signal);
+  box-shadow: 0 0 0 1px var(--signal);
+  transform: translateX(-50%);
+}
+
+.answerCard {
+  position: relative;
+  z-index: 2;
+  align-self: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--bg) 94%, transparent);
+}
+
+.answerCard::before {
+  position: absolute;
+  inset: -1px auto -1px -1px;
+  width: 2px;
+  content: '';
+  background: var(--signal);
+}
+
+.citation {
+  display: inline-grid;
+  min-width: 1.55rem;
+  height: 1.55rem;
+  place-items: center;
+  border: 1px solid color-mix(in oklch, var(--signal) 62%, var(--border));
+  border-radius: 50%;
+  background: var(--signal-soft);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+}
+
+.editorialCard {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--surface) 82%, transparent);
+}
+
+.editorialCard::after {
+  position: absolute;
+  inset: auto -10% -58% auto;
+  width: 54%;
+  aspect-ratio: 1;
+  border: 1px solid color-mix(in oklch, var(--border-strong) 68%, transparent);
+  border-radius: 50%;
+  content: '';
+  pointer-events: none;
+}
+
+.workflowStep {
+  position: relative;
+}
+
+.workflowStep::before {
+  position: absolute;
+  top: 1.65rem;
+  bottom: -1.65rem;
+  left: 0.95rem;
+  width: 1px;
+  content: '';
+  background: var(--border);
+}
+
+.workflowStep:last-child::before {
+  display: none;
+}
+
+.workflowIndex {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--signal);
+}
+
+.promptBlock {
+  position: relative;
+  overflow: hidden;
+  background: var(--fg);
+  color: var(--bg);
+}
+
+.promptBlock::before {
+  position: absolute;
+  inset: -90% -14% auto auto;
+  width: 35rem;
+  aspect-ratio: 1;
+  border: 1px solid color-mix(in oklch, var(--signal) 55%, transparent);
+  border-radius: 50%;
+  content: '';
+  box-shadow:
+    0 0 0 5rem color-mix(in oklch, var(--signal) 7%, transparent),
+    0 0 0 11rem color-mix(in oklch, var(--signal) 4%, transparent);
+}
+
+.ctaStage {
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient(circle at 78% 34%, var(--signal-soft), transparent 26%), var(--fg);
+  color: var(--bg);
+}
+
+.ctaStage::after {
+  position: absolute;
+  right: -8rem;
+  bottom: -15rem;
+  width: 32rem;
+  aspect-ratio: 1;
+  border: 1px solid color-mix(in oklch, var(--signal) 48%, transparent);
+  border-radius: 50%;
+  content: '';
+  box-shadow:
+    0 0 0 4rem color-mix(in oklch, var(--signal) 7%, transparent),
+    0 0 0 9rem color-mix(in oklch, var(--signal) 4%, transparent);
+}
+
+.readingMeasure {
+  max-width: 68ch;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .provenanceReveal[data-revealed='true'] .sourceCard {
+    animation: source-emphasize 120ms cubic-bezier(0.25, 1, 0.5, 1);
+  }
+
+  .provenanceReveal[data-revealed='true'] .sourceCard:nth-child(2) {
+    animation-delay: 30ms;
+  }
+
+  .provenanceReveal[data-revealed='true'] .sourceCard:nth-child(3) {
+    animation-delay: 60ms;
+  }
+
+  .provenanceReveal[data-revealed='true'] .sourceCard:nth-child(4) {
+    animation-delay: 90ms;
+  }
+
+  .provenanceReveal[data-revealed='true'] .sourceCard::after {
+    animation: connector-draw 120ms cubic-bezier(0.25, 1, 0.5, 1) 90ms both;
+  }
+
+  .provenanceReveal[data-revealed='true'] .chronologyRail::after {
+    animation: rail-resolve 120ms cubic-bezier(0.25, 1, 0.5, 1) 120ms both;
+  }
+
+  .provenanceReveal[data-revealed='true'] .answerCard {
+    animation: answer-emphasize 120ms cubic-bezier(0.25, 1, 0.5, 1) 150ms;
+  }
+
+  .editorialCard {
+    transition:
+      transform 80ms cubic-bezier(0.25, 1, 0.5, 1),
+      border-color 80ms ease;
+  }
+
+  .editorialCard:hover {
+    border-color: var(--border-strong);
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes source-emphasize {
+  50% {
+    transform: translateX(0.2rem);
+  }
+}
+
+@keyframes connector-draw {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes rail-resolve {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes answer-emphasize {
+  50% {
+    transform: translateX(-0.2rem);
+  }
+}
+
+@media (max-width: 64rem) {
+  .heroGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .provenanceStage {
+    min-height: 33rem;
+  }
+}
+
+@media (max-width: 47.999rem) {
+  .canvas {
+    background: var(--bg);
+  }
+
+  .displayTitle,
+  .guideTitle {
+    max-width: none;
+  }
+
+  .provenanceStage {
+    min-height: 0;
+    background-size: 2rem 2rem;
+  }
+
+  .sourceCard::after {
+    display: none;
+  }
+
+  .workflowStep::before {
+    left: 0.75rem;
+  }
+
+  .workflowIndex {
+    width: 1.5rem;
+    height: 1.5rem;
+  }
+}
+
+@media (forced-colors: active) {
+  .citation,
+  .workflowIndex,
+  .answerCard {
+    border-color: CanvasText;
+  }
+
+  .chronologyRail::after,
+  .answerCard::before {
+    background: Highlight;
+  }
+}
