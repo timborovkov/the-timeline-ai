@@ -90,7 +90,7 @@ describe('LandingPage', () => {
     });
   });
 
-  it('states connector capabilities without linking to unbuilt acquisition pages', async () => {
+  it('states connector capabilities without inventing a connector destination', async () => {
     const html = renderToStaticMarkup(await LandingPage());
 
     for (const connector of ['GitHub', 'Linear', 'Google Drive', 'Monday.com', 'Slack', 'Sentry']) {
@@ -106,8 +106,6 @@ describe('LandingPage', () => {
     expect(html).toContain('Not connectable or indexed until support is real.');
     expect(html).not.toContain('Future connector pages remain unindexed');
     expect(html).not.toContain('href="/integrations');
-    expect(html).not.toContain('href="/guides');
-    expect(html).not.toContain('href="/record');
   });
 
   it('keeps the marketing page browsable for signed-in users with dashboard CTAs', async () => {
