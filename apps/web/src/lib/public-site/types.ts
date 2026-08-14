@@ -5,7 +5,6 @@ export const PUBLIC_DOCUMENT_KINDS = [
   'connector',
   'guide-index',
   'guide',
-  'record',
   'trust',
   'support',
   'legal',
@@ -25,7 +24,7 @@ export const PUBLIC_LLM_SECTIONS = [
   'primary',
   'product-guides',
   'integrations',
-  'the-record',
+  'how-it-works',
   'companion',
 ] as const;
 

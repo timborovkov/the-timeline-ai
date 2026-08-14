@@ -58,7 +58,13 @@ function patchCardState(
  * FILTER_THRESHOLD entries — there's no value in chrome for a 3-entry
  * grid.
  */
-export function McpCatalog({ entries }: { entries: CatalogEntryProps[] }) {
+export function McpCatalog({
+  entries,
+  localConnectionsEnabled = false,
+}: {
+  entries: CatalogEntryProps[];
+  localConnectionsEnabled?: boolean;
+}) {
   const [query, setQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
@@ -143,7 +149,7 @@ export function McpCatalog({ entries }: { entries: CatalogEntryProps[] }) {
       ) : (
         <div className="grid auto-rows-fr gap-3 md:grid-cols-2">
           {filtered.map((e) => (
-            <CatalogCard key={e.id} entry={e} />
+            <CatalogCard key={e.id} entry={e} localConnectionsEnabled={localConnectionsEnabled} />
           ))}
         </div>
       )}
@@ -151,16 +157,27 @@ export function McpCatalog({ entries }: { entries: CatalogEntryProps[] }) {
   );
 }
 
-function CatalogCard({ entry }: { entry: CatalogEntryProps }) {
+function CatalogCard({
+  entry,
+  localConnectionsEnabled,
+}: {
+  entry: CatalogEntryProps;
+  localConnectionsEnabled: boolean;
+}) {
   const router = useRouter();
   const dialog = useAppDialog();
-  const isConnectable = entry.status === 'mcp_available' && entry.authType !== null;
+  const isConnectable =
+    (entry.status === 'mcp_available' ||
+      (entry.status === 'mcp_local' && localConnectionsEnabled)) &&
+    entry.authType !== null;
   const statusLabel =
     entry.status === 'coming_soon'
       ? 'Coming soon'
-      : entry.ingestStatus === 'coming_soon'
-        ? 'MCP now'
-        : 'Available';
+      : entry.status === 'mcp_local'
+        ? 'Local desktop only'
+        : entry.ingestStatus === 'coming_soon'
+          ? 'MCP now'
+          : 'Available';
   const [{ open, bearer, headerName, headerValue, busy }, setCardState] = useReducer(
     patchCardState,
     INITIAL_CARD_STATE,
@@ -336,7 +353,9 @@ function CatalogCard({ entry }: { entry: CatalogEntryProps }) {
               }}
             >
               {!isConnectable
-                ? 'Coming soon'
+                ? entry.status === 'mcp_local'
+                  ? 'Local setup only'
+                  : 'Coming soon'
                 : busy
                   ? 'Connecting…'
                   : entry.authType === 'oauth'

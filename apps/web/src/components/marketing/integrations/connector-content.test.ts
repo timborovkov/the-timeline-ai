@@ -1,0 +1,359 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+  CONNECTOR_DIRECTORY_SUMMARY,
+  CONNECTOR_SLUGS,
+  CONNECTORS,
+  findConnector,
+  getConnectorCapabilityTiers,
+  INDEXABLE_CONNECTOR_ROUTES,
+} from '@/components/marketing/integrations/connector-content';
+import {
+  PUBLIC_DEMO_DISCLOSURE,
+  PUBLIC_DEMO_STORY,
+} from '@/components/marketing/public-demo-story';
+
+describe('connector content manifest', () => {
+  it('exports exactly the six implemented native connector routes for public indexing', () => {
+    expect(CONNECTORS.map((connector) => connector.slug)).toEqual(CONNECTOR_SLUGS);
+    expect(INDEXABLE_CONNECTOR_ROUTES).toHaveLength(6);
+    expect(new Set(INDEXABLE_CONNECTOR_ROUTES.map((route) => route.indexable))).toEqual(
+      new Set([true]),
+    );
+    expect(new Set(INDEXABLE_CONNECTOR_ROUTES.map((route) => route.capability))).toEqual(
+      new Set(['native']),
+    );
+    expect(INDEXABLE_CONNECTOR_ROUTES.map((route) => route.path)).toEqual([
+      '/integrations/slack',
+      '/integrations/github',
+      '/integrations/linear',
+      '/integrations/google-drive',
+      '/integrations/monday',
+      '/integrations/sentry',
+    ]);
+  });
+
+  it('keeps MCP and planned tiers out of the canonical connector route export', () => {
+    const capabilityTiers = getConnectorCapabilityTiers();
+    const serializedRoutes = JSON.stringify(INDEXABLE_CONNECTOR_ROUTES);
+    expect(serializedRoutes).not.toContain('notion');
+    expect(serializedRoutes).not.toContain('jira');
+    expect(capabilityTiers.mcpAccess).toContain('Notion');
+    expect(capabilityTiers.mcpAccess).not.toContain('Figma');
+    expect(capabilityTiers.localDesktopAccess).toEqual(['Figma']);
+    expect(capabilityTiers.nativeProviders).toEqual([
+      'GitHub',
+      'Linear',
+      'Google Drive',
+      'Monday.com',
+      'Slack',
+      'Sentry',
+    ]);
+    expect(capabilityTiers.plannedProviders).toContain('HubSpot');
+    expect(CONNECTOR_DIRECTORY_SUMMARY.planned.indexable).toBe(false);
+  });
+
+  it('uses one explicitly fictional Acme corpus across every provider example', () => {
+    expect(PUBLIC_DEMO_DISCLOSURE).toBe('Fictional Acme example, not customer data.');
+    expect(PUBLIC_DEMO_STORY.organization).toBe('Acme');
+
+    for (const connector of CONNECTORS) {
+      const example = JSON.stringify({ diagram: connector.diagram, scenario: connector.scenario });
+      expect(example).toContain('Acme');
+      expect(example).not.toMatch(/Northline|Project Atlas|API-91|WEB-913/u);
+    }
+  });
+
+  it('requires curated provider-specific substance on every native page', () => {
+    for (const connector of CONNECTORS) {
+      expect(connector.capability).toBe('Native integration');
+      expect(connector.lastReviewed).toMatch(/^\d{4}-\d{2}-\d{2}$/u);
+      expect(connector.diagram.records).toHaveLength(3);
+      expect(connector.diagram.citations).toHaveLength(3);
+      expect(connector.exampleQuestions.length).toBeGreaterThanOrEqual(4);
+      expect(connector.capturedRecords.length).toBeGreaterThanOrEqual(6);
+      expect(connector.recipes).toHaveLength(3);
+      expect(connector.setup.length).toBeGreaterThanOrEqual(4);
+      expect(connector.permissions.length).toBeGreaterThanOrEqual(4);
+      expect(connector.limitations.length).toBeGreaterThanOrEqual(3);
+      expect(connector.faqs).toHaveLength(4);
+      expect(connector.captureStatement).toContain('Timeline');
+      expect(connector.providerStatement).toContain(connector.name);
+    }
+  });
+
+  it('keeps fixed dark provider marks legible on dark surfaces', () => {
+    expect(
+      CONNECTORS.filter((connector) => connector.lightLogoTileInDarkMode).map(
+        (connector) => connector.slug,
+      ),
+    ).toEqual(['slack', 'github', 'sentry']);
+  });
+
+  it('resolves known connectors and rejects non-published slugs', () => {
+    expect(findConnector('google-drive')?.providerId).toBe('google_drive');
+    expect(findConnector('notion')).toBeUndefined();
+    expect(findConnector('planned-slack-alternative')).toBeUndefined();
+  });
+
+  it('discloses the Slack incremental reconciliation window', () => {
+    const slack = findConnector('slack');
+    if (!slack) throw new Error('expected Slack connector');
+
+    const limitations = slack.limitations.join(' ');
+    expect(limitations).toContain('looks back 14 days');
+    expect(limitations).toContain('new replies whose thread root is older than that window');
+    expect(limitations).toContain('at most 25 history pages, or 5,000 messages');
+    expect(limitations).toContain('without persisting a continuation for an unprocessed gap');
+    expect(limitations).toContain('can be omitted and later age out of the lookback');
+    expect(limitations).toContain('remain the first-observed snapshot');
+    expect(limitations).toContain('first 2,000 replies returned');
+    expect(limitations).toContain('replies beyond that cap remain absent');
+    expect(limitations).toContain('at most 2,000 non-archived channels');
+    expect(slack.capturedRecords).toContain(
+      'Messages in selected public channels where the Slack app is a member',
+    );
+    expect(slack.setup.join(' ')).toContain(
+      'invite the app to every selected public or private channel before syncing',
+    );
+    expect(slack.setup.join(' ')).toContain('fail with not_in_channel');
+    expect(limitations).toContain('does not preserve Slack’s membership flag');
+    expect(limitations).toContain('A listed public channel still requires the bot to be invited');
+    expect(slack.permissions.join(' ')).toContain(
+      'does not intersect bot access with the authorizing person’s own channel membership',
+    );
+    expect(slack.faqs.map((faq) => faq.answer).join(' ')).toContain(
+      'bot can retain access after that person leaves a channel',
+    );
+    expect(slack.capturedRecords).toContain(
+      'First-observed reaction aggregates anchored to message time, with their initial count and user snapshot',
+    );
+    expect(limitations).toContain('uses the source message timestamp');
+  });
+
+  it('discloses native provider history and reconciliation boundaries', () => {
+    const github = findConnector('github');
+    const linear = findConnector('linear');
+    const monday = findConnector('monday');
+    if (!github || !linear || !monday) throw new Error('expected native connector content');
+
+    const githubClaims = JSON.stringify(github);
+    expect(githubClaims).toContain('polls the repository default branch');
+    expect(githubClaims).toContain('non-default-branch-only pushes rely on webhook delivery');
+    expect(githubClaims).not.toContain('recover anything missed');
+    expect(githubClaims).toContain(
+      'Initial default-branch commit history is capped at 2,000 commits',
+    );
+    expect(githubClaims).toContain('2,000 pull requests per state');
+    expect(githubClaims).toContain('2,000 combined issue-endpoint entries');
+    expect(githubClaims).toContain('issues endpoint mixes issues and pull requests');
+    expect(githubClaims).toContain('PRs consume the shared 2,000-entry scan budget');
+    expect(githubClaims).toContain('2,000 review summaries per pull request');
+    expect(githubClaims).toContain(
+      'Issue and inline-review comment surfaces use a separate continuation',
+    );
+    expect(githubClaims).toContain('2,000 most recently updated repositories');
+    expect(githubClaims).toContain('organization source also expands at most its 2,000');
+    expect(githubClaims).toContain('lifecycle state for at most 5,000 IDs per map');
+    expect(githubClaims).toContain('missed reopen webhook can be lost');
+    expect(githubClaims).toContain('first-observed snapshots within each lifecycle state');
+    expect(githubClaims).toContain(
+      'edits that do not change lifecycle state reuse the existing immutable row',
+    );
+    expect(githubClaims).toContain(
+      'Release revisions are keyed by release lifecycle plus a digest',
+    );
+    expect(githubClaims).toContain('returns to a previously captured combination');
+    expect(githubClaims).toContain('reuses the earlier immutable row');
+    expect(githubClaims).toContain('scheduled reconciliation runs every six hours');
+    expect(githubClaims).toContain('first 100 installations returned during OAuth');
+    expect(githubClaims).toContain('fall back to the connection owner’s broad OAuth token');
+
+    expect(linear.limitations.join(' ')).toContain(
+      'history begins when Timeline starts observing the selected team',
+    );
+    expect(linear.limitations.join(' ')).toContain(
+      'move between Linear workflow states that normalize to the same Timeline bucket',
+    );
+    expect(linear.limitations.join(' ')).toContain('first 2,000 teams returned by the API');
+    expect(linear.limitations.join(' ')).toContain(
+      '2,500 issues, 2,500 comments, and 2,500 projects across the complete selected-team set',
+    );
+    expect(linear.limitations.join(' ')).toContain('every incremental recovery pass');
+    expect(linear.limitations.join(' ')).toContain(
+      'advances that surface’s updated-at cursor to the newest fetched timestamp',
+    );
+    expect(linear.limitations.join(' ')).toContain(
+      'overflowed older changes are not revisited and can be permanently absent',
+    );
+    expect(linear.limitations.join(' ')).toContain('runs every six hours');
+    expect(linear.limitations.join(' ')).toContain(
+      'retains issue status for at most 5,000 issue IDs',
+    );
+    expect(linear.limitations.join(' ')).toContain(
+      'fields return to a previously captured combination',
+    );
+    expect(monday.limitations.join(' ')).toContain(
+      'Initial board activity-log backfill requests the preceding 30 days',
+    );
+    expect(monday.limitations.join(' ')).toContain('first default response page');
+    expect(monday.limitations.join(' ')).toContain('does not paginate the activity log');
+    expect(monday.limitations.join(' ')).toContain('lag Monday.com by up to 24 hours');
+    expect(monday.limitations.join(' ')).toContain(
+      'Scheduled Monday.com board reconciliation runs every hour',
+    );
+    expect(monday.limitations.join(' ')).toContain('remain stale for nearly an hour');
+    expect(monday.limitations.join(' ')).toContain(
+      'Polling item keys change only when the normalized lifecycle bucket changes',
+    );
+    expect(monday.limitations.join(' ')).toContain(
+      'owner, due-date, rename, or other same-status field change',
+    );
+    expect(monday.limitations.join(' ')).toContain('can remain permanently absent');
+    expect(monday.limitations.join(' ')).toContain('10,000 boards and 2,500 WorkDocs');
+    expect(monday.limitations.join(' ')).toContain('WorkDoc refresh reads at most 10,000 blocks');
+    expect(monday.limitations.join(' ')).toContain('does not persist a block-page continuation');
+    expect(monday.limitations.join(' ')).toContain(
+      'last lifecycle bucket for at most 5,000 item IDs',
+    );
+    expect(monday.limitations.join(' ')).toContain(
+      'return to a previously captured status can reuse the original immutable key',
+    );
+    expect(monday.limitations.join(' ')).toContain(
+      'user-created board with that prefix can therefore be hidden',
+    );
+  });
+
+  it('keeps Slack attachment claims inside the metadata-only boundary', () => {
+    const slack = findConnector('slack');
+    if (!slack) throw new Error('expected Slack connector');
+
+    const claims = JSON.stringify(slack);
+    expect(claims).toContain('file-share metadata');
+    expect(claims).toContain('does not download or inspect attachment bodies');
+    expect(slack.intro).not.toContain('threads, files, reactions');
+    expect(slack.seoDescription).not.toContain('threads, files, reactions');
+  });
+
+  it('discloses GitHub App installation scope for organization selections', () => {
+    const github = findConnector('github');
+    if (!github) throw new Error('expected GitHub connector');
+
+    const claims = JSON.stringify(github);
+    expect(claims).toContain('installation covers every repository');
+    expect(claims).toContain('excluded from a selected-repositories App installation');
+    expect(claims).not.toContain(
+      'Organization selection includes only repositories the connection owner and installed app can access',
+    );
+  });
+
+  it('qualifies Sentry recovery and lifecycle timestamps', () => {
+    const sentry = findConnector('sentry');
+    if (!sentry) throw new Error('expected Sentry connector');
+
+    const claims = JSON.stringify(sentry);
+    expect(claims).toContain('cannot recover a missed alert or deployment delivery');
+    expect(claims).toContain(
+      'A missed resolve or ignore webhook for a quiet issue may not be recovered',
+    );
+    expect(claims).toContain('repeated closed transition does not create a new lifecycle row');
+    expect(claims).toContain('one immutable deployed key per release');
+    expect(claims).toContain('later deployment does not create a new row');
+    expect(claims).toContain('lifecycle state for at most 5,000 issue IDs');
+    expect(claims).toContain('missed regression webhook can be lost');
+    expect(claims).toContain('Scheduled Sentry reconciliation runs every 24 hours');
+    expect(claims).toContain('later deliveries for another project in that installation');
+    expect(claims).toContain('bypass project-selection checks');
+    expect(claims).toContain('do not preserve the later action time');
+    expect(claims).not.toContain('reconciliation recovers missed activity');
+    expect(sentry.diagram.answer).toContain(
+      'does not establish when the resolution action occurred',
+    );
+    expect(sentry.diagram.records.map((record) => record.time)).not.toContain('16:02');
+  });
+
+  it('keeps GitHub release claims distinct from deployment evidence', () => {
+    const github = findConnector('github');
+    if (!github) throw new Error('expected GitHub connector');
+
+    const claims = JSON.stringify(github);
+    expect(claims).toContain('not proof of a production deployment');
+    expect(claims).toContain('does not ingest GitHub deployment or environment records');
+    expect(github.diagram.answer).toContain('GitHub release v2.8.0 published');
+    expect(claims).not.toContain('Release published to production');
+    expect(claims).not.toContain('What shipped in last week’s releases?');
+  });
+
+  it('keeps Google Drive claims inside the implemented change-feed boundary', () => {
+    const drive = findConnector('google-drive');
+    if (!drive) throw new Error('expected Google Drive connector');
+
+    const promotedClaims = JSON.stringify({
+      hero: drive.hero,
+      intro: drive.intro,
+      seoDescription: drive.seoDescription,
+      captureStatement: drive.captureStatement,
+      diagram: drive.diagram,
+      exampleQuestions: drive.exampleQuestions,
+      scenario: drive.scenario,
+      capturedRecords: drive.capturedRecords,
+    });
+    const publicClaims = JSON.stringify(drive);
+
+    expect(promotedClaims).not.toMatch(/Drive comments|selected folders|specific folders/iu);
+    expect(publicClaims).toContain('My Drive root');
+    expect(publicClaims).toContain('shared drives');
+    expect(drive.permissions.join(' ')).toContain('openid and email');
+    expect(drive.permissions.join(' ')).toContain('stable subject identifier');
+    expect(drive.permissions.join(' ')).toContain('primary email labels the connection');
+    expect(publicClaims).toContain(
+      'capture effectively begins at the cursor used by the first successful reconciliation',
+    );
+    expect(publicClaims).toContain('Activation only queues the first sync');
+    expect(publicClaims).toContain('does not persist a Drive cursor');
+    expect(publicClaims).toContain(
+      'Changes made between activation and that cursor can precede it',
+    );
+    expect(publicClaims).toContain('are never returned');
+    expect(publicClaims).toContain('does not ingest Drive comments or Activity history');
+    expect(publicClaims).not.toContain(
+      'A team receives changes only from the My Drive root or shared drives',
+    );
+    expect(publicClaims).not.toContain(
+      'Timeline admits changes only when their parent tree or shared-drive ID matches a deliberately activated source',
+    );
+    expect(publicClaims).toContain(
+      'Selecting My Drive root currently admits any changed file the connected account can access',
+    );
+    expect(publicClaims).toContain(
+      'changed Shared with me file or accessible shared-drive file can therefore be captured',
+    );
+    expect(publicClaims).toContain(
+      'every non-removed file in the account-wide changes feed passes',
+    );
+    expect(publicClaims).toContain(
+      'Document-body harvest and version creation require the person who connected Drive to remain a member',
+    );
+    expect(publicClaims).toContain(
+      'change metadata continues to land and the Drive cursor still advances',
+    );
+    expect(publicClaims).toContain('intervening file states are not recovered');
+    expect(publicClaims).toContain('outside the user’s My Drive');
+    expect(publicClaims).toContain('Versions are sync-observed snapshots');
+    expect(publicClaims).toContain('may not preserve the intermediate wording');
+    expect(publicClaims).toContain('up to the first 100 shared drives returned by Google');
+    expect(publicClaims).toContain('current listing does not paginate beyond that first page');
+    expect(publicClaims).toContain(
+      'does not currently provision a customer-configurable Drive push channel',
+    );
+    expect(publicClaims).toContain('15-minute scheduled reconciliation policy');
+    expect(publicClaims).toContain('evaluated by the worker’s five-minute integration tick');
+    expect(publicClaims).toContain('roughly that interval plus scheduling delay');
+    expect(publicClaims).not.toContain(
+      'an optional push channel can signal faster incremental sync',
+    );
+    expect(publicClaims).not.toContain('Timeline observes each new file modification');
+    expect(publicClaims).toContain('Drive removal tombstones do not include parent information');
+    expect(publicClaims).toContain('even when that area was not activated');
+  });
+});

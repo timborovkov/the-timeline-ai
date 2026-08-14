@@ -29,6 +29,7 @@ import { slackProvider } from '#src/integrations/providers/slack.js';
 //   - `native_available`  — adapter implemented, env credentials configured.
 //   - `native_unconfigured` — adapter implemented, env credentials missing.
 //   - `mcp_available`     — connectable today via the custom-MCP flow.
+//   - `mcp_local`         — usable only when Timeline and the MCP server share a machine.
 //   - `coming_soon`       — listed on the landing page; not yet routable.
 //
 // `ingestStatus` is intentionally separate from `status`: an integration can
@@ -72,6 +73,7 @@ export type IntegrationStatus =
   | 'native_available'
   | 'native_unconfigured'
   | 'mcp_available'
+  | 'mcp_local'
   | 'coming_soon';
 
 export type IntegrationIngestStatus = 'implemented' | 'coming_soon';
@@ -91,7 +93,7 @@ export interface CatalogEntry {
   featured: boolean;
   /** Native adapters expose Connect on `/app/team/integrations`. */
   connectablePath?: '/app/team/integrations' | '/app/team/mcp-servers';
-  /** MCP server URL for `mcp_available` entries. Required for one-click connect. */
+  /** MCP server URL for `mcp_available` and `mcp_local` entries. */
   mcpUrl?: string;
   /**
    * MCP auth mode. `oauth` kicks off /api/mcp/oauth/start after creation.
@@ -222,7 +224,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     },
   },
 
-  // ─────────────────────── MCP-backed (connectable today) ────────────
+  // ─────────────────────── MCP-backed (hosted or local) ──────────────
   {
     id: 'notion',
     label: 'Notion',
@@ -285,9 +287,9 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     mcpUrl: 'http://127.0.0.1:3845/sse',
     mcpAuthType: 'none',
     mcpAuthHint:
-      'Figma ships an MCP server inside the desktop app. Enable it in Preferences → MCP, then click Connect (no token needed).',
+      'Figma ships an MCP server inside the desktop app. Enable it in Preferences → MCP, then connect from a local Timeline development instance on the same machine (no token needed).',
     examplePrompt: 'Show me the latest design iterations on the checkout flow.',
-    staticStatus: 'mcp_available',
+    staticStatus: 'mcp_local',
   },
   {
     id: 'stripe',

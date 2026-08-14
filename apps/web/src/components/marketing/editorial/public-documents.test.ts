@@ -4,7 +4,7 @@ import {
   EDITORIAL_CANONICAL_ROUTES,
   EDITORIAL_GUIDES,
   EDITORIAL_PUBLICATION_NAME,
-  RECORD_ROUTE,
+  HOW_IT_WORKS_ROUTE,
 } from '@/components/marketing/editorial/content';
 import {
   EDITORIAL_PUBLIC_DOCUMENTS,
@@ -27,7 +27,7 @@ describe('editorial public documents', () => {
     }
   });
 
-  it('publishes the Record and guides through sitemap discovery', () => {
+  it('publishes the how-it-works overview and guides through sitemap discovery', () => {
     const urls = buildPublicSitemap(PUBLIC_DOCUMENT_REGISTRY, SITE_URL).map((entry) => entry.url);
 
     expect(urls).toEqual(
@@ -41,8 +41,8 @@ describe('editorial public documents', () => {
     const compact = buildLlmsTxt({ registry: PUBLIC_DOCUMENT_REGISTRY, siteUrl: SITE_URL });
     const full = buildLlmsFullTxt({ registry: PUBLIC_DOCUMENT_REGISTRY, siteUrl: SITE_URL });
 
-    expect(compact).toContain('## The Record');
-    expect(compact).toContain(`[${EDITORIAL_PUBLICATION_NAME}](${SITE_URL}${RECORD_ROUTE})`);
+    expect(compact).toContain('## How Timeline works');
+    expect(compact).toContain(`[${EDITORIAL_PUBLICATION_NAME}](${SITE_URL}${HOW_IT_WORKS_ROUTE})`);
     for (const guide of EDITORIAL_GUIDES) {
       const firstBoundary = guide.boundaries.at(0);
       expect(firstBoundary).toBeDefined();

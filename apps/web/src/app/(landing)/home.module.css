@@ -9,7 +9,6 @@
   --home-line-strong: oklch(0.64 0.024 115);
   --home-signal: oklch(0.5 0.19 130);
   --home-signal-soft: oklch(0.5 0.19 130 / 0.12);
-  --home-nav: oklch(0.955 0.015 95);
   --home-meta-size: 0.75rem;
   --home-progress: 0;
   min-width: 0;
@@ -35,17 +34,22 @@
   --home-line-strong: oklch(0.42 0.026 130);
   --home-signal: oklch(0.9 0.2 130);
   --home-signal-soft: oklch(0.9 0.2 130 / 0.13);
-  --home-nav: oklch(0.13 0.008 135);
 }
 
 .page::before {
   position: fixed;
   inset: 0;
   z-index: 20;
-  opacity: 0.035;
+  opacity: 0.055;
   pointer-events: none;
   content: '';
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='4' stitchTiles='stitchTiles'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.75'/%3E%3C/svg%3E");
+  mix-blend-mode: multiply;
+}
+
+:global(.dark) .page::before {
+  opacity: 0.035;
+  mix-blend-mode: normal;
 }
 
 .page ::selection {
@@ -92,23 +96,6 @@
   transform-origin: left;
 }
 
-.masthead {
-  position: sticky;
-  top: 0;
-  z-index: 50;
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  min-height: 4rem;
-  padding-inline: clamp(1rem, 3vw, 3rem);
-  border-bottom: 1px solid color-mix(in oklch, var(--home-line-strong) 65%, transparent);
-  background: var(--home-nav);
-}
-
-.brandLink,
-.mastLinks a,
-.navLink,
-.navCta,
 .textLink,
 .primaryCta,
 .footer a,
@@ -118,100 +105,12 @@
   outline-offset: 4px;
 }
 
-.brandLink:focus-visible,
-.mastLinks a:focus-visible,
-.navLink:focus-visible,
-.navCta:focus-visible,
 .textLink:focus-visible,
 .primaryCta:focus-visible,
 .footer a:focus-visible,
 .citation:focus-visible,
 .receiptLedger a:focus-visible {
   outline: 2px solid var(--home-signal);
-}
-
-.brandLink {
-  width: fit-content;
-  color: var(--home-paper);
-}
-
-.mastLinks {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: clamp(0.25rem, 1.2vw, 1rem);
-}
-
-.mastLinks a {
-  display: inline-flex;
-  min-height: 2.75rem;
-  align-items: center;
-  padding-inline: 0.65rem;
-  color: var(--home-muted);
-  font-size: 0.75rem;
-  text-decoration: none;
-}
-
-.mastLinks a:hover {
-  color: var(--home-paper);
-}
-
-.nav {
-  display: flex;
-  justify-self: end;
-  align-items: center;
-  gap: 0.25rem;
-}
-
-.navLink {
-  min-height: 2.75rem;
-  padding: 0.68rem 0.75rem;
-  color: var(--home-muted);
-  font-size: 0.78rem;
-  text-decoration: none;
-}
-
-.navLink:hover {
-  color: var(--home-paper);
-}
-
-.navCta {
-  display: inline-flex;
-  min-height: 2.75rem;
-  align-items: center;
-  padding: 0 0.9rem;
-  border: 1px solid var(--home-signal);
-  background: var(--home-signal);
-  color: var(--home-ink);
-  font-size: 0.78rem;
-  font-weight: 650;
-  text-decoration: none;
-}
-
-.githubLink,
-.themeToggle {
-  background: transparent !important;
-  color: var(--home-muted) !important;
-}
-
-.githubLink {
-  border-color: transparent !important;
-  min-height: 2.75rem !important;
-  width: 2.75rem !important;
-}
-
-.githubLink:hover {
-  background: var(--home-panel) !important;
-  color: var(--home-paper) !important;
-}
-
-.themeToggle {
-  border-color: var(--home-line-strong) !important;
-}
-
-.themeToggle {
-  min-height: 2.75rem !important;
-  width: 2.75rem !important;
 }
 
 .scene {
@@ -224,7 +123,7 @@
   isolation: isolate;
 }
 
-.scene > :not(.ambientTrace) {
+.scene > * {
   position: relative;
   z-index: 1;
 }
@@ -240,37 +139,6 @@
   align-items: center;
   min-height: calc(100svh - 4rem);
   padding-block: clamp(4rem, 8vw, 8rem);
-}
-
-.ambientTrace {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.ambientTrace span {
-  position: absolute;
-  left: -38%;
-  width: 38%;
-  height: 1px;
-  background: var(--home-line-strong);
-  opacity: 0;
-  transform: translateX(0) rotate(-12deg);
-  transform-origin: center;
-}
-
-.ambientTrace span:first-child {
-  top: 22%;
-}
-
-.ambientTrace span:nth-child(2) {
-  top: 51%;
-}
-
-.ambientTrace span:nth-child(3) {
-  top: 78%;
 }
 
 .sceneIndex {
@@ -408,10 +276,47 @@
   transform-origin: center;
 }
 
-.orbitLines path:nth-child(n + 5) {
-  stroke: var(--home-line-strong);
-  stroke-dasharray: 3 12;
-  opacity: 0.3;
+.ingestPackets circle {
+  fill: var(--home-signal);
+  opacity: 0;
+  transform-box: view-box;
+  transform-origin: center;
+}
+
+.ingestPackets circle:nth-child(1) {
+  --ingest-x: 182px;
+  --ingest-y: 184px;
+  --ingest-delay: 0ms;
+}
+
+.ingestPackets circle:nth-child(2) {
+  --ingest-x: -186px;
+  --ingest-y: 158px;
+  --ingest-delay: 520ms;
+}
+
+.ingestPackets circle:nth-child(3) {
+  --ingest-x: 188px;
+  --ingest-y: -162px;
+  --ingest-delay: 1040ms;
+}
+
+.ingestPackets circle:nth-child(4) {
+  --ingest-x: -190px;
+  --ingest-y: -170px;
+  --ingest-delay: 1560ms;
+}
+
+.ingestPackets circle:nth-child(5) {
+  --ingest-x: 230px;
+  --ingest-y: 0px;
+  --ingest-delay: 2080ms;
+}
+
+.ingestPackets circle:nth-child(6) {
+  --ingest-x: -230px;
+  --ingest-y: -10px;
+  --ingest-delay: 2600ms;
 }
 
 .memoryCore {
@@ -463,25 +368,39 @@
   background: color-mix(in oklch, var(--home-panel) 95%, transparent);
 }
 
-.orbitSource span {
+.orbitSourceTime {
   color: var(--home-dim);
   font-family: var(--font-mono);
   font-size: var(--home-meta-size);
   letter-spacing: 0.1em;
 }
 
+.orbitSourceIdentity {
+  display: flex;
+  gap: 0.42rem;
+  align-items: center;
+  min-width: 0;
+  margin-top: 0.18rem;
+}
+
+.orbitSourceLogo {
+  display: grid;
+  flex: 0 0 auto;
+  width: 1.35rem;
+  height: 1.35rem;
+  place-items: center;
+  border: 1px solid color-mix(in oklch, var(--home-line-strong) 70%, transparent);
+  background: oklch(0.98 0.005 95);
+}
+
+.orbitSourceLogo img {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
 .orbitSource strong {
   font-size: 0.78rem;
   font-weight: 550;
-}
-
-.orbitSource small {
-  margin-top: 0.15rem;
-  color: var(--home-dim);
-  font-family: var(--font-mono);
-  font-size: var(--home-meta-size);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 
 .orbitSource1 {
@@ -514,24 +433,14 @@
   right: 2%;
 }
 
-.orbitSourceAux {
-  min-width: 5.8rem;
-  padding: 0.5rem 0.6rem;
-  border-color: color-mix(in oklch, var(--home-signal) 38%, var(--home-line-strong));
-  background: var(--home-panel);
-}
-
 .observatoryCaption {
   position: absolute;
   right: 1rem;
   bottom: 0.8rem;
   left: 1rem;
   color: var(--home-dim);
-  font-family: var(--font-mono);
-  font-size: var(--home-meta-size);
-  letter-spacing: 0.1em;
+  font-size: 0.75rem;
   text-align: center;
-  text-transform: uppercase;
 }
 
 .sceneHeading {
@@ -1079,96 +988,139 @@
 }
 
 .connectorPanel {
-  display: grid;
-  grid-template-columns: minmax(18rem, 0.68fr) minmax(0, 1.32fr);
-  gap: 1px;
   margin-top: clamp(2.5rem, 4vw, 4rem);
   border: 1px solid var(--home-line);
   background: var(--home-line);
 }
 
-.connectorPanel > header,
-.connectorContent {
+.connectorPanel > header {
+  display: grid;
+  grid-template-columns: minmax(11rem, 0.35fr) minmax(0, 1fr);
+  gap: clamp(2rem, 6vw, 7rem);
   padding: clamp(1.5rem, 3vw, 3rem);
   background: var(--home-panel);
 }
 
 .connectorPanel > header h3 {
-  max-width: 12ch;
-  margin-top: 1rem;
-  font-size: clamp(2rem, 3.5vw, 3.8rem);
+  max-width: 18ch;
+  font-size: clamp(2rem, 3vw, 3.25rem);
   font-weight: 600;
   line-height: 0.97;
   letter-spacing: -0.055em;
 }
 
 .connectorPanel > header p {
-  max-width: 34rem;
+  max-width: 42rem;
   margin-top: 1.25rem;
   color: var(--home-muted);
   line-height: 1.65;
 }
 
-.nativeConnectors > span,
-.connectorTiers dt {
-  color: var(--home-signal);
-  font-family: var(--font-mono);
-  font-size: var(--home-meta-size);
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
+.connectorPaths {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--home-line);
 }
 
-.nativeConnectors ul {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin: 1rem 0 0;
+.connectorPath {
+  padding: clamp(1.5rem, 3vw, 3rem);
+  background: var(--home-panel);
+}
+
+.connectorPath h4 {
+  margin-top: 0.8rem;
+  font-size: clamp(1.45rem, 2vw, 2.05rem);
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -0.045em;
+}
+
+.connectorPath > p {
+  max-width: 35rem;
+  margin-top: 0.9rem;
+  color: var(--home-muted);
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+
+.captureSurfaceList,
+.nativeConnectorList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 1.5rem 0 0;
   padding: 0;
-  border-block: 1px solid var(--home-line);
   list-style: none;
 }
 
-.nativeConnectors li {
-  display: grid;
-  gap: 0.4rem;
+.captureSurfaceList li,
+.nativeConnectorList a {
+  display: flex;
   min-width: 0;
-  padding: 1rem 0.75rem;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--home-line-strong);
+  background: var(--home-ink);
+  color: var(--home-paper);
+  font-size: 0.75rem;
 }
 
-.nativeConnectors li + li {
-  border-left: 1px solid var(--home-line);
+.captureSurfaceIcon,
+.connectorLogoTile {
+  display: grid;
+  flex: 0 0 auto;
+  width: 1.7rem;
+  height: 1.7rem;
+  place-items: center;
+  border: 1px solid var(--home-line);
+  background: var(--home-panel);
 }
 
-.nativeConnectors li:nth-child(4) {
-  border-left: 0;
+.captureSurfaceIconBrand,
+.connectorLogoTileLight {
+  background: oklch(0.98 0.005 95);
 }
 
-.nativeConnectors li:nth-child(n + 4) {
-  border-top: 1px solid var(--home-line);
+.captureSurfaceIcon img,
+.connectorLogoTile img {
+  width: 1rem;
+  height: 1rem;
 }
 
-.nativeConnectors strong {
+.nativeConnectorList a {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.05rem 0.55rem;
+  min-height: 3rem;
+  border-radius: 2px;
+  outline-offset: 4px;
+  text-decoration: none;
+}
+
+.nativeConnectorList a:hover {
+  color: var(--home-signal);
+}
+
+.nativeConnectorList a:focus-visible {
+  outline: 2px solid var(--home-signal);
+}
+
+.nativeConnectorList .connectorLogoTile {
+  grid-row: 1 / 3;
+}
+
+.nativeConnectorList a > span:nth-child(2) {
   overflow-wrap: anywhere;
-  font-size: 0.88rem;
   font-weight: 600;
 }
 
-.nativeConnectors small {
+.nativeConnectorList small {
   color: var(--home-dim);
   font-family: var(--font-mono);
   font-size: var(--home-meta-size);
-  letter-spacing: 0.07em;
   text-transform: uppercase;
-}
-
-.nativeConnectors small::before {
-  display: inline-block;
-  width: 0.35rem;
-  height: 0.35rem;
-  margin-right: 0.4rem;
-  background: var(--home-signal);
-  border-radius: 50%;
-  content: '';
-  vertical-align: 0.08em;
 }
 
 .connectorEmpty {
@@ -1178,28 +1130,25 @@
   line-height: 1.5;
 }
 
-.connectorTiers {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1px;
-  margin-block: 1.5rem;
-  background: var(--home-line);
-}
-
-.connectorTiers > div {
-  padding: 1rem;
+.connectorFooter {
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem clamp(1.5rem, 3vw, 3rem);
+  border-top: 1px solid var(--home-line);
   background: var(--home-panel);
 }
 
-.connectorTiers dt {
-  color: var(--home-muted);
-}
-
-.connectorTiers dd {
-  margin-top: 0.45rem;
+.connectorFooter p {
+  max-width: 55rem;
   color: var(--home-muted);
   font-size: 0.8rem;
   line-height: 1.55;
+}
+
+.connectorFooter .textLink {
+  flex: 0 0 auto;
 }
 
 .ctaScene {
@@ -1281,6 +1230,26 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 1.2rem;
+}
+
+.footerNavigation {
+  flex-direction: column;
+  align-items: flex-end !important;
+  gap: 0.85rem !important;
+}
+
+.footerLinks {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 1.2rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.footerLinkActive {
+  color: var(--home-signal) !important;
 }
 
 .footer nav {
@@ -1436,8 +1405,7 @@
     transition: transform 90ms linear;
   }
 
-  .primaryCta,
-  .navCta {
+  .primaryCta {
     transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
@@ -1445,8 +1413,7 @@
     transition: background-color 120ms ease-out;
   }
 
-  .primaryCta:hover,
-  .navCta:hover {
+  .primaryCta:hover {
     transform: translateY(-2px);
   }
 
@@ -1472,6 +1439,10 @@
 
   .motionReady .observatory.visible .orbitLines path:nth-child(6) {
     animation-delay: 600ms;
+  }
+
+  .motionReady .observatory.visible .ingestPackets circle {
+    animation: ingestPacket 5.4s var(--ingest-delay) cubic-bezier(0.45, 0, 0.55, 1) infinite;
   }
 
   .motionReady .observatory.visible .orbitSource {
@@ -1515,8 +1486,8 @@
   .motionReady .timelineStage.visible .timelineList li,
   .motionReady .timelineStage.visible .chronologyContract,
   .motionReady .connectorPanel.visible > header,
-  .motionReady .connectorPanel.visible .connectorContent,
-  .motionReady .connectorPanel.visible .nativeConnectors li,
+  .motionReady .connectorPanel.visible .connectorPath,
+  .motionReady .connectorPanel.visible .connectorFooter,
   .motionReady .fitPanel.visible .fitPanelIntro,
   .motionReady .fitPanel.visible .audienceRail article,
   .motionReady .trustFlowPanel.visible > header,
@@ -1553,32 +1524,16 @@
     animation-delay: 900ms;
   }
 
-  .motionReady .connectorPanel.visible .connectorContent {
+  .motionReady .connectorPanel.visible .connectorPath:nth-child(1) {
     animation-delay: 120ms;
   }
 
-  .motionReady .connectorPanel.visible .nativeConnectors li:nth-child(1) {
+  .motionReady .connectorPanel.visible .connectorPath:nth-child(2) {
     animation-delay: 240ms;
   }
 
-  .motionReady .connectorPanel.visible .nativeConnectors li:nth-child(2) {
-    animation-delay: 320ms;
-  }
-
-  .motionReady .connectorPanel.visible .nativeConnectors li:nth-child(3) {
-    animation-delay: 400ms;
-  }
-
-  .motionReady .connectorPanel.visible .nativeConnectors li:nth-child(4) {
-    animation-delay: 480ms;
-  }
-
-  .motionReady .connectorPanel.visible .nativeConnectors li:nth-child(5) {
-    animation-delay: 560ms;
-  }
-
-  .motionReady .connectorPanel.visible .nativeConnectors li:nth-child(6) {
-    animation-delay: 640ms;
+  .motionReady .connectorPanel.visible .connectorFooter {
+    animation-delay: 360ms;
   }
 
   .motionReady .answerLayout.visible .answerWindow,
@@ -1682,18 +1637,6 @@
     animation-delay: 980ms;
   }
 
-  .motionReady [data-home-ambient].visible span {
-    animation: ambientSweep 9s cubic-bezier(0.45, 0, 0.55, 1) infinite both;
-  }
-
-  .motionReady [data-home-ambient].visible span:nth-child(2) {
-    animation-delay: 1.6s;
-  }
-
-  .motionReady [data-home-ambient].visible span:nth-child(3) {
-    animation-delay: 3.2s;
-  }
-
   .motionReady [data-home-reveal].visible {
     animation: diagramItemIn 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
@@ -1752,6 +1695,29 @@
   72% {
     opacity: 0.72;
     transform: scale(1);
+  }
+}
+
+@keyframes ingestPacket {
+  0%,
+  12% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.65);
+  }
+
+  20% {
+    opacity: 1;
+  }
+
+  78% {
+    opacity: 1;
+    transform: translate(var(--ingest-x), var(--ingest-y)) scale(1);
+  }
+
+  88%,
+  100% {
+    opacity: 0;
+    transform: translate(var(--ingest-x), var(--ingest-y)) scale(0.45);
   }
 }
 
@@ -1900,41 +1866,18 @@
   }
 }
 
-@keyframes ambientSweep {
-  0% {
-    opacity: 0;
-    transform: translateX(0) rotate(-12deg);
-  }
-
-  18% {
-    opacity: 0.18;
-  }
-
-  78% {
-    opacity: 0.1;
-  }
-
-  100% {
-    opacity: 0;
-    transform: translateX(370%) rotate(-12deg);
-  }
-}
-
 @media (max-width: 64rem) {
-  .masthead {
-    grid-template-columns: 1fr auto;
-  }
-
-  .mastLinks {
-    display: none;
-  }
-
   .claimScene,
   .recoveryScene,
   .answerLayout,
   .fitPanel,
-  .connectorPanel {
+  .connectorPaths {
     grid-template-columns: 1fr;
+  }
+
+  .connectorPanel > header {
+    grid-template-columns: 1fr;
+    gap: 1rem;
   }
 
   .claimScene {
@@ -2035,50 +1978,12 @@
     justify-content: flex-start;
   }
 
-  .nativeConnectors ul {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .nativeConnectors li + li {
-    border-left: 0;
-  }
-
-  .nativeConnectors li:nth-child(even) {
-    border-left: 1px solid var(--home-line);
-  }
-
-  .nativeConnectors li:nth-child(n + 3) {
-    border-top: 1px solid var(--home-line);
-  }
-
-  .connectorTiers {
-    grid-template-columns: 1fr;
-  }
-
   .motionReady .trustFlowPanel.visible .trustFlow::before {
     animation-name: trustPathDrawVertical;
   }
 }
 
 @media (max-width: 44rem) {
-  .masthead {
-    min-height: 3.5rem;
-    padding-inline: 0.75rem;
-  }
-
-  .navLink,
-  .githubLink {
-    display: none !important;
-  }
-
-  .signInLink {
-    display: inline-flex !important;
-  }
-
-  .navCta {
-    padding-inline: 0.65rem;
-  }
-
   .scene {
     width: calc(100% - 2rem);
     padding-block: 4.5rem;
@@ -2150,6 +2055,20 @@
 
   .orbitSource strong {
     font-size: var(--home-meta-size);
+  }
+
+  .orbitSourceIdentity {
+    gap: 0.25rem;
+  }
+
+  .orbitSourceLogo {
+    width: 1.05rem;
+    height: 1.05rem;
+  }
+
+  .orbitSourceLogo img {
+    width: 0.72rem;
+    height: 0.72rem;
   }
 
   .orbitSourceAux {
@@ -2267,9 +2186,15 @@
 
   .fitPanelIntro,
   .connectorPanel > header,
-  .connectorContent,
+  .connectorPath,
   .trustFlowPanel {
     padding: 1.25rem;
+  }
+
+  .connectorFooter {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 1rem 1.25rem;
   }
 
   .ctaInner h2 {
@@ -2284,17 +2209,17 @@
   .footer nav {
     justify-content: flex-start;
   }
+
+  .footerNavigation {
+    align-items: flex-start !important;
+  }
+
+  .footerLinks {
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 22rem) {
-  .signInLink {
-    display: none !important;
-  }
-
-  .navCta {
-    font-size: var(--home-meta-size);
-  }
-
   .heroTitle {
     font-size: 3.8rem;
   }
@@ -2310,6 +2235,7 @@
   }
 
   .orbitLines path,
+  .ingestPackets circle,
   .orbitInner,
   .orbitSource,
   .memoryCore,
@@ -2328,21 +2254,16 @@
     animation: none !important;
     transition: none !important;
   }
-
-  .ambientTrace {
-    display: none;
-  }
 }
 
 @media (forced-colors: active) {
   .timelineNode span,
   .trustFlow li > span,
-  .nativeConnectors small::before {
+  .ingestPackets circle {
     forced-color-adjust: auto;
   }
 
   .primaryCta,
-  .navCta,
   .citation {
     border-color: ButtonText;
   }

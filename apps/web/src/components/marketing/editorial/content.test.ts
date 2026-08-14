@@ -2,21 +2,20 @@ import { describe, expect, it } from 'vitest';
 
 import {
   EDITORIAL_CANONICAL_ROUTES,
-  EDITORIAL_CONTENT_TYPES,
   EDITORIAL_GUIDES,
   EDITORIAL_MACHINE_SUMMARIES,
   EDITORIAL_PUBLICATION_NAME,
   findEditorialGuide,
   GUIDE_ROUTES,
+  HOW_IT_WORKS_ROUTE,
   NATIVE_EDITORIAL_PROVIDERS,
-  RECORD_ROUTE,
 } from '@/components/marketing/editorial/content';
 
 describe('editorial content model', () => {
   it('exports stable canonical routes and machine-readable summaries', () => {
-    expect(EDITORIAL_PUBLICATION_NAME).toBe('The Record');
+    expect(EDITORIAL_PUBLICATION_NAME).toBe('How Timeline works');
     expect(EDITORIAL_CANONICAL_ROUTES).toEqual([
-      RECORD_ROUTE,
+      HOW_IT_WORKS_ROUTE,
       GUIDE_ROUTES.slackAndDrive,
       GUIDE_ROUTES.weeklyEngineeringUpdates,
       GUIDE_ROUTES.sentryReleaseIncidents,
@@ -26,13 +25,7 @@ describe('editorial content model', () => {
     expect(EDITORIAL_MACHINE_SUMMARIES.every((entry) => entry.summary.length > 80)).toBe(true);
   });
 
-  it('defines all four publication forms and three substantial guides', () => {
-    expect(EDITORIAL_CONTENT_TYPES.map((type) => type.id)).toEqual([
-      'essay',
-      'playbook',
-      'dossier',
-      'product-note',
-    ]);
+  it('publishes three substantial walkthroughs', () => {
     expect(EDITORIAL_GUIDES).toHaveLength(3);
 
     for (const guide of EDITORIAL_GUIDES) {
@@ -67,12 +60,8 @@ describe('editorial content model', () => {
     }
   });
 
-  it('keeps edition labels independent from the provisional publication name', () => {
-    expect(EDITORIAL_GUIDES.map((guide) => guide.issue)).toEqual([
-      'Edition 001',
-      'Edition 002',
-      'Edition 003',
-    ]);
+  it('uses a plain-language name for the public explanation', () => {
+    expect(EDITORIAL_PUBLICATION_NAME).toBe('How Timeline works');
   });
 
   it('states native timing and branch boundaries in the affected guides', () => {

@@ -28,6 +28,8 @@ import { childLogger } from '#src/logger.js';
 const log = childLogger('integrations:google-drive');
 
 const SCOPES = [
+  'openid',
+  'email',
   'https://www.googleapis.com/auth/drive.readonly',
   'https://www.googleapis.com/auth/drive.metadata.readonly',
 ];

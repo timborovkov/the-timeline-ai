@@ -74,7 +74,7 @@ describe('llms text files', () => {
     expect(text).not.toContain('wrong.example');
   });
 
-  it('renders integration and Record contributions in both LLM documents', () => {
+  it('renders integration and how-it-works contributions in both LLM documents', () => {
     const registry = createPublicDocumentRegistry(
       definePublicDocuments('existing-public-documents', PUBLIC_DOCUMENT_REGISTRY.all()),
       definePublicDocuments('discovery-contributions', [
@@ -90,11 +90,11 @@ describe('llms text files', () => {
           },
         }),
         testDocument({
-          canonicalPath: '/record/why-citations-matter',
-          kind: 'record',
+          canonicalPath: '/how-it-works/why-citations-matter',
+          kind: 'guide',
           title: 'Why citations matter',
           llms: {
-            section: 'the-record',
+            section: 'how-it-works',
             order: 1,
             summary: 'An editorial note about evidence-backed answers.',
           },
@@ -109,14 +109,14 @@ describe('llms text files', () => {
     expect(compact).toContain(
       '[GitHub integration](https://thetimeline.cc/integrations/github): Capture GitHub activity as cited timeline evidence.',
     );
-    expect(compact).toContain('## The Record');
+    expect(compact).toContain('## How Timeline works');
     expect(compact).toContain(
-      '[Why citations matter](https://thetimeline.cc/record/why-citations-matter): An editorial note about evidence-backed answers.',
+      '[Why citations matter](https://thetimeline.cc/how-it-works/why-citations-matter): An editorial note about evidence-backed answers.',
     );
     expect(full).toContain('## Integrations');
     expect(full).toContain('URL: https://thetimeline.cc/integrations/github');
-    expect(full).toContain('## The Record');
-    expect(full).toContain('URL: https://thetimeline.cc/record/why-citations-matter');
+    expect(full).toContain('## How Timeline works');
+    expect(full).toContain('URL: https://thetimeline.cc/how-it-works/why-citations-matter');
   });
 });
 

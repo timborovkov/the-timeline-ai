@@ -4,9 +4,8 @@ import type { ReactNode } from 'react';
 
 import { LandingSkipLink } from '@/app/(landing)/_landing-skip-link';
 import styles from '@/app/(landing)/home.module.css';
-import { Logo, Wordmark } from '@/components/brand/logo';
-import { GitHubSourceLink } from '@/components/github-source-link';
-import { ThemeToggle } from '@/components/theme-toggle';
+import { Logo } from '@/components/brand/logo';
+import { PublicHeader } from '@/components/public-header';
 
 const CONTACT_HREF = '/help/support';
 
@@ -18,26 +17,7 @@ export function LandingRecoveryShell({ children }: { children: ReactNode }) {
       <div className={styles.skipLayer}>
         <LandingSkipLink />
       </div>
-      <header className={styles.masthead}>
-        <Link href="/" aria-label="The Timeline home" className={styles.brandLink}>
-          <Wordmark compact />
-        </Link>
-        <nav className={styles.mastLinks} aria-label="Page sections">
-          <Link href="/#sources">How it works</Link>
-          <Link href="/#answer">Example answer</Link>
-          <Link href="/#trust">For teams</Link>
-        </nav>
-        <nav className={styles.nav} aria-label="Landing navigation">
-          <GitHubSourceLink compact className={styles.githubLink} />
-          <Link href="/help" className={styles.navLink}>
-            Help
-          </Link>
-          <Link href={CONTACT_HREF} className={styles.navLink}>
-            Contact
-          </Link>
-          <ThemeToggle className={styles.themeToggle} />
-        </nav>
-      </header>
+      <PublicHeader currentSection="product" showAccountActions={false} />
       <main id="main" tabIndex={-1}>
         {children}
       </main>

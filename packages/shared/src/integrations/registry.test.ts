@@ -16,6 +16,7 @@ import {
   PROVIDER_SYNC_POLICIES,
   providerSyncPolicy,
 } from '#src/integrations/types.js';
+import { validateMcpUrl } from '#src/mcp/auth.js';
 
 const ENV_BACKUP = { ...process.env };
 
@@ -137,6 +138,22 @@ describe('integration registry catalog visibility', () => {
     expect(byId.get('monday')?.ingestStatus).toBe('implemented');
     expect(byId.get('slack')?.ingestStatus).toBe('implemented');
     expect(byId.get('sentry')?.ingestStatus).toBe('implemented');
+    expect(byId.get('figma')?.status).toBe('mcp_local');
+  });
+
+  it('marks only production-connectable MCP endpoints as available', () => {
+    resetEnv({ NODE_ENV: 'production' });
+
+    const catalog = listCatalog();
+    const hostedMcp = catalog.filter((entry) => entry.status === 'mcp_available');
+    for (const entry of hostedMcp) {
+      expect(entry.mcpUrl, `${entry.id} should declare its MCP endpoint`).toBeDefined();
+      expect(validateMcpUrl(entry.mcpUrl ?? ''), entry.id).toBeNull();
+    }
+
+    const figma = catalog.find((entry) => entry.id === 'figma');
+    expect(figma?.status).toBe('mcp_local');
+    expect(validateMcpUrl(figma?.mcpUrl ?? '')).toMatch(/not allowed in production/u);
   });
 
   it('has a shared sync policy for every registered native provider', () => {

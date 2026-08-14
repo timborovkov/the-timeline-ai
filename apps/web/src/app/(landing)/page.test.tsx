@@ -50,13 +50,20 @@ describe('LandingPage', () => {
     }
 
     expect(html).toContain('Acme rollout / Last 7 days');
-    expect(html).toContain('Four cited Acme rollout work signals');
-    expect(html).toContain('Example project / Acme rollout / 4 cited + 2 connected');
-    expect(html).toContain('Connected, not cited');
+    expect(html).toContain('Six Acme project sources flow into one chronological project history');
+    expect(html).toContain('Fictional Acme example, not customer data.');
+    expect(html).toContain('Project history');
+    expect(html).not.toMatch(/Connected, not cited|4 cited \+ 2 connected|Cited project memory/u);
+    expect(html).toContain('Telegram');
     expect(html).toContain('Linear');
     expect(html).toContain('Sentry');
-    expect(html).toContain('aria-label="Page sections"');
-    expect(html).toContain('href="#answer"');
+    expect(html).toContain('/connectors/telegram.svg');
+    expect(html).toContain('/connectors/google-meet.svg');
+    expect(html).toContain('data-ingest-packets="6"');
+    expect(html).toContain('aria-label="Public navigation"');
+    expect(html).toContain('href="/integrations"');
+    expect(html).toContain('href="/how-it-works"');
+    expect(html).toContain('aria-label="Public navigation menu"');
     expect(html).toContain('Launch is waiting on SSO. Everything else moved.');
     expect(html).toContain('Evidence behind this answer');
     expect(html).toContain('href="#acme-source-01"');
@@ -65,6 +72,7 @@ describe('LandingPage', () => {
     expect(html).toContain('Every answer carries its evidence chain.');
     expect(html).not.toContain('Northline');
     expect(html.match(/data-home-diagram/g)).toHaveLength(6);
+    expect(html).not.toContain('data-home-ambient');
     expect(html).not.toContain('↘');
     expect(html).not.toContain('02-sources');
     expect(html).not.toContain('05-audience');
@@ -97,15 +105,32 @@ describe('LandingPage', () => {
       expect(html).toContain(connector);
     }
 
-    expect(html).toContain('Native ingestion');
     expect(html).toContain('Where evidence enters');
-    expect(html).toContain('Available here');
-    expect(html).toContain('Setup required');
-    expect(html).toContain('MCP access');
-    expect(html).toContain('Live approved tool access, not passive ingestion.');
-    expect(html).toContain('Not connectable or indexed until support is real.');
+    expect(html).toContain('Two ways in. One cited record.');
+    expect(html).toContain('Messages and files');
+    expect(html).toContain('Send the work to Timeline.');
+    expect(html).toContain('Connected tools');
+    expect(html).toContain('Sync selected records.');
+    expect(html).toContain('Ready to connect');
+    expect(html).toContain('Admin setup needed');
+    expect(html).toContain('look up approved tools when you ask a question');
+    expect(html).not.toMatch(
+      /Capture contract|Deliberate capture|Provider record sync|Available here|MCP is live approved access/u,
+    );
+    for (const surface of [
+      'Telegram',
+      'Slack conversations',
+      'Email forwarding',
+      'Meeting transcripts',
+      'Ingest webhooks',
+    ]) {
+      expect(html).toContain(surface);
+    }
     expect(html).not.toContain('Future connector pages remain unindexed');
-    expect(html).not.toContain('href="/integrations');
+    expect(html).toContain('href="/integrations"');
+    for (const slug of ['github', 'linear', 'google-drive', 'monday', 'slack', 'sentry']) {
+      expect(html).toContain(`href="/integrations/${slug}"`);
+    }
   });
 
   it('keeps the marketing page browsable for signed-in users with dashboard CTAs', async () => {

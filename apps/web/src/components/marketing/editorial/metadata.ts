@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import {
   EDITORIAL_GUIDES,
   EDITORIAL_PUBLICATION_NAME,
-  RECORD_ROUTE,
+  HOW_IT_WORKS_ROUTE,
   type EditorialGuide,
 } from '@/components/marketing/editorial/content';
 import { findEditorialPublicDocument } from '@/components/marketing/editorial/public-documents';
@@ -16,8 +16,8 @@ import { getSiteUrl } from '@/lib/site-url';
 
 const SITE_NAME = 'The Timeline';
 
-export function createRecordMetadata(): Metadata {
-  return createEditorialMetadata(findEditorialPublicDocument(RECORD_ROUTE), 'website');
+export function createHowItWorksMetadata(): Metadata {
+  return createEditorialMetadata(findEditorialPublicDocument(HOW_IT_WORKS_ROUTE), 'website');
 }
 
 export function createGuideMetadata(guide: EditorialGuide): Metadata {
@@ -44,9 +44,9 @@ function createEditorialMetadata(
   };
 }
 
-export function buildRecordStructuredData(): PublicStructuredDataGraph {
+export function buildHowItWorksStructuredData(): PublicStructuredDataGraph {
   const siteUrl = getSiteUrl();
-  const data = buildPublicStructuredData(findEditorialPublicDocument(RECORD_ROUTE), siteUrl);
+  const data = buildPublicStructuredData(findEditorialPublicDocument(HOW_IT_WORKS_ROUTE), siteUrl);
   const collection = data['@graph'].find((node) => node['@type'] === 'CollectionPage');
 
   if (collection) {
@@ -63,7 +63,7 @@ export function buildRecordStructuredData(): PublicStructuredDataGraph {
         url: absoluteUrl(guide.route, siteUrl),
         headline: guide.title,
         description: guide.machineSummary,
-        articleSection: guide.typeLabel,
+        articleSection: EDITORIAL_PUBLICATION_NAME,
       })),
     });
   }
@@ -81,12 +81,12 @@ export function buildGuideStructuredData(guide: EditorialGuide): PublicStructure
     Object.assign(article, {
       mainEntityOfPage: guideUrl,
       headline: guide.title,
-      articleSection: guide.typeLabel,
+      articleSection: EDITORIAL_PUBLICATION_NAME,
       author: organization(siteUrl),
       publisher: organization(siteUrl),
       isPartOf: {
         '@type': 'CollectionPage',
-        '@id': `${absoluteUrl(RECORD_ROUTE, siteUrl)}#webpage`,
+        '@id': `${absoluteUrl(HOW_IT_WORKS_ROUTE, siteUrl)}#webpage`,
         name: EDITORIAL_PUBLICATION_NAME,
       },
       about: guide.topics.map((topic) => ({ '@type': 'Thing', name: topic })),

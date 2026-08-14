@@ -55,15 +55,15 @@ describe('Landing route states', () => {
     ).toHaveLength(1);
     expect(screen.getByText('Evidence interrupted')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'The Timeline home' }).getAttribute('href')).toBe('/');
-    const navigation = screen.getByRole('navigation', { name: 'Landing navigation' });
+    const navigation = screen.getByRole('navigation', { name: 'Public navigation' });
     expect(within(navigation).getByRole('link', { name: 'Help' }).getAttribute('href')).toBe(
       '/help',
     );
-    expect(within(navigation).getByRole('link', { name: 'Contact' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'Contact' }).getAttribute('href')).toBe(
       '/help/support',
     );
-    expect(within(navigation).queryByRole('link', { name: 'Sign in' })).toBeNull();
-    expect(within(navigation).queryByRole('link', { name: 'Create team' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Try one project' })).toBeNull();
     expect(
       screen.getByRole('heading', { level: 2, name: 'Unable to load The Timeline' }),
     ).toBeTruthy();
@@ -101,11 +101,13 @@ describe('Landing route states', () => {
     const html = renderToStaticMarkup(<LandingLoading />);
 
     expect(html).toContain('focus:z-[90]');
-    expect(html).toContain('How it works');
-    expect(html).toContain('Example answer');
-    expect(html).toContain('For teams');
+    expect(html).toContain('>Product</a>');
+    expect(html).toContain('>Integrations</a>');
+    expect(html).toContain('>How it works</a>');
+    expect(html).toContain('>Help</a>');
     expect(html).toContain('aria-label="The Timeline source code on GitHub"');
-    expect(html).toContain('aria-label="Landing navigation"');
+    expect(html).toContain('aria-label="Public navigation"');
+    expect(html).toContain('aria-label="Public navigation menu"');
     expect(html).toContain('href="/help/support"');
     expect(html).not.toContain('href="/sign-in"');
     expect(html).not.toContain('href="/sign-up"');

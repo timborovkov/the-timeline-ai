@@ -1,22 +1,21 @@
 import type { PublicDocument } from '@/lib/public-site/types';
 
 import {
-  EDITORIAL_CONTENT_TYPES,
   EDITORIAL_GUIDES,
   EDITORIAL_PUBLICATION_NAME,
-  RECORD_ROUTE,
+  HOW_IT_WORKS_ROUTE,
   type GuideRoute,
 } from '@/components/marketing/editorial/content';
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
-const EDITORIAL_REVIEW_DATE = '2026-08-13' as const;
+const EDITORIAL_REVIEW_DATE = '2026-08-14' as const;
 
-const recordDocument = {
-  canonicalPath: RECORD_ROUTE,
-  kind: 'record',
-  title: `${EDITORIAL_PUBLICATION_NAME}: field notes on operational memory`,
+const howItWorksDocument = {
+  canonicalPath: HOW_IT_WORKS_ROUTE,
+  kind: 'guide-index',
+  title: EDITORIAL_PUBLICATION_NAME,
   description:
-    'Evidence-led essays, playbooks, dossiers, and product notes about turning scattered work into cited operational memory.',
+    'See how Timeline turns selected records from connected tools into chronology and cited answers.',
   indexability: 'index',
   dates: { modified: EDITORIAL_REVIEW_DATE, reviewed: EDITORIAL_REVIEW_DATE },
   capability: { kind: 'current-product' },
@@ -27,25 +26,25 @@ const recordDocument = {
       type: 'breadcrumbs',
       items: [
         { name: 'Home', path: '/' },
-        { name: EDITORIAL_PUBLICATION_NAME, path: RECORD_ROUTE },
+        { name: EDITORIAL_PUBLICATION_NAME, path: HOW_IT_WORKS_ROUTE },
       ],
     },
   ],
   llms: {
-    section: 'the-record',
+    section: 'how-it-works',
     order: 0,
     label: EDITORIAL_PUBLICATION_NAME,
     summary:
-      'Evidence-led essays, playbooks, dossiers, and product notes about turning scattered work into cited operational memory.',
+      'See how Timeline turns selected records from connected tools into chronology and cited answers.',
     sections: [
       {
-        title: 'Publication formats',
-        body: 'The publication uses four formats, each with a distinct editorial purpose.',
-        items: EDITORIAL_CONTENT_TYPES.map((type) => `${type.label}: ${type.description}`),
+        title: 'Questions covered',
+        body: 'Three detailed walkthroughs apply the same cited-answer method to common cross-tool questions.',
+        items: EDITORIAL_GUIDES.map((guide) => `${guide.title}: ${guide.machineSummary}`),
       },
       {
-        title: 'Editorial method',
-        body: 'Every guide leads with a direct answer, then exposes the workflow, provenance map, source boundaries, limitations, and query contract behind it.',
+        title: 'Method',
+        body: 'Each walkthrough starts with the answer, then exposes the workflow, evidence path, source boundaries, limitations, and query contract behind it.',
       },
     ],
   },
@@ -67,14 +66,14 @@ const guideDocuments = EDITORIAL_GUIDES.map(
         type: 'breadcrumbs',
         items: [
           { name: 'Home', path: '/' },
-          { name: EDITORIAL_PUBLICATION_NAME, path: RECORD_ROUTE },
+          { name: EDITORIAL_PUBLICATION_NAME, path: HOW_IT_WORKS_ROUTE },
           { name: guide.shortTitle, path: guide.route },
         ],
       },
       { type: 'faq', entries: guide.faqs },
     ],
     llms: {
-      section: 'the-record',
+      section: 'how-it-works',
       order: (index + 1) * 10,
       summary: guide.machineSummary,
       sections: [
@@ -108,13 +107,13 @@ const guideDocuments = EDITORIAL_GUIDES.map(
   }),
 );
 
-export const EDITORIAL_PUBLIC_DOCUMENTS = definePublicDocuments('editorial-record', [
-  recordDocument,
+export const EDITORIAL_PUBLIC_DOCUMENTS = definePublicDocuments('how-it-works', [
+  howItWorksDocument,
   ...guideDocuments,
 ]);
 
 export function findEditorialPublicDocument(
-  route: typeof RECORD_ROUTE | GuideRoute,
+  route: typeof HOW_IT_WORKS_ROUTE | GuideRoute,
 ): PublicDocument {
   const document = EDITORIAL_PUBLIC_DOCUMENTS.documents.find(
     (candidate) => candidate.canonicalPath === route,

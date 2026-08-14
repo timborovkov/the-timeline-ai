@@ -321,15 +321,31 @@ shared due-date vocabulary above.
 
 The public landing page is an editorial, five-scene acquisition narrative:
 claim, evidence and chronology, cited answer, audience fit with trust, and a
-one-project CTA. Its signature example project, Acme rollout, distinguishes four
-signals cited in the demonstrated answer from two connected-but-unused signals,
-then shows the cited work settling onto a chronological rail and resolving into
-an answer with tangible source links. Connector capability belongs with the
+one-project CTA. Its signature example project, Acme rollout, shows six familiar
+work sources converging into one project history, then shows captured work
+settling onto a chronological rail and resolving into an answer with tangible
+source links. Acme rollout is the canonical fictional
+public demo corpus across landing, connector, and guide examples; every rendered
+example states that it is illustrative and not customer data. Provider pages may
+show distinct slices, but people, identifiers, records, and outcomes stay
+coherent across the journey. Connector capability belongs with the
 evidence-entry scene; audience fit and the evidence chain remain a separate,
 stacked explanation rather than an equal-height split. Substantive copy and
 diagrams are server-rendered; a small client motion controller may progressively
-reveal scenes, replay each evidence diagram while it is in view, run restrained
-ambient traces, and show scroll progress.
+reveal scenes, replay each evidence diagram while it is in view, and show scroll
+progress. Background motion is prohibited: movement belongs to the evidence
+diagram and must explain provenance or hierarchy. The shared public canvas uses
+the same subtle fixed grain in both themes, with theme-specific blending so
+cream reads like paper and near-black retains its tactile texture.
+
+The landing observatory identifies every source with its provider mark, includes
+Telegram alongside Slack, meeting, code, document, and monitoring signals,
+and uses small inward-moving packets to explain ingestion. Those packets use only
+transform and opacity, run only while the diagram is visible, and disappear in
+the complete reduced-motion state. The evidence-entry summary below chronology
+compresses the directory into two honest paths—work people send to Timeline and
+selected history from connected tools. More technical distinctions remain in
+the underlying content model, not as customer-facing taxonomy.
 
 Public pages may use oversized Switzer display type, denser Commit Mono source
 metadata, a near-black evidence-instrument canvas, and more cinematic spacing
@@ -338,18 +354,69 @@ hierarchy, use transforms and opacity, and opt in only under
 `prefers-reduced-motion: no-preference`; the default HTML is a complete static
 narrative. Public pages still use one lime signal, hairline structure, and no
 decorative AI gradients. Connector references distinguish native ingestion
-(GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry), live MCP access,
-and planned support. Planned destinations stay unlinked and unindexed until
-real.
+(GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry), hosted live MCP
+access, local-desktop MCP access, and planned support. Local-desktop entries
+must never imply they connect from hosted Timeline; planned destinations stay
+unlinked and unindexed until real. The landing claim owns the largest display
+scale. Integration directory and connector-detail titles use a subordinate,
+capped display scale so long provider headlines preserve the first viewport's
+explanation and evidence.
+Review dates, implementation labels, indexing state, and capability-tier names
+belong in metadata and the typed content manifest, not visible marketing chrome.
+Public copy explains the same truth through customer actions and constraints:
+what enters the record, what is looked up only on request, what requires local
+setup, and what cannot be connected yet.
+The integration directory leads with implemented first-party capture surfaces:
+Telegram and Slack conversation capture, forward/CC/BCC email,
+participant-notification-gated-by-default Google Meet/Microsoft Teams/Zoom
+transcripts, and named textual ingest webhooks.
+It then presents the six native provider-record connectors separately. Slack
+appears in both groups because conversational capture and selected-channel
+history sync are distinct contracts; public copy must say so. Generic ingest
+webhooks are evidence-only, meeting capture stores transcripts rather than raw
+audio, and implemented surfaces may still require workspace or provider setup.
+The directory uses the expanded public acquisition measure with a narrow fixed
+section-index rail so two-up capture and provider cards retain a readable text
+measure instead of being squeezed by a proportional sidebar.
 
-The landing hero and public navigation link directly to the project's source
-on GitHub; the public help shell and developer docs repeat that path. Legal
-pages use the shared public shell at reading width (65–70ch).
+Every public shell uses the landing masthead as one full-width chrome component,
+with the same warm public palette, wordmark position, active state, GitHub and
+theme controls, and lime account CTA. Signed-in visitors see `Dashboard`;
+signed-out visitors see `Sign in` and `Try one project`. The shared public canvas
+inherits that warm paper palette in light mode and the landing's warm near-black
+palette in dark mode, while each page group keeps its own content structure.
+Auth-neutral loading and error boundaries keep the same masthead but omit
+account actions rather than guessing the visitor's session state.
+The masthead exposes the same four primary destinations in the same order:
+Product (`/`), Integrations (`/integrations`), How it works (`/how-it-works`), and
+Help (`/help`). Desktop headers show them directly, compact widths use a native
+menu disclosure, and footers repeat them for recovery at the end of a page. The
+current destination uses `aria-current="page"`. At phone widths, sign-in and
+theme controls move into the disclosure instead of disappearing, and the
+disclosure closes after link activation or a persisted-layout route change.
+Native connector labels on the landing page link to their integration detail
+pages, while native source badges in public walkthroughs link back to the same
+provider truth. The landing hero and public navigation also link directly to
+the project's source on GitHub; the
+public help shell and developer docs repeat that path. Legal pages use the
+shared public shell at reading width (65–70ch).
 Help uses the same public shell at wide width with a sidebar nav. Its overview
 is one searchable, single-column guide directory rather than repeating the
 same destinations in category lists and card grids. Guide and support pages
 provide a visible route back to all guides; article bodies may optionally
 constrain to a reading measure without forcing the shell narrow.
+
+`/how-it-works` is the plain-language explanation of how Timeline works. It uses
+the same 82rem acquisition grid, 13–15rem indexed section rail, hero scale, footer, and
+section rhythm as the integration directory. It shows the
+source-to-chronology-to-answer loop once, then links to a small set of
+substantive cross-tool walkthroughs. Its first viewport explains the three-step
+model at a glance; the complete evidence diagram follows in its own indexed
+section and is never squeezed beside the hero copy. Walkthroughs remain indexable
+for specific questions, but public navigation and page copy do not ask visitors
+to learn an editorial publication, edition, playbook, or dossier taxonomy.
+The legacy `/record` URL permanently redirects to `/how-it-works`; it is not a
+second indexable destination.
 
 ### Administrator dashboards
 
@@ -414,4 +481,13 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-05 | Taste v2 landing evolution | Tightens the hero, varies section rhythm, and adds tactile states while preserving Quiet Archive tokens and IA. |
 | 2026-08-05 | Searchable public help directory | Removes repeated guide grids and makes task-level help discoverable from one calm index. |
 | 2026-08-12 | Editorial public acquisition system | Lets visitors watch evidence become chronology and a cited answer while the authenticated product remains Quiet Archive. |
-| 2026-08-13 | Acme evidence narrative | Clarifies cited versus merely connected signals, pairs connectors with chronology, and replays each evidence diagram while it is in view. |
+| 2026-08-13 | Acme evidence narrative | Pairs recognizable work sources with chronology and replays each evidence diagram while it is in view. |
+| 2026-08-13 | Connected public navigation | Gives every acquisition, integration, guide, help, and legal page a consistent route through the public site. |
+| 2026-08-13 | Finalized public content system | Replaces concept notes and disconnected mock stories with a plain-language how-it-works overview, substantive walkthroughs, capability-aware connection guidance, and one disclosed Acme demo corpus. |
+| 2026-08-13 | Unified public masthead and canvas | Makes the landing masthead and warm public palette identical across integrations, editorial, help, legal, and recovery routes without changing authenticated Quiet Archive. |
+| 2026-08-13 | Subordinate integration title scale | Keeps long directory and provider headlines editorial without letting them crowd the explanation and evidence out of the first viewport. |
+| 2026-08-13 | Plain-language how-it-works surface | Replaces the publication taxonomy and split-column guide template with one compact product explanation and readable walkthroughs. |
+| 2026-08-14 | Clear how-it-works IA and hierarchy | Makes `/how-it-works` canonical, redirects `/record`, aligns the overview and walkthroughs with the integration acquisition grid, and keeps the three-step explanation in the first viewport. |
+| 2026-08-14 | Legible integration acquisition paths | Adds provider-marked ingestion flow to the landing observatory, condenses the evidence-entry summary into capture and provider-sync paths, and widens the integration directory's card rail. |
+| 2026-08-14 | Public capability truth | Separates hosted MCP, local-desktop MCP, and planned support while keeping phone navigation actions reachable. |
+| 2026-08-14 | Customer-facing public language | Keeps review cadence, implementation state, indexing terms, and capability taxonomy in metadata while public pages explain concrete actions and availability. |

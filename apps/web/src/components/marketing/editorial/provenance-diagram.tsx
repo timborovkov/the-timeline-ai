@@ -2,6 +2,7 @@ import type { EditorialDiagram } from '@/components/marketing/editorial/content'
 
 import styles from '@/components/marketing/editorial/editorial.module.css';
 import { ProvenanceReveal } from '@/components/marketing/editorial/provenance-reveal';
+import { PUBLIC_DEMO_DISCLOSURE } from '@/components/marketing/public-demo-story';
 
 export function ProvenanceDiagram({
   diagram,
@@ -20,9 +21,7 @@ export function ProvenanceDiagram({
           <span className="font-mono text-[0.65rem] tracking-[0.13em] text-signal uppercase">
             {diagram.label}
           </span>
-          <span className="font-mono text-[0.65rem] tracking-[0.08em] text-fg-dim uppercase">
-            Example / not customer data
-          </span>
+          <span className="text-xs text-fg-dim">{PUBLIC_DEMO_DISCLOSURE}</span>
         </figcaption>
         <div className="relative z-10 mt-6 rounded-md border border-border bg-bg/90 p-4">
           <p className="font-mono text-[0.65rem] tracking-[0.12em] text-fg-dim uppercase">
