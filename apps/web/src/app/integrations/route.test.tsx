@@ -33,6 +33,9 @@ describe('public integration routes', () => {
     expect(html).toContain('Six native connectors implemented');
     expect(html).toContain('reconciliation, and webhook boundaries');
     expect(html).toContain('Live access');
+    expect(html).toContain('Local setup only');
+    expect(text).toContain('Last reviewed 2026-08-14');
+    expect(html).toContain('<time dateTime="2026-08-14">2026-08-14</time>');
     expect(html).toContain('Not available yet');
     expect(html).not.toContain('Indexable');
     expect(html).not.toContain('Noindex');

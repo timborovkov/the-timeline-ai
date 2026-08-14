@@ -31,5 +31,10 @@ describe('capture surface content', () => {
     expect(content).toContain('not a copy of the raw meeting audio');
     expect(content).toContain('evidence-only sources');
     expect(content).toContain('direct file or binary upload uses a separate capture path');
+    expect(content).toContain('Accepted messages from unknown senders');
+    expect(content).toContain('sender whitelist is enabled');
+    expect(content).toContain('participants will be informed');
+    expect(content).toContain('Team admins can disable this gate');
+    expect(content).not.toContain('only after explicit consent');
   });
 });

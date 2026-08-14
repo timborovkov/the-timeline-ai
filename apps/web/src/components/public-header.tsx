@@ -35,7 +35,12 @@ export function PublicHeader({
         />
       </nav>
       <div className={styles.actions}>
-        <PublicNavigationDisclosure currentSection={currentSection} className={styles.publicMenu} />
+        <PublicNavigationDisclosure
+          currentSection={currentSection}
+          className={styles.publicMenu}
+          isSignedIn={isSignedIn}
+          showAccountActions={showAccountActions}
+        />
         <GitHubSourceLink compact className={styles.githubLink} />
         {showAccountActions && !isSignedIn ? (
           <Link href="/sign-in" className={cn(styles.navLink, styles.signInLink)}>

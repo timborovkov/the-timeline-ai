@@ -39,7 +39,8 @@ describe('connector content manifest', () => {
     expect(serializedRoutes).not.toContain('notion');
     expect(serializedRoutes).not.toContain('jira');
     expect(capabilityTiers.mcpAccess).toContain('Notion');
-    expect(capabilityTiers.mcpAccess).toContain('Figma');
+    expect(capabilityTiers.mcpAccess).not.toContain('Figma');
+    expect(capabilityTiers.localDesktopAccess).toEqual(['Figma']);
     expect(capabilityTiers.nativeProviders).toEqual([
       'GitHub',
       'Linear',

@@ -66,6 +66,56 @@ const entries = [
 afterEach(cleanup);
 
 describe('McpCatalog', () => {
+  it('does not offer hosted connection for a local desktop MCP server', () => {
+    render(
+      <McpCatalog
+        entries={[
+          {
+            id: 'figma',
+            label: 'Figma',
+            description: 'Local desktop design context.',
+            logo: '/figma.svg',
+            category: 'Design',
+            authType: 'none',
+            authHint: 'Run Figma locally.',
+            status: 'mcp_local',
+            ingestStatus: 'coming_soon',
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('Local desktop only')).toBeTruthy();
+    expect(
+      screen.getByRole<HTMLButtonElement>('button', { name: 'Local setup only' }).disabled,
+    ).toBe(true);
+    expect(screen.queryByText('Run Figma locally.')).toBeNull();
+  });
+
+  it('enables a local desktop MCP server in an explicit local environment', () => {
+    render(
+      <McpCatalog
+        localConnectionsEnabled
+        entries={[
+          {
+            id: 'figma',
+            label: 'Figma',
+            description: 'Local desktop design context.',
+            logo: '/figma.svg',
+            category: 'Design',
+            authType: 'none',
+            authHint: 'Run Figma locally.',
+            status: 'mcp_local',
+            ingestStatus: 'coming_soon',
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Connect' }).disabled).toBe(false);
+    expect(screen.getByText('Run Figma locally.')).toBeTruthy();
+  });
+
   it('exposes category selection and the remaining catalog count to keyboard and assistive-technology users', async () => {
     const user = userEvent.setup();
 

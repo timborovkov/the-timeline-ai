@@ -721,11 +721,13 @@ export const CONNECTOR_DIRECTORY_SUMMARY = {
 export function getConnectorCapabilityTiers(catalog: readonly CatalogEntry[] = listCatalog()): {
   nativeProviders: string[];
   mcpAccess: string[];
+  localDesktopAccess: string[];
   plannedProviders: string[];
 } {
   const tiers = {
     nativeProviders: [] as string[],
     mcpAccess: [] as string[],
+    localDesktopAccess: [] as string[],
     plannedProviders: [] as string[],
   };
 
@@ -735,6 +737,9 @@ export function getConnectorCapabilityTiers(catalog: readonly CatalogEntry[] = l
     }
     if (entry.kind === 'mcp' && entry.status === 'mcp_available') {
       tiers.mcpAccess.push(entry.label);
+    }
+    if (entry.kind === 'mcp' && entry.status === 'mcp_local') {
+      tiers.localDesktopAccess.push(entry.label);
     }
     if (entry.status === 'coming_soon') tiers.plannedProviders.push(entry.label);
   }

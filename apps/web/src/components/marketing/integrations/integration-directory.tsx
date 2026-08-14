@@ -10,6 +10,7 @@ import {
   CONNECTORS,
   getConnectorCapabilityTiers,
 } from '@/components/marketing/integrations/connector-content';
+import { INTEGRATION_DIRECTORY_DOCUMENT } from '@/components/marketing/integrations/connector-public-documents';
 import { DirectoryStructuredData } from '@/components/marketing/integrations/connector-seo';
 import { RecordsToAnswer } from '@/components/marketing/integrations/records-to-answer';
 import { PublicShell } from '@/components/public-shell';
@@ -34,6 +35,12 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
         <section className="border-b border-border">
           <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24 lg:py-28">
             <p className="text-sm font-medium text-fg-muted">Integrations / capability directory</p>
+            <p className="mt-3 text-sm text-fg-dim">
+              Last reviewed{' '}
+              <time dateTime={INTEGRATION_DIRECTORY_DOCUMENT.dates.reviewed}>
+                {INTEGRATION_DIRECTORY_DOCUMENT.dates.reviewed}
+              </time>
+            </p>
             <div className="mt-8 grid items-end gap-10 lg:grid-cols-[1.25fr_0.75fr]">
               <h1 className="max-w-[13ch] break-words text-balance text-[3rem] font-semibold leading-[0.95] tracking-[-0.05em] text-fg sm:text-[clamp(3.5rem,5vw,5.5rem)]">
                 Connect the places where the work already happens.
@@ -193,8 +200,9 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
               </h2>
               <p className="mt-4 max-w-[64ch] text-base leading-relaxed text-fg-muted">
                 First-party capture accepts deliberately routed conversations and payloads. Native
-                provider sync stores selected records. MCP provides live tool access without passive
-                ingestion, and planned native support cannot be connected yet.
+                provider sync stores selected records. Hosted MCP provides live tool access without
+                passive ingestion. Local desktop MCP requires Timeline on the same machine, and
+                planned native support cannot be connected yet.
               </p>
               <div className="mt-10 border-t border-border">
                 <CapabilityRow
@@ -215,6 +223,12 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
                   title="MCP access"
                   status="Live access"
                   body={capabilityTiers.mcpAccess.join(', ')}
+                />
+                <CapabilityRow
+                  icon={Wrench}
+                  title="Local desktop MCP"
+                  status="Local setup only"
+                  body={`${capabilityTiers.localDesktopAccess.join(', ')} — available only when Timeline runs on the same machine; not connectable from hosted Timeline.`}
                 />
                 <CapabilityRow
                   icon={CircleDotDashed}

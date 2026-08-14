@@ -35,7 +35,7 @@ export const INTEGRATION_DIRECTORY_DOCUMENT = {
       },
       {
         title: 'Capability boundary',
-        body: 'First-party capture accepts deliberately routed conversations and payloads. Native integrations sync selected provider records into durable cited events. MCP access provides live tools without passive ingestion, and planned native support cannot be connected yet.',
+        body: 'First-party capture accepts deliberately routed conversations and payloads. Native integrations sync selected provider records into durable cited events. Hosted MCP access provides live tools without passive ingestion. Figma desktop MCP requires Timeline on the same machine and is not connectable from hosted Timeline. Planned native support cannot be connected yet.',
       },
     ],
   },

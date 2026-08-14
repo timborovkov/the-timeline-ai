@@ -21,6 +21,8 @@ describe('PublicShell', () => {
     expect(html).toContain('aria-label="The Timeline source code on GitHub"');
     expect(html).not.toContain('>Source on GitHub<');
     expect(html).toContain('href="/sign-in"');
+    expect(html.match(/href="\/sign-in"/g)).toHaveLength(2);
+    expect(html.match(/aria-label="Toggle theme"/g)).toHaveLength(2);
     expect(html).toContain('href="/sign-up"');
     expect(html).toContain('>Try one project</a>');
   });

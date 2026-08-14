@@ -532,6 +532,7 @@ function McpCatalogSection({
         ingestion.
       </p>
       <McpCatalog
+        localConnectionsEnabled={process.env.NODE_ENV !== 'production'}
         entries={catalog.map((c) => ({
           id: c.id,
           label: c.label,

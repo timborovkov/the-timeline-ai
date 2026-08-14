@@ -61,7 +61,7 @@ export const CAPTURE_SURFACES = [
     captured:
       'Message body, sender and recipient context, and supported file, document, and audio attachments.',
     boundary:
-      'Email enters only when the team address is included. Unknown senders are retained as unverified evidence rather than silently mapped to a member.',
+      'Email enters only when the team address is included. Accepted messages from unknown senders are retained as unverified evidence rather than silently mapped to a member. When the team sender whitelist is enabled, messages from unlisted senders are rejected.',
     setupHref: '/app/team?section=email',
     setupLabel: 'Set up email',
     featured: false,
@@ -73,9 +73,10 @@ export const CAPTURE_SURFACES = [
     icon: 'video',
     summary:
       'Invite a silent notetaker to a live call, then keep the transcript, speakers, summary, and action items with the rest of the work.',
-    captured: 'Consent-gated transcripts from Google Meet, Microsoft Teams, and Zoom calls.',
+    captured:
+      'Transcripts from Google Meet, Microsoft Teams, and Zoom calls after the scheduling gate is satisfied.',
     boundary:
-      'The bot joins only after explicit consent. Timeline stores the transcript, not a copy of the raw meeting audio; provider setup is required.',
+      'By default, the scheduler must confirm that participants will be informed before the bot joins. Team admins can disable this gate when they have another legal basis. Timeline stores the transcript, not a copy of the raw meeting audio; provider setup is required.',
     setupHref: '/app/meetings',
     setupLabel: 'Open meetings',
     featured: false,

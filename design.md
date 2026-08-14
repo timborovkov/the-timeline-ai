@@ -345,14 +345,17 @@ hierarchy, use transforms and opacity, and opt in only under
 `prefers-reduced-motion: no-preference`; the default HTML is a complete static
 narrative. Public pages still use one lime signal, hairline structure, and no
 decorative AI gradients. Connector references distinguish native ingestion
-(GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry), live MCP access,
-and planned support. Planned destinations stay unlinked and unindexed until
-real. The landing claim owns the largest display scale. Integration directory
-and connector-detail titles use a subordinate, capped display scale so long
-provider headlines preserve the first viewport's explanation and evidence.
+(GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry), hosted live MCP
+access, local-desktop MCP access, and planned support. Local-desktop entries
+must never imply they connect from hosted Timeline; planned destinations stay
+unlinked and unindexed until real. The landing claim owns the largest display
+scale. Integration directory and connector-detail titles use a subordinate,
+capped display scale so long provider headlines preserve the first viewport's
+explanation and evidence.
 The integration directory leads with implemented first-party capture surfaces:
-Telegram and Slack conversation capture, forward/CC/BCC email, consent-gated
-Google Meet/Microsoft Teams/Zoom transcripts, and named textual ingest webhooks.
+Telegram and Slack conversation capture, forward/CC/BCC email,
+participant-notification-gated-by-default Google Meet/Microsoft Teams/Zoom
+transcripts, and named textual ingest webhooks.
 It then presents the six native provider-record connectors separately. Slack
 appears in both groups because conversational capture and selected-channel
 history sync are distinct contracts; public copy must say so. Generic ingest
@@ -371,10 +374,13 @@ The masthead exposes the same four primary destinations in the same order:
 Product (`/`), Integrations (`/integrations`), How it works (`/record`), and
 Help (`/help`). Desktop headers show them directly, compact widths use a native
 menu disclosure, and footers repeat them for recovery at the end of a page. The
-current destination uses `aria-current="page"`. Native connector labels on the
-landing page link to their integration detail pages, while native source badges
-in public walkthroughs link back to the same provider truth. The landing hero and
-public navigation also link directly to the project's source on GitHub; the
+current destination uses `aria-current="page"`. At phone widths, sign-in and
+theme controls move into the disclosure instead of disappearing, and the
+disclosure closes after link activation or a persisted-layout route change.
+Native connector labels on the landing page link to their integration detail
+pages, while native source badges in public walkthroughs link back to the same
+provider truth. The landing hero and public navigation also link directly to
+the project's source on GitHub; the
 public help shell and developer docs repeat that path. Legal pages use the
 shared public shell at reading width (65–70ch).
 Help uses the same public shell at wide width with a sidebar nav. Its overview
@@ -461,3 +467,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-13 | Subordinate integration title scale | Keeps long directory and provider headlines editorial without letting them crowd the explanation and evidence out of the first viewport. |
 | 2026-08-13 | Plain-language how-it-works surface | Replaces the publication taxonomy and split-column guide template with one compact product explanation and readable walkthroughs. |
 | 2026-08-14 | Legible how-it-works hierarchy | Keeps the three-step explanation in the first viewport and gives the evidence diagram a separate full-width stage. |
+| 2026-08-14 | Public capability truth | Separates hosted MCP, local-desktop MCP, and planned support while keeping phone navigation actions reachable. |
