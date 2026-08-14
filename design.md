@@ -338,6 +338,15 @@ diagram and must explain provenance or hierarchy. The shared public canvas uses
 the same subtle fixed grain in both themes, with theme-specific blending so
 cream reads like paper and near-black retains its tactile texture.
 
+The landing observatory identifies every source with its provider mark, includes
+Telegram alongside cited Slack, meeting, code, document, and monitoring signals,
+and uses small inward-moving packets to explain ingestion. Those packets use only
+transform and opacity, run only while the diagram is visible, and disappear in
+the complete reduced-motion state. The evidence-entry summary below chronology
+compresses the directory into two honest paths—deliberate first-party capture and
+selected provider-record sync—while MCP and planned support remain a short
+boundary note rather than competing capability cards.
+
 Public pages may use oversized Switzer display type, denser Commit Mono source
 metadata, a near-black evidence-instrument canvas, and more cinematic spacing
 than the authenticated Quiet Archive. Motion must explain provenance or
@@ -361,6 +370,9 @@ appears in both groups because conversational capture and selected-channel
 history sync are distinct contracts; public copy must say so. Generic ingest
 webhooks are evidence-only, meeting capture stores transcripts rather than raw
 audio, and implemented surfaces may still require workspace or provider setup.
+The directory uses the expanded public acquisition measure with a narrow fixed
+section-index rail so two-up capture and provider cards retain a readable text
+measure instead of being squeezed by a proportional sidebar.
 
 Every public shell uses the landing masthead as one full-width chrome component,
 with the same warm public palette, wordmark position, active state, GitHub and
@@ -471,4 +483,5 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-13 | Subordinate integration title scale | Keeps long directory and provider headlines editorial without letting them crowd the explanation and evidence out of the first viewport. |
 | 2026-08-13 | Plain-language how-it-works surface | Replaces the publication taxonomy and split-column guide template with one compact product explanation and readable walkthroughs. |
 | 2026-08-14 | Clear how-it-works IA and hierarchy | Makes `/how-it-works` canonical, redirects `/record`, aligns the overview and walkthroughs with the integration acquisition grid, and keeps the three-step explanation in the first viewport. |
+| 2026-08-14 | Legible integration acquisition paths | Adds provider-marked ingestion flow to the landing observatory, condenses the evidence-entry summary into capture and provider-sync paths, and widens the integration directory's card rail. |
 | 2026-08-14 | Public capability truth | Separates hosted MCP, local-desktop MCP, and planned support while keeping phone navigation actions reachable. |

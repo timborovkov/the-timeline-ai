@@ -28,13 +28,14 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
   return (
     <PublicShell
       isSignedIn={isSignedIn}
+      width="expanded"
       footerLabel="The Timeline integrations"
       currentSection="integrations"
     >
       <DirectoryStructuredData />
       <main id="main" tabIndex={-1}>
         <section className="border-b border-border">
-          <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24 lg:py-28">
+          <div className="mx-auto max-w-[82rem] px-4 py-16 sm:px-6 sm:py-24 lg:py-28">
             <p className="text-sm font-medium text-fg-muted">Integrations / capability directory</p>
             <p className="mt-3 text-sm text-fg-dim">
               Last reviewed{' '}
@@ -64,10 +65,10 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
         </section>
 
         <section
-          className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20"
+          className="mx-auto max-w-[82rem] px-4 py-16 sm:px-6 sm:py-20"
           aria-labelledby="capture-surfaces"
         >
-          <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
+          <div className="grid gap-8 lg:grid-cols-[13rem_minmax(0,1fr)] xl:grid-cols-[15rem_minmax(0,1fr)]">
             <MarketingSectionIndex label="First-party capture" />
             <div>
               <div className="flex flex-wrap items-end justify-between gap-4">
@@ -109,8 +110,8 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
         </section>
 
         <section className="border-t border-border" aria-labelledby="native">
-          <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
-            <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
+          <div className="mx-auto max-w-[82rem] px-4 py-16 sm:px-6 sm:py-20">
+            <div className="grid gap-8 lg:grid-cols-[13rem_minmax(0,1fr)] xl:grid-cols-[15rem_minmax(0,1fr)]">
               <MarketingSectionIndex index="02" label="Provider record sync" />
               <div>
                 <div className="flex flex-wrap items-end justify-between gap-4">
@@ -172,8 +173,8 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
         </section>
 
         <section className="border-y border-border bg-surface">
-          <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
-            <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
+          <div className="mx-auto max-w-[82rem] px-4 py-16 sm:px-6 sm:py-20">
+            <div className="grid gap-8 lg:grid-cols-[13rem_minmax(0,1fr)] xl:grid-cols-[15rem_minmax(0,1fr)]">
               <MarketingSectionIndex index="03" label="Proof" />
               <div>
                 <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
@@ -192,8 +193,11 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
           </div>
         </section>
 
-        <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20" aria-labelledby="tiers">
-          <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
+        <section
+          className="mx-auto max-w-[82rem] px-4 py-16 sm:px-6 sm:py-20"
+          aria-labelledby="tiers"
+        >
+          <div className="grid gap-8 lg:grid-cols-[13rem_minmax(0,1fr)] xl:grid-cols-[15rem_minmax(0,1fr)]">
             <MarketingSectionIndex index="04" label="Capability tiers" />
             <div>
               <h2 id="tiers" className="text-3xl font-semibold tracking-tight sm:text-4xl">

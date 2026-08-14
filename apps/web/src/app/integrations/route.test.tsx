@@ -67,6 +67,9 @@ describe('public integration routes', () => {
     expect(html).not.toMatch(/font-mono[^>]*>Integrations \/ capability directory/u);
     expect(html).not.toContain('Available now');
     expect(html).toContain('motion-safe:group-hover:translate-x-1');
+    expect(html).toContain('max-w-[82rem]');
+    expect(html).toContain('lg:grid-cols-[13rem_minmax(0,1fr)]');
+    expect(html).toContain('xl:grid-cols-[15rem_minmax(0,1fr)]');
     expect(html).not.toContain('01 / Native');
     expect(html).not.toContain('03 / Tiers');
     expect(html.match(/dark:bg-white/g)).toHaveLength(5);

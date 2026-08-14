@@ -1,4 +1,6 @@
 import * as integrationsLib from '@timeline/shared/integrations/registry';
+import { Mail, Video, Webhook } from 'lucide-react';
+import Image from 'next/image';
 import Link from 'next/link';
 
 import type { Metadata } from 'next';
@@ -9,6 +11,7 @@ import styles from '@/app/(landing)/home.module.css';
 import { Logo } from '@/components/brand/logo';
 import { GitHubSourceLink } from '@/components/github-source-link';
 import { HomeMotion } from '@/components/marketing/home/home-motion';
+import { CAPTURE_SURFACES } from '@/components/marketing/integrations/capture-surface-content';
 import { findConnectorByName } from '@/components/marketing/integrations/connector-content';
 import {
   PUBLIC_DEMO_DISCLOSURE,
@@ -61,6 +64,15 @@ const HERO_SIGNALS = [
   ...PUBLIC_DEMO_STORY.landing.connectedSignals.map((signal) => ({ ...signal, cited: false })),
 ] as const;
 
+const HERO_SOURCE_LOGOS: Readonly<Record<string, string>> = {
+  Slack: '/connectors/slack.svg',
+  Meeting: '/connectors/google-meet.svg',
+  GitHub: '/connectors/github.svg',
+  Drive: '/connectors/google-drive.svg',
+  Telegram: '/connectors/telegram.svg',
+  Sentry: '/connectors/sentry.svg',
+};
+
 const AUDIENCES = [
   {
     index: '01',
@@ -107,6 +119,8 @@ const TRUST_STEPS = [
 
 interface NativeConnector {
   label: string;
+  logo: string;
+  lightLogoTileInDarkMode: boolean;
   state: 'available' | 'setup-required';
   href?: `/integrations/${string}`;
 }
@@ -119,11 +133,24 @@ export default async function LandingPage() {
     if (connector.kind !== 'native' || connector.ingestStatus !== 'implemented') continue;
     const publicConnector = findConnectorByName(connector.label);
     const href = publicConnector ? (`/integrations/${publicConnector.slug}` as const) : undefined;
+    if (!publicConnector) continue;
     if (connector.status === 'native_available') {
-      nativeConnectors.push({ label: connector.label, state: 'available', href });
+      nativeConnectors.push({
+        label: connector.label,
+        logo: publicConnector.logo,
+        lightLogoTileInDarkMode: publicConnector.lightLogoTileInDarkMode,
+        state: 'available',
+        href,
+      });
     }
     if (connector.status === 'native_unconfigured') {
-      nativeConnectors.push({ label: connector.label, state: 'setup-required', href });
+      nativeConnectors.push({
+        label: connector.label,
+        logo: publicConnector.logo,
+        lightLogoTileInDarkMode: publicConnector.lightLogoTileInDarkMode,
+        state: 'setup-required',
+        href,
+      });
     }
   }
 
@@ -241,6 +268,14 @@ function ClaimScene({ isSignedIn }: { isSignedIn: boolean }) {
           <path d="M490 470 C 420 420, 388 354, 300 300" />
           <path d="M70 300 C 170 300, 220 300, 300 300" />
           <path d="M530 310 C 430 310, 380 304, 300 300" />
+          <g className={styles.ingestPackets} data-ingest-packets="6">
+            <circle cx="118" cy="116" r="4" />
+            <circle cx="486" cy="142" r="4" />
+            <circle cx="112" cy="462" r="4" />
+            <circle cx="490" cy="470" r="4" />
+            <circle cx="70" cy="300" r="4" />
+            <circle cx="530" cy="310" r="4" />
+          </g>
         </svg>
         <div className={styles.orbitOuter} aria-hidden="true" />
         <div className={styles.orbitInner} aria-hidden="true" />
@@ -257,8 +292,11 @@ function ClaimScene({ isSignedIn }: { isSignedIn: boolean }) {
               !signal.cited && styles.orbitSourceAux,
             )}
           >
-            <span>{signal.time}</span>
-            <strong>{signal.source}</strong>
+            <span className={styles.orbitSourceTime}>{signal.time}</span>
+            <span className={styles.orbitSourceIdentity}>
+              <HeroSourceLogo source={signal.source} />
+              <strong>{signal.source}</strong>
+            </span>
             {signal.cited ? null : <small>Connected, not cited</small>}
           </div>
         ))}
@@ -343,49 +381,100 @@ function ConnectorRail({ nativeConnectors }: { nativeConnectors: NativeConnector
     <aside className={styles.connectorPanel} data-home-diagram aria-labelledby="connector-title">
       <header>
         <span className={styles.monoLabel}>Where evidence enters</span>
-        <h3 id="connector-title">Keep the tools. Connect the record.</h3>
-        <p>
-          Native ingestion creates durable Timeline evidence. MCP provides live approved tool
-          access. Planned support remains clearly labeled and unavailable until it is real.
-        </p>
+        <div>
+          <h3 id="connector-title">Two ways in. One cited record.</h3>
+          <p>
+            Deliberately send work to Timeline, or sync selected records from the systems that
+            already hold it. Both paths preserve the source and its evidence boundary.
+          </p>
+        </div>
       </header>
-      <div className={styles.connectorContent}>
-        <div className={styles.nativeConnectors}>
-          <span>Native ingestion</span>
+      <div className={styles.connectorPaths}>
+        <article className={styles.connectorPath}>
+          <span className={styles.monoLabel}>Deliberate capture</span>
+          <h4>Send the work to Timeline.</h4>
+          <p>
+            Conversations, forwarded mail, meeting transcripts, and authenticated payloads enter
+            only when your team routes them in.
+          </p>
+          <ul className={styles.captureSurfaceList} aria-label="First-party capture surfaces">
+            {CAPTURE_SURFACES.map((surface) => (
+              <li key={surface.id}>
+                <HomeCaptureSurfaceIcon icon={surface.icon} />
+                <span>{surface.name}</span>
+              </li>
+            ))}
+          </ul>
+        </article>
+        <article className={styles.connectorPath}>
+          <span className={styles.monoLabel}>Provider record sync</span>
+          <h4>Sync selected records.</h4>
+          <p>
+            Native connectors turn selected provider history into durable, citable events without
+            pretending Timeline replaces the provider.
+          </p>
           {nativeConnectors.length > 0 ? (
-            <ul>
+            <ul className={styles.nativeConnectorList} aria-label="Native provider connectors">
               {nativeConnectors.map((connector) => (
                 <li key={connector.label}>
-                  {connector.href ? (
-                    <Link href={connector.href}>{connector.label}</Link>
-                  ) : (
-                    <strong>{connector.label}</strong>
-                  )}
-                  <small>
-                    {connector.state === 'available' ? 'Available here' : 'Setup required'}
-                  </small>
+                  <Link href={connector.href ?? '/integrations'}>
+                    <span
+                      className={cn(
+                        styles.connectorLogoTile,
+                        connector.lightLogoTileInDarkMode && styles.connectorLogoTileLight,
+                      )}
+                    >
+                      <Image src={connector.logo} alt="" width={20} height={20} />
+                    </span>
+                    <span>{connector.label}</span>
+                    <small>
+                      {connector.state === 'available' ? 'Available here' : 'Setup required'}
+                    </small>
+                  </Link>
                 </li>
               ))}
             </ul>
           ) : (
             <p className={styles.connectorEmpty}>No native OAuth connectors are configured.</p>
           )}
-        </div>
-        <dl className={styles.connectorTiers}>
-          <div>
-            <dt>MCP access</dt>
-            <dd>Live approved tool access, not passive ingestion.</dd>
-          </div>
-          <div>
-            <dt>Planned</dt>
-            <dd>Not connectable until native support is available.</dd>
-          </div>
-        </dl>
+        </article>
+      </div>
+      <div className={styles.connectorFooter}>
+        <p>
+          MCP is live approved access, not passive ingestion. Planned connections remain unavailable
+          until native support ships.
+        </p>
         <Link href="/integrations" className={styles.textLink}>
-          Explore all integrations
+          Explore integrations <span aria-hidden="true">→</span>
         </Link>
       </div>
     </aside>
+  );
+}
+
+function HeroSourceLogo({ source }: { source: string }) {
+  const logo = HERO_SOURCE_LOGOS[source];
+  if (!logo) return null;
+  return (
+    <span className={styles.orbitSourceLogo} aria-hidden="true">
+      <Image src={logo} alt="" width={18} height={18} />
+    </span>
+  );
+}
+
+function HomeCaptureSurfaceIcon({ icon }: { icon: (typeof CAPTURE_SURFACES)[number]['icon'] }) {
+  if (icon === 'telegram' || icon === 'slack') {
+    return (
+      <span className={cn(styles.captureSurfaceIcon, styles.captureSurfaceIconBrand)}>
+        <Image src={`/connectors/${icon}.svg`} alt="" width={18} height={18} />
+      </span>
+    );
+  }
+  const Icon = icon === 'mail' ? Mail : icon === 'video' ? Video : Webhook;
+  return (
+    <span className={styles.captureSurfaceIcon}>
+      <Icon aria-hidden="true" size={16} strokeWidth={1.6} />
+    </span>
   );
 }
 

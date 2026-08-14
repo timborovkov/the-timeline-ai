@@ -55,8 +55,12 @@ describe('LandingPage', () => {
       'Illustrative example — not customer data / Acme rollout / 4 cited + 2 connected',
     );
     expect(html).toContain('Connected, not cited');
+    expect(html).toContain('Telegram');
     expect(html).toContain('Linear');
     expect(html).toContain('Sentry');
+    expect(html).toContain('/connectors/telegram.svg');
+    expect(html).toContain('/connectors/google-meet.svg');
+    expect(html).toContain('data-ingest-packets="6"');
     expect(html).toContain('aria-label="Public navigation"');
     expect(html).toContain('href="/integrations"');
     expect(html).toContain('href="/how-it-works"');
@@ -102,13 +106,25 @@ describe('LandingPage', () => {
       expect(html).toContain(connector);
     }
 
-    expect(html).toContain('Native ingestion');
     expect(html).toContain('Where evidence enters');
+    expect(html).toContain('Two ways in. One cited record.');
+    expect(html).toContain('Deliberate capture');
+    expect(html).toContain('Send the work to Timeline.');
+    expect(html).toContain('Provider record sync');
+    expect(html).toContain('Sync selected records.');
     expect(html).toContain('Available here');
     expect(html).toContain('Setup required');
-    expect(html).toContain('MCP access');
-    expect(html).toContain('Live approved tool access, not passive ingestion.');
-    expect(html).toContain('Not connectable until native support is available.');
+    expect(html).toContain('MCP is live approved access, not passive ingestion.');
+    expect(html).toContain('Planned connections remain unavailable');
+    for (const surface of [
+      'Telegram',
+      'Slack conversations',
+      'Email forwarding',
+      'Meeting transcripts',
+      'Ingest webhooks',
+    ]) {
+      expect(html).toContain(surface);
+    }
     expect(html).not.toContain('Future connector pages remain unindexed');
     expect(html).toContain('href="/integrations"');
     for (const slug of ['github', 'linear', 'google-drive', 'monday', 'slack', 'sentry']) {

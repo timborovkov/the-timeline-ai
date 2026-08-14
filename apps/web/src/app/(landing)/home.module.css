@@ -282,6 +282,51 @@
   opacity: 0.3;
 }
 
+.ingestPackets circle {
+  fill: var(--home-signal);
+  opacity: 0;
+  transform-box: view-box;
+  transform-origin: center;
+}
+
+.ingestPackets circle:nth-child(1) {
+  --ingest-x: 182px;
+  --ingest-y: 184px;
+  --ingest-delay: 0ms;
+}
+
+.ingestPackets circle:nth-child(2) {
+  --ingest-x: -186px;
+  --ingest-y: 158px;
+  --ingest-delay: 520ms;
+}
+
+.ingestPackets circle:nth-child(3) {
+  --ingest-x: 188px;
+  --ingest-y: -162px;
+  --ingest-delay: 1040ms;
+}
+
+.ingestPackets circle:nth-child(4) {
+  --ingest-x: -190px;
+  --ingest-y: -170px;
+  --ingest-delay: 1560ms;
+}
+
+.ingestPackets circle:nth-child(5) {
+  --ingest-x: 230px;
+  --ingest-y: 0px;
+  --ingest-delay: 2080ms;
+  fill: var(--home-line-strong);
+}
+
+.ingestPackets circle:nth-child(6) {
+  --ingest-x: -230px;
+  --ingest-y: -10px;
+  --ingest-delay: 2600ms;
+  fill: var(--home-line-strong);
+}
+
 .memoryCore {
   position: absolute;
   top: 50%;
@@ -331,11 +376,34 @@
   background: color-mix(in oklch, var(--home-panel) 95%, transparent);
 }
 
-.orbitSource span {
+.orbitSourceTime {
   color: var(--home-dim);
   font-family: var(--font-mono);
   font-size: var(--home-meta-size);
   letter-spacing: 0.1em;
+}
+
+.orbitSourceIdentity {
+  display: flex;
+  gap: 0.42rem;
+  align-items: center;
+  min-width: 0;
+  margin-top: 0.18rem;
+}
+
+.orbitSourceLogo {
+  display: grid;
+  flex: 0 0 auto;
+  width: 1.35rem;
+  height: 1.35rem;
+  place-items: center;
+  border: 1px solid color-mix(in oklch, var(--home-line-strong) 70%, transparent);
+  background: oklch(0.98 0.005 95);
+}
+
+.orbitSourceLogo img {
+  width: 0.9rem;
+  height: 0.9rem;
 }
 
 .orbitSource strong {
@@ -947,113 +1015,139 @@
 }
 
 .connectorPanel {
-  display: grid;
-  grid-template-columns: minmax(18rem, 0.68fr) minmax(0, 1.32fr);
-  gap: 1px;
   margin-top: clamp(2.5rem, 4vw, 4rem);
   border: 1px solid var(--home-line);
   background: var(--home-line);
 }
 
-.connectorPanel > header,
-.connectorContent {
+.connectorPanel > header {
+  display: grid;
+  grid-template-columns: minmax(11rem, 0.35fr) minmax(0, 1fr);
+  gap: clamp(2rem, 6vw, 7rem);
   padding: clamp(1.5rem, 3vw, 3rem);
   background: var(--home-panel);
 }
 
 .connectorPanel > header h3 {
-  max-width: 12ch;
-  margin-top: 1rem;
-  font-size: clamp(2rem, 3.5vw, 3.8rem);
+  max-width: 18ch;
+  font-size: clamp(2rem, 3vw, 3.25rem);
   font-weight: 600;
   line-height: 0.97;
   letter-spacing: -0.055em;
 }
 
 .connectorPanel > header p {
-  max-width: 34rem;
+  max-width: 42rem;
   margin-top: 1.25rem;
   color: var(--home-muted);
   line-height: 1.65;
 }
 
-.nativeConnectors > span,
-.connectorTiers dt {
-  color: var(--home-signal);
-  font-family: var(--font-mono);
-  font-size: var(--home-meta-size);
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
+.connectorPaths {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--home-line);
 }
 
-.nativeConnectors ul {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin: 1rem 0 0;
+.connectorPath {
+  padding: clamp(1.5rem, 3vw, 3rem);
+  background: var(--home-panel);
+}
+
+.connectorPath h4 {
+  margin-top: 0.8rem;
+  font-size: clamp(1.45rem, 2vw, 2.05rem);
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -0.045em;
+}
+
+.connectorPath > p {
+  max-width: 35rem;
+  margin-top: 0.9rem;
+  color: var(--home-muted);
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+
+.captureSurfaceList,
+.nativeConnectorList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 1.5rem 0 0;
   padding: 0;
-  border-block: 1px solid var(--home-line);
   list-style: none;
 }
 
-.nativeConnectors li {
-  display: grid;
-  gap: 0.4rem;
+.captureSurfaceList li,
+.nativeConnectorList a {
+  display: flex;
   min-width: 0;
-  padding: 1rem 0.75rem;
-}
-
-.nativeConnectors li + li {
-  border-left: 1px solid var(--home-line);
-}
-
-.nativeConnectors li:nth-child(4) {
-  border-left: 0;
-}
-
-.nativeConnectors li:nth-child(n + 4) {
-  border-top: 1px solid var(--home-line);
-}
-
-.nativeConnectors strong,
-.nativeConnectors a {
-  overflow-wrap: anywhere;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--home-line-strong);
+  background: var(--home-ink);
   color: var(--home-paper);
-  font-size: 0.88rem;
-  font-weight: 600;
+  font-size: 0.75rem;
 }
 
-.nativeConnectors a {
-  width: fit-content;
+.captureSurfaceIcon,
+.connectorLogoTile {
+  display: grid;
+  flex: 0 0 auto;
+  width: 1.7rem;
+  height: 1.7rem;
+  place-items: center;
+  border: 1px solid var(--home-line);
+  background: var(--home-panel);
+}
+
+.captureSurfaceIconBrand,
+.connectorLogoTileLight {
+  background: oklch(0.98 0.005 95);
+}
+
+.captureSurfaceIcon img,
+.connectorLogoTile img {
+  width: 1rem;
+  height: 1rem;
+}
+
+.nativeConnectorList a {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.05rem 0.55rem;
+  min-height: 3rem;
   border-radius: 2px;
   outline-offset: 4px;
   text-decoration: none;
 }
 
-.nativeConnectors a:hover {
+.nativeConnectorList a:hover {
   color: var(--home-signal);
 }
 
-.nativeConnectors a:focus-visible {
+.nativeConnectorList a:focus-visible {
   outline: 2px solid var(--home-signal);
 }
 
-.nativeConnectors small {
+.nativeConnectorList .connectorLogoTile {
+  grid-row: 1 / 3;
+}
+
+.nativeConnectorList a > span:nth-child(2) {
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+.nativeConnectorList small {
   color: var(--home-dim);
   font-family: var(--font-mono);
   font-size: var(--home-meta-size);
-  letter-spacing: 0.07em;
   text-transform: uppercase;
-}
-
-.nativeConnectors small::before {
-  display: inline-block;
-  width: 0.35rem;
-  height: 0.35rem;
-  margin-right: 0.4rem;
-  background: var(--home-signal);
-  border-radius: 50%;
-  content: '';
-  vertical-align: 0.08em;
 }
 
 .connectorEmpty {
@@ -1063,28 +1157,25 @@
   line-height: 1.5;
 }
 
-.connectorTiers {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1px;
-  margin-block: 1.5rem;
-  background: var(--home-line);
-}
-
-.connectorTiers > div {
-  padding: 1rem;
+.connectorFooter {
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem clamp(1.5rem, 3vw, 3rem);
+  border-top: 1px solid var(--home-line);
   background: var(--home-panel);
 }
 
-.connectorTiers dt {
-  color: var(--home-muted);
-}
-
-.connectorTiers dd {
-  margin-top: 0.45rem;
+.connectorFooter p {
+  max-width: 55rem;
   color: var(--home-muted);
   font-size: 0.8rem;
   line-height: 1.55;
+}
+
+.connectorFooter .textLink {
+  flex: 0 0 auto;
 }
 
 .ctaScene {
@@ -1377,6 +1468,10 @@
     animation-delay: 600ms;
   }
 
+  .motionReady .observatory.visible .ingestPackets circle {
+    animation: ingestPacket 5.4s var(--ingest-delay) cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  }
+
   .motionReady .observatory.visible .orbitSource {
     animation: sourceResolve 720ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
@@ -1418,8 +1513,8 @@
   .motionReady .timelineStage.visible .timelineList li,
   .motionReady .timelineStage.visible .chronologyContract,
   .motionReady .connectorPanel.visible > header,
-  .motionReady .connectorPanel.visible .connectorContent,
-  .motionReady .connectorPanel.visible .nativeConnectors li,
+  .motionReady .connectorPanel.visible .connectorPath,
+  .motionReady .connectorPanel.visible .connectorFooter,
   .motionReady .fitPanel.visible .fitPanelIntro,
   .motionReady .fitPanel.visible .audienceRail article,
   .motionReady .trustFlowPanel.visible > header,
@@ -1456,32 +1551,16 @@
     animation-delay: 900ms;
   }
 
-  .motionReady .connectorPanel.visible .connectorContent {
+  .motionReady .connectorPanel.visible .connectorPath:nth-child(1) {
     animation-delay: 120ms;
   }
 
-  .motionReady .connectorPanel.visible .nativeConnectors li:nth-child(1) {
+  .motionReady .connectorPanel.visible .connectorPath:nth-child(2) {
     animation-delay: 240ms;
   }
 
-  .motionReady .connectorPanel.visible .nativeConnectors li:nth-child(2) {
-    animation-delay: 320ms;
-  }
-
-  .motionReady .connectorPanel.visible .nativeConnectors li:nth-child(3) {
-    animation-delay: 400ms;
-  }
-
-  .motionReady .connectorPanel.visible .nativeConnectors li:nth-child(4) {
-    animation-delay: 480ms;
-  }
-
-  .motionReady .connectorPanel.visible .nativeConnectors li:nth-child(5) {
-    animation-delay: 560ms;
-  }
-
-  .motionReady .connectorPanel.visible .nativeConnectors li:nth-child(6) {
-    animation-delay: 640ms;
+  .motionReady .connectorPanel.visible .connectorFooter {
+    animation-delay: 360ms;
   }
 
   .motionReady .answerLayout.visible .answerWindow,
@@ -1646,6 +1725,29 @@
   }
 }
 
+@keyframes ingestPacket {
+  0%,
+  12% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.65);
+  }
+
+  20% {
+    opacity: 1;
+  }
+
+  78% {
+    opacity: 1;
+    transform: translate(var(--ingest-x), var(--ingest-y)) scale(1);
+  }
+
+  88%,
+  100% {
+    opacity: 0;
+    transform: translate(var(--ingest-x), var(--ingest-y)) scale(0.45);
+  }
+}
+
 @keyframes connectedPath {
   0%,
   100% {
@@ -1796,8 +1898,13 @@
   .recoveryScene,
   .answerLayout,
   .fitPanel,
-  .connectorPanel {
+  .connectorPaths {
     grid-template-columns: 1fr;
+  }
+
+  .connectorPanel > header {
+    grid-template-columns: 1fr;
+    gap: 1rem;
   }
 
   .claimScene {
@@ -1898,26 +2005,6 @@
     justify-content: flex-start;
   }
 
-  .nativeConnectors ul {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .nativeConnectors li + li {
-    border-left: 0;
-  }
-
-  .nativeConnectors li:nth-child(even) {
-    border-left: 1px solid var(--home-line);
-  }
-
-  .nativeConnectors li:nth-child(n + 3) {
-    border-top: 1px solid var(--home-line);
-  }
-
-  .connectorTiers {
-    grid-template-columns: 1fr;
-  }
-
   .motionReady .trustFlowPanel.visible .trustFlow::before {
     animation-name: trustPathDrawVertical;
   }
@@ -1995,6 +2082,20 @@
 
   .orbitSource strong {
     font-size: var(--home-meta-size);
+  }
+
+  .orbitSourceIdentity {
+    gap: 0.25rem;
+  }
+
+  .orbitSourceLogo {
+    width: 1.05rem;
+    height: 1.05rem;
+  }
+
+  .orbitSourceLogo img {
+    width: 0.72rem;
+    height: 0.72rem;
   }
 
   .orbitSourceAux {
@@ -2112,9 +2213,15 @@
 
   .fitPanelIntro,
   .connectorPanel > header,
-  .connectorContent,
+  .connectorPath,
   .trustFlowPanel {
     padding: 1.25rem;
+  }
+
+  .connectorFooter {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 1rem 1.25rem;
   }
 
   .ctaInner h2 {
@@ -2155,6 +2262,7 @@
   }
 
   .orbitLines path,
+  .ingestPackets circle,
   .orbitInner,
   .orbitSource,
   .memoryCore,
@@ -2178,7 +2286,7 @@
 @media (forced-colors: active) {
   .timelineNode span,
   .trustFlow li > span,
-  .nativeConnectors small::before {
+  .ingestPackets circle {
     forced-color-adjust: auto;
   }
 

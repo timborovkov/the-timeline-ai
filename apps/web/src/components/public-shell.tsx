@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils';
 interface PublicShellProps {
   children: ReactNode;
   isSignedIn?: boolean;
-  width?: 'reading' | 'wide';
+  width?: 'reading' | 'wide' | 'expanded';
   footerLabel?: string;
   currentSection?: PublicNavigationSection;
 }
@@ -26,7 +26,8 @@ export function PublicShell({
   footerLabel = 'The Timeline',
   currentSection,
 }: PublicShellProps) {
-  const widthClass = width === 'reading' ? 'max-w-4xl' : 'max-w-6xl';
+  const widthClass =
+    width === 'reading' ? 'max-w-4xl' : width === 'expanded' ? 'max-w-[82rem]' : 'max-w-6xl';
   return (
     <div className={cn(publicSiteStyles.canvas, 'min-h-dvh overflow-x-hidden text-fg')}>
       <SkipLink />

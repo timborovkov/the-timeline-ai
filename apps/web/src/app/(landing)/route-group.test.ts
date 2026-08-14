@@ -45,11 +45,17 @@ describe('landing route group', () => {
     expect(Math.min(...remFontSizeMinimums)).toBeGreaterThanOrEqual(0.75);
     expect(styles).not.toContain('translateX(0.35rem)');
     expect(styles).toContain('animation: evidencePath 4.8s ease-in-out infinite both');
+    expect(styles).toContain(
+      'animation: ingestPacket 5.4s var(--ingest-delay) cubic-bezier(0.45, 0, 0.55, 1) infinite',
+    );
     expect(styles).toContain('animation: chronologyDraw 1.25s');
     expect(styles).toContain('animation: answerPanelIn 680ms');
     expect(styles).toContain('animation: trustPathDraw 1.15s');
     expect(styles).not.toContain('ambientSweep');
     expect(styles).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(styles).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.ingestPackets circle,[\s\S]*animation: none !important;/u,
+    );
     expect(styles).not.toContain('stroke-dashoffset');
     expect(styles).not.toContain(':not(.visible)');
     expect(styles).not.toContain('.motionReady [data-home-diagram] {');

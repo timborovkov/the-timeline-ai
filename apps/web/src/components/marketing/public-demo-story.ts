@@ -63,7 +63,7 @@ export const PUBLIC_DEMO_STORY = {
       },
     ],
     connectedSignals: [
-      { time: '13:05', source: 'Linear' },
+      { time: '13:05', source: 'Telegram' },
       { time: '18:21', source: 'Sentry' },
     ],
   },
