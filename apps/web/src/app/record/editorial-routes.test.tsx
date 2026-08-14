@@ -44,8 +44,10 @@ describe('how-it-works and guide routes', () => {
     expect(html.indexOf('data-how-it-works-steps="true"')).toBeLessThan(
       html.indexOf('data-how-it-works-evidence="true"'),
     );
-    expect(html).toContain('max-w-6xl');
-    expect(html).toContain('lg:grid-cols-[0.45fr_1fr]');
+    expect(html).toContain('max-w-[82rem]');
+    expect(html).toContain('lg:grid-cols-[13rem_minmax(0,1fr)]');
+    expect(html).toContain('xl:grid-cols-[15rem_minmax(0,1fr)]');
+    expect(html).not.toContain('lg:grid-cols-[0.45fr_1fr]');
     expect(html).toContain('How Timeline works');
     expect(html).not.toContain('Last reviewed');
     expect(html).not.toContain('product overview');

@@ -12,6 +12,7 @@ import {
 } from '@/components/marketing/integrations/connector-content';
 import { DirectoryStructuredData } from '@/components/marketing/integrations/connector-seo';
 import { RecordsToAnswer } from '@/components/marketing/integrations/records-to-answer';
+import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
 import { MarketingSectionIndex } from '@/components/marketing/section-index';
 import { PublicShell } from '@/components/public-shell';
 import { Button } from '@/components/ui/button';
@@ -34,7 +35,7 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
       <DirectoryStructuredData />
       <main id="main" tabIndex={-1}>
         <section className="border-b border-border">
-          <div className="mx-auto max-w-[82rem] px-4 py-16 sm:px-6 sm:py-24 lg:py-28">
+          <MarketingContainer className="py-16 sm:py-24 lg:py-28">
             <p className="text-sm font-medium text-fg-muted">Integrations</p>
             <div className="mt-6 grid items-end gap-10 lg:grid-cols-[1.25fr_0.75fr]">
               <h1 className="max-w-[13ch] break-words text-balance text-[3rem] font-semibold leading-[0.95] tracking-[-0.05em] text-fg sm:text-[clamp(3.5rem,5vw,5.5rem)]">
@@ -54,52 +55,52 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
                 </Button>
               </div>
             </div>
-          </div>
+          </MarketingContainer>
         </section>
 
-        <section
-          className="mx-auto max-w-[82rem] px-4 py-16 sm:px-6 sm:py-20"
-          aria-labelledby="capture-surfaces"
-        >
-          <div className="grid gap-8 lg:grid-cols-[13rem_minmax(0,1fr)] xl:grid-cols-[15rem_minmax(0,1fr)]">
-            <MarketingSectionIndex label="Send work in" />
-            <div>
-              <div className="flex flex-wrap items-end justify-between gap-4">
-                <div>
-                  <h2
-                    id="capture-surfaces"
-                    className="max-w-[18ch] text-3xl font-semibold tracking-tight sm:text-4xl"
-                  >
-                    Start where the conversation already happens.
-                  </h2>
-                  <p className="mt-4 max-w-[64ch] text-base leading-relaxed text-fg-muted">
-                    Send messages, files, forwarded email, meeting transcripts, or webhook payloads
-                    to Timeline. Each route makes it clear what is saved and who can see it.
-                  </p>
+        <section aria-labelledby="capture-surfaces">
+          <MarketingContainer className="py-16 sm:py-20">
+            <MarketingSectionGrid>
+              <MarketingSectionIndex label="Send work in" />
+              <div>
+                <div className="flex flex-wrap items-end justify-between gap-4">
+                  <div>
+                    <h2
+                      id="capture-surfaces"
+                      className="max-w-[18ch] text-3xl font-semibold tracking-tight sm:text-4xl"
+                    >
+                      Start where the conversation already happens.
+                    </h2>
+                    <p className="mt-4 max-w-[64ch] text-base leading-relaxed text-fg-muted">
+                      Send messages, files, forwarded email, meeting transcripts, or webhook
+                      payloads to Timeline. Each route makes it clear what is saved and who can see
+                      it.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-10 grid gap-px border border-border bg-border md:grid-cols-2">
+                  {FEATURED_CAPTURE_SURFACES.map((surface) => (
+                    <FeaturedCaptureSurface
+                      key={surface.id}
+                      surface={surface}
+                      isSignedIn={isSignedIn}
+                    />
+                  ))}
+                </div>
+                <div className="grid gap-px border-x border-b border-border bg-border">
+                  {SUPPORTING_CAPTURE_SURFACES.map((surface) => (
+                    <CaptureSurfaceRow key={surface.id} surface={surface} isSignedIn={isSignedIn} />
+                  ))}
                 </div>
               </div>
-
-              <div className="mt-10 grid gap-px border border-border bg-border md:grid-cols-2">
-                {FEATURED_CAPTURE_SURFACES.map((surface) => (
-                  <FeaturedCaptureSurface
-                    key={surface.id}
-                    surface={surface}
-                    isSignedIn={isSignedIn}
-                  />
-                ))}
-              </div>
-              <div className="grid gap-px border-x border-b border-border bg-border">
-                {SUPPORTING_CAPTURE_SURFACES.map((surface) => (
-                  <CaptureSurfaceRow key={surface.id} surface={surface} isSignedIn={isSignedIn} />
-                ))}
-              </div>
-            </div>
-          </div>
+            </MarketingSectionGrid>
+          </MarketingContainer>
         </section>
 
         <section className="border-t border-border" aria-labelledby="native">
-          <div className="mx-auto max-w-[82rem] px-4 py-16 sm:px-6 sm:py-20">
-            <div className="grid gap-8 lg:grid-cols-[13rem_minmax(0,1fr)] xl:grid-cols-[15rem_minmax(0,1fr)]">
+          <MarketingContainer className="py-16 sm:py-20">
+            <MarketingSectionGrid>
               <MarketingSectionIndex index="02" label="Connect your tools" />
               <div>
                 <div className="flex flex-wrap items-end justify-between gap-4">
@@ -152,13 +153,13 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
                   ))}
                 </div>
               </div>
-            </div>
-          </div>
+            </MarketingSectionGrid>
+          </MarketingContainer>
         </section>
 
         <section className="border-y border-border bg-surface">
-          <div className="mx-auto max-w-[82rem] px-4 py-16 sm:px-6 sm:py-20">
-            <div className="grid gap-8 lg:grid-cols-[13rem_minmax(0,1fr)] xl:grid-cols-[15rem_minmax(0,1fr)]">
+          <MarketingContainer className="py-16 sm:py-20">
+            <MarketingSectionGrid>
               <MarketingSectionIndex index="03" label="Proof" />
               <div>
                 <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
@@ -173,55 +174,54 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
                   <RecordsToAnswer connector={featuredConnector} compact />
                 </div>
               </div>
-            </div>
-          </div>
+            </MarketingSectionGrid>
+          </MarketingContainer>
         </section>
 
-        <section
-          className="mx-auto max-w-[82rem] px-4 py-16 sm:px-6 sm:py-20"
-          aria-labelledby="tiers"
-        >
-          <div className="grid gap-8 lg:grid-cols-[13rem_minmax(0,1fr)] xl:grid-cols-[15rem_minmax(0,1fr)]">
-            <MarketingSectionIndex index="04" label="More connections" />
-            <div>
-              <h2 id="tiers" className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                Know what each connection can do.
-              </h2>
-              <p className="mt-4 max-w-[64ch] text-base leading-relaxed text-fg-muted">
-                Some connections add selected records to your Timeline. Others look up approved
-                tools only when you ask a question. Local connections require Timeline on the same
-                computer, and integrations listed as coming later cannot be connected yet.
-              </p>
-              <div className="mt-10 border-t border-border">
-                <CapabilityRow
-                  icon={Check}
-                  title="Send work to Timeline"
-                  body="Telegram, Slack conversations, email forwarding, meeting transcripts, ingest webhooks"
-                  live
-                />
-                <CapabilityRow
-                  icon={Check}
-                  title="Keep selected tool history"
-                  body={capabilityTiers.nativeProviders.join(', ')}
-                />
-                <CapabilityRow
-                  icon={Wrench}
-                  title="Look up live tools"
-                  body={capabilityTiers.mcpAccess.join(', ')}
-                />
-                <CapabilityRow
-                  icon={Wrench}
-                  title="Use a local desktop connection"
-                  body={`${capabilityTiers.localDesktopAccess.join(', ')} — available only when Timeline runs on the same machine; not connectable from hosted Timeline.`}
-                />
-                <CapabilityRow
-                  icon={CircleDotDashed}
-                  title="Coming later"
-                  body={capabilityTiers.plannedProviders.join(', ')}
-                />
+        <section aria-labelledby="tiers">
+          <MarketingContainer className="py-16 sm:py-20">
+            <MarketingSectionGrid>
+              <MarketingSectionIndex index="04" label="More connections" />
+              <div>
+                <h2 id="tiers" className="text-3xl font-semibold tracking-tight sm:text-4xl">
+                  Know what each connection can do.
+                </h2>
+                <p className="mt-4 max-w-[64ch] text-base leading-relaxed text-fg-muted">
+                  Some connections add selected records to your Timeline. Others look up approved
+                  tools only when you ask a question. Local connections require Timeline on the same
+                  computer, and integrations listed as coming later cannot be connected yet.
+                </p>
+                <div className="mt-10 border-t border-border">
+                  <CapabilityRow
+                    icon={Check}
+                    title="Send work to Timeline"
+                    body="Telegram, Slack conversations, email forwarding, meeting transcripts, ingest webhooks"
+                    live
+                  />
+                  <CapabilityRow
+                    icon={Check}
+                    title="Keep selected tool history"
+                    body={capabilityTiers.nativeProviders.join(', ')}
+                  />
+                  <CapabilityRow
+                    icon={Wrench}
+                    title="Look up live tools"
+                    body={capabilityTiers.mcpAccess.join(', ')}
+                  />
+                  <CapabilityRow
+                    icon={Wrench}
+                    title="Use a local desktop connection"
+                    body={`${capabilityTiers.localDesktopAccess.join(', ')} — available only when Timeline runs on the same machine; not connectable from hosted Timeline.`}
+                  />
+                  <CapabilityRow
+                    icon={CircleDotDashed}
+                    title="Coming later"
+                    body={capabilityTiers.plannedProviders.join(', ')}
+                  />
+                </div>
               </div>
-            </div>
-          </div>
+            </MarketingSectionGrid>
+          </MarketingContainer>
         </section>
       </main>
     </PublicShell>

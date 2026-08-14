@@ -407,7 +407,7 @@ provide a visible route back to all guides; article bodies may optionally
 constrain to a reading measure without forcing the shell narrow.
 
 `/how-it-works` is the plain-language explanation of how Timeline works. It uses
-the same 72rem acquisition grid, hero scale, indexed section rail, footer, and
+the same 82rem acquisition grid, 13–15rem indexed section rail, hero scale, footer, and
 section rhythm as the integration directory. It shows the
 source-to-chronology-to-answer loop once, then links to a small set of
 substantive cross-tool walkthroughs. Its first viewport explains the three-step

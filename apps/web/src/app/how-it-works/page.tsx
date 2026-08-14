@@ -14,6 +14,7 @@ import {
   createHowItWorksMetadata,
 } from '@/components/marketing/editorial/metadata';
 import { ProvenanceDiagram } from '@/components/marketing/editorial/provenance-diagram';
+import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
 import { MarketingSectionIndex } from '@/components/marketing/section-index';
 
 export const metadata: Metadata = createHowItWorksMetadata();
@@ -40,7 +41,7 @@ export default function HowItWorksPage() {
     <main id="main" tabIndex={-1}>
       <EditorialStructuredData data={buildHowItWorksStructuredData()} />
       <section data-how-it-works-hero className="border-b border-border">
-        <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24 lg:py-28">
+        <MarketingContainer className="py-16 sm:py-24 lg:py-28">
           <p className="text-sm font-medium text-fg-muted">How Timeline works</p>
           <div className="mt-6 grid items-end gap-10 lg:grid-cols-[1.25fr_0.75fr]">
             <h1 className="max-w-[13ch] break-words text-balance text-[3rem] font-semibold leading-[0.95] tracking-[-0.05em] text-fg sm:text-[clamp(3.5rem,5vw,5.5rem)]">
@@ -68,73 +69,79 @@ export default function HowItWorksPage() {
               </li>
             ))}
           </ol>
-        </div>
+        </MarketingContainer>
       </section>
 
       <section data-how-it-works-evidence className="border-b border-border bg-surface/45">
-        <div className="mx-auto grid max-w-6xl gap-8 px-4 py-16 sm:px-6 sm:py-20 lg:grid-cols-[0.45fr_1fr]">
-          <MarketingSectionIndex index="02" label="Evidence path" />
-          <div>
-            <h2 className="max-w-[18ch] text-3xl font-semibold tracking-tight sm:text-4xl">
-              Watch three records become one answer.
-            </h2>
-            <p className="mt-4 max-w-[64ch] text-base leading-relaxed text-fg-muted">
-              This illustrative example keeps every source distinct, places the records in time, and
-              cites the evidence behind the conclusion.
-            </p>
-            <div className="mt-10">
-              <ProvenanceDiagram diagram={featuredGuide.diagram} answerHeadingLevel={2} />
+        <MarketingContainer className="py-16 sm:py-20">
+          <MarketingSectionGrid>
+            <MarketingSectionIndex index="02" label="Evidence path" />
+            <div>
+              <h2 className="max-w-[18ch] text-3xl font-semibold tracking-tight sm:text-4xl">
+                Watch three records become one answer.
+              </h2>
+              <p className="mt-4 max-w-[64ch] text-base leading-relaxed text-fg-muted">
+                This illustrative example keeps every source distinct, places the records in time,
+                and cites the evidence behind the conclusion.
+              </p>
+              <div className="mt-10">
+                <ProvenanceDiagram diagram={featuredGuide.diagram} answerHeadingLevel={2} />
+              </div>
             </div>
-          </div>
-        </div>
+          </MarketingSectionGrid>
+        </MarketingContainer>
       </section>
 
-      <section className="mx-auto grid max-w-6xl gap-8 px-4 py-16 sm:px-6 sm:py-20 lg:grid-cols-[0.45fr_1fr]">
-        <MarketingSectionIndex index="03" label="Practical walkthroughs" />
-        <div>
-          <h2 className="max-w-[20ch] text-3xl font-semibold tracking-tight sm:text-4xl">
-            Start with a question your team already knows how to verify.
-          </h2>
-          <p className="mt-4 max-w-[64ch] text-base leading-relaxed text-fg-muted">
-            These examples show the method on three common cross-tool questions. The sources stay
-            distinct, and every conclusion keeps its evidence attached.
-          </p>
-          <div className="mt-10 border-y border-border">
-            {EDITORIAL_GUIDES.map((guide, index) => (
-              <Link
-                key={guide.route}
-                href={guide.route}
-                className="group grid gap-5 border-b border-border px-1 py-8 outline-none last:border-b-0 hover:bg-surface/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset sm:px-5 md:grid-cols-[2.5rem_minmax(0,1fr)_auto] md:items-center"
-              >
-                <span className="font-mono text-[0.68rem] text-signal">
-                  {String(index + 1).padStart(2, '0')}
-                </span>
-                <div>
-                  <p className="font-mono text-[0.62rem] tracking-[0.1em] text-fg-dim uppercase">
-                    {guide.nativeConnectors.join(' + ')}
-                  </p>
-                  <h3 className="mt-3 max-w-3xl text-balance text-2xl font-semibold tracking-[-0.035em] sm:text-3xl">
-                    {guide.title}
-                  </h3>
-                  <p className="mt-3 max-w-3xl text-sm leading-7 text-fg-muted sm:text-base">
-                    {guide.summary}
-                  </p>
-                </div>
-                <span className="inline-flex items-center gap-2 text-sm font-semibold md:justify-self-end">
-                  Read walkthrough
-                  <ArrowRight
-                    aria-hidden="true"
-                    className="size-4 motion-safe:transition-transform motion-safe:group-hover:translate-x-1"
-                  />
-                </span>
-              </Link>
-            ))}
-          </div>
-        </div>
+      <section>
+        <MarketingContainer className="py-16 sm:py-20">
+          <MarketingSectionGrid>
+            <MarketingSectionIndex index="03" label="Practical walkthroughs" />
+            <div>
+              <h2 className="max-w-[20ch] text-3xl font-semibold tracking-tight sm:text-4xl">
+                Start with a question your team already knows how to verify.
+              </h2>
+              <p className="mt-4 max-w-[64ch] text-base leading-relaxed text-fg-muted">
+                These examples show the method on three common cross-tool questions. The sources
+                stay distinct, and every conclusion keeps its evidence attached.
+              </p>
+              <div className="mt-10 border-y border-border">
+                {EDITORIAL_GUIDES.map((guide, index) => (
+                  <Link
+                    key={guide.route}
+                    href={guide.route}
+                    className="group grid gap-5 border-b border-border px-1 py-8 outline-none last:border-b-0 hover:bg-surface/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset sm:px-5 md:grid-cols-[2.5rem_minmax(0,1fr)_auto] md:items-center"
+                  >
+                    <span className="font-mono text-[0.68rem] text-signal">
+                      {String(index + 1).padStart(2, '0')}
+                    </span>
+                    <div>
+                      <p className="font-mono text-[0.62rem] tracking-[0.1em] text-fg-dim uppercase">
+                        {guide.nativeConnectors.join(' + ')}
+                      </p>
+                      <h3 className="mt-3 max-w-3xl text-balance text-2xl font-semibold tracking-[-0.035em] sm:text-3xl">
+                        {guide.title}
+                      </h3>
+                      <p className="mt-3 max-w-3xl text-sm leading-7 text-fg-muted sm:text-base">
+                        {guide.summary}
+                      </p>
+                    </div>
+                    <span className="inline-flex items-center gap-2 text-sm font-semibold md:justify-self-end">
+                      Read walkthrough
+                      <ArrowRight
+                        aria-hidden="true"
+                        className="size-4 motion-safe:transition-transform motion-safe:group-hover:translate-x-1"
+                      />
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </MarketingSectionGrid>
+        </MarketingContainer>
       </section>
 
       <section className="border-y border-border bg-surface">
-        <div className="mx-auto grid max-w-6xl gap-8 px-4 py-16 sm:px-6 sm:py-20 lg:grid-cols-[1fr_auto] lg:items-end">
+        <MarketingContainer className="grid gap-8 py-16 sm:py-20 lg:grid-cols-[1fr_auto] lg:items-end">
           <div>
             <p className="text-sm font-medium text-fg-muted">Start with the answer</p>
             <h2 className="mt-5 max-w-3xl text-balance text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">
@@ -152,7 +159,7 @@ export default function HowItWorksPage() {
             Open the first walkthrough
             <ArrowRight aria-hidden="true" className="size-4" />
           </Link>
-        </div>
+        </MarketingContainer>
       </section>
     </main>
   );
