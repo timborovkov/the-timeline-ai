@@ -397,7 +397,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     eyebrow: 'File change becomes durable evidence',
     hero: 'Turn new Drive changes into cited document evidence.',
     intro:
-      'Timeline watches admitted Google Drive changes after its first successful reconciliation establishes a changes cursor. Selecting a shared drive scopes live files to that drive; selecting My Drive root currently admits changed files anywhere the connected account can access, including Shared with me and other shared drives. When a supported file changes and the connection owner still belongs to the Timeline team, Timeline stores its current content as a versioned document so later answers can cite the state it observed.',
+      'Timeline saves supported file changes it sees after Google Drive is connected, so later answers can cite the document state captured at the time. You can limit the connection to a shared drive; choosing My Drive currently also includes changed files the connected account can access through Shared with me and other shared drives.',
     seoTitle: 'Google Drive integration for cited document answers',
     seoDescription:
       'Capture sync-observed Google Drive file states in The Timeline for cited cross-tool answers and versioned evidence, with explicit source-scope limitations.',
@@ -406,9 +406,9 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     capability: 'Native integration',
     lastReviewed: LAST_REVIEWED,
     captureStatement:
-      'Timeline records admitted Drive changes as cited events and versions the supported file state observed at sync time, subject to the boundaries disclosed below.',
+      'Timeline records supported Drive changes as cited events and saves the file state it sees during each sync, subject to the limits below.',
     providerStatement:
-      'Google Drive remains the place where files are authored, shared, organized, and permissioned. Timeline reads changed content admitted by its current source rules; it does not replace Drive collaboration or rewrite source files.',
+      'Google Drive remains the place where files are authored, shared, organized, and permissioned. Timeline reads changed content included by the selected source; it does not replace Drive collaboration or rewrite source files.',
     diagram: DEMO_CONNECTORS.googleDrive.diagram,
     exampleQuestions: [
       'Summarize the latest partnership agreement.',
@@ -598,7 +598,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     eyebrow: 'Issue lifecycle becomes incident context',
     hero: 'Trace what broke, what changed, and how the fix was confirmed.',
     intro:
-      'Timeline turns Sentry issue lifecycle and release activity into incident evidence. Reconciliation follows activated sources, while the current installation-level webhook route can also admit events from other projects in the same Sentry installation after its first matching delivery.',
+      'Timeline turns selected Sentry issues, alerts, and releases into incident evidence you can connect to code and team discussion. Project selection applies to scheduled history checks; after one matching webhook, later webhook events from another project in the same Sentry installation may also be captured.',
     seoTitle: 'Sentry integration for cited incident history',
     seoDescription:
       'Sync Sentry issue lifecycle, alerts, and releases into The Timeline, with explicit project-scope and recovery limits for cited incident answers.',
@@ -607,7 +607,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     capability: 'Native integration',
     lastReviewed: LAST_REVIEWED,
     captureStatement:
-      'Timeline reconciles activated Sentry organizations or projects and maps captured lifecycle and release evidence to cited incidents. Current installation-level webhook routing can admit events from an unselected project in the same installation after a matching webhook is remembered.',
+      'Timeline checks selected Sentry organizations or projects and connects captured issue and release evidence to cited incidents. After it receives a matching webhook, a later webhook from an unselected project in the same Sentry installation may also be captured.',
     providerStatement:
       'Sentry remains the monitoring and error-diagnostics system. Timeline does not collect application telemetry on Sentry’s behalf or replace Sentry alerting, traces, performance views, or issue management.',
     diagram: DEMO_CONNECTORS.sentry.diagram,

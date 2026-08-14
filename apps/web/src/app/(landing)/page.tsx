@@ -59,9 +59,9 @@ function getHomeDocument() {
 
 const ACME_EVENTS = PUBLIC_DEMO_STORY.landing.events;
 
-const HERO_SIGNALS = [
-  ...ACME_EVENTS.map(({ time, shortSource }) => ({ time, source: shortSource, cited: true })),
-  ...PUBLIC_DEMO_STORY.landing.connectedSignals.map((signal) => ({ ...signal, cited: false })),
+const HERO_SOURCES = [
+  ...ACME_EVENTS.map(({ time, shortSource }) => ({ time, source: shortSource })),
+  ...PUBLIC_DEMO_STORY.landing.connectedSignals,
 ] as const;
 
 const HERO_SOURCE_LOGOS: Readonly<Record<string, string>> = {
@@ -259,7 +259,7 @@ function ClaimScene({ isSignedIn }: { isSignedIn: boolean }) {
       <div
         className={styles.observatory}
         data-home-diagram
-        aria-label="Four cited Acme rollout work signals converge into project memory while two other connected signals remain unused in this answer"
+        aria-label="Six Acme project sources flow into one chronological project history"
       >
         <svg className={styles.orbitLines} viewBox="0 0 600 600" aria-hidden="true">
           <path d="M118 116 C 205 150, 226 242, 300 300" />
@@ -281,28 +281,21 @@ function ClaimScene({ isSignedIn }: { isSignedIn: boolean }) {
         <div className={styles.orbitInner} aria-hidden="true" />
         <div className={styles.memoryCore}>
           <Logo ariaHidden />
-          <span>Cited project memory</span>
+          <span>Project history</span>
         </div>
-        {HERO_SIGNALS.map((signal, index) => (
+        {HERO_SOURCES.map((signal, index) => (
           <div
             key={signal.source}
-            className={cn(
-              styles.orbitSource,
-              styles[`orbitSource${index + 1}`],
-              !signal.cited && styles.orbitSourceAux,
-            )}
+            className={cn(styles.orbitSource, styles[`orbitSource${index + 1}`])}
           >
             <span className={styles.orbitSourceTime}>{signal.time}</span>
             <span className={styles.orbitSourceIdentity}>
               <HeroSourceLogo source={signal.source} />
               <strong>{signal.source}</strong>
             </span>
-            {signal.cited ? null : <small>Connected, not cited</small>}
           </div>
         ))}
-        <p className={styles.observatoryCaption}>
-          {PUBLIC_DEMO_DISCLOSURE} / Acme rollout / 4 cited + 2 connected
-        </p>
+        <p className={styles.observatoryCaption}>{PUBLIC_DEMO_DISCLOSURE}</p>
       </div>
     </section>
   );
@@ -354,7 +347,7 @@ function ChronologyScene({ nativeConnectors }: { nativeConnectors: NativeConnect
           ))}
         </ol>
         <aside className={styles.chronologyContract} aria-label="Source handling">
-          <span className={styles.monoLabel}>Capture contract</span>
+          <span className={styles.monoLabel}>What Timeline preserves</span>
           <dl>
             <div>
               <dt>Content</dt>
@@ -391,13 +384,13 @@ function ConnectorRail({ nativeConnectors }: { nativeConnectors: NativeConnector
       </header>
       <div className={styles.connectorPaths}>
         <article className={styles.connectorPath}>
-          <span className={styles.monoLabel}>Deliberate capture</span>
+          <span className={styles.monoLabel}>Messages and files</span>
           <h4>Send the work to Timeline.</h4>
           <p>
             Conversations, forwarded mail, meeting transcripts, and authenticated payloads enter
             only when your team routes them in.
           </p>
-          <ul className={styles.captureSurfaceList} aria-label="First-party capture surfaces">
+          <ul className={styles.captureSurfaceList} aria-label="Ways to send work to Timeline">
             {CAPTURE_SURFACES.map((surface) => (
               <li key={surface.id}>
                 <HomeCaptureSurfaceIcon icon={surface.icon} />
@@ -407,11 +400,11 @@ function ConnectorRail({ nativeConnectors }: { nativeConnectors: NativeConnector
           </ul>
         </article>
         <article className={styles.connectorPath}>
-          <span className={styles.monoLabel}>Provider record sync</span>
+          <span className={styles.monoLabel}>Connected tools</span>
           <h4>Sync selected records.</h4>
           <p>
-            Native connectors turn selected provider history into durable, citable events without
-            pretending Timeline replaces the provider.
+            Choose which provider records belong in Timeline. The original tool remains the source,
+            and every captured event links back to it.
           </p>
           {nativeConnectors.length > 0 ? (
             <ul className={styles.nativeConnectorList} aria-label="Native provider connectors">
@@ -428,7 +421,7 @@ function ConnectorRail({ nativeConnectors }: { nativeConnectors: NativeConnector
                     </span>
                     <span>{connector.label}</span>
                     <small>
-                      {connector.state === 'available' ? 'Available here' : 'Setup required'}
+                      {connector.state === 'available' ? 'Ready to connect' : 'Admin setup needed'}
                     </small>
                   </Link>
                 </li>
@@ -441,8 +434,9 @@ function ConnectorRail({ nativeConnectors }: { nativeConnectors: NativeConnector
       </div>
       <div className={styles.connectorFooter}>
         <p>
-          MCP is live approved access, not passive ingestion. Planned connections remain unavailable
-          until native support ships.
+          Timeline can also look up approved tools when you ask a question without adding their
+          history to the record. Some local and upcoming connections are not available in the hosted
+          app yet.
         </p>
         <Link href="/integrations" className={styles.textLink}>
           Explore integrations <span aria-hidden="true">→</span>

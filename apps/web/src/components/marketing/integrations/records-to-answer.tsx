@@ -20,9 +20,7 @@ export function RecordsToAnswer({
       <figcaption id={`diagram-${connector.slug}`} className="sr-only">
         {connector.name} records enter a chronological Timeline and resolve into a cited answer.
       </figcaption>
-      <p className="mb-4 font-mono text-[0.65rem] tracking-[0.12em] text-fg-dim uppercase">
-        {PUBLIC_DEMO_DISCLOSURE}
-      </p>
+      <p className="mb-4 text-xs text-fg-dim">{PUBLIC_DEMO_DISCLOSURE}</p>
       <div className={styles.question}>
         <span className={styles.index}>Question</span>
         <p>{connector.diagram.question}</p>

@@ -91,7 +91,7 @@ export const CAPTURE_SURFACES = [
     captured:
       'JSON, form, CSV, XML, YAML, GraphQL, NDJSON, and other textual request bodies up to 1 MB.',
     boundary:
-      'Webhooks are evidence-only sources. They do not become lifecycle-authoritative integrations, and direct file or binary upload uses a separate capture path.',
+      'Webhook payloads can support an answer, but they cannot update or control records in the sending tool. Direct file or binary upload uses a separate route.',
     setupHref: '/app/sources',
     setupLabel: 'Create a webhook',
     featured: false,

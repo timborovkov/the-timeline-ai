@@ -46,7 +46,9 @@ describe('how-it-works and guide routes', () => {
     );
     expect(html).toContain('max-w-6xl');
     expect(html).toContain('lg:grid-cols-[0.45fr_1fr]');
-    expect(html).toContain('Last reviewed');
+    expect(html).toContain('How Timeline works');
+    expect(html).not.toContain('Last reviewed');
+    expect(html).not.toContain('product overview');
     for (const label of ['Capture', 'Order', 'Answer']) {
       expect(html).toMatch(new RegExp(`<h2[^>]*>${label}<\\/h2>`));
     }
@@ -95,7 +97,10 @@ describe('how-it-works and guide routes', () => {
       expect(html).toContain(`>${guide.diagram.answerTitle}</h3>`);
       expect(html).toContain('What each source contributes');
       expect(html).toContain('What this cannot prove');
-      expect(html).toContain('Illustrative example / not customer data');
+      expect(html).toContain('Fictional Acme example, not customer data.');
+      expect(html).toContain('Try this question');
+      expect(html).toContain('Source roles');
+      expect(html).not.toMatch(/Native \/|Prompt pattern|Source boundaries/u);
       expect(html).toContain('application/ld+json');
       expect(html).toContain('href="/sign-in"');
       expect(html).toContain('aria-label="Breadcrumb"');

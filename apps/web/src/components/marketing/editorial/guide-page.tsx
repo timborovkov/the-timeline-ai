@@ -46,12 +46,12 @@ export function EditorialGuidePage({ guide }: { guide: EditorialGuide }) {
           </nav>
           <div className={styles.heroGrid}>
             <div>
-              <EditorialKicker>Walkthrough / {guide.nativeConnectors.join(' + ')}</EditorialKicker>
+              <EditorialKicker>Walkthrough</EditorialKicker>
               <h1 className={`${styles.guideTitle} mt-6`}>{guide.title}</h1>
               <p className="mt-7 max-w-2xl text-lg leading-8 text-fg-muted sm:text-xl">
                 {guide.summary}
               </p>
-              <div className="mt-8 flex flex-wrap gap-2" aria-label="Native sources covered">
+              <div className="mt-8 flex flex-wrap gap-2" aria-label="Sources in this walkthrough">
                 {guide.nativeConnectors.map((connectorName) => {
                   const connector = findConnectorByName(connectorName);
                   return connector ? (
@@ -60,7 +60,7 @@ export function EditorialGuidePage({ guide }: { guide: EditorialGuide }) {
                       href={`/integrations/${connector.slug}`}
                       className="inline-flex min-h-10 items-center border border-border bg-surface px-3 font-mono text-[0.65rem] tracking-[0.1em] text-fg-muted uppercase outline-none hover:border-border-strong hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                     >
-                      Native / {connectorName}
+                      {connectorName}
                     </Link>
                   ) : null;
                 })}

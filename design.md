@@ -321,10 +321,10 @@ shared due-date vocabulary above.
 
 The public landing page is an editorial, five-scene acquisition narrative:
 claim, evidence and chronology, cited answer, audience fit with trust, and a
-one-project CTA. Its signature example project, Acme rollout, distinguishes four
-signals cited in the demonstrated answer from two connected-but-unused signals,
-then shows the cited work settling onto a chronological rail and resolving into
-an answer with tangible source links. Acme rollout is the canonical fictional
+one-project CTA. Its signature example project, Acme rollout, shows six familiar
+work sources converging into one project history, then shows captured work
+settling onto a chronological rail and resolving into an answer with tangible
+source links. Acme rollout is the canonical fictional
 public demo corpus across landing, connector, and guide examples; every rendered
 example states that it is illustrative and not customer data. Provider pages may
 show distinct slices, but people, identifiers, records, and outcomes stay
@@ -339,13 +339,13 @@ the same subtle fixed grain in both themes, with theme-specific blending so
 cream reads like paper and near-black retains its tactile texture.
 
 The landing observatory identifies every source with its provider mark, includes
-Telegram alongside cited Slack, meeting, code, document, and monitoring signals,
+Telegram alongside Slack, meeting, code, document, and monitoring signals,
 and uses small inward-moving packets to explain ingestion. Those packets use only
 transform and opacity, run only while the diagram is visible, and disappear in
 the complete reduced-motion state. The evidence-entry summary below chronology
-compresses the directory into two honest paths—deliberate first-party capture and
-selected provider-record sync—while MCP and planned support remain a short
-boundary note rather than competing capability cards.
+compresses the directory into two honest paths—work people send to Timeline and
+selected history from connected tools. More technical distinctions remain in
+the underlying content model, not as customer-facing taxonomy.
 
 Public pages may use oversized Switzer display type, denser Commit Mono source
 metadata, a near-black evidence-instrument canvas, and more cinematic spacing
@@ -361,6 +361,11 @@ unlinked and unindexed until real. The landing claim owns the largest display
 scale. Integration directory and connector-detail titles use a subordinate,
 capped display scale so long provider headlines preserve the first viewport's
 explanation and evidence.
+Review dates, implementation labels, indexing state, and capability-tier names
+belong in metadata and the typed content manifest, not visible marketing chrome.
+Public copy explains the same truth through customer actions and constraints:
+what enters the record, what is looked up only on request, what requires local
+setup, and what cannot be connected yet.
 The integration directory leads with implemented first-party capture surfaces:
 Telegram and Slack conversation capture, forward/CC/BCC email,
 participant-notification-gated-by-default Google Meet/Microsoft Teams/Zoom
@@ -476,12 +481,13 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-05 | Taste v2 landing evolution | Tightens the hero, varies section rhythm, and adds tactile states while preserving Quiet Archive tokens and IA. |
 | 2026-08-05 | Searchable public help directory | Removes repeated guide grids and makes task-level help discoverable from one calm index. |
 | 2026-08-12 | Editorial public acquisition system | Lets visitors watch evidence become chronology and a cited answer while the authenticated product remains Quiet Archive. |
-| 2026-08-13 | Acme evidence narrative | Clarifies cited versus merely connected signals, pairs connectors with chronology, and replays each evidence diagram while it is in view. |
+| 2026-08-13 | Acme evidence narrative | Pairs recognizable work sources with chronology and replays each evidence diagram while it is in view. |
 | 2026-08-13 | Connected public navigation | Gives every acquisition, integration, guide, help, and legal page a consistent route through the public site. |
-| 2026-08-13 | Finalized public content system | Replaces concept notes and disconnected mock stories with a plain-language how-it-works overview, substantive walkthroughs, registry-backed capability tiers, and one disclosed Acme demo corpus. |
+| 2026-08-13 | Finalized public content system | Replaces concept notes and disconnected mock stories with a plain-language how-it-works overview, substantive walkthroughs, capability-aware connection guidance, and one disclosed Acme demo corpus. |
 | 2026-08-13 | Unified public masthead and canvas | Makes the landing masthead and warm public palette identical across integrations, editorial, help, legal, and recovery routes without changing authenticated Quiet Archive. |
 | 2026-08-13 | Subordinate integration title scale | Keeps long directory and provider headlines editorial without letting them crowd the explanation and evidence out of the first viewport. |
 | 2026-08-13 | Plain-language how-it-works surface | Replaces the publication taxonomy and split-column guide template with one compact product explanation and readable walkthroughs. |
 | 2026-08-14 | Clear how-it-works IA and hierarchy | Makes `/how-it-works` canonical, redirects `/record`, aligns the overview and walkthroughs with the integration acquisition grid, and keeps the three-step explanation in the first viewport. |
 | 2026-08-14 | Legible integration acquisition paths | Adds provider-marked ingestion flow to the landing observatory, condenses the evidence-entry summary into capture and provider-sync paths, and widens the integration directory's card rail. |
 | 2026-08-14 | Public capability truth | Separates hosted MCP, local-desktop MCP, and planned support while keeping phone navigation actions reachable. |
+| 2026-08-14 | Customer-facing public language | Keeps review cadence, implementation state, indexing terms, and capability taxonomy in metadata while public pages explain concrete actions and availability. |

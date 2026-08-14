@@ -276,12 +276,6 @@
   transform-origin: center;
 }
 
-.orbitLines path:nth-child(n + 5) {
-  stroke: var(--home-line-strong);
-  stroke-dasharray: 3 12;
-  opacity: 0.3;
-}
-
 .ingestPackets circle {
   fill: var(--home-signal);
   opacity: 0;
@@ -317,14 +311,12 @@
   --ingest-x: 230px;
   --ingest-y: 0px;
   --ingest-delay: 2080ms;
-  fill: var(--home-line-strong);
 }
 
 .ingestPackets circle:nth-child(6) {
   --ingest-x: -230px;
   --ingest-y: -10px;
   --ingest-delay: 2600ms;
-  fill: var(--home-line-strong);
 }
 
 .memoryCore {
@@ -411,15 +403,6 @@
   font-weight: 550;
 }
 
-.orbitSource small {
-  margin-top: 0.15rem;
-  color: var(--home-dim);
-  font-family: var(--font-mono);
-  font-size: var(--home-meta-size);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
 .orbitSource1 {
   top: 10%;
   left: 7%;
@@ -450,24 +433,14 @@
   right: 2%;
 }
 
-.orbitSourceAux {
-  min-width: 5.8rem;
-  padding: 0.5rem 0.6rem;
-  border-color: color-mix(in oklch, var(--home-signal) 38%, var(--home-line-strong));
-  background: var(--home-panel);
-}
-
 .observatoryCaption {
   position: absolute;
   right: 1rem;
   bottom: 0.8rem;
   left: 1rem;
   color: var(--home-dim);
-  font-family: var(--font-mono);
-  font-size: var(--home-meta-size);
-  letter-spacing: 0.1em;
+  font-size: 0.75rem;
   text-align: center;
-  text-transform: uppercase;
 }
 
 .sceneHeading {

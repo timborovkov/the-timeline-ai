@@ -54,7 +54,7 @@ describe('connector content manifest', () => {
   });
 
   it('uses one explicitly fictional Acme corpus across every provider example', () => {
-    expect(PUBLIC_DEMO_DISCLOSURE).toBe('Illustrative example — not customer data');
+    expect(PUBLIC_DEMO_DISCLOSURE).toBe('Fictional Acme example, not customer data.');
     expect(PUBLIC_DEMO_STORY.organization).toBe('Acme');
 
     for (const connector of CONNECTORS) {
@@ -306,7 +306,9 @@ describe('connector content manifest', () => {
     expect(drive.permissions.join(' ')).toContain('openid and email');
     expect(drive.permissions.join(' ')).toContain('stable subject identifier');
     expect(drive.permissions.join(' ')).toContain('primary email labels the connection');
-    expect(publicClaims).toContain('first successful reconciliation establishes a changes cursor');
+    expect(publicClaims).toContain(
+      'capture effectively begins at the cursor used by the first successful reconciliation',
+    );
     expect(publicClaims).toContain('Activation only queues the first sync');
     expect(publicClaims).toContain('does not persist a Drive cursor');
     expect(publicClaims).toContain(

@@ -29,8 +29,8 @@ describe('capture surface content', () => {
     expect(content).toContain('Forward, CC, or BCC');
     expect(content).toContain('Google Meet, Microsoft Teams, and Zoom');
     expect(content).toContain('not a copy of the raw meeting audio');
-    expect(content).toContain('evidence-only sources');
-    expect(content).toContain('direct file or binary upload uses a separate capture path');
+    expect(content).toContain('cannot update or control records in the sending tool');
+    expect(content).toContain('Direct file or binary upload uses a separate route');
     expect(content).toContain('Accepted messages from unknown senders');
     expect(content).toContain('sender whitelist is enabled');
     expect(content).toContain('participants will be informed');

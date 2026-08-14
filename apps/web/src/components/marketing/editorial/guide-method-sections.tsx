@@ -67,7 +67,7 @@ export function GuideMethodSections({ guide }: { guide: EditorialGuide }) {
         <div className={`${styles.promptBlock} mt-8 rounded-md p-6 sm:p-9`}>
           <div className="relative z-10">
             <p className="font-mono text-[0.65rem] tracking-[0.14em] text-signal uppercase">
-              Prompt pattern / Adapt the brackets
+              Try this question
             </p>
             <blockquote className="mt-8 max-w-4xl text-balance text-xl leading-9 font-medium tracking-[-0.02em] sm:text-2xl sm:leading-10">
               “{guide.prompt}”
@@ -83,9 +83,9 @@ export function GuideMethodSections({ guide }: { guide: EditorialGuide }) {
       <section className="border-y border-border bg-surface/45">
         <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-20">
           <EditorialSectionHeading
-            index="Source boundaries"
+            index="Source roles"
             title="What each source contributes"
-            intro="These guides describe native ingestion. They do not relabel MCP access or planned support as native capability."
+            intro="Each source contributes a different part of the answer. Timeline keeps those roles distinct instead of flattening everything into one activity feed."
           />
           <div
             className={`mt-12 grid gap-px overflow-hidden rounded-md border border-border bg-border ${guide.boundaries.length === 2 ? 'lg:grid-cols-2' : 'lg:grid-cols-3'}`}
@@ -94,7 +94,7 @@ export function GuideMethodSections({ guide }: { guide: EditorialGuide }) {
               <section key={boundary.provider} className="bg-bg p-6 sm:p-8">
                 <div className="flex items-center justify-between gap-4">
                   <p className="font-mono text-[0.65rem] tracking-[0.12em] text-signal uppercase">
-                    Native / {boundary.provider}
+                    {boundary.provider}
                   </p>
                   <ShieldCheck aria-hidden="true" className="size-4 text-fg-dim" />
                 </div>
@@ -102,7 +102,7 @@ export function GuideMethodSections({ guide }: { guide: EditorialGuide }) {
                 <p className="mt-4 text-sm leading-7 text-fg-muted">{boundary.includes}</p>
                 <div className="mt-6 border-t border-border pt-5">
                   <p className="font-mono text-[0.62rem] tracking-[0.12em] text-fg-dim uppercase">
-                    Boundary
+                    What to know
                   </p>
                   <p className="mt-2 text-sm leading-7">{boundary.boundary}</p>
                 </div>

@@ -1,4 +1,4 @@
-export const PUBLIC_DEMO_DISCLOSURE = 'Illustrative example — not customer data';
+export const PUBLIC_DEMO_DISCLOSURE = 'Fictional Acme example, not customer data.';
 
 /**
  * One coherent fictional project for every public acquisition surface.

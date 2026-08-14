@@ -10,7 +10,6 @@ import {
   CONNECTORS,
   getConnectorCapabilityTiers,
 } from '@/components/marketing/integrations/connector-content';
-import { INTEGRATION_DIRECTORY_DOCUMENT } from '@/components/marketing/integrations/connector-public-documents';
 import { DirectoryStructuredData } from '@/components/marketing/integrations/connector-seo';
 import { RecordsToAnswer } from '@/components/marketing/integrations/records-to-answer';
 import { MarketingSectionIndex } from '@/components/marketing/section-index';
@@ -36,21 +35,15 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
       <main id="main" tabIndex={-1}>
         <section className="border-b border-border">
           <div className="mx-auto max-w-[82rem] px-4 py-16 sm:px-6 sm:py-24 lg:py-28">
-            <p className="text-sm font-medium text-fg-muted">Integrations / capability directory</p>
-            <p className="mt-3 text-sm text-fg-dim">
-              Last reviewed{' '}
-              <time dateTime={INTEGRATION_DIRECTORY_DOCUMENT.dates.reviewed}>
-                {INTEGRATION_DIRECTORY_DOCUMENT.dates.reviewed}
-              </time>
-            </p>
-            <div className="mt-8 grid items-end gap-10 lg:grid-cols-[1.25fr_0.75fr]">
+            <p className="text-sm font-medium text-fg-muted">Integrations</p>
+            <div className="mt-6 grid items-end gap-10 lg:grid-cols-[1.25fr_0.75fr]">
               <h1 className="max-w-[13ch] break-words text-balance text-[3rem] font-semibold leading-[0.95] tracking-[-0.05em] text-fg sm:text-[clamp(3.5rem,5vw,5.5rem)]">
                 Connect the places where the work already happens.
               </h1>
               <div>
                 <p className="max-w-[44ch] text-base leading-relaxed text-fg-muted sm:text-lg">
                   Capture conversations, forwarded email, meeting transcripts, webhook payloads, and
-                  selected provider records. Timeline keeps each source contract visible while it
+                  selected records from connected tools. Timeline keeps the origin clear while it
                   turns the work into chronology and cited answers.
                 </p>
                 <Button asChild size="lg" className="mt-7">
@@ -69,7 +62,7 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
           aria-labelledby="capture-surfaces"
         >
           <div className="grid gap-8 lg:grid-cols-[13rem_minmax(0,1fr)] xl:grid-cols-[15rem_minmax(0,1fr)]">
-            <MarketingSectionIndex label="First-party capture" />
+            <MarketingSectionIndex label="Send work in" />
             <div>
               <div className="flex flex-wrap items-end justify-between gap-4">
                 <div>
@@ -80,15 +73,10 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
                     Start where the conversation already happens.
                   </h2>
                   <p className="mt-4 max-w-[64ch] text-base leading-relaxed text-fg-muted">
-                    These surfaces accept work people deliberately send to Timeline. They are not
-                    passive provider-history syncs, and each one preserves a different consent,
-                    routing, and evidence boundary.
+                    Send messages, files, forwarded email, meeting transcripts, or webhook payloads
+                    to Timeline. Each route makes it clear what is saved and who can see it.
                   </p>
                 </div>
-                <span className="inline-flex items-center gap-2 text-sm font-medium text-fg-muted">
-                  <span className="size-2 rounded-full bg-signal" aria-hidden="true" />
-                  Implemented · setup required
-                </span>
               </div>
 
               <div className="mt-10 grid gap-px border border-border bg-border md:grid-cols-2">
@@ -112,23 +100,19 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
         <section className="border-t border-border" aria-labelledby="native">
           <div className="mx-auto max-w-[82rem] px-4 py-16 sm:px-6 sm:py-20">
             <div className="grid gap-8 lg:grid-cols-[13rem_minmax(0,1fr)] xl:grid-cols-[15rem_minmax(0,1fr)]">
-              <MarketingSectionIndex index="02" label="Provider record sync" />
+              <MarketingSectionIndex index="02" label="Connect your tools" />
               <div>
                 <div className="flex flex-wrap items-end justify-between gap-4">
                   <div>
                     <h2 id="native" className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                      Sync structured provider records.
+                      Bring selected tool history into Timeline.
                     </h2>
                     <p className="mt-4 max-w-[62ch] text-base leading-relaxed text-fg-muted">
-                      Six native connectors create durable, citable events from selected provider
-                      records visible to connected credentials. Each provider page documents the
-                      exact records, permissions, reconciliation, and webhook boundaries.
+                      Choose the repositories, teams, drives, boards, channels, and projects that
+                      belong in the record. Each integration page explains exactly what Timeline
+                      keeps, what stays in the original tool, and which permissions it needs.
                     </p>
                   </div>
-                  <span className="inline-flex items-center gap-2 text-sm font-medium text-fg-muted">
-                    <span className="size-2 rounded-full bg-signal" aria-hidden="true" />
-                    Six native connectors implemented
-                  </span>
                 </div>
                 <div className="mt-10 grid gap-px border border-border bg-border md:grid-cols-2">
                   {CONNECTORS.map((connector, index) => (
@@ -198,47 +182,41 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
           aria-labelledby="tiers"
         >
           <div className="grid gap-8 lg:grid-cols-[13rem_minmax(0,1fr)] xl:grid-cols-[15rem_minmax(0,1fr)]">
-            <MarketingSectionIndex index="04" label="Capability tiers" />
+            <MarketingSectionIndex index="04" label="More connections" />
             <div>
               <h2 id="tiers" className="text-3xl font-semibold tracking-tight sm:text-4xl">
                 Know what each connection can do.
               </h2>
               <p className="mt-4 max-w-[64ch] text-base leading-relaxed text-fg-muted">
-                First-party capture accepts deliberately routed conversations and payloads. Native
-                provider sync stores selected records. Hosted MCP provides live tool access without
-                passive ingestion. Local desktop MCP requires Timeline on the same machine, and
-                planned native support cannot be connected yet.
+                Some connections add selected records to your Timeline. Others look up approved
+                tools only when you ask a question. Local connections require Timeline on the same
+                computer, and integrations listed as coming later cannot be connected yet.
               </p>
               <div className="mt-10 border-t border-border">
                 <CapabilityRow
                   icon={Check}
-                  title="First-party capture"
-                  status="Implemented"
+                  title="Send work to Timeline"
                   body="Telegram, Slack conversations, email forwarding, meeting transcripts, ingest webhooks"
                   live
                 />
                 <CapabilityRow
                   icon={Check}
-                  title="Provider record sync"
-                  status="Implemented"
+                  title="Keep selected tool history"
                   body={capabilityTiers.nativeProviders.join(', ')}
                 />
                 <CapabilityRow
                   icon={Wrench}
-                  title="MCP access"
-                  status="Live access"
+                  title="Look up live tools"
                   body={capabilityTiers.mcpAccess.join(', ')}
                 />
                 <CapabilityRow
                   icon={Wrench}
-                  title="Local desktop MCP"
-                  status="Local setup only"
+                  title="Use a local desktop connection"
                   body={`${capabilityTiers.localDesktopAccess.join(', ')} — available only when Timeline runs on the same machine; not connectable from hosted Timeline.`}
                 />
                 <CapabilityRow
                   icon={CircleDotDashed}
-                  title="Planned native support"
-                  status="Not available yet"
+                  title="Coming later"
                   body={capabilityTiers.plannedProviders.join(', ')}
                 />
               </div>
@@ -261,9 +239,8 @@ function FeaturedCaptureSurface({
 
   return (
     <article className="flex min-h-96 flex-col bg-bg p-6 sm:p-8">
-      <div className="flex items-start justify-between gap-4">
+      <div>
         <CaptureSurfaceIcon surface={surface} />
-        <span className="text-right text-xs font-medium text-fg-dim">Implemented</span>
       </div>
       <p className="mt-8 text-sm font-medium text-fg-muted">{surface.category}</p>
       <h3 className="mt-2 text-3xl font-semibold tracking-tight text-fg">{surface.name}</h3>
@@ -274,7 +251,7 @@ function FeaturedCaptureSurface({
           <dd className="mt-1 text-fg-muted">{surface.captured}</dd>
         </div>
         <div>
-          <dt className="font-medium text-fg">Boundary</dt>
+          <dt className="font-medium text-fg">What to know</dt>
           <dd className="mt-1 text-fg-muted">{surface.boundary}</dd>
         </div>
       </dl>
@@ -304,9 +281,8 @@ function CaptureSurfaceRow({
   return (
     <article className="grid gap-6 bg-bg p-6 sm:p-8 lg:grid-cols-[1.1fr_1fr_1fr] lg:gap-10">
       <div>
-        <div className="flex items-start justify-between gap-4 lg:block">
+        <div>
           <CaptureSurfaceIcon surface={surface} />
-          <span className="text-right text-xs font-medium text-fg-dim lg:hidden">Implemented</span>
         </div>
         <p className="mt-5 text-sm font-medium text-fg-muted">{surface.category}</p>
         <h3 className="mt-2 text-2xl font-semibold tracking-tight text-fg">{surface.name}</h3>
@@ -327,10 +303,7 @@ function CaptureSurfaceRow({
         <p className="mt-2 text-sm leading-relaxed text-fg-muted">{surface.captured}</p>
       </div>
       <div className="border-t border-border pt-5 lg:border-t-0 lg:pt-0">
-        <div className="flex items-start justify-between gap-4">
-          <p className="font-medium text-fg">Boundary</p>
-          <span className="hidden text-xs font-medium text-fg-dim lg:block">Implemented</span>
-        </div>
+        <p className="font-medium text-fg">What to know</p>
         <p className="mt-2 text-sm leading-relaxed text-fg-muted">{surface.boundary}</p>
       </div>
     </article>
@@ -363,22 +336,19 @@ function CaptureSurfaceIcon({ surface }: { surface: CaptureSurfaceContent }) {
 function CapabilityRow({
   icon: Icon,
   title,
-  status,
   body,
   live = false,
 }: {
   icon: typeof Check;
   title: string;
-  status: string;
   body: string;
   live?: boolean;
 }) {
   return (
-    <article className="grid gap-4 border-b border-border py-6 sm:grid-cols-[2rem_11rem_1fr_auto] sm:items-center">
+    <article className="grid gap-4 border-b border-border py-6 sm:grid-cols-[2rem_13rem_1fr] sm:items-center">
       <Icon aria-hidden="true" className={live ? 'size-4 text-signal' : 'size-4 text-fg-dim'} />
       <h3 className="font-semibold text-fg">{title}</h3>
       <p className="text-sm leading-relaxed text-fg-muted">{body}</p>
-      <span className="text-xs font-medium text-fg-dim">{status}</span>
     </article>
   );
 }

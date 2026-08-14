@@ -7,7 +7,6 @@ import {
   EDITORIAL_GUIDES,
   findEditorialGuideByRoute,
   GUIDE_ROUTES,
-  HOW_IT_WORKS_ROUTE,
 } from '@/components/marketing/editorial/content';
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
 import {
@@ -15,12 +14,9 @@ import {
   createHowItWorksMetadata,
 } from '@/components/marketing/editorial/metadata';
 import { ProvenanceDiagram } from '@/components/marketing/editorial/provenance-diagram';
-import { findEditorialPublicDocument } from '@/components/marketing/editorial/public-documents';
 import { MarketingSectionIndex } from '@/components/marketing/section-index';
 
 export const metadata: Metadata = createHowItWorksMetadata();
-
-const HOW_IT_WORKS_DOCUMENT = findEditorialPublicDocument(HOW_IT_WORKS_ROUTE);
 
 const HOW_IT_WORKS_STEPS = [
   {
@@ -45,14 +41,8 @@ export default function HowItWorksPage() {
       <EditorialStructuredData data={buildHowItWorksStructuredData()} />
       <section data-how-it-works-hero className="border-b border-border">
         <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24 lg:py-28">
-          <p className="text-sm font-medium text-fg-muted">How it works / product overview</p>
-          <p className="mt-3 text-sm text-fg-dim">
-            Last reviewed{' '}
-            <time dateTime={HOW_IT_WORKS_DOCUMENT.dates.reviewed}>
-              {HOW_IT_WORKS_DOCUMENT.dates.reviewed}
-            </time>
-          </p>
-          <div className="mt-8 grid items-end gap-10 lg:grid-cols-[1.25fr_0.75fr]">
+          <p className="text-sm font-medium text-fg-muted">How Timeline works</p>
+          <div className="mt-6 grid items-end gap-10 lg:grid-cols-[1.25fr_0.75fr]">
             <h1 className="max-w-[13ch] break-words text-balance text-[3rem] font-semibold leading-[0.95] tracking-[-0.05em] text-fg sm:text-[clamp(3.5rem,5vw,5.5rem)]">
               From scattered work to a cited answer.
             </h1>

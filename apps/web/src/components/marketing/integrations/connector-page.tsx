@@ -59,7 +59,7 @@ function ConnectorHero({
           href="/integrations"
           className="mb-10 inline-flex min-h-10 items-center rounded-sm text-sm font-medium text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
         >
-          06 native integrations / {connector.name}
+          All integrations
         </Link>
         <div className="grid items-end gap-10 lg:grid-cols-[1.3fr_0.7fr]">
           <div>
@@ -76,7 +76,7 @@ function ConnectorHero({
                 />
               </div>
               <div>
-                <p className="text-sm font-medium text-fg-muted">{connector.eyebrow}</p>
+                <p className="text-sm font-medium text-fg-muted">Integration</p>
                 <p className="mt-1 text-sm font-semibold text-fg">{connector.name}</p>
               </div>
             </div>
@@ -113,19 +113,12 @@ function TruthBoundary({ connector }: { connector: ConnectorContent }) {
   return (
     <section className="border-b border-border py-16 sm:py-20" aria-labelledby="truth-boundary">
       <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
-        <SectionIndex index="01" label="Capability truth" />
+        <SectionIndex index="01" label="What gets captured" />
         <div>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border pb-6">
+          <div className="border-b border-border pb-6">
             <h2 id="truth-boundary" className="text-3xl font-semibold tracking-tight sm:text-4xl">
-              Native, scoped, inspectable.
+              What Timeline keeps—and what stays in {connector.name}.
             </h2>
-            <span className="inline-flex items-center gap-2 text-sm font-semibold text-fg">
-              <span className="size-2 rounded-full bg-signal" aria-hidden="true" />
-              {connector.capability}
-            </span>
-            <span className="text-sm text-fg-dim">
-              Last reviewed <time dateTime={connector.lastReviewed}>{connector.lastReviewed}</time>
-            </span>
           </div>
           <div className="grid gap-px border border-border bg-border sm:grid-cols-2">
             <article className="bg-bg p-6 sm:p-8">
@@ -178,12 +171,10 @@ function WorkedScenario({ connector }: { connector: ConnectorContent }) {
   return (
     <section className="border-b border-border py-16 sm:py-20" aria-labelledby="scenario">
       <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
-        <SectionLabel label="Worked scenario" />
+        <SectionLabel label="Example" />
         <div className="grid gap-8 lg:grid-cols-[0.82fr_1.18fr]">
           <div>
-            <p className="mb-4 font-mono text-[0.65rem] tracking-[0.12em] text-fg-dim uppercase">
-              {PUBLIC_DEMO_DISCLOSURE}
-            </p>
+            <p className="mb-4 text-xs text-fg-dim">{PUBLIC_DEMO_DISCLOSURE}</p>
             <h2 id="scenario" className="text-3xl font-semibold tracking-tight sm:text-4xl">
               {connector.scenario.title}
             </h2>
@@ -217,7 +208,7 @@ function CapturedRecords({ connector }: { connector: ConnectorContent }) {
   return (
     <section className="border-b border-border py-16 sm:py-20" aria-labelledby="records">
       <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
-        <SectionLabel label="Captured records" />
+        <SectionLabel label="What Timeline saves" />
         <div>
           <h2 id="records" className="text-3xl font-semibold tracking-tight sm:text-4xl">
             What enters the Timeline
@@ -242,7 +233,7 @@ function Recipes({ connector }: { connector: ConnectorContent }) {
   return (
     <section className="border-b border-border py-16 sm:py-20" aria-labelledby="recipes">
       <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
-        <SectionLabel label="Cross-tool recipes" />
+        <SectionLabel label="Use it with" />
         <div>
           <h2 id="recipes" className="text-3xl font-semibold tracking-tight sm:text-4xl">
             Better when the silos meet
@@ -318,7 +309,7 @@ function Limitations({ connector }: { connector: ConnectorContent }) {
   return (
     <section className="border-b border-border py-16 sm:py-20" aria-labelledby="limitations">
       <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
-        <SectionLabel label="Boundaries" />
+        <SectionLabel label="Limits" />
         <div>
           <h2 id="limitations" className="text-3xl font-semibold tracking-tight sm:text-4xl">
             Honest limitations
@@ -381,7 +372,7 @@ function Related({ connector }: { connector: ConnectorContent }) {
   return (
     <section className="border-b border-border py-16 sm:py-20" aria-labelledby="related">
       <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
-        <SectionLabel label="Related integrations" />
+        <SectionLabel label="Related" />
         <div>
           <h2 id="related" className="text-2xl font-semibold tracking-tight">
             Continue across the work

@@ -5,6 +5,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CONNECTOR_SLUGS } from '@/components/marketing/integrations/connector-content';
 
+function visibleText(html: string): string {
+  return html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gu, '').replace(/<[^>]+>/gu, '');
+}
+
 const fakes = vi.hoisted(() => ({ auth: vi.fn() }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
@@ -20,35 +24,32 @@ describe('public integration routes', () => {
 
   it('renders the directory with one heading and an accurate capability tier boundary', async () => {
     const html = renderToStaticMarkup(await IntegrationsPage());
-    const text = html.replace(/<[^>]+>/gu, '');
+    const text = visibleText(html);
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(text).toContain('Connect the places where the work already happens');
     expect(html).toContain('Start where the conversation already happens');
-    expect(html).toContain('Sync structured provider records');
-    expect(html).toContain('First-party capture');
-    expect(html).toContain('Provider record sync');
-    expect(html).toContain('MCP access');
-    expect(html).toContain('Planned native support');
-    expect(html).toContain('Six native connectors implemented');
-    expect(html).toContain('reconciliation, and webhook boundaries');
-    expect(html).toContain('Live access');
-    expect(html).toContain('Local setup only');
-    expect(text).toContain('Last reviewed 2026-08-14');
-    expect(html).toContain('<time dateTime="2026-08-14">2026-08-14</time>');
-    expect(html).toContain('Not available yet');
+    expect(text).toContain('Bring selected tool history into Timeline');
+    expect(text).toContain('Send work in');
+    expect(text).toContain('Connect your tools');
+    expect(text).toContain('Look up live tools');
+    expect(text).toContain('Coming later');
+    expect(text).not.toMatch(
+      /Last reviewed|capability directory|Capability tiers|Implemented|First-party capture|Provider record sync|MCP access|Planned native support/u,
+    );
+    expect(html).not.toContain('<time');
     expect(html).not.toContain('Indexable');
     expect(html).not.toContain('Noindex');
     expect(html).not.toContain('Shared structure keeps the experience coherent');
     expect(html).toContain('Slack example shows that journey from conversation to chronology');
-    expect(html.match(/Illustrative example — not customer data/g)).toHaveLength(1);
+    expect(html.match(/Fictional Acme example, not customer data\./g)).toHaveLength(1);
     expect(html).toContain('href="/integrations/slack"');
     expect(text).toContain('Telegram');
     expect(text).toContain('Slack conversations');
     expect(text).toContain('Forward, CC, or BCC');
     expect(text).toContain('Google Meet · Microsoft Teams · Zoom');
     expect(text).toContain('Ingest webhooks');
-    expect(text).toContain('evidence-only sources');
+    expect(text).toContain('cannot update or control records in the sending tool');
     expect(text).toContain('separate from the Slack history connector below');
     expect(text).toContain('Start with Telegram');
     expect(text).toContain('Start with Meeting transcripts');
@@ -60,9 +61,9 @@ describe('public integration routes', () => {
     expect(html).toContain('text-[3rem]');
     expect(html).toContain('sm:text-[clamp(3.5rem,5vw,5.5rem)]');
     expect(html).not.toContain('7.5vw');
-    expect(html).toContain('First-party capture');
-    expect(html).toContain('Capability tiers');
-    expect(text).toContain('02/Provider record sync');
+    expect(text).toContain('Send work in');
+    expect(text).toContain('02/Connect your tools');
+    expect(text).toContain('04/More connections');
     expect(text).toContain('03/Proof');
     expect(html).not.toMatch(/font-mono[^>]*>Integrations \/ capability directory/u);
     expect(html).not.toContain('Available now');
@@ -96,7 +97,7 @@ describe('public integration routes', () => {
     );
 
     expect(html).toContain('dark:bg-white');
-    expect(html.match(/Illustrative example — not customer data/g)).toHaveLength(2);
+    expect(html.match(/Fictional Acme example, not customer data\./g)).toHaveLength(2);
     expect(html).toContain('scroll-mt-12');
     expect(html).toContain('text-[3rem]');
     expect(html).toContain('sm:text-[clamp(3.5rem,5vw,5.5rem)]');
@@ -111,7 +112,7 @@ describe('public integration routes', () => {
     );
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(html.match(/Illustrative example — not customer data/g)).toHaveLength(2);
+    expect(html.match(/Fictional Acme example, not customer data\./g)).toHaveLength(2);
     expect(html).toContain('Acme');
     expect(html).not.toMatch(/Northline|Project Atlas|API-91|WEB-913/u);
   });
@@ -120,11 +121,14 @@ describe('public integration routes', () => {
     const html = renderToStaticMarkup(
       await connectorRoute.default({ params: Promise.resolve({ slug: 'github' }) }),
     );
-    const text = html.replace(/<[^>]+>/gu, '');
+    const text = visibleText(html);
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(html).toContain('Native integration');
-    expect(html).toContain('Last reviewed');
+    expect(text).toContain('All integrations');
+    expect(text).toContain('What gets captured');
+    expect(text).toContain('What Timeline keeps—and what stays in GitHub');
+    expect(text).not.toMatch(/Last reviewed|Native integration|Capability truth/u);
+    expect(html).not.toContain('<time');
     expect(html).not.toMatch(/font-mono[^>]*>06 native integrations/u);
     expect(html).not.toMatch(/font-mono[^>]*>Last reviewed/u);
     expect(html).toContain('Timeline captures');

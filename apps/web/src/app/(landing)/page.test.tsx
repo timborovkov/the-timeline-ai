@@ -50,11 +50,10 @@ describe('LandingPage', () => {
     }
 
     expect(html).toContain('Acme rollout / Last 7 days');
-    expect(html).toContain('Four cited Acme rollout work signals');
-    expect(html).toContain(
-      'Illustrative example — not customer data / Acme rollout / 4 cited + 2 connected',
-    );
-    expect(html).toContain('Connected, not cited');
+    expect(html).toContain('Six Acme project sources flow into one chronological project history');
+    expect(html).toContain('Fictional Acme example, not customer data.');
+    expect(html).toContain('Project history');
+    expect(html).not.toMatch(/Connected, not cited|4 cited \+ 2 connected|Cited project memory/u);
     expect(html).toContain('Telegram');
     expect(html).toContain('Linear');
     expect(html).toContain('Sentry');
@@ -108,14 +107,16 @@ describe('LandingPage', () => {
 
     expect(html).toContain('Where evidence enters');
     expect(html).toContain('Two ways in. One cited record.');
-    expect(html).toContain('Deliberate capture');
+    expect(html).toContain('Messages and files');
     expect(html).toContain('Send the work to Timeline.');
-    expect(html).toContain('Provider record sync');
+    expect(html).toContain('Connected tools');
     expect(html).toContain('Sync selected records.');
-    expect(html).toContain('Available here');
-    expect(html).toContain('Setup required');
-    expect(html).toContain('MCP is live approved access, not passive ingestion.');
-    expect(html).toContain('Planned connections remain unavailable');
+    expect(html).toContain('Ready to connect');
+    expect(html).toContain('Admin setup needed');
+    expect(html).toContain('look up approved tools when you ask a question');
+    expect(html).not.toMatch(
+      /Capture contract|Deliberate capture|Provider record sync|Available here|MCP is live approved access/u,
+    );
     for (const surface of [
       'Telegram',
       'Slack conversations',
