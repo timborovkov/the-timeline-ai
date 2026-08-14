@@ -59,7 +59,7 @@ describe('LandingPage', () => {
     expect(html).toContain('Sentry');
     expect(html).toContain('aria-label="Public navigation"');
     expect(html).toContain('href="/integrations"');
-    expect(html).toContain('href="/record"');
+    expect(html).toContain('href="/how-it-works"');
     expect(html).toContain('aria-label="Public navigation menu"');
     expect(html).toContain('Launch is waiting on SSO. Everything else moved.');
     expect(html).toContain('Evidence behind this answer');

@@ -371,7 +371,7 @@ palette in dark mode, while each page group keeps its own content structure.
 Auth-neutral loading and error boundaries keep the same masthead but omit
 account actions rather than guessing the visitor's session state.
 The masthead exposes the same four primary destinations in the same order:
-Product (`/`), Integrations (`/integrations`), How it works (`/record`), and
+Product (`/`), Integrations (`/integrations`), How it works (`/how-it-works`), and
 Help (`/help`). Desktop headers show them directly, compact widths use a native
 menu disclosure, and footers repeat them for recovery at the end of a page. The
 current destination uses `aria-current="page"`. At phone widths, sign-in and
@@ -389,13 +389,17 @@ same destinations in category lists and card grids. Guide and support pages
 provide a visible route back to all guides; article bodies may optionally
 constrain to a reading measure without forcing the shell narrow.
 
-`/record` is the plain-language explanation of how Timeline works. It shows the
+`/how-it-works` is the plain-language explanation of how Timeline works. It uses
+the same 72rem acquisition grid, hero scale, indexed section rail, footer, and
+section rhythm as the integration directory. It shows the
 source-to-chronology-to-answer loop once, then links to a small set of
 substantive cross-tool walkthroughs. Its first viewport explains the three-step
-model at a glance; the complete evidence diagram follows on a separate full-width
-stage and is never squeezed beside the hero copy. Walkthroughs remain indexable
+model at a glance; the complete evidence diagram follows in its own indexed
+section and is never squeezed beside the hero copy. Walkthroughs remain indexable
 for specific questions, but public navigation and page copy do not ask visitors
 to learn an editorial publication, edition, playbook, or dossier taxonomy.
+The legacy `/record` URL permanently redirects to `/how-it-works`; it is not a
+second indexable destination.
 
 ### Administrator dashboards
 
@@ -466,5 +470,5 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-13 | Unified public masthead and canvas | Makes the landing masthead and warm public palette identical across integrations, editorial, help, legal, and recovery routes without changing authenticated Quiet Archive. |
 | 2026-08-13 | Subordinate integration title scale | Keeps long directory and provider headlines editorial without letting them crowd the explanation and evidence out of the first viewport. |
 | 2026-08-13 | Plain-language how-it-works surface | Replaces the publication taxonomy and split-column guide template with one compact product explanation and readable walkthroughs. |
-| 2026-08-14 | Legible how-it-works hierarchy | Keeps the three-step explanation in the first viewport and gives the evidence diagram a separate full-width stage. |
+| 2026-08-14 | Clear how-it-works IA and hierarchy | Makes `/how-it-works` canonical, redirects `/record`, aligns the overview and walkthroughs with the integration acquisition grid, and keeps the three-step explanation in the first viewport. |
 | 2026-08-14 | Public capability truth | Separates hosted MCP, local-desktop MCP, and planned support while keeping phone navigation actions reachable. |

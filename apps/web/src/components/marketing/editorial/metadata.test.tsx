@@ -1,21 +1,21 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { EDITORIAL_GUIDES, RECORD_ROUTE } from '@/components/marketing/editorial/content';
+import { EDITORIAL_GUIDES, HOW_IT_WORKS_ROUTE } from '@/components/marketing/editorial/content';
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
 import {
   buildGuideStructuredData,
-  buildRecordStructuredData,
+  buildHowItWorksStructuredData,
   createGuideMetadata,
-  createRecordMetadata,
+  createHowItWorksMetadata,
 } from '@/components/marketing/editorial/metadata';
 
 describe('editorial metadata', () => {
   it('publishes canonical index metadata', () => {
-    const metadata = createRecordMetadata();
+    const metadata = createHowItWorksMetadata();
 
-    expect(metadata.alternates).toEqual({ canonical: RECORD_ROUTE });
-    expect(metadata.openGraph).toMatchObject({ type: 'website', url: RECORD_ROUTE });
+    expect(metadata.alternates).toEqual({ canonical: HOW_IT_WORKS_ROUTE });
+    expect(metadata.openGraph).toMatchObject({ type: 'website', url: HOW_IT_WORKS_ROUTE });
     expect(metadata.robots).toMatchObject({ index: true, follow: true });
   });
 
@@ -31,7 +31,7 @@ describe('editorial metadata', () => {
 
   it('builds CollectionPage and BreadcrumbList data for the publication', () => {
     const html = renderToStaticMarkup(
-      <EditorialStructuredData data={buildRecordStructuredData()} />,
+      <EditorialStructuredData data={buildHowItWorksStructuredData()} />,
     );
 
     expect(html).toContain('application/ld+json');

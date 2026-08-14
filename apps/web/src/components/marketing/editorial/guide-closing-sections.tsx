@@ -3,7 +3,10 @@ import Link from 'next/link';
 
 import type { EditorialGuide } from '@/components/marketing/editorial/content';
 
-import { findEditorialGuideByRoute, RECORD_ROUTE } from '@/components/marketing/editorial/content';
+import {
+  findEditorialGuideByRoute,
+  HOW_IT_WORKS_ROUTE,
+} from '@/components/marketing/editorial/content';
 import { EditorialKicker } from '@/components/marketing/editorial/editorial-kicker';
 import { EditorialSectionHeading } from '@/components/marketing/editorial/editorial-section-heading';
 
@@ -91,7 +94,7 @@ export function GuideClosingSections({ guide }: { guide: EditorialGuide }) {
             );
           })}
           <Link
-            href={RECORD_ROUTE}
+            href={HOW_IT_WORKS_ROUTE}
             className="group bg-bg p-6 outline-none hover:bg-surface focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset sm:p-8"
           >
             <p className="font-mono text-[0.62rem] tracking-[0.12em] text-signal uppercase">

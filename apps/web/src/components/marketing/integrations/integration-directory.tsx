@@ -13,6 +13,7 @@ import {
 import { INTEGRATION_DIRECTORY_DOCUMENT } from '@/components/marketing/integrations/connector-public-documents';
 import { DirectoryStructuredData } from '@/components/marketing/integrations/connector-seo';
 import { RecordsToAnswer } from '@/components/marketing/integrations/records-to-answer';
+import { MarketingSectionIndex } from '@/components/marketing/section-index';
 import { PublicShell } from '@/components/public-shell';
 import { Button } from '@/components/ui/button';
 
@@ -67,7 +68,7 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
           aria-labelledby="capture-surfaces"
         >
           <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
-            <SectionLabel label="First-party capture" />
+            <MarketingSectionIndex label="First-party capture" />
             <div>
               <div className="flex flex-wrap items-end justify-between gap-4">
                 <div>
@@ -110,7 +111,7 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
         <section className="border-t border-border" aria-labelledby="native">
           <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
             <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
-              <SectionIndex index="02" label="Provider record sync" />
+              <MarketingSectionIndex index="02" label="Provider record sync" />
               <div>
                 <div className="flex flex-wrap items-end justify-between gap-4">
                   <div>
@@ -173,7 +174,7 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
         <section className="border-y border-border bg-surface">
           <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
             <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
-              <SectionIndex index="03" label="Proof" />
+              <MarketingSectionIndex index="03" label="Proof" />
               <div>
                 <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
                   Every connector has a specific evidence story.
@@ -193,7 +194,7 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
 
         <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20" aria-labelledby="tiers">
           <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
-            <SectionIndex index="04" label="Capability tiers" />
+            <MarketingSectionIndex index="04" label="Capability tiers" />
             <div>
               <h2 id="tiers" className="text-3xl font-semibold tracking-tight sm:text-4xl">
                 Know what each connection can do.
@@ -375,19 +376,5 @@ function CapabilityRow({
       <p className="text-sm leading-relaxed text-fg-muted">{body}</p>
       <span className="text-xs font-medium text-fg-dim">{status}</span>
     </article>
-  );
-}
-
-function SectionLabel({ label }: { label: string }) {
-  return <p className="text-sm font-medium text-fg-muted">{label}</p>;
-}
-
-function SectionIndex({ index, label }: { index: string; label: string }) {
-  return (
-    <p className="flex items-baseline gap-1.5 text-sm font-medium text-fg-muted">
-      <span className="font-mono text-[11px] text-fg-dim">{index}</span>
-      <span aria-hidden="true">/</span>
-      <span>{label}</span>
-    </p>
   );
 }

@@ -54,7 +54,7 @@ composition edit is the integration seam for sitemap and LLM discovery. Route
 modules can resolve their document by canonical path and pass it to
 `metadataForPublicDocument` and `buildPublicStructuredData`; serialize JSON-LD
 with `stringifyJsonLdForHtml` before embedding it in a script element.
-`integrations` and `the-record` contributions receive their own stable sections
+`integrations` and `how-it-works` contributions receive their own stable sections
 in both LLM files. Empty contribution sections are omitted, so adding the first
 document is what makes its section appear.
 
@@ -70,7 +70,7 @@ without removing its entry.
   Canonical URL generation percent-encodes raw XML and Markdown destination
   delimiters before a route enters sitemap or LLM output.
 - `kind` identifies the editorial surface: landing, product, solution,
-  connector, guide index, guide, Record entry, trust, support, legal, or
+  connector, guide index, guide, trust, support, legal, or
   machine-readable document.
 - `title` and `description` are the canonical discovery copy. Keep both
   single-line and human-authored.

@@ -11,7 +11,7 @@ import { cn } from '@/lib/utils';
 const PUBLIC_NAVIGATION_ITEMS = [
   { section: 'product', href: '/', label: 'Product' },
   { section: 'integrations', href: '/integrations', label: 'Integrations' },
-  { section: 'guides', href: '/record', label: 'How it works' },
+  { section: 'how-it-works', href: '/how-it-works', label: 'How it works' },
   { section: 'help', href: '/help', label: 'Help' },
 ] as const;
 

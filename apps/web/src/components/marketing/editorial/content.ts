@@ -2,7 +2,7 @@ import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
 
 export const EDITORIAL_PUBLICATION_NAME = 'How Timeline works';
 
-export const RECORD_ROUTE = '/record' as const;
+export const HOW_IT_WORKS_ROUTE = '/how-it-works' as const;
 
 export const NATIVE_EDITORIAL_PROVIDERS = [
   'GitHub',
@@ -487,7 +487,7 @@ export function findEditorialGuideByRoute(route: GuideRoute): EditorialGuide {
 
 export const EDITORIAL_MACHINE_SUMMARIES = [
   {
-    route: RECORD_ROUTE,
+    route: HOW_IT_WORKS_ROUTE,
     title: EDITORIAL_PUBLICATION_NAME,
     kind: 'how-it-works',
     summary:

@@ -3,7 +3,7 @@ import Link from 'next/link';
 
 import type { EditorialGuide } from '@/components/marketing/editorial/content';
 
-import { RECORD_ROUTE } from '@/components/marketing/editorial/content';
+import { HOW_IT_WORKS_ROUTE } from '@/components/marketing/editorial/content';
 import { EditorialKicker } from '@/components/marketing/editorial/editorial-kicker';
 import styles from '@/components/marketing/editorial/editorial.module.css';
 import { GuideClosingSections } from '@/components/marketing/editorial/guide-closing-sections';
@@ -30,7 +30,7 @@ export function EditorialGuidePage({ guide }: { guide: EditorialGuide }) {
               </li>
               <li>
                 <Link
-                  href={RECORD_ROUTE}
+                  href={HOW_IT_WORKS_ROUTE}
                   className="rounded-sm outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
                   How it works

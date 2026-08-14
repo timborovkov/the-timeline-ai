@@ -53,7 +53,7 @@ describe('public integration routes', () => {
     expect(text).toContain('Start with Telegram');
     expect(text).toContain('Start with Meeting transcripts');
     expect(html).toMatch(/aria-current="page"[^>]*href="\/integrations"/u);
-    expect(html).toContain('href="/record"');
+    expect(html).toContain('href="/how-it-works"');
     expect(html).not.toContain('href="/integrations/notion"');
     expect(html).toContain('compact');
     expect(html).toContain('dark:bg-white');

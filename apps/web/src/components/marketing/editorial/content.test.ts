@@ -7,15 +7,15 @@ import {
   EDITORIAL_PUBLICATION_NAME,
   findEditorialGuide,
   GUIDE_ROUTES,
+  HOW_IT_WORKS_ROUTE,
   NATIVE_EDITORIAL_PROVIDERS,
-  RECORD_ROUTE,
 } from '@/components/marketing/editorial/content';
 
 describe('editorial content model', () => {
   it('exports stable canonical routes and machine-readable summaries', () => {
     expect(EDITORIAL_PUBLICATION_NAME).toBe('How Timeline works');
     expect(EDITORIAL_CANONICAL_ROUTES).toEqual([
-      RECORD_ROUTE,
+      HOW_IT_WORKS_ROUTE,
       GUIDE_ROUTES.slackAndDrive,
       GUIDE_ROUTES.weeklyEngineeringUpdates,
       GUIDE_ROUTES.sentryReleaseIncidents,

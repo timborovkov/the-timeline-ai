@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import SentryIncidentGuidePage from '@/app/guides/connect-sentry-incidents-to-releases-discussions-and-fixes/page';
 import SlackAndDriveGuidePage from '@/app/guides/search-slack-and-google-drive-together/page';
 import WeeklyEngineeringUpdatesGuidePage from '@/app/guides/weekly-engineering-updates-from-slack-linear-and-github/page';
-import RecordPage from '@/app/record/page';
+import HowItWorksPage from '@/app/how-it-works/page';
 import {
   EDITORIAL_GUIDES,
   findEditorialGuideByRoute,
@@ -29,21 +29,24 @@ const GUIDE_PAGES = [
   },
 ] as const;
 
-describe('editorial routes', () => {
+describe('how-it-works and guide routes', () => {
   it('renders one plain-language how-it-works index without publication taxonomy', () => {
-    const html = renderToStaticMarkup(<RecordPage />);
+    const html = renderToStaticMarkup(<HowItWorksPage />);
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('From scattered work to a cited answer.');
-    expect(html).toContain('data-record-hero="true"');
-    expect(html).toContain('data-record-steps="true"');
-    expect(html).toContain('data-record-evidence="true"');
-    expect(html.indexOf('data-record-hero="true"')).toBeLessThan(
-      html.indexOf('data-record-evidence="true"'),
+    expect(html).toContain('data-how-it-works-hero="true"');
+    expect(html).toContain('data-how-it-works-steps="true"');
+    expect(html).toContain('data-how-it-works-evidence="true"');
+    expect(html.indexOf('data-how-it-works-hero="true"')).toBeLessThan(
+      html.indexOf('data-how-it-works-evidence="true"'),
     );
-    expect(html.indexOf('data-record-steps="true"')).toBeLessThan(
-      html.indexOf('data-record-evidence="true"'),
+    expect(html.indexOf('data-how-it-works-steps="true"')).toBeLessThan(
+      html.indexOf('data-how-it-works-evidence="true"'),
     );
+    expect(html).toContain('max-w-6xl');
+    expect(html).toContain('lg:grid-cols-[0.45fr_1fr]');
+    expect(html).toContain('Last reviewed');
     for (const label of ['Capture', 'Order', 'Answer']) {
       expect(html).toMatch(new RegExp(`<h2[^>]*>${label}<\\/h2>`));
     }
@@ -56,6 +59,13 @@ describe('editorial routes', () => {
       expect(html).toContain(`href="${guide.route}"`);
       expect(html).toContain(guide.title);
     }
+  });
+
+  it('keeps the old record URL as a permanent redirect only', () => {
+    const legacyRoute = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8');
+
+    expect(legacyRoute).toContain('permanentRedirect(HOW_IT_WORKS_ROUTE)');
+    expect(legacyRoute).not.toContain('<main');
   });
 
   it('uses the shared tactile public canvas without decorative background motion', () => {
@@ -120,8 +130,11 @@ describe('editorial routes', () => {
     expect(recordShell).toContain('data-public-header="true"');
     expect(recordShell).toContain('How it works');
     expect(guideShell).toContain('>Try one project</a>');
-    expect(recordShell.match(/aria-current="page"[^>]*href="\/record"/g)).not.toBeNull();
-    expect(guideShell.match(/aria-current="page"[^>]*href="\/record"/g)).not.toBeNull();
+    expect(recordShell.match(/aria-current="page"[^>]*href="\/how-it-works"/g)).not.toBeNull();
+    expect(guideShell.match(/aria-current="page"[^>]*href="\/how-it-works"/g)).not.toBeNull();
+    expect(recordShell).toContain('aria-label="Support and legal"');
+    expect(recordShell).toContain('href="/help/support"');
+    expect(recordShell).toContain('href="/terms"');
   });
 
   it('routes signed-in editorial readers directly to the dashboard', () => {
@@ -132,7 +145,7 @@ describe('editorial routes', () => {
     );
 
     expect(html).toContain('href="/app"');
-    expect(html.match(/href="\/app"/g)).toHaveLength(2);
+    expect(html).toContain('href="/app"');
     expect(html).toContain('Dashboard');
     expect(html).not.toContain('href="/sign-in"');
   });

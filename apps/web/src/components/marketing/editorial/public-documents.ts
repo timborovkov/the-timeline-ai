@@ -3,16 +3,16 @@ import type { PublicDocument } from '@/lib/public-site/types';
 import {
   EDITORIAL_GUIDES,
   EDITORIAL_PUBLICATION_NAME,
-  RECORD_ROUTE,
+  HOW_IT_WORKS_ROUTE,
   type GuideRoute,
 } from '@/components/marketing/editorial/content';
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
 const EDITORIAL_REVIEW_DATE = '2026-08-14' as const;
 
-const recordDocument = {
-  canonicalPath: RECORD_ROUTE,
-  kind: 'record',
+const howItWorksDocument = {
+  canonicalPath: HOW_IT_WORKS_ROUTE,
+  kind: 'guide-index',
   title: EDITORIAL_PUBLICATION_NAME,
   description:
     'See how Timeline turns selected records from connected tools into chronology and cited answers.',
@@ -26,12 +26,12 @@ const recordDocument = {
       type: 'breadcrumbs',
       items: [
         { name: 'Home', path: '/' },
-        { name: EDITORIAL_PUBLICATION_NAME, path: RECORD_ROUTE },
+        { name: EDITORIAL_PUBLICATION_NAME, path: HOW_IT_WORKS_ROUTE },
       ],
     },
   ],
   llms: {
-    section: 'the-record',
+    section: 'how-it-works',
     order: 0,
     label: EDITORIAL_PUBLICATION_NAME,
     summary:
@@ -66,14 +66,14 @@ const guideDocuments = EDITORIAL_GUIDES.map(
         type: 'breadcrumbs',
         items: [
           { name: 'Home', path: '/' },
-          { name: EDITORIAL_PUBLICATION_NAME, path: RECORD_ROUTE },
+          { name: EDITORIAL_PUBLICATION_NAME, path: HOW_IT_WORKS_ROUTE },
           { name: guide.shortTitle, path: guide.route },
         ],
       },
       { type: 'faq', entries: guide.faqs },
     ],
     llms: {
-      section: 'the-record',
+      section: 'how-it-works',
       order: (index + 1) * 10,
       summary: guide.machineSummary,
       sections: [
@@ -107,13 +107,13 @@ const guideDocuments = EDITORIAL_GUIDES.map(
   }),
 );
 
-export const EDITORIAL_PUBLIC_DOCUMENTS = definePublicDocuments('editorial-record', [
-  recordDocument,
+export const EDITORIAL_PUBLIC_DOCUMENTS = definePublicDocuments('how-it-works', [
+  howItWorksDocument,
   ...guideDocuments,
 ]);
 
 export function findEditorialPublicDocument(
-  route: typeof RECORD_ROUTE | GuideRoute,
+  route: typeof HOW_IT_WORKS_ROUTE | GuideRoute,
 ): PublicDocument {
   const document = EDITORIAL_PUBLIC_DOCUMENTS.documents.find(
     (candidate) => candidate.canonicalPath === route,
