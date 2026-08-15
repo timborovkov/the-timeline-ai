@@ -1,4 +1,5 @@
 /* eslint-disable no-console -- demo verification CLI output */
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -23,13 +24,15 @@ import {
   teams,
   users,
 } from '@timeline/db';
+import { llm, qdrant } from '@timeline/shared';
 import { verifyPassword } from '@timeline/shared/passwords';
-import { getDocumentsBucket, getS3Client, headObject } from '@timeline/shared/s3';
+import { getDocumentsBucket, getObjectBuffer, getS3Client } from '@timeline/shared/s3';
 import { and, eq, inArray } from 'drizzle-orm';
 
 import {
   assertDemoFixture,
-  assertDemoSeedEnvironment,
+  assertDemoVectorEnvironment,
+  DEMO_DOCUMENT_BYTE_SIZE,
   DEMO_DOCUMENT_OBJECT_KEY,
   DEMO_ENTITIES,
   DEMO_EVENTS,
@@ -79,6 +82,7 @@ async function readDemoFixtureSnapshot(): Promise<DemoFixtureSnapshot> {
     documentRows,
     documentObject,
     meetingRows,
+    vectorSnapshot,
   ] = await Promise.all([
     db
       .select({ id: teams.id, slug: teams.slug, name: teams.name })
@@ -229,6 +233,7 @@ async function readDemoFixtureSnapshot(): Promise<DemoFixtureSnapshot> {
         versionContentType: documentVersions.contentType,
         versionChecksumSha256: documentVersions.checksumSha256,
         versionProcessingStatus: documentVersions.processingStatus,
+        versionEmbeddingModelVersion: documentVersions.embeddingModelVersion,
         chunkId: documentChunks.id,
         chunkDocumentId: documentChunks.documentId,
         chunkVersionId: documentChunks.documentVersionId,
@@ -255,6 +260,7 @@ async function readDemoFixtureSnapshot(): Promise<DemoFixtureSnapshot> {
       .from(meetings)
       .leftJoin(meetingTranscriptChunks, eq(meetingTranscriptChunks.id, DEMO_IDS.meetingChunk))
       .where(eq(meetings.id, DEMO_IDS.meeting)),
+    readDemoVectorSnapshot(),
   ]);
 
   return {
@@ -292,6 +298,7 @@ async function readDemoFixtureSnapshot(): Promise<DemoFixtureSnapshot> {
           endedAt: meetingRows[0].endedAt?.toISOString() ?? null,
         }
       : null,
+    vectors: vectorSnapshot,
   };
 }
 
@@ -299,25 +306,99 @@ async function readDemoDocumentObject(): Promise<{
   backingObjectExists: boolean;
   backingObjectByteSize: number | null;
   backingObjectContentType: string | null;
+  backingObjectChecksumSha256: string | null;
 }> {
-  try {
-    const object = await headObject(getS3Client(), getDocumentsBucket(), DEMO_DOCUMENT_OBJECT_KEY);
-    return {
-      backingObjectExists: true,
-      backingObjectByteSize: object.contentLength ?? null,
-      backingObjectContentType: object.contentType ?? null,
-    };
-  } catch {
-    return {
-      backingObjectExists: false,
-      backingObjectByteSize: null,
-      backingObjectContentType: null,
-    };
-  }
+  const object = await getObjectBuffer(
+    getS3Client(),
+    getDocumentsBucket(),
+    DEMO_DOCUMENT_OBJECT_KEY,
+    DEMO_DOCUMENT_BYTE_SIZE,
+  );
+  return {
+    backingObjectExists: true,
+    backingObjectByteSize: object.body.byteLength,
+    backingObjectContentType: object.contentType ?? null,
+    backingObjectChecksumSha256: createHash('sha256').update(object.body).digest('hex'),
+  };
+}
+
+async function readDemoVectorSnapshot(): Promise<DemoFixtureSnapshot['vectors']> {
+  const query = [
+    ...DEMO_EVENTS.map((event) => event.contentText),
+    'Northstar pilot export validation handoff CSV fallback field-mapping blocker',
+  ].join('\n');
+  const embeddedQuery = await llm.embed({ text: query });
+  const client = qdrant.getQdrantClient();
+  const expectedByKind = {
+    rawEvents: DEMO_EVENTS.map((event) =>
+      qdrant.buildChunkedPointId('event', event.id, embeddedQuery.model, 0),
+    ),
+    facts: [
+      DEMO_IDS.factCommitment,
+      DEMO_IDS.factHandoff,
+      DEMO_IDS.factDecision,
+      DEMO_IDS.factBlocker,
+      DEMO_IDS.factStatus,
+    ].map((id) => qdrant.buildChunkedPointId('fact', id, embeddedQuery.model, 0)),
+    documentChunks: [
+      qdrant.buildChunkedPointId('doc_chunk', DEMO_IDS.documentChunk, embeddedQuery.model, 0),
+    ],
+    meetingChunks: [
+      qdrant.buildChunkedPointId('meeting_chunk', DEMO_IDS.meetingChunk, embeddedQuery.model, 0),
+    ],
+  };
+  const [rawHits, factHits, documentHits, meetingHits] = await Promise.all([
+    client.search(DEMO_IDS.team, DEMO_IDS.owner, embeddedQuery.vector, {
+      eventIds: DEMO_EVENTS.map((event) => event.id),
+      embeddingModel: embeddedQuery.model,
+      sourceKind: ['raw_event', 'integration_event'],
+      limit: expectedByKind.rawEvents.length,
+    }),
+    client.search(DEMO_IDS.team, DEMO_IDS.owner, embeddedQuery.vector, {
+      eventIds: [DEMO_IDS.eventEmail, DEMO_IDS.eventMeeting, DEMO_IDS.eventProvider],
+      embeddingModel: embeddedQuery.model,
+      sourceKind: 'fact',
+      limit: expectedByKind.facts.length,
+    }),
+    client.search(DEMO_IDS.team, DEMO_IDS.owner, embeddedQuery.vector, {
+      documentId: DEMO_IDS.document,
+      embeddingModel: embeddedQuery.model,
+      sourceKind: 'doc_chunk',
+      limit: expectedByKind.documentChunks.length,
+    }),
+    client.search(DEMO_IDS.team, DEMO_IDS.owner, embeddedQuery.vector, {
+      eventIds: [DEMO_IDS.eventMeeting],
+      embeddingModel: embeddedQuery.model,
+      sourceKind: 'meeting_chunk',
+      limit: expectedByKind.meetingChunks.length,
+    }),
+  ]);
+  const discoverableByKind = {
+    rawEvents: matchingPointIds(rawHits, expectedByKind.rawEvents),
+    facts: matchingPointIds(factHits, expectedByKind.facts),
+    documentChunks: matchingPointIds(documentHits, expectedByKind.documentChunks),
+    meetingChunks: matchingPointIds(meetingHits, expectedByKind.meetingChunks),
+  };
+  return {
+    embeddingModel: embeddedQuery.model,
+    expectedPointIds: Object.values(expectedByKind).flat(),
+    discoverablePointIds: Object.values(discoverableByKind).flat(),
+    sourceCounts: {
+      rawEvents: discoverableByKind.rawEvents.length,
+      facts: discoverableByKind.facts.length,
+      documentChunks: discoverableByKind.documentChunks.length,
+      meetingChunks: discoverableByKind.meetingChunks.length,
+    },
+  };
+}
+
+function matchingPointIds(hits: qdrant.SearchHit[], expectedPointIds: readonly string[]): string[] {
+  const expected = new Set(expectedPointIds);
+  return [...new Set(hits.map((hit) => hit.id).filter((id) => expected.has(id)))];
 }
 
 async function main(): Promise<void> {
-  assertDemoSeedEnvironment();
+  assertDemoVectorEnvironment();
   try {
     assertDemoFixture(await readDemoFixtureSnapshot());
     console.log('[demo:verify] deterministic demo fixture is intact');

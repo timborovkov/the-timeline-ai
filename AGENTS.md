@@ -139,13 +139,17 @@ Treat this file as an operating contract for agents, not a loose README.
 - **`pnpm` only** (no `npm` / `yarn`). Workspace packages are wired via
   Turborepo; `pnpm -r build` is the canonical build.
 - **Use the verified demo seed for recorded demos and local regression checks.** `pnpm demo:seed`
-  runs the idempotent `pnpm dev:seed` and then `pnpm demo:verify`. It creates the
+  runs the idempotent `pnpm dev:seed`, indexes every deterministic fixture source through the real
+  embed worker/OpenRouter/Qdrant path, and then runs `pnpm demo:verify`. It creates the
   documented Acme Labs team, fake login users, events, objects, board, and
   deterministic fictional evidence corpus with encrypted fake integration credentials after
   migrations. `pnpm demo:verify` fails closed on both login identities, active memberships,
-  password usability, the canonical document object's size/checksum/storage presence, fixture
-  chronology, visibility, source links, or canonical support drift. Both commands refuse production
-  and unapproved remote databases. The fake
+  password usability, the canonical document object's downloaded-byte checksum, scoped Qdrant
+  discoverability for raw events/facts/document chunks/meeting chunks, fixture chronology,
+  visibility, source links, or canonical support drift. The commands refuse production and
+  unapproved remote databases/Qdrant; S3 writes additionally require the local endpoint and
+  `timeline-documents` bucket unless `ALLOW_DEV_SEED_STORAGE` carries the documented explicit
+  isolated-storage acknowledgement. The fake
   integrations stay disabled for sync so local workers do not call real
   providers. Keep the credential list in [README.md](README.md) current when
   the seed changes.

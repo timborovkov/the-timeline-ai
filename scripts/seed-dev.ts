@@ -874,9 +874,9 @@ async function main(): Promise<void> {
           checksumSha256: DEMO_DOCUMENT_CHECKSUM_SHA256,
           uploadedByUserId: DEMO_IDS.member,
           sourceEventId: DEMO_IDS.eventEmail,
-          processingStatus: 'embedded',
+          processingStatus: 'chunked',
           extractionModelVersion: DEMO_FIXTURE_VERSION,
-          embeddingModelVersion: DEMO_FIXTURE_VERSION,
+          embeddingModelVersion: null,
           createdAt: new Date(DEMO_TIMES.email),
         })
         .onConflictDoUpdate({
@@ -892,7 +892,7 @@ async function main(): Promise<void> {
             processingStatus: sql`excluded.processing_status`,
             processingError: null,
             extractionModelVersion: sql`excluded.extraction_model_version`,
-            embeddingModelVersion: sql`excluded.embedding_model_version`,
+            embeddingModelVersion: null,
           },
         });
 
@@ -927,6 +927,21 @@ async function main(): Promise<void> {
         .update(documents)
         .set({ currentVersionId: DEMO_IDS.documentVersion })
         .where(and(eq(documents.teamId, DEMO_IDS.team), eq(documents.id, DEMO_IDS.document)));
+
+      await tx
+        .update(rawEvents)
+        .set({
+          sourceMetadata: sql`${rawEvents.sourceMetadata} - 'embedded_at' - 'embedding_model' - 'embedding_chunks' - 'embedding_failed_at' - 'embedding_error'`,
+        })
+        .where(
+          and(
+            eq(rawEvents.teamId, DEMO_IDS.team),
+            inArray(
+              rawEvents.id,
+              DEMO_EVENTS.map((event) => event.id),
+            ),
+          ),
+        );
 
       await tx
         .insert(meetings)

@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto';
 
 export const LOCAL_DEV_SEED_OVERRIDE = 'I_UNDERSTAND_THIS_SEEDS_KNOWN_DEV_CREDENTIALS';
+export const LOCAL_DEV_SEED_STORAGE_OVERRIDE =
+  'I_UNDERSTAND_THIS_WRITES_DEMO_DATA_TO_ISOLATED_STORAGE';
+export const LOCAL_DEMO_DOCUMENTS_BUCKET = 'timeline-documents';
 
 export const DEMO_FIXTURE_VERSION = 'demo-seed-v1';
 
@@ -312,9 +315,11 @@ export interface DemoFixtureSnapshot {
     versionContentType: string | null;
     versionChecksumSha256: string | null;
     versionProcessingStatus: string | null;
+    versionEmbeddingModelVersion: string | null;
     backingObjectExists: boolean;
     backingObjectByteSize: number | null;
     backingObjectContentType: string | null;
+    backingObjectChecksumSha256: string | null;
     chunkId: string | null;
     chunkDocumentId: string | null;
     chunkVersionId: string | null;
@@ -332,6 +337,17 @@ export interface DemoFixtureSnapshot {
     chunkRawEventId: string | null;
     chunkText: string | null;
   } | null;
+  vectors: {
+    embeddingModel: string;
+    expectedPointIds: string[];
+    discoverablePointIds: string[];
+    sourceCounts: {
+      rawEvents: number;
+      facts: number;
+      documentChunks: number;
+      meetingChunks: number;
+    };
+  };
 }
 
 export function assertDemoFixture(snapshot: DemoFixtureSnapshot): void {
@@ -635,6 +651,11 @@ export function assertDemoFixture(snapshot: DemoFixtureSnapshot): void {
     snapshot.document?.backingObjectContentType,
     DEMO_DOCUMENT_CONTENT_TYPE,
   );
+  expectValue(
+    'document backing object checksum',
+    snapshot.document?.backingObjectChecksumSha256,
+    DEMO_DOCUMENT_CHECKSUM_SHA256,
+  );
   expectValue('document chunk id', snapshot.document?.chunkId, DEMO_IDS.documentChunk);
   expectValue(
     'document chunk document link',
@@ -661,6 +682,44 @@ export function assertDemoFixture(snapshot: DemoFixtureSnapshot): void {
     'meeting chunk text',
     snapshot.meeting?.chunkText,
     'Avery: I am handing export validation to Mika. Mika: I own it. We will use the CSV fallback, but field-mapping confirmation is still blocking completion.',
+  );
+
+  if (!snapshot.vectors.embeddingModel.trim()) {
+    fail('demo vector embedding model must be present');
+  }
+  for (const event of snapshot.events) {
+    expectValue(
+      `raw event ${event.id} embedding model`,
+      event.sourceMetadata.embedding_model,
+      snapshot.vectors.embeddingModel,
+    );
+    if (typeof event.sourceMetadata.embedded_at !== 'string' || !event.sourceMetadata.embedded_at) {
+      fail(`raw event ${event.id} must have embedded_at only after vector indexing`);
+    }
+  }
+  expectValue(
+    'document vector model',
+    snapshot.document?.versionEmbeddingModelVersion,
+    snapshot.vectors.embeddingModel,
+  );
+  expectValue('demo vector expected point count', snapshot.vectors.expectedPointIds.length, 11);
+  expectIds(
+    errors,
+    'discoverable demo vectors',
+    snapshot.vectors.discoverablePointIds,
+    snapshot.vectors.expectedPointIds,
+  );
+  expectValue('discoverable raw-event vector count', snapshot.vectors.sourceCounts.rawEvents, 4);
+  expectValue('discoverable fact vector count', snapshot.vectors.sourceCounts.facts, 5);
+  expectValue(
+    'discoverable document-chunk vector count',
+    snapshot.vectors.sourceCounts.documentChunks,
+    1,
+  );
+  expectValue(
+    'discoverable meeting-chunk vector count',
+    snapshot.vectors.sourceCounts.meetingChunks,
+    1,
   );
 
   if (errors.length > 0) {
@@ -717,7 +776,16 @@ function show(value: unknown): string {
 type DemoEnvironment = Partial<
   Pick<
     NodeJS.ProcessEnv,
-    'ALLOW_DEV_SEED' | 'AUTH_SECRET' | 'DATABASE_URL' | 'NODE_ENV' | 'SECRETS_ENCRYPTION_KEY'
+    | 'ALLOW_DEV_SEED'
+    | 'ALLOW_DEV_SEED_STORAGE'
+    | 'AUTH_SECRET'
+    | 'DATABASE_URL'
+    | 'NODE_ENV'
+    | 'OPENROUTER_API_KEY'
+    | 'QDRANT_URL'
+    | 'S3_BUCKET_DOCUMENTS'
+    | 'S3_ENDPOINT'
+    | 'SECRETS_ENCRYPTION_KEY'
   >
 >;
 
@@ -732,11 +800,61 @@ export function assertDemoSeedEnvironment(env: DemoEnvironment = process.env): v
     throw new Error('Refusing to run demo seed or verification with NODE_ENV=production');
   }
 
-  const host = new URL(databaseUrl).hostname.toLowerCase();
-  const isLocalDatabase = host === 'localhost' || host === '127.0.0.1' || host === '::1';
-  if (!isLocalDatabase && env.ALLOW_DEV_SEED !== LOCAL_DEV_SEED_OVERRIDE) {
+  const databaseHost = parseHost(databaseUrl, 'DATABASE_URL');
+  if (!isLoopbackHost(databaseHost) && env.ALLOW_DEV_SEED !== LOCAL_DEV_SEED_OVERRIDE) {
     throw new Error(
-      `Refusing to use non-local database host "${host}". Set ALLOW_DEV_SEED=${LOCAL_DEV_SEED_OVERRIDE} only if this is an isolated development database.`,
+      `Refusing to use non-local database host "${databaseHost}". Set ALLOW_DEV_SEED=${LOCAL_DEV_SEED_OVERRIDE} only if this is an isolated development database.`,
     );
   }
+
+  const s3Endpoint = env.S3_ENDPOINT;
+  if (!s3Endpoint) throw new Error('S3_ENDPOINT is required before writing the demo document');
+  const documentsBucket = env.S3_BUCKET_DOCUMENTS;
+  if (!documentsBucket) {
+    throw new Error('S3_BUCKET_DOCUMENTS is required before writing the demo document');
+  }
+  const s3Host = parseHost(s3Endpoint, 'S3_ENDPOINT');
+  const storageIsLocal = isLoopbackHost(s3Host) && documentsBucket === LOCAL_DEMO_DOCUMENTS_BUCKET;
+  if (!storageIsLocal && env.ALLOW_DEV_SEED_STORAGE !== LOCAL_DEV_SEED_STORAGE_OVERRIDE) {
+    if (!isLoopbackHost(s3Host)) {
+      throw new Error(
+        `Refusing to use non-local S3 endpoint host "${s3Host}". Set ALLOW_DEV_SEED_STORAGE=${LOCAL_DEV_SEED_STORAGE_OVERRIDE} only for isolated development storage.`,
+      );
+    }
+    throw new Error(
+      `Refusing to use non-isolated documents bucket "${documentsBucket}". The local demo bucket is "${LOCAL_DEMO_DOCUMENTS_BUCKET}"; set ALLOW_DEV_SEED_STORAGE=${LOCAL_DEV_SEED_STORAGE_OVERRIDE} only for another isolated development bucket.`,
+    );
+  }
+}
+
+export function assertDemoVectorEnvironment(env: DemoEnvironment = process.env): void {
+  assertDemoSeedEnvironment(env);
+  if (!env.OPENROUTER_API_KEY) {
+    throw new Error(
+      'OPENROUTER_API_KEY is required to create and verify genuine demo embeddings; configure a development key and rerun pnpm demo:seed',
+    );
+  }
+  if (!env.QDRANT_URL) {
+    throw new Error(
+      'QDRANT_URL is required to create and verify demo vectors; start the local Qdrant service or configure an acknowledged isolated development stack',
+    );
+  }
+  const qdrantHost = parseHost(env.QDRANT_URL, 'QDRANT_URL');
+  if (!isLoopbackHost(qdrantHost) && env.ALLOW_DEV_SEED !== LOCAL_DEV_SEED_OVERRIDE) {
+    throw new Error(
+      `Refusing to use non-local Qdrant host "${qdrantHost}". Set ALLOW_DEV_SEED=${LOCAL_DEV_SEED_OVERRIDE} only if the database and vector store are an isolated development stack.`,
+    );
+  }
+}
+
+function parseHost(value: string, label: string): string {
+  try {
+    return new URL(value).hostname.toLowerCase();
+  } catch {
+    throw new Error(`${label} must be a valid URL`);
+  }
+}
+
+function isLoopbackHost(host: string): boolean {
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]';
 }

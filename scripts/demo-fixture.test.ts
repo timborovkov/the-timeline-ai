@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import {
   assertDemoFixture,
   assertDemoSeedEnvironment,
+  assertDemoVectorEnvironment,
   DEMO_DOCUMENT_BYTE_SIZE,
   DEMO_DOCUMENT_CHECKSUM_SHA256,
   DEMO_DOCUMENT_CONTENT_TYPE,
@@ -21,6 +22,8 @@ const localEnv = {
   DATABASE_URL: 'postgres://timeline:timeline_dev@localhost:5432/timeline',
   AUTH_SECRET: 'local-auth-secret',
   SECRETS_ENCRYPTION_KEY: 'local-encryption-key',
+  S3_ENDPOINT: 'http://localhost:9000',
+  S3_BUCKET_DOCUMENTS: 'timeline-documents',
 };
 
 assert.doesNotThrow(() => assertDemoSeedEnvironment(localEnv));
@@ -28,6 +31,26 @@ assert.doesNotThrow(() => assertDemoSeedEnvironment(localEnv));
 assert.throws(
   () => assertDemoSeedEnvironment({ ...localEnv, NODE_ENV: 'production' }),
   /Refusing to run demo seed or verification with NODE_ENV=production/,
+);
+
+assert.throws(
+  () => assertDemoVectorEnvironment(localEnv),
+  /OPENROUTER_API_KEY is required to create and verify genuine demo embeddings/,
+);
+
+assert.throws(
+  () => assertDemoVectorEnvironment({ ...localEnv, OPENROUTER_API_KEY: 'dev-key' }),
+  /QDRANT_URL is required to create and verify demo vectors/,
+);
+
+assert.throws(
+  () =>
+    assertDemoVectorEnvironment({
+      ...localEnv,
+      OPENROUTER_API_KEY: 'dev-key',
+      QDRANT_URL: 'https://qdrant.example.com',
+    }),
+  /Refusing to use non-local Qdrant host "qdrant\.example\.com"/,
 );
 
 assert.throws(
@@ -45,6 +68,45 @@ assert.doesNotThrow(() =>
     DATABASE_URL: 'postgres://timeline:secret@db.example.com:5432/timeline',
     ALLOW_DEV_SEED: 'I_UNDERSTAND_THIS_SEEDS_KNOWN_DEV_CREDENTIALS',
   }),
+);
+
+assert.throws(
+  () =>
+    assertDemoSeedEnvironment({
+      ...localEnv,
+      S3_ENDPOINT: 'https://objects.example.com',
+    }),
+  /Refusing to use non-local S3 endpoint host "objects\.example\.com"/,
+);
+
+assert.throws(
+  () =>
+    assertDemoSeedEnvironment({
+      ...localEnv,
+      S3_BUCKET_DOCUMENTS: 'timeline-production-documents',
+    }),
+  /Refusing to use non-isolated documents bucket "timeline-production-documents"/,
+);
+
+assert.doesNotThrow(() =>
+  assertDemoSeedEnvironment({
+    ...localEnv,
+    S3_ENDPOINT: 'https://objects.dev.example.com',
+    S3_BUCKET_DOCUMENTS: 'timeline-review-349-documents',
+    ALLOW_DEV_SEED_STORAGE: 'I_UNDERSTAND_THIS_WRITES_DEMO_DATA_TO_ISOLATED_STORAGE',
+  }),
+);
+
+assert.throws(
+  () =>
+    assertDemoSeedEnvironment({
+      ...localEnv,
+      NODE_ENV: 'production',
+      S3_ENDPOINT: 'https://objects.dev.example.com',
+      S3_BUCKET_DOCUMENTS: 'timeline-review-349-documents',
+      ALLOW_DEV_SEED_STORAGE: 'I_UNDERSTAND_THIS_WRITES_DEMO_DATA_TO_ISOLATED_STORAGE',
+    }),
+  /Refusing to run demo seed or verification with NODE_ENV=production/,
 );
 
 assert.equal(DEMO_IDS.team, '20000000-0000-4000-8000-000000000001');
@@ -119,6 +181,16 @@ corruptionFails('document checksum', (snapshot) => {
   if (snapshot.document) snapshot.document.versionChecksumSha256 = 'incorrect-checksum';
 });
 
+corruptionFails('same-size document object content', (snapshot) => {
+  if (snapshot.document) {
+    snapshot.document.backingObjectChecksumSha256 = '0'.repeat(64);
+  }
+});
+
+corruptionFails('missing discoverable vector', (snapshot) => {
+  snapshot.vectors.discoverablePointIds = snapshot.vectors.discoverablePointIds.slice(1);
+});
+
 corruptionFails('current blocker support', (snapshot) => {
   snapshot.associations = snapshot.associations.filter(
     (row) => row.id !== DEMO_IDS.associationBlocker,
@@ -146,7 +218,10 @@ assert.equal(
   packageJson.scripts?.['demo:verify'],
   'NODE_OPTIONS=--conditions=development tsx scripts/verify-demo.ts',
 );
-assert.equal(packageJson.scripts?.['demo:seed'], 'pnpm dev:seed && pnpm demo:verify');
+assert.equal(
+  packageJson.scripts?.['demo:seed'],
+  'pnpm dev:seed && pnpm demo:index && pnpm demo:verify',
+);
 
 console.log('demo fixture tests passed');
 
@@ -259,6 +334,9 @@ function validSnapshot(): DemoFixtureSnapshot {
       sourceMetadata: {
         fixture_version: DEMO_FIXTURE_VERSION,
         source_payload_ref: event.sourcePayloadRef,
+        embedded_at: '2026-07-10T00:00:00.000Z',
+        embedding_model: 'openai/text-embedding-3-small',
+        embedding_chunks: 1,
         ...(event.id === DEMO_IDS.eventNote
           ? { capture_kind: 'explicit_chat_note', command: '/timeline note' }
           : {}),
@@ -350,9 +428,11 @@ function validSnapshot(): DemoFixtureSnapshot {
       versionContentType: DEMO_DOCUMENT_CONTENT_TYPE,
       versionChecksumSha256: DEMO_DOCUMENT_CHECKSUM_SHA256,
       versionProcessingStatus: 'embedded',
+      versionEmbeddingModelVersion: 'openai/text-embedding-3-small',
       backingObjectExists: true,
       backingObjectByteSize: DEMO_DOCUMENT_BYTE_SIZE,
       backingObjectContentType: DEMO_DOCUMENT_CONTENT_TYPE,
+      backingObjectChecksumSha256: DEMO_DOCUMENT_CHECKSUM_SHA256,
       chunkId: DEMO_IDS.documentChunk,
       chunkDocumentId: DEMO_IDS.document,
       chunkVersionId: DEMO_IDS.documentVersion,
@@ -370,6 +450,17 @@ function validSnapshot(): DemoFixtureSnapshot {
       chunkRawEventId: DEMO_IDS.eventMeeting,
       chunkText:
         'Avery: I am handing export validation to Mika. Mika: I own it. We will use the CSV fallback, but field-mapping confirmation is still blocking completion.',
+    },
+    vectors: {
+      embeddingModel: 'openai/text-embedding-3-small',
+      expectedPointIds: Array.from({ length: 11 }, (_, index) => `point-${String(index)}`),
+      discoverablePointIds: Array.from({ length: 11 }, (_, index) => `point-${String(index)}`),
+      sourceCounts: {
+        rawEvents: 4,
+        facts: 5,
+        documentChunks: 1,
+        meetingChunks: 1,
+      },
     },
   };
 }

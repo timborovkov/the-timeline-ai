@@ -70,10 +70,13 @@ pnpm demo:seed
 pnpm dev
 ```
 
-`demo:seed` runs the idempotent local dev seed and then `demo:verify`, which fails if the fixed
-fictional corpus, demo login identities/roles/password usability, canonical document object,
-chronology, visibility, or evidence links drift. Run `pnpm demo:verify` independently for regression
-checks; neither command permits production or unapproved remote databases.
+`demo:seed` runs the idempotent local dev seed, indexes the fixture's raw events, facts, document
+chunk, and meeting chunk through the production embedding worker path, then runs `demo:verify`.
+Verification downloads and hashes the canonical document bytes and uses team/user-scoped Qdrant
+searches to confirm every expected point is discoverable. A real development
+`OPENROUTER_API_KEY` is therefore required; a missing key or unavailable Qdrant fails closed without
+marking the document embedded. The commands refuse production, unapproved remote databases or
+Qdrant, and non-local/nonstandard S3 storage without its separate explicit acknowledgement.
 
 Open <http://localhost:3000> and sign in with:
 
