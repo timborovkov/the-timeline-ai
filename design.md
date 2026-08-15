@@ -321,14 +321,19 @@ shared due-date vocabulary above.
 
 The public landing page is an editorial, five-scene acquisition narrative:
 claim, evidence and chronology, cited answer, audience fit with trust, and a
-one-project CTA. Its signature example project, Acme rollout, shows six familiar
-work sources converging into one project history, then shows captured work
-settling onto a chronological rail and resolving into an answer with tangible
-source links. Acme rollout is the canonical fictional
-public demo corpus across landing, connector, and guide examples; every rendered
-example states that it is illustrative and not customer data. Provider pages may
-show distinct slices, but people, identifiers, records, and outcomes stay
-coherent across the journey. Connector capability belongs with the
+one-project CTA. The claim defines Timeline as an evidence-backed working
+history. The chronology scene names the cost of rebuilding status, handoffs,
+customer commitments, and decisions across Telegram, Slack, meetings,
+documents, tickets, code, and email before showing how selected work becomes an
+inspectable record. Its signature example project, Acme rollout, shows five
+cited work sources converging into one project history, with Telegram as the
+first explicit note. A sixth connected Sentry source is visibly marked as
+unused in that answer. Captured work then settles onto a chronological rail and
+resolves into an answer with tangible source links. Acme rollout is the
+canonical fictional public demo corpus across landing, connector, and guide
+examples; every rendered example states that it is illustrative and not
+customer data. Provider pages may show distinct slices, but people, identifiers,
+records, and outcomes stay coherent across the journey. Connector capability belongs with the
 evidence-entry scene; audience fit and the evidence chain remain a separate,
 stacked explanation rather than an equal-height split. Substantive copy and
 diagrams are server-rendered; a small client motion controller may progressively
@@ -340,7 +345,9 @@ cream reads like paper and near-black retains its tactile texture.
 
 The landing observatory identifies every source with its provider mark, includes
 Telegram alongside Slack, meeting, code, document, and monitoring signals,
-and uses small inward-moving packets to explain ingestion. Those packets use only
+and distinguishes evidence cited in the example answer from a connected source
+that the answer did not use. It uses small inward-moving packets to explain
+ingestion. Those packets use only
 transform and opacity, run only while the diagram is visible, and disappear in
 the complete reduced-motion state. The evidence-entry summary below chronology
 compresses the directory into two honest paths—work people send to Timeline and
@@ -411,10 +418,13 @@ the same 82rem acquisition grid, 13–15rem indexed section rail, hero scale, fo
 section rhythm as the integration directory. It shows the
 source-to-chronology-to-answer loop once, then links to a small set of
 substantive cross-tool walkthroughs. Its first viewport explains the three-step
-model at a glance; the complete evidence diagram follows in its own indexed
-section and is never squeezed beside the hero copy. Walkthroughs remain indexable
-for specific questions, but public navigation and page copy do not ask visitors
-to learn an editorial publication, edition, playbook, or dossier taxonomy.
+model at a glance: choose what enters, preserve the chronology, then ask and
+inspect. It also states two trust boundaries directly: connected does not mean
+cited, and durable workspace changes wait for human approval. The complete
+evidence diagram follows in its own indexed section and is never squeezed beside
+the hero copy. Walkthroughs remain indexable for specific questions, but public
+navigation and page copy do not ask visitors to learn an editorial publication,
+edition, playbook, or dossier taxonomy.
 The legacy `/record` URL permanently redirects to `/how-it-works`; it is not a
 second indexable destination.
 
@@ -491,3 +501,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-14 | Legible integration acquisition paths | Adds provider-marked ingestion flow to the landing observatory, condenses the evidence-entry summary into capture and provider-sync paths, and widens the integration directory's card rail. |
 | 2026-08-14 | Public capability truth | Separates hosted MCP, local-desktop MCP, and planned support while keeping phone navigation actions reachable. |
 | 2026-08-14 | Customer-facing public language | Keeps review cadence, implementation state, indexing terms, and capability taxonomy in metadata while public pages explain concrete actions and availability. |
+| 2026-08-15 | Evidence-backed public product story | Makes the working-history problem, deliberate capture boundary, cited-versus-unused evidence, Telegram entry point, inspectable answers, and human approval contract explicit across the landing and how-it-works journey. |

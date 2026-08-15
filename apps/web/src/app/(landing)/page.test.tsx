@@ -50,10 +50,13 @@ describe('LandingPage', () => {
     }
 
     expect(html).toContain('Acme rollout / Last 7 days');
-    expect(html).toContain('Six Acme project sources flow into one chronological project history');
+    expect(html).toContain(
+      'Five cited Acme project sources form a chronological working history while connected Sentry evidence remains unused in this answer',
+    );
     expect(html).toContain('Fictional Acme example, not customer data.');
-    expect(html).toContain('Project history');
-    expect(html).not.toMatch(/Connected, not cited|4 cited \+ 2 connected|Cited project memory/u);
+    expect(html).toContain('Working history');
+    expect(html).toContain('Connected, not used in this answer');
+    expect(html).toContain('5 cited sources. Sentry is connected, but unused in this answer.');
     expect(html).toContain('Telegram');
     expect(html).toContain('Linear');
     expect(html).toContain('Sentry');
@@ -64,10 +67,10 @@ describe('LandingPage', () => {
     expect(html).toContain('href="/integrations"');
     expect(html).toContain('href="/how-it-works"');
     expect(html).toContain('aria-label="Public navigation menu"');
-    expect(html).toContain('Launch is waiting on SSO. Everything else moved.');
+    expect(html).toContain('SSO blocks launch. Friday’s customer update is still due.');
     expect(html).toContain('Evidence behind this answer');
     expect(html).toContain('href="#acme-source-01"');
-    expect(html).toContain('Source 01: Slack approval');
+    expect(html).toContain('Source 01: Telegram explicit note');
     expect(html).toContain('Teams that owe someone a reliable answer.');
     expect(html).toContain('Every answer carries its evidence chain.');
     expect(html).not.toContain('Northline');
@@ -86,12 +89,13 @@ describe('LandingPage', () => {
     const webPage = graph['@graph'].find((node) => node['@type'] === 'WebPage');
     const application = graph['@graph'].find((node) => node['@type'] === 'SoftwareApplication');
     expect(webPage).toMatchObject({
-      dateModified: '2026-08-13',
-      lastReviewed: '2026-08-13',
+      dateModified: '2026-08-15',
+      lastReviewed: '2026-08-15',
     });
     expect(application?.featureList).toContain(
       'Native ingestion for GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry',
     );
+    expect(application?.featureList).toContain('Human approval before durable workspace changes');
     expect(metadata).toMatchObject({
       title: 'The Timeline | The work becomes the record',
       alternates: { canonical: '/' },
@@ -131,6 +135,43 @@ describe('LandingPage', () => {
     for (const slug of ['github', 'linear', 'google-drive', 'monday', 'slack', 'sentry']) {
       expect(html).toContain(`href="/integrations/${slug}"`);
     }
+  });
+
+  it('renders the product, problem, workflow, and trust contract without implying passive capture', async () => {
+    const html = renderToStaticMarkup(await LandingPage());
+
+    expect(html).toContain('Timeline is an evidence-backed working history for a project.');
+    expect(html).toContain('Telegram, Slack, meetings, documents, tickets, code, and email');
+    expect(html).toContain(
+      'Rebuilding status, handoffs, customer commitments, and decisions becomes slow—and the result is easy to get wrong.',
+    );
+    expect(html).toContain('Your team keeps using');
+    expect(html).toContain('the provider records they select as one chronological record');
+    expect(html).toContain('preserves source, time, and visibility');
+    expect(html).toContain(
+      'Give me the current status, handoff, blockers, and customer commitments.',
+    );
+    expect(html).toContain('proposes it for human review instead of applying it on its own');
+    expect(html).toContain('Human-approved changes');
+    expect(html).toContain('Telegram / explicit note');
+    expect(html).toContain('saved an explicit note');
+    expect(html).toContain('A plain Telegram DM asks Timeline; it does not become');
+    expect(html).toContain('team evidence unless you use /note.');
+    expect(html).toContain('Connected, not used in this answer');
+    expect(html).toContain('Sentry is connected, but unused in this answer.');
+    expect(html).not.toContain('Timeline watches the tools');
+    expect(html).not.toMatch(/captures? (?:all|every) (?:chat|conversation|message)/iu);
+  });
+
+  it('keeps signed-out calls to action on public pages or the real account conversion path', async () => {
+    const html = renderToStaticMarkup(await LandingPage());
+
+    expect(html.match(/href="\/sign-up"/g)).toHaveLength(3);
+    expect(html).toContain('href="/how-it-works"');
+    expect(html).not.toContain('<video');
+    expect(html).not.toMatch(/watch (?:the )?demo|interactive demo/iu);
+    expect(html).not.toMatch(/href="(?:\/(?:app\/)?demo|\/workspace\/demo|https?:\/\/t\.me\/)/u);
+    expect(html).not.toMatch(/href="\/(?:app\/)?(?:seed|acme)(?:\/|"|\?)/iu);
   });
 
   it('keeps the marketing page browsable for signed-in users with dashboard CTAs', async () => {

@@ -88,7 +88,7 @@ export interface EditorialGuide {
     title: string;
     body: string;
     label: string;
-    href: '/sign-in';
+    href: '/sign-up';
   };
 }
 
@@ -106,7 +106,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
     nativeConnectors: ['Slack', 'Google Drive'],
     answer: {
       title: 'Bring both sources into one evidence set, then ask one bounded question.',
-      body: 'Connect Slack and Google Drive as native sources. Share only the Slack channels and Drive sources available today—My Drive root or selected shared drives—that contain the project, then ask Timeline a question with a named project, time window, and desired output. The useful result is not a blended blob: it is an answer whose claims point back to the conversation or file that supports them.',
+      body: 'Connect Slack and Google Drive as native sources. Share only the Slack channels and Drive sources available today (My Drive root or selected shared drives) that contain the project, then ask Timeline a question with a named project, time window, and desired output. The useful result is not a blended blob: it is an answer whose claims point back to the conversation or file that supports them.',
       checklist: [
         'Choose the Slack channels and activated Drive root or shared drives that contain the project.',
         'Allow new Slack activity and supported Drive files changed after activation to enter the team history.',
@@ -160,7 +160,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
         includes:
           'Messages, threads, edits, reactions, and file-sharing signals from selected channels.',
         boundary:
-          'A connection owner shares channels and a team admin activates them. After capture, Timeline event visibility—not each viewer’s Slack membership—controls who can retrieve the evidence.',
+          'A connection owner shares channels and a team admin activates them. After capture, Timeline event visibility, not each viewer’s Slack membership, controls who can retrieve the evidence.',
       },
       {
         provider: 'Google Drive',
@@ -208,7 +208,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
       title: 'Try it on one project, not the whole company.',
       body: 'Activate one channel and the smallest Drive source available, ask a question about newly changed material that you already know how to verify, and inspect every citation.',
       label: 'Start with one project',
-      href: '/sign-in',
+      href: '/sign-up',
     },
   },
   {
@@ -338,7 +338,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
       title: 'Build one update you can audit.',
       body: 'Connect the channels, Linear scope, and repositories for one active project. Generate the update, then challenge every sentence against its citations.',
       label: 'Create a cited update',
-      href: '/sign-in',
+      href: '/sign-up',
     },
   },
   {
@@ -470,7 +470,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
       title: 'Reconstruct one incident without erasing uncertainty.',
       body: 'Connect one Sentry project, its repository, and the response channel. Start with an incident your team already understands, then compare the dossier with the original evidence.',
       label: 'Build an incident timeline',
-      href: '/sign-in',
+      href: '/sign-up',
     },
   },
 ] as const;

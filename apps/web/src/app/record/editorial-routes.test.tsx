@@ -51,13 +51,27 @@ describe('how-it-works and guide routes', () => {
     expect(html).toContain('How Timeline works');
     expect(html).not.toContain('Last reviewed');
     expect(html).not.toContain('product overview');
-    for (const label of ['Capture', 'Order', 'Answer']) {
+    for (const label of ['Choose what enters', 'Preserve the chronology', 'Ask and inspect']) {
       expect(html).toMatch(new RegExp(`<h2[^>]*>${label}<\\/h2>`));
     }
+    expect(html).toContain('Telegram, Slack, meetings, documents, tickets, code, and');
+    expect(html).toContain('status, handoffs, commitments, and decisions slow to rebuild');
+    expect(html).toContain('Teams keep using those tools');
+    expect(html).toContain('data-how-it-works-trust="true"');
+    expect(html).toContain('Connected does not mean cited.');
+    expect(html).toContain('does not give Timeline its whole history by default');
+    expect(html).toContain('People approve durable changes.');
+    expect(html).toContain('waits for a person to approve, change, or reject it');
     expect(html).toMatch(
       /<h2[^>]*>The review date and owner are set; pricing is still unresolved\.<\/h2>/,
     );
-    expect(html).toContain('Start with the answer');
+    expect(html).toContain('Start with one project and one question.');
+    expect(html).toContain('href="/sign-up"');
+    expect(html).toContain('Try one real project');
+    expect(html).toContain('Read the first walkthrough');
+    expect(html).not.toContain('<video');
+    expect(html).not.toMatch(/watch (?:the )?demo|interactive demo/iu);
+    expect(html).not.toMatch(/href="(?:\/(?:app\/)?demo|\/workspace\/demo|https?:\/\/t\.me\/)/u);
     expect(html).not.toMatch(/Publication|Edition 00|Playbooks|Dossiers|field guide/u);
     for (const guide of EDITORIAL_GUIDES) {
       expect(html).toContain(`href="${guide.route}"`);
@@ -104,7 +118,7 @@ describe('how-it-works and guide routes', () => {
       expect(html).toContain('Source roles');
       expect(html).not.toMatch(/Native \/|Prompt pattern|Source boundaries/u);
       expect(html).toContain('application/ld+json');
-      expect(html).toContain('href="/sign-in"');
+      expect(html).toContain('href="/sign-up"');
       expect(html).toContain('aria-label="Breadcrumb"');
       expect(html).not.toMatch(/Publication|Edition 00|field notes|field guide/u);
       for (const connector of guide.nativeConnectors) {
@@ -137,6 +151,9 @@ describe('how-it-works and guide routes', () => {
     expect(recordShell).toContain('data-public-header="true"');
     expect(recordShell).toContain('How it works');
     expect(guideShell).toContain('>Try one project</a>');
+    expect(guideShell).not.toMatch(
+      /href="(?:\/(?:app\/)?demo|\/workspace\/demo|https?:\/\/t\.me\/)/u,
+    );
     expect(recordShell.match(/aria-current="page"[^>]*href="\/how-it-works"/g)).not.toBeNull();
     expect(guideShell.match(/aria-current="page"[^>]*href="\/how-it-works"/g)).not.toBeNull();
     expect(recordShell).toContain('aria-label="Support and legal"');

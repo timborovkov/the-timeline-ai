@@ -43,9 +43,9 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
               </h1>
               <div>
                 <p className="max-w-[44ch] text-base leading-relaxed text-fg-muted sm:text-lg">
-                  Capture conversations, forwarded email, meeting transcripts, webhook payloads, and
-                  selected records from connected tools. Timeline keeps the origin clear while it
-                  turns the work into chronology and cited answers.
+                  Deliberately route conversations, forwarded email, meeting transcripts, and
+                  webhook payloads into Timeline, or select records from connected tools. Timeline
+                  keeps the origin clear while it turns that work into chronology and cited answers.
                 </p>
                 <Button asChild size="lg" className="mt-7">
                   <Link href={isSignedIn ? '/app/sources' : '/sign-up'}>
@@ -211,7 +211,7 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
                   <CapabilityRow
                     icon={Wrench}
                     title="Use a local desktop connection"
-                    body={`${capabilityTiers.localDesktopAccess.join(', ')} — available only when Timeline runs on the same machine; not connectable from hosted Timeline.`}
+                    body={`${capabilityTiers.localDesktopAccess.join(', ')}. Available only when Timeline runs on the same machine; not connectable from hosted Timeline.`}
                   />
                   <CapabilityRow
                     icon={CircleDotDashed}

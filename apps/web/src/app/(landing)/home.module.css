@@ -276,6 +276,12 @@
   transform-origin: center;
 }
 
+.orbitLines path:nth-child(n + 6) {
+  stroke: var(--home-line-strong);
+  stroke-dasharray: 3 12;
+  opacity: 0.3;
+}
+
 .ingestPackets circle {
   fill: var(--home-signal);
   opacity: 0;
@@ -403,6 +409,23 @@
   font-weight: 550;
 }
 
+.orbitSource small {
+  max-width: 9.5rem;
+  margin-top: 0.18rem;
+  color: var(--home-dim);
+  font-family: var(--font-mono);
+  font-size: var(--home-meta-size);
+  line-height: 1.35;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.orbitSourceAux {
+  min-width: 8.4rem;
+  border-color: color-mix(in oklch, var(--home-signal) 38%, var(--home-line-strong));
+  background: var(--home-panel);
+}
+
 .orbitSource1 {
   top: 10%;
   left: 7%;
@@ -441,6 +464,14 @@
   color: var(--home-dim);
   font-size: 0.75rem;
   text-align: center;
+}
+
+.observatoryCaption span {
+  display: block;
+}
+
+.observatoryCaption span + span {
+  margin-top: 0.15rem;
 }
 
 .sceneHeading {
@@ -1417,7 +1448,7 @@
     transform: translateY(-2px);
   }
 
-  .motionReady .observatory.visible .orbitLines path:nth-child(-n + 4) {
+  .motionReady .observatory.visible .orbitLines path:nth-child(-n + 5) {
     animation: evidencePath 4.8s ease-in-out infinite both;
   }
 
@@ -1433,7 +1464,7 @@
     animation-delay: 840ms;
   }
 
-  .motionReady .observatory.visible .orbitLines path:nth-child(n + 5) {
+  .motionReady .observatory.visible .orbitLines path:nth-child(n + 6) {
     animation: connectedPath 5.6s ease-in-out infinite both;
   }
 

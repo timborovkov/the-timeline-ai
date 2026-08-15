@@ -8,14 +8,14 @@ import {
 } from '@/components/marketing/editorial/content';
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
-const EDITORIAL_REVIEW_DATE = '2026-08-14' as const;
+const EDITORIAL_REVIEW_DATE = '2026-08-15' as const;
 
 const howItWorksDocument = {
   canonicalPath: HOW_IT_WORKS_ROUTE,
   kind: 'guide-index',
   title: EDITORIAL_PUBLICATION_NAME,
   description:
-    'See how Timeline turns selected records from connected tools into chronology and cited answers.',
+    'See how Timeline preserves selected work as an evidence-backed chronology, answers with citations, and keeps durable changes human-approved.',
   indexability: 'index',
   dates: { modified: EDITORIAL_REVIEW_DATE, reviewed: EDITORIAL_REVIEW_DATE },
   capability: { kind: 'current-product' },
@@ -35,7 +35,7 @@ const howItWorksDocument = {
     order: 0,
     label: EDITORIAL_PUBLICATION_NAME,
     summary:
-      'See how Timeline turns selected records from connected tools into chronology and cited answers.',
+      'See how Timeline preserves selected work as an evidence-backed chronology, answers with citations, and keeps durable changes human-approved.',
     sections: [
       {
         title: 'Questions covered',
@@ -44,7 +44,7 @@ const howItWorksDocument = {
       },
       {
         title: 'Method',
-        body: 'Each walkthrough starts with the answer, then exposes the workflow, evidence path, source boundaries, limitations, and query contract behind it.',
+        body: 'Choose what enters, preserve source, time, and visibility, ask a bounded question, inspect the cited evidence, and require human approval for durable workspace changes.',
       },
     ],
   },
@@ -86,7 +86,7 @@ const guideDocuments = EDITORIAL_GUIDES.map(
           title: 'Workflow',
           body: 'Build the answer in inspectable stages and retain each stage as part of the review path.',
           items: guide.workflow.map(
-            (step) => `${step.index} — ${step.title}: ${step.body} Output: ${step.output}`,
+            (step) => `${step.index}. ${step.title}: ${step.body} Output: ${step.output}`,
           ),
         },
         {
@@ -94,7 +94,7 @@ const guideDocuments = EDITORIAL_GUIDES.map(
           body: 'Each provider contributes a distinct kind of evidence and keeps an explicit capability boundary.',
           items: guide.boundaries.map(
             (boundary) =>
-              `${boundary.provider} — ${boundary.role}. Includes: ${boundary.includes} Boundary: ${boundary.boundary}`,
+              `${boundary.provider}: ${boundary.role}. Includes: ${boundary.includes} Boundary: ${boundary.boundary}`,
           ),
         },
         {
