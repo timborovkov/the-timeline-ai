@@ -94,8 +94,11 @@ pnpm demo:seed              # optional fixed fictional corpus; seeds and verifie
         <code>member@timeline.dev</code> with password <code>timeline-dev</code>. The seeded GitHub
         and Linear credentials are fake, encrypted, and disabled for sync. Daily digest email is
         disabled for the demo users so the worker can run without outbound email configuration.
-        Seeded canonical objects leave legacy <code>source_event_id</code> empty and expose demo
-        provenance through reconciliation evidence, associations, and applied outputs.
+        Verification checks both login identities, active team roles, and password usability without
+        printing password hashes. It also confirms the canonical document bytes, size, checksum, and
+        backing RustFS object before accepting the fixture. Seeded canonical objects leave legacy
+        <code>source_event_id</code> empty and expose demo provenance through reconciliation
+        evidence, associations, and applied outputs.
       </p>
 
       <p>Run the app:</p>
@@ -215,7 +218,7 @@ pnpm e2e:prod-smoke                   # build + standalone-server smoke; require
 pnpm e2e:setup / pnpm e2e:cleanup     # seed/remove deterministic e2e users and team
 pnpm dev:seed                         # seed local demo data with disabled fake integrations and reconciliation provenance
 pnpm demo:seed                        # seed and verify the fixed private/local fictional demo corpus
-pnpm demo:verify                      # fail closed on demo fixture, chronology, visibility, or evidence-link drift
+pnpm demo:verify                      # also verifies demo logins and the canonical RustFS document object
 pnpm lint &amp;&amp; pnpm typecheck           # quick static checks
 pnpm knip                             # dead code / unused deps
 pnpm format                           # prettier write

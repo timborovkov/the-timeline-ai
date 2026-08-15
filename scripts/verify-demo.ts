@@ -19,16 +19,23 @@ import {
   meetingTranscriptChunks,
   rawEvents,
   reconciliationEvidence,
+  teamMembers,
   teams,
+  users,
 } from '@timeline/db';
-import { eq, inArray } from 'drizzle-orm';
+import { verifyPassword } from '@timeline/shared/passwords';
+import { getDocumentsBucket, getS3Client, headObject } from '@timeline/shared/s3';
+import { and, eq, inArray } from 'drizzle-orm';
 
 import {
   assertDemoFixture,
   assertDemoSeedEnvironment,
+  DEMO_DOCUMENT_OBJECT_KEY,
   DEMO_ENTITIES,
   DEMO_EVENTS,
   DEMO_IDS,
+  DEMO_LOGINS,
+  DEMO_LOGIN_PASSWORD,
   type DemoFixtureSnapshot,
 } from './demo-fixture.js';
 
@@ -60,6 +67,7 @@ async function readDemoFixtureSnapshot(): Promise<DemoFixtureSnapshot> {
 
   const [
     workspaceRows,
+    loginRows,
     integrationRows,
     eventRows,
     entityRows,
@@ -69,12 +77,34 @@ async function readDemoFixtureSnapshot(): Promise<DemoFixtureSnapshot> {
     evidenceRows,
     associationRows,
     documentRows,
+    documentObject,
     meetingRows,
   ] = await Promise.all([
     db
       .select({ id: teams.id, slug: teams.slug, name: teams.name })
       .from(teams)
       .where(eq(teams.id, DEMO_IDS.team)),
+    db
+      .select({
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        passwordHash: users.passwordHash,
+        teamId: teamMembers.teamId,
+        role: teamMembers.role,
+        removedAt: teamMembers.removedAt,
+      })
+      .from(users)
+      .leftJoin(
+        teamMembers,
+        and(eq(teamMembers.userId, users.id), eq(teamMembers.teamId, DEMO_IDS.team)),
+      )
+      .where(
+        inArray(
+          users.id,
+          DEMO_LOGINS.map((login) => login.id),
+        ),
+      ),
     db
       .select({
         id: integrations.id,
@@ -194,6 +224,11 @@ async function readDemoFixtureSnapshot(): Promise<DemoFixtureSnapshot> {
         versionId: documentVersions.id,
         versionDocumentId: documentVersions.documentId,
         versionSourceEventId: documentVersions.sourceEventId,
+        versionObjectKey: documentVersions.objectKey,
+        versionByteSize: documentVersions.byteSize,
+        versionContentType: documentVersions.contentType,
+        versionChecksumSha256: documentVersions.checksumSha256,
+        versionProcessingStatus: documentVersions.processingStatus,
         chunkId: documentChunks.id,
         chunkDocumentId: documentChunks.documentId,
         chunkVersionId: documentChunks.documentVersionId,
@@ -203,6 +238,7 @@ async function readDemoFixtureSnapshot(): Promise<DemoFixtureSnapshot> {
       .leftJoin(documentVersions, eq(documentVersions.id, DEMO_IDS.documentVersion))
       .leftJoin(documentChunks, eq(documentChunks.id, DEMO_IDS.documentChunk))
       .where(eq(documents.id, DEMO_IDS.document)),
+    readDemoDocumentObject(),
     db
       .select({
         id: meetings.id,
@@ -223,6 +259,19 @@ async function readDemoFixtureSnapshot(): Promise<DemoFixtureSnapshot> {
 
   return {
     workspace: workspaceRows[0] ?? null,
+    logins: await Promise.all(
+      loginRows.map(async (row) => ({
+        id: row.id,
+        name: row.name,
+        email: row.email,
+        teamId: row.teamId,
+        role: row.role,
+        membershipActive: row.teamId === DEMO_IDS.team && row.removedAt === null,
+        passwordUsable: row.passwordHash
+          ? await verifyPassword(DEMO_LOGIN_PASSWORD, row.passwordHash)
+          : false,
+      })),
+    ),
     integration: integrationRows[0] ?? null,
     events: eventRows.map((row) => ({
       ...row,
@@ -235,7 +284,7 @@ async function readDemoFixtureSnapshot(): Promise<DemoFixtureSnapshot> {
     factLinks: factLinkRows,
     evidence: evidenceRows.map((row) => ({ ...row, occurredAt: row.occurredAt.toISOString() })),
     associations: associationRows,
-    document: documentRows[0] ?? null,
+    document: documentRows[0] ? { ...documentRows[0], ...documentObject } : null,
     meeting: meetingRows[0]
       ? {
           ...meetingRows[0],
@@ -244,6 +293,27 @@ async function readDemoFixtureSnapshot(): Promise<DemoFixtureSnapshot> {
         }
       : null,
   };
+}
+
+async function readDemoDocumentObject(): Promise<{
+  backingObjectExists: boolean;
+  backingObjectByteSize: number | null;
+  backingObjectContentType: string | null;
+}> {
+  try {
+    const object = await headObject(getS3Client(), getDocumentsBucket(), DEMO_DOCUMENT_OBJECT_KEY);
+    return {
+      backingObjectExists: true,
+      backingObjectByteSize: object.contentLength ?? null,
+      backingObjectContentType: object.contentType ?? null,
+    };
+  } catch {
+    return {
+      backingObjectExists: false,
+      backingObjectByteSize: null,
+      backingObjectContentType: null,
+    };
+  }
 }
 
 async function main(): Promise<void> {

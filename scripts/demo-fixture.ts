@@ -1,6 +1,10 @@
+import { createHash } from 'node:crypto';
+
 export const LOCAL_DEV_SEED_OVERRIDE = 'I_UNDERSTAND_THIS_SEEDS_KNOWN_DEV_CREDENTIALS';
 
 export const DEMO_FIXTURE_VERSION = 'demo-seed-v1';
+
+export const DEMO_LOGIN_PASSWORD = 'timeline-dev';
 
 export const DEMO_IDS = {
   owner: '10000000-0000-4000-8000-000000000001',
@@ -46,6 +50,30 @@ export const DEMO_TIMES = {
   meeting: '2026-07-08T15:00:00.000Z',
   provider: '2026-07-09T16:15:00.000Z',
 } as const;
+
+export const DEMO_LOGINS = [
+  {
+    id: DEMO_IDS.owner,
+    name: 'Avery Timeline',
+    email: 'owner@timeline.dev',
+    role: 'owner',
+  },
+  {
+    id: DEMO_IDS.member,
+    name: 'Mika Product',
+    email: 'member@timeline.dev',
+    role: 'member',
+  },
+] as const;
+
+export const DEMO_DOCUMENT_TEXT =
+  'Northstar pilot handoff: Avery transfers export validation to Mika. Customer launch review is July 15. CSV fallback is approved; field-mapping confirmation is still required.';
+export const DEMO_DOCUMENT_OBJECT_KEY = `${DEMO_IDS.team}/documents/demo-seed/northstar-handoff/v1.txt`;
+export const DEMO_DOCUMENT_CONTENT_TYPE = 'text/plain';
+export const DEMO_DOCUMENT_BYTE_SIZE = Buffer.byteLength(DEMO_DOCUMENT_TEXT);
+export const DEMO_DOCUMENT_CHECKSUM_SHA256 = createHash('sha256')
+  .update(DEMO_DOCUMENT_TEXT)
+  .digest('hex');
 
 export const DEMO_SOURCE_REFS = {
   note: 'inline://timeline/demo-seed/slack/northstar-kickoff-note',
@@ -227,8 +255,19 @@ export interface DemoAssociationSnapshot {
   sourceRefs: unknown;
 }
 
+export interface DemoLoginSnapshot {
+  id: string;
+  name: string | null;
+  email: string;
+  teamId: string | null;
+  role: string | null;
+  membershipActive: boolean;
+  passwordUsable: boolean;
+}
+
 export interface DemoFixtureSnapshot {
   workspace: { id: string; slug: string; name: string } | null;
+  logins: DemoLoginSnapshot[];
   integration: {
     id: string;
     teamId: string;
@@ -268,6 +307,14 @@ export interface DemoFixtureSnapshot {
     versionId: string | null;
     versionDocumentId: string | null;
     versionSourceEventId: string | null;
+    versionObjectKey: string | null;
+    versionByteSize: number | null;
+    versionContentType: string | null;
+    versionChecksumSha256: string | null;
+    versionProcessingStatus: string | null;
+    backingObjectExists: boolean;
+    backingObjectByteSize: number | null;
+    backingObjectContentType: string | null;
     chunkId: string | null;
     chunkDocumentId: string | null;
     chunkVersionId: string | null;
@@ -300,6 +347,22 @@ export function assertDemoFixture(snapshot: DemoFixtureSnapshot): void {
   expectValue('workspace id', snapshot.workspace?.id, DEMO_IDS.team);
   expectValue('workspace slug', snapshot.workspace?.slug, 'acme-labs');
   expectValue('workspace name', snapshot.workspace?.name, 'Acme Labs');
+
+  expectIds(
+    errors,
+    'demo login identities',
+    snapshot.logins.map((row) => row.id),
+    DEMO_LOGINS.map((row) => row.id),
+  );
+  for (const expected of DEMO_LOGINS) {
+    const login = snapshot.logins.find((row) => row.id === expected.id);
+    expectValue(`${expected.email} name`, login?.name, expected.name);
+    expectValue(`${expected.email} email`, login?.email, expected.email);
+    expectValue(`${expected.email} team`, login?.teamId, DEMO_IDS.team);
+    expectValue(`${expected.email} role`, login?.role, expected.role);
+    expectValue(`${expected.email} active membership`, login?.membershipActive, true);
+    expectValue(`${expected.email} password usability`, login?.passwordUsable, true);
+  }
 
   expectValue('Linear integration id', snapshot.integration?.id, DEMO_IDS.linearIntegration);
   expectValue('Linear integration team', snapshot.integration?.teamId, DEMO_IDS.team);
@@ -404,6 +467,12 @@ export function assertDemoFixture(snapshot: DemoFixtureSnapshot): void {
     DEMO_IDS.eventNote,
   );
   expectValue('explicit note association role', noteAssociation?.role, 'discussion');
+  expectValue('explicit note association visibility', noteAssociation?.visibility, 'team');
+  expectValue(
+    'explicit note association visibility floor',
+    noteAssociation?.visibilityFloor,
+    'team',
+  );
   if (!hasSourceRef(noteAssociation?.sourceRefs, DEMO_IDS.eventNote, DEMO_IDS.evidenceNote)) {
     fail('explicit note association source_refs do not cite its raw event and evidence');
   }
@@ -530,6 +599,42 @@ export function assertDemoFixture(snapshot: DemoFixtureSnapshot): void {
     snapshot.document?.versionSourceEventId,
     DEMO_IDS.eventEmail,
   );
+  expectValue(
+    'document version object key',
+    snapshot.document?.versionObjectKey,
+    DEMO_DOCUMENT_OBJECT_KEY,
+  );
+  expectValue(
+    'document version byte size',
+    snapshot.document?.versionByteSize,
+    DEMO_DOCUMENT_BYTE_SIZE,
+  );
+  expectValue(
+    'document version content type',
+    snapshot.document?.versionContentType,
+    DEMO_DOCUMENT_CONTENT_TYPE,
+  );
+  expectValue(
+    'document version checksum',
+    snapshot.document?.versionChecksumSha256,
+    DEMO_DOCUMENT_CHECKSUM_SHA256,
+  );
+  expectValue(
+    'document version processing status',
+    snapshot.document?.versionProcessingStatus,
+    'embedded',
+  );
+  expectValue('document backing object exists', snapshot.document?.backingObjectExists, true);
+  expectValue(
+    'document backing object byte size',
+    snapshot.document?.backingObjectByteSize,
+    DEMO_DOCUMENT_BYTE_SIZE,
+  );
+  expectValue(
+    'document backing object content type',
+    snapshot.document?.backingObjectContentType,
+    DEMO_DOCUMENT_CONTENT_TYPE,
+  );
   expectValue('document chunk id', snapshot.document?.chunkId, DEMO_IDS.documentChunk);
   expectValue(
     'document chunk document link',
@@ -541,11 +646,7 @@ export function assertDemoFixture(snapshot: DemoFixtureSnapshot): void {
     snapshot.document?.chunkVersionId,
     DEMO_IDS.documentVersion,
   );
-  expectValue(
-    'document chunk text',
-    snapshot.document?.chunkText,
-    'Northstar pilot handoff: Avery transfers export validation to Mika. Customer launch review is July 15. CSV fallback is approved; field-mapping confirmation is still required.',
-  );
+  expectValue('document chunk text', snapshot.document?.chunkText, DEMO_DOCUMENT_TEXT);
 
   expectValue('meeting id', snapshot.meeting?.id, DEMO_IDS.meeting);
   expectValue('meeting team', snapshot.meeting?.teamId, DEMO_IDS.team);

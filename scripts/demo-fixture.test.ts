@@ -4,6 +4,11 @@ import { readFileSync } from 'node:fs';
 import {
   assertDemoFixture,
   assertDemoSeedEnvironment,
+  DEMO_DOCUMENT_BYTE_SIZE,
+  DEMO_DOCUMENT_CHECKSUM_SHA256,
+  DEMO_DOCUMENT_CONTENT_TYPE,
+  DEMO_DOCUMENT_OBJECT_KEY,
+  DEMO_DOCUMENT_TEXT,
   DEMO_ENTITIES,
   DEMO_EVENTS,
   DEMO_FACTS,
@@ -54,6 +59,21 @@ corruptionFails('workspace identity', (snapshot) => {
   if (snapshot.workspace) snapshot.workspace.id = '20000000-0000-4000-8000-000000000099';
 });
 
+corruptionFails('login identity', (snapshot) => {
+  const owner = snapshot.logins.find((login) => login.id === DEMO_IDS.owner);
+  if (owner) owner.email = 'wrong-owner@timeline.dev';
+});
+
+corruptionFails('login membership', (snapshot) => {
+  const member = snapshot.logins.find((login) => login.id === DEMO_IDS.member);
+  if (member) member.membershipActive = false;
+});
+
+corruptionFails('login password usability', (snapshot) => {
+  const owner = snapshot.logins.find((login) => login.id === DEMO_IDS.owner);
+  if (owner) owner.passwordUsable = false;
+});
+
 corruptionFails('source chronology', (snapshot) => {
   const provider = snapshot.events.find((row) => row.id === DEMO_IDS.eventProvider);
   if (provider) provider.occurredAt = '2026-07-08T14:59:00.000Z';
@@ -75,6 +95,28 @@ corruptionFails('raw-event source link', (snapshot) => {
 corruptionFails('association source link', (snapshot) => {
   const blocker = snapshot.associations.find((row) => row.id === DEMO_IDS.associationBlocker);
   if (blocker) blocker.sourceRefs = [];
+});
+
+corruptionFails('explicit-note association visibility', (snapshot) => {
+  const note = snapshot.associations.find((row) => row.id === DEMO_IDS.associationNote);
+  if (note) note.visibility = 'private';
+});
+
+corruptionFails('explicit-note association visibility floor', (snapshot) => {
+  const note = snapshot.associations.find((row) => row.id === DEMO_IDS.associationNote);
+  if (note) note.visibilityFloor = 'private';
+});
+
+corruptionFails('document backing object', (snapshot) => {
+  if (snapshot.document) snapshot.document.backingObjectExists = false;
+});
+
+corruptionFails('document byte size', (snapshot) => {
+  if (snapshot.document) snapshot.document.versionByteSize = DEMO_DOCUMENT_BYTE_SIZE - 1;
+});
+
+corruptionFails('document checksum', (snapshot) => {
+  if (snapshot.document) snapshot.document.versionChecksumSha256 = 'incorrect-checksum';
 });
 
 corruptionFails('current blocker support', (snapshot) => {
@@ -176,6 +218,26 @@ function validSnapshot(): DemoFixtureSnapshot {
 
   return {
     workspace: { id: DEMO_IDS.team, slug: 'acme-labs', name: 'Acme Labs' },
+    logins: [
+      {
+        id: DEMO_IDS.owner,
+        name: 'Avery Timeline',
+        email: 'owner@timeline.dev',
+        teamId: DEMO_IDS.team,
+        role: 'owner',
+        membershipActive: true,
+        passwordUsable: true,
+      },
+      {
+        id: DEMO_IDS.member,
+        name: 'Mika Product',
+        email: 'member@timeline.dev',
+        teamId: DEMO_IDS.team,
+        role: 'member',
+        membershipActive: true,
+        passwordUsable: true,
+      },
+    ],
     integration: {
       id: DEMO_IDS.linearIntegration,
       teamId: DEMO_IDS.team,
@@ -283,11 +345,18 @@ function validSnapshot(): DemoFixtureSnapshot {
       versionId: DEMO_IDS.documentVersion,
       versionDocumentId: DEMO_IDS.document,
       versionSourceEventId: DEMO_IDS.eventEmail,
+      versionObjectKey: DEMO_DOCUMENT_OBJECT_KEY,
+      versionByteSize: DEMO_DOCUMENT_BYTE_SIZE,
+      versionContentType: DEMO_DOCUMENT_CONTENT_TYPE,
+      versionChecksumSha256: DEMO_DOCUMENT_CHECKSUM_SHA256,
+      versionProcessingStatus: 'embedded',
+      backingObjectExists: true,
+      backingObjectByteSize: DEMO_DOCUMENT_BYTE_SIZE,
+      backingObjectContentType: DEMO_DOCUMENT_CONTENT_TYPE,
       chunkId: DEMO_IDS.documentChunk,
       chunkDocumentId: DEMO_IDS.document,
       chunkVersionId: DEMO_IDS.documentVersion,
-      chunkText:
-        'Northstar pilot handoff: Avery transfers export validation to Mika. Customer launch review is July 15. CSV fallback is approved; field-mapping confirmation is still required.',
+      chunkText: DEMO_DOCUMENT_TEXT,
     },
     meeting: {
       id: DEMO_IDS.meeting,

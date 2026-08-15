@@ -37,15 +37,22 @@ import {
 } from '@timeline/db';
 import { encryptJson } from '@timeline/shared/crypto';
 import { hashPassword } from '@timeline/shared/passwords';
+import { getDocumentsBucket, getS3Client, putObject } from '@timeline/shared/s3';
 import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
 
 import {
   assertDemoSeedEnvironment,
+  DEMO_DOCUMENT_BYTE_SIZE,
+  DEMO_DOCUMENT_CHECKSUM_SHA256,
+  DEMO_DOCUMENT_CONTENT_TYPE,
+  DEMO_DOCUMENT_OBJECT_KEY,
+  DEMO_DOCUMENT_TEXT,
   DEMO_ENTITIES,
   DEMO_EVENTS,
   DEMO_FACTS,
   DEMO_FIXTURE_VERSION,
   DEMO_IDS,
+  DEMO_LOGIN_PASSWORD,
   DEMO_SOURCE_REFS,
   DEMO_TIMES,
 } from './demo-fixture.js';
@@ -54,7 +61,6 @@ loadDotEnv(resolve(process.cwd(), '.env'));
 
 const TERMS_VERSION = '2026-06-02';
 const PRIVACY_VERSION = '2026-06-02';
-const DEV_PASSWORD = 'timeline-dev';
 
 const IDS = {
   owner: '10000000-0000-4000-8000-000000000001',
@@ -283,7 +289,7 @@ async function main(): Promise<void> {
 
   const db = getDb();
   await assertReservedSeedRowsAreCompatible(db);
-  const passwordHash = await hashPassword(DEV_PASSWORD);
+  const passwordHash = await hashPassword(DEMO_LOGIN_PASSWORD);
   const githubSecret = encryptJson({
     access_token: 'gho_dev_seed_access_token_123',
     refresh_token: 'ghr_dev_seed_refresh_token_123',
@@ -296,6 +302,13 @@ async function main(): Promise<void> {
   });
 
   try {
+    await putObject(getS3Client(), {
+      bucket: getDocumentsBucket(),
+      key: DEMO_DOCUMENT_OBJECT_KEY,
+      body: Buffer.from(DEMO_DOCUMENT_TEXT),
+      contentType: DEMO_DOCUMENT_CONTENT_TYPE,
+    });
+
     await db.transaction(async (tx) => {
       await tx
         .insert(users)
@@ -855,10 +868,10 @@ async function main(): Promise<void> {
           teamId: DEMO_IDS.team,
           documentId: DEMO_IDS.document,
           version: 1,
-          objectKey: `${DEMO_IDS.team}/documents/demo-seed/northstar-handoff/v1.txt`,
-          byteSize: 169,
-          contentType: 'text/plain',
-          checksumSha256: 'demo-seed-northstar-handoff-v1',
+          objectKey: DEMO_DOCUMENT_OBJECT_KEY,
+          byteSize: DEMO_DOCUMENT_BYTE_SIZE,
+          contentType: DEMO_DOCUMENT_CONTENT_TYPE,
+          checksumSha256: DEMO_DOCUMENT_CHECKSUM_SHA256,
           uploadedByUserId: DEMO_IDS.member,
           sourceEventId: DEMO_IDS.eventEmail,
           processingStatus: 'embedded',
@@ -892,7 +905,7 @@ async function main(): Promise<void> {
           documentVersionId: DEMO_IDS.documentVersion,
           chunkIndex: 0,
           representationKind: 'source_text',
-          text: 'Northstar pilot handoff: Avery transfers export validation to Mika. Customer launch review is July 15. CSV fallback is approved; field-mapping confirmation is still required.',
+          text: DEMO_DOCUMENT_TEXT,
           tokenCount: 25,
           summary: 'Northstar pilot handoff, decision, and unresolved export blocker.',
           createdAt: new Date(DEMO_TIMES.email),
@@ -2082,8 +2095,8 @@ async function main(): Promise<void> {
     });
 
     console.log('[seed-dev] seeded Acme Labs dev workspace');
-    console.log(`[seed-dev] owner login: owner@timeline.dev / ${DEV_PASSWORD}`);
-    console.log(`[seed-dev] member login: member@timeline.dev / ${DEV_PASSWORD}`);
+    console.log(`[seed-dev] owner login: owner@timeline.dev / ${DEMO_LOGIN_PASSWORD}`);
+    console.log(`[seed-dev] member login: member@timeline.dev / ${DEMO_LOGIN_PASSWORD}`);
     console.log('[seed-dev] fake GitHub access token: gho_dev_seed_access_token_123');
     console.log('[seed-dev] fake Linear access token: lin_api_dev_seed_access_token_456');
   } finally {
