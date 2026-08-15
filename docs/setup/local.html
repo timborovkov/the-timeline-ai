@@ -78,7 +78,7 @@ set +a
 
 pnpm db:generate            # only if you changed schema
 pnpm db:migrate
-pnpm dev:seed               # optional demo team, users, events, objects, integrations, reconciliation provenance
+pnpm demo:seed              # optional fixed fictional corpus; seeds and verifies exact evidence links
 </code></pre>
       <p>
         Exporting the root environment is required for the database and worker commands. The root
@@ -86,8 +86,10 @@ pnpm dev:seed               # optional demo team, users, events, objects, integr
         worker; Next.js reads the same values through <code>apps/web/.env</code>.
       </p>
       <p>
-        <code>pnpm dev:seed</code> only runs against local database hosts unless you set an explicit
-        override, and it requires <code>AUTH_SECRET</code>, <code>DATABASE_URL</code>, and
+        <code>pnpm demo:seed</code> runs the idempotent dev seed and then
+        <code>pnpm demo:verify</code>. Both commands refuse production and only run against local
+        database hosts unless you set the existing explicit development override. They require
+        <code>AUTH_SECRET</code>, <code>DATABASE_URL</code>, and
         <code>SECRETS_ENCRYPTION_KEY</code>. It creates <code>owner@timeline.dev</code> and
         <code>member@timeline.dev</code> with password <code>timeline-dev</code>. The seeded GitHub
         and Linear credentials are fake, encrypted, and disabled for sync. Daily digest email is
@@ -212,6 +214,8 @@ pnpm e2e                              # Playwright core journeys; requires compo
 pnpm e2e:prod-smoke                   # build + standalone-server smoke; requires compose infra + migrations
 pnpm e2e:setup / pnpm e2e:cleanup     # seed/remove deterministic e2e users and team
 pnpm dev:seed                         # seed local demo data with disabled fake integrations and reconciliation provenance
+pnpm demo:seed                        # seed and verify the fixed private/local fictional demo corpus
+pnpm demo:verify                      # fail closed on demo fixture, chronology, visibility, or evidence-link drift
 pnpm lint &amp;&amp; pnpm typecheck           # quick static checks
 pnpm knip                             # dead code / unused deps
 pnpm format                           # prettier write

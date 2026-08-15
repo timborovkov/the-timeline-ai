@@ -138,9 +138,13 @@ Treat this file as an operating contract for agents, not a loose README.
   No direct OpenAI / OpenRouter SDK calls from app or worker code.
 - **`pnpm` only** (no `npm` / `yarn`). Workspace packages are wired via
   Turborepo; `pnpm -r build` is the canonical build.
-- **Use the dev seed for local demo data.** `pnpm dev:seed` creates the
+- **Use the verified demo seed for recorded demos and local regression checks.** `pnpm demo:seed`
+  runs the idempotent `pnpm dev:seed` and then `pnpm demo:verify`. It creates the
   documented Acme Labs team, fake login users, events, objects, board, and
-  encrypted fake integration credentials after migrations. The fake
+  deterministic fictional evidence corpus with encrypted fake integration credentials after
+  migrations. `pnpm demo:verify` fails closed on fixture identity, chronology, visibility, source
+  links, or canonical support drift. Both commands refuse production and unapproved remote
+  databases. The fake
   integrations stay disabled for sync so local workers do not call real
   providers. Keep the credential list in [README.md](README.md) current when
   the seed changes.
@@ -272,13 +276,13 @@ Phased build plan and current state: [todo.md](todo.md). Product vision:
 ### Local stack for this environment
 
 - Infra (Postgres, Redis, Qdrant, RustFS) is started with `docker compose up -d` from the repo root. Dockerd is not managed by systemd here — if containers are down, ensure `dockerd` is running first, then compose up. Confirm health with `docker compose ps`.
-- App processes: web (`apps/web`, Next.js on `:3000`) + worker (`apps/worker`, BullMQ). Standard commands are in [README.md](README.md) (`pnpm dev`, `pnpm db:migrate`, `pnpm dev:seed`, `pnpm validate`, `pnpm test`, `pnpm run doctor`).
-- Seeded demo logins (after `pnpm db:migrate` + `pnpm dev:seed`): `owner@timeline.dev` / `member@timeline.dev`, password `timeline-dev`.
+- App processes: web (`apps/web`, Next.js on `:3000`) + worker (`apps/worker`, BullMQ). Standard commands are in [README.md](README.md) (`pnpm dev`, `pnpm db:migrate`, `pnpm demo:seed`, `pnpm demo:verify`, `pnpm validate`, `pnpm test`, `pnpm run doctor`).
+- Seeded demo logins (after `pnpm db:migrate` + `pnpm demo:seed`): `owner@timeline.dev` / `member@timeline.dev`, password `timeline-dev`.
 
 ### Non-obvious env / startup gotchas
 
 - **Node must be >=24.** This Cloud Agent image ships an older Node on `/exec-daemon` ahead of nvm on `PATH`. Prefer the nvm Node 24 binary (see `~/.bashrc` PATH override). Use `pnpm` via Corepack on that Node (`packageManager` pins `pnpm@11.8.0`).
-- **Root `.env` is not auto-loaded by the worker or by `drizzle-kit`.** Next.js loads `apps/web/.env` (symlink to `../../.env`). Before `pnpm db:migrate`, `pnpm dev:seed`, or running the worker, export the root env into the shell, e.g. `set -a; . ./.env; set +a`. Quote any values that contain spaces (for example `RECALL_BOT_DISPLAY_NAME="Timeline Bot"`) or bash will try to execute the trailing words when sourcing.
+- **Root `.env` is not auto-loaded by the worker or by `drizzle-kit`.** Next.js loads `apps/web/.env` (symlink to `../../.env`). Before `pnpm db:migrate`, `pnpm demo:seed`, or running the worker, export the root env into the shell, e.g. `set -a; . ./.env; set +a`. Quote any values that contain spaces (for example `RECALL_BOT_DISPLAY_NAME="Timeline Bot"`) or bash will try to execute the trailing words when sourcing.
 - **The root `pnpm dev` script must keep `--env-mode=loose`.** Turbo's strict default strips unlisted env vars from the worker task even after sourcing `.env`. Alternatively run packages separately with env already exported: `pnpm --filter @timeline/web dev` and `pnpm --filter @timeline/worker dev`.
 - Optional URL keys left blank in `.env.example` must use `emptyStringAsUnset` in the shared env schema so the documented shell export flow remains valid.
-- Keep a real `OPENROUTER_API_KEY` and `SECRETS_ENCRYPTION_KEY` in `.env` for chat/extraction/embeddings and for `pnpm dev:seed` (seed encrypts fake integration credentials).
+- Keep a real `OPENROUTER_API_KEY` and `SECRETS_ENCRYPTION_KEY` in `.env` for chat/extraction/embeddings and for `pnpm demo:seed` (seed encrypts fake integration credentials).

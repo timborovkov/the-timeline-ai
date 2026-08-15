@@ -9,6 +9,9 @@ import {
   boardLanes,
   boards,
   closeDb,
+  documentChunks,
+  documents,
+  documentVersions,
   entities,
   entityRelationships,
   taskCategoryAssignments,
@@ -19,6 +22,8 @@ import {
   integrations,
   integrationSelections,
   integrationSyncState,
+  meetings,
+  meetingTranscriptChunks,
   messagePreferences,
   providerConnections,
   rawEvents,
@@ -33,6 +38,17 @@ import {
 import { encryptJson } from '@timeline/shared/crypto';
 import { hashPassword } from '@timeline/shared/passwords';
 import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
+
+import {
+  assertDemoSeedEnvironment,
+  DEMO_ENTITIES,
+  DEMO_EVENTS,
+  DEMO_FACTS,
+  DEMO_FIXTURE_VERSION,
+  DEMO_IDS,
+  DEMO_SOURCE_REFS,
+  DEMO_TIMES,
+} from './demo-fixture.js';
 
 loadDotEnv(resolve(process.cwd(), '.env'));
 
@@ -98,28 +114,6 @@ const IDS = {
 } as const;
 
 const now = new Date('2026-06-18T09:00:00.000Z');
-const LOCAL_DEV_SEED_OVERRIDE = 'I_UNDERSTAND_THIS_SEEDS_KNOWN_DEV_CREDENTIALS';
-
-function assertDevSeedEnvironment(): void {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) throw new Error('DATABASE_URL is required');
-  if (!process.env.AUTH_SECRET) throw new Error('AUTH_SECRET is required');
-  if (!process.env.SECRETS_ENCRYPTION_KEY) {
-    throw new Error('SECRETS_ENCRYPTION_KEY is required to seed fake integration credentials');
-  }
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('Refusing to run dev seed with NODE_ENV=production');
-  }
-
-  const host = new URL(databaseUrl).hostname.toLowerCase();
-  const isLocalDatabase = host === 'localhost' || host === '127.0.0.1' || host === '::1';
-  if (!isLocalDatabase && process.env.ALLOW_DEV_SEED !== LOCAL_DEV_SEED_OVERRIDE) {
-    throw new Error(
-      `Refusing to seed non-local database host "${host}". Set ALLOW_DEV_SEED=${LOCAL_DEV_SEED_OVERRIDE} only if this is an isolated development database.`,
-    );
-  }
-}
-
 async function assertReservedSeedRowsAreCompatible(db: ReturnType<typeof getDb>): Promise<void> {
   const [reservedUsers, reservedTeams, reservedConnections, reservedIntegrations] =
     await Promise.all([
@@ -252,8 +246,40 @@ function assertReservedIntegrationRows(
   }
 }
 
+function demoAssociation(input: {
+  id: string;
+  clusterId: string;
+  evidenceId: string;
+  rawEventId: string;
+  source: 'email' | 'integration' | 'meeting' | 'slack';
+  role: 'blocker' | 'decision' | 'discussion' | 'lifecycle_update' | 'update';
+  strength: 'human' | 'provider' | 'structured';
+  associationSource: 'authoritative_provider' | 'human' | 'structured_anchor';
+  rationale: string;
+  dedupeKey: string;
+}) {
+  return {
+    ...input,
+    teamId: DEMO_IDS.team,
+    sourceRefs: [
+      {
+        source: input.source,
+        rawEventId: input.rawEventId,
+        evidenceId: input.evidenceId,
+      },
+    ],
+    visibility: 'team' as const,
+    visibilityOwnerUserId: null,
+    visibilityUserIds: null,
+    visibilityFloor: 'team' as const,
+    visibilityFloorOwnerUserId: null,
+    visibilityFloorUserIds: null,
+    metadata: { fixture_version: DEMO_FIXTURE_VERSION },
+  };
+}
+
 async function main(): Promise<void> {
-  assertDevSeedEnvironment();
+  assertDemoSeedEnvironment();
 
   const db = getDb();
   await assertReservedSeedRowsAreCompatible(db);
@@ -709,8 +735,259 @@ async function main(): Promise<void> {
               dedup_key: 'linear:dev-seed:issue:TL-101',
             },
           },
+          {
+            id: DEMO_IDS.eventNote,
+            teamId: DEMO_IDS.team,
+            authorUserId: DEMO_IDS.owner,
+            source: 'slack',
+            contentText: DEMO_EVENTS[0].contentText,
+            occurredAt: new Date(DEMO_TIMES.note),
+            createdAt: new Date(DEMO_TIMES.note),
+            visibility: 'team',
+            sourceMetadata: {
+              fixture_version: DEMO_FIXTURE_VERSION,
+              capture_kind: 'explicit_chat_note',
+              command: '/timeline note',
+              slack_event_id: 'EvDEMOSEEDNORTHSTAR001',
+              slack_channel_name: '#northstar-pilot',
+              source_payload_ref: DEMO_SOURCE_REFS.note,
+            },
+          },
+          {
+            id: DEMO_IDS.eventEmail,
+            teamId: DEMO_IDS.team,
+            authorUserId: DEMO_IDS.member,
+            source: 'email',
+            contentText: DEMO_EVENTS[1].contentText,
+            occurredAt: new Date(DEMO_TIMES.email),
+            createdAt: new Date(DEMO_TIMES.email),
+            visibility: 'team',
+            sourceMetadata: {
+              fixture_version: DEMO_FIXTURE_VERSION,
+              message_id: 'demo-seed-northstar-export-commitment-001',
+              from: 'elena.park@northstar.example',
+              subject: 'Northstar pilot export commitment',
+              attachment_name: 'Northstar pilot handoff brief.txt',
+              source_payload_ref: DEMO_SOURCE_REFS.email,
+            },
+          },
+          {
+            id: DEMO_IDS.eventMeeting,
+            teamId: DEMO_IDS.team,
+            authorUserId: DEMO_IDS.owner,
+            source: 'meeting',
+            contentText: DEMO_EVENTS[2].contentText,
+            occurredAt: new Date(DEMO_TIMES.meeting),
+            createdAt: new Date(DEMO_TIMES.meeting),
+            visibility: 'team',
+            sourceMetadata: {
+              fixture_version: DEMO_FIXTURE_VERSION,
+              meeting_id: DEMO_IDS.meeting,
+              platform: 'meet',
+              title: 'Northstar pilot handoff review',
+              meeting_chunk_provider_id: 'demo-seed-northstar-meeting-001',
+              source_payload_ref: DEMO_SOURCE_REFS.meeting,
+            },
+          },
+          {
+            id: DEMO_IDS.eventProvider,
+            teamId: DEMO_IDS.team,
+            authorUserId: DEMO_IDS.member,
+            source: 'integration',
+            contentText: DEMO_EVENTS[3].contentText,
+            occurredAt: new Date(DEMO_TIMES.provider),
+            createdAt: new Date(DEMO_TIMES.provider),
+            visibility: 'team',
+            sourceMetadata: {
+              fixture_version: DEMO_FIXTURE_VERSION,
+              provider: 'linear',
+              integration_id: DEMO_IDS.linearIntegration,
+              selection_external_id: 'LIN-TL',
+              event_type: 'issue.updated',
+              external_object_id: 'NORTH-42',
+              dedup_key: 'linear:demo-seed:issue:NORTH-42:blocked',
+              source_payload_ref: DEMO_SOURCE_REFS.provider,
+            },
+          },
         ])
         .onConflictDoNothing();
+
+      await tx
+        .insert(documents)
+        .values({
+          id: DEMO_IDS.document,
+          teamId: DEMO_IDS.team,
+          fileKind: 'document',
+          name: 'Northstar pilot handoff brief.txt',
+          currentVersionId: null,
+          ownerUserId: DEMO_IDS.member,
+          visibility: 'team',
+          metadata: {
+            fixture_version: DEMO_FIXTURE_VERSION,
+            source_surface: 'email_attachment',
+          },
+          sourceRawEventId: DEMO_IDS.eventEmail,
+          promotedAt: new Date(DEMO_TIMES.email),
+          promotedByUserId: DEMO_IDS.member,
+          createdAt: new Date(DEMO_TIMES.email),
+          updatedAt: new Date(DEMO_TIMES.email),
+        })
+        .onConflictDoUpdate({
+          target: documents.id,
+          set: {
+            name: sql`excluded.name`,
+            ownerUserId: sql`excluded.owner_user_id`,
+            visibility: sql`excluded.visibility`,
+            visibilityUserIds: null,
+            metadata: sql`excluded.metadata`,
+            sourceRawEventId: sql`excluded.source_raw_event_id`,
+            promotedAt: sql`excluded.promoted_at`,
+            promotedByUserId: sql`excluded.promoted_by_user_id`,
+            deletedAt: null,
+            updatedAt: sql`excluded.updated_at`,
+          },
+        });
+
+      await tx
+        .insert(documentVersions)
+        .values({
+          id: DEMO_IDS.documentVersion,
+          teamId: DEMO_IDS.team,
+          documentId: DEMO_IDS.document,
+          version: 1,
+          objectKey: `${DEMO_IDS.team}/documents/demo-seed/northstar-handoff/v1.txt`,
+          byteSize: 169,
+          contentType: 'text/plain',
+          checksumSha256: 'demo-seed-northstar-handoff-v1',
+          uploadedByUserId: DEMO_IDS.member,
+          sourceEventId: DEMO_IDS.eventEmail,
+          processingStatus: 'embedded',
+          extractionModelVersion: DEMO_FIXTURE_VERSION,
+          embeddingModelVersion: DEMO_FIXTURE_VERSION,
+          createdAt: new Date(DEMO_TIMES.email),
+        })
+        .onConflictDoUpdate({
+          target: documentVersions.id,
+          set: {
+            documentId: sql`excluded.document_id`,
+            version: sql`excluded.version`,
+            objectKey: sql`excluded.object_key`,
+            byteSize: sql`excluded.byte_size`,
+            contentType: sql`excluded.content_type`,
+            checksumSha256: sql`excluded.checksum_sha256`,
+            uploadedByUserId: sql`excluded.uploaded_by_user_id`,
+            processingStatus: sql`excluded.processing_status`,
+            processingError: null,
+            extractionModelVersion: sql`excluded.extraction_model_version`,
+            embeddingModelVersion: sql`excluded.embedding_model_version`,
+          },
+        });
+
+      await tx
+        .insert(documentChunks)
+        .values({
+          id: DEMO_IDS.documentChunk,
+          teamId: DEMO_IDS.team,
+          documentId: DEMO_IDS.document,
+          documentVersionId: DEMO_IDS.documentVersion,
+          chunkIndex: 0,
+          representationKind: 'source_text',
+          text: 'Northstar pilot handoff: Avery transfers export validation to Mika. Customer launch review is July 15. CSV fallback is approved; field-mapping confirmation is still required.',
+          tokenCount: 25,
+          summary: 'Northstar pilot handoff, decision, and unresolved export blocker.',
+          createdAt: new Date(DEMO_TIMES.email),
+        })
+        .onConflictDoUpdate({
+          target: documentChunks.id,
+          set: {
+            documentId: sql`excluded.document_id`,
+            documentVersionId: sql`excluded.document_version_id`,
+            chunkIndex: sql`excluded.chunk_index`,
+            representationKind: sql`excluded.representation_kind`,
+            text: sql`excluded.text`,
+            tokenCount: sql`excluded.token_count`,
+            summary: sql`excluded.summary`,
+          },
+        });
+
+      await tx
+        .update(documents)
+        .set({ currentVersionId: DEMO_IDS.documentVersion })
+        .where(and(eq(documents.teamId, DEMO_IDS.team), eq(documents.id, DEMO_IDS.document)));
+
+      await tx
+        .insert(meetings)
+        .values({
+          id: DEMO_IDS.meeting,
+          teamId: DEMO_IDS.team,
+          createdByUserId: DEMO_IDS.owner,
+          provider: 'demo-fixture',
+          platform: 'meet',
+          meetingUrl: 'https://meet.example.test/northstar-pilot-review',
+          title: 'Northstar pilot handoff review',
+          status: 'completed',
+          defaultVisibility: 'team',
+          participants: [
+            { name: 'Avery Timeline', role: 'owner' },
+            { name: 'Mika Product', role: 'handoff_owner' },
+          ],
+          metadata: {
+            fixture_version: DEMO_FIXTURE_VERSION,
+            silent: true,
+            consent_confirmed: true,
+            source_payload_ref: DEMO_SOURCE_REFS.meeting,
+          },
+          startedAt: new Date(DEMO_TIMES.meeting),
+          endedAt: new Date('2026-07-08T15:30:00.000Z'),
+          createdAt: new Date(DEMO_TIMES.meeting),
+          updatedAt: new Date(DEMO_TIMES.meeting),
+        })
+        .onConflictDoUpdate({
+          target: meetings.id,
+          set: {
+            createdByUserId: sql`excluded.created_by_user_id`,
+            provider: sql`excluded.provider`,
+            providerBotId: null,
+            platform: sql`excluded.platform`,
+            meetingUrl: sql`excluded.meeting_url`,
+            title: sql`excluded.title`,
+            status: sql`excluded.status`,
+            defaultVisibility: sql`excluded.default_visibility`,
+            visibilityUserIds: null,
+            participants: sql`excluded.participants`,
+            metadata: sql`excluded.metadata`,
+            startedAt: sql`excluded.started_at`,
+            endedAt: sql`excluded.ended_at`,
+            updatedAt: sql`excluded.updated_at`,
+          },
+        });
+
+      await tx
+        .insert(meetingTranscriptChunks)
+        .values({
+          id: DEMO_IDS.meetingChunk,
+          meetingId: DEMO_IDS.meeting,
+          teamId: DEMO_IDS.team,
+          speaker: 'Avery and Mika',
+          text: 'Avery: I am handing export validation to Mika. Mika: I own it. We will use the CSV fallback, but field-mapping confirmation is still blocking completion.',
+          startMs: 12_000,
+          endMs: 31_000,
+          rawEventId: DEMO_IDS.eventMeeting,
+          providerChunkId: 'demo-seed-northstar-chunk-001',
+          createdAt: new Date(DEMO_TIMES.meeting),
+        })
+        .onConflictDoUpdate({
+          target: meetingTranscriptChunks.id,
+          set: {
+            meetingId: sql`excluded.meeting_id`,
+            speaker: sql`excluded.speaker`,
+            text: sql`excluded.text`,
+            startMs: sql`excluded.start_ms`,
+            endMs: sql`excluded.end_ms`,
+            rawEventId: sql`excluded.raw_event_id`,
+            providerChunkId: sql`excluded.provider_chunk_id`,
+          },
+        });
 
       await tx
         .insert(entities)
@@ -783,6 +1060,66 @@ async function main(): Promise<void> {
             status: 'active',
             ownerUserId: IDS.member,
           },
+          {
+            id: DEMO_IDS.objectPilot,
+            teamId: DEMO_IDS.team,
+            type: DEMO_ENTITIES[0].type,
+            canonicalName: DEMO_ENTITIES[0].canonicalName,
+            aliases: ['Northstar Works pilot'],
+            metadata: {
+              fixture_version: DEMO_FIXTURE_VERSION,
+              customer: 'Northstar Works',
+              review_date: '2026-07-15',
+            },
+            status: DEMO_ENTITIES[0].status,
+            stage: DEMO_ENTITIES[0].stage,
+            priority: 1,
+            ownerUserId: DEMO_ENTITIES[0].ownerUserId,
+            sourceEventId: null,
+          },
+          {
+            id: DEMO_IDS.objectDelivery,
+            teamId: DEMO_IDS.team,
+            type: DEMO_ENTITIES[1].type,
+            canonicalName: DEMO_ENTITIES[1].canonicalName,
+            aliases: ['NORTH-42', 'Northstar export validation'],
+            metadata: {
+              fixture_version: DEMO_FIXTURE_VERSION,
+              blocker: 'Waiting for field-mapping confirmation',
+              provider: 'linear',
+              external_object_id: 'NORTH-42',
+            },
+            status: DEMO_ENTITIES[1].status,
+            stage: DEMO_ENTITIES[1].stage,
+            priority: 1,
+            ownerUserId: DEMO_ENTITIES[1].ownerUserId,
+            assigneeUserId: DEMO_ENTITIES[1].assigneeUserId,
+            dueAt: new Date('2026-07-12T17:00:00.000Z'),
+            taskCategory: 'engineering',
+            taskCategoryMode: 'automatic',
+            taskCategorySource: 'llm',
+            taskCategoryStatus: 'ready',
+            taskCategoryAppliedInputHash: 'demo-seed-northstar-task-v1',
+            taskCategoryTaxonomyVersion: 'task-categories-v1',
+            taskCategoryUpdatedAt: new Date(DEMO_TIMES.provider),
+            sourceEventId: null,
+          },
+          {
+            id: DEMO_IDS.objectDecision,
+            teamId: DEMO_IDS.team,
+            type: DEMO_ENTITIES[2].type,
+            canonicalName: DEMO_ENTITIES[2].canonicalName,
+            aliases: ['Northstar CSV fallback'],
+            metadata: {
+              fixture_version: DEMO_FIXTURE_VERSION,
+              rationale: 'Keeps the pilot moving while field mapping is clarified.',
+            },
+            status: DEMO_ENTITIES[2].status,
+            stage: DEMO_ENTITIES[2].stage,
+            priority: 1,
+            ownerUserId: DEMO_ENTITIES[2].ownerUserId,
+            sourceEventId: null,
+          },
         ])
         .onConflictDoUpdate({
           target: entities.id,
@@ -839,6 +1176,51 @@ async function main(): Promise<void> {
             modelVersion: 'dev-seed',
             extractedAt: now,
           },
+          {
+            id: DEMO_IDS.factCommitment,
+            teamId: DEMO_IDS.team,
+            rawEventId: DEMO_IDS.eventEmail,
+            statement: DEMO_FACTS.commitment,
+            confidence: 0.99,
+            modelVersion: DEMO_FIXTURE_VERSION,
+            extractedAt: new Date(DEMO_TIMES.email),
+          },
+          {
+            id: DEMO_IDS.factHandoff,
+            teamId: DEMO_IDS.team,
+            rawEventId: DEMO_IDS.eventMeeting,
+            statement: DEMO_FACTS.handoff,
+            confidence: 0.99,
+            modelVersion: DEMO_FIXTURE_VERSION,
+            extractedAt: new Date(DEMO_TIMES.meeting),
+          },
+          {
+            id: DEMO_IDS.factDecision,
+            teamId: DEMO_IDS.team,
+            rawEventId: DEMO_IDS.eventMeeting,
+            statement: DEMO_FACTS.decision,
+            confidence: 0.99,
+            modelVersion: DEMO_FIXTURE_VERSION,
+            extractedAt: new Date(DEMO_TIMES.meeting),
+          },
+          {
+            id: DEMO_IDS.factBlocker,
+            teamId: DEMO_IDS.team,
+            rawEventId: DEMO_IDS.eventProvider,
+            statement: DEMO_FACTS.blocker,
+            confidence: 0.99,
+            modelVersion: DEMO_FIXTURE_VERSION,
+            extractedAt: new Date(DEMO_TIMES.provider),
+          },
+          {
+            id: DEMO_IDS.factStatus,
+            teamId: DEMO_IDS.team,
+            rawEventId: DEMO_IDS.eventProvider,
+            statement: DEMO_FACTS.status,
+            confidence: 0.99,
+            modelVersion: DEMO_FIXTURE_VERSION,
+            extractedAt: new Date(DEMO_TIMES.provider),
+          },
         ])
         .onConflictDoNothing();
 
@@ -848,6 +1230,31 @@ async function main(): Promise<void> {
           { factId: IDS.factKickoff, entityId: IDS.objectProject, role: 'subject' },
           { factId: IDS.factEmail, entityId: IDS.objectTask, role: 'subject' },
           { factId: IDS.factMeeting, entityId: IDS.objectDecision, role: 'subject' },
+          {
+            factId: DEMO_IDS.factCommitment,
+            entityId: DEMO_IDS.objectPilot,
+            role: 'subject',
+          },
+          {
+            factId: DEMO_IDS.factHandoff,
+            entityId: DEMO_IDS.objectDelivery,
+            role: 'subject',
+          },
+          {
+            factId: DEMO_IDS.factDecision,
+            entityId: DEMO_IDS.objectDecision,
+            role: 'subject',
+          },
+          {
+            factId: DEMO_IDS.factBlocker,
+            entityId: DEMO_IDS.objectDelivery,
+            role: 'subject',
+          },
+          {
+            factId: DEMO_IDS.factStatus,
+            entityId: DEMO_IDS.objectDelivery,
+            role: 'subject',
+          },
         ])
         .onConflictDoNothing();
 
@@ -883,6 +1290,40 @@ async function main(): Promise<void> {
             status: 'resolved',
             canonicalEntityId: IDS.objectDecision,
             metadata: { seed: true },
+          },
+          {
+            id: DEMO_IDS.clusterPilot,
+            teamId: DEMO_IDS.team,
+            artifactClusterKind: 'customer_project',
+            artifactType: 'project',
+            canonicalName: 'Northstar pilot',
+            status: 'active',
+            canonicalEntityId: DEMO_IDS.objectPilot,
+            metadata: { fixture_version: DEMO_FIXTURE_VERSION },
+          },
+          {
+            id: DEMO_IDS.clusterDelivery,
+            teamId: DEMO_IDS.team,
+            artifactClusterKind: 'task',
+            artifactType: 'task',
+            canonicalName: 'Validate Northstar pilot export',
+            status: 'active',
+            canonicalEntityId: DEMO_IDS.objectDelivery,
+            metadata: {
+              fixture_version: DEMO_FIXTURE_VERSION,
+              provider: 'linear',
+              external_object_id: 'NORTH-42',
+            },
+          },
+          {
+            id: DEMO_IDS.clusterDecision,
+            teamId: DEMO_IDS.team,
+            artifactClusterKind: 'decision',
+            artifactType: 'decision',
+            canonicalName: 'Use CSV fallback for Northstar pilot',
+            status: 'resolved',
+            canonicalEntityId: DEMO_IDS.objectDecision,
+            metadata: { fixture_version: DEMO_FIXTURE_VERSION },
           },
         ])
         .onConflictDoUpdate({
@@ -966,6 +1407,106 @@ async function main(): Promise<void> {
             replayState: 'full',
             dedupeKey: 'dev-seed:evidence:meeting-bots-decision',
           },
+          {
+            id: DEMO_IDS.evidenceNote,
+            teamId: DEMO_IDS.team,
+            rawEventId: DEMO_IDS.eventNote,
+            sourcePayloadRef: DEMO_SOURCE_REFS.note,
+            payloadDigest: 'sha256:demo-seed-northstar-note-payload',
+            source: 'slack',
+            externalEventId: 'EvDEMOSEEDNORTHSTAR001',
+            eventType: 'explicit_note.created',
+            occurredAt: new Date(DEMO_TIMES.note),
+            visibility: 'team',
+            visibilityOwnerUserId: null,
+            visibilityUserIds: null,
+            actor: { user_id: DEMO_IDS.owner },
+            contentDigest: 'sha256:demo-seed-northstar-note',
+            title: 'Northstar pilot kickoff note',
+            summary: 'The pilot review is July 15 and the export path should stay narrow.',
+            metadata: { fixture_version: DEMO_FIXTURE_VERSION },
+            normalizerVersion: DEMO_FIXTURE_VERSION,
+            replayState: 'full',
+            dedupeKey: 'demo-seed:evidence:northstar-note',
+          },
+          {
+            id: DEMO_IDS.evidenceEmail,
+            teamId: DEMO_IDS.team,
+            rawEventId: DEMO_IDS.eventEmail,
+            sourcePayloadRef: DEMO_SOURCE_REFS.email,
+            payloadDigest: 'sha256:demo-seed-northstar-email-payload',
+            source: 'email',
+            externalEventId: 'demo-seed-northstar-export-commitment-001',
+            eventType: 'email.received',
+            occurredAt: new Date(DEMO_TIMES.email),
+            visibility: 'team',
+            visibilityOwnerUserId: null,
+            visibilityUserIds: null,
+            actor: { email: 'elena.park@northstar.example' },
+            contentDigest: 'sha256:demo-seed-northstar-email',
+            title: 'Northstar export commitment',
+            summary: DEMO_FACTS.commitment,
+            metadata: {
+              fixture_version: DEMO_FIXTURE_VERSION,
+              document_id: DEMO_IDS.document,
+            },
+            normalizerVersion: DEMO_FIXTURE_VERSION,
+            replayState: 'full',
+            dedupeKey: 'demo-seed:evidence:northstar-email',
+          },
+          {
+            id: DEMO_IDS.evidenceMeeting,
+            teamId: DEMO_IDS.team,
+            rawEventId: DEMO_IDS.eventMeeting,
+            sourcePayloadRef: DEMO_SOURCE_REFS.meeting,
+            payloadDigest: 'sha256:demo-seed-northstar-meeting-payload',
+            source: 'meeting',
+            externalEventId: 'demo-seed-northstar-meeting-001',
+            eventType: 'meeting.transcript_summary',
+            occurredAt: new Date(DEMO_TIMES.meeting),
+            visibility: 'team',
+            visibilityOwnerUserId: null,
+            visibilityUserIds: null,
+            actor: { user_id: DEMO_IDS.owner },
+            contentDigest: 'sha256:demo-seed-northstar-meeting',
+            title: 'Northstar pilot handoff review',
+            summary: `${DEMO_FACTS.handoff} ${DEMO_FACTS.decision}`,
+            metadata: {
+              fixture_version: DEMO_FIXTURE_VERSION,
+              meeting_id: DEMO_IDS.meeting,
+            },
+            normalizerVersion: DEMO_FIXTURE_VERSION,
+            replayState: 'full',
+            dedupeKey: 'demo-seed:evidence:northstar-meeting',
+          },
+          {
+            id: DEMO_IDS.evidenceProvider,
+            teamId: DEMO_IDS.team,
+            rawEventId: DEMO_IDS.eventProvider,
+            sourcePayloadRef: DEMO_SOURCE_REFS.provider,
+            payloadDigest: 'sha256:demo-seed-northstar-linear-payload',
+            source: 'integration',
+            provider: 'linear',
+            externalObjectId: 'NORTH-42',
+            externalEventId: 'NORTH-42:blocked',
+            eventType: 'issue.updated',
+            occurredAt: new Date(DEMO_TIMES.provider),
+            visibility: 'team',
+            visibilityOwnerUserId: null,
+            visibilityUserIds: null,
+            actor: { user_id: DEMO_IDS.member },
+            contentDigest: 'sha256:demo-seed-northstar-linear',
+            title: 'NORTH-42 blocked',
+            summary: `${DEMO_FACTS.status} ${DEMO_FACTS.blocker}`,
+            metadata: {
+              fixture_version: DEMO_FIXTURE_VERSION,
+              integration_id: DEMO_IDS.linearIntegration,
+              selection_external_id: 'LIN-TL',
+            },
+            normalizerVersion: DEMO_FIXTURE_VERSION,
+            replayState: 'full',
+            dedupeKey: 'demo-seed:evidence:northstar-linear-blocked',
+          },
         ])
         .onConflictDoUpdate({
           target: reconciliationEvidence.id,
@@ -974,6 +1515,8 @@ async function main(): Promise<void> {
             sourcePayloadRef: sql`excluded.source_payload_ref`,
             payloadDigest: sql`excluded.payload_digest`,
             source: sql`excluded.source`,
+            provider: sql`excluded.provider`,
+            externalObjectId: sql`excluded.external_object_id`,
             externalEventId: sql`excluded.external_event_id`,
             eventType: sql`excluded.event_type`,
             occurredAt: sql`excluded.occurred_at`,
@@ -1064,6 +1607,80 @@ async function main(): Promise<void> {
             metadata: { seed: true },
             dedupeKey: 'dev-seed:association:meeting-bots-decision',
           },
+          demoAssociation({
+            id: DEMO_IDS.associationNote,
+            clusterId: DEMO_IDS.clusterPilot,
+            evidenceId: DEMO_IDS.evidenceNote,
+            rawEventId: DEMO_IDS.eventNote,
+            source: 'slack',
+            role: 'discussion',
+            strength: 'human',
+            associationSource: 'human',
+            rationale: 'The explicit team note establishes the private demo scenario context.',
+            dedupeKey: 'demo-seed:association:northstar-note',
+          }),
+          demoAssociation({
+            id: DEMO_IDS.associationCommitment,
+            clusterId: DEMO_IDS.clusterPilot,
+            evidenceId: DEMO_IDS.evidenceEmail,
+            rawEventId: DEMO_IDS.eventEmail,
+            source: 'email',
+            role: 'update',
+            strength: 'structured',
+            associationSource: 'structured_anchor',
+            rationale: 'The customer email explicitly commits to the final sample export date.',
+            dedupeKey: 'demo-seed:association:northstar-customer-commitment',
+          }),
+          demoAssociation({
+            id: DEMO_IDS.associationHandoff,
+            clusterId: DEMO_IDS.clusterDelivery,
+            evidenceId: DEMO_IDS.evidenceMeeting,
+            rawEventId: DEMO_IDS.eventMeeting,
+            source: 'meeting',
+            role: 'update',
+            strength: 'human',
+            associationSource: 'human',
+            rationale: 'The meeting transcript explicitly records Avery handing ownership to Mika.',
+            dedupeKey: 'demo-seed:association:northstar-handoff',
+          }),
+          demoAssociation({
+            id: DEMO_IDS.associationDecision,
+            clusterId: DEMO_IDS.clusterDecision,
+            evidenceId: DEMO_IDS.evidenceMeeting,
+            rawEventId: DEMO_IDS.eventMeeting,
+            source: 'meeting',
+            role: 'decision',
+            strength: 'human',
+            associationSource: 'human',
+            rationale: 'The meeting transcript explicitly records the CSV fallback decision.',
+            dedupeKey: 'demo-seed:association:northstar-decision',
+          }),
+          demoAssociation({
+            id: DEMO_IDS.associationBlocker,
+            clusterId: DEMO_IDS.clusterDelivery,
+            evidenceId: DEMO_IDS.evidenceProvider,
+            rawEventId: DEMO_IDS.eventProvider,
+            source: 'integration',
+            role: 'blocker',
+            strength: 'provider',
+            associationSource: 'authoritative_provider',
+            rationale:
+              'Selected Linear issue NORTH-42 reports the unresolved field-mapping blocker.',
+            dedupeKey: 'demo-seed:association:northstar-blocker',
+          }),
+          demoAssociation({
+            id: DEMO_IDS.associationStatus,
+            clusterId: DEMO_IDS.clusterDelivery,
+            evidenceId: DEMO_IDS.evidenceProvider,
+            rawEventId: DEMO_IDS.eventProvider,
+            source: 'integration',
+            role: 'lifecycle_update',
+            strength: 'provider',
+            associationSource: 'authoritative_provider',
+            rationale:
+              'Selected Linear issue NORTH-42 is authoritative for the current blocked state.',
+            dedupeKey: 'demo-seed:association:northstar-current-status',
+          }),
         ])
         .onConflictDoUpdate({
           target: artifactEvidenceAssociations.id,

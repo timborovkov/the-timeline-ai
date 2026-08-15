@@ -66,9 +66,14 @@ set -a
 set +a
 
 pnpm db:migrate
-pnpm dev:seed
+pnpm demo:seed
 pnpm dev
 ```
+
+`demo:seed` runs the idempotent local dev seed and then `demo:verify`, which fails if the fixed
+fictional corpus, chronology, visibility, or evidence links drift. Run `pnpm demo:verify`
+independently for regression checks; neither command permits production or unapproved remote
+databases.
 
 Open <http://localhost:3000> and sign in with:
 
