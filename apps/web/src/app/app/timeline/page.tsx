@@ -599,7 +599,9 @@ function TimelineFilterPanel({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <h2 className="text-base font-semibold text-fg">Timeline</h2>
+      <h2 className="text-base font-semibold text-fg" data-inspector-focus-fallback tabIndex={-1}>
+        Timeline
+      </h2>
       <details className="group ml-auto min-w-0 text-sm [&[open]]:basis-full" open={hasFilters}>
         <summary className="ml-auto flex h-9 w-fit cursor-pointer list-none items-center gap-1.5 rounded-sm border border-border bg-surface px-3 text-sm font-medium text-fg-muted transition-colors hover:border-border-strong hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg">
           <span>Filters{hasFilters ? ' · On' : ''}</span>

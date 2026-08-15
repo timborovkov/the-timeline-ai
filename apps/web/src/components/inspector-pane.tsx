@@ -86,7 +86,12 @@ export function InspectorPane() {
       return;
     }
 
-    restoreFocusRef.current?.focus();
+    const restoreTarget = restoreFocusRef.current;
+    if (restoreTarget?.isConnected) {
+      restoreTarget.focus();
+    } else {
+      document.querySelector<HTMLElement>('[data-inspector-focus-fallback]')?.focus();
+    }
     restoreFocusRef.current = null;
   }, [inspector.open, inspector.content?.id]);
 
