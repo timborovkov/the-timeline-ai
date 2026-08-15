@@ -21,16 +21,16 @@ export const metadata: Metadata = createHowItWorksMetadata();
 
 const HOW_IT_WORKS_STEPS = [
   {
-    title: 'Capture',
-    body: 'Choose the conversations, documents, and workspaces that belong in Timeline.',
+    title: 'Choose what enters',
+    body: 'Send an explicit Telegram or Slack note, forward email, capture a meeting transcript, or select the provider records that belong in Timeline.',
   },
   {
-    title: 'Order',
-    body: 'Keep every record attached to its source, author, and time as one chronology forms.',
+    title: 'Preserve the chronology',
+    body: 'Keep every captured record attached to its source, author, time, and visibility as one working history forms.',
   },
   {
-    title: 'Answer',
-    body: 'Ask across that history and inspect the citations, uncertainty, and missing evidence.',
+    title: 'Ask and inspect',
+    body: 'Ask for cited status, handoffs, blockers, decisions, or customer commitments, then inspect the evidence and any gaps.',
   },
 ] as const;
 
@@ -48,8 +48,10 @@ export default function HowItWorksPage() {
               From scattered work to a cited answer.
             </h1>
             <p className="max-w-[44ch] text-base leading-relaxed text-fg-muted sm:text-lg">
-              Timeline captures selected records from the tools your team already uses, orders them
-              by time, and answers with links back to the evidence.
+              Context is split across Telegram, Slack, meetings, documents, tickets, code, and
+              email, which makes status, handoffs, commitments, and decisions slow to rebuild and
+              easy to get wrong. Teams keep using those tools while Timeline preserves selected work
+              as a chronological project record.
             </p>
           </div>
 
@@ -69,6 +71,31 @@ export default function HowItWorksPage() {
               </li>
             ))}
           </ol>
+
+          <div
+            data-how-it-works-trust
+            className="mt-8 grid gap-px border border-border bg-border sm:grid-cols-2"
+          >
+            <article className="bg-bg p-6 sm:p-7">
+              <h2 className="text-xl font-semibold tracking-[-0.025em]">
+                Connected does not mean cited.
+              </h2>
+              <p className="mt-3 max-w-xl text-sm leading-6 text-fg-muted">
+                A connected tool does not give Timeline its whole history by default. An answer
+                cites only the evidence it used, so connected or captured sources can remain unused
+                in that answer.
+              </p>
+            </article>
+            <article className="bg-bg p-6 sm:p-7">
+              <h2 className="text-xl font-semibold tracking-[-0.025em]">
+                People approve durable changes.
+              </h2>
+              <p className="mt-3 max-w-xl text-sm leading-6 text-fg-muted">
+                Cited answers remain answers. When evidence suggests a lasting workspace change,
+                Timeline creates a proposal and waits for a person to approve, change, or reject it.
+              </p>
+            </article>
+          </div>
         </MarketingContainer>
       </section>
 
@@ -145,20 +172,28 @@ export default function HowItWorksPage() {
           <div>
             <p className="text-sm font-medium text-fg-muted">Start with the answer</p>
             <h2 className="mt-5 max-w-3xl text-balance text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">
-              Try one real question before connecting everything.
+              Start with one project and one question.
             </h2>
             <p className="mt-5 max-w-2xl text-base leading-7 text-fg-muted sm:text-lg">
               Use one project, the smallest useful source set, and a question whose answer you can
               check against the original work.
             </p>
           </div>
-          <Link
-            href={featuredGuide.route}
-            className="inline-flex min-h-12 items-center gap-6 rounded-sm bg-signal px-5 font-semibold text-signal-fg outline-none hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
-          >
-            Open the first walkthrough
-            <ArrowRight aria-hidden="true" className="size-4" />
-          </Link>
+          <div className="flex flex-col items-start gap-4 lg:items-end">
+            <Link
+              href="/sign-up"
+              className="inline-flex min-h-12 items-center gap-6 rounded-sm bg-signal px-5 font-semibold text-signal-fg outline-none hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+            >
+              Try one real project
+              <ArrowRight aria-hidden="true" className="size-4" />
+            </Link>
+            <Link
+              href={featuredGuide.route}
+              className="rounded-sm text-sm font-semibold text-fg underline decoration-border-strong underline-offset-4 outline-none hover:decoration-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+            >
+              Read the first walkthrough
+            </Link>
+          </div>
         </MarketingContainer>
       </section>
     </main>

@@ -49,6 +49,7 @@ describe('landing route group', () => {
       'animation: ingestPacket 5.4s var(--ingest-delay) cubic-bezier(0.45, 0, 0.55, 1) infinite',
     );
     expect(styles).toContain('animation: chronologyDraw 1.25s');
+    expect(styles).toMatch(/\.timelineList li:nth-child\(5\)\s*\{\s*animation-delay: 820ms;/u);
     expect(styles).toContain('animation: answerPanelIn 680ms');
     expect(styles).toContain('animation: trustPathDraw 1.15s');
     expect(styles).not.toContain('ambientSweep');

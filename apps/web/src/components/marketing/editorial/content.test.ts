@@ -37,7 +37,7 @@ describe('editorial content model', () => {
       expect(guide.limitations.length).toBeGreaterThanOrEqual(4);
       expect(guide.faqs.length).toBeGreaterThanOrEqual(3);
       expect(guide.relatedRoutes.length).toBeGreaterThan(0);
-      expect(guide.cta.href).toBe('/sign-in');
+      expect(guide.cta.href).toBe('/sign-up');
     }
   });
 

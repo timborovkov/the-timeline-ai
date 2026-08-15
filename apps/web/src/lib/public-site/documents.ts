@@ -1,6 +1,7 @@
 import type { PublicDocument } from '@/lib/public-site/types';
 
 import { EDITORIAL_PUBLIC_DOCUMENTS } from '@/components/marketing/editorial/public-documents';
+import { CONNECTOR_PUBLIC_DOCUMENTS } from '@/components/marketing/integrations/connector-public-documents';
 import { HELP_PAGES } from '@/lib/help-content';
 import { createPublicDocumentRegistry, definePublicDocuments } from '@/lib/public-site/registry';
 
@@ -9,7 +10,7 @@ const LAST_REVIEWED = '2026-08-12' as const;
 const LANDING_SECTIONS = [
   {
     title: 'What The Timeline does',
-    body: 'Teams capture voice notes, chat messages, emails, meetings, calendar events, documents, and integration activity. The agent extracts durable events, facts, objects, tasks, and relationships, then answers questions with citations back to source material.',
+    body: 'The Timeline is an evidence-backed working history. Teams deliberately send notes, files, emails, meeting transcripts, calendar events, and documents or select provider records to preserve in a chronological project record. The agent answers questions with citations back to source material.',
   },
   {
     title: 'Best-fit teams',
@@ -17,7 +18,7 @@ const LANDING_SECTIONS = [
   },
   {
     title: 'Core differentiator',
-    body: 'Capture is unstructured, but output is structured. Users do not need to keep a CRM, wiki, project tracker, and document index manually synchronized; the timeline compiles the operational archive from everyday work.',
+    body: 'Capture is unstructured, but output is structured. Teams keep working in their existing tools while Timeline preserves source, time, and visibility. Cited answers remain inspectable, and durable workspace changes require human approval.',
   },
   {
     title: 'Trust model',
@@ -39,9 +40,9 @@ const coreDocuments = definePublicDocuments('public-core', [
     kind: 'landing',
     title: 'The Timeline | The work becomes the record',
     description:
-      'The Timeline turns work from Slack, meetings, code, and documents into a chronological project record and cited answers.',
+      'The Timeline preserves selected work from Telegram, Slack, meetings, documents, tickets, code, and email as an evidence-backed project history with cited answers.',
     indexability: 'index',
-    dates: { modified: '2026-08-13', reviewed: '2026-08-13' },
+    dates: { modified: '2026-08-15', reviewed: '2026-08-15' },
     capability: { kind: 'current-product' },
     sitemap: { changeFrequency: 'weekly', priority: 1 },
     structuredData: [
@@ -51,11 +52,12 @@ const coreDocuments = definePublicDocuments('public-core', [
         applicationCategory: 'BusinessApplication',
         operatingSystem: 'Web',
         features: [
-          'Chronological project history from captured work',
-          'Cited answers linked to immutable source events',
+          'Evidence-backed chronological project history from selected work',
+          'Deliberate Telegram, Slack, email, meeting transcript, and webhook capture',
+          'Cited status, handoffs, blockers, decisions, and commitments',
           'Native ingestion for GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry',
-          'Meeting transcript, document, message, and email capture',
-          'Team-scoped storage with per-event visibility',
+          'Source, time, and visibility preserved with captured evidence',
+          'Human approval before durable workspace changes',
         ],
       },
     ],
@@ -216,5 +218,6 @@ export const PUBLIC_DOCUMENT_REGISTRY = createPublicDocumentRegistry(
   coreDocuments,
   helpDocuments,
   publicUtilityDocuments,
+  CONNECTOR_PUBLIC_DOCUMENTS,
   EDITORIAL_PUBLIC_DOCUMENTS,
 );

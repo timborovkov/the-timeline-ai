@@ -153,7 +153,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     limitations: [
       'Slack file shares contribute the title, filename, MIME type, and private source URL. This native history path does not download or inspect attachment bodies.',
       'Native workspace ingestion reconciles selected channels hourly; it is not a real-time mirror of every workspace event.',
-      'After the initial history backfill, reconciliation looks back 14 days. Edits and reactions on older messages—and new replies whose thread root is older than that window—may not be observed.',
+      'After the initial history backfill, reconciliation looks back 14 days. Edits and reactions on older messages, along with new replies whose thread root is older than that window, may not be observed.',
       'Each incremental channel scan reads at most 25 history pages, or 5,000 messages at the requested page size, inside that 14-day window. The current recent scan advances to the newest returned message without persisting a continuation for an unprocessed gap, so activity beyond the page cap can be omitted and later age out of the lookback.',
       'A single Slack thread is capped at the first 2,000 replies returned. The current sync does not persist a reply-page continuation, so replies beyond that cap remain absent on later runs.',
       'A reaction row is immutable, keyed by message plus emoji, and uses the source message timestamp rather than the time someone reacted. Later users or count changes for an already captured emoji do not update that row, so its count and user list remain the first-observed snapshot.',
@@ -452,7 +452,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     permissions: [
       'OAuth requests read-only Drive content and metadata plus openid and email. Google’s stable subject identifier anchors the provider account identity, and its primary email labels the connection.',
       'The connection sees only files the authorizing Google account is allowed to read.',
-      'Selecting a shared drive admits live changes from that drive. Selecting My Drive root currently admits any changed file the connected account can access—including Shared with me files and files in other shared drives—even when those locations were not separately activated.',
+      'Selecting a shared drive admits live changes from that drive. Selecting My Drive root currently admits any changed file the connected account can access, including Shared with me files and files in other shared drives, even when those locations were not separately activated.',
       'Non-owners cannot use Timeline to browse the connection owner’s unshared Drive resources.',
       'OAuth credentials are encrypted at rest; Timeline’s own team and event visibility rules still apply after capture.',
     ],
@@ -664,7 +664,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Issue lifecycle webhooks use the issue’s Sentry first-seen or last-seen occurrence time. They do not preserve the later action time when someone resolves or ignores a quiet issue.',
       'Resolved and ignored records use one immutable lifecycle key per issue. If an issue regresses and later resolves or is ignored again, the repeated closed transition does not create a new lifecycle row.',
       'Polling retains lifecycle state for at most 5,000 issue IDs. After an older resolved issue is pruned, a missed regression webhook can be lost because polling may reuse its original immutable open key.',
-      'Deployment records also use one immutable deployed key per release. If the same release is deployed again—for example to another environment—the later deployment does not create a new row.',
+      'Deployment records also use one immutable deployed key per release. If the same release is deployed again, for example to another environment, the later deployment does not create a new row.',
       'Repeated occurrences of an already-open issue coalesce into the existing lifecycle evidence instead of generating a new Timeline event for every occurrence.',
       'The native connector focuses on issue lifecycle, alerts, and releases; it is not a replacement for Sentry traces, replays, dashboards, or performance analysis.',
       'Timeline does not resolve, ignore, assign, or configure alerts in Sentry through this capture path.',

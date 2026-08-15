@@ -75,20 +75,12 @@ describe('llms text files', () => {
   });
 
   it('renders integration and how-it-works contributions in both LLM documents', () => {
+    const github = PUBLIC_DOCUMENT_REGISTRY.get('/integrations/github');
+    if (!github?.llms)
+      throw new Error('GitHub public document is not registered for LLM discovery');
     const registry = createPublicDocumentRegistry(
       definePublicDocuments('existing-public-documents', PUBLIC_DOCUMENT_REGISTRY.all()),
       definePublicDocuments('discovery-contributions', [
-        testDocument({
-          canonicalPath: '/integrations/github',
-          kind: 'connector',
-          title: 'GitHub integration',
-          capability: { kind: 'native-ingestion', provider: 'github' },
-          llms: {
-            section: 'integrations',
-            order: 1,
-            summary: 'Capture GitHub activity as cited timeline evidence.',
-          },
-        }),
         testDocument({
           canonicalPath: '/how-it-works/why-citations-matter',
           kind: 'guide',
@@ -107,7 +99,7 @@ describe('llms text files', () => {
 
     expect(compact).toContain('## Integrations');
     expect(compact).toContain(
-      '[GitHub integration](https://thetimeline.cc/integrations/github): Capture GitHub activity as cited timeline evidence.',
+      `[GitHub integration](https://thetimeline.cc/integrations/github): ${github.llms.summary}`,
     );
     expect(compact).toContain('## How Timeline works');
     expect(compact).toContain(

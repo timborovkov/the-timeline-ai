@@ -45,6 +45,9 @@ describe('public integration routes', () => {
     expect(html.match(/Fictional Acme example, not customer data\./g)).toHaveLength(1);
     expect(html).toContain('href="/integrations/slack"');
     expect(text).toContain('Telegram');
+    expect(text).toContain('Plain text in a direct chat asks the agent');
+    expect(text).toContain('does not silently become team evidence');
+    expect(text).toContain('Telegram is not a passive account-history sync');
     expect(text).toContain('Slack conversations');
     expect(text).toContain('Forward, CC, or BCC');
     expect(text).toContain('Google Meet · Microsoft Teams · Zoom');
@@ -56,6 +59,8 @@ describe('public integration routes', () => {
     expect(html).toMatch(/aria-current="page"[^>]*href="\/integrations"/u);
     expect(html).toContain('href="/how-it-works"');
     expect(html).not.toContain('href="/integrations/notion"');
+    expect(html).not.toMatch(/href="(?:\/(?:app\/)?demo|\/workspace\/demo|https?:\/\/t\.me\/)/u);
+    expect(text).not.toMatch(/captures? (?:all|every) (?:chat|conversation|message)/iu);
     expect(html).toContain('compact');
     expect(html).toContain('dark:bg-white');
     expect(html).toContain('text-[3rem]');
@@ -126,7 +131,7 @@ describe('public integration routes', () => {
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(text).toContain('All integrations');
     expect(text).toContain('What gets captured');
-    expect(text).toContain('What Timeline keeps—and what stays in GitHub');
+    expect(text).toContain('What Timeline keeps, and what stays in GitHub');
     expect(text).not.toMatch(/Last reviewed|Native integration|Capability truth/u);
     expect(html).not.toContain('<time');
     expect(html).not.toMatch(/font-mono[^>]*>06 native integrations/u);

@@ -5,7 +5,7 @@
 <h1 align="center">The Timeline</h1>
 
 <p align="center">
-  Turn everyday work into cited answers, updates, digests, and handoffs.
+  An evidence-backed working history for every project.
 </p>
 
 <p align="center">
@@ -16,14 +16,17 @@
   <a href="./docs/index.html">Developer docs</a>
 </p>
 
-The Timeline captures work from Slack, Telegram, meetings, email, documents,
-calendar events, and connected tools. It keeps the original evidence, derives
-structured workspace memory, and answers questions with citations back to the
-source.
+The Timeline preserves work that a team deliberately sends from Slack,
+Telegram, meetings, email, documents, and calendar events, plus selected records
+from connected tools. It keeps source, time, and visibility attached, answers
+questions with citations, and requires human approval before evidence becomes a
+durable workspace change.
 
 ## What it does
 
-- Captures notes, messages, voice memos, files, meetings, and integration events.
+- Captures deliberately routed notes, messages, voice memos, files, and meetings.
+- Syncs selected records from supported integrations without treating every connected source as
+  evidence for every answer.
 - Searches across events, documents, tasks, projects, people, companies, and calendars.
 - Produces cited answers, status updates, daily digests, and handoff briefs.
 - Turns durable facts and decisions into approval-backed workspace changes.

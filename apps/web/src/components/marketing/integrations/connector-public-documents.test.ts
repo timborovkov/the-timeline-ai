@@ -7,6 +7,7 @@ import {
   INTEGRATION_DIRECTORY_DOCUMENT,
   findConnectorPublicDocument,
 } from '@/components/marketing/integrations/connector-public-documents';
+import { PUBLIC_DOCUMENT_REGISTRY } from '@/lib/public-site';
 
 describe('connector public documents', () => {
   it('contributes the directory and six native connector routes to public discovery', () => {
@@ -17,11 +18,18 @@ describe('connector public documents', () => {
     expect(
       CONNECTOR_PUBLIC_DOCUMENTS.documents.filter((document) => document.kind === 'connector'),
     ).toHaveLength(6);
+    for (const document of CONNECTOR_PUBLIC_DOCUMENTS.documents) {
+      expect(PUBLIC_DOCUMENT_REGISTRY.get(document.canonicalPath)).toBe(document);
+    }
   });
 
   it('publishes capture-surface truth without inventing additional connector routes', () => {
     const serialized = JSON.stringify(INTEGRATION_DIRECTORY_DOCUMENT);
 
+    expect(INTEGRATION_DIRECTORY_DOCUMENT.dates).toEqual({
+      modified: '2026-08-15',
+      reviewed: '2026-08-15',
+    });
     for (const surface of CAPTURE_SURFACES) {
       expect(serialized).toContain(surface.name);
     }

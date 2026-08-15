@@ -60,8 +60,15 @@ function getHomeDocument() {
 const ACME_EVENTS = PUBLIC_DEMO_STORY.landing.events;
 
 const HERO_SOURCES = [
-  ...ACME_EVENTS.map(({ time, shortSource }) => ({ time, source: shortSource })),
-  ...PUBLIC_DEMO_STORY.landing.connectedSignals,
+  ...ACME_EVENTS.map(({ time, shortSource }) => ({
+    time,
+    source: shortSource,
+    cited: true,
+  })),
+  ...PUBLIC_DEMO_STORY.landing.connectedSignals.map((signal) => ({
+    ...signal,
+    cited: false,
+  })),
 ] as const;
 
 const HERO_SOURCE_LOGOS: Readonly<Record<string, string>> = {
@@ -98,12 +105,12 @@ const TRUST_STEPS = [
   {
     index: '01',
     title: 'Evidence arrives',
-    detail: 'Slack / #acme-rollout',
+    detail: 'Telegram / explicit note',
   },
   {
     index: '02',
     title: 'Original stays intact',
-    detail: 'Raw event / immutable',
+    detail: 'Captured source / immutable',
   },
   {
     index: '03',
@@ -112,8 +119,8 @@ const TRUST_STEPS = [
   },
   {
     index: '04',
-    title: 'Answer cites the source',
-    detail: '[01] / inspectable',
+    title: 'Durable changes wait',
+    detail: 'Human approval required',
   },
 ] as const;
 
@@ -239,17 +246,18 @@ function ClaimScene({ isSignedIn }: { isSignedIn: boolean }) {
           The work <em>becomes</em> the record.
         </h1>
         <p className={styles.heroIntro}>
-          Timeline watches the tools where a project happens—messages, meetings, code, and
-          documents—then builds one chronological history you can question. Every answer links back
-          to the work.
+          Timeline is an evidence-backed working history for a project. Your team keeps using
+          Telegram, Slack, meetings, documents, tickets, code, and email; Timeline preserves the
+          work people deliberately send and the provider records they select as one chronological
+          record.
         </p>
         <div className={styles.heroActions}>
           <Link href={isSignedIn ? '/app' : '/sign-up'} className={styles.primaryCta}>
             {isSignedIn ? 'Go to dashboard' : 'Try one real project'} <span aria-hidden>→</span>
           </Link>
-          <a href="#sources" className={styles.textLink}>
-            Watch the evidence resolve
-          </a>
+          <Link href="/how-it-works" className={styles.textLink}>
+            See how Timeline works
+          </Link>
         </div>
         <div className={styles.heroSourceLink}>
           <GitHubSourceLink />
@@ -259,7 +267,7 @@ function ClaimScene({ isSignedIn }: { isSignedIn: boolean }) {
       <div
         className={styles.observatory}
         data-home-diagram
-        aria-label="Six Acme project sources flow into one chronological project history"
+        aria-label="Five cited Acme project sources form a chronological working history while connected Sentry evidence remains unused in this answer"
       >
         <svg className={styles.orbitLines} viewBox="0 0 600 600" aria-hidden="true">
           <path d="M118 116 C 205 150, 226 242, 300 300" />
@@ -281,21 +289,29 @@ function ClaimScene({ isSignedIn }: { isSignedIn: boolean }) {
         <div className={styles.orbitInner} aria-hidden="true" />
         <div className={styles.memoryCore}>
           <Logo ariaHidden />
-          <span>Project history</span>
+          <span>Working history</span>
         </div>
         {HERO_SOURCES.map((signal, index) => (
           <div
             key={signal.source}
-            className={cn(styles.orbitSource, styles[`orbitSource${index + 1}`])}
+            className={cn(
+              styles.orbitSource,
+              styles[`orbitSource${index + 1}`],
+              !signal.cited && styles.orbitSourceAux,
+            )}
           >
             <span className={styles.orbitSourceTime}>{signal.time}</span>
             <span className={styles.orbitSourceIdentity}>
               <HeroSourceLogo source={signal.source} />
               <strong>{signal.source}</strong>
             </span>
+            {signal.cited ? null : <small>Connected, not used in this answer</small>}
           </div>
         ))}
-        <p className={styles.observatoryCaption}>{PUBLIC_DEMO_DISCLOSURE}</p>
+        <p className={styles.observatoryCaption}>
+          <span>5 cited sources. Sentry is connected, but unused in this answer.</span>
+          <span>{PUBLIC_DEMO_DISCLOSURE}</span>
+        </p>
       </div>
     </section>
   );
@@ -315,15 +331,15 @@ function ChronologyScene({ nativeConnectors }: { nativeConnectors: NativeConnect
         id="chronology-title"
         title={
           <>
-            Work enters once. Time gives it <em>shape.</em>
+            Status should not require an <em>investigation.</em>
           </>
         }
-        copy="Each fragment keeps its source, author, time, and visibility while Slack context, meetings, code, and documents settle into one inspectable Acme rollout history."
+        copy="Work can begin in an explicit Telegram note or a Slack conversation, then spread through meetings, documents, tickets, code, and email. Rebuilding status, handoffs, customer commitments, and decisions becomes slow—and the result is easy to get wrong. Timeline preserves source, time, and visibility in the project record."
       />
       <div className={styles.timelineStage} data-home-diagram>
         <div className={styles.timelineHeader}>
           <span>Acme rollout / Last 7 days</span>
-          <span>4 evidence items</span>
+          <span>5 evidence items</span>
         </div>
         <ol className={styles.timelineList}>
           {ACME_EVENTS.map((event) => (
@@ -387,8 +403,9 @@ function ConnectorRail({ nativeConnectors }: { nativeConnectors: NativeConnector
           <span className={styles.monoLabel}>Messages and files</span>
           <h4>Send the work to Timeline.</h4>
           <p>
-            Conversations, forwarded mail, meeting transcripts, and authenticated payloads enter
-            only when your team routes them in.
+            Send an explicit Telegram or Slack note, forward mail, add a meeting transcript, or post
+            an authenticated payload. Plain text in a Telegram DM asks Timeline; it does not become
+            team evidence unless you use /note.
           </p>
           <ul className={styles.captureSurfaceList} aria-label="Ways to send work to Timeline">
             {CAPTURE_SURFACES.map((surface) => (
@@ -495,34 +512,35 @@ function AnswerScene() {
         <article className={styles.answerWindow}>
           <div className={styles.answerBar}>
             <span>/ask / Acme rollout</span>
-            <span>4 sources linked</span>
+            <span>5 sources linked</span>
           </div>
           <div className={styles.question}>
             <span>You</span>
-            <p>What changed, what is blocked, and what do we owe them?</p>
+            <p>Give me the current status, handoff, blockers, and customer commitments.</p>
           </div>
           <div className={styles.answerBody}>
             <span>Timeline</span>
-            <h3>Launch is waiting on SSO. Everything else moved.</h3>
+            <h3>SSO blocks launch. Friday’s customer update is still due.</h3>
             <p>
-              Onboarding copy was approved <Citation id="01" label="Slack approval" /> and the
-              migration callback merged <Citation id="03" label="GitHub pull request" />. SSO is
-              still the launch blocker <Citation id="02" label="launch review meeting" />. Priya
-              Shah owns the migration checklist, due for review Friday{' '}
-              <Citation id="04" label="Google Drive checklist" />.
+              The customer expects an update by Friday{' '}
+              <Citation id="01" label="Telegram explicit note" />. Onboarding copy was approved{' '}
+              <Citation id="02" label="Slack approval" /> and the migration callback merged{' '}
+              <Citation id="04" label="GitHub pull request" />. SSO remains the launch blocker{' '}
+              <Citation id="03" label="launch review meeting" />. Priya Shah owns the migration
+              checklist and its Friday review <Citation id="05" label="Google Drive checklist" />.
             </p>
           </div>
           <div className={styles.answerFooter}>
-            <span>Answer / cited</span>
+            <span>Draft answer / cited</span>
             <span>Visibility checked</span>
-            <span>Sources immutable</span>
+            <span>5 of 6 sources used</span>
           </div>
         </article>
 
         <aside className={styles.receiptLedger} aria-labelledby="receipt-ledger-title">
           <div className={styles.ledgerTitle}>
             <span id="receipt-ledger-title">Evidence behind this answer</span>
-            <span>4 / 4</span>
+            <span>5 / 5</span>
           </div>
           <ol>
             {ACME_EVENTS.map((event) => (
@@ -560,7 +578,7 @@ function TrustScene() {
             When the work is scattered, the answer <em>should not be.</em>
           </>
         }
-        copy="Timeline gives client delivery, implementation, product, and operations teams one current account of what happened—without asking everyone to maintain another system."
+        copy="Timeline gives client delivery, implementation, product, and operations teams one current account of what happened without asking everyone to maintain another system."
       />
       <div className={styles.fitPanel} data-home-diagram>
         <div className={styles.fitPanelIntro}>
@@ -588,8 +606,9 @@ function TrustScene() {
           <span className={styles.monoLabel}>How one answer stays trustworthy</span>
           <h3 id="trust-flow-title">Every answer carries its evidence chain.</h3>
           <p>
-            Timeline preserves source content, checks access at retrieval, and keeps the citation
-            attached to the final answer.
+            Timeline preserves source content, checks access at retrieval, and keeps citations
+            attached to the answer. If evidence suggests a lasting workspace change, Timeline
+            proposes it for human review instead of applying it on its own.
           </p>
         </header>
         <ol className={styles.trustFlow}>
@@ -606,6 +625,7 @@ function TrustScene() {
           <span>Team isolation</span>
           <span>Per-event privacy</span>
           <span>Inspectable citations</span>
+          <span>Human-approved changes</span>
         </div>
       </div>
     </section>
@@ -625,8 +645,8 @@ function CtaScene({ isSignedIn }: { isSignedIn: boolean }) {
           Give it one real project. <em>Ask one honest question.</em>
         </h2>
         <p>
-          Connect the conversations and work where a project already lives. Let Timeline capture a
-          week, then ask what changed, what is blocked, and what you owe next.
+          Choose one project and the smallest useful source set. Preserve a week of selected work,
+          then ask for current status, the next handoff, open blockers, and customer commitments.
         </p>
         <Link href={isSignedIn ? '/app' : '/sign-up'} className={styles.primaryCta}>
           {isSignedIn ? 'Open your Timeline' : 'Try one real project'} <span aria-hidden>→</span>

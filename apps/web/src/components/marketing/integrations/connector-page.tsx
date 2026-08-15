@@ -117,7 +117,7 @@ function TruthBoundary({ connector }: { connector: ConnectorContent }) {
         <div>
           <div className="border-b border-border pb-6">
             <h2 id="truth-boundary" className="text-3xl font-semibold tracking-tight sm:text-4xl">
-              What Timeline keeps—and what stays in {connector.name}.
+              What Timeline keeps, and what stays in {connector.name}.
             </h2>
           </div>
           <div className="grid gap-px border border-border bg-border sm:grid-cols-2">

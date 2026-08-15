@@ -24,6 +24,17 @@ export const PUBLIC_DEMO_STORY = {
       {
         id: '01',
         day: 'Monday',
+        dateTime: '2026-08-03T08:46:00+03:00',
+        time: '08:46',
+        source: 'Telegram / explicit note',
+        shortSource: 'Telegram',
+        title: 'Friday customer update promised',
+        detail:
+          'Maya Chen saved an explicit note that the customer expects a launch update by Friday.',
+      },
+      {
+        id: '02',
+        day: 'Monday',
         dateTime: '2026-08-03T09:14:00+03:00',
         time: '09:14',
         source: 'Slack / #acme-rollout',
@@ -32,7 +43,7 @@ export const PUBLIC_DEMO_STORY = {
         detail: 'Maya Chen approved the onboarding copy. Implementation can continue.',
       },
       {
-        id: '02',
+        id: '03',
         day: 'Tuesday',
         dateTime: '2026-08-04T11:40:00+03:00',
         time: '11:40',
@@ -42,7 +53,7 @@ export const PUBLIC_DEMO_STORY = {
         detail: 'The launch review confirmed SSO validation is the only remaining launch blocker.',
       },
       {
-        id: '03',
+        id: '04',
         day: 'Wednesday',
         dateTime: '2026-08-05T15:22:00+03:00',
         time: '15:22',
@@ -52,7 +63,7 @@ export const PUBLIC_DEMO_STORY = {
         detail: 'The migration callback merged after review and passed CI.',
       },
       {
-        id: '04',
+        id: '05',
         day: 'Thursday',
         dateTime: '2026-08-06T17:08:00+03:00',
         time: '17:08',
@@ -62,10 +73,7 @@ export const PUBLIC_DEMO_STORY = {
         detail: 'Priya Shah owns the migration checklist. The next review is due Friday.',
       },
     ],
-    connectedSignals: [
-      { time: '13:05', source: 'Telegram' },
-      { time: '18:21', source: 'Sentry' },
-    ],
+    connectedSignals: [{ time: '18:21', source: 'Sentry' }],
   },
   connectors: {
     slack: {

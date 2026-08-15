@@ -14,7 +14,7 @@ export const INTEGRATION_DIRECTORY_DOCUMENT = {
   description:
     'Explore Telegram, Slack, email, meeting, and webhook capture alongside native Timeline record sync for GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry.',
   indexability: 'index',
-  dates: { modified: '2026-08-14', reviewed: '2026-08-14' },
+  dates: { modified: '2026-08-15', reviewed: '2026-08-15' },
   capability: { kind: 'current-product' },
   sitemap: { changeFrequency: 'weekly', priority: 0.9 },
   structuredData: [{ type: 'collection-page' }],

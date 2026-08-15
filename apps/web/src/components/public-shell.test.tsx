@@ -25,6 +25,7 @@ describe('PublicShell', () => {
     expect(html.match(/aria-label="Toggle theme"/g)).toHaveLength(2);
     expect(html).toContain('href="/sign-up"');
     expect(html).toContain('>Try one project</a>');
+    expect(html).not.toMatch(/href="(?:\/(?:app\/)?demo|\/workspace\/demo|https?:\/\/t\.me\/)/u);
   });
 
   it('keeps every public destination available in desktop, mobile, and footer navigation', () => {
