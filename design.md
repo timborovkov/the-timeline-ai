@@ -245,7 +245,10 @@ opens Work → Pinned.
 Timeline is the strongest archive expression. Each row leads with time, source,
 human title, one supporting line, and meaningful impact/status. The rail, sticky
 dates, evidence quick view, and pagination remain. Exact capture and provider
-details move into the inspector. Compact Home moments reuse the same formatter.
+details move into the inspector. The default view ends at the current instant so
+materialized calendar occurrences do not displace recent work. Upcoming context
+is an explicit seven-day view; the Calendar surface owns the complete future
+schedule. Compact Home moments reuse the same formatter.
 
 ### Ask
 

@@ -1,5 +1,18 @@
+import { localDateFromInstant, localDateSpanToUtcRange } from '@timeline/shared/time';
+
 import type { ImpactKind } from '@/lib/timeline-moments';
 import type { TimelineOriginFilter, TimelineSourceFacet } from '@timeline/shared/team-scope';
+
+export const TIMELINE_UPCOMING_DAYS = 7;
+
+export interface TimelineDateWindow {
+  from: Date | undefined;
+  to: Date;
+  todayInput: string;
+  maxUpcomingInput: string;
+  effectiveToInput: string;
+  wasUpcomingClamped: boolean;
+}
 
 export const TIMELINE_SOURCES = [
   ['chat', 'Chat'],
@@ -37,6 +50,60 @@ export interface TimelineOriginOption {
 export interface TimelineSourceSelection {
   source: string;
   origin: string;
+}
+
+function isDateInput(value: string | null | undefined): value is string {
+  return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
+}
+
+function addDateInputDays(value: string, days: number): string {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function startOfDateInput(value: string | null | undefined, timezone: string): Date | undefined {
+  if (!isDateInput(value)) return undefined;
+  try {
+    return localDateSpanToUtcRange(value, addDateInputDays(value, 1), timezone).from;
+  } catch {
+    return undefined;
+  }
+}
+
+function endOfDateInput(value: string | null | undefined, timezone: string): Date | undefined {
+  if (!isDateInput(value)) return undefined;
+  try {
+    return localDateSpanToUtcRange(value, addDateInputDays(value, 1), timezone).to;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Timeline is an activity archive. Upcoming calendar occurrences are opt-in and
+ * bounded; the Calendar surface owns the full future schedule.
+ */
+export function resolveTimelineDateWindow(
+  input: { from?: string | null; to?: string | null },
+  timezone: string,
+  now = new Date(),
+): TimelineDateWindow {
+  const todayInput = localDateFromInstant(now.toISOString(), timezone);
+  const maxUpcomingInput = addDateInputDays(todayInput, TIMELINE_UPCOMING_DAYS);
+  const requestedTo = endOfDateInput(input.to, timezone);
+  const maxUpcomingTo = endOfDateInput(maxUpcomingInput, timezone) ?? now;
+  const wasUpcomingClamped = Boolean(requestedTo && requestedTo > maxUpcomingTo);
+  const to = requestedTo ? new Date(Math.min(requestedTo.getTime(), maxUpcomingTo.getTime())) : now;
+
+  return {
+    from: startOfDateInput(input.from, timezone),
+    to,
+    todayInput,
+    maxUpcomingInput,
+    effectiveToInput: requestedTo ? (wasUpcomingClamped ? maxUpcomingInput : (input.to ?? '')) : '',
+    wasUpcomingClamped,
+  };
 }
 
 export const TIMELINE_PRESETS = [
