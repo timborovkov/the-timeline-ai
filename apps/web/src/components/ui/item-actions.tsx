@@ -1,7 +1,7 @@
 'use client';
 
 import { MoreHorizontal } from 'lucide-react';
-import type { ComponentPropsWithoutRef, ReactNode } from 'react';
+import type { ComponentPropsWithoutRef, ReactNode, Ref } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -44,17 +44,20 @@ export function ItemOverflowMenu({
   align = 'end',
   triggerClassName,
   contentClassName,
+  triggerRef,
 }: {
   targetLabel: string;
   children: ReactNode;
   align?: ComponentPropsWithoutRef<typeof DropdownMenuContent>['align'];
   triggerClassName?: string;
   contentClassName?: string;
+  triggerRef?: Ref<HTMLButtonElement>;
 }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
+          ref={triggerRef}
           type="button"
           variant="ghost"
           size="icon"

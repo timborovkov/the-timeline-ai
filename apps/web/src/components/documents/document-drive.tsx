@@ -45,6 +45,7 @@ import { SectionHeading } from '@/components/section-heading';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ItemActionGroup } from '@/components/ui/item-actions';
 import { queryKeys } from '@/lib/query-keys';
 import { type DocumentListPage, useDocumentListQuery } from '@/lib/use-paginated-queries';
 
@@ -766,19 +767,21 @@ function FolderList({
                 <span>{f.name}</span>
               </Link>
             )}
-            <Button
-              type="button"
-              onClick={() => {
-                void onDeleteFolder(f.id);
-              }}
-              disabled={f.optimistic}
-              variant="ghost"
-              size="sm"
-              aria-label={`Delete folder ${f.name}`}
-              className="min-h-9 px-2 text-fg-muted opacity-100 transition-opacity group-focus-within:opacity-100 hover:text-fg focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
-            >
-              Delete
-            </Button>
+            <ItemActionGroup label={`Actions for ${f.name}`}>
+              <Button
+                type="button"
+                onClick={() => {
+                  void onDeleteFolder(f.id);
+                }}
+                disabled={f.optimistic}
+                variant="ghost"
+                size="sm"
+                aria-label={`Delete folder ${f.name}`}
+                className="min-h-9 px-2 text-fg-muted"
+              >
+                Delete
+              </Button>
+            </ItemActionGroup>
           </li>
         ))}
       </ul>
@@ -871,7 +874,8 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
           <ProcessingBadge status={status} optimistic={document.optimistic === true} />
           <VisibilityBadge visibility={document.visibility} />
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <span className="hidden text-xs text-fg-dim sm:inline">{updatedAt}</span>
+        <ItemActionGroup label={`Actions for ${title}`}>
           {sourceEventId ? (
             <EvidenceLink
               eventId={sourceEventId}
@@ -884,7 +888,6 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
               Event
             </EvidenceLink>
           ) : null}
-          <span className="hidden text-xs text-fg-dim sm:inline">{updatedAt}</span>
           {!document.optimistic ? (
             <PinOverflowMenu
               target={{ kind: 'document', key: document.id }}
@@ -892,7 +895,7 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
               initialPinned={document.pinned}
             />
           ) : null}
-        </div>
+        </ItemActionGroup>
       </div>
     </li>
   );

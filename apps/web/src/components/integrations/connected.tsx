@@ -6,6 +6,8 @@ import { useActionState, useId, useState } from 'react';
 import { setIntegrationVisibilityDefaultAction } from '@/app/actions/visibility';
 import { InlineError } from '@/components/inline-error';
 import { Button } from '@/components/ui/button';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { providerLabel } from '@/lib/resource-labels';
 import { connectionErrorMessage } from '@/lib/ux-errors';
 
@@ -282,7 +284,7 @@ export function ConnectedIntegrations({
                 ) : null}
                 <IntegrationVisibilityForm integration={c} members={members} />
               </div>
-              <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:flex-nowrap sm:justify-end">
+              <ItemActionGroup label={`Actions for ${c.displayName}`}>
                 {blockingAction ? (
                   <Button asChild size="sm" variant="secondary" className="flex-1 sm:flex-none">
                     <a href={blockingAction.href}>{blockingAction.label}</a>
@@ -308,20 +310,19 @@ export function ConnectedIntegrations({
                   </Button>
                 )}
                 {confirmDisconnectId === c.id ? null : (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    className="flex-1 sm:flex-none"
-                    disabled={busy !== null}
-                    onClick={() => {
-                      setConfirmDisconnectId(c.id);
-                    }}
-                  >
-                    Disconnect
-                  </Button>
+                  <ItemOverflowMenu targetLabel={c.displayName}>
+                    <DropdownMenuItem
+                      disabled={busy !== null}
+                      className="text-destructive focus:text-destructive"
+                      onSelect={() => {
+                        setConfirmDisconnectId(c.id);
+                      }}
+                    >
+                      Disconnect
+                    </DropdownMenuItem>
+                  </ItemOverflowMenu>
                 )}
-              </div>
+              </ItemActionGroup>
             </li>
           );
         })}

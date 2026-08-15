@@ -7,7 +7,9 @@ import { TechnicalDetails } from '@/components/technical-details';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
+import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { Label } from '@/components/ui/label';
 import { networkActionError, readPublicApiError } from '@/lib/client-api-error';
 
@@ -563,7 +565,7 @@ export function McpServersUi({
                     </div>
                     <p className="break-all text-xs text-fg-muted">{s.url}</p>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+                  <ItemActionGroup label={`Actions for ${s.name}`}>
                     {s.authType === 'oauth' ? (
                       <Button
                         size="sm"
@@ -575,33 +577,46 @@ export function McpServersUi({
                         Connect
                       </Button>
                     ) : null}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={mutation.busy !== null}
-                      onClick={() => {
-                        void toggleEnabled(s);
-                      }}
-                    >
-                      {mutation.busy === 'toggle'
-                        ? s.enabled
-                          ? 'Disabling…'
-                          : 'Enabling…'
-                        : s.enabled
-                          ? 'Disable'
-                          : 'Enable'}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={mutation.busy !== null}
-                      onClick={() => {
-                        void remove(s);
-                      }}
-                    >
-                      {mutation.busy === 'remove' ? 'Removing…' : 'Remove'}
-                    </Button>
-                  </div>
+                    {s.authType === 'oauth' ? null : (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={mutation.busy !== null}
+                        onClick={() => {
+                          void toggleEnabled(s);
+                        }}
+                      >
+                        {mutation.busy === 'toggle'
+                          ? s.enabled
+                            ? 'Disabling…'
+                            : 'Enabling…'
+                          : s.enabled
+                            ? 'Disable'
+                            : 'Enable'}
+                      </Button>
+                    )}
+                    <ItemOverflowMenu targetLabel={s.name}>
+                      {s.authType === 'oauth' ? (
+                        <DropdownMenuItem
+                          disabled={mutation.busy !== null}
+                          onSelect={() => {
+                            void toggleEnabled(s);
+                          }}
+                        >
+                          {s.enabled ? 'Disable' : 'Enable'}
+                        </DropdownMenuItem>
+                      ) : null}
+                      <DropdownMenuItem
+                        disabled={mutation.busy !== null}
+                        className="text-destructive focus:text-destructive"
+                        onSelect={() => {
+                          void remove(s);
+                        }}
+                      >
+                        {mutation.busy === 'remove' ? 'Removing…' : 'Remove'}
+                      </DropdownMenuItem>
+                    </ItemOverflowMenu>
+                  </ItemActionGroup>
                 </div>
                 {s.lastError ? (
                   <div className="space-y-2">

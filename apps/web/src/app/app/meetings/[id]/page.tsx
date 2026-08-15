@@ -12,6 +12,7 @@ import { PinButton } from '@/components/pins/pin-button';
 import { SectionHeading } from '@/components/section-heading';
 import { TechnicalDetails } from '@/components/technical-details';
 import { Button } from '@/components/ui/button';
+import { ItemActionGroup } from '@/components/ui/item-actions';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -47,7 +48,7 @@ function renderMeetingHeaderActions({
   cancellable: boolean;
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-end gap-2">
+    <ItemActionGroup label={`Actions for ${title}`}>
       <Button asChild variant="outline" size="sm">
         <a
           href={meetingUrl}
@@ -62,7 +63,7 @@ function renderMeetingHeaderActions({
       <PinButton target={{ kind: 'meeting', key: meetingId }} initialPinned={initialPinned} />
       <MeetingExportButtons title={title} transcriptText={transcriptExport} />
       {cancellable ? <CancelMeetingButton meetingId={meetingId} /> : null}
-    </div>
+    </ItemActionGroup>
   );
 }
 

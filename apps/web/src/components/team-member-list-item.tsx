@@ -2,6 +2,7 @@ import type { TeamMemberInfo, TeamMemberRow } from '@/components/team-member-typ
 
 import { MemberRoleForm, RemoveMemberForm } from '@/components/team-member-actions';
 import { Badge } from '@/components/ui/badge';
+import { ItemActionGroup } from '@/components/ui/item-actions';
 import { displayMemberLabel } from '@/lib/display-labels';
 
 export function TeamMemberListItem({
@@ -28,18 +29,25 @@ export function TeamMemberListItem({
         <p className="break-words text-sm font-medium">{memberLabel}</p>
         {user?.email ? <p className="break-all text-xs text-fg-muted">{user.email}</p> : null}
       </div>
-      <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
-        {canManageRole ? (
-          <MemberRoleForm
-            memberLabel={memberLabel}
-            memberRole={member.role}
-            userId={member.userId}
-          />
-        ) : (
-          <Badge variant="outline">{member.role}</Badge>
-        )}
-        {canRemove ? <RemoveMemberForm memberLabel={memberLabel} userId={member.userId} /> : null}
-      </div>
+      {canManageRole || canRemove ? (
+        <ItemActionGroup
+          label={`Actions for ${memberLabel}`}
+          className="flex-col items-stretch sm:items-end"
+        >
+          {canManageRole ? (
+            <MemberRoleForm
+              memberLabel={memberLabel}
+              memberRole={member.role}
+              userId={member.userId}
+            />
+          ) : (
+            <Badge variant="outline">{member.role}</Badge>
+          )}
+          {canRemove ? <RemoveMemberForm memberLabel={memberLabel} userId={member.userId} /> : null}
+        </ItemActionGroup>
+      ) : (
+        <Badge variant="outline">{member.role}</Badge>
+      )}
     </li>
   );
 }

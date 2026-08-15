@@ -26,6 +26,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { ItemActionGroup } from '@/components/ui/item-actions';
 import { displaySourceLabel } from '@/lib/display-labels';
 import { selectedValues } from '@/lib/filter-values';
 import { statusLabel } from '@/lib/status-labels';
@@ -503,7 +504,7 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
           </p>
         ) : null}
       </div>
-      <div className="flex min-w-0 flex-wrap items-center gap-2 md:justify-end">
+      <ItemActionGroup label={`Actions for ${presentation.displayTitle}`}>
         <PinOverflowMenu
           target={{ kind: 'document', key: file.id }}
           title={presentation.displayTitle}
@@ -536,7 +537,7 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
             Promote
           </Button>
         </DialogTrigger>
-      </div>
+      </ItemActionGroup>
     </li>
   );
 }

@@ -361,11 +361,14 @@ describe('PersonalConnectionsUi', () => {
     );
 
     await screen.findByText('acme/app');
-    const deleteAccount = screen.getByRole('button', { name: 'Delete account' });
-    deleteAccount.focus();
+    const accountActions = screen.getByRole('button', {
+      name: 'Actions for this provider account',
+    });
+    accountActions.focus();
+    await user.keyboard('{Enter}');
+    expect(await screen.findByRole('menuitem', { name: 'Delete account' })).toBeTruthy();
     await user.keyboard('{Enter}');
 
-    expect(deleteAccount.getAttribute('aria-expanded')).toBe('true');
     expect(screen.getByRole('region', { name: 'Confirm provider account deletion' })).toBeTruthy();
 
     await user.tab();
@@ -377,8 +380,8 @@ describe('PersonalConnectionsUi', () => {
 
     await user.keyboard('{Enter}');
 
-    expect(deleteAccount.getAttribute('aria-expanded')).toBe('false');
-    expect(document.activeElement).toBe(deleteAccount);
+    expect(accountActions.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(accountActions);
   });
   it('lets keyboard users clear a search with no matching sources', async () => {
     const user = userEvent.setup();
@@ -685,7 +688,8 @@ describe('PersonalConnectionsUi', () => {
     );
 
     await screen.findByText('GitHub — Tim');
-    await user.click(screen.getByRole('button', { name: 'Delete account' }));
+    await user.click(screen.getByRole('button', { name: 'Actions for this provider account' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Delete account' }));
     await user.click(screen.getByRole('button', { name: 'Delete provider account' }));
 
     expect(await screen.findByText(/Could not disconnect this connection/i)).toBeTruthy();

@@ -23,6 +23,7 @@ import { TechnicalDetails } from '@/components/technical-details';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ItemActionGroup } from '@/components/ui/item-actions';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -323,12 +324,14 @@ export function SlackSettingsPageView({ model }: { model: SlackSettingsViewModel
                     />
                   </div>
                   {model.isAdmin ? (
-                    <form action={unbindSlackConversationAction}>
-                      <input type="hidden" name="id" value={b.id} />
-                      <Button type="submit" variant="ghost" size="sm">
-                        Unbind
-                      </Button>
-                    </form>
+                    <ItemActionGroup label={`Actions for ${b.title ?? 'Unnamed channel'}`}>
+                      <form action={unbindSlackConversationAction}>
+                        <input type="hidden" name="id" value={b.id} />
+                        <Button type="submit" variant="ghost" size="sm">
+                          Unbind
+                        </Button>
+                      </form>
+                    </ItemActionGroup>
                   ) : null}
                 </li>
               ))}
