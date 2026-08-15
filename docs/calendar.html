@@ -170,6 +170,12 @@
         <code>eventPage</code> URL parameters.
       </p>
       <p>
+        The Timeline is the historical activity surface, so its default query ends at the current
+        instant even though recurrence workers materialize later occurrences. Teammates can opt in
+        to a bounded seven-day upcoming Timeline view; longer future schedules belong here on the
+        Calendar page. Timeline date filters and pagination enforce the same seven-day future cap.
+      </p>
+      <p>
         Manual edits use the same recurrence modes as accepted suggestions:
         <code>single</code>, <code>series</code>, and <code>this_and_future</code>. This keeps
         direct calendar edits and agent-approved edits consistent.

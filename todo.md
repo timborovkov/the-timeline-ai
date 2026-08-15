@@ -127,7 +127,10 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       Timeline page/API reads now emit privacy-safe `timeline_moments_viewed`
       counters for mode, filters, row-count reduction, scan pressure, missing
       grouping metadata, AI presentation cache status, and visibility cache
-      partitioning without exposing raw content.
+      partitioning without exposing raw content. Timeline browsing now ends at
+      the current instant by default; an explicit upcoming control and future
+      date filters are bounded to seven days so recurrence materialization
+      cannot crowd historical work out of the archive.
       An opt-in live OpenRouter smoke test (`OPENROUTER_LIVE_TESTS=1`) now
       verifies the presentation prompt and schema through the real structured
       LLM boundary.
