@@ -11,11 +11,11 @@
     <main id="main">
       <h1>The Timeline — Product Brief</h1>
       <div class="meta">
-        <span class="kind">Product brief</span><span>Last updated 2026-08-06</span>
+        <span class="kind">Product brief</span><span>Last updated 2026-08-15</span>
       </div>
       <p class="tldr">
-        Capture work as it happens, then generate cited updates, digests, handoffs, answers, and
-        operational memory from the evidence.
+        Preserve deliberately routed work and selected provider records, then generate cited
+        updates, digests, handoffs, answers, and operational memory from the evidence.
       </p>
 
       <nav class="toc" aria-label="On this page">
@@ -40,12 +40,12 @@
 
       <h2 id="what-were-building">What we're building</h2>
       <p>
-        An evidence-derived operating record that turns everyday work into cited updates, digests,
-        handoffs, answers, and object memory. Team members capture work as it happens — voice notes
-        after a call, a forwarded email, a quick text dump at end of day, Slack messages, meeting
-        transcripts, documents, and integration events — and The Timeline compiles it into a
-        searchable event history of who did what, talked to whom, decided what, what changed, and
-        why the system believes it.
+        An evidence-backed working history that turns selected work into cited updates, digests,
+        handoffs, answers, and object memory. Team members deliberately send voice notes after a
+        call, forwarded email, explicit text notes, files, and meeting transcripts, while teams
+        select which Slack channels and provider records should enter. The Timeline compiles that
+        evidence into a searchable event history of who did what, talked to whom, decided what, what
+        changed, and why the system believes it.
       </p>
       <p>
         The interaction model is voice-first and chat-first. People resist updating systems of
@@ -83,16 +83,17 @@
 
       <h2 id="solution">Solution</h2>
       <p>
-        One ingest pipeline, many capture surfaces. Voice notes, written notes, forwarded emails,
-        Telegram and Slack messages, team documents, meetings, calendar rows, and third-party
-        systems all flow into the same event stream. An LLM extracts useful facts ("Tim discussed
-        SaaS licensing with John Ternus at Apple"), links them to existing objects when possible,
-        and proposes approval-backed object changes only when the evidence is durable. Documents are
-        processed into searchable chunks with version-aware citations. Calendar suggestions use the
-        same approval-backed path: clear deadlines, meetings, recurring calls, proposed time slots,
-        confirmations, and reschedules become reviewable calendar changes before they materialize.
-        Everything important is embedded and indexed. An agent answers questions over the event
-        history and knowledge base:
+        One ingest pipeline, many capture surfaces. Deliberately routed voice notes, written notes,
+        forwarded emails, Telegram and Slack captures, team documents, consent-gated meeting
+        transcripts, calendar rows, and selected records from connected systems flow into the same
+        event stream. An LLM extracts useful facts ("Tim discussed SaaS licensing with John Ternus
+        at Apple"), links them to existing objects when possible, and proposes approval-backed
+        object changes only when the evidence is durable. Documents are processed into searchable
+        chunks with version-aware citations. Calendar suggestions use the same approval-backed path:
+        clear deadlines, meetings, recurring calls, proposed time slots, confirmations, and
+        reschedules become reviewable calendar changes before they materialize. Everything important
+        is embedded and indexed. An agent answers questions over the event history and knowledge
+        base:
         <em>what did the team work on yesterday</em>,
         <em>what changed on the Apple licensing deal</em>, <em>what's outstanding for Acme</em>,
         <em>what are our office rules</em>, <em>which projects have gone stale</em>.

@@ -404,8 +404,8 @@ function ConnectorRail({ nativeConnectors }: { nativeConnectors: NativeConnector
           <h4>Send the work to Timeline.</h4>
           <p>
             Send an explicit Telegram or Slack note, forward mail, add a meeting transcript, or post
-            an authenticated payload. A plain Telegram DM asks Timeline; it does not become team
-            evidence unless you use /note.
+            an authenticated payload. Plain text in a Telegram DM asks Timeline; it does not become
+            team evidence unless you use /note.
           </p>
           <ul className={styles.captureSurfaceList} aria-label="Ways to send work to Timeline">
             {CAPTURE_SURFACES.map((surface) => (

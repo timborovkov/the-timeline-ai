@@ -14,8 +14,15 @@ describe('editorial metadata', () => {
   it('publishes canonical index metadata', () => {
     const metadata = createHowItWorksMetadata();
 
+    const description =
+      'See how Timeline preserves selected work as an evidence-backed chronology, answers with citations, and keeps durable changes human-approved.';
+    expect(metadata.description).toBe(description);
     expect(metadata.alternates).toEqual({ canonical: HOW_IT_WORKS_ROUTE });
-    expect(metadata.openGraph).toMatchObject({ type: 'website', url: HOW_IT_WORKS_ROUTE });
+    expect(metadata.openGraph).toMatchObject({
+      description,
+      type: 'website',
+      url: HOW_IT_WORKS_ROUTE,
+    });
     expect(metadata.robots).toMatchObject({ index: true, follow: true });
   });
 

@@ -98,7 +98,13 @@ describe('LandingPage', () => {
     expect(application?.featureList).toContain('Human approval before durable workspace changes');
     expect(metadata).toMatchObject({
       title: 'The Timeline | The work becomes the record',
+      description:
+        'The Timeline preserves selected work from Telegram, Slack, meetings, documents, tickets, code, and email as an evidence-backed project history with cited answers.',
       alternates: { canonical: '/' },
+      openGraph: {
+        description:
+          'The Timeline preserves selected work from Telegram, Slack, meetings, documents, tickets, code, and email as an evidence-backed project history with cited answers.',
+      },
     });
   });
 
@@ -155,7 +161,7 @@ describe('LandingPage', () => {
     expect(html).toContain('Human-approved changes');
     expect(html).toContain('Telegram / explicit note');
     expect(html).toContain('saved an explicit note');
-    expect(html).toContain('A plain Telegram DM asks Timeline; it does not become');
+    expect(html).toContain('Plain text in a Telegram DM asks Timeline; it does not become');
     expect(html).toContain('team evidence unless you use /note.');
     expect(html).toContain('Connected, not used in this answer');
     expect(html).toContain('Sentry is connected, but unused in this answer.');

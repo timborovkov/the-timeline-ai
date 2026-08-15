@@ -1547,12 +1547,16 @@
     animation-delay: 660ms;
   }
 
+  .motionReady .timelineStage.visible .timelineList li:nth-child(5) {
+    animation-delay: 820ms;
+  }
+
   .motionReady .timelineStage.visible .timelineNode span {
-    animation: evidenceNode 720ms 760ms ease-out both;
+    animation: evidenceNode 720ms 920ms ease-out both;
   }
 
   .motionReady .timelineStage.visible .chronologyContract {
-    animation-delay: 900ms;
+    animation-delay: 1060ms;
   }
 
   .motionReady .connectorPanel.visible .connectorPath:nth-child(1) {
