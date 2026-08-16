@@ -232,7 +232,10 @@ SLACK_CAPTURE_CANARY_ALLOWED_ORIGIN=https://thetimeline.cc
         <li>
           In bound channels, <code>/ask</code> and <code>@Timeline</code> can answer for unlinked
           Slack senders through a team-scoped bot actor. That actor sees team-visible history but
-          not private or specific-user events.
+          not private or specific-user events. It may use enabled team-shared custom MCP tools and
+          create new team-visible approval proposals, but cannot revise/approve proposals, use
+          personal tools, or mutate canonical state. Linked members retain normal member-level
+          behavior, and unlinked direct messages remain blocked.
         </li>
         <li>
           Text-bearing Slack captures enqueue extraction, embeddings, and approval-suggestion work

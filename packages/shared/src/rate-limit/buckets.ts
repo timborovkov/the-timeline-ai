@@ -55,6 +55,8 @@ export const RATE_LIMITS = {
   integrationWebhook: { capacity: 300, refillPerSec: 300 / 60 },
   /** Timeline-as-MCP-server endpoint: 600/min per source IP. */
   mcpServer: { capacity: 600, refillPerSec: 600 / 60 },
+  /** Paid Timeline-agent turns through MCP: 10/min per outbound key. */
+  mcpAgentAsk: { capacity: 10, refillPerSec: 10 / 60 },
   /** Generic ingest webhooks: 300/min per credential for provider bursts. */
   ingestWebhook: { capacity: 300, refillPerSec: 300 / 60 },
   /** Per-connection extract LLM for conversational integrations (Slack, Drive).

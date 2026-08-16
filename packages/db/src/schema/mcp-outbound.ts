@@ -25,7 +25,7 @@ export const mcpOutboundKeys = pgTable(
     keyHash: text('key_hash').notNull(),
     /** Short prefix shown in the UI (e.g. `tla_a1b2c3…`). */
     keyPrefix: text('key_prefix').notNull(),
-    /** JSON array of scopes (currently only `'read'` is supported). */
+    /** JSON scopes: every key has `read`; explicit opt-in adds `agent:ask`. */
     scopes: jsonb('scopes').notNull().default(['read']),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     expiresAt: timestamp('expires_at', { withTimezone: true }),

@@ -222,6 +222,10 @@ Treat this file as an operating contract for agents, not a loose README.
   before the agent sees it (Rule 8 of the system prompt). Same for
   integration event snippets surfaced via `search_integration_events`.
   A new tool that surfaces external content MUST wrap it.
+  Successful team-shared MCP calls are captured as immutable team-visible
+  evidence; personal-server calls remain private to their owner. Capture
+  dedupe keys include server scope/owner and must never broaden an older
+  private event.
 - **Agent presentation follows the current delivery surface.** Literal web
   delivery uses the rich cited profile. Telegram, Slack, and every future
   external chat provider use the shared compact plain-text profile; internal
@@ -231,12 +235,20 @@ Treat this file as an operating contract for agents, not a loose README.
   answer prompts or citation sanitizers. The external output-token ceiling is
   applied only in a no-tool final-answer pass; retrieval, visibility, grounding,
   and tool-call budgets remain unchanged.
+  Outbound `timeline.ask_agent` uses the separate compact `mcp_agent` profile,
+  which preserves inline Timeline citations and returns parsed artifact refs.
 - **Outbound MCP bearer keys see only `team`-visibility events.** The
   `/api/mcp/server` handler uses `withTeam(db, teamId, ZERO_UUID,
   { skipMembershipCheck: true })`. The zero-UUID can't match
   `authorUserId` (private) or `visibilityUserIds` (specific_users), so
   those events stay invisible. Do not loosen this — bearer keys
   represent a team, not a user.
+- **Synthetic team agents are proposal-only.** Agent-enabled outbound MCP keys
+  and unlinked trusted Telegram groups/Slack channels may read team-visible
+  data, call team-shared custom MCP tools, and create new team-visible
+  proposals. They may not revise proposals, use personal pins, invoke
+  approval-required `execute_*` tools, or mutate canonical state. Existing MCP
+  keys remain read-only unless an admin explicitly grants `agent:ask`.
 - **No SSRF from user-supplied or discovered URLs.** `validateMcpUrl`
   in [`packages/shared/src/mcp/auth.ts`](packages/shared/src/mcp/auth.ts)
   rejects loopback, RFC1918, RFC 3927 link-local (169.254/16 — cloud

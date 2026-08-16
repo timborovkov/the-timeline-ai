@@ -35,6 +35,14 @@ or contains only removable internal material, the completed grounded draft and
 its model attribution are retained; the draft still goes through deterministic
 external formatting before delivery.
 
+Outbound MCP agent calls use a separate compact profile that preserves inline
+citations and returns parsed artifact references. Agent-enabled MCP keys and
+unlinked trusted Telegram/Slack group actors use proposal-only authority:
+team-visible reads, team-shared MCP tools, and new approval proposals without
+proposal revision, personal pins, or canonical mutations. Successful
+team-server MCP results become immutable team-visible evidence; personal-server
+results stay private to their owner.
+
 ## How to use
 
 ```ts

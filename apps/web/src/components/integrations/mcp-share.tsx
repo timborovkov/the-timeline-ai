@@ -22,6 +22,7 @@ interface KeyRow {
   id: string;
   name: string;
   prefix: string;
+  scopes: string[];
   lastUsedAt: string | null;
   createdAt: string;
 }
@@ -69,6 +70,7 @@ interface McpShareState {
   showCreate: boolean;
   name: string;
   nameError: string | null;
+  allowAgent: boolean;
   busy: boolean;
   mintedKey: MintedKey | null;
   mcpUrl: string;
@@ -83,8 +85,8 @@ function McpStatusGrid() {
     <section className="grid gap-3 md:grid-cols-4">
       {[
         ['Transport', 'Streamable HTTP URL', 'Use the URL below, not an SSE endpoint.'],
-        ['Protocol', '2024-11-05', 'Compatibility target returned during initialize.'],
-        ['Auth', 'Bearer header', 'Keys are team-scoped and can be revoked here.'],
+        ['Default access', 'Retrieval only', 'Agent access is a separate permission on each key.'],
+        ['Agent access', 'Opt in per key', 'Paid turns can create proposals for human review.'],
         ['Visibility', 'Team-visible only', 'Private and specific-user events stay out.'],
       ].map(([label, value, description]) => (
         <div key={label} className="rounded-sm border border-border bg-surface p-3">
@@ -112,9 +114,9 @@ function McpEndpointCard({ mcpUrl }: { mcpUrl: string }) {
         Timeline does not expose an <code className="font-mono">/sse</code> endpoint.
       </p>
       <p className="text-sm text-fg-muted">
-        The endpoint is read-only and exposes team-level retrieval for workspace context, timeline
-        events, entities, objects, tasks, boards, calendar, documents, and connected integration
-        activity.
+        Every key exposes team-level retrieval for workspace context, timeline events, entities,
+        objects, tasks, boards, calendar, documents, and connected integration activity. You can
+        separately allow a key to ask the Timeline agent and create proposals for human review.
       </p>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <code className="flex-1 break-all rounded-sm border border-border bg-surface-2 px-2 py-1.5 font-mono text-xs">
@@ -141,6 +143,10 @@ function McpRetrievalSummary() {
           ['Objects and tasks', 'get/search/list objects, active tasks, and board state.'],
           ['Calendar and time', 'list/get events and resolve workspace-relative dates.'],
           ['Docs and integrations', 'semantic and structured document plus integration search.'],
+          [
+            'Timeline agent',
+            'Optional stateless agent turns with citations, team MCP tools, and reviewable proposals.',
+          ],
         ].map(([title, description]) => (
           <div key={title} className="rounded-sm border border-border bg-surface p-3">
             <div className="text-sm font-medium text-fg">{title}</div>
@@ -263,17 +269,16 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
     busyKeyIds.current ??= new Set();
     return busyKeyIds.current;
   }
-  const [{ showCreate, name, nameError, busy, mintedKey, mcpUrl }, patchState] = useReducer(
-    patchMcpShareState,
-    {
+  const [{ showCreate, name, nameError, allowAgent, busy, mintedKey, mcpUrl }, patchState] =
+    useReducer(patchMcpShareState, {
       showCreate: false,
       name: '',
       nameError: null,
+      allowAgent: false,
       busy: false,
       mintedKey: null,
       mcpUrl: initialMcpUrl,
-    },
-  );
+    });
 
   useEffect(() => {
     if (initialMcpUrl) return;
@@ -308,13 +313,14 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
         const res = await fetch('/api/team/mcp-keys', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ name }),
+          body: JSON.stringify({ name, allowAgent }),
         });
         if (!res.ok) return { error: 'failed' };
         const data = (await res.json()) as { name: string; plaintext: string };
         patchState({
           mintedKey: { name: data.name, plaintext: data.plaintext },
           name: '',
+          allowAgent: false,
           showCreate: false,
         });
         return { ok: true };
@@ -439,6 +445,24 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
               </p>
             ) : null}
           </div>
+          <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-sm border border-border bg-surface-2 p-3">
+            <input
+              type="checkbox"
+              name="allow-agent"
+              className="mt-0.5 size-4 shrink-0"
+              checked={allowAgent}
+              onChange={(event) => {
+                patchState({ allowAgent: event.currentTarget.checked });
+              }}
+            />
+            <span className="space-y-1">
+              <span className="block text-sm font-medium text-fg">Allow Timeline agent</span>
+              <span className="block text-xs leading-5 text-fg-muted">
+                This key can start paid agent turns, use enabled team MCP tools, and create
+                team-visible proposals. A teammate must still approve every proposal.
+              </span>
+            </span>
+          </label>
           <Button type="submit" size="sm" disabled={busy}>
             {busy ? 'Create key · creating…' : 'Create key'}
           </Button>
@@ -450,7 +474,7 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
           icon={KeyRound}
           size="inset"
           title="No active keys"
-          body="Create a key to let an external agent read this team's timeline."
+          body="Create a retrieval key, with optional access to the Timeline agent."
         />
       ) : (
         <ul className="divide-y divide-border border-y border-border">
@@ -471,6 +495,16 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
                       )}
                     </span>
                   </CollectionRow.Context>
+                  <CollectionRow.Metadata>
+                    <Badge variant="outline" className="rounded-sm">
+                      Retrieval
+                    </Badge>
+                    {k.scopes.includes('agent:ask') ? (
+                      <Badge variant="outline" className="rounded-sm">
+                        Timeline agent
+                      </Badge>
+                    ) : null}
+                  </CollectionRow.Metadata>
                   <CollectionRow.Actions>
                     <ItemActionGroup label={`Actions for ${k.name}`}>
                       <Button

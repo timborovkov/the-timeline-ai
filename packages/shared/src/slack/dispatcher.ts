@@ -310,6 +310,12 @@ async function handleSlackAskCommand(
         deliverySurface: 'slack',
         userName: route.userName,
         trustedTeamActor: route.trustedTeamActor,
+        ...(route.trustedTeamActor
+          ? {
+              toolMode: 'proposal_only' as const,
+              proposalOrigin: { surface: 'slack', actorKind: 'team_agent' as const },
+            }
+          : {}),
         question,
       },
       {
@@ -983,6 +989,12 @@ async function handleAppMention(
         deliverySurface: 'slack',
         userName: route.linkedUserName ?? 'a teammate',
         trustedTeamActor: !route.linkedUserId && !route.isDm,
+        ...(!route.linkedUserId && !route.isDm
+          ? {
+              toolMode: 'proposal_only' as const,
+              proposalOrigin: { surface: 'slack', actorKind: 'team_agent' as const },
+            }
+          : {}),
         question,
       },
       {

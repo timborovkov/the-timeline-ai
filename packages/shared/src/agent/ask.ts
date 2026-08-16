@@ -17,6 +17,8 @@ import {
   buildAgentTools,
   buildMcpTools,
   type AgentApprovalDecisionObservation,
+  type AgentProposalOrigin,
+  type AgentToolMode,
   type AgentToolErrorReporter,
 } from '#src/agent/tools.js';
 import { getEnv } from '#src/env.js';
@@ -50,6 +52,14 @@ export interface AskAgentInput {
   userName?: string;
   /** Trusted team-scoped bot actor. Keeps private/specific-user events invisible. */
   trustedTeamActor?: boolean | undefined;
+  /** Tool authority for this turn. Defaults to read-only for trusted team actors. */
+  toolMode?: AgentToolMode | undefined;
+  /** Auditable origin attached to proposals created by a synthetic actor. */
+  proposalOrigin?: AgentProposalOrigin | undefined;
+  /** Outbound MCP key responsible for this turn, when invoked through Timeline MCP. */
+  mcpOutboundKeyId?: string | undefined;
+  /** Current Timeline-agent delegation depth propagated across MCP calls. */
+  agentDelegationDepth?: number | undefined;
   /** Cap on agent tool-call rounds. Defaults to `DEFAULT_AGENT_MAX_STEPS`. */
   maxSteps?: number;
   /** Bounded prior direct-conversation messages, ordered oldest to newest. */
@@ -272,6 +282,7 @@ export async function askAgent(
 
   const presentation = resolveAgentPresentation(input.deliverySurface);
   const presentationPolicy = presentationInstructions(presentation);
+  const toolMode = input.toolMode ?? (input.trustedTeamActor ? 'read_only' : 'full');
   const scope = withTeam(input.db, input.teamId, input.userId, {
     ...(deps.teamScopeDeps ?? {}),
     ...(input.trustedTeamActor ? { skipMembershipCheck: true } : {}),
@@ -296,6 +307,9 @@ export async function askAgent(
     presentation,
     workspaceTime: workspaceTimeContext(calendarSettings.defaultTimezone, currentDate),
   });
+  if (toolMode === 'proposal_only') {
+    system += `\n\nSYNTHETIC TEAM AGENT MODE:\nThis requester is not a verified human member. You may read team-visible workspace data and create new team-visible approval-queue proposals, but you cannot revise existing proposals, use personal pins, request in-chat approval, or mutate canonical workspace state. For this mode only, when the request explicitly asks to create or change workspace state, use the matching available suggest_* or propose_* tool instead of the full-member execute_* path described in Rule 7. Clearly say that the proposal did not change canonical state and a human teammate must review it.`;
+  }
   const nativeTools = buildAgentTools(scope, {
     onToolError: deps.onToolError,
     onApprovalDecision: deps.onApprovalDecision
@@ -307,7 +321,8 @@ export async function askAgent(
           })
       : undefined,
     sanitizeError: deps.sanitizeError,
-    readOnly: input.trustedTeamActor,
+    toolMode,
+    proposalOrigin: input.proposalOrigin,
     currentDate,
   });
   const retrievalContract = parseExplicitRetrievalContract(input.question);
@@ -347,6 +362,10 @@ export async function askAgent(
         db: input.db,
         onToolError: deps.onToolError,
         sanitizeError: deps.sanitizeError,
+        invocationSurface: input.deliverySurface,
+        mcpOutboundKeyId: input.mcpOutboundKeyId,
+        agentDelegationDepth: input.agentDelegationDepth,
+        abortSignal: deps.abortSignal,
       }).catch((err: unknown) => {
         const safeError = deps.sanitizeError?.(err) ?? err;
         log.warn({ err: safeError, teamId: input.teamId }, 'askAgent MCP tool discovery failed');

@@ -55,6 +55,7 @@ beforeEach(() => {
         description: 'Search external research.',
         serverId: SERVER_ID,
         serverName: 'Research MCP',
+        serverUserId: null,
         namespacedName: TOOL_NAME,
         inputSchema: {
           type: 'object',
@@ -80,7 +81,9 @@ describe('agent MCP safety evals', () => {
     const result = (await exec({ q: 'launch' }, {})) as { ok: boolean; content_text: string };
 
     expect(fakes.connectForTeam).toHaveBeenCalledWith({}, TEAM_ID, USER_ID);
-    expect(fakes.callTool).toHaveBeenCalledWith({}, TEAM_ID, TOOL_NAME, { q: 'launch' }, USER_ID);
+    expect(fakes.callTool).toHaveBeenCalledWith({}, TEAM_ID, TOOL_NAME, { q: 'launch' }, USER_ID, {
+      agentDelegationDepth: 1,
+    });
     expect(result.ok).toBe(true);
     expect(result.content_text).toMatch(
       new RegExp(`^<external_content source="mcp:Research MCP" event_id="${SERVER_ID}">`),

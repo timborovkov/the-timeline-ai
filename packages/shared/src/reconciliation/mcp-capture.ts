@@ -15,13 +15,18 @@ const MAX_INLINE_MCP_TOOL_RESULT_BYTES = 32_000;
 export interface RecordMcpToolResultEvidenceInput {
   db: DbOrTx;
   teamId: string;
-  userId: string;
+  actorUserId: string | null;
+  visibility: 'team' | 'private';
+  visibilityOwnerUserId: string | null;
   serverId: string;
   serverName: string;
   toolName: string;
   namespacedToolName: string;
   args: Record<string, unknown>;
   result: unknown;
+  invocationSurface?: string;
+  syntheticActorKind?: 'team_agent';
+  mcpOutboundKeyId?: string;
   occurredAt?: Date;
 }
 
@@ -44,9 +49,11 @@ export async function recordMcpToolResultEvidence(
     argsDigest,
     resultDigest,
   });
-  const dedupKey = `mcp:${input.serverId}:${input.namespacedToolName}:${callId.slice(
-    'sha256:'.length,
-  )}`;
+  const evidenceOwner = input.visibility === 'private' ? input.visibilityOwnerUserId : null;
+  if (input.visibility === 'private' && !evidenceOwner) {
+    throw new Error('Private MCP evidence requires a visibility owner');
+  }
+  const dedupKey = `mcp:v2:${input.visibility}:${evidenceOwner ?? 'team'}:${input.serverId}:${input.namespacedToolName}:${callId.slice('sha256:'.length)}`;
   const inlineSnapshot =
     Buffer.byteLength(resultText, 'utf8') <= MAX_INLINE_MCP_TOOL_RESULT_BYTES
       ? {
@@ -68,12 +75,12 @@ export async function recordMcpToolResultEvidence(
     .insert(rawEvents)
     .values({
       teamId: input.teamId,
-      authorUserId: input.userId,
+      authorUserId: input.actorUserId,
       source: 'integration',
       contentText: resultText.slice(0, MAX_INLINE_MCP_TOOL_RESULT_BYTES),
       occurredAt,
-      visibility: 'private',
-      visibilityOwnerUserId: input.userId,
+      visibility: input.visibility,
+      visibilityOwnerUserId: evidenceOwner,
       sourceMetadata: {
         provider: 'mcp',
         event_type: 'mcp.tool_result',
@@ -85,6 +92,10 @@ export async function recordMcpToolResultEvidence(
         mcp_tool_name: input.toolName,
         mcp_namespaced_tool_name: input.namespacedToolName,
         mcp_call_id: callId,
+        mcp_server_scope: input.visibility === 'team' ? 'team' : 'personal',
+        invocation_surface: input.invocationSurface ?? null,
+        synthetic_actor_kind: input.syntheticActorKind ?? null,
+        mcp_outbound_key_id: input.mcpOutboundKeyId ?? null,
         args_digest: argsDigest,
         result_digest: resultDigest,
         source_payload_ref: sourcePayloadRef,

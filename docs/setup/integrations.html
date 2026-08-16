@@ -529,9 +529,10 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
         integration tools section of <code>/app/team/integrations</code> (team catalog — admins
         only) or <code>/app/me/mcp-servers</code> (personal overlay — visible only to you, any
         member can add). MCP servers are queried on demand during chat; they are not passive
-        ingestion jobs, but successful tool results are written as private
-        <code>source='integration'</code>, <code>provider='mcp'</code> evidence for later
-        reconciliation. Pick an auth mode:
+        ingestion jobs. Successful team-server results are captured as immutable team-visible
+        <code>source='integration'</code>, <code>provider='mcp'</code> evidence. Personal-server
+        results remain private to their owner. Captured results include an event citation for the
+        current answer and later reconciliation. Pick an auth mode:
       </p>
       <p>
         Hosted catalog entries use production-safe HTTPS endpoints. The Figma desktop MCP entry is
@@ -574,8 +575,10 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
           <em>Manage Timeline MCP endpoint</em>, and copy the MCP endpoint URL shown there.
         </li>
         <li>
-          Click <em>New key</em>, give it a label (e.g. "Claude Desktop — personal mac"), and copy
-          the one-time plaintext.
+          Click <em>New key</em>, give it a label (e.g. "Claude Desktop — personal mac"), and choose
+          whether to enable <em>Allow Timeline agent</em>. This option is off by default. Enabling
+          it permits paid model turns, enabled team-shared custom MCP tools, and team-visible
+          proposal creation. Copy the one-time plaintext.
         </li>
         <li>
           In the consuming agent, add an MCP server with:
@@ -617,6 +620,13 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
         connector needs an OAuth-backed auth path or bridge before it is a one-click setup.
       </p>
       <ul>
+        <li>
+          <code>timeline.ask_agent({ question })</code> — available only to keys with
+          <code>agent:ask</code>. Runs a stateless, team-level Timeline agent over team-visible data
+          and team-shared custom MCP tools. The structured result contains the concise cited answer,
+          parsed artifact references, proposal IDs, and a truncation flag. The caller carries any
+          prior context into its next question.
+        </li>
         <li>
           <code>timeline.retrieve_workspace_context</code> — broad read-only retrieval across
           objects, notes, events, tasks, boards, calendar, documents, and route guides
@@ -663,6 +673,16 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
         shown once at creation). Moment tools are built from that same visible event set and fence
         raw snippets as external content before returning them. Revoke from the same page;
         revocation is immediate.
+      </p>
+      <p>
+        Existing keys and newly created default keys have only <code>read</code>; they neither list
+        nor invoke <code>timeline.ask_agent</code>. Agent-enabled keys carry <code>read</code> plus
+        <code>agent:ask</code>. Their synthetic actor can create task, object-memory, object-change,
+        calendar-create, and calendar-update/cancellation proposals, but cannot revise proposals,
+        use personal pins, call approval-required mutation tools, or change canonical state. Every
+        proposal still requires a teammate to accept it. Direct Timeline-agent delegation is bounded
+        to one nested call, each turn has a 90-second deadline, and agent calls are limited to 10
+        per minute per key in addition to the endpoint IP limit.
       </p>
       <p>
         Wildcard CORS is set so browser-based agents work; Authorization-header auth means cookies

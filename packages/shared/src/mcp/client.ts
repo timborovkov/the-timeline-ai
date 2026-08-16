@@ -52,6 +52,8 @@ export interface McpTool {
 export interface DiscoveredTool extends McpTool {
   serverId: string;
   serverName: string;
+  /** NULL for team-shared servers; otherwise the owning Timeline user. */
+  serverUserId: string | null;
   /** `mcp__<serverIdCompact>__<toolName>`. */
   namespacedName: string;
 }
@@ -75,7 +77,11 @@ async function rpc(
   headers: Record<string, string>,
   method: string,
   params: unknown,
-  requestOptions: { signal?: AbortSignal; timeoutMs?: number } = {},
+  requestOptions: {
+    signal?: AbortSignal;
+    timeoutMs?: number;
+    extraHeaders?: Record<string, string>;
+  } = {},
 ): Promise<unknown> {
   const id = Date.now() + Math.floor(Math.random() * 1000);
   const body: JsonRpcRequest = { jsonrpc: '2.0', id, method, params };
@@ -91,6 +97,7 @@ async function rpc(
         accept: 'application/json, text/event-stream',
         'content-type': 'application/json',
         ...headers,
+        ...requestOptions.extraHeaders,
       },
       body: JSON.stringify(body),
       redirect: 'manual',
@@ -350,6 +357,7 @@ export class McpClientManager {
             ...t,
             serverId: server.id,
             serverName: server.name,
+            serverUserId: server.userId,
             namespacedName: namespaced,
           };
           allTools.push(discovered);
@@ -422,6 +430,11 @@ export class McpClientManager {
     namespacedName: string,
     args: Record<string, unknown>,
     userId?: string,
+    requestOptions: {
+      signal?: AbortSignal;
+      timeoutMs?: number;
+      agentDelegationDepth?: number;
+    } = {},
   ): Promise<unknown> {
     const cached = await this.connectForTeam(db, teamId, userId);
     const mapping = cached.toolMap.get(namespacedName);
@@ -467,7 +480,23 @@ export class McpClientManager {
       throw new McpNeedsReauthError(server.id, server.name);
     }
     const { headers, url } = buildAuth(server, oauth);
-    return rpc(url, headers, 'tools/call', { name: mapping.toolName, arguments: args });
+    return rpc(
+      url,
+      headers,
+      'tools/call',
+      { name: mapping.toolName, arguments: args },
+      {
+        ...(requestOptions.signal ? { signal: requestOptions.signal } : {}),
+        ...(requestOptions.timeoutMs !== undefined ? { timeoutMs: requestOptions.timeoutMs } : {}),
+        ...(requestOptions.agentDelegationDepth !== undefined
+          ? {
+              extraHeaders: {
+                'x-timeline-agent-depth': String(requestOptions.agentDelegationDepth),
+              },
+            }
+          : {}),
+      },
+    );
   }
 }
 

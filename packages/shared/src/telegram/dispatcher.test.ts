@@ -36,6 +36,13 @@ vi.mock('#src/queue/queues.js', async (importOriginal) => ({
   enqueueConversationAgentJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'turn' }),
 }));
 
+const askAgentMock = vi.hoisted(() => vi.fn());
+
+vi.mock('#src/agent/ask.js', () => ({
+  askAgent: askAgentMock,
+  TEAM_BOT_ACTOR_USER_ID: '00000000-0000-0000-0000-000000000000',
+}));
+
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const OTHER_TEAM_ID = '22222222-2222-2222-2222-222222222222';
 const USER_A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -422,6 +429,8 @@ describe('handleUpdate telegram edit visibility', () => {
   >;
 
   beforeEach(async () => {
+    askAgentMock.mockReset();
+    askAgentMock.mockResolvedValue({ ok: false, error: 'unconfigured' });
     askEnvBeforeEach = {
       OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
       QDRANT_URL: process.env.QDRANT_URL,
@@ -1775,6 +1784,18 @@ describe('handleUpdate telegram edit visibility', () => {
     expect(messages).toEqual([
       'Chat is not configured on this server (missing OPENROUTER_API_KEY or QDRANT_URL).',
     ]);
+    expect(askAgentMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        teamId: TEAM_ID,
+        userId: '00000000-0000-0000-0000-000000000000',
+        deliverySurface: 'telegram',
+        trustedTeamActor: true,
+        toolMode: 'proposal_only',
+        proposalOrigin: { surface: 'telegram', actorKind: 'team_agent' },
+        question: 'when did DFK get back to us?',
+      }),
+      expect.any(Object),
+    );
   });
 
   it('does not tombstone another team with matching Telegram chat and message ids', async () => {

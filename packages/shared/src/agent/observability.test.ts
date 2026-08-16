@@ -98,8 +98,26 @@ describe('agent tool observability', () => {
           chunkId: CHUNK_ID,
         },
       ],
+      proposalIds: [],
       warningCodes: ['warning:partial_index'],
     });
+  });
+
+  it('reports proposal ids created by proposal tools', async () => {
+    const observations: Parameters<typeof summarizeAgentToolObservations>[0]['observations'] = [];
+    const tools = instrumentAgentTools(
+      {
+        suggest_task: {
+          execute: () => Promise.resolve({ ok: true, id: 'proposal-1' }),
+        },
+      } as unknown as ToolSet,
+      (observation) => observations.push(observation),
+    );
+
+    const execute = tools.suggest_task?.execute as TestToolExecute;
+    await execute({ title: 'Follow up' }, { toolCallId: 'call-1', messages: [] });
+
+    expect(summarizeAgentToolObservations({ observations }).proposalIds).toEqual(['proposal-1']);
   });
 
   it('marks failed tool results without throwing away the original output', async () => {

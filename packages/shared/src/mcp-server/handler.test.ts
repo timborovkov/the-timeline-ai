@@ -1,8 +1,9 @@
 import { PGlite } from '@electric-sql/pglite';
-import { mcpOutboundKeys, rawEvents } from '@timeline/db';
+import { agentSuggestions, mcpOutboundKeys, rawEvents } from '@timeline/db';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { buildAgentTools } from '#src/agent/tools.js';
 import { handleMcpRequest } from '#src/mcp-server/handler.js';
 import { hashKey } from '#src/mcp-server/keys.js';
 import { TASK_CATEGORIES } from '#src/task-categories/types.js';
@@ -12,6 +13,7 @@ import { applyDbMigrations } from '#src/test/pglite.js';
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const TOKEN = 'tla_test_outbound_mcp_key_for_handler_tests';
+const AGENT_TOKEN = 'tla_test_agent_enabled_key_for_handler_tests';
 const WORKFLOW_EVENT_A = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1';
 const WORKFLOW_EVENT_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2';
 const WORKFLOW_PRIVATE_EVENT = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3';
@@ -58,14 +60,24 @@ async function seed(pg: PGlite, db: ReturnType<typeof drizzle>): Promise<void> {
     VALUES ('${TEAM_ID}', '${USER_ID}', 'owner');
   `);
 
-  await db.insert(mcpOutboundKeys).values({
-    teamId: TEAM_ID,
-    createdByUserId: USER_ID,
-    name: 'E2E handler key',
-    keyHash: hashKey(TOKEN),
-    keyPrefix: TOKEN.slice(0, 12),
-    scopes: ['read'],
-  });
+  await db.insert(mcpOutboundKeys).values([
+    {
+      teamId: TEAM_ID,
+      createdByUserId: USER_ID,
+      name: 'E2E handler key',
+      keyHash: hashKey(TOKEN),
+      keyPrefix: TOKEN.slice(0, 12),
+      scopes: ['read'],
+    },
+    {
+      teamId: TEAM_ID,
+      createdByUserId: USER_ID,
+      name: 'Agent-enabled handler key',
+      keyHash: hashKey(AGENT_TOKEN),
+      keyPrefix: AGENT_TOKEN.slice(0, 12),
+      scopes: ['read', 'agent:ask'],
+    },
+  ]);
 }
 
 async function callTool(
@@ -190,6 +202,7 @@ describe('handleMcpRequest', () => {
     );
 
     const tools = toolsListResult(response).tools;
+    expect(tools.find((tool) => tool.name === 'timeline.ask_agent')).toBeUndefined();
     const listEvents = tools.find((tool) => tool.name === 'timeline.list_events');
     expect(listEvents).toBeDefined();
     expect(listEvents?.inputSchema.properties?.source?.enum).toEqual(
@@ -227,6 +240,263 @@ describe('handleMcpRequest', () => {
         'timeline.get_integration_resource',
       ]),
     );
+  });
+
+  it('filters ask_agent from read-only keys and independently rejects direct calls', async () => {
+    const response = await handleMcpRequest(
+      { db: db as never, bearer: TOKEN },
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: 'timeline.ask_agent', arguments: { question: 'What changed?' } },
+      },
+    );
+
+    expect(response).toMatchObject({
+      result: {
+        isError: true,
+        content: [{ text: JSON.stringify({ ok: false, error: 'forbidden' }) }],
+      },
+    });
+  });
+
+  it('runs ask_agent as the proposal-only team actor and returns structured references', async () => {
+    const proposalId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    const eventId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    const askAgent = vi.fn(
+      (
+        _input: Record<string, unknown>,
+        deps: { onTurnObservability?: (value: unknown) => void },
+      ) => {
+        deps.onTurnObservability?.({
+          toolObservations: [],
+          selection: null,
+          totalResultCount: 0,
+          topArtifactRefs: [],
+          proposalIds: [proposalId],
+          warningCodes: [],
+        });
+        return Promise.resolve({
+          ok: true as const,
+          answer: `Launch is ready [ev:${eventId}].`,
+          truncated: false,
+          profile: 'mcp_agent' as const,
+        });
+      },
+    );
+    const checkRateLimit = vi.fn().mockResolvedValue({ ok: true, remaining: 9, retryAfterMs: 0 });
+
+    const response = await handleMcpRequest(
+      { db: db as never, bearer: AGENT_TOKEN, agentDelegationDepth: 1 },
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: 'timeline.ask_agent', arguments: { question: '  What changed?  ' } },
+      },
+      { askAgent: askAgent as never, checkRateLimit: checkRateLimit as never },
+    );
+
+    if (!response || !('result' in response)) throw new Error('expected tool result');
+    const result = response.result as {
+      content: { text: string }[];
+      isError: boolean;
+    };
+    expect(result).toMatchObject({ isError: false });
+    const text = result.content[0]?.text;
+    expect(JSON.parse(text ?? '{}')).toEqual({
+      ok: true,
+      answer: `Launch is ready [ev:${eventId}].`,
+      citations: [{ kind: 'timeline_event', id: eventId }],
+      proposal_ids: [proposalId],
+      truncated: false,
+    });
+    const [askInput, askDeps] = askAgent.mock.calls[0] as unknown as [
+      Record<string, unknown> & {
+        proposalOrigin: Record<string, unknown>;
+      },
+      { abortSignal: AbortSignal; includeMcpTools: boolean },
+    ];
+    expect(askInput).toMatchObject({
+      teamId: TEAM_ID,
+      userId: '00000000-0000-0000-0000-000000000000',
+      deliverySurface: 'mcp',
+      trustedTeamActor: true,
+      toolMode: 'proposal_only',
+      question: 'What changed?',
+    });
+    expect(askInput.proposalOrigin).toMatchObject({
+      surface: 'mcp',
+      actorKind: 'team_agent',
+    });
+    expect(typeof askInput.proposalOrigin.mcpOutboundKeyId).toBe('string');
+    expect(askDeps.includeMcpTools).toBe(true);
+    expect(askDeps.abortSignal).toBeInstanceOf(AbortSignal);
+    expect(checkRateLimit).toHaveBeenCalledWith(
+      expect.objectContaining({ capacity: 10, refillPerSec: 10 / 60 }),
+    );
+  });
+
+  it('persists synthetic-agent proposals as team-visible approval work', async () => {
+    const scope = withTeam(db as never, TEAM_ID, '00000000-0000-0000-0000-000000000000', {
+      skipMembershipCheck: true,
+    });
+    const tools = buildAgentTools(scope, {
+      toolMode: 'proposal_only',
+      proposalOrigin: {
+        surface: 'mcp',
+        actorKind: 'team_agent',
+        mcpOutboundKeyId: '99999999-9999-4999-8999-999999999999',
+      },
+    });
+    const suggestTask = tools.suggest_task?.execute as (
+      input: unknown,
+      options: unknown,
+    ) => Promise<unknown>;
+
+    const suggestionResult = (await suggestTask({ title: 'Send the launch note' }, {})) as {
+      id: string;
+      ok: boolean;
+    };
+    expect(suggestionResult.ok).toBe(true);
+    expect(typeof suggestionResult.id).toBe('string');
+
+    const rows = await db.select().from(agentSuggestions);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      visibility: 'team',
+      visibilityOwnerUserId: null,
+    });
+    expect(rows[0]?.metadata).toMatchObject({
+      origin_surface: 'mcp',
+      origin_actor_kind: 'team_agent',
+      mcp_outbound_key_id: '99999999-9999-4999-8999-999999999999',
+    });
+  });
+
+  it('advertises ask_agent only to agent-enabled keys', async () => {
+    const response = await handleMcpRequest(
+      { db: db as never, bearer: AGENT_TOKEN },
+      { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+    );
+
+    const askTool = toolsListResult(response).tools.find(
+      (tool) => tool.name === 'timeline.ask_agent',
+    );
+    expect(askTool?.inputSchema.properties).toHaveProperty('question');
+  });
+
+  it('returns stable delegation, throttling, availability, and validation failures', async () => {
+    const request = {
+      jsonrpc: '2.0' as const,
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'timeline.ask_agent', arguments: { question: 'What changed?' } },
+    };
+    const output = async (
+      context: Parameters<typeof handleMcpRequest>[0],
+      deps: Parameters<typeof handleMcpRequest>[2],
+      raw: unknown = request,
+    ) => {
+      const response = await handleMcpRequest(context, raw, deps);
+      if (!response || !('result' in response)) throw new Error('expected tool result');
+      const result = response.result as { content: { text: string }[]; isError: boolean };
+      const parsed = JSON.parse(result.content[0]?.text ?? '{}') as unknown;
+      if (!parsed || typeof parsed !== 'object') throw new Error('expected object tool output');
+      return { ...parsed, isError: result.isError };
+    };
+
+    await expect(
+      output({ db: db as never, bearer: AGENT_TOKEN, agentDelegationDepth: 2 }, {}),
+    ).resolves.toMatchObject({ error: 'delegation_limit', isError: true });
+    await expect(
+      output(
+        { db: db as never, bearer: AGENT_TOKEN },
+        {
+          checkRateLimit: vi.fn().mockResolvedValue({ ok: false, retryAfterMs: 2_000 }) as never,
+        },
+      ),
+    ).resolves.toMatchObject({
+      error: 'rate_limited',
+      retry_after_seconds: 2,
+      isError: true,
+    });
+    await expect(
+      output(
+        { db: db as never, bearer: AGENT_TOKEN },
+        {
+          checkRateLimit: vi.fn().mockResolvedValue({ ok: true, retryAfterMs: 0 }) as never,
+          askAgent: vi.fn().mockResolvedValue({ ok: false, error: 'unconfigured' }) as never,
+        },
+      ),
+    ).resolves.toMatchObject({ error: 'agent_unavailable', isError: true });
+    await expect(
+      output(
+        { db: db as never, bearer: AGENT_TOKEN },
+        {},
+        {
+          ...request,
+          params: { name: 'timeline.ask_agent', arguments: { question: '   ' } },
+        },
+      ),
+    ).resolves.toMatchObject({ error: 'failed', message: 'invalid_question', isError: true });
+  });
+
+  it('cancels agent turns at the 90-second deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      let markStarted: (() => void) | undefined;
+      const started = new Promise<void>((resolve) => {
+        markStarted = resolve;
+      });
+      const askAgent = vi.fn(
+        (_input: unknown, deps: { abortSignal?: AbortSignal }): Promise<never> => {
+          markStarted?.();
+          return new Promise((_resolve, reject) => {
+            deps.abortSignal?.addEventListener(
+              'abort',
+              () => {
+                reject(new Error('turn aborted'));
+              },
+              { once: true },
+            );
+          });
+        },
+      );
+      const responsePromise = handleMcpRequest(
+        { db: db as never, bearer: AGENT_TOKEN },
+        {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: {
+            name: 'timeline.ask_agent',
+            arguments: { question: 'Summarize the launch.' },
+          },
+        },
+        {
+          askAgent: askAgent as never,
+          checkRateLimit: vi
+            .fn()
+            .mockResolvedValue({ ok: true, remaining: 9, retryAfterMs: 0 }) as never,
+        },
+      );
+
+      await started;
+      await vi.advanceTimersByTimeAsync(90_000);
+      const response = await responsePromise;
+      expect(response).toMatchObject({ result: { isError: true } });
+      if (!response || !('result' in response)) throw new Error('expected tool result');
+      const result = response.result as { content: { text: string }[] };
+      expect(JSON.parse(result.content[0]?.text ?? '{}')).toEqual({
+        ok: false,
+        error: 'failed',
+        message: 'timeout',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('lists bundled team-visible moments for outbound MCP callers', async () => {

@@ -643,6 +643,7 @@ maybeDescribe('live agent chat evals', () => {
             'Fetch customer health from the connected success platform by account id. Use for customer-health, renewal-risk, and adoption questions.',
           serverId: MCP_SERVER_ID,
           serverName: 'Success MCP',
+          serverUserId: null,
           namespacedName: MCP_TOOL_NAME,
           inputSchema: {
             type: 'object',

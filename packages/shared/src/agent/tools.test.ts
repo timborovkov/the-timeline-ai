@@ -397,12 +397,80 @@ describe('buildAgentTools — team isolation', () => {
   });
 
   it('keeps pin reads but removes pin mutations from read-only tool sets', () => {
-    const tools = buildAgentTools(makeFakeScope() as unknown as TeamScope, { readOnly: true });
+    const tools = buildAgentTools(makeFakeScope() as unknown as TeamScope, {
+      toolMode: 'read_only',
+    });
     expect(tools.list_pins).toBeDefined();
+    expect(tools.suggest_task).toBeUndefined();
+    expect(tools.propose_object_change).toBeUndefined();
     expect(tools.revise_suggestion).toBeUndefined();
     expect(tools.pin_item).toBeUndefined();
     expect(tools.unpin_item).toBeUndefined();
     expect(tools.move_pin).toBeUndefined();
+  });
+
+  it('exposes new proposals but no revisions or canonical mutations in proposal-only mode', () => {
+    const tools = buildAgentTools(makeFakeScope() as unknown as TeamScope, {
+      toolMode: 'proposal_only',
+    });
+    expect(tools.suggest_task).toBeDefined();
+    expect(tools.propose_object_change).toBeDefined();
+    expect(tools.suggest_object_memory).toBeDefined();
+    expect(tools.suggest_calendar_event).toBeDefined();
+    expect(tools.propose_calendar_update).toBeDefined();
+    expect(tools.revise_suggestion).toBeUndefined();
+    expect(tools.execute_object_create).toBeUndefined();
+    expect(tools.execute_calendar_create).toBeUndefined();
+    expect(tools.pin_item).toBeUndefined();
+  });
+
+  it('forces synthetic proposals to team visibility and records their origin', async () => {
+    const scope = makeFakeScope();
+    scope.suggestions.createOrMergeSuggestionBundle.mockResolvedValue({ id: 'suggestion-1' });
+    const tools = buildAgentTools(scope as unknown as TeamScope, {
+      toolMode: 'proposal_only',
+      proposalOrigin: {
+        surface: 'mcp',
+        actorKind: 'team_agent',
+        mcpOutboundKeyId: '33333333-3333-4333-8333-333333333333',
+      },
+    });
+    const suggestTask = tools.suggest_task?.execute as (
+      input: unknown,
+      options: unknown,
+    ) => Promise<unknown>;
+    const suggestCalendar = tools.suggest_calendar_event?.execute as (
+      input: unknown,
+      options: unknown,
+    ) => Promise<unknown>;
+
+    await suggestTask({ title: 'Send launch note' }, {});
+    await suggestCalendar(
+      {
+        title: 'Private launch review',
+        startAt: '2026-07-02T10:00:00.000Z',
+        endAt: '2026-07-02T10:30:00.000Z',
+        visibility: 'private',
+      },
+      {},
+    );
+
+    const taskInput = scope.suggestions.createOrMergeSuggestionBundle.mock.calls[0]?.[0] as unknown;
+    const calendarInput = scope.suggestions.createOrMergeSuggestionBundle.mock
+      .calls[1]?.[0] as unknown;
+    expect(taskInput).toMatchObject({
+      metadata: {
+        tool: 'suggest_task',
+        origin_surface: 'mcp',
+        origin_actor_kind: 'team_agent',
+        mcp_outbound_key_id: '33333333-3333-4333-8333-333333333333',
+      },
+    });
+    expect(calendarInput).toMatchObject({
+      visibility: 'team',
+      metadata: { origin_surface: 'mcp', origin_actor_kind: 'team_agent' },
+      items: [{ proposedPayload: { visibility: 'team' } }],
+    });
   });
 
   it('does not expose pin mutations without explicit current-turn authorization', () => {

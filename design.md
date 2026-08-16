@@ -584,6 +584,10 @@ compact plain-text presentation, normally one short paragraph or three to five
 bullets. Telegram, Slack, and future external chat providers never expose
 Timeline citation syntax, raw-event IDs, or generic source footers. Explicit
 requests for more detail may expand within the provider-safe reply limit.
+Outbound MCP agent calls use a third compact profile: citations remain inline
+for machine verification, while the response also exposes parsed artifact
+references and proposal IDs. Key creation keeps agent access visibly default-off
+and warns about model usage, enabled team MCP tools, and human-reviewed proposals.
 
 ### Work and settings
 
@@ -1153,3 +1157,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-19 | Board add-item people and companies | Add item keeps person and company type filters visible and searches beyond a recency window of recent tasks. |
 | 2026-08-19 | Object discussions | Replaces object custom notes with a Linear-style activity + comments thread, @mentions, The Timeline Bot pings, and quiet comment counts. |
 | 2026-08-19 | Quiet list bounds | Replaces “No more matching …” copy with a short centered hairline. |
+| 2026-08-16 | Explicit MCP agent permission | Keeps model spend, team MCP access, and proposal authority default-off and legible at key creation while preserving cited machine-readable answers. |
