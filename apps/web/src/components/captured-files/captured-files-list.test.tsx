@@ -33,6 +33,12 @@ vi.mock('@/components/evidence-link', () => ({
 
 const { CapturedFilesList } = await import('./captured-files-list.js');
 
+async function openFilters(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  const trigger = screen.getAllByRole('button', { name: /^Filters/ })[0];
+  if (!trigger) throw new Error('Missing filter trigger');
+  await user.click(trigger);
+}
+
 type CapturedFile = Parameters<typeof CapturedFilesList>[0]['files'][number];
 
 function capturedFile(overrides: Partial<CapturedFile> = {}): CapturedFile {
@@ -87,7 +93,7 @@ describe('CapturedFilesList', () => {
       }),
     );
 
-    expect(html).toContain('All sources');
+    expect(html).toContain('Filters');
     expect(html).toContain('Whiteboard planning photo');
     expect(html).toContain('stored as');
     expect(html).toContain(
@@ -106,7 +112,7 @@ describe('CapturedFilesList', () => {
     const user = userEvent.setup();
     render(<CapturedFilesList folders={[]} members={[]} files={[capturedFile()]} />);
 
-    expect(screen.getByRole('group', { name: 'Filter captured files' })).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: 'Filters' })).toHaveLength(2);
     expect(screen.getByRole('link', { name: 'View evidence' })).toBeTruthy();
 
     const promote = screen.getByRole('button', { name: 'Promote' });
@@ -304,6 +310,7 @@ describe('CapturedFilesList', () => {
       />,
     );
 
+    await openFilters(user);
     await user.click(screen.getByRole('button', { name: 'Status' }));
     await user.click(screen.getByRole('menuitemcheckbox', { name: 'Ready for search' }));
     await user.click(screen.getByRole('menuitemcheckbox', { name: 'Ready' }));

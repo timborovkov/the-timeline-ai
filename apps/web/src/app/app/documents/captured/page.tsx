@@ -59,6 +59,7 @@ export default async function CapturedFilesPage() {
   return (
     <div className="space-y-6">
       <PageHeader
+        variant="collection"
         title="Captured files"
         subtitle="Review source attachments, then promote the files your team should keep in Documents."
         trailing={documentsAction}

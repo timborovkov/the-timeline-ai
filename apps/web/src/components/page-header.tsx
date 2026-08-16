@@ -59,6 +59,8 @@ interface PageHeaderProps {
    * visible metadata row is hidden to avoid duplicate announcements. */
   srLabel?: string;
   className?: string;
+  /** Compact chrome for dense workspace collections. */
+  variant?: 'default' | 'collection';
 }
 
 /**
@@ -78,57 +80,108 @@ export function PageHeader({
   titleId,
   srLabel,
   className,
+  variant = 'default',
 }: PageHeaderProps) {
   const metadataList = metadata ?? [];
   const hasMetadata = metadataList.length > 0;
   return (
-    <header className={cn('space-y-2', className)}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex flex-col gap-1.5">
+    <header
+      className={cn(
+        'space-y-2',
+        variant === 'collection' && 'min-h-12 space-y-0 border-b border-border py-2',
+        className,
+      )}
+    >
+      <div
+        className={cn(
+          'flex flex-wrap items-start justify-between gap-3',
+          variant === 'collection' && 'min-h-8 items-center',
+        )}
+      >
+        <div
+          className={cn(
+            'flex flex-col gap-1.5',
+            variant === 'collection' && 'min-w-0 flex-row items-baseline gap-3',
+          )}
+        >
           {leading ? <div className="text-fg-dim">{leading}</div> : null}
-          <h1 id={titleId} className="m-0 text-2xl font-semibold tracking-tight text-fg">
+          <h1
+            id={titleId}
+            className={cn(
+              'm-0 text-2xl font-semibold tracking-tight text-fg',
+              variant === 'collection' && 'truncate text-lg leading-7',
+            )}
+          >
             {title}
           </h1>
-          {subtitle ? <p className="m-0 text-sm text-fg-muted">{subtitle}</p> : null}
+          {subtitle ? (
+            <p className={cn('m-0 text-sm text-fg-muted', variant === 'collection' && 'sr-only')}>
+              {subtitle}
+            </p>
+          ) : null}
+          {hasMetadata && variant === 'collection' ? (
+            <dl
+              aria-hidden={srLabel ? true : undefined}
+              className="m-0 hidden min-w-0 items-baseline gap-x-3 text-xs text-fg-muted sm:flex"
+            >
+              {metadataList.map((seg, index) => (
+                <HeaderMetadata key={metadataKey(seg, index)} segment={seg} compact />
+              ))}
+            </dl>
+          ) : null}
         </div>
         {trailing ? <div className="flex items-center gap-2">{trailing}</div> : null}
       </div>
-      {hasMetadata ? (
+      {hasMetadata && variant === 'default' ? (
         <dl
           aria-hidden={srLabel ? true : undefined}
           className="m-0 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs text-fg-muted"
         >
           {metadataList.map((seg, index) => (
-            <div
-              key={metadataKey(seg, index)}
-              className={cn(
-                'relative inline-flex items-baseline gap-1.5',
-                seg.href && 'min-h-10 min-w-10 items-center px-2 -mx-2',
-              )}
-            >
-              {seg.label ? <dt className="m-0 text-fg-dim">{seg.label}</dt> : null}
-              <dd
-                className={cn(
-                  'm-0 text-fg',
-                  seg.mono && 'font-mono tabular-nums',
-                  seg.signal && 'text-signal',
-                  seg.danger && 'text-danger',
-                )}
-              >
-                {seg.value}
-              </dd>
-              {seg.href ? (
-                <Link
-                  href={seg.href}
-                  aria-label={seg.ariaLabel}
-                  className="absolute inset-0 rounded-sm outline-none hover:bg-surface/50 focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2"
-                />
-              ) : null}
-            </div>
+            <HeaderMetadata key={metadataKey(seg, index)} segment={seg} />
           ))}
         </dl>
       ) : null}
       {srLabel ? <span className="sr-only">{srLabel}</span> : null}
     </header>
+  );
+}
+
+function HeaderMetadata({
+  segment: seg,
+  compact = false,
+}: {
+  segment: PageHeaderMetadata;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        'relative inline-flex items-baseline gap-1.5',
+        seg.href &&
+          (compact
+            ? 'min-h-8 items-center px-1.5 -mx-1.5'
+            : 'min-h-10 min-w-10 items-center px-2 -mx-2'),
+      )}
+    >
+      {seg.label ? <dt className="m-0 text-fg-dim">{seg.label}</dt> : null}
+      <dd
+        className={cn(
+          'm-0 text-fg',
+          seg.mono && 'font-mono tabular-nums',
+          seg.signal && 'text-signal',
+          seg.danger && 'text-danger',
+        )}
+      >
+        {seg.value}
+      </dd>
+      {seg.href ? (
+        <Link
+          href={seg.href}
+          aria-label={seg.ariaLabel}
+          className="absolute inset-0 rounded-sm outline-none hover:bg-surface/50 focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2"
+        />
+      ) : null}
+    </div>
   );
 }

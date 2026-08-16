@@ -34,6 +34,7 @@ interface FilterMultiSelectProps {
   className?: string;
   triggerClassName?: string;
   onValueChange?: (value: string) => void;
+  form?: string;
   search?: {
     value: string;
     onValueChange: (value: string) => void;
@@ -53,6 +54,7 @@ export function FilterMultiSelect({
   triggerClassName,
   onValueChange,
   search,
+  form,
 }: FilterMultiSelectProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const selectionDescriptionId = useId();
@@ -118,7 +120,9 @@ export function FilterMultiSelect({
   return (
     <label className={cn('min-w-36', className)}>
       <span className="mb-1 block text-xs font-medium text-fg-muted">{label}</span>
-      {name ? <input ref={inputRef} type="hidden" name={name} value={selected} /> : null}
+      {name ? (
+        <input ref={inputRef} type="hidden" name={name} value={selected} form={form} />
+      ) : null}
       <span id={selectionDescriptionId} className="sr-only">
         {selectionDescription}
       </span>

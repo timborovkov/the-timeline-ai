@@ -86,3 +86,48 @@ test('authenticated Quiet Archive surfaces', async ({ browser }) => {
 
   await page.context().close();
 });
+
+test('unified collection surfaces', async ({ browser }) => {
+  const page = await newSignedInPage(browser, 'owner');
+  await page.addInitScript(() => {
+    window.localStorage.setItem('theme', 'dark');
+  });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+
+  await page.goto('/app/tasks');
+  await capture(page, 'collections-tasks-dark-desktop.png', false);
+  await page.goto('/app/objects');
+  await capture(page, 'collections-objects-dark-desktop.png', false);
+  await page.goto('/app/boards');
+  const boardHref = await page.locator('a[href^="/app/boards/"]').first().getAttribute('href');
+  expect(boardHref).toBeTruthy();
+  await page.goto(`${boardHref ?? '/app/boards'}?view=kanban`);
+  await capture(page, 'collections-board-kanban-dark-desktop.png', false);
+  await page.goto(`${boardHref ?? '/app/boards'}?view=table`);
+  await capture(page, 'collections-board-table-dark-desktop.png', false);
+  await page.goto('/app/timeline');
+  await capture(page, 'collections-timeline-dark-desktop.png', false);
+  await page.goto('/app/documents/captured');
+  await capture(page, 'collections-captured-files-dark-desktop.png', false);
+
+  await page.addInitScript(() => {
+    window.localStorage.setItem('theme', 'light');
+  });
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/app/tasks');
+  await capture(page, 'collections-tasks-light-mobile.png', false);
+  await page.goto('/app/objects');
+  await capture(page, 'collections-objects-light-mobile.png', false);
+  await page.goto(`${boardHref ?? '/app/boards'}?view=kanban`);
+  await capture(page, 'collections-board-kanban-light-mobile.png', false);
+  await page.goto(`${boardHref ?? '/app/boards'}?view=table`);
+  await capture(page, 'collections-board-table-light-mobile.png', false);
+  await page.goto('/app/timeline');
+  await capture(page, 'collections-timeline-light-mobile.png', false);
+  await page.goto('/app/meetings');
+  await capture(page, 'collections-meetings-light-mobile.png', false);
+
+  await page.context().close();
+});

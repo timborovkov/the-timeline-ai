@@ -8,6 +8,7 @@ import type { MemberFilterOption, WorkFilterState } from '@/lib/work-filters';
 import type * as boards from '@timeline/shared/boards';
 import type { ReactNode } from 'react';
 
+import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { DebouncedFilterForm } from '@/components/debounced-filter-form';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
 import { useProjectSearch } from '@/hooks/use-project-search';
@@ -73,6 +74,7 @@ export function WorkFilterBar({
   className,
 }: Props) {
   const formId = useId();
+  const domFormId = `work-filters-${formId.replaceAll(':', '')}`;
   const filterKey = workFilterStateKey(filters);
   const clearHref = useMemo(() => hrefWithParams(basePath, hiddenParams), [basePath, hiddenParams]);
   const hasRangeFilters = Boolean(
@@ -89,27 +91,36 @@ export function WorkFilterBar({
     dateRangeToggle.state === 'closed' && dateRangeToggle.filterKey === filterKey;
   const showDateRanges =
     dateRangeToggle.state === 'open' || (hasRangeFilters && !dateRangesManuallyClosed);
+  const activeFilterEntries = workFilterEntries(filters);
+  const currentParams = { ...hiddenParams, ...workFilterParams(filters) };
+  const clearControl = active ? (
+    <a
+      href={clearHref}
+      className="inline-flex min-h-9 items-center gap-1.5 rounded-sm px-2 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
+    >
+      <X className="size-3.5" aria-hidden />
+      Clear all
+    </a>
+  ) : null;
 
   return (
     <DebouncedFilterForm
-      key={filterKey}
+      id={domFormId}
       basePath={basePath}
       preservedParams={hiddenParams}
-      className={cn(
-        'border-y border-border bg-bg/80 px-4 py-3 md:px-8',
-        mode === 'objects' && 'px-0 md:px-0',
-        className,
-      )}
+      className={className}
     >
-      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
-        <div className="flex min-w-0 flex-wrap items-end gap-2">
-          <label className="relative min-w-[15rem] flex-1 sm:max-w-xs">
-            <span className="mb-1 block text-[11px] text-fg-dim">Search</span>
+      <CollectionToolbar
+        count={active ? `${resultCount} / ${totalCount}` : `${totalCount} visible`}
+        search={
+          <label className="relative block min-w-0">
+            <span className="sr-only">Search</span>
             <Search
-              className="pointer-events-none absolute bottom-2.5 left-2.5 size-3.5 text-fg-dim"
+              className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-fg-dim"
               aria-hidden
             />
             <input
+              key={`search:${filters.q}`}
               name="q"
               type="search"
               defaultValue={filters.q}
@@ -120,202 +131,234 @@ export function WorkFilterBar({
                     ? 'Search tasks…'
                     : 'Search objects…'
               }
-              className="h-9 w-full rounded-sm border border-border bg-surface py-1 pl-8 pr-2 text-sm text-fg outline-none transition-colors placeholder:text-fg-dim focus-visible:border-signal/60 focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+              className="h-9 w-full rounded-sm border-0 bg-transparent py-1 pl-8 pr-2 text-sm text-fg outline-none transition-colors placeholder:text-fg-dim focus-visible:ring-2 focus-visible:ring-signal/40"
             />
           </label>
+        }
+        filters={
+          <div key={filterKey} className="flex min-w-0 flex-wrap items-end gap-2">
+            {mode === 'board' ? (
+              <FilterSelect name="lane" label="Lane" defaultValue={filters.lane} form={domFormId}>
+                <option value="">Any lane</option>
+                <option value={NONE_FILTER_VALUE}>Unset</option>
+                {lanes.map((lane) => (
+                  <option key={lane.id} value={lane.id}>
+                    {displayText(lane.name)}
+                  </option>
+                ))}
+              </FilterSelect>
+            ) : null}
 
-          {mode === 'board' ? (
-            <FilterSelect name="lane" label="Lane" defaultValue={filters.lane}>
-              <option value="">Any lane</option>
-              <option value={NONE_FILTER_VALUE}>Unset</option>
-              {lanes.map((lane) => (
-                <option key={lane.id} value={lane.id}>
-                  {displayText(lane.name)}
+            {mode === 'objects' || mode === 'board' ? (
+              <FilterMultiSelect
+                key={`type:${filters.type}`}
+                name="type"
+                label={mode === 'board' ? 'Object type' : 'Type'}
+                defaultValue={filters.type}
+                placeholder="Any type"
+                options={Object.entries(typeLabels).map(([value, label]) => ({ value, label }))}
+                form={domFormId}
+              />
+            ) : null}
+
+            <StatusControl
+              defaultValue={filters.status}
+              mode={mode}
+              statusOptions={statusOptions}
+              form={domFormId}
+            />
+
+            <div className="task-category-ui">
+              <FilterMultiSelect
+                key={`category:${filters.category}`}
+                name="category"
+                label="Category"
+                defaultValue={filters.category}
+                placeholder="Any category"
+                options={[
+                  ...TASK_CATEGORY_OPTIONS,
+                  { value: 'uncategorized', label: 'Uncategorized' },
+                ]}
+                form={domFormId}
+              />
+            </div>
+
+            <ProjectFilterControl
+              key={`project:${filters.project}`}
+              defaultValue={filters.project}
+              projects={projects}
+              form={domFormId}
+            />
+
+            {mode === 'objects' ? (
+              <FilterInput
+                name="stage"
+                label="Stage"
+                defaultValue={filters.stage}
+                placeholder="Any stage"
+                form={domFormId}
+              />
+            ) : null}
+
+            {mode === 'objects' ? (
+              <PersonSelect
+                name="owner"
+                label="Owner"
+                defaultValue={filters.owner}
+                members={members}
+                form={domFormId}
+              />
+            ) : null}
+
+            {mode === 'board' ? (
+              <PersonSelect
+                name="responsible"
+                label="Responsible"
+                defaultValue={filters.responsible}
+                members={members}
+                form={domFormId}
+              />
+            ) : (
+              <PersonSelect
+                name="assignee"
+                label="Assignee"
+                defaultValue={filters.assignee}
+                members={members}
+                form={domFormId}
+              />
+            )}
+
+            {mode === 'board' ? (
+              <PersonSelect
+                name="assignee"
+                label="Object assignee"
+                defaultValue={filters.assignee}
+                members={members}
+                form={domFormId}
+              />
+            ) : null}
+
+            <FilterSelect
+              name="priority"
+              label="Priority"
+              defaultValue={filters.priority}
+              form={domFormId}
+            >
+              <option value="">Any priority</option>
+              <option value={NONE_FILTER_VALUE}>No priority</option>
+              {[1, 2, 3, 4].map((priority) => (
+                <option key={priority} value={priority}>
+                  P{priority}
                 </option>
               ))}
             </FilterSelect>
-          ) : null}
 
-          {mode === 'objects' || mode === 'board' ? (
-            <FilterMultiSelect
-              key={`type:${filters.type}`}
-              name="type"
-              label={mode === 'board' ? 'Object type' : 'Type'}
-              defaultValue={filters.type}
-              placeholder="Any type"
-              options={Object.entries(typeLabels).map(([value, label]) => ({ value, label }))}
-            />
-          ) : null}
-
-          <StatusControl defaultValue={filters.status} mode={mode} statusOptions={statusOptions} />
-
-          <div className="task-category-ui">
-            <FilterMultiSelect
-              key={`category:${filters.category}`}
-              name="category"
-              label="Category"
-              defaultValue={filters.category}
-              placeholder="Any category"
-              options={[
-                ...TASK_CATEGORY_OPTIONS,
-                { value: 'uncategorized', label: 'Uncategorized' },
-              ]}
-            />
-          </div>
-
-          <ProjectFilterControl
-            key={`project:${filters.project}`}
-            defaultValue={filters.project}
-            projects={projects}
-          />
-
-          {mode === 'objects' ? (
-            <FilterInput
-              name="stage"
-              label="Stage"
-              defaultValue={filters.stage}
-              placeholder="Any stage"
-            />
-          ) : null}
-
-          {mode === 'objects' ? (
-            <PersonSelect
-              name="owner"
-              label="Owner"
-              defaultValue={filters.owner}
-              members={members}
-            />
-          ) : null}
-
-          {mode === 'board' ? (
-            <PersonSelect
-              name="responsible"
-              label="Responsible"
-              defaultValue={filters.responsible}
-              members={members}
-            />
-          ) : (
-            <PersonSelect
-              name="assignee"
-              label="Assignee"
-              defaultValue={filters.assignee}
-              members={members}
-            />
-          )}
-
-          {mode === 'board' ? (
-            <PersonSelect
-              name="assignee"
-              label="Object assignee"
-              defaultValue={filters.assignee}
-              members={members}
-            />
-          ) : null}
-
-          <FilterSelect name="priority" label="Priority" defaultValue={filters.priority}>
-            <option value="">Any priority</option>
-            <option value={NONE_FILTER_VALUE}>No priority</option>
-            {[1, 2, 3, 4].map((priority) => (
-              <option key={priority} value={priority}>
-                P{priority}
-              </option>
-            ))}
-          </FilterSelect>
-
-          <FilterSelect
-            name="due"
-            label={mode === 'board' ? 'Board due' : 'Due'}
-            defaultValue={filters.due}
-            onChange={(value) => {
-              if (value === 'range') setDateRangeToggle({ state: 'open' });
-            }}
-          >
-            <option value="">Any due date</option>
-            <option value="overdue">Overdue</option>
-            <option value="today">Today</option>
-            <option value="next7">Next 7 days</option>
-            <option value="none">No due date</option>
-            <option value="range">Date range</option>
-          </FilterSelect>
-
-          <button
-            type="button"
-            aria-expanded={showDateRanges}
-            aria-controls={`${formId}-date-ranges`}
-            onClick={() => {
-              setDateRangeToggle(
-                showDateRanges ? { state: 'closed', filterKey } : { state: 'open' },
-              );
-            }}
-            className={cn(
-              'inline-flex h-9 items-center gap-2 rounded-sm border border-border bg-surface px-3 text-xs text-fg-muted transition-colors hover:border-border-strong hover:text-fg focus-visible:border-signal/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
-              (showDateRanges || hasRangeFilters) && 'border-border-strong text-fg',
-            )}
-          >
-            Date ranges
-            <ChevronDown
-              className={cn(
-                'size-3.5 text-fg-dim transition-transform',
-                showDateRanges && 'rotate-180',
-              )}
-              aria-hidden
-            />
-          </button>
-
-          <div
-            id={`${formId}-date-ranges`}
-            hidden={!showDateRanges}
-            className="grid min-w-full gap-2 pt-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
-          >
-            <FilterInput
-              name="dueFrom"
-              label="Due from"
-              defaultValue={filters.dueFrom}
-              type="date"
-            />
-            <FilterInput name="dueTo" label="Due to" defaultValue={filters.dueTo} type="date" />
-            <FilterInput
-              name="createdFrom"
-              label={mode === 'board' ? 'Item created from' : 'Created from'}
-              defaultValue={filters.createdFrom}
-              type="date"
-            />
-            <FilterInput
-              name="createdTo"
-              label={mode === 'board' ? 'Item created to' : 'Created to'}
-              defaultValue={filters.createdTo}
-              type="date"
-            />
-            <FilterInput
-              name="updatedFrom"
-              label={mode === 'board' ? 'Item updated from' : 'Updated from'}
-              defaultValue={filters.updatedFrom}
-              type="date"
-            />
-            <FilterInput
-              name="updatedTo"
-              label={mode === 'board' ? 'Item updated to' : 'Updated to'}
-              type="date"
-              defaultValue={filters.updatedTo}
-            />
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 xl:justify-end xl:pt-[1.125rem]">
-          <output className="mr-1 text-xs text-fg-dim" aria-live="polite">
-            {active ? `${resultCount} / ${totalCount}` : `${totalCount} visible`}
-          </output>
-          {active ? (
-            <a
-              href={clearHref}
-              className="inline-flex h-9 items-center gap-2 rounded-sm border border-border bg-surface px-3 text-xs font-medium text-fg-muted transition-colors hover:border-border-strong hover:text-fg"
+            <FilterSelect
+              name="due"
+              label={mode === 'board' ? 'Board due' : 'Due'}
+              defaultValue={filters.due}
+              form={domFormId}
+              onChange={(value) => {
+                if (value === 'range') setDateRangeToggle({ state: 'open' });
+              }}
             >
-              <X className="size-3.5" aria-hidden />
-              Clear
+              <option value="">Any due date</option>
+              <option value="overdue">Overdue</option>
+              <option value="today">Today</option>
+              <option value="next7">Next 7 days</option>
+              <option value="none">No due date</option>
+              <option value="range">Date range</option>
+            </FilterSelect>
+
+            <button
+              type="button"
+              aria-expanded={showDateRanges}
+              aria-controls={`${formId}-date-ranges`}
+              onClick={() => {
+                setDateRangeToggle(
+                  showDateRanges ? { state: 'closed', filterKey } : { state: 'open' },
+                );
+              }}
+              className={cn(
+                'inline-flex h-9 items-center gap-2 rounded-sm border border-border bg-surface px-3 text-xs text-fg-muted transition-colors hover:border-border-strong hover:text-fg focus-visible:border-signal/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
+                (showDateRanges || hasRangeFilters) && 'border-border-strong text-fg',
+              )}
+            >
+              Date ranges
+              <ChevronDown
+                className={cn(
+                  'size-3.5 text-fg-dim transition-transform',
+                  showDateRanges && 'rotate-180',
+                )}
+                aria-hidden
+              />
+            </button>
+
+            <div
+              id={`${formId}-date-ranges`}
+              hidden={!showDateRanges}
+              className="grid min-w-full gap-2 pt-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
+            >
+              <FilterInput
+                name="dueFrom"
+                label="Due from"
+                defaultValue={filters.dueFrom}
+                type="date"
+                form={domFormId}
+              />
+              <FilterInput
+                name="dueTo"
+                label="Due to"
+                defaultValue={filters.dueTo}
+                type="date"
+                form={domFormId}
+              />
+              <FilterInput
+                name="createdFrom"
+                label={mode === 'board' ? 'Item created from' : 'Created from'}
+                defaultValue={filters.createdFrom}
+                type="date"
+                form={domFormId}
+              />
+              <FilterInput
+                name="createdTo"
+                label={mode === 'board' ? 'Item created to' : 'Created to'}
+                defaultValue={filters.createdTo}
+                type="date"
+                form={domFormId}
+              />
+              <FilterInput
+                name="updatedFrom"
+                label={mode === 'board' ? 'Item updated from' : 'Updated from'}
+                defaultValue={filters.updatedFrom}
+                type="date"
+                form={domFormId}
+              />
+              <FilterInput
+                name="updatedTo"
+                label={mode === 'board' ? 'Item updated to' : 'Updated to'}
+                type="date"
+                defaultValue={filters.updatedTo}
+                form={domFormId}
+              />
+            </div>
+          </div>
+        }
+        activeFilters={activeFilterEntries.map(([key, label]) => ({
+          key,
+          label,
+          clear: (
+            <a
+              href={hrefWithParams(basePath, omitParam(currentParams, key))}
+              aria-label={`Remove ${label} filter`}
+              className="inline-flex size-6 items-center justify-center rounded-sm hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
+            >
+              <X aria-hidden="true" className="size-3" />
             </a>
-          ) : null}
-        </div>
-      </div>
+          ),
+        }))}
+        clearAll={clearControl}
+      />
     </DebouncedFilterForm>
   );
 }
@@ -323,9 +366,11 @@ export function WorkFilterBar({
 function ProjectFilterControl({
   defaultValue,
   projects,
+  form,
 }: {
   defaultValue: string;
   projects: MemberFilterOption[];
+  form: string;
 }) {
   const { query, setQuery, projects: searchResults } = useProjectSearch();
   const options = useMemo(() => {
@@ -353,6 +398,7 @@ function ProjectFilterControl({
       defaultValue={defaultValue}
       placeholder="Any project"
       options={options}
+      form={form}
       className="min-w-44"
       search={{
         value: query,
@@ -368,10 +414,12 @@ function StatusControl({
   defaultValue,
   mode,
   statusOptions,
+  form,
 }: {
   defaultValue: string;
   mode: Props['mode'];
   statusOptions: readonly string[];
+  form: string;
 }) {
   return (
     <StatusMultiSelect
@@ -380,6 +428,7 @@ function StatusControl({
       options={dedupeStatusOptions(
         statusOptions.length === 0 ? COMMON_STATUS_OPTIONS : statusOptions,
       )}
+      form={form}
     />
   );
 }
@@ -388,10 +437,12 @@ function StatusMultiSelect({
   defaultValue,
   mode,
   options,
+  form,
 }: {
   defaultValue: string;
   mode: Props['mode'];
   options: readonly string[];
+  form: string;
 }) {
   return (
     <FilterMultiSelect
@@ -401,6 +452,7 @@ function StatusMultiSelect({
       defaultValue={normalizeStatusValue(defaultValue)}
       placeholder="Any status"
       options={options.map((status) => ({ value: status, label: status }))}
+      form={form}
     />
   );
 }
@@ -434,11 +486,13 @@ function PersonSelect({
   label,
   defaultValue,
   members,
+  form,
 }: {
   name: string;
   label: string;
   defaultValue: string;
   members: MemberFilterOption[];
+  form: string;
 }) {
   return (
     <FilterMultiSelect
@@ -451,6 +505,7 @@ function PersonSelect({
         { value: UNASSIGNED_FILTER_VALUE, label: 'Unassigned' },
         ...members.map((member) => ({ value: member.id, label: member.label })),
       ]}
+      form={form}
     />
   );
 }
@@ -461,18 +516,21 @@ function FilterSelect({
   defaultValue,
   children,
   onChange,
+  form,
 }: {
   name: string;
   label: string;
   defaultValue: string;
   children: ReactNode;
   onChange?: (value: string) => void;
+  form: string;
 }) {
   return (
     <label className="min-w-32">
       <span className="mb-1 block text-[11px] text-fg-dim">{label}</span>
       <select
         name={name}
+        form={form}
         defaultValue={defaultValue}
         onChange={(event) => onChange?.(event.currentTarget.value)}
         className="h-9 w-full rounded-sm border border-border bg-surface px-2 text-xs text-fg outline-none transition-colors focus-visible:border-signal/60 focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
@@ -489,18 +547,21 @@ function FilterInput({
   defaultValue,
   placeholder,
   type = 'text',
+  form,
 }: {
   name: string;
   label: string;
   defaultValue: string;
   placeholder?: string;
   type?: 'text' | 'date';
+  form: string;
 }) {
   return (
     <label className={type === 'date' ? 'min-w-36' : 'min-w-32'}>
       <span className="mb-1 block text-[11px] text-fg-dim">{label}</span>
       <input
         name={name}
+        form={form}
         type={type}
         defaultValue={defaultValue}
         placeholder={placeholder}
@@ -513,6 +574,45 @@ function FilterInput({
 function hrefWithParams(basePath: string, params: Record<string, string>): string {
   const qs = new URLSearchParams(params).toString();
   return qs ? `${basePath}?${qs}` : basePath;
+}
+
+function omitParam(params: Record<string, string>, key: string): Record<string, string> {
+  const { [key]: _removed, ...rest } = params;
+  return rest;
+}
+
+function workFilterParams(filters: WorkFilterState): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(filters).filter(([, value]) => typeof value === 'string' && value.length > 0),
+  );
+}
+
+function workFilterEntries(filters: WorkFilterState): [string, string][] {
+  const labels: Record<keyof WorkFilterState, string> = {
+    q: 'Search',
+    type: 'Type',
+    status: 'Status',
+    category: 'Category',
+    project: 'Project',
+    stage: 'Stage',
+    owner: 'Owner',
+    assignee: 'Assignee',
+    responsible: 'Responsible',
+    lane: 'Lane',
+    priority: 'Priority',
+    due: 'Due date',
+    dueFrom: 'Due from',
+    dueTo: 'Due to',
+    createdFrom: 'Created from',
+    createdTo: 'Created to',
+    updatedFrom: 'Updated from',
+    updatedTo: 'Updated to',
+  };
+  return Object.entries(filters).flatMap(([key, value]) =>
+    key !== 'q' && typeof value === 'string' && value.length > 0
+      ? [[key, labels[key as keyof WorkFilterState]]]
+      : [],
+  );
 }
 
 function workFilterStateKey(filters: WorkFilterState): string {

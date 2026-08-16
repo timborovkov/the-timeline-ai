@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
+import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { PageHeader } from '@/components/page-header';
 import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -77,6 +78,7 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
   return (
     <div className="space-y-6">
       <PageHeader
+        variant="collection"
         title="Approvals"
         subtitle="Review evidence-backed changes before they become team memory."
         metadata={[
@@ -86,23 +88,28 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
         ]}
       />
       <WorkSubnav current="/app/approvals" />
-      <nav className="flex flex-wrap gap-2" aria-label="Approval status filters">
-        {STATUS_FILTERS.map((filter) => (
-          <Link
-            key={filter}
-            href={`/app/approvals?status=${filter}`}
-            aria-current={status === filter ? 'page' : undefined}
-            className={`inline-flex min-h-9 items-center rounded-sm border px-2.5 text-xs capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg ${
-              status === filter
-                ? 'border-signal/40 bg-signal-soft text-signal'
-                : 'border-border text-fg-muted hover:bg-surface-2 hover:text-fg'
-            }`}
-          >
-            {filter}
-            {filter === 'pending' || filter === 'failed' ? ` ${approvalCounts[filter]}` : ''}
-          </Link>
-        ))}
-      </nav>
+      <CollectionToolbar
+        count={`${itemCount} proposals`}
+        viewControls={
+          <nav className="flex flex-wrap gap-1" aria-label="Approval status filters">
+            {STATUS_FILTERS.map((filter) => (
+              <Link
+                key={filter}
+                href={`/app/approvals?status=${filter}`}
+                aria-current={status === filter ? 'page' : undefined}
+                className={`inline-flex min-h-9 items-center rounded-sm px-2.5 text-xs capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong ${
+                  status === filter
+                    ? 'bg-signal-soft text-signal'
+                    : 'text-fg-muted hover:bg-surface-2 hover:text-fg'
+                }`}
+              >
+                {filter}
+                {filter === 'pending' || filter === 'failed' ? ` ${approvalCounts[filter]}` : ''}
+              </Link>
+            ))}
+          </nav>
+        }
+      />
       <ApprovalsClient
         suggestions={visibleSuggestions}
         timezone={calendarSettings.defaultTimezone}

@@ -26,15 +26,20 @@ import {
   useTransition,
 } from 'react';
 
-import type { BoardMemberOption } from '@/components/boards/board-detail-client';
+import type {
+  BoardItemOptimisticPatch,
+  BoardMemberOption,
+} from '@/components/boards/board-detail-client';
 import type * as boards from '@timeline/shared/boards';
-import type { ReactNode } from 'react';
 
 import { updateBoardItemAction } from '@/app/actions/boards';
 import {
   curatedKanbanSaveState,
   type CuratedKanbanSaveState,
 } from '@/components/boards/curated-kanban-state';
+import { CollectionStatus, priorityTone } from '@/components/collections/collection-status';
+import { EditableMetadata } from '@/components/collections/editable-metadata';
+import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { boardViewHref } from '@/lib/board-links';
@@ -75,8 +80,8 @@ export function CuratedKanbanBoard({
   );
   const [optimisticItems, moveOptimistic] = useOptimistic(
     items,
-    (state, move: { id: string; laneId: string | null }) =>
-      state.map((item) => (item.id === move.id ? { ...item, laneId: move.laneId } : item)),
+    (state, update: { id: string; patch: BoardItemOptimisticPatch }) =>
+      state.map((item) => (item.id === update.id ? { ...item, ...update.patch } : item)),
   );
   const [, startTransition] = useTransition();
   const [savingIds, setSavingIds] = useState<ReadonlySet<string>>(() => new Set());
@@ -135,7 +140,7 @@ export function CuratedKanbanBoard({
   }, [boardId, laneIdSet, lanes, optimisticItems]);
 
   const registerMoveControl = useCallback(
-    (id: string, laneValue: string, node: HTMLSelectElement | null) => {
+    (id: string, laneValue: string, node: HTMLButtonElement | null) => {
       if (!node || node.disabled) return;
       const pendingFocus = pendingMoveControlFocusRef.current;
       if (pendingFocus?.id !== id || pendingFocus.laneValue !== laneValue) return;
@@ -214,7 +219,7 @@ export function CuratedKanbanBoard({
     });
     markSaving(id, true);
     startTransition(async () => {
-      moveOptimistic({ id, laneId });
+      moveOptimistic({ id, patch: { laneId } });
       let failed = false;
       try {
         const result = await updateBoardItemAction({ id, laneId });
@@ -223,7 +228,7 @@ export function CuratedKanbanBoard({
           if (focusMoveControl) {
             pendingMoveControlFocusRef.current = { id, laneValue: item.laneId ?? 'unset' };
           }
-          moveOptimistic({ id, laneId: item.laneId });
+          moveOptimistic({ id, patch: { laneId: item.laneId } });
           setErrors((current) => ({ ...current, [id]: result.error ?? 'Move failed' }));
         }
       } catch (err) {
@@ -231,8 +236,47 @@ export function CuratedKanbanBoard({
         if (focusMoveControl) {
           pendingMoveControlFocusRef.current = { id, laneValue: item.laneId ?? 'unset' };
         }
-        moveOptimistic({ id, laneId: item.laneId });
+        moveOptimistic({ id, patch: { laneId: item.laneId } });
         setErrors((current) => ({ ...current, [id]: errorMessage(err, 'Move failed') }));
+      } finally {
+        markSaving(id, false, failed);
+        router.refresh();
+      }
+    });
+  }
+
+  function updateItem(id: string, patch: BoardItemOptimisticPatch): void {
+    if (savingSet().has(id)) return;
+    const item = optimisticItems.find((candidate) => candidate.id === id);
+    if (!item) return;
+    const baseline = Object.fromEntries(
+      Object.keys(patch).map((key) => [key, item[key as keyof boards.BoardItemRow]]),
+    ) as BoardItemOptimisticPatch;
+    setErrors((current) => {
+      const { [id]: _cleared, ...rest } = current;
+      return rest;
+    });
+    markSaving(id, true);
+    startTransition(async () => {
+      moveOptimistic({ id, patch });
+      let failed = false;
+      try {
+        const result = await updateBoardItemAction({
+          id,
+          ...patch,
+          ...(patch.dueAt !== undefined
+            ? { dueAt: patch.dueAt ? patch.dueAt.toISOString() : null }
+            : {}),
+        });
+        failed = 'error' in result && Boolean(result.error);
+        if ('error' in result && result.error) {
+          moveOptimistic({ id, patch: baseline });
+          setErrors((current) => ({ ...current, [id]: result.error ?? 'Save failed' }));
+        }
+      } catch (err) {
+        failed = true;
+        moveOptimistic({ id, patch: baseline });
+        setErrors((current) => ({ ...current, [id]: errorMessage(err, 'Save failed') }));
       } finally {
         markSaving(id, false, failed);
         router.refresh();
@@ -276,6 +320,7 @@ export function CuratedKanbanBoard({
               filterParams={filterParams}
               moveTargets={visibleLanes}
               onMoveItem={moveItem}
+              onUpdateItem={updateItem}
               onMoveControlRef={registerMoveControl}
             />
           ))}
@@ -302,6 +347,7 @@ function KanbanColumn({
   filterParams,
   moveTargets,
   onMoveItem,
+  onUpdateItem,
   onMoveControlRef,
 }: {
   boardId: string;
@@ -315,7 +361,8 @@ function KanbanColumn({
   filterParams: Record<string, string>;
   moveTargets: boards.BoardLaneRow[];
   onMoveItem: (id: string, laneId: string | null, focusMoveControl?: boolean) => void;
-  onMoveControlRef: (id: string, laneValue: string, node: HTMLSelectElement | null) => void;
+  onUpdateItem: (id: string, patch: BoardItemOptimisticPatch) => void;
+  onMoveControlRef: (id: string, laneValue: string, node: HTMLButtonElement | null) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: lane.id });
   return (
@@ -345,6 +392,7 @@ function KanbanColumn({
             filterParams={filterParams}
             moveTargets={moveTargets}
             onMoveItem={onMoveItem}
+            onUpdateItem={onUpdateItem}
             onMoveControlRef={onMoveControlRef}
           />
         ))}
@@ -364,6 +412,7 @@ function KanbanCard({
   filterParams,
   moveTargets,
   onMoveItem,
+  onUpdateItem,
   onMoveControlRef,
 }: {
   boardId: string;
@@ -376,7 +425,8 @@ function KanbanCard({
   filterParams: Record<string, string>;
   moveTargets: boards.BoardLaneRow[];
   onMoveItem: (id: string, laneId: string | null, focusMoveControl?: boolean) => void;
-  onMoveControlRef: (id: string, laneValue: string, node: HTMLSelectElement | null) => void;
+  onUpdateItem: (id: string, patch: BoardItemOptimisticPatch) => void;
+  onMoveControlRef: (id: string, laneValue: string, node: HTMLButtonElement | null) => void;
 }) {
   const optimistic = item.id.startsWith('optimistic-');
   const { attributes, listeners, setActivatorNodeRef, setNodeRef, transform, isDragging } =
@@ -391,9 +441,8 @@ function KanbanCard({
   const title = displayObjectTitle(item.object);
   const titleId = `board-card-${item.id}-title`;
   const moveControlId = `board-card-${item.id}-move-lane`;
-  const errorId = `board-card-${item.id}-move-error`;
   const registerMoveControl = useCallback(
-    (node: HTMLSelectElement | null) => {
+    (node: HTMLButtonElement | null) => {
       if (saving) return;
       onMoveControlRef(item.id, lane.id, node);
     },
@@ -452,78 +501,148 @@ function KanbanCard({
         ) : null}
         {blocked ? <span className="text-danger">Blocked</span> : null}
       </div>
-      <div className="mt-2 grid grid-cols-3 gap-px overflow-hidden rounded-sm border border-border bg-border text-[11px]">
-        <CardMeta
+      <div className="mt-1 flex flex-wrap items-center gap-0.5">
+        <EditableMetadata
+          label={`Responsible person for ${displayText(title)}`}
           value={ownerLabel(item.responsibleUserId, members)}
-          missing={!item.responsibleUserId}
+          pending={saving}
+          disabled={optimistic}
+          editor={
+            <select
+              value={item.responsibleUserId ?? ''}
+              onChange={(event) =>
+                onUpdateItem(item.id, { responsibleUserId: event.currentTarget.value || null })
+              }
+              className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+              aria-label="Responsible person"
+            >
+              <option value="">Unassigned</option>
+              {members.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.label}
+                </option>
+              ))}
+            </select>
+          }
         />
-        <CardMeta value={<DueDateDisplay value={item.dueAt} variant="compact" />} />
-        <CardMeta
-          value={item.priority ? `P${item.priority}` : 'No priority'}
-          missing={!item.priority}
+        <EditableMetadata
+          label={`Due date for ${displayText(title)}`}
+          value={<DueDateDisplay value={item.dueAt} variant="compact" />}
+          pending={saving}
+          disabled={optimistic}
+          editor={
+            <MetadataDateEditor
+              defaultValue={item.dueAt ? item.dueAt.toISOString().slice(0, 10) : ''}
+              onApply={(value) =>
+                onUpdateItem(item.id, {
+                  dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
+                })
+              }
+            />
+          }
+        />
+        <EditableMetadata
+          label={`Priority for ${displayText(title)}`}
+          value={
+            <CollectionStatus
+              value={item.priority ? `p${item.priority}` : 'none'}
+              tone={priorityTone(item.priority)}
+              label={item.priority ? `P${item.priority}` : 'No priority'}
+            />
+          }
+          pending={saving}
+          disabled={optimistic}
+          editor={
+            <select
+              value={item.priority ?? ''}
+              onChange={(event) =>
+                onUpdateItem(item.id, {
+                  priority: event.currentTarget.value ? Number(event.currentTarget.value) : null,
+                })
+              }
+              className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+              aria-label="Priority"
+            >
+              <option value="">None</option>
+              {[1, 2, 3, 4].map((priority) => (
+                <option key={priority} value={priority}>
+                  P{priority}
+                </option>
+              ))}
+            </select>
+          }
+        />
+        <EditableMetadata
+          label={`Next step for ${displayText(title)}`}
+          value={item.nextStep ?? 'No next step'}
+          pending={saving}
+          disabled={optimistic}
+          editor={
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                const data = new FormData(event.currentTarget);
+                const nextStep = String(data.get('nextStep') ?? '').trim();
+                onUpdateItem(item.id, { nextStep: nextStep || null });
+              }}
+              className="flex items-center gap-2"
+            >
+              <input
+                name="nextStep"
+                defaultValue={item.nextStep ?? ''}
+                className="h-10 min-w-56 rounded-sm border border-border bg-bg px-2 text-xs"
+                aria-label="Next step"
+              />
+              <button
+                type="submit"
+                className="min-h-10 rounded-sm bg-signal px-3 text-xs font-medium text-signal-fg"
+              >
+                Apply
+              </button>
+            </form>
+          }
         />
       </div>
-      {item.nextStep ? (
-        <p className="mt-2 line-clamp-2 text-xs text-fg-muted">{displayText(item.nextStep)}</p>
-      ) : null}
       {!optimistic ? (
-        <div className="mt-2 min-w-0">
-          <label htmlFor={moveControlId} className="mb-1 block text-[11px] text-fg-dim">
-            Move to lane
-          </label>
-          <select
-            id={moveControlId}
-            ref={registerMoveControl}
-            value={lane.id}
-            disabled={saving}
-            aria-invalid={error ? true : undefined}
-            aria-describedby={error ? `${titleId} ${errorId}` : titleId}
-            onPointerDown={(event) => {
-              event.stopPropagation();
-            }}
-            onChange={(event) => {
-              const nextLaneId =
-                event.currentTarget.value === 'unset' ? null : event.currentTarget.value;
-              onMoveItem(item.id, nextLaneId, true);
-            }}
-            className="h-9 w-full min-w-0 rounded-sm border border-border bg-surface px-2 text-base text-fg transition-colors focus-visible:border-signal/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-progress disabled:opacity-60 sm:text-sm"
-          >
-            {moveTargets.map((target) => (
-              <option key={target.id} value={target.id}>
-                {target.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      ) : null}
-      {error ? (
-        <p id={errorId} className="mt-2 text-xs text-danger" role="alert">
-          Unable to move {displayText(title)}. {error} Choose a lane to try again.
-        </p>
+        <EditableMetadata
+          label={`Lane for ${displayText(title)}`}
+          value={lane.name}
+          pending={saving}
+          error={
+            error
+              ? `Unable to move ${displayText(title)}. ${error} Choose a lane to try again.`
+              : null
+          }
+          className="mt-1"
+          triggerRef={registerMoveControl}
+          editor={
+            <select
+              id={moveControlId}
+              value={lane.id}
+              disabled={saving}
+              aria-label="Move to lane"
+              aria-invalid={error ? true : undefined}
+              aria-describedby={titleId}
+              onPointerDown={(event) => {
+                event.stopPropagation();
+              }}
+              onChange={(event) => {
+                const nextLaneId =
+                  event.currentTarget.value === 'unset' ? null : event.currentTarget.value;
+                onMoveItem(item.id, nextLaneId, true);
+              }}
+              className="h-9 w-full min-w-0 rounded-sm border border-border bg-surface px-2 text-base text-fg transition-colors focus-visible:border-signal/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-progress disabled:opacity-60 sm:text-sm"
+            >
+              {moveTargets.map((target) => (
+                <option key={target.id} value={target.id}>
+                  {target.name}
+                </option>
+              ))}
+            </select>
+          }
+        />
       ) : null}
     </li>
-  );
-}
-
-function CardMeta({
-  value,
-  missing,
-  danger = false,
-}: {
-  value: ReactNode;
-  missing?: boolean;
-  danger?: boolean;
-}) {
-  return (
-    <span
-      className={cn(
-        'truncate bg-bg px-1.5 py-1 text-fg',
-        missing && 'text-fg-dim',
-        danger && 'text-danger',
-      )}
-    >
-      {value}
-    </span>
   );
 }
 

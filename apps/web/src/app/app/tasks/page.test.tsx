@@ -511,6 +511,13 @@ describe('TasksPage', () => {
     expect(html).toContain('view list');
   });
 
+  it('defaults to the grouped list when view is absent', async () => {
+    fakes.listObjects.mockResolvedValue([taskRow()]);
+    const html = renderToStaticMarkup(await TasksPage(pageProps()));
+
+    expect(html).toContain('view list');
+  });
+
   it('passes workflow columns in active-to-terminal order', async () => {
     fakes.listObjects.mockResolvedValue([
       {

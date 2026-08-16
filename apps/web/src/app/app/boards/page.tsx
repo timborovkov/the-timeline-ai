@@ -6,6 +6,7 @@ import type { Metadata } from 'next';
 
 import { BoardCreateDialog } from '@/components/boards/board-create-form';
 import { PageHeader } from '@/components/page-header';
+import { CollectionRow } from '@/components/collections/collection-row';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -36,6 +37,7 @@ export default async function BoardsIndexPage() {
   return (
     <div className="space-y-6">
       <PageHeader
+        variant="collection"
         title="Boards"
         subtitle="Curated work surfaces for the way your team operates."
         metadata={[{ label: 'Total', value: boards.length, mono: true }]}
@@ -59,53 +61,42 @@ export default async function BoardsIndexPage() {
           <div className="mt-4 flex justify-center">{BOARD_CREATE_DIALOG}</div>
         </section>
       ) : (
-        <ul
-          className="divide-y divide-border overflow-hidden rounded-lg border border-border"
-          aria-label="Boards"
-        >
+        <ul className="overflow-hidden border-x border-border" aria-label="Boards">
           {boards.map((board) => {
             const description = visibleBoardDescription(board.purpose);
             return (
-              <li
-                key={board.id}
-                className="bg-bg transition-colors hover:bg-surface focus-within:bg-surface"
-              >
-                <article className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center">
-                  <Link
-                    href={`/app/boards/${board.id}`}
-                    className="min-w-0 flex-1 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
-                  >
-                    <h2 className="m-0 truncate text-sm font-medium text-fg">{board.name}</h2>
-                    {description ? (
-                      <span className="mt-1 block line-clamp-2 text-sm text-fg-muted">
-                        {description}
-                      </span>
-                    ) : null}
-                    <span className="mt-2 flex flex-wrap items-center gap-2 text-xs text-fg-dim">
-                      <span className="capitalize">
-                        <span className="sr-only">Template: </span>
-                        {board.templateKind.replaceAll('_', ' ')}
-                      </span>
-                      <span aria-hidden="true">·</span>
+              <li key={board.id}>
+                <CollectionRow
+                  title={
+                    <Link
+                      href={`/app/boards/${board.id}`}
+                      className="block truncate rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {board.name}
+                    </Link>
+                  }
+                  context={description ?? board.templateKind.replaceAll('_', ' ')}
+                  metadata={
+                    <>
+                      <span className="capitalize">{board.templateKind.replaceAll('_', ' ')}</span>
                       <time dateTime={board.updatedAt.toISOString()}>
-                        Updated{' '}
                         {formatDisplayDate(board.updatedAt, {
                           timezone: calendarSettings.defaultTimezone,
                         })}
                       </time>
-                    </span>
-                  </Link>
-                  <div className="flex shrink-0 self-end items-center justify-between gap-3 sm:self-auto sm:justify-start">
-                    <span className="font-mono text-xs text-fg-dim">
-                      {board.itemCount} {board.itemCount === 1 ? 'item' : 'items'}
-                    </span>
+                      <span className="font-mono tabular-nums text-fg-dim">
+                        {board.itemCount} {board.itemCount === 1 ? 'item' : 'items'}
+                      </span>
+                    </>
+                  }
+                  actions={
                     <PinOverflowMenu
                       target={{ kind: 'board', key: board.id }}
                       title={board.name}
                       initialPinned={board.pinned}
                     />
-                  </div>
-                </article>
+                  }
+                />
               </li>
             );
           })}

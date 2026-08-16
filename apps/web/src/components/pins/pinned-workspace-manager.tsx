@@ -6,6 +6,7 @@ import { useReducer, useRef, useTransition } from 'react';
 
 import type { PinPage, PinTargetKind, PinnedItem } from '@timeline/shared/pins';
 
+import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { PinnedItemRow } from '@/components/pins/pinned-item-row';
 import { Button } from '@/components/ui/button';
 import { readJson } from '@/lib/paginated-api';
@@ -187,59 +188,58 @@ export function PinnedWorkspaceManager({
   }
 
   return (
-    <section className="space-y-4" aria-labelledby="pinned-work-title">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
-        <div>
-          <h2 id="pinned-work-title" className="text-base font-semibold text-fg">
-            Pinned work
-          </h2>
-          <p className="mt-1 text-sm text-fg-muted">
-            Your personal shortcuts across the workspace.
-          </p>
-        </div>
-        {canReorder && items.length > 1 ? (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              dispatch({ type: 'toggle-reorder' });
-            }}
-          >
-            <GripVertical aria-hidden="true" />
-            {reorderMode ? 'Done reordering' : 'Reorder'}
-          </Button>
-        ) : null}
-      </div>
-
-      <nav aria-label="Pinned work filters" className="flex flex-wrap gap-1">
-        {FILTERS.map((entry) => (
-          <Link
-            key={entry.value}
-            href={
-              entry.value === 'all'
-                ? '/app/work?view=pinned'
-                : `/app/work?view=pinned&kind=${entry.value}`
-            }
-            aria-current={filter === entry.value ? 'page' : undefined}
-            className={cn(
-              'rounded-sm border border-transparent px-2.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:text-fg',
-              filter === entry.value && 'border-border bg-surface text-fg',
-            )}
-          >
-            {entry.label}
-          </Link>
-        ))}
-      </nav>
+    <section aria-labelledby="pinned-work-title">
+      <h2 id="pinned-work-title" className="sr-only">
+        Pinned work
+      </h2>
+      <CollectionToolbar
+        count={`${items.length} pinned`}
+        viewControls={
+          <nav aria-label="Pinned work filters" className="flex items-center gap-0.5">
+            {FILTERS.map((entry) => (
+              <Link
+                key={entry.value}
+                href={
+                  entry.value === 'all'
+                    ? '/app/work?view=pinned'
+                    : `/app/work?view=pinned&kind=${entry.value}`
+                }
+                aria-current={filter === entry.value ? 'page' : undefined}
+                className={cn(
+                  'min-h-9 rounded-sm px-2.5 py-2 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg',
+                  filter === entry.value && 'bg-surface-2 text-fg',
+                )}
+              >
+                {entry.label}
+              </Link>
+            ))}
+          </nav>
+        }
+        actions={
+          canReorder && items.length > 1 ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                dispatch({ type: 'toggle-reorder' });
+              }}
+            >
+              <GripVertical aria-hidden="true" />
+              {reorderMode ? 'Done reordering' : 'Reorder'}
+            </Button>
+          ) : null
+        }
+      />
 
       {items.length === 0 ? (
-        <div className="border-y border-border py-10 text-center">
+        <div className="border-b border-border py-10 text-center">
           <p className="text-sm font-medium text-fg">Nothing pinned here yet</p>
           <p className="mt-1 text-sm text-fg-muted">
             Use Pin on an item detail page or its overflow menu.
           </p>
         </div>
       ) : (
-        <div className="border-y border-border">
+        <div className="border-x border-border">
           {items.map((item, index) => (
             <PinnedItemRow
               key={item.pinId}

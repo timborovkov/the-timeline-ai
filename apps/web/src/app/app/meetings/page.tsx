@@ -8,6 +8,9 @@ import type { MeetingRow, SavedMeetingRow } from '@timeline/shared/meetings';
 import type { Metadata } from 'next';
 
 import { EmptyAction } from '@/components/empty-action';
+import { CollectionRow } from '@/components/collections/collection-row';
+import { CollectionStatus } from '@/components/collections/collection-status';
+import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import {
   ArchiveSavedMeetingButton,
   EditSavedMeetingForm,
@@ -19,10 +22,7 @@ import {
 import { PageHeader } from '@/components/page-header';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { SectionHeading } from '@/components/section-heading';
-import { StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -179,6 +179,7 @@ export default async function MeetingsPage({
   return (
     <div className="space-y-6">
       <PageHeader
+        variant="collection"
         title="Meetings"
         subtitle="Invite the silent notetaker or manage meeting links for automatic capture."
         metadata={[
@@ -276,51 +277,73 @@ function MeetingSearchControls({
   tab: MeetingTab;
 }) {
   return (
-    <form
-      action="/app/meetings"
-      role="search"
-      className="grid gap-3 border-y border-border py-4 sm:grid-cols-[minmax(0,1fr)_minmax(11rem,auto)_auto] sm:items-end"
-    >
+    <form action="/app/meetings" role="search">
       <input name="tab" type="hidden" value={tab === 'saved' ? 'saved' : ''} />
-      <div className="space-y-2">
-        <Label htmlFor="meeting-search">
-          {tab === 'saved' ? 'Search saved meetings' : 'Search captures'}
-        </Label>
-        <Input
-          id="meeting-search"
-          name="q"
-          type="search"
-          defaultValue={query}
-          placeholder={tab === 'saved' ? 'Title, alias, or platform' : 'Title, platform, or status'}
-        />
-      </div>
-      {tab === 'captures' ? (
-        <div className="space-y-2">
-          <Label htmlFor="capture-status">Filter captures</Label>
-          <select
-            id="capture-status"
-            name="status"
-            defaultValue={filter}
-            className="flex h-9 w-full min-w-0 rounded-sm border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          >
-            {CAPTURE_FILTERS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
-      ) : null}
-      <div className="flex flex-wrap items-center gap-2">
-        <Button type="submit" variant="outline">
-          Apply filters
-        </Button>
-        {hasActiveFilters ? (
-          <Button asChild size="sm" variant="ghost">
-            <Link href={clearHref}>Clear filters</Link>
-          </Button>
-        ) : null}
-      </div>
+      <CollectionToolbar
+        search={
+          <label className="block min-w-0">
+            <span className="sr-only">
+              {tab === 'saved' ? 'Search saved meetings' : 'Search captures'}
+            </span>
+            <input
+              id="meeting-search"
+              name="q"
+              type="search"
+              defaultValue={query}
+              placeholder={
+                tab === 'saved' ? 'Title, alias, or platform' : 'Title, platform, or status'
+              }
+              className="h-9 w-full rounded-sm border-0 bg-transparent px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40"
+            />
+          </label>
+        }
+        filters={
+          tab === 'captures' ? (
+            <label className="space-y-1">
+              <span className="block text-[11px] text-fg-dim">Capture status</span>
+              <select
+                id="capture-status"
+                name="status"
+                defaultValue={filter}
+                className="flex h-9 w-full min-w-0 rounded-sm border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                {CAPTURE_FILTERS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null
+        }
+        activeFilters={[
+          ...(query
+            ? [{ key: 'query', label: 'Search', value: query, href: meetingHref({ tab, filter }) }]
+            : []),
+          ...(tab === 'captures' && filter !== 'all'
+            ? [
+                {
+                  key: 'status',
+                  label: 'Status',
+                  value: CAPTURE_FILTERS.find((option) => option.value === filter)?.label ?? filter,
+                  href: meetingHref({ tab, query }),
+                },
+              ]
+            : []),
+        ]}
+        actions={
+          <div className="flex items-center gap-1">
+            <Button type="submit" variant="outline">
+              Apply
+            </Button>
+            {hasActiveFilters ? (
+              <Button asChild size="sm" variant="ghost">
+                <Link href={clearHref}>Clear filters</Link>
+              </Button>
+            ) : null}
+          </div>
+        }
+      />
     </form>
   );
 }
@@ -362,42 +385,47 @@ function SavedMeetingsSection({
           action={hasSearch ? 'Clear filters' : 'Save a meeting'}
         />
       ) : (
-        <ul
-          aria-label="Saved meetings"
-          className="divide-y divide-border rounded-md border border-border"
-        >
+        <ul aria-label="Saved meetings" className="border-x border-border">
           {meetings.map((saved) => (
             <li
               id={`saved-meeting-${saved.id}`}
               key={saved.id}
-              className="scroll-mt-24 space-y-3 p-4"
+              className="scroll-mt-24"
+              style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 64px' }}
             >
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0 space-y-1">
-                  <p className="break-words font-medium text-fg">{displayMeetingLabel(saved)}</p>
-                  <p className="break-words text-xs text-fg-muted">
-                    {displaySourceLabel(saved.platform)} ·{' '}
-                    {saved.aliases.length ? saved.aliases.join(', ') : 'no aliases'} ·{' '}
-                    {saved.autoJoinEnabled ? 'auto-join on' : 'manual join'}
-                  </p>
-                </div>
-                <fieldset
-                  aria-label={`Actions for ${displayMeetingLabel(saved)}`}
-                  className="flex min-w-0 flex-wrap items-center gap-2 border-0 p-0 sm:justify-end"
-                >
-                  <JoinSavedMeetingButton query={saved.aliases[0] ?? saved.title} />
-                  <PinOverflowMenu
-                    target={{ kind: 'saved_meeting', key: saved.id }}
-                    title={displayMeetingLabel(saved)}
-                    initialPinned={pinState[`saved_meeting:${saved.id}`] ?? false}
-                  />
-                  <ArchiveSavedMeetingButton savedMeetingId={saved.id} />
-                </fieldset>
+              <CollectionRow
+                title={displayMeetingLabel(saved)}
+                context={
+                  saved.description ??
+                  (saved.aliases.length ? saved.aliases.join(', ') : 'No aliases')
+                }
+                metadata={
+                  <>
+                    <span>{displaySourceLabel(saved.platform)}</span>
+                    <CollectionStatus
+                      value={saved.autoJoinEnabled ? 'active' : 'manual'}
+                      label={saved.autoJoinEnabled ? 'Auto-join' : 'Manual join'}
+                    />
+                  </>
+                }
+                actions={
+                  <fieldset
+                    aria-label={`Actions for ${displayMeetingLabel(saved)}`}
+                    className="flex min-w-0 flex-wrap items-center gap-1 border-0 p-0 sm:justify-end"
+                  >
+                    <JoinSavedMeetingButton query={saved.aliases[0] ?? saved.title} />
+                    <PinOverflowMenu
+                      target={{ kind: 'saved_meeting', key: saved.id }}
+                      title={displayMeetingLabel(saved)}
+                      initialPinned={pinState[`saved_meeting:${saved.id}`] ?? false}
+                    />
+                    <ArchiveSavedMeetingButton savedMeetingId={saved.id} />
+                  </fieldset>
+                }
+              />
+              <div className="border-b border-border/80 px-3 pb-2">
+                <EditSavedMeetingForm saved={saved} defaultTimezone={timezone} members={members} />
               </div>
-              {saved.description ? (
-                <p className="break-words text-sm text-fg-muted">{saved.description}</p>
-              ) : null}
-              <EditSavedMeetingForm saved={saved} defaultTimezone={timezone} members={members} />
             </li>
           ))}
         </ul>
@@ -451,23 +479,25 @@ function MeetingCapturesSection({
           action={hasActiveFilters ? 'Clear filters' : 'Invite notetaker'}
         />
       ) : (
-        <ul
-          aria-label="Meeting captures"
-          className="divide-y divide-border rounded-md border border-border"
-        >
+        <ul aria-label="Meeting captures" className="border-x border-border">
           {meetings.map((meeting) => (
-            <li key={meeting.id} className="p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <Link
-                  href={`/app/meetings/${meeting.id}`}
-                  className="min-w-0 flex-1 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2"
-                >
-                  <span className="block break-words font-medium text-fg">
+            <li
+              key={meeting.id}
+              style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 44px' }}
+            >
+              <CollectionRow
+                title={
+                  <Link
+                    href={`/app/meetings/${meeting.id}`}
+                    className="block truncate rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
+                  >
                     {displayMeetingLabel(meeting)}
-                  </span>
-                  <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-muted">
-                    <span>{displaySourceLabel(meeting.platform)}</span>
-                    <StatusBadge status={meeting.status} />
+                  </Link>
+                }
+                context={displaySourceLabel(meeting.platform)}
+                metadata={
+                  <>
+                    <CollectionStatus value={meeting.status} />
                     <time
                       className="font-mono tabular-nums"
                       dateTime={new Date(
@@ -478,22 +508,24 @@ function MeetingCapturesSection({
                         timezone,
                       })}
                     </time>
-                  </span>
-                </Link>
-                <fieldset
-                  aria-label={`Actions for ${displayMeetingLabel(meeting)}`}
-                  className="flex min-w-0 flex-wrap items-center gap-2 border-0 p-0 sm:justify-end"
-                >
-                  {meeting.status === 'scheduled' ? (
-                    <SkipScheduledMeetingButton meetingId={meeting.id} />
-                  ) : null}
-                  <PinOverflowMenu
-                    target={{ kind: 'meeting', key: meeting.id }}
-                    title={displayMeetingLabel(meeting)}
-                    initialPinned={pinState[`meeting:${meeting.id}`] ?? false}
-                  />
-                </fieldset>
-              </div>
+                  </>
+                }
+                actions={
+                  <fieldset
+                    aria-label={`Actions for ${displayMeetingLabel(meeting)}`}
+                    className="flex min-w-0 flex-wrap items-center gap-2 border-0 p-0 sm:justify-end"
+                  >
+                    {meeting.status === 'scheduled' ? (
+                      <SkipScheduledMeetingButton meetingId={meeting.id} />
+                    ) : null}
+                    <PinOverflowMenu
+                      target={{ kind: 'meeting', key: meeting.id }}
+                      title={displayMeetingLabel(meeting)}
+                      initialPinned={pinState[`meeting:${meeting.id}`] ?? false}
+                    />
+                  </fieldset>
+                }
+              />
             </li>
           ))}
         </ul>

@@ -90,7 +90,7 @@ describe('MeetingsPage', () => {
     expect(html).toContain('aria-label="Meeting views"');
     expect(html).toContain('aria-current="page"');
     expect(html).toContain('Search captures');
-    expect(html).toContain('Filter captures');
+    expect(html).toContain('Filters');
     expect(html).toContain('Launch review');
     expect(html).not.toContain('Daily sync');
     expect(html).toContain('Showing 1 of 2 captures.');

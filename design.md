@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3 · Quiet Archive (2026-07-14). Replaces v2 Operational Archive.
+**Version:** v3.1 · Quiet Archive collection density (2026-08-16). Replaces v2 Operational Archive.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -80,10 +80,14 @@ The neutral OKLCH palette and single lime signal remain. Tokens live in
 | `--fg-dim` | Non-essential metadata |
 | `--signal` / `--signal-soft` | Primary action, active route, citation |
 | `--danger` | Failure, destructive state, overdue work |
+| `--status-progress` | Active, doing, and in-progress work |
+| `--status-review` | Proposed, pending, and review states |
+| `--status-success` | Done, shipped, and complete states |
 
-Success and informational states remain neutral unless action is required.
-Color never carries meaning alone. Danger is not used for incomplete, paused,
-or merely noteworthy work.
+Collection status color is muted and always paired with a glyph and readable
+label. Outside collection status metadata, success and informational states
+remain neutral unless action is required. Danger is not used for incomplete,
+paused, or merely noteworthy work.
 
 ## Typography
 
@@ -95,7 +99,7 @@ Both families are self-hosted with `next/font/local`.
 
 | Role | Font and size |
 | --- | --- |
-| Page title | Switzer 600, 24px |
+| Page title | Switzer 600, 24px default / 18px collection variant |
 | Auth and help marketing hero | Switzer 600, 32px mobile / 48px tablet / 60px desktop |
 | Public acquisition display | Switzer 600, 64px mobile / fluid up to 150px desktop |
 | Section heading | Switzer 600, 16px |
@@ -140,6 +144,49 @@ It supplements the page title and must never create a second heading.
 The default route header. It owns the single sentence-case `<h1>`, an optional
 subtitle, leading/trailing actions, and a quiet wrapping 12px metadata row.
 Metadata is sans by default; individual values may opt into mono.
+
+The collection variant is at most 52px tall on desktop. It uses an 18px title,
+keeps metadata and actions inline, and exposes the descriptive subtitle to
+assistive technology without spending a visible row on it.
+
+### Collection system
+
+Workspace indexes and queues use the slot-based collection primitives in
+`apps/web/src/components/collections/`. Domains keep ownership of their row
+content and actions; do not replace them with a configuration-heavy universal
+table.
+
+- `CollectionToolbar` is one 44px control row for search, result count, a
+  Filters trigger, view controls, and primary actions. Filters open in a
+  popover on desktop and a bottom dialog on mobile. Active filters appear in a
+  removable chip row only while active.
+- `CollectionGroup` uses a 40px header with glyph, readable status label,
+  count, and optional action. Groups start open; collapse state lasts only for
+  the mounted session and is never saved as a preference.
+- `CollectionRow` is at least 44px on desktop. It favors one line: selection or
+  type cue, human title, compact context, metadata, and overflow. Mobile uses
+  two lines: title plus context, then wrapping metadata. Non-board collections
+  must never force horizontal viewport scrolling.
+- `EditableMetadata` is a quiet, borderless trigger with a minimum 40px hit
+  target. Select-like changes save immediately and optimistically. Text and
+  date changes commit with Apply or Enter and cancel with Escape. Failed saves
+  roll back, return focus, show an inline row error, and keep the existing
+  toast feedback.
+- `SelectionBar` appears only after selection. Desktop checkboxes may fade in
+  on row hover or focus and remain visible while selection is active. Touch
+  layouts expose selection explicitly and keep its checkboxes visible.
+
+Status order and vocabulary remain domain-owned. Semantic tones are shared:
+backlog/open/todo/archived/cancelled are neutral; active/doing/in progress are
+amber; proposed/pending/review are blue; done/shipped/complete are green; and
+blocked/failed/overdue use danger. P1 uses danger, P2 amber, and P3/P4 neutral.
+Lime remains reserved for the primary action, active route, and citation
+signal.
+
+Collection transitions last 150–200ms and are limited to background, border,
+opacity, and transform. They honor reduced motion. No collection introduces a
+new global keyboard shortcut; existing inspectors, drag handles, pagination,
+evidence links, and URL state remain the interaction contract.
 
 ### SectionHeading
 
@@ -502,3 +549,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-14 | Public capability truth | Separates hosted MCP, local-desktop MCP, and planned support while keeping phone navigation actions reachable. |
 | 2026-08-14 | Customer-facing public language | Keeps review cadence, implementation state, indexing terms, and capability taxonomy in metadata while public pages explain concrete actions and availability. |
 | 2026-08-15 | Evidence-backed public product story | Makes the working-history problem, deliberate capture boundary, cited-versus-unused evidence, Telegram entry point, inspectable answers, and human approval contract explicit across the landing and how-it-works journey. |
+| 2026-08-16 | Unified workspace collection density | Replaces stacked form chrome and card grids with compact headers, one filter toolbar, 44px rows, semantic status glyphs, optimistic metadata triggers, and contextual selection without changing domain behavior. |

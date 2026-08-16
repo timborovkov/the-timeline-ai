@@ -5,11 +5,13 @@ import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
+import { CollectionGroup } from '@/components/collections/collection-group';
+import { CollectionRow } from '@/components/collections/collection-row';
+import { CollectionStatus, priorityTone } from '@/components/collections/collection-status';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { EmptyAction } from '@/components/empty-action';
 import { PageHeader } from '@/components/page-header';
 import { PinnedWorkspaceManager } from '@/components/pins/pinned-workspace-manager';
-import { SectionHeading } from '@/components/section-heading';
 import {
   LiveTaskCategoryBadge,
   TaskCategoryPollingProvider,
@@ -67,6 +69,7 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
     return (
       <div className="space-y-6">
         <PageHeader
+          variant="collection"
           title="Work"
           subtitle="Personal shortcuts to the work and context you return to."
         />
@@ -117,6 +120,7 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
   return (
     <div className="space-y-6">
       <PageHeader
+        variant="collection"
         title="Work"
         subtitle="Prioritized work that needs a decision, owner, or next action."
         metadata={[
@@ -142,8 +146,7 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
       <WorkSubnav current="/app/work" />
 
       <div className="space-y-7">
-        <section aria-labelledby="work-queue-title" className="space-y-3">
-          <SectionHeading id="work-queue-title">Work queue</SectionHeading>
+        <CollectionGroup title="Work queue" count={queue.length}>
           {queue.length === 0 ? (
             <EmptyAction
               title="Work queue clear"
@@ -153,41 +156,47 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
             />
           ) : (
             <TaskCategoryPollingProvider tasks={categoryPollingTasks}>
-              <div className="overflow-hidden border border-border">
+              <div className="border-x border-border">
                 {queue.map((item) => (
                   <WorkQueueRow key={item.id} item={item} timezone={timezone} />
                 ))}
               </div>
             </TaskCategoryPollingProvider>
           )}
-        </section>
+        </CollectionGroup>
 
-        <section aria-labelledby="team-boards-title" className="space-y-3">
-          <SectionHeading id="team-boards-title">Pinned and team boards</SectionHeading>
+        <CollectionGroup title="Pinned and team boards" count={boardModules.length}>
           {boardModules.length === 0 ? (
             <EmptyPanel label="No boards yet" body="Create a board to give team work a surface." />
           ) : (
-            <div className="grid gap-px overflow-hidden border border-border">
+            <div className="border-x border-border">
               {boardModules.map((board) => (
-                <Link
+                <CollectionRow
                   key={board.id}
-                  href={`/app/boards/${board.id}`}
-                  className="block bg-bg p-3 transition-colors hover:bg-surface"
-                >
-                  <span className="flex items-center justify-between gap-3">
-                    <span className="truncate text-sm font-medium text-fg">{board.name}</span>
-                    {board.pinned ? (
-                      <span className="text-xs font-medium text-signal">Pinned</span>
-                    ) : null}
-                  </span>
-                  <span className="mt-2 block text-xs tabular-nums text-fg-dim">
-                    {board.itemCount} items · updated {dateLabel(board.updatedAt, timezone)}
-                  </span>
-                </Link>
+                  title={
+                    <Link
+                      href={`/app/boards/${board.id}`}
+                      className="block truncate hover:underline"
+                    >
+                      {board.name}
+                    </Link>
+                  }
+                  context={`Updated ${dateLabel(board.updatedAt, timezone)}`}
+                  metadata={
+                    <>
+                      <span className="px-2 text-xs tabular-nums text-fg-dim">
+                        {board.itemCount} items
+                      </span>
+                      {board.pinned ? (
+                        <span className="px-2 text-xs font-medium text-signal">Pinned</span>
+                      ) : null}
+                    </>
+                  }
+                />
               ))}
             </div>
           )}
-        </section>
+        </CollectionGroup>
       </div>
     </div>
   );
@@ -198,47 +207,43 @@ function WorkQueueRow({ item, timezone }: { item: WorkQueueItem; timezone: strin
     (reason) => reason !== 'overdue' && reason !== 'due_soon',
   );
   return (
-    <Link
-      href={item.href}
-      className="grid gap-3 border-b border-border bg-bg p-3 transition-colors last:border-b-0 hover:bg-surface md:grid-cols-[minmax(0,1fr)_auto]"
-    >
-      <span className="min-w-0">
-        <span className="flex min-w-0 flex-wrap items-center gap-2">
-          <span className="truncate text-sm font-medium text-fg">{displayText(item.title)}</span>
-          <span className="text-xs text-fg-dim">{item.sourceLabel}</span>
-        </span>
-        <span className="mt-1 block truncate text-sm text-fg-muted">
-          {displayText(item.subtitle)}
-        </span>
-        {contextReasons.length > 0 ? (
-          <span className="mt-2 flex flex-wrap gap-1.5">
-            {contextReasons.map((reason) => (
-              <ReasonBadge key={reason} reason={reason} />
-            ))}
-          </span>
-        ) : null}
-      </span>
-      <span className="flex flex-wrap items-center gap-2 md:justify-end">
-        {item.source !== 'approval' ? (
-          <DueDateDisplay
-            value={item.dueAt}
-            timezone={timezone}
-            variant="stacked"
-            className="min-w-28 md:text-right"
-          />
-        ) : null}
-        {item.priority ? <MetaPill label={`P${item.priority}`} /> : null}
-        {item.objectType ? <MetaPill label={statusLabel(item.objectType)} /> : null}
-        {item.objectType === 'task' ? (
-          <LiveTaskCategoryBadge
-            taskId={item.entityId ?? item.id}
-            category={item.taskCategory ?? null}
-            status={item.taskCategoryStatus ?? null}
-            updatedAt={item.updatedAt}
-          />
-        ) : null}
-      </span>
-    </Link>
+    <CollectionRow
+      title={
+        <Link href={item.href} className="block truncate hover:underline">
+          {displayText(item.title)}
+        </Link>
+      }
+      context={displayText(item.subtitle)}
+      metadata={
+        <>
+          <span className="px-2 text-xs text-fg-dim">{item.sourceLabel}</span>
+          {contextReasons.map((reason) => (
+            <ReasonBadge key={reason} reason={reason} />
+          ))}
+          {item.source !== 'approval' ? (
+            <DueDateDisplay value={item.dueAt} timezone={timezone} variant="compact" />
+          ) : null}
+          {item.priority ? (
+            <CollectionStatus
+              value={`p${item.priority}`}
+              tone={priorityTone(item.priority)}
+              label={`P${item.priority}`}
+            />
+          ) : null}
+          {item.objectType ? (
+            <CollectionStatus value={item.objectType} label={statusLabel(item.objectType)} />
+          ) : null}
+          {item.objectType === 'task' ? (
+            <LiveTaskCategoryBadge
+              taskId={item.entityId ?? item.id}
+              category={item.taskCategory ?? null}
+              status={item.taskCategoryStatus ?? null}
+              updatedAt={item.updatedAt}
+            />
+          ) : null}
+        </>
+      }
+    />
   );
 }
 
@@ -255,18 +260,6 @@ function ReasonBadge({ reason }: { reason: WorkQueueItem['reasons'][number] }) {
       }`}
     >
       {reasonLabel(reason)}
-    </span>
-  );
-}
-
-function MetaPill({ label, danger = false }: { label: string; danger?: boolean }) {
-  return (
-    <span
-      className={`inline-flex min-h-6 items-center rounded-sm border px-2 text-xs ${
-        danger ? 'border-danger/40 text-danger' : 'border-border text-fg-muted'
-      }`}
-    >
-      {label}
     </span>
   );
 }

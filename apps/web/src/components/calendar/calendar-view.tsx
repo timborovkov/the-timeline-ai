@@ -46,6 +46,9 @@ import {
   calendarOverlayReducer,
   mergeCalendarEvents,
 } from '@/components/calendar/calendar-overlay';
+import { CollectionRow } from '@/components/collections/collection-row';
+import { CollectionStatus } from '@/components/collections/collection-status';
+import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { PinButton } from '@/components/pins/pin-button';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { Button } from '@/components/ui/button';
@@ -869,98 +872,110 @@ function CalendarEventList({
   }, []);
 
   return (
-    <section className="border-t border-border pt-4" aria-labelledby="calendar-events-heading">
-      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-        <div className="min-w-0 flex-1">
-          <h2 id="calendar-events-heading" className="text-base font-semibold text-fg">
-            Calendar events
-          </h2>
-          <p
-            role="status"
-            aria-live="polite"
-            aria-atomic="true"
-            className="mt-1 text-sm text-fg-muted"
-          >
-            {eventCountLabel}
-          </p>
-        </div>
-        <div className="flex w-full items-center gap-2 rounded-sm border border-input bg-background px-3 sm:w-auto sm:min-w-64">
-          <Search className="size-4 shrink-0 text-fg-dim" aria-hidden="true" />
-          <Label htmlFor="calendar-event-search" className="sr-only">
-            Search calendar events
-          </Label>
-          <Input
-            id="calendar-event-search"
-            ref={searchInputRef}
-            defaultValue={query}
-            onChange={(event) => {
-              const nextQuery = event.target.value;
-              if (searchTimer.current) clearTimeout(searchTimer.current);
-              searchTimer.current = setTimeout(() => {
-                committedSearchRef.current = nextQuery.trim();
-                onQueryChange(nextQuery);
-              }, 350);
-            }}
-            placeholder="Search events"
-            className="h-9 border-0 px-0"
-          />
-        </div>
-        <fieldset className="grid w-full grid-cols-3 gap-1 border-0 p-0 sm:flex sm:w-auto">
-          <legend className="sr-only">Event range</legend>
-          {(['future', 'past', 'all'] as const).map((nextScope) => (
-            <Button
-              key={nextScope}
-              type="button"
-              size="sm"
-              variant={scope === nextScope ? 'secondary' : 'outline'}
-              aria-pressed={scope === nextScope}
-              onClick={() => {
-                onScopeChange(nextScope);
+    <section className="border-t border-border" aria-labelledby="calendar-events-heading">
+      <h2 id="calendar-events-heading" className="sr-only">
+        Calendar events
+      </h2>
+      <CollectionToolbar
+        count={eventCountLabel}
+        search={
+          <div className="flex w-full items-center gap-2 px-2">
+            <Search className="size-4 shrink-0 text-fg-dim" aria-hidden="true" />
+            <Label htmlFor="calendar-event-search" className="sr-only">
+              Search calendar events
+            </Label>
+            <Input
+              id="calendar-event-search"
+              ref={searchInputRef}
+              defaultValue={query}
+              onChange={(event) => {
+                const nextQuery = event.target.value;
+                if (searchTimer.current) clearTimeout(searchTimer.current);
+                searchTimer.current = setTimeout(() => {
+                  committedSearchRef.current = nextQuery.trim();
+                  onQueryChange(nextQuery);
+                }, 350);
               }}
-            >
-              {nextScope === 'future' ? 'Upcoming' : nextScope === 'past' ? 'Past' : 'All'}
-            </Button>
-          ))}
-        </fieldset>
-      </div>
-
-      <div className="mt-3 divide-y divide-border border border-border bg-bg">
-        {events.length > 0 ? (
-          events.map((event) => (
-            <div
-              key={event.id}
-              className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 p-3 transition-colors hover:bg-muted/30"
-            >
-              <button
+              placeholder="Search events"
+              className="h-9 border-0 bg-transparent px-0"
+            />
+          </div>
+        }
+        activeFilters={[
+          ...(query
+            ? [{ key: 'query', label: 'Search', value: query, onRemove: () => onQueryChange('') }]
+            : []),
+          ...(scope !== 'future'
+            ? [
+                {
+                  key: 'scope',
+                  label: 'Range',
+                  value: scope,
+                  onRemove: () => onScopeChange('future'),
+                },
+              ]
+            : []),
+        ]}
+        viewControls={
+          <fieldset className="grid grid-cols-3 gap-1 border-0 p-0 sm:flex">
+            <legend className="sr-only">Event range</legend>
+            {(['future', 'past', 'all'] as const).map((nextScope) => (
+              <Button
+                key={nextScope}
                 type="button"
-                disabled={event.redacted}
-                className="grid min-w-0 gap-3 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-default disabled:opacity-100 md:grid-cols-[minmax(10rem,0.45fr)_minmax(0,1fr)_8rem]"
+                size="sm"
+                variant={scope === nextScope ? 'secondary' : 'outline'}
+                aria-pressed={scope === nextScope}
                 onClick={() => {
-                  onEdit(event);
+                  onScopeChange(nextScope);
                 }}
               >
-                <span className="text-xs text-fg-dim">{formatEventRange(event, timezone)}</span>
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-medium text-fg">
-                    {event.redacted ? 'Busy' : event.title}
-                  </span>
-                  <span className="mt-1 block truncate text-xs text-fg-muted">
-                    {[event.location, event.description].filter(Boolean).join(' · ') ||
-                      (event.allDay ? 'All day' : statusLabel(event.showAs))}
-                  </span>
-                </span>
-                <span className="self-center justify-self-start rounded-sm border border-border px-2 py-1 text-[11px] text-fg-dim md:justify-self-end">
-                  {statusLabel(event.visibility)}
-                </span>
-              </button>
-              {!event.redacted ? (
-                <PinOverflowMenu
-                  target={{ kind: 'calendar_event', key: event.id }}
-                  title={event.title}
-                  initialPinned={event.pinned}
-                />
-              ) : null}
-            </div>
+                {nextScope === 'future' ? 'Upcoming' : nextScope === 'past' ? 'Past' : 'All'}
+              </Button>
+            ))}
+          </fieldset>
+        }
+      />
+
+      <div className="border-x border-border bg-bg">
+        {events.length > 0 ? (
+          events.map((event) => (
+            <CollectionRow
+              key={event.id}
+              className="min-h-13"
+              title={
+                <button
+                  type="button"
+                  disabled={event.redacted}
+                  className="block min-w-0 truncate rounded-sm text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-100"
+                  onClick={() => {
+                    onEdit(event);
+                  }}
+                >
+                  {event.redacted ? 'Busy' : event.title}
+                </button>
+              }
+              context={
+                [event.location, event.description].filter(Boolean).join(' · ') ||
+                (event.allDay ? 'All day' : statusLabel(event.showAs))
+              }
+              metadata={
+                <>
+                  <span className="text-xs text-fg-dim">{formatEventRange(event, timezone)}</span>
+                  <CollectionStatus value={event.showAs} label={statusLabel(event.showAs)} />
+                  <span className="text-xs text-fg-dim">{statusLabel(event.visibility)}</span>
+                </>
+              }
+              actions={
+                !event.redacted ? (
+                  <PinOverflowMenu
+                    target={{ kind: 'calendar_event', key: event.id }}
+                    title={event.title}
+                    initialPinned={event.pinned}
+                  />
+                ) : null
+              }
+            />
           ))
         ) : (
           <div className="p-4">

@@ -219,8 +219,8 @@ describe('DocumentDrive', () => {
     );
 
     const deleteFolder = screen.getByRole('button', { name: 'Delete folder Acme' });
-    expect(deleteFolder.className).toContain('min-h-9');
-    expect(deleteFolder.className).toContain('group-focus-within:opacity-100');
+    expect(deleteFolder.className).toContain('min-h-10');
+    expect(deleteFolder.className).toContain('sm:group-hover/collection-row:opacity-100');
     expect(deleteFolder.className).toContain('focus-visible:opacity-100');
     expect(deleteFolder.className).toContain('focus-visible:ring-2');
     expect(deleteFolder.className).toContain('transition-opacity');
