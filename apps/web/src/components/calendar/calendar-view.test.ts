@@ -346,8 +346,8 @@ describe('CalendarView recurrence and tentative UI', () => {
 
     expect(screen.getByPlaceholderText('Search events')).toHaveProperty('value', 'budget');
     expect(within(eventList).getByText('1 event')).toBeTruthy();
-    expect(within(eventList).getByRole('button', { name: /^Jun 3.*Budget review/ })).toBeTruthy();
-    expect(within(eventList).getByText('Finance room')).toBeTruthy();
+    expect(within(eventList).getByRole('button', { name: 'Budget review' })).toBeTruthy();
+    expect(within(eventList).getAllByText('Finance room')).toHaveLength(2);
     expect(within(eventList).queryByRole('button', { name: /Roadmap review/ })).toBeNull();
 
     rerender(
@@ -444,8 +444,10 @@ describe('CalendarView recurrence and tentative UI', () => {
 
     expect(await screen.findByRole('button', { name: /New sales sync/ })).toBeTruthy();
     expect(screen.getByText('1 upcoming event')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /^Jun 3.*Roadmap review/ })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /^Jun 3.*New sales sync/s })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Roadmap review' })).toBeTruthy();
+    const eventList = screen.getByText('Calendar events').closest('section');
+    if (!eventList) throw new Error('Calendar events section not found');
+    expect(within(eventList).queryByRole('button', { name: 'New sales sync' })).toBeNull();
   });
 
   it('validates create title and sends specific-user visibility selections', async () => {

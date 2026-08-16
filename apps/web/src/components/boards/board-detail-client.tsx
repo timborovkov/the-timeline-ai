@@ -278,6 +278,7 @@ export function BoardDetailClient({
   return (
     <TaskCategoryPollingProvider tasks={categoryPollingTasks}>
       <PageHeader
+        variant="collection"
         title={boardName}
         subtitle={description ?? undefined}
         leading={boardHeaderLeading}

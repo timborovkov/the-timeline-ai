@@ -169,7 +169,7 @@ describe('WorkPage', () => {
     const html = renderToStaticMarkup(await WorkPage(pageProps()));
 
     expect(html).toContain('Team overdue task');
-    expect(html).toContain('>Overdue</span>');
+    expect(html).toContain('>Overdue Jul 19, 2026</span>');
     expect(html).toContain('Jul 19, 2026');
   });
 

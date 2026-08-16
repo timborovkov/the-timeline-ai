@@ -32,6 +32,12 @@ function inputValue(element: HTMLElement): string {
   throw new Error('Expected an input element.');
 }
 
+async function openFilters(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  const trigger = screen.getAllByRole('button', { name: /^Filters/ })[0];
+  if (!trigger) throw new Error('Missing filter trigger');
+  await user.click(trigger);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal(
@@ -63,6 +69,7 @@ describe('GlobalSearchPage', () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalled();
     });
+    await openFilters(user);
     await user.click(screen.getByRole('button', { name: 'Result types' }));
     await user.click(screen.getByRole('menuitemcheckbox', { name: 'Documents' }));
     await user.click(screen.getByRole('menuitemcheckbox', { name: 'Tasks' }));
@@ -93,6 +100,7 @@ describe('GlobalSearchPage', () => {
 
     render(<GlobalSearchPage initialQuery="launch" />);
 
+    await openFilters(user);
     await user.click(screen.getByRole('button', { name: 'Result types' }));
     await user.click(screen.getByRole('menuitemcheckbox', { name: 'Documents' }));
     await user.keyboard('{Escape}');
@@ -118,6 +126,7 @@ describe('GlobalSearchPage', () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalled();
     });
+    await openFilters(user);
     await user.click(screen.getByRole('button', { name: 'Source' }));
     await user.click(screen.getByRole('menuitemcheckbox', { name: 'Slack' }));
     await user.keyboard('{Escape}');
@@ -147,6 +156,7 @@ describe('GlobalSearchPage', () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalled();
     });
+    await openFilters(user);
     await user.click(screen.getByRole('button', { name: 'Source' }));
     await user.click(screen.getByRole('menuitemcheckbox', { name: 'Ingest webhook' }));
 
@@ -159,6 +169,7 @@ describe('GlobalSearchPage', () => {
   });
 
   it('initializes source and date filters from URL props', async () => {
+    const user = userEvent.setup();
     const fetchMock = vi.mocked(fetch);
 
     render(
@@ -185,6 +196,7 @@ describe('GlobalSearchPage', () => {
       expect(parsed.from).toBe('2026-06-01T00:00:00.000Z');
       expect(parsed.to).toBe('2026-07-01T00:00:00.000Z');
     });
+    await openFilters(user);
     expect(screen.getByRole('button', { name: 'Source' }).textContent).toContain('Slack');
     expect(inputValue(screen.getByLabelText('From'))).toBe('2026-06-01');
     expect(inputValue(screen.getByLabelText('To'))).toBe('2026-06-30');
@@ -257,9 +269,7 @@ describe('GlobalSearchPage', () => {
     render(<GlobalSearchPage initialQuery="docs" />);
 
     expect(await screen.findByText('Semantic search is not configured.')).toBeTruthy();
-    expect(
-      screen.getByText(/Related evidence · Acme renewal · 3 signals · 1 status source/i),
-    ).toBeTruthy();
+    expect(screen.getByText(/Evidence · Acme renewal · 3 signals · 1 status source/i)).toBeTruthy();
     expect(screen.getByRole('link', { name: /Objects/ }).getAttribute('href')).toBe('/app/objects');
     const external = screen.getByRole('link', { name: /Public help docs/ });
     expect(external.getAttribute('href')).toBe('/help');
@@ -304,7 +314,7 @@ describe('GlobalSearchPage', () => {
     render(<GlobalSearchPage initialQuery="review" />);
 
     expect(await screen.findByText('No due date')).toBeTruthy();
-    expect(screen.getByText('todo · launch')).toBeTruthy();
+    expect(screen.getAllByText('todo · launch')).toHaveLength(2);
     expect(screen.getAllByText('No due date')).toHaveLength(1);
   });
 

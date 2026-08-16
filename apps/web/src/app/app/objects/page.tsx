@@ -187,44 +187,23 @@ export default async function ObjectsIndexPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <PageHeader
-          title="Objects"
-          subtitle="Projects, people, decisions, and other durable team context."
-          metadata={[
-            { label: 'Shown', value: rows.length, mono: true },
-            ...(singleType
-              ? [{ label: 'Type', value: OBJECT_TYPE_LABELS[singleType] ?? singleType }]
-              : []),
-          ]}
-        />
-        <div className="shrink-0">
+      <PageHeader
+        variant="collection"
+        title="Objects"
+        subtitle="Projects, people, decisions, and other durable team context."
+        metadata={[
+          { label: 'Shown', value: rows.length, mono: true },
+          ...(singleType
+            ? [{ label: 'Type', value: OBJECT_TYPE_LABELS[singleType] ?? singleType }]
+            : []),
+        ]}
+        trailing={
           <Button asChild>
             <Link href="/app/objects/new">New object</Link>
           </Button>
-        </div>
-      </div>
+        }
+      />
       <WorkSubnav current="/app/objects" />
-
-      <nav aria-label="Filter by type" className="flex flex-wrap gap-1.5 text-xs">
-        <Link
-          href={objectsTypeHref(null, params)}
-          aria-current={!hasTypeFilter ? 'page' : undefined}
-          className={`rounded-sm border px-2.5 py-1 transition-colors ${!hasTypeFilter ? 'border-signal/40 bg-signal-soft text-signal' : 'border-border text-fg-muted hover:bg-surface-2 hover:text-fg'}`}
-        >
-          All
-        </Link>
-        {Object.entries(OBJECT_TYPE_LABELS).map(([key, label]) => (
-          <Link
-            key={key}
-            href={objectsTypeHref(key, params)}
-            aria-current={singleType === key ? 'page' : undefined}
-            className={`rounded-sm border px-2.5 py-1 transition-colors ${selectedTypes.includes(key) ? 'border-signal/40 bg-signal-soft text-signal' : 'border-border text-fg-muted hover:bg-surface-2 hover:text-fg'}`}
-          >
-            {label}
-          </Link>
-        ))}
-      </nav>
 
       <WorkFilterBar
         mode="objects"
@@ -392,16 +371,6 @@ function objectsPageHref(params: {
   if (params.cursor) query.set('cursor', params.cursor);
   const qs = query.toString();
   return qs ? `/app/objects?${qs}` : '/app/objects';
-}
-
-function objectsTypeHref(
-  type: string | null,
-  params: Record<string, string | string[] | undefined>,
-): string {
-  const filters = workFilterHiddenParams(params, WORK_FILTER_PARAM_KEYS);
-  if (type) filters.type = type;
-  else delete filters.type;
-  return objectsPageHref({ filters });
 }
 
 function firstParam(value: string | string[] | undefined): string {

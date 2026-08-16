@@ -44,7 +44,7 @@ function taskParam(value: string | string[] | undefined): string | null {
 
 function viewParam(value: string | string[] | undefined): TaskView {
   const v = Array.isArray(value) ? value[0] : value;
-  return v === 'list' ? v : 'kanban';
+  return v === 'kanban' ? 'kanban' : 'list';
 }
 
 export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'>) {
@@ -145,6 +145,7 @@ export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'
       }
     >
       <PageHeader
+        variant="collection"
         title="Tasks"
         subtitle="Assigned work and follow-ups from your timeline."
         metadata={[
@@ -175,7 +176,7 @@ export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'
               ]
             : []),
         ]}
-        className={rows.length > 0 ? 'w-full shrink-0 px-4 pt-5 md:px-8' : 'shrink-0'}
+        className={rows.length > 0 ? 'w-full shrink-0 px-4 md:px-8' : 'shrink-0'}
       />
       <WorkSubnav
         current="/app/tasks"

@@ -1154,7 +1154,7 @@ function TimelineMomentRow({
       id={moment.anchorId}
       aria-current={selected ? 'true' : undefined}
       className={cn(
-        'group relative -mx-3 grid scroll-mt-24 grid-cols-1 border-b border-border px-3 transition-colors hover:bg-surface md:grid-cols-[6.75rem_minmax(0,1fr)]',
+        'group relative -mx-3 grid min-h-11 scroll-mt-24 grid-cols-1 border-b border-border px-3 transition-colors hover:bg-surface md:grid-cols-[5.75rem_minmax(0,1fr)]',
         selected && 'bg-surface shadow-[inset_3px_0_0_var(--signal)]',
       )}
       data-moment-id={moment.id}
@@ -1167,7 +1167,7 @@ function TimelineMomentRow({
           className="absolute -top-16 left-0 size-px scroll-mt-24 overflow-hidden target:h-full target:w-0.5 target:bg-signal"
         />
       ))}
-      <div className="relative px-0 pt-4 font-mono text-xs text-fg-dim md:px-0 md:py-4 md:pr-4">
+      <div className="relative px-0 pt-2 font-mono text-xs text-fg-dim md:px-0 md:py-2.5 md:pr-3">
         <span data-visual-dynamic="timeline-time">{moment.timeLabel}</span>
         <span
           aria-hidden="true"
@@ -1176,14 +1176,14 @@ function TimelineMomentRow({
         <span
           aria-hidden="true"
           className={cn(
-            'absolute right-[-7px] top-5 hidden size-3.5 items-center justify-center border border-border-strong bg-bg text-fg-dim transition-colors md:flex',
+            'absolute right-[-7px] top-3.5 hidden size-3.5 items-center justify-center border border-border-strong bg-bg text-fg-dim transition-colors md:flex',
             selected && 'border-signal text-signal',
           )}
         >
           <KindIcon aria-hidden="true" className="size-2.5" />
         </span>
       </div>
-      <div className="min-w-0 py-3 md:py-4 md:pl-4 md:pr-2">
+      <div className="min-w-0 py-2 md:pl-3 md:pr-2">
         <button
           type="button"
           aria-label={[title, previewText, moment.timeLabel, 'View evidence']
@@ -1204,7 +1204,7 @@ function TimelineMomentRow({
           }}
           className="block w-full rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong"
         >
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-dim">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-fg-dim">
             <span className="inline-flex items-center gap-1 font-medium text-fg-muted">
               <KindIcon aria-hidden="true" className="size-3.5" />
               {moment.sourceLabel}
@@ -1224,12 +1224,12 @@ function TimelineMomentRow({
               View evidence · {sourceCountLabel}
             </span>
           </div>
-          <p className="mt-1.5 line-clamp-2 break-words text-base font-medium leading-6 text-fg md:max-w-[88ch] md:text-[15px]">
+          <p className="mt-0.5 line-clamp-1 break-words text-sm font-medium leading-5 text-fg md:max-w-[88ch]">
             {title}
           </p>
           <p
             className={cn(
-              'mt-1 line-clamp-2 break-words text-sm leading-5 text-fg-dim',
+              'line-clamp-1 break-words text-xs leading-4 text-fg-dim',
               !compact && 'md:max-w-[84ch]',
             )}
           >
@@ -1237,7 +1237,7 @@ function TimelineMomentRow({
           </p>
         </button>
         {hasSupportingContext ? (
-          <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
             <ImpactStrip items={moment.impactItems} timezone={timezone} />
             <RelatedEvidenceStrip clusters={moment.artifactClusters} />
             {transcriptionStatus ? (
@@ -1250,7 +1250,7 @@ function TimelineMomentRow({
         {meetingHref ? (
           <Link
             href={meetingHref}
-            className="mt-3 inline-flex items-center gap-1.5 rounded-sm border border-border bg-surface px-2 py-1 text-xs text-fg-muted transition-colors hover:text-signal"
+            className="mt-1 inline-flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs text-fg-muted transition-colors hover:bg-surface hover:text-signal"
           >
             <ExternalLink aria-hidden="true" className="size-3" />
             Open transcript

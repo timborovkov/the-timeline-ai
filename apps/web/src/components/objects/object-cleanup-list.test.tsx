@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -10,6 +10,8 @@ const fakes = vi.hoisted(() => ({
   refresh: vi.fn(),
   confirm: vi.fn(),
   bulkArchiveObjectsAction: vi.fn(),
+  updateObjectAction: vi.fn(),
+  toastError: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
@@ -18,7 +20,9 @@ vi.mock('@/components/ui/app-dialog', () => ({
 }));
 vi.mock('@/app/actions/objects', () => ({
   bulkArchiveObjectsAction: fakes.bulkArchiveObjectsAction,
+  updateObjectAction: fakes.updateObjectAction,
 }));
+vi.mock('sonner', () => ({ toast: { error: fakes.toastError, success: vi.fn() } }));
 
 const { ObjectCleanupList } = await import('./object-cleanup-list.js');
 
@@ -54,6 +58,7 @@ describe('ObjectCleanupList', () => {
     vi.clearAllMocks();
     fakes.confirm.mockResolvedValue(false);
     fakes.bulkArchiveObjectsAction.mockResolvedValue({ ok: true });
+    fakes.updateObjectAction.mockResolvedValue({ ok: true });
   });
 
   it('does not render legacy agentSuggested badges on object rows', () => {
@@ -93,16 +98,56 @@ describe('ObjectCleanupList', () => {
     await user.click(screen.getByRole('button', { name: 'Select' }));
 
     expect(screen.queryByRole('link', { name: 'Merge' })).toBeNull();
-    expect(screen.getByText('Merge').getAttribute('aria-disabled')).toBe('true');
+    expect(screen.queryByText('Merge')).toBeNull();
 
     await user.click(screen.getByRole('checkbox', { name: 'Select First object' }));
-    expect(screen.getByRole('status').textContent).toBe('1 selected');
+    expect(screen.getByRole('status').textContent).toBe('1 object selected');
+    expect(screen.getByText('Merge').getAttribute('aria-disabled')).toBe('true');
     expect(screen.queryByRole('link', { name: 'Merge' })).toBeNull();
 
     await user.click(screen.getByRole('checkbox', { name: 'Select Second object' }));
-    expect(screen.getByRole('status').textContent).toBe('2 selected');
+    expect(screen.getByRole('status').textContent).toBe('2 objects selected');
     expect(screen.getByRole('link', { name: 'Merge' }).getAttribute('href')).toContain(
       '/app/objects/merge?ids=object-1%2Cobject-2',
     );
+  });
+
+  it('edits displayed metadata optimistically from quiet row triggers', async () => {
+    const user = userEvent.setup();
+    render(<ObjectCleanupList rows={[object()]} typeLabels={{ task: 'Task' }} />);
+
+    await user.click(
+      screen.getByRole('button', { name: 'Status for Legacy suggested cleanup row' }),
+    );
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Status' }), 'doing');
+
+    expect(fakes.updateObjectAction).toHaveBeenCalledWith({
+      id: 'object-1',
+      status: 'doing',
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: 'Status for Legacy suggested cleanup row' }).textContent,
+      ).toContain('In progress');
+    });
+  });
+
+  it('rolls failed metadata edits back and reports the row error', async () => {
+    const user = userEvent.setup();
+    fakes.updateObjectAction.mockResolvedValueOnce({ error: 'Connection lost' });
+    render(<ObjectCleanupList rows={[object()]} typeLabels={{ task: 'Task' }} />);
+
+    await user.click(
+      screen.getByRole('button', { name: 'Priority for Legacy suggested cleanup row' }),
+    );
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Priority' }), '1');
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toBe('Connection lost');
+    });
+    expect(
+      screen.getByRole('button', { name: 'Priority for Legacy suggested cleanup row' }).textContent,
+    ).toContain('No priority');
+    expect(fakes.toastError).toHaveBeenCalledWith('Connection lost');
   });
 });

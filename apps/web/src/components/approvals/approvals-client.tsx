@@ -964,7 +964,7 @@ function PageBulkActions({
     0,
   );
   return (
-    <div className="flex flex-wrap items-center justify-end gap-2">
+    <div className="flex min-h-11 flex-wrap items-center justify-end gap-2 border-y border-signal/30 bg-signal-soft px-3 py-1.5">
       {canAccept && mergeReviewItemCount > 0 ? (
         <span className="text-xs text-fg-dim">
           {mergeReviewItemCount} merge{' '}
@@ -1035,8 +1035,8 @@ function ApprovalBundleRow({
   );
   const mergeReviewCount = pendingItems.length - bulkAcceptItems.length;
   return (
-    <article className="border-t border-border py-3">
-      <div className="flex flex-wrap items-center gap-3">
+    <article className="border-t border-border">
+      <div className="flex min-h-11 flex-wrap items-center gap-3 bg-surface/70 px-3 py-1.5">
         <ApprovalBundleHeader bundle={bundle} timezone={timezone} />
         {allowBulkAccept && bulkAcceptItems.length > 1 ? (
           <Button
@@ -1059,7 +1059,7 @@ function ApprovalBundleRow({
           </Button>
         ) : null}
       </div>
-      <ul className="mt-3 divide-y divide-border border border-border bg-bg">
+      <ul className="divide-y divide-border border-x border-border bg-bg">
         {bundle.items.map((item) => (
           <ApprovalItemRow
             bundle={bundle}
@@ -1089,18 +1089,20 @@ function ApprovalBundleHeader({
 }) {
   const source = approvalSourceLabel(bundle);
   return (
-    <div className="min-w-0 flex-1">
-      <div className="text-xs text-fg-dim">
-        {source} ·{' '}
-        <span className="font-mono tabular-nums">
-          {formatDisplayDateTime(bundle.createdAt, { timezone })}
-        </span>
-      </div>
-      <h2 className="mt-1 text-base font-semibold tracking-tight text-fg">
+    <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-0.5">
+      <h2 className="min-w-0 truncate text-sm font-semibold text-fg">
         {displayText(bundle.title, { timezone })}
       </h2>
+      <div className="text-[11px] text-fg-dim">
+        {source} ·{' '}
+        <time className="font-mono tabular-nums" dateTime={bundle.createdAt}>
+          {formatDisplayDateTime(bundle.createdAt, { timezone })}
+        </time>
+      </div>
       {bundle.summary ? (
-        <p className="mt-1 text-sm text-fg-muted">{displayText(bundle.summary, { timezone })}</p>
+        <p className="basis-full truncate text-xs text-fg-muted">
+          {displayText(bundle.summary, { timezone })}
+        </p>
       ) : null}
     </div>
   );
@@ -1134,7 +1136,7 @@ function ApprovalItemRow({
   taskCategoriesEnabled: boolean;
 }) {
   return (
-    <li className="grid gap-3 p-3 md:grid-cols-[minmax(0,1.3fr)_minmax(10rem,0.8fr)_minmax(9rem,auto)]">
+    <li className="grid min-h-11 gap-2 px-3 py-2 md:grid-cols-[minmax(0,1.3fr)_minmax(10rem,0.8fr)_minmax(9rem,auto)] md:items-center">
       <ApprovalItemMain actionFailed={actionFailed} item={item} timezone={timezone} />
       <ApprovalItemPayload
         bundle={bundle}

@@ -1145,7 +1145,7 @@ describe('TaskBoard', () => {
     );
     renderBoard(null, rows, 'list');
 
-    await user.click(screen.getByRole('checkbox', { name: 'Select all visible tasks' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Select all Open tasks' }));
     await user.selectOptions(screen.getByLabelText('Bulk field'), 'category');
     await user.selectOptions(screen.getByLabelText('Bulk category'), 'engineering');
     await user.click(screen.getByRole('button', { name: 'Apply' }));
@@ -1189,7 +1189,8 @@ describe('TaskBoard', () => {
       />,
     );
 
-    await user.selectOptions(screen.getByLabelText('Status for Send proposal'), 'doing');
+    await user.click(screen.getByRole('button', { name: 'Status for Send proposal' }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Status' }), 'doing');
     await waitFor(() => {
       expect(fakes.updateObjectAction).toHaveBeenCalledWith({
         id: 'task-1',
@@ -1197,9 +1198,9 @@ describe('TaskBoard', () => {
       });
     });
     await waitFor(() => {
-      expect(screen.getByLabelText<HTMLSelectElement>('Status for Send proposal').value).toBe(
-        'doing',
-      );
+      expect(
+        screen.getByRole('button', { name: 'Status for Send proposal' }).textContent,
+      ).toContain('In progress');
     });
 
     rerender(
@@ -1214,9 +1215,9 @@ describe('TaskBoard', () => {
       />,
     );
     await waitFor(() => {
-      expect(screen.getByLabelText<HTMLSelectElement>('Status for Send proposal').value).toBe(
-        'doing',
-      );
+      expect(
+        screen.getByRole('button', { name: 'Status for Send proposal' }).textContent,
+      ).toContain('In progress');
     });
 
     rerender(
@@ -1231,7 +1232,9 @@ describe('TaskBoard', () => {
       />,
     );
 
-    expect(screen.getByLabelText<HTMLSelectElement>('Status for Send proposal').value).toBe('done');
+    expect(screen.getByRole('button', { name: 'Status for Send proposal' }).textContent).toContain(
+      'Done',
+    );
   });
 
   it('keeps the latest repeated status edit visible before refreshed rows arrive', async () => {
@@ -1248,14 +1251,16 @@ describe('TaskBoard', () => {
       />,
     );
 
-    await user.selectOptions(screen.getByLabelText('Status for Send proposal'), 'doing');
+    await user.click(screen.getByRole('button', { name: 'Status for Send proposal' }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Status' }), 'doing');
     await waitFor(() => {
-      expect(screen.getByLabelText<HTMLSelectElement>('Status for Send proposal').value).toBe(
-        'doing',
-      );
+      expect(
+        screen.getByRole('button', { name: 'Status for Send proposal' }).textContent,
+      ).toContain('In progress');
     });
 
-    await user.selectOptions(screen.getByLabelText('Status for Send proposal'), 'done');
+    await user.click(screen.getByRole('button', { name: 'Status for Send proposal' }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Status' }), 'done');
     await waitFor(() => {
       expect(fakes.updateObjectAction).toHaveBeenCalledWith({
         id: 'task-1',
@@ -1274,7 +1279,9 @@ describe('TaskBoard', () => {
         nextCursor={null}
       />,
     );
-    expect(screen.getByLabelText<HTMLSelectElement>('Status for Send proposal').value).toBe('done');
+    expect(screen.getByRole('button', { name: 'Status for Send proposal' }).textContent).toContain(
+      'Done',
+    );
 
     rerender(
       <TaskBoard
@@ -1287,6 +1294,8 @@ describe('TaskBoard', () => {
         nextCursor={null}
       />,
     );
-    expect(screen.getByLabelText<HTMLSelectElement>('Status for Send proposal').value).toBe('done');
+    expect(screen.getByRole('button', { name: 'Status for Send proposal' }).textContent).toContain(
+      'Done',
+    );
   });
 });
