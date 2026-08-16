@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createAudioEventAction,
   createTextEventAction,
+  removeConversationalEventAction,
   requestAudioUploadAction,
 } from '@/app/actions/events';
 
@@ -18,6 +19,7 @@ const fakes = vi.hoisted(() => ({
   fakeResolveActiveTeam: vi.fn(),
   fakeRequireMembership: vi.fn(),
   fakeCreateEvent: vi.fn(),
+  fakeRemoveConversationalMessage: vi.fn(),
   fakeSafeMarkOnboardingStep: vi.fn(),
   fakeDeleteCacheKey: vi.fn(),
   fakeGetSignedPutObjectUrl: vi.fn(),
@@ -60,14 +62,14 @@ vi.mock('@timeline/shared/team-scope', () => ({
     requireMembership: fakes.fakeRequireMembership,
     timeline: {
       createEvent: fakes.fakeCreateEvent,
-      removeConversationalMessage: vi.fn(),
+      removeConversationalMessage: fakes.fakeRemoveConversationalMessage,
     },
   }),
 }));
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = '22222222-2222-2222-2222-222222222222';
-const RAW_EVENT_ID = '33333333-3333-3333-3333-333333333333';
+const RAW_EVENT_ID = '33333333-3333-4333-8333-333333333333';
 
 function form(values: Record<string, string | string[]>): FormData {
   const fd = new FormData();
@@ -91,6 +93,7 @@ beforeEach(() => {
   fakes.fakeResolveActiveTeam.mockResolvedValue({ active: { teamId: TEAM_ID } });
   fakes.fakeRequireMembership.mockResolvedValue('member');
   fakes.fakeCreateEvent.mockResolvedValue({ id: RAW_EVENT_ID, teamId: TEAM_ID });
+  fakes.fakeRemoveConversationalMessage.mockResolvedValue(true);
   fakes.fakeGetSignedPutObjectUrl.mockResolvedValue('https://rustfs.test/signed-audio');
   fakes.fakeEnqueueExtractJob.mockResolvedValue(undefined);
   fakes.fakeEnqueueEmbedJob.mockResolvedValue(undefined);
@@ -164,6 +167,46 @@ describe('createTextEventAction', () => {
     );
     expect(fakes.fakeDbUpdate).toHaveBeenCalledTimes(3);
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/timeline');
+  });
+});
+
+describe('removeConversationalEventAction', () => {
+  it('returns typed errors without mutating when authentication or input is invalid', async () => {
+    fakes.fakeAuth.mockResolvedValue(null);
+    await expect(removeConversationalEventAction({}, form({ id: RAW_EVENT_ID }))).resolves.toEqual({
+      error: 'Not signed in',
+    });
+    expect(fakes.fakeRemoveConversationalMessage).not.toHaveBeenCalled();
+
+    fakes.fakeAuth.mockResolvedValue({ user: { id: USER_ID } });
+    await expect(removeConversationalEventAction({}, form({ id: 'not-an-id' }))).resolves.toEqual({
+      error: 'Invalid evidence item',
+    });
+    expect(fakes.fakeRemoveConversationalMessage).not.toHaveBeenCalled();
+  });
+
+  it('reports missing evidence and revalidates source truth only after a successful tombstone', async () => {
+    fakes.fakeRemoveConversationalMessage.mockResolvedValueOnce(false);
+    await expect(removeConversationalEventAction({}, form({ id: RAW_EVENT_ID }))).resolves.toEqual({
+      error: 'Evidence item not found or already removed',
+    });
+    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
+
+    fakes.fakeRemoveConversationalMessage.mockResolvedValueOnce(true);
+    await expect(removeConversationalEventAction({}, form({ id: RAW_EVENT_ID }))).resolves.toEqual({
+      ok: true,
+    });
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/timeline');
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app');
+  });
+
+  it('returns a retryable public error when tombstoning fails', async () => {
+    fakes.fakeRemoveConversationalMessage.mockRejectedValueOnce(new Error('database offline'));
+
+    const result = await removeConversationalEventAction({}, form({ id: RAW_EVENT_ID }));
+
+    expect(result.error).toMatch(/^Could not remove this evidence item\. Try again\. Reference: /);
+    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
   });
 });
 

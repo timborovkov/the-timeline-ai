@@ -1247,11 +1247,11 @@ test('timeline inspector edits visibility and removes conversational events', as
 
     await inspector
       .locator('summary')
-      .filter({ hasText: /^Visibility ·/ })
+      .filter({ hasText: /^Team visibility$/ })
       .click();
-    await inspector.getByRole('combobox').selectOption('private');
-    await inspector.getByRole('button', { name: 'Save' }).click();
-    await expect(inspector.getByText('Saved')).toBeVisible();
+    await inspector.getByLabel('Who can see this evidence?').selectOption('private');
+    await inspector.getByRole('button', { name: 'Save visibility' }).click();
+    await expect(inspector.getByRole('status')).toHaveText('Visibility saved');
     await expect
       .poll(async () => {
         const rows = await sql<{ visibility: string }[]>`
@@ -1265,9 +1265,18 @@ test('timeline inspector edits visibility and removes conversational events', as
       })
       .toBe('private');
 
+    await inspector.getByRole('button', { name: /Actions for Slack evidence/ }).click();
+    await ownerPage.getByRole('menuitem', { name: 'Remove evidence' }).click();
+    await expect(
+      ownerPage.getByText(
+        /tombstone this captured Telegram or Slack message and all stored revisions/i,
+      ),
+    ).toBeVisible();
     await waitForPost(ownerPage, '/app/timeline', () =>
-      inspector.locator('[title="Remove from timeline"]').click(),
+      ownerPage.getByRole('button', { name: 'Remove evidence' }).click(),
     );
+    await expect(inspector).toBeHidden();
+    await expect(ownerPage.getByText('Evidence removed from Timeline')).toBeVisible();
     await expect
       .poll(async () => {
         const rows = await sql<{ deleted: boolean }[]>`

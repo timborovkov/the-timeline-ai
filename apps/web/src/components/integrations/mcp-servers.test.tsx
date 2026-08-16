@@ -39,6 +39,11 @@ function serverRow(overrides: Partial<Parameters<typeof McpServersUi>[0]['server
   };
 }
 
+async function selectServerAction(user: ReturnType<typeof userEvent.setup>, name: string) {
+  await user.click(screen.getByRole('button', { name: 'Actions for Research MCP' }));
+  await user.click(await screen.findByRole('menuitem', { name }));
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -236,14 +241,16 @@ describe('McpServersUi', () => {
     });
     expect(routerRefresh).toHaveBeenCalledOnce();
 
-    await user.click(screen.getByRole('button', { name: 'Remove' }));
+    await selectServerAction(user, 'Remove');
     expect(screen.getByText('Remove team MCP server?')).toBeTruthy();
     expect(
       screen.getByText(
         'Research MCP will be removed from this team. Everyone on this team will lose access to its tools.',
       ),
     ).toBeTruthy();
-    await user.click(screen.getByRole('button', { name: 'Remove' }));
+    const confirmRemove = screen.getAllByRole('button', { name: 'Remove' }).at(-1);
+    if (!confirmRemove) throw new Error('expected remove confirmation button');
+    await user.click(confirmRemove);
 
     await waitFor(() => {
       expect(requests[1]).toEqual({
@@ -262,7 +269,7 @@ describe('McpServersUi', () => {
 
     render(<McpServersUi ownership="personal" servers={[serverRow({ authType: 'none' })]} />);
 
-    await user.click(screen.getByRole('button', { name: 'Remove' }));
+    await selectServerAction(user, 'Remove');
     expect(screen.getByText('Remove personal MCP server?')).toBeTruthy();
     expect(
       screen.getByText(
@@ -352,7 +359,7 @@ describe('McpServersUi', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     render(<McpServersUi servers={[serverRow({ authType: 'none' })]} />);
-    await user.click(screen.getByRole('button', { name: 'Remove' }));
+    await selectServerAction(user, 'Remove');
     const confirmRemove = screen.getAllByRole('button', { name: 'Remove' }).at(-1);
     if (!confirmRemove) throw new Error('expected remove confirmation button');
     await user.click(confirmRemove);

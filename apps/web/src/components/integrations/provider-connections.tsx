@@ -7,7 +7,9 @@ import { useId, useMemo, useReducer, useRef, useState } from 'react';
 
 import { InlineError } from '@/components/inline-error';
 import { Button } from '@/components/ui/button';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
+import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { Skeleton } from '@/components/ui/skeleton';
 import { queryKeys } from '@/lib/query-keys';
 import { groupResourcesByKind, providerLabel, shareDisplayName } from '@/lib/resource-labels';
@@ -294,7 +296,6 @@ function PersonalConnectionToolbar({
   isSourcesLoading,
   hasSourceLoadError,
   confirmingDeletion,
-  deleteConfirmationId,
   deleteButtonRef,
   onSave,
   onDelete,
@@ -304,7 +305,6 @@ function PersonalConnectionToolbar({
   isSourcesLoading: boolean;
   hasSourceLoadError: boolean;
   confirmingDeletion: boolean;
-  deleteConfirmationId: string;
   deleteButtonRef: React.RefObject<HTMLButtonElement | null>;
   onSave: () => void;
   onDelete: () => void;
@@ -334,26 +334,20 @@ function PersonalConnectionToolbar({
           </>
         )}
       </div>
-      <Button
-        size="sm"
-        className="min-h-9 sm:ml-auto"
-        disabled={busy !== null || !canSave}
-        onClick={onSave}
-      >
-        {busy === 'save' ? 'Saving' : 'Save sharing'}
-      </Button>
-      <Button
-        ref={deleteButtonRef}
-        size="sm"
-        variant="ghost"
-        className="min-h-9"
-        disabled={busy !== null}
-        aria-controls={deleteConfirmationId}
-        aria-expanded={confirmingDeletion}
-        onClick={onDelete}
-      >
-        Delete account
-      </Button>
+      <ItemActionGroup label="Actions for this provider account" className="sm:ml-auto">
+        <Button size="sm" className="min-h-9" disabled={busy !== null || !canSave} onClick={onSave}>
+          {busy === 'save' ? 'Saving' : 'Save sharing'}
+        </Button>
+        <ItemOverflowMenu targetLabel="this provider account" triggerRef={deleteButtonRef}>
+          <DropdownMenuItem
+            disabled={busy !== null || confirmingDeletion}
+            className="text-destructive focus:text-destructive"
+            onSelect={onDelete}
+          >
+            Delete account
+          </DropdownMenuItem>
+        </ItemOverflowMenu>
+      </ItemActionGroup>
     </div>
   );
 }
@@ -575,7 +569,6 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
             isSourcesLoading={isLoading}
             hasSourceLoadError={Boolean(sourceLoadError)}
             confirmingDeletion={state.confirmDelete}
-            deleteConfirmationId={deleteConfirmationId}
             deleteButtonRef={deleteButtonRef}
             onSave={() => void save()}
             onDelete={() => {

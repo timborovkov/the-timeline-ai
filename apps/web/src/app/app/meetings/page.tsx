@@ -22,6 +22,7 @@ import { SectionHeading } from '@/components/section-heading';
 import { StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ItemActionGroup } from '@/components/ui/item-actions';
 import { Label } from '@/components/ui/label';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -381,10 +382,7 @@ function SavedMeetingsSection({
                     {saved.autoJoinEnabled ? 'auto-join on' : 'manual join'}
                   </p>
                 </div>
-                <fieldset
-                  aria-label={`Actions for ${displayMeetingLabel(saved)}`}
-                  className="flex min-w-0 flex-wrap items-center gap-2 border-0 p-0 sm:justify-end"
-                >
+                <ItemActionGroup label={`Actions for ${displayMeetingLabel(saved)}`}>
                   <JoinSavedMeetingButton query={saved.aliases[0] ?? saved.title} />
                   <PinOverflowMenu
                     target={{ kind: 'saved_meeting', key: saved.id }}
@@ -392,7 +390,7 @@ function SavedMeetingsSection({
                     initialPinned={pinState[`saved_meeting:${saved.id}`] ?? false}
                   />
                   <ArchiveSavedMeetingButton savedMeetingId={saved.id} />
-                </fieldset>
+                </ItemActionGroup>
               </div>
               {saved.description ? (
                 <p className="break-words text-sm text-fg-muted">{saved.description}</p>
@@ -480,10 +478,7 @@ function MeetingCapturesSection({
                     </time>
                   </span>
                 </Link>
-                <fieldset
-                  aria-label={`Actions for ${displayMeetingLabel(meeting)}`}
-                  className="flex min-w-0 flex-wrap items-center gap-2 border-0 p-0 sm:justify-end"
-                >
+                <ItemActionGroup label={`Actions for ${displayMeetingLabel(meeting)}`}>
                   {meeting.status === 'scheduled' ? (
                     <SkipScheduledMeetingButton meetingId={meeting.id} />
                   ) : null}
@@ -492,7 +487,7 @@ function MeetingCapturesSection({
                     title={displayMeetingLabel(meeting)}
                     initialPinned={pinState[`meeting:${meeting.id}`] ?? false}
                   />
-                </fieldset>
+                </ItemActionGroup>
               </div>
             </li>
           ))}

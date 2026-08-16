@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { ItemActionGroup } from '@/components/ui/item-actions';
 import { Label } from '@/components/ui/label';
 import { networkActionError, readPublicApiError } from '@/lib/client-api-error';
 
@@ -500,16 +501,18 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
                     </p>
                   ) : null}
                 </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={mutation.busy}
-                  onClick={() => {
-                    void revoke(k.id, k.name);
-                  }}
-                >
-                  {mutation.busy ? 'Revoking…' : 'Revoke'}
-                </Button>
+                <ItemActionGroup label={`Actions for ${k.name}`}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={mutation.busy}
+                    onClick={() => {
+                      void revoke(k.id, k.name);
+                    }}
+                  >
+                    {mutation.busy ? 'Revoking…' : 'Revoke'}
+                  </Button>
+                </ItemActionGroup>
               </li>
             );
           })}
