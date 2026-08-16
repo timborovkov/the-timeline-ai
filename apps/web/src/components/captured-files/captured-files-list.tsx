@@ -28,6 +28,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { ItemActionGroup } from '@/components/ui/item-actions';
 import { displaySourceLabel } from '@/lib/display-labels';
 import { selectedValues } from '@/lib/filter-values';
 import { statusLabel } from '@/lib/status-labels';
@@ -332,7 +333,9 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
                   key: 'source',
                   label: 'Source',
                   value: uiState.sourceFilter,
-                  onRemove: () => dispatchUi({ type: 'source', value: '' }),
+                  onRemove: () => {
+                    dispatchUi({ type: 'source', value: '' });
+                  },
                 },
               ]
             : []),
@@ -342,7 +345,9 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
                   key: 'type',
                   label: 'Type',
                   value: uiState.typeFilter,
-                  onRemove: () => dispatchUi({ type: 'fileType', value: '' }),
+                  onRemove: () => {
+                    dispatchUi({ type: 'fileType', value: '' });
+                  },
                 },
               ]
             : []),
@@ -352,7 +357,9 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
                   key: 'status',
                   label: 'Status',
                   value: uiState.statusFilter,
-                  onRemove: () => dispatchUi({ type: 'status', value: '' }),
+                  onRemove: () => {
+                    dispatchUi({ type: 'status', value: '' });
+                  },
                 },
               ]
             : []),
@@ -362,7 +369,9 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
                   key: 'date',
                   label: 'Date',
                   value: uiState.dateFilter,
-                  onRemove: () => dispatchUi({ type: 'date', value: ALL }),
+                  onRemove: () => {
+                    dispatchUi({ type: 'date', value: ALL });
+                  },
                 },
               ]
             : []),
@@ -373,7 +382,9 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
               type="button"
               variant="ghost"
               size="sm"
-              onClick={() => dispatchUi({ type: 'clear_filters' })}
+              onClick={() => {
+                dispatchUi({ type: 'clear_filters' });
+              }}
             >
               Clear all
             </Button>
@@ -546,7 +557,7 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
           </>
         }
         actions={
-          <div className="flex min-w-0 flex-wrap items-center gap-1">
+          <ItemActionGroup label={`Actions for ${presentation.displayTitle}`}>
             <PinOverflowMenu
               target={{ kind: 'document', key: file.id }}
               title={presentation.displayTitle}
@@ -579,7 +590,7 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
                 Promote
               </Button>
             </DialogTrigger>
-          </div>
+          </ItemActionGroup>
         }
       />
     </li>

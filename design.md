@@ -166,7 +166,9 @@ table.
 - `CollectionRow` is at least 44px on desktop. It favors one line: selection or
   type cue, human title, compact context, metadata, and overflow. Mobile uses
   two lines: title plus context, then wrapping metadata. Non-board collections
-  must never force horizontal viewport scrolling.
+  must never force horizontal viewport scrolling. Row actions use the shared
+  `ItemActionGroup` and `ItemOverflowMenu` primitives so item-owned controls
+  stay labeled, wrap without scrolling, and remain visible without hover.
 - `EditableMetadata` is a quiet, borderless trigger with a minimum 40px hit
   target. Select-like changes save immediately and optimistically. Text and
   date changes commit with Apply or Enter and cancel with Escape. Failed saves
@@ -292,7 +294,10 @@ opens Work → Pinned.
 Timeline is the strongest archive expression. Each row leads with time, source,
 human title, one supporting line, and meaningful impact/status. The rail, sticky
 dates, evidence quick view, and pagination remain. Exact capture and provider
-details move into the inspector. Compact Home moments reuse the same formatter.
+details move into the inspector. The default view ends at the current instant so
+materialized calendar occurrences do not displace recent work. Upcoming context
+is an explicit seven-day view; the Calendar surface owns the complete future
+schedule. Compact Home moments reuse the same formatter.
 
 ### Ask
 
@@ -328,6 +333,25 @@ cards, calendar entries, timeline moments, and global-search results keep the
 same action inside their overflow menu, whose accessible label includes the
 target title. Controls update optimistically, retain focus, and restore the
 prior state with a concise error when a mutation fails.
+
+Item-owned actions stay inside the row, card, inspector evidence block, or
+detail region for the item they affect. Use the shared row placement for dense
+items and the shared footer placement for cards that need persistent controls;
+both wrap without horizontal scrolling at 320 px and at 200% zoom. Every action
+group has an accessible label naming its target. Keep the primary workflow
+action visible. For three or more independent actions, keep that primary action
+visible and move edit/state, utility, and destructive actions into a
+target-labeled overflow menu, in that order. Destructive actions never become
+the visible primary action when a safer workflow action exists. Coordinated
+decision sets such as Accept, Change, and Reject remain inline because they are
+one workflow, not independent commands. Overflow menus support keyboard
+navigation, close on Escape, and restore focus to their trigger.
+
+Collection toolbars, page-level actions, form Save/Cancel controls, modal
+footers, field-level table editors, and visible detail-page Pin/Unpin controls
+remain in their established ownership zones. Item actions are always visible
+or reachable without hover; hidden or paginated items expose no detached or
+orphaned controls.
 
 Task category is a compact secondary label in the task/type line, subordinate
 to title, status, assignee, due date, and priority. Pending and failed states

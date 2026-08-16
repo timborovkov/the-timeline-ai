@@ -101,11 +101,15 @@ describe('collection primitives', () => {
     expect(remove).toHaveBeenCalledOnce();
 
     const triggers = screen.getAllByRole('button', { name: /Filters/ });
-    await user.click(triggers[0]!);
+    const firstTrigger = triggers[0];
+    const secondTrigger = triggers[1];
+    if (!firstTrigger || !secondTrigger)
+      throw new Error('expected desktop and mobile filter triggers');
+    await user.click(firstTrigger);
     expect(screen.getByRole('dialog')).toBeTruthy();
     await user.keyboard('{Escape}');
 
-    await user.click(triggers[1]!);
+    await user.click(secondTrigger);
     expect(screen.getByText('Refine the visible collection.')).toBeTruthy();
   });
 
@@ -132,7 +136,9 @@ describe('collection primitives', () => {
     await user.click(trigger);
     expect(screen.getByRole('combobox', { name: 'Priority' })).toBeTruthy();
     await user.keyboard('{Escape}');
-    await waitFor(() => expect(document.activeElement).toBe(trigger));
+    await waitFor(() => {
+      expect(document.activeElement).toBe(trigger);
+    });
   });
 
   it('cancels date drafts on Escape and commits them with Enter', async () => {

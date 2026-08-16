@@ -510,9 +510,9 @@ function KanbanCard({
           editor={
             <select
               value={item.responsibleUserId ?? ''}
-              onChange={(event) =>
-                onUpdateItem(item.id, { responsibleUserId: event.currentTarget.value || null })
-              }
+              onChange={(event) => {
+                onUpdateItem(item.id, { responsibleUserId: event.currentTarget.value || null });
+              }}
               className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
               aria-label="Responsible person"
             >
@@ -533,11 +533,11 @@ function KanbanCard({
           editor={
             <MetadataDateEditor
               defaultValue={item.dueAt ? item.dueAt.toISOString().slice(0, 10) : ''}
-              onApply={(value) =>
+              onApply={(value) => {
                 onUpdateItem(item.id, {
                   dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
-                })
-              }
+                });
+              }}
             />
           }
         />
@@ -555,11 +555,11 @@ function KanbanCard({
           editor={
             <select
               value={item.priority ?? ''}
-              onChange={(event) =>
+              onChange={(event) => {
                 onUpdateItem(item.id, {
                   priority: event.currentTarget.value ? Number(event.currentTarget.value) : null,
-                })
-              }
+                });
+              }}
               className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
               aria-label="Priority"
             >
@@ -582,7 +582,8 @@ function KanbanCard({
               onSubmit={(event) => {
                 event.preventDefault();
                 const data = new FormData(event.currentTarget);
-                const nextStep = String(data.get('nextStep') ?? '').trim();
+                const rawNextStep = data.get('nextStep');
+                const nextStep = (typeof rawNextStep === 'string' ? rawNextStep : '').trim();
                 onUpdateItem(item.id, { nextStep: nextStep || null });
               }}
               className="flex items-center gap-2"

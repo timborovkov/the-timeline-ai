@@ -13,8 +13,8 @@ import {
 import { useQueries } from '@tanstack/react-query';
 import { TASK_CATEGORY_OPTIONS, type TaskCategory } from '@timeline/shared/task-categories/types';
 import { presentDueDate } from '@timeline/shared/time';
-import Link from 'next/link';
 import { GripVertical } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   useEffect,
@@ -58,6 +58,7 @@ import { useTaskCategoryPolling } from '@/components/tasks/task-category-polling
 import { TaskCategorySelect } from '@/components/tasks/task-category-select';
 import { TaskProjectSelect } from '@/components/tasks/task-project-select';
 import { useAppDialog } from '@/components/ui/app-dialog';
+import { ItemActionGroup } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText } from '@/lib/display-dates';
 import { objectDetailHref } from '@/lib/object-links';
@@ -1354,9 +1355,15 @@ function TaskListRow({
                   currentProjectLabel={primaryProject?.projectName}
                   projectArchived={Boolean(primaryProject?.archivedAt)}
                   projects={projects}
-                  onProjectChange={(project) => onProjectChange(row.id, project)}
-                  onProjectChangeCommitted={() => onProjectChangeCommitted(row.id)}
-                  onProjectChangeReverted={() => onProjectChangeReverted(row.id)}
+                  onProjectChange={(project) => {
+                    onProjectChange(row.id, project);
+                  }}
+                  onProjectChangeCommitted={() => {
+                    onProjectChangeCommitted(row.id);
+                  }}
+                  onProjectChangeReverted={() => {
+                    onProjectChangeReverted(row.id);
+                  }}
                 />
               }
             />
@@ -1432,11 +1439,13 @@ function TaskListRow({
           </>
         }
         actions={
-          <PinOverflowMenu
-            target={{ kind: 'object', key: row.id }}
-            title={displayText(title)}
-            initialPinned={pinned}
-          />
+          <ItemActionGroup label={`Actions for ${displayText(title)}`}>
+            <PinOverflowMenu
+              target={{ kind: 'object', key: row.id }}
+              title={displayText(title)}
+              initialPinned={pinned}
+            />
+          </ItemActionGroup>
         }
       />
     </li>
@@ -1527,7 +1536,9 @@ function TaskBulkToolbar({
       <SelectionBar
         count={selectedCount}
         label={selectedCount === 1 ? 'task selected' : 'tasks selected'}
-        onClear={() => setSelectedIds(new Set())}
+        onClear={() => {
+          setSelectedIds(new Set());
+        }}
         className="shrink-0"
         actions={
           <>
@@ -1798,8 +1809,12 @@ function TaskCard({
       .then((result) => {
         if (result.error) setMetadataError(result.error);
       })
-      .catch((cause: unknown) => setMetadataError(errorMessage(cause, 'Save failed')))
-      .finally(() => setMetadataSaving(false));
+      .catch((cause: unknown) => {
+        setMetadataError(errorMessage(cause, 'Save failed'));
+      })
+      .finally(() => {
+        setMetadataSaving(false);
+      });
   };
   return (
     <li
@@ -1830,11 +1845,13 @@ function TaskCard({
         >
           {displayText(title)}
         </Link>
-        <PinOverflowMenu
-          target={{ kind: 'object', key: row.id }}
-          title={displayText(title)}
-          initialPinned={pinned}
-        />
+        <ItemActionGroup label={`Actions for ${displayText(title)}`}>
+          <PinOverflowMenu
+            target={{ kind: 'object', key: row.id }}
+            title={displayText(title)}
+            initialPinned={pinned}
+          />
+        </ItemActionGroup>
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-fg-dim">
         <span>Task</span>
@@ -1865,9 +1882,15 @@ function TaskCard({
               currentProjectLabel={primaryProject?.projectName}
               projectArchived={Boolean(primaryProject?.archivedAt)}
               projects={projects}
-              onProjectChange={(project) => onProjectChange(row.id, project)}
-              onProjectChangeCommitted={() => onProjectChangeCommitted(row.id)}
-              onProjectChangeReverted={() => onProjectChangeReverted(row.id)}
+              onProjectChange={(project) => {
+                onProjectChange(row.id, project);
+              }}
+              onProjectChangeCommitted={() => {
+                onProjectChangeCommitted(row.id);
+              }}
+              onProjectChangeReverted={() => {
+                onProjectChangeReverted(row.id);
+              }}
             />
           }
         />
@@ -1880,9 +1903,9 @@ function TaskCard({
           editor={
             <select
               value={row.assigneeUserId ?? ''}
-              onChange={(event) =>
-                saveMetadata({ assigneeUserId: event.currentTarget.value || null })
-              }
+              onChange={(event) => {
+                saveMetadata({ assigneeUserId: event.currentTarget.value || null });
+              }}
               className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
             >
               <option value="">Unassigned</option>
@@ -1901,11 +1924,11 @@ function TaskCard({
           editor={
             <MetadataDateEditor
               defaultValue={row.dueAt ? row.dueAt.toISOString().slice(0, 10) : ''}
-              onApply={(value) =>
+              onApply={(value) => {
                 saveMetadata({
                   dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
-                })
-              }
+                });
+              }}
             />
           }
         />
@@ -1922,11 +1945,11 @@ function TaskCard({
           editor={
             <select
               value={row.priority ?? ''}
-              onChange={(event) =>
+              onChange={(event) => {
                 saveMetadata({
                   priority: event.currentTarget.value ? Number(event.currentTarget.value) : null,
-                })
-              }
+                });
+              }}
               className="h-10 rounded-sm border border-border bg-bg px-2 text-xs"
             >
               <option value="">None</option>

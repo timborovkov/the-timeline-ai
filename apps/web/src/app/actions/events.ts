@@ -16,6 +16,7 @@ import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { safeMarkOnboardingStep } from '@/lib/onboarding';
+import { publicActionError } from '@/lib/public-error';
 import { requireRedisQueue } from '@/lib/queue';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
@@ -444,32 +445,51 @@ const removeTelegramEventSchema = z.object({
   id: z.uuid(),
 });
 
-export async function removeConversationalEventAction(formData: FormData): Promise<void> {
+export interface RemoveConversationalEventState {
+  ok?: boolean;
+  error?: string;
+}
+
+export async function removeConversationalEventAction(
+  _prev: RemoveConversationalEventState,
+  formData: FormData,
+): Promise<RemoveConversationalEventState> {
   return runSentryServerAction('remove_conversational_event', async () => {
     const session = await auth();
-    if (!session?.user) return;
+    if (!session?.user) return { error: 'Not signed in' };
     const { active } = await resolveActiveTeam(session.user.id);
-    if (!active) return;
+    if (!active) return { error: 'No active team' };
 
     const parsed = removeTelegramEventSchema.safeParse({ id: formData.get('id') });
-    if (!parsed.success) return;
+    if (!parsed.success) return { error: 'Invalid evidence item' };
 
     const scope = withTeam(db, active.teamId, session.user.id);
     try {
-      await scope.timeline.removeConversationalMessage(parsed.data.id);
+      const removed = await scope.timeline.removeConversationalMessage(parsed.data.id);
+      if (!removed) return { error: 'Evidence item not found or already removed' };
     } catch (err) {
       log.warn({ err, rawEventId: parsed.data.id }, 'remove_conversational_event_failed');
       reportCaughtError(err, {
         surface: 'server_action',
         operation: 'remove_conversational_event',
       });
+      return {
+        error: publicActionError(err, {
+          operation: 'remove_conversational_event',
+          fallback: 'Could not remove this evidence item. Try again.',
+        }),
+      };
     }
     revalidatePath('/app/timeline');
+    revalidatePath('/app');
+    return { ok: true };
   });
 }
 
-export async function removeTelegramEventAction(formData: FormData): Promise<void> {
+export async function removeTelegramEventAction(
+  formData: FormData,
+): Promise<RemoveConversationalEventState> {
   return runSentryServerAction('remove_telegram_event', async () => {
-    await removeConversationalEventAction(formData);
+    return removeConversationalEventAction({}, formData);
   });
 }

@@ -17,7 +17,9 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { startTransition, useActionState, useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 
 import type { TimelineCapturedFile } from '@/lib/timeline-captured-files';
 import type { TimelineArtifactCluster, TimelineEvent } from '@/lib/use-paginated-queries';
@@ -25,10 +27,11 @@ import type { TimelineArtifactCluster, TimelineEvent } from '@/lib/use-paginated
 import { removeConversationalEventAction } from '@/app/actions/events';
 import { DocumentPreview } from '@/components/documents/document-preview';
 import { EmptyAction } from '@/components/empty-action';
-import { EventVisibilityForm } from '@/components/event-visibility-form';
+import { EventVisibilityForm, type SavedEventVisibility } from '@/components/event-visibility-form';
 import { useInspector } from '@/components/inspector-context';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { TechnicalDetails } from '@/components/technical-details';
+import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -37,6 +40,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { statusLabel } from '@/lib/status-labels';
@@ -492,15 +497,24 @@ function groupedByDate(moments: TimelineMoment[]): [string, TimelineMoment[]][] 
 
 function InspectorBody({
   moment,
+  audioUrlMap,
+  currentUserId,
+  isAdmin,
+  members,
   capturedFilesByEventId,
   timezone,
 }: {
   moment: TimelineMoment;
+  audioUrlMap?: Map<string, string>;
+  currentUserId: string;
+  isAdmin: boolean;
+  members: { id: string; label: string }[];
   capturedFilesByEventId: Record<string, TimelineCapturedFile[]>;
   timezone: string;
 }) {
   const summary = sourceTruthSummary(moment);
-  const visibleRawEvents = moment.rawEvents.slice(0, INSPECTOR_RAW_EVENT_LIMIT);
+  const [visibleRawEventCount, setVisibleRawEventCount] = useState(INSPECTOR_RAW_EVENT_LIMIT);
+  const visibleRawEvents = moment.rawEvents.slice(0, visibleRawEventCount);
   const hiddenRawEventCount = moment.rawEvents.length - visibleRawEvents.length;
   const actorByTelegramUserId = actorLabelsByTelegramUserId(moment.rawEvents);
 
@@ -554,16 +568,28 @@ function InspectorBody({
               key={event.id}
               event={event}
               actorLabel={rawEventActorLabel(event, actorByTelegramUserId)}
+              audioUrl={audioUrlMap?.get(event.id)}
+              canEditVisibility={canEditVisibility(event, currentUserId)}
+              canRemove={canRemoveConversational(event, currentUserId, isAdmin)}
+              members={members}
               capturedFiles={capturedFilesByEventId[event.id] ?? []}
               timezone={timezone}
             />
           ))}
         </ol>
         {hiddenRawEventCount > 0 ? (
-          <p className="mt-2 rounded-sm border border-border bg-surface-2 px-2 py-1.5 text-fg-dim">
-            + {hiddenRawEventCount} older evidence item
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="mt-2 h-8"
+            onClick={() => {
+              setVisibleRawEventCount((count) => count + INSPECTOR_RAW_EVENT_LIMIT);
+            }}
+          >
+            Show {hiddenRawEventCount} older evidence item
             {hiddenRawEventCount === 1 ? '' : 's'}
-          </p>
+          </Button>
         ) : null}
       </section>
       {moment.artifactClusters.length > 0 ? (
@@ -691,15 +717,27 @@ function RelatedEvidenceStrip({ clusters }: { clusters: TimelineArtifactCluster[
 function SourceEvidenceCard({
   event,
   actorLabel,
+  audioUrl,
+  canEditVisibility: visibilityEditable,
+  canRemove,
+  members,
   capturedFiles,
   timezone,
 }: {
   event: TimelineEvent;
   actorLabel: string;
+  audioUrl?: string;
+  canEditVisibility: boolean;
+  canRemove: boolean;
+  members: { id: string; label: string }[];
   capturedFiles: TimelineCapturedFile[];
   timezone: string;
 }) {
   const [quickViewOpen, setQuickViewOpen] = useState(false);
+  const [savedVisibility, setSavedVisibility] = useState<SavedEventVisibility>({
+    visibility: event.visibility,
+    visibilityUserIds: event.visibilityUserIds ?? [],
+  });
   const documentLink = rawEventDocumentLink(event);
   const context = rawEventContextLabel(event);
   const transcriptionStatus = transcriptionStatusMessage(event);
@@ -793,7 +831,167 @@ function SourceEvidenceCard({
       {transcriptionStatus && body !== transcriptionStatus ? (
         <p className="mt-2 text-sm italic text-fg-dim">{transcriptionStatus}</p>
       ) : null}
+      <SourceEvidenceActions
+        event={event}
+        actorLabel={actorLabel}
+        audioUrl={audioUrl}
+        visibility={savedVisibility}
+        canEditVisibility={visibilityEditable}
+        canRemove={canRemove}
+        members={members}
+        onVisibilitySaved={setSavedVisibility}
+        timezone={timezone}
+      />
     </li>
+  );
+}
+
+function visibilityLabel(value: SavedEventVisibility): string {
+  if (value.visibility === 'private') return 'Private';
+  if (value.visibility === 'specific_users') {
+    return `Specific people · ${value.visibilityUserIds.length}`;
+  }
+  return 'Team visibility';
+}
+
+function evidenceTargetLabel(event: TimelineEvent, actorLabel: string, timezone: string): string {
+  const firstLine = event.contentText?.split(/\r?\n/, 1)[0]?.trim();
+  const subject = firstLine?.length ? firstLine : 'Evidence item';
+  const compactSubject = subject.length > 60 ? `${subject.slice(0, 57)}…` : subject;
+  return `${formatSourceLabel(event.source)} evidence “${compactSubject}” from ${actorLabel} at ${formatTimestamp(event.occurredAt, timezone)}`;
+}
+
+function SourceEvidenceActions({
+  event,
+  actorLabel,
+  audioUrl,
+  visibility,
+  canEditVisibility: visibilityEditable,
+  canRemove,
+  members,
+  onVisibilitySaved,
+  timezone,
+}: {
+  event: TimelineEvent;
+  actorLabel: string;
+  audioUrl?: string;
+  visibility: SavedEventVisibility;
+  canEditVisibility: boolean;
+  canRemove: boolean;
+  members: { id: string; label: string }[];
+  onVisibilitySaved: (value: SavedEventVisibility) => void;
+  timezone: string;
+}) {
+  const targetLabel = evidenceTargetLabel(event, actorLabel, timezone);
+  const hasActions = [Boolean(event.contentAudioUrl), visibilityEditable, canRemove].some(Boolean);
+  if (!hasActions) return null;
+
+  return (
+    <ItemActionGroup
+      placement="footer"
+      label={`Actions for ${targetLabel}`}
+      className="items-start sm:justify-start"
+    >
+      {event.contentAudioUrl ? (
+        audioUrl ? (
+          <audio
+            src={audioUrl}
+            controls
+            aria-label={`Audio for ${targetLabel}`}
+            preload="metadata"
+            className="h-8 w-full basis-full"
+          >
+            <track kind="captions" src="data:text/vtt,WEBVTT" srcLang="en" label="Captions" />
+          </audio>
+        ) : (
+          <p role="status" className="w-full basis-full text-xs text-fg-dim">
+            Audio unavailable for this evidence item.
+          </p>
+        )
+      ) : null}
+      {visibilityEditable ? (
+        <details className="min-w-0 basis-full text-xs">
+          <summary className="w-fit cursor-pointer rounded-sm px-1 py-1.5 font-medium text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/30">
+            {visibilityLabel(visibility)}
+          </summary>
+          <EventVisibilityForm
+            eventId={event.id}
+            visibility={visibility.visibility}
+            visibilityUserIds={visibility.visibilityUserIds}
+            members={members}
+            onSaved={onVisibilitySaved}
+          />
+        </details>
+      ) : null}
+      {canRemove ? <EvidenceRemovalAction event={event} targetLabel={targetLabel} /> : null}
+    </ItemActionGroup>
+  );
+}
+
+function EvidenceRemovalAction({
+  event,
+  targetLabel,
+}: {
+  event: TimelineEvent;
+  targetLabel: string;
+}) {
+  const [state, action, pending] = useActionState(removeConversationalEventAction, {});
+  const dialog = useAppDialog();
+  const inspector = useInspector();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!state.ok) return;
+    inspector.hide();
+    router.refresh();
+    toast.success('Evidence removed from Timeline');
+    window.setTimeout(() => {
+      const active = document.activeElement;
+      if (!(active instanceof HTMLElement) || active === document.body || !active.isConnected) {
+        document.querySelector<HTMLElement>('[data-inspector-focus-fallback]')?.focus();
+      }
+    }, 0);
+  }, [inspector, router, state.ok]);
+
+  const requestRemoval = () => {
+    void dialog
+      .confirm({
+        title: 'Remove this evidence from Timeline?',
+        description:
+          'Timeline will tombstone this captured Telegram or Slack message and all stored revisions. This does not delete the message from Telegram or Slack, and derived summaries may update.',
+        confirmLabel: 'Remove evidence',
+        cancelLabel: 'Keep evidence',
+        destructive: true,
+      })
+      .then((confirmed) => {
+        if (!confirmed) return;
+        const formData = new FormData();
+        formData.set('id', event.id);
+        startTransition(() => {
+          action(formData);
+        });
+      });
+  };
+
+  return (
+    <>
+      <ItemOverflowMenu targetLabel={targetLabel}>
+        <DropdownMenuItem
+          disabled={pending}
+          className="text-destructive focus:text-destructive"
+          onSelect={requestRemoval}
+        >
+          <Trash2 aria-hidden="true" />
+          {pending ? 'Removing evidence…' : 'Remove evidence'}
+        </DropdownMenuItem>
+      </ItemOverflowMenu>
+      {state.error ? (
+        <p role="alert" className="w-full basis-full text-xs text-destructive">
+          {state.error} Open actions and try again.
+        </p>
+      ) : null}
+      {dialog.node}
+    </>
   );
 }
 
@@ -836,95 +1034,6 @@ function CapturedFileEvidence({ file }: { file: TimelineCapturedFile }) {
         </p>
       ) : null}
     </div>
-  );
-}
-
-function InspectorActions({
-  moment,
-  audioUrlMap,
-  currentUserId,
-  isAdmin,
-  members,
-  timezone,
-}: {
-  moment: TimelineMoment;
-  audioUrlMap?: Map<string, string>;
-  currentUserId: string;
-  isAdmin: boolean;
-  members: { id: string; label: string }[];
-  timezone: string;
-}) {
-  const editableEvents = moment.rawEvents.filter((event) =>
-    canEditVisibility(event, currentUserId),
-  );
-  const removableEvents = moment.rawEvents.filter((event) =>
-    canRemoveConversational(event, currentUserId, isAdmin),
-  );
-  const audioEvents = moment.rawEvents.filter((event) => event.contentAudioUrl);
-  if (editableEvents.length === 0 && removableEvents.length === 0 && audioEvents.length === 0) {
-    return null;
-  }
-  return (
-    <section>
-      <h3 className="mb-2 text-sm font-semibold text-fg">Controls</h3>
-      <div className="space-y-3">
-        {audioEvents.map((event) =>
-          audioUrlMap?.get(event.id) ? (
-            <audio
-              key={event.id}
-              src={audioUrlMap.get(event.id)}
-              controls
-              aria-label="Voice memo"
-              preload="metadata"
-              className="w-full"
-            >
-              <track kind="captions" src="data:text/vtt,WEBVTT" srcLang="en" label="Captions" />
-            </audio>
-          ) : (
-            <p
-              key={event.id}
-              className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim"
-            >
-              [audio unavailable]
-            </p>
-          ),
-        )}
-        {editableEvents.map((event) => (
-          <details key={event.id} className="text-xs">
-            <summary className="cursor-pointer font-mono uppercase tracking-[0.1em] text-fg-dim">
-              Visibility ·{' '}
-              <span
-                data-visual-dynamic="timeline-timestamp"
-                className="inline-block min-w-[28ch] whitespace-nowrap"
-              >
-                {formatTimestamp(event.occurredAt, timezone)}
-              </span>
-            </summary>
-            <EventVisibilityForm
-              eventId={event.id}
-              visibility={event.visibility}
-              visibilityUserIds={event.visibilityUserIds}
-              members={members}
-            />
-          </details>
-        ))}
-        {removableEvents.map((event) => (
-          <form key={event.id} action={removeConversationalEventAction}>
-            <input type="hidden" name="id" value={event.id} />
-            <Button
-              type="submit"
-              variant="ghost"
-              size="sm"
-              className="h-8 px-2 text-fg-dim hover:text-danger"
-              title="Remove from timeline"
-            >
-              <Trash2 aria-hidden="true" className="mr-1.5 size-3.5" />
-              Remove {formatTimestamp(event.occurredAt, timezone)}
-            </Button>
-          </form>
-        ))}
-      </div>
-    </section>
   );
 }
 
@@ -990,15 +1099,11 @@ function momentInspectorContent({
       <div className="space-y-5">
         <InspectorBody
           moment={moment}
-          capturedFilesByEventId={capturedFilesByEventId}
-          timezone={timezone}
-        />
-        <InspectorActions
-          moment={moment}
           audioUrlMap={audioUrlMap}
           currentUserId={currentUserId}
           isAdmin={isAdmin}
           members={members}
+          capturedFilesByEventId={capturedFilesByEventId}
           timezone={timezone}
         />
         <InspectorTechnicalDetails moment={moment} timezone={timezone} />

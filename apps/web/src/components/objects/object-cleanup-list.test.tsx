@@ -142,7 +142,9 @@ describe('ObjectCleanupList', () => {
     );
     await user.selectOptions(screen.getByRole('combobox', { name: 'Priority' }), '1');
 
-    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('Connection lost'));
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toBe('Connection lost');
+    });
     expect(
       screen.getByRole('button', { name: 'Priority for Legacy suggested cleanup row' }).textContent,
     ).toContain('No priority');

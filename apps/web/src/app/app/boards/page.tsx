@@ -5,9 +5,10 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 
 import { BoardCreateDialog } from '@/components/boards/board-create-form';
-import { PageHeader } from '@/components/page-header';
 import { CollectionRow } from '@/components/collections/collection-row';
+import { PageHeader } from '@/components/page-header';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
+import { ItemActionGroup } from '@/components/ui/item-actions';
 import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -90,11 +91,13 @@ export default async function BoardsIndexPage() {
                     </>
                   }
                   actions={
-                    <PinOverflowMenu
-                      target={{ kind: 'board', key: board.id }}
-                      title={board.name}
-                      initialPinned={board.pinned}
-                    />
+                    <ItemActionGroup label={`Actions for ${board.name}`}>
+                      <PinOverflowMenu
+                        target={{ kind: 'board', key: board.id }}
+                        title={board.name}
+                        initialPinned={board.pinned}
+                      />
+                    </ItemActionGroup>
                   }
                 />
               </li>

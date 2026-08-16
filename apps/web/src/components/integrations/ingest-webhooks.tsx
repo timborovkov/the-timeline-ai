@@ -6,7 +6,9 @@ import { useEffect, useReducer } from 'react';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
+import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { Label } from '@/components/ui/label';
 
 interface CredentialRow {
@@ -317,7 +319,7 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
                         : ' · no active credential'}
                     </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
+                  <ItemActionGroup label={`Actions for ${webhook.name}`}>
                     <Button
                       size="sm"
                       variant="ghost"
@@ -326,15 +328,16 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
                     >
                       Rotate
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={Boolean(webhook.disabledAt)}
-                      onClick={() => void disable(webhook.id, webhook.name)}
-                    >
-                      Disable
-                    </Button>
-                  </div>
+                    <ItemOverflowMenu targetLabel={webhook.name}>
+                      <DropdownMenuItem
+                        disabled={Boolean(webhook.disabledAt)}
+                        className="text-destructive focus:text-destructive"
+                        onSelect={() => void disable(webhook.id, webhook.name)}
+                      >
+                        Disable
+                      </DropdownMenuItem>
+                    </ItemOverflowMenu>
+                  </ItemActionGroup>
                 </div>
                 <div className="flex flex-wrap gap-3 text-sm">
                   <label className="flex items-center gap-2">

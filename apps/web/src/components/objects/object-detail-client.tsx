@@ -49,6 +49,7 @@ import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { TaskCategorySelect } from '@/components/tasks/task-category-select';
 import { TaskProjectSelect } from '@/components/tasks/task-project-select';
 import { TechnicalDetails } from '@/components/technical-details';
+import { ItemActionGroup } from '@/components/ui/item-actions';
 import { WorkSubnav } from '@/components/work-subnav';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
@@ -1741,7 +1742,9 @@ function ObjectNoteItem({
       <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
         <span>{formatDisplayDateTime(note.createdAt, { timezone })}</span>
         {isOwner && !isEditing ? (
-          <div className="flex gap-3">
+          <ItemActionGroup
+            label={`Actions for note from ${formatDisplayDateTime(note.createdAt, { timezone })}`}
+          >
             <button
               type="button"
               disabled={pending}
@@ -1762,7 +1765,7 @@ function ObjectNoteItem({
             >
               Delete
             </button>
-          </div>
+          </ItemActionGroup>
         ) : null}
       </div>
     </li>
@@ -2215,16 +2218,20 @@ function ObjectRelationshipsSection({
                   relationship.kind === 'child' &&
                   relationship.otherType === 'project'
                 ) ? (
-                  <button
-                    type="button"
-                    disabled={pending || isOptimisticRelationship(relationship)}
-                    onClick={() => {
-                      onRemoveRelationship(relationship.id, relationship.otherId);
-                    }}
-                    className="text-xs text-destructive hover:underline"
+                  <ItemActionGroup
+                    label={`Actions for relationship with ${displayText(relationship.otherName)}`}
                   >
-                    Unlink
-                  </button>
+                    <button
+                      type="button"
+                      disabled={pending || isOptimisticRelationship(relationship)}
+                      onClick={() => {
+                        onRemoveRelationship(relationship.id, relationship.otherId);
+                      }}
+                      className="text-xs text-destructive hover:underline"
+                    >
+                      Unlink
+                    </button>
+                  </ItemActionGroup>
                 ) : null}
               </div>
             </li>

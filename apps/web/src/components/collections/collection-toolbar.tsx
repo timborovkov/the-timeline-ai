@@ -24,6 +24,10 @@ interface ActiveFilter {
   onRemove?: () => void;
 }
 
+function filterLabelText(label: ReactNode, fallback: string): string {
+  return typeof label === 'string' || typeof label === 'number' ? String(label) : fallback;
+}
+
 export function CollectionToolbar({
   search,
   count,
@@ -123,7 +127,7 @@ export function CollectionToolbar({
                 (filter.href ? (
                   <a
                     href={filter.href}
-                    aria-label={`Remove ${String(filter.label)} filter`}
+                    aria-label={`Remove ${filterLabelText(filter.label, filter.key)} filter`}
                     className="inline-flex size-6 items-center justify-center rounded-sm hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
                   >
                     <X aria-hidden="true" className="size-3" />
@@ -132,7 +136,7 @@ export function CollectionToolbar({
                   <button
                     type="button"
                     onClick={filter.onRemove}
-                    aria-label={`Remove ${String(filter.label)} filter`}
+                    aria-label={`Remove ${filterLabelText(filter.label, filter.key)} filter`}
                     className="inline-flex size-6 items-center justify-center rounded-sm hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
                   >
                     <X aria-hidden="true" className="size-3" />

@@ -17,7 +17,8 @@ export function MetadataDateEditor({
       onSubmit={(event) => {
         event.preventDefault();
         const data = new FormData(event.currentTarget);
-        onApply(String(data.get('date') ?? ''));
+        const rawDate = data.get('date');
+        onApply(typeof rawDate === 'string' ? rawDate : '');
       }}
     >
       <input

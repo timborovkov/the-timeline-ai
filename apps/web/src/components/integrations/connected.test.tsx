@@ -37,6 +37,12 @@ function connectedRow(
   };
 }
 
+async function chooseDisconnect() {
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('button', { name: 'Actions for Monday.com — Acme' }));
+  await user.click(await screen.findByRole('menuitem', { name: 'Disconnect' }));
+}
+
 describe('ConnectedIntegrations', () => {
   it('formats server-rendered timestamps with the stable app locale and timezone', () => {
     render(
@@ -238,9 +244,9 @@ describe('ConnectedIntegrations', () => {
 
     render(<ConnectedIntegrations connected={[connectedRow()]} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+    await chooseDisconnect();
     expect(screen.getByText(/Future sync stops/i)).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Disconnect' })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: 'Disconnect' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Confirm disconnect' }));
 
     await waitFor(() => {
@@ -263,7 +269,7 @@ describe('ConnectedIntegrations', () => {
 
     render(<ConnectedIntegrations connected={[connectedRow()]} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+    await chooseDisconnect();
     fireEvent.click(screen.getByRole('button', { name: 'Confirm disconnect' }));
 
     expect(await screen.findByText('Connection failed (500).')).toBeTruthy();
@@ -289,7 +295,7 @@ describe('ConnectedIntegrations', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+    await chooseDisconnect();
     fireEvent.click(screen.getByRole('button', { name: 'Confirm disconnect' }));
 
     expect(await screen.findByText('Connection failed (500).')).toBeTruthy();
@@ -309,7 +315,7 @@ describe('ConnectedIntegrations', () => {
 
     render(<ConnectedIntegrations connected={[connectedRow()]} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+    await chooseDisconnect();
     fireEvent.click(screen.getByRole('button', { name: 'Confirm disconnect' }));
 
     expect(

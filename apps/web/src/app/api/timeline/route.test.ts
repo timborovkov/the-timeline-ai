@@ -164,6 +164,21 @@ describe('GET /api/timeline', () => {
     expect(fakes.fakeListEventsPage).not.toHaveBeenCalled();
   });
 
+  it('keeps upcoming events out of the default timeline', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-16T12:34:56.000Z'));
+
+    try {
+      await GET(request('/api/timeline'));
+
+      expect(fakes.fakeListEventsPage).toHaveBeenCalledWith(
+        expect.objectContaining({ to: new Date('2026-08-16T12:34:56.000Z') }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('forwards valid filters, serializes the page, hydrates authors, and signs audio URLs', async () => {
     fakes.fakeListEventsPage.mockResolvedValue({
       items: [event({ contentAudioUrl: 'audio/event-1.webm' })],
@@ -292,20 +307,27 @@ describe('GET /api/timeline', () => {
   });
 
   it('ignores invalid author, source, impact, and dates', async () => {
-    await GET(
-      request('/api/timeline?author=bad&source=jira&impact=meeting&from=nope&to=also-nope'),
-    );
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-16T12:34:56.000Z'));
 
-    expect(fakes.fakeListEventsPage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        authorUserId: undefined,
-        from: undefined,
-        to: undefined,
-        source: undefined,
-      }),
-    );
-    expect(fakes.fakeListImpactItems).toHaveBeenCalledWith(['event-1']);
-    expect(fakes.fakeListArtifactClusters).toHaveBeenCalledWith(['event-1']);
+    try {
+      await GET(
+        request('/api/timeline?author=bad&source=jira&impact=meeting&from=nope&to=also-nope'),
+      );
+
+      expect(fakes.fakeListEventsPage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          authorUserId: undefined,
+          from: undefined,
+          to: new Date('2026-08-16T12:34:56.000Z'),
+          source: undefined,
+        }),
+      );
+      expect(fakes.fakeListImpactItems).toHaveBeenCalledWith(['event-1']);
+      expect(fakes.fakeListArtifactClusters).toHaveBeenCalledWith(['event-1']);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('expands grouped source filters before querying timeline events', async () => {

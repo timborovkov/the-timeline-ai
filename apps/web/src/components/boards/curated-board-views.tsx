@@ -8,13 +8,13 @@ import type { BoardItemOptimisticPatch } from '@/components/boards/board-detail-
 import type * as boards from '@timeline/shared/boards';
 import type { Dispatch, SetStateAction } from 'react';
 
-import { DueDateDisplay } from '@/components/due-date-display';
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus, priorityTone } from '@/components/collections/collection-status';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { SelectionBar } from '@/components/collections/selection-bar';
+import { DueDateDisplay } from '@/components/due-date-display';
 import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { boardViewHref, type BoardLayout } from '@/lib/board-links';
@@ -483,7 +483,9 @@ function BoardBulkToolbar({
     <SelectionBar
       count={selectedCount}
       label={selectedCount === 1 ? 'board item selected' : 'board items selected'}
-      onClear={() => setSelectedIds(new Set())}
+      onClear={() => {
+        setSelectedIds(new Set());
+      }}
       actions={
         <>
           <select
@@ -744,7 +746,9 @@ export function CuratedBoardList({
                             type="checkbox"
                             checked={visibleSelectedIds.has(item.id)}
                             disabled={optimistic}
-                            onChange={(event) => toggleOne(item.id, event.currentTarget.checked)}
+                            onChange={(event) => {
+                              toggleOne(item.id, event.currentTarget.checked);
+                            }}
                             aria-label={`Select ${displayText(objectTitle)}`}
                             className="size-4 shrink-0 rounded-sm border-border disabled:opacity-50"
                           />

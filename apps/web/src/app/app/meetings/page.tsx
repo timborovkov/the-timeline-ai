@@ -7,10 +7,10 @@ import { redirect } from 'next/navigation';
 import type { MeetingRow, SavedMeetingRow } from '@timeline/shared/meetings';
 import type { Metadata } from 'next';
 
-import { EmptyAction } from '@/components/empty-action';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
+import { EmptyAction } from '@/components/empty-action';
 import {
   ArchiveSavedMeetingButton,
   EditSavedMeetingForm,
@@ -23,6 +23,7 @@ import { PageHeader } from '@/components/page-header';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { SectionHeading } from '@/components/section-heading';
 import { Button } from '@/components/ui/button';
+import { ItemActionGroup } from '@/components/ui/item-actions';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -409,10 +410,7 @@ function SavedMeetingsSection({
                   </>
                 }
                 actions={
-                  <fieldset
-                    aria-label={`Actions for ${displayMeetingLabel(saved)}`}
-                    className="flex min-w-0 flex-wrap items-center gap-1 border-0 p-0 sm:justify-end"
-                  >
+                  <ItemActionGroup label={`Actions for ${displayMeetingLabel(saved)}`}>
                     <JoinSavedMeetingButton query={saved.aliases[0] ?? saved.title} />
                     <PinOverflowMenu
                       target={{ kind: 'saved_meeting', key: saved.id }}
@@ -420,7 +418,7 @@ function SavedMeetingsSection({
                       initialPinned={pinState[`saved_meeting:${saved.id}`] ?? false}
                     />
                     <ArchiveSavedMeetingButton savedMeetingId={saved.id} />
-                  </fieldset>
+                  </ItemActionGroup>
                 }
               />
               <div className="border-b border-border/80 px-3 pb-2">
@@ -511,10 +509,7 @@ function MeetingCapturesSection({
                   </>
                 }
                 actions={
-                  <fieldset
-                    aria-label={`Actions for ${displayMeetingLabel(meeting)}`}
-                    className="flex min-w-0 flex-wrap items-center gap-2 border-0 p-0 sm:justify-end"
-                  >
+                  <ItemActionGroup label={`Actions for ${displayMeetingLabel(meeting)}`}>
                     {meeting.status === 'scheduled' ? (
                       <SkipScheduledMeetingButton meetingId={meeting.id} />
                     ) : null}
@@ -523,7 +518,7 @@ function MeetingCapturesSection({
                       title={displayMeetingLabel(meeting)}
                       initialPinned={pinState[`meeting:${meeting.id}`] ?? false}
                     />
-                  </fieldset>
+                  </ItemActionGroup>
                 }
               />
             </li>

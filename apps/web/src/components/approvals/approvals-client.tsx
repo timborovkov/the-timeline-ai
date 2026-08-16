@@ -36,6 +36,7 @@ import { EmptyAction } from '@/components/empty-action';
 import { EvidenceLink } from '@/components/evidence-link';
 import { TechnicalDetails } from '@/components/technical-details';
 import { Button } from '@/components/ui/button';
+import { ItemActionGroup } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { useProjectSearch } from '@/hooks/use-project-search';
 import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/display-dates';
@@ -1585,7 +1586,7 @@ function ApprovalItemActions({
   run: ApprovalAction;
 }) {
   return (
-    <div className="flex items-center justify-end gap-1.5">
+    <ItemActionGroup label={`Decision actions for ${displayText(item.title)}`}>
       {item.targetKind === 'object_merge' ? (
         <Button asChild size="sm" variant="outline" disabled={pending}>
           <Link href={objectMergeHref(item)}>
@@ -1626,7 +1627,7 @@ function ApprovalItemActions({
         <X className="size-4" />
         Reject
       </Button>
-    </div>
+    </ItemActionGroup>
   );
 }
 

@@ -16,12 +16,13 @@ import { useEffect, useMemo, useReducer } from 'react';
 import type { GlobalSearchKind, GlobalSearchResult } from '@timeline/shared/search';
 import type { ComponentType, SVGProps, SyntheticEvent } from 'react';
 
-import { DueDateDisplay } from '@/components/due-date-display';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
+import { DueDateDisplay } from '@/components/due-date-display';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
-import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { PageHeader } from '@/components/page-header';
+import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
+import { ItemActionGroup } from '@/components/ui/item-actions';
 import { Skeleton } from '@/components/ui/skeleton';
 import { isSchedulableObjectType } from '@/lib/due-dates';
 import { selectedValues } from '@/lib/filter-values';
@@ -287,11 +288,13 @@ function SearchResultRow({ result }: { result: GlobalSearchResult }) {
         result.externalHref ? (
           <ExternalLink aria-hidden="true" className="size-4 text-fg-dim" />
         ) : result.pinTarget ? (
-          <PinOverflowMenu
-            target={result.pinTarget}
-            title={result.title}
-            initialPinned={result.pinned ?? false}
-          />
+          <ItemActionGroup label={`Actions for ${result.title}`}>
+            <PinOverflowMenu
+              target={result.pinTarget}
+              title={result.title}
+              initialPinned={result.pinned ?? false}
+            />
+          </ItemActionGroup>
         ) : null
       }
     />

@@ -46,6 +46,7 @@ import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ItemActionGroup } from '@/components/ui/item-actions';
 import { queryKeys } from '@/lib/query-keys';
 import { type DocumentListPage, useDocumentListQuery } from '@/lib/use-paginated-queries';
 
@@ -766,19 +767,21 @@ function FolderList({
               context={f.visibility}
               metadata={<time dateTime={f.updatedAt}>{formatDate(f.updatedAt)}</time>}
               actions={
-                <Button
-                  type="button"
-                  onClick={() => {
-                    void onDeleteFolder(f.id);
-                  }}
-                  disabled={f.optimistic}
-                  variant="ghost"
-                  size="sm"
-                  aria-label={`Delete folder ${f.name}`}
-                  className="min-h-10 px-2 text-fg-muted opacity-100 transition-opacity hover:text-fg focus-visible:opacity-100 sm:opacity-0 sm:group-hover/collection-row:opacity-100"
-                >
-                  Delete
-                </Button>
+                <ItemActionGroup label={`Actions for ${f.name}`}>
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      void onDeleteFolder(f.id);
+                    }}
+                    disabled={f.optimistic}
+                    variant="ghost"
+                    size="sm"
+                    aria-label={`Delete folder ${f.name}`}
+                    className="min-h-10 px-2 text-fg-muted hover:text-fg"
+                  >
+                    Delete
+                  </Button>
+                </ItemActionGroup>
               }
             />
           </li>
@@ -874,7 +877,7 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
           </>
         }
         actions={
-          <div className="flex shrink-0 items-center gap-1">
+          <ItemActionGroup label={`Actions for ${title}`}>
             {sourceEventId ? (
               <EvidenceLink
                 eventId={sourceEventId}
@@ -894,7 +897,7 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
                 initialPinned={document.pinned}
               />
             ) : null}
-          </div>
+          </ItemActionGroup>
         }
       />
     </li>

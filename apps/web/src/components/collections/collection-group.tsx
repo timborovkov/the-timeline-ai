@@ -34,7 +34,9 @@ export function CollectionGroup({
           type="button"
           aria-expanded={open}
           aria-controls={contentId}
-          onClick={() => setOpen((current) => !current)}
+          onClick={() => {
+            setOpen((current) => !current);
+          }}
           className="flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-sm text-left text-xs font-medium text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
         >
           <ChevronDown

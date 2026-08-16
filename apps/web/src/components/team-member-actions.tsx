@@ -11,6 +11,7 @@ import {
 } from '@/app/actions/teams';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
+import { ItemActionGroup } from '@/components/ui/item-actions';
 
 type TeamAction = (formData: FormData) => void | Promise<void>;
 
@@ -146,7 +147,7 @@ export function PendingInviteActions({
   inviteId: string;
 }) {
   return (
-    <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+    <ItemActionGroup label={`Actions for invite to ${inviteEmail}`}>
       <form action={resendInviteAction} className="w-full sm:w-auto">
         <input type="hidden" name="inviteId" value={inviteId} />
         <SubmitButton label="Resend invite" pendingLabel="Resending invite…" />
@@ -160,6 +161,6 @@ export function PendingInviteActions({
         <input type="hidden" name="inviteId" value={inviteId} />
         <SubmitButton label="Revoke invite" pendingLabel="Revoking invite…" variant="destructive" />
       </ConfirmingActionForm>
-    </div>
+    </ItemActionGroup>
   );
 }

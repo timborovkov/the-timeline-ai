@@ -7,6 +7,7 @@ import { Suspense, useTransition } from 'react';
 
 import { archiveChatSessionAction } from '@/app/actions/chat';
 import { useAppDialog } from '@/components/ui/app-dialog';
+import { ItemActionGroup } from '@/components/ui/item-actions';
 import { cn } from '@/lib/utils';
 
 interface SessionEntry {
@@ -116,34 +117,39 @@ function SessionSidebarContent({
                       </span>
                     )}
                   </Link>
-                  <button
-                    type="button"
-                    disabled={pending}
-                    aria-label={`Archive chat: ${label}`}
-                    onClick={async () => {
-                      const confirmed = await dialog.confirm({
-                        title: 'Archive chat?',
-                        description: 'This hides the conversation from the sidebar.',
-                        confirmLabel: 'Archive chat',
-                        destructive: true,
-                      });
-                      if (!confirmed) return;
-                      startTransition(async () => {
-                        await archiveChatSessionAction({ sessionId: s.id });
-                        if (isActive) {
-                          const params = new URLSearchParams(search.toString());
-                          params.delete('session');
-                          router.push(
-                            params.toString() ? `${pathname}?${params.toString()}` : pathname,
-                          );
-                        }
-                        router.refresh();
-                      });
-                    }}
-                    className="absolute right-1 top-1 grid size-8 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-50"
+                  <ItemActionGroup
+                    label={`Actions for ${label}`}
+                    className="absolute right-1 top-1 w-auto"
                   >
-                    <Trash2 aria-hidden="true" className="size-3" />
-                  </button>
+                    <button
+                      type="button"
+                      disabled={pending}
+                      aria-label={`Archive chat: ${label}`}
+                      onClick={async () => {
+                        const confirmed = await dialog.confirm({
+                          title: 'Archive chat?',
+                          description: 'This hides the conversation from the sidebar.',
+                          confirmLabel: 'Archive chat',
+                          destructive: true,
+                        });
+                        if (!confirmed) return;
+                        startTransition(async () => {
+                          await archiveChatSessionAction({ sessionId: s.id });
+                          if (isActive) {
+                            const params = new URLSearchParams(search.toString());
+                            params.delete('session');
+                            router.push(
+                              params.toString() ? `${pathname}?${params.toString()}` : pathname,
+                            );
+                          }
+                          router.refresh();
+                        });
+                      }}
+                      className="grid size-8 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-50"
+                    >
+                      <Trash2 aria-hidden="true" className="size-3" />
+                    </button>
+                  </ItemActionGroup>
                 </li>
               );
             })}
@@ -228,34 +234,36 @@ function MobileSessionNavContent({
                         <span className="truncate">{sessionLabel(session)}</span>
                       </span>
                     </Link>
-                    <button
-                      type="button"
-                      disabled={pending}
-                      aria-label={`Archive chat: ${sessionLabel(session)}`}
-                      onClick={async () => {
-                        const confirmed = await dialog.confirm({
-                          title: 'Archive chat?',
-                          description: 'This hides the conversation from the session list.',
-                          confirmLabel: 'Archive chat',
-                          destructive: true,
-                        });
-                        if (!confirmed) return;
-                        startTransition(async () => {
-                          await archiveChatSessionAction({ sessionId: session.id });
-                          if (isActive) {
-                            const params = new URLSearchParams(search.toString());
-                            params.delete('session');
-                            router.push(
-                              params.toString() ? `${pathname}?${params.toString()}` : pathname,
-                            );
-                          }
-                          router.refresh();
-                        });
-                      }}
-                      className="grid size-9 shrink-0 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-50"
-                    >
-                      <Trash2 aria-hidden="true" className="size-3.5" />
-                    </button>
+                    <ItemActionGroup label={`Actions for ${sessionLabel(session)}`}>
+                      <button
+                        type="button"
+                        disabled={pending}
+                        aria-label={`Archive chat: ${sessionLabel(session)}`}
+                        onClick={async () => {
+                          const confirmed = await dialog.confirm({
+                            title: 'Archive chat?',
+                            description: 'This hides the conversation from the session list.',
+                            confirmLabel: 'Archive chat',
+                            destructive: true,
+                          });
+                          if (!confirmed) return;
+                          startTransition(async () => {
+                            await archiveChatSessionAction({ sessionId: session.id });
+                            if (isActive) {
+                              const params = new URLSearchParams(search.toString());
+                              params.delete('session');
+                              router.push(
+                                params.toString() ? `${pathname}?${params.toString()}` : pathname,
+                              );
+                            }
+                            router.refresh();
+                          });
+                        }}
+                        className="grid size-9 shrink-0 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-50"
+                      >
+                        <Trash2 aria-hidden="true" className="size-3.5" />
+                      </button>
+                    </ItemActionGroup>
                   </li>
                 );
               })}

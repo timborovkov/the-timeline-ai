@@ -26,6 +26,7 @@ import {
 } from '@/components/tasks/task-category-badge';
 import { TaskCategorySelect } from '@/components/tasks/task-category-select';
 import { useAppDialog } from '@/components/ui/app-dialog';
+import { ItemActionGroup } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText } from '@/lib/display-dates';
 import { isSchedulableObjectType } from '@/lib/due-dates';
@@ -273,7 +274,9 @@ export function ObjectCleanupList({ rows, typeLabels, pageInfo, sectionMoreHrefs
                           timezone={timezone}
                           selecting={selecting}
                           selected={isSelected}
-                          onToggle={() => toggle(object.id)}
+                          onToggle={() => {
+                            toggle(object.id);
+                          }}
                         />
                       );
                     })}
@@ -290,10 +293,10 @@ export function ObjectCleanupList({ rows, typeLabels, pageInfo, sectionMoreHrefs
 
 type ObjectEditableKey = 'status' | 'priority' | 'dueAt';
 type ObjectEditableValue = PinnableObjectRow[ObjectEditableKey];
-type ObjectFieldOverlay = {
+interface ObjectFieldOverlay {
   value: ObjectEditableValue;
   pendingValues: ObjectEditableValue[];
-};
+}
 
 const OBJECT_STATUS_OPTIONS: Record<string, string[]> = {
   deal: ['open', 'qualified', 'proposal', 'won', 'lost'],
@@ -389,7 +392,9 @@ function ObjectCollectionItem({
         setError('Update failed');
         toast.error('Update failed');
       })
-      .finally(() => setSaving(null));
+      .finally(() => {
+        setSaving(null);
+      });
   }
 
   const statusOptions = OBJECT_STATUS_OPTIONS[object.type] ?? ['open', 'active', 'archived'];
@@ -454,7 +459,9 @@ function ObjectCollectionItem({
                 <select
                   aria-label="Status"
                   value={status}
-                  onChange={(event) => save('status', event.currentTarget.value)}
+                  onChange={(event) => {
+                    save('status', event.currentTarget.value);
+                  }}
                   className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
                 >
                   {statusOptions.map((option) => (
@@ -482,12 +489,12 @@ function ObjectCollectionItem({
                 <select
                   aria-label="Priority"
                   value={priority ?? ''}
-                  onChange={(event) =>
+                  onChange={(event) => {
                     save(
                       'priority',
                       event.currentTarget.value ? Number(event.currentTarget.value) : null,
-                    )
-                  }
+                    );
+                  }}
                   className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
                 >
                   <option value="">None</option>
@@ -505,18 +512,25 @@ function ObjectCollectionItem({
                 pending={saving === 'dueAt'}
                 value={<DueDateDisplay value={dueAt} timezone={timezone} variant="compact" />}
                 editor={
-                  <ObjectDueDateEditor value={dueAt} onSave={(value) => save('dueAt', value)} />
+                  <ObjectDueDateEditor
+                    value={dueAt}
+                    onSave={(value) => {
+                      save('dueAt', value);
+                    }}
+                  />
                 }
               />
             ) : null}
           </>
         }
         actions={
-          <PinOverflowMenu
-            target={{ kind: 'object', key: object.id }}
-            title={displayText(object.canonicalName)}
-            initialPinned={object.pinned ?? false}
-          />
+          <ItemActionGroup label={`Actions for ${displayText(object.canonicalName)}`}>
+            <PinOverflowMenu
+              target={{ kind: 'object', key: object.id }}
+              title={displayText(object.canonicalName)}
+              initialPinned={object.pinned ?? false}
+            />
+          </ItemActionGroup>
         }
       />
     </li>
@@ -543,7 +557,9 @@ function ObjectDueDateEditor({
         aria-label="Due date"
         type="date"
         value={draft}
-        onChange={(event) => setDraft(event.currentTarget.value)}
+        onChange={(event) => {
+          setDraft(event.currentTarget.value);
+        }}
         className="h-10 rounded-sm border border-border bg-bg px-2 text-xs"
       />
       <button

@@ -10,6 +10,7 @@ import { TechnicalDetails } from '@/components/technical-details';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ItemActionGroup } from '@/components/ui/item-actions';
 import {
   type FinishedJobArchivePage,
   useFinishedJobsInfiniteQuery,
@@ -502,7 +503,7 @@ function JobRecoveryItemActions({
   retry: RetrySnapshot | undefined;
 }) {
   return (
-    <div className="flex shrink-0 gap-2">
+    <ItemActionGroup label={`Actions for ${item.label}`}>
       {item.retryable ? (
         <Button
           size="sm"
@@ -531,7 +532,7 @@ function JobRecoveryItemActions({
         <X aria-hidden="true" className="mr-1 size-3.5" />
         {busy === `dismiss:${item.id}` ? 'Dismissing' : 'Dismiss'}
       </Button>
-    </div>
+    </ItemActionGroup>
   );
 }
 

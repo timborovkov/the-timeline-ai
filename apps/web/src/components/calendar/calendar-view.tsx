@@ -61,6 +61,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { ItemActionGroup } from '@/components/ui/item-actions';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { statusLabel } from '@/lib/status-labels';
@@ -903,7 +904,16 @@ function CalendarEventList({
         }
         activeFilters={[
           ...(query
-            ? [{ key: 'query', label: 'Search', value: query, onRemove: () => onQueryChange('') }]
+            ? [
+                {
+                  key: 'query',
+                  label: 'Search',
+                  value: query,
+                  onRemove: () => {
+                    onQueryChange('');
+                  },
+                },
+              ]
             : []),
           ...(scope !== 'future'
             ? [
@@ -911,7 +921,9 @@ function CalendarEventList({
                   key: 'scope',
                   label: 'Range',
                   value: scope,
-                  onRemove: () => onScopeChange('future'),
+                  onRemove: () => {
+                    onScopeChange('future');
+                  },
                 },
               ]
             : []),
@@ -968,11 +980,13 @@ function CalendarEventList({
               }
               actions={
                 !event.redacted ? (
-                  <PinOverflowMenu
-                    target={{ kind: 'calendar_event', key: event.id }}
-                    title={event.title}
-                    initialPinned={event.pinned}
-                  />
+                  <ItemActionGroup label={`Actions for ${event.title}`}>
+                    <PinOverflowMenu
+                      target={{ kind: 'calendar_event', key: event.id }}
+                      title={event.title}
+                      initialPinned={event.pinned}
+                    />
+                  </ItemActionGroup>
                 ) : null
               }
             />
