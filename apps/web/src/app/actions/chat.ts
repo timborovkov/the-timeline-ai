@@ -1,9 +1,10 @@
 'use server';
 
-import type { ChatContextRef } from '@timeline/shared/chat-context';
 import { type UIMessage } from 'ai';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
+
+import type { ChatContextRef } from '@timeline/shared/chat-context';
 
 import { type ActionState, resolveScope, uuidSchema } from '@/lib/action-scope';
 import { hydrateChatSessionMessages } from '@/lib/chat-session';
@@ -71,7 +72,7 @@ export async function loadChatSessionAction(input: unknown): Promise<LoadChatSes
       return {
         ok: true,
         messages: hydrateChatSessionMessages(loaded),
-        contextTrail: loaded.session?.contextTrail ?? [],
+        contextTrail: loaded.session.contextTrail,
       };
     } catch (err) {
       return {

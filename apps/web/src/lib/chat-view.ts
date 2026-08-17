@@ -1,6 +1,5 @@
-import type { ChatContextRef } from '@timeline/shared/chat-context';
-
 import type { ChatHandoffContext } from '@/lib/chat-handoff';
+import type { ChatContextRef } from '@timeline/shared/chat-context';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MOMENT_ID_RE = /^moment:[a-z0-9:._/-]{1,180}$/i;

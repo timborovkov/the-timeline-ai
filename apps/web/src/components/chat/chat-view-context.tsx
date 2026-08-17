@@ -11,9 +11,9 @@ import {
   type ReactNode,
 } from 'react';
 
+import type { ChatHandoffContext } from '@/lib/chat-handoff';
 import type { ChatContextRef } from '@timeline/shared/chat-context';
 
-import type { ChatHandoffContext } from '@/lib/chat-handoff';
 import { buildChatView, type ChatViewOverlay } from '@/lib/chat-view';
 
 interface ChatViewRegistry {

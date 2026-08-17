@@ -1,10 +1,10 @@
 import { entities, type Db } from '@timeline/db';
-import type { ChatContextRef } from '@timeline/shared/chat-context';
 import { withTeam } from '@timeline/shared/team-scope';
 import { type UIMessage } from 'ai';
 import { and, eq, inArray } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
+import type { ChatContextRef } from '@timeline/shared/chat-context';
 import type { Metadata } from 'next';
 
 import { AskHeader } from '@/components/chat/ask-header';

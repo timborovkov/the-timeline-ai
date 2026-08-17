@@ -53,7 +53,10 @@ beforeEach(() => {
   fakes.resolveScope.mockResolvedValue(okScope());
   fakes.archiveChatSession.mockResolvedValue(undefined);
   fakes.linkChatSessionToObject.mockResolvedValue(undefined);
-  fakes.getChatSession.mockResolvedValue({ id: SESSION_ID, messages: [] });
+  fakes.getChatSession.mockResolvedValue({
+    session: { id: SESSION_ID, contextTrail: [] },
+    messages: [],
+  });
   fakes.hydrateChatSessionMessages.mockReturnValue([
     { id: 'message-1', role: 'assistant', parts: [{ type: 'text', text: 'Hello' }] },
   ]);
@@ -116,7 +119,10 @@ describe('chat actions', () => {
       contextTrail: [],
     });
     expect(fakes.getChatSession).toHaveBeenCalledWith(SESSION_ID);
-    expect(fakes.hydrateChatSessionMessages).toHaveBeenCalledWith({ id: SESSION_ID, messages: [] });
+    expect(fakes.hydrateChatSessionMessages).toHaveBeenCalledWith({
+      session: { id: SESSION_ID, contextTrail: [] },
+      messages: [],
+    });
 
     fakes.getChatSession.mockResolvedValueOnce(null);
     await expect(loadChatSessionAction({ sessionId: SESSION_ID })).resolves.toEqual({

@@ -11,9 +11,8 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 
-import type { ChatContextRef } from '@timeline/shared/chat-context';
-
 import type { ChatHandoff, ChatHandoffContext } from '@/lib/chat-handoff';
+import type { ChatContextRef } from '@timeline/shared/chat-context';
 
 import { unpinChatSessionAction } from '@/app/actions/chat';
 import { CitationText } from '@/components/chat/citation';
