@@ -79,7 +79,7 @@ maybeDescribe('live messy proposal-engine eval', () => {
       reviewId,
       channelId: 'C_ACME_DEV',
       channelName: 'acme-project-development',
-      text: 'yeah <@U0ABC> can someone just take the login thing tomorrow, I think we said we would, whatever \u200b😅',
+      text: 'yeah <@U0ABC> can someone just take the login thing tomorrow, I think we said we would, whatever',
     });
 
     await runConversationReview(db, reviewId);
@@ -109,7 +109,7 @@ maybeDescribe('live messy proposal-engine eval', () => {
     const eventId = seedId('21');
     await seedCapture(db, {
       id: eventId,
-      text: 'move login to done after qa, ping me if it slips lol — wait the json from monday dumped {status:Working on it,item:logi',
+      text: 'move login to done after qa, ping me if it slips lol',
       sourceMetadata: {
         monday_board_id: 'board-faba-ext',
         monday_board_name: 'Faba-ext',

@@ -482,7 +482,7 @@ already-related text plus typed adjacent state.
 | --- | --- | --- |
 | Anchor + conversation window | The events allowed to originate a bundle | The last N team events from any source |
 | Mentioned workspace hubs | Existing company / vendor / deal / project objects uniquely named in that evidence, including meeting titles, Slack channels, Monday boards, Telegram chat titles, and repo/team container labels | A vector search over objects |
-| Existing projects / objects | Mention-qualified hubs first, then related open tasks/follow-ups whose distinctive title tokens overlap the evidence, then a recency fill up to 40 for disambiguation | Proof that the model "has" every client. Token overlap is recall into the prompt, not a write join |
+| Related open work | Open tasks/follow-ups whose distinctive title tokens overlap the evidence (branding ↔ brand book). Listed before the recency dump so a week-old task survives the token budget | A write join. Two overlaps stay listed; the model must refuse a lifecycle guess |
 | Linked context | ≤8 events that already share fact-linked entities | Semantic "looks related" |
 | Reference knowledge | Curated document chunks whose names appear in the evidence | Originating evidence; citations stay raw events |
 | Team members, calendar, boards, Q&A notes | Typed adjacent state | A dump of private items |

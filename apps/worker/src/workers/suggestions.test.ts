@@ -2991,6 +2991,7 @@ describe('processSuggestionJobForTests', () => {
     const call = chat.mock.calls[0]?.[0] as { prompt: string; system: string } | undefined;
     expect(call?.prompt).toContain('Create branding and name proposal');
     expect(call?.prompt).toContain(OBJECT_ID);
+    expect(call?.prompt).toContain('# Related open work');
     expect(call?.system).toContain('later outcome evidence');
   });
 

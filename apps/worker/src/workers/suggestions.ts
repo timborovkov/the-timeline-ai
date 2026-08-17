@@ -2995,6 +2995,13 @@ async function runSuggestionExtraction(
       aliases: hub.aliases,
       status: hub.status,
     })),
+    relatedOpenWork: relatedOpenWork.map((work) => ({
+      id: work.id,
+      type: work.type,
+      name: work.name,
+      aliases: aliasesForRow({ aliases: work.aliases }),
+      status: work.status,
+    })),
     projects: suggestions
       .selectPromptObjects({
         mentioned: matchingEntityRows.filter(
@@ -4004,6 +4011,7 @@ function buildPromptParts(args: {
   members: { userId: string; name: string | null; email: string | null }[];
   objects: { id: string; type: string; name: string; aliases: string[]; status: string }[];
   mentionedHubs: { id: string; type: string; name: string; aliases: string[]; status: string }[];
+  relatedOpenWork: { id: string; type: string; name: string; aliases: string[]; status: string }[];
   projects: { id: string; name: string; aliases: string[]; status: string }[];
   qnaNotes: {
     id: string;
@@ -4083,6 +4091,17 @@ function buildPromptParts(args: {
     '# Team members',
     'Use ownerUserId/assigneeUserId only when one listed member clearly matches. If the member is clear but the UUID is uncertain, use ownerName/assigneeName instead; acceptance resolves only unique active members by name or email and fails safe on ambiguous or missing names.',
     ...args.members.map((m) => `- ${m.userId}: ${m.name ?? 'Unnamed'} <${m.email ?? 'no-email'}>`),
+    '',
+    '# Related open work',
+    'These open tasks/follow-ups share distinctive title tokens with the evidence. They are recall into the prompt, not proof of a write. If exactly one of them is the work whose deliverable just appeared (brand book captured, naming decision accepted, project already using the name), update that UUID to status=done even if nobody said "this is complete". Example: listed task "Create branding and name proposal" + evidence "brand book v3 is in drive, we went with Helix" → update that task to done; do not create a sibling branding task. If two listed open tasks could own the outcome, return no lifecycle proposal. A file/link share with none listed is not a create.',
+    ...(args.relatedOpenWork.length > 0
+      ? args.relatedOpenWork.map(
+          (work) =>
+            `- ${work.id}: ${work.type} "${work.name}" status=${work.status} aliases=${
+              work.aliases.join(', ') || 'none'
+            }`,
+        )
+      : ['- (none recalled from this evidence)']),
     '',
     '# Existing workspace objects',
     'Prefer updating one listed object over creating a sibling. Open tasks listed here can be marked done from later outcome evidence (the deliverable exists, a naming decision was accepted, the project already uses the name) even if nobody said "this is complete". If two listed open tasks could own that outcome, do not guess.',
