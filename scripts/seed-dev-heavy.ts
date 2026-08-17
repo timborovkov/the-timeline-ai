@@ -9,6 +9,7 @@ import {
   meetings,
   notifications,
   rawEvents,
+  reconciliationEvidence,
   userPins,
 } from '@timeline/db';
 import { eq } from 'drizzle-orm';
@@ -42,16 +43,25 @@ export async function seedHeavyAcmeLabs(tx: SeedTx, ids: HeavySeedIds): Promise<
   const taskStatuses = ['todo', 'doing', 'done', 'blocked'] as const;
   const lanes = [ids.laneTodo, ids.laneDoing, ids.laneDone];
 
-  const events = Array.from({ length: 400 }, (_, index) => ({
-    id: heavyUuid('aa110001', index + 1),
-    teamId: ids.team,
-    authorUserId: index % 2 === 0 ? ids.owner : ids.member,
-    source: 'web' as const,
-    contentText: `Heavy seed moment ${String(index + 1).padStart(3, '0')}: Atlas volume check.`,
-    occurredAt: new Date(now.getTime() - (index + 1) * 3_600_000),
-    visibility: 'team' as const,
-    sourceMetadata: { seed: true, heavy: true, n: index + 1 },
-  }));
+  const events = Array.from({ length: 400 }, (_, index) => {
+    const n = String(index + 1).padStart(3, '0');
+    return {
+      id: heavyUuid('aa110001', index + 1),
+      teamId: ids.team,
+      authorUserId: index % 2 === 0 ? ids.owner : ids.member,
+      source: 'web' as const,
+      contentText: `Heavy seed moment ${n}: Atlas volume check.`,
+      occurredAt: new Date(now.getTime() - (index + 1) * 3_600_000),
+      visibility: 'team' as const,
+      sourceMetadata: {
+        seed: true,
+        heavy: true,
+        n: index + 1,
+        source_payload_ref: `inline://timeline/dev-seed/heavy/moment/${n}`,
+        payload_digest: `sha256:dev-seed-heavy-moment-${n}`,
+      },
+    };
+  });
 
   const tasks = Array.from({ length: 300 }, (_, index) => ({
     id: heavyUuid('aa120001', index + 1),
@@ -174,6 +184,32 @@ export async function seedHeavyAcmeLabs(tx: SeedTx, ids: HeavySeedIds): Promise<
   for (const batch of chunk(events, 80)) {
     await tx.insert(rawEvents).values(batch).onConflictDoNothing();
   }
+  await tx
+    .insert(reconciliationEvidence)
+    .values(
+      events.map((event, index) => ({
+        id: heavyUuid('aa1e0001', index + 1),
+        teamId: ids.team,
+        rawEventId: event.id,
+        sourcePayloadRef: `inline://timeline/dev-seed/heavy/moment/${String(index + 1).padStart(3, '0')}`,
+        payloadDigest: `sha256:dev-seed-heavy-moment-${String(index + 1).padStart(3, '0')}`,
+        source: event.source,
+        eventType: 'manual_note.created',
+        occurredAt: event.occurredAt,
+        visibility: 'team' as const,
+        visibilityOwnerUserId: null,
+        visibilityUserIds: null,
+        actor: { user_id: event.authorUserId },
+        contentDigest: `sha256:dev-seed-heavy-moment-content-${String(index + 1).padStart(3, '0')}`,
+        title: event.contentText,
+        summary: event.contentText,
+        metadata: { seed: true, heavy: true },
+        normalizerVersion: 'dev-seed-reconciliation-2026-07',
+        replayState: 'full' as const,
+        dedupeKey: `dev-seed:evidence:heavy-moment-${String(index + 1).padStart(3, '0')}`,
+      })),
+    )
+    .onConflictDoNothing();
   for (const batch of chunk([...tasks, ...objects], 80)) {
     await tx.insert(entities).values(batch).onConflictDoNothing();
   }
