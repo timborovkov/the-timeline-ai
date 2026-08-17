@@ -27,7 +27,7 @@ export function runMetricHint(metrics: unknown): string {
   return parts.filter((part): part is string => Boolean(part)).join(' · ');
 }
 
-function runMetricParts(record: Record<string, unknown>): Array<string | null> {
+function runMetricParts(record: Record<string, unknown>): (string | null)[] {
   const mode = stringMetric(record.mode);
   if (mode === 'audit') {
     const passed = booleanMetric(record.release_gate_passed);

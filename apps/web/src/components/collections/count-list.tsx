@@ -3,13 +3,13 @@ export function CountList({
   items,
 }: {
   empty?: string;
-  items: Array<{
+  items: {
     danger?: boolean;
     hint?: string;
     key: string;
     label: string;
     value: number | string;
-  }>;
+  }[];
 }) {
   if (items.length === 0) {
     return <p className="px-1 py-3 text-sm text-fg-muted">{empty}</p>;
