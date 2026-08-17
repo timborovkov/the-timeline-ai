@@ -133,6 +133,12 @@ Treat this file as an operating contract for agents, not a loose README.
   the source. Calendar raw-event rows are derived schedule mirrors and may
   refresh their timeline text, occurrence time, and visibility when the owning
   calendar event changes.
+- **Proposal writes qualify hubs; they do not cosine-write.** Communication
+  proposals attach existing company/project objects only on unique name mention
+  ([docs/relational-memory.md](docs/relational-memory.md) Layer 6). Recency
+  dumps and embeddings recall. Captured-work parsers join on provider id, alias,
+  or unique `repo#n`. Do not add an ingest summarizer whose only job is prettier
+  embeddings.
 - **Design system lives in [design.md](design.md).** If a screen disagrees with
   it, fix the screen — not the doc. If you're intentionally evolving the design
   language, update [design.md](design.md) in the same PR.

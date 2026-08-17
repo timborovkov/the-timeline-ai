@@ -99,6 +99,16 @@ The living workflow is
 [docs/relational-memory.md](docs/relational-memory.md).
 _Avoid_: Conversation, thread, or source when describing cross-surface identity
 
+**Mention-Qualified Hub**:
+An existing company, vendor, deal, or project that the proposal engine may
+attach because the evidence uniquely names it (canonical name, alias, or a
+distinctive token such as `Faba` in `Faba website redesign`). Generic words
+do not qualify. Two hits of the same type refuse rather than guess. The
+primary-project edge is `parentObjectId`; a client attaches as
+`object_relationship` `related`. This is a write-path qualify step, not Ask
+retrieval and not a recency dump of workspace objects.
+_Avoid_: Similar object, related client, cosine match
+
 **Memory Grade**:
 The role of a hub, not a numeric importance score. Goal is a team commitment
 with a horizon. Work is something the team is actually tracking. Finding is a
@@ -364,8 +374,10 @@ An approval-backed agent suggestion to create or update object memory, such as
 adding an alias, identity facet, relationship, note, field value, or missing
 workspace object. Object memory proposals become canonical only when a teammate
 accepts them; weak mentions should remain evidence rather than proposed memory.
-When evidence supports new related objects together, their create proposals and
-relationship proposal should be reviewed as one bundle.
+When evidence uniquely names one existing company or project, a create-task
+proposal should attach that hub in the same bundle rather than leaving a bare
+task. When evidence supports new related objects together, their create
+proposals and relationship proposal should be reviewed as one bundle.
 Creation proposals should be the last resort after checking existing objects
 and pending proposals.
 _Avoid_: Memory write when it hides the approval step
@@ -718,16 +730,18 @@ _Avoid_: Automation permission, write access
 
 **Event-Local Proposal**:
 An approval-backed suggestion generated primarily from one raw event plus its
-available extracted facts, recent context, and existing workspace state. Event-
-local proposals remain the default for conversational and webhook sources.
-Generic ingest webhooks are the first adapter to honor cross-source evidence
-mode; in enforced mode, the anchor and directly related pack evidence replace
-time-only raw chronology while typed workspace state remains adjacent context.
-Other event-local adapters keep their legacy behavior until their own rollout
-milestones. GitHub, Linear, Monday, and Sentry skip this LLM path: they persist,
-embed, and reconcile without the extract or suggestion models. GitHub PR and
-issue lifecycle fields enqueue a coalesced, approval-backed Timeline task
-update keyed by work-item id rather than by nearby unrelated events.
+extracted facts, mention-qualified hubs, and typed adjacent workspace state.
+It is not a recency dump of the team's last N events or last 40 objects.
+Event-local proposals remain the default for intentional captures and for
+sources without a conversation identity. Generic ingest webhooks are the first
+adapter to honor cross-source evidence mode; in enforced mode, the anchor and
+directly related pack evidence replace time-only raw chronology while typed
+workspace state remains adjacent context. Other event-local adapters keep
+their legacy behavior until their own rollout milestones. GitHub, Linear,
+Monday, and Sentry skip this LLM path: they persist, embed, and reconcile
+without the extract or suggestion models. GitHub PR and issue lifecycle
+fields enqueue a coalesced, approval-backed Timeline task update keyed by
+work-item id rather than by nearby unrelated events.
 _Avoid_: Full-context proposal, automatic synthesis
 
 **Event Visibility**:

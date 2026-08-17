@@ -39,6 +39,7 @@ code-complete; remaining work is rollout, listed in the pack page and
 - [The question this engine exists to answer](#the-question-this-engine-exists-to-answer)
 - [Thesis](#thesis)
 - [Layers](#how-to-read-the-rest-of-this-file)
+- [Proposal engine](#layer-6--proposal-engine)
 - [Memory grade](#memory-grade)
 - [Cost, quality, and distance](#cost-quality-and-distance-from-ideal)
 - [Shipped vs target](#what-is-shipped-vs-target)
@@ -386,6 +387,10 @@ same conversation, canonical artifact or object association, provider or
 external id, canonical URL, or a human-curated object link. A model-extracted
 fact may create a candidate. It cannot qualify that candidate by itself.
 
+Unique **name mention** of an existing company/project is a proposal-time
+qualify step (Layer 6). It does not insert a graph edge by itself. The edge is
+the approval bundle: `parentObjectId` or `object_relationship`.
+
 ## Layer 5 — Evidence packs
 
 A pack is a bounded, visibility-safe read of already-related evidence. It is
@@ -412,55 +417,81 @@ Rollout gates and website-copy rules live in
 ## Layer 6 — Proposal engine
 
 Proposals are how inferred Timeline memory moves. They are not how providers
-update fields they own.
+update fields they own. There are two write engines. They share hubs, evidence
+citations, and living pending bundles. They do not share a prompt.
 
 ```mermaid
-flowchart LR
-  subgraph inputs [Inputs already related]
-    Pack[Evidence pack]
-    Structured[Structured captured-work fields]
+flowchart TB
+  subgraph qualify [Qualify - no cosine]
+    Evidence[Evidence text + meeting title]
+    Hubs[Existing company / vendor / deal / project]
+    Unique[Unique mention / alias / distinctive token]
+    Evidence --> Unique
+    Hubs --> Unique
   end
 
-  subgraph engine [Proposal engine]
-    LLM[Conversation / pack LLM]
+  subgraph comm [Communication write]
+    LLM[Structured suggestion LLM]
+    Attach[Deterministic hub attach]
+    LLM --> Attach
+  end
+
+  subgraph work [Captured-work write]
     Parser[Deterministic parser]
   end
 
-  subgraph outputs [Outputs]
-    Bundle[Approval bundle]
-    Authority[Provider-authoritative reconcile]
-  end
-
-  Pack --> LLM --> Bundle
-  Structured --> Parser --> Bundle
-  Structured --> Authority
+  Unique --> LLM
+  Unique --> Attach
+  Attach --> Bundle[Approval bundle]
+  Parser --> Bundle
 ```
 
-Rules:
+| Write engine | When | Model? | Join key |
+| --- | --- | --- | --- |
+| Communication LLM + attach | Conversation review, intentional capture, event-local meeting/email/web | Yes, one structured call | Conversation key, unique hub mention, cited `rawEventId`s |
+| Captured-work parser | Structured lifecycle on a work item Timeline should review | No | Provider id, alias, unique `repo#n` title |
+| Provider-authoritative reconcile | Cluster fields the provider owns | No | `objectMap` / cluster | 
 
-- **Communication** proposes through a conversation review (and, once migrated,
-  a proposal-policy pack). Isolated Slack/Telegram **group** messages do not
-  mint tasks. Intentional captures may propose from that single event.
-  Curated documents may inform the proposal; they must not originate it.
-- **Captured work** proposes only when a Timeline-owned field should change
-  (task `done`, assignee, aliases). Provider-owned cluster status can move
-  without a suggestion model.
-- **Pulses** never originate bundles. They may appear as supporting citations
-  inside a pack started by communication or captured work.
-- Every proposed item names exact raw-event ids from the supplied pack or the
-  structured source event. Empty, hidden, or invented citations invalidate the
-  bundle.
-- Accepted memory is canonical until a new proposal is accepted. Pending
-  bundles may merge or supersede as related evidence arrives.
-- Existing **company / vendor / deal / project** hubs participate in proposal
-  writes only when the evidence uniquely names them. Recency dumps and
-  embedding similarity are not join keys. A Faba meeting can attach a task to
-  the Faba company because "Faba" is a unique mention, not because Faba was
-  recently updated.
+Ask retrieval is not a third write engine. Embeddings recall. They do not
+prove a proposal.
 
-Vectors do not sit on this write path as a join key. Stored embeddings may
-tie-break already-qualified pack candidates. The prompt may list other recent
-objects for disambiguation; it does not mean the model "has" every client.
+### What the LLM actually sees
+
+The suggestion prompt is **not** "the workspace." It is a bounded pack of
+already-related text plus typed adjacent state.
+
+| Prompt section | What it is | What it is not |
+| --- | --- | --- |
+| Anchor + conversation window | The events allowed to originate a bundle | The last N team events from any source |
+| Mentioned workspace hubs | Existing company / vendor / deal / project objects uniquely named in that evidence, including meeting titles | A vector search over objects |
+| Existing projects / objects | Mention-qualified hubs first, then a recency fill up to 40 for disambiguation | Proof that the model "has" every client |
+| Linked context | ≤8 events that already share fact-linked entities | Semantic "looks related" |
+| Reference knowledge | Curated document chunks whose names appear in the evidence | Originating evidence; citations stay raw events |
+| Team members, calendar, boards, Q&A notes | Typed adjacent state | A dump of private items |
+
+`OBJECT_PROMPT_LIMIT = 40` is a fill, not a join. If Faba was not updated
+recently, Faba still belongs in **Mentioned workspace hubs** when the meeting
+is titled "Faba weekly." If two clients are named, neither is unique; omit
+rather than guess.
+
+### Qualify vs recall vs invent
+
+| Operation | Allowed on this write path | Forbidden |
+| --- | --- | --- |
+| **Qualify** an existing hub | Unique name, alias, or distinctive token in the evidence (`Faba` in `Faba website redesign`). Unique `repo#n` / provider id for captured work | Generic tokens (`website`, `meeting`, `project`). Two hits of the same type |
+| **Recall** for Ask | Embeddings, object-profile retrieval, document chunks | Using cosine as the write join |
+| **Invent** a new company/person | Only when the conversation treats them as an account or teammate to track | One-off PR/commit/review mentions; broad categories; everyday tools |
+
+Edges after qualify:
+
+| Hub type | How a create task attaches | Code |
+| --- | --- | --- |
+| `project` | Primary-project edge: `proposedPayload.parentObjectId` → task `child` of that project | `packages/shared/src/suggestions/hub-context.ts`, accept path in `objects` |
+| `company` / `vendor` / `deal` | `object_relationship` `kind=related` from the new task `localRef` | Same attach pass; [ADR 0006](./adr/0006-object-relationship-proposals-use-bundle-local-refs.md) |
+| `person` | Assignee/owner when a listed member uniquely matches | Not a silent company-style relate |
+| `task` | Prefer update the existing task over creating a sibling | Name/alias match against existing objects |
+
+A company must not go in `parentObjectId`. That field is the primary project.
 
 ### Communication path — how five events become one task
 
@@ -474,29 +505,38 @@ objects for disambiguation; it does not mean the model "has" every client.
    plus ≤8 linked-context events that already share fact-linked entities.
    Intentional captures without a conversation identity skip this debounce and
    run the event-local suggestion path.
-4. One structured LLM call over that window (or the single capture) proposes
-   creates/updates (task, assignee, due, project edge, notes). Evidence quotes
-   `rawEventId`s from the window or capture. Team-visible curated document
-   chunks related to names already in the evidence may fill counterparties,
-   dates, and constraints; they cannot originate the bundle. **Mention-qualified
-   hubs** (existing companies, vendors, deals, projects whose name, alias, or
-   distinctive token appears in the window, capture, or meeting title) are
-   listed explicitly. After the model returns, a deterministic pass attaches a
-   unique project as `parentObjectId` and a unique client hub as
-   `object_relationship` when the model omitted them. Two named clients → no
-   silent attach.
-5. A teammate accepts in Approvals. That write creates the `entities` row —
+4. Qualify existing hubs from the window/capture/meeting title. One structured
+   LLM call proposes creates/updates (task, assignee, due, notes). Evidence
+   quotes `rawEventId`s from the window or capture. Curated document chunks
+   related to names already in the evidence may fill counterparties, dates, and
+   constraints; they cannot originate the bundle.
+5. Deterministic attach: unique project → `parentObjectId`; unique client hub →
+   `object_relationship`. Two named clients or projects → no silent attach.
+6. A teammate accepts in Approvals. That write creates the `entities` row —
    the hub. Category classification may run after accept.
-6. Later communication in the same conversation can merge or supersede the
+7. Later communication in the same conversation can merge or supersede the
    pending bundle. If a later message uniquely names the client or project and
    overlaps the pending create's evidence, the pending item is **amended in
    place** (skip user-edited items). It does not silently rewrite the accepted
    task.
 
-Certor-shaped teams (one product, one implicit whole) often look fine even
-when hubs are omitted: there is little client collision. Agency-shaped teams
-(several active clients) fail if a "Faba meeting" commitment lands as a bare
-task. That is a qualification bug, not a missing CRM type.
+One-product teams (one implicit whole) often look fine even when hubs are
+omitted: there is little client collision. Multi-client teams fail if a
+"Faba meeting" commitment lands as a bare task. That is a qualification bug,
+not a missing CRM type, and not something Ask can paper over.
+
+**Still weak (Target, not a license to cosine-write):**
+
+- A meeting titled "Weekly" whose transcript never names the client. Unique
+  mention has nothing to qualify. Next join is the Saved Meeting / calendar
+  event's existing object links, not embeddings.
+- Mixed-client Slack **channels** (not threads) inside a 24-event window. Two
+  clients named → refuse. Zero clients named → bare task. Correct, and unusable
+  as a board until a later unique mention amends the pending create.
+- Extract's `RECENT_CONTEXT_LIMIT = 5` is still a time-ordered **team** dump,
+  not the conversation key. That pollutes facts that feed linked context.
+- Provider ticket keys spoken in chat (`acme/app#88`) are not yet copied onto
+  the proposed task as aliases, so a later PR cannot hard-join.
 
 ### Captured-work path — how a later PR proposes `done`
 
@@ -521,9 +561,23 @@ task. That is a qualification bug, not a missing CRM type.
 6. Write an approval bundle citing that raw event. Human accepts. Now the hub
    carries GitHub aliases, so future pulses and PRs hard-match.
 
-GitHub `objectMap` never creates the task. If the five-event proposal is still
-pending, today's matcher has nothing to update. **Target:** merge that pending
-create with the captured-work lifecycle so the human sees one bundle.
+GitHub `objectMap` never creates the task. If the communication proposal is
+still pending, the GitHub matcher **refreshes that pending create in place**
+(status, aliases, actor, new evidence) when it can join by alias, provider id,
+or unique `repo#n` title. **Target:** the same living refresh for Linear/Monday
+envelope completion.
+
+### Living pending
+
+Pending bundles are not snapshots that rot until a human accepts.
+
+| Later evidence | Shipped | Target |
+| --- | --- | --- |
+| Same conversation uniquely names the client/project | Amend overlapping unedited pending creates | Unchanged |
+| Merged PR / closed issue joins the pending create | GitHub refresh in place | Linear/Monday envelope |
+| User edited the pending item | Skip | Unchanged |
+| Accepted task | New proposal only | Unchanged |
+| Topic-only "this is the same work" | No write | Optional pairwise qualify after recall; still approval-backed |
 
 ## Layer 7 — Object types and hub roles
 
@@ -537,9 +591,9 @@ Postgres enum `entity_type` / runtime `OBJECT_TYPES`:
 | --- | --- | --- |
 | `task` | Primary captured-work hub. GitHub/Linear lifecycle proposes status/assignee here | backlog · open · doing · blocked · done · cancelled |
 | `follow_up` | Lighter commitment hub; conversation review may mint these | todo · doing · done · cancelled |
-| `project` | Grouping hub. Optional primary-project edge from a task (`child`) | planning · active · on_hold · shipped · cancelled |
+| `project` | Grouping hub. Optional primary-project edge from a task (`child`). Unique mention in proposal evidence may set `parentObjectId` | planning · active · on_hold · shipped · cancelled |
 | `person` | Identity hub. Approved facets (email, GitHub login, Slack) map actors | open · active · archived |
-| `company` / `vendor` | Account/org hub | open · active · archived |
+| `company` / `vendor` | Account/org hub. Unique mention in proposal evidence may add `object_relationship` `related`; never `parentObjectId` | open · active · archived |
 | `deal` | CRM captured-work hub | open · qualified · proposal · won · lost |
 | `incident` | Incident hub; Sentry pulses attach, they do not close it | open · mitigated · resolved · postmortem |
 | `hiring_loop` | Hiring hub | sourcing · interviewing · offer · hired · closed |
@@ -758,6 +812,7 @@ not yet stamp `signalClass` on every event.
 | Timeline tasks stay open after the work is complete | **Fixed when a hub join exists**, including **pending creates**. Completion is work-item lifecycle (merged PR, closed issue, provider `status=done`), not a time window. Pending approvals are refreshed in place when later completion arrives. |
 | Extract used "5 recent team events" as context | **Fixed for structured providers** (they never call extract) **and Drive file-change pulses**. **Still live** for Slack, email, meetings: `RECENT_CONTEXT_LIMIT = 5` in `apps/worker/src/workers/extract.ts` is a time-ordered team dump, not a conversation key. |
 | GitHub assignee attributed to whoever connected the integration | **Fixed.** Assignee is the GitHub actor/assignee login when it uniquely matches a teammate (connection login map, compact name, or email local-part). Connecting GitHub is identity, not work ownership. |
+| Multi-client board: "Faba meeting" task has no client | **Fixed when the evidence uniquely names one existing company/project**, including meeting titles. Recency dump and cosine are not the join. **Still live** when the meeting never names the client, when two clients are in the window, and for already-accepted unscoped tasks (those need a new proposal or memory repair, not a silent rewrite). |
 | CI / comments treated as work-item `done` | **Not a completion signal, and never should be.** The matcher refuses comments/reviews/commits/CI so a green check cannot close a task. That is not the same as "no proposals." |
 | Telegram + PR + Meet + last month's email as one write | **Designed, not finished.** Ask can retrieve them once embedded. A `done` write still needs a hub join. Packs default `off`. |
 
@@ -789,6 +844,7 @@ skipping pulse embeddings or we lose "why did the release fail?"
 | Assignee mapping is identity-based | Pack-backed conversation proposals are not shipped (`MODE=off`) |
 | Pulses remain searchable | Core matcher still parses `github.type`; Linear/Jira cannot reuse it yet |
 | Ask can show the full story without rewriting memory | Topic-only PR → task still must not become a silent write |
+| Mention-qualified client/project attach on communication creates | Silent meetings and mixed-client channels still produce bare tasks |
 | One cited create-evidence event is enough to summarize | Historical Bugbot/CI tasks still exist until humans archive them |
 | Suggestion prompt refuses findings and asks for priority / create-as-done | Accept-time GitHub reconcile is not shipped; the model can still miss a merged PR |
 
@@ -808,9 +864,10 @@ is half; source independence and packs are the rest.**
 | Ask object-profile includes curated documents | Shipped | Unchanged |
 | Object summaries cite related curated documents | Shipped | Document extract should enqueue summary refresh for name-matched hubs |
 | Proposals may read related curated documents | Shipped as supporting context; cannot originate | Pack admission for document chunks |
+| Mention-qualify existing company/project hubs on communication proposals | Shipped: unique mention + meeting title, deterministic attach, living pending amend | Calendar/Saved Meeting object links when the transcript is silent; do not cosine-write |
 | GitHub PR/issue → coalesced task proposal | Shipped in `github-task-proposals.ts` | Stop parsing `github.type` in shared code; match `objectMap` + status for any adapter |
 | Rate-limit extract/embed/proposal per connection | Shipped | Keep |
-| Stamp GitHub aliases onto accepted chat tasks | Only after a successful match | Conversation review should copy `acme/app#88` when the window already said it — highest-leverage quality fix |
+| Stamp GitHub aliases onto accepted chat tasks | Only after a successful match | Conversation review should copy `acme/app#88` when the window already said it — highest-leverage remaining quality fix |
 | Pending create + later PR as one bundle | Shipped: GitHub matcher refreshes the pending create in place | Linear/Monday envelope completion uses the same refresh |
 | `relatedExternalObjectId` for CI/Sentry | `head_sha` in metadata | Envelope field + pulse attach |
 | Evidence packs | Builder exists, default `off`; Ask uses answer packs | Enforce per adapter after gates in [`cross-source-evidence.md`](./cross-source-evidence.md) |
@@ -821,8 +878,10 @@ is half; source independence and packs are the rest.**
 | Propose `priority` 1–4 on goal/work creates | Prompt shipped; schema already accepts | Captured-work matcher should copy provider priority when the envelope has it |
 | Create already-done when the PR was already fixed | Prompt only | Accept-time captured-work reconcile + pending-create merge |
 
-Do not start the pairwise-qualify slice before alias stamping and pending-create
-merge. Those two close most dogfood misses without a new model call.
+Do not start the pairwise-qualify slice before alias stamping. GitHub
+pending-create merge and mention-qualified client attach are already shipped.
+Alias stamping closes the remaining "chat task never joins the later PR" miss
+without a new model call.
 
 ## What is shipped vs target
 
@@ -834,7 +893,8 @@ merge. Those two close most dogfood misses without a new model call.
 | Drive file-change pulses skip extract | Shipped | Envelope `signalClass=pulse` |
 | Intentional captures (web, Telegram `/note`) extract + propose | Shipped event-local | Unchanged; do not fold them into conversation-review debounce |
 | Curated documents in Ask / object summaries / proposal context | Shipped: object-profile retrieval, summary `document_chunk` refs, supporting proposal context | Pack admission for chunks; summary refresh on document extract |
-| Conversation review → approval-backed task create | Shipped, including mention-qualified company/project attach and living pending hub amend | Migrate onto proposal packs |
+| Conversation review → approval-backed task create | Shipped, including mention-qualified company/project attach and living pending hub amend | Migrate onto proposal packs; inherit hubs from calendar/Saved Meeting links when the transcript is silent |
+| Stamp `repo#n` / ticket aliases from conversation onto the proposed task | Not shipped | Deterministic copy when the window uniquely names one work-item id |
 | GitHub PR/issue lifecycle → coalesced task proposals | Shipped, GitHub-specific parser | Envelope-driven matcher on `objectMap` + status + aliases |
 | Match pending create bundles when the PR arrives first | Shipped for GitHub: refresh the pending create (status/aliases/actor) instead of letting it rot | Same living-proposal refresh on Linear/Monday captured work |
 | Topic-only PR → task `done` | Not shipped, and must not ship as cosine-write | Optional pairwise qualify after recall; still approval-backed |
@@ -853,8 +913,8 @@ merge. Those two close most dogfood misses without a new model call.
 
 1. Classify by event, not by OAuth app. Core code reads the envelope, not
    `provider === 'github'`.
-2. Do not use time windows or embedding similarity as proposal join keys.
-   Embeddings recall; hubs qualify.
+2. Do not use time windows, recency dumps, or embedding similarity as
+   proposal join keys. Embeddings recall; hubs qualify.
 3. Pulses never originate proposals and never call extract.
 4. Structured captured work never calls extract or the suggestion model.
 5. Firehose communication still requires a conversation review or pack, not one
@@ -894,18 +954,28 @@ When code changes ingest or proposals, update this file in the same change.
 ## Open work this contract implies
 
 Detail and sequencing: [Cost, quality, and distance](#cost-quality-and-distance-from-ideal).
-Highest leverage next: stamp PR aliases from conversation windows, then reuse
-the living pending-create refresh for Linear/Monday. Do not start pairwise
-qualify first.
 
+**Do next, in this order. Do not start pairwise cosine-qualify first.**
+
+1. Stamp unique `repo#n` / ticket keys from the conversation window onto the
+   proposed task as aliases so the later captured-work matcher can hard-join.
+2. When a meeting/transcript is silent, inherit a unique hub from the owning
+   calendar event or Saved Meeting's existing object links.
+3. Replace extract's team-time "5 recent events" dump with conversation-keyed
+   context.
+4. Then lift the provider skip list into `signalClass` and reuse the GitHub
+   living-pending refresh for Linear/Monday.
+
+- When a conversation window already names `acme/app#88`, stamp that alias on
+  the proposed task so the later matcher can hard-join.
+- Inherit unique client/project hubs from calendar / Saved Meeting object links
+  when the transcript never repeats the name.
+- Replace extract `RECENT_CONTEXT_LIMIT` team dumps with the conversation key.
 - Lift the provider skip list into an event-level `signalClass` on the envelope.
 - Replace GitHub-specific proposal parsing in shared code with an
   envelope-driven captured-work matcher.
-- When a conversation window already names `acme/app#88`, stamp that alias on
-  the proposed task so the later matcher can hard-join.
-- Merge pending communication creates with later captured-work lifecycle.
-  GitHub already refreshes the pending create in place; reuse that for
-  Linear/Monday.
+- GitHub already refreshes pending communication creates when a later PR joins.
+  Reuse that for Linear/Monday.
 - Treat GitHub review discussion as communication attached to a PR cluster.
 - Set pulse parent ids (`relatedExternalObjectId`).
 - Let pulses into proposal packs only as supporting evidence when a hard join
@@ -926,6 +996,8 @@ qualify first.
   and tracked work. Create already-done when the evidence shows the work is
   already addressed.
 - Do not add a second numeric importance field. Hub role is memory grade.
+- Do not silently rewrite already-accepted unscoped tasks. Propose a
+  relationship or use memory repair.
 
 ## Doc map
 

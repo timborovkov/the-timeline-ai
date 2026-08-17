@@ -321,6 +321,10 @@
         Approval-backed task creation previews category and project together.
         <code>suggest_task</code>, <code>suggest_object_memory</code>, and background conversation
         review all normalize the same existing/new-project contract before classification.
+        Background proposals also mention-qualify existing company, vendor, deal, and project hubs
+        from the evidence (including meeting titles): a unique project becomes
+        <code>parentObjectId</code>; a unique client becomes an <code>object_relationship</code>
+        <code>related</code> edge. Recency dumps and embedding similarity are not that join.
         Background review classifies its maximum 25 proposed tasks in one bounded structured LLM
         call, preserving proposal-time previews without serial provider calls. Legacy pending task
         approvals that predate the primary-project contract may still reference another object type;

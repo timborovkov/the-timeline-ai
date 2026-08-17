@@ -193,6 +193,19 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       amended in place when that later evidence uniquely names the hub. Ask
       retrieval is unchanged — embeddings still recall; they still do not
       write.
+- [ ] Stamp unique provider work-item aliases from the conversation window
+      onto proposed tasks (`acme/app#88`, Linear keys, Monday item ids) so a
+      later captured-work matcher can hard-join. Deterministic copy only when
+      one id is named. Highest-leverage remaining close-the-loop slice; do
+      not start pairwise cosine-qualify first.
+- [ ] When a meeting transcript never names the client, inherit a unique
+      company/project hub from the owning calendar event or Saved Meeting's
+      existing object links. Still refuse when two hubs are linked. Do not
+      silently rewrite already-accepted unscoped tasks; propose a relationship
+      or use memory repair.
+- [ ] Replace extract's time-ordered team dump (`RECENT_CONTEXT_LIMIT = 5`)
+      with conversation-keyed / same-source context so facts that feed linked
+      context are not five unrelated recent events.
 - [ ] Classify ingest by signal class rather than by OAuth app, following
       [`docs/relational-memory.md`](./docs/relational-memory.md):
       communication may extract and review; structured captured work parses
@@ -206,12 +219,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       event-level classifier on the source envelope so GitHub PRs and GitHub
       CI can differ without a core `if (provider === "github")`. Replace the
       GitHub-specific proposal parser with an envelope-driven captured-work
-      matcher on `objectMap` + status. When a conversation window already names
-      a PR (`acme/app#88`), stamp that alias onto the proposed task so the later
-      matcher can hard-join. Merge pending communication-created task
-      bundles with later captured-work lifecycle so a PR that arrives before
-      accept still becomes one approval. Cross-source stories join at a work
-      hub (task/cluster); embeddings recall candidates and do not prove
+      matcher on `objectMap` + status. Reuse the GitHub living-pending refresh
+      for Linear/Monday envelope completion. Cross-source stories join at a
+      work hub (task/cluster); embeddings recall candidates and do not prove
       writes. Do not add an ingest summarizer whose only job is prettier
       embeddings. Do not use time windows as the join key. Do not mint Timeline
       tasks from automated findings (Bugbot, CI, Codex); attach those to the

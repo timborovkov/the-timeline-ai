@@ -31,7 +31,9 @@ database implementation details in ordinary product views.
   these labels in ordinary chrome.
 - **Work hubs** (internal) are the tasks, projects, people, and artifact
   clusters that events from different surfaces attach to. Ordinary chrome
-  still names the task or project, not "hub."
+  still names the task or project, not "hub." Proposal chrome should show the
+  attached client or project when one was qualified; it should not invent a
+  "hub" label.
 - **Memory grade** (internal) is the hub's role: goal, work, finding, or
   mention. Ordinary chrome still names the task or company. Do not add a
   second importance slider; `priority` 1–4 stays urgency on goals and work.
