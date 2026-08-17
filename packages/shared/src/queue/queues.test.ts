@@ -569,6 +569,28 @@ describe('queue wrappers', () => {
     expect(duplicate).toMatchObject({ enqueued: false });
   });
 
+  it('coalesces GitHub task proposal jobs by work-item id', async () => {
+    const queues = await importQueues();
+    const data = {
+      scope: 'github_task_proposal' as const,
+      teamId: '22222222-2222-4222-8222-222222222222',
+      integrationId: '33333333-3333-4333-8333-333333333333',
+      externalObjectId: 'timborovkov/audit-ai#88',
+    };
+    const first = await queues.enqueueSuggestionJob(data, { delayMs: 8_000 });
+    const duplicate = await queues.enqueueSuggestionJob(data, { delayMs: 8_000 });
+    expect(fakes.queues[0]?.addCalls).toHaveLength(1);
+    expect(fakes.queues[0]?.addCalls[0]).toMatchObject({
+      opts: {
+        delay: 8_000,
+        jobId:
+          'github-task-proposal|22222222-2222-4222-8222-222222222222|timborovkov%2Faudit-ai%2388',
+      },
+    });
+    expect(first).toMatchObject({ enqueued: true });
+    expect(duplicate).toMatchObject({ enqueued: false });
+  });
+
   it('dedupes manual object cleanup suggestion scans by team and trigger', async () => {
     const queues = await importQueues();
     const data = {

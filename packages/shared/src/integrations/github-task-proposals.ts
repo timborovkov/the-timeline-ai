@@ -11,9 +11,11 @@ import {
 } from '@timeline/db';
 import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 
-import type { IntegrationEvent, IntegrationRow, ObjectMapping } from '#src/integrations/types.js';
+import type { IntegrationEvent, ObjectMapping } from '#src/integrations/types.js';
 
+import { GITHUB_TASK_PROPOSAL_COALESCE_MS } from '#src/integrations/ingest-processing.js';
 import { childLogger } from '#src/logger.js';
+import { enqueueSuggestionJob } from '#src/queue/queues.js';
 import { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 import { withTeam } from '#src/team-scope.js';
 
@@ -205,31 +207,6 @@ export function planGithubTaskProposal(input: {
   };
 }
 
-export async function proposeGithubTaskUpdatesFromEvents(input: {
-  db: Db;
-  integration: Pick<IntegrationRow, 'id' | 'teamId' | 'provider' | 'connectedByUserId'>;
-  events: IntegrationEvent[];
-  rawEventIdsByDedupKey: Map<string, string>;
-}): Promise<number> {
-  if (input.integration.provider !== 'github') return 0;
-  const sources: GithubProposalSource[] = [];
-  for (const event of input.events) {
-    const workItem = githubWorkItemFromIntegrationEvent(event);
-    const rawEventId = input.rawEventIdsByDedupKey.get(event.dedupKey);
-    if (!workItem || !rawEventId) continue;
-    sources.push({
-      workItem,
-      rawEventId,
-      contentText: event.contentText,
-    });
-  }
-  return proposeGithubTaskUpdates({
-    db: input.db,
-    teamId: input.integration.teamId,
-    sources,
-  });
-}
-
 export async function proposeGithubTaskUpdatesFromRawEvent(input: {
   db: Db;
   teamId: string;
@@ -261,10 +238,47 @@ export async function proposeGithubTaskUpdatesFromRawEvent(input: {
   });
 }
 
+export async function enqueueGithubTaskProposalJob(input: {
+  teamId: string;
+  integrationId: string;
+  externalObjectId: string;
+}): Promise<void> {
+  await enqueueSuggestionJob(
+    {
+      scope: 'github_task_proposal',
+      teamId: input.teamId,
+      integrationId: input.integrationId,
+      externalObjectId: input.externalObjectId,
+    },
+    { delayMs: GITHUB_TASK_PROPOSAL_COALESCE_MS },
+  );
+}
+
+export async function proposeGithubTaskUpdatesForExternalObject(input: {
+  db: Db;
+  teamId: string;
+  externalObjectId: string;
+}): Promise<number> {
+  const scope = withTeam(input.db, input.teamId, PSEUDO_USER, { skipMembershipCheck: true });
+  const [row] = await scope.timeline.listEvents({
+    source: 'integration',
+    origins: [{ kind: 'provider', provider: 'github' }],
+    externalObjectId: input.externalObjectId,
+    limit: 1,
+  });
+  if (!row) return 0;
+  return proposeGithubTaskUpdatesFromRawEvent({
+    db: input.db,
+    teamId: input.teamId,
+    rawEvent: row,
+  });
+}
+
 export async function proposeGithubTaskUpdatesForTeam(input: {
   db: Db;
   teamId: string;
   restrictToObjectId?: string;
+  restrictToExternalObjectId?: string;
 }): Promise<number> {
   const clusterRows = await input.db
     .select({
@@ -283,6 +297,9 @@ export async function proposeGithubTaskUpdatesForTeam(input: {
         eq(artifactClusters.teamId, input.teamId),
         isNull(artifactClusters.archivedAt),
         sql`${artifactEvidenceAssociations.metadata} ->> 'provider' = 'github'`,
+        input.restrictToExternalObjectId
+          ? sql`${artifactEvidenceAssociations.metadata} ->> 'external_object_id' = ${input.restrictToExternalObjectId}`
+          : undefined,
       ),
     )
     .orderBy(desc(artifactEvidenceAssociations.createdAt))

@@ -53,6 +53,7 @@ async function seedEvent(
     id: string;
     text: string | null;
     teamId?: string;
+    source?: (typeof rawEvents.$inferInsert)['source'];
     visibility?: 'team' | 'private' | 'specific_users';
     occurredAt?: Date;
     metadata?: Record<string, unknown>;
@@ -62,7 +63,7 @@ async function seedEvent(
     id: input.id,
     teamId: input.teamId ?? TEAM_ID,
     authorUserId: OWNER_ID,
-    source: 'web',
+    source: input.source ?? 'web',
     contentText: input.text,
     occurredAt: input.occurredAt ?? new Date('2026-06-01T10:00:00.000Z'),
     visibility: input.visibility ?? 'team',
@@ -643,6 +644,91 @@ describe('processExtractJobForTests', () => {
     expect(rows.find((row) => row.id === specificId)?.sourceMetadata).toMatchObject({
       extraction_skipped_reason: 'visibility=specific_users',
     });
+  });
+
+  it('skips GitHub integration events without calling the LLM or requiring OPENROUTER_API_KEY', async () => {
+    const rawEventId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
+    await seedEvent(db, {
+      id: rawEventId,
+      source: 'integration',
+      text: 'GitHub PR timborovkov/audit-ai#88 — Fix command palette Engagements route 404',
+      metadata: {
+        provider: 'github',
+        integration_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        event_type: 'pr.merged',
+      },
+    });
+    const chatStructured = modelWithFacts([]);
+    const testIO = io({
+      getEnv: () => ({ OPENROUTER_API_KEY: undefined }) as never,
+      chatStructured,
+    });
+
+    await expect(
+      processExtractJobForTests({ db }, { rawEventId, teamId: TEAM_ID }, testIO),
+    ).resolves.toMatchObject({
+      skipped: true,
+      reason: 'integration_structured_source',
+    });
+    expect(chatStructured).not.toHaveBeenCalled();
+    expect(testIO.enqueueSuggestionJob).not.toHaveBeenCalled();
+    const [row] = await db
+      .select({ sourceMetadata: rawEvents.sourceMetadata })
+      .from(rawEvents)
+      .where(eq(rawEvents.id, rawEventId));
+    expect(row?.sourceMetadata).toMatchObject({
+      extraction_skipped_reason: 'integration_structured_source',
+    });
+  });
+
+  it('delays remaining integration extract jobs when the connection budget is exhausted', async () => {
+    const rawEventId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2';
+    await seedEvent(db, {
+      id: rawEventId,
+      source: 'integration',
+      text: 'Slack note: ship the pricing page tomorrow',
+      metadata: {
+        provider: 'slack',
+        integration_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      },
+    });
+    const chatStructured = modelWithFacts([]);
+    const testIO = io({
+      chatStructured,
+      takeIngestProcessingSlot: vi.fn().mockResolvedValue({ allowed: false, retryAfterMs: 2_000 }),
+    });
+
+    await expect(
+      processExtractJobForTests({ db }, { rawEventId, teamId: TEAM_ID }, testIO),
+    ).resolves.toMatchObject({ delayed: true, retryAfterMs: 2_000 });
+    expect(chatStructured).not.toHaveBeenCalled();
+  });
+
+  it('delays remaining integration embed jobs when the connection budget is exhausted', async () => {
+    const rawEventId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3';
+    await seedEvent(db, {
+      id: rawEventId,
+      source: 'integration',
+      text: 'GitHub PR timborovkov/audit-ai#91 updated',
+      metadata: {
+        provider: 'github',
+        integration_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      },
+    });
+
+    await expect(
+      processEmbedJobForTests(
+        { db },
+        { scope: 'raw_event', rawEventId, teamId: TEAM_ID },
+        {
+          getEnv: () =>
+            ({ OPENROUTER_API_KEY: 'test-key', QDRANT_URL: 'http://qdrant.test' }) as never,
+          takeIngestProcessingSlot: vi
+            .fn()
+            .mockResolvedValue({ allowed: false, retryAfterMs: 3_000 }),
+        },
+      ),
+    ).resolves.toMatchObject({ delayed: true, retryAfterMs: 3_000 });
   });
 
   it('filters private recent context from the extraction prompt', async () => {

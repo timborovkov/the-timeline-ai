@@ -33,6 +33,7 @@ vi.mock('#src/queue/queues.js', () => ({
   enqueueEmbedJob: vi.fn().mockResolvedValue(undefined),
   enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
   enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
+  enqueueSuggestionJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'proposal-job' }),
 }));
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
@@ -907,15 +908,21 @@ describe('writeIntegrationEvents visibility', () => {
       events,
     });
     expect(insertedIds).toHaveLength(3);
+    expect(enqueueExtractJob).not.toHaveBeenCalled();
+    const persisted = await db.select().from(rawEvents);
+    expect(persisted).toHaveLength(3);
+    for (const row of persisted) {
+      expect(row.sourceMetadata).toMatchObject({
+        extraction_skipped_reason: 'integration_structured_source',
+      });
+    }
     for (const rawEventId of insertedIds) {
-      expect(enqueueExtractJob).toHaveBeenCalledWith({ teamId: TEAM_ID, rawEventId });
       expect(enqueueEmbedJob).toHaveBeenCalledWith({
         scope: 'raw_event',
         teamId: TEAM_ID,
         rawEventId,
       });
     }
-    expect(enqueueExtractJob).toHaveBeenCalledTimes(3);
     expect(enqueueEmbedJob).toHaveBeenCalledTimes(3);
 
     const retryIds = await writeIntegrationEvents({
@@ -924,7 +931,7 @@ describe('writeIntegrationEvents visibility', () => {
       events,
     });
     expect(retryIds).toEqual([]);
-    expect(enqueueExtractJob).toHaveBeenCalledTimes(3);
+    expect(enqueueExtractJob).not.toHaveBeenCalled();
     expect(enqueueEmbedJob).toHaveBeenCalledTimes(3);
 
     const evidenceRows = await db
@@ -1204,7 +1211,7 @@ describe('writeIntegrationEvents visibility', () => {
   });
 
   it('keeps reconciliation evidence when integration queue handoff fails', async () => {
-    vi.mocked(enqueueExtractJob).mockRejectedValueOnce(new Error('redis unavailable'));
+    vi.mocked(enqueueEmbedJob).mockRejectedValueOnce(new Error('redis unavailable'));
     const [integration] = await db
       .insert(integrations)
       .values({
@@ -1238,7 +1245,7 @@ describe('writeIntegrationEvents visibility', () => {
     });
     if (!eventId) throw new Error('event insert failed');
 
-    expect(enqueueExtractJob).toHaveBeenCalledWith({ teamId: TEAM_ID, rawEventId: eventId });
+    expect(enqueueExtractJob).not.toHaveBeenCalled();
     expect(enqueueEmbedJob).toHaveBeenCalledWith({
       scope: 'raw_event',
       teamId: TEAM_ID,
@@ -1407,6 +1414,50 @@ describe('writeIntegrationEvents visibility', () => {
 
     expect(inserted).toEqual([]);
     await expect(db.select().from(rawEvents)).resolves.toEqual([]);
+  });
+
+  it('still enqueues extract for conversational Slack events', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'slack',
+        displayName: 'Slack',
+        externalAccountId: 'T_SLACK_EXTRACT',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const [eventId] = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'slack:message:T_SLACK_EXTRACT:C_FREE:1700000000.000200',
+          provider: 'slack',
+          externalObjectId: 'C_FREE:1700000000.000200',
+          externalEventId: '1700000000.000200',
+          eventType: 'message.created',
+          occurredAt: new Date('2026-05-27T09:00:00Z'),
+          contentText: 'Ship the pricing page tomorrow',
+          extra: {
+            slack_team_id: 'T_SLACK_EXTRACT',
+            slack_channel_id: 'C_FREE',
+            slack_message_ts: '1700000000.000200',
+          },
+        },
+      ],
+    });
+    if (!eventId) throw new Error('event insert failed');
+
+    expect(enqueueExtractJob).toHaveBeenCalledWith({
+      teamId: TEAM_ID,
+      rawEventId: eventId,
+    });
+    const [row] = await db.select().from(rawEvents).where(eq(rawEvents.id, eventId));
+    expect(row?.sourceMetadata).not.toHaveProperty('extraction_skipped_reason');
   });
 
   it('falls back to team visibility for private integration events without a connector owner', async () => {

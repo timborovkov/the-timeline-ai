@@ -451,6 +451,84 @@ describe('processSuggestionJobForTests', () => {
     await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 0, items: 0 });
   });
 
+  it('runs coalesced GitHub task proposal jobs without calling the LLM', async () => {
+    await db.insert(integrations).values({
+      teamId: TEAM_ID,
+      connectedByUserId: OWNER_ID,
+      provider: 'github',
+      displayName: 'GitHub — timborovkov',
+      externalAccountId: '44',
+      visibilityDefault: 'team',
+    });
+    const [task] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'Fix command palette Engagements route 404 in audit-ai PR #88',
+        status: 'todo',
+      })
+      .returning();
+    if (!task) throw new Error('task insert failed');
+    await seedRawEvent(db as never, {
+      id: '99999999-4444-4444-8444-444444444452',
+      source: 'integration',
+      text: 'GitHub PR timborovkov/audit-ai#88 — Fix command palette Engagements route 404',
+      sourceMetadata: {
+        provider: 'github',
+        event_type: 'pr.merged',
+        external_object_id: 'timborovkov/audit-ai#88',
+        actor: { externalId: 'timborovkov', name: 'timborovkov' },
+        github: {
+          type: 'pull_request',
+          repo: 'timborovkov/audit-ai',
+          number: 88,
+          merged_at: '2026-06-02T09:00:00Z',
+        },
+      },
+    });
+    const chat = emptyModel();
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      {
+        scope: 'github_task_proposal',
+        teamId: TEAM_ID,
+        integrationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        externalObjectId: 'timborovkov/audit-ai#88',
+      },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    expect(chat).not.toHaveBeenCalled();
+    await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 1, items: 1 });
+  });
+
+  it('delays coalesced GitHub task proposal jobs when the connection budget is exhausted', async () => {
+    const chat = emptyModel();
+    await expect(
+      processSuggestionJobForTests(
+        { db: db as never },
+        {
+          scope: 'github_task_proposal',
+          teamId: TEAM_ID,
+          integrationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+          externalObjectId: 'timborovkov/audit-ai#88',
+        },
+        {
+          getEnv: env,
+          chatStructured: chat,
+          modelId: MODEL_ID,
+          takeIngestProcessingSlot: vi
+            .fn()
+            .mockResolvedValue({ allowed: false, retryAfterMs: 1_500 }),
+        },
+      ),
+    ).resolves.toEqual({ delayed: true, retryAfterMs: 1_500 });
+    expect(chat).not.toHaveBeenCalled();
+    await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 0, items: 0 });
+  });
+
   it('skips integration-sourced events before requiring OPENROUTER_API_KEY', async () => {
     const rawEventId = '99999999-4444-4444-8444-444444444445';
     await seedRawEvent(db as never, {

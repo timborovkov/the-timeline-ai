@@ -642,11 +642,15 @@ _Avoid_: Automation permission, write access
 **Event-Local Proposal**:
 An approval-backed suggestion generated primarily from one raw event plus its
 available extracted facts, recent context, and existing workspace state. Event-
-local proposals remain the default. Generic ingest webhooks are the first
-adapter to honor cross-source evidence mode; in enforced mode, the anchor and
-directly related pack evidence replace time-only raw chronology while typed
-workspace state remains adjacent context. Other event-local adapters keep their
-legacy behavior until their own rollout milestones.
+local proposals remain the default for conversational and webhook sources.
+Generic ingest webhooks are the first adapter to honor cross-source evidence
+mode; in enforced mode, the anchor and directly related pack evidence replace
+time-only raw chronology while typed workspace state remains adjacent context.
+Other event-local adapters keep their legacy behavior until their own rollout
+milestones. GitHub, Linear, Monday, and Sentry skip this LLM path: they persist,
+embed, and reconcile without the extract or suggestion models. GitHub PR and
+issue lifecycle fields enqueue a coalesced, approval-backed Timeline task
+update keyed by work-item id rather than by nearby unrelated events.
 _Avoid_: Full-context proposal, automatic synthesis
 
 **Event Visibility**:

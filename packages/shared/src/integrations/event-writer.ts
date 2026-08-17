@@ -29,7 +29,11 @@ import {
   reconcileLinkArtifactsForRawEvent,
   textHasLinks,
 } from '#src/conversational/link-artifacts.js';
-import { proposeGithubTaskUpdatesFromEvents } from '#src/integrations/github-task-proposals.js';
+import {
+  enqueueGithubTaskProposalJob,
+  githubWorkItemFromIntegrationEvent,
+} from '#src/integrations/github-task-proposals.js';
+import { integrationSkipsLlmIngest } from '#src/integrations/ingest-processing.js';
 import { childLogger } from '#src/logger.js';
 import { invalidateObjectSummariesForRawEvent } from '#src/objects/summaries.js';
 import { enqueueEmbedJob, enqueueExtractJob } from '#src/queue/queues.js';
@@ -249,6 +253,12 @@ export async function writeIntegrationEvents(deps: {
         evt,
         tombstonesByTargetKey,
       );
+      const extractionSkip = integrationSkipsLlmIngest(evt.provider)
+        ? {
+            extraction_skipped_at: new Date().toISOString(),
+            extraction_skipped_reason: 'integration_structured_source',
+          }
+        : {};
 
       return {
         teamId,
@@ -273,6 +283,7 @@ export async function writeIntegrationEvents(deps: {
             source_kind: 'integration_event',
             ...sourcePayloadMetadata,
             ...deletionMetadata,
+            ...extractionSkip,
           },
           evt.contentText,
         ),
@@ -298,14 +309,21 @@ export async function writeIntegrationEvents(deps: {
   );
 
   await Promise.all(
-    activeInserted.flatMap((row) => [
-      enqueueIntegrationProcessingJob(deps.db, row.id, 'extraction', () =>
-        enqueueExtractJob({ teamId, rawEventId: row.id }),
-      ),
-      enqueueIntegrationProcessingJob(deps.db, row.id, 'embedding', () =>
-        enqueueEmbedJob({ scope: 'raw_event', teamId, rawEventId: row.id }),
-      ),
-    ]),
+    activeInserted.flatMap((row) => {
+      const jobs = [
+        enqueueIntegrationProcessingJob(deps.db, row.id, 'embedding', () =>
+          enqueueEmbedJob({ scope: 'raw_event', teamId, rawEventId: row.id }),
+        ),
+      ];
+      if (!integrationSkipsLlmIngest(deps.integration.provider)) {
+        jobs.unshift(
+          enqueueIntegrationProcessingJob(deps.db, row.id, 'extraction', () =>
+            enqueueExtractJob({ teamId, rawEventId: row.id }),
+          ),
+        );
+      }
+      return jobs;
+    }),
   );
 
   // Normalization and artifact reconciliation are repairable from existing
@@ -368,19 +386,29 @@ export async function writeIntegrationEvents(deps: {
       entityByExternalId,
       events: repairableArtifactEvents,
     });
-    try {
-      await proposeGithubTaskUpdatesFromEvents({
-        db: deps.db,
-        integration: deps.integration,
-        events: repairableArtifactEvents,
-        rawEventIdsByDedupKey,
-      });
-    } catch (err) {
-      log.warn(
-        { err, teamId, integrationId: deps.integration.id },
-        'github task proposal generation failed',
-      );
-    }
+    const githubWorkItems = [
+      ...new Set(
+        repairableArtifactEvents
+          .map((event) => githubWorkItemFromIntegrationEvent(event)?.externalId)
+          .filter((externalId): externalId is string => typeof externalId === 'string'),
+      ),
+    ];
+    await Promise.all(
+      githubWorkItems.map(async (externalObjectId) => {
+        try {
+          await enqueueGithubTaskProposalJob({
+            teamId,
+            integrationId: deps.integration.id,
+            externalObjectId,
+          });
+        } catch (err) {
+          log.warn(
+            { err, teamId, integrationId: deps.integration.id, externalObjectId },
+            'failed to enqueue GitHub task proposal job',
+          );
+        }
+      }),
+    );
   }
 
   return inserted.map((r) => r.id);

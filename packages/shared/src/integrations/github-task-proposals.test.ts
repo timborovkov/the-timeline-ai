@@ -15,6 +15,7 @@ import {
   proposeGithubTaskUpdatesForTeam,
   resolveGithubLoginToUserId,
 } from '#src/integrations/github-task-proposals.js';
+import { enqueueSuggestionJob } from '#src/queue/queues.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
 vi.mock('#src/queue/queues.js', () => ({
@@ -22,6 +23,7 @@ vi.mock('#src/queue/queues.js', () => ({
   enqueueEmbedJob: vi.fn().mockResolvedValue(undefined),
   enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
   enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
+  enqueueSuggestionJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'proposal-job' }),
 }));
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
@@ -384,11 +386,24 @@ describe('GitHub task proposal persistence', () => {
       ],
     });
 
+    expect(enqueueSuggestionJob).toHaveBeenCalledWith(
+      {
+        scope: 'github_task_proposal',
+        teamId: TEAM_ID,
+        integrationId: integration.id,
+        externalObjectId: 'timborovkov/audit-ai#10',
+      },
+      { delayMs: expect.any(Number) },
+    );
+
     const [taskRow] = await db.select().from(entities).where(eq(entities.id, task.id));
     expect(taskRow).toMatchObject({
       status: 'todo',
       assigneeUserId: null,
     });
+    await expect(db.select().from(agentSuggestions)).resolves.toEqual([]);
+
+    await proposeGithubTaskUpdatesForTeam({ db: db as never, teamId: TEAM_ID });
 
     const bundles = await db.select().from(agentSuggestions);
     expect(bundles).toHaveLength(1);
@@ -465,6 +480,8 @@ describe('GitHub task proposal persistence', () => {
         },
       ],
     });
+
+    await proposeGithubTaskUpdatesForTeam({ db: db as never, teamId: TEAM_ID });
 
     const items = await db.select().from(agentSuggestionItems);
     expect(items).toHaveLength(1);

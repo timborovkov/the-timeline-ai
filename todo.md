@@ -168,14 +168,16 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       evidence, artifact resolution, authority policy, output-backed approvals,
       and deterministic/live reconciliation evals.
 - [x] Propose Timeline task status and assignee updates from GitHub PR/issue
-      lifecycle fields without running the suggestion model: merged PRs and
-      closed issues generate approval-backed `done` updates, and GitHub
-      actor/assignee logins map to team members through the person-owned GitHub
-      connection (or a unique compact name match) instead of attributing work
-      to the teammate who connected the integration. Matching uses provider
-      ids, aliases, and high-confidence repo+PR-number titles. Comments,
-      reviews, commits, and CI stay out of this path. Daily object cleanup
-      backfills the same proposals for already-ingested GitHub clusters.
+      lifecycle fields without running the suggestion or extract models: merged
+      PRs and closed issues enqueue a coalesced approval-backed `done` job
+      keyed by GitHub work-item id, not by a time window of unrelated events.
+      GitHub actor/assignee logins map to team members through the person-owned
+      GitHub connection (or a unique compact name match) instead of attributing
+      work to the teammate who connected the integration. Matching uses
+      provider ids, aliases, and high-confidence repo+PR-number titles.
+      Comments, reviews, commits, and CI stay out of this path. Per-connection
+      ingest processing is rate-limited. Daily object cleanup backfills the
+      same proposals for already-ingested GitHub clusters.
 - [ ] Wire workspace reconciliation into future authoritative external sync
       paths when calendar/provider imports directly update artifacts they own.
 - [ ] Ship the cross-source evidence pack north star in

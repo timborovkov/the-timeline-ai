@@ -37,7 +37,7 @@ import {
 } from '@timeline/shared/reconciliation/planner';
 import { likeMentionCondition, textMentionsAnyValue } from '@timeline/shared/sql-like';
 import * as taskCategories from '@timeline/shared/task-categories';
-import { UnrecoverableError, Worker, type Job } from 'bullmq';
+import { DelayedError, UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, count, desc, eq, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
@@ -77,6 +77,7 @@ interface SuggestionWorkerIO {
   taskCategoryClassificationEnabled?: boolean;
   evidencePackMode?: 'off' | 'shadow' | 'enforced';
   buildEvidencePack?: typeof evidencePacks.buildEvidencePack;
+  takeIngestProcessingSlot?: typeof integrations.takeConnectionIngestSlot;
 }
 
 const suggestionItemObjectSchema = z.object({
@@ -773,9 +774,22 @@ export async function processSuggestionJobForTests(
   deps: SuggestionWorkerDeps,
   data: queue.SuggestionJobData,
   io: SuggestionWorkerIO = {},
-): Promise<void> {
+): Promise<{ delayed: true; retryAfterMs: number } | void> {
   if ('scope' in data && data.scope === 'object_cleanup') {
     await processObjectCleanupJob(deps, data);
+    return;
+  }
+  if ('scope' in data && data.scope === 'github_task_proposal') {
+    const slot = await (io.takeIngestProcessingSlot ?? integrations.takeConnectionIngestSlot)({
+      integrationId: data.integrationId,
+      stage: 'github_task_proposal',
+    });
+    if (!slot.allowed) return { delayed: true, retryAfterMs: slot.retryAfterMs };
+    await integrations.proposeGithubTaskUpdatesForExternalObject({
+      db: deps.db,
+      teamId: data.teamId,
+      externalObjectId: data.externalObjectId,
+    });
     return;
   }
 
@@ -3928,12 +3942,17 @@ function buildPromptParts(args: {
 export function startSuggestionWorker(deps: SuggestionWorkerDeps): Worker<queue.SuggestionJobData> {
   const worker = new Worker<queue.SuggestionJobData>(
     queue.QUEUE_NAMES.suggestions,
-    async (job: Job<queue.SuggestionJobData>) => {
-      await processSuggestionJobForTests(deps, job.data);
+    async (job: Job<queue.SuggestionJobData>, token?: string) => {
+      const result = await processSuggestionJobForTests(deps, job.data);
+      if (result?.delayed) {
+        await job.moveToDelayed(Date.now() + result.retryAfterMs, token);
+        throw new DelayedError();
+      }
     },
     { connection: queue.getRedisConnection(), concurrency: 1 },
   );
   worker.on('failed', (job, err) => {
+    if (err instanceof DelayedError) return;
     captureWorkerJobFailure(err, job);
   });
   return worker;

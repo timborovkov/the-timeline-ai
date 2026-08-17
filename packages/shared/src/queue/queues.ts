@@ -162,11 +162,16 @@ export function getExtractQueue(): TimelineQueue<ExtractJobData> {
   return _extractQueue;
 }
 
-export async function enqueueExtractJob(data: ExtractJobData): Promise<void> {
+export async function enqueueExtractJob(
+  data: ExtractJobData,
+  opts: { delayMs?: number } = {},
+): Promise<void> {
   // Same no-jobId-dedup rationale as transcribe: row-level idempotency lives
   // in the worker, which skips when facts for (rawEventId, modelVersion)
   // already exist. A duplicate enqueue costs at most one extra DB lookup.
-  await getExtractQueue().add('extract', data);
+  await getExtractQueue().add('extract', data, {
+    ...(opts.delayMs && opts.delayMs > 0 ? { delay: opts.delayMs } : {}),
+  });
 }
 
 export async function closeExtractQueue(): Promise<void> {
@@ -178,7 +183,8 @@ export async function closeExtractQueue(): Promise<void> {
 export type SuggestionJobData =
   | SuggestionRawEventJobData
   | SuggestionConversationReviewJobData
-  | SuggestionObjectCleanupJobData;
+  | SuggestionObjectCleanupJobData
+  | SuggestionGithubTaskProposalJobData;
 
 export interface SuggestionRawEventJobData {
   rawEventId: string;
@@ -198,6 +204,13 @@ export interface SuggestionObjectCleanupJobData {
   objectId?: string;
 }
 
+export interface SuggestionGithubTaskProposalJobData {
+  scope: 'github_task_proposal';
+  teamId: string;
+  integrationId: string;
+  externalObjectId: string;
+}
+
 let _suggestionQueue: TimelineQueue<SuggestionJobData> | undefined;
 
 function bullmqCustomJobId(parts: string[]): string {
@@ -210,6 +223,14 @@ function suggestionJobId(data: SuggestionJobData, jobIdSuffix?: string): string 
       return bullmqCustomJobId([
         'conversation-review',
         data.conversationReviewId,
+        ...(jobIdSuffix ? [jobIdSuffix] : []),
+      ]);
+    }
+    if (data.scope === 'github_task_proposal') {
+      return bullmqCustomJobId([
+        'github-task-proposal',
+        data.teamId,
+        data.externalObjectId,
         ...(jobIdSuffix ? [jobIdSuffix] : []),
       ]);
     }
@@ -460,12 +481,17 @@ export function getEmbedQueue(): TimelineQueue<EmbedJobData> {
   return _embedQueue;
 }
 
-export async function enqueueEmbedJob(data: EmbedJobData): Promise<void> {
+export async function enqueueEmbedJob(
+  data: EmbedJobData,
+  opts: { delayMs?: number } = {},
+): Promise<void> {
   // Same no-jobId-dedup rationale as the other queues. Worker-side idempotency
   // is provided by deterministic Qdrant point ids derived from
   // (scope, sourceId, embedding_model, chunk_index) — duplicate enqueues upsert
   // the same point(s). Oversized sources continue through bounded child jobs.
-  await getEmbedQueue().add('embed', data);
+  await getEmbedQueue().add('embed', data, {
+    ...(opts.delayMs && opts.delayMs > 0 ? { delay: opts.delayMs } : {}),
+  });
 }
 
 export async function enqueueObjectEmbedJob(
