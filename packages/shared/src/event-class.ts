@@ -125,7 +125,10 @@ const EVENT_TYPE_RULES: { pattern: RegExp; eventClass: TimelineEventClass }[] = 
     eventClass: 'work_record',
   },
   { pattern: /release\.|deployment\.|deploy\./i, eventClass: 'work_record' },
-  { pattern: /comment\.|message\.|chat\./i, eventClass: 'communication' },
+  {
+    pattern: /comment\.|message\.|chat\.|^(update)\.(created|observed|edited|deleted)/i,
+    eventClass: 'communication',
+  },
   { pattern: /document\.|file\.|drive\./i, eventClass: 'artifact' },
   { pattern: /calendar\.|meeting\./i, eventClass: 'schedule' },
 ];
@@ -197,6 +200,9 @@ function inferIntegrationClass(
   }
   if (stringValue(metadata.monday_item_name) || stringValue(metadata.monday_parent_item_name)) {
     return 'work_record';
+  }
+  if (stringValue(metadata.monday_update_id) || stringValue(metadata.monday_reply_id)) {
+    return 'communication';
   }
   const linear = recordValue(metadata.linear);
   if (linear && (stringValue(linear.kind) === 'issue' || stringValue(linear.identifier))) {

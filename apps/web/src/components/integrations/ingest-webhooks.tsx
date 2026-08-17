@@ -1,6 +1,10 @@
 'use client';
 
-import { TIMELINE_EVENT_CLASS_OPTIONS, type TimelineEventClass } from '@timeline/shared/event-class';
+import {
+  isTimelineEventClass,
+  TIMELINE_EVENT_CLASS_OPTIONS,
+  type TimelineEventClass,
+} from '@timeline/shared/event-class';
 import { useRouter } from 'next/navigation';
 import { useEffect, useReducer } from 'react';
 
@@ -92,15 +96,61 @@ function copyToClipboard(text: string): void {
   void navigator.clipboard.writeText(text).catch(() => undefined);
 }
 
+function parseEventClass(value: string): TimelineEventClass | null {
+  return isTimelineEventClass(value) ? value : null;
+}
+
 function eventClassLabel(value: TimelineEventClass): string {
   return TIMELINE_EVENT_CLASS_OPTIONS.find((option) => option.value === value)?.label ?? value;
+}
+
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- Shared Timeline type select for create and row editors.
+function EventClassSelect({
+  id,
+  value,
+  disabled,
+  onChange,
+}: {
+  id?: string;
+  value: TimelineEventClass;
+  disabled?: boolean;
+  onChange: (value: TimelineEventClass) => void;
+}) {
+  return (
+    <select
+      id={id}
+      value={value}
+      disabled={disabled}
+      onChange={(e) => {
+        const next = parseEventClass(e.target.value);
+        if (!next) return;
+        onChange(next);
+      }}
+      className="h-9 w-full rounded-sm border border-border bg-bg px-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+    >
+      {TIMELINE_EVENT_CLASS_OPTIONS.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  );
 }
 
 export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] }) {
   const router = useRouter();
   const dialog = useAppDialog();
   const [
-    { showCreate, name, visibilityDefault, eventClass, proposalGenerationEnabled, busy, minted, origin },
+    {
+      showCreate,
+      name,
+      visibilityDefault,
+      eventClass,
+      proposalGenerationEnabled,
+      busy,
+      minted,
+      origin,
+    },
     dispatch,
   ] = useReducer(reducer, {
     showCreate: false,
@@ -257,75 +307,15 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
       ) : null}
 
       {showCreate ? (
-        <Card>
-          <CardContent className="space-y-4 pt-4">
-            <div className="space-y-1">
-              <Label htmlFor="ingest-webhook-name">Name</Label>
-              <Input
-                id="ingest-webhook-name"
-                value={name}
-                onChange={(e) => {
-                  dispatch({ type: 'name', name: e.target.value });
-                }}
-                placeholder="Pipedrive webhook"
-              />
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={visibilityDefault === 'team'}
-                  onChange={(e) => {
-                    dispatch({
-                      type: 'visibilityDefault',
-                      visibilityDefault: e.target.checked ? 'team' : 'private',
-                    });
-                  }}
-                />
-                Team-visible by default
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={proposalGenerationEnabled}
-                  onChange={(e) => {
-                    dispatch({
-                      type: 'proposalGenerationEnabled',
-                      proposalGenerationEnabled: e.target.checked,
-                    });
-                  }}
-                />
-                Generate approval proposals
-              </label>
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="ingest-webhook-event-class">Timeline type</Label>
-              <select
-                id="ingest-webhook-event-class"
-                value={eventClass}
-                onChange={(e) => {
-                  dispatch({
-                    type: 'eventClass',
-                    eventClass: e.target.value as TimelineEventClass,
-                  });
-                }}
-                className="h-9 w-full rounded-sm border border-border bg-bg px-2 text-sm"
-              >
-                {TIMELINE_EVENT_CLASS_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <p className="text-xs text-fg-muted">
-                {TIMELINE_EVENT_CLASS_OPTIONS.find((option) => option.value === eventClass)?.hint}
-              </p>
-            </div>
-            <Button size="sm" disabled={busy || !name.trim()} onClick={() => void create()}>
-              {busy ? 'Creating…' : 'Create webhook'}
-            </Button>
-          </CardContent>
-        </Card>
+        <IngestWebhookCreateForm
+          name={name}
+          visibilityDefault={visibilityDefault}
+          eventClass={eventClass}
+          proposalGenerationEnabled={proposalGenerationEnabled}
+          busy={busy}
+          dispatch={dispatch}
+          onCreate={() => void create()}
+        />
       ) : null}
 
       {webhooks.length === 0 ? (
@@ -334,100 +324,195 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
         </div>
       ) : (
         <ul className="divide-y divide-border rounded-md border border-border bg-surface">
-          {webhooks.map((webhook) => {
-            const credential = webhook.credentials[0];
-            return (
-              <li key={webhook.id} className="space-y-3 p-3">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium">{webhook.name}</div>
-                    <div className="font-mono text-xs text-fg-muted">
-                      {webhook.disabledAt ? 'disabled' : 'active'} ·{' '}
-                      {eventClassLabel(webhook.eventClass)} ·
-                      visibility {webhook.visibilityDefault} · proposals{' '}
-                      {webhook.proposalGenerationEnabled ? 'on' : 'off'}
-                      {credential
-                        ? ` · ${credential.prefix}... · last used ${
-                            credential.lastUsedAt
-                              ? new Date(credential.lastUsedAt).toLocaleString()
-                              : 'never'
-                          }`
-                        : ' · no active credential'}
-                    </div>
-                  </div>
-                  <ItemActionGroup label={`Actions for ${webhook.name}`}>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={Boolean(webhook.disabledAt)}
-                      onClick={() => void rotate(webhook.id, webhook.name)}
-                    >
-                      Rotate
-                    </Button>
-                    <ItemOverflowMenu targetLabel={webhook.name}>
-                      <DropdownMenuItem
-                        disabled={Boolean(webhook.disabledAt)}
-                        className="text-destructive focus:text-destructive"
-                        onSelect={() => void disable(webhook.id, webhook.name)}
-                      >
-                        Disable
-                      </DropdownMenuItem>
-                    </ItemOverflowMenu>
-                  </ItemActionGroup>
-                </div>
-                <div className="flex flex-wrap items-end gap-3 text-sm">
-                  <label className="flex min-w-40 flex-col gap-1">
-                    <span className="text-xs text-fg-muted">Timeline type</span>
-                    <select
-                      value={webhook.eventClass}
-                      disabled={Boolean(webhook.disabledAt)}
-                      onChange={(e) =>
-                        void patch(webhook.id, {
-                          eventClass: e.target.value as TimelineEventClass,
-                        })
-                      }
-                      className="h-8 rounded-sm border border-border bg-bg px-2 text-sm"
-                    >
-                      {TIMELINE_EVENT_CLASS_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={webhook.visibilityDefault === 'team'}
-                      disabled={Boolean(webhook.disabledAt)}
-                      onChange={(e) =>
-                        void patch(webhook.id, {
-                          visibilityDefault: e.target.checked ? 'team' : 'private',
-                        })
-                      }
-                    />
-                    Team-visible
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={webhook.proposalGenerationEnabled}
-                      disabled={Boolean(webhook.disabledAt)}
-                      onChange={(e) =>
-                        void patch(webhook.id, {
-                          proposalGenerationEnabled: e.target.checked,
-                        })
-                      }
-                    />
-                    Proposals
-                  </label>
-                </div>
-              </li>
-            );
-          })}
+          {webhooks.map((webhook) => (
+            <IngestWebhookListItem
+              key={webhook.id}
+              webhook={webhook}
+              onPatch={patch}
+              onRotate={rotate}
+              onDisable={disable}
+            />
+          ))}
         </ul>
       )}
       {dialog.node}
     </div>
+  );
+}
+
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- Create form shares webhook reducer types and stays with the Connections ingest UI.
+function IngestWebhookCreateForm({
+  name,
+  visibilityDefault,
+  eventClass,
+  proposalGenerationEnabled,
+  busy,
+  dispatch,
+  onCreate,
+}: {
+  name: string;
+  visibilityDefault: 'team' | 'private';
+  eventClass: TimelineEventClass;
+  proposalGenerationEnabled: boolean;
+  busy: boolean;
+  dispatch: (action: Action) => void;
+  onCreate: () => void;
+}) {
+  return (
+    <Card>
+      <CardContent className="space-y-4 pt-4">
+        <div className="space-y-1">
+          <Label htmlFor="ingest-webhook-name">Name</Label>
+          <Input
+            id="ingest-webhook-name"
+            value={name}
+            onChange={(e) => {
+              dispatch({ type: 'name', name: e.target.value });
+            }}
+            placeholder="Pipedrive webhook"
+          />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={visibilityDefault === 'team'}
+              onChange={(e) => {
+                dispatch({
+                  type: 'visibilityDefault',
+                  visibilityDefault: e.target.checked ? 'team' : 'private',
+                });
+              }}
+            />
+            Team-visible by default
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={proposalGenerationEnabled}
+              onChange={(e) => {
+                dispatch({
+                  type: 'proposalGenerationEnabled',
+                  proposalGenerationEnabled: e.target.checked,
+                });
+              }}
+            />
+            Generate approval proposals
+          </label>
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="ingest-webhook-event-class">Timeline type</Label>
+          <EventClassSelect
+            id="ingest-webhook-event-class"
+            value={eventClass}
+            onChange={(next) => {
+              dispatch({ type: 'eventClass', eventClass: next });
+            }}
+          />
+          <p className="text-xs text-fg-muted">
+            {TIMELINE_EVENT_CLASS_OPTIONS.find((option) => option.value === eventClass)?.hint}
+          </p>
+        </div>
+        <Button size="sm" disabled={busy || !name.trim()} onClick={onCreate}>
+          {busy ? 'Creating…' : 'Create webhook'}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- Row editor is local to the ingest webhook list and shares the same patch contract.
+function IngestWebhookListItem({
+  webhook,
+  onPatch,
+  onRotate,
+  onDisable,
+}: {
+  webhook: IngestWebhookRow;
+  onPatch: (id: string, body: Record<string, unknown>) => Promise<void>;
+  onRotate: (id: string, label: string) => Promise<void>;
+  onDisable: (id: string, label: string) => Promise<void>;
+}) {
+  const credential = webhook.credentials[0];
+  const disabled = Boolean(webhook.disabledAt);
+  return (
+    <li className="space-y-3 p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-medium">{webhook.name}</div>
+          <div className="font-mono text-xs text-fg-muted">
+            {disabled ? 'disabled' : 'active'} · {eventClassLabel(webhook.eventClass)} · visibility{' '}
+            {webhook.visibilityDefault} · proposals{' '}
+            {webhook.proposalGenerationEnabled ? 'on' : 'off'}
+            {credential
+              ? ` · ${credential.prefix}... · last used ${
+                  credential.lastUsedAt ? new Date(credential.lastUsedAt).toLocaleString() : 'never'
+                }`
+              : ' · no active credential'}
+          </div>
+        </div>
+        <ItemActionGroup label={`Actions for ${webhook.name}`}>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={disabled}
+            onClick={() => void onRotate(webhook.id, webhook.name)}
+          >
+            Rotate
+          </Button>
+          <ItemOverflowMenu targetLabel={webhook.name}>
+            <DropdownMenuItem
+              disabled={disabled}
+              className="text-destructive focus:text-destructive"
+              onSelect={() => void onDisable(webhook.id, webhook.name)}
+            >
+              Disable
+            </DropdownMenuItem>
+          </ItemOverflowMenu>
+        </ItemActionGroup>
+      </div>
+      <div className="flex flex-wrap items-end gap-3 text-sm">
+        <label
+          className="flex min-w-40 flex-col gap-1"
+          htmlFor={`ingest-webhook-type-${webhook.id}`}
+        >
+          <span className="text-xs text-fg-muted">Timeline type</span>
+          <EventClassSelect
+            id={`ingest-webhook-type-${webhook.id}`}
+            value={webhook.eventClass}
+            disabled={disabled}
+            onChange={(next) => {
+              void onPatch(webhook.id, { eventClass: next });
+            }}
+          />
+        </label>
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={webhook.visibilityDefault === 'team'}
+            disabled={disabled}
+            onChange={(e) =>
+              void onPatch(webhook.id, {
+                visibilityDefault: e.target.checked ? 'team' : 'private',
+              })
+            }
+          />
+          Team-visible
+        </label>
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={webhook.proposalGenerationEnabled}
+            disabled={disabled}
+            onChange={(e) =>
+              void onPatch(webhook.id, {
+                proposalGenerationEnabled: e.target.checked,
+              })
+            }
+          />
+          Proposals
+        </label>
+      </div>
+    </li>
   );
 }

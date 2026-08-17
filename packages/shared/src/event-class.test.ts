@@ -109,6 +109,18 @@ describe('timeline event class', () => {
     expect(
       classifyCapturedEvent({
         source: 'integration',
+        metadata: { provider: 'monday', event_type: 'update.created' },
+      }),
+    ).toBe('communication');
+    expect(
+      classifyCapturedEvent({
+        source: 'integration',
+        metadata: { provider: 'monday', event_type: 'item.status_changed' },
+      }),
+    ).toBe('work_record');
+    expect(
+      classifyCapturedEvent({
+        source: 'integration',
         metadata: { provider: 'gitlab', gitlab: { type: 'pipeline' } },
       }),
     ).toBe('pulse');

@@ -1,9 +1,8 @@
+import type { TimelineEventClass } from '#src/event-class.js';
 import type {
   integrations as integrationsTable,
   providerConnections as providerConnectionsTable,
 } from '@timeline/db';
-
-import type { TimelineEventClass } from '#src/event-class.js';
 
 // Phase 11 — Provider adapter interface.
 //

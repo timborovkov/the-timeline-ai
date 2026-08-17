@@ -440,7 +440,6 @@ function TimelineBrowserSection({
           members={members}
           userMap={userMap}
           baseParams={baseParams}
-          hasFilters={hasFilters}
           hasPanelFilters={hasPanelFilters}
           sourceFilterValue={sourceFilterValue}
           originFilterValue={originFilterValue}
@@ -524,7 +523,6 @@ function TimelineFilterPanel({
   members,
   userMap,
   baseParams,
-  hasFilters,
   hasPanelFilters,
   sourceFilterValue,
   originFilterValue,
@@ -543,7 +541,6 @@ function TimelineFilterPanel({
   members: TimelineMember[];
   userMap: TimelineUserMap;
   baseParams: TimelineBaseParams;
-  hasFilters: boolean;
   hasPanelFilters: boolean;
   sourceFilterValue: string;
   originFilterValue: string;

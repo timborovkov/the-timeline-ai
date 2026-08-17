@@ -1564,7 +1564,10 @@ describe('writeIntegrationEvents visibility', () => {
       ],
     });
     expect(insertedIds).toHaveLength(1);
-    const [row] = await db.select().from(rawEvents).where(eq(rawEvents.id, insertedIds[0] ?? ''));
+    const [row] = await db
+      .select()
+      .from(rawEvents)
+      .where(eq(rawEvents.id, insertedIds[0] ?? ''));
     expect(row?.sourceMetadata).toMatchObject({ event_class: 'pulse' });
     await expect(db.select().from(artifactClusters)).resolves.toEqual([]);
     await expect(db.select().from(entities)).resolves.toEqual([]);

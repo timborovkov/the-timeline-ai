@@ -14,11 +14,6 @@ import {
 } from '@timeline/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
-import {
-  classifyCapturedEvent,
-  promotesWorkspaceObject,
-  type TimelineEventClass,
-} from '#src/event-class.js';
 import type { IntegrationEvent, IntegrationRow, ObjectMapping } from '#src/integrations/types.js';
 
 import {
@@ -34,6 +29,7 @@ import {
   reconcileLinkArtifactsForRawEvent,
   textHasLinks,
 } from '#src/conversational/link-artifacts.js';
+import { classifyCapturedEvent, type TimelineEventClass } from '#src/event-class.js';
 import { invalidateObjectSummariesForRawEvent } from '#src/objects/summaries.js';
 import { enqueueEmbedJob, enqueueExtractJob } from '#src/queue/queues.js';
 import {
@@ -345,7 +341,7 @@ export async function writeIntegrationEvents(deps: {
 
   const artifactEvents = activeWritableEvents.filter(
     (evt): evt is IntegrationEvent & { objectMap: ObjectMapping } =>
-      Boolean(evt.objectMap) && promotesWorkspaceObject(integrationEventClass(evt)),
+      Boolean(evt.objectMap) && integrationEventClass(evt) !== 'pulse',
   );
   const linkEvents = activeWritableEvents.filter((evt) => textHasLinks(evt.contentText));
   await Promise.all(

@@ -283,7 +283,13 @@ function inspectorFacts(moment: TimelineMoment, timezone: string): [string, stri
     firstMetaString(meta, ['repo', 'repository', 'project']),
     timezone,
   );
-  addDetail(entries, seen, 'Branch', firstMetaString(meta, ['head_branch', 'branch', 'ref']), timezone);
+  addDetail(
+    entries,
+    seen,
+    'Branch',
+    firstMetaString(meta, ['head_branch', 'branch', 'ref']),
+    timezone,
+  );
   addDetail(
     entries,
     seen,
@@ -1274,9 +1280,7 @@ function TimelineMomentRow({
               <p
                 className={cn(
                   'mt-0.5 break-words text-sm leading-5 md:max-w-[88ch]',
-                  story
-                    ? 'line-clamp-2 font-medium text-fg'
-                    : 'line-clamp-1 font-medium text-fg',
+                  story ? 'line-clamp-2 font-medium text-fg' : 'line-clamp-1 font-medium text-fg',
                 )}
               >
                 {title}
@@ -1437,7 +1441,9 @@ export function TimelineList({
 
   return (
     <div
-      aria-label={compact ? 'Recent timeline moments' : mode === 'events' ? 'All events' : 'Timeline moments'}
+      aria-label={
+        compact ? 'Recent timeline moments' : mode === 'events' ? 'All events' : 'Timeline moments'
+      }
       data-timeline-mode={mode}
     >
       {dateGroups.map(([date, group]) => (
