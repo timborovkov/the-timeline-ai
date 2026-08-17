@@ -31,6 +31,7 @@ import { EventVisibilityForm, type SavedEventVisibility } from '@/components/eve
 import { useInspector } from '@/components/inspector-context';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { TechnicalDetails } from '@/components/technical-details';
+import { VirtualList } from '@/components/collections/virtual-list';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
 import {
@@ -1196,7 +1197,7 @@ function TimelineMomentRow({
     );
   }
   return (
-    <li
+    <div
       id={moment.anchorId}
       aria-current={selected ? 'true' : undefined}
       className={cn(
@@ -1305,7 +1306,7 @@ function TimelineMomentRow({
           initialPinned={pinned}
         />
       </div>
-    </li>
+    </div>
   );
 }
 
@@ -1426,41 +1427,73 @@ export function TimelineList({
 
   return (
     <div aria-label={compact ? 'Recent timeline moments' : 'Timeline moments'}>
-      {dateGroups.map(([date, group]) => (
-        <section key={date} aria-labelledby={`timeline-date-${date}`}>
-          <h2
-            id={`timeline-date-${date}`}
-            className={cn(
-              '-mx-3 bg-bg px-3 font-mono uppercase tracking-[0.14em] text-fg-dim',
-              compact
-                ? 'py-1 text-[10px]'
-                : 'sticky top-0 z-10 border-y border-border py-2 text-[11px]',
-            )}
-          >
-            {date}
-          </h2>
-          <ol>
-            {group.map((moment) => (
-              <TimelineMomentRow
-                key={moment.id}
-                moment={moment}
-                audioUrlMap={audioUrlMap}
-                currentUserId={currentUserId}
-                isAdmin={isAdmin}
-                members={members}
-                capturedFilesByEventId={capturedFilesByEventId}
-                focused={
-                  moment.id === focusMomentId ||
-                  moment.rawEvents.some((event) => event.id === focusEventId)
-                }
-                compact={compact}
-                pinned={pinnedMomentIds.has(moment.id)}
-                timezone={resolvedTimezone}
-              />
-            ))}
-          </ol>
-        </section>
-      ))}
+      {compact || typeof maxMoments === 'number' ? (
+        dateGroups.map(([date, group]) => (
+          <section key={date} aria-labelledby={`timeline-date-${date}`}>
+            <h2
+              id={`timeline-date-${date}`}
+              className={cn(
+                '-mx-3 bg-bg px-3 font-mono uppercase tracking-[0.14em] text-fg-dim',
+                compact
+                  ? 'py-1 text-[10px]'
+                  : 'sticky top-0 z-10 border-y border-border py-2 text-[11px]',
+              )}
+            >
+              {date}
+            </h2>
+            <ol>
+              {group.map((moment) => (
+                <TimelineMomentRow
+                  key={moment.id}
+                  moment={moment}
+                  audioUrlMap={audioUrlMap}
+                  currentUserId={currentUserId}
+                  isAdmin={isAdmin}
+                  members={members}
+                  capturedFilesByEventId={capturedFilesByEventId}
+                  focused={
+                    moment.id === focusMomentId ||
+                    moment.rawEvents.some((event) => event.id === focusEventId)
+                  }
+                  compact={compact}
+                  pinned={pinnedMomentIds.has(moment.id)}
+                  timezone={resolvedTimezone}
+                />
+              ))}
+            </ol>
+          </section>
+        ))
+      ) : (
+        <VirtualList
+          items={visibleMoments}
+          getItemKey={(moment) => moment.id}
+          estimateSize={88}
+          renderSticky={(moment) =>
+            moment ? (
+              <h2 className="sticky top-0 z-10 -mx-3 border-y border-border bg-bg px-3 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
+                {moment.dateLabel}
+              </h2>
+            ) : null
+          }
+          renderItem={(moment) => (
+            <TimelineMomentRow
+              moment={moment}
+              audioUrlMap={audioUrlMap}
+              currentUserId={currentUserId}
+              isAdmin={isAdmin}
+              members={members}
+              capturedFilesByEventId={capturedFilesByEventId}
+              focused={
+                moment.id === focusMomentId ||
+                moment.rawEvents.some((event) => event.id === focusEventId)
+              }
+              compact={compact}
+              pinned={pinnedMomentIds.has(moment.id)}
+              timezone={resolvedTimezone}
+            />
+          )}
+        />
+      )}
     </div>
   );
 }
