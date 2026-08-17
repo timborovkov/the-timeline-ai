@@ -32,8 +32,14 @@ export function EditableMetadata({
   const wasPendingRef = useRef(pending);
   const previousErrorRef = useRef(error);
 
+  if (pending && open) {
+    setOpen(false);
+  }
+
+  // Restore focus after a parent-driven save finishes. pending/error are the
+  // completion signals; there is no local event handler for that commit.
+  // react-doctor-disable-next-line react-doctor/no-event-handler -- Focus restoration is keyed to parent pending/error, not a local click.
   useEffect(() => {
-    if (pending) setOpen(false);
     const completedSave = wasPendingRef.current && !pending;
     const receivedError = Boolean(error && error !== previousErrorRef.current);
     if (completedSave || receivedError) {
@@ -45,7 +51,7 @@ export function EditableMetadata({
 
   return (
     <span className="relative inline-flex min-w-0 flex-col">
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover open={pending ? false : open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <button
             ref={(node) => {

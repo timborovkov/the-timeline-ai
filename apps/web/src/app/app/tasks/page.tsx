@@ -11,6 +11,7 @@ import { EmptyAction } from '@/components/empty-action';
 import { PageHeader } from '@/components/page-header';
 import { TaskBoard } from '@/components/tasks/task-board';
 import { TaskCategoryFilterRefresh } from '@/components/tasks/task-category-filter-refresh';
+import { TaskViewToggle } from '@/components/tasks/task-view-toggle';
 import { WorkFilterBar } from '@/components/work-filter-bar';
 import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -194,6 +195,13 @@ export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'
         members={memberOptions}
         projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}
         statusOptions={TASK_STATUS_COLUMNS}
+        viewControls={
+          <TaskViewToggle
+            view={view}
+            selectedTaskId={selectedVisibleTaskId}
+            filterParams={taskLoadFilterParams}
+          />
+        }
       />
 
       {categoryFilterBaseline ? (

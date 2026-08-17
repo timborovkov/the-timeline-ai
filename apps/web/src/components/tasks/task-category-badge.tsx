@@ -7,12 +7,13 @@ import type { TaskCategory, TaskCategoryStatus } from '@timeline/shared/task-cat
 import type { ReactNode } from 'react';
 
 import { useTaskCategoryPolling } from '@/components/tasks/task-category-polling';
+import { isoTimestamp } from '@/lib/iso-timestamp';
 import { cn } from '@/lib/utils';
 
 interface TaskCategoryPollingTarget {
   id: string;
   status: TaskCategoryStatus | null;
-  updatedAt: Date | null;
+  updatedAt: Date | string | null;
 }
 
 type PolledTaskCategoryState = ReturnType<typeof useTaskCategoryPolling>['data']['rows'][number];
@@ -49,7 +50,7 @@ function PendingTaskCategoryPollingProvider({
   const generationKey = useMemo(
     () =>
       tasks
-        .map((task) => `${task.id}:${task.updatedAt?.toISOString() ?? ''}`)
+        .map((task) => `${task.id}:${isoTimestamp(task.updatedAt) ?? ''}`)
         .sort()
         .join(','),
     [tasks],
@@ -108,7 +109,7 @@ export function LiveTaskCategoryBadge({
   taskId: string;
   category: TaskCategory | null;
   status: TaskCategoryStatus | null;
-  updatedAt?: Date | null;
+  updatedAt?: Date | string | null;
   className?: string;
 }) {
   const sharedStates = use(TaskCategoryPollingContext);
@@ -143,10 +144,10 @@ function StandalonePendingTaskCategoryBadge({
 }: {
   taskId: string;
   category: TaskCategory | null;
-  updatedAt: Date | null;
+  updatedAt: Date | string | null;
   className?: string;
 }) {
-  const categoryQuery = useTaskCategoryPolling([taskId], 3_000, updatedAt?.toISOString());
+  const categoryQuery = useTaskCategoryPolling([taskId], 3_000, isoTimestamp(updatedAt));
   const polled = categoryQuery.data.rows[0];
   return (
     <TaskCategoryBadge
