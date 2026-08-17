@@ -21,6 +21,7 @@ import { ThemeToggle } from '@/components/theme-toggle';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { UserMenu } from '@/components/user-menu';
 import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
+import { APP_MAIN_SCROLL_ID } from '@/lib/app-scroll';
 
 interface Props {
   active: TeamMembership;
@@ -110,7 +111,7 @@ export function AppShell({
               not shift horizontally during navigation. Pages may constrain
               an inner prose region, but not their outer frame. */}
             <main
-              id="main"
+              id={APP_MAIN_SCROLL_ID}
               className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-24 pt-6 md:px-8 md:py-8"
             >
               <AppMainScrollRestoration />
