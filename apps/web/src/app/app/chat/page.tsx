@@ -91,6 +91,7 @@ export default async function ChatPage({
     pinnedEntityName: chatSession.pinnedEntityId
       ? (pinnedNames.get(chatSession.pinnedEntityId) ?? null)
       : null,
+    updatedAt: chatSession.updatedAt.toISOString(),
   }));
 
   return (

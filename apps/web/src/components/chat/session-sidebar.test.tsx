@@ -4,6 +4,9 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { formatDisplayDateTime } from '@/lib/display-dates';
+import { DEFAULT_TIMEZONE } from '@/lib/timezones';
+
 const fakes = vi.hoisted(() => ({
   archive: vi.fn(),
   confirm: vi.fn(),
@@ -23,6 +26,29 @@ vi.mock('next/navigation', () => ({
 
 const { MobileSessionNav, SessionSidebar } = await import('./session-sidebar.js');
 
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+function sessionFixture(
+  overrides: Partial<{
+    id: string;
+    surface: string;
+    title: string | null;
+    pinnedEntityId: string | null;
+    pinnedEntityName: string | null;
+    updatedAt: string;
+  }> = {},
+) {
+  return {
+    id: 'session-1',
+    surface: 'web',
+    title: 'Launch review',
+    pinnedEntityId: null,
+    pinnedEntityName: null,
+    updatedAt: new Date(Date.now() - WEEK_MS).toISOString(),
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   fakes.confirm.mockResolvedValue(true);
@@ -36,20 +62,7 @@ afterEach(() => {
 describe('MobileSessionNav', () => {
   it('archives the active chat and returns to a fresh session', async () => {
     const user = userEvent.setup();
-    render(
-      <MobileSessionNav
-        activeSessionId="session-1"
-        sessions={[
-          {
-            id: 'session-1',
-            surface: 'web',
-            title: 'Launch review',
-            pinnedEntityId: null,
-            pinnedEntityName: null,
-          },
-        ]}
-      />,
-    );
+    render(<MobileSessionNav activeSessionId="session-1" sessions={[sessionFixture()]} />);
 
     await user.click(screen.getByRole('button', { name: 'Archive chat: Launch review' }));
 
@@ -62,27 +75,21 @@ describe('MobileSessionNav', () => {
 
   it('labels Telegram, Slack, and future-provider sessions on mobile and desktop', () => {
     const sessions = [
-      {
+      sessionFixture({
         id: 'telegram-session',
         surface: 'telegram',
         title: 'Telegram answer',
-        pinnedEntityId: null,
-        pinnedEntityName: null,
-      },
-      {
+      }),
+      sessionFixture({
         id: 'slack-session',
         surface: 'slack',
         title: 'Slack answer',
-        pinnedEntityId: null,
-        pinnedEntityName: null,
-      },
-      {
+      }),
+      sessionFixture({
         id: 'future-session',
         surface: 'discord',
         title: 'Future answer',
-        pinnedEntityId: null,
-        pinnedEntityName: null,
-      },
+      }),
     ];
     render(
       <>
@@ -97,24 +104,40 @@ describe('MobileSessionNav', () => {
   });
 
   it('marks the active desktop session and keeps its archive action keyboard reachable', () => {
-    render(
-      <SessionSidebar
-        activeSessionId="session-1"
-        sessions={[
-          {
-            id: 'session-1',
-            surface: 'web',
-            title: 'Launch review',
-            pinnedEntityId: null,
-            pinnedEntityName: null,
-          },
-        ]}
-      />,
-    );
+    render(<SessionSidebar activeSessionId="session-1" sessions={[sessionFixture()]} />);
 
-    expect(screen.getByRole('link', { name: 'Launch review' }).getAttribute('aria-current')).toBe(
+    expect(screen.getByRole('link', { name: /Launch review/ }).getAttribute('aria-current')).toBe(
       'page',
     );
-    expect(screen.getByRole('button', { name: 'Archive chat: Launch review' })).toBeTruthy();
+    const archive = screen.getByRole('button', { name: 'Archive chat: Launch review' });
+    expect(archive).toBeTruthy();
+    expect(archive.closest('fieldset')?.className).toContain('opacity-0');
+    expect(archive.closest('fieldset')?.className).toContain('group-hover:opacity-100');
+    expect(archive.closest('fieldset')?.className).toContain('focus-within:opacity-100');
+  });
+
+  it('shows last-activity age, a timestamp title, and short hairlines between rows', () => {
+    const older = sessionFixture();
+    const newer = sessionFixture({
+      id: 'session-2',
+      title: 'Website requirements',
+      updatedAt: new Date(Date.now() - 2 * WEEK_MS).toISOString(),
+    });
+    const { container } = render(
+      <>
+        <SessionSidebar activeSessionId={null} sessions={[older, newer]} />
+        <MobileSessionNav activeSessionId={null} sessions={[older, newer]} />
+      </>,
+    );
+
+    expect(screen.getAllByText('7 days ago')).toHaveLength(2);
+    expect(screen.getAllByText('14 days ago')).toHaveLength(2);
+    const age = screen.getAllByText('7 days ago')[0];
+    expect(age?.getAttribute('datetime')).toBe(older.updatedAt);
+    expect(age?.getAttribute('title')).toBe(
+      formatDisplayDateTime(older.updatedAt, { timezone: DEFAULT_TIMEZONE }),
+    );
+    expect(container.querySelectorAll('[data-session-rule="true"]')).toHaveLength(2);
+    expect(container.querySelector('[data-session-rule="true"]')?.className).toContain('w-[60%]');
   });
 });

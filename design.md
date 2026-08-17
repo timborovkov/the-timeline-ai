@@ -126,7 +126,9 @@ Ask, Work, Documents, Meetings, Connections, and Team.
 - Full-canvas chat and boards may opt into full bleed.
 - Provider-created chat sessions use a compact `TG`, `SL`, or neutral `EXT`
   badge in desktop and mobile history. Web-created sessions remain unbadged;
-  provider identity must not replace the human-readable session title.
+  provider identity must not replace the human-readable session title. Each
+  row shows last-activity age; archive stays hidden until hover or focus on
+  desktop.
 - Inspector: hidden until content exists. Desktop uses the right pane; mobile
   uses a focus-managed bottom sheet.
 - Work routes share `WorkSubnav`: Overview, Pinned, Objects, Tasks, Boards,
@@ -305,6 +307,11 @@ Ask uses a standard sans header. Human/assistant role labels are quiet 12px
 text; citations remain mono and lime. Tool execution is collapsed. Pinned
 objects always have a human label. Prompts handed off from Home are stored
 briefly in team-scoped session storage and never in the URL.
+
+The desktop session list stays dense: last-activity age under each title in
+mono 11px, a centered 60% hairline between rows, and archive revealed on row
+hover or keyboard focus. Hovering the relative age shows the localized
+timestamp. Touch session lists keep archive visible.
 
 The web Ask surface is the rich research view: answers may be thorough and use
 sections, lists, or tables, while inline citations remain inspectable links to
@@ -574,3 +581,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-14 | Customer-facing public language | Keeps review cadence, implementation state, indexing terms, and capability taxonomy in metadata while public pages explain concrete actions and availability. |
 | 2026-08-15 | Evidence-backed public product story | Makes the working-history problem, deliberate capture boundary, cited-versus-unused evidence, Telegram entry point, inspectable answers, and human approval contract explicit across the landing and how-it-works journey. |
 | 2026-08-16 | Unified workspace collection density | Replaces stacked form chrome and card grids with compact headers, one filter toolbar, 44px rows, semantic status glyphs, optimistic metadata triggers, and contextual selection without changing domain behavior. |
+| 2026-08-17 | Dense Ask session history | Reveals archive on hover/focus, shows relative last-activity age with a timestamp title, and uses a short centered hairline instead of a persistent trash column. |
