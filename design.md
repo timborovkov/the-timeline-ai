@@ -388,14 +388,16 @@ conversation-suggestion backfill stay inside closed Advanced tools and never
 use “needs attention” language.
 
 Reconciliation is an admin-only health view, not a retry queue. Members who
-open `/app/team/reconciliation` see an Admins-only empty state. The dashboard
-keeps How it works, Current health, and Evidence by source. Recent clusters,
-recent outputs, and cluster evidence/output lists use dense collection rows:
-status, human label, and relative time. Cluster IDs, output IDs, raw-event IDs,
-and raw enum keys stay in the row hover title. Cluster output JSON copy lives
-in the row overflow menu. Manual UUID reconcile stays inside closed Advanced
-tools. Cluster detail uses Team / Reconciliation breadcrumbs without a second
-back link; Reconcile and View workspace item sit in the header.
+open `/app/team/reconciliation` see an Admins-only empty state. The page
+explains itself in the header, then shows sources that still need evidence as
+dense rows, a Check coverage / Preview repair toolbar with hover hints, and
+recent clusters and outputs. There is no How it works primer, release-gate
+banner, or stat-card strip. Evidence-by-source counts, manual UUID reconcile,
+and run history stay inside closed Advanced tools. Cluster IDs, output IDs,
+raw-event IDs, and raw enum keys stay in the row hover title. Cluster output
+JSON copy lives in the row overflow menu. Cluster detail uses Team /
+Reconciliation breadcrumbs without a second back link; Reconcile and View
+workspace item sit in the header.
 
 Work → Pinned is the complete pin-management surface. It is a single
 side-to-side list with cursor pagination and All, Objects, Boards, Documents,
@@ -585,8 +587,9 @@ Jobs and Reconciliation list rows show status, a human label, and relative time.
 IDs, raw enum keys, and provider errors stay in the row hover title. Copy access
 for reconciliation JSON payloads lives in the row overflow menu. Audit and
 Integration Audit still keep UUIDs, refs, and JSON closed inside
-`TechnicalDetails`. Reconciliation is a health/inspect dashboard, not a retry
-queue. Manual UUID reconcile stays in Advanced tools.
+`TechnicalDetails`. Reconciliation has no stat-card strip and no release-gate
+banner; coverage actions sit on a toolbar with hover hints. Manual UUID
+reconcile stays in Advanced tools.
 
 ## States and responsive behavior
 
@@ -670,4 +673,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Jobs recovery dismiss at scale | Makes older-job dismiss a batch write with progress toasts, windows the 7-day snapshot behind Load more, and keeps retry/dismiss on the shared mutation-toast path. |
 | 2026-08-17 | Dense jobs recovery rows | Drops per-row Technical details so the admin queue is status, label, time, and retry/dismiss. |
 | 2026-08-17 | Job recovery row overflow | Renames the page Job recovery, moves per-row retry/dismiss into the overflow menu, and keeps IDs plus raw errors in the row hover title. |
-| 2026-08-17 | Dense reconciliation rows | Makes Reconciliation recent and cluster lists status, label, and relative time, moves IDs into hover titles, and shows members an Admins-only empty state. |
+| 2026-08-17 | Quiet reconciliation dashboard | Drops the How it works primer, release-gate banner, and stat cards, and puts coverage actions on a hinted toolbar above recent rows. |

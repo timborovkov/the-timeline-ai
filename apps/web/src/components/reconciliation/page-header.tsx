@@ -6,7 +6,7 @@ import { PageHeader, type PageHeaderMetadata } from '@/components/page-header';
 const RECONCILIATION_PAGE_TITLE = 'Reconciliation';
 
 const RECONCILIATION_PAGE_SUBTITLE =
-  'Timeline connects activity from different sources, checks the evidence, and proposes trustworthy updates for review.';
+  'Groups related captures into the same work, then proposes updates for review.';
 
 const RECONCILIATION_BREADCRUMB = [
   { label: 'Team', href: '/app/team' },

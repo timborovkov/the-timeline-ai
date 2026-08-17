@@ -786,9 +786,8 @@ test.describe.serial('reconciliation dashboard', () => {
     await page.goto('/app/team/reconciliation');
 
     await expect(page.getByRole('heading', { name: 'Reconciliation', exact: true })).toBeVisible();
-    const currentHealth = page.getByRole('region', { name: 'Current health' });
-    await expect(currentHealth).toBeVisible();
-    await expect(currentHealth.getByText(/Release gate/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Check coverage' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Preview repair' })).toBeVisible();
     await expect(page.getByText(fixtures.team.title).first()).toBeVisible();
     await expect(page.getByText('Customer project').first()).toBeVisible();
     await openAdvancedTools(page);

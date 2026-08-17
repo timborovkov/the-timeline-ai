@@ -1,16 +1,6 @@
 import { eventSource } from '@timeline/db';
 import { withTeam } from '@timeline/shared/team-scope';
-import {
-  CheckCircle2,
-  ChevronDown,
-  DatabaseZap,
-  FileCheck2,
-  GitMerge,
-  ListRestart,
-  Play,
-  ScanSearch,
-  TriangleAlert,
-} from 'lucide-react';
+import { ChevronDown, ListRestart, Play } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -20,7 +10,6 @@ import type {
   ReconciliationDashboardRun,
   ReconciliationDashboardRunHistory,
 } from '@timeline/shared/reconciliation';
-import type { LucideIcon } from 'lucide-react';
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
@@ -29,6 +18,7 @@ import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { DebouncedFilterForm } from '@/components/debounced-filter-form';
 import { ReconciliationForbiddenView } from '@/components/reconciliation/forbidden-view';
+import { HintedSubmitButton } from '@/components/reconciliation/hinted-submit-button';
 import { ReconciliationPageHeader } from '@/components/reconciliation/page-header';
 import {
   artifactClusterKindLabel,
@@ -39,6 +29,7 @@ import {
   outputKindLabel,
   outputStatusLabel,
 } from '@/components/reconciliation/presentation';
+import { repairFailureCopy } from '@/components/reconciliation/repair-copy';
 import {
   reconciliationClusterRowHint,
   reconciliationOutputRowHint,
@@ -55,7 +46,7 @@ import { formatDisplayDateTime } from '@/lib/display-dates';
 
 export const metadata: Metadata = {
   title: 'Reconciliation',
-  description: 'Review reconciliation evidence coverage, outputs, and replay health.',
+  description: 'Groups related captures into the same work, then proposes updates for review.',
 };
 
 export const dynamic = 'force-dynamic';
@@ -98,13 +89,12 @@ export default async function ReconciliationDashboardPage({
 
   const coverage = dashboard.evidenceCoverage;
   const diagnostics = dashboard.diagnostics;
-  const outputAttention = countKeys(dashboard.outputs.byStatus, ['pending', 'failed']);
   const outboxAttention = countKeys(dashboard.projectionOutbox.byStatus, ['pending', 'failed']);
   const legacyProvenanceRows = diagnostics.legacyProvenance.totalRows;
   const approvalRate = formatRate(diagnostics.approvalStats.acceptanceRate);
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-8">
       <ReconciliationPageHeader
         teamName={active.teamName}
         metadata={[
@@ -123,101 +113,24 @@ export default async function ReconciliationDashboardPage({
             ),
             mono: true,
           },
+          ...(diagnostics.openConflicts > 0
+            ? ([
+                {
+                  label: 'conflicts',
+                  value: diagnostics.openConflicts,
+                  danger: true,
+                },
+              ] as const)
+            : []),
         ]}
         srLabel={`Reconciliation for ${active.teamName}. Admins only. ${String(coverage.totalRawEvents)} captured items checked; ${String(coverage.missingRawEvents + coverage.degradedReplayEvidence)} need repair. Times in ${timezone}.`}
       />
       {notice ? <Notice tone={notice.tone} message={notice.message} /> : null}
 
-      <section aria-labelledby="how-reconciliation-works" className="space-y-4">
-        <SectionHeading id="how-reconciliation-works">How it works</SectionHeading>
-        <div className="grid overflow-hidden rounded-sm border border-border bg-surface md:grid-cols-3 md:divide-x md:divide-border">
-          <ProcessStep
-            icon={ScanSearch}
-            number="01"
-            title="Check the evidence"
-            description="Captured activity is converted into consistent, citable evidence."
-            metric={`${coverage.fullReplayEvidence.toLocaleString()} of ${coverage.totalRawEvents.toLocaleString()} ready`}
-          />
-          <ProcessStep
-            icon={GitMerge}
-            number="02"
-            title="Connect related work"
-            description="Evidence about the same task, incident, or project is grouped together."
-            metric={`${dashboard.clusters.total.toLocaleString()} clusters · ${dashboard.associations.total.toLocaleString()} links`}
-          />
-          <ProcessStep
-            icon={FileCheck2}
-            number="03"
-            title="Propose safe updates"
-            description="Potential workspace changes are prepared for approval, with their sources attached."
-            metric={`${outputAttention.toLocaleString()} awaiting attention`}
-          />
-        </div>
-      </section>
-
-      <section aria-labelledby="reconciliation-health" className="space-y-4">
-        <SectionHeading id="reconciliation-health">Current health</SectionHeading>
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <ReleaseGatePanel gate={coverage.releaseGate} />
-          <ReplayPanel coverageLimit={dashboard.coverageLimit} />
-        </div>
-        <div className="grid divide-y divide-border rounded-sm border border-border bg-surface sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4">
-          <Metric label="Evidence ready" value={coverage.fullReplayEvidence} />
-          <Metric
-            label="Needs evidence"
-            value={coverage.missingRawEvents}
-            tone={coverage.missingRawEvents > 0 ? 'hot' : 'ok'}
-          />
-          <Metric
-            label="Needs full replay"
-            value={coverage.degradedReplayEvidence}
-            tone={coverage.degradedReplayEvidence > 0 ? 'hot' : 'ok'}
-          />
-          <Metric
-            label="Open conflicts"
-            value={diagnostics.openConflicts}
-            tone={diagnostics.openConflicts > 0 ? 'hot' : 'ok'}
-          />
-        </div>
-      </section>
-
-      <section className="space-y-4">
-        <div>
-          <SectionHeading>Evidence by source</SectionHeading>
-          <p className="mt-1 max-w-2xl text-sm text-fg-muted">
-            This shows where captured activity is ready to support a proposed update—and where
-            Timeline still needs to rebuild evidence.
-          </p>
-        </div>
-        <div className="overflow-x-auto rounded-sm border border-border bg-surface">
-          <table className="min-w-full divide-y divide-border text-sm">
-            <thead className="bg-muted/30 text-left font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-              <tr>
-                <th className="px-3 py-2">Source</th>
-                <th className="px-3 py-2 text-right">Raw</th>
-                <th className="px-3 py-2 text-right">Normalized</th>
-                <th className="px-3 py-2 text-right">Missing</th>
-                <th className="px-3 py-2 text-right">Full replay</th>
-                <th className="px-3 py-2 text-right">Degraded</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {Object.entries(coverage.bySource).map(([source, row]) => (
-                <tr key={source}>
-                  <td className="px-3 py-2 font-medium">{sourceLabel(source)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{row.totalRawEvents}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{row.normalizedRawEvents}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{row.missingRawEvents}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{row.fullReplayEvidence}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {row.degradedReplayEvidence}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      <CoverageSection
+        failures={coverage.releaseGate.failures}
+        coverageLimit={dashboard.coverageLimit}
+      />
 
       <section className="space-y-4">
         <SectionHeading>Recently reconciled</SectionHeading>
@@ -239,6 +152,7 @@ export default async function ReconciliationDashboardPage({
         </summary>
         <div className="space-y-8 border-t border-border p-4 sm:p-6">
           <ManualReconcilePanel />
+          <EvidenceBySource coverage={coverage} />
           <section className="grid gap-4 xl:grid-cols-2">
             <StatusPanel title="Cluster kinds" rows={dashboard.clusters.byKind} />
             <StatusPanel title="Run status" rows={dashboard.runs.byStatus} />
@@ -288,77 +202,168 @@ export default async function ReconciliationDashboardPage({
   );
 }
 
-function ProcessStep({
-  icon: Icon,
-  number,
-  title,
-  description,
-  metric,
+function CoverageSection({
+  coverageLimit,
+  failures,
 }: {
-  icon: LucideIcon;
-  number: string;
-  title: string;
-  description: string;
-  metric: string;
+  coverageLimit: number;
+  failures: {
+    source: string;
+    code: string;
+    rawEventCount: number;
+    message: string;
+  }[];
 }) {
   return (
-    <article className="relative min-h-48 p-5">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex size-9 items-center justify-center rounded-sm bg-surface-2 text-fg">
-          <Icon className="size-4" />
-        </div>
-        <span className="font-mono text-xs tabular-nums text-fg-dim">{number}</span>
-      </div>
-      <h3 className="mt-5 text-base font-semibold tracking-tight text-fg">{title}</h3>
-      <p className="mt-1 text-sm leading-relaxed text-fg-muted">{description}</p>
-      <div className="mt-4 font-mono text-xs uppercase tracking-[0.1em] text-signal">{metric}</div>
-    </article>
+    <div className="border-y border-border">
+      <RepairAttention failures={failures} />
+      <CoverageToolbar coverageLimit={coverageLimit} hasRepairRows={failures.length > 0} />
+    </div>
   );
 }
 
-function ReplayPanel({ coverageLimit }: { coverageLimit: number }) {
+function RepairAttention({
+  failures,
+}: {
+  failures: {
+    source: string;
+    code: string;
+    rawEventCount: number;
+    message: string;
+  }[];
+}) {
+  if (failures.length === 0) return null;
   return (
-    <section className="space-y-4 rounded-sm border border-border bg-surface p-4">
+    <div aria-label="Evidence that needs repair">
+      {failures.map((failure) => {
+        const copy = repairFailureCopy({
+          code: failure.code,
+          message: failure.message,
+          rawEventCount: failure.rawEventCount,
+        });
+        return (
+          <CollectionRow
+            key={`${failure.source}:${failure.code}`}
+            leading={<CollectionStatus value="failed" label={copy.status} tone="danger" />}
+            title={copy.detail}
+            titleHint={copy.hint}
+            context={sourceLabel(failure.source)}
+            contextTitle={copy.hint}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function CoverageToolbar({
+  coverageLimit,
+  hasRepairRows,
+}: {
+  coverageLimit: number;
+  hasRepairRows: boolean;
+}) {
+  const windowHint = `Looks at up to ${coverageLimit.toLocaleString()} recent captures.`;
+  return (
+    <form
+      action={queueReconciliationJobFormAction}
+      className={`flex flex-col gap-2 px-2 py-2 sm:px-3 md:flex-row md:items-center md:justify-end${hasRepairRows ? ' border-t border-border' : ''}`}
+    >
+      <p className="text-xs text-fg-muted md:mr-auto">{windowHint}</p>
+      <label className="sr-only" htmlFor="reconciliation-source">
+        Source
+      </label>
+      <select
+        id="reconciliation-source"
+        name="source"
+        aria-label="Source"
+        title="Limit the check to one capture source."
+        className="h-8 rounded-sm border border-border bg-background px-2 text-sm text-fg"
+        defaultValue=""
+      >
+        <option value="">All sources</option>
+        {eventSource.enumValues.map((source) => (
+          <option key={source} value={source}>
+            {sourceLabel(source)}
+          </option>
+        ))}
+      </select>
+      <div className="flex flex-wrap gap-2">
+        <HintedSubmitButton
+          name="mode"
+          value="audit"
+          variant="outline"
+          size="sm"
+          hint="Count captures that still need evidence. Nothing is changed."
+        >
+          <ListRestart className="size-4" />
+          Check coverage
+        </HintedSubmitButton>
+        <HintedSubmitButton
+          name="mode"
+          value="backfill"
+          size="sm"
+          hint="Queue a dry-run that rebuilds missing evidence. Workspace data does not change."
+        >
+          <Play className="size-4" />
+          Preview repair
+        </HintedSubmitButton>
+      </div>
+      <input type="hidden" name="dryRun" value="true" />
+    </form>
+  );
+}
+
+function EvidenceBySource({
+  coverage,
+}: {
+  coverage: {
+    bySource: Record<
+      string,
+      {
+        totalRawEvents: number;
+        normalizedRawEvents: number;
+        missingRawEvents: number;
+        fullReplayEvidence: number;
+        degradedReplayEvidence: number;
+      }
+    >;
+  };
+}) {
+  return (
+    <section className="space-y-3">
       <div>
-        <div className="flex items-center gap-2">
-          <DatabaseZap className="size-4 text-signal" />
-          <h3 className="font-semibold text-fg">Check or repair evidence</h3>
-        </div>
+        <SectionTitle label="Evidence by source" />
         <p className="mt-1 text-sm text-fg-muted">
-          Check first, then preview a safe repair without changing workspace data.
+          Where captured activity already has evidence, and where a rebuild is still needed.
         </p>
       </div>
-      <form action={queueReconciliationJobFormAction} className="space-y-3">
-        <label className="grid gap-1.5 text-sm font-medium text-fg">
-          Source
-          <select
-            name="source"
-            className="h-10 rounded-sm border border-border bg-background px-3 text-sm text-fg"
-            defaultValue=""
-          >
-            <option value="">All sources</option>
-            {eventSource.enumValues.map((source) => (
-              <option key={source} value={source}>
-                {sourceLabel(source)}
-              </option>
+      <div className="overflow-x-auto rounded-sm border border-border bg-background">
+        <table className="min-w-full divide-y divide-border text-sm">
+          <thead className="bg-muted/30 text-left font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+            <tr>
+              <th className="px-3 py-2">Source</th>
+              <th className="px-3 py-2 text-right">Raw</th>
+              <th className="px-3 py-2 text-right">Normalized</th>
+              <th className="px-3 py-2 text-right">Missing</th>
+              <th className="px-3 py-2 text-right">Full replay</th>
+              <th className="px-3 py-2 text-right">Degraded</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {Object.entries(coverage.bySource).map(([source, row]) => (
+              <tr key={source}>
+                <td className="px-3 py-2 font-medium">{sourceLabel(source)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{row.totalRawEvents}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{row.normalizedRawEvents}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{row.missingRawEvents}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{row.fullReplayEvidence}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{row.degradedReplayEvidence}</td>
+              </tr>
             ))}
-          </select>
-        </label>
-        <div className="grid gap-2 sm:grid-cols-2">
-          <Button type="submit" name="mode" value="audit" variant="outline">
-            <ListRestart className="size-4" />
-            Check coverage
-          </Button>
-          <Button type="submit" name="mode" value="backfill">
-            <Play className="size-4" />
-            Preview repair
-          </Button>
-        </div>
-        <input type="hidden" name="dryRun" value="true" />
-      </form>
-      <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-        Scanned window · {coverageLimit.toLocaleString()} items max
-      </p>
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
@@ -464,73 +469,6 @@ function FormField({ label, children }: { label: string; children: ReactNode }) 
       {label}
       {children}
     </label>
-  );
-}
-
-function ReleaseGatePanel({
-  gate,
-}: {
-  gate: {
-    passed: boolean;
-    failureCount: number;
-    failures: {
-      source: string;
-      code: string;
-      rawEventCount: number;
-      message: string;
-    }[];
-  };
-}) {
-  const Icon = gate.passed ? CheckCircle2 : TriangleAlert;
-  return (
-    <section
-      className={`space-y-4 rounded-sm border p-5 ${gate.passed ? 'border-border bg-surface' : 'border-destructive/40 bg-destructive/10'}`}
-    >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Icon className={`size-4 ${gate.passed ? 'text-signal' : 'text-destructive'}`} />
-          <h3 className="font-semibold text-fg">
-            {gate.passed ? 'Evidence is ready' : 'Some evidence needs repair'}
-          </h3>
-        </div>
-        <Badge variant={gate.passed ? 'outline' : 'destructive'} className="rounded-sm">
-          {gate.passed
-            ? 'Release gate passed'
-            : `Release gate · ${gate.failureCount} failure${gate.failureCount === 1 ? '' : 's'}`}
-        </Badge>
-      </div>
-      {gate.passed ? (
-        <p className="text-sm text-fg-muted">
-          Every captured item in the scanned window has the evidence needed for reconciliation.
-        </p>
-      ) : (
-        <div>
-          <p className="text-sm text-fg-muted">
-            These items cannot yet support complete, source-backed updates. Check coverage, then
-            preview a repair.
-          </p>
-          <ul className="mt-3 divide-y divide-destructive/20 text-sm">
-            {gate.failures.map((failure) => (
-              <li
-                key={`${failure.source}:${failure.code}`}
-                className="grid gap-1 py-3 sm:grid-cols-[140px_1fr_auto] sm:gap-3"
-              >
-                <span className="font-medium">{sourceLabel(failure.source)}</span>
-                <span className="text-fg-muted">
-                  {failure.message}
-                  <span className="ml-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-                    {failure.code}
-                  </span>
-                </span>
-                <span className="tabular-nums text-fg-muted">
-                  {failure.rawEventCount.toLocaleString()} raw
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </section>
   );
 }
 

@@ -108,11 +108,15 @@ _Avoid_: Cleanup, removal, sync, extraction
 **Reconciliation Dashboard**:
 A team-scoped owner/admin health view for evidence coverage, clusters, and
 proposed workspace updates. Members who open the page see an Admins-only empty
-state. Recent clusters, recent outputs, and cluster evidence/output lists show
-status, a human label, and relative time. Cluster IDs, output IDs, raw-event
-IDs, and raw enum keys stay in the row hover title. Copying an output payload
-lives in the row overflow menu. Manual UUID reconcile stays in Advanced tools.
-_Avoid_: Recovery queue, retry dashboard, operator console
+state. The header explains that captures are grouped into work and proposed
+updates wait for review. Sources that still need evidence appear as dense rows.
+Check coverage and Preview repair sit on a toolbar with hover hints. Recent
+clusters, recent outputs, and cluster evidence/output lists show status, a
+human label, and relative time. Cluster IDs, output IDs, raw-event IDs, and raw
+enum keys stay in the row hover title. Copying an output payload lives in the
+row overflow menu. Evidence-by-source counts and manual UUID reconcile stay in
+Advanced tools.
+_Avoid_: Recovery queue, retry dashboard, operator console, release gate, stat cards
 
 **Lifecycle Update**:
 A workspace reconciliation outcome that changes the state of a derived artifact

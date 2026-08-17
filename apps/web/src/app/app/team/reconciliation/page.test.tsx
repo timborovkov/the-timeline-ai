@@ -66,17 +66,30 @@ describe('ReconciliationDashboardPage', () => {
     );
 
     expect(html).toContain('Queued cluster replay.');
-    expect(html).toContain('How it works');
-    expect(html).toContain('Check the evidence');
-    expect(html).toContain('9 of 12 ready');
-    expect(html).toContain('Connect related work');
-    expect(html).toContain('Propose safe updates');
+    expect(html).toContain(
+      'Groups related captures into the same work, then proposes updates for review.',
+    );
+    expect(html).not.toContain('How it works');
+    expect(html).not.toContain('Evidence ready');
+    expect(html).not.toContain('Release gate');
+    expect(html).toContain('Needs evidence');
+    expect(html).toContain('1 capture has no evidence yet');
+    expect(html).toContain('Needs replay');
+    expect(html).toContain('1 capture needs a full evidence rebuild');
+    expect(html).toContain('missing_evidence');
+    expect(html).toContain('degraded_replay');
+    expect(html).not.toContain('Current health');
+    expect(html).not.toContain('SCANNED WINDOW');
+    expect(html).toContain('Check coverage');
+    expect(html).toContain('Preview repair');
+    expect(html).toContain('Count captures that still need evidence. Nothing is changed.');
+    expect(html).toContain(
+      'Queue a dry-run that rebuilds missing evidence. Workspace data does not change.',
+    );
+    expect(html).toContain('Looks at up to 5,000 recent captures.');
     expect(html).toContain('Advanced tools');
     expect(html).not.toContain('Advanced tools and diagnostics');
-    expect(html).toContain('Release gate');
-    expect(html).toContain('2 failures');
-    expect(html).toContain('missing_evidence');
-    expect(html).toContain('1 raw');
+    expect(html).toContain('Evidence by source');
     expect(html).toContain('evidence_audit:integration');
     expect(html).toContain('gate failures');
     expect(html).toContain('object:object-1');
