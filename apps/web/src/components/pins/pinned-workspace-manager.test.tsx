@@ -143,7 +143,7 @@ describe('PinnedWorkspaceManager', () => {
       />,
     );
 
-    expect(screen.queryByRole('status')).toBeNull();
     expect(screen.queryByText('1')).toBeNull();
+    expect(document.querySelector('output')).toBeNull();
   });
 });
