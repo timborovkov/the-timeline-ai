@@ -67,7 +67,9 @@ docker compose ps           # all services should be "healthy"
         console). The <code>rustfs-init</code> container runs once to create the required buckets,
         enable versioning, and allow direct browser document uploads from any local
         <code>localhost</code> or <code>127.0.0.1</code> port, including isolated worktree and E2E
-        servers.
+        servers. Compose keeps Qdrant snapshots on the data volume
+        (<code>QDRANT__STORAGE__SNAPSHOTS_PATH=/qdrant/storage/snapshots</code>) so snapshot create
+        does not fail with overlayfs <code>EXDEV</code> / CrossesDevices on some Cloud Agent hosts.
       </p>
 
       <p>Install deps, run migrations, and optionally seed demo data:</p>
@@ -106,11 +108,13 @@ pnpm demo:seed              # optional Acme Labs demo corpus; indexes vectors an
         Drive credentials are fake, encrypted, and disabled for sync. Daily digest send stays
         disabled so the worker can run without outbound email or chat-bot configuration. Seed still
         creates the default email digest destination for the team, plus disabled Slack and Telegram
-        destinations, and twenty weekdays of digest history. Verification checks canonical login
+        destinations, and twenty weekdays of digest history. Verification checks all eight login
         identities, active team roles, and password usability without printing password hashes. It
         downloads seeded RustFS objects and verifies their actual SHA-256 bytes, then uses a real
         query embedding and team/user-scoped Qdrant searches to confirm every expected Northstar
-        raw-event, fact, document-chunk, and meeting-chunk point. A missing embedding prerequisite
+        raw-event, fact, document-chunk, and meeting-chunk point. It also requires every expanded
+        corpus document version to be <code>embedded</code> with a confirmed Qdrant point for each
+        corpus chunk id. A missing embedding prerequisite
         fails closed, and documents remain <code>chunked</code> until Qdrant confirms applied point
         writes. Seeded canonical objects leave legacy <code>source_event_id</code> empty and expose
         demo provenance through reconciliation evidence, associations, and applied outputs. The

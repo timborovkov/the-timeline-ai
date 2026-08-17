@@ -144,9 +144,10 @@ Treat this file as an operating contract for agents, not a loose README.
   documented Acme Labs team, eight fake login users, a month of timeline events, objects, custom
   boards, documents, meetings, Ask history, pending proposals, digest history, and the
   deterministic fictional Northstar evidence corpus with encrypted fake integration credentials after
-  migrations. `pnpm demo:reset` is `pnpm dev:wipe && pnpm demo:seed`. `pnpm demo:verify` fails closed on both canonical login identities, active memberships,
+  migrations. `pnpm demo:reset` is `pnpm dev:wipe && pnpm demo:seed`. `pnpm demo:verify` fails closed on all eight login identities, active memberships,
   password usability, downloaded document-byte checksums, scoped Qdrant
-  discoverability for raw events/facts/document chunks/meeting chunks, fixture chronology,
+  discoverability for Northstar raw events/facts/document chunks/meeting chunks, expanded-corpus
+  document `embedded` status and chunk vectors, fixture chronology,
   visibility, source links, canonical support drift, or expanded-corpus volume floors. The commands refuse production and
   unapproved remote databases/Qdrant; S3 writes additionally require the local endpoint and
   `timeline-documents` bucket unless `ALLOW_DEV_SEED_STORAGE` carries the documented explicit

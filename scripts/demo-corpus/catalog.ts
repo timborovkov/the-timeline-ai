@@ -13,14 +13,14 @@ export const TEAM_ID = DEMO_IDS.team;
 export const CORPUS_VOLUME_FLOORS = {
   people: 8,
   events: 150,
-  objects: 50,
-  documents: 10,
-  meetings: 7,
-  pendingProposals: 12,
-  boardItems: 14,
-  chatSessions: 5,
-  digests: 15,
-  facts: 20,
+  objects: 55,
+  documents: 11,
+  meetings: 8,
+  pendingProposals: 14,
+  boardItems: 16,
+  chatSessions: 6,
+  digests: 20,
+  facts: 22,
 } as const;
 
 export const CORPUS_SECRETS = {
@@ -852,6 +852,16 @@ export const CORPUS_EVENTS: CorpusEvent[] = [
   ),
 ];
 
+export function corpusEventId(needle: string): string {
+  const matches = CORPUS_EVENTS.filter((row) => row.contentText.includes(needle));
+  if (matches.length !== 1 || !matches[0]) {
+    throw new Error(
+      `Expected exactly one corpus event containing ${JSON.stringify(needle)}, found ${String(matches.length)}`,
+    );
+  }
+  return matches[0].id;
+}
+
 const OBJECT_DEFS: Array<Omit<CorpusObject, 'id'> & { n: number }> = [
   {
     n: 1,
@@ -1583,7 +1593,7 @@ export const CORPUS_DOCUMENTS: CorpusDocument[] = [
     paragraphs: [
       'Acme Labs is building Atlas, an evidence-backed working history for operators who are tired of status theater.',
       'Design partner: Northstar Works, currently blocked on field-mapping confirmation, CSV fallback already accepted.',
-      'Traction: six active pipeline deals, one paid design-partner invoice, importer reliability shipped in atlas-0.8.0.',
+      'Traction: Helio, Moss, Orchard, Brightline, and Northstar on dealflow; Polar inbound pending an add-to-board approval; one paid design-partner invoice; importer reliability shipped in atlas-0.8.0.',
       'Ask: Northwind Capital to lead a Series A. Runway at current burn is 11.4 months. Hiring two roles: backend and design.',
       'Use of proceeds: capture reliability, approval-backed CRM memory, and a quieter launch webinar on 20 August.',
     ],
@@ -1855,7 +1865,7 @@ export const CORPUS_SAVED_MEETING = {
   createdByUserId: CORPUS_PERSON.avery.id,
   permissionConfirmedAt: '2026-07-14T09:00:00.000Z',
   scheduleConfig: {
-    weekdays: [1],
+    weekdays: [2],
     times: ['12:30'],
     timezone: 'Europe/Helsinki',
     joinOffsetMinutes: 0,

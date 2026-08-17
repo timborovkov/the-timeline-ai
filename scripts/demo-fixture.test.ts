@@ -25,6 +25,7 @@ import {
   CORPUS_PEOPLE,
   CORPUS_PROPOSALS,
   CORPUS_VOLUME_FLOORS,
+  corpusEventId,
   corpusObjectId,
 } from './demo-corpus/index.js';
 
@@ -243,10 +244,18 @@ assert.match(glossary, /Customer dealflow/);
 assert.match(glossary, /Series A funding/);
 assert.match(glossary, /pnpm demo:seed/);
 assert.match(glossary, /pnpm demo:reset/);
+assert.match(glossary, /Polar Studio is inbound/);
+assert.match(glossary, /pending add-to-board/);
+assert.match(glossary, /Active lane holds the Northstar Works company/);
 
 assert.ok(CORPUS_EVENTS.length >= CORPUS_VOLUME_FLOORS.events);
 assert.ok(CORPUS_OBJECTS.length >= CORPUS_VOLUME_FLOORS.objects);
 assert.ok(CORPUS_DOCUMENTS.length >= CORPUS_VOLUME_FLOORS.documents);
+assert.doesNotThrow(() => corpusEventId('dealflow this week'));
+assert.throws(
+  () => corpusEventId('no-such-demo-event-needle'),
+  /Expected exactly one corpus event containing/,
+);
 assert.equal(new Set(CORPUS_EVENTS.map((row) => row.id)).size, CORPUS_EVENTS.length);
 assert.equal(
   new Set(CORPUS_DOCUMENTS.flatMap((doc) => [doc.id, doc.versionId, ...doc.chunkIds])).size,
@@ -264,6 +273,7 @@ assert.doesNotThrow(() =>
   assertExpandedDemoCorpus({
     people: CORPUS_PEOPLE.length,
     loginEmails: CORPUS_PEOPLE.map((person) => person.email),
+    passwordUsableEmails: CORPUS_PEOPLE.map((person) => person.email),
     events: 180,
     objects: 55,
     documents: CORPUS_DOCUMENTS.length + 1,
@@ -278,6 +288,11 @@ assert.doesNotThrow(() =>
     ingestWebhooks: 1,
     extraProviders: ['github', 'linear', 'monday', 'sentry', 'google_drive'],
     documentChecksums: CORPUS_DOCUMENTS.map((doc) => doc.checksumSha256),
+    embeddedCorpusDocumentVersions: CORPUS_DOCUMENTS.length,
+    corpusDocumentChunkPointsPresent: CORPUS_DOCUMENTS.reduce(
+      (count, document) => count + document.chunkIds.length,
+      0,
+    ),
     onboardingStepsCompleted: 11,
   }),
 );
@@ -286,6 +301,7 @@ assert.throws(
     assertExpandedDemoCorpus({
       people: 2,
       loginEmails: ['owner@timeline.dev'],
+      passwordUsableEmails: ['owner@timeline.dev'],
       events: 4,
       objects: 3,
       documents: 1,
@@ -300,6 +316,8 @@ assert.throws(
       ingestWebhooks: 0,
       extraProviders: ['github'],
       documentChecksums: [],
+      embeddedCorpusDocumentVersions: 0,
+      corpusDocumentChunkPointsPresent: 0,
       onboardingStepsCompleted: 0,
     }),
   /Expanded demo corpus verification failed/,

@@ -3,10 +3,10 @@ import { type queue } from '@timeline/shared';
 const REMOTE_DEV_OVERRIDE = 'I_UNDERSTAND_THIS_SEEDS_KNOWN_DEV_CREDENTIALS';
 
 export const DEMO_VECTOR_SOURCE_MINIMUMS = {
-  rawEvents: 4,
-  facts: 5,
-  documentChunks: 1,
-  meetingChunks: 1,
+  rawEvents: 80,
+  facts: 20,
+  documentChunks: 15,
+  meetingChunks: 8,
 } as const;
 
 export interface DemoVectorRows {

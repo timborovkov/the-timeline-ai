@@ -428,7 +428,7 @@ async function readExpandedDemoCorpusSnapshot(): Promise<
     onboardingCount,
   ] = await Promise.all([
     db
-      .select({ email: users.email })
+      .select({ email: users.email, passwordHash: users.passwordHash })
       .from(users)
       .innerJoin(
         teamMembers,
@@ -491,9 +491,51 @@ async function readExpandedDemoCorpusSnapshot(): Promise<
     }
   }
 
+  const corpusVersionRows = await db
+    .select({
+      id: documentVersions.id,
+      processingStatus: documentVersions.processingStatus,
+      embeddingModelVersion: documentVersions.embeddingModelVersion,
+    })
+    .from(documentVersions)
+    .where(
+      inArray(
+        documentVersions.id,
+        CORPUS_DOCUMENTS.map((document) => document.versionId),
+      ),
+    );
+  const embeddedCorpusDocumentVersions = corpusVersionRows.filter(
+    (row) => row.processingStatus === 'embedded' && Boolean(row.embeddingModelVersion),
+  ).length;
+  const embeddingModels = new Set(
+    corpusVersionRows
+      .map((row) => row.embeddingModelVersion)
+      .filter((model): model is string => Boolean(model)),
+  );
+  const corpusChunkIds = CORPUS_DOCUMENTS.flatMap((document) => document.chunkIds);
+  let corpusDocumentChunkPointsPresent = 0;
+  if (embeddingModels.size === 1) {
+    const model = [...embeddingModels][0];
+    if (model) {
+      const pointIds = corpusChunkIds.map((chunkId) =>
+        qdrant.buildChunkedPointId('doc_chunk', chunkId, model, 0),
+      );
+      const present = await qdrant.getQdrantClient().pointsExist(pointIds);
+      corpusDocumentChunkPointsPresent = pointIds.filter((pointId) => present.has(pointId)).length;
+    }
+  }
+
+  const passwordUsableEmails: string[] = [];
+  for (const row of peopleRows) {
+    if (row.passwordHash && (await verifyPassword(DEMO_LOGIN_PASSWORD, row.passwordHash))) {
+      passwordUsableEmails.push(row.email);
+    }
+  }
+
   return {
     people: peopleRows.length,
     loginEmails: peopleRows.map((row) => row.email),
+    passwordUsableEmails,
     events: Number(eventCount[0]?.value ?? 0),
     objects: Number(objectCount[0]?.value ?? 0),
     documents: Number(documentCount[0]?.value ?? 0),
@@ -508,6 +550,8 @@ async function readExpandedDemoCorpusSnapshot(): Promise<
     ingestWebhooks: Number(webhookCount[0]?.value ?? 0),
     extraProviders: integrationRows.map((row) => row.provider),
     documentChecksums,
+    embeddedCorpusDocumentVersions,
+    corpusDocumentChunkPointsPresent,
     onboardingStepsCompleted: Number(onboardingCount[0]?.value ?? 0),
   };
 }

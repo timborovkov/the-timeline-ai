@@ -1,9 +1,10 @@
-import { CORPUS_VOLUME_FLOORS } from './catalog.js';
+import { CORPUS_DOCUMENTS, CORPUS_VOLUME_FLOORS } from './catalog.js';
 import { CORPUS_LOGIN_EMAILS, CORPUS_PEOPLE } from './people.js';
 
 export interface ExpandedDemoCorpusSnapshot {
   people: number;
   loginEmails: string[];
+  passwordUsableEmails: string[];
   events: number;
   objects: number;
   documents: number;
@@ -18,6 +19,8 @@ export interface ExpandedDemoCorpusSnapshot {
   ingestWebhooks: number;
   extraProviders: string[];
   documentChecksums: string[];
+  embeddedCorpusDocumentVersions: number;
+  corpusDocumentChunkPointsPresent: number;
   onboardingStepsCompleted: number;
 }
 
@@ -49,6 +52,22 @@ export function assertExpandedDemoCorpus(snapshot: ExpandedDemoCorpusSnapshot): 
   if (missingLogins.length > 0) {
     errors.push(`missing demo logins: ${missingLogins.join(', ')}`);
   }
+  const unusablePasswords = CORPUS_LOGIN_EMAILS.filter(
+    (email) => !snapshot.passwordUsableEmails.includes(email),
+  );
+  if (unusablePasswords.length > 0) {
+    errors.push(`password unusable for demo logins: ${unusablePasswords.join(', ')}`);
+  }
+  atLeast(
+    'embedded corpus document versions',
+    snapshot.embeddedCorpusDocumentVersions,
+    CORPUS_DOCUMENTS.length,
+  );
+  atLeast(
+    'corpus document chunk vectors',
+    snapshot.corpusDocumentChunkPointsPresent,
+    CORPUS_DOCUMENTS.reduce((count, document) => count + document.chunkIds.length, 0),
+  );
   if (CORPUS_PEOPLE.length !== snapshot.people && snapshot.people < CORPUS_PEOPLE.length) {
     errors.push('not every corpus person is an active team member');
   }

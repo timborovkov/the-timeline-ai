@@ -83,7 +83,7 @@ const EMAILS = [
     author: 'casey' as const,
     from: 'dana.cole@brightline.example',
     subject: 'Brightline scoping recap',
-    text: 'Forwarded email from Dana Cole: Brightline will stay on CSV plus evidence packs. No clinical-ops template in v1.',
+    text: 'Forwarded email from Dana at Brightline Health: stay on CSV plus evidence packs. No clinical-ops template in v1.',
   },
   {
     author: 'avery' as const,
@@ -95,7 +95,7 @@ const EMAILS = [
     author: 'casey' as const,
     from: 'elena.park@northstar.example',
     subject: 'Northstar mapping delay',
-    text: 'Forwarded email from Elena Park at Northstar: sample export is still coming, field-mapping is not confirmed today.',
+    text: 'Forwarded email from Elena at Northstar Works: sample export is still coming, mapping is not confirmed today.',
   },
   {
     author: 'riley' as const,

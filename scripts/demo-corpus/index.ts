@@ -4,6 +4,7 @@ export {
   CORPUS_EVENTS,
   CORPUS_OBJECTS,
   CORPUS_VOLUME_FLOORS,
+  corpusEventId,
   corpusObjectId,
 } from './catalog.js';
 export { CORPUS_PEOPLE } from './people.js';

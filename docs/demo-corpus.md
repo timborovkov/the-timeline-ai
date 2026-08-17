@@ -27,8 +27,10 @@ remote databases/Qdrant, and non-local S3 unless `ALLOW_DEV_SEED` /
 `ALLOW_DEV_SEED_STORAGE` carry the documented acknowledgements.
 
 A development `OPENROUTER_API_KEY` is required so search vectors are real. Documents
-are marked `embedded` only after Qdrant confirms the points. Verification downloads
-document bytes and hashes them; same-size tampering fails.
+are marked `embedded` only after Qdrant confirms the points. Verification checks every
+seeded login password, downloads document bytes and hashes them (same-size tampering
+fails), confirms Northstar search hits, and confirms every expanded-corpus document
+version is `embedded` with a Qdrant point for each corpus chunk id.
 
 ## Logins
 
@@ -68,7 +70,8 @@ The through-line:
    Linden Ventures will follow. Harbor Peak is only a catch-up. The data room opened
    13 August.
 4. **Dealflow** is live: Helio Retail, Brightline Health, Moss & Co, Orchard Finance,
-   Polar Studio, and a lost Kite Logistics on-prem request.
+   and a lost Kite Logistics on-prem request. Polar Studio is inbound and waiting on
+   an add-to-board approval, not a live dealflow card.
 5. **GTM** is heading to an Atlas beta webinar on 20 August. Brand voice is quiet and
    citation-first.
 6. **Hiring**: product designer (Maya Chen, final round 15 August) and a reopened
@@ -124,7 +127,7 @@ These are not production secrets. They exist so settings screens look configured
 
 ### Companies and deals
 
-- **Northstar Works** — design partner, Active on dealflow, invoice `inv_2041` paid
+- **Northstar Works** — design partner. The dealflow Active lane holds the Northstar Works company; invoice `inv_2041` paid
 - **Helio Retail** — Qualified, technical validation 21 August
 - **Brightline Health** — Proposal, CSV + evidence packs only. The company record is **Brightline Health account**.
 - **Moss & Co** — Qualified, wants to keep Monday.com

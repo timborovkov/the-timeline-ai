@@ -96,6 +96,7 @@ import {
   CORPUS_SAVED_MEETING,
   CORPUS_SECRETS,
   TEAM_ID,
+  corpusEventId,
 } from './catalog.js';
 import { CORPUS_PEOPLE, CORPUS_PERSON, CORPUS_PASSWORD } from './people.js';
 import { CORPUS_UUID } from './ids.js';
@@ -669,7 +670,13 @@ async function insertEventsAndFacts(tx: SeedTx): Promise<void> {
         extractedAt: NOW,
       })),
     )
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: facts.id,
+      set: {
+        statement: sql`excluded.statement`,
+        rawEventId: sql`excluded.raw_event_id`,
+      },
+    });
 
   await tx
     .insert(reconciliationEvidence)
@@ -956,7 +963,13 @@ async function insertDocuments(tx: SeedTx): Promise<void> {
           tokenCount: Math.max(8, Math.round(text.split(/\s+/).length * 1.3)),
         })),
       )
-      .onConflictDoNothing();
+      .onConflictDoUpdate({
+        target: documentChunks.id,
+        set: {
+          text: sql`excluded.text`,
+          tokenCount: sql`excluded.token_count`,
+        },
+      });
     await tx
       .update(documents)
       .set({ currentVersionId: doc.versionId })
@@ -992,7 +1005,15 @@ async function insertMeetings(tx: SeedTx): Promise<void> {
       autoJoinEnabled: true,
       metadata: { fixture_version: DEMO_FIXTURE_VERSION, silent: true, consent_confirmed: true },
     })
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: savedMeetings.id,
+      set: {
+        scheduleConfig: sql`excluded.schedule_config`,
+        autoJoinEnabled: sql`excluded.auto_join_enabled`,
+        title: sql`excluded.title`,
+        meetingUrl: sql`excluded.meeting_url`,
+      },
+    });
 
   await tx
     .insert(meetings)
@@ -1058,7 +1079,14 @@ async function insertMeetings(tx: SeedTx): Promise<void> {
         })),
       ),
     )
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: meetingTranscriptChunks.id,
+      set: {
+        text: sql`excluded.text`,
+        speaker: sql`excluded.speaker`,
+        rawEventId: sql`excluded.raw_event_id`,
+      },
+    });
 }
 
 async function insertBoards(tx: SeedTx): Promise<void> {
@@ -1139,7 +1167,16 @@ async function insertBoards(tx: SeedTx): Promise<void> {
         nextStep: item.nextStep,
       })),
     ])
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: boardItems.id,
+      set: {
+        laneId: sql`excluded.lane_id`,
+        position: sql`excluded.position`,
+        responsibleUserId: sql`excluded.responsible_user_id`,
+        nextStep: sql`excluded.next_step`,
+        entityId: sql`excluded.entity_id`,
+      },
+    });
 }
 
 async function insertCalendar(tx: SeedTx): Promise<void> {
@@ -1160,7 +1197,15 @@ async function insertCalendar(tx: SeedTx): Promise<void> {
         scheduledRawEventId: 'rawEventId' in row ? (row.rawEventId ?? null) : null,
       })),
     )
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: calendarEvents.id,
+      set: {
+        title: sql`excluded.title`,
+        startAt: sql`excluded.start_at`,
+        endAt: sql`excluded.end_at`,
+        scheduledRawEventId: sql`excluded.scheduled_raw_event_id`,
+      },
+    });
 }
 
 async function insertProposals(tx: SeedTx): Promise<void> {
@@ -1169,12 +1214,7 @@ async function insertProposals(tx: SeedTx): Promise<void> {
       throw new Error(`Proposal ${proposal.title} is missing evidence event`);
     }
   }
-  const reviewEventId = CORPUS_EVENTS.find((row) =>
-    row.contentText.includes('dealflow this week'),
-  )?.id;
-  if (!reviewEventId) {
-    throw new Error('Conversation review is missing the #gtm dealflow event');
-  }
+  const reviewEventId = corpusEventId('dealflow this week');
   await tx
     .insert(agentSuggestions)
     .values(
@@ -1201,6 +1241,7 @@ async function insertProposals(tx: SeedTx): Promise<void> {
         summary: sql`excluded.summary`,
         reason: sql`excluded.reason`,
         source: sql`excluded.source`,
+        status: sql`excluded.status`,
         updatedAt: NOW,
       },
     });
@@ -1231,6 +1272,7 @@ async function insertProposals(tx: SeedTx): Promise<void> {
         title: sql`excluded.title`,
         description: sql`excluded.description`,
         proposedPayload: sql`excluded.proposed_payload`,
+        status: sql`excluded.status`,
       },
     });
   await tx
@@ -1240,11 +1282,17 @@ async function insertProposals(tx: SeedTx): Promise<void> {
         id: row.evidenceId,
         suggestionId: row.id,
         teamId: TEAM_ID,
-        rawEventId: row.eventId ?? CORPUS_EVENTS[0]?.id ?? DEMO_IDS.eventNote,
+        rawEventId: row.eventId,
         quote: row.summary,
       })),
     )
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: agentSuggestionEvidence.id,
+      set: {
+        rawEventId: sql`excluded.raw_event_id`,
+        quote: sql`excluded.quote`,
+      },
+    });
 
   await tx
     .insert(agentSuggestions)

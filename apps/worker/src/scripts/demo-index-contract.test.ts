@@ -4,6 +4,7 @@ import {
   assertDemoVectorIndexEnvironment,
   assertExpectedDemoVectorSources,
   buildDemoVectorJobs,
+  DEMO_VECTOR_SOURCE_MINIMUMS,
   type DemoVectorRows,
 } from '#src/scripts/demo-index-contract.js';
 
@@ -11,13 +12,23 @@ const TEAM_ID = '20000000-0000-4000-8000-000000000001';
 
 function rows(): DemoVectorRows {
   return {
-    rawEvents: Array.from({ length: 4 }, (_, index) => ({ id: `event-${String(index)}` })),
-    facts: Array.from({ length: 5 }, (_, index) => ({
-      id: `fact-${String(index)}`,
-      rawEventId: `event-${String(index % 4)}`,
+    rawEvents: Array.from({ length: DEMO_VECTOR_SOURCE_MINIMUMS.rawEvents }, (_, index) => ({
+      id: `event-${String(index)}`,
     })),
-    documentChunks: [{ id: 'document-chunk-0', versionId: 'document-version-0' }],
-    meetingChunks: [{ id: 'meeting-chunk-0' }],
+    facts: Array.from({ length: DEMO_VECTOR_SOURCE_MINIMUMS.facts }, (_, index) => ({
+      id: `fact-${String(index)}`,
+      rawEventId: `event-${String(index % DEMO_VECTOR_SOURCE_MINIMUMS.rawEvents)}`,
+    })),
+    documentChunks: Array.from(
+      { length: DEMO_VECTOR_SOURCE_MINIMUMS.documentChunks },
+      (_, index) => ({
+        id: `document-chunk-${String(index)}`,
+        versionId: `document-version-${String(index)}`,
+      }),
+    ),
+    meetingChunks: Array.from({ length: DEMO_VECTOR_SOURCE_MINIMUMS.meetingChunks }, (_, index) => ({
+      id: `meeting-chunk-${String(index)}`,
+    })),
   };
 }
 
@@ -63,16 +74,16 @@ describe('demo vector indexing contract', () => {
         rawEventId,
         teamId: TEAM_ID,
       })),
-      {
-        scope: 'doc_chunk',
-        documentChunkId: 'document-chunk-0',
+      ...fixtureRows.documentChunks.map(({ id }) => ({
+        scope: 'doc_chunk' as const,
+        documentChunkId: id,
         teamId: TEAM_ID,
-      },
-      {
-        scope: 'meeting_chunk',
-        meetingChunkId: 'meeting-chunk-0',
+      })),
+      ...fixtureRows.meetingChunks.map(({ id }) => ({
+        scope: 'meeting_chunk' as const,
+        meetingChunkId: id,
         teamId: TEAM_ID,
-      },
+      })),
     ]);
   });
 
@@ -89,6 +100,6 @@ describe('demo vector indexing contract', () => {
     fixtureRows.documentChunks = [];
     expect(() => {
       assertExpectedDemoVectorSources(fixtureRows);
-    }).toThrow(/documentChunks expected at least 1, found 0/);
+    }).toThrow(/documentChunks expected at least 15, found 0/);
   });
 });

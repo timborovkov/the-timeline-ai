@@ -1,6 +1,6 @@
 import { DEMO_IDS } from '../demo-fixture.js';
 
-import { CORPUS_EVENTS, CORPUS_OBJECTS, corpusObjectId } from './catalog.js';
+import { CORPUS_OBJECTS, corpusEventId, corpusObjectId } from './catalog.js';
 import { CORPUS_UUID } from './ids.js';
 import { CORPUS_PERSON } from './people.js';
 
@@ -228,7 +228,7 @@ export const CORPUS_CALENDAR_EVENTS = [
     startAt: '2026-08-20T15:00:00.000Z',
     endAt: '2026-08-20T16:00:00.000Z',
     createdByUserId: CORPUS_PERSON.riley.id,
-    rawEventId: CORPUS_EVENTS.find((row) => row.contentText.includes('public launch event'))?.id,
+    rawEventId: corpusEventId('public launch event'),
   },
   {
     id: CORPUS_UUID.calendar(2),
@@ -236,6 +236,7 @@ export const CORPUS_CALENDAR_EVENTS = [
     startAt: '2026-08-15T13:00:00.000Z',
     endAt: '2026-08-15T14:00:00.000Z',
     createdByUserId: CORPUS_PERSON.quinn.id,
+    rawEventId: corpusEventId('Designer final round with Maya Chen is August 15'),
   },
   {
     id: CORPUS_UUID.calendar(3),
@@ -243,6 +244,7 @@ export const CORPUS_CALENDAR_EVENTS = [
     startAt: '2026-08-21T15:00:00.000Z',
     endAt: '2026-08-21T16:00:00.000Z',
     createdByUserId: CORPUS_PERSON.casey.id,
+    rawEventId: corpusEventId('proposing a technical validation on August 21'),
   },
   {
     id: CORPUS_UUID.calendar(4),
@@ -250,6 +252,7 @@ export const CORPUS_CALENDAR_EVENTS = [
     startAt: '2026-08-19T14:00:00.000Z',
     endAt: '2026-08-19T14:30:00.000Z',
     createdByUserId: CORPUS_PERSON.casey.id,
+    rawEventId: corpusEventId('Polar Studio asked'),
   },
   {
     id: CORPUS_UUID.calendar(5),
@@ -257,6 +260,7 @@ export const CORPUS_CALENDAR_EVENTS = [
     startAt: '2026-08-19T09:00:00.000Z',
     endAt: '2026-08-19T10:30:00.000Z',
     createdByUserId: CORPUS_PERSON.harper.id,
+    rawEventId: corpusEventId('Avery sent Northwind the data-room link'),
   },
 ] as const;
 
@@ -265,20 +269,14 @@ export const CORPUS_PROPOSALS = [
     id: CORPUS_UUID.suggestion(1),
     itemId: CORPUS_UUID.suggestion(101),
     evidenceId: CORPUS_UUID.suggestion(201),
-    title: 'Create follow-up to ping Elena Park',
+    title: 'Slip Elena field-mapping follow-up to 19 August',
     summary: 'Northstar field-mapping slipped to 19 August.',
     source: 'background' as const,
-    operation: 'create' as const,
-    targetKind: 'task' as const,
-    proposedPayload: {
-      type: 'follow_up',
-      canonicalName: 'Confirm Elena Park field-mapping on 19 August',
-      dueAt: '2026-08-19T15:00:00.000Z',
-      assigneeUserId: CORPUS_PERSON.casey.id,
-    },
-    eventId: CORPUS_EVENTS.find((row) =>
-      row.contentText.includes('field-mapping confirmation is delayed'),
-    )?.id,
+    operation: 'update' as const,
+    targetKind: 'object' as const,
+    targetId: objectByName('Ping Elena Park on field-mapping'),
+    proposedPayload: { dueAt: '2026-08-19T15:00:00.000Z' },
+    eventId: corpusEventId('field-mapping confirmation is delayed'),
   },
   {
     id: CORPUS_UUID.suggestion(2),
@@ -295,8 +293,7 @@ export const CORPUS_PROPOSALS = [
       dueAt: '2026-08-15T17:00:00.000Z',
       assigneeUserId: CORPUS_PERSON.harper.id,
     },
-    eventId: CORPUS_EVENTS.find((row) => row.contentText.includes('accepted CSV + evidence packs'))
-      ?.id,
+    eventId: corpusEventId('accepted CSV + evidence packs'),
   },
   {
     id: CORPUS_UUID.suggestion(3),
@@ -313,8 +310,7 @@ export const CORPUS_PROPOSALS = [
       endAt: '2026-08-18T13:40:00.000Z',
       timezone: 'Europe/Helsinki',
     },
-    eventId: CORPUS_EVENTS.find((row) => row.contentText.includes('Need 40-minute run of show'))
-      ?.id,
+    eventId: corpusEventId('Need 40-minute run of show'),
   },
   {
     id: CORPUS_UUID.suggestion(4),
@@ -330,7 +326,7 @@ export const CORPUS_PROPOSALS = [
       entityId: objectByName('Polar Studio'),
       laneId: boardLaneId(DEALFLOW_BOARD, 'New'),
     },
-    eventId: CORPUS_EVENTS.find((row) => row.contentText.includes('Polar Studio asked'))?.id,
+    eventId: corpusEventId('Polar Studio asked'),
   },
   {
     id: CORPUS_UUID.suggestion(5),
@@ -346,13 +342,13 @@ export const CORPUS_PROPOSALS = [
       canonicalName: 'Nadia Holm',
       metadata: { email: 'nadia.holm@linden.example', role: 'Partner' },
     },
-    eventId: CORPUS_EVENTS.find((row) => row.contentText.includes('Nadia Holm'))?.id,
+    eventId: corpusEventId('Nadia Holm'),
   },
   {
     id: CORPUS_UUID.suggestion(6),
     itemId: CORPUS_UUID.suggestion(106),
     evidenceId: CORPUS_UUID.suggestion(206),
-    title: 'Move Helio next step to technical validation',
+    title: 'Confirm Helio validation attendees',
     summary: 'Casey already proposed August 21.',
     source: 'background' as const,
     operation: 'update' as const,
@@ -362,7 +358,7 @@ export const CORPUS_PROPOSALS = [
       field: 'nextStep',
       newValue: 'Confirm Helio technical validation attendees',
     },
-    eventId: CORPUS_EVENTS.find((row) => row.contentText.includes('Helio Retail: sharing'))?.id,
+    eventId: corpusEventId('Helio Retail: sharing'),
   },
   {
     id: CORPUS_UUID.suggestion(7),
@@ -378,7 +374,7 @@ export const CORPUS_PROPOSALS = [
       dueAt: '2026-08-18T09:00:00.000Z',
       assigneeUserId: CORPUS_PERSON.quinn.id,
     },
-    eventId: CORPUS_EVENTS.find((row) => row.contentText.includes('backend engineer loop'))?.id,
+    eventId: corpusEventId('backend engineer loop'),
   },
   {
     id: CORPUS_UUID.suggestion(8),
@@ -391,7 +387,7 @@ export const CORPUS_PROPOSALS = [
     targetKind: 'object' as const,
     targetId: objectByName('Dana Cole champion'),
     proposedPayload: { status: 'archived' },
-    eventId: CORPUS_EVENTS.find((row) => row.contentText.includes('Dana Cole'))?.id,
+    eventId: corpusEventId('Dana Cole'),
   },
   {
     id: CORPUS_UUID.suggestion(9),
@@ -406,9 +402,7 @@ export const CORPUS_PROPOSALS = [
       entityId: DEMO_IDS.objectPilot,
       body: 'CSV fallback remains the plan. Proof is delayed one week, not cancelled.',
     },
-    eventId: CORPUS_EVENTS.find((row) =>
-      row.contentText.includes('we keep the CSV fallback decision'),
-    )?.id,
+    eventId: corpusEventId('we keep the CSV fallback decision'),
   },
   {
     id: CORPUS_UUID.suggestion(10),
@@ -424,8 +418,7 @@ export const CORPUS_PROPOSALS = [
       toEntityId: objectByName('Prepare Brightline MSA excerpt'),
       kind: 'related',
     },
-    eventId: CORPUS_EVENTS.find((row) => row.contentText.includes('accepted CSV + evidence packs'))
-      ?.id,
+    eventId: corpusEventId('accepted CSV + evidence packs'),
   },
   {
     id: CORPUS_UUID.suggestion(11),
@@ -442,7 +435,7 @@ export const CORPUS_PROPOSALS = [
       status: 'proposed',
       stage: 'proposed',
     },
-    eventId: CORPUS_EVENTS.find((row) => row.contentText.includes('Pilot review should move'))?.id,
+    eventId: corpusEventId('Pilot review should move'),
   },
   {
     id: CORPUS_UUID.suggestion(12),
@@ -459,7 +452,7 @@ export const CORPUS_PROPOSALS = [
       dueAt: '2026-09-01T17:00:00.000Z',
       assigneeUserId: CORPUS_PERSON.casey.id,
     },
-    eventId: CORPUS_EVENTS.find((row) => row.contentText.includes('Kite Logistics went cold'))?.id,
+    eventId: corpusEventId('Kite Logistics went cold'),
   },
   {
     id: CORPUS_UUID.suggestion(13),
@@ -475,7 +468,7 @@ export const CORPUS_PROPOSALS = [
       kind: 'email',
       value: 'elena.park@northstar.example',
     },
-    eventId: CORPUS_EVENTS.find((row) => row.contentText.includes('Elena Park at Northstar'))?.id,
+    eventId: corpusEventId('Elena Park at Northstar'),
   },
   {
     id: CORPUS_UUID.suggestion(14),
@@ -488,9 +481,7 @@ export const CORPUS_PROPOSALS = [
     targetKind: 'task' as const,
     targetId: objectByName('Press backgrounder for The Record'),
     proposedPayload: { status: 'cancelled' },
-    eventId: CORPUS_EVENTS.find((row) =>
-      row.contentText.includes('backgrounder on evidence-backed'),
-    )?.id,
+    eventId: corpusEventId('backgrounder on evidence-backed'),
   },
 ] as const;
 

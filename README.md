@@ -74,9 +74,11 @@ pnpm dev
 event, fact, document chunk, and meeting chunk through the production embedding
 worker path, then runs `demo:verify`. The seed is the Acme Labs / Atlas month of
 use: eight logins, dealflow and Series A boards, documents, meetings, Ask history,
-pending proposals, and digest history. Verification downloads and hashes document
-bytes and uses team/user-scoped Qdrant searches to confirm every expected Northstar
-point is discoverable, then checks expanded-corpus volume floors. A real development
+pending proposals, and digest history. Verification checks all eight login passwords,
+downloads and hashes document bytes, uses team/user-scoped Qdrant searches to confirm
+every expected Northstar point is discoverable, then confirms expanded-corpus document
+versions are `embedded` with a Qdrant point for each corpus chunk id and that volume
+floors hold. A real development
 `OPENROUTER_API_KEY` is therefore required; a missing key or unavailable Qdrant fails closed without
 marking the document embedded. The commands refuse production, unapproved remote databases or
 Qdrant, and non-local/nonstandard S3 storage without its separate explicit acknowledgement.
