@@ -5605,6 +5605,130 @@ describe('processSuggestionJobForTests', () => {
     });
   });
 
+  it('keeps conversation-review item citations that lexical bundle evidence omitted', async () => {
+    const citedId = '10000000-0000-4000-8000-0000000000a1';
+    const anchorId = '10000000-0000-4000-8000-0000000000a2';
+    const reviewId = '20000000-0000-4000-8000-0000000000a1';
+    const conversationKey = `telegram:${TEAM_ID}:chat:cited-window`;
+    await seedRawEvent(db as never, {
+      id: citedId,
+      source: 'telegram',
+      text: 'Board voted yes unanimously.',
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+      sourceMetadata: { tg_chat_id: 'cited-window', tg_message_id: '1' },
+    });
+    await seedRawEvent(db as never, {
+      id: anchorId,
+      source: 'telegram',
+      text: "I'll send the Acme proposal next Tuesday",
+      occurredAt: new Date('2026-05-27T10:02:00.000Z'),
+      sourceMetadata: { tg_chat_id: 'cited-window', tg_message_id: '2' },
+    });
+    await seedConversationReview(db as never, {
+      id: reviewId,
+      conversationKey,
+      lastRawEventId: anchorId,
+      quietUntil: new Date('2026-05-27T09:00:00.000Z'),
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Send the Acme proposal',
+            confidence: 'high',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'task',
+                title: 'Send the Acme proposal',
+                proposedPayload: { canonicalName: 'Send the Acme proposal' },
+                evidenceRawEventIds: [citedId, OBJECT_ID],
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundle?.evidence.map((entry) => entry.rawEventId).sort()).toEqual(
+      [anchorId, citedId].sort(),
+    );
+    expect(bundle?.items[0]).toMatchObject({
+      evidenceStatus: 'current',
+      evidence: [{ rawEventId: citedId }],
+    });
+    const [item] = await db
+      .select({ metadata: agentSuggestionItems.metadata })
+      .from(agentSuggestionItems)
+      .limit(1);
+    expect(item?.metadata).toMatchObject({ evidence_raw_event_ids: [citedId] });
+  });
+
+  it('drops event-local item citations that are not the current raw event', async () => {
+    const rawEventId = '10000000-0000-4000-8000-0000000000a3';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      source: 'web',
+      text: "I'll send the Acme proposal next Tuesday",
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Send the Acme proposal',
+            confidence: 'high',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'task',
+                title: 'Send the Acme proposal',
+                proposedPayload: { canonicalName: 'Send the Acme proposal' },
+                evidenceRawEventIds: [OBJECT_ID],
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundle?.evidence).toEqual([expect.objectContaining({ rawEventId })]);
+    expect(bundle?.items[0]).toMatchObject({
+      evidenceStatus: 'legacy',
+      evidence: [],
+    });
+    const [item] = await db
+      .select({ metadata: agentSuggestionItems.metadata })
+      .from(agentSuggestionItems)
+      .limit(1);
+    expect(
+      (item?.metadata as { evidence_raw_event_ids?: string[] } | null)?.evidence_raw_event_ids,
+    ).toBeUndefined();
+  });
+
   it('identifies the original forwarded email sender in fenced prompt context', async () => {
     const rawEventId = '10000000-0000-0000-0000-0000000000e9';
     await seedRawEvent(db as never, {

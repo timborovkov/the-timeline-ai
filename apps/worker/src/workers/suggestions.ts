@@ -181,6 +181,32 @@ function tokenizeEvidence(text: string): Map<string, number> {
   return tokens;
 }
 
+function quoteForEvidenceEvent(bundle: SuggestionBundleOutput, contentText: string): string {
+  return bundle.quote && contentText.includes(bundle.quote)
+    ? bundle.quote
+    : truncate(contentText, 500);
+}
+
+function knownLegacyEvidenceEvents(args: {
+  fallbackRawEventId: string;
+  fallbackText: string;
+  window: conversationReview.ConversationEvidenceEvent[] | null;
+}): Map<string, { contentText: string; conversationEvidence: boolean }> {
+  const known = new Map<string, { contentText: string; conversationEvidence: boolean }>();
+  const conversationEvidence = Boolean(args.window && args.window.length > 0);
+  known.set(args.fallbackRawEventId, {
+    contentText: args.fallbackText,
+    conversationEvidence,
+  });
+  for (const event of args.window ?? []) {
+    known.set(event.id, {
+      contentText: event.contentText,
+      conversationEvidence: true,
+    });
+  }
+  return known;
+}
+
 function minimalEvidenceForBundle(args: {
   bundle: SuggestionBundleOutput;
   fallbackRawEventId: string;
@@ -233,12 +259,49 @@ function minimalEvidenceForBundle(args: {
   const picked = relevant.length > 0 ? relevant.map((entry) => entry.event) : [fallbackEvent];
   return picked.map((event) => ({
     rawEventId: event.id,
-    quote:
-      args.bundle.quote && event.contentText.includes(args.bundle.quote)
-        ? args.bundle.quote
-        : truncate(event.contentText, 500),
+    quote: quoteForEvidenceEvent(args.bundle, event.contentText),
     metadata: { conversation_evidence: true },
   }));
+}
+
+/**
+ * Legacy / off-mode extraction still uses lexical bundle evidence, but the
+ * structured schema always exposes optional `evidenceRawEventIds`. The model
+ * often cites conversation-window (or current-event) IDs that the lexical
+ * picker did not keep. Union those known IDs into bundle evidence so storage
+ * can persist item citations instead of failing the job.
+ */
+function evidenceForLegacyBundle(args: {
+  bundle: SuggestionBundleOutput;
+  fallbackRawEventId: string;
+  fallbackText: string;
+  window: conversationReview.ConversationEvidenceEvent[] | null;
+}): suggestions.SuggestionEvidenceInput[] {
+  const lexical = minimalEvidenceForBundle(args);
+  const known = knownLegacyEvidenceEvents(args);
+  const byId = new Map(lexical.map((evidence) => [evidence.rawEventId, evidence]));
+  for (const item of args.bundle.items) {
+    for (const rawEventId of item.evidenceRawEventIds ?? []) {
+      if (byId.has(rawEventId)) continue;
+      const event = known.get(rawEventId);
+      if (!event) continue;
+      byId.set(rawEventId, {
+        rawEventId,
+        quote: quoteForEvidenceEvent(args.bundle, event.contentText),
+        ...(event.conversationEvidence ? { metadata: { conversation_evidence: true } } : {}),
+      });
+    }
+  }
+  return [...byId.values()];
+}
+
+function itemEvidenceWithinBundle(
+  evidenceRawEventIds: string[] | undefined,
+  evidenceIdSet: Set<string>,
+): { evidenceRawEventIds?: string[] } {
+  if (!evidenceRawEventIds || evidenceRawEventIds.length === 0) return {};
+  const ids = [...new Set(evidenceRawEventIds.filter((id) => evidenceIdSet.has(id)))];
+  return ids.length > 0 ? { evidenceRawEventIds: ids } : {};
 }
 
 function makeModelVersion(modelId: string): string {
@@ -2870,12 +2933,13 @@ async function runSuggestionExtraction(
     });
     const evidence =
       enforcedEvidenceByBundle?.[bundleIndex] ??
-      minimalEvidenceForBundle({
+      evidenceForLegacyBundle({
         bundle,
         fallbackRawEventId: rawEventId,
         fallbackText: text,
         window: args.conversation?.window ?? null,
       });
+    const evidenceIdSet = new Set(evidence.map((entry) => entry.rawEventId));
     const suggestion = await scope.suggestions.createOrMergeSuggestionBundle({
       source: 'background',
       title: bundle.title,
@@ -2936,7 +3000,7 @@ async function runSuggestionExtraction(
             proposedPayload,
           }),
           proposedPayload,
-          ...(item.evidenceRawEventIds ? { evidenceRawEventIds: item.evidenceRawEventIds } : {}),
+          ...itemEvidenceWithinBundle(item.evidenceRawEventIds, evidenceIdSet),
         };
       }),
     });
