@@ -135,8 +135,9 @@ describe('MobileSessionNav', () => {
 
     const searchFields = screen.getAllByRole('searchbox', { name: 'Search chats' });
     expect(searchFields).toHaveLength(2);
-    await user.type(searchFields[0]!, 'website');
-    await user.type(searchFields[1]!, 'website');
+    for (const field of searchFields) {
+      await user.type(field, 'website');
+    }
 
     expect(screen.getAllByRole('link', { name: /Website requirements/ })).toHaveLength(2);
     expect(screen.queryByRole('link', { name: /Launch review/ })).toBeNull();

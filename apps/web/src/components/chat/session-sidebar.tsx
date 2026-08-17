@@ -100,7 +100,9 @@ function SessionSearch({
         id={id}
         type="search"
         value={query}
-        onChange={(event) => onQueryChange(event.target.value)}
+        onChange={(event) => {
+          onQueryChange(event.target.value);
+        }}
         placeholder="Search chats"
         className="h-9 w-full rounded-sm border border-border bg-bg py-1 pl-8 pr-2 text-sm text-fg outline-none transition-colors placeholder:text-fg-dim focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
       />
