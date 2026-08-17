@@ -1,6 +1,6 @@
 'use client';
 
-import { artifactRefLabel } from '@timeline/shared/citation';
+import { artifactRefCitation, artifactRefLabel } from '@timeline/shared/citation';
 import { ExternalLink, Link2 } from 'lucide-react';
 import Link from 'next/link';
 import { type ReactNode, useCallback, useMemo, useRef, useState } from 'react';
@@ -16,6 +16,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+
+const CITATION_CHIP_CLASS =
+  'inline-flex items-center align-baseline font-mono text-[0.9em] leading-none rounded-sm border border-signal/30 bg-signal-soft px-1 py-0.5 text-signal transition-colors no-underline hover:bg-signal/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg';
 
 interface ArtifactReferenceChipProps {
   refValue: ArtifactRef;
@@ -119,12 +122,7 @@ export function ArtifactReferenceChip({
     <>
       <button
         type="button"
-        className={cn(
-          'inline-flex items-center align-baseline font-mono text-[0.9em] leading-none',
-          'rounded-sm border border-signal/30 bg-signal-soft px-1 py-0.5 text-signal transition-colors no-underline hover:bg-signal/25',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg',
-          className,
-        )}
+        className={cn(CITATION_CHIP_CLASS, className)}
         title={title ?? label}
         onClick={() => {
           setOpen(true);
@@ -270,5 +268,47 @@ function ArtifactPreviewDialog({
         ) : null}
       </DialogContent>
     </Dialog>
+  );
+}
+
+export function CitationCopyChip({
+  refValue,
+  className,
+}: {
+  refValue: ArtifactRef;
+  className?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const label = artifactRefLabel(refValue);
+  const citation = artifactRefCitation(refValue);
+
+  async function copyCitation() {
+    const clipboard = Reflect.get(navigator, 'clipboard') as Clipboard | undefined;
+    if (!clipboard?.writeText) return;
+    try {
+      await clipboard.writeText(citation);
+    } catch {
+      return;
+    }
+    setCopied(true);
+    window.setTimeout(() => {
+      setCopied(false);
+    }, 1500);
+  }
+
+  return (
+    <button
+      type="button"
+      className={cn(CITATION_CHIP_CLASS, 'normal-case', className)}
+      title={copied ? `Copied ${citation}` : `Copy ${citation}`}
+      onClick={() => {
+        void copyCitation();
+      }}
+    >
+      <span aria-hidden="true">{label}</span>
+      <span className="sr-only">
+        {copied ? `Copied citation ${label}` : `Copy citation ${label}`}
+      </span>
+    </button>
   );
 }

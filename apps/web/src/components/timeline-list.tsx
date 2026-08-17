@@ -34,6 +34,7 @@ import type { TimelineCapturedFile } from '@/lib/timeline-captured-files';
 import type { TimelineArtifactCluster, TimelineEvent } from '@/lib/use-paginated-queries';
 
 import { removeConversationalEventAction } from '@/app/actions/events';
+import { CitationCopyChip } from '@/components/artifact-reference-chip';
 import { DocumentPreview } from '@/components/documents/document-preview';
 import { EmptyAction } from '@/components/empty-action';
 import { EventVisibilityForm, type SavedEventVisibility } from '@/components/event-visibility-form';
@@ -242,6 +243,10 @@ function humanizeImpact(item: ImpactItem): string {
     return `Updated ${target}`;
   }
   return `${IMPACT_LABEL[item.kind]} · ${item.label}`;
+}
+
+function eventCitationRef(eventId: string): { kind: 'timeline_event'; id: string } {
+  return { kind: 'timeline_event', id: eventId };
 }
 
 function groupingCue(moment: TimelineMoment): string | null {
@@ -669,7 +674,7 @@ function InspectorBody({
           <ol className="space-y-2">
             {visibleRawEvents.map((event) => (
               <li key={event.id} className="min-w-0">
-                <div className="flex min-w-0 gap-2 text-sm">
+                <div className="flex min-w-0 items-center gap-2 text-sm">
                   <time
                     dateTime={event.occurredAt}
                     className="shrink-0 font-mono text-xs text-fg-dim"
@@ -679,6 +684,7 @@ function InspectorBody({
                   <span className="min-w-0 truncate text-fg-muted">
                     {rawEventBody(event, timezone)}
                   </span>
+                  <CitationCopyChip refValue={eventCitationRef(event.id)} className="shrink-0" />
                 </div>
                 <SourceOriginalDisclosure
                   source={event.source}
@@ -864,18 +870,21 @@ function SourceEvidenceCard({
     .join(' · ');
   return (
     <li className="min-w-0 overflow-hidden rounded-sm border border-border bg-bg px-2.5 py-2">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-        <span className="text-fg-muted">{actorLabel}</span>
-        <span>{formatSourceLabel(event.source)}</span>
-        {context ? <span>{context}</span> : null}
-        <time
-          data-visual-dynamic="timeline-timestamp"
-          dateTime={event.occurredAt}
-          className="inline-block min-w-[28ch] whitespace-nowrap"
-        >
-          {formatTimestamp(event.occurredAt, timezone)}
-        </time>
-        {event.visibility === 'private' ? <span>Private</span> : null}
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+          <span className="text-fg-muted">{actorLabel}</span>
+          <span>{formatSourceLabel(event.source)}</span>
+          {context ? <span>{context}</span> : null}
+          <time
+            data-visual-dynamic="timeline-timestamp"
+            dateTime={event.occurredAt}
+            className="inline-block min-w-[28ch] whitespace-nowrap"
+          >
+            {formatTimestamp(event.occurredAt, timezone)}
+          </time>
+          {event.visibility === 'private' ? <span>Private</span> : null}
+        </div>
+        <CitationCopyChip refValue={eventCitationRef(event.id)} />
       </div>
       {documentLink ? (
         <div className="mt-2 flex min-w-0 flex-wrap items-start gap-2">

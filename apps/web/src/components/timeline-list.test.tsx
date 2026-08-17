@@ -382,6 +382,7 @@ describe('TimelineList moment presentation', () => {
     expect(html).toContain('data-visual-weight="story"');
     expect(html).toContain('data-event-class="communication"');
     expect(html).toContain('CI passed on acme/app · main');
+    expect(html).not.toContain('[ev:');
     expect(html).not.toContain('View evidence');
     expect(html).not.toContain('workflow_run:1603');
     expect(html).not.toContain('right-[-7px]');
@@ -485,6 +486,8 @@ describe('TimelineList moment presentation', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Done \/ 16\.20/i }));
     const inspector = renderLastInspector();
     expect(inspector).toContain('Source evidence');
+    expect(inspector).toContain('[ev:14141414]');
+    expect(inspector).toContain('Copy citation [ev:14141414]');
     expect(inspector).toContain('Technical details');
     expect(inspector).not.toContain('Evidence summary');
     expect(inspector).not.toContain('1 evidence item');

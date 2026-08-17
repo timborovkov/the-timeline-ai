@@ -259,7 +259,11 @@ pulses. Opening a row shows a human source summary first. Original source
 collapsed inspector disclosure with a readable preview: HTML in a sandboxed
 frame, text as prose, JSON in Commit Mono. Attached documents link to the
 document drive. Exact timestamps, ownership/visibility internals, source IDs,
-and other implementation keys stay inside `TechnicalDetails`.
+and other implementation keys stay inside `TechnicalDetails`. Ask answers cite
+raw source events as lime `[ev:…]` chips, objects as `[ent:…]`, and notes as
+`[note:…]`. Those tokens do not appear on timeline rows. Each inspector
+evidence item shows the matching copyable `[ev:…]` chip so a cited source can
+be identified without putting database IDs on the archive list.
 
 Pack-backed approvals show a compact “Evidence for this change · N sources”
 disclosure beneath each proposed item, using source, sender, timestamp, bounded
@@ -309,7 +313,8 @@ single title line, and at most one muted context line. Do not duplicate the
 icon on a rail node, and do not stack source, actor, title, and preview as
 separate competing headings. Stories and records share that same skeleton;
 pulses stay one muted line. Impact on the row is omitted; the inspector shows
-workspace consequences, structured facts, and a collapsed Original source
+workspace consequences, structured facts, a matching `[ev:…]` citation chip per
+source evidence item, and a collapsed Original source
 disclosure. Attached files link to Documents. Sticky dates (`top-11` under the
 toolbar) and pagination remain. The default view ends at the current instant so
 materialized calendar occurrences do not displace recent work. Upcoming context
@@ -593,3 +598,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-16 | Unified workspace collection density | Replaces stacked form chrome and card grids with compact headers, one filter toolbar, 44px rows, semantic status glyphs, optimistic metadata triggers, and contextual selection without changing domain behavior. |
 | 2026-08-17 | Timeline event families | Gives Moments weighted story/record/pulse rows and All events a uniform compact log, with provider-agnostic classification. |
 | 2026-08-17 | Linear timeline rows and original source | Drops duplicate rail icons and stacked row chrome; original payloads open from a collapsed inspector viewer. |
+| 2026-08-17 | Inspector citation chips | Ask `[ev:…]` tokens stay off timeline rows and appear as copyable chips on inspector evidence items. |

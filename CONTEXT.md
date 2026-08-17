@@ -43,7 +43,10 @@ filters, and technical disclosures count source events. Conversation inspectors
 use evidence items; pulses use a compact activity log — do not pair moment and
 raw-event totals in the same chrome. The inspector keeps original source
 (message, email HTML, transcript, webhook/JSON payload) in a collapsed
-disclosure; attached documents link to the document drive.
+disclosure; attached documents link to the document drive. Ask `[ev:]`
+citations name those raw source events; the inspector evidence item shows the
+matching chip so a cited source can be identified without putting IDs on the
+timeline list.
 _Avoid_: Raw Event when referring to the grouped browsing unit
 
 **Timeline event class**:
