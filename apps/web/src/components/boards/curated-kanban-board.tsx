@@ -2,15 +2,16 @@
 
 import {
   DndContext,
+  DragOverlay,
   KeyboardSensor,
   PointerSensor,
-  closestCenter,
   useDraggable,
   useDroppable,
   useSensor,
   useSensors,
   type Announcements,
   type DragEndEvent,
+  type DragStartEvent,
   type ScreenReaderInstructions,
 } from '@dnd-kit/core';
 import Link from 'next/link';
@@ -40,10 +41,12 @@ import {
 import { CollectionStatus, priorityTone } from '@/components/collections/collection-status';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
+import { VirtualList } from '@/components/collections/virtual-list';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { boardViewHref } from '@/lib/board-links';
 import { displayText } from '@/lib/display-dates';
+import { kanbanCollisionDetection } from '@/lib/kanban-collision';
 import { displayObjectTitle } from '@/lib/object-title';
 import { statusLabel } from '@/lib/status-labels';
 import { cn, errorMessage } from '@/lib/utils';
@@ -87,6 +90,10 @@ export function CuratedKanbanBoard({
   const [savingIds, setSavingIds] = useState<ReadonlySet<string>>(() => new Set());
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saveState, setSaveState] = useState<CuratedKanbanSaveState>('idle');
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const activeDragItem = activeDragId
+    ? (optimisticItems.find((item) => item.id === activeDragId) ?? null)
+    : null;
   const savingRef = useRef<Set<string> | null>(null);
   const pendingMoveControlFocusRef = useRef<MoveControlFocus>(null);
   savingRef.current ??= new Set<string>();
@@ -284,7 +291,12 @@ export function CuratedKanbanBoard({
     });
   }
 
+  function onDragStart(event: DragStartEvent): void {
+    setActiveDragId(String(event.active.id));
+  }
+
   function onDragEnd(event: DragEndEvent): void {
+    setActiveDragId(null);
     const overId = event.over?.id ? String(event.over.id) : null;
     if (!overId) return;
     moveItem(String(event.active.id), overId === 'unset' ? null : overId);
@@ -294,7 +306,8 @@ export function CuratedKanbanBoard({
     <DndContext
       id={dndContextId}
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={kanbanCollisionDetection}
+      onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       accessibility={{
         announcements: dragAnnouncements,
@@ -331,6 +344,13 @@ export function CuratedKanbanBoard({
           </output>
         ) : null}
       </div>
+      <DragOverlay>
+        {activeDragItem ? (
+          <div className="rounded-sm border border-signal bg-bg px-2.5 py-2 text-sm shadow-md">
+            {displayText(displayObjectTitle(activeDragItem.object))}
+          </div>
+        ) : null}
+      </DragOverlay>
     </DndContext>
   );
 }
@@ -365,6 +385,7 @@ function KanbanColumn({
   onMoveControlRef: (id: string, laneValue: string, node: HTMLButtonElement | null) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: lane.id });
+  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
   return (
     <section
       ref={setNodeRef}
@@ -378,25 +399,31 @@ function KanbanColumn({
         <h3 className="text-xs text-fg-dim">{lane.name}</h3>
         <span className="text-xs text-fg">{items.length}</span>
       </div>
-      <ul className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
-        {items.map((item) => (
-          <KanbanCard
-            key={item.id}
-            boardId={boardId}
-            item={item}
-            lane={lane}
-            saving={savingIds.has(item.id)}
-            error={errors[item.id]}
-            selected={item.id === selectedItemId}
-            members={members}
-            filterParams={filterParams}
-            moveTargets={moveTargets}
-            onMoveItem={onMoveItem}
-            onUpdateItem={onUpdateItem}
-            onMoveControlRef={onMoveControlRef}
-          />
-        ))}
-      </ul>
+      <div ref={setScrollEl} className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <VirtualList
+          items={items}
+          getItemKey={(item) => item.id}
+          estimateSize={120}
+          gap={8}
+          getScrollElement={() => scrollEl}
+          renderItem={(item) => (
+            <KanbanCard
+              boardId={boardId}
+              item={item}
+              lane={lane}
+              saving={savingIds.has(item.id)}
+              error={errors[item.id]}
+              selected={item.id === selectedItemId}
+              members={members}
+              filterParams={filterParams}
+              moveTargets={moveTargets}
+              onMoveItem={onMoveItem}
+              onUpdateItem={onUpdateItem}
+              onMoveControlRef={onMoveControlRef}
+            />
+          )}
+        />
+      </div>
     </section>
   );
 }
@@ -449,7 +476,7 @@ function KanbanCard({
     [item.id, lane.id, onMoveControlRef, saving],
   );
   return (
-    <li
+    <article
       ref={setNodeRef}
       style={style}
       className={cn(
@@ -643,7 +670,7 @@ function KanbanCard({
           }
         />
       ) : null}
-    </li>
+    </article>
   );
 }
 

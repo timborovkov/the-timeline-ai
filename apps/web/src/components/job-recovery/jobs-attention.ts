@@ -3,7 +3,7 @@ export const JOBS_ATTENTION_DAYS = 7;
 
 export const JOB_RECOVERY_PAGE_TITLE = 'Job recovery';
 
-/** Visible row window over the current snapshot. Replace with the shared list virtualizer when it lands. */
+/** Visible row window over the current snapshot; InfiniteScroll expands it. */
 export const JOB_RECOVERY_LIST_WINDOW_SIZE = 50;
 
 /** Client continues matching dismiss while the server reports leftovers. */

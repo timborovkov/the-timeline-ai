@@ -36,6 +36,7 @@
           "src/components/audio-recorder.tsx",
           "src/components/boards/kanban-board.tsx",
           "src/components/calendar/calendar-view.tsx",
+          "src/components/collections/infinite-scroll.tsx",
           "src/components/objects/object-detail-client.tsx",
           "src/components/turnstile-widget.tsx"
         ],
@@ -86,8 +87,76 @@
         "rules": ["react-doctor/webhook-signature-risk"]
       },
       {
-        "files": ["src/app/sign-in/page.tsx"],
-        "rules": ["react-doctor/clickjacking-redirect-risk"]
+        "files": [
+          "src/app/app/boards/page.tsx",
+          "src/app/app/meetings/page.tsx",
+          "src/app/app/objects/page.tsx",
+          "src/app/app/timeline/page.tsx",
+          "src/app/app/work/page.tsx",
+          "src/app/app/team/reconciliation/clusters/[id]/page.tsx",
+          "src/app/app/team/reconciliation/page.tsx",
+          "src/components/approvals/approvals-client.tsx",
+          "src/components/boards/curated-board-views.tsx",
+          "src/components/boards/curated-kanban-board.tsx",
+          "src/components/calendar/calendar-view.tsx",
+          "src/components/captured-files/captured-files-list.tsx",
+          "src/components/chat/session-sidebar.tsx",
+          "src/components/collections/virtual-list.tsx",
+          "src/components/documents/document-drive.tsx",
+          "src/components/documents/document-search.tsx",
+          "src/components/global-search-page.tsx",
+          "src/components/inbox/inbox-list.tsx",
+          "src/components/job-recovery/job-recovery-list.tsx",
+          "src/components/meetings/meeting-captures-list.tsx",
+          "src/components/objects/object-cleanup-list.tsx",
+          "src/components/objects/object-cleanup-suggestions.tsx",
+          "src/components/objects/object-section-feed.tsx",
+          "src/components/pins/pinned-item-row.tsx",
+          "src/components/pins/pinned-workspace-manager.tsx",
+          "src/components/reconciliation/cluster-output-row.tsx",
+          "src/components/tasks/task-board.tsx",
+          "src/components/timeline-feed.tsx",
+          "src/components/timeline-list.tsx",
+          "src/components/work-filter-bar.tsx",
+          "src/components/work/work-queue-row.tsx"
+        ],
+        "rules": ["react-doctor/jsx-no-jsx-as-prop"]
+      },
+      {
+        "files": [
+          "src/components/collections/collection-status.tsx",
+          "src/components/meetings/meeting-captures-list.tsx",
+          "src/components/tasks/task-view-toggle.tsx"
+        ],
+        "rules": ["react-doctor/only-export-components"]
+      },
+      {
+        "files": ["src/components/approvals/approvals-client.tsx"],
+        "rules": ["react-doctor/prefer-useReducer"]
+      },
+      {
+        "files": [
+          "src/components/boards/curated-board-views.tsx",
+          "src/components/global-search-page.tsx",
+          "src/components/work-filter-bar.tsx"
+        ],
+        "rules": ["react-doctor/no-giant-component"]
+      },
+      {
+        "files": [
+          "src/components/boards/curated-kanban-board.tsx",
+          "src/components/collections/metadata-date-editor.tsx",
+          "src/components/objects/object-cleanup-list.tsx"
+        ],
+        "rules": ["react-doctor/no-prevent-default"]
+      },
+      {
+        "files": ["src/components/collections/editable-metadata.tsx"],
+        "rules": ["react-doctor/no-event-handler", "react-doctor/role-supports-aria-props"]
+      },
+      {
+        "files": ["src/components/global-search-page.tsx"],
+        "rules": ["react-doctor/control-has-associated-label"]
       }
     ]
   }

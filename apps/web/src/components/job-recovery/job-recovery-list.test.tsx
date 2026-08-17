@@ -140,7 +140,13 @@ function fetchUrl(input: RequestInfo | URL): string {
 }
 
 beforeEach(() => {
+  class FakeIntersectionObserver {
+    observe = vi.fn();
+    unobserve = vi.fn();
+    disconnect = vi.fn();
+  }
   vi.clearAllMocks();
+  vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
   installFinishedJobsQuery({ items: [] });
 });
 
@@ -505,13 +511,11 @@ describe('JobRecoveryList', () => {
 
     expect(screen.getByText('Transcribe job 1')).toBeTruthy();
     expect(screen.queryByText('Transcribe job 51')).toBeNull();
-    expect(screen.getByText('Showing 50 of 51')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Dismiss all (51)' })).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'Load more' }));
 
     expect(screen.getByText('Transcribe job 51')).toBeTruthy();
-    expect(screen.queryByText('Showing 50 of 51')).toBeNull();
     expect(screen.getByRole('button', { name: 'Dismiss all (51)' })).toBeTruthy();
   });
 

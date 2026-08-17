@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { type ActionState, resolveScope, uuidSchema } from '@/lib/action-scope';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { db } from '@/lib/db';
+import { loadObjectRowsPage } from '@/lib/object-page';
 import { publicActionError } from '@/lib/public-error';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
@@ -127,6 +128,7 @@ const loadTaskRowsSchema = z.object({
     .record(z.string(), z.union([z.string(), z.array(z.string()), z.undefined()]))
     .optional(),
 });
+const loadObjectRowsSchema = loadTaskRowsSchema;
 const taskCategoryFilterStateSchema = z.object({
   surface: z.enum(['tasks', 'objects', 'board']),
   boardId: uuidSchema.optional(),
@@ -221,6 +223,47 @@ export async function loadTaskRowsAction(input: unknown): Promise<{
       { timezone: settings.defaultTimezone },
     );
     const page = await loadTaskRowsPage(r.scope.objects, parsed.data.cursor ?? null, filters);
+    const pinState = await r.scope.pins.isPinnedMany(
+      page.rows.map((row) => ({ kind: 'object' as const, key: row.id })),
+    );
+    return {
+      rows: page.rows.map((row) => ({
+        ...row,
+        pinned: pinState[`object:${row.id}`] ?? false,
+      })),
+      nextCursor: page.nextCursor,
+    };
+  });
+}
+
+export async function loadObjectRowsAction(input: unknown): Promise<{
+  rows: (objects.ObjectRow & { pinned: boolean })[];
+  nextCursor: string | null;
+  error?: string;
+}> {
+  return runSentryServerAction('load_object_rows', async () => {
+    const parsed = loadObjectRowsSchema.safeParse(input);
+    if (!parsed.success) return { rows: [], nextCursor: null, error: 'Invalid cursor' };
+    const r = await resolveScope();
+    if (!r.ok) return { rows: [], nextCursor: null, error: r.error };
+    if (!(await checkUserSearchRateLimit(r.userId))) {
+      return {
+        rows: [],
+        nextCursor: null,
+        error: 'Too many object loads. Try again shortly.',
+      };
+    }
+    const settings = await r.scope.calendar.getCalendarSettings();
+    const parsedFilters = parseWorkFilters(parsed.data.filters ?? {}, {
+      taskCategoriesEnabled: getEnv().TASK_CATEGORY_UI_ENABLED,
+    });
+    const contextualTaskFilter = Boolean(parsedFilters.category || parsedFilters.project);
+    const filters = {
+      ...objectListFilterFromWorkFilters(parsedFilters, { timezone: settings.defaultTimezone }),
+      ...(contextualTaskFilter && !parsedFilters.type ? { type: 'task' as const } : {}),
+      archived: false,
+    } satisfies objects.ObjectListFilter;
+    const page = await loadObjectRowsPage(r.scope.objects, parsed.data.cursor ?? null, filters);
     const pinState = await r.scope.pins.isPinnedMany(
       page.rows.map((row) => ({ kind: 'object' as const, key: row.id })),
     );

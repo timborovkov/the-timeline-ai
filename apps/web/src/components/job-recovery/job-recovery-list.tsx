@@ -9,6 +9,7 @@ import type * as jobRecovery from '@timeline/shared/job-recovery';
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
+import { InfiniteScroll } from '@/components/collections/infinite-scroll';
 import { jobRecoveryRowHint } from '@/components/job-recovery/job-recovery-row-hint';
 import {
   DISMISS_MATCHING_CLIENT_MAX_ROUNDS,
@@ -475,24 +476,15 @@ export function JobRecoveryList({
           retryStates={retryStates}
           shownItems={shownItems}
         />
-        {filtered.length > shownItems.length ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 px-1">
-            <p className="text-xs text-fg-muted">
-              Showing {shownItems.length.toLocaleString()} of {filtered.length.toLocaleString()}
-            </p>
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              disabled={busy !== null}
-              onClick={() => {
-                setListWindow((current) => current + JOB_RECOVERY_LIST_WINDOW_SIZE);
-              }}
-            >
-              Load more
-            </Button>
-          </div>
-        ) : null}
+        <InfiniteScroll
+          hasMore={filtered.length > shownItems.length}
+          disabled={busy !== null}
+          onLoadMore={() => {
+            setListWindow((current) => current + JOB_RECOVERY_LIST_WINDOW_SIZE);
+          }}
+          boundLabel="No more jobs from the last 7 days"
+          hideBound
+        />
         <AdvancedJobTools
           finishedItems={finishedArchiveItems}
           finishedQuery={finishedJobs}
@@ -970,19 +962,16 @@ function FinishedJobsArchive({
           </tbody>
         </table>
       </div>
-      {query.hasNextPage ? (
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          disabled={query.isFetchingNextPage}
-          onClick={() => {
-            void query.fetchNextPage();
-          }}
-        >
-          {query.isFetchingNextPage ? 'Loading' : 'Load more'}
-        </Button>
-      ) : null}
+      <InfiniteScroll
+        hasMore={query.hasNextPage}
+        loading={query.isFetchingNextPage}
+        error={query.isFetchNextPageError ? 'Could not load more jobs.' : null}
+        onLoadMore={() => {
+          void query.fetchNextPage();
+        }}
+        boundLabel="No more matching jobs"
+        hideBound={items.length === 0}
+      />
     </section>
   );
 }

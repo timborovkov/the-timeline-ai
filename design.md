@@ -192,8 +192,11 @@ signal.
 
 Collection transitions last 150–200ms and are limited to background, border,
 opacity, and transform. They honor reduced motion. No collection introduces a
-new global keyboard shortcut; existing inspectors, drag handles, pagination,
-evidence links, and URL state remain the interaction contract.
+new global keyboard shortcut; existing inspectors, drag handles, infinite
+scroll with virtualization, evidence links, and URL state remain the interaction
+contract. Collection inventories use `24 of 847` when a filter is on and `847`
+when it is not. Timeline has no inventory chip; Moments versus Audit trail is
+the page mode.
 
 ### SectionHeading
 
@@ -322,7 +325,7 @@ rest of the archive.
 
 Timeline is the strongest archive expression. Each row leads with time, source,
 human title, one supporting line, and meaningful impact/status. The rail, sticky
-dates, evidence quick view, and pagination remain. Exact capture and provider
+dates, evidence quick view, and infinite scroll remain. Exact capture and provider
 details move into the inspector. The default view ends at the current instant so
 materialized calendar occurrences do not displace recent work. Upcoming context
 is an explicit seven-day view; the Calendar surface owns the complete future
@@ -380,8 +383,8 @@ failed and Dismiss all stay on the toolbar. Hovering a row’s label or time
 shows the formatted timestamp, job ID, artifact UUID, and raw provider error
 when one exists. Jobs older than 7 days are hidden from attention; admins can
 dismiss them in bulk, and the action keeps going with a loading toast until the
-hidden count is cleared. The visible 7-day list uses a Load more window over the
-current snapshot so a later shared virtualizer can replace it. Retry and dismiss
+hidden count is cleared. The visible 7-day list pages through the current
+snapshot with the shared infinite-scroll sentinel. Retry and dismiss
 use a loading toast that becomes success, warning, or error. Unprocessed
 backlog counts (events still waiting for extraction or embedding) and the
 conversation-suggestion backfill stay inside closed Advanced tools and never
@@ -401,7 +404,7 @@ menu. Cluster detail uses Team / Reconciliation breadcrumbs without a second
 back link; Reconcile and View workspace item sit in the header.
 
 Work → Pinned is the complete pin-management surface. It is a single
-side-to-side list with cursor pagination and All, Objects, Boards, Documents,
+side-to-side list with infinite scroll, virtualization, and All, Objects, Boards, Documents,
 Meetings, Calendar, and Timeline filters. Reordering is available only under
 All so filtered adjacency never changes the mixed global order implicitly.
 Drag reorder has equivalent keyboard actions for move up, down, top, and
@@ -588,8 +591,9 @@ Jobs and Reconciliation list rows show status, a human label, and relative time.
 IDs, raw enum keys, and provider errors stay in the row hover title. Copy access
 for reconciliation JSON payloads lives in the row overflow menu. Audit and
 Integration Audit still keep UUIDs, refs, and JSON closed inside
-`TechnicalDetails`. Reconciliation has no stat-card strip and no release-gate
-banner; coverage actions sit on a toolbar with hover hints. The dashboard
+`TechnicalDetails`. Job recovery pages the 7-day snapshot and finished archive
+with the shared infinite-scroll sentinel. Reconciliation has no stat-card strip
+and no release-gate banner; coverage actions sit on a toolbar with hover hints. The dashboard
 header metadata is checked / needs repair / updated, not access or team.
 Recent clusters and Recent outputs use the same sentence-case section title as
 the rest of the product. Manual UUID reconcile stays in Advanced tools.
@@ -678,3 +682,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Job recovery row overflow | Renames the page Job recovery, moves per-row retry/dismiss into the overflow menu, and keeps IDs plus raw errors in the row hover title. |
 | 2026-08-17 | Quiet reconciliation dashboard | Drops the How it works primer, release-gate banner, and stat cards, and puts coverage actions on a hinted toolbar above recent rows. |
 | 2026-08-17 | Reconciliation header and column titles | Drops access and team from the metadata row, removes Recently reconciled, and uses sentence-case Recent clusters / Recent outputs titles. |
+| 2026-08-17 | Job recovery infinite scroll | Pages the 7-day snapshot and finished archive with the shared InfiniteScroll sentinel instead of a Load more button. |
