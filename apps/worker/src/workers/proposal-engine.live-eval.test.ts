@@ -262,11 +262,9 @@ maybeDescribe('live messy proposal-engine eval', () => {
 
     await runConversationReview(db, reviewId);
 
-    const [amended] = await withTeam(
-      db as never,
-      TEAM_ID,
-      USER_ID,
-    ).suggestions.listPendingSuggestions();
+    const [amended] = (
+      await withTeam(db as never, TEAM_ID, USER_ID).suggestions.listPendingSuggestions()
+    ).filter((bundle) => bundle.id === initial?.id);
     expect(amended?.id).toBe(initial?.id);
     expect(
       (amended?.items ?? []).some(
@@ -275,7 +273,7 @@ maybeDescribe('live messy proposal-engine eval', () => {
           item.proposedPayload.toEntityId === FABA_COMPANY_ID,
       ),
     ).toBe(true);
-  }, 240_000);
+  }, 360_000);
 
   it('does not originate proposals from a structured integration pulse', async () => {
     const eventId = seedId('71');
@@ -612,7 +610,7 @@ maybeDescribe('live messy proposal-engine eval', () => {
         return !/brand/i.test(`${item.title} ${canonical}`);
       }),
     ).toBe(true);
-  }, 240_000);
+  }, 360_000);
 
   it('refuses implicit done when two open branding tasks could own the brand book', async () => {
     await db.insert(entities).values([

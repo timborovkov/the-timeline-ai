@@ -3249,6 +3249,7 @@ describe('processSuggestionJobForTests', () => {
     expect(prompt).toContain('tz=Europe/Helsinki');
     expect(prompt).toContain('location=Teams');
     expect(prompt).toContain('description=Initial project kickoff with Acme.');
+    expect(prompt).toContain('# Pending task approvals');
     expect(prompt).toContain('# Pending calendar approvals');
     expect(prompt).toContain('Acme kickoff option');
     expect(prompt).toContain('proposalGroupId');

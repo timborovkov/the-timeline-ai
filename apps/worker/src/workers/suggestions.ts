@@ -2896,6 +2896,29 @@ async function runSuggestionExtraction(
     )
     .orderBy(desc(agentSuggestionItems.createdAt))
     .limit(20);
+  const pendingTaskRows = await deps.db
+    .select({
+      id: agentSuggestionItems.id,
+      operation: agentSuggestionItems.operation,
+      targetKind: agentSuggestionItems.targetKind,
+      title: agentSuggestionItems.title,
+      payload: agentSuggestionItems.proposedPayload,
+      suggestionTitle: agentSuggestions.title,
+    })
+    .from(agentSuggestionItems)
+    .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+    .where(
+      and(
+        eq(agentSuggestionItems.teamId, teamId),
+        inArray(agentSuggestionItems.targetKind, ['task', 'object']),
+        eq(agentSuggestionItems.operation, 'create'),
+        eq(agentSuggestions.visibility, 'team'),
+        inArray(agentSuggestionItems.status, ['pending', 'failed']),
+        inArray(agentSuggestions.status, ['pending', 'partially_resolved']),
+      ),
+    )
+    .orderBy(desc(agentSuggestionItems.createdAt))
+    .limit(20);
   const boardDetails = (
     await Promise.all(
       (await scope.boards.listBoards())
@@ -3045,6 +3068,17 @@ async function runSuggestionExtraction(
       id: item.id,
       operation: item.operation,
       targetId: item.targetId,
+      title: item.title,
+      suggestionTitle: item.suggestionTitle,
+      payload:
+        item.payload && typeof item.payload === 'object' && !Array.isArray(item.payload)
+          ? (item.payload as Record<string, unknown>)
+          : {},
+    })),
+    pendingTasks: pendingTaskRows.map((item) => ({
+      id: item.id,
+      operation: item.operation,
+      targetKind: item.targetKind,
       title: item.title,
       suggestionTitle: item.suggestionTitle,
       payload:
@@ -4044,6 +4078,14 @@ function buildPromptParts(args: {
     suggestionTitle: string;
     payload: Record<string, unknown>;
   }[];
+  pendingTasks: {
+    id: string;
+    operation: string;
+    targetKind: string;
+    title: string;
+    suggestionTitle: string;
+    payload: Record<string, unknown>;
+  }[];
   boards: {
     id: string;
     name: string;
@@ -4164,6 +4206,15 @@ function buildPromptParts(args: {
           ev.description ?? '',
           220,
         )}`,
+    ),
+    '',
+    '# Pending task approvals',
+    'Treat these as already proposed but not canonical. Do not create another equivalent task. If later evidence only names the client or project for one of these, return no new create; the attach pass amends the unedited pending item in place.',
+    ...args.pendingTasks.map(
+      (item) =>
+        `- ${item.id}: ${item.operation} ${item.targetKind} "${item.title}" bundle="${
+          item.suggestionTitle
+        }" payload=${JSON.stringify(item.payload)}`,
     ),
     '',
     '# Pending calendar approvals',

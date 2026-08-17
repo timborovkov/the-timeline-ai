@@ -485,7 +485,7 @@ already-related text plus typed adjacent state.
 | Related open work | Open tasks/follow-ups whose distinctive title tokens overlap the evidence (branding ↔ brand book). Listed before the recency dump so a week-old task survives the token budget | A write join. Two overlaps stay listed; the model must refuse a lifecycle guess |
 | Linked context | ≤8 events that already share fact-linked entities | Semantic "looks related" |
 | Reference knowledge | Curated document chunks whose names appear in the evidence | Originating evidence; citations stay raw events |
-| Team members, calendar, boards, Q&A notes | Typed adjacent state | A dump of private items |
+| Team members, calendar, boards, Q&A notes, pending task/calendar approvals | Typed adjacent state. Pending task creates are listed so later client-naming messages amend in place instead of minting a sibling | A dump of private items |
 
 `OBJECT_PROMPT_LIMIT = 40` is a fill, not a join. If Faba was not updated
 recently, Faba still belongs in **Mentioned workspace hubs** when the meeting
