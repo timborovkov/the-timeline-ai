@@ -574,8 +574,8 @@ back link; Reconcile and View workspace item sit in the header.
 Work → Pinned is the complete pin-management surface. It is a single
 side-to-side Linear list with infinite scroll, virtualization, and no inventory
 chip. Filters are All, Objects, Boards, Documents, Meetings, Calendar, and
-Timeline. Reordering is available only under
-All so filtered adjacency never changes the mixed global order implicitly.
+Timeline. Reordering is available only under All so filtered adjacency never
+changes the mixed global order implicitly.
 Drag reorder has equivalent keyboard actions for move up, down, top, and
 bottom; keyboard moves announce their result through a polite live region.
 
