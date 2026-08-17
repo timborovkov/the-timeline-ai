@@ -1254,9 +1254,9 @@ describe('writeIntegrationEvents visibility', () => {
 
     const [row] = await db.select().from(rawEvents).where(eq(rawEvents.id, eventId));
     const metadata = row?.sourceMetadata as Record<string, unknown> | undefined;
-    expect(metadata?.extraction_error).toBe('enqueue failed: redis unavailable');
-    expect(metadata?.extraction_failed_at).toEqual(expect.any(String));
-    expect(metadata).not.toHaveProperty('embedding_failed_at');
+    expect(metadata?.embedding_error).toBe('enqueue failed: redis unavailable');
+    expect(metadata?.embedding_failed_at).toEqual(expect.any(String));
+    expect(metadata).not.toHaveProperty('extraction_failed_at');
 
     const [evidence] = await db
       .select()
