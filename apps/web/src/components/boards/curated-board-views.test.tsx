@@ -241,9 +241,9 @@ describe('CuratedBoardTable', () => {
     const nameCell = screen.getByRole('link', { name: 'Launch review' }).closest('td');
     expect(nameCell?.textContent).toContain('Call customer');
     expect(nameCell?.className).toContain('align-middle');
-    expect(screen.getByRole('checkbox', { name: 'Select Launch review' }).closest('td')?.className).toContain(
-      'align-middle',
-    );
+    expect(
+      screen.getByRole('checkbox', { name: 'Select Launch review' }).closest('td')?.className,
+    ).toContain('align-middle');
   });
 
   it('bulk assigns selected board items in table view', async () => {
