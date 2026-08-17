@@ -6,7 +6,6 @@ import { useReducer } from 'react';
 
 import { CopyButton } from '@/components/copy-button';
 import { Button } from '@/components/ui/button';
-import { notifyAction } from '@/lib/notify';
 import {
   Dialog,
   DialogContent,
@@ -17,6 +16,7 @@ import {
 } from '@/components/ui/dialog';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
+import { notifyAction } from '@/lib/notify';
 
 interface CalendarSubscription {
   prefix: string;

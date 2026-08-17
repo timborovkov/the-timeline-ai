@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { TimelineEvent } from '@/lib/use-paginated-queries';
 import type { ComponentProps, ReactNode } from 'react';
@@ -49,9 +49,13 @@ vi.mock('@/components/inspector-context', () => ({
 }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
 vi.mock('@/lib/notify', () => ({
-  notifyAction: (options: { run: () => Promise<{ error?: string }> }) =>
-    fakes.notifyAction(options),
-  notifyError: fakes.notifyError,
+  notifyAction: async (options: { run: () => Promise<{ error?: string }> }) => {
+    fakes.notifyAction(options);
+    return options.run();
+  },
+  notifyError: (id: string, message: string) => {
+    fakes.notifyError(id, message);
+  },
 }));
 
 const { TimelineList } = await import('./timeline-list.js');
@@ -59,12 +63,6 @@ const { TimelineList } = await import('./timeline-list.js');
 interface InspectorContentForTest {
   render: () => ReactNode;
 }
-
-beforeEach(() => {
-  fakes.notifyAction.mockImplementation(async ({ run }: { run: () => Promise<{ error?: string }> }) =>
-    run(),
-  );
-});
 
 afterEach(() => {
   cleanup();

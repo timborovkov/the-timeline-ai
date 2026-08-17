@@ -3,7 +3,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ReactNode } from 'react';
 
@@ -15,9 +15,13 @@ const fakes = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/notify', () => ({
-  notifyAction: (options: { run: () => Promise<{ error?: string }> }) =>
-    fakes.notifyAction(options),
-  notifyError: fakes.notifyError,
+  notifyAction: async (options: { run: () => Promise<{ error?: string }> }) => {
+    fakes.notifyAction(options);
+    return options.run();
+  },
+  notifyError: (id: string, message: string) => {
+    fakes.notifyError(id, message);
+  },
 }));
 
 vi.mock('next/navigation', () => ({
@@ -83,12 +87,6 @@ function capturedFile(overrides: Partial<CapturedFile> = {}): CapturedFile {
     ...overrides,
   };
 }
-
-beforeEach(() => {
-  fakes.notifyAction.mockImplementation(async ({ run }: { run: () => Promise<{ error?: string }> }) =>
-    run(),
-  );
-});
 
 afterEach(() => {
   cleanup();

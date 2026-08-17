@@ -14,9 +14,13 @@ const fakes = vi.hoisted(() => ({
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
 vi.mock('@/lib/notify', () => ({
-  notifyAction: (options: { run: () => Promise<{ error?: string }> }) =>
-    fakes.notifyAction(options),
-  notifyError: fakes.notifyError,
+  notifyAction: async (options: { run: () => Promise<{ error?: string }> }) => {
+    fakes.notifyAction(options);
+    return options.run();
+  },
+  notifyError: (id: string, message: string) => {
+    fakes.notifyError(id, message);
+  },
 }));
 
 const { CalendarSubscriptionPanel } = await import('./calendar-subscription-panel.js');
@@ -43,9 +47,6 @@ function mockFetch(response: Response) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  fakes.notifyAction.mockImplementation(async ({ run }: { run: () => Promise<{ error?: string }> }) =>
-    run(),
-  );
 });
 
 afterEach(() => {
@@ -79,11 +80,12 @@ describe('CalendarSubscriptionPanel', () => {
       expect.objectContaining({
         success: 'Calendar URL created',
         error: 'Couldn’t create calendar URL',
-        undo: expect.objectContaining({
-          success: 'Calendar URL disabled',
-        }),
       }),
     );
+    expect(
+      (fakes.notifyAction.mock.calls[0]?.[0] as { undo?: { success?: string } } | undefined)?.undo
+        ?.success,
+    ).toBe('Calendar URL disabled');
     expect(fakes.refresh).toHaveBeenCalled();
   });
 

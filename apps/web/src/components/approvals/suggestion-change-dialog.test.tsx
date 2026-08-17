@@ -13,9 +13,13 @@ const fakes = vi.hoisted(() => ({
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
 vi.mock('@/lib/notify', () => ({
-  notifyAction: (options: { run: () => Promise<{ error?: string }> }) =>
-    fakes.notifyAction(options),
-  notifyError: fakes.notifyError,
+  notifyAction: async (options: { run: () => Promise<{ error?: string }> }) => {
+    fakes.notifyAction(options);
+    return options.run();
+  },
+  notifyError: (id: string, message: string) => {
+    fakes.notifyError(id, message);
+  },
 }));
 vi.mock('@/app/actions/suggestions', () => ({
   reviseSuggestionItemAction: fakes.reviseSuggestionItemAction,
@@ -26,9 +30,6 @@ const { SuggestionChangeDialog } = await import('./suggestion-change-dialog.js')
 beforeEach(() => {
   vi.clearAllMocks();
   fakes.reviseSuggestionItemAction.mockResolvedValue({ ok: true });
-  fakes.notifyAction.mockImplementation(async ({ run }: { run: () => Promise<{ error?: string }> }) =>
-    run(),
-  );
 });
 
 afterEach(cleanup);

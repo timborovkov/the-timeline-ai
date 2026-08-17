@@ -24,9 +24,13 @@ vi.mock('@/app/actions/objects', () => ({
   updateObjectAction: fakes.updateObjectAction,
 }));
 vi.mock('@/lib/notify', () => ({
-  notifyAction: (options: { run: () => Promise<{ error?: string }> }) =>
-    fakes.notifyAction(options),
-  notifyError: fakes.notifyError,
+  notifyAction: async (options: { run: () => Promise<{ error?: string }> }) => {
+    fakes.notifyAction(options);
+    return options.run();
+  },
+  notifyError: (id: string, message: string) => {
+    fakes.notifyError(id, message);
+  },
 }));
 
 const { ObjectCleanupList } = await import('./object-cleanup-list.js');
@@ -64,9 +68,6 @@ describe('ObjectCleanupList', () => {
     fakes.confirm.mockResolvedValue(false);
     fakes.bulkArchiveObjectsAction.mockResolvedValue({ ok: true });
     fakes.updateObjectAction.mockResolvedValue({ ok: true });
-    fakes.notifyAction.mockImplementation(async ({ run }: { run: () => Promise<{ error?: string }> }) =>
-      run(),
-    );
   });
 
   it('does not render legacy agentSuggested badges on object rows', () => {

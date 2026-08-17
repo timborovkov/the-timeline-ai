@@ -19,8 +19,10 @@ vi.mock('next/image', () => ({
   ),
 }));
 vi.mock('@/lib/notify', () => ({
-  notifyAction: vi.fn(async ({ run }: { run: () => Promise<{ error?: string }> }) => run()),
-  notifyError: (...args: unknown[]) => fakes.notifyError(...args),
+  notifyAction: async (options: { run: () => Promise<{ error?: string }> }) => options.run(),
+  notifyError: (id: string, message: string) => {
+    fakes.notifyError(id, message);
+  },
 }));
 vi.mock('@/app/actions/documents', () => ({
   getDocumentPreviewUrlAction: fakes.getDocumentPreviewUrlAction,

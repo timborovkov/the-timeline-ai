@@ -20,9 +20,13 @@ const fakes = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: fakes.useQueryClient }));
 vi.mock('@/lib/notify', () => ({
-  notifyAction: (options: { run: () => Promise<{ error?: string }> }) =>
-    fakes.notifyAction(options),
-  notifyError: fakes.notifyError,
+  notifyAction: async (options: { run: () => Promise<{ error?: string }> }) => {
+    fakes.notifyAction(options);
+    return options.run();
+  },
+  notifyError: (id: string, message: string) => {
+    fakes.notifyError(id, message);
+  },
 }));
 vi.mock('@/lib/use-paginated-queries', () => ({
   useDocumentListQuery: fakes.useDocumentListQuery,
@@ -62,9 +66,6 @@ function renderDrive(overrides: Partial<Parameters<typeof DocumentDrive>[0]> = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  fakes.notifyAction.mockImplementation(async ({ run }: { run: () => Promise<{ error?: string }> }) =>
-    run(),
-  );
   fakes.useQueryClient.mockReturnValue({ setQueryData: vi.fn() });
   fakes.useDocumentListQuery.mockImplementation((_folderId: string | null, initial: unknown) => ({
     data: { pages: [initial] },

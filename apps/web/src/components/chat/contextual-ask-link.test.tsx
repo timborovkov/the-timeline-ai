@@ -9,8 +9,10 @@ const fakes = vi.hoisted(() => ({ push: vi.fn(), notifyError: vi.fn() }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: fakes.push }) }));
 vi.mock('@/lib/notify', () => ({
-  notifyAction: vi.fn(async ({ run }: { run: () => Promise<{ error?: string }> }) => run()),
-  notifyError: (...args: unknown[]) => fakes.notifyError(...args),
+  notifyAction: async (options: { run: () => Promise<{ error?: string }> }) => options.run(),
+  notifyError: (id: string, message: string) => {
+    fakes.notifyError(id, message);
+  },
 }));
 
 const { ContextualAskLink } = await import('@/components/chat/contextual-ask-link');

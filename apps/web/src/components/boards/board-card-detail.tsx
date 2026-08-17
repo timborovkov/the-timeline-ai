@@ -32,8 +32,8 @@ import {
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { boardViewHref } from '@/lib/board-links';
 import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/display-dates';
-import { notifyAction } from '@/lib/notify';
 import { isSchedulableObjectType } from '@/lib/due-dates';
+import { notifyAction } from '@/lib/notify';
 import { objectDetailHref } from '@/lib/object-links';
 import { displayObjectTitle } from '@/lib/object-title';
 import { statusLabel } from '@/lib/status-labels';
