@@ -67,7 +67,10 @@ describe('Job recovery route states', () => {
     expect(screen.getAllByRole('heading', { level: 1, name: 'Job recovery' })).toHaveLength(1);
     expect(container.innerHTML).not.toContain('>access</dt>');
     expect(container.innerHTML).not.toContain('>team</dt>');
-    expect(screen.getByText('Admins only')).toBeTruthy();
+    expect(
+      screen.getByText('Admins can retry or dismiss failed processing from the last 7 days.'),
+    ).toBeTruthy();
+    expect(container.querySelector('.sr-only')?.textContent).toContain('Admins only');
     expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Back' }).getAttribute('href')).toBe('/app/team');
     expect(
