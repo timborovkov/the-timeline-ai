@@ -4,7 +4,6 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 
 import type { PGlite } from '@electric-sql/pglite';
 
-import { generateDailyDigest } from '#src/messaging/digest.js';
 import {
   addTeamDigestDestination,
   insertDefaultDigestDestination,
@@ -12,6 +11,7 @@ import {
   listWorkspaceDigestTeamIds,
   removeTeamDigestDestination,
 } from '#src/messaging/destinations.js';
+import { generateDailyDigest } from '#src/messaging/digest.js';
 import { createResettablePGliteTestDb, type ResettablePGliteTestDb } from '#src/test/pglite.js';
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
@@ -143,15 +143,14 @@ describe('workspace digest destinations', () => {
       createdByUserId: USER_ID,
       destination: { kind: 'slack_channel', targetId: 'C123', label: '#general' },
     });
-    expect(added).toMatchObject({ id: expect.any(String) });
+    if ('error' in added) throw new Error(added.error);
+    expect(typeof added.id).toBe('string');
     const destinations = await listTeamDigestDestinations(db, TEAM_ID);
     expect(destinations.map((row) => row.kind).sort()).toEqual(['email_members', 'slack_channel']);
     expect(await listWorkspaceDigestTeamIds(db)).toEqual([TEAM_ID]);
-    if ('id' in added) {
-      await expect(
-        removeTeamDigestDestination({ db, teamId: TEAM_ID, destinationId: added.id }),
-      ).resolves.toBe(true);
-    }
+    await expect(
+      removeTeamDigestDestination({ db, teamId: TEAM_ID, destinationId: added.id }),
+    ).resolves.toBe(true);
     expect(await listWorkspaceDigestTeamIds(db)).toEqual([]);
   });
 

@@ -89,8 +89,10 @@ describe('digest destinations', () => {
         enabled: true,
       },
     ];
-    expect(digestDestinationLabel(destinations[0]!)).toBe('Email every member');
-    expect(digestDestinationLabel(destinations[1]!)).toBe('Slack #general');
+    const email = destinations.find((row) => row.kind === 'email_members');
+    const slack = destinations.find((row) => row.kind === 'slack_channel');
+    expect(email ? digestDestinationLabel(email) : null).toBe('Email every member');
+    expect(slack ? digestDestinationLabel(slack) : null).toBe('Slack #general');
     expect(personalDigestDestinations(destinations).map((row) => row.kind)).toEqual([
       'email_members',
     ]);

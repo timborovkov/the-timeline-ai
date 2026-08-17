@@ -56,14 +56,14 @@ const addDestinationSchema = z
   .superRefine((value, ctx) => {
     if (digestDestinationRequiresTarget(value.kind) && !value.targetId) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         message: 'Choose where the digest should be posted.',
         path: ['targetId'],
       });
     }
     if (!digestDestinationRequiresTarget(value.kind) && value.targetId) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         message: 'This destination does not take a specific chat.',
         path: ['targetId'],
       });

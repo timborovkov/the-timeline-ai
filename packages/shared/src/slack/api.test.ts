@@ -113,7 +113,9 @@ describe('SlackApi deterministic E2E seam', () => {
     });
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('https://slack.com/api/conversations.open');
-    expect(String(init.body)).toContain('users=U123');
+    expect(init.body).toBeInstanceOf(URLSearchParams);
+    const body = init.body as URLSearchParams;
+    expect(body.get('users')).toBe('U123');
   });
 });
 
