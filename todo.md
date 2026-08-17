@@ -77,6 +77,8 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       a wider family-aware inspector with collapsed original-source viewers,
       Ask citation previews that name transcript/calendar/document/Timeline
       destinations and reuse that original-source viewer,
+      sentinel infinite scroll with virtualized archive rows and no inventory
+      chip,
       GitHub workflow bundling, and the
       `search_timeline_moments`/`get_timeline_moment` agent tools, and the
       shared `@timeline/shared/timeline-moments` projection. Outbound MCP now

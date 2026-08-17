@@ -34,21 +34,23 @@ _Avoid_: Message, activity, log entry
 **Timeline Moment**:
 A user-facing cluster of related raw events shown together on the timeline so
 team members can understand a meaningful slice of work before drilling into
-individual source evidence. The timeline is date-first, with source clusters
-inside each date and impact shown as attached context. Timeline lists should
-show compact signals for extracted file representations; full transcripts,
-OCR text, and visual descriptions belong in event detail, citations, and agent
-tools. User-facing Moments chrome and digests count moments; All events,
-filters, and technical disclosures count source events. Conversation inspectors
-use evidence items; pulses use a compact activity log — do not pair moment and
-raw-event totals in the same chrome. The inspector keeps original source
-(message, email HTML, transcript, webhook/JSON payload) in a collapsed
-disclosure; attached documents link to the document drive. Ask `[ev:]`
-citations name those raw source events; the inspector evidence item shows the
-matching chip so a cited source can be identified without putting IDs on the
-timeline list. Citation previews open the matching workspace destination
-(transcript, document, calendar event, object, or Timeline moment) and reuse
-the inspector original-source viewer for payloads.
+individual source evidence. Archive rows are Linear-quiet: time, one source
+icon, a title, and at most one muted context line, with sticky dates under the
+filter toolbar. Impact stays in the inspector, not on the row. The archive
+pages older activity through infinite scroll and virtualizes mounted rows;
+Timeline has no inventory chip. Timeline lists should show compact signals for
+extracted file representations; full transcripts, OCR text, and visual
+descriptions belong in event detail, citations, and agent tools. User-facing
+Moments chrome and digests count moments; All events, filters, and technical
+disclosures count source events. Conversation inspectors use evidence items;
+pulses use a compact activity log — do not pair moment and raw-event totals in
+the same chrome. The inspector keeps original source (message, email HTML,
+transcript, webhook/JSON payload) in a collapsed disclosure; attached documents
+link to the document drive. Ask `[ev:]` citations name those raw source events;
+the inspector evidence item shows the matching chip so a cited source can be
+identified without putting IDs on the timeline list. Citation previews open the
+matching workspace destination (transcript, document, calendar event, object,
+or Timeline moment) and reuse the inspector original-source viewer for payloads.
 _Avoid_: Raw Event when referring to the grouped browsing unit
 
 **Timeline event class**:

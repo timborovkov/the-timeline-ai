@@ -262,6 +262,51 @@ describe('TimelineList compact home rows', () => {
   });
 });
 
+describe('TimelineList archive virtualization', () => {
+  it('virtualizes full archive rows with sticky dates under the toolbar', () => {
+    const html = renderTimeline([
+      timelineEvent({
+        id: '19191919-1919-4191-8191-191919191919',
+        occurredAt: '2026-06-03T13:10:00.000Z',
+        source: 'integration',
+        contentText: 'GitHub workflow "CI" #1603 on acme/app success',
+        sourceMetadata: {
+          provider: 'github',
+          event_type: 'workflow_run.success',
+          github: { type: 'workflow_run', repo: 'acme/app', head_branch: 'main' },
+        },
+      }),
+    ]);
+
+    expect(html).toContain('data-timeline-mode="moments"');
+    expect(html).toContain('sticky top-11');
+    expect(html).not.toContain('sticky top-0');
+    expect(html).not.toContain('<ol');
+    expect(html).not.toContain('[ev:');
+    expect(html).not.toContain('View evidence');
+    expect(html).toContain('data-visual-weight="pulse"');
+  });
+
+  it('keeps Home compact rows grouped instead of virtualized', () => {
+    const html = renderTimeline(
+      [
+        timelineEvent({
+          id: '11111111-1111-4111-8111-111111111111',
+          occurredAt: '2026-06-03T13:04:00.000Z',
+        }),
+      ],
+      {
+        compact: true,
+        maxMoments: 8,
+      },
+    );
+
+    expect(html).toContain('<ol');
+    expect(html).not.toContain('sticky top-11');
+    expect(html).toContain('aria-label="Recent timeline moments"');
+  });
+});
+
 describe('TimelineList document attachments', () => {
   it('moves document previews into the inspector and keeps lifecycle rules', () => {
     const uploadId = '66666666-6666-4666-8666-666666666666';
