@@ -96,7 +96,7 @@ describe('FloatingAgentChat', () => {
     await user.click(trigger);
 
     expect(await screen.findByRole('heading', { name: 'Object' })).toBeTruthy();
-    expect(screen.getAllByText('⌘J').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/⌘J/).length).toBeGreaterThan(0);
     const body = fakes.transports.at(-1)?.options.body?.() as {
       dashboardContext?: Record<string, unknown>;
       contextTrail?: { kind: string; objectId?: string }[];
@@ -220,5 +220,39 @@ describe('FloatingAgentChat', () => {
     );
 
     expect(window.localStorage.getItem(storageKey)).toBeNull();
+  });
+
+  it('appends earlier views when the route changes', async () => {
+    const user = userEvent.setup();
+    const { rerender } = renderChat();
+    await user.click(screen.getByRole('button', { name: /Open floating agent chat/ }));
+    expect(await screen.findByRole('heading', { name: 'Object' })).toBeTruthy();
+
+    fakes.pathname.mockReturnValue('/app/sources');
+    fakes.searchParams.mockReturnValue(new URLSearchParams());
+    rerender(
+      <ChatViewProvider>
+        <FloatingAgentChat teamId="team-1" teamName="AuditAI" />
+      </ChatViewProvider>,
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Connections' })).toBeTruthy();
+    expect(screen.getByText(/1 earlier/)).toBeTruthy();
+    const body = fakes.transports.at(-1)?.options.body?.() as {
+      contextTrail?: { kind: string; href?: string }[];
+    };
+    expect(body.contextTrail?.[0]).toMatchObject({ kind: 'page', href: '/app/sources' });
+    expect(body.contextTrail?.some((ref) => ref.kind === 'object')).toBe(true);
+  });
+
+  it('writes the live trail when opening full Ask', async () => {
+    const user = userEvent.setup();
+    renderChat();
+    await user.click(screen.getByRole('button', { name: /Open floating agent chat/ }));
+    await user.click(screen.getByRole('link', { name: 'Open full chat' }));
+    const stored = JSON.parse(
+      window.sessionStorage.getItem('timeline:chat-handoff:team-1') ?? '{}',
+    ) as { contextTrail?: { kind: string }[] };
+    expect(stored.contextTrail?.[0]).toMatchObject({ kind: 'object' });
   });
 });

@@ -11,6 +11,7 @@ import { loadChatSessionAction } from '@/app/actions/chat';
 import { ChatSurface } from '@/components/chat/chat-pane';
 import { useCurrentChatView } from '@/components/chat/chat-view-context';
 import { Button } from '@/components/ui/button';
+import { storeChatContextHandoff } from '@/lib/chat-handoff';
 import { chatShortcutLabel } from '@/lib/chat-view';
 import { cn } from '@/lib/utils';
 
@@ -45,7 +46,7 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
   const { current, dashboardContext } = useCurrentChatView();
   const [{ open, activated }, setPanel] = useState({ open: false, activated: false });
   const storageKey = `timeline:floating-agent-chat:${teamId}:session`;
-  const [{ sessionId, initialMessages, contextTrail }, setSessionState] =
+  const [{ sessionId, initialMessages }, setSessionState] =
     useState<FloatingSessionState>(() => ({
       sessionId: readStoredSessionId(storageKey),
       initialMessages: [],
@@ -54,12 +55,14 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
   const hydratedSessionIdRef = useRef<string | null>(null);
   const sessionGenerationRef = useRef(0);
   const launcherRef = useRef<HTMLButtonElement>(null);
+  const trailRef = useRef<ChatContextRef[]>([]);
   const openRef = useRef(open);
   const pathnameRef = useRef(pathname);
   openRef.current = open;
   pathnameRef.current = pathname;
   const excluded = isExcludedPath(pathname);
-  const liveTrail = mergeChatContextTrail(contextTrail, [current]);
+  const liveTrail = mergeChatContextTrail(trailRef.current, [current]);
+  trailRef.current = liveTrail;
   const pinnedEntityId = current.objectId ?? null;
   const openPanel = useCallback(() => {
     setPanel({ open: true, activated: true });
@@ -72,8 +75,9 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
     sessionGenerationRef.current += 1;
     window.localStorage.removeItem(storageKey);
     hydratedSessionIdRef.current = null;
+    trailRef.current = [current];
     setSessionState({ sessionId: null, initialMessages: [], contextTrail: [] });
-  }, [storageKey]);
+  }, [current, storageKey]);
 
   useEffect(() => {
     if (!sessionId) {
@@ -87,6 +91,7 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
       if (hydratedSessionIdRef.current !== activeSessionId) return;
       window.localStorage.removeItem(storageKey);
       hydratedSessionIdRef.current = null;
+      trailRef.current = [current];
       setSessionState({ sessionId: null, initialMessages: [], contextTrail: [] });
     };
 
@@ -94,12 +99,14 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
       .then((loaded) => {
         if (hydratedSessionIdRef.current !== activeSessionId) return;
         if (loaded.ok) {
+          const nextTrail = mergeChatContextTrail(loaded.contextTrail ?? [], [current]);
+          trailRef.current = mergeChatContextTrail(trailRef.current, nextTrail);
           setSessionState((state) =>
             state.sessionId === activeSessionId
               ? {
                   ...state,
                   initialMessages: loaded.messages ?? [],
-                  contextTrail: loaded.contextTrail ?? [],
+                  contextTrail: trailRef.current,
                 }
               : state,
           );
@@ -111,7 +118,7 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
         if (hydratedSessionIdRef.current !== activeSessionId) return;
         clearStaleSession();
       });
-  }, [sessionId, storageKey]);
+  }, [current, sessionId, storageKey]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -181,7 +188,7 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
         hidden={!showPanel}
         className={cn(
           'fixed z-[60] m-0 flex flex-col border-border bg-bg p-0 shadow-2xl shadow-black/20',
-          'inset-x-0 bottom-0 h-[min(82dvh,42rem)] max-h-none w-full max-w-none rounded-t-md border-t',
+          'inset-x-0 top-auto bottom-0 h-[min(82dvh,42rem)] max-h-none w-screen max-w-none rounded-t-md border-t',
           'md:inset-auto md:bottom-20 md:right-5 md:h-[min(36rem,calc(100dvh-8rem))] md:w-[min(26rem,calc(100vw-2.5rem))] md:rounded-sm md:border',
         )}
       >
@@ -214,7 +221,21 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
               asChild
               aria-label="Open full chat"
             >
-              <Link href={fullChatHref}>
+              <Link
+                href={fullChatHref}
+                onClick={() => {
+                  storeChatContextHandoff(window.sessionStorage, teamId, {
+                    context: dashboardContext,
+                    contextTrail: liveTrail,
+                    ...(pinnedEntityId
+                      ? {
+                          pinnedEntityId,
+                          pinnedEntityName: current.label,
+                        }
+                      : {}),
+                  });
+                }}
+              >
                 <ExternalLink className="size-4" />
               </Link>
             </Button>

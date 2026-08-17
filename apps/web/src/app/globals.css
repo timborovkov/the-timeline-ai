@@ -164,4 +164,12 @@
     background-color: var(--signal-soft);
     color: var(--fg);
   }
+
+  /* Native <dialog> UA styles (fit-content + margin:auto) fight the floating
+     Ask sheet. Reset them so mobile is a full-width bottom sheet. */
+  dialog#floating-agent-chat-panel {
+    margin: 0;
+    max-width: none;
+    padding: 0;
+  }
 }

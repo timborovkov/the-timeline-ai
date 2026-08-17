@@ -280,6 +280,6 @@ export function buildChatView(input: {
   };
 }
 
-export function chatShortcutLabel(metaKey = true): string {
-  return metaKey ? '⌘J' : 'Ctrl+J';
+export function chatShortcutLabel(): string {
+  return '⌘J / Ctrl+J';
 }

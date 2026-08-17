@@ -68,4 +68,31 @@ describe('chat handoff', () => {
     });
     expect(consumeChatHandoffEntry(storage, 'team-a', 2_000)).toBeNull();
   });
+
+  it('hands a dashboard context trail off without a prompt', () => {
+    const storage = memoryStorage();
+    storeChatContextHandoff(
+      storage,
+      'team-a',
+      {
+        context: { pathname: '/app/sources', routeKind: 'sources' },
+        contextTrail: [
+          { kind: 'page', href: '/app/sources', label: 'Connections' },
+          {
+            kind: 'object',
+            href: '/app/objects/44444444-4444-4444-8444-444444444444',
+            label: 'Project Atlas',
+            objectId: '44444444-4444-4444-8444-444444444444',
+          },
+        ],
+      },
+      1_000,
+    );
+    expect(consumeChatHandoffEntry(storage, 'team-a', 2_000)).toMatchObject({
+      contextTrail: [
+        { kind: 'page', href: '/app/sources', label: 'Connections' },
+        { kind: 'object', label: 'Project Atlas' },
+      ],
+    });
+  });
 });

@@ -613,4 +613,44 @@ describe('ChatPane', () => {
       startNewSession: true,
     });
   });
+
+  it('shows context badges from a floating-Ask handoff on a new full Ask', async () => {
+    fakes.useChat.mockReturnValue({
+      messages: [],
+      sendMessage: vi.fn(),
+      status: 'ready',
+      error: null,
+    });
+    window.sessionStorage.setItem(
+      chatHandoffKey('team-1'),
+      JSON.stringify({
+        createdAt: Date.now(),
+        context: { pathname: '/app/sources', routeKind: 'sources' },
+        contextTrail: [
+          { kind: 'page', href: '/app/sources', label: 'Connections' },
+          {
+            kind: 'object',
+            href: '/app/objects/44444444-4444-4444-8444-444444444444',
+            label: 'Project Atlas',
+            objectId: '44444444-4444-4444-8444-444444444444',
+          },
+        ],
+      }),
+    );
+
+    render(
+      createElement(ChatPane, {
+        teamId: 'team-1',
+        teamName: 'Acme',
+        sessionId: null,
+        initialMessages: [],
+        pinnedEntityId: null,
+        pinnedEntityName: null,
+      }),
+    );
+
+    expect(await screen.findByLabelText('Conversation context')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Connections' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Project Atlas' })).toBeTruthy();
+  });
 });

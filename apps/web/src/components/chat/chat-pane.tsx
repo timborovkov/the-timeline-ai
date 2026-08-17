@@ -1,6 +1,7 @@
 'use client';
 
 import { useChat } from '@ai-sdk/react';
+import { mergeChatContextTrail, type ChatContextRef } from '@timeline/shared/chat-context';
 import {
   DefaultChatTransport,
   lastAssistantMessageIsCompleteWithApprovalResponses,
@@ -12,7 +13,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 
 import type { ChatHandoff, ChatHandoffContext } from '@/lib/chat-handoff';
-import type { ChatContextRef } from '@timeline/shared/chat-context';
 
 import { unpinChatSessionAction } from '@/app/actions/chat';
 import { CitationText } from '@/components/chat/citation';
@@ -91,13 +91,18 @@ function ChatSurfaceContent({
   const router = useRouter();
   const search = useSearchParams();
   const chatHandoffRef = useRef<ChatHandoff | null>(null);
+  const [consumedHandoff, setConsumedHandoff] = useState<ChatHandoff | null>(null);
+  const visibleTrail = mergeChatContextTrail(
+    contextTrail ?? [],
+    consumedHandoff?.contextTrail ?? [],
+  );
   const { sessionId, transport } = useChatSessionTransport({
     initialSessionId,
     initialPinnedEntityId: pinnedEntityId,
     chatHandoffRef,
     search,
     dashboardContext,
-    contextTrail,
+    contextTrail: visibleTrail,
     onSessionIdChange,
     updateUrlOnSessionCreate,
   });
@@ -108,7 +113,6 @@ function ChatSurfaceContent({
   });
 
   const [input, setInput] = useState('');
-  const [consumedHandoff, setConsumedHandoff] = useState<ChatHandoff | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const handoffConsumedRef = useRef(false);
 
@@ -121,7 +125,7 @@ function ChatSurfaceContent({
       : null;
 
   useEffect(() => {
-    if (handoffConsumedRef.current || initialSessionId || initialMessages.length > 0) return;
+    if (handoffConsumedRef.current) return;
     handoffConsumedRef.current = true;
     let handoff: ChatHandoff | null = null;
     try {
@@ -130,10 +134,12 @@ function ChatSurfaceContent({
       return;
     }
     if (!handoff) return;
-    chatHandoffRef.current = handoff;
+    if (!initialSessionId && initialMessages.length === 0) {
+      chatHandoffRef.current = handoff;
+    }
     // react-doctor-disable-next-line react-doctor/no-adjust-state-on-prop-change, react-doctor/no-chain-state-updates -- This hydrates a consumed one-time sessionStorage message after SSR; it does not mirror a prop or chain derived state.
     setConsumedHandoff(handoff);
-    if (handoff.prompt) void sendMessage({ text: handoff.prompt });
+    if (!initialSessionId && handoff.prompt) void sendMessage({ text: handoff.prompt });
   }, [initialMessages.length, initialSessionId, sendMessage, teamId]);
 
   useEffect(() => {
@@ -167,7 +173,7 @@ function ChatSurfaceContent({
           router.refresh();
         }}
       />
-      <ChatContextBadges refs={contextTrail ?? []} compact={compact} />
+      <ChatContextBadges refs={visibleTrail} compact={compact} />
       <ChatTranscript
         compact={compact}
         emptyHint={emptyHint}

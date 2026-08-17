@@ -1,3 +1,5 @@
+import { type ChatContextRef, parseChatContextTrail } from '@timeline/shared/chat-context';
+
 export const CHAT_HANDOFF_MAX_AGE_MS = 5 * 60 * 1000;
 export const CHAT_HANDOFF_MAX_PROMPT_LENGTH = 4_000;
 
@@ -24,6 +26,7 @@ export interface ChatHandoff {
   context?: ChatHandoffContext;
   pinnedEntityId?: string;
   pinnedEntityName?: string;
+  contextTrail?: ChatContextRef[];
 }
 
 interface StorageLike {
@@ -86,13 +89,22 @@ export function consumeChatHandoffEntry(
       return null;
     }
     if (parsed.prompt !== undefined && validateChatHandoffPrompt(parsed.prompt)) return null;
-    if (parsed.prompt === undefined && !parsed.context && !parsed.pinnedEntityId) return null;
+    const contextTrail = parseChatContextTrail(parsed.contextTrail);
+    if (
+      parsed.prompt === undefined &&
+      !parsed.context &&
+      !parsed.pinnedEntityId &&
+      contextTrail.length === 0
+    ) {
+      return null;
+    }
     return {
       createdAt: parsed.createdAt,
       ...(parsed.prompt === undefined ? {} : { prompt: parsed.prompt.trim() }),
       ...(parsed.context ? { context: parsed.context } : {}),
       ...(parsed.pinnedEntityId ? { pinnedEntityId: parsed.pinnedEntityId } : {}),
       ...(parsed.pinnedEntityName ? { pinnedEntityName: parsed.pinnedEntityName } : {}),
+      ...(contextTrail.length > 0 ? { contextTrail } : {}),
     };
   } catch {
     return null;
