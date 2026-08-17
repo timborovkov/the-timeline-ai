@@ -420,7 +420,7 @@ function pushSlackThread(
         input.channelName,
         threadTs,
         messageTs,
-        `Ev${input.channelId}${stamp(input.day)}${String(index)}`,
+        `Ev${input.channelId}${stamp(input.day)}${input.threadKey}${String(index)}`,
       ),
       payloadRef: `inline://timeline/demo-seed/slack/${input.channelName.slice(1)}-${input.day}-${String(index)}`,
     });
