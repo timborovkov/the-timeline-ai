@@ -59,9 +59,9 @@ describe('ArtifactReferenceChip', () => {
     render(<ArtifactReferenceChip refValue={{ kind: 'timeline_event', id: EVENT_ID }} />);
     await userEvent.click(screen.getByRole('button', { name: /Open reference/ }));
 
-    expect((await screen.findByRole('link', { name: 'Open transcript' })).getAttribute('href')).toBe(
-      `/app/meetings/${MEETING_ID}`,
-    );
+    expect(
+      (await screen.findByRole('link', { name: 'Open transcript' })).getAttribute('href'),
+    ).toBe(`/app/meetings/${MEETING_ID}`);
     expect(screen.getByRole('link', { name: 'Open calendar' }).getAttribute('href')).toBe(
       `/app/calendar?date=2026-07-17&view=day&event=${CALENDAR_ID}`,
     );
@@ -92,8 +92,8 @@ describe('ArtifactReferenceChip', () => {
     render(<ArtifactReferenceChip refValue={{ kind: 'timeline_event', id: EVENT_ID }} />);
     await userEvent.click(screen.getByRole('button', { name: /Open reference/ }));
 
-    expect((await screen.findByRole('link', { name: 'Open on Timeline' })).getAttribute('href')).toBe(
-      `/app/timeline?event=${EVENT_ID}#ev-${EVENT_ID}`,
-    );
+    expect(
+      (await screen.findByRole('link', { name: 'Open on Timeline' })).getAttribute('href'),
+    ).toBe(`/app/timeline?event=${EVENT_ID}#ev-${EVENT_ID}`);
   });
 });
