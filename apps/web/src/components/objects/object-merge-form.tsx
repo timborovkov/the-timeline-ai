@@ -104,7 +104,7 @@ export function ObjectMergeForm({
         return;
       }
       if (onMerged) {
-        onMerged(result.id ?? survivorId);
+        onMerged('id' in result && result.id ? result.id : survivorId);
         return;
       }
       router.push('/app/objects');

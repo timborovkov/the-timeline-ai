@@ -48,11 +48,7 @@ export function LegalAcceptanceForm({ returnTo }: { returnTo?: string }) {
           .
         </span>
       </label>
-      <FormActionToast
-        id="legal:accept"
-        error={state.error}
-        success={state.ok ? 'Legal terms accepted' : undefined}
-      />
+      <FormActionToast id="legal:accept" error={state.error} />
       <SubmitButton />
     </form>
   );

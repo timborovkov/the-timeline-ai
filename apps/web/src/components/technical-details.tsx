@@ -47,11 +47,7 @@ export function TechnicalDetails({
                   <dd className="m-0 flex min-w-0 items-start gap-2">
                     <code className="min-w-0 flex-1 break-all text-xs text-fg">{item.value}</code>
                     {itemCopyValue ? (
-                      <CopyButton
-                        value={itemCopyValue}
-                        label={item.label}
-                        appearance="icon"
-                      />
+                      <CopyButton value={itemCopyValue} label={item.label} appearance="icon" />
                     ) : null}
                   </dd>
                 </div>

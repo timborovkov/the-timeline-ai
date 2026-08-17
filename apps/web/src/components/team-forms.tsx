@@ -75,12 +75,7 @@ function FormFeedback({
 
   return (
     <>
-      <FormActionToast
-        id={toastId}
-        error={error}
-        success={success}
-        fieldError={fieldError}
-      />
+      <FormActionToast id={toastId} error={error} success={success} fieldError={fieldError} />
       <p
         id={errorId}
         aria-atomic="true"

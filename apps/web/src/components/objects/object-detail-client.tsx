@@ -156,9 +156,7 @@ function capitalizeLabel(value: string): string {
   return value.slice(0, 1).toUpperCase() + value.slice(1);
 }
 
-function serializeEditableValue(
-  value: EditableValue,
-): string | number | readonly string[] | null {
+function serializeEditableValue(value: EditableValue): string | number | readonly string[] | null {
   return value instanceof Date ? value.toISOString() : value;
 }
 
@@ -716,8 +714,7 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
               ...current,
               deletedRelationshipIds: [...current.deletedRelationshipIds, relationshipId],
               pendingRelationships: current.pendingRelationships.filter(
-                (relationship) =>
-                  relationship.id !== relationshipId && relationship.id !== tempId,
+                (relationship) => relationship.id !== relationshipId && relationship.id !== tempId,
               ),
             }));
             const undoResult = await removeRelationshipAction({

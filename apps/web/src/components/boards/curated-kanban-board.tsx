@@ -15,16 +15,7 @@ import {
 } from '@dnd-kit/core';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useMemo,
-  useOptimistic,
-  useRef,
-  useState,
-  useTransition,
-} from 'react';
+import { useCallback, useId, useMemo, useOptimistic, useRef, useState, useTransition } from 'react';
 
 import type {
   BoardItemOptimisticPatch,
@@ -33,10 +24,6 @@ import type {
 import type * as boards from '@timeline/shared/boards';
 
 import { updateBoardItemAction } from '@/app/actions/boards';
-import {
-  curatedKanbanSaveState,
-  type CuratedKanbanSaveState,
-} from '@/components/boards/curated-kanban-state';
 import { CollectionStatus, priorityTone } from '@/components/collections/collection-status';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
@@ -86,31 +73,9 @@ export function CuratedKanbanBoard({
   );
   const [, startTransition] = useTransition();
   const [savingIds, setSavingIds] = useState<ReadonlySet<string>>(() => new Set());
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [saveState, setSaveState] = useState<CuratedKanbanSaveState>('idle');
   const savingRef = useRef<Set<string> | null>(null);
   const pendingMoveControlFocusRef = useRef<MoveControlFocus>(null);
   savingRef.current ??= new Set<string>();
-  const batchHadFailureRef = useRef(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const clearSaveTimer = useCallback(() => {
-    if (timer.current) {
-      clearTimeout(timer.current);
-      timer.current = null;
-    }
-  }, []);
-
-  useEffect(() => {
-    return clearSaveTimer;
-  }, [clearSaveTimer]);
-
-  function resetSaveTimer() {
-    clearSaveTimer();
-    timer.current = setTimeout(() => {
-      setSaveState('idle');
-    }, 1600);
-  }
 
   const laneIdSet = useMemo(() => new Set(lanes.map((lane) => lane.id)), [lanes]);
   const byLane = new Map<string | null, boards.BoardItemRow[]>();
@@ -187,24 +152,11 @@ export function CuratedKanbanBoard({
     return savingRef.current;
   }
 
-  function markSaving(id: string, saving: boolean, failed = false) {
+  function markSaving(id: string, saving: boolean) {
     const currentSaving = savingSet();
-    if (saving) {
-      if (timer.current) clearTimeout(timer.current);
-      if (currentSaving.size === 0) batchHadFailureRef.current = false;
-      currentSaving.add(id);
-    } else {
-      if (failed) batchHadFailureRef.current = true;
-      currentSaving.delete(id);
-    }
+    if (saving) currentSaving.add(id);
+    else currentSaving.delete(id);
     setSavingIds(new Set(currentSaving));
-    const nextSaveState = curatedKanbanSaveState(currentSaving.size, batchHadFailureRef.current);
-    setSaveState(nextSaveState);
-    if (!saving && currentSaving.size === 0) {
-      if (!batchHadFailureRef.current) {
-        resetSaveTimer();
-      }
-    }
   }
 
   function moveItem(id: string, laneId: string | null, focusMoveControl = false): void {
@@ -214,10 +166,6 @@ export function CuratedKanbanBoard({
     if (focusMoveControl) {
       pendingMoveControlFocusRef.current = { id, laneValue: laneId ?? 'unset' };
     }
-    setErrors((current) => {
-      const { [id]: _cleared, ...rest } = current;
-      return rest;
-    });
     markSaving(id, true);
     startTransition(async () => {
       moveOptimistic({ id, patch: { laneId } });
@@ -244,7 +192,7 @@ export function CuratedKanbanBoard({
         }
         moveOptimistic({ id, patch: { laneId: previousLaneId } });
       }
-      markSaving(id, false, failed);
+      markSaving(id, false);
       router.refresh();
     });
   }
@@ -256,14 +204,11 @@ export function CuratedKanbanBoard({
     const baseline = Object.fromEntries(
       Object.keys(patch).map((key) => [key, item[key as keyof boards.BoardItemRow]]),
     ) as BoardItemOptimisticPatch;
-    setErrors((current) => {
-      const { [id]: _cleared, ...rest } = current;
-      return rest;
-    });
     markSaving(id, true);
     startTransition(async () => {
       moveOptimistic({ id, patch });
-      const label = Object.keys(patch)[0] === 'dueAt' ? 'due date' : (Object.keys(patch)[0] ?? 'item');
+      const label =
+        Object.keys(patch)[0] === 'dueAt' ? 'due date' : (Object.keys(patch)[0] ?? 'item');
       const result = await notifyAction({
         id: `board-item:${id}`,
         loading: `Updating ${label}…`,
@@ -294,7 +239,7 @@ export function CuratedKanbanBoard({
       });
       const failed = Boolean(result.error);
       if (failed) moveOptimistic({ id, patch: baseline });
-      markSaving(id, false, failed);
+      markSaving(id, false);
       router.refresh();
     });
   }
@@ -329,7 +274,6 @@ export function CuratedKanbanBoard({
               ordinal={index + 1}
               items={byLane.get(lane.id === 'unset' ? null : lane.id) ?? []}
               savingIds={savingIds}
-              errors={errors}
               selectedItemId={selectedItemId}
               members={members}
               filterParams={filterParams}
@@ -351,7 +295,6 @@ function KanbanColumn({
   ordinal,
   items,
   savingIds,
-  errors,
   selectedItemId,
   members,
   filterParams,
@@ -365,7 +308,6 @@ function KanbanColumn({
   ordinal: number;
   items: boards.BoardItemRow[];
   savingIds: ReadonlySet<string>;
-  errors: Record<string, string>;
   selectedItemId: string | null;
   members: BoardMemberOption[];
   filterParams: Record<string, string>;
@@ -396,7 +338,6 @@ function KanbanColumn({
             item={item}
             lane={lane}
             saving={savingIds.has(item.id)}
-            error={errors[item.id]}
             selected={item.id === selectedItemId}
             members={members}
             filterParams={filterParams}
@@ -416,7 +357,6 @@ function KanbanCard({
   item,
   lane,
   saving,
-  error,
   selected,
   members,
   filterParams,
@@ -429,7 +369,6 @@ function KanbanCard({
   item: boards.BoardItemRow;
   lane: boards.BoardLaneRow;
   saving: boolean;
-  error?: string;
   selected: boolean;
   members: BoardMemberOption[];
   filterParams: Record<string, string>;
@@ -469,7 +408,6 @@ function KanbanCard({
         isDragging && 'opacity-50',
         saving && 'cursor-progress opacity-80',
         optimistic && 'cursor-wait opacity-80',
-        error && 'border-danger/50',
       )}
     >
       <div className="flex min-w-0 items-start gap-1">

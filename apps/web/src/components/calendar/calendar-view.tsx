@@ -680,7 +680,7 @@ function useCalendarViewModel({
                     timezone: originalEvent.timezone,
                     allDay: originalEvent.allDay,
                     location: originalEvent.location ?? undefined,
-                    visibility: originalEvent.visibility,
+                    visibility: originalEvent.visibility as 'team' | 'private' | 'specific_users',
                     showAs: originalEvent.showAs,
                     rrule: originalEvent.rrule,
                     recurrenceEditMode: draft.recurrenceEditMode,

@@ -6,7 +6,12 @@ export const ACTION_TOAST_LOADING_DELAY_MS = 150;
 export const ACTION_TOAST_SUCCESS_MS = 2_000;
 export const ACTION_TOAST_ERROR_MS = 6_000;
 
-export type ActionResult = { error?: string };
+export type ActionResult = {
+  error?: string;
+  ok?: boolean;
+  id?: string;
+  failedItemIds?: string[];
+};
 
 export interface NotifyUndo<T extends ActionResult = ActionResult> {
   run: (result: T) => Promise<ActionResult>;

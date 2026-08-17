@@ -785,7 +785,9 @@ export function ApprovalsClient({
         });
         if (result.error) {
           const failedItemIds =
-            result.failedItemIds?.filter((id) => optimisticItemIds.includes(id)) ?? [];
+            'failedItemIds' in result
+              ? (result.failedItemIds?.filter((id) => optimisticItemIds.includes(id)) ?? [])
+              : [];
           const restoreItemIds = failedItemIds.length > 0 ? failedItemIds : optimisticItemIds;
           restoreItems(restoreItemIds);
           markActionFailures(restoreItemIds);

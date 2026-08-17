@@ -19,7 +19,8 @@ vi.mock('@/app/actions/pins', () => ({
   unpinTargetAction: fakes.unpinTargetAction,
 }));
 vi.mock('@/lib/notify', () => ({
-  notifyAction: (options: { run: () => Promise<{ error?: string }> }) => fakes.notifyAction(options),
+  notifyAction: (options: { run: () => Promise<{ error?: string }> }) =>
+    fakes.notifyAction(options),
 }));
 
 const { PinButton } = await import('@/components/pins/pin-button');
@@ -40,13 +41,15 @@ beforeEach(() => {
   vi.clearAllMocks();
   fakes.pinTargetAction.mockResolvedValue({ ok: true });
   fakes.unpinTargetAction.mockResolvedValue({ ok: true });
-  fakes.notifyAction.mockImplementation(async ({ run }: { run: () => Promise<{ error?: string }> }) => {
-    try {
-      return await run();
-    } catch {
-      return { error: 'failed' };
-    }
-  });
+  fakes.notifyAction.mockImplementation(
+    async ({ run }: { run: () => Promise<{ error?: string }> }) => {
+      try {
+        return await run();
+      } catch {
+        return { error: 'failed' };
+      }
+    },
+  );
 });
 
 afterEach(cleanup);

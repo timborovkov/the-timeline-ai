@@ -126,10 +126,10 @@ function previousTaskPatch(row: objects.ObjectRow, patch: TaskPatch): TaskPatch 
 }
 
 function serializeTaskPatch(patch: TaskPatch): Record<string, string | number | null | undefined> {
-  const dueAt = patch.dueAt === undefined ? undefined : (patch.dueAt?.toISOString() ?? null);
+  const { dueAt, ...rest } = patch;
   return {
-    ...patch,
-    ...(dueAt !== undefined ? { dueAt } : {}),
+    ...rest,
+    ...(dueAt !== undefined ? { dueAt: dueAt?.toISOString() ?? null } : {}),
   };
 }
 type TaskPatchValue = TaskPatch[TaskPatchKey];
