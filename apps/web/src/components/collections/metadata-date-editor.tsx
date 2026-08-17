@@ -14,10 +14,8 @@ export function MetadataDateEditor({
   return (
     <form
       className="flex items-center gap-2"
-      onSubmit={(event) => {
-        event.preventDefault();
-        const data = new FormData(event.currentTarget);
-        const rawDate = data.get('date');
+      action={(formData) => {
+        const rawDate = formData.get('date');
         onApply(typeof rawDate === 'string' ? rawDate : '');
       }}
     >

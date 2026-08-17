@@ -42,11 +42,8 @@ import {
 } from '@/app/actions/objects';
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
-import {
-  CollectionStatus,
-  priorityTone,
-  statusTone,
-} from '@/components/collections/collection-status';
+import { CollectionStatus } from '@/components/collections/collection-status';
+import { priorityTone, statusTone } from '@/components/collections/collection-status-tone';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { InfiniteScroll } from '@/components/collections/infinite-scroll';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
