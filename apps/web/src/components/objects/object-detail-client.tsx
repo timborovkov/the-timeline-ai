@@ -55,6 +55,7 @@ import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { TaskCategorySelect } from '@/components/tasks/task-category-select';
 import { TaskProjectSelect } from '@/components/tasks/task-project-select';
 import { TechnicalDetails } from '@/components/technical-details';
+import { DetailRail } from '@/components/ui/detail-rail';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
@@ -876,7 +877,7 @@ function ObjectDetailView(props: Props) {
           />
         </main>
 
-        <aside className="min-w-0 space-y-2 xl:sticky xl:top-2">
+        <DetailRail className="min-w-0 divide-y divide-border xl:sticky xl:top-2 [&>footer]:px-2 [&>footer]:py-1.5 [&>section]:px-1 [&>section]:py-1.5">
           <ObjectContactSection detail={view.viewDetail} />
 
           <ObjectEditableFields
@@ -924,7 +925,7 @@ function ObjectDetailView(props: Props) {
             pending={view.pending}
             onArchiveObject={view.archiveObject}
           />
-        </aside>
+        </DetailRail>
       </div>
     </div>
   );

@@ -152,6 +152,8 @@ describe('ObjectDetailClient', () => {
     expect(html).not.toContain('Connected work');
     expect(html).not.toContain('Recent changes');
     expect(html).toContain('Archive object');
+    expect(html).toContain('bg-surface');
+    expect(html).toContain('border-border');
   });
 
   it('formats string-backed due-date changes in the workspace timezone', () => {

@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.9 · Tighter object and task detail rhythm (2026-08-17). Replaces v3.8 Compact object and task detail rhythm.
+**Version:** v3.10 · Object and task detail rails (2026-08-17). Replaces v3.9 Tighter object and task detail rhythm.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -417,9 +417,9 @@ rows and the peek’s “Open object” link go to `/app/objects/[id]` with `ret
 so Back restores the originating list. In-list selection links use
 `scroll={false}` so opening a peek does not jump the page.
 
-The peek is a dense inspector, not a form card: 14px title, ghost icon
-Pin/Close, then the same status / priority / assignee / due / project /
-category triggers used in the list. Project and category pickers on this
+The peek is a dense inspector on the shared detail rail, not a form card:
+14px title, ghost icon Pin/Close, then the same status / priority / assignee /
+due / project / category triggers used in the list. Project and category pickers on this
 surface are borderless. Do not duplicate those values in a second “current”
 grid. Do not label the peek “side panel.” If accepted creation evidence exists,
 lead with that “why this exists” excerpt. Notes and related links follow as
@@ -436,16 +436,19 @@ line-height: why this exists, a generated summary only when it has content or
 an actionable generate/retry state, then only the provenance / connected-work /
 evidence / facts groups that have items. Empty “Not enough object memory,” “No
 connected work,” and “Nothing here yet” cards are prohibited. Notes keep a
-borderless composer. The right column is Properties: 32px icon-and-value
-metadata rows, then Related search, recent changes when present, and a quiet
-Archive text control. An empty summary is a single Generate summary control,
-not a “ready to generate” block. Evidence uses a quiet text control, not a
-signal chip. Section labels, supporting copy, and timestamps use 12px
-`--fg-dim`. Body and links use 14px `--fg` at regular weight. Quiet actions
-use 12px `--fg-muted`. `--signal` is reserved for alerts and Accept. Object ID
-lives in a compact 12px Technical details disclosure. Relationship and change
-metadata stay sentence case. Content is grouped by typography and spacing.
-Nested bordered boxes are not a layout system on these surfaces.
+borderless composer. The right column is one Properties rail: a 6px-radius
+`--surface` panel with a hairline `--border`, not raw page canvas. Properties,
+Related, recent changes, and Archive share that one panel and divide with
+hairlines. Do not nest a card per field. The task peek uses the same rail so
+it lifts off the list in light and dark. An empty summary is a single
+Generate summary control, not a “ready to generate” block. Evidence uses a
+quiet text control, not a signal chip. Section labels, supporting copy, and
+timestamps use 12px `--fg-dim`. Body and links use 14px `--fg` at regular
+weight. Quiet actions use 12px `--fg-muted`. `--signal` is reserved for
+alerts and Accept. Object ID lives in a compact 12px Technical details
+disclosure. Relationship and change metadata stay sentence case. Content is
+grouped by typography and spacing. Nested bordered boxes are not a layout
+system on these surfaces.
 
 Approval rows lead with the proposed change and use human labels and localized
 values, such as `Due soon · <localized date>` and `Status To do`, rather than payload
@@ -675,3 +678,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Linear-density object and task detail | Replaces boxed field grids and empty memory cards with list-row metadata, why-this-exists lead copy, ghost icon actions, and list-preserving peek navigation. |
 | 2026-08-17 | Compact object and task detail rhythm | Tightens the object-page section stack to 16px, uses 20px titles, 32px property rows, 1.35 body leading, and keeps peek/page chrome on `--fg` / `--fg-muted` / `--fg-dim` / `--danger` without uppercase metadata. |
 | 2026-08-17 | Tighter object and task detail rhythm | Compresses the object-page section stack to 8px, uses 18px titles, folds board placement into the header, and keeps body, labels, and quiet actions on one `--fg` / `--fg-muted` / `--fg-dim` set. |
+| 2026-08-17 | Object and task detail rails | Puts the object Properties column and task peek on one `--surface` hairline panel so they lift off `--bg` in light and dark without nested field cards. |

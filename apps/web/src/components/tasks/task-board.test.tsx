@@ -735,7 +735,12 @@ describe('TaskBoard', () => {
   it('renders the selected task panel with an object link that can return to the panel', () => {
     renderBoard('task-1');
 
-    expect(screen.getByRole('complementary', { name: 'Task detail' })).toBeTruthy();
+    expect(screen.getByRole('complementary', { name: 'Task detail' }).className).toContain(
+      'bg-surface',
+    );
+    expect(screen.getByRole('complementary', { name: 'Task detail' }).className).toContain(
+      'border-border',
+    );
     expect(screen.getByRole('link', { name: 'Close' }).getAttribute('href')).toBe('/app/tasks');
     expect(screen.getByRole('link', { name: 'Open object' }).getAttribute('href')).toBe(
       '/app/objects/task-1?returnTo=%2Fapp%2Ftasks%3Ftask%3Dtask-1',

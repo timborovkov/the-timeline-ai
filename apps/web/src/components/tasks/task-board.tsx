@@ -60,6 +60,7 @@ import { TaskCategorySelect } from '@/components/tasks/task-category-select';
 import { TaskProjectSelect } from '@/components/tasks/task-project-select';
 import { taskViewHref, type TaskView } from '@/components/tasks/task-view-toggle';
 import { useAppDialog } from '@/components/ui/app-dialog';
+import { DetailRail } from '@/components/ui/detail-rail';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText } from '@/lib/display-dates';
@@ -2003,7 +2004,7 @@ function TaskDetailPanel({
   }
 
   return (
-    <aside className="h-full overflow-y-auto bg-bg" aria-label="Task detail">
+    <DetailRail className="h-full min-h-0 overflow-y-auto" aria-label="Task detail">
       <div className="flex items-start gap-2 px-3 pt-2">
         <h2 className="min-w-0 flex-1 whitespace-normal break-words text-sm font-semibold leading-snug text-fg">
           {displayText(title)}
@@ -2180,7 +2181,7 @@ function TaskDetailPanel({
           Open object
         </Link>
       </div>
-    </aside>
+    </DetailRail>
   );
 }
 
