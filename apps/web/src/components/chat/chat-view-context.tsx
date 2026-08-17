@@ -16,36 +16,55 @@ import type { ChatContextRef } from '@timeline/shared/chat-context';
 
 import { buildChatView, type ChatViewOverlay } from '@/lib/chat-view';
 
-interface ChatViewRegistry {
-  overlay: ChatViewOverlay | null;
+interface ChatViewActions {
   register: (overlay: ChatViewOverlay) => void;
   unregister: (viewKey: string) => void;
 }
 
-const ChatViewRegistryContext = createContext<ChatViewRegistry | null>(null);
+const ChatViewActionsContext = createContext<ChatViewActions | null>(null);
+const ChatViewOverlayContext = createContext<ChatViewOverlay | null | undefined>(undefined);
+
+function overlayEqual(left: ChatViewOverlay, right: ChatViewOverlay): boolean {
+  return (
+    left.viewKey === right.viewKey &&
+    left.kind === right.kind &&
+    left.href === right.href &&
+    left.label === right.label &&
+    left.objectId === right.objectId &&
+    left.documentId === right.documentId &&
+    left.boardId === right.boardId &&
+    left.boardItemId === right.boardItemId &&
+    left.taskId === right.taskId &&
+    left.calendarEventId === right.calendarEventId &&
+    left.timelineEventId === right.timelineEventId &&
+    left.timelineMomentId === right.timelineMomentId &&
+    left.meetingId === right.meetingId
+  );
+}
 
 export function ChatViewProvider({ children }: { children: ReactNode }) {
   const [overlays, setOverlays] = useState<ChatViewOverlay[]>([]);
   const register = useCallback((next: ChatViewOverlay) => {
-    setOverlays((current) => [...current.filter((item) => item.viewKey !== next.viewKey), next]);
+    setOverlays((current) => {
+      const last = current.at(-1);
+      if (last?.viewKey === next.viewKey && overlayEqual(last, next)) return current;
+      return [...current.filter((item) => item.viewKey !== next.viewKey), next];
+    });
   }, []);
   const unregister = useCallback((viewKey: string) => {
-    setOverlays((current) => current.filter((item) => item.viewKey !== viewKey));
+    setOverlays((current) =>
+      current.some((item) => item.viewKey === viewKey)
+        ? current.filter((item) => item.viewKey !== viewKey)
+        : current,
+    );
   }, []);
-  const value = useMemo<ChatViewRegistry>(
-    () => ({
-      overlay: overlays.at(-1) ?? null,
-      register,
-      unregister,
-    }),
-    [overlays, register, unregister],
+  const actions = useMemo<ChatViewActions>(() => ({ register, unregister }), [register, unregister]);
+
+  return (
+    <ChatViewActionsContext value={actions}>
+      <ChatViewOverlayContext value={overlays.at(-1) ?? null}>{children}</ChatViewOverlayContext>
+    </ChatViewActionsContext>
   );
-
-  return <ChatViewRegistryContext value={value}>{children}</ChatViewRegistryContext>;
-}
-
-function useChatViewRegistry(): ChatViewRegistry | null {
-  return use(ChatViewRegistryContext);
 }
 
 export function useCurrentChatView(): {
@@ -54,11 +73,10 @@ export function useCurrentChatView(): {
 } {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const registry = useChatViewRegistry();
-  if (!registry) {
+  const overlay = use(ChatViewOverlayContext);
+  if (overlay === undefined) {
     throw new Error('useCurrentChatView must be used within ChatViewProvider');
   }
-  const { overlay } = registry;
   return useMemo(
     () => buildChatView({ pathname, searchParams, overlay }),
     [overlay, pathname, searchParams],
@@ -80,10 +98,10 @@ export function ChatViewContextBinder({
   timelineMomentId,
   meetingId,
 }: ChatViewOverlay) {
-  const registry = useChatViewRegistry();
+  const actions = use(ChatViewActionsContext);
   useEffect(() => {
-    if (!registry) return;
-    registry.register({
+    if (!actions) return;
+    actions.register({
       viewKey,
       kind,
       href,
@@ -99,9 +117,10 @@ export function ChatViewContextBinder({
       ...(meetingId ? { meetingId } : {}),
     });
     return () => {
-      registry.unregister(viewKey);
+      actions.unregister(viewKey);
     };
   }, [
+    actions,
     boardId,
     boardItemId,
     calendarEventId,
@@ -111,7 +130,6 @@ export function ChatViewContextBinder({
     label,
     meetingId,
     objectId,
-    registry,
     taskId,
     timelineEventId,
     timelineMomentId,

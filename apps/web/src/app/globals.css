@@ -165,11 +165,16 @@
     color: var(--fg);
   }
 
-  /* Native <dialog> UA styles (fit-content + margin:auto) fight the floating
-     Ask sheet. Reset them so mobile is a full-width bottom sheet. */
-  dialog#floating-agent-chat-panel {
-    margin: 0;
-    max-width: none;
-    padding: 0;
-  }
+}
+
+/* Keep this unlayered so native <dialog> UA styles and Tailwind layered
+   width/margin utilities cannot shrink the floating Ask sheet. */
+dialog#floating-agent-chat-panel {
+  margin: 0;
+  max-width: none;
+  padding: 0;
+}
+
+dialog#floating-agent-chat-panel[open] {
+  display: flex;
 }
