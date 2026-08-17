@@ -18,6 +18,9 @@ vi.mock('@/app/actions/boards', () => ({
   addBoardItemAction: fakes.addBoardItemAction,
   quickCreateBoardItemAction: fakes.quickCreateBoardItemAction,
 }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
+}));
 
 const { BoardAddItemForm } = await import('./board-add-item-form.js');
 

@@ -6,6 +6,7 @@ import { useActionState } from 'react';
 
 import { resendEmailVerificationAction, type EmailVerificationState } from '@/app/actions/auth';
 import { reopenOnboardingChecklistAction } from '@/app/actions/onboarding';
+import { FormActionToast } from '@/components/form-action-toast';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -54,6 +55,12 @@ export function UserMenu({ user }: Props) {
           <>
             <DropdownMenuSeparator />
             <form action={resendVerification}>
+              <FormActionToast
+                id="account:resend-verification"
+                error={verificationState.error}
+                success={verificationState.ok ? 'Verification email sent' : undefined}
+                loading="Sending verification email…"
+              />
               <DropdownMenuItem asChild>
                 <button type="submit" className="flex w-full items-center gap-2">
                   <MailWarning className="size-4" />
@@ -61,11 +68,6 @@ export function UserMenu({ user }: Props) {
                 </button>
               </DropdownMenuItem>
             </form>
-            {verificationState.ok || verificationState.error ? (
-              <div className="px-2 py-1 text-xs text-muted-foreground">
-                {verificationState.ok ? 'Verification email sent.' : verificationState.error}
-              </div>
-            ) : null}
           </>
         ) : null}
         <DropdownMenuSeparator />

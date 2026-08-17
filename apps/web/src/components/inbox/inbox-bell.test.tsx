@@ -18,6 +18,15 @@ vi.mock('@/app/actions/objects', () => ({
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: fakes.refresh, push: fakes.push }),
 }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => {
+    try {
+      return await run();
+    } catch {
+      return { error: 'failed' };
+    }
+  },
+}));
 vi.mock('@/components/workspace-timezone-context', () => ({ useWorkspaceTimezone: () => 'UTC' }));
 
 const { InboxBell } = await import('./inbox-bell.js');
@@ -59,9 +68,7 @@ describe('InboxBell', () => {
     await user.click(screen.getByRole('button', { name: 'Open inbox, 1 unread' }));
     await user.click(screen.getByRole('button', { name: 'Mark all read' }));
 
-    expect((await screen.findByRole('alert')).textContent).toBe(
-      'Unable to update notifications. They remain unread. Try again.',
-    );
+    expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.getByText('Review the launch plan')).toBeTruthy();
     expect(fakes.refresh).not.toHaveBeenCalled();
   });
@@ -102,9 +109,7 @@ describe('InboxBell', () => {
     const item = screen.getByRole('link', { name: /Review the launch plan/i });
     await user.click(item);
 
-    expect((await screen.findByRole('alert')).textContent).toBe(
-      'Unable to update notifications. They remain unread. Try again.',
-    );
+    expect(screen.queryByRole('alert')).toBeNull();
     expect(fakes.refresh).not.toHaveBeenCalled();
     expect(fakes.push).not.toHaveBeenCalled();
 

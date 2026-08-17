@@ -12,6 +12,9 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: routerRefresh }
 vi.mock('@/app/actions/visibility', () => ({
   setIntegrationVisibilityDefaultAction: vi.fn(() => Promise.resolve({ ok: true })),
 }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
+}));
 
 afterEach(() => {
   vi.restoreAllMocks();

@@ -475,8 +475,7 @@ export function ScheduleMeetingBotForm({
   members?: { id: string; label: string }[];
 }) {
   const router = useRouter();
-  const errorRef = useRef<HTMLParagraphElement>(null);
-  const [{ pending, error, visibility, visibilityUserIds, consent }, dispatch] = useReducer(
+  const [{ pending, visibility, visibilityUserIds, consent }, dispatch] = useReducer(
     scheduleMeetingReducer,
     {
       pending: false,
@@ -487,15 +486,9 @@ export function ScheduleMeetingBotForm({
     },
   );
 
-  function showError(message: string) {
-    dispatch({ type: 'error', error: message });
-    focusFormError(errorRef);
-  }
-
   async function onSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     const formElement = e.currentTarget;
-    dispatch({ type: 'error', error: null });
     dispatch({ type: 'pending', pending: true });
     const form = new FormData(formElement);
     const rawUrl = form.get('meetingUrl');
@@ -517,10 +510,7 @@ export function ScheduleMeetingBotForm({
         }),
     });
     dispatch({ type: 'pending', pending: false });
-    if (result.error) {
-      showError(result.error);
-      return;
-    }
+    if (result.error) return;
     if ('meetingId' in result && result.meetingId) {
       router.push(`/app/meetings/${result.meetingId}`);
     } else {
@@ -578,7 +568,6 @@ export function ScheduleMeetingBotForm({
           and capturing the transcript.
         </span>
       </label>
-      <FormError errorRef={errorRef} message={error} />
       <Button type="submit" disabled={pending}>
         {pending ? 'Inviting notetaker…' : 'Invite notetaker'}
       </Button>

@@ -21,8 +21,18 @@ vi.mock('@/lib/db', () => ({ db: {} }));
 vi.mock('@/app/actions/visibility', () => ({
   setIntegrationVisibilityDefaultAction: vi.fn(() => Promise.resolve({ ok: true })),
 }));
+const notify = vi.hoisted(() => ({
+  notifyError: vi.fn(),
+  notifySuccess: vi.fn(),
+}));
+vi.mock('@/lib/notify', () => ({
+  notifyError: notify.notifyError,
+  notifySuccess: notify.notifySuccess,
+}));
 
 afterEach(() => {
+  notify.notifyError.mockClear();
+  notify.notifySuccess.mockClear();
   cleanup();
 });
 
@@ -216,7 +226,7 @@ describe('IntegrationsPageView', () => {
     );
   });
 
-  it('points the MCP OAuth success banner to advanced integration tools', () => {
+  it('toasts MCP OAuth success instead of a page banner', () => {
     render(
       <IntegrationsPageView
         params={{ connected: '1' }}
@@ -225,13 +235,14 @@ describe('IntegrationsPageView', () => {
       />,
     );
 
-    expect(
-      screen.getByText(/MCP server connected successfully.*Advanced integration tools/i),
-    ).toBeTruthy();
-    expect(screen.queryByText(/list above/i)).toBeNull();
+    expect(notify.notifySuccess).toHaveBeenCalledWith(
+      'integrations:oauth',
+      'MCP server connected',
+    );
+    expect(screen.queryByText(/MCP server connected successfully/i)).toBeNull();
   });
 
-  it('keeps connection error codes in a closed technical disclosure', () => {
+  it('toasts connection errors without a page banner', () => {
     render(
       <IntegrationsPageView
         params={{ error: 'oauth_denied' }}
@@ -240,7 +251,11 @@ describe('IntegrationsPageView', () => {
       />,
     );
 
-    const errorAlert = screen.getAllByRole('alert').find((alert) => alert.querySelector('details'));
-    expect(errorAlert).toBeTruthy();
+    expect(notify.notifyError).toHaveBeenCalledWith(
+      'integrations:oauth',
+      'The provider denied access. Try connecting again.',
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText('oauth_denied')).toBeNull();
   });
 });

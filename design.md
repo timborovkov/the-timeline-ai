@@ -584,8 +584,10 @@ undo token). Hard deletes and canonical approval decisions have no Undo.
 Toasts use the popover surface, a hairline border, 6px radius, and an overlay
 shadow. Color lives on the icon only. Position is bottom-right on desktop and
 bottom-center on small screens, above a `SelectionBar`. Reduced motion replaces
-the spinner with a static glyph. Feature code calls `notifyAction` rather than
-`toast` from `sonner`.
+the spinner with a static glyph. Feature code calls `notifyAction`,
+`notifyError`, or `notifySuccess` rather than `toast` from `sonner`. Completed
+redirect results (OAuth callback, export download) use that same toast channel
+instead of a page banner.
 
 Copyable values use the shared `CopyButton`. The control shows a copy icon plus
 label, then a check and `Copied`. Dense technical rows use the icon appearance

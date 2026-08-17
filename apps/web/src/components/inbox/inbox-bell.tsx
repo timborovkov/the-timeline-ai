@@ -7,6 +7,7 @@ import { type MouseEvent, useState, useTransition } from 'react';
 
 import { markAllNotificationsReadAction, markNotificationReadAction } from '@/app/actions/objects';
 import { formatNavBadge } from '@/components/nav-items';
+import { notifyAction } from '@/lib/notify';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -46,7 +47,6 @@ export function InboxBell({ unreadCount, notifications }: InboxBellProps) {
   const timezone = useWorkspaceTimezone();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [actionError, setActionError] = useState<string | null>(null);
   const [pendingNotificationId, setPendingNotificationId] = useState<string | null>(null);
   const badge = formatNavBadge(unreadCount);
 
@@ -55,22 +55,21 @@ export function InboxBell({ unreadCount, notifications }: InboxBellProps) {
     onSuccess: () => void,
     notificationId?: string,
   ): void {
-    setActionError(null);
     setPendingNotificationId(notificationId ?? null);
     startTransition(async () => {
-      try {
-        const result = await action();
-        if (!result.error) {
-          setPendingNotificationId(null);
-          onSuccess();
-          router.refresh();
-          return;
-        }
-      } catch {
-        // The inbox remains unchanged when a read action cannot be completed.
-      }
+      const result = await notifyAction({
+        id: notificationId ? `inbox:${notificationId}:read` : 'inbox:mark-all-read',
+        loading: notificationId ? 'Marking notification read…' : 'Marking notifications read…',
+        success: notificationId ? 'Notification marked read' : 'Notifications marked read',
+        error: notificationId
+          ? 'Couldn’t mark notification read'
+          : 'Couldn’t mark notifications read',
+        run: action,
+      });
       setPendingNotificationId(null);
-      setActionError('Unable to update notifications. They remain unread. Try again.');
+      if (result.error) return;
+      onSuccess();
+      router.refresh();
     });
   }
 
@@ -114,11 +113,6 @@ export function InboxBell({ unreadCount, notifications }: InboxBellProps) {
         sideOffset={8}
         className="w-[min(26rem,calc(100vw-1.5rem))] p-0"
       >
-        {actionError ? (
-          <div role="alert" className="border-b border-danger/30 px-3 py-2 text-xs text-danger">
-            {actionError}
-          </div>
-        ) : null}
         <div className="flex items-center justify-between border-b border-border px-3 py-2">
           <div className="text-xs text-fg">
             Inbox

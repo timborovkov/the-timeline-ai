@@ -7,6 +7,7 @@ import { Suspense, useEffect, useRef, useState, useTransition } from 'react';
 import { markNotificationReadAction } from '@/app/actions/objects';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { formatDisplayDateTime } from '@/lib/display-dates';
+import { notifyAction } from '@/lib/notify';
 import { notificationKindLabel } from '@/lib/notification-labels';
 import { cn } from '@/lib/utils';
 
@@ -48,7 +49,6 @@ function NotificationRowContent({
   // clears the unread dot — the server action runs async without
   // blocking the navigation.
   const [read, setRead] = useState(initiallyRead);
-  const [actionError, setActionError] = useState<string | null>(null);
   const readRef = useRef(initiallyRead);
   const latestInitiallyReadRef = useRef(initiallyRead);
   const individuallyReadRef = useRef(initiallyRead);
@@ -66,7 +66,6 @@ function NotificationRowContent({
       individuallyReadRef.current = true;
       readRef.current = true;
       setRead(true);
-      setActionError(null);
     }
   }
 
@@ -77,7 +76,6 @@ function NotificationRowContent({
         bulkReadRef.current = bulkReadRef.current || !readRef.current;
         readRef.current = true;
         setRead(true);
-        setActionError(null);
         return;
       }
       if (!bulkReadRef.current) return;
@@ -99,23 +97,24 @@ function NotificationRowContent({
     ) {
       return;
     }
-    setActionError(null);
     individuallyReadRef.current = true;
     readRef.current = true;
     setRead(true);
     startTransition(async () => {
-      try {
-        const result = await markNotificationReadAction(id);
-        if (!('error' in result) || !result.error) {
-          // On the unread-only view, the server filter excludes read rows —
-          // refresh so the now-read row drops out instead of lingering with
-          // muted styling. On the All view, refresh still matters because the
-          // shell inbox badge and dropdown are loaded by the server layout.
-          router.refresh();
-          return;
-        }
-      } catch {
-        // Fall through to the same rollback as an explicit action error.
+      const result = await notifyAction({
+        id: `inbox:${id}:read`,
+        loading: 'Marking notification read…',
+        success: 'Notification marked read',
+        error: 'Couldn’t mark notification read',
+        run: () => markNotificationReadAction(id),
+      });
+      if (!result.error) {
+        // On the unread-only view, the server filter excludes read rows —
+        // refresh so the now-read row drops out instead of lingering with
+        // muted styling. On the All view, refresh still matters because the
+        // shell inbox badge and dropdown are loaded by the server layout.
+        router.refresh();
+        return;
       }
       // Action failed (DB blip, scope mismatch). Roll back the
       // optimistic state so the UI reflects what the server
@@ -126,7 +125,6 @@ function NotificationRowContent({
       const next = latestInitiallyReadRef.current || bulkReadRef.current;
       readRef.current = next;
       setRead(next);
-      setActionError('Unable to mark this notification as read. Try again.');
     });
   }
 
@@ -174,11 +172,6 @@ function NotificationRowContent({
         >
           Mark read
         </button>
-      ) : null}
-      {actionError ? (
-        <p role="alert" className="col-span-full text-xs text-danger">
-          {actionError}
-        </p>
       ) : null}
     </li>
   );

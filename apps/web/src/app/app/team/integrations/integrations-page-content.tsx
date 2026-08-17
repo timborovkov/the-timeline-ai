@@ -19,8 +19,8 @@ import { McpCatalog } from '@/components/integrations/mcp-catalog';
 import { AddCustomMcpServerLauncher, McpServersUi } from '@/components/integrations/mcp-servers';
 import { TeamSourcesUi } from '@/components/integrations/provider-connections';
 import { PageHeader } from '@/components/page-header';
+import { RedirectActionToast } from '@/components/redirect-action-toast';
 import { SectionHeading } from '@/components/section-heading';
-import { TechnicalDetails } from '@/components/technical-details';
 import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -330,23 +330,11 @@ export function IntegrationsPageView({
 
       <IntegrationPageActions isAdmin={model.isAdmin} />
 
-      {params.connected ? (
-        <output className="block rounded-md border border-signal/40 bg-signal/10 px-3 py-2 text-sm text-signal">
-          MCP server connected successfully. It should now appear under Advanced integration tools.
-        </output>
-      ) : null}
-      {params.error ? (
-        <div
-          role="alert"
-          className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger"
-        >
-          <p>{connectionErrorMessage(params.error)}</p>
-          <TechnicalDetails
-            className="mt-3"
-            items={[{ label: 'Error code', value: params.error, copyValue: params.error }]}
-          />
-        </div>
-      ) : null}
+      <RedirectActionToast
+        id="integrations:oauth"
+        error={params.error ? connectionErrorMessage(params.error) : null}
+        success={params.connected ? 'MCP server connected' : null}
+      />
 
       {model.blockingAttentionCount > 0 ? (
         <div

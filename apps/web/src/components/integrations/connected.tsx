@@ -7,6 +7,7 @@ import { setIntegrationVisibilityDefaultAction } from '@/app/actions/visibility'
 import { FormActionToast } from '@/components/form-action-toast';
 import { InlineError } from '@/components/inline-error';
 import { Button } from '@/components/ui/button';
+import { notifyAction } from '@/lib/notify';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { providerLabel } from '@/lib/resource-labels';
@@ -48,29 +49,6 @@ const DATE_FORMAT = new Intl.DateTimeFormat('en-US', {
   timeStyle: 'short',
   timeZone: 'UTC',
 });
-
-interface ConnectionRequestError {
-  id: string;
-  message: string | undefined;
-  status: number;
-  details?: string;
-}
-
-async function readConnectionRequestError(
-  res: Response,
-): Promise<Omit<ConnectionRequestError, 'id'>> {
-  const text = await res.text();
-  if (!text) return { message: undefined, status: res.status };
-  try {
-    const data = JSON.parse(text) as { error?: unknown };
-    if (typeof data.error === 'string' && data.error.length > 0) {
-      return { message: data.error, status: res.status, details: text };
-    }
-  } catch {
-    // Non-JSON error bodies still carry useful operational details.
-  }
-  return { message: text, status: res.status, details: text };
-}
 
 function syncPauseText(syncPause: ConnectedRow['syncPause']): string | null {
   if (!syncPause) return null;
@@ -150,7 +128,6 @@ export function ConnectedIntegrations({
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
-  const [retryError, setRetryError] = useState<ConnectionRequestError | null>(null);
   const [confirmDisconnectId, setConfirmDisconnectId] = useState<string | null>(null);
   const [locallyDisconnectedIds, setLocallyDisconnectedIds] = useState<Set<string>>(
     () => new Set(),
@@ -163,31 +140,28 @@ export function ConnectedIntegrations({
 
   async function call(method: 'sync' | 'disconnect', id: string) {
     setBusy(`${method}:${id}`);
-    setRetryError(null);
-    try {
-      const res = await fetch(`/api/integrations/manage/${id}/${method}`, { method: 'POST' });
-      if (!res.ok) {
-        setRetryError({ id, ...(await readConnectionRequestError(res)) });
-        return;
-      }
-      if (method === 'disconnect') {
-        setConfirmDisconnectId((current) => (current === id ? null : current));
-        setLocallyDisconnectedIds((current) => {
-          const next = new Set(current);
-          next.add(id);
-          return next;
-        });
-      }
-      router.refresh();
-    } catch (err) {
-      setRetryError({
-        id,
-        message: err instanceof Error ? err.message : 'request_failed',
-        status: 0,
+    const result = await notifyAction({
+      id: `integration:${id}:${method}`,
+      loading: method === 'sync' ? 'Syncing…' : 'Disconnecting…',
+      success: method === 'sync' ? 'Sync started' : 'Integration disconnected',
+      error: method === 'sync' ? 'Couldn’t sync integration' : 'Couldn’t disconnect integration',
+      run: async () => {
+        const res = await fetch(`/api/integrations/manage/${id}/${method}`, { method: 'POST' });
+        if (!res.ok) return { error: 'request_failed' };
+        return { ok: true };
+      },
+    });
+    setBusy(null);
+    if (result.error) return;
+    if (method === 'disconnect') {
+      setConfirmDisconnectId((current) => (current === id ? null : current));
+      setLocallyDisconnectedIds((current) => {
+        const next = new Set(current);
+        next.add(id);
+        return next;
       });
-    } finally {
-      setBusy(null);
     }
+    router.refresh();
   }
 
   return (
@@ -234,17 +208,7 @@ export function ConnectedIntegrations({
                     {pauseText}
                   </output>
                 ) : null}
-                {retryError?.id === c.id ? (
-                  <InlineError
-                    message={connectionErrorMessage(retryError.message, retryError.status)}
-                    details={retryError.details ?? retryError.message}
-                    onRetry={() => {
-                      setRetryError(null);
-                    }}
-                    retryLabel="Dismiss"
-                    className="mt-2"
-                  />
-                ) : c.lastError && !pauseText && c.attention.length === 0 ? (
+                {c.lastError && !pauseText && c.attention.length === 0 ? (
                   <InlineError
                     message={connectionErrorMessage(c.lastError)}
                     details={c.lastError}

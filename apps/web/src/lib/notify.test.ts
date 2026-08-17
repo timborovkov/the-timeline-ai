@@ -8,8 +8,13 @@ const toast = vi.hoisted(() => ({
 
 vi.mock('sonner', () => ({ toast }));
 
-const { notifyAction, notifyError, resetNotifyActionState, ACTION_TOAST_LOADING_DELAY_MS } =
-  await import('@/lib/notify');
+const {
+  notifyAction,
+  notifyError,
+  notifySuccess,
+  resetNotifyActionState,
+  ACTION_TOAST_LOADING_DELAY_MS,
+} = await import('@/lib/notify');
 
 describe('notifyAction', () => {
   beforeEach(() => {
@@ -146,6 +151,21 @@ describe('notifyError', () => {
     expect(toast.error).toHaveBeenCalledWith('Couldn’t open preview', {
       id: 'document:preview',
       duration: 6_000,
+    });
+  });
+});
+
+describe('notifySuccess', () => {
+  beforeEach(() => {
+    toast.success.mockReset();
+    resetNotifyActionState();
+  });
+
+  it('shows a completed-action success toast', () => {
+    notifySuccess('integrations:oauth', 'MCP server connected');
+    expect(toast.success).toHaveBeenCalledWith('MCP server connected', {
+      id: 'integrations:oauth',
+      duration: 2_000,
     });
   });
 });

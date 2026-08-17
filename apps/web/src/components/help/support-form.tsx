@@ -3,6 +3,7 @@
 import { useActionState, useSyncExternalStore } from 'react';
 
 import { submitSupportRequestAction, type SupportFormState } from '@/app/actions/support';
+import { FormActionToast } from '@/components/form-action-toast';
 import { TurnstileWidget } from '@/components/turnstile-widget';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -36,6 +37,12 @@ export function SupportForm({
 
   return (
     <form action={action} className="space-y-5">
+      <FormActionToast
+        id="support:request"
+        error={state.error}
+        success={state.ok ? 'We received your request' : undefined}
+        loading="Sending request…"
+      />
       <input type="hidden" name="currentPage" value={currentPage} readOnly />
       <div className="hidden" aria-hidden="true">
         <Label htmlFor="support-company">Company website</Label>
@@ -112,22 +119,6 @@ export function SupportForm({
           administrator.
         </p>
       ) : null}
-
-      <div>
-        {state.error ? (
-          <p className="text-sm text-danger" role="alert">
-            {state.error}
-          </p>
-        ) : null}
-        {state.ok ? (
-          <p
-            className="rounded-sm border border-signal/30 bg-signal-soft px-3 py-2 text-sm text-fg"
-            role="status"
-          >
-            We received your request.
-          </p>
-        ) : null}
-      </div>
 
       <Button
         type="submit"

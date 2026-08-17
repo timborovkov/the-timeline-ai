@@ -46,6 +46,12 @@ vi.mock('@/app/actions/teams', () => ({
 vi.mock('@/components/form-action-toast', () => ({
   FormActionToast: () => null,
 }));
+const notify = vi.hoisted(() => ({
+  notifyError: vi.fn(),
+}));
+vi.mock('@/lib/notify', () => ({
+  notifyError: notify.notifyError,
+}));
 
 const {
   DigestPreferenceForm,
@@ -305,10 +311,11 @@ describe('TeamExportPanel', () => {
       'unavailable',
       'This export is not ready or is no longer available. Refresh or start a new export.',
     ],
-  ])('shows the %s download error inside the export panel', (downloadError, message) => {
+  ])('toasts the %s download error instead of a page banner', (downloadError, message) => {
     render(<TeamExportPanel exports={[]} downloadError={downloadError} />);
 
-    expect(screen.getByRole('alert').textContent).toBe(message);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(notify.notifyError).toHaveBeenCalledWith('team-export:download', message);
   });
 
   it.each(['raw-provider-error', '__proto__', 'toString'])(

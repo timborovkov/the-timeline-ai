@@ -62,7 +62,7 @@ import { useAppDialog } from '@/components/ui/app-dialog';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText } from '@/lib/display-dates';
-import { notifyAction } from '@/lib/notify';
+import { notifyAction, notifyError } from '@/lib/notify';
 import { objectDetailHref } from '@/lib/object-links';
 import { displayObjectTitle } from '@/lib/object-title';
 import { statusLabel } from '@/lib/status-labels';
@@ -530,7 +530,6 @@ function useTaskBoardController({
   const [, startTransition] = useTransition();
   const [moveUi, dispatchMoveUi] = useReducer(moveUiReducer, INITIAL_MOVE_UI);
   const { rowPatches } = boardState;
-  const loadError = boardState.loadErrorFilterKey === filterKey ? boardState.loadError : null;
   const selectedIds =
     boardState.selectedFilterKey === filterKey ? boardState.selectedIds : EMPTY_SELECTED_IDS;
   const setSelectedIds: Dispatch<SetStateAction<ReadonlySet<string>>> = useCallback(
@@ -867,14 +866,13 @@ function useTaskBoardController({
 
   function loadMoreTasks(): void {
     if (!cursor || loadingMore) return;
-    dispatchBoard({ type: 'load-error', message: null, filterKey });
     startLoadMore(async () => {
       const page = await loadTaskRowsAction({
         cursor,
         ...(Object.keys(filterParams).length > 0 ? { filters: filterParams } : {}),
       });
       if (page.error) {
-        dispatchBoard({ type: 'load-error', message: page.error, filterKey });
+        notifyError('tasks:load-more', 'Couldn’t load older tasks');
         return;
       }
       dispatchBoard({
@@ -892,7 +890,6 @@ function useTaskBoardController({
     canLoadMore,
     dndContextId,
     effectiveRows,
-    loadError,
     loadingMore,
     loadMoreTasks,
     moveUi,
@@ -923,7 +920,6 @@ function TaskBoardView({
   canLoadMore,
   dndContextId,
   effectiveRows,
-  loadError,
   loadingMore,
   loadMoreTasks,
   members,
@@ -1026,11 +1022,6 @@ function TaskBoardView({
               >
                 {loadingMore ? 'Loading…' : 'Load older tasks'}
               </button>
-            ) : null}
-            {loadError ? (
-              <span className="text-xs text-danger" role="alert">
-                {loadError}
-              </span>
             ) : null}
           </div>
         </div>

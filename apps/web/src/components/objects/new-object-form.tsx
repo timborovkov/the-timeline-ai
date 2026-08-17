@@ -8,12 +8,12 @@ import { createObjectAction } from '@/app/actions/objects';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { ProjectPicker } from '@/components/tasks/project-picker';
 import { isSchedulableObjectType } from '@/lib/due-dates';
+import { notifyAction } from '@/lib/notify';
 import { OBJECT_TYPES as TYPES } from '@/lib/object-types';
 
 const EMPTY_PROJECTS: { id: string; label: string }[] = [];
 
 interface FormState {
-  error: string | null;
   nameError: string | null;
   type: (typeof TYPES)[number];
   name: string;
@@ -37,7 +37,6 @@ export function NewObjectForm({
   const [form, updateForm] = useReducer(
     (state: FormState, patch: Partial<FormState>) => ({ ...state, ...patch }),
     {
-      error: null,
       nameError: null,
       type: 'task',
       name: '',
@@ -46,30 +45,34 @@ export function NewObjectForm({
       projectLabel: projects.find((project) => project.id === defaultProjectId)?.label ?? '',
     },
   );
-  const { error, nameError, type, name, dueAt, projectId, projectLabel } = form;
+  const { nameError, type, name, dueAt, projectId, projectLabel } = form;
 
   function submit(event: SyntheticEvent<HTMLFormElement>): void {
     event.preventDefault();
     const canonicalName = name.trim();
     if (!canonicalName) {
-      updateForm({ error: null, nameError: 'Enter an object name.' });
+      updateForm({ nameError: 'Enter an object name.' });
       nameInputRef.current?.focus();
       return;
     }
-    updateForm({ error: null, nameError: null });
+    updateForm({ nameError: null });
     startTransition(async () => {
-      const result = await createObjectAction({
-        type,
-        canonicalName,
-        ...(isSchedulableObjectType(type) && dueAt
-          ? { dueAt: new Date(`${dueAt}T00:00:00.000Z`).toISOString() }
-          : {}),
-        ...(type === 'task' && projectId ? { parentObjectId: projectId } : {}),
+      const result = await notifyAction({
+        id: 'object:create',
+        loading: 'Creating object…',
+        success: 'Object created',
+        error: 'Couldn’t create object',
+        run: () =>
+          createObjectAction({
+            type,
+            canonicalName,
+            ...(isSchedulableObjectType(type) && dueAt
+              ? { dueAt: new Date(`${dueAt}T00:00:00.000Z`).toISOString() }
+              : {}),
+            ...(type === 'task' && projectId ? { parentObjectId: projectId } : {}),
+          }),
       });
-      if ('error' in result && result.error) {
-        updateForm({ error: result.error });
-        return;
-      }
+      if (result.error) return;
       if ('id' in result && result.id) router.push(returnTo ?? `/app/objects/${result.id}`);
     });
   }
@@ -126,7 +129,6 @@ export function NewObjectForm({
               updateForm({
                 name: nextName,
                 ...(nextName.trim() ? { nameError: null } : {}),
-                ...(error ? { error: null } : {}),
               });
             }}
             aria-invalid={nameError ? true : undefined}
@@ -157,14 +159,6 @@ export function NewObjectForm({
           <DueDateDisplay value={dueAt || null} variant="field-hint" className="mt-1 block" />
         </label>
       ) : null}
-      {error && (
-        <p
-          role="alert"
-          className="rounded-lg border border-danger/40 bg-danger/5 px-4 py-2 text-sm text-danger"
-        >
-          {error}
-        </p>
-      )}
       <button
         type="submit"
         disabled={pending}

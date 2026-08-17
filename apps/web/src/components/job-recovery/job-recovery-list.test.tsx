@@ -20,6 +20,9 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/lib/use-paginated-queries', () => ({
   useFinishedJobsInfiniteQuery: fakes.useFinishedJobsInfiniteQuery,
 }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
+}));
 
 const { JobRecoveryList } = await import('./job-recovery-list.js');
 
@@ -261,7 +264,7 @@ describe('JobRecoveryList', () => {
         { id: 'job-2', detectedAt: '2026-07-02T11:00:00.000Z' },
       ],
     });
-    expect(screen.getByText('Retried 1 failed jobs; 1 could not be queued.')).toBeTruthy();
+    expect(screen.queryByText('Retried 1 failed jobs; 1 could not be queued.')).toBeNull();
     expect(screen.getByText('Retry queued. Watching finished jobs below.')).toBeTruthy();
     expect(fakes.refetchFinishedJobs).toHaveBeenCalledOnce();
     expect(fakes.routerRefresh).toHaveBeenCalledOnce();

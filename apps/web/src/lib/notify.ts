@@ -104,6 +104,11 @@ export function notifyError(id: string, message: string): void {
   toast.error(message, { id, duration: ACTION_TOAST_ERROR_MS });
 }
 
+export function notifySuccess(id: string, message: string): void {
+  nextGeneration(id);
+  toast.success(message, { id, duration: ACTION_TOAST_SUCCESS_MS });
+}
+
 export function resetNotifyActionState(): void {
   generations.clear();
 }

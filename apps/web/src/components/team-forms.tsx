@@ -1,6 +1,6 @@
 'use client';
 
-import { type ReactNode, useActionState, useMemo, useSyncExternalStore } from 'react';
+import { type ReactNode, useActionState, useEffect, useMemo, useSyncExternalStore } from 'react';
 import { useFormStatus } from 'react-dom';
 
 import {
@@ -24,6 +24,7 @@ import {
 } from '@/app/actions/teams';
 import { FormActionToast } from '@/components/form-action-toast';
 import { TechnicalDetails } from '@/components/technical-details';
+import { notifyError } from '@/lib/notify';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -476,13 +477,11 @@ export function TeamExportPanel({
     {},
   );
   const downloadErrorMessage = teamExportDownloadErrorMessage(downloadError);
+  useEffect(() => {
+    if (downloadErrorMessage) notifyError('team-export:download', downloadErrorMessage);
+  }, [downloadErrorMessage]);
   return (
     <div className="space-y-4">
-      {downloadErrorMessage ? (
-        <p role="alert" className="text-sm text-destructive">
-          {downloadErrorMessage}
-        </p>
-      ) : null}
       <form
         action={action}
         className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"

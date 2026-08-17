@@ -11,6 +11,7 @@ import { useAppDialog } from '@/components/ui/app-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ItemActionGroup } from '@/components/ui/item-actions';
+import { notifyAction } from '@/lib/notify';
 import {
   type FinishedJobArchivePage,
   useFinishedJobsInfiniteQuery,
@@ -41,7 +42,6 @@ interface JobRecoveryListProps {
 }
 
 interface JobRecoveryUiState {
-  actionError: string | null;
   busy: string | null;
   dismissedKeys: Set<string>;
   filter: JobRecoveryKind | 'all';
@@ -52,7 +52,6 @@ type JobRecoveryUiAction =
   | { type: 'busy'; busy: string | null }
   | { type: 'dismiss'; key: string }
   | { type: 'dismissMany'; keys: string[] }
-  | { type: 'error'; error: string | null }
   | { type: 'filter'; filter: JobRecoveryKind | 'all' }
   | { type: 'retryQueued'; id: string; startedAt: number }
   | { type: 'retryQueuedMany'; ids: string[]; startedAt: number };
@@ -68,7 +67,6 @@ const FILTERS: { kind: JobRecoveryKind | 'all'; label: string }[] = [
 ];
 
 const initialJobRecoveryUiState: JobRecoveryUiState = {
-  actionError: null,
   busy: null,
   dismissedKeys: new Set<string>(),
   filter: 'all',
@@ -92,8 +90,6 @@ function jobRecoveryUiReducer(
       for (const key of action.keys) dismissedKeys.add(key);
       return { ...state, dismissedKeys };
     }
-    case 'error':
-      return { ...state, actionError: action.error };
     case 'filter':
       return { ...state, filter: action.filter };
     case 'retryQueued':
@@ -118,7 +114,7 @@ export function JobRecoveryList({ items, defaultFilter }: JobRecoveryListProps) 
   const router = useRouter();
   const dialog = useAppDialog();
   const finishedJobs = useFinishedJobsInfiniteQuery();
-  const [{ actionError, busy, dismissedKeys, filter, retrySnapshots }, dispatchUi] = useReducer(
+  const [{ busy, dismissedKeys, filter, retrySnapshots }, dispatchUi] = useReducer(
     jobRecoveryUiReducer,
     initialJobRecoveryUiState,
     (initial): JobRecoveryUiState => ({ ...initial, filter: defaultFilter ?? 'all' }),
@@ -198,32 +194,31 @@ export function JobRecoveryList({ items, defaultFilter }: JobRecoveryListProps) 
   async function call(action: 'retry' | 'dismiss', id: string) {
     const retryStartedAt = Date.now();
     dispatchUi({ type: 'busy', busy: `${action}:${id}` });
-    dispatchUi({ type: 'error', error: null });
-    try {
-      const res = await fetch(`/api/team/job-recovery/${encodeURIComponent(id)}/${action}`, {
-        method: 'POST',
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        dispatchUi({
-          type: 'error',
-          error: `${action === 'retry' ? 'Retry' : 'Dismiss'} failed: ${text}`,
+    const result = await notifyAction({
+      id: `job-recovery:${action}:${id}`,
+      loading: action === 'retry' ? 'Retrying job…' : 'Dismissing job…',
+      success: action === 'retry' ? 'Job queued' : 'Job dismissed',
+      error: action === 'retry' ? 'Couldn’t retry job' : 'Couldn’t dismiss job',
+      run: async () => {
+        const res = await fetch(`/api/team/job-recovery/${encodeURIComponent(id)}/${action}`, {
+          method: 'POST',
         });
-        return;
-      }
-      if (action === 'retry') {
-        dispatchUi({ type: 'retryQueued', id, startedAt: retryStartedAt });
-        void finishedJobs.refetch();
-      } else {
-        const dismissed = items.find((item) => item.id === id);
-        if (dismissed) {
-          dispatchUi({ type: 'dismiss', key: itemSnapshotKey(dismissed) });
-        }
-        router.refresh();
-      }
-    } finally {
-      dispatchUi({ type: 'busy', busy: null });
+        if (!res.ok) return { error: 'failed' };
+        return { ok: true };
+      },
+    });
+    dispatchUi({ type: 'busy', busy: null });
+    if (result.error) return;
+    if (action === 'retry') {
+      dispatchUi({ type: 'retryQueued', id, startedAt: retryStartedAt });
+      void finishedJobs.refetch();
+      return;
     }
+    const dismissed = items.find((item) => item.id === id);
+    if (dismissed) {
+      dispatchUi({ type: 'dismiss', key: itemSnapshotKey(dismissed) });
+    }
+    router.refresh();
   }
 
   async function dismissFailed() {
@@ -237,82 +232,81 @@ export function JobRecoveryList({ items, defaultFilter }: JobRecoveryListProps) 
     });
     if (!confirmed) return;
     dispatchUi({ type: 'busy', busy: 'dismiss-failed' });
-    dispatchUi({ type: 'error', error: null });
-    try {
-      const res = await fetch('/api/team/job-recovery/dismiss-failed', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          ...(filter === 'all' ? {} : { kind: filter }),
-          items: failedItems.map((item) => ({
-            id: item.id,
-            detectedAt: new Date(item.detectedAt).toISOString(),
-          })),
-          expectedCount: failedCount,
-        }),
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        dispatchUi({ type: 'error', error: `Dismiss failed jobs failed: ${text}` });
-        return;
-      }
-      dispatchUi({
-        type: 'dismissMany',
-        keys: failedItems.map((item) => itemSnapshotKey(item)),
-      });
-      router.refresh();
-    } finally {
-      dispatchUi({ type: 'busy', busy: null });
-    }
+    const result = await notifyAction({
+      id: 'job-recovery:dismiss-failed',
+      loading: 'Dismissing failed jobs…',
+      success: 'Failed jobs dismissed',
+      error: 'Couldn’t dismiss failed jobs',
+      run: async () => {
+        const res = await fetch('/api/team/job-recovery/dismiss-failed', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            ...(filter === 'all' ? {} : { kind: filter }),
+            items: failedItems.map((item) => ({
+              id: item.id,
+              detectedAt: new Date(item.detectedAt).toISOString(),
+            })),
+            expectedCount: failedCount,
+          }),
+        });
+        if (!res.ok) return { error: 'failed' };
+        return { ok: true };
+      },
+    });
+    dispatchUi({ type: 'busy', busy: null });
+    if (result.error) return;
+    dispatchUi({
+      type: 'dismissMany',
+      keys: failedItems.map((item) => itemSnapshotKey(item)),
+    });
+    router.refresh();
   }
 
   async function retryFailed() {
     if (failedCount === 0) return;
     const retryStartedAt = Date.now();
     dispatchUi({ type: 'busy', busy: 'retry-failed' });
-    dispatchUi({ type: 'error', error: null });
-    try {
-      const res = await fetch('/api/team/job-recovery/retry-failed', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          ...(filter === 'all' ? {} : { kind: filter }),
-          items: failedItems.map((item) => ({
-            id: item.id,
-            detectedAt: new Date(item.detectedAt).toISOString(),
-          })),
-          expectedCount: failedCount,
-        }),
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        dispatchUi({ type: 'error', error: `Retry failed jobs failed: ${text}` });
-        return;
-      }
-      const body = (await res.json().catch(() => ({}))) as RetryFailedResponse;
-      const failedRetryIds = new Set(body.failedIds ?? []);
-      const retryQueuedIds: string[] = [];
-      for (const item of failedItems) {
-        if (!failedRetryIds.has(item.id)) retryQueuedIds.push(item.id);
-      }
-      dispatchUi({
-        type: 'retryQueuedMany',
-        ids: retryQueuedIds,
-        startedAt: retryStartedAt,
-      });
-      if ((body.failed ?? failedRetryIds.size) > 0) {
-        dispatchUi({
-          type: 'error',
-          error: `Retried ${String(body.retried ?? failedCount - failedRetryIds.size)} failed jobs; ${String(
-            body.failed ?? failedRetryIds.size,
-          )} could not be queued.`,
+    const result = await notifyAction({
+      id: 'job-recovery:retry-failed',
+      loading: 'Retrying failed jobs…',
+      success: 'Failed jobs queued',
+      error: 'Couldn’t retry failed jobs',
+      run: async () => {
+        const res = await fetch('/api/team/job-recovery/retry-failed', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            ...(filter === 'all' ? {} : { kind: filter }),
+            items: failedItems.map((item) => ({
+              id: item.id,
+              detectedAt: new Date(item.detectedAt).toISOString(),
+            })),
+            expectedCount: failedCount,
+          }),
         });
-      }
-      void finishedJobs.refetch();
-      router.refresh();
-    } finally {
-      dispatchUi({ type: 'busy', busy: null });
-    }
+        if (!res.ok) return { error: 'failed' };
+        const body = (await res.json().catch(() => ({}))) as RetryFailedResponse;
+        const failedRetryIds = new Set(body.failedIds ?? []);
+        const retryQueuedIds: string[] = [];
+        for (const item of failedItems) {
+          if (!failedRetryIds.has(item.id)) retryQueuedIds.push(item.id);
+        }
+        dispatchUi({
+          type: 'retryQueuedMany',
+          ids: retryQueuedIds,
+          startedAt: retryStartedAt,
+        });
+        if ((body.failed ?? failedRetryIds.size) > 0) {
+          return { error: 'partial' };
+        }
+        return { ok: true };
+      },
+    });
+    dispatchUi({ type: 'busy', busy: null });
+    if (result.error && result.error !== 'partial') return;
+    void finishedJobs.refetch();
+    router.refresh();
   }
 
   return (
@@ -322,12 +316,6 @@ export function JobRecoveryList({ items, defaultFilter }: JobRecoveryListProps) 
           router.refresh();
         }}
       />
-
-      {actionError ? (
-        <div className="rounded-sm border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {actionError}
-        </div>
-      ) : null}
 
       <JobRecoveryToolbar
         busy={busy}
@@ -538,44 +526,33 @@ function JobRecoveryItemActions({
 
 function ConversationSuggestionRecovery({ onQueued }: { onQueued: () => void }) {
   const [windowDays, setWindowDays] = useState<ResuggestWindowDays>(30);
-  const [status, setStatus] = useState<string | null>(null);
   const [queueing, setQueueing] = useState(false);
 
   async function queueConversationSuggestions() {
     setQueueing(true);
-    setStatus(null);
-    try {
-      const res = await fetch('/api/team/job-recovery/resuggest', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ windowDays, source: 'all' }),
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        setStatus(`Queue suggestions failed: ${text}`);
-        return;
-      }
-      const body = (await res.json()) as {
-        enqueued?: number;
-        scanned?: number;
-        truncated?: boolean;
-      };
-      setStatus(
-        `Queued ${String(body.enqueued ?? 0)} conversation reviews from ${String(body.scanned ?? 0)} events${
-          body.truncated ? ' (conversation limit reached)' : ''
-        }.`,
-      );
-      onQueued();
-    } finally {
-      setQueueing(false);
-    }
+    const result = await notifyAction({
+      id: 'job-recovery:resuggest',
+      loading: 'Queueing suggestions…',
+      success: 'Suggestions queued',
+      error: 'Couldn’t queue suggestions',
+      run: async () => {
+        const res = await fetch('/api/team/job-recovery/resuggest', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ windowDays, source: 'all' }),
+        });
+        if (!res.ok) return { error: 'failed' };
+        return { ok: true };
+      },
+    });
+    setQueueing(false);
+    if (!result.error) onQueued();
   }
 
   return (
     <div className="flex flex-col gap-2 rounded-sm border border-border bg-surface p-3 md:flex-row md:items-center md:justify-between">
       <div className="space-y-1">
         <h2 className="text-sm font-medium">Conversation suggestions</h2>
-        {status ? <p className="text-xs text-fg-muted">{status}</p> : null}
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <select

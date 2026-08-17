@@ -11,6 +11,14 @@ const routerRefresh = vi.hoisted(() => vi.fn());
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: routerRefresh }),
 }));
+const notify = vi.hoisted(() => ({
+  notifyAction: vi.fn(async ({ run }: { run: () => Promise<{ error?: string }> }) => run()),
+  notifyError: vi.fn(),
+}));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: notify.notifyAction,
+  notifyError: notify.notifyError,
+}));
 
 const SERVER_ID = '33333333-3333-4333-8333-333333333333';
 
@@ -44,10 +52,16 @@ async function selectServerAction(user: ReturnType<typeof userEvent.setup>, name
   await user.click(await screen.findByRole('menuitem', { name }));
 }
 
+beforeEach(() => {
+  notify.notifyAction.mockImplementation(async ({ run }) => run());
+});
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   routerRefresh.mockClear();
+  notify.notifyAction.mockClear();
+  notify.notifyError.mockClear();
   cleanup();
 });
 
@@ -438,7 +452,7 @@ describe('McpServersUi', () => {
     expect(await screen.findByText('{"result":"ok"}')).toBeTruthy();
   });
 
-  it('surfaces MCP reconnect results from test calls as a reconnect-specific dialog', async () => {
+  it('toasts MCP reconnect results from test calls', async () => {
     const user = userEvent.setup();
     vi.stubGlobal(
       'fetch',
@@ -462,14 +476,17 @@ describe('McpServersUi', () => {
     await user.click(screen.getByRole('button', { name: 'Test call' }));
     await user.click(screen.getByRole('button', { name: 'Run test' }));
 
-    expect(await screen.findByText('Reconnect required')).toBeTruthy();
-    expect(
-      screen.getByText('Research MCP needs to be reconnected before this tool can run.'),
-    ).toBeTruthy();
+    await waitFor(() => {
+      expect(notify.notifyError).toHaveBeenCalledWith(
+        'mcp:test-call',
+        'Research MCP needs to be reconnected before this tool can run.',
+      );
+    });
+    expect(screen.queryByText('Reconnect required')).toBeNull();
     expect(screen.queryByText(/needs_reauth/)).toBeNull();
   });
 
-  it('surfaces failed MCP test calls without labeling them as successful responses', async () => {
+  it('toasts failed MCP test calls without labeling them as successful responses', async () => {
     const user = userEvent.setup();
     vi.stubGlobal(
       'fetch',
@@ -487,8 +504,11 @@ describe('McpServersUi', () => {
     await user.click(screen.getByRole('button', { name: 'Test call' }));
     await user.click(screen.getByRole('button', { name: 'Run test' }));
 
-    expect(await screen.findByText('Tool call failed')).toBeTruthy();
-    expect(screen.getByText('remote unavailable')).toBeTruthy();
+    await waitFor(() => {
+      expect(notify.notifyError).toHaveBeenCalledWith('mcp:test-call', 'Couldn’t run tool');
+    });
+    expect(screen.queryByText('Tool call failed')).toBeNull();
+    expect(screen.queryByText('remote unavailable')).toBeNull();
     expect(screen.queryByText('Tool response')).toBeNull();
   });
 });

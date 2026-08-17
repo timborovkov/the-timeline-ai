@@ -10,6 +10,7 @@ import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { notifyAction } from '@/lib/notify';
 import {
   chatSessionLabel,
   filterChatSessions,
@@ -132,6 +133,35 @@ function SessionSearch({
   );
 }
 
+async function archiveChatSession({
+  sessionId,
+  isActive,
+  pathname,
+  search,
+  router,
+}: {
+  sessionId: string;
+  isActive: boolean;
+  pathname: string;
+  search: { toString(): string };
+  router: { push: (href: string) => void; refresh: () => void };
+}): Promise<void> {
+  const result = await notifyAction({
+    id: `chat:${sessionId}:archive`,
+    loading: 'Archiving chat…',
+    success: 'Chat archived',
+    error: 'Couldn’t archive chat',
+    run: () => archiveChatSessionAction({ sessionId }),
+  });
+  if (result.error) return;
+  if (isActive) {
+    const params = new URLSearchParams(search.toString());
+    params.delete('session');
+    router.push(params.toString() ? `${pathname}?${params.toString()}` : pathname);
+  }
+  router.refresh();
+}
+
 function NewChatButton({ onClick, className }: { onClick: () => void; className?: string }) {
   return (
     <Button
@@ -227,15 +257,13 @@ function SessionSidebarContent({
                         });
                         if (!confirmed) return;
                         startTransition(async () => {
-                          await archiveChatSessionAction({ sessionId: s.id });
-                          if (isActive) {
-                            const params = new URLSearchParams(search.toString());
-                            params.delete('session');
-                            router.push(
-                              params.toString() ? `${pathname}?${params.toString()}` : pathname,
-                            );
-                          }
-                          router.refresh();
+                          await archiveChatSession({
+                            sessionId: s.id,
+                            isActive,
+                            pathname,
+                            search,
+                            router,
+                          });
                         });
                       }}
                       className="grid size-8 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-50"
@@ -341,15 +369,13 @@ function MobileSessionNavContent({
                             });
                             if (!confirmed) return;
                             startTransition(async () => {
-                              await archiveChatSessionAction({ sessionId: session.id });
-                              if (isActive) {
-                                const params = new URLSearchParams(search.toString());
-                                params.delete('session');
-                                router.push(
-                                  params.toString() ? `${pathname}?${params.toString()}` : pathname,
-                                );
-                              }
-                              router.refresh();
+                              await archiveChatSession({
+                                sessionId: session.id,
+                                isActive,
+                                pathname,
+                                search,
+                                router,
+                              });
                             });
                           }}
                           className="grid size-9 shrink-0 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-50"

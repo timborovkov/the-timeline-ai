@@ -54,6 +54,15 @@ vi.mock('@/app/actions/documents', () => ({
   finalizeDocumentVersionAction: fakes.finalizeDocumentVersionAction,
   requestDocumentUploadAction: fakes.requestDocumentUploadAction,
 }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => {
+    try {
+      return await run();
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : 'failed' };
+    }
+  },
+}));
 
 const { CaptureForm } = await import('./capture-form.js');
 

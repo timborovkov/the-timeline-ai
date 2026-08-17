@@ -6,6 +6,7 @@ import { useReducer, useTransition } from 'react';
 
 import { createBoardAction } from '@/app/actions/boards';
 import { BoardStageEditor, type EditableBoardStage } from '@/components/boards/board-stage-editor';
+import { notifyAction } from '@/lib/notify';
 import {
   Dialog,
   DialogContent,
@@ -163,16 +164,20 @@ function BoardCreateForm({ showHeading = true }: BoardCreateFormProps) {
     }
     dispatch({ type: 'error', error: null });
     startTransition(async () => {
-      const result = await createBoardAction({
-        name: name.trim(),
-        templateKind,
-        purpose: purpose.trim() || undefined,
-        lanes,
+      const result = await notifyAction({
+        id: 'board:create',
+        loading: 'Creating board…',
+        success: 'Board created',
+        error: 'Couldn’t create board',
+        run: () =>
+          createBoardAction({
+            name: name.trim(),
+            templateKind,
+            purpose: purpose.trim() || undefined,
+            lanes,
+          }),
       });
-      if ('error' in result && result.error) {
-        dispatch({ type: 'error', error: result.error });
-        return;
-      }
+      if (result.error) return;
       if ('id' in result && result.id) router.push(`/app/boards/${result.id}`);
     });
   }

@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { Label } from '@/components/ui/label';
 import { networkActionError, readPublicApiError } from '@/lib/client-api-error';
+import { notifyAction } from '@/lib/notify';
 
 interface KeyRow {
   id: string;
@@ -268,9 +269,7 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
   const keyNameRef = useRef<HTMLInputElement>(null);
   const focusNameOnError = useRef(false);
   const busyKeyIds = useRef<Set<string> | null>(null);
-  const [keyMutations, setKeyMutations] = useState<
-    Record<string, { busy: boolean; error: string | null }>
-  >({});
+  const [keyMutations, setKeyMutations] = useState<Record<string, { busy: boolean }>>({});
 
   function activeBusyKeyIds(): Set<string> {
     busyKeyIds.current ??= new Set();
@@ -312,26 +311,29 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
 
   async function create() {
     patchState({ busy: true });
-    try {
-      const res = await fetch('/api/team/mcp-keys', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name }),
-      });
-      if (!res.ok) {
-        await dialog.alert({ title: 'Create failed', description: await res.text() });
-        return;
-      }
-      const data = (await res.json()) as { name: string; plaintext: string };
-      patchState({
-        mintedKey: { name: data.name, plaintext: data.plaintext },
-        name: '',
-        showCreate: false,
-      });
-      router.refresh();
-    } finally {
-      patchState({ busy: false });
-    }
+    const result = await notifyAction({
+      id: 'mcp:create-key',
+      loading: 'Creating key…',
+      success: 'Key created',
+      error: 'Couldn’t create key',
+      run: async () => {
+        const res = await fetch('/api/team/mcp-keys', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ name }),
+        });
+        if (!res.ok) return { error: 'failed' };
+        const data = (await res.json()) as { name: string; plaintext: string };
+        patchState({
+          mintedKey: { name: data.name, plaintext: data.plaintext },
+          name: '',
+          showCreate: false,
+        });
+        return { ok: true };
+      },
+    });
+    patchState({ busy: false });
+    if (!result.error) router.refresh();
   }
 
   async function revoke(id: string, label: string) {
@@ -345,30 +347,32 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
     if (!confirmed) return;
     if (activeBusyKeyIds().has(id)) return;
     activeBusyKeyIds().add(id);
-    setKeyMutations((current) => ({ ...current, [id]: { busy: true, error: null } }));
-    try {
-      const response = await fetch(`/api/team/mcp-keys/${id}`, { method: 'DELETE' });
-      if (!response.ok) {
-        const error = await readPublicApiError(
-          response,
-          'The key could not be revoked. Try again.',
-        );
-        setKeyMutations((current) => ({ ...current, [id]: { busy: false, error } }));
-        return;
-      }
-      router.refresh();
-    } catch {
-      setKeyMutations((current) => ({
-        ...current,
-        [id]: { busy: false, error: networkActionError('revoke this key') },
-      }));
-    } finally {
-      activeBusyKeyIds().delete(id);
-      setKeyMutations((current) => ({
-        ...current,
-        [id]: { busy: false, error: current[id]?.error ?? null },
-      }));
-    }
+    setKeyMutations((current) => ({ ...current, [id]: { busy: true } }));
+    const result = await notifyAction({
+      id: `mcp-key:${id}:revoke`,
+      loading: 'Revoking key…',
+      success: 'Key revoked',
+      error: 'Couldn’t revoke key',
+      run: async () => {
+        try {
+          const response = await fetch(`/api/team/mcp-keys/${id}`, { method: 'DELETE' });
+          if (!response.ok) {
+            return {
+              error: await readPublicApiError(
+                response,
+                'The key could not be revoked. Try again.',
+              ),
+            };
+          }
+          return { ok: true };
+        } catch {
+          return { error: networkActionError('revoke this key') };
+        }
+      },
+    });
+    activeBusyKeyIds().delete(id);
+    setKeyMutations((current) => ({ ...current, [id]: { busy: false } }));
+    if (!result.error) router.refresh();
   }
 
   return (
@@ -464,7 +468,7 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
       ) : (
         <ul className="divide-y divide-border rounded-md border border-border bg-surface">
           {keys.map((k) => {
-            const mutation = keyMutations[k.id] ?? { busy: false, error: null };
+            const mutation = keyMutations[k.id] ?? { busy: false };
             return (
               <li key={k.id} className="flex items-center gap-3 px-3 py-2.5">
                 <div className="min-w-0 flex-1">
@@ -475,11 +479,6 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
                       ? ` · last used ${new Date(k.lastUsedAt).toLocaleString()}`
                       : ' · never used'}
                   </div>
-                  {mutation.error ? (
-                    <p className="mt-1 text-xs text-destructive" role="alert">
-                      {mutation.error}
-                    </p>
-                  ) : null}
                 </div>
                 <ItemActionGroup label={`Actions for ${k.name}`}>
                   <Button

@@ -14,7 +14,6 @@ import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { DocumentPreview } from '@/components/documents/document-preview';
 import { EvidenceLink } from '@/components/evidence-link';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
-import { InlineError } from '@/components/inline-error';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -178,7 +177,6 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
   );
   const paginationInputsRef = useRef({ files, nextCursor });
   const [loadingMore, startLoadMore] = useTransition();
-  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [uiState, dispatchUi] = useReducer(capturedFilesUiReducer, capturedFilesUiInitialState);
 
   if (
@@ -187,7 +185,6 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
   ) {
     paginationInputsRef.current = { files, nextCursor };
     setPaginationState(paginationStateForProps(files, nextCursor));
-    setLoadMoreError(null);
   }
 
   const { loadedFiles, cursor } = paginationState;
@@ -238,7 +235,6 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
 
   function loadMore(): void {
     if (!cursor) return;
-    setLoadMoreError(null);
     startLoadMore(async () => {
       try {
         const params = new URLSearchParams({ cursor });
@@ -253,9 +249,6 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
           }),
         );
       } catch {
-        const message =
-          'Could not load older captured files. The files already shown remain available. Check your connection, then try again.';
-        setLoadMoreError(message);
         notifyError('captured-files:load-more', 'Couldn’t load older captured files');
       }
     });
@@ -429,14 +422,6 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
               : 'Clear the filters to view every captured file.'}
           </p>
         </div>
-      ) : null}
-      {loadMoreError ? (
-        <InlineError
-          message={loadMoreError}
-          onRetry={loadMore}
-          retrying={loadingMore}
-          retryLabel="Retry loading older files"
-        />
       ) : null}
       {cursor ? (
         <>
