@@ -8,6 +8,7 @@ import {
   artifactClusters,
   artifactEvidenceAssociations,
   boardItems,
+  boards,
   chatSessions,
   closeDb,
   dailyDigests,
@@ -37,7 +38,12 @@ import { verifyPassword } from '@timeline/shared/passwords';
 import { getDocumentsBucket, getObjectBuffer, getS3Client } from '@timeline/shared/s3';
 import { and, count, eq, inArray, isNull } from 'drizzle-orm';
 
-import { assertExpandedDemoCorpus, CORPUS_DOCUMENTS, CORPUS_PEOPLE } from './demo-corpus/index.js';
+import {
+  assertExpandedDemoCorpus,
+  CORPUS_DOCUMENTS,
+  CORPUS_MEETINGS,
+  CORPUS_PEOPLE,
+} from './demo-corpus/index.js';
 import {
   assertDemoFixture,
   assertDemoVectorEnvironment,
@@ -426,6 +432,7 @@ async function readExpandedDemoCorpusSnapshot(): Promise<
     webhookCount,
     integrationRows,
     onboardingCount,
+    polarDealflowCount,
   ] = await Promise.all([
     db
       .select({ email: users.email, passwordHash: users.passwordHash })
@@ -475,6 +482,19 @@ async function readExpandedDemoCorpusSnapshot(): Promise<
       .select({ value: count() })
       .from(teamOnboardingCompletions)
       .where(eq(teamOnboardingCompletions.teamId, DEMO_IDS.team)),
+    db
+      .select({ value: count() })
+      .from(boardItems)
+      .innerJoin(boards, eq(boards.id, boardItems.boardId))
+      .innerJoin(entities, eq(entities.id, boardItems.entityId))
+      .where(
+        and(
+          eq(boardItems.teamId, DEMO_IDS.team),
+          eq(boards.name, 'Customer dealflow'),
+          eq(entities.canonicalName, 'Polar Studio'),
+          isNull(boardItems.archivedAt),
+        ),
+      ),
   ]);
 
   const documentChecksums: string[] = [];
@@ -513,15 +533,27 @@ async function readExpandedDemoCorpusSnapshot(): Promise<
       .filter((model): model is string => Boolean(model)),
   );
   const corpusChunkIds = CORPUS_DOCUMENTS.flatMap((document) => document.chunkIds);
+  const corpusMeetingChunkIds = CORPUS_MEETINGS.flatMap((meeting) => meeting.chunkIds);
   let corpusDocumentChunkPointsPresent = 0;
+  let corpusMeetingChunkPointsPresent = 0;
   if (embeddingModels.size === 1) {
     const model = [...embeddingModels][0];
     if (model) {
-      const pointIds = corpusChunkIds.map((chunkId) =>
+      const documentPointIds = corpusChunkIds.map((chunkId) =>
         qdrant.buildChunkedPointId('doc_chunk', chunkId, model, 0),
       );
-      const present = await qdrant.getQdrantClient().pointsExist(pointIds);
-      corpusDocumentChunkPointsPresent = pointIds.filter((pointId) => present.has(pointId)).length;
+      const meetingPointIds = corpusMeetingChunkIds.map((chunkId) =>
+        qdrant.buildChunkedPointId('meeting_chunk', chunkId, model, 0),
+      );
+      const present = await qdrant
+        .getQdrantClient()
+        .pointsExist([...documentPointIds, ...meetingPointIds]);
+      corpusDocumentChunkPointsPresent = documentPointIds.filter((pointId) =>
+        present.has(pointId),
+      ).length;
+      corpusMeetingChunkPointsPresent = meetingPointIds.filter((pointId) =>
+        present.has(pointId),
+      ).length;
     }
   }
 
@@ -552,6 +584,8 @@ async function readExpandedDemoCorpusSnapshot(): Promise<
     documentChecksums,
     embeddedCorpusDocumentVersions,
     corpusDocumentChunkPointsPresent,
+    corpusMeetingChunkPointsPresent,
+    polarDealflowItems: Number(polarDealflowCount[0]?.value ?? 0),
     onboardingStepsCompleted: Number(onboardingCount[0]?.value ?? 0),
   };
 }

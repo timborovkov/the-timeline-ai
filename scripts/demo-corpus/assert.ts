@@ -1,4 +1,4 @@
-import { CORPUS_DOCUMENTS, CORPUS_VOLUME_FLOORS } from './catalog.js';
+import { CORPUS_DOCUMENTS, CORPUS_MEETINGS, CORPUS_VOLUME_FLOORS } from './catalog.js';
 import { CORPUS_LOGIN_EMAILS, CORPUS_PEOPLE } from './people.js';
 
 export interface ExpandedDemoCorpusSnapshot {
@@ -21,6 +21,8 @@ export interface ExpandedDemoCorpusSnapshot {
   documentChecksums: string[];
   embeddedCorpusDocumentVersions: number;
   corpusDocumentChunkPointsPresent: number;
+  corpusMeetingChunkPointsPresent: number;
+  polarDealflowItems: number;
   onboardingStepsCompleted: number;
 }
 
@@ -68,6 +70,16 @@ export function assertExpandedDemoCorpus(snapshot: ExpandedDemoCorpusSnapshot): 
     snapshot.corpusDocumentChunkPointsPresent,
     CORPUS_DOCUMENTS.reduce((count, document) => count + document.chunkIds.length, 0),
   );
+  atLeast(
+    'corpus meeting chunk vectors',
+    snapshot.corpusMeetingChunkPointsPresent,
+    CORPUS_MEETINGS.reduce((count, meeting) => count + meeting.chunkIds.length, 0),
+  );
+  if (snapshot.polarDealflowItems !== 0) {
+    errors.push(
+      `Polar Studio is on Customer dealflow (${String(snapshot.polarDealflowItems)} active items)`,
+    );
+  }
   if (CORPUS_PEOPLE.length !== snapshot.people && snapshot.people < CORPUS_PEOPLE.length) {
     errors.push('not every corpus person is an active team member');
   }

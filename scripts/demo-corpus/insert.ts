@@ -709,7 +709,17 @@ async function insertEventsAndFacts(tx: SeedTx): Promise<void> {
         dedupeKey: `demo-seed:evidence:${row.id}`,
       })),
     )
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: reconciliationEvidence.id,
+      set: {
+        rawEventId: sql`excluded.raw_event_id`,
+        sourcePayloadRef: sql`excluded.source_payload_ref`,
+        payloadDigest: sql`excluded.payload_digest`,
+        title: sql`excluded.title`,
+        summary: sql`excluded.summary`,
+        contentDigest: sql`excluded.content_digest`,
+      },
+    });
 }
 
 async function insertObjects(tx: SeedTx): Promise<void> {
@@ -744,7 +754,30 @@ async function insertObjects(tx: SeedTx): Promise<void> {
           : {}),
       })),
     )
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: entities.id,
+      set: {
+        canonicalName: sql`excluded.canonical_name`,
+        aliases: sql`excluded.aliases`,
+        metadata: sql`excluded.metadata`,
+        status: sql`excluded.status`,
+        stage: sql`excluded.stage`,
+        priority: sql`excluded.priority`,
+        ownerUserId: sql`excluded.owner_user_id`,
+        assigneeUserId: sql`excluded.assignee_user_id`,
+        dueAt: sql`excluded.due_at`,
+        archivedAt: sql`excluded.archived_at`,
+        taskCategory: sql`excluded.task_category`,
+        taskCategoryMode: sql`excluded.task_category_mode`,
+        taskCategorySource: sql`excluded.task_category_source`,
+        taskCategoryStatus: sql`excluded.task_category_status`,
+        taskCategoryAppliedInputHash: sql`excluded.task_category_applied_input_hash`,
+        taskCategoryTaxonomyVersion: sql`excluded.task_category_taxonomy_version`,
+        taskCategoryUpdatedAt: sql`excluded.task_category_updated_at`,
+        sourceEventId: null,
+        updatedAt: NOW,
+      },
+    });
 
   await tx
     .insert(artifactClusters)
@@ -760,7 +793,16 @@ async function insertObjects(tx: SeedTx): Promise<void> {
         metadata: { fixture_version: DEMO_FIXTURE_VERSION },
       })),
     )
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: artifactClusters.id,
+      set: {
+        canonicalName: sql`excluded.canonical_name`,
+        status: sql`excluded.status`,
+        artifactClusterKind: sql`excluded.artifact_cluster_kind`,
+        artifactType: sql`excluded.artifact_type`,
+        canonicalEntityId: sql`excluded.canonical_entity_id`,
+      },
+    });
 
   const relationships = [
     { from: 'Helio Retail pilot', to: 'Helio Retail', kind: 'related' as const },
@@ -797,7 +839,14 @@ async function insertObjects(tx: SeedTx): Promise<void> {
         updatedAt: NOW,
       })),
     )
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: objectNotes.id,
+      set: {
+        body: sql`excluded.body`,
+        entityId: sql`excluded.entity_id`,
+        updatedAt: NOW,
+      },
+    });
 
   await tx
     .insert(objectSummaries)
@@ -843,7 +892,14 @@ async function insertObjects(tx: SeedTx): Promise<void> {
         promptVersion: DEMO_FIXTURE_VERSION,
       },
     ])
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: objectSummaries.id,
+      set: {
+        summary: sql`excluded.summary`,
+        plainText: sql`excluded.plain_text`,
+        entityId: sql`excluded.entity_id`,
+      },
+    });
 
   await tx
     .insert(artifactEvidenceAssociations)
@@ -875,7 +931,16 @@ async function insertObjects(tx: SeedTx): Promise<void> {
         dedupeKey: `demo-seed:assoc:${row.id}`,
       })),
     )
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: artifactEvidenceAssociations.id,
+      set: {
+        clusterId: sql`excluded.cluster_id`,
+        evidenceId: sql`excluded.evidence_id`,
+        rawEventId: sql`excluded.raw_event_id`,
+        rationale: sql`excluded.rationale`,
+        sourceRefs: sql`excluded.source_refs`,
+      },
+    });
 }
 
 async function insertFactLinks(tx: SeedTx): Promise<void> {
@@ -1073,7 +1138,20 @@ async function insertMeetings(tx: SeedTx): Promise<void> {
         updatedAt: NOW,
       },
     ])
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: meetings.id,
+      set: {
+        title: sql`excluded.title`,
+        meetingUrl: sql`excluded.meeting_url`,
+        status: sql`excluded.status`,
+        savedMeetingId: sql`excluded.saved_meeting_id`,
+        startedAt: sql`excluded.started_at`,
+        endedAt: sql`excluded.ended_at`,
+        scheduledStartAt: sql`excluded.scheduled_start_at`,
+        scheduledEndAt: sql`excluded.scheduled_end_at`,
+        updatedAt: NOW,
+      },
+    });
 
   await tx.delete(meetingTranscriptChunks).where(
     and(
@@ -1155,7 +1233,15 @@ async function insertBoards(tx: SeedTx): Promise<void> {
     )
     .onConflictDoNothing();
 
-  await tx.delete(boardItems).where(eq(boardItems.id, CORPUS_UUID.board(31)));
+  await tx
+    .delete(boardItems)
+    .where(
+      and(
+        eq(boardItems.teamId, TEAM_ID),
+        eq(boardItems.boardId, DEALFLOW_BOARD.id),
+        eq(boardItems.entityId, dealflowEntityId('Polar Studio')),
+      ),
+    );
   await tx
     .insert(boardItems)
     .values([
@@ -1368,7 +1454,14 @@ async function insertProposals(tx: SeedTx): Promise<void> {
       quietUntil: new Date('2026-08-14T18:30:00.000Z'),
       metadata: { fixture_version: DEMO_FIXTURE_VERSION, title: '#gtm' },
     })
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: conversationReviews.id,
+      set: {
+        lastRawEventId: sql`excluded.last_raw_event_id`,
+        status: sql`excluded.status`,
+        quietUntil: sql`excluded.quiet_until`,
+      },
+    });
 }
 
 async function insertChats(tx: SeedTx): Promise<void> {
@@ -1385,7 +1478,14 @@ async function insertChats(tx: SeedTx): Promise<void> {
         updatedAt: new Date(row.createdAt),
       })),
     )
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: chatSessions.id,
+      set: {
+        title: sql`excluded.title`,
+        updatedAt: sql`excluded.updated_at`,
+        archivedAt: null,
+      },
+    });
   await tx
     .insert(chatMessages)
     .values(
@@ -1415,7 +1515,13 @@ async function insertChats(tx: SeedTx): Promise<void> {
         },
       ]),
     )
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: chatMessages.id,
+      set: {
+        content: sql`excluded.content`,
+        authorUserId: sql`excluded.author_user_id`,
+      },
+    });
 }
 
 async function insertDigests(tx: SeedTx): Promise<void> {
@@ -1434,7 +1540,17 @@ async function insertDigests(tx: SeedTx): Promise<void> {
     createdAt: new Date(row.start),
     updatedAt: new Date(row.start),
   }));
-  await tx.insert(messageDeliveries).values(deliveries).onConflictDoNothing();
+  await tx
+    .insert(messageDeliveries)
+    .values(deliveries)
+    .onConflictDoUpdate({
+      target: messageDeliveries.id,
+      set: {
+        subject: sql`excluded.subject`,
+        status: sql`excluded.status`,
+        sentAt: sql`excluded.sent_at`,
+      },
+    });
   await tx
     .insert(dailyDigests)
     .values(
@@ -1455,7 +1571,7 @@ async function insertDigests(tx: SeedTx): Promise<void> {
             windowStart: start.toISOString(),
             windowEnd: end.toISOString(),
             summary: row.summary,
-            pendingApprovals: 14,
+            pendingApprovals: CORPUS_PROPOSALS.length,
             eventCount: 6,
             sourceDistribution: { slack: 2, email: 1, meeting: 1, integration: 2 },
             objectChangesByType: { deal: 1, task: 1 },
@@ -1471,7 +1587,16 @@ async function insertDigests(tx: SeedTx): Promise<void> {
         };
       }),
     )
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: dailyDigests.id,
+      set: {
+        summary: sql`excluded.summary`,
+        payload: sql`excluded.payload`,
+        status: sql`excluded.status`,
+        deliveryId: sql`excluded.delivery_id`,
+        sentAt: sql`excluded.sent_at`,
+      },
+    });
 }
 
 async function insertPinsNotesOnboarding(tx: SeedTx): Promise<void> {

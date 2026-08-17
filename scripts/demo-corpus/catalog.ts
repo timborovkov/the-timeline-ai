@@ -1177,7 +1177,7 @@ const OBJECT_DEFS: Array<Omit<CorpusObject, 'id'> & { n: number }> = [
     n: 36,
     type: 'person',
     canonicalName: 'Dana Cole champion',
-    status: 'archived',
+    status: 'active',
     ownerUserId: CORPUS_PERSON.casey.id,
     metadata: { note: 'Duplicate label retired; use Dana Cole' },
   },

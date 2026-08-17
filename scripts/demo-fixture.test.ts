@@ -20,12 +20,14 @@ import {
 import {
   assertExpandedDemoCorpus,
   CORPUS_DOCUMENTS,
+  CORPUS_EVENT_NEEDLES,
   CORPUS_EVENTS,
   CORPUS_MEETINGS,
   CORPUS_OBJECTS,
   CORPUS_PEOPLE,
   CORPUS_PROPOSALS,
   CORPUS_VOLUME_FLOORS,
+  DEALFLOW_ITEMS,
   corpusEventId,
   corpusObjectId,
 } from './demo-corpus/index.js';
@@ -257,6 +259,10 @@ assert.throws(
   () => corpusEventId('no-such-demo-event-needle'),
   /Expected exactly one corpus event containing/,
 );
+for (const needle of CORPUS_EVENT_NEEDLES) {
+  assert.doesNotThrow(() => corpusEventId(needle), needle);
+}
+assert.ok(DEALFLOW_ITEMS.every((item) => item.entityName !== 'Polar Studio'));
 assert.equal(new Set(CORPUS_EVENTS.map((row) => row.id)).size, CORPUS_EVENTS.length);
 assert.equal(
   new Set(CORPUS_DOCUMENTS.flatMap((doc) => [doc.id, doc.versionId, ...doc.chunkIds])).size,
@@ -305,6 +311,11 @@ assert.doesNotThrow(() =>
       (count, document) => count + document.chunkIds.length,
       0,
     ),
+    corpusMeetingChunkPointsPresent: CORPUS_MEETINGS.reduce(
+      (count, meeting) => count + meeting.chunkIds.length,
+      0,
+    ),
+    polarDealflowItems: 0,
     onboardingStepsCompleted: 11,
   }),
 );
@@ -330,6 +341,8 @@ assert.throws(
       documentChecksums: [],
       embeddedCorpusDocumentVersions: 0,
       corpusDocumentChunkPointsPresent: 0,
+      corpusMeetingChunkPointsPresent: 0,
+      polarDealflowItems: 1,
       onboardingStepsCompleted: 0,
     }),
   /Expanded demo corpus verification failed/,

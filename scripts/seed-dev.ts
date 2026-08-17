@@ -1295,7 +1295,13 @@ async function main(): Promise<void> {
             extractedAt: new Date(DEMO_TIMES.provider),
           },
         ])
-        .onConflictDoNothing();
+        .onConflictDoUpdate({
+          target: facts.id,
+          set: {
+            statement: sql`excluded.statement`,
+            rawEventId: sql`excluded.raw_event_id`,
+          },
+        });
 
       await tx
         .insert(factEntities)
