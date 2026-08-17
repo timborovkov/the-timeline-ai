@@ -203,10 +203,12 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       (`pnpm test:proposal-engine:live`): real models, real embeddings/Qdrant
       when configured, realistic noisy payloads (~90% messy: Sentry spikes,
       GitHub Actions pulses, Bugbot findings, buried ids, typo fragments,
-      silent calendar-linked meetings), isolated team, cleanup afterwards.
+      mention soup, truncated paste, silent calendar-linked meetings, outcome
+      evidence without "this is complete"), isolated team, cleanup afterwards.
       Not part of CI. Safe name-maps are the minority. Covers Slack/Monday
       qualify, generic `#general` refuse, mixed-client refuse, living pending
-      amend, pulse/finding skip, alias stamp, and cosine-recall-is-not-a-write.
+      amend, pulse/finding skip, alias stamp, cosine-recall-is-not-a-write,
+      implicit branding `done`, two-task refuse, and file-share no-create.
 - [x] Stamp unique provider work-item aliases from the conversation window
       onto proposed tasks (`acme/app#88`, Linear keys, Monday item ids) so a
       later captured-work matcher can hard-join. Deterministic copy only when

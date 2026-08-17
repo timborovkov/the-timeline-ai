@@ -180,7 +180,7 @@ AGENT_LIVE_ENV_FILE=/path/.env pnpm test:agent-eval:live
 SUGGESTIONS_LIVE_ENV_FILE=/path/.env pnpm test:suggestions-eval:live
                                       # opt-in live LLM suggestion extraction/projection eval
 PROPOSAL_ENGINE_LIVE_ENV_FILE=/path/.env pnpm test:proposal-engine:live
-                                      # opt-in live messy proposal-engine eval (real models + vectors; not CI)
+                                      # opt-in live messy proposal-engine eval (real models + vectors; not CI; includes implicit done)
 pnpm test:reconciliation-eval         # deterministic reconciliation domain/eval checks + sampling CLI gate
 RECONCILIATION_LIVE_ENV_FILE=/path/.env pnpm test:reconciliation-eval:live
                                       # opt-in live LLM planner + judge matrix

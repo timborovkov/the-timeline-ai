@@ -209,9 +209,12 @@ lifecycle state. They may skip intermediate states when newer evidence clearly
 shows the artifact's current state. Lifecycle updates require clear resolution
 to one artifact cluster; ambiguous evidence should not guess between plausible
 artifacts. Progress updates require explicit workflow movement, not mere
-attention or discussion. Completion evidence can come from any credible source
-when the statement is assertive and the artifact match is clear; hedged guesses
-remain evidence only. Cancellation, blocking, and unblocking are lifecycle
+attention or discussion. Completion evidence can come from an assertive
+statement **or** from later outcome evidence that uniquely matches one open
+task (the deliverable exists: brand book captured, naming decision accepted,
+project already using the name). Nobody has to say "this is complete." Hedged
+guesses such as "I think it is done" remain evidence only. Two matching open
+tasks refuse a lifecycle guess. Cancellation, blocking, and unblocking are lifecycle
 updates when they map cleanly to the artifact's supported state vocabulary.
 Each artifact type has one canonical lifecycle vocabulary; conversational and
 display aliases such as "in progress" normalize to that vocabulary before
@@ -1482,6 +1485,17 @@ marked done automatically?"
 Domain expert: "Conversation evidence should create a lifecycle update proposal
 for the canonical task. It should not silently mark the task done unless the
 change comes from an authoritative source for that artifact."
+
+Developer: "The branding task is still open, but the timeline already has the
+name, the brand book, and a week of using them. Nobody said branding is
+complete. Should we understand that anyway?"
+
+Domain expert: "Yes. That is outcome evidence, not a missing magic phrase.
+Recall the open task into the proposal prompt by distinctive title tokens,
+propose `status: done` when exactly one open task owns that deliverable, and
+keep it approval-backed. If two branding tasks could own the brand book, refuse.
+A Drive link with no matching open task is not a create. A later GitHub PR that
+only shares topic words still needs a join key; that is not this path."
 
 Developer: "If Google Calendar moves an imported meeting, does that need a
 team approval?"
