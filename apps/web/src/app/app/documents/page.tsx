@@ -69,7 +69,11 @@ export default async function DocumentsPage({ searchParams }: Props) {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Documents" subtitle="Browse files, folders, and captured knowledge." />
+      <PageHeader
+        variant="collection"
+        title="Documents"
+        subtitle="Browse files, folders, and captured knowledge."
+      />
       <DocumentSearch />
       <DocumentDrive
         key={folderId ?? 'root'}

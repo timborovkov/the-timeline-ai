@@ -300,14 +300,15 @@ describe('CuratedKanbanBoard', () => {
       />,
     );
 
-    const moveControl = screen.getByRole<HTMLSelectElement>('combobox', { name: 'Move to lane' });
     const title = screen.getByRole('link', { name: 'Keyboard card' });
     const dragHandle = screen.getByRole('button', { name: 'Drag Keyboard card' });
+    const laneTrigger = screen.getByRole('button', { name: 'Lane for Keyboard card' });
     title.focus();
     await user.tab();
     expect(document.activeElement).toBe(dragHandle);
-    await user.tab();
-    expect(document.activeElement).toBe(moveControl);
+    laneTrigger.focus();
+    await user.keyboard('{Enter}');
+    const moveControl = screen.getByRole<HTMLSelectElement>('combobox', { name: 'Move to lane' });
     expect(moveControl.className).toContain('w-full');
     expect(moveControl.className).toContain('text-base');
     expect(screen.getByText(/To move directly between lanes with the keyboard/)).toBeTruthy();
@@ -316,21 +317,17 @@ describe('CuratedKanbanBoard', () => {
 
     await waitFor(() => {
       expect(fakes.updateBoardItemAction).toHaveBeenCalledWith({ id: 'item-1', laneId: 'lane-2' });
-      const movedControl = screen.getByRole<HTMLSelectElement>('combobox', {
-        name: 'Move to lane',
-      });
-      expect(movedControl.value).toBe('lane-2');
-      expect(movedControl.disabled).toBe(true);
+      expect(
+        screen.getByRole('button', { name: 'Lane for Keyboard card' }).hasAttribute('disabled'),
+      ).toBe(true);
       expect(screen.getByText('Saving…')).toBeTruthy();
     });
 
     resolveMove({ ok: true, id: 'item-1' });
     await waitFor(() => {
       expect(screen.getByText('Saved')).toBeTruthy();
-      const savedControl = screen.getByRole<HTMLSelectElement>('combobox', {
-        name: 'Move to lane',
-      });
-      expect(savedControl.disabled).toBe(false);
+      const savedControl = screen.getByRole('button', { name: 'Lane for Keyboard card' });
+      expect(savedControl.hasAttribute('disabled')).toBe(false);
       expect(document.activeElement).toBe(savedControl);
     });
   });
@@ -354,16 +351,12 @@ describe('CuratedKanbanBoard', () => {
       />,
     );
 
-    await user.selectOptions(
-      screen.getByRole<HTMLSelectElement>('combobox', { name: 'Move to lane' }),
-      'lane-2',
-    );
+    await user.click(screen.getByRole('button', { name: 'Lane for Pending move card' }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Move to lane' }), 'lane-2');
 
     await waitFor(() => {
-      const pendingControl = screen.getByRole<HTMLSelectElement>('combobox', {
-        name: 'Move to lane',
-      });
-      expect(pendingControl.disabled).toBe(true);
+      const pendingControl = screen.getByRole('button', { name: 'Lane for Pending move card' });
+      expect(pendingControl.hasAttribute('disabled')).toBe(true);
       expect(screen.getByText('Saving…')).toBeTruthy();
     });
     expect(fakes.updateBoardItemAction).toHaveBeenCalledOnce();
@@ -389,20 +382,20 @@ describe('CuratedKanbanBoard', () => {
       />,
     );
 
+    const laneTrigger = screen.getByRole('button', { name: 'Lane for Recovery card' });
+    await user.click(laneTrigger);
     const moveControl = screen.getByRole<HTMLSelectElement>('combobox', { name: 'Move to lane' });
     await user.selectOptions(moveControl, 'lane-2');
 
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('Unable to move Recovery card.');
     expect(alert.textContent).toContain('Choose a lane to try again.');
-    const recoveredControl = screen.getByRole<HTMLSelectElement>('combobox', {
-      name: 'Move to lane',
-    });
-    expect(recoveredControl.getAttribute('aria-invalid')).toBe('true');
-    expect(recoveredControl.getAttribute('aria-describedby')).toContain('move-error');
-    expect(document.activeElement).toBe(recoveredControl);
+    const recoveredTrigger = screen.getByRole('button', { name: 'Lane for Recovery card' });
+    expect(recoveredTrigger.getAttribute('aria-invalid')).toBe('true');
+    expect(document.activeElement).toBe(recoveredTrigger);
 
-    await user.selectOptions(recoveredControl, 'lane-2');
+    await user.click(recoveredTrigger);
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Move to lane' }), 'lane-2');
     await waitFor(() => {
       expect(fakes.updateBoardItemAction).toHaveBeenCalledTimes(2);
       expect(screen.queryByRole('alert')).toBeNull();

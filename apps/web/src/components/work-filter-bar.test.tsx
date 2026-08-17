@@ -43,6 +43,12 @@ async function waitForMenuToClose(): Promise<void> {
   });
 }
 
+async function openFilters(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  const trigger = screen.getAllByRole('button', { name: /^Filters/ })[0];
+  if (!trigger) throw new Error('Missing filter trigger');
+  await user.click(trigger);
+}
+
 describe('WorkFilterBar', () => {
   afterEach(() => {
     cleanup();
@@ -73,6 +79,7 @@ describe('WorkFilterBar', () => {
       });
     });
 
+    await openFilters(user);
     await user.click(screen.getByRole('button', { name: 'Type' }));
     await user.click(screen.getByRole('menuitem', { name: 'Any type' }));
     await waitForMenuToClose();
@@ -80,6 +87,24 @@ describe('WorkFilterBar', () => {
       expect(replace).toHaveBeenLastCalledWith('/app/objects?q=proposal', { scroll: false });
     });
     expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull();
+  });
+
+  it('renders view controls on the same toolbar row as search', () => {
+    render(
+      <WorkFilterBar
+        mode="tasks"
+        basePath="/app/tasks"
+        filters={EMPTY_FILTERS}
+        active={false}
+        resultCount={10}
+        totalCount={10}
+        viewControls={<nav aria-label="Task view">list</nav>}
+      />,
+    );
+
+    const search = screen.getByLabelText('Search');
+    const view = screen.getByRole('navigation', { name: 'Task view' });
+    expect(search.closest('.flex.min-h-11')).toBe(view.closest('.flex.min-h-11'));
   });
 
   it('submits multiple dropdown values as comma-separated filters', async () => {
@@ -96,6 +121,7 @@ describe('WorkFilterBar', () => {
       />,
     );
 
+    await openFilters(user);
     await user.click(screen.getByRole('button', { name: 'Status' }));
     await user.click(screen.getByRole('menuitemcheckbox', { name: 'todo' }));
     await user.click(screen.getByRole('menuitemcheckbox', { name: 'doing' }));
@@ -129,6 +155,7 @@ describe('WorkFilterBar', () => {
       />,
     );
 
+    await openFilters(user);
     const projectTrigger = screen.getByRole('button', { name: 'Project' });
     projectTrigger.focus();
     await user.keyboard('{Enter}');
@@ -157,6 +184,7 @@ describe('WorkFilterBar', () => {
       />,
     );
 
+    await openFilters(user);
     await user.click(screen.getByRole('button', { name: 'Project' }));
     await user.type(screen.getByLabelText('Search project filters'), 'Overflow');
     await new Promise((resolve) => setTimeout(resolve, 400));
@@ -178,6 +206,7 @@ describe('WorkFilterBar', () => {
       />,
     );
 
+    await openFilters(user);
     await user.click(screen.getByRole('button', { name: 'Status' }));
 
     expect(screen.getByRole('menuitemcheckbox', { name: 'cancelled' })).toBeTruthy();
@@ -200,6 +229,7 @@ describe('WorkFilterBar', () => {
       />,
     );
 
+    await openFilters(user);
     const toggle = screen.getByRole('button', { name: 'Date ranges' });
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(screen.getByLabelText('Due from').closest('[hidden]')).toBeTruthy();
@@ -221,6 +251,7 @@ describe('WorkFilterBar', () => {
       />,
     );
 
+    await openFilters(user);
     await user.selectOptions(screen.getByRole('combobox', { name: 'Due' }), 'range');
 
     expect(screen.getByRole('button', { name: 'Date ranges' }).getAttribute('aria-expanded')).toBe(
@@ -240,6 +271,7 @@ describe('WorkFilterBar', () => {
       />,
     );
 
+    await openFilters(user);
     expect(screen.getByRole('button', { name: 'Date ranges' }).getAttribute('aria-expanded')).toBe(
       'true',
     );
@@ -291,6 +323,7 @@ describe('WorkFilterBar', () => {
       />,
     );
 
+    await openFilters(user);
     await user.click(screen.getByRole('button', { name: 'Date ranges' }));
     await user.selectOptions(screen.getByRole('combobox', { name: 'Priority' }), '1');
     await waitFor(() => {
@@ -315,6 +348,7 @@ describe('WorkFilterBar', () => {
       />,
     );
 
+    await openFilters(user);
     await user.click(screen.getByRole('button', { name: 'Date ranges' }));
 
     expect(screen.getByRole('button', { name: 'Date ranges' }).getAttribute('aria-expanded')).toBe(

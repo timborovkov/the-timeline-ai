@@ -2,7 +2,6 @@ import { users } from '@timeline/db';
 import { cacheKey, cachedJson } from '@timeline/shared/cache';
 import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
 import { withTeam } from '@timeline/shared/team-scope';
-import { localDateSpanToUtcRange } from '@timeline/shared/time';
 import { inArray } from 'drizzle-orm';
 
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -14,6 +13,7 @@ import {
   parseTimelineImpacts,
   parseTimelineOrigins,
   parseTimelineSources,
+  resolveTimelineDateWindow,
   timelineOriginValue,
   timelineSourceValues,
 } from '@/lib/timeline-controls';
@@ -43,30 +43,6 @@ function parseTimelineMode(input: string | null): 'moments' | 'events' {
 function parseMomentId(input: string | null): string | null {
   if (!input || input.length > 500) return null;
   return input.startsWith('moment:') ? input : null;
-}
-
-function nextDateInput(input: string): string {
-  const d = new Date(`${input}T00:00:00.000Z`);
-  d.setUTCDate(d.getUTCDate() + 1);
-  return d.toISOString().slice(0, 10);
-}
-
-function parseStartOfDay(input: string | null, timezone: string): Date | undefined {
-  if (!input || !/^\d{4}-\d{2}-\d{2}$/.test(input)) return undefined;
-  try {
-    return localDateSpanToUtcRange(input, nextDateInput(input), timezone).from;
-  } catch {
-    return undefined;
-  }
-}
-
-function parseEndOfDay(input: string | null, timezone: string): Date | undefined {
-  if (!input || !/^\d{4}-\d{2}-\d{2}$/.test(input)) return undefined;
-  try {
-    return localDateSpanToUtcRange(input, nextDateInput(input), timezone).to;
-  } catch {
-    return undefined;
-  }
 }
 
 function parseUuids(input: string | null): string[] {
@@ -138,8 +114,12 @@ export async function GET(req: Request): Promise<Response> {
   await scope.requireMembership();
   const settings = await scope.calendar.getCalendarSettings();
   const timezone = settings.defaultTimezone;
-  const from = parseStartOfDay(url.searchParams.get('from'), timezone);
-  const to = parseEndOfDay(url.searchParams.get('to'), timezone);
+  const dateWindow = resolveTimelineDateWindow(
+    { from: url.searchParams.get('from'), to: url.searchParams.get('to') },
+    timezone,
+  );
+  const from = dateWindow.from;
+  const to = dateWindow.to;
 
   const key = cacheKey([
     'timeline-page',
@@ -147,7 +127,7 @@ export async function GET(req: Request): Promise<Response> {
     session.user.id,
     authorUserIds.join(','),
     from?.toISOString(),
-    to?.toISOString(),
+    dateWindow.effectiveToInput ? to.toISOString() : 'through-now',
     sourceValue,
     originValue,
     impactValue,

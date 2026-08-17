@@ -39,12 +39,14 @@ import {
   finalizeDocumentVersionAction,
   requestDocumentUploadAction,
 } from '@/app/actions/documents';
+import { CollectionGroup } from '@/components/collections/collection-group';
+import { CollectionRow } from '@/components/collections/collection-row';
 import { EvidenceLink } from '@/components/evidence-link';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
-import { SectionHeading } from '@/components/section-heading';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ItemActionGroup } from '@/components/ui/item-actions';
 import { queryKeys } from '@/lib/query-keys';
 import { type DocumentListPage, useDocumentListQuery } from '@/lib/use-paginated-queries';
 
@@ -744,45 +746,48 @@ function FolderList({
 }) {
   if (folders.length === 0) return null;
   return (
-    <section>
-      <SectionHeading className="mb-3">Folders</SectionHeading>
-      <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+    <CollectionGroup title="Folders" count={folders.length}>
+      <ul className="border-x border-border">
         {folders.map((f) => (
-          <li
-            key={f.id}
-            className="group flex items-center justify-between rounded-lg border border-border bg-card p-3 hover:border-fg/20"
-          >
-            {f.optimistic ? (
-              <div className="flex items-center gap-2 text-sm font-medium opacity-70">
-                <FolderIcon className="size-4 text-muted-foreground" />
-                <span>{f.name}</span>
-              </div>
-            ) : (
-              <Link
-                href={`/app/documents?folder=${f.id}`}
-                className="flex min-h-8 items-center gap-2 rounded-sm text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
-                <FolderIcon className="size-4 text-muted-foreground" />
-                <span>{f.name}</span>
-              </Link>
-            )}
-            <Button
-              type="button"
-              onClick={() => {
-                void onDeleteFolder(f.id);
-              }}
-              disabled={f.optimistic}
-              variant="ghost"
-              size="sm"
-              aria-label={`Delete folder ${f.name}`}
-              className="min-h-9 px-2 text-fg-muted opacity-100 transition-opacity group-focus-within:opacity-100 hover:text-fg focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
-            >
-              Delete
-            </Button>
+          <li key={f.id}>
+            <CollectionRow
+              leading={<FolderIcon className="size-4 text-muted-foreground" aria-hidden />}
+              title={
+                f.optimistic ? (
+                  <span className="opacity-70">{f.name}</span>
+                ) : (
+                  <Link
+                    href={`/app/documents?folder=${f.id}`}
+                    className="block truncate rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {f.name}
+                  </Link>
+                )
+              }
+              context={f.visibility}
+              metadata={<time dateTime={f.updatedAt}>{formatDate(f.updatedAt)}</time>}
+              actions={
+                <ItemActionGroup label={`Actions for ${f.name}`}>
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      void onDeleteFolder(f.id);
+                    }}
+                    disabled={f.optimistic}
+                    variant="ghost"
+                    size="sm"
+                    aria-label={`Delete folder ${f.name}`}
+                    className="min-h-10 px-2 text-fg-muted hover:text-fg"
+                  >
+                    Delete
+                  </Button>
+                </ItemActionGroup>
+              }
+            />
           </li>
         ))}
       </ul>
-    </section>
+    </CollectionGroup>
   );
 }
 
@@ -795,9 +800,8 @@ function DocumentList({
 }) {
   if (documents.length === 0) return null;
   return (
-    <section>
-      <SectionHeading className="mb-3">Documents</SectionHeading>
-      <ul className="space-y-2">
+    <CollectionGroup title="Documents" count={documents.length}>
+      <ul className="border-x border-border">
         {documents.map((d) => (
           <DocumentListItem key={d.id} document={d} />
         ))}
@@ -816,7 +820,7 @@ function DocumentList({
           {query.isFetchingNextPage ? 'Loading…' : 'Load more'}
         </Button>
       ) : null}
-    </section>
+    </CollectionGroup>
   );
 }
 
@@ -851,49 +855,51 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
       normalizeDocumentSummary(document.provenance.summary, document.name, title));
 
   return (
-    <li className="grid gap-3 rounded-lg border border-border bg-card px-3 py-2.5 transition-colors hover:border-border-strong lg:grid-cols-[minmax(0,1fr)_auto]">
-      <div className="min-w-0">
-        <DocumentTitleRow
-          document={document}
-          fileKind={fileKind}
-          title={title}
-          storedName={usingFriendlyTitle ? truncateFilenameMiddle(document.name) : null}
-          fullStoredName={usingFriendlyTitle ? document.name : null}
-        />
-        <DocumentMetaLine items={metaItems} />
-        {summary ? (
-          <p className="mt-2 line-clamp-1 text-xs text-muted-foreground">{summary}</p>
-        ) : null}
-      </div>
-      <div className="flex items-center justify-between gap-2 lg:justify-end">
-        <div className="flex flex-wrap items-center gap-2">
-          <SourceBadge source={source} />
-          <ProcessingBadge status={status} optimistic={document.optimistic === true} />
-          <VisibilityBadge visibility={document.visibility} />
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {sourceEventId ? (
-            <EvidenceLink
-              eventId={sourceEventId}
-              previewText={summary}
-              source={document.provenance.source}
-              occurredAt={document.provenance.occurredAt}
-              className="inline-flex h-8 items-center gap-1 rounded-sm border border-border px-2 text-xs text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"
-            >
-              <Link2 className="size-3.5" />
-              Event
-            </EvidenceLink>
-          ) : null}
-          <span className="hidden text-xs text-fg-dim sm:inline">{updatedAt}</span>
-          {!document.optimistic ? (
-            <PinOverflowMenu
-              target={{ kind: 'document', key: document.id }}
-              title={title}
-              initialPinned={document.pinned}
-            />
-          ) : null}
-        </div>
-      </div>
+    <li style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 52px' }}>
+      <CollectionRow
+        className="min-h-13"
+        title={
+          <DocumentTitleRow
+            document={document}
+            fileKind={fileKind}
+            title={title}
+            storedName={usingFriendlyTitle ? truncateFilenameMiddle(document.name) : null}
+            fullStoredName={usingFriendlyTitle ? document.name : null}
+          />
+        }
+        context={summary ?? <DocumentMetaLine items={metaItems} />}
+        metadata={
+          <>
+            <SourceBadge source={source} />
+            <ProcessingBadge status={status} optimistic={document.optimistic === true} />
+            <VisibilityBadge visibility={document.visibility} />
+            <span className="hidden text-xs text-fg-dim sm:inline">{updatedAt}</span>
+          </>
+        }
+        actions={
+          <ItemActionGroup label={`Actions for ${title}`}>
+            {sourceEventId ? (
+              <EvidenceLink
+                eventId={sourceEventId}
+                previewText={summary}
+                source={document.provenance.source}
+                occurredAt={document.provenance.occurredAt}
+                className="inline-flex h-8 items-center gap-1 rounded-sm border border-border px-2 text-xs text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"
+              >
+                <Link2 className="size-3.5" />
+                Event
+              </EvidenceLink>
+            ) : null}
+            {!document.optimistic ? (
+              <PinOverflowMenu
+                target={{ kind: 'document', key: document.id }}
+                title={title}
+                initialPinned={document.pinned}
+              />
+            ) : null}
+          </ItemActionGroup>
+        }
+      />
     </li>
   );
 }

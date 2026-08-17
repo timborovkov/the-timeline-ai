@@ -917,7 +917,7 @@ export function EditSavedMeetingForm({
 
   return (
     <details className="space-y-3 text-sm">
-      <summary className="cursor-pointer rounded-sm text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+      <summary className="inline-flex min-h-10 cursor-pointer items-center rounded-sm text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
         Edit saved meeting
       </summary>
       <form aria-busy={pending} onSubmit={onSubmit} className="space-y-4 pt-3">

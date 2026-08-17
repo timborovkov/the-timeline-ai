@@ -16,9 +16,13 @@ import { useEffect, useMemo, useReducer } from 'react';
 import type { GlobalSearchKind, GlobalSearchResult } from '@timeline/shared/search';
 import type { ComponentType, SVGProps, SyntheticEvent } from 'react';
 
+import { CollectionRow } from '@/components/collections/collection-row';
+import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
+import { PageHeader } from '@/components/page-header';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
+import { ItemActionGroup } from '@/components/ui/item-actions';
 import { Skeleton } from '@/components/ui/skeleton';
 import { isSchedulableObjectType } from '@/lib/due-dates';
 import { selectedValues } from '@/lib/filter-values';
@@ -246,71 +250,57 @@ function SearchResultRow({ result }: { result: GlobalSearchResult }) {
   const relatedEvidence = relatedEvidenceLabel(result);
   const objectType = typeof result.metadata?.type === 'string' ? result.metadata.type : '';
   const dueAt = typeof result.metadata?.dueAt === 'string' ? result.metadata.dueAt : null;
-  const content = (
-    <span className="flex min-w-0 items-start gap-3 p-3">
-      <Icon aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-fg-muted" />
-      <span className="min-w-0 flex-1">
-        <span className="flex min-w-0 flex-wrap items-center gap-2">
-          <span className="truncate text-sm font-medium">{result.title}</span>
-          <span className="rounded-sm border border-border px-1.5 py-0.5 text-[11px] text-fg-dim">
-            {kindLabel(result.kind)}
-          </span>
-        </span>
-        <span className="mt-1 line-clamp-2 text-sm text-fg-muted">{result.snippet}</span>
-        <span className="mt-2 flex flex-wrap gap-2 text-[11px] text-fg-dim">
+  const title = result.externalHref ? (
+    <a
+      href={result.externalHref}
+      target="_blank"
+      rel="noreferrer"
+      className="block truncate hover:underline"
+    >
+      {result.title}
+    </a>
+  ) : (
+    <Link href={result.href} className="block truncate hover:underline">
+      {result.title}
+    </Link>
+  );
+  const row = (
+    <CollectionRow
+      className="min-h-13"
+      leading={<Icon aria-hidden="true" className="size-4 shrink-0 text-fg-muted" />}
+      title={title}
+      context={result.snippet}
+      metadata={
+        <>
+          <span className="text-[11px] text-fg-dim">{kindLabel(result.kind)}</span>
           {date ? <span>{date}</span> : null}
           {result.metadata?.source ? <span>{result.metadata.source}</span> : null}
           {result.metadata?.type ? <span>{result.metadata.type}</span> : null}
           {isSchedulableObjectType(objectType) ? (
             <DueDateDisplay value={dueAt} variant="compact" />
           ) : null}
-        </span>
-        {relatedEvidence ? (
-          <span className="mt-2 inline-flex max-w-full rounded-sm border border-border bg-surface px-1.5 py-0.5 text-[11px] text-fg-dim">
-            <span className="truncate">Related evidence · {relatedEvidence}</span>
-          </span>
-        ) : null}
-      </span>
-      {result.externalHref ? (
-        <ExternalLink aria-hidden="true" className="mt-1 size-4 shrink-0 text-fg-dim" />
-      ) : null}
-    </span>
+          {relatedEvidence ? (
+            <span className="truncate text-[11px] text-fg-dim">Evidence · {relatedEvidence}</span>
+          ) : null}
+        </>
+      }
+      actions={
+        result.externalHref ? (
+          <ExternalLink aria-hidden="true" className="size-4 text-fg-dim" />
+        ) : result.pinTarget ? (
+          <ItemActionGroup label={`Actions for ${result.title}`}>
+            <PinOverflowMenu
+              target={result.pinTarget}
+              title={result.title}
+              initialPinned={result.pinned ?? false}
+            />
+          </ItemActionGroup>
+        ) : null
+      }
+    />
   );
 
-  if (result.externalHref) {
-    return (
-      <li>
-        <a
-          href={result.externalHref}
-          target="_blank"
-          rel="noreferrer"
-          className="block border-b border-border transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-strong"
-        >
-          {content}
-        </a>
-      </li>
-    );
-  }
-
-  return (
-    <li className="flex items-center border-b border-border transition-colors hover:bg-surface">
-      <Link
-        href={result.href}
-        className="min-w-0 flex-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-strong"
-      >
-        {content}
-      </Link>
-      {result.pinTarget ? (
-        <div className="mr-2 shrink-0">
-          <PinOverflowMenu
-            target={result.pinTarget}
-            title={result.title}
-            initialPinned={result.pinned ?? false}
-          />
-        </div>
-      ) : null}
-    </li>
-  );
+  return <li>{row}</li>;
 }
 
 function SearchResultsLoading() {
@@ -447,90 +437,149 @@ export function GlobalSearchPage({
 
   return (
     <div className="space-y-5">
-      <header className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Search</h1>
-        <p className="text-sm text-fg-muted">
-          Search pages, workspace objects, tasks, boards, calendar, timeline events, and documents.
-        </p>
-      </header>
+      <PageHeader
+        variant="collection"
+        title="Search"
+        subtitle="Search pages, workspace objects, tasks, boards, calendar, timeline events, and documents."
+      />
 
-      <form onSubmit={submit} className="relative">
-        <label htmlFor="global-search-query" className="sr-only">
-          Search everything
-        </label>
-        <Search
-          aria-hidden="true"
-          className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-fg-dim"
+      <form onSubmit={submit}>
+        <CollectionToolbar
+          count={resultStatus}
+          search={
+            <div className="relative">
+              <label htmlFor="global-search-query" className="sr-only">
+                Search everything
+              </label>
+              <Search
+                aria-hidden="true"
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-fg-dim"
+              />
+              <input
+                id="global-search-query"
+                type="search"
+                value={state.draft}
+                onChange={(event) => {
+                  dispatch({ type: 'draft', value: event.target.value });
+                }}
+                placeholder="Search everything"
+                className="h-9 w-full rounded-sm border-0 bg-transparent pl-10 pr-24 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 sm:text-sm"
+              />
+              <button
+                type="submit"
+                className="absolute right-2 top-1/2 h-8 -translate-y-1/2 rounded-sm px-3 text-xs text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+              >
+                Search
+              </button>
+            </div>
+          }
+          filters={
+            <div className="flex min-w-0 flex-wrap items-end gap-2">
+              <FilterMultiSelect
+                label="Result types"
+                value={state.typeFilters}
+                onValueChange={(value) => {
+                  dispatch({ type: 'type_filters', value });
+                  replaceSearchUrl({ typeFilters: value });
+                }}
+                placeholder="All results"
+                options={RESULT_TYPE_OPTIONS}
+              />
+              <FilterMultiSelect
+                label="Source"
+                value={state.source}
+                onValueChange={(value) => {
+                  dispatch({ type: 'source', value });
+                  replaceSearchUrl({ source: value });
+                }}
+                placeholder="All sources"
+                options={SOURCE_OPTIONS}
+              />
+              <DateFilterInput
+                label="From"
+                value={state.from}
+                onChange={(value) => {
+                  dispatch({ type: 'from', value });
+                  replaceSearchUrl({ from: value });
+                }}
+              />
+              <DateFilterInput
+                label="To"
+                value={state.to}
+                onChange={(value) => {
+                  dispatch({ type: 'to', value });
+                  replaceSearchUrl({ to: value });
+                }}
+              />
+            </div>
+          }
+          activeFilters={[
+            ...(state.typeFilters
+              ? [
+                  {
+                    key: 'type',
+                    label: 'Type',
+                    value: state.typeFilters,
+                    onRemove: () => {
+                      dispatch({ type: 'type_filters', value: '' });
+                      replaceSearchUrl({ typeFilters: '' });
+                    },
+                  },
+                ]
+              : []),
+            ...(state.source
+              ? [
+                  {
+                    key: 'source',
+                    label: 'Source',
+                    value: state.source,
+                    onRemove: () => {
+                      dispatch({ type: 'source', value: '' });
+                      replaceSearchUrl({ source: '' });
+                    },
+                  },
+                ]
+              : []),
+            ...(state.from
+              ? [
+                  {
+                    key: 'from',
+                    label: 'From',
+                    value: state.from,
+                    onRemove: () => {
+                      dispatch({ type: 'from', value: '' });
+                      replaceSearchUrl({ from: '' });
+                    },
+                  },
+                ]
+              : []),
+            ...(state.to
+              ? [
+                  {
+                    key: 'to',
+                    label: 'To',
+                    value: state.to,
+                    onRemove: () => {
+                      dispatch({ type: 'to', value: '' });
+                      replaceSearchUrl({ to: '' });
+                    },
+                  },
+                ]
+              : []),
+          ]}
+          actions={
+            filterCount > 0 ? (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="h-9 rounded-sm border border-border px-3 text-sm text-fg-muted transition-colors hover:border-border-strong hover:text-fg"
+              >
+                Clear
+              </button>
+            ) : null
+          }
         />
-        <input
-          id="global-search-query"
-          type="search"
-          value={state.draft}
-          onChange={(event) => {
-            dispatch({ type: 'draft', value: event.target.value });
-          }}
-          placeholder="Search everything"
-          className="h-11 w-full rounded-sm border border-border bg-surface pl-10 pr-28 text-base focus-visible:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg sm:text-sm"
-        />
-        <button
-          type="submit"
-          className="absolute right-2 top-1/2 h-8 -translate-y-1/2 rounded-sm px-3 text-xs text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
-        >
-          Search
-        </button>
       </form>
-
-      <div className="grid gap-3 border-y border-border py-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
-        <div className="flex min-w-0 flex-wrap items-end gap-2">
-          <FilterMultiSelect
-            label="Result types"
-            value={state.typeFilters}
-            onValueChange={(value) => {
-              dispatch({ type: 'type_filters', value });
-              replaceSearchUrl({ typeFilters: value });
-            }}
-            placeholder="All results"
-            options={RESULT_TYPE_OPTIONS}
-          />
-          <FilterMultiSelect
-            label="Source"
-            value={state.source}
-            onValueChange={(value) => {
-              dispatch({ type: 'source', value });
-              replaceSearchUrl({ source: value });
-            }}
-            placeholder="All sources"
-            options={SOURCE_OPTIONS}
-          />
-          <DateFilterInput
-            label="From"
-            value={state.from}
-            onChange={(value) => {
-              dispatch({ type: 'from', value });
-              replaceSearchUrl({ from: value });
-            }}
-          />
-          <DateFilterInput
-            label="To"
-            value={state.to}
-            onChange={(value) => {
-              dispatch({ type: 'to', value });
-              replaceSearchUrl({ to: value });
-            }}
-          />
-        </div>
-        <div className="flex flex-wrap items-center gap-2 xl:justify-end xl:pt-[1.125rem]">
-          {filterCount > 0 ? (
-            <button
-              type="button"
-              onClick={clearFilters}
-              className="h-9 rounded-sm border border-border px-3 text-sm text-fg-muted transition-colors hover:border-border-strong hover:text-fg"
-            >
-              Clear
-            </button>
-          ) : null}
-        </div>
-      </div>
 
       {state.warnings.length > 0 ? (
         <div className="rounded-sm border border-border bg-surface px-3 py-2 text-sm text-fg-muted">
@@ -540,7 +589,7 @@ export function GlobalSearchPage({
 
       <section
         aria-labelledby="search-results-heading"
-        className="overflow-hidden rounded-sm border border-border bg-bg"
+        className="overflow-hidden border-x border-border bg-bg"
       >
         <div className="flex items-center justify-between border-b border-border px-3 py-2">
           <h2 id="search-results-heading" className="sr-only">

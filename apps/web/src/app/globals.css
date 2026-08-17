@@ -40,6 +40,9 @@
   --color-signal-fg: var(--signal-fg);
   --color-signal-soft: var(--signal-soft);
   --color-danger: var(--danger);
+  --color-status-progress: var(--status-progress);
+  --color-status-review: var(--status-review);
+  --color-status-success: var(--status-success);
 
   /* Controls use 4px; content panels use 6px. */
   --radius-sm: 4px;
@@ -68,6 +71,9 @@
   --signal-soft: oklch(0.65 0.22 130 / 0.14);
   --danger: oklch(0.55 0.22 25);
   --danger-foreground: oklch(0.99 0.002 240);
+  --status-progress: oklch(0.62 0.14 78);
+  --status-review: oklch(0.58 0.12 255);
+  --status-success: oklch(0.56 0.13 150);
 
   /* Shadcn aliases */
   --background: var(--bg);
@@ -107,6 +113,9 @@
   --signal-soft: oklch(0.9 0.2 130 / 0.16);
   --danger: oklch(0.7 0.2 25);
   --danger-foreground: oklch(0.13 0.005 240);
+  --status-progress: oklch(0.78 0.13 82);
+  --status-review: oklch(0.72 0.11 255);
+  --status-success: oklch(0.73 0.12 150);
 }
 
 /* Keep this unlayered so it outranks Tailwind's layered max-width utility.

@@ -9,12 +9,14 @@ import { toast } from 'sonner';
 import type { ReactNode } from 'react';
 
 import { promoteCapturedFileAction } from '@/app/actions/documents';
+import { CollectionRow } from '@/components/collections/collection-row';
+import { CollectionStatus } from '@/components/collections/collection-status';
+import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { DocumentPreview } from '@/components/documents/document-preview';
 import { EvidenceLink } from '@/components/evidence-link';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
 import { InlineError } from '@/components/inline-error';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
-import { StatusBadge } from '@/components/status-badge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -26,6 +28,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { ItemActionGroup } from '@/components/ui/item-actions';
 import { displaySourceLabel } from '@/lib/display-labels';
 import { selectedValues } from '@/lib/filter-values';
 import { statusLabel } from '@/lib/status-labels';
@@ -275,68 +278,119 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
 
   return (
     <section aria-label="Captured files" className="space-y-4">
-      <fieldset className="grid min-w-0 gap-3 rounded-md border border-border bg-surface p-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
-        <legend className="sr-only">Filter captured files</legend>
-        <div className="flex min-w-0 flex-wrap items-end gap-2">
-          <FilterMultiSelect
-            label="Source"
-            value={uiState.sourceFilter}
-            onValueChange={(value) => {
-              dispatchUi({ type: 'source', value });
-            }}
-            placeholder="All sources"
-            options={sourceOptions}
-          />
-          <FilterMultiSelect
-            label="Type"
-            value={uiState.typeFilter}
-            onValueChange={(value) => {
-              dispatchUi({ type: 'fileType', value });
-            }}
-            placeholder="All types"
-            options={typeOptions}
-          />
-          <FilterMultiSelect
-            label="Status"
-            value={uiState.statusFilter}
-            onValueChange={(value) => {
-              dispatchUi({ type: 'status', value });
-            }}
-            placeholder="All statuses"
-            options={statusOptions}
-          />
-          <FilterSelect
-            label="Date"
-            value={uiState.dateFilter}
-            onChange={(value) => {
-              dispatchUi({ type: 'date', value });
-            }}
-          >
-            <option value={ALL}>Any time</option>
-            <option value="7d">Last 7 days</option>
-            <option value="30d">Last 30 days</option>
-          </FilterSelect>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 xl:justify-end xl:pt-[1.125rem]">
-          <output className="text-xs tabular-nums text-fg-dim" aria-live="polite">
-            {activeFilterCount > 0
-              ? `Showing ${capturedFileCountLabel(visibleFiles.length)} of ${String(loadedFiles.length)}`
-              : `Showing ${capturedFileCountLabel(loadedFiles.length)}`}
-          </output>
-          {activeFilterCount > 0 ? (
+      <CollectionToolbar
+        count={
+          activeFilterCount > 0
+            ? `Showing ${capturedFileCountLabel(visibleFiles.length)} of ${String(loadedFiles.length)}`
+            : `Showing ${capturedFileCountLabel(loadedFiles.length)}`
+        }
+        filters={
+          <div className="flex min-w-0 flex-wrap items-end gap-2">
+            <FilterMultiSelect
+              label="Source"
+              value={uiState.sourceFilter}
+              onValueChange={(value) => {
+                dispatchUi({ type: 'source', value });
+              }}
+              placeholder="All sources"
+              options={sourceOptions}
+            />
+            <FilterMultiSelect
+              label="Type"
+              value={uiState.typeFilter}
+              onValueChange={(value) => {
+                dispatchUi({ type: 'fileType', value });
+              }}
+              placeholder="All types"
+              options={typeOptions}
+            />
+            <FilterMultiSelect
+              label="Status"
+              value={uiState.statusFilter}
+              onValueChange={(value) => {
+                dispatchUi({ type: 'status', value });
+              }}
+              placeholder="All statuses"
+              options={statusOptions}
+            />
+            <FilterSelect
+              label="Date"
+              value={uiState.dateFilter}
+              onChange={(value) => {
+                dispatchUi({ type: 'date', value });
+              }}
+            >
+              <option value={ALL}>Any time</option>
+              <option value="7d">Last 7 days</option>
+              <option value="30d">Last 30 days</option>
+            </FilterSelect>
+          </div>
+        }
+        activeFilters={[
+          ...(uiState.sourceFilter
+            ? [
+                {
+                  key: 'source',
+                  label: 'Source',
+                  value: uiState.sourceFilter,
+                  onRemove: () => {
+                    dispatchUi({ type: 'source', value: '' });
+                  },
+                },
+              ]
+            : []),
+          ...(uiState.typeFilter
+            ? [
+                {
+                  key: 'type',
+                  label: 'Type',
+                  value: uiState.typeFilter,
+                  onRemove: () => {
+                    dispatchUi({ type: 'fileType', value: '' });
+                  },
+                },
+              ]
+            : []),
+          ...(uiState.statusFilter
+            ? [
+                {
+                  key: 'status',
+                  label: 'Status',
+                  value: uiState.statusFilter,
+                  onRemove: () => {
+                    dispatchUi({ type: 'status', value: '' });
+                  },
+                },
+              ]
+            : []),
+          ...(uiState.dateFilter !== ALL
+            ? [
+                {
+                  key: 'date',
+                  label: 'Date',
+                  value: uiState.dateFilter,
+                  onRemove: () => {
+                    dispatchUi({ type: 'date', value: ALL });
+                  },
+                },
+              ]
+            : []),
+        ]}
+        actions={
+          activeFilterCount > 0 ? (
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="sm"
               onClick={() => {
                 dispatchUi({ type: 'clear_filters' });
               }}
             >
-              Clear filters
+              Clear all
             </Button>
-          ) : null}
-        </div>
-      </fieldset>
+          ) : null
+        }
+      />
 
       <Dialog
         open={uiState.promoting !== null}
@@ -344,7 +398,7 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
           if (!open) dispatchUi({ type: 'promote', file: null });
         }}
       >
-        <ul className="overflow-hidden rounded-md border border-border bg-surface divide-y divide-border">
+        <ul className="overflow-hidden border-x border-border bg-surface">
           {visibleFiles.map((file) => (
             <CapturedFileRow
               key={file.id}
@@ -451,15 +505,18 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
     : null;
 
   return (
-    <li className="grid gap-3 px-3 py-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-      <div className="min-w-0">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="grid size-9 shrink-0 place-items-center rounded-sm border border-border bg-surface-2 text-fg-muted">
+    <li style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 52px' }}>
+      <CollectionRow
+        className="min-h-13"
+        leading={
+          <span className="grid size-8 shrink-0 place-items-center rounded-sm bg-surface-2 text-fg-muted">
             <Icon aria-hidden="true" className="size-4" />
           </span>
+        }
+        title={
           <span className="min-w-0">
             <span
-              className="block line-clamp-2 break-words text-sm font-semibold leading-5 text-fg"
+              className="block truncate text-sm font-semibold leading-5 text-fg"
               title={presentation.displayTitle}
             >
               {presentation.displayTitle}
@@ -480,63 +537,62 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
               ) : null}
             </span>
           </span>
-        </div>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Badge variant="secondary" className="text-[11px] text-fg-muted">
-            {displaySourceLabel(file.provenance.source)}
-          </Badge>
-          <StatusBadge
-            status={file.currentVersion?.processingStatus ?? 'pending'}
-            label={processingStatusLabel(file.currentVersion?.processingStatus ?? 'pending')}
-            className="text-[11px]"
-          />
-          <Badge variant="outline" className="text-[11px] text-fg-muted">
-            {visibilityLabel(file.visibility)}
-          </Badge>
-          <span className="text-xs tabular-nums text-fg-dim">
-            Updated {formatDate(file.updatedAt)}
-          </span>
-        </div>
-        {file.description ? (
-          <p className="mt-2 line-clamp-2 break-words text-xs leading-5 text-fg-muted">
-            {file.description}
-          </p>
-        ) : null}
-      </div>
-      <div className="flex min-w-0 flex-wrap items-center gap-2 md:justify-end">
-        <PinOverflowMenu
-          target={{ kind: 'document', key: file.id }}
-          title={presentation.displayTitle}
-          initialPinned={file.pinned}
-        />
-        {file.currentVersion?.id &&
-        ['image', 'pdf', 'audio'].includes(documentKindLabel(contentType)) ? (
-          <DocumentPreview
-            target={{ versionId: file.currentVersion.id }}
-            compact
-            label="Preview"
-            className="w-full md:w-auto"
-          />
-        ) : null}
-        {eventId ? (
-          <EvidenceLink
-            eventId={eventId}
-            previewText={file.provenance.summary}
-            source={file.provenance.source}
-            occurredAt={file.provenance.occurredAt}
-            className="inline-flex h-8 items-center gap-1 rounded-sm border border-signal/30 bg-signal-soft px-2 font-mono text-[10px] text-signal transition-colors hover:border-signal/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2"
-          >
-            <Link2 aria-hidden="true" className="size-3.5" />
-            View evidence
-          </EvidenceLink>
-        ) : null}
-        <DialogTrigger asChild>
-          <Button type="button" variant="outline" size="sm" onClick={onPromote}>
-            <Upload aria-hidden="true" className="mr-2 size-4" />
-            Promote
-          </Button>
-        </DialogTrigger>
-      </div>
+        }
+        context={file.description ?? fileTypeLabel(contentType)}
+        metadata={
+          <>
+            <Badge variant="secondary" className="text-[11px] text-fg-muted">
+              {displaySourceLabel(file.provenance.source)}
+            </Badge>
+            <CollectionStatus
+              value={file.currentVersion?.processingStatus ?? 'pending'}
+              label={processingStatusLabel(file.currentVersion?.processingStatus ?? 'pending')}
+            />
+            <Badge variant="outline" className="text-[11px] text-fg-muted">
+              {visibilityLabel(file.visibility)}
+            </Badge>
+            <span className="text-xs tabular-nums text-fg-dim">
+              Updated {formatDate(file.updatedAt)}
+            </span>
+          </>
+        }
+        actions={
+          <ItemActionGroup label={`Actions for ${presentation.displayTitle}`}>
+            <PinOverflowMenu
+              target={{ kind: 'document', key: file.id }}
+              title={presentation.displayTitle}
+              initialPinned={file.pinned}
+            />
+            {file.currentVersion?.id &&
+            ['image', 'pdf', 'audio'].includes(documentKindLabel(contentType)) ? (
+              <DocumentPreview
+                target={{ versionId: file.currentVersion.id }}
+                compact
+                label="Preview"
+                className="w-full md:w-auto"
+              />
+            ) : null}
+            {eventId ? (
+              <EvidenceLink
+                eventId={eventId}
+                previewText={file.provenance.summary}
+                source={file.provenance.source}
+                occurredAt={file.provenance.occurredAt}
+                className="inline-flex h-8 items-center gap-1 rounded-sm border border-signal/30 bg-signal-soft px-2 font-mono text-[10px] text-signal transition-colors hover:border-signal/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2"
+              >
+                <Link2 aria-hidden="true" className="size-3.5" />
+                View evidence
+              </EvidenceLink>
+            ) : null}
+            <DialogTrigger asChild>
+              <Button type="button" variant="outline" size="sm" onClick={onPromote}>
+                <Upload aria-hidden="true" className="mr-2 size-4" />
+                Promote
+              </Button>
+            </DialogTrigger>
+          </ItemActionGroup>
+        }
+      />
     </li>
   );
 }

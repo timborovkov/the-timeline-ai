@@ -11,6 +11,9 @@ export default defineConfig({
   test: {
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     environment: 'node',
+    // The web suite includes several PGlite and browser-emulation tests. Capping workers keeps
+    // those resource-heavy files from starving interaction tests and tripping false timeouts.
+    maxWorkers: 4,
     env: {
       LOG_LEVEL: 'silent',
       DATABASE_URL: 'postgres://placeholder@localhost:5432/placeholder',

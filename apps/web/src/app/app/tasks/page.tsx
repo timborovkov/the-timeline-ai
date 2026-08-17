@@ -11,6 +11,7 @@ import { EmptyAction } from '@/components/empty-action';
 import { PageHeader } from '@/components/page-header';
 import { TaskBoard } from '@/components/tasks/task-board';
 import { TaskCategoryFilterRefresh } from '@/components/tasks/task-category-filter-refresh';
+import { TaskViewToggle } from '@/components/tasks/task-view-toggle';
 import { WorkFilterBar } from '@/components/work-filter-bar';
 import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -44,7 +45,7 @@ function taskParam(value: string | string[] | undefined): string | null {
 
 function viewParam(value: string | string[] | undefined): TaskView {
   const v = Array.isArray(value) ? value[0] : value;
-  return v === 'list' ? v : 'kanban';
+  return v === 'kanban' ? 'kanban' : 'list';
 }
 
 export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'>) {
@@ -145,6 +146,7 @@ export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'
       }
     >
       <PageHeader
+        variant="collection"
         title="Tasks"
         subtitle="Assigned work and follow-ups from your timeline."
         metadata={[
@@ -175,7 +177,7 @@ export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'
               ]
             : []),
         ]}
-        className={rows.length > 0 ? 'w-full shrink-0 px-4 pt-5 md:px-8' : 'shrink-0'}
+        className={rows.length > 0 ? 'w-full shrink-0 px-4 md:px-8' : 'shrink-0'}
       />
       <WorkSubnav
         current="/app/tasks"
@@ -193,6 +195,13 @@ export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'
         members={memberOptions}
         projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}
         statusOptions={TASK_STATUS_COLUMNS}
+        viewControls={
+          <TaskViewToggle
+            view={view}
+            selectedTaskId={selectedVisibleTaskId}
+            filterParams={taskLoadFilterParams}
+          />
+        }
       />
 
       {categoryFilterBaseline ? (

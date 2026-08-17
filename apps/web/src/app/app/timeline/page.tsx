@@ -1,9 +1,7 @@
 import { users } from '@timeline/db';
 import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
 import { withTeam } from '@timeline/shared/team-scope';
-import { localDateSpanToUtcRange } from '@timeline/shared/time';
 import { inArray } from 'drizzle-orm';
-import { ChevronDown } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -11,6 +9,7 @@ import type { Metadata } from 'next';
 import type { ComponentProps } from 'react';
 
 import { Coachmark } from '@/components/coachmark';
+import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { DebouncedFilterForm } from '@/components/debounced-filter-form';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
 import { IndexStrip } from '@/components/index-strip';
@@ -26,10 +25,12 @@ import {
   TIMELINE_IMPACT_FILTERS,
   TIMELINE_PRESETS,
   TIMELINE_SOURCES,
+  TIMELINE_UPCOMING_DAYS,
   isTimelinePresetActive,
   parseTimelineImpacts,
   parseTimelineOrigins,
   parseTimelineSources,
+  resolveTimelineDateWindow,
   timelineHref,
   timelineLoadedCount,
   timelineLoadedSrLabel,
@@ -84,9 +85,11 @@ type TimelineFeedProps = ComponentProps<typeof TimelineFeed>;
 interface TimelineBaseParams extends Record<string, string | null | undefined> {
   author: string | null;
   from: string | null;
-  to: string | null;
+  impact: string | null;
   mode: string | null;
   origin: string | null;
+  source: string | null;
+  to: string | null;
 }
 
 function parseTimelineMode(input: string | undefined): TimelineMode {
@@ -96,30 +99,6 @@ function parseTimelineMode(input: string | undefined): TimelineMode {
 function parseMomentId(input: string | undefined): string | undefined {
   if (!input || input.length > 500) return undefined;
   return input.startsWith('moment:') ? input : undefined;
-}
-
-function nextDateInput(input: string): string {
-  const d = new Date(`${input}T00:00:00.000Z`);
-  d.setUTCDate(d.getUTCDate() + 1);
-  return d.toISOString().slice(0, 10);
-}
-
-function parseStartOfDay(input: string | undefined, timezone: string): Date | undefined {
-  if (!input || !/^\d{4}-\d{2}-\d{2}$/.test(input)) return undefined;
-  try {
-    return localDateSpanToUtcRange(input, nextDateInput(input), timezone).from;
-  } catch {
-    return undefined;
-  }
-}
-
-function parseEndOfDay(input: string | undefined, timezone: string): Date | undefined {
-  if (!input || !/^\d{4}-\d{2}-\d{2}$/.test(input)) return undefined;
-  try {
-    return localDateSpanToUtcRange(input, nextDateInput(input), timezone).to;
-  } catch {
-    return undefined;
-  }
 }
 
 function parseUuid(input: string | undefined): string | undefined {
@@ -182,9 +161,12 @@ export default async function TimelinePage({ searchParams }: Props) {
   const focusEventId = parseUuid(sp.event);
   const focusMomentId = parseMomentId(sp.moment);
   const mode = parseTimelineMode(sp.mode);
-  const fromFilter = parseStartOfDay(sp.from, timezone);
-  const toFilter = parseStartOfDay(sp.to, timezone);
-  const toQueryFilter = parseEndOfDay(sp.to, timezone);
+  const dateWindow = resolveTimelineDateWindow(sp, timezone);
+  if (dateWindow.wasUpcomingClamped) {
+    redirect(timelineHref(sp, { to: dateWindow.effectiveToInput }));
+  }
+  const fromFilter = dateWindow.from;
+  const toQueryFilter = dateWindow.to;
 
   const [timelinePage, members, sourceFacets] = await Promise.all([
     collectTimelinePage({
@@ -283,7 +265,7 @@ export default async function TimelinePage({ searchParams }: Props) {
   const hasPanelFilters =
     authorFilters.length > 0 ||
     fromFilter !== undefined ||
-    toFilter !== undefined ||
+    Boolean(dateWindow.effectiveToInput) ||
     sourceFilters.length > 0 ||
     originFilters.length > 0 ||
     impactFilters.length > 0;
@@ -360,6 +342,8 @@ export default async function TimelinePage({ searchParams }: Props) {
   const baseParams = {
     author: authorFilterValue || null,
     from: sp.from ?? null,
+    impact: impactFilterValue || null,
+    source: sourceFilterValue || null,
     to: sp.to ?? null,
     event: focusEventId ?? null,
     moment: focusMomentId ?? null,
@@ -428,6 +412,8 @@ export default async function TimelinePage({ searchParams }: Props) {
         isAdmin={isAdmin}
         timezone={timezone}
         mode={mode}
+        todayInput={dateWindow.todayInput}
+        maxUpcomingInput={dateWindow.maxUpcomingInput}
       />
     </div>
   );
@@ -462,6 +448,8 @@ function TimelineBrowserSection({
   isAdmin,
   timezone,
   mode,
+  todayInput,
+  maxUpcomingInput,
 }: {
   sp: SearchParams;
   members: TimelineMember[];
@@ -491,6 +479,8 @@ function TimelineBrowserSection({
   isAdmin: boolean;
   timezone: string;
   mode: TimelineMode;
+  todayInput: string;
+  maxUpcomingInput: string;
 }) {
   return (
     <section className="space-y-3">
@@ -507,9 +497,8 @@ function TimelineBrowserSection({
         authorFilterValue={authorFilterValue}
         fromValue={toDateInputValue(sp.from)}
         toValue={toDateInputValue(sp.to)}
-      />
-      <TimelinePresetControls
-        baseParams={baseParams}
+        todayInput={todayInput}
+        maxUpcomingInput={maxUpcomingInput}
         mode={mode}
         eventCount={events.length}
         momentCount={moments?.length ?? events.length}
@@ -583,6 +572,14 @@ function TimelineFilterPanel({
   authorFilterValue,
   fromValue,
   toValue,
+  todayInput,
+  maxUpcomingInput,
+  mode,
+  eventCount,
+  momentCount,
+  sourceFilters,
+  impactFilters,
+  hasOriginFilter,
 }: {
   members: TimelineMember[];
   userMap: TimelineUserMap;
@@ -596,29 +593,35 @@ function TimelineFilterPanel({
   authorFilterValue: string;
   fromValue: string;
   toValue: string;
+  todayInput: string;
+  maxUpcomingInput: string;
+  mode: TimelineMode;
+  eventCount: number;
+  momentCount: number;
+  sourceFilters: ReturnType<typeof parseTimelineSources>;
+  impactFilters: ReturnType<typeof parseTimelineImpacts>;
+  hasOriginFilter: boolean;
 }) {
+  const formId = 'timeline-collection-filters';
+  const upcomingHref = timelineHref(baseParams, {
+    from: todayInput,
+    to: maxUpcomingInput,
+  });
+  const upcomingActive = fromValue === todayInput && toValue === maxUpcomingInput;
+  const upcomingClassName = `inline-flex min-h-9 items-center rounded-sm px-2.5 text-xs font-medium transition-colors ${upcomingActive ? 'bg-signal-soft text-signal' : 'text-fg-muted hover:bg-surface hover:text-fg'}`;
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <h2 className="text-base font-semibold text-fg">Timeline</h2>
-      <details className="group ml-auto min-w-0 text-sm [&[open]]:basis-full" open={hasFilters}>
-        <summary className="ml-auto flex h-9 w-fit cursor-pointer list-none items-center gap-1.5 rounded-sm border border-border bg-surface px-3 text-sm font-medium text-fg-muted transition-colors hover:border-border-strong hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg">
-          <span>Filters{hasFilters ? ' · On' : ''}</span>
-          <ChevronDown
-            aria-hidden="true"
-            className="size-3.5 transition-transform group-open:rotate-180"
-          />
-        </summary>
-        <DebouncedFilterForm
-          basePath="/app/timeline"
-          className="mt-3 grid gap-3 rounded-sm border border-border bg-surface p-3 text-sm xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start"
-        >
-          {baseParams.mode ? <input type="hidden" name="mode" value={baseParams.mode} /> : null}
+    <DebouncedFilterForm id={formId} basePath="/app/timeline">
+      {baseParams.mode ? <input type="hidden" name="mode" value={baseParams.mode} /> : null}
+      <CollectionToolbar
+        count={`${timelinePresetCountLabel(mode, momentCount, eventCount)}${hasFilters ? ' · filtered' : ''}`}
+        filters={
           <div className="flex min-w-0 flex-wrap items-end gap-2">
             <TimelineSourceFilterControls
               key={`timeline-source-filters:${sourceFilterValue}:${originFilterValue}`}
               source={sourceFilterValue}
               origin={originFilterValue}
               originOptions={originOptions}
+              form={formId}
             />
             <FilterMultiSelect
               key={`timeline-impact:${impactFilterValue}`}
@@ -627,6 +630,7 @@ function TimelineFilterPanel({
               defaultValue={impactFilterValue}
               placeholder="All impact"
               options={TIMELINE_IMPACT_FILTERS.map((value) => ({ value, label: value }))}
+              form={formId}
             />
             <FilterMultiSelect
               key={`timeline-author:${authorFilterValue}`}
@@ -641,34 +645,135 @@ function TimelineFilterPanel({
                   label: displayMemberLabel(user),
                 };
               })}
+              form={formId}
             />
-            <TimelineDateField name="from" label="From" value={fromValue} />
-            <TimelineDateField name="to" label="To" value={toValue} />
+            <TimelineDateField name="from" label="From" value={fromValue} form={formId} />
+            <TimelineDateField
+              name="to"
+              label="To"
+              value={toValue}
+              form={formId}
+              max={maxUpcomingInput}
+            />
+            <Link
+              href={upcomingHref}
+              aria-current={upcomingActive ? 'page' : undefined}
+              className={upcomingClassName}
+            >
+              Upcoming · {TIMELINE_UPCOMING_DAYS} days
+            </Link>
           </div>
-          <div className="flex flex-wrap items-center gap-2 xl:justify-end xl:pt-[1.125rem]">
-            {hasPanelFilters ? (
-              <Link
-                href={timelineHref(baseParams, {
-                  author: null,
-                  from: null,
-                  to: null,
-                  source: null,
-                  origin: null,
-                  impact: null,
-                })}
-                className="inline-flex h-9 items-center rounded-sm border border-border bg-bg px-3 text-sm text-fg-muted transition-colors hover:border-border-strong hover:text-fg"
-              >
-                Clear
-              </Link>
-            ) : null}
-          </div>
-        </DebouncedFilterForm>
-      </details>
-    </div>
+        }
+        activeFilters={
+          hasPanelFilters
+            ? [
+                {
+                  key: 'filters',
+                  label: 'Timeline filters',
+                  value: upcomingActive
+                    ? `Upcoming · ${String(TIMELINE_UPCOMING_DAYS)} days`
+                    : 'On',
+                  href: timelineHref(baseParams, {
+                    author: null,
+                    from: null,
+                    to: null,
+                    source: null,
+                    origin: null,
+                    impact: null,
+                  }),
+                },
+              ]
+            : []
+        }
+        actions={
+          <nav aria-label="Timeline presets" className="hidden flex-wrap gap-1.5 lg:flex">
+            <Link
+              href={upcomingHref}
+              aria-current={upcomingActive ? 'page' : undefined}
+              className={upcomingClassName}
+            >
+              Upcoming · {TIMELINE_UPCOMING_DAYS} days
+            </Link>
+            {TIMELINE_PRESETS.map((preset) => {
+              const href =
+                'all' in preset
+                  ? timelineHref(baseParams, { source: null, origin: null, impact: null })
+                  : timelineHref(baseParams, { source: preset.source, origin: null, impact: null });
+              const active = isTimelinePresetActive(preset, {
+                sourceFilters,
+                impactCount: impactFilters.length,
+                hasOriginFilter,
+              });
+              return (
+                <Link
+                  key={preset.label}
+                  href={href}
+                  aria-current={active ? 'page' : undefined}
+                  className={`inline-flex min-h-9 items-center rounded-sm px-2.5 text-xs font-medium transition-colors ${active ? 'bg-signal-soft text-signal' : 'text-fg-muted hover:bg-surface hover:text-fg'}`}
+                >
+                  {preset.label}
+                </Link>
+              );
+            })}
+          </nav>
+        }
+        viewControls={
+          <nav aria-label="Timeline mode" className="flex rounded-sm bg-surface p-0.5">
+            {(
+              [
+                ['moments', 'Moments'],
+                ['events', 'Audit trail'],
+              ] as const
+            ).map(([value, label]) => {
+              const active = mode === value;
+              return (
+                <Link
+                  key={value}
+                  href={timelineHref(baseParams, { mode: value === 'events' ? value : null })}
+                  aria-current={active ? 'page' : undefined}
+                  className={`inline-flex min-h-8 items-center rounded-[3px] px-2.5 text-xs transition-colors ${active ? 'bg-bg text-fg shadow-sm' : 'text-fg-muted hover:text-fg'}`}
+                >
+                  {label}
+                </Link>
+              );
+            })}
+          </nav>
+        }
+      />
+      <div className="sr-only">
+        {hasPanelFilters ? (
+          <Link
+            href={timelineHref(baseParams, {
+              author: null,
+              from: null,
+              to: null,
+              source: null,
+              origin: null,
+              impact: null,
+            })}
+            className="inline-flex h-9 items-center rounded-sm border border-border bg-bg px-3 text-sm text-fg-muted transition-colors hover:border-border-strong hover:text-fg"
+          >
+            Clear
+          </Link>
+        ) : null}
+      </div>
+    </DebouncedFilterForm>
   );
 }
 
-function TimelineDateField({ name, label, value }: { name: string; label: string; value: string }) {
+function TimelineDateField({
+  name,
+  label,
+  value,
+  form,
+  max,
+}: {
+  name: string;
+  label: string;
+  value: string;
+  form?: string;
+  max?: string;
+}) {
   return (
     <label className="flex flex-col gap-1">
       <span className="text-xs font-medium text-fg-muted">{label}</span>
@@ -676,88 +781,10 @@ function TimelineDateField({ name, label, value }: { name: string; label: string
         type="date"
         name={name}
         defaultValue={value}
+        form={form}
+        max={max}
         className="h-9 rounded-sm border border-border bg-bg px-2 text-sm font-mono focus-visible:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
       />
     </label>
-  );
-}
-
-function TimelinePresetControls({
-  baseParams,
-  mode,
-  eventCount,
-  momentCount,
-  sourceFilters,
-  impactFilters,
-  hasOriginFilter,
-}: {
-  baseParams: TimelineBaseParams;
-  mode: TimelineMode;
-  eventCount: number;
-  momentCount: number;
-  sourceFilters: ReturnType<typeof parseTimelineSources>;
-  impactFilters: ReturnType<typeof parseTimelineImpacts>;
-  hasOriginFilter: boolean;
-}) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-y border-border py-2">
-      <nav aria-label="Timeline presets" className="flex flex-wrap gap-1.5">
-        {TIMELINE_PRESETS.map((preset) => {
-          const href =
-            'all' in preset
-              ? timelineHref(baseParams, { source: null, origin: null, impact: null })
-              : timelineHref(baseParams, {
-                  source: preset.source,
-                  origin: null,
-                  impact: null,
-                });
-          const active = isTimelinePresetActive(preset, {
-            sourceFilters,
-            impactCount: impactFilters.length,
-            hasOriginFilter,
-          });
-          return (
-            <Link
-              key={preset.label}
-              href={href}
-              aria-current={active ? 'page' : undefined}
-              className={`inline-flex min-h-8 items-center rounded-sm border px-2.5 text-xs font-medium transition-colors ${
-                active
-                  ? 'border-signal/50 bg-signal-soft text-signal'
-                  : 'border-border text-fg-muted hover:bg-surface hover:text-fg'
-              }`}
-            >
-              {preset.label}
-            </Link>
-          );
-        })}
-      </nav>
-      <p className="min-w-0 flex-1 text-xs leading-5 text-fg-dim md:text-right">
-        {timelinePresetCountLabel(mode, momentCount, eventCount)}
-      </p>
-      <nav
-        aria-label="Timeline mode"
-        className="flex rounded-sm border border-border bg-surface p-0.5"
-      >
-        {[
-          ['moments', 'Moments'],
-          ['events', 'Audit trail'],
-        ].map(([value, label]) => {
-          const active = mode === value;
-          return (
-            <Link
-              key={value}
-              href={timelineHref(baseParams, { mode: value === 'events' ? value : null })}
-              aria-current={active ? 'page' : undefined}
-              className={`inline-flex min-h-7 items-center rounded-[3px] px-2.5 text-xs transition-colors ${
-                active ? 'bg-bg text-fg shadow-sm' : 'text-fg-muted hover:text-fg'
-              }`}
-            >
-              {label}
-            </Link>
-          );
-        })}
-      </nav>
-    </div>
   );
 }

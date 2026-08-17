@@ -126,7 +126,8 @@ describe('CalendarSubscriptionPanel', () => {
 
     render(<CalendarSubscriptionPanel subscription={subscription} />);
 
-    await user.click(screen.getByRole('button', { name: 'Disable URL' }));
+    await user.click(screen.getByRole('button', { name: 'Actions for calendar subscription' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Disable URL' }));
     const dialog = screen.getByRole('dialog', { name: 'Disable calendar URL?' });
     expect(
       within(dialog).getByText('Calendar apps using this URL will stop updating.'),

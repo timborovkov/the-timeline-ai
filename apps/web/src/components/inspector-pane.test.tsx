@@ -118,6 +118,40 @@ describe('InspectorPane', () => {
     opener.remove();
   });
 
+  it('focuses the page fallback when the opener no longer survives refresh', async () => {
+    fakes.inspector.open = true;
+    fakes.inspector.content = {
+      id: 'moment-1',
+      kind: 'Moment',
+      title: 'Removed message',
+      render: () => createElement('p', null, 'Evidence'),
+    };
+    const fallback = document.createElement('h2');
+    fallback.tabIndex = -1;
+    fallback.dataset.inspectorFocusFallback = '';
+    fallback.textContent = 'Timeline';
+    document.body.append(fallback);
+    const opener = document.createElement('button');
+    opener.type = 'button';
+    opener.textContent = 'Open removed message';
+    document.body.append(opener);
+    opener.focus();
+
+    const { rerender } = render(<InspectorPane />);
+    await waitFor(() => {
+      expect(document.activeElement?.getAttribute('aria-label')).toBe('Close inspector');
+    });
+
+    opener.remove();
+    fakes.inspector.open = false;
+    rerender(<InspectorPane />);
+
+    await waitFor(() => {
+      expect(document.activeElement).toBe(fallback);
+    });
+    fallback.remove();
+  });
+
   it('keeps keyboard focus inside the mobile inspector', async () => {
     vi.spyOn(window, 'matchMedia').mockImplementation(
       (query) =>

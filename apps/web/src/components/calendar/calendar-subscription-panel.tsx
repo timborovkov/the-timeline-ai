@@ -15,6 +15,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 
 interface CalendarSubscription {
   prefix: string;
@@ -138,33 +140,35 @@ export function CalendarSubscriptionPanel({
             </p>
           ) : null}
         </div>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={busy}
-          onClick={() => {
-            if (subscription) dispatch({ confirmAction: 'reset' });
-            else void createOrReset();
-          }}
-        >
-          <RefreshCw className="size-4" aria-hidden />
-          {subscription ? 'Reset URL' : 'Create URL'}
-        </Button>
-        {subscription ? (
+        <ItemActionGroup label="Actions for calendar subscription">
           <Button
             type="button"
             size="sm"
-            variant="ghost"
+            variant="outline"
             disabled={busy}
             onClick={() => {
-              dispatch({ confirmAction: 'disable' });
+              if (subscription) dispatch({ confirmAction: 'reset' });
+              else void createOrReset();
             }}
           >
-            <Trash2 className="size-4" aria-hidden />
-            Disable URL
+            <RefreshCw className="size-4" aria-hidden />
+            {subscription ? 'Reset URL' : 'Create URL'}
           </Button>
-        ) : null}
+          {subscription ? (
+            <ItemOverflowMenu targetLabel="calendar subscription">
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                disabled={busy}
+                onSelect={() => {
+                  dispatch({ confirmAction: 'disable' });
+                }}
+              >
+                <Trash2 className="size-4" aria-hidden />
+                Disable URL
+              </DropdownMenuItem>
+            </ItemOverflowMenu>
+          ) : null}
+        </ItemActionGroup>
       </div>
 
       {revealedUrl ? (

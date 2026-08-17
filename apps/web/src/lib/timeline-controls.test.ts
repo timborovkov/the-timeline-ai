@@ -15,6 +15,7 @@ import {
   timelineOriginValue,
   timelinePresetCountLabel,
   timelineSourceValues,
+  resolveTimelineDateWindow,
   updateTimelineSourceSelection,
 } from '@/lib/timeline-controls';
 
@@ -149,6 +150,27 @@ describe('timeline controls', () => {
     expect(timelineHref({ q: 'launch' }, { source: 'slack', impact: null })).toBe(
       '/app/timeline?q=launch&source=slack',
     );
+  });
+
+  it('defaults the archive to now and bounds explicit upcoming ranges to seven days', () => {
+    const now = new Date('2026-08-16T12:34:56.000Z');
+
+    expect(resolveTimelineDateWindow({}, 'Europe/Helsinki', now)).toMatchObject({
+      from: undefined,
+      to: now,
+      todayInput: '2026-08-16',
+      maxUpcomingInput: '2026-08-23',
+      effectiveToInput: '',
+      wasUpcomingClamped: false,
+    });
+    expect(
+      resolveTimelineDateWindow({ from: '2026-08-01', to: '2026-11-14' }, 'Europe/Helsinki', now),
+    ).toMatchObject({
+      from: new Date('2026-07-31T21:00:00.000Z'),
+      to: new Date('2026-08-23T21:00:00.000Z'),
+      effectiveToInput: '2026-08-23',
+      wasUpcomingClamped: true,
+    });
   });
 
   it('uses one primary count matching Moments vs Audit trail mode', () => {

@@ -13,9 +13,10 @@ interface Props {
   source: string;
   origin: string;
   originOptions: readonly TimelineOriginOption[];
+  form?: string;
 }
 
-export function TimelineSourceFilterControls({ source, origin, originOptions }: Props) {
+export function TimelineSourceFilterControls({ source, origin, originOptions, form }: Props) {
   const [selection, setSelection] = useState({ source, origin });
 
   function update(update: Partial<typeof selection>): void {
@@ -33,6 +34,7 @@ export function TimelineSourceFilterControls({ source, origin, originOptions }: 
         }}
         placeholder="All sources"
         options={TIMELINE_SOURCES.map(([value, label]) => ({ value, label }))}
+        form={form}
       />
       {originOptions.length > 0 || selection.origin ? (
         <FilterMultiSelect
@@ -46,6 +48,7 @@ export function TimelineSourceFilterControls({ source, origin, originOptions }: 
           options={originOptions}
           className="min-w-56"
           triggerClassName="max-w-72"
+          form={form}
         />
       ) : null}
     </>

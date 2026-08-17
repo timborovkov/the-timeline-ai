@@ -10,6 +10,7 @@ const fakes = vi.hoisted(() => ({
   captureVisibility: null as 'private' | 'team' | null,
   getCalendarSettings: vi.fn(),
   getWorkAttentionSummary: vi.fn(),
+  getHomeOpenObjectCounts: vi.fn(),
   isPinnedMany: vi.fn(),
   latestDailyDigest: vi.fn(),
   listArtifactClusters: vi.fn(),
@@ -65,7 +66,9 @@ vi.mock('@/components/home/daily-digest-block', () => ({ DailyDigestBlock: () =>
 vi.mock('@/components/home/home-ask-composer', () => ({
   HomeAskComposer: ({ actions }: { actions?: ReactNode }) => <div>{actions}</div>,
 }));
-vi.mock('@/components/onboarding-checklist', () => ({ OnboardingChecklist: () => null }));
+vi.mock('@/components/onboarding-checklist', () => ({
+  OnboardingChecklist: () => <div data-testid="home-onboarding">Team setup checklist</div>,
+}));
 vi.mock('@/components/pins/pinned-workspace-preview', () => ({
   PinnedWorkspacePreview: () => null,
 }));
@@ -80,6 +83,9 @@ vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
 vi.mock('@/lib/db', () => ({ db: {} }));
 vi.mock('@/lib/hub-status', () => ({
   getWorkAttentionSummary: fakes.getWorkAttentionSummary,
+  getHomeOpenObjectCounts: fakes.getHomeOpenObjectCounts,
+  homeOpenObjectTotal: (counts: Record<string, number>) =>
+    Object.entries(counts).reduce((sum, [type, count]) => (type === 'task' ? sum : sum + count), 0),
   homeWorkNeedingAttentionCount: (summary: { overdueTasks: number }) => summary.overdueTasks,
 }));
 vi.mock('@/lib/timeline-captured-files', () => ({
@@ -102,6 +108,14 @@ beforeEach(() => {
     overdueTasks: 0,
     pendingApprovals: 0,
   });
+  fakes.getHomeOpenObjectCounts.mockResolvedValue({
+    task: 0,
+    follow_up: 0,
+    person: 0,
+    company: 0,
+    project: 0,
+    deal: 0,
+  });
   fakes.listEventsPage.mockResolvedValue({ items: [], nextCursor: null });
   fakes.listMembers.mockResolvedValue([]);
   fakes.resolveVisibilityDefault.mockResolvedValue({ visibility: 'team' });
@@ -121,9 +135,15 @@ describe('HomeDashboardPage', () => {
     const html = renderToStaticMarkup(await HomeDashboardPage());
 
     expect(html).toContain('<h1 class="sr-only">Home</h1>');
+    expect(html).toContain('data-testid="home-onboarding"');
+    expect(html.indexOf('data-testid="home-onboarding"')).toBeLessThan(
+      html.indexOf('You’re caught up'),
+    );
     expect(html).toContain('You’re caught up');
     expect(html).not.toContain('href="/app/approvals"');
     expect(html).not.toContain('href="/app/work"');
+    expect(html).not.toContain('href="/app/tasks"');
+    expect(html).not.toContain('href="/app/objects"');
     expect(html).not.toContain('href="/app/team/jobs"');
     expect(html).not.toContain('href="/app/sources"');
     expect(fakes.listRecoverableJobs).not.toHaveBeenCalled();
@@ -153,11 +173,41 @@ describe('HomeDashboardPage', () => {
     expect(fakes.captureVisibility).toBe('private');
   });
 
+  it('lists open tasks and a single open-objects group', async () => {
+    fakes.getHomeOpenObjectCounts.mockResolvedValue({
+      task: 4,
+      follow_up: 0,
+      person: 6,
+      company: 2,
+      project: 1,
+      deal: 0,
+    });
+
+    const html = renderToStaticMarkup(await HomeDashboardPage());
+
+    expect(html).toContain('href="/app/tasks"');
+    expect(html).toContain('open tasks');
+    expect(html).toContain('href="/app/objects"');
+    expect(html).toContain('open objects');
+    expect(html).toContain('People, companies, projects, and more');
+    expect(html).not.toContain('href="/app/objects?type=person"');
+    expect(html).not.toContain('open people');
+    expect(html).not.toContain('open companies');
+    expect(html).not.toContain('open projects');
+    expect(html).not.toContain('open follow-ups');
+    expect(html).not.toContain('open deals');
+  });
+
   it('keeps Home previews bounded and its recent-moments feed static', async () => {
-    renderToStaticMarkup(await HomeDashboardPage());
+    const html = renderToStaticMarkup(await HomeDashboardPage());
 
     expect(fakes.listPins).toHaveBeenCalledWith({ limit: 6 });
-    expect(fakes.listEventsPage).toHaveBeenCalledWith({ limit: 3 });
-    expect(fakes.timelineFeedProps).toMatchObject({ compact: true, live: false, maxMoments: 3 });
+    expect(fakes.listEventsPage).toHaveBeenCalledWith({ limit: 16 });
+    expect(fakes.timelineFeedProps).toMatchObject({ compact: true, live: false, maxMoments: 8 });
+    expect(html).not.toContain('>Attention<');
+    expect(html).not.toContain('>Recent moments<');
+    expect(html).toContain('aria-label="Recent moments"');
+    expect(html).toContain('href="/app/timeline"');
+    expect(html).toContain('Go to the full timeline');
   });
 });

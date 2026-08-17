@@ -746,12 +746,6 @@ describe('TaskBoard', () => {
   it('switches to list view and preserves list mode when opening a task', () => {
     renderBoard(null, [task()], 'list');
 
-    expect(screen.getByRole('link', { name: 'kanban' }).getAttribute('href')).toBe(
-      '/app/tasks?view=kanban',
-    );
-    expect(screen.getByRole('link', { name: 'list' }).getAttribute('href')).toBe(
-      '/app/tasks?view=list',
-    );
     expect(screen.getByRole('link', { name: 'Send proposal' }).getAttribute('href')).toBe(
       '/app/tasks?view=list&task=task-1',
     );
@@ -765,9 +759,6 @@ describe('TaskBoard', () => {
       q: 'proposal',
     });
 
-    expect(screen.getByRole('link', { name: 'kanban' }).getAttribute('href')).toBe(
-      '/app/tasks?assignee=user-1&due=next7&q=proposal&view=kanban&task=task-1',
-    );
     expect(screen.getByRole('link', { name: 'Send proposal' }).getAttribute('href')).toBe(
       '/app/tasks?assignee=user-1&due=next7&q=proposal&view=list&task=task-1',
     );
@@ -1086,13 +1077,32 @@ describe('TaskBoard', () => {
       task({ id: `task-${index}`, canonicalName: `Task ${index}` }),
     );
 
-    renderBoard(null, rows, 'list');
+    const { container } = renderBoard(null, rows, 'list');
 
     expect(screen.getByRole('link', { name: 'Task 4' })).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Task 5' })).toBeNull();
     expect(
       screen.getByText('17 loaded tasks hidden. Narrow the filter to inspect them.'),
     ).toBeTruthy();
+    const list = container.querySelector('[data-task-list]');
+    expect(list).toBeTruthy();
+    expect(list?.className.split(/\s+/)).not.toContain('px-4');
+    expect(list?.className.split(/\s+/)).not.toContain('md:px-8');
+  });
+
+  it('shows project once per list row as the editable control', () => {
+    renderBoard(null, [task()], 'list');
+
+    expect(screen.getAllByText('No project')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Project for Send proposal' })).toBeTruthy();
+  });
+
+  it('keeps kanban cards compact without a redundant Task type label', () => {
+    renderBoard();
+
+    expect(screen.queryByText('Task', { exact: true })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Project for Send proposal' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Send proposal' }).className).toContain('line-clamp-2');
   });
 
   it('bulk assigns selected tasks from list view', async () => {
@@ -1145,7 +1155,7 @@ describe('TaskBoard', () => {
     );
     renderBoard(null, rows, 'list');
 
-    await user.click(screen.getByRole('checkbox', { name: 'Select all visible tasks' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Select all Open tasks' }));
     await user.selectOptions(screen.getByLabelText('Bulk field'), 'category');
     await user.selectOptions(screen.getByLabelText('Bulk category'), 'engineering');
     await user.click(screen.getByRole('button', { name: 'Apply' }));
@@ -1189,7 +1199,8 @@ describe('TaskBoard', () => {
       />,
     );
 
-    await user.selectOptions(screen.getByLabelText('Status for Send proposal'), 'doing');
+    await user.click(screen.getByRole('button', { name: 'Status for Send proposal' }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Status' }), 'doing');
     await waitFor(() => {
       expect(fakes.updateObjectAction).toHaveBeenCalledWith({
         id: 'task-1',
@@ -1197,9 +1208,9 @@ describe('TaskBoard', () => {
       });
     });
     await waitFor(() => {
-      expect(screen.getByLabelText<HTMLSelectElement>('Status for Send proposal').value).toBe(
-        'doing',
-      );
+      expect(
+        screen.getByRole('button', { name: 'Status for Send proposal' }).textContent,
+      ).toContain('In progress');
     });
 
     rerender(
@@ -1214,9 +1225,9 @@ describe('TaskBoard', () => {
       />,
     );
     await waitFor(() => {
-      expect(screen.getByLabelText<HTMLSelectElement>('Status for Send proposal').value).toBe(
-        'doing',
-      );
+      expect(
+        screen.getByRole('button', { name: 'Status for Send proposal' }).textContent,
+      ).toContain('In progress');
     });
 
     rerender(
@@ -1231,7 +1242,9 @@ describe('TaskBoard', () => {
       />,
     );
 
-    expect(screen.getByLabelText<HTMLSelectElement>('Status for Send proposal').value).toBe('done');
+    expect(screen.getByRole('button', { name: 'Status for Send proposal' }).textContent).toContain(
+      'Done',
+    );
   });
 
   it('keeps the latest repeated status edit visible before refreshed rows arrive', async () => {
@@ -1248,14 +1261,16 @@ describe('TaskBoard', () => {
       />,
     );
 
-    await user.selectOptions(screen.getByLabelText('Status for Send proposal'), 'doing');
+    await user.click(screen.getByRole('button', { name: 'Status for Send proposal' }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Status' }), 'doing');
     await waitFor(() => {
-      expect(screen.getByLabelText<HTMLSelectElement>('Status for Send proposal').value).toBe(
-        'doing',
-      );
+      expect(
+        screen.getByRole('button', { name: 'Status for Send proposal' }).textContent,
+      ).toContain('In progress');
     });
 
-    await user.selectOptions(screen.getByLabelText('Status for Send proposal'), 'done');
+    await user.click(screen.getByRole('button', { name: 'Status for Send proposal' }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Status' }), 'done');
     await waitFor(() => {
       expect(fakes.updateObjectAction).toHaveBeenCalledWith({
         id: 'task-1',
@@ -1274,7 +1289,9 @@ describe('TaskBoard', () => {
         nextCursor={null}
       />,
     );
-    expect(screen.getByLabelText<HTMLSelectElement>('Status for Send proposal').value).toBe('done');
+    expect(screen.getByRole('button', { name: 'Status for Send proposal' }).textContent).toContain(
+      'Done',
+    );
 
     rerender(
       <TaskBoard
@@ -1287,6 +1304,8 @@ describe('TaskBoard', () => {
         nextCursor={null}
       />,
     );
-    expect(screen.getByLabelText<HTMLSelectElement>('Status for Send proposal').value).toBe('done');
+    expect(screen.getByRole('button', { name: 'Status for Send proposal' }).textContent).toContain(
+      'Done',
+    );
   });
 });

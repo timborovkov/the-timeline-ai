@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -10,22 +11,43 @@ import type { ComponentProps, ReactNode } from 'react';
 
 const fakes = vi.hoisted(() => ({
   showInspector: vi.fn(),
+  hideInspector: vi.fn(),
+  refresh: vi.fn(),
+  removeConversationalEvent: vi.fn(),
+  toastSuccess: vi.fn(),
 }));
 
-vi.mock('@/app/actions/events', () => ({ removeConversationalEventAction: vi.fn() }));
+vi.mock('@/app/actions/events', () => ({
+  removeConversationalEventAction: fakes.removeConversationalEvent,
+}));
 vi.mock('@/components/documents/document-preview', () => ({
   DocumentPreview: () => createElement('button', { type: 'button' }, 'Preview'),
 }));
 vi.mock('@/components/event-visibility-form', () => ({
-  EventVisibilityForm: () => createElement('div', null),
+  EventVisibilityForm: ({
+    onSaved,
+  }: {
+    onSaved?: (value: { visibility: string; visibilityUserIds: string[] }) => void;
+  }) =>
+    createElement(
+      'button',
+      {
+        type: 'button',
+        onClick: () => onSaved?.({ visibility: 'specific_users', visibilityUserIds: ['user-2'] }),
+      },
+      'Save test visibility',
+    ),
 }));
 vi.mock('@/components/inspector-context', () => ({
   useInspector: () => ({
     open: false,
     content: null,
     show: fakes.showInspector,
+    hide: fakes.hideInspector,
   }),
 }));
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
+vi.mock('sonner', () => ({ toast: { success: fakes.toastSuccess } }));
 
 const { TimelineList } = await import('./timeline-list.js');
 
@@ -36,6 +58,10 @@ interface InspectorContentForTest {
 afterEach(() => {
   cleanup();
   fakes.showInspector.mockClear();
+  fakes.hideInspector.mockClear();
+  fakes.refresh.mockClear();
+  fakes.removeConversationalEvent.mockReset();
+  fakes.toastSuccess.mockClear();
 });
 
 function renderLastInspector(): string {
@@ -64,20 +90,24 @@ function timelineEvent(input: {
   contentText?: string;
   contentAudioUrl?: string | null;
   source?: TimelineEvent['source'];
+  authorUserId?: string | null;
+  visibility?: TimelineEvent['visibility'];
+  visibilityUserIds?: string[] | null;
+  visibilityOwnerUserId?: string | null;
   sourceMetadata?: Record<string, unknown>;
 }): TimelineEvent {
   return {
     id: input.id,
     teamId: 'team-1',
-    authorUserId: null,
+    authorUserId: input.authorUserId ?? null,
     source: input.source ?? 'meeting',
     contentText: input.contentText ?? 'Daily call notes',
     contentAudioUrl: input.contentAudioUrl ?? null,
     occurredAt: input.occurredAt,
     createdAt: input.occurredAt,
-    visibility: 'team',
-    visibilityUserIds: null,
-    visibilityOwnerUserId: null,
+    visibility: input.visibility ?? 'team',
+    visibilityUserIds: input.visibilityUserIds ?? null,
+    visibilityOwnerUserId: input.visibilityOwnerUserId ?? null,
     sourceMetadata: input.sourceMetadata ?? { meeting_id: 'meeting-1', title: 'Daily' },
   };
 }
@@ -171,6 +201,43 @@ describe('TimelineList event anchors', () => {
     expect(html).toContain(`id="ev-${focusedEventId}"`);
     expect(html).toContain(`id="ev-${taskEventId}"`);
     expect(html).toContain('shadow-[inset_3px_0_0_var(--signal)]');
+  });
+});
+
+describe('TimelineList compact home rows', () => {
+  it('links dense rows to the full timeline without evidence chrome', () => {
+    const eventId = '11111111-1111-4111-8111-111111111111';
+    const html = renderTimeline(
+      [timelineEvent({ id: eventId, occurredAt: '2026-06-03T13:04:00.000Z' })],
+      { compact: true },
+    );
+
+    expect(html).toContain(
+      'href="/app/timeline?moment=moment%3Ameeting%3Ameeting-1&amp;event=11111111-1111-4111-8111-111111111111#tm-moment_3Ameeting_3Ameeting-1"',
+    );
+    expect(html).toContain('underline decoration-fg-dim');
+    expect(html).toContain('Daily');
+    expect(html).not.toContain('View evidence');
+    expect(html).not.toContain('Open transcript');
+    expect(html).not.toContain('sticky top-0');
+    expect(html).not.toContain(`id="ev-${eventId}"`);
+  });
+
+  it('deep-links compact rows to the newest event in a grouped moment', () => {
+    const olderEventId = '11111111-1111-4111-8111-111111111111';
+    const newerEventId = '22222222-2222-4222-8222-222222222222';
+    const html = renderTimeline(
+      [
+        timelineEvent({ id: olderEventId, occurredAt: '2026-06-03T13:04:00.000Z' }),
+        timelineEvent({ id: newerEventId, occurredAt: '2026-06-03T13:12:00.000Z' }),
+      ],
+      { compact: true },
+    );
+
+    expect(html).toContain(
+      `href="/app/timeline?moment=moment%3Ameeting%3Ameeting-1&amp;event=${newerEventId}#tm-moment_3Ameeting_3Ameeting-1"`,
+    );
+    expect(html).not.toContain(`event=${olderEventId}`);
   });
 });
 
@@ -412,7 +479,7 @@ describe('TimelineList moment presentation', () => {
     expect(inspector).not.toContain('1 source event');
   });
 
-  it('orders inspector evidence before controls and technical details', () => {
+  it('keeps evidence-owned controls inside the source card before technical details', () => {
     const eventId = '15151515-1515-4151-8151-151515151515';
     render(
       createElement(TimelineList, {
@@ -434,13 +501,142 @@ describe('TimelineList moment presentation', () => {
     fireEvent.click(screen.getByRole('button', { name: /Voice note summary/i }));
     const inspector = renderLastInspector();
     expectTextOrder(inspector, 'Moment', 'Source evidence');
-    expectTextOrder(inspector, 'Source evidence', 'Controls');
-    expectTextOrder(inspector, 'Controls', 'Technical details');
+    expectTextOrder(inspector, 'Source evidence', 'Audio for Meeting evidence');
+    expectTextOrder(inspector, 'Audio for Meeting evidence', 'Technical details');
+    expect(inspector).not.toContain('>Controls<');
+  });
+});
+
+describe('TimelineList evidence-owned actions', () => {
+  it('gives five same-minute Telegram events one matching footer each with no global controls', async () => {
+    const user = userEvent.setup();
+    const events = Array.from({ length: 5 }, (_, index) =>
+      timelineEvent({
+        id: `aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa${index}`,
+        occurredAt: `2026-08-04T12:35:${String(index).padStart(2, '0')}.000Z`,
+        source: 'telegram',
+        contentText: `Telegram message ${index}`,
+        authorUserId: 'user-1',
+        visibilityOwnerUserId: 'user-1',
+        visibility: index === 1 ? 'private' : index === 2 ? 'specific_users' : 'team',
+        visibilityUserIds: index === 2 ? ['user-2', 'user-3'] : null,
+        contentAudioUrl: index === 3 || index === 4 ? `audio-${index}.m4a` : null,
+        sourceMetadata: {
+          tg_chat_id: 'audit-ai',
+          tg_message_id: 100 + index,
+          tg_chat_title: 'AuditAI',
+          tg_sender_name: 'Mikael',
+        },
+      }),
+    );
+    const playable = events[3];
+    if (!playable) throw new Error('Expected playable Telegram evidence.');
+
+    render(
+      <TimelineList
+        events={events}
+        authorMap={new Map()}
+        audioUrlMap={new Map([[playable.id, '/audio/telegram-message.m4a']])}
+        currentUserId="user-1"
+        isAdmin={false}
+        members={[
+          { id: 'user-2', label: 'Alex' },
+          { id: 'user-3', label: 'Sam' },
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Telegram message 4/i }));
+    renderLastInspectorContent();
+
+    expect(
+      screen.getAllByRole('group', { name: /Actions for Telegram evidence .* from Mikael/ }),
+    ).toHaveLength(5);
+    expect(screen.queryByRole('heading', { name: 'Controls' })).toBeNull();
+    expect(screen.getAllByText('Team visibility')).toHaveLength(3);
+    expect(screen.getByText('Private', { selector: 'summary' })).toBeTruthy();
+    expect(screen.getByText('Specific people · 2')).toBeTruthy();
+    expect(
+      screen
+        .getByLabelText(/Audio for Telegram evidence “Telegram message 3”/i)
+        .getAttribute('src'),
+    ).toBe('/audio/telegram-message.m4a');
+    expect(screen.getByText('Audio unavailable for this evidence item.')).toBeTruthy();
+
+    const firstFooter = screen.getAllByRole('group', {
+      name: /Actions for Telegram evidence .* from Mikael/,
+    })[0];
+    if (!firstFooter) throw new Error('Expected the first evidence footer.');
+    await user.click(within(firstFooter).getByText('Team visibility'));
+    await user.click(within(firstFooter).getByRole('button', { name: 'Save test visibility' }));
+    expect(within(firstFooter).getByText('Specific people · 1')).toBeTruthy();
+  });
+
+  it('confirms removal, retains retryable failures, then closes and refreshes on success', async () => {
+    const user = userEvent.setup();
+    const event = timelineEvent({
+      id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      occurredAt: '2026-08-04T12:35:00.000Z',
+      source: 'slack',
+      contentText: 'Remove this captured message',
+      authorUserId: 'user-1',
+      visibilityOwnerUserId: 'user-1',
+      sourceMetadata: {
+        slack_workspace_id: 'workspace-1',
+        slack_channel_id: 'channel-1',
+        slack_message_ts: '123.456',
+        slack_sender_name: 'Mikael',
+      },
+    });
+
+    render(
+      <TimelineList
+        events={[event]}
+        authorMap={new Map()}
+        currentUserId="user-1"
+        isAdmin={false}
+      />,
+    );
+    await user.click(
+      screen.getByRole('button', { name: /^Remove this captured message .*View evidence$/i }),
+    );
+    renderLastInspectorContent();
+
+    const openRemoval = async () => {
+      await user.click(screen.getByRole('button', { name: /Actions for Slack evidence/ }));
+      await user.click(await screen.findByRole('menuitem', { name: 'Remove evidence' }));
+    };
+
+    await openRemoval();
+    expect(
+      screen.getByText(
+        /tombstone this captured Telegram or Slack message and all stored revisions/i,
+      ),
+    ).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Keep evidence' }));
+    expect(fakes.removeConversationalEvent).not.toHaveBeenCalled();
+
+    fakes.removeConversationalEvent.mockResolvedValueOnce({ error: 'Removal failed' });
+    await openRemoval();
+    await user.click(screen.getByRole('button', { name: 'Remove evidence' }));
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toContain('Removal failed');
+    });
+    expect(fakes.hideInspector).not.toHaveBeenCalled();
+
+    fakes.removeConversationalEvent.mockResolvedValueOnce({ ok: true });
+    await openRemoval();
+    await user.click(screen.getByRole('button', { name: 'Remove evidence' }));
+    await waitFor(() => {
+      expect(fakes.hideInspector).toHaveBeenCalledTimes(1);
+      expect(fakes.refresh).toHaveBeenCalledTimes(1);
+      expect(fakes.toastSuccess).toHaveBeenCalledWith('Evidence removed from Timeline');
+    });
   });
 });
 
 describe('TimelineList inspector source caps', () => {
-  it('shows the latest source evidence while keeping controls for hidden older evidence', () => {
+  it('reveals older source evidence in batches without exposing orphaned controls', () => {
     const events = Array.from({ length: 9 }, (_, index) =>
       timelineEvent({
         id: `99999999-9999-4999-8999-99999999999${index}`,
@@ -463,11 +659,19 @@ describe('TimelineList inspector source caps', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: /Meeting note 8/i }));
-    const inspector = renderLastInspector();
-    expect(inspector).toContain('Meeting note 8');
-    expect(inspector).not.toContain('Meeting note 0');
-    expect(inspector).toContain('+ 1 older evidence item');
-    expect(inspector).toContain('/audio/older-audio.m4a');
+    renderLastInspectorContent();
+    expect(screen.getAllByText('Meeting note 8').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Meeting note 0')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Show 1 older evidence item' })).toBeTruthy();
+    expect(screen.queryByLabelText(/Audio for Meeting evidence.*4:00 PM/i)).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show 1 older evidence item' }));
+
+    expect(screen.getByText('Meeting note 0')).toBeTruthy();
+    expect(
+      screen.getByLabelText(/Audio for Meeting evidence.*Meeting note 0/i).getAttribute('src'),
+    ).toBe('/audio/older-audio.m4a');
+    expect(screen.queryByRole('button', { name: /Show .* older evidence/ })).toBeNull();
   });
 
   it('opens long source evidence in a quick-view dialog from the inspector', async () => {

@@ -12,6 +12,7 @@ interface Props {
   children: ReactNode;
   className?: string;
   preservedParams?: Record<string, string>;
+  id?: string;
 }
 
 const EMPTY_PARAMS: Record<string, string> = {};
@@ -30,6 +31,7 @@ export function DebouncedFilterForm({
   children,
   className,
   preservedParams = EMPTY_PARAMS,
+  id,
 }: Props) {
   const router = useRouter();
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -88,6 +90,7 @@ export function DebouncedFilterForm({
 
   return (
     <form
+      id={id}
       onSubmit={onSubmit}
       onChange={(event) => {
         scheduleNavigation(event.currentTarget);

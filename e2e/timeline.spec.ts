@@ -1071,7 +1071,7 @@ test('onboarding checklist supports manual completion, dismissal, and reopening'
   const ownerPage = await newSignedInPage(browser, 'owner');
 
   await ownerPage.goto('/app');
-  await expect(ownerPage.getByText('Next setup step')).toBeVisible();
+  await expect(ownerPage.getByRole('heading', { name: 'Team setup checklist' })).toBeVisible();
   const markNextStep = ownerPage.getByRole('button', { name: /^Mark .+ complete$/ });
   await expect(markNextStep).toBeVisible();
   const completedStepLabel = await markNextStep.getAttribute('aria-label');
@@ -1083,17 +1083,21 @@ test('onboarding checklist supports manual completion, dismissal, and reopening'
   await expect(ownerPage.getByRole('button', { name: completedStepLabel })).toHaveCount(0);
 
   await waitForOnboardingPatch(ownerPage, async () => {
-    await ownerPage.getByRole('button', { name: 'Dismiss setup' }).click();
+    await ownerPage.getByRole('button', { name: 'Hide team setup checklist' }).click();
   });
-  await expect(ownerPage.getByRole('button', { name: 'Reopen setup' })).toBeVisible();
+  await expect(
+    ownerPage.getByRole('button', { name: 'Team setup checklist', exact: true }),
+  ).toBeVisible();
 
   await ownerPage.reload();
-  await expect(ownerPage.getByRole('button', { name: 'Reopen setup' })).toBeVisible();
+  await expect(
+    ownerPage.getByRole('button', { name: 'Team setup checklist', exact: true }),
+  ).toBeVisible();
 
   await waitForOnboardingPatch(ownerPage, async () => {
-    await ownerPage.getByRole('button', { name: 'Reopen setup' }).click();
+    await ownerPage.getByRole('button', { name: 'Team setup checklist', exact: true }).click();
   });
-  await expect(ownerPage.getByText('Next setup step')).toBeVisible();
+  await expect(ownerPage.getByRole('heading', { name: 'Team setup checklist' })).toBeVisible();
 });
 
 test('timeline capture enforces team, private, specific-user, and cross-team visibility', async ({
@@ -1247,11 +1251,11 @@ test('timeline inspector edits visibility and removes conversational events', as
 
     await inspector
       .locator('summary')
-      .filter({ hasText: /^Visibility ·/ })
+      .filter({ hasText: /^Team visibility$/ })
       .click();
-    await inspector.getByRole('combobox').selectOption('private');
-    await inspector.getByRole('button', { name: 'Save' }).click();
-    await expect(inspector.getByText('Saved')).toBeVisible();
+    await inspector.getByLabel('Who can see this evidence?').selectOption('private');
+    await inspector.getByRole('button', { name: 'Save visibility' }).click();
+    await expect(inspector.getByRole('status')).toHaveText('Visibility saved');
     await expect
       .poll(async () => {
         const rows = await sql<{ visibility: string }[]>`
@@ -1265,9 +1269,18 @@ test('timeline inspector edits visibility and removes conversational events', as
       })
       .toBe('private');
 
+    await inspector.getByRole('button', { name: /Actions for Slack evidence/ }).click();
+    await ownerPage.getByRole('menuitem', { name: 'Remove evidence' }).click();
+    await expect(
+      ownerPage.getByText(
+        /tombstone this captured Telegram or Slack message and all stored revisions/i,
+      ),
+    ).toBeVisible();
     await waitForPost(ownerPage, '/app/timeline', () =>
-      inspector.locator('[title="Remove from timeline"]').click(),
+      ownerPage.getByRole('button', { name: 'Remove evidence' }).click(),
     );
+    await expect(inspector).toBeHidden();
+    await expect(ownerPage.getByText('Evidence removed from Timeline')).toBeVisible();
     await expect
       .poll(async () => {
         const rows = await sql<{ deleted: boolean }[]>`

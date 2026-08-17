@@ -20,6 +20,7 @@ import { GenerateGroupTokenForm, GeneratePersonalTokenForm } from '@/components/
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ItemActionGroup } from '@/components/ui/item-actions';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -190,12 +191,16 @@ export default async function TelegramSettingsPage() {
                     </span>
                   </div>
                   {isAdmin ? (
-                    <form action={revokeLinkTokenAction}>
-                      <input type="hidden" name="id" value={t.id} />
-                      <Button type="submit" variant="ghost" size="sm">
-                        Revoke
-                      </Button>
-                    </form>
+                    <ItemActionGroup
+                      label={`Actions for ${t.scope === 'group' ? 'group binding' : 'personal link'} token`}
+                    >
+                      <form action={revokeLinkTokenAction}>
+                        <input type="hidden" name="id" value={t.id} />
+                        <Button type="submit" variant="ghost" size="sm">
+                          Revoke
+                        </Button>
+                      </form>
+                    </ItemActionGroup>
                   ) : null}
                 </li>
               ))}
@@ -239,12 +244,14 @@ export default async function TelegramSettingsPage() {
                     />
                   </div>
                   {isAdmin ? (
-                    <form action={unbindChatAction}>
-                      <input type="hidden" name="id" value={b.id} />
-                      <Button type="submit" variant="ghost" size="sm">
-                        Unbind
-                      </Button>
-                    </form>
+                    <ItemActionGroup label={`Actions for ${b.title ?? 'Unnamed chat'}`}>
+                      <form action={unbindChatAction}>
+                        <input type="hidden" name="id" value={b.id} />
+                        <Button type="submit" variant="ghost" size="sm">
+                          Unbind
+                        </Button>
+                      </form>
+                    </ItemActionGroup>
                   ) : null}
                 </li>
               ))}

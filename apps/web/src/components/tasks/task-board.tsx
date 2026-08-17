@@ -13,6 +13,7 @@ import {
 import { useQueries } from '@tanstack/react-query';
 import { TASK_CATEGORY_OPTIONS, type TaskCategory } from '@timeline/shared/task-categories/types';
 import { presentDueDate } from '@timeline/shared/time';
+import { GripVertical } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -38,7 +39,16 @@ import {
   setTaskCategoryAction,
   updateObjectAction,
 } from '@/app/actions/objects';
-import { ObjectTextFilter } from '@/components/boards/object-text-filter';
+import { CollectionGroup } from '@/components/collections/collection-group';
+import { CollectionRow } from '@/components/collections/collection-row';
+import {
+  CollectionStatus,
+  priorityTone,
+  statusTone,
+} from '@/components/collections/collection-status';
+import { EditableMetadata } from '@/components/collections/editable-metadata';
+import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
+import { SelectionBar } from '@/components/collections/selection-bar';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { ObjectPinButton } from '@/components/objects/object-pin-button';
 import { ObjectRelatedContext } from '@/components/objects/object-related-context';
@@ -47,10 +57,11 @@ import { TaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { useTaskCategoryPolling } from '@/components/tasks/task-category-polling';
 import { TaskCategorySelect } from '@/components/tasks/task-category-select';
 import { TaskProjectSelect } from '@/components/tasks/task-project-select';
+import { taskViewHref, type TaskView } from '@/components/tasks/task-view-toggle';
 import { useAppDialog } from '@/components/ui/app-dialog';
+import { ItemActionGroup } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText } from '@/lib/display-dates';
-import { filterObjectsByText } from '@/lib/object-filter';
 import { objectDetailHref } from '@/lib/object-links';
 import { displayObjectTitle } from '@/lib/object-title';
 import { statusLabel } from '@/lib/status-labels';
@@ -98,7 +109,6 @@ interface TaskPatchOverlay {
   pendingValues: TaskPatchPendingValues;
   patch: TaskPatch;
 }
-type TaskView = 'kanban' | 'list';
 type BulkField = 'status' | 'assignee' | 'due' | 'priority' | 'category';
 
 interface BulkState {
@@ -158,7 +168,6 @@ interface TaskBoardState {
   pagination: TaskPaginationState;
   loadErrorFilterKey: string | null;
   loadError: string | null;
-  filterQuery: string;
   selectedFilterKey: string | null;
   selectedIds: ReadonlySet<string>;
   rowPatches: Record<string, TaskPatchOverlay>;
@@ -183,7 +192,6 @@ type TaskBoardAction =
       nextCursor: string | null;
       filterKey: string;
     }
-  | { type: 'filter'; query: string }
   | { type: 'reset-pagination' }
   | { type: 'selected'; next: SetStateAction<ReadonlySet<string>>; filterKey: string }
   | { type: 'patches'; next: SetStateAction<Record<string, TaskPatchOverlay>> };
@@ -198,7 +206,6 @@ const INITIAL_TASK_BOARD_STATE: TaskBoardState = {
   pagination: { filterKey: null, appendedRows: [], cursor: null },
   loadErrorFilterKey: null,
   loadError: null,
-  filterQuery: '',
   selectedFilterKey: null,
   selectedIds: new Set(),
   rowPatches: {},
@@ -256,8 +263,6 @@ function taskBoardReducer(state: TaskBoardState, action: TaskBoardAction): TaskB
         },
       };
     }
-    case 'filter':
-      return { ...state, filterQuery: action.query };
     case 'reset-pagination':
       return {
         ...state,
@@ -289,16 +294,6 @@ function closeHref(view: TaskView, extraParams: Record<string, string> = {}): st
   return view === 'kanban'
     ? hrefWithParams('/app/tasks', extraParams)
     : taskViewHref(view, null, extraParams);
-}
-
-function taskViewHref(
-  view: TaskView,
-  taskId: string | null,
-  extraParams: Record<string, string> = {},
-): string {
-  const params = new URLSearchParams({ ...extraParams, view });
-  if (taskId) params.set('task', taskId);
-  return `/app/tasks?${params.toString()}`;
 }
 
 function hrefWithParams(basePath: string, params: Record<string, string>): string {
@@ -504,13 +499,10 @@ function useTaskBoardController({
   );
   const [, startTransition] = useTransition();
   const [moveUi, dispatchMoveUi] = useReducer(moveUiReducer, INITIAL_MOVE_UI);
-  const { filterQuery, rowPatches } = boardState;
+  const { rowPatches } = boardState;
   const loadError = boardState.loadErrorFilterKey === filterKey ? boardState.loadError : null;
   const selectedIds =
     boardState.selectedFilterKey === filterKey ? boardState.selectedIds : EMPTY_SELECTED_IDS;
-  const setFilterQuery = useCallback((query: string) => {
-    dispatchBoard({ type: 'filter', query });
-  }, []);
   const setSelectedIds: Dispatch<SetStateAction<ReadonlySet<string>>> = useCallback(
     (next) => {
       dispatchBoard({ type: 'selected', next, filterKey });
@@ -639,10 +631,7 @@ function useTaskBoardController({
       return next;
     });
   }, []);
-  const visibleRows = useMemo(
-    () => filterObjectsByText(effectiveRows, filterQuery, { groupBy: 'status' }),
-    [effectiveRows, filterQuery],
-  );
+  const visibleRows = effectiveRows;
   const selectedTask = selectedTaskId
     ? (effectiveRows.find((row) => row.id === selectedTaskId) ?? null)
     : null;
@@ -833,7 +822,6 @@ function useTaskBoardController({
     canLoadMore,
     dndContextId,
     effectiveRows,
-    filterQuery,
     loadError,
     loadingMore,
     loadMoreTasks,
@@ -843,7 +831,6 @@ function useTaskBoardController({
     selectedTask,
     selectedVisibleIds,
     sensors,
-    setFilterQuery,
     setSelectedIds,
     updateTask,
     updateTasks,
@@ -867,7 +854,6 @@ function TaskBoardView({
   canLoadMore,
   dndContextId,
   effectiveRows,
-  filterQuery,
   loadError,
   loadingMore,
   loadMoreTasks,
@@ -882,7 +868,6 @@ function TaskBoardView({
   selectedTaskPinned = false,
   selectedVisibleIds,
   sensors,
-  setFilterQuery,
   setSelectedIds,
   filterParams = EMPTY_FILTER_PARAMS,
   totalCount,
@@ -913,41 +898,16 @@ function TaskBoardView({
         onDragEnd={onDragEnd}
       >
         <div className="flex h-full min-h-0 min-w-0 flex-col">
-          <div className="flex w-full shrink-0 flex-wrap items-center justify-between gap-3 px-4 py-4 md:px-8">
-            <ObjectTextFilter
-              query={filterQuery}
-              onQueryChange={setFilterQuery}
-              resultCount={visibleRows.length}
-              totalCount={effectiveRows.length}
-            />
-            <div className="flex flex-wrap items-center gap-3">
-              {moveUi.saveState !== 'idle' ? (
-                <output className="text-xs text-fg-dim" aria-live="polite">
-                  {moveUi.saveState === 'saving'
-                    ? `Saving${moveUi.savingCount > 1 ? ` ${moveUi.savingCount} moves` : ''}...`
-                    : 'Saved'}
-                </output>
-              ) : null}
-              <nav className="inline-flex overflow-hidden rounded-sm border border-border">
-                {(['kanban', 'list'] as const).map((nextView) => (
-                  <Link
-                    key={nextView}
-                    href={taskViewHref(nextView, selectedTaskId, filterParams)}
-                    className={`px-3 py-1.5 text-xs ${
-                      view === nextView
-                        ? 'bg-signal text-signal-fg'
-                        : 'bg-bg text-fg-muted hover:text-fg'
-                    }`}
-                  >
-                    {nextView}
-                  </Link>
-                ))}
-              </nav>
-            </div>
-          </div>
+          {moveUi.saveState !== 'idle' ? (
+            <output className="shrink-0 px-2 py-1.5 text-xs text-fg-dim sm:px-3" aria-live="polite">
+              {moveUi.saveState === 'saving'
+                ? `Saving${moveUi.savingCount > 1 ? ` ${moveUi.savingCount} moves` : ''}...`
+                : 'Saved'}
+            </output>
+          ) : null}
           {moveErrors.length > 0 ? (
             <p
-              className="mx-4 mb-3 shrink-0 rounded-sm border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger md:mx-8"
+              className="mx-2 mb-3 shrink-0 rounded-sm border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger sm:mx-3"
               role="alert"
             >
               {moveErrors.length === 1
@@ -958,7 +918,7 @@ function TaskBoardView({
           {view === 'kanban' ? (
             <section
               aria-label="Task status columns"
-              className="flex min-h-0 flex-1 gap-3 overflow-x-auto overflow-y-hidden px-4 pb-2 md:px-8"
+              className="flex min-h-0 flex-1 gap-3 overflow-x-auto overflow-y-hidden px-2 pb-2 sm:px-3"
             >
               {allColumns.map((column) => (
                 <TaskColumn
@@ -969,7 +929,13 @@ function TaskBoardView({
                   savingCardIds={moveUi.savingCardIds}
                   cardErrors={moveUi.cardErrors}
                   members={members}
+                  projects={projects}
                   primaryProjects={hydratedPrimaryProjects}
+                  taskCategoriesEnabled={taskCategoriesEnabled}
+                  onUpdateTask={updateTask}
+                  onProjectChange={updatePrimaryProject}
+                  onProjectChangeCommitted={commitPrimaryProject}
+                  onProjectChangeReverted={revertPrimaryProject}
                   taskHref={(taskId) => taskHref(taskId, filterParams)}
                   pinnedObjectIds={pinnedObjectIdSet}
                 />
@@ -980,6 +946,7 @@ function TaskBoardView({
               rows={visibleRows}
               columns={allColumns}
               members={members}
+              projects={projects}
               primaryProjects={hydratedPrimaryProjects}
               selectedTaskId={selectedTaskId}
               selectedIds={selectedVisibleIds}
@@ -987,12 +954,15 @@ function TaskBoardView({
               onUpdateTask={updateTask}
               onUpdateTasks={updateTasks}
               onUpdateTaskCategories={updateTaskCategories}
+              onProjectChange={updatePrimaryProject}
+              onProjectChangeCommitted={commitPrimaryProject}
+              onProjectChangeReverted={revertPrimaryProject}
               taskCategoriesEnabled={taskCategoriesEnabled}
               filterParams={filterParams}
               pinnedObjectIds={pinnedObjectIdSet}
             />
           )}
-          <div className="flex shrink-0 flex-wrap items-center gap-3 px-4 pb-4 pt-3 md:px-8">
+          <div className="flex shrink-0 flex-wrap items-center gap-3 px-2 pb-4 pt-3 sm:px-3">
             <output className="text-xs text-fg-dim" aria-live="polite">
               {`${effectiveRows.length} loaded of ${totalCount}`}
             </output>
@@ -1054,6 +1024,7 @@ function TaskListView({
   rows,
   columns,
   members,
+  projects,
   primaryProjects,
   selectedTaskId,
   selectedIds,
@@ -1061,6 +1032,9 @@ function TaskListView({
   onUpdateTask,
   onUpdateTasks,
   onUpdateTaskCategories,
+  onProjectChange,
+  onProjectChangeCommitted,
+  onProjectChangeReverted,
   taskCategoriesEnabled,
   filterParams,
   pinnedObjectIds,
@@ -1068,6 +1042,7 @@ function TaskListView({
   rows: objects.ObjectRow[];
   columns: string[];
   members: TaskMemberOption[];
+  projects: TaskMemberOption[];
   primaryProjects: objects.TaskPrimaryProjectRow[];
   selectedTaskId: string | null;
   selectedIds: ReadonlySet<string>;
@@ -1078,13 +1053,16 @@ function TaskListView({
     ids: string[],
     category: TaskCategory | 'automatic',
   ) => Promise<{ failed: number }>;
+  onProjectChange: (taskId: string, project: TaskMemberOption | null) => void;
+  onProjectChangeCommitted: (taskId: string) => void;
+  onProjectChangeReverted: (taskId: string) => void;
   taskCategoriesEnabled: boolean;
   filterParams: Record<string, string>;
   pinnedObjectIds: ReadonlySet<string>;
 }) {
   if (rows.length === 0) {
     return (
-      <p className="mx-4 rounded-sm border border-border bg-surface py-10 text-center text-xs text-fg-dim md:mx-8">
+      <p className="rounded-sm border-y border-border bg-surface py-10 text-center text-xs text-fg-dim">
         No visible tasks
       </p>
     );
@@ -1092,18 +1070,13 @@ function TaskListView({
 
   const renderedRows = rows.slice(0, TASK_BOARD_LIST_RENDER_LIMIT);
   const hiddenRows = rows.length - renderedRows.length;
-  const allVisibleSelected = renderedRows.every((row) => selectedIds.has(row.id));
-
-  function toggleAll(checked: boolean): void {
-    setSelectedIds((current) => {
-      const next = new Set(current);
-      for (const row of renderedRows) {
-        if (checked) next.add(row.id);
-        else next.delete(row.id);
-      }
-      return next;
-    });
-  }
+  const orderedStatuses = Array.from(
+    new Set([...columns, ...renderedRows.map((row) => taskDisplayStatus(row.status))]),
+  );
+  const groupedRows = orderedStatuses.flatMap((status) => {
+    const groupRows = renderedRows.filter((row) => taskDisplayStatus(row.status) === status);
+    return groupRows.length > 0 ? [{ status, rows: groupRows }] : [];
+  });
 
   function toggleOne(id: string, checked: boolean): void {
     setSelectedIds((current) => {
@@ -1115,7 +1088,7 @@ function TaskListView({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4 md:px-8">
+    <div data-task-list className="flex min-h-0 flex-1 flex-col">
       <TaskBulkToolbar
         columns={columns}
         members={members}
@@ -1125,70 +1098,74 @@ function TaskListView({
         onUpdateTaskCategories={onUpdateTaskCategories}
         taskCategoriesEnabled={taskCategoriesEnabled}
       />
-      <div className="min-h-0 flex-1 overflow-auto rounded-sm border border-border bg-surface">
-        <table
-          className={cn(
-            'w-full text-sm',
-            taskCategoriesEnabled ? 'min-w-[780px]' : 'min-w-[620px]',
-          )}
-        >
-          <thead className="sticky top-0 z-10 border-b border-border bg-bg text-left text-xs text-fg-dim">
-            <tr>
-              <th className="w-10 px-3 py-2 font-normal">
-                <input
-                  type="checkbox"
-                  checked={allVisibleSelected}
-                  onChange={(event) => {
-                    toggleAll(event.currentTarget.checked);
-                  }}
-                  aria-label="Select all visible tasks"
-                  className="size-4 rounded-sm border-border"
-                />
-              </th>
-              <th className="px-3 py-2 font-normal">Task</th>
-              <th className="px-3 py-2 font-normal">Status</th>
-              {taskCategoriesEnabled ? <th className="px-3 py-2 font-normal">Category</th> : null}
-              <th className="px-3 py-2 font-normal">Assignee</th>
-              <th className="px-3 py-2 font-normal">Due</th>
-              <th className="px-3 py-2 font-normal">Priority</th>
-              <th className="w-10 px-2 py-2 font-normal">
-                <span className="sr-only">Actions</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {renderedRows.map((row) => (
-              <TaskListRow
-                key={row.id}
-                row={row}
-                columns={columns}
-                members={members}
-                primaryProject={
-                  primaryProjects.find((project) => project.taskId === row.id) ?? null
-                }
-                selected={selectedIds.has(row.id)}
-                highlighted={row.id === selectedTaskId}
-                onSelectedChange={(checked) => {
-                  toggleOne(row.id, checked);
-                }}
-                onUpdateTask={onUpdateTask}
-                taskCategoriesEnabled={taskCategoriesEnabled}
-                filterParams={filterParams}
-                pinned={pinnedObjectIds.has(row.id)}
-              />
-            ))}
-            {hiddenRows > 0 ? (
-              <tr>
-                <td
-                  colSpan={taskCategoriesEnabled ? 8 : 7}
-                  className="bg-bg px-3 py-3 text-center text-xs text-fg-dim"
-                >
-                  {hiddenRows} loaded tasks hidden. Narrow the filter to inspect them.
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
+      <div className="min-h-0 flex-1 overflow-y-auto bg-bg">
+        {groupedRows.map((group) => {
+          const groupSelected = group.rows.every((row) => selectedIds.has(row.id));
+          return (
+            <CollectionGroup
+              key={group.status}
+              title={statusLabel(group.status)}
+              count={group.rows.length}
+              tone={statusTone(group.status)}
+              icon={
+                <CollectionStatus value={group.status} label={statusLabel(group.status)} compact />
+              }
+              actions={
+                <label className="flex min-h-10 items-center px-2">
+                  <span className="sr-only">Select all {statusLabel(group.status)} tasks</span>
+                  <input
+                    type="checkbox"
+                    checked={groupSelected}
+                    onChange={(event) => {
+                      const checked = event.currentTarget.checked;
+                      setSelectedIds((current) => {
+                        const next = new Set(current);
+                        for (const row of group.rows) {
+                          if (checked) next.add(row.id);
+                          else next.delete(row.id);
+                        }
+                        return next;
+                      });
+                    }}
+                    className="size-4 rounded-sm border-border"
+                  />
+                </label>
+              }
+            >
+              <ul>
+                {group.rows.map((row) => (
+                  <TaskListRow
+                    key={row.id}
+                    row={row}
+                    columns={columns}
+                    members={members}
+                    projects={projects}
+                    primaryProject={
+                      primaryProjects.find((project) => project.taskId === row.id) ?? null
+                    }
+                    selected={selectedIds.has(row.id)}
+                    highlighted={row.id === selectedTaskId}
+                    onSelectedChange={(checked) => {
+                      toggleOne(row.id, checked);
+                    }}
+                    onUpdateTask={onUpdateTask}
+                    onProjectChange={onProjectChange}
+                    onProjectChangeCommitted={onProjectChangeCommitted}
+                    onProjectChangeReverted={onProjectChangeReverted}
+                    taskCategoriesEnabled={taskCategoriesEnabled}
+                    filterParams={filterParams}
+                    pinned={pinnedObjectIds.has(row.id)}
+                  />
+                ))}
+              </ul>
+            </CollectionGroup>
+          );
+        })}
+        {hiddenRows > 0 ? (
+          <p className="border-b border-border bg-surface px-3 py-3 text-center text-xs text-fg-dim">
+            {hiddenRows} loaded tasks hidden. Narrow the filter to inspect them.
+          </p>
+        ) : null}
       </div>
     </div>
   );
@@ -1199,11 +1176,15 @@ function TaskListRow({
   row,
   columns,
   members,
+  projects,
   primaryProject,
   selected,
   highlighted,
   onSelectedChange,
   onUpdateTask,
+  onProjectChange,
+  onProjectChangeCommitted,
+  onProjectChangeReverted,
   taskCategoriesEnabled,
   filterParams,
   pinned,
@@ -1211,11 +1192,15 @@ function TaskListRow({
   row: objects.ObjectRow;
   columns: string[];
   members: TaskMemberOption[];
+  projects: TaskMemberOption[];
   primaryProject: objects.TaskPrimaryProjectRow | null;
   selected: boolean;
   highlighted: boolean;
   onSelectedChange: (checked: boolean) => void;
   onUpdateTask: (id: string, patch: TaskPatch) => Promise<{ ok?: boolean; error?: string }>;
+  onProjectChange: (taskId: string, project: TaskMemberOption | null) => void;
+  onProjectChangeCommitted: (taskId: string) => void;
+  onProjectChangeReverted: (taskId: string) => void;
   taskCategoriesEnabled: boolean;
   filterParams: Record<string, string>;
   pinned: boolean;
@@ -1241,123 +1226,195 @@ function TaskListRow({
     });
   }
 
+  const assignee = members.find((member) => member.id === row.assigneeUserId);
+
   return (
-    <tr
-      style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 52px' }}
-      className={cn(
-        'border-t border-border transition-colors hover:bg-bg',
-        highlighted && 'bg-signal-soft',
-      )}
-    >
-      <td className="px-3 py-2 align-top">
-        <input
-          type="checkbox"
-          checked={selected}
-          onChange={(event) => {
-            onSelectedChange(event.currentTarget.checked);
-          }}
-          aria-label={`Select ${displayText(title)}`}
-          className="size-4 rounded-sm border-border"
-        />
-      </td>
-      <td className="min-w-72 px-3 py-2 align-top">
-        <Link
-          href={taskViewHref('list', row.id, filterParams)}
-          className="block whitespace-normal break-words font-medium leading-snug hover:underline"
-        >
-          {displayText(title)}
-        </Link>
-        <div className="mt-1 text-[11px] text-fg-dim">
-          Task{primaryProject ? ` · ${primaryProject.projectName}` : ''}
-        </div>
-        {saving || error ? (
-          <div className="mt-1 text-[11px]">
-            {saving ? <span className="text-fg-dim">Saving {saving}…</span> : null}
-            {error ? <span className="text-danger">{error}</span> : null}
-          </div>
-        ) : null}
-      </td>
-      <td className="min-w-36 px-3 py-2 align-top">
-        <select
-          value={taskDisplayStatus(row.status)}
-          onChange={(event) => {
-            save('status', { status: event.currentTarget.value });
-          }}
-          className="h-8 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-          aria-label={`Status for ${displayText(title)}`}
-        >
-          {columns.map((column) => (
-            <option key={column} value={column}>
-              {statusLabel(column)}
-            </option>
-          ))}
-          {!columns.includes(taskDisplayStatus(row.status)) ? (
-            <option value={row.status}>{statusLabel(row.status)}</option>
-          ) : null}
-        </select>
-      </td>
-      {taskCategoriesEnabled ? (
-        <td className="min-w-40 px-3 py-2 align-top">
-          <TaskCategoryBadge category={row.taskCategory} status={row.taskCategoryStatus} />
-        </td>
-      ) : null}
-      <td className="min-w-40 px-3 py-2 align-top">
-        <select
-          value={row.assigneeUserId ?? ''}
-          onChange={(event) => {
-            save('assignee', { assigneeUserId: event.currentTarget.value || null });
-          }}
-          className="h-8 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-          aria-label={`Assignee for ${displayText(title)}`}
-        >
-          <option value="">Unassigned</option>
-          {members.map((member) => (
-            <option key={member.id} value={member.id}>
-              {member.label}
-            </option>
-          ))}
-        </select>
-      </td>
-      <td className="min-w-36 px-3 py-2 align-top">
-        <input
-          type="date"
-          value={row.dueAt ? dateInputValue(row.dueAt, timezone) : ''}
-          onChange={(event) => {
-            const value = event.currentTarget.value;
-            save('due date', { dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null });
-          }}
-          className="h-8 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-          aria-label={`Due date for ${displayText(title)}`}
-        />
-        <DueDateDisplay value={row.dueAt} variant="field-hint" className="mt-1 block" />
-      </td>
-      <td className="min-w-28 px-3 py-2 align-top">
-        <select
-          value={row.priority ?? ''}
-          onChange={(event) => {
-            save('priority', {
-              priority: event.currentTarget.value ? Number(event.currentTarget.value) : null,
-            });
-          }}
-          className="h-8 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-          aria-label={`Priority for ${displayText(title)}`}
-        >
-          <option value="">None</option>
-          {[1, 2, 3, 4].map((priority) => (
-            <option key={priority} value={priority}>
-              P{priority}
-            </option>
-          ))}
-        </select>
-      </td>
-      <td className="px-2 py-1.5 align-top">
-        <PinOverflowMenu
-          target={{ kind: 'object', key: row.id }}
-          title={displayText(title)}
-          initialPinned={pinned}
-        />
-      </td>
-    </tr>
+    <li style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 44px' }}>
+      <CollectionRow
+        selected={highlighted || selected}
+        leading={
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={(event) => {
+              onSelectedChange(event.currentTarget.checked);
+            }}
+            aria-label={`Select ${displayText(title)}`}
+            className={cn(
+              'size-4 rounded-sm border-border transition-opacity md:opacity-0 md:group-hover/collection-row:opacity-100 md:focus:opacity-100',
+              selected && 'md:opacity-100',
+            )}
+          />
+        }
+        title={
+          <Link
+            href={taskViewHref('list', row.id, filterParams)}
+            className="block truncate hover:underline"
+          >
+            {displayText(title)}
+          </Link>
+        }
+        context={
+          error ? (
+            <span className="text-danger" role="alert">
+              {error}
+            </span>
+          ) : saving ? (
+            <span>Saving {saving}…</span>
+          ) : undefined
+        }
+        metadata={
+          <>
+            <EditableMetadata
+              label={`Status for ${displayText(title)}`}
+              pending={saving === 'status'}
+              value={
+                <CollectionStatus
+                  value={row.status}
+                  label={statusLabel(taskDisplayStatus(row.status))}
+                />
+              }
+              editor={
+                <select
+                  value={taskDisplayStatus(row.status)}
+                  onChange={(event) => {
+                    save('status', { status: event.currentTarget.value });
+                  }}
+                  className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+                  aria-label="Status"
+                >
+                  {columns.map((column) => (
+                    <option key={column} value={column}>
+                      {statusLabel(column)}
+                    </option>
+                  ))}
+                  {!columns.includes(taskDisplayStatus(row.status)) ? (
+                    <option value={row.status}>{statusLabel(row.status)}</option>
+                  ) : null}
+                </select>
+              }
+            />
+            {taskCategoriesEnabled ? (
+              <EditableMetadata
+                label={`Category for ${displayText(title)}`}
+                value={
+                  <TaskCategoryBadge category={row.taskCategory} status={row.taskCategoryStatus} />
+                }
+                editor={
+                  <TaskCategorySelect
+                    taskId={row.id}
+                    category={row.taskCategory}
+                    mode={row.taskCategoryMode}
+                    status={row.taskCategoryStatus}
+                    updatedAt={row.taskCategoryUpdatedAt}
+                  />
+                }
+              />
+            ) : null}
+            <EditableMetadata
+              label={`Project for ${displayText(title)}`}
+              value={primaryProject?.projectName ?? 'No project'}
+              editor={
+                <TaskProjectSelect
+                  taskId={row.id}
+                  projectId={primaryProject?.projectId ?? null}
+                  currentProjectLabel={primaryProject?.projectName}
+                  projectArchived={Boolean(primaryProject?.archivedAt)}
+                  projects={projects}
+                  onProjectChange={(project) => {
+                    onProjectChange(row.id, project);
+                  }}
+                  onProjectChangeCommitted={() => {
+                    onProjectChangeCommitted(row.id);
+                  }}
+                  onProjectChangeReverted={() => {
+                    onProjectChangeReverted(row.id);
+                  }}
+                />
+              }
+            />
+            <EditableMetadata
+              label={`Assignee for ${displayText(title)}`}
+              pending={saving === 'assignee'}
+              value={assignee?.label ?? 'Unassigned'}
+              editor={
+                <select
+                  value={row.assigneeUserId ?? ''}
+                  onChange={(event) => {
+                    save('assignee', { assigneeUserId: event.currentTarget.value || null });
+                  }}
+                  className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+                  aria-label="Assignee"
+                >
+                  <option value="">Unassigned</option>
+                  {members.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.label}
+                    </option>
+                  ))}
+                </select>
+              }
+            />
+            <EditableMetadata
+              label={`Due date for ${displayText(title)}`}
+              pending={saving === 'due date'}
+              value={<DueDateDisplay value={row.dueAt} variant="field-hint" />}
+              editor={
+                <MetadataDateEditor
+                  defaultValue={row.dueAt ? dateInputValue(row.dueAt, timezone) : ''}
+                  onApply={(value) => {
+                    save('due date', {
+                      dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
+                    });
+                  }}
+                />
+              }
+            />
+            <EditableMetadata
+              label={`Priority for ${displayText(title)}`}
+              pending={saving === 'priority'}
+              value={
+                <CollectionStatus
+                  value={row.priority ? `p${row.priority}` : 'none'}
+                  tone={priorityTone(row.priority)}
+                  label={row.priority ? `P${row.priority}` : 'No priority'}
+                />
+              }
+              editor={
+                <select
+                  value={row.priority ?? ''}
+                  onChange={(event) => {
+                    save('priority', {
+                      priority: event.currentTarget.value
+                        ? Number(event.currentTarget.value)
+                        : null,
+                    });
+                  }}
+                  className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+                  aria-label="Priority"
+                >
+                  <option value="">None</option>
+                  {[1, 2, 3, 4].map((priority) => (
+                    <option key={priority} value={priority}>
+                      P{priority}
+                    </option>
+                  ))}
+                </select>
+              }
+            />
+          </>
+        }
+        actions={
+          <ItemActionGroup label={`Actions for ${displayText(title)}`}>
+            <PinOverflowMenu
+              target={{ kind: 'object', key: row.id }}
+              title={displayText(title)}
+              initialPinned={pinned}
+            />
+          </ItemActionGroup>
+        }
+      />
+    </li>
   );
 }
 
@@ -1441,129 +1498,129 @@ function TaskBulkToolbar({
   }
 
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-sm border border-border bg-surface px-3 py-2">
-      <output className="mr-auto text-xs text-fg-dim" aria-live="polite">
-        {selectedCount === 0
-          ? 'Select tasks to edit'
-          : `${selectedCount} ${selectedCount === 1 ? 'task' : 'tasks'} selected`}
-      </output>
-      <select
-        value={bulk.field}
-        onChange={(event) => {
-          dispatchBulk({ type: 'field', field: event.currentTarget.value as BulkField });
+    <>
+      <SelectionBar
+        count={selectedCount}
+        label={selectedCount === 1 ? 'task selected' : 'tasks selected'}
+        onClear={() => {
+          setSelectedIds(new Set());
         }}
-        className="h-8 rounded-sm border border-border bg-bg px-2 text-xs"
-        aria-label="Bulk field"
-      >
-        <option value="assignee">Assignee</option>
-        <option value="due">Due date</option>
-        <option value="priority">Priority</option>
-        <option value="status">Status</option>
-        {taskCategoriesEnabled ? <option value="category">Category</option> : null}
-      </select>
-      {bulk.field === 'status' ? (
-        <select
-          value={bulk.status}
-          onChange={(event) => {
-            dispatchBulk({ type: 'status', status: event.currentTarget.value });
-          }}
-          className="h-8 rounded-sm border border-border bg-bg px-2 text-xs"
-          aria-label="Bulk status"
-        >
-          {columns.map((column) => (
-            <option key={column} value={column}>
-              {statusLabel(column)}
-            </option>
-          ))}
-        </select>
+        className="shrink-0"
+        actions={
+          <>
+            <select
+              value={bulk.field}
+              onChange={(event) => {
+                dispatchBulk({ type: 'field', field: event.currentTarget.value as BulkField });
+              }}
+              className="h-8 rounded-sm border border-border bg-bg px-2 text-xs"
+              aria-label="Bulk field"
+            >
+              <option value="assignee">Assignee</option>
+              <option value="due">Due date</option>
+              <option value="priority">Priority</option>
+              <option value="status">Status</option>
+              {taskCategoriesEnabled ? <option value="category">Category</option> : null}
+            </select>
+            {bulk.field === 'status' ? (
+              <select
+                value={bulk.status}
+                onChange={(event) => {
+                  dispatchBulk({ type: 'status', status: event.currentTarget.value });
+                }}
+                className="h-8 rounded-sm border border-border bg-bg px-2 text-xs"
+                aria-label="Bulk status"
+              >
+                {columns.map((column) => (
+                  <option key={column} value={column}>
+                    {statusLabel(column)}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            {bulk.field === 'assignee' ? (
+              <select
+                value={bulk.assignee}
+                onChange={(event) => {
+                  dispatchBulk({ type: 'assignee', assignee: event.currentTarget.value });
+                }}
+                className="h-8 rounded-sm border border-border bg-bg px-2 text-xs"
+                aria-label="Bulk assignee"
+              >
+                <option value="">Unassigned</option>
+                {members.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.label}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            {bulk.field === 'due' ? (
+              <input
+                type="date"
+                value={bulk.due}
+                onChange={(event) => {
+                  dispatchBulk({ type: 'due', due: event.currentTarget.value });
+                }}
+                className="h-8 rounded-sm border border-border bg-bg px-2 text-xs"
+                aria-label="Bulk due date"
+              />
+            ) : null}
+            {bulk.field === 'priority' ? (
+              <select
+                value={bulk.priority}
+                onChange={(event) => {
+                  dispatchBulk({ type: 'priority', priority: event.currentTarget.value });
+                }}
+                className="h-8 rounded-sm border border-border bg-bg px-2 text-xs"
+                aria-label="Bulk priority"
+              >
+                <option value="">None</option>
+                {[1, 2, 3, 4].map((value) => (
+                  <option key={value} value={value}>
+                    P{value}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            {taskCategoriesEnabled && bulk.field === 'category' ? (
+              <select
+                value={bulk.category}
+                onChange={(event) => {
+                  dispatchBulk({
+                    type: 'category',
+                    category: event.currentTarget.value as TaskCategory | 'automatic',
+                  });
+                }}
+                className="h-8 rounded-sm border border-border bg-bg px-2 text-xs"
+                aria-label="Bulk category"
+              >
+                <option value="automatic">Use automatic category</option>
+                {TASK_CATEGORY_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => void applyBulk()}
+              className="h-8 rounded-sm border border-border bg-bg px-3 text-xs font-medium hover:bg-signal-soft disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {pending ? 'Applying…' : 'Apply'}
+            </button>
+            {dialog.node}
+          </>
+        }
+      />
+      {bulk.message ? (
+        <p className="px-3 py-1.5 text-xs text-fg-dim" role="status">
+          {bulk.message}
+        </p>
       ) : null}
-      {bulk.field === 'assignee' ? (
-        <select
-          value={bulk.assignee}
-          onChange={(event) => {
-            dispatchBulk({ type: 'assignee', assignee: event.currentTarget.value });
-          }}
-          className="h-8 rounded-sm border border-border bg-bg px-2 text-xs"
-          aria-label="Bulk assignee"
-        >
-          <option value="">Unassigned</option>
-          {members.map((member) => (
-            <option key={member.id} value={member.id}>
-              {member.label}
-            </option>
-          ))}
-        </select>
-      ) : null}
-      {bulk.field === 'due' ? (
-        <input
-          type="date"
-          value={bulk.due}
-          onChange={(event) => {
-            dispatchBulk({ type: 'due', due: event.currentTarget.value });
-          }}
-          className="h-8 rounded-sm border border-border bg-bg px-2 text-xs"
-          aria-label="Bulk due date"
-        />
-      ) : null}
-      {bulk.field === 'priority' ? (
-        <select
-          value={bulk.priority}
-          onChange={(event) => {
-            dispatchBulk({ type: 'priority', priority: event.currentTarget.value });
-          }}
-          className="h-8 rounded-sm border border-border bg-bg px-2 text-xs"
-          aria-label="Bulk priority"
-        >
-          <option value="">None</option>
-          {[1, 2, 3, 4].map((value) => (
-            <option key={value} value={value}>
-              P{value}
-            </option>
-          ))}
-        </select>
-      ) : null}
-      {taskCategoriesEnabled && bulk.field === 'category' ? (
-        <select
-          value={bulk.category}
-          onChange={(event) => {
-            dispatchBulk({
-              type: 'category',
-              category: event.currentTarget.value as TaskCategory | 'automatic',
-            });
-          }}
-          className="h-8 rounded-sm border border-border bg-bg px-2 text-xs"
-          aria-label="Bulk category"
-        >
-          <option value="automatic">Use automatic category</option>
-          {TASK_CATEGORY_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      ) : null}
-      <button
-        type="button"
-        disabled={selectedCount === 0 || pending}
-        onClick={() => void applyBulk()}
-        className="h-8 rounded-sm border border-border bg-bg px-3 text-xs font-medium hover:bg-signal-soft disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {pending ? 'Applying…' : 'Apply'}
-      </button>
-      {selectedCount > 0 ? (
-        <button
-          type="button"
-          onClick={() => {
-            setSelectedIds(new Set());
-          }}
-          className="h-8 rounded-sm border border-border bg-bg px-3 text-xs font-medium hover:bg-bg"
-        >
-          Clear
-        </button>
-      ) : null}
-      {bulk.message ? <span className="text-xs text-fg-dim">{bulk.message}</span> : null}
-      {dialog.node}
-    </div>
+    </>
   );
 }
 
@@ -1594,7 +1651,13 @@ function TaskColumn({
   savingCardIds,
   cardErrors,
   members,
+  projects,
   primaryProjects,
+  taskCategoriesEnabled,
+  onUpdateTask,
+  onProjectChange,
+  onProjectChangeCommitted,
+  onProjectChangeReverted,
   taskHref,
   pinnedObjectIds,
 }: {
@@ -1604,7 +1667,13 @@ function TaskColumn({
   savingCardIds: ReadonlySet<string>;
   cardErrors: Record<string, string>;
   members: TaskMemberOption[];
+  projects: TaskMemberOption[];
   primaryProjects: objects.TaskPrimaryProjectRow[];
+  taskCategoriesEnabled: boolean;
+  onUpdateTask: (id: string, patch: TaskPatch) => Promise<{ ok?: boolean; error?: string }>;
+  onProjectChange: (taskId: string, project: TaskMemberOption | null) => void;
+  onProjectChangeCommitted: (taskId: string) => void;
+  onProjectChangeReverted: (taskId: string) => void;
   taskHref: (taskId: string) => string;
   pinnedObjectIds: ReadonlySet<string>;
 }) {
@@ -1617,17 +1686,17 @@ function TaskColumn({
       ref={setNodeRef}
       aria-labelledby={headingId}
       className={cn(
-        'flex h-full w-[min(290px,calc(100vw-4rem))] shrink-0 flex-col rounded-sm border border-border bg-surface p-3',
+        'flex h-full w-[min(260px,calc(100vw-2.5rem))] shrink-0 flex-col rounded-sm border border-border bg-surface p-2',
         isOver && 'border-signal/40 bg-signal-soft',
       )}
     >
-      <div className="mb-3 flex shrink-0 items-baseline justify-between">
+      <div className="mb-2 flex shrink-0 items-baseline justify-between px-0.5">
         <h3 id={headingId} className="text-xs text-fg-dim">
           {statusLabel(id)}
         </h3>
         <span className="text-xs text-fg">{rows.length}</span>
       </div>
-      <ul className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
+      <ul className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto">
         {renderedRows.map((row) => (
           <TaskCard
             key={row.id}
@@ -1637,7 +1706,13 @@ function TaskColumn({
             saving={savingCardIds.has(row.id)}
             error={cardErrors[row.id]}
             members={members}
+            projects={projects}
             primaryProject={primaryProjects.find((project) => project.taskId === row.id) ?? null}
+            taskCategoriesEnabled={taskCategoriesEnabled}
+            onUpdateTask={onUpdateTask}
+            onProjectChange={onProjectChange}
+            onProjectChangeCommitted={onProjectChangeCommitted}
+            onProjectChangeReverted={onProjectChangeReverted}
             pinned={pinnedObjectIds.has(row.id)}
           />
         ))}
@@ -1659,7 +1734,13 @@ function TaskCard({
   saving,
   error,
   members,
+  projects,
   primaryProject,
+  taskCategoriesEnabled,
+  onUpdateTask,
+  onProjectChange,
+  onProjectChangeCommitted,
+  onProjectChangeReverted,
   pinned,
 }: {
   row: objects.ObjectRow;
@@ -1668,7 +1749,13 @@ function TaskCard({
   saving: boolean;
   error?: string;
   members: TaskMemberOption[];
+  projects: TaskMemberOption[];
   primaryProject: objects.TaskPrimaryProjectRow | null;
+  taskCategoriesEnabled: boolean;
+  onUpdateTask: (id: string, patch: TaskPatch) => Promise<{ ok?: boolean; error?: string }>;
+  onProjectChange: (taskId: string, project: TaskMemberOption | null) => void;
+  onProjectChangeCommitted: (taskId: string) => void;
+  onProjectChangeReverted: (taskId: string) => void;
   pinned: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
@@ -1679,51 +1766,170 @@ function TaskCard({
     ? { transform: `translate3d(${String(transform.x)}px,${String(transform.y)}px,0)` }
     : undefined;
   const title = displayObjectTitle(row);
+  const [metadataSaving, setMetadataSaving] = useState(false);
+  const [metadataError, setMetadataError] = useState<string | null>(null);
+  const saveMetadata = (patch: TaskPatch) => {
+    setMetadataSaving(true);
+    setMetadataError(null);
+    void onUpdateTask(row.id, patch)
+      .then((result) => {
+        if (result.error) setMetadataError(result.error);
+      })
+      .catch((cause: unknown) => {
+        setMetadataError(errorMessage(cause, 'Save failed'));
+      })
+      .finally(() => {
+        setMetadataSaving(false);
+      });
+  };
   return (
     <li
       ref={setNodeRef}
-      style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 112px', ...style }}
-      {...attributes}
-      {...listeners}
+      style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 76px', ...style }}
       className={cn(
-        'cursor-grab rounded-sm border border-border bg-bg px-3 py-2 text-sm transition-colors hover:border-border-strong',
+        'rounded-sm border border-border/80 bg-bg px-2 py-1.5 text-sm transition-colors hover:bg-surface',
         selected && 'border-signal bg-signal-soft shadow-[inset_3px_0_0_var(--color-signal)]',
         isDragging && 'opacity-50',
-        saving && 'cursor-progress opacity-80',
+        saving && 'opacity-80',
         error && 'border-danger/50',
       )}
     >
-      <div className="flex min-w-0 items-start gap-1">
+      <div className="flex min-w-0 items-start gap-0.5">
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          disabled={saving}
+          className="-ml-1 inline-flex size-8 shrink-0 cursor-grab items-center justify-center rounded-sm text-fg-dim hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50 active:cursor-grabbing disabled:cursor-progress"
+          aria-label={`Drag ${displayText(title)}`}
+        >
+          <GripVertical aria-hidden="true" className="size-3.5" />
+        </button>
         <Link
           href={href}
-          className="min-w-0 flex-1 whitespace-normal break-words font-medium leading-snug hover:underline"
+          className="min-w-0 flex-1 line-clamp-2 whitespace-normal break-words font-medium leading-snug hover:underline"
         >
           {displayText(title)}
         </Link>
-        <PinOverflowMenu
-          target={{ kind: 'object', key: row.id }}
-          title={displayText(title)}
-          initialPinned={pinned}
-        />
+        <ItemActionGroup label={`Actions for ${displayText(title)}`} className="w-auto shrink-0">
+          <PinOverflowMenu
+            target={{ kind: 'object', key: row.id }}
+            title={displayText(title)}
+            initialPinned={pinned}
+          />
+        </ItemActionGroup>
       </div>
-      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-fg-dim">
-        <span>Task</span>
-        <TaskCategoryBadge category={row.taskCategory} status={row.taskCategoryStatus} />
-        {primaryProject ? (
-          <span className="max-w-full truncate" title={primaryProject.projectName}>
-            {primaryProject.projectName}
-            {primaryProject.archivedAt ? ' · Archived' : ''}
-          </span>
+      <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-0 text-[11px]">
+        {taskCategoriesEnabled ? (
+          <EditableMetadata
+            label={`Category for ${displayText(title)}`}
+            value={
+              <TaskCategoryBadge category={row.taskCategory} status={row.taskCategoryStatus} />
+            }
+            editor={
+              <TaskCategorySelect
+                taskId={row.id}
+                category={row.taskCategory}
+                mode={row.taskCategoryMode}
+                status={row.taskCategoryStatus}
+                updatedAt={row.taskCategoryUpdatedAt}
+              />
+            }
+          />
         ) : null}
-      </div>
-      <div className="mt-2 grid grid-cols-3 gap-px overflow-hidden rounded-sm border border-border bg-border text-[11px]">
-        <CardMeta value={memberLabel(row.assigneeUserId, members)} missing={!row.assigneeUserId} />
-        <CardMeta value={<DueDateDisplay value={row.dueAt} variant="compact" />} />
-        <CardMeta
-          value={row.priority ? `P${row.priority}` : 'No priority'}
-          missing={!row.priority}
+        <EditableMetadata
+          label={`Project for ${displayText(title)}`}
+          value={primaryProject?.projectName ?? 'No project'}
+          editor={
+            <TaskProjectSelect
+              taskId={row.id}
+              projectId={primaryProject?.projectId ?? null}
+              currentProjectLabel={primaryProject?.projectName}
+              projectArchived={Boolean(primaryProject?.archivedAt)}
+              projects={projects}
+              onProjectChange={(project) => {
+                onProjectChange(row.id, project);
+              }}
+              onProjectChangeCommitted={() => {
+                onProjectChangeCommitted(row.id);
+              }}
+              onProjectChangeReverted={() => {
+                onProjectChangeReverted(row.id);
+              }}
+            />
+          }
+        />
+        <EditableMetadata
+          label={`Assignee for ${displayText(title)}`}
+          value={memberLabel(row.assigneeUserId, members)}
+          pending={metadataSaving}
+          editor={
+            <select
+              value={row.assigneeUserId ?? ''}
+              onChange={(event) => {
+                saveMetadata({ assigneeUserId: event.currentTarget.value || null });
+              }}
+              className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+            >
+              <option value="">Unassigned</option>
+              {members.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.label}
+                </option>
+              ))}
+            </select>
+          }
+        />
+        <EditableMetadata
+          label={`Due date for ${displayText(title)}`}
+          value={<DueDateDisplay value={row.dueAt} variant="compact" />}
+          pending={metadataSaving}
+          editor={
+            <MetadataDateEditor
+              defaultValue={row.dueAt ? row.dueAt.toISOString().slice(0, 10) : ''}
+              onApply={(value) => {
+                saveMetadata({
+                  dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
+                });
+              }}
+            />
+          }
+        />
+        <EditableMetadata
+          label={`Priority for ${displayText(title)}`}
+          value={
+            <CollectionStatus
+              value={row.priority ? `p${row.priority}` : 'none'}
+              tone={priorityTone(row.priority)}
+              label={row.priority ? `P${row.priority}` : 'No priority'}
+            />
+          }
+          pending={metadataSaving}
+          editor={
+            <select
+              value={row.priority ?? ''}
+              onChange={(event) => {
+                saveMetadata({
+                  priority: event.currentTarget.value ? Number(event.currentTarget.value) : null,
+                });
+              }}
+              className="h-10 rounded-sm border border-border bg-bg px-2 text-xs"
+            >
+              <option value="">None</option>
+              {[1, 2, 3, 4].map((priority) => (
+                <option key={priority} value={priority}>
+                  P{priority}
+                </option>
+              ))}
+            </select>
+          }
         />
       </div>
+      {metadataError ? (
+        <p className="mt-1 text-xs text-danger" role="alert">
+          {metadataError}
+        </p>
+      ) : null}
       {error ? <p className="mt-2 text-xs text-danger">{error}</p> : null}
     </li>
   );
@@ -1946,29 +2152,6 @@ function Detail({ label, value }: { label: string; value: ReactNode }) {
         {typeof value === 'string' ? displayText(value) : value}
       </div>
     </div>
-  );
-}
-
-// react-doctor-disable-next-line react-doctor/no-multi-comp -- Tiny local card metadata cell for task cards.
-function CardMeta({
-  value,
-  missing,
-  danger = false,
-}: {
-  value: ReactNode;
-  missing?: boolean;
-  danger?: boolean;
-}) {
-  return (
-    <span
-      className={cn(
-        'truncate bg-bg px-1.5 py-1 text-fg',
-        missing && 'text-fg-dim',
-        danger && 'text-danger',
-      )}
-    >
-      {typeof value === 'string' ? displayText(value) : value}
-    </span>
   );
 }
 

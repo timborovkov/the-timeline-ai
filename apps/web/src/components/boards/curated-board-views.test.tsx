@@ -101,8 +101,9 @@ describe('CuratedBoardTable', () => {
       />,
     );
 
+    await user.click(screen.getByRole('button', { name: 'Responsible person for Launch review' }));
     await user.selectOptions(
-      screen.getByLabelText('Responsible person for Launch review'),
+      screen.getByRole('combobox', { name: 'Responsible person' }),
       'user-1',
     );
     await waitFor(() => {
@@ -111,13 +112,16 @@ describe('CuratedBoardTable', () => {
       });
     });
 
-    await user.selectOptions(screen.getByLabelText('Lane for Launch review'), 'lane-2');
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByRole('button', { name: 'Lane for Launch review' }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Lane' }), 'lane-2');
     await waitFor(() => {
       expect(fakes.updateItem).toHaveBeenCalledWith('item-1', { laneId: 'lane-2' });
     });
   });
 
-  it('uses the same date-only due timestamp as the detail panel', () => {
+  it('uses the same date-only due timestamp as the detail panel', async () => {
+    const user = userEvent.setup();
     render(
       <CuratedBoardTable
         boardId="board-1"
@@ -129,9 +133,11 @@ describe('CuratedBoardTable', () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText('Due date for Launch review'), {
+    await user.click(screen.getByRole('button', { name: 'Due date for Launch review' }));
+    fireEvent.change(screen.getByLabelText('Due date'), {
       target: { value: '2026-07-04' },
     });
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
 
     expect(fakes.updateItem).toHaveBeenCalledWith('item-1', {
       dueAt: new Date('2026-07-04T00:00:00.000Z'),
@@ -179,8 +185,9 @@ describe('CuratedBoardTable', () => {
       />,
     );
 
+    await user.click(screen.getByRole('button', { name: 'Responsible person for Launch review' }));
     await user.selectOptions(
-      screen.getByLabelText('Responsible person for Launch review'),
+      screen.getByRole('combobox', { name: 'Responsible person' }),
       'user-1',
     );
 
@@ -216,15 +223,24 @@ describe('CuratedBoardTable', () => {
     });
   });
 
-  it('syncs the next step editor when refreshed item props change', () => {
+  it('syncs the next step editor when refreshed item props change', async () => {
+    const user = userEvent.setup();
     const item = { ...boardItem(), nextStep: 'Call customer' };
     const { rerender } = render(
-      <CuratedBoardTable boardId="board-1" view="table" lanes={[]} items={[item]} members={[]} />,
+      <CuratedBoardTable
+        boardId="board-1"
+        view="table"
+        lanes={[]}
+        items={[item]}
+        members={[]}
+        onUpdateItem={fakes.updateItem}
+      />,
     );
 
-    expect(screen.getByLabelText<HTMLInputElement>('Next step for Launch review').value).toBe(
-      'Call customer',
-    );
+    await user.click(screen.getByRole('button', { name: 'Next step for Launch review' }));
+    expect(
+      screen.getByRole<HTMLInputElement>('textbox', { name: 'Next step for Launch review' }).value,
+    ).toBe('Call customer');
 
     rerender(
       <CuratedBoardTable
@@ -233,10 +249,13 @@ describe('CuratedBoardTable', () => {
         lanes={[]}
         items={[{ ...item, nextStep: null }]}
         members={[]}
+        onUpdateItem={fakes.updateItem}
       />,
     );
 
-    expect(screen.getByLabelText<HTMLInputElement>('Next step for Launch review').value).toBe('');
+    expect(
+      screen.getByRole<HTMLInputElement>('textbox', { name: 'Next step for Launch review' }).value,
+    ).toBe('');
   });
 
   it('bulk assigns selected board items in table view', async () => {
@@ -294,8 +313,7 @@ describe('CuratedBoardList', () => {
     );
 
     const title = screen.getByText(longTitle);
-    expect(title.className).toContain('break-words');
-    expect(title.className).not.toContain('truncate');
+    expect(title.className).toContain('truncate');
   });
 
   it('bulk sets due dates for selected board items in list view', async () => {
