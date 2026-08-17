@@ -352,6 +352,11 @@ export function useFinishedJobsInfiniteQuery() {
 
 export function useOnboardingChecklistQuery(initialData?: OnboardingChecklistView) {
   const queryClient = useQueryClient();
+  const seededServerSnapshot = useRef(false);
+  if (initialData && !seededServerSnapshot.current) {
+    queryClient.setQueryData(queryKeys.onboarding(), initialData);
+    seededServerSnapshot.current = true;
+  }
   const { data, isPending, isError, refetch } = useQuery({
     queryKey: queryKeys.onboarding(),
     queryFn: async () =>
