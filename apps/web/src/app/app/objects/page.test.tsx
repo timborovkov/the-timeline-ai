@@ -57,18 +57,22 @@ vi.mock('@/lib/db', () => ({
 vi.mock('@/components/objects/object-cleanup-list', () => ({
   ObjectCleanupList: ({
     pageInfo,
+    nextCursor,
     sectionMoreHrefs,
   }: {
     pageInfo?: {
       shownCount: number;
       nextHref: string | null;
     };
+    nextCursor?: string | null;
     sectionMoreHrefs?: Record<string, string>;
   }) => (
     <div data-testid="object-cleanup-list">
       {pageInfo
         ? `${pageInfo.shownCount}|${pageInfo.nextHref ?? 'none'}`
-        : `sections:${JSON.stringify(sectionMoreHrefs ?? {})}`}
+        : nextCursor
+          ? `cursor:${nextCursor}`
+          : `sections:${JSON.stringify(sectionMoreHrefs ?? {})}`}
     </div>
   ),
 }));
@@ -197,18 +201,15 @@ describe('ObjectsIndexPage', () => {
     expect(fakes.categoryRefresh?.baselineToken).toBe('design:0');
   });
 
-  it('fetches one cursor-paginated object window and preserves filters in page links', async () => {
+  it('fetches one object window and hydrates later pages from the cursor', async () => {
     fakes.listMembers.mockResolvedValue([{ userId: 'user-1' }]);
     fakes.userRows = [{ id: 'user-1', name: 'Ada Lovelace', email: 'ada@example.test' }];
     fakes.listObjects.mockResolvedValue(Array.from({ length: 49 }, (_, index) => objectRow(index)));
-    const cursor = Buffer.from(
-      JSON.stringify({ at: '2026-05-31T10:00:00.000Z', id: objectRow(50).id }),
-      'utf8',
-    ).toString('base64url');
+    fakes.countObjects.mockImplementation((filter: { type?: string }) => (filter.type ? 24 : 847));
 
     const html = renderToStaticMarkup(
       await ObjectsIndexPage({
-        searchParams: Promise.resolve({ type: 'task', status: ' open ', cursor }),
+        searchParams: Promise.resolve({ type: 'task', status: ' open ' }),
       }),
     );
 
@@ -217,11 +218,13 @@ describe('ObjectsIndexPage', () => {
       type: 'task',
       status: ['open'],
       limit: 49,
-      cursor,
+      cursor: null,
     });
     expect(html).toContain('hidden:{&quot;type&quot;:&quot;task&quot;}');
     expect(html).toContain('members:Ada Lovelace');
-    expect(html).toContain('48|/app/objects?type=task&amp;status=open&amp;cursor=');
+    expect(html).toContain('24/847');
+    expect(html).toContain('cursor:');
+    expect(html).not.toContain('&amp;cursor=');
   });
 
   it('shows section previews on the unfiltered index and links large sections to typed pagination', async () => {
@@ -257,7 +260,7 @@ describe('ObjectsIndexPage', () => {
     expect(html).not.toContain('page=2');
   });
 
-  it('ignores invalid cursors and uses a cursor-specific empty state', async () => {
+  it('loads the first object page even when a stale cursor query is present', async () => {
     const cursor = Buffer.from(
       JSON.stringify({ at: '2026-05-31T10:00:00.000Z', id: objectRow(50).id }),
       'utf8',
@@ -273,22 +276,11 @@ describe('ObjectsIndexPage', () => {
       type: 'task',
       status: ['open'],
       limit: 49,
-      cursor,
+      cursor: null,
     });
-    expect(html).toContain('No objects on this page');
-    expect(html).toContain('/app/objects?type=task&amp;status=open');
-    expect(html).toContain('Open first page');
-
-    await ObjectsIndexPage({
-      searchParams: Promise.resolve({ type: 'task', status: 'open', cursor: 'not-a-cursor' }),
-    });
-    expect(fakes.listObjects).toHaveBeenLastCalledWith({
-      archived: false,
-      type: 'task',
-      status: ['open'],
-      limit: 49,
-      cursor: undefined,
-    });
+    expect(html).toContain('No objects match this filter');
+    expect(html).not.toContain('No objects on this page');
+    expect(html).not.toContain('Open first page');
   });
 
   it('preloads merge previews only for the cleanup panel window', async () => {

@@ -243,7 +243,7 @@ describe('daily digest worker', () => {
       db: {},
       digestId: 'digest-1',
       to: 'a@example.test',
-      digestUrl: 'https://timeline-preview.vercel.app/app',
+      digestUrl: 'https://timeline-preview.vercel.app/app/digests?digest=digest-1',
     });
   });
 

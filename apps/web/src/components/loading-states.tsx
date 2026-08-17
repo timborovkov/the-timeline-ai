@@ -25,17 +25,19 @@ export function PageHeaderSkeleton({ action = false }: { action?: boolean }) {
 }
 
 /**
- * Matches {@link CollectionToolbar}: search, count, Filters, optional view
- * toggle, and optional compact add action on one `min-h-11` row.
+ * Matches {@link CollectionToolbar}: optional search, optional count, Filters,
+ * optional view toggle, and optional compact add action on one `min-h-11` row.
  */
 export function CollectionToolbarSkeleton({
   viewSegments = 0,
   action = false,
   search = true,
+  count = true,
 }: {
   viewSegments?: number;
   action?: boolean;
   search?: boolean;
+  count?: boolean;
 }) {
   return (
     <div className="border-b border-border bg-bg" data-loading-toolbar="collection">
@@ -45,7 +47,7 @@ export function CollectionToolbarSkeleton({
             <Skeleton className="h-9 w-full max-w-56" />
           </div>
         ) : null}
-        <Skeleton className="h-3 w-14" />
+        {count ? <Skeleton className="h-3 w-14" /> : null}
         <Skeleton className="h-9 w-16" />
         {viewSegments > 0 ? (
           <div className="ml-auto flex min-h-10 items-center">
@@ -228,7 +230,7 @@ function TimelineRowSkeleton() {
 
 export function TimelineFeedSkeleton({ count = 4 }: { count?: number }) {
   return (
-    <ol className="border-t border-border" aria-busy="true" aria-label="Loading timeline">
+    <ol aria-busy="true" aria-label="Loading timeline">
       {Array.from({ length: count }).map((_, i) => (
         <TimelineRowSkeleton key={i} />
       ))}

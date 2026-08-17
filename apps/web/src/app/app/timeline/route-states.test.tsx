@@ -42,5 +42,6 @@ describe('Timeline route states', () => {
     expect(screen.getByLabelText('Loading timeline page').getAttribute('aria-busy')).toBe('true');
     expect(screen.getByRole('heading', { name: 'Timeline', level: 1 })).toBeTruthy();
     expect(screen.getByRole('region', { name: 'Timeline loading placeholder' })).toBeTruthy();
+    expect(document.querySelector('[data-loading-toolbar="collection"]')).toBeTruthy();
   });
 });

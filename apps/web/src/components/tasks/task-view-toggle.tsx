@@ -1,21 +1,13 @@
 import { CollectionViewToggle } from '@/components/collections/collection-view-toggle';
 
-export type TaskView = 'kanban' | 'list';
+import { taskViewHref, type TaskView } from '@/components/tasks/task-view';
 
-export function taskViewHref(
-  view: TaskView,
-  taskId: string | null,
-  extraParams: Record<string, string> = {},
-): string {
-  const params = new URLSearchParams({ ...extraParams, view });
-  if (taskId) params.set('task', taskId);
-  return `/app/tasks?${params.toString()}`;
-}
+const EMPTY_FILTER_PARAMS: Record<string, string> = {};
 
 export function TaskViewToggle({
   view,
   selectedTaskId,
-  filterParams = {},
+  filterParams = EMPTY_FILTER_PARAMS,
 }: {
   view: TaskView;
   selectedTaskId: string | null;

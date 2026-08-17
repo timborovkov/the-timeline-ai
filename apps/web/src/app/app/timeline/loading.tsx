@@ -1,8 +1,4 @@
-import {
-  CollectionToolbarSkeleton,
-  PageHeaderSkeleton,
-  TimelineFeedSkeleton,
-} from '@/components/loading-states';
+import { CollectionToolbarSkeleton, TimelineFeedSkeleton } from '@/components/loading-states';
 
 export default function TimelineLoading() {
   return (
@@ -10,12 +6,11 @@ export default function TimelineLoading() {
       <output className="sr-only" aria-live="polite">
         Loading timeline
       </output>
-      <div className="space-y-6" aria-busy="true" aria-label="Loading timeline page">
+      <div className="space-y-0" aria-busy="true" aria-label="Loading timeline page">
         <h1 className="sr-only">Timeline</h1>
-        <PageHeaderSkeleton />
         <section aria-label="Timeline loading placeholder" className="space-y-0">
-          <CollectionToolbarSkeleton viewSegments={2} />
-          <TimelineFeedSkeleton count={6} />
+          <CollectionToolbarSkeleton search={false} count={false} viewSegments={2} />
+          <TimelineFeedSkeleton count={8} />
         </section>
       </div>
     </>

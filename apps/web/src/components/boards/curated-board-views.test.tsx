@@ -2,9 +2,11 @@
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { createElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as boards from '@timeline/shared/boards';
+import type { ReactNode } from 'react';
 
 const fakes = vi.hoisted(() => ({
   updateItem: vi.fn(),
@@ -12,6 +14,24 @@ const fakes = vi.hoisted(() => ({
 
 vi.mock('@/app/actions/objects', () => ({
   loadTaskCategoryStatesAction: vi.fn(),
+}));
+vi.mock('@/components/collections/virtual-list', () => ({
+  VirtualList: ({
+    items,
+    renderItem,
+    getItemKey,
+  }: {
+    items: { id: string }[];
+    renderItem: (item: { id: string }, index: number) => ReactNode;
+    getItemKey: (item: { id: string }, index: number) => string;
+  }) =>
+    createElement(
+      'div',
+      null,
+      items.map((item, index) =>
+        createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+      ),
+    ),
 }));
 
 const { CuratedBoardList, CuratedBoardTable } = await import('./curated-board-views.js');

@@ -34,21 +34,41 @@ _Avoid_: Message, activity, log entry
 **Timeline Moment**:
 A user-facing cluster of related raw events shown together on the timeline so
 team members can understand a meaningful slice of work before drilling into
-individual source evidence. The timeline is date-first, with source clusters
-inside each date and impact shown as attached context. Timeline lists should
-show compact signals for extracted file representations; full transcripts,
-OCR text, and visual descriptions belong in event detail, citations, and agent
-tools. User-facing Moments chrome and digests count moments; Audit trail,
-filters, and technical disclosures count source events. Row chips use signals;
-inspectors use evidence items — do not pair moment and raw-event totals in the
-same chrome.
+individual source evidence. Archive rows are Linear-quiet: time, one source
+icon, a title, and at most one muted context line, with sticky dates under the
+filter toolbar. Impact stays in the inspector, not on the row. The archive
+pages older activity through infinite scroll and virtualizes mounted rows;
+Timeline has no inventory chip. Timeline lists should show compact signals for
+extracted file representations; full transcripts, OCR text, and visual
+descriptions belong in event detail, citations, and agent tools. User-facing
+Moments chrome and digests count moments; All events, filters, and technical
+disclosures count source events. Conversation inspectors use evidence items;
+pulses use a compact activity log — do not pair moment and raw-event totals in
+the same chrome. The inspector keeps original source (message, email HTML,
+transcript, webhook/JSON payload) in a collapsed disclosure; attached documents
+link to the document drive. Ask `[ev:]` citations name those raw source events;
+the inspector evidence item shows the matching chip so a cited source can be
+identified without putting IDs on the timeline list. Citation previews open the
+matching workspace destination (transcript, document, calendar event, object,
+or Timeline moment) and reuse the inspector original-source viewer for payloads.
 _Avoid_: Raw Event when referring to the grouped browsing unit
+
+**Timeline event class**:
+A provider-agnostic family for captured events: communication, work record,
+pulse, incident, artifact, or schedule. Native sources, integrations, and
+ingest webhooks all resolve to one class. The class chooses visual weight
+(story, record, pulse), whether `objectMap` may feed artifact identity, and
+how the inspector is laid out. Generic ingest webhooks let an admin set the
+class when creating the webhook; unknown deliveries default to pulse.
+_Avoid_: GitHub event, Sentry event, webhook type when discussing presentation
 
 **Impact Context**:
 The workspace consequences or links attached to a timeline moment, such as
 tasks, boards, objects, calendar events, documents, decisions, follow-ups, or
 pending approvals that were created, changed, referenced, or suggested from the
-underlying evidence. Extracted emails, phone numbers, and labeled addresses can
+underlying evidence. Work records (merged PRs, issue moves, deal stages) also
+surface deterministic structured facts from source metadata. Pulses do not
+invent impact from machine identifiers. Extracted emails, phone numbers, and labeled addresses can
 ride on raw-event metadata as evidence, but emails/phones become useful product
 state only when they are accepted as person identity facets; addresses remain
 location/object metadata unless a later workflow promotes them. Impact Context
@@ -949,7 +969,8 @@ _Avoid_: Operator dashboard, BullMQ dashboard, queue admin
 **Environment Reset**:
 A development-only operational action that destroys all data and derived state
 in a non-production Timeline environment so it can be rebuilt from migrations
-and seed data.
+and seed data. Locally, `pnpm demo:reset` wipes then reseeds the Acme Labs
+demo corpus documented in `docs/demo-corpus.md`.
 _Avoid_: Team reset, clear everything, backup restore
 
 **Integration Audit Log**:
@@ -980,9 +1001,12 @@ _Avoid_: Setup wizard, activation gate
 **Home**:
 The signed-in landing surface for a team member. It leads with Ask, the team
 setup checklist, and actionable attention, keeps capture in a focused dialog,
-and follows with the latest digest, pinned work, and a dense scan of recent
-moments. It does not duplicate the canonical Timeline, Work navigation, or
-Connections management.
+and follows with a folded latest digest, pinned work, and a dense scan of
+recent moments. The digest header is the day; the covering time range stays
+footer metadata. Opened digests show narrative summaries of what changed and
+linked task, object, and calendar rows; Work → Digests lists generated days.
+It does not duplicate the canonical Timeline, Work navigation, or Connections
+management.
 _Avoid_: Timeline when referring to the landing page
 
 **Workspace Time Context**:

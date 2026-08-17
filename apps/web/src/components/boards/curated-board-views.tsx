@@ -14,6 +14,7 @@ import { CollectionStatus, priorityTone } from '@/components/collections/collect
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { SelectionBar } from '@/components/collections/selection-bar';
+import { VirtualList } from '@/components/collections/virtual-list';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
@@ -678,8 +679,11 @@ export function CuratedBoardList({
       <div className="min-h-0 flex-1 overflow-y-auto bg-bg">
         {laneGroups.map((group) => (
           <CollectionGroup key={group.id || 'unset'} title={group.name} count={group.items.length}>
-            <ul>
-              {group.items.map((item) => {
+            <VirtualList
+              items={group.items}
+              getItemKey={(item) => item.id}
+              estimateSize={48}
+              renderItem={(item) => {
                 const optimistic = isOptimisticItem(item);
                 const objectTitle = displayObjectTitle(item.object);
                 const title = optimistic ? (
@@ -693,10 +697,7 @@ export function CuratedBoardList({
                   </Link>
                 );
                 return (
-                  <li
-                    key={item.id}
-                    style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 44px' }}
-                  >
+                  <div style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 44px' }}>
                     <CollectionRow
                       selected={visibleSelectedIds.has(item.id)}
                       leading={
@@ -811,10 +812,10 @@ export function CuratedBoardList({
                         </>
                       }
                     />
-                  </li>
+                  </div>
                 );
-              })}
-            </ul>
+              }}
+            />
           </CollectionGroup>
         ))}
       </div>

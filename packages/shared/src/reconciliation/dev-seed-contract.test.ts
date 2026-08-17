@@ -293,6 +293,8 @@ describe('reconciliation cutover contracts', () => {
       'packages/shared/src/slack/dispatcher.ts',
       'packages/shared/src/team-scope.ts',
       'packages/shared/src/telegram/dispatcher.ts',
+      'scripts/demo-corpus/insert.ts',
+      'scripts/seed-dev-heavy.ts',
       'scripts/seed-dev.ts',
     ]);
 
@@ -469,6 +471,9 @@ describe('reconciliation cutover contracts', () => {
       .map(relativeRepoPath)
       .sort();
 
-    expect(approvalProjectionWriterFiles).toEqual(['packages/shared/src/suggestions/index.ts']);
+    expect(approvalProjectionWriterFiles).toEqual([
+      'packages/shared/src/suggestions/index.ts',
+      'scripts/demo-corpus/insert.ts',
+    ]);
   });
 });

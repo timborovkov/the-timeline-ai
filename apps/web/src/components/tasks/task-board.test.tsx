@@ -3,10 +3,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, render as testingRender, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { createElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as objects from '@timeline/shared/objects/types';
-import type { PropsWithChildren, ReactElement } from 'react';
+import type { PropsWithChildren, ReactElement, ReactNode } from 'react';
 
 const fakes = vi.hoisted(() => {
   const refresh = vi.fn();
@@ -44,11 +45,26 @@ vi.mock('@/app/actions/pins', () => ({
   unpinTargetAction: fakes.unpinObjectAction,
 }));
 vi.mock('@/lib/task-board-config', () => ({
-  TASK_BOARD_COLUMN_RENDER_LIMIT: 3,
-  TASK_BOARD_LIST_RENDER_LIMIT: 5,
-  TASK_BOARD_PAGE_SIZE: 500,
-  TASK_BOARD_TOTAL_LIMIT: 50_000,
+  TASK_BOARD_PAGE_SIZE: 80,
   TASK_OPEN_STATUSES_EXCLUDED: ['done', 'cancelled'],
+}));
+vi.mock('@/components/collections/virtual-list', () => ({
+  VirtualList: ({
+    items,
+    renderItem,
+    getItemKey,
+  }: {
+    items: { id: string }[];
+    renderItem: (item: { id: string }, index: number) => ReactNode;
+    getItemKey: (item: { id: string }, index: number) => string;
+  }) =>
+    createElement(
+      'div',
+      null,
+      items.map((item, index) =>
+        createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+      ),
+    ),
 }));
 
 const { TaskBoard } = await import('./task-board.js');
@@ -167,9 +183,24 @@ function renderBoard(
   );
 }
 
+class FakeIntersectionObserver {
+  readonly observe = vi.fn();
+  readonly disconnect = vi.fn();
+  readonly unobserve = vi.fn();
+}
+
+async function clickLoadMore(
+  user: ReturnType<typeof userEvent.setup> = userEvent.setup(),
+): Promise<void> {
+  const button = screen.getAllByRole('button', { name: 'Load more' })[0];
+  if (!button) throw new Error('Missing Load more sentinel');
+  await user.click(button);
+}
+
 describe('TaskBoard', () => {
   beforeEach(() => {
     cleanup();
+    vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
     delete document.body.dataset.taskCategoriesEnabled;
     fakes.refresh.mockReset();
     fakes.updateObjectAction.mockReset();
@@ -343,7 +374,7 @@ describe('TaskBoard', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Load older tasks' }));
+    await clickLoadMore(user);
     expect(screen.getByRole('link', { name: 'Older pending task' })).toBeTruthy();
 
     await waitFor(
@@ -791,15 +822,15 @@ describe('TaskBoard', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Load older tasks' }));
+    await clickLoadMore(user);
 
     await waitFor(() => {
       expect(fakes.loadTaskRowsAction).toHaveBeenCalledWith({ cursor: 'older-cursor' });
       expect(screen.getByRole('link', { name: 'Older task' })).toBeTruthy();
     });
     expect(screen.queryByText('Send proposal duplicate')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Load older tasks' })).toBeNull();
-    expect(screen.getByText('2 loaded of 2')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
+    expect(screen.getByText('No more matching tasks')).toBeTruthy();
   });
 
   it('keeps loaded older tasks when refreshed first-page props arrive', async () => {
@@ -820,7 +851,7 @@ describe('TaskBoard', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Load older tasks' }));
+    await clickLoadMore(user);
     await screen.findByRole('link', { name: 'Older task' });
 
     rerender(
@@ -837,7 +868,7 @@ describe('TaskBoard', () => {
 
     expect(screen.getByRole('link', { name: 'Send proposal refreshed' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Older task' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Load older tasks' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
   });
 
   it('drops loaded pages and uses the refreshed cursor when category membership changes', async () => {
@@ -865,7 +896,7 @@ describe('TaskBoard', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Load older tasks' }));
+    await clickLoadMore(user);
     await screen.findByRole('link', { name: 'Stale category match' });
 
     rerender(
@@ -885,7 +916,7 @@ describe('TaskBoard', () => {
     expect(screen.queryByRole('link', { name: 'Stale category match' })).toBeNull();
     expect(screen.getByRole('link', { name: 'Refreshed category match' })).toBeTruthy();
 
-    await user.click(screen.getByRole('button', { name: 'Load older tasks' }));
+    await clickLoadMore(user);
     await screen.findByRole('link', { name: 'New older category match' });
     expect(fakes.loadTaskRowsAction).toHaveBeenNthCalledWith(1, {
       cursor: 'older-cursor',
@@ -938,7 +969,7 @@ describe('TaskBoard', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Load older tasks' }));
+    await clickLoadMore(user);
     await screen.findByRole('link', { name: 'Stale project match' });
     await user.click(screen.getByRole('button', { name: /^Task project:/ }));
     await user.click(screen.getByRole('button', { name: 'Project B' }));
@@ -958,7 +989,7 @@ describe('TaskBoard', () => {
         nextCursor="refreshed-cursor"
       />,
     );
-    await user.click(screen.getByRole('button', { name: 'Load older tasks' }));
+    await clickLoadMore(user);
     await screen.findByRole('link', { name: 'New older project match' });
     expect(fakes.loadTaskRowsAction).toHaveBeenNthCalledWith(2, {
       cursor: 'refreshed-cursor',
@@ -997,7 +1028,7 @@ describe('TaskBoard', () => {
 
     expect(screen.getByRole('link', { name: 'Assigned to Ada' })).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Unassigned task' })).toBeNull();
-    expect(screen.getByText('1 loaded of 1')).toBeTruthy();
+    expect(screen.getByText('No more matching tasks')).toBeTruthy();
   });
 
   it('ignores an older page that resolves after server filters change', async () => {
@@ -1022,7 +1053,7 @@ describe('TaskBoard', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Load older tasks' }));
+    await clickLoadMore(user);
     await waitFor(() => {
       expect(fakes.loadTaskRowsAction).toHaveBeenCalledWith({ cursor: 'older-cursor' });
     });
@@ -1049,10 +1080,10 @@ describe('TaskBoard', () => {
     });
 
     expect(screen.queryByRole('link', { name: 'Stale unfiltered task' })).toBeNull();
-    expect(screen.getByText('1 loaded of 1')).toBeTruthy();
+    expect(screen.getByText('No more matching tasks')).toBeTruthy();
   });
 
-  it('bounds rendered kanban cards while reporting loaded tasks outside the window', () => {
+  it('renders every kanban card without a loaded-window cap', () => {
     const rows = Array.from({ length: 7 }, (_, index) =>
       task({ id: `task-${index}`, canonicalName: `Task ${index}`, status: 'done' }),
     );
@@ -1060,8 +1091,9 @@ describe('TaskBoard', () => {
     renderBoard(null, rows);
 
     expect(screen.getByRole('link', { name: 'Task 2' })).toBeTruthy();
-    expect(screen.queryByRole('link', { name: 'Task 3' })).toBeNull();
-    expect(screen.getByText('4 loaded tasks hidden. Narrow filter.')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Task 3' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Task 6' })).toBeTruthy();
+    expect(screen.queryByText(/loaded tasks hidden/)).toBeNull();
   });
 
   it('names the kanban rail and each status column for navigation', () => {
@@ -1072,7 +1104,7 @@ describe('TaskBoard', () => {
     expect(screen.getByRole('region', { name: 'Backlog' })).toBeTruthy();
   });
 
-  it('bounds rendered list rows while reporting loaded tasks outside the window', () => {
+  it('renders every list row without a loaded-window cap', () => {
     const rows = Array.from({ length: 22 }, (_, index) =>
       task({ id: `task-${index}`, canonicalName: `Task ${index}` }),
     );
@@ -1080,10 +1112,9 @@ describe('TaskBoard', () => {
     const { container } = renderBoard(null, rows, 'list');
 
     expect(screen.getByRole('link', { name: 'Task 4' })).toBeTruthy();
-    expect(screen.queryByRole('link', { name: 'Task 5' })).toBeNull();
-    expect(
-      screen.getByText('17 loaded tasks hidden. Narrow the filter to inspect them.'),
-    ).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Task 5' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Task 21' })).toBeTruthy();
+    expect(screen.queryByText(/loaded tasks hidden/)).toBeNull();
     const list = container.querySelector('[data-task-list]');
     expect(list).toBeTruthy();
     expect(list?.className.split(/\s+/)).not.toContain('px-4');

@@ -350,7 +350,7 @@ describe('TasksPage', () => {
   });
 
   it('fetches one bounded task batch and exposes a cursor for older tasks', async () => {
-    const firstPage = Array.from({ length: 501 }, (_, index) =>
+    const firstPage = Array.from({ length: 81 }, (_, index) =>
       taskRow({ id: `task-${index}`, canonicalName: `Task ${index}`, status: 'done' }),
     );
     fakes.listObjects.mockResolvedValue(firstPage);
@@ -360,15 +360,15 @@ describe('TasksPage', () => {
 
     const html = renderToStaticMarkup(await TasksPage(pageProps()));
 
-    expect(html).toContain('Task 499');
-    expect(html).not.toContain('Task 500');
+    expect(html).toContain('Task 79');
+    expect(html).not.toContain('Task 80');
     expect(html).toContain('data-app-layout="full-bleed"');
     expect(html).toContain('total 501');
     expect(html).not.toContain('cursor none');
     expect(fakes.listObjects).toHaveBeenCalledWith({
       type: 'task',
       archived: false,
-      limit: 501,
+      limit: 81,
       cursor: null,
     });
     expect(fakes.listObjects).toHaveBeenCalledTimes(2);
