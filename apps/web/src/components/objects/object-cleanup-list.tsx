@@ -536,7 +536,7 @@ function ObjectDueDateEditor({
   value: Date | string | null;
   onSave: (value: Date | null) => void;
 }) {
-  const [draft, setDraft] = useState(dateInputValue(value));
+  const [draft, setDraft] = useState(() => dateInputValue(value));
   return (
     <form
       className="flex items-center gap-2"
