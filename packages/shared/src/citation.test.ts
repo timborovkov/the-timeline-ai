@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  artifactPreviewActionLabel,
   artifactRefCitation,
   artifactRefLabel,
+  attachArtifactPreviewActions,
   citationPartToArtifactRef,
+  meetingDetailHref,
   parseCitations,
+  resolveArtifactPreviewActions,
+  timelineEventFocusHref,
 } from '#src/citation.js';
 
 const EV = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
@@ -155,6 +160,49 @@ describe('parseCitations', () => {
       `[rel:${REL}]`,
       `[chg:${CHG}]`,
       '[route:team]',
+    ]);
+  });
+});
+
+describe('artifact preview destinations', () => {
+  it('names the matching workspace destination for each citation kind', () => {
+    expect(timelineEventFocusHref(EV)).toBe(`/app/timeline?event=${EV}#ev-${EV}`);
+    expect(meetingDetailHref(ENT)).toBe(`/app/meetings/${ENT}`);
+    expect(artifactPreviewActionLabel('timeline_event')).toBe('Open on Timeline');
+    expect(artifactPreviewActionLabel('document_chunk')).toBe('Open in Documents');
+    expect(artifactPreviewActionLabel('calendar_event')).toBe('Open calendar');
+    expect(artifactPreviewActionLabel('task')).toBe('Open task');
+  });
+
+  it('keeps the first destination as the primary href and falls back from href-only previews', () => {
+    const preview = attachArtifactPreviewActions(
+      {
+        ref: { kind: 'timeline_event', id: EV },
+        title: 'Meeting event',
+      },
+      [
+        { href: meetingDetailHref(ENT), label: 'Open transcript' },
+        { href: timelineEventFocusHref(EV), label: 'Open on Timeline' },
+      ],
+    );
+    expect(preview.href).toBe(`/app/meetings/${ENT}`);
+    expect(preview.actions?.map((action) => action.label)).toEqual([
+      'Open transcript',
+      'Open on Timeline',
+    ]);
+    expect(preview.actions?.[0]?.primary).toBe(true);
+
+    expect(
+      resolveArtifactPreviewActions({
+        ref: { kind: 'document_chunk', id: CHUNK, documentId: DOC, version: 2, chunkId: CHUNK },
+        href: `/app/documents/${DOC}?version=2#chunk-${CHUNK}`,
+      }),
+    ).toEqual([
+      {
+        href: `/app/documents/${DOC}?version=2#chunk-${CHUNK}`,
+        label: 'Open in Documents',
+        primary: true,
+      },
     ]);
   });
 });

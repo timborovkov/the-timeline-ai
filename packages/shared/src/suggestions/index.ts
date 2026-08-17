@@ -71,6 +71,7 @@ import { chatStructured as defaultChatStructured } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
 import { OBJECT_TYPES } from '#src/objects/index.js';
 import { suggestedProjectIsUnusedCondition } from '#src/objects/suggested-projects.js';
+import { decodeCursor } from '#src/pagination.js';
 import {
   buildOutputDedupeKey,
   reconciliationDedupeKey,
@@ -5916,7 +5917,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
   }
 
   async function listSuggestions(
-    opts: { status?: SuggestionListStatus; limit?: number } = {},
+    opts: { status?: SuggestionListStatus; limit?: number; cursor?: string | null } = {},
   ): Promise<SuggestionBundle[]> {
     await ensureMember();
     await recoverInterruptedTaskCreateAcceptances();
@@ -5942,11 +5943,23 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     } else {
       conditions.push(nonFailedItemExistsPredicate());
     }
+    const decoded = decodeCursor(opts.cursor);
+    if (opts.cursor && !decoded) throw new Error('Invalid cursor');
+    const cursorSql = decoded
+      ? or(
+          lt(agentSuggestions.createdAt, new Date(decoded.at)),
+          and(
+            eq(agentSuggestions.createdAt, new Date(decoded.at)),
+            lt(agentSuggestions.id, decoded.id),
+          ),
+        )
+      : undefined;
+    if (cursorSql) conditions.push(cursorSql);
     const rows = await db
       .select()
       .from(agentSuggestions)
       .where(and(...conditions))
-      .orderBy(desc(agentSuggestions.createdAt))
+      .orderBy(desc(agentSuggestions.createdAt), desc(agentSuggestions.id))
       .limit(Math.min(Math.max(opts.limit ?? 100, 1), 200));
     return hydrateBundles(rows);
   }

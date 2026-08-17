@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import type { TimelineMoment, TimelineMomentEvent } from '#src/timeline-moments/index.js';
 
+import { classifyCapturedEvent } from '#src/event-class.js';
 import { chatStructured as defaultChatStructured } from '#src/llm/chat.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 
@@ -196,7 +197,12 @@ export function timelineMomentPresentationEligibility(
     reasons.push('multi_message_chat');
   }
   if (sourceSet.has('integration') && moment.rawEvents.length >= 2) {
-    reasons.push('dense_integration_group');
+    const lead = moment.rawEvents[0];
+    const eventClass = classifyCapturedEvent({
+      source: lead?.source ?? 'integration',
+      metadata: lead?.sourceMetadata,
+    });
+    if (eventClass !== 'pulse') reasons.push('dense_integration_group');
   }
   if (sourceSet.has('ingest_webhook') && moment.rawEvents.length >= 2) {
     reasons.push('webhook_burst');

@@ -1,12 +1,17 @@
 'use client';
 
-import { artifactRefLabel } from '@timeline/shared/citation';
+import {
+  artifactRefCitation,
+  artifactRefLabel,
+  resolveArtifactPreviewActions,
+  type ArtifactPreview,
+  type ArtifactRef,
+} from '@timeline/shared/citation';
 import { ExternalLink, Link2 } from 'lucide-react';
 import Link from 'next/link';
 import { type ReactNode, useCallback, useMemo, useRef, useState } from 'react';
 
-import type { ArtifactPreview, ArtifactRef } from '@timeline/shared/citation';
-
+import { SourceOriginalDetails } from '@/components/source-original';
 import {
   Dialog,
   DialogContent,
@@ -16,6 +21,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+
+const CITATION_CHIP_CLASS =
+  'inline-flex items-center align-baseline font-mono text-[0.9em] leading-none rounded-sm border border-signal/30 bg-signal-soft px-1 py-0.5 text-signal transition-colors no-underline hover:bg-signal/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg';
 
 interface ArtifactReferenceChipProps {
   refValue: ArtifactRef;
@@ -119,12 +127,7 @@ export function ArtifactReferenceChip({
     <>
       <button
         type="button"
-        className={cn(
-          'inline-flex items-center align-baseline font-mono text-[0.9em] leading-none',
-          'rounded-sm border border-signal/30 bg-signal-soft px-1 py-0.5 text-signal transition-colors no-underline hover:bg-signal/25',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg',
-          className,
-        )}
+        className={cn(CITATION_CHIP_CLASS, className)}
         title={title ?? label}
         onClick={() => {
           setOpen(true);
@@ -171,6 +174,9 @@ function ArtifactPreviewDialog({
   onOpenChange,
 }: ArtifactPreviewDialogProps) {
   const description = preview?.subtitle ?? refLabel;
+  const actions = preview ? resolveArtifactPreviewActions(preview) : [];
+  const primaryAction = actions.find((action) => action.primary) ?? actions[0];
+  const secondaryActions = actions.filter((action) => action !== primaryAction);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="grid h-[calc(100dvh-1rem)] max-h-[860px] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden border-border bg-bg p-4 sm:h-[min(860px,calc(100dvh-2rem))] sm:max-w-3xl sm:p-6">
@@ -221,6 +227,17 @@ function ArtifactPreviewDialog({
                     <track kind="captions" />
                   </audio>
                 ) : null}
+                {preview.original ? (
+                  <SourceOriginalDetails
+                    className="mt-3"
+                    original={{
+                      label: preview.original.label,
+                      text: preview.original.text ?? null,
+                      html: preview.original.html ?? null,
+                      json: preview.original.json ?? null,
+                    }}
+                  />
+                ) : null}
               </div>
 
               {preview.sections?.map((section) => (
@@ -257,18 +274,89 @@ function ArtifactPreviewDialog({
           </div>
         </div>
 
-        {preview?.href ? (
-          <DialogFooter className="border-t border-border pt-4">
-            <Link
-              href={preview.href}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-sm border border-border bg-background pl-4 pr-3.5 text-sm font-medium transition-[background-color,color,scale] duration-150 ease-out hover:bg-accent hover:text-accent-foreground active:scale-[0.96]"
-            >
-              <ExternalLink className="size-4" />
-              Open full page
-            </Link>
+        {actions.length > 0 ? (
+          <DialogFooter className="flex-wrap border-t border-border pt-4">
+            {secondaryActions.map((action) => (
+              <PreviewActionLink
+                key={`${refLabel}:action:${action.label}:${action.href}`}
+                action={action}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-sm border border-border bg-background px-3.5 text-sm font-medium transition-[background-color,color,scale] duration-150 ease-out hover:bg-accent hover:text-accent-foreground active:scale-[0.96]"
+              />
+            ))}
+            {primaryAction ? (
+              <PreviewActionLink
+                action={primaryAction}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-sm border border-border bg-background pl-4 pr-3.5 text-sm font-medium transition-[background-color,color,scale] duration-150 ease-out hover:bg-accent hover:text-accent-foreground active:scale-[0.96]"
+              />
+            ) : null}
           </DialogFooter>
         ) : null}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function PreviewActionLink({
+  action,
+  className,
+}: {
+  action: { href: string; label: string; external?: boolean };
+  className: string;
+}) {
+  if (action.external) {
+    return (
+      <a href={action.href} target="_blank" rel="noreferrer" className={className}>
+        <ExternalLink className="size-4" />
+        {action.label}
+      </a>
+    );
+  }
+  return (
+    <Link href={action.href} className={className}>
+      <ExternalLink className="size-4" />
+      {action.label}
+    </Link>
+  );
+}
+
+export function CitationCopyChip({
+  refValue,
+  className,
+}: {
+  refValue: ArtifactRef;
+  className?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const label = artifactRefLabel(refValue);
+  const citation = artifactRefCitation(refValue);
+
+  async function copyCitation() {
+    const clipboard = Reflect.get(navigator, 'clipboard') as Clipboard | undefined;
+    if (!clipboard?.writeText) return;
+    try {
+      await clipboard.writeText(citation);
+    } catch {
+      return;
+    }
+    setCopied(true);
+    window.setTimeout(() => {
+      setCopied(false);
+    }, 1500);
+  }
+
+  return (
+    <button
+      type="button"
+      className={cn(CITATION_CHIP_CLASS, 'normal-case', className)}
+      title={copied ? `Copied ${citation}` : `Copy ${citation}`}
+      onClick={() => {
+        void copyCitation();
+      }}
+    >
+      <span aria-hidden="true">{label}</span>
+      <span className="sr-only">
+        {copied ? `Copied citation ${label}` : `Copy citation ${label}`}
+      </span>
+    </button>
   );
 }

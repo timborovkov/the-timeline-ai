@@ -22,6 +22,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  lt,
   lte,
   notInArray,
   or,
@@ -31,6 +32,7 @@ import {
 import { currentExtractionModelVersion } from '#src/extraction-model-version.js';
 import { participantNames } from '#src/meetings/participants.js';
 import { formatMeetingTranscript } from '#src/meetings/transcript.js';
+import { decodeCursor } from '#src/pagination.js';
 import { validateVisibilityUserIds } from '#src/visibility.js';
 
 // Phase 10 — meeting scope. Mirrors the documents scope pattern: a factory
@@ -881,13 +883,25 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
       return (rows[0] as MeetingRow | undefined) ?? null;
     },
 
-    async listMeetings(opts: { limit?: number } = {}): Promise<MeetingRow[]> {
+    async listMeetings(
+      opts: { limit?: number; cursor?: string | null } = {},
+    ): Promise<MeetingRow[]> {
       await ensureMember();
+      const decoded = decodeCursor(opts.cursor);
+      if (opts.cursor && !decoded) throw new Error('Invalid cursor');
+      const cursorSql = decoded
+        ? or(
+            lt(meetings.createdAt, new Date(decoded.at)),
+            and(eq(meetings.createdAt, new Date(decoded.at)), lt(meetings.id, decoded.id)),
+          )
+        : undefined;
       const rows = await db
         .select()
         .from(meetings)
-        .where(and(eq(meetings.teamId, teamId), meetingVisibility))
-        .orderBy(desc(meetings.createdAt))
+        .where(
+          and(eq(meetings.teamId, teamId), meetingVisibility, ...(cursorSql ? [cursorSql] : [])),
+        )
+        .orderBy(desc(meetings.createdAt), desc(meetings.id))
         .limit(opts.limit ?? 50);
       return rows as MeetingRow[];
     },

@@ -12,6 +12,7 @@ import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { DebouncedFilterForm } from '@/components/debounced-filter-form';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
 import { useProjectSearch } from '@/hooks/use-project-search';
+import { formatCollectionCount } from '@/lib/collection-count';
 import { displayText } from '@/lib/display-dates';
 import { cn } from '@/lib/utils';
 import { NONE_FILTER_VALUE, UNASSIGNED_FILTER_VALUE } from '@/lib/work-filters';
@@ -113,7 +114,11 @@ export function WorkFilterBar({
       className={className}
     >
       <CollectionToolbar
-        count={active ? `${resultCount} / ${totalCount}` : `${totalCount} visible`}
+        count={formatCollectionCount({
+          matching: resultCount,
+          total: totalCount,
+          filtered: active,
+        })}
         search={
           <label className="relative block min-w-0">
             <span className="sr-only">Search</span>

@@ -8,7 +8,11 @@ import { toast } from 'sonner';
 
 import type * as objects from '@timeline/shared/objects/types';
 
-import { bulkArchiveObjectsAction, updateObjectAction } from '@/app/actions/objects';
+import {
+  bulkArchiveObjectsAction,
+  loadObjectRowsAction,
+  updateObjectAction,
+} from '@/app/actions/objects';
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
 import {
@@ -17,7 +21,9 @@ import {
   statusTone,
 } from '@/components/collections/collection-status';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
+import { InfiniteScroll } from '@/components/collections/infinite-scroll';
 import { SelectionBar } from '@/components/collections/selection-bar';
+import { VirtualList } from '@/components/collections/virtual-list';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import {
@@ -36,14 +42,20 @@ import { statusOptionsForType } from '@/lib/object-status-options';
 import { statusLabel } from '@/lib/status-labels';
 
 type PinnableObjectRow = objects.ObjectRow & { pinned?: boolean };
+const EMPTY_FILTER_PARAMS: Record<string, string> = {};
+
+function objectFilterKey(filterParams: Record<string, string>): string {
+  return Object.entries(filterParams)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${key}=${value}`)
+    .join('&');
+}
 
 interface Props {
   rows: PinnableObjectRow[];
   typeLabels: Record<string, string>;
-  pageInfo?: {
-    shownCount: number;
-    nextHref: string | null;
-  };
+  nextCursor?: string | null;
+  filterParams?: Record<string, string>;
   sectionMoreHrefs?: Record<string, string>;
 }
 
@@ -52,6 +64,10 @@ interface CleanupListState {
   selected: Set<string>;
   archivedIds: Set<string>;
   error: string | null;
+  appendedRows: PinnableObjectRow[];
+  cursor: string | null;
+  paginationKey: string | null;
+  loadError: string | null;
 }
 
 type CleanupListAction =
@@ -59,7 +75,14 @@ type CleanupListAction =
   | { type: 'toggle'; id: string }
   | { type: 'clear-selection' }
   | { type: 'archive-optimistic'; ids: string[] }
-  | { type: 'archive-rollback'; ids: string[]; error: string };
+  | { type: 'archive-rollback'; ids: string[]; error: string }
+  | {
+      type: 'append-page';
+      rows: PinnableObjectRow[];
+      nextCursor: string | null;
+      paginationKey: string;
+    }
+  | { type: 'load-error'; message: string | null; paginationKey: string };
 
 function cleanupListReducer(state: CleanupListState, action: CleanupListAction): CleanupListState {
   switch (action.type) {
@@ -86,27 +109,69 @@ function cleanupListReducer(state: CleanupListState, action: CleanupListAction):
       for (const id of action.ids) archivedIds.delete(id);
       return { ...state, archivedIds, error: action.error };
     }
+    case 'append-page': {
+      const currentRows = action.paginationKey === state.paginationKey ? state.appendedRows : [];
+      const seen = new Set(currentRows.map((row) => row.id));
+      return {
+        ...state,
+        paginationKey: action.paginationKey,
+        appendedRows: [...currentRows, ...action.rows.filter((row) => !seen.has(row.id))],
+        cursor: action.nextCursor,
+        loadError: null,
+      };
+    }
+    case 'load-error':
+      return { ...state, paginationKey: action.paginationKey, loadError: action.message };
   }
 }
 
-export function ObjectCleanupList({ rows, typeLabels, pageInfo, sectionMoreHrefs }: Props) {
+export function ObjectCleanupList({
+  rows,
+  typeLabels,
+  nextCursor = null,
+  filterParams = EMPTY_FILTER_PARAMS,
+  sectionMoreHrefs,
+}: Props) {
   const timezone = useWorkspaceTimezone();
   const router = useRouter();
   const dialog = useAppDialog();
-  const [{ selecting, selected, archivedIds, error }, dispatchCleanupList] = useReducer(
-    cleanupListReducer,
+  const paginationKey = objectFilterKey(filterParams);
+  const [
     {
-      selecting: false,
-      selected: new Set<string>(),
-      archivedIds: new Set<string>(),
-      error: null,
+      selecting,
+      selected,
+      archivedIds,
+      error,
+      appendedRows,
+      cursor,
+      paginationKey: loadedKey,
+      loadError,
     },
+    dispatchCleanupList,
+  ] = useReducer(cleanupListReducer, {
+    selecting: false,
+    selected: new Set<string>(),
+    archivedIds: new Set<string>(),
+    error: null,
+    appendedRows: [],
+    cursor: null,
+    paginationKey: null,
+    loadError: null,
+  });
+  const [loadingMore, startLoadMore] = useTransition();
+  const loadedAppendedRows = useMemo(
+    () => (loadedKey === paginationKey ? appendedRows : []),
+    [appendedRows, loadedKey, paginationKey],
   );
+  const pageCursor = loadedKey === paginationKey ? cursor : nextCursor;
+  const pageLoadError = loadedKey === paginationKey ? loadError : null;
   const [isPending, startTransition] = useTransition();
-  const activeRows = useMemo(
-    () => rows.filter((row) => !archivedIds.has(row.id)),
-    [archivedIds, rows],
-  );
+  const activeRows = useMemo(() => {
+    const firstPageIds = new Set(rows.map((row) => row.id));
+    return [...rows, ...loadedAppendedRows.filter((row) => !firstPageIds.has(row.id))].filter(
+      (row) => !archivedIds.has(row.id),
+    );
+  }, [archivedIds, loadedAppendedRows, rows]);
   const visibleRows = activeRows;
   const visibleIds = useMemo(() => new Set(visibleRows.map((row) => row.id)), [visibleRows]);
 
@@ -144,6 +209,27 @@ export function ObjectCleanupList({ rows, typeLabels, pageInfo, sectionMoreHrefs
   );
   function toggle(id: string) {
     dispatchCleanupList({ type: 'toggle', id });
+  }
+
+  function loadMoreObjects(): void {
+    if (!pageCursor || loadingMore) return;
+    dispatchCleanupList({ type: 'load-error', message: null, paginationKey });
+    startLoadMore(async () => {
+      const page = await loadObjectRowsAction({
+        cursor: pageCursor,
+        ...(Object.keys(filterParams).length > 0 ? { filters: filterParams } : {}),
+      });
+      if (page.error) {
+        dispatchCleanupList({ type: 'load-error', message: page.error, paginationKey });
+        return;
+      }
+      dispatchCleanupList({
+        type: 'append-page',
+        rows: page.rows,
+        nextCursor: page.nextCursor,
+        paginationKey,
+      });
+    });
   }
 
   function clearSelection() {
@@ -229,9 +315,6 @@ export function ObjectCleanupList({ rows, typeLabels, pageInfo, sectionMoreHrefs
             </>
           }
         />
-        {pageInfo ? (
-          <ObjectListPager shownCount={pageInfo.shownCount} nextHref={pageInfo.nextHref} />
-        ) : null}
         {error ? (
           <p className="border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
             {error}
@@ -265,12 +348,14 @@ export function ObjectCleanupList({ rows, typeLabels, pageInfo, sectionMoreHrefs
                     ) : null
                   }
                 >
-                  <ul>
-                    {list.map((object) => {
+                  <VirtualList
+                    items={list}
+                    getItemKey={(object) => object.id}
+                    estimateSize={48}
+                    renderItem={(object) => {
                       const isSelected = selected.has(object.id);
                       return (
                         <ObjectCollectionItem
-                          key={object.id}
                           object={object}
                           typeLabel={typeLabels[object.type] ?? object.type}
                           timezone={timezone}
@@ -281,13 +366,21 @@ export function ObjectCleanupList({ rows, typeLabels, pageInfo, sectionMoreHrefs
                           }}
                         />
                       );
-                    })}
-                  </ul>
+                    }}
+                  />
                 </CollectionGroup>
               );
             })}
           </div>
         )}
+        <InfiniteScroll
+          hasMore={Boolean(pageCursor)}
+          loading={loadingMore}
+          error={pageLoadError}
+          onLoadMore={loadMoreObjects}
+          boundLabel="No more matching objects"
+          hideBound={!pageCursor && Boolean(sectionMoreHrefs)}
+        />
       </div>
     </TaskCategoryPollingProvider>
   );
@@ -392,7 +485,7 @@ function ObjectCollectionItem({
   const statusOptions = statusOptionsForType(object.type, status);
 
   return (
-    <li style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 44px' }}>
+    <div style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 44px' }}>
       <CollectionRow
         selected={selected}
         leading={
@@ -525,7 +618,7 @@ function ObjectCollectionItem({
           </ItemActionGroup>
         }
       />
-    </li>
+    </div>
   );
 }
 
@@ -561,42 +654,5 @@ function ObjectDueDateEditor({
         Apply
       </button>
     </form>
-  );
-}
-
-function ObjectListPager({
-  shownCount,
-  nextHref,
-}: {
-  shownCount: number;
-  nextHref: string | null;
-}) {
-  return (
-    <nav
-      aria-label="Objects pages"
-      className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2"
-    >
-      <p className="text-xs text-fg-dim">{shownCount} shown</p>
-      <div className="flex items-center gap-1.5">
-        <PaginationLink href={nextHref} label="Next" />
-      </div>
-    </nav>
-  );
-}
-
-function PaginationLink({ href, label }: { href: string | null; label: string }) {
-  const className =
-    'inline-flex h-8 items-center rounded-sm border px-2.5 text-xs transition-colors';
-  if (!href) {
-    return (
-      <span className={`${className} border-border text-fg-dim opacity-50`} aria-disabled="true">
-        {label}
-      </span>
-    );
-  }
-  return (
-    <Link href={href} className={`${className} border-border text-fg hover:bg-surface-2`}>
-      {label}
-    </Link>
   );
 }

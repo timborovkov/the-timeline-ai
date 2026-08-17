@@ -35,6 +35,8 @@ import { encryptJson } from '@timeline/shared/crypto';
 import { hashPassword } from '@timeline/shared/passwords';
 import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
 
+import { seedHeavyAcmeLabs } from './seed-dev-heavy.js';
+
 loadDotEnv(resolve(process.cwd(), '.env'));
 
 const TERMS_VERSION = '2026-06-02';
@@ -255,6 +257,7 @@ function assertReservedIntegrationRows(
 
 async function main(): Promise<void> {
   assertDevSeedEnvironment();
+  const heavy = process.argv.includes('--heavy');
 
   const db = getDb();
   await assertReservedSeedRowsAreCompatible(db);
@@ -574,6 +577,17 @@ async function main(): Promise<void> {
               message_id: 'dev-seed-email-contract-001',
               from: 'member@timeline.dev',
               subject: 'Vendor contract review',
+              html_body:
+                '<p>Vendor contract review is due Friday, and the <b>security appendix</b> still needs approval.</p>',
+              source_snapshot: {
+                provider: 'postmark',
+                subject: 'Vendor contract review',
+                html_body:
+                  '<p>Vendor contract review is due Friday, and the <b>security appendix</b> still needs approval.</p>',
+                text_body:
+                  'Vendor contract review is due Friday, and the security appendix still needs approval.',
+                from: { email: 'member@timeline.dev' },
+              },
               source_payload_ref: 'inline://timeline/dev-seed/email/vendor-security-contract',
               payload_digest: 'sha256:dev-seed-vendor-security-email-payload',
             },
@@ -1473,6 +1487,21 @@ async function main(): Promise<void> {
         ])
         .onConflictDoNothing();
     });
+
+    if (heavy) {
+      await db.transaction(async (tx) => {
+        await seedHeavyAcmeLabs(tx, {
+          team: IDS.team,
+          owner: IDS.owner,
+          member: IDS.member,
+          board: IDS.board,
+          laneTodo: IDS.laneTodo,
+          laneDoing: IDS.laneDoing,
+          laneDone: IDS.laneDone,
+        });
+      });
+      console.log('[seed-dev] seeded heavy Acme Labs volume for infinite-scroll testing');
+    }
 
     console.log('[seed-dev] seeded Acme Labs dev workspace');
     console.log(`[seed-dev] owner login: owner@timeline.dev / ${DEV_PASSWORD}`);
