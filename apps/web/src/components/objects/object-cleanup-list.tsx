@@ -539,7 +539,7 @@ function ObjectDueDateEditor({
   value: Date | string | null;
   onSave: (value: Date | null) => void;
 }) {
-  const [draft, setDraft] = useState(dateInputValue(value));
+  const [draft, setDraft] = useState(() => dateInputValue(value));
 
   function commit() {
     onSave(draft ? new Date(`${draft}T00:00:00.000Z`) : null);

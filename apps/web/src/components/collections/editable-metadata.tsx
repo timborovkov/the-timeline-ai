@@ -40,16 +40,17 @@ export function EditableMetadata({
   const slots = readCollectionSlots(children, METADATA_SLOTS);
   const [userOpen, setUserOpen] = useState(false);
   const internalTriggerRef = useRef<HTMLButtonElement>(null);
-  const wasPendingRef = useRef(pending);
-  const previousErrorRef = useRef(error);
+  const wasPendingRef = useRef(false);
+  const previousErrorRef = useRef<string | null | undefined>(undefined);
   const errorId = useId();
   const open = userOpen && !pending && !disabled;
 
   // Restore focus after a parent-driven save finishes. pending/error are the
   // completion signals; there is no local event handler for that commit.
-  // react-doctor-disable-next-line react-doctor/no-event-handler -- Focus restoration is keyed to parent pending/error, not a local click.
   useEffect(() => {
+    // react-doctor-disable-next-line react-doctor/no-event-handler -- Focus restoration is keyed to parent pending/error, not a local click.
     const completedSave = wasPendingRef.current && !pending;
+    // react-doctor-disable-next-line react-doctor/no-event-handler -- Same parent pending/error completion signal.
     const receivedError = Boolean(error && error !== previousErrorRef.current);
     if (completedSave || receivedError) {
       internalTriggerRef.current?.focus();
