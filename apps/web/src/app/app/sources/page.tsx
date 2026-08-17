@@ -324,7 +324,11 @@ function SourceGroup({
 
 function SourceRow({ source }: { source: SourceEntry }) {
   const tone =
-    source.status === 'attention' ? 'danger' : source.status === 'connected' ? 'success' : 'neutral';
+    source.status === 'attention'
+      ? 'danger'
+      : source.status === 'connected'
+        ? 'success'
+        : 'neutral';
   return (
     <CollectionRow
       leading={<source.icon className="size-4 text-fg-dim" aria-hidden="true" />}

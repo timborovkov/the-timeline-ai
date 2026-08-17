@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, GitMerge, Pencil, X } from 'lucide-react';
+import { Check, GitMerge, X } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
@@ -72,9 +72,12 @@ export function ApprovalPreviewDialog({
   onAccept: () => void;
   onReject: () => void;
 }) {
-  const [snapshot, setSnapshot] = useState<ApprovalTargetSnapshot | null>(null);
-  const [members, setMembers] = useState<Record<string, string>>({});
-  const [loadingSnapshot, setLoadingSnapshot] = useState(false);
+  const requestKey = `${item.id}:${item.targetKind}:${item.targetId ?? ''}:${open ? 'open' : 'closed'}`;
+  const [loaded, setLoaded] = useState<{
+    key: string;
+    snapshot: ApprovalTargetSnapshot;
+    members: Record<string, string>;
+  } | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -82,21 +85,26 @@ export function ApprovalPreviewDialog({
     const objectIds = Array.isArray(item.proposedPayload.objectIds)
       ? item.proposedPayload.objectIds.filter((value): value is string => typeof value === 'string')
       : undefined;
-    setLoadingSnapshot(true);
     void getApprovalTargetSnapshotAction({
       targetKind: item.targetKind,
       targetId: item.targetId,
       objectIds,
     }).then((result) => {
       if (cancelled) return;
-      setSnapshot(result.snapshot ?? { kind: 'none' });
-      setMembers(result.members ?? {});
-      setLoadingSnapshot(false);
+      setLoaded({
+        key: requestKey,
+        snapshot: result.snapshot ?? { kind: 'none' },
+        members: result.members ?? {},
+      });
     });
     return () => {
       cancelled = true;
     };
-  }, [item.id, item.proposedPayload.objectIds, item.targetId, item.targetKind, open]);
+  }, [item.id, item.proposedPayload.objectIds, item.targetId, item.targetKind, open, requestKey]);
+
+  const snapshot = loaded?.key === requestKey ? loaded.snapshot : null;
+  const members = loaded?.key === requestKey ? loaded.members : {};
+  const loadingSnapshot = open && loaded?.key !== requestKey;
 
   const { fields, timestamps } = buildApprovalPreviewFields({
     operation: item.operation,
@@ -122,9 +130,7 @@ export function ApprovalPreviewDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="max-h-[min(28rem,60dvh)] space-y-4 overflow-y-auto pr-1">
-          {loadingSnapshot ? (
-            <p className="text-xs text-fg-dim">Loading current record…</p>
-          ) : null}
+          {loadingSnapshot ? <p className="text-xs text-fg-dim">Loading current record…</p> : null}
           <dl className="grid gap-1.5">
             {fields.map((field) => (
               <PreviewFieldRow field={field} key={field.key} />

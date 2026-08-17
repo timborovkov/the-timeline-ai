@@ -37,8 +37,6 @@ import {
   createFolderAction,
   deleteFolderAction,
   finalizeDocumentVersionAction,
-  deleteFolderAction,
-  finalizeDocumentVersionAction,
   requestDocumentUploadAction,
 } from '@/app/actions/documents';
 import { CollectionGroup } from '@/components/collections/collection-group';
@@ -49,8 +47,8 @@ import { useAppDialog } from '@/components/ui/app-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ItemActionGroup } from '@/components/ui/item-actions';
-import { queryKeys } from '@/lib/query-keys';
 import { toastMutation } from '@/lib/mutation-toast';
+import { queryKeys } from '@/lib/query-keys';
 import { type DocumentListPage, useDocumentListQuery } from '@/lib/use-paginated-queries';
 
 const LIST_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });

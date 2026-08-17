@@ -7,15 +7,7 @@ import {
   localDateSpanToUtcRange,
   startOfIsoWeek,
 } from '@timeline/shared/time';
-import {
-  CalendarDays,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  Plus,
-  Search,
-  Trash2,
-} from 'lucide-react';
+import { CalendarDays, Check, ChevronLeft, ChevronRight, Plus, Search, Trash2 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Suspense,
@@ -62,8 +54,8 @@ import { Input } from '@/components/ui/input';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { statusLabel } from '@/lib/status-labels';
 import { toastMutation } from '@/lib/mutation-toast';
+import { statusLabel } from '@/lib/status-labels';
 import { errorMessage } from '@/lib/utils';
 
 type CalendarViewMode = 'month' | 'week' | 'day';
@@ -1656,7 +1648,8 @@ function DayCell({
     year: 'numeric',
   });
   const monthCap = 3;
-  const visibleEvents = mode === 'month' && events.length > monthCap ? events.slice(0, monthCap) : events;
+  const visibleEvents =
+    mode === 'month' && events.length > monthCap ? events.slice(0, monthCap) : events;
   const overflow = mode === 'month' ? Math.max(0, events.length - monthCap) : 0;
   return (
     <div
@@ -1712,7 +1705,10 @@ function DayCell({
                     aria-label="Recurring"
                   />
                 ) : (
-                  <span className="size-1.5 shrink-0 rounded-full bg-current opacity-40" aria-hidden="true" />
+                  <span
+                    className="size-1.5 shrink-0 rounded-full bg-current opacity-40"
+                    aria-hidden="true"
+                  />
                 )}
                 {event.allDay ? null : (
                   <span className="shrink-0 font-mono text-[10px] tabular-nums text-fg-dim">

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildApprovalPreviewFields } from './approval-preview.js';
+import { buildApprovalPreviewFields } from '@/lib/approval-preview';
 
 describe('buildApprovalPreviewFields', () => {
   it('treats every proposed field as new on create', () => {

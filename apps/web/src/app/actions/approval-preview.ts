@@ -8,6 +8,7 @@ import type {
   ApprovalObjectSnapshot,
   ApprovalTargetSnapshot,
 } from '@/lib/approval-preview';
+
 import { type ActionState, resolveScope, uuidSchema } from '@/lib/action-scope';
 import { displayMemberLabel } from '@/lib/display-labels';
 import { publicActionError } from '@/lib/public-error';
@@ -41,6 +42,7 @@ function serializeObject(row: {
   archivedAt: Date | string | null;
   notes?: { body: string }[];
 }): ApprovalObjectSnapshot {
+  const note = row.notes?.[0]?.body.trim();
   return {
     id: row.id,
     type: row.type,
@@ -52,7 +54,7 @@ function serializeObject(row: {
     assigneeUserId: row.assigneeUserId,
     dueAt: iso(row.dueAt),
     aliases: row.aliases,
-    content: row.notes?.[0]?.body?.trim() || null,
+    content: note ?? null,
     createdAt: iso(row.createdAt) ?? '',
     updatedAt: iso(row.updatedAt) ?? '',
     archivedAt: iso(row.archivedAt),

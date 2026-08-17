@@ -23,9 +23,7 @@ export function RemovedMembersCard({
               className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"
             >
               <div className="min-w-0">
-                <p className="break-words text-sm font-medium">
-                  {displayRemovedMemberLabel(user)}
-                </p>
+                <p className="break-words text-sm font-medium">{displayRemovedMemberLabel(user)}</p>
                 {user?.email ? (
                   <p className="break-all text-xs text-fg-muted">
                     {user.email} · removed {member.removedAt?.toLocaleDateString()}

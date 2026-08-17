@@ -3,7 +3,6 @@
 import { Link2, RefreshCw, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useReducer } from 'react';
-import { toastMutation } from '@/lib/mutation-toast';
 
 import { CopyButton } from '@/components/copy-button';
 import { Button } from '@/components/ui/button';
@@ -17,6 +16,7 @@ import {
 } from '@/components/ui/dialog';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
+import { toastMutation } from '@/lib/mutation-toast';
 
 interface CalendarSubscription {
   prefix: string;

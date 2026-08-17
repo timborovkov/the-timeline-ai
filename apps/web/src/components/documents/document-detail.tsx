@@ -8,7 +8,6 @@ import { Download, EyeOff, FileText, Link2, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useId, useState, useTransition } from 'react';
-import { toastMutation } from '@/lib/mutation-toast';
 
 import type { ReactNode } from 'react';
 
@@ -21,12 +20,13 @@ import { Breadcrumb } from '@/components/breadcrumb';
 import { ContextualAskLink } from '@/components/chat/contextual-ask-link';
 import { DocumentPreview } from '@/components/documents/document-preview';
 import { EvidenceLink } from '@/components/evidence-link';
-import { StatusBadge } from '@/components/status-badge';
 import { SectionHeading } from '@/components/section-heading';
+import { StatusBadge } from '@/components/status-badge';
 import { TechnicalDetails } from '@/components/technical-details';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { toastMutation } from '@/lib/mutation-toast';
 import { statusLabel } from '@/lib/status-labels';
 
 interface VersionItem {
@@ -214,54 +214,54 @@ export function DocumentDetail({
       />
 
       <section className="flex flex-row items-start justify-between gap-4 border-y border-border py-4 max-sm:flex-col">
-          <div className="min-w-0 space-y-1">
-            <h1
-              className="max-w-full break-all text-2xl font-semibold leading-tight tracking-tight"
-              title={currentDocument.name}
-            >
-              {visibleDocumentName}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {currentDocument.folderPath} · Updated{' '}
-              {new Date(currentDocument.updatedAt).toLocaleString()}
+        <div className="min-w-0 space-y-1">
+          <h1
+            className="max-w-full break-all text-2xl font-semibold leading-tight tracking-tight"
+            title={currentDocument.name}
+          >
+            {visibleDocumentName}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {currentDocument.folderPath} · Updated{' '}
+            {new Date(currentDocument.updatedAt).toLocaleString()}
+          </p>
+          {usingFriendlyName ? (
+            <p className="max-w-full truncate text-xs text-muted-foreground">
+              Stored as{' '}
+              <span title={currentDocument.name}>
+                {truncateFilenameMiddle(currentDocument.name)}
+              </span>
             </p>
-            {usingFriendlyName ? (
-              <p className="max-w-full truncate text-xs text-muted-foreground">
-                Stored as{' '}
-                <span title={currentDocument.name}>
-                  {truncateFilenameMiddle(currentDocument.name)}
-                </span>
-              </p>
-            ) : null}
-          </div>
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
-            {currentDocument.visibility !== 'team' && (
-              <Badge variant="outline">{statusLabel(currentDocument.visibility)}</Badge>
-            )}
-            {teamId ? (
-              <ContextualAskLink
-                teamId={teamId}
-                context={{
-                  pathname: `/app/documents/${currentDocument.id}`,
-                  routeKind: 'document-detail',
-                  documentId: currentDocument.id,
-                }}
-                label="Ask about document"
-              />
-            ) : null}
-            <Button size="sm" variant="outline" onClick={() => void onRename()} disabled={pending}>
-              Rename
-            </Button>
-            <Button
-              size="sm"
-              variant="destructive"
-              onClick={() => void onDelete()}
-              disabled={pending}
-            >
-              <Trash2 className="mr-1 size-3.5" />
-              Delete
-            </Button>
-          </div>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {currentDocument.visibility !== 'team' && (
+            <Badge variant="outline">{statusLabel(currentDocument.visibility)}</Badge>
+          )}
+          {teamId ? (
+            <ContextualAskLink
+              teamId={teamId}
+              context={{
+                pathname: `/app/documents/${currentDocument.id}`,
+                routeKind: 'document-detail',
+                documentId: currentDocument.id,
+              }}
+              label="Ask about document"
+            />
+          ) : null}
+          <Button size="sm" variant="outline" onClick={() => void onRename()} disabled={pending}>
+            Rename
+          </Button>
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={() => void onDelete()}
+            disabled={pending}
+          >
+            <Trash2 className="mr-1 size-3.5" />
+            Delete
+          </Button>
+        </div>
       </section>
 
       {activeVersion ? (
@@ -277,75 +277,73 @@ export function DocumentDetail({
 
       <section className="space-y-3 border-y border-border py-4">
         <SectionHeading>Version history</SectionHeading>
-          <ul className="divide-y divide-border">
-            {versions.map((v) => {
-              const highlight = requestedVersion === v.version;
-              const isCurrent = v.id === currentDocument.currentVersionId;
-              return (
-                <li
-                  key={v.id}
-                  className={
-                    'flex items-center justify-between gap-3 py-3 max-sm:flex-col max-sm:items-stretch ' +
-                    (highlight || activeVersion?.id === v.id
-                      ? 'rounded bg-surface-2 px-2 -mx-2'
-                      : '')
-                  }
-                >
-                  <div className="min-w-0 flex flex-col gap-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono text-sm font-semibold">v{String(v.version)}</span>
-                      {isCurrent && (
-                        <Badge variant="outline" className="text-[10px]">
-                          current
-                        </Badge>
-                      )}
-                      <StatusBadge status={v.processingStatus} />
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {formatBytes(v.byteSize)} · {v.contentType ?? 'unknown'} ·{' '}
-                      {new Date(v.createdAt).toLocaleString()}
-                    </p>
-                    {v.processingError ? (
-                      <TechnicalDetails
-                        items={[
-                          {
-                            label: 'Processing error',
-                            value: v.processingError,
-                            copyValue: v.processingError,
-                          },
-                        ]}
-                      />
-                    ) : null}
+        <ul className="divide-y divide-border">
+          {versions.map((v) => {
+            const highlight = requestedVersion === v.version;
+            const isCurrent = v.id === currentDocument.currentVersionId;
+            return (
+              <li
+                key={v.id}
+                className={
+                  'flex items-center justify-between gap-3 py-3 max-sm:flex-col max-sm:items-stretch ' +
+                  (highlight || activeVersion?.id === v.id ? 'rounded bg-surface-2 px-2 -mx-2' : '')
+                }
+              >
+                <div className="min-w-0 flex flex-col gap-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-sm font-semibold">v{String(v.version)}</span>
+                    {isCurrent && (
+                      <Badge variant="outline" className="text-[10px]">
+                        current
+                      </Badge>
+                    )}
+                    <StatusBadge status={v.processingStatus} />
                   </div>
-                  <div className="flex shrink-0 flex-wrap items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant={activeVersion?.id === v.id ? 'default' : 'outline'}
-                      asChild
-                    >
-                      <Link href={`/app/documents/${document.id}?version=${String(v.version)}`}>
-                        Preview
-                      </Link>
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        void onDownload(v.id);
-                      }}
-                      disabled={downloading.includes(v.id)}
-                    >
-                      <Download className="mr-1 size-3.5" />
-                      {downloading.includes(v.id) ? 'Opening…' : 'Download'}
-                    </Button>
-                  </div>
-                </li>
-              );
-            })}
-            {versions.length === 0 && (
-              <li className="py-6 text-center text-sm text-muted-foreground">No versions yet</li>
-            )}
-          </ul>
+                  <p className="text-xs text-muted-foreground">
+                    {formatBytes(v.byteSize)} · {v.contentType ?? 'unknown'} ·{' '}
+                    {new Date(v.createdAt).toLocaleString()}
+                  </p>
+                  {v.processingError ? (
+                    <TechnicalDetails
+                      items={[
+                        {
+                          label: 'Processing error',
+                          value: v.processingError,
+                          copyValue: v.processingError,
+                        },
+                      ]}
+                    />
+                  ) : null}
+                </div>
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant={activeVersion?.id === v.id ? 'default' : 'outline'}
+                    asChild
+                  >
+                    <Link href={`/app/documents/${document.id}?version=${String(v.version)}`}>
+                      Preview
+                    </Link>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      void onDownload(v.id);
+                    }}
+                    disabled={downloading.includes(v.id)}
+                  >
+                    <Download className="mr-1 size-3.5" />
+                    {downloading.includes(v.id) ? 'Opening…' : 'Download'}
+                  </Button>
+                </div>
+              </li>
+            );
+          })}
+          {versions.length === 0 && (
+            <li className="py-6 text-center text-sm text-muted-foreground">No versions yet</li>
+          )}
+        </ul>
       </section>
       {dialog.node}
     </div>
@@ -380,7 +378,9 @@ function CurrentVersionPanel({
     <section className="space-y-3 border-y border-border py-4">
       <div className="flex flex-row items-start justify-between gap-4 max-sm:flex-col">
         <div>
-          <SectionHeading>{isCurrentVersion ? 'Current version' : 'Selected version'}</SectionHeading>
+          <SectionHeading>
+            {isCurrentVersion ? 'Current version' : 'Selected version'}
+          </SectionHeading>
           <p className="mt-1 text-xs text-muted-foreground">
             v{String(version.version)} · {formatBytes(version.byteSize)} ·{' '}
             {version.contentType ?? 'unknown'} · {new Date(version.createdAt).toLocaleString()}
@@ -398,92 +398,92 @@ function CurrentVersionPanel({
           {downloading ? 'Opening…' : 'Download'}
         </Button>
       </div>
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
-          <div className="min-w-0">
-            {kind ? (
-              <DocumentPreview
-                target={{ versionId: version.id }}
-                autoLoad
-                showButton={false}
-                className="w-full"
-              />
-            ) : (
-              <UnsupportedPreview chunks={chunks} />
-            )}
-          </div>
-          <aside aria-label="Document context" className="space-y-3">
-            <InfoBlock
-              title="Model understanding"
-              headingId={modelUnderstandingId}
-              contentClassName="max-h-72 overflow-y-auto pr-1"
-              contentScrollable
-            >
-              {description ? (
-                <p className="break-words text-sm leading-6 text-fg-muted">{description}</p>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  No extracted description is available yet.
-                </p>
-              )}
-            </InfoBlock>
-            <InfoBlock title="Provenance">
-              <div className="space-y-2 text-sm text-fg-muted">
-                <p>{sourceLabel}</p>
-                {eventId ? (
-                  <EvidenceLink
-                    eventId={eventId}
-                    previewText={document.provenance.summary}
-                    source={document.provenance.source}
-                    occurredAt={document.provenance.occurredAt}
-                    className="inline-flex h-8 items-center gap-1 rounded-sm border border-border px-2 text-xs text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"
-                  >
-                    <Link2 className="size-3.5" />
-                    Event
-                  </EvidenceLink>
-                ) : null}
-              </div>
-            </InfoBlock>
-            <InfoBlock title="Agent status">
-              <div className="flex flex-wrap items-center gap-2">
-                <StatusBadge status={version.processingStatus} />
-                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                  <FileText className="size-3.5" />
-                  {chunks.length === 1 ? '1 chunk' : `${String(chunks.length)} chunks`}
-                </span>
-              </div>
-              {version.processingError ? (
-                <TechnicalDetails
-                  className="mt-2"
-                  items={[
-                    {
-                      label: 'Processing error',
-                      value: version.processingError,
-                      copyValue: version.processingError,
-                    },
-                  ]}
-                />
-              ) : null}
-            </InfoBlock>
-            {chunks.length > 0 ? (
-              <InfoBlock
-                title="Content excerpts"
-                headingId={contentExcerptsId}
-                contentClassName="space-y-3"
-              >
-                <ChunkCitationList chunks={chunks} ariaLabelledBy={contentExcerptsId} />
-                <TechnicalDetails
-                  summary="Indexing details"
-                  items={chunks.map((chunk, index) => ({
-                    id: chunk.id,
-                    label: `Excerpt ${String(index + 1)}`,
-                    value: `${chunk.id} · ${chunk.representationKind}`,
-                    copyValue: chunk.id,
-                  }))}
-                />
-              </InfoBlock>
-            ) : null}
-          </aside>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
+        <div className="min-w-0">
+          {kind ? (
+            <DocumentPreview
+              target={{ versionId: version.id }}
+              autoLoad
+              showButton={false}
+              className="w-full"
+            />
+          ) : (
+            <UnsupportedPreview chunks={chunks} />
+          )}
         </div>
+        <aside aria-label="Document context" className="space-y-3">
+          <InfoBlock
+            title="Model understanding"
+            headingId={modelUnderstandingId}
+            contentClassName="max-h-72 overflow-y-auto pr-1"
+            contentScrollable
+          >
+            {description ? (
+              <p className="break-words text-sm leading-6 text-fg-muted">{description}</p>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No extracted description is available yet.
+              </p>
+            )}
+          </InfoBlock>
+          <InfoBlock title="Provenance">
+            <div className="space-y-2 text-sm text-fg-muted">
+              <p>{sourceLabel}</p>
+              {eventId ? (
+                <EvidenceLink
+                  eventId={eventId}
+                  previewText={document.provenance.summary}
+                  source={document.provenance.source}
+                  occurredAt={document.provenance.occurredAt}
+                  className="inline-flex h-8 items-center gap-1 rounded-sm border border-border px-2 text-xs text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"
+                >
+                  <Link2 className="size-3.5" />
+                  Event
+                </EvidenceLink>
+              ) : null}
+            </div>
+          </InfoBlock>
+          <InfoBlock title="Agent status">
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge status={version.processingStatus} />
+              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                <FileText className="size-3.5" />
+                {chunks.length === 1 ? '1 chunk' : `${String(chunks.length)} chunks`}
+              </span>
+            </div>
+            {version.processingError ? (
+              <TechnicalDetails
+                className="mt-2"
+                items={[
+                  {
+                    label: 'Processing error',
+                    value: version.processingError,
+                    copyValue: version.processingError,
+                  },
+                ]}
+              />
+            ) : null}
+          </InfoBlock>
+          {chunks.length > 0 ? (
+            <InfoBlock
+              title="Content excerpts"
+              headingId={contentExcerptsId}
+              contentClassName="space-y-3"
+            >
+              <ChunkCitationList chunks={chunks} ariaLabelledBy={contentExcerptsId} />
+              <TechnicalDetails
+                summary="Indexing details"
+                items={chunks.map((chunk, index) => ({
+                  id: chunk.id,
+                  label: `Excerpt ${String(index + 1)}`,
+                  value: `${chunk.id} · ${chunk.representationKind}`,
+                  copyValue: chunk.id,
+                }))}
+              />
+            </InfoBlock>
+          ) : null}
+        </aside>
+      </div>
     </section>
   );
 }

@@ -3,7 +3,6 @@
 import { TASK_CATEGORY_OPTIONS } from '@timeline/shared/task-categories/types';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
-import { toastMutation } from '@/lib/mutation-toast';
 
 import type {
   TaskCategory,
@@ -18,6 +17,7 @@ import {
   undoTaskCategoryChangeAction,
 } from '@/app/actions/objects';
 import { useTaskCategoryPolling } from '@/components/tasks/task-category-polling';
+import { toastMutation } from '@/lib/mutation-toast';
 import { errorMessage } from '@/lib/utils';
 
 const AUTOMATIC_VALUE = '__automatic__';

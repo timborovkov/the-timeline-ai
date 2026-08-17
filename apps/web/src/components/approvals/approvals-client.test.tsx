@@ -2219,9 +2219,7 @@ describe('ApprovalsClient', () => {
     );
 
     await user.click(screen.getByRole('checkbox', { name: 'Select Merge Acme duplicates' }));
-    await user.click(
-      screen.getByRole('checkbox', { name: 'Select Merge Globex duplicates' }),
-    );
+    await user.click(screen.getByRole('checkbox', { name: 'Select Merge Globex duplicates' }));
     await user.click(screen.getByRole('button', { name: /^Reject$/ }));
 
     expect(fakes.rejectVisibleSuggestionsAction).toHaveBeenCalledWith({

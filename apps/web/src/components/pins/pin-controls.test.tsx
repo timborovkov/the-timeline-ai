@@ -115,7 +115,9 @@ describe('shared pin controls', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Launch plan')).toBeTruthy();
-      expect(fakes.toastError).toHaveBeenCalledWith('Could not unpin that item.', { id: 'toast-1' });
+      expect(fakes.toastError).toHaveBeenCalledWith('Could not unpin that item.', {
+        id: 'toast-1',
+      });
     });
   });
 });

@@ -147,7 +147,7 @@ function humanizeToken(value: string): string {
   return words ? `${words.charAt(0).toUpperCase()}${words.slice(1)}` : value;
 }
 
-export function previewFieldLabel(key: string): string {
+function previewFieldLabel(key: string): string {
   return FIELD_LABELS[key] ?? humanizeToken(key);
 }
 
@@ -194,9 +194,7 @@ function formatValue(
   return null;
 }
 
-function objectCurrentValues(
-  snapshot: ApprovalObjectSnapshot,
-): Record<string, unknown> {
+function objectCurrentValues(snapshot: ApprovalObjectSnapshot): Record<string, unknown> {
   return {
     type: snapshot.type,
     title: snapshot.title,
@@ -211,9 +209,7 @@ function objectCurrentValues(
   };
 }
 
-function calendarCurrentValues(
-  snapshot: ApprovalCalendarSnapshot,
-): Record<string, unknown> {
+function calendarCurrentValues(snapshot: ApprovalCalendarSnapshot): Record<string, unknown> {
   return {
     title: snapshot.title,
     allDay: snapshot.allDay,
@@ -230,8 +226,9 @@ function calendarCurrentValues(
 
 function proposedValues(payload: Record<string, unknown>, title: string): Record<string, unknown> {
   const next: Record<string, unknown> = { ...payload };
-  if (typeof payload.canonicalName === 'string' && !payload.title) next.title = payload.canonicalName;
-  if (!next.title) next.title = title;
+  if (typeof payload.canonicalName === 'string' && !payload.title)
+    next.title = payload.canonicalName;
+  next.title ??= title;
   if (typeof payload.createProjectName === 'string' && !payload.projectName) {
     next.projectName = payload.createProjectName;
   }
@@ -288,8 +285,7 @@ export function buildApprovalPreviewFields(input: {
 }): { fields: ApprovalPreviewField[]; timestamps: ApprovalPreviewTimestamps } {
   const proposed = proposedValues(input.proposedPayload, input.title);
   const objectSnapshot = input.snapshot?.kind === 'object' ? input.snapshot.object : null;
-  const calendarSnapshot =
-    input.snapshot?.kind === 'calendar_event' ? input.snapshot.event : null;
+  const calendarSnapshot = input.snapshot?.kind === 'calendar_event' ? input.snapshot.event : null;
   const current =
     objectSnapshot !== null
       ? objectCurrentValues(objectSnapshot)
@@ -300,7 +296,8 @@ export function buildApprovalPreviewFields(input: {
     input.targetKind === 'calendar_event' || calendarSnapshot
       ? CALENDAR_FIELD_ORDER
       : OBJECT_FIELD_ORDER;
-  const isCreate = input.operation === 'create' || input.snapshot?.kind === 'none' || !input.snapshot;
+  const isCreate =
+    input.operation === 'create' || input.snapshot?.kind === 'none' || !input.snapshot;
   const fields = mergeFieldKeys(order, current, proposed).flatMap((key) => {
     const currentText = formatValue(key, current[key], input.timezone, input.members);
     const proposedRaw = proposed[key];

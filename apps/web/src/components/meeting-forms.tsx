@@ -17,8 +17,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { DEFAULT_TIMEZONE, timezoneOptions } from '@/lib/timezones';
 import { toastMutation } from '@/lib/mutation-toast';
+import { DEFAULT_TIMEZONE, timezoneOptions } from '@/lib/timezones';
 
 const EMPTY_MEMBERS: { id: string; label: string }[] = [];
 const INCOMPLETE_SCHEDULE_ERROR =
@@ -537,11 +537,7 @@ export function ScheduleMeetingBotForm({
   }
 
   return (
-    <form
-      aria-busy={pending}
-      onSubmit={onSubmit}
-      className="space-y-4"
-    >
+    <form aria-busy={pending} onSubmit={onSubmit} className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor="meetingUrl">Meeting URL</Label>
         <Input
@@ -724,11 +720,7 @@ export function SavedMeetingForm({
   }
 
   return (
-    <form
-      aria-busy={pending}
-      onSubmit={onSubmit}
-      className="space-y-4"
-    >
+    <form aria-busy={pending} onSubmit={onSubmit} className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="saved-title">Meeting title</Label>

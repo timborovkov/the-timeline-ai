@@ -600,42 +600,6 @@ export function ApprovalsClient({
       }),
     [effectiveResolvedItemIds, suggestions],
   );
-  const bulkAcceptSuggestions = visibleSuggestions.flatMap((bundle) => {
-    const itemIds = bundle.items.reduce<string[]>((ids, item) => {
-      if (
-        isActionableSuggestionStatus(item.status) &&
-        item.targetKind !== 'object_merge' &&
-        item.evidenceStatus !== 'stale'
-      ) {
-        ids.push(item.id);
-      }
-      return ids;
-    }, []);
-    return itemIds.length > 0 ? [{ suggestionId: bundle.id, itemIds }] : [];
-  });
-  const bulkAcceptItemCount = bulkAcceptSuggestions.reduce(
-    (sum, suggestion) => sum + suggestion.itemIds.length,
-    0,
-  );
-  const mergeReviewItemCount = visibleSuggestions.reduce(
-    (sum, bundle) =>
-      sum +
-      bundle.items.filter(
-        (item) => isActionableSuggestionStatus(item.status) && item.targetKind === 'object_merge',
-      ).length,
-    0,
-  );
-  const bulkRejectSuggestions = visibleSuggestions.flatMap((bundle) => {
-    const itemIds = bundle.items.reduce<string[]>((ids, item) => {
-      if (isActionableSuggestionStatus(item.status)) ids.push(item.id);
-      return ids;
-    }, []);
-    return itemIds.length > 0 ? [{ suggestionId: bundle.id, itemIds }] : [];
-  });
-  const bulkRejectItemCount = bulkRejectSuggestions.reduce(
-    (sum, suggestion) => sum + suggestion.itemIds.length,
-    0,
-  );
   const visiblePendingItemCount = visibleSuggestions.reduce(
     (sum, bundle) =>
       sum + bundle.items.filter((item) => isActionableSuggestionStatus(item.status)).length,
@@ -881,7 +845,9 @@ function ApprovalListBody({
 }) {
   const selectable = allowBulkAccept || allowBulkReject;
   const selectedItems = visibleSuggestions.flatMap((bundle) =>
-    bundle.items.filter((item) => selectedIds.has(item.id) && isActionableSuggestionStatus(item.status)),
+    bundle.items.filter(
+      (item) => selectedIds.has(item.id) && isActionableSuggestionStatus(item.status),
+    ),
   );
   const selectedAccept = selectedItems.filter(
     (item) => item.targetKind !== 'object_merge' && item.evidenceStatus !== 'stale',
@@ -984,9 +950,7 @@ function ApprovalListBody({
 }
 
 function ApprovalUpdatingState() {
-  return (
-    <output className="px-3 py-2 text-xs text-fg-dim">Updating approvals…</output>
-  );
+  return <output className="px-3 py-2 text-xs text-fg-dim">Updating approvals…</output>;
 }
 
 function ApprovalBundleRow({
@@ -1277,13 +1241,7 @@ function CalendarResolutionLine({
   return null;
 }
 
-function ApprovalCalendarHint({
-  item,
-  timezone,
-}: {
-  item: SuggestionItem;
-  timezone: string;
-}) {
+function ApprovalCalendarHint({ item, timezone }: { item: SuggestionItem; timezone: string }) {
   if (item.targetKind !== 'calendar_event') return null;
   const proposedRange = proposedCalendarRange(item, timezone);
   return (
@@ -1458,4 +1416,3 @@ function ApprovalEvidence({ bundle, timezone }: { bundle: SuggestionBundle; time
     </details>
   );
 }
-

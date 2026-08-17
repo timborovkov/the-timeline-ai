@@ -76,10 +76,7 @@ export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
           </div>
         ) : null}
         {unavailable.length > 0 ? (
-          <details
-            open={available.length === 0}
-            className="border-y border-border py-3"
-          >
+          <details open={available.length === 0} className="border-y border-border py-3">
             <summary className="cursor-pointer text-sm font-medium text-fg-muted hover:text-fg">
               {available.length === 0
                 ? `Provider setup required · ${String(unavailable.length)}`

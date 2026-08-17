@@ -4,7 +4,6 @@ import { presentDueDate } from '@timeline/shared/time';
 import { ExternalLink, Save } from 'lucide-react';
 import Link from 'next/link';
 import { useState, useTransition } from 'react';
-import { toastMutation } from '@/lib/mutation-toast';
 
 import type {
   BoardItemOptimisticPatch,
@@ -34,6 +33,7 @@ import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { boardViewHref } from '@/lib/board-links';
 import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/display-dates';
 import { isSchedulableObjectType } from '@/lib/due-dates';
+import { toastMutation } from '@/lib/mutation-toast';
 import { objectDetailHref } from '@/lib/object-links';
 import { displayObjectTitle } from '@/lib/object-title';
 import { statusLabel } from '@/lib/status-labels';

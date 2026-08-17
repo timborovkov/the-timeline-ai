@@ -4,7 +4,6 @@ import { documentKindLabel, truncateFilenameMiddle } from '@timeline/shared/docu
 import { FileText, Image as ImageIcon, Link2, Upload } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMemo, useReducer, useRef, useState, useTransition } from 'react';
-import { toastMutation } from '@/lib/mutation-toast';
 
 import type { ReactNode } from 'react';
 
@@ -31,6 +30,7 @@ import {
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { displaySourceLabel } from '@/lib/display-labels';
 import { selectedValues } from '@/lib/filter-values';
+import { toastMutation } from '@/lib/mutation-toast';
 import { statusLabel } from '@/lib/status-labels';
 
 interface CapturedFileItem {
@@ -256,14 +256,11 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
         const message =
           'Could not load older captured files. The files already shown remain available. Check your connection, then try again.';
         setLoadMoreError(message);
-        await toastMutation(
-          Promise.resolve({ error: 'Could not load older captured files' }),
-          {
-            loading: 'Loading captured files',
-            success: 'Loaded captured files',
-            error: 'Could not load older captured files',
-          },
-        );
+        await toastMutation(Promise.resolve({ error: 'Could not load older captured files' }), {
+          loading: 'Loading captured files',
+          success: 'Loaded captured files',
+          error: 'Could not load older captured files',
+        });
       }
     });
   }

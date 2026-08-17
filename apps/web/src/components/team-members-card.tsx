@@ -1,9 +1,10 @@
+import Link from 'next/link';
+
 import type { TeamMemberMap, TeamMemberRow } from '@/components/team-member-types';
 
+import { SectionHeading } from '@/components/section-heading';
 import { TeamMemberListItem } from '@/components/team-member-list-item';
 import { Button } from '@/components/ui/button';
-import { SectionHeading } from '@/components/section-heading';
-import Link from 'next/link';
 
 export function MembersCard({
   members,

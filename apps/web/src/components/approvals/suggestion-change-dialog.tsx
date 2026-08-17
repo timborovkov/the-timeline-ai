@@ -62,10 +62,13 @@ export function SuggestionChangeDialog({
     }
     setError(null);
     startTransition(async () => {
-      const result = await toastMutation(reviseSuggestionItemAction({ itemId, feedback: trimmed }), {
-        loading: 'Updating proposal',
-        success: 'Proposal updated',
-      });
+      const result = await toastMutation(
+        reviseSuggestionItemAction({ itemId, feedback: trimmed }),
+        {
+          loading: 'Updating proposal',
+          success: 'Proposal updated',
+        },
+      );
       if (result.error) {
         setError(result.error);
         return;

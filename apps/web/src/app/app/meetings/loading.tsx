@@ -18,7 +18,10 @@ export default function MeetingsLoading() {
           <Skeleton className="h-9 w-20 rounded-t-sm" />
           <Skeleton className="h-9 w-16 rounded-t-sm" />
         </nav>
-        <section aria-label="Meeting setup loading placeholder" className="space-y-3 border-y border-border py-4">
+        <section
+          aria-label="Meeting setup loading placeholder"
+          className="space-y-3 border-y border-border py-4"
+        >
           <Skeleton className="h-5 w-44 max-w-full" />
           <div className="space-y-4">
             <Skeleton className="h-4 w-full max-w-xl" />

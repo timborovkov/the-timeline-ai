@@ -252,37 +252,37 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
               placeholder="Pipedrive webhook"
             />
           </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={visibilityDefault === 'team'}
-                  onChange={(e) => {
-                    dispatch({
-                      type: 'visibilityDefault',
-                      visibilityDefault: e.target.checked ? 'team' : 'private',
-                    });
-                  }}
-                />
-                Team-visible by default
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={proposalGenerationEnabled}
-                  onChange={(e) => {
-                    dispatch({
-                      type: 'proposalGenerationEnabled',
-                      proposalGenerationEnabled: e.target.checked,
-                    });
-                  }}
-                />
-                Generate approval proposals
-              </label>
-            </div>
-            <Button size="sm" disabled={busy || !name.trim()} onClick={() => void create()}>
-              {busy ? 'Creating…' : 'Create webhook'}
-            </Button>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={visibilityDefault === 'team'}
+                onChange={(e) => {
+                  dispatch({
+                    type: 'visibilityDefault',
+                    visibilityDefault: e.target.checked ? 'team' : 'private',
+                  });
+                }}
+              />
+              Team-visible by default
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={proposalGenerationEnabled}
+                onChange={(e) => {
+                  dispatch({
+                    type: 'proposalGenerationEnabled',
+                    proposalGenerationEnabled: e.target.checked,
+                  });
+                }}
+              />
+              Generate approval proposals
+            </label>
+          </div>
+          <Button size="sm" disabled={busy || !name.trim()} onClick={() => void create()}>
+            {busy ? 'Creating…' : 'Create webhook'}
+          </Button>
         </div>
       ) : null}
 

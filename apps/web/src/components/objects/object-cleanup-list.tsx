@@ -4,7 +4,6 @@ import { Archive, GitMerge, SquareCheckBig } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useReducer, useState, useTransition } from 'react';
-import { toastMutation } from '@/lib/mutation-toast';
 
 import type * as objects from '@timeline/shared/objects/types';
 
@@ -30,6 +29,7 @@ import { ItemActionGroup } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText } from '@/lib/display-dates';
 import { isSchedulableObjectType } from '@/lib/due-dates';
+import { toastMutation } from '@/lib/mutation-toast';
 import { MAX_OBJECT_MERGE_SELECTION, objectMergeHref } from '@/lib/object-merge';
 import { statusLabel } from '@/lib/status-labels';
 
