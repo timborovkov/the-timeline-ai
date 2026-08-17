@@ -1,7 +1,7 @@
 'use client';
 
 import { formatDigestDate, type DailyDigestPayload } from '@timeline/shared/messaging/format';
-import { Fragment, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { DigestBody } from '@/components/home/digest-body';
 import { cn } from '@/lib/utils';
@@ -39,76 +39,52 @@ export function DigestHistoryTable({
   }
 
   return (
-    <table className="w-full table-fixed border-collapse text-left text-sm">
-      <caption className="sr-only">Daily digests by day</caption>
-      <colgroup>
-        <col className="w-32" />
-        <col />
-        <col className="w-24" />
-      </colgroup>
-      <thead>
-        <tr className="border-b border-border text-xs text-fg-dim">
-          <th className="py-2 pr-4 font-medium">Day</th>
-          <th className="py-2 pr-4 font-medium">Summary</th>
-          <th className="py-2 font-medium">Status</th>
-        </tr>
-      </thead>
-      <tbody>
-        {digests.map((digest) => {
-          const open = openId === digest.id;
-          const timezone = digest.timezone ?? digest.payload.timezone;
-          const toggleOpen = () => {
-            setOverride({ forSelectedId: selectedId, openId: open ? null : digest.id });
-          };
-          return (
-            <Fragment key={digest.id}>
-              <tr id={digest.id} className="border-b border-border">
-                <td className="py-3 pr-4 align-top">
-                  <button
-                    type="button"
-                    aria-expanded={open}
-                    aria-controls={`digest-panel-${digest.id}`}
-                    className="font-mono text-xs text-fg-dim hover:text-fg"
-                    onClick={toggleOpen}
-                  >
-                    {formatDigestDate(digest.windowEnd, timezone)}
-                  </button>
-                </td>
-                <td className="min-w-0 py-3 pr-4 align-top">
-                  <button
-                    type="button"
-                    aria-expanded={open}
-                    aria-controls={`digest-panel-${digest.id}`}
-                    className="block w-full truncate text-left text-fg hover:text-signal"
-                    onClick={toggleOpen}
-                  >
-                    {digest.summary || 'No summary'}
-                  </button>
-                </td>
-                <td className="py-3 align-top">
-                  <span
-                    className={cn(
-                      'font-mono text-xs capitalize text-fg-dim',
-                      digest.status === 'sent' && 'text-signal',
-                    )}
-                  >
-                    {digest.status}
-                  </span>
-                </td>
-              </tr>
-              {open ? (
-                <tr className="border-b border-border">
-                  <td colSpan={3} className="px-1 pb-5 pt-2">
-                    <div id={`digest-panel-${digest.id}`}>
-                      <DigestBody digest={digest.payload} />
-                    </div>
-                  </td>
-                </tr>
-              ) : null}
-            </Fragment>
-          );
-        })}
-      </tbody>
-    </table>
+    <div>
+      <div className="grid grid-cols-[8rem_minmax(0,1fr)_6rem] gap-4 border-b border-border text-xs text-fg-dim">
+        <div className="py-2 font-medium">Day</div>
+        <div className="py-2 font-medium">Summary</div>
+        <div className="py-2 font-medium">Status</div>
+      </div>
+      {digests.map((digest) => {
+        const open = openId === digest.id;
+        const timezone = digest.timezone ?? digest.payload.timezone;
+        return (
+          <details
+            key={digest.id}
+            id={digest.id}
+            className="border-b border-border"
+            open={open || undefined}
+            onToggle={(event) => {
+              const nextOpen = event.currentTarget.open;
+              setOverride({
+                forSelectedId: selectedId,
+                openId: nextOpen ? digest.id : null,
+              });
+            }}
+          >
+            <summary
+              aria-expanded={open}
+              className="grid cursor-pointer grid-cols-[8rem_minmax(0,1fr)_6rem] gap-4 py-3 text-sm"
+            >
+              <span className="font-mono text-xs text-fg-dim">
+                {formatDigestDate(digest.windowEnd, timezone)}
+              </span>
+              <span className="min-w-0 truncate text-fg">{digest.summary || 'No summary'}</span>
+              <span
+                className={cn(
+                  'font-mono text-xs capitalize text-fg-dim',
+                  digest.status === 'sent' && 'text-signal',
+                )}
+              >
+                {digest.status}
+              </span>
+            </summary>
+            <div id={`digest-panel-${digest.id}`} className="px-1 pb-5 pt-1">
+              <DigestBody digest={digest.payload} />
+            </div>
+          </details>
+        );
+      })}
+    </div>
   );
 }

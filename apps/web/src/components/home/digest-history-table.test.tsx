@@ -39,7 +39,7 @@ describe('DigestHistoryTable', () => {
   });
 
   it('opens the selected digest row so a day can be inspected', () => {
-    render(
+    const { container } = render(
       <DigestHistoryTable
         selectedId="digest-2"
         digests={[
@@ -63,20 +63,20 @@ describe('DigestHistoryTable', () => {
       />,
     );
 
-    expect(
-      screen
-        .getByRole('button', { name: 'The launch moved forward.' })
-        .getAttribute('aria-expanded'),
-    ).toBe('true');
-    expect(screen.getByText('The invite flow is ready for the next review.')).toBeTruthy();
-    expect(
-      screen.getByRole('button', { name: 'Earlier quiet day.' }).getAttribute('aria-expanded'),
-    ).toBe('false');
+    const selected = container.querySelector('#digest-2');
+    const other = container.querySelector('#digest-1');
+    expect(selected).toBeInstanceOf(HTMLDetailsElement);
+    expect(other).toBeInstanceOf(HTMLDetailsElement);
+    expect((selected as HTMLDetailsElement | null)?.open).toBe(true);
+    expect((other as HTMLDetailsElement | null)?.open).toBe(false);
+    expect(selected?.querySelector('summary')?.getAttribute('aria-expanded')).toBe('true');
+    expect(other?.querySelector('summary')?.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByText('Jul 16, 2026')).toBeTruthy();
   });
 
   it('lets a teammate open another day without a selected query', async () => {
     const user = userEvent.setup();
-    render(
+    const { container } = render(
       <DigestHistoryTable
         digests={[
           {
@@ -99,8 +99,14 @@ describe('DigestHistoryTable', () => {
       />,
     );
 
-    expect(screen.queryByText('The invite flow is ready for the next review.')).toBeNull();
-    await user.click(screen.getByRole('button', { name: 'The launch moved forward.' }));
-    expect(screen.getByText('The invite flow is ready for the next review.')).toBeTruthy();
+    const details = container.querySelector('#digest-2');
+    const summary = details?.querySelector('summary');
+    expect(details).toBeInstanceOf(HTMLDetailsElement);
+    expect((details as HTMLDetailsElement | null)?.open).toBe(false);
+    expect(summary).toBeTruthy();
+    if (!summary) return;
+    await user.click(summary);
+    expect((details as HTMLDetailsElement | null)?.open).toBe(true);
+    expect(summary.getAttribute('aria-expanded')).toBe('true');
   });
 });
