@@ -14,6 +14,11 @@ import {
 } from '@timeline/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
+import {
+  classifyCapturedEvent,
+  promotesWorkspaceObject,
+  type TimelineEventClass,
+} from '#src/event-class.js';
 import type { IntegrationEvent, IntegrationRow, ObjectMapping } from '#src/integrations/types.js';
 
 import {
@@ -145,6 +150,18 @@ function resolveEventVisibility(args: {
   return args.requestedVisibility;
 }
 
+function integrationEventClass(event: IntegrationEvent): TimelineEventClass {
+  if (event.eventClass) return event.eventClass;
+  return classifyCapturedEvent({
+    source: 'integration',
+    metadata: {
+      ...(event.extra ?? {}),
+      provider: event.provider,
+      event_type: event.eventType,
+    },
+  });
+}
+
 export async function writeIntegrationEvents(deps: {
   db: Db;
   integration: IntegrationRow;
@@ -263,6 +280,7 @@ export async function writeIntegrationEvents(deps: {
             external_object_id: evt.externalObjectId,
             external_event_id: evt.externalEventId ?? null,
             event_type: evt.eventType,
+            event_class: integrationEventClass(evt),
             actor: evt.actor ?? null,
             dedup_key: evt.dedupKey,
             sync_at: new Date().toISOString(),
@@ -326,7 +344,8 @@ export async function writeIntegrationEvents(deps: {
   });
 
   const artifactEvents = activeWritableEvents.filter(
-    (evt): evt is IntegrationEvent & { objectMap: ObjectMapping } => Boolean(evt.objectMap),
+    (evt): evt is IntegrationEvent & { objectMap: ObjectMapping } =>
+      Boolean(evt.objectMap) && promotesWorkspaceObject(integrationEventClass(evt)),
   );
   const linkEvents = activeWritableEvents.filter((evt) => textHasLinks(evt.contentText));
   await Promise.all(

@@ -58,6 +58,7 @@ export async function handleGet(req: Request, pathToken?: string): Promise<Respo
     ok: true,
     name: resolved.name,
     visibilityDefault: resolved.visibilityDefault,
+    eventClass: resolved.eventClass,
     proposalGenerationEnabled: resolved.proposalGenerationEnabled,
   });
 }
@@ -131,6 +132,7 @@ export async function handlePost(req: Request, pathToken?: string): Promise<Resp
         requestHeaders,
         proposalGenerationEnabled: resolved.proposalGenerationEnabled,
       }),
+      event_class: resolved.eventClass,
     },
     contentText,
   );

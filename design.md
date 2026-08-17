@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.1 · Quiet Archive collection density (2026-08-16). Replaces v2 Operational Archive.
+**Version:** v3.2 · Timeline event families (2026-08-17). Replaces v3.1 Quiet Archive collection density.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -28,10 +28,11 @@ database implementation details in ordinary product views.
   work while keeping evidence association separate from source authority.
 - **Approval-backed state** is durable work state that passed human review.
 
-Count chrome: Moments mode and digest headlines count **moments**; Audit trail,
+Count chrome: Moments mode and digest headlines count **moments**; All events,
 source filters, and technical disclosures count **source events**. Moment rows
-use **signals** for bundled evidence size; the inspector uses **evidence
-items**. Do not show competing moment and raw-event totals in the same chrome.
+do not show competing signal chips; the inspector uses **evidence items** for
+conversations and an **Activity** log for pulses. Do not show competing moment
+and raw-event totals in the same chrome.
 
 Prefer concrete customer language over internal architecture terms. A user
 should understand what happened, what needs attention, and what they can do
@@ -127,15 +128,16 @@ Ask, Work, Documents, Meetings, Connections, and Team.
 - Provider-created chat sessions use a compact `TG`, `SL`, or neutral `EXT`
   badge in desktop and mobile history. Web-created sessions remain unbadged;
   provider identity must not replace the human-readable session title.
-- Inspector: hidden until content exists. Desktop uses the right pane; mobile
-  uses a focus-managed bottom sheet.
+- Inspector: hidden until content exists. Desktop uses a reading pane up to
+  `min(40%, 36rem)`; mobile uses a taller focus-managed bottom sheet.
 - Work routes share `WorkSubnav`: Overview, Pinned, Objects, Tasks, Boards,
   Calendar, Approvals.
 - Team settings use URL-backed `SettingsNav`: Members, General, Preferences,
   Visibility, Email, Exports, and admin-only Advanced.
 
-The `IndexStrip` is restricted to Timeline and explicit audit/operator views.
-It supplements the page title and must never create a second heading.
+The `IndexStrip` is restricted to explicit audit/operator views. Timeline uses
+a sticky collection toolbar under the 48px shell header instead of an index
+strip or loaded-count heading.
 
 ## Shared components
 
@@ -249,11 +251,12 @@ audit view.
 
 ### Evidence and citations
 
-Timeline evidence cues use a compact, mono, lime “View evidence · N signals”
-label that makes the inspector affordance explicit and remains keyboard
-operable. Opening the evidence inspector shows a human source summary first.
-Exact timestamps, ownership/visibility internals, source IDs, payloads, and raw
-provider data sit inside the inspector’s `TechnicalDetails`.
+Timeline rows themselves are the inspector affordance. Conversations and
+meetings read as stories; pull requests, issues, and other named records read
+as compact work records; CI, telemetry, and webhook chatter read as one-line
+pulses. Opening a row shows a human source summary first. Exact timestamps,
+ownership/visibility internals, source IDs, payloads, and raw provider data sit
+inside the inspector’s `TechnicalDetails`.
 
 Pack-backed approvals show a compact “Evidence for this change · N sources”
 disclosure beneath each proposed item, using source, sender, timestamp, bounded
@@ -291,12 +294,25 @@ opens Work → Pinned.
 
 ### Timeline
 
-Timeline is the strongest archive expression. Each row leads with time, source,
-human title, one supporting line, and meaningful impact/status. The rail, sticky
-dates, evidence quick view, and pagination remain. Exact capture and provider
-details move into the inspector. The default view ends at the current instant so
-materialized calendar occurrences do not displace recent work. Upcoming context
-is an explicit seven-day view; the Calendar surface owns the complete future
+Timeline is the strongest archive expression. Chrome is a sticky
+`CollectionToolbar` under the 48px shell header, with **Moments** and **All
+events** as the view control. Moments group related activity and give rows
+different visual weight. All events is a uniform compact log of every captured
+source event. The labels and the row density should make the difference
+obvious without a lecture.
+
+Each Moments row leads with time and source. Conversations and meetings are
+stories: a stronger title and a two-line preview. Work records (pull requests,
+issues, deals, incidents) are denser named records without chat-style previews.
+Pulses (CI, deploys, telemetry, generic webhooks) stay on one muted line, still
+visible, never competing with a transcript or Slack thread. Impact on the row
+is omitted; the inspector shows workspace consequences and structured facts
+(repository, branch, status) rather than LLM-written notes or machine IDs such
+as `repo#workflow_run:123`. The rail, sticky dates (`top-11` under the
+toolbar), and pagination remain. Exact capture and provider details move into
+the inspector. The default view ends at the current instant so materialized
+calendar occurrences do not displace recent work. Upcoming context is an
+explicit seven-day view; the Calendar surface owns the complete future
 schedule. Compact Home moments reuse the same formatter.
 
 ### Ask

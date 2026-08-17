@@ -152,8 +152,8 @@ export function InspectorPane() {
         aria-label="Inspector"
         aria-labelledby="inspector-title"
         className={cn(
-          'fixed inset-x-0 bottom-0 z-50 flex max-h-[min(82dvh,42rem)] flex-col rounded-t-md border-t border-border bg-surface shadow-2xl shadow-black/20',
-          'lg:sticky lg:top-0 lg:z-auto lg:h-full lg:max-h-none lg:w-96 lg:shrink-0 lg:self-start lg:rounded-none lg:border-l lg:border-t-0 lg:shadow-none',
+          'fixed inset-x-0 bottom-0 z-50 flex max-h-[min(90dvh,52rem)] flex-col rounded-t-md border-t border-border bg-surface shadow-2xl shadow-black/20',
+          'lg:sticky lg:top-0 lg:z-auto lg:h-full lg:max-h-none lg:w-[min(40%,36rem)] lg:min-w-[22rem] lg:shrink-0 lg:self-start lg:rounded-none lg:border-l lg:border-t-0 lg:shadow-none',
         )}
         tabIndex={-1}
       >

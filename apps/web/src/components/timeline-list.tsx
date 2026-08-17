@@ -1,6 +1,7 @@
 'use client';
 
 import { truncateFilenameMiddle } from '@timeline/shared/documents/presentation';
+import { isMachineIdentityLabel } from '@timeline/shared/event-class';
 import {
   Activity,
   CalendarDays,
@@ -234,6 +235,82 @@ function humanizeImpact(item: ImpactItem): string {
   return `${IMPACT_LABEL[item.kind]} · ${item.label}`;
 }
 
+function groupingCue(moment: TimelineMoment): string | null {
+  const count = moment.rawEvents.length;
+  if (count < 2) return null;
+  if (moment.eventClass === 'communication') return `${count} messages`;
+  if (moment.kind === 'ci_deploy') return `${count} runs`;
+  return `${count} events`;
+}
+
+function workspaceImpactItems(moment: TimelineMoment): ImpactItem[] {
+  const title = displayMomentTitle(moment);
+  return moment.impactItems.filter((item) => {
+    if (isMachineIdentityLabel(item.label)) return false;
+    if (isRepeatedContext(item.label, title)) return false;
+    if (item.kind === 'object' && moment.visualWeight === 'pulse') return false;
+    return item.kind !== 'object' || Boolean(item.href);
+  });
+}
+
+function humanClusters(moment: TimelineMoment): TimelineArtifactCluster[] {
+  return moment.artifactClusters.filter(
+    (cluster) => cluster.canonicalName && !isMachineIdentityLabel(cluster.canonicalName),
+  );
+}
+
+function externalSourceHref(moment: TimelineMoment): string | null {
+  for (const event of moment.rawEvents) {
+    const meta = metaObject(event.sourceMetadata);
+    const github = metaObject(meta.github);
+    const url =
+      stringMeta(meta, 'external_url') ?? stringMeta(github, 'url') ?? stringMeta(meta, 'url');
+    if (url && /^https?:\/\//i.test(url)) return url;
+  }
+  return null;
+}
+
+function inspectorFacts(moment: TimelineMoment, timezone: string): [string, string][] {
+  const lead = moment.rawEvents[0];
+  if (!lead) return [];
+  const meta = metaObject(lead.sourceMetadata);
+  const entries: [string, string][] = [];
+  const seen = new Set<string>();
+  addDetail(
+    entries,
+    seen,
+    'Repository',
+    firstMetaString(meta, ['repo', 'repository', 'project']),
+    timezone,
+  );
+  addDetail(entries, seen, 'Branch', firstMetaString(meta, ['head_branch', 'branch', 'ref']), timezone);
+  addDetail(
+    entries,
+    seen,
+    'Status',
+    firstMetaString(meta, ['conclusion', 'status', 'state']),
+    timezone,
+  );
+  addDetail(entries, seen, 'Event', firstMetaString(meta, ['event_type', 'event']), timezone);
+  addDetail(entries, seen, 'Webhook', stringMeta(meta, 'ingest_webhook_name'), timezone);
+  return entries.filter(([, value]) => !isRepeatedContext(value, displayMomentTitle(moment)));
+}
+
+function firstMetaString(meta: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const direct = stringMeta(meta, key);
+    if (direct) return direct;
+  }
+  for (const value of Object.values(meta)) {
+    const nested = metaObject(value);
+    for (const key of keys) {
+      const nestedVal = stringMeta(nested, key);
+      if (nestedVal) return nestedVal;
+    }
+  }
+  return null;
+}
+
 function evidenceSourceLabel(evidence: TimelineArtifactCluster['relatedEvidence'][number]): string {
   return evidence.provider ?? evidence.source ?? 'source';
 }
@@ -254,39 +331,8 @@ function shouldCapSourceEvidenceBody(body: string): boolean {
   return body.split(/\r\n|\r|\n/).length > SOURCE_EVIDENCE_BODY_LINE_LIMIT;
 }
 
-function uniqueLabels(labels: (string | null | undefined)[]): string[] {
-  return [...new Set(labels.filter((label): label is string => Boolean(label)))];
-}
-
 function inspectorTitle(moment: TimelineMoment): string {
   return displayMomentTitle(moment);
-}
-
-function sourceTruthSummary(moment: TimelineMoment): { title: string; body: string | null } {
-  const actorByTelegramUserId = actorLabelsByTelegramUserId(moment.rawEvents);
-  const actors = uniqueLabels(
-    moment.rawEvents.map((event) => rawEventActorLabel(event, actorByTelegramUserId)),
-  );
-  const contexts = uniqueLabels(moment.rawEvents.map(rawEventContextLabel));
-  const parts = [
-    moment.rawEvents.length === 1
-      ? '1 evidence item'
-      : `${String(moment.rawEvents.length)} evidence items`,
-    contexts.length === 1
-      ? contexts[0]
-      : contexts.length > 1
-        ? `${String(contexts.length)} places`
-        : null,
-    actors.length === 1
-      ? actors[0]
-      : actors.length > 1
-        ? `${String(actors.length)} contributors`
-        : null,
-  ].filter((part): part is string => Boolean(part));
-  return {
-    title: displayMomentTitle(moment),
-    body: parts.length > 0 ? parts.join(' · ') : null,
-  };
 }
 
 function rawEventBody(event: TimelineEvent, timezone: string): string {
@@ -512,33 +558,48 @@ function InspectorBody({
   capturedFilesByEventId: Record<string, TimelineCapturedFile[]>;
   timezone: string;
 }) {
-  const summary = sourceTruthSummary(moment);
   const [visibleRawEventCount, setVisibleRawEventCount] = useState(INSPECTOR_RAW_EVENT_LIMIT);
   const visibleRawEvents = moment.rawEvents.slice(0, visibleRawEventCount);
   const hiddenRawEventCount = moment.rawEvents.length - visibleRawEvents.length;
   const actorByTelegramUserId = actorLabelsByTelegramUserId(moment.rawEvents);
+  const impactItems = workspaceImpactItems(moment);
+  const clusters = humanClusters(moment);
+  const facts = inspectorFacts(moment, timezone);
+  const href = externalSourceHref(moment);
+  const preview = supportingText(moment, '');
+  const compactEvidence = moment.visualWeight === 'pulse';
 
   return (
     <div className="space-y-5">
-      <section>
-        <h3 className="mb-2 text-sm font-semibold text-fg">Moment</h3>
-        <p className="break-words text-sm font-medium leading-6 text-fg">
-          {displayMomentTitle(moment)}
-        </p>
-        {moment.preview ? (
-          <p className="mt-1 break-words text-sm leading-6 text-fg-muted">{moment.preview}</p>
-        ) : null}
-        {summary.body ? (
-          <p className="mt-1 break-words text-sm leading-6 text-fg-muted">
-            Evidence summary · {summary.body}
-          </p>
-        ) : null}
-      </section>
-      {moment.impactItems.length > 0 ? (
+      {preview && preview !== displayMomentTitle(moment) ? (
+        <p className="break-words text-sm leading-6 text-fg-muted">{preview}</p>
+      ) : null}
+      {facts.length > 0 ? (
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
+          {facts.map(([label, value]) => (
+            <div key={label} className="contents">
+              <dt className="text-fg-dim">{label}</dt>
+              <dd className="min-w-0 break-words text-fg">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+      {href ? (
+        <a
+          href={href}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-sm text-fg-muted underline decoration-border underline-offset-4 transition-colors hover:text-signal hover:decoration-signal"
+        >
+          Open source
+          <ExternalLink aria-hidden="true" className="size-3" />
+        </a>
+      ) : null}
+      {impactItems.length > 0 ? (
         <section>
           <h3 className="mb-2 text-sm font-semibold text-fg">Impact</h3>
           <ul className="space-y-1.5">
-            {moment.impactItems.map((item, index) => (
+            {impactItems.map((item, index) => (
               <li
                 key={`${item.kind}:${item.label}:${index}`}
                 className="rounded-sm border border-border bg-surface-2 px-2 py-1.5"
@@ -561,22 +622,42 @@ function InspectorBody({
         </section>
       ) : null}
       <section>
-        <h3 className="mb-2 text-sm font-semibold text-fg">Source evidence</h3>
-        <ol className="space-y-2">
-          {visibleRawEvents.map((event) => (
-            <SourceEvidenceCard
-              key={event.id}
-              event={event}
-              actorLabel={rawEventActorLabel(event, actorByTelegramUserId)}
-              audioUrl={audioUrlMap?.get(event.id)}
-              canEditVisibility={canEditVisibility(event, currentUserId)}
-              canRemove={canRemoveConversational(event, currentUserId, isAdmin)}
-              members={members}
-              capturedFiles={capturedFilesByEventId[event.id] ?? []}
-              timezone={timezone}
-            />
-          ))}
-        </ol>
+        <h3 className="mb-2 text-sm font-semibold text-fg">
+          {compactEvidence ? 'Activity' : 'Source evidence'}
+        </h3>
+        {compactEvidence ? (
+          <ol className="space-y-1">
+            {visibleRawEvents.map((event) => (
+              <li key={event.id} className="flex min-w-0 gap-2 text-sm">
+                <time
+                  dateTime={event.occurredAt}
+                  className="shrink-0 font-mono text-xs text-fg-dim"
+                >
+                  {formatTimestamp(event.occurredAt, timezone)}
+                </time>
+                <span className="min-w-0 truncate text-fg-muted">
+                  {rawEventBody(event, timezone)}
+                </span>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <ol className="space-y-2">
+            {visibleRawEvents.map((event) => (
+              <SourceEvidenceCard
+                key={event.id}
+                event={event}
+                actorLabel={rawEventActorLabel(event, actorByTelegramUserId)}
+                audioUrl={audioUrlMap?.get(event.id)}
+                canEditVisibility={canEditVisibility(event, currentUserId)}
+                canRemove={canRemoveConversational(event, currentUserId, isAdmin)}
+                members={members}
+                capturedFiles={capturedFilesByEventId[event.id] ?? []}
+                timezone={timezone}
+              />
+            ))}
+          </ol>
+        )}
         {hiddenRawEventCount > 0 ? (
           <Button
             type="button"
@@ -592,11 +673,11 @@ function InspectorBody({
           </Button>
         ) : null}
       </section>
-      {moment.artifactClusters.length > 0 ? (
+      {clusters.length > 0 ? (
         <section>
           <h3 className="mb-2 text-sm font-semibold text-fg">Related evidence</h3>
           <div className="space-y-3">
-            {moment.artifactClusters.map((cluster) => (
+            {clusters.map((cluster) => (
               <ArtifactEvidenceBundle key={cluster.id} cluster={cluster} timezone={timezone} />
             ))}
           </div>
@@ -619,6 +700,7 @@ function InspectorTechnicalDetails({
     <TechnicalDetails
       items={[
         { label: 'Moment ID', value: moment.id, copyValue: moment.id },
+        { label: 'Event class', value: moment.eventClass },
         { label: 'Evidence IDs', value: evidenceIds, copyValue: evidenceIds },
         { label: 'Visibility', value: formatVisibilitySummary(moment.rawEvents) },
         ...metadata.map(([label, value]) => ({ label, value, copyValue: value })),
@@ -692,25 +774,6 @@ function ArtifactEvidenceBundle({
         })}
       </ol>
     </div>
-  );
-}
-
-function RelatedEvidenceStrip({ clusters }: { clusters: TimelineArtifactCluster[] }) {
-  if (clusters.length === 0) return null;
-  const primary = clusters[0];
-  if (!primary) return null;
-  const signalCount = primary.relatedEvidence.length;
-  const extraClusters = clusters.length - 1;
-  const label = `${primary.canonicalName} · ${evidenceCountLabel(signalCount)}${
-    extraClusters > 0 ? ` · +${extraClusters}` : ''
-  }`;
-  return (
-    <span
-      className="inline-flex min-h-6 max-w-full min-w-0 items-center rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim"
-      title={`Related evidence for ${primary.canonicalName}`}
-    >
-      <span className="min-w-0 truncate">Related · {label}</span>
-    </span>
   );
 }
 
@@ -1037,35 +1100,6 @@ function CapturedFileEvidence({ file }: { file: TimelineCapturedFile }) {
   );
 }
 
-function ImpactStrip({ items, timezone }: { items: ImpactItem[]; timezone: string }) {
-  if (items.length === 0) return null;
-  return (
-    <div
-      className="flex min-w-0 flex-wrap justify-start gap-x-2 gap-y-1"
-      aria-label="Impact context"
-    >
-      {items.slice(0, 2).map((item, index) => {
-        const count = item.count && item.count > 1 ? ` ×${item.count}` : '';
-        const status = item.status ? ` · ${statusLabel(item.status)}` : '';
-        const label = displayText(`${humanizeImpact(item)}${count}${status}`, {
-          timezone,
-        });
-        const className =
-          'inline-flex min-h-6 max-w-full min-w-0 items-center text-xs text-fg-dim transition-colors hover:text-fg';
-        return item.href ? (
-          <Link key={`${item.kind}:${item.label}:${index}`} href={item.href} className={className}>
-            <span className="min-w-0 truncate">{label}</span>
-          </Link>
-        ) : (
-          <span key={`${item.kind}:${item.label}:${index}`} className={className}>
-            <span className="min-w-0 truncate">{label}</span>
-          </span>
-        );
-      })}
-    </div>
-  );
-}
-
 function momentTranscriptionStatus(moment: TimelineMoment): string | null {
   for (const event of moment.rawEvents) {
     const status = transcriptionStatusMessage(event);
@@ -1140,24 +1174,24 @@ function TimelineMomentRow({
   const meetingHref = meetingDetailHrefForMoment(moment);
   const transcriptionStatus = momentTranscriptionStatus(moment);
   const KindIcon = MOMENT_KIND_ICON[moment.kind];
-  const sourceTruth = sourceTruthSummary(moment);
   const title = displayMomentTitle(moment);
-  const previewText = supportingText(moment, sourceTruth.body ?? 'Evidence available');
-  const sourceCountLabel =
-    moment.rawEvents.length === 1 ? '1 signal' : `${moment.rawEvents.length} signals`;
-  const hasSupportingContext =
-    moment.impactItems.length > 0 ||
-    moment.artifactClusters.length > 0 ||
-    transcriptionStatus !== null;
+  const cue = groupingCue(moment);
+  const pulse = moment.visualWeight === 'pulse';
+  const story = moment.visualWeight === 'story';
+  const previewText = story ? supportingText(moment, '') : '';
+  const showPreview = Boolean(previewText) && previewText !== title;
   return (
     <li
       id={moment.anchorId}
       aria-current={selected ? 'true' : undefined}
       className={cn(
-        'group relative -mx-3 grid min-h-11 scroll-mt-24 grid-cols-1 border-b border-border px-3 transition-colors hover:bg-surface md:grid-cols-[5.75rem_minmax(0,1fr)]',
+        'group relative -mx-3 grid scroll-mt-24 grid-cols-1 border-b border-border px-3 transition-colors hover:bg-surface md:grid-cols-[5.75rem_minmax(0,1fr)]',
+        pulse ? 'min-h-9' : story ? 'min-h-12' : 'min-h-10',
         selected && 'bg-surface shadow-[inset_3px_0_0_var(--signal)]',
       )}
       data-moment-id={moment.id}
+      data-visual-weight={moment.visualWeight}
+      data-event-class={moment.eventClass}
     >
       {moment.rawEvents.map((event) => (
         <span
@@ -1167,7 +1201,12 @@ function TimelineMomentRow({
           className="absolute -top-16 left-0 size-px scroll-mt-24 overflow-hidden target:h-full target:w-0.5 target:bg-signal"
         />
       ))}
-      <div className="relative px-0 pt-2 font-mono text-xs text-fg-dim md:px-0 md:py-2.5 md:pr-3">
+      <div
+        className={cn(
+          'relative px-0 font-mono text-xs text-fg-dim md:pr-3',
+          pulse ? 'pt-1.5 md:py-1.5' : 'pt-2 md:py-2.5',
+        )}
+      >
         <span data-visual-dynamic="timeline-time">{moment.timeLabel}</span>
         <span
           aria-hidden="true"
@@ -1176,19 +1215,18 @@ function TimelineMomentRow({
         <span
           aria-hidden="true"
           className={cn(
-            'absolute right-[-7px] top-3.5 hidden size-3.5 items-center justify-center border border-border-strong bg-bg text-fg-dim transition-colors md:flex',
+            'absolute right-[-7px] hidden size-3.5 items-center justify-center border border-border-strong bg-bg text-fg-dim transition-colors md:flex',
+            pulse ? 'top-2' : story ? 'top-3.5' : 'top-3',
             selected && 'border-signal text-signal',
           )}
         >
           <KindIcon aria-hidden="true" className="size-2.5" />
         </span>
       </div>
-      <div className="min-w-0 py-2 md:pl-3 md:pr-2">
+      <div className={cn('min-w-0 md:pl-3 md:pr-2', pulse ? 'py-1.5' : story ? 'py-2' : 'py-1.5')}>
         <button
           type="button"
-          aria-label={[title, previewText, moment.timeLabel, 'View evidence']
-            .filter(Boolean)
-            .join(' · ')}
+          aria-label={[title, previewText, moment.timeLabel, cue].filter(Boolean).join(' · ')}
           onClick={() => {
             inspector.show(
               momentInspectorContent({
@@ -1204,48 +1242,62 @@ function TimelineMomentRow({
           }}
           className="block w-full rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong"
         >
-          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-fg-dim">
-            <span className="inline-flex items-center gap-1 font-medium text-fg-muted">
-              <KindIcon aria-hidden="true" className="size-3.5" />
-              {moment.sourceLabel}
-            </span>
-            {!isRepeatedContext(moment.actorLabel, moment.sourceLabel, title) ? (
-              <span>{moment.actorLabel}</span>
-            ) : null}
-            {!isRepeatedContext(
-              moment.contextLabel,
-              moment.sourceLabel,
-              title,
-              moment.actorLabel,
-            ) ? (
-              <span>{moment.contextLabel}</span>
-            ) : null}
-            <span className="inline-flex min-h-6 items-center rounded-sm border border-signal/30 bg-signal-soft px-1.5 py-0.5 font-mono text-[10px] text-signal">
-              View evidence · {sourceCountLabel}
-            </span>
-          </div>
-          <p className="mt-0.5 line-clamp-1 break-words text-sm font-medium leading-5 text-fg md:max-w-[88ch]">
-            {title}
-          </p>
-          <p
-            className={cn(
-              'line-clamp-1 break-words text-xs leading-4 text-fg-dim',
-              !compact && 'md:max-w-[84ch]',
-            )}
-          >
-            {previewText}
-          </p>
-        </button>
-        {hasSupportingContext ? (
-          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
-            <ImpactStrip items={moment.impactItems} timezone={timezone} />
-            <RelatedEvidenceStrip clusters={moment.artifactClusters} />
-            {transcriptionStatus ? (
-              <span className="inline-flex min-h-6 max-w-full min-w-0 items-center rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-muted">
-                {transcriptionStatus}
+          {pulse ? (
+            <p className="flex min-w-0 items-baseline gap-x-2 text-sm leading-5 text-fg-muted">
+              <span className="inline-flex shrink-0 items-center gap-1 text-xs text-fg-dim">
+                <KindIcon aria-hidden="true" className="size-3.5" />
+                {moment.sourceLabel}
               </span>
-            ) : null}
-          </div>
+              <span className="min-w-0 truncate">{title}</span>
+              {cue ? <span className="shrink-0 text-xs text-fg-dim">{cue}</span> : null}
+            </p>
+          ) : (
+            <>
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-fg-dim">
+                <span className="inline-flex items-center gap-1 font-medium text-fg-muted">
+                  <KindIcon aria-hidden="true" className="size-3.5" />
+                  {moment.sourceLabel}
+                </span>
+                {!isRepeatedContext(moment.actorLabel, moment.sourceLabel, title) ? (
+                  <span>{moment.actorLabel}</span>
+                ) : null}
+                {!isRepeatedContext(
+                  moment.contextLabel,
+                  moment.sourceLabel,
+                  title,
+                  moment.actorLabel,
+                ) ? (
+                  <span>{moment.contextLabel}</span>
+                ) : null}
+                {cue ? <span>{cue}</span> : null}
+              </div>
+              <p
+                className={cn(
+                  'mt-0.5 break-words text-sm leading-5 md:max-w-[88ch]',
+                  story
+                    ? 'line-clamp-2 font-medium text-fg'
+                    : 'line-clamp-1 font-medium text-fg',
+                )}
+              >
+                {title}
+              </p>
+              {showPreview ? (
+                <p
+                  className={cn(
+                    'line-clamp-2 break-words text-xs leading-4 text-fg-dim',
+                    !compact && 'md:max-w-[84ch]',
+                  )}
+                >
+                  {previewText}
+                </p>
+              ) : null}
+            </>
+          )}
+        </button>
+        {transcriptionStatus ? (
+          <span className="mt-1 inline-flex min-h-6 max-w-full min-w-0 items-center text-xs text-fg-muted">
+            {transcriptionStatus}
+          </span>
         ) : null}
         {meetingHref ? (
           <Link
@@ -1384,12 +1436,18 @@ export function TimelineList({
   }
 
   return (
-    <div aria-label={compact ? 'Recent timeline moments' : 'Timeline moments'}>
+    <div
+      aria-label={compact ? 'Recent timeline moments' : mode === 'events' ? 'All events' : 'Timeline moments'}
+      data-timeline-mode={mode}
+    >
       {dateGroups.map(([date, group]) => (
         <section key={date} aria-labelledby={`timeline-date-${date}`}>
           <h2
             id={`timeline-date-${date}`}
-            className="sticky top-0 z-10 -mx-3 border-y border-border bg-bg px-3 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim"
+            className={cn(
+              'sticky z-10 -mx-3 border-y border-border bg-bg px-3 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim',
+              compact ? 'top-0' : 'top-11',
+            )}
           >
             {date}
           </h2>

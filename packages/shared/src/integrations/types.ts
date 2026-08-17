@@ -3,6 +3,8 @@ import type {
   providerConnections as providerConnectionsTable,
 } from '@timeline/db';
 
+import type { TimelineEventClass } from '#src/event-class.js';
+
 // Phase 11 — Provider adapter interface.
 //
 // Every integration (Google Drive, Linear, GitHub, Monday.com, Slack, Sentry,
@@ -78,6 +80,12 @@ export interface IntegrationEvent {
    * still has a stable source payload ref.
    */
   extra?: Record<string, unknown>;
+  /**
+   * Optional presentation family. When omitted, the event-writer classifies
+   * from provider, event type, and nested record kind. Pulses never promote
+   * `objectMap` into artifact identity.
+   */
+  eventClass?: TimelineEventClass;
   /**
    * A durable Monday update/reply deletion target. The writer persists it
    * before writing the event batch, hides matching immutable source rows, and

@@ -38,17 +38,28 @@ individual source evidence. The timeline is date-first, with source clusters
 inside each date and impact shown as attached context. Timeline lists should
 show compact signals for extracted file representations; full transcripts,
 OCR text, and visual descriptions belong in event detail, citations, and agent
-tools. User-facing Moments chrome and digests count moments; Audit trail,
-filters, and technical disclosures count source events. Row chips use signals;
-inspectors use evidence items — do not pair moment and raw-event totals in the
-same chrome.
+tools. User-facing Moments chrome and digests count moments; All events,
+filters, and technical disclosures count source events. Conversation inspectors
+use evidence items; pulses use a compact activity log — do not pair moment and
+raw-event totals in the same chrome.
 _Avoid_: Raw Event when referring to the grouped browsing unit
+
+**Timeline event class**:
+A provider-agnostic family for captured events: communication, work record,
+pulse, incident, artifact, or schedule. Native sources, integrations, and
+ingest webhooks all resolve to one class. The class chooses visual weight
+(story, record, pulse), whether `objectMap` may feed artifact identity, and
+how the inspector is laid out. Generic ingest webhooks let an admin set the
+class when creating the webhook; unknown deliveries default to pulse.
+_Avoid_: GitHub event, Sentry event, webhook type when discussing presentation
 
 **Impact Context**:
 The workspace consequences or links attached to a timeline moment, such as
 tasks, boards, objects, calendar events, documents, decisions, follow-ups, or
 pending approvals that were created, changed, referenced, or suggested from the
-underlying evidence. Extracted emails, phone numbers, and labeled addresses can
+underlying evidence. Work records (merged PRs, issue moves, deal stages) also
+surface deterministic structured facts from source metadata. Pulses do not
+invent impact from machine identifiers. Extracted emails, phone numbers, and labeled addresses can
 ride on raw-event metadata as evidence, but emails/phones become useful product
 state only when they are accepted as person identity facets; addresses remain
 location/object metadata unless a later workflow promotes them. Impact Context

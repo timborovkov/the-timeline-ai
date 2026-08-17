@@ -339,7 +339,7 @@ export function timelineHref(
   return query ? `/app/timeline?${query}` : '/app/timeline';
 }
 
-/** Primary loaded count for IndexStrip / chrome: moments in Moments mode, events in Audit trail. */
+/** Primary loaded count: moments in Moments mode, events in All events. */
 export function timelineLoadedCount(
   mode: 'moments' | 'events',
   momentCount: number,

@@ -1,5 +1,6 @@
 'use client';
 
+import { TIMELINE_EVENT_CLASS_OPTIONS, type TimelineEventClass } from '@timeline/shared/event-class';
 import { useRouter } from 'next/navigation';
 import { useEffect, useReducer } from 'react';
 
@@ -22,6 +23,7 @@ export interface IngestWebhookRow {
   id: string;
   name: string;
   visibilityDefault: string;
+  eventClass: TimelineEventClass;
   proposalGenerationEnabled: boolean;
   disabledAt: string | null;
   createdAt: string;
@@ -37,6 +39,7 @@ interface State {
   showCreate: boolean;
   name: string;
   visibilityDefault: 'team' | 'private';
+  eventClass: TimelineEventClass;
   proposalGenerationEnabled: boolean;
   busy: boolean;
   minted: MintedCredential | null;
@@ -47,6 +50,7 @@ type Action =
   | { type: 'showCreate'; showCreate: boolean }
   | { type: 'name'; name: string }
   | { type: 'visibilityDefault'; visibilityDefault: 'team' | 'private' }
+  | { type: 'eventClass'; eventClass: TimelineEventClass }
   | { type: 'proposalGenerationEnabled'; proposalGenerationEnabled: boolean }
   | { type: 'busy'; busy: boolean }
   | { type: 'minted'; minted: MintedCredential | null }
@@ -61,6 +65,8 @@ function reducer(state: State, action: Action): State {
       return { ...state, name: action.name };
     case 'visibilityDefault':
       return { ...state, visibilityDefault: action.visibilityDefault };
+    case 'eventClass':
+      return { ...state, eventClass: action.eventClass };
     case 'proposalGenerationEnabled':
       return { ...state, proposalGenerationEnabled: action.proposalGenerationEnabled };
     case 'busy':
@@ -75,6 +81,7 @@ function reducer(state: State, action: Action): State {
         minted: action.minted,
         name: '',
         visibilityDefault: 'team',
+        eventClass: 'pulse',
         proposalGenerationEnabled: true,
         showCreate: false,
       };
@@ -85,16 +92,21 @@ function copyToClipboard(text: string): void {
   void navigator.clipboard.writeText(text).catch(() => undefined);
 }
 
+function eventClassLabel(value: TimelineEventClass): string {
+  return TIMELINE_EVENT_CLASS_OPTIONS.find((option) => option.value === value)?.label ?? value;
+}
+
 export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] }) {
   const router = useRouter();
   const dialog = useAppDialog();
   const [
-    { showCreate, name, visibilityDefault, proposalGenerationEnabled, busy, minted, origin },
+    { showCreate, name, visibilityDefault, eventClass, proposalGenerationEnabled, busy, minted, origin },
     dispatch,
   ] = useReducer(reducer, {
     showCreate: false,
     name: '',
     visibilityDefault: 'team',
+    eventClass: 'pulse',
     proposalGenerationEnabled: true,
     busy: false,
     minted: null,
@@ -119,7 +131,7 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
       const res = await fetch('/api/team/ingest-webhooks', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name, visibilityDefault, proposalGenerationEnabled }),
+        body: JSON.stringify({ name, visibilityDefault, eventClass, proposalGenerationEnabled }),
       });
       if (!res.ok) {
         await alertFailure('Create failed', res);
@@ -286,6 +298,29 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
                 Generate approval proposals
               </label>
             </div>
+            <div className="space-y-1">
+              <Label htmlFor="ingest-webhook-event-class">Timeline type</Label>
+              <select
+                id="ingest-webhook-event-class"
+                value={eventClass}
+                onChange={(e) => {
+                  dispatch({
+                    type: 'eventClass',
+                    eventClass: e.target.value as TimelineEventClass,
+                  });
+                }}
+                className="h-9 w-full rounded-sm border border-border bg-bg px-2 text-sm"
+              >
+                {TIMELINE_EVENT_CLASS_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-fg-muted">
+                {TIMELINE_EVENT_CLASS_OPTIONS.find((option) => option.value === eventClass)?.hint}
+              </p>
+            </div>
             <Button size="sm" disabled={busy || !name.trim()} onClick={() => void create()}>
               {busy ? 'Creating…' : 'Create webhook'}
             </Button>
@@ -307,8 +342,9 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
                   <div className="min-w-0">
                     <div className="text-sm font-medium">{webhook.name}</div>
                     <div className="font-mono text-xs text-fg-muted">
-                      {webhook.disabledAt ? 'disabled' : 'active'} · visibility{' '}
-                      {webhook.visibilityDefault} · proposals{' '}
+                      {webhook.disabledAt ? 'disabled' : 'active'} ·{' '}
+                      {eventClassLabel(webhook.eventClass)} ·
+                      visibility {webhook.visibilityDefault} · proposals{' '}
                       {webhook.proposalGenerationEnabled ? 'on' : 'off'}
                       {credential
                         ? ` · ${credential.prefix}... · last used ${
@@ -339,7 +375,26 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
                     </ItemOverflowMenu>
                   </ItemActionGroup>
                 </div>
-                <div className="flex flex-wrap gap-3 text-sm">
+                <div className="flex flex-wrap items-end gap-3 text-sm">
+                  <label className="flex min-w-40 flex-col gap-1">
+                    <span className="text-xs text-fg-muted">Timeline type</span>
+                    <select
+                      value={webhook.eventClass}
+                      disabled={Boolean(webhook.disabledAt)}
+                      onChange={(e) =>
+                        void patch(webhook.id, {
+                          eventClass: e.target.value as TimelineEventClass,
+                        })
+                      }
+                      className="h-8 rounded-sm border border-border bg-bg px-2 text-sm"
+                    >
+                      {TIMELINE_EVENT_CLASS_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                   <label className="flex items-center gap-2">
                     <input
                       type="checkbox"

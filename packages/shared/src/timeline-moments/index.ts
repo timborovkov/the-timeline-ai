@@ -1,4 +1,11 @@
 import { documentKindLabel, truncateFilenameMiddle } from '#src/documents/presentation.js';
+import {
+  classifyCapturedEvent,
+  isMachineIdentityLabel,
+  visualWeightForEventClass,
+  type TimelineEventClass,
+  type TimelineVisualWeight,
+} from '#src/event-class.js';
 
 const ISO_INSTANT_PATTERN = /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z\b/g;
 const PROVIDER_LABELS: Record<string, string> = {
@@ -191,6 +198,8 @@ export interface TimelineMoment<
   source: TEvent['source'];
   sourceLabel: string;
   sourceIcon: string;
+  eventClass: TimelineEventClass;
+  visualWeight: TimelineVisualWeight;
   actorLabel: string;
   contextLabel: string;
   title: string;
@@ -1034,7 +1043,8 @@ function integrationResourceLabel(
     stringMeta(meta, 'external_object_id') ??
     stringMeta(meta, 'external_event_id');
 
-  return label ? formatIntegrationResourceLabel(label) : null;
+  if (!label || isMachineIdentityLabel(label)) return null;
+  return formatIntegrationResourceLabel(label);
 }
 
 function githubTitleForGroup(
@@ -1054,9 +1064,23 @@ function githubTitleForGroup(
     const cancelled = sorted.filter((event) =>
       stringMeta(metaObject(event.sourceMetadata), 'event_type')?.includes('cancelled'),
     ).length;
+    const latestMeta = metaObject(latest.sourceMetadata);
+    const latestType = stringMeta(latestMeta, 'event_type') ?? '';
+    const latestGithub = nestedRecord(latestMeta, 'github');
+    const latestStatus = stringMeta(latestGithub, 'status') ?? '';
     const name = workflowNameFromContent(latest) ?? 'workflow';
-    const state = failures > 0 ? 'failed' : cancelled > 0 ? 'was cancelled' : 'passed';
-    return `${name} ${state}${repo ? ` on ${repo}` : ''}`;
+    const state =
+      failures > 0
+        ? 'failed'
+        : cancelled > 0
+          ? 'was cancelled'
+          : /in_progress|queued|waiting|pending/.test(latestType) ||
+              latestStatus === 'in_progress' ||
+              latestStatus === 'queued'
+            ? 'in progress'
+            : 'passed';
+    const branch = stringMeta(github, 'head_branch');
+    return `${name} ${state}${repo ? ` on ${repo}` : ''}${branch ? ` · ${branch}` : ''}`;
   }
   if (type === 'pull_request') {
     const number = numberMeta(github, 'number');
@@ -1273,15 +1297,19 @@ function impactItemsForEvent(
   }
   if (
     event.source === 'integration' &&
+    classifyCapturedEvent({ source: event.source, metadata: meta }) !== 'pulse' &&
     (stringMeta(meta, 'external_object_id') || stringMeta(meta, 'provider'))
   ) {
-    items.push({
-      kind: 'object',
-      label:
-        integrationResourceLabel(meta, event.contentText) ??
-        providerDisplayName(stringMeta(meta, 'provider')),
-      sourceEventId: event.id,
-    });
+    const label =
+      integrationResourceLabel(meta, event.contentText) ??
+      providerDisplayName(stringMeta(meta, 'provider'));
+    if (label && !isMachineIdentityLabel(label)) {
+      items.push({
+        kind: 'object',
+        label,
+        sourceEventId: event.id,
+      });
+    }
   }
   const attachments = meta.attachments;
   if (Array.isArray(attachments) && attachments.length > 0) {
@@ -1314,6 +1342,17 @@ function dedupeArtifactClusters<TArtifactCluster extends TimelineArtifactCluster
     seen.add(cluster.id);
     return true;
   });
+}
+
+function sourceLabelForEvent(event: TimelineEvent): string {
+  const meta = metaObject(event.sourceMetadata);
+  if (event.source === 'integration') {
+    return providerDisplayName(stringMeta(meta, 'provider'));
+  }
+  if (event.source === 'ingest_webhook') {
+    return stringMeta(meta, 'ingest_webhook_name') ?? SOURCE_LABEL.ingest_webhook;
+  }
+  return SOURCE_LABEL[event.source];
 }
 
 function timelineGroupingStrategy(event: TimelineEvent): string {
@@ -1498,6 +1537,10 @@ export function buildTimelineMoments<
               .slice(0, 3)
               .join(' / ');
       const kind = momentKindForGroup(sorted);
+      const eventClass = classifyCapturedEvent({
+        source: displayLead.source,
+        metadata: displayLead.sourceMetadata,
+      });
       const title = titleForGroup(sorted, displayLead, timezone);
       const subtitle = subtitleForGroup(sorted, displayLead, actorLabels, contextLabels);
       const preview = previewForGroup(sorted, timezone);
@@ -1514,8 +1557,10 @@ export function buildTimelineMoments<
           dateLabel: formatDateSection(lead.occurredAt, now, timezone),
           timeLabel: timeLabel(sorted, timezone),
           source: displayLead.source,
-          sourceLabel: SOURCE_LABEL[displayLead.source],
+          sourceLabel: sourceLabelForEvent(displayLead),
           sourceIcon: SOURCE_ICON[displayLead.source],
+          eventClass,
+          visualWeight: visualWeightForEventClass(eventClass, groupingMode),
           actorLabel: actorLabelForGroup(displayLead, sorted, authorMap),
           contextLabel: contextLabel(displayLead, timezone),
           title,

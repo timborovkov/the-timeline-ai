@@ -173,7 +173,7 @@ describe('timeline controls', () => {
     });
   });
 
-  it('uses one primary count matching Moments vs Audit trail mode', () => {
+  it('uses one primary count matching Moments vs All events mode', () => {
     expect(timelineLoadedCount('moments', 7, 12)).toBe(7);
     expect(timelineLoadedCount('events', 7, 12)).toBe(12);
     expect(timelineLoadedSrLabel('moments', 7)).toBe('7 moments loaded');
