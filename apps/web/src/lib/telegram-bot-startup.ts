@@ -11,6 +11,7 @@ import {
 } from '@timeline/shared/telegram/commands';
 
 const ALLOWED_UPDATES = ['message', 'edited_message', 'callback_query'] as const;
+const TELEGRAM_STARTUP_REQUEST_TIMEOUT_MS = 10_000;
 
 export interface TelegramBotStartupEnv {
   nodeEnv: string | undefined;
@@ -58,6 +59,7 @@ async function callTelegram<T>(token: string, method: string, body?: unknown): P
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: body ? JSON.stringify(body) : '{}',
+    signal: AbortSignal.timeout(TELEGRAM_STARTUP_REQUEST_TIMEOUT_MS),
   });
   const json = (await res.json().catch(() => ({}))) as TelegramCallResult<T>;
   if (!res.ok || !json.ok) {
@@ -167,41 +169,48 @@ export function startTelegramBotRegistration(
   env: TelegramBotStartupEnv,
   logger: TelegramStartupLogger,
   postTelegram: TelegramBotApiPost = callTelegram,
-): void {
+): { commands: Promise<void>; webhook: Promise<void> } {
   const token = nonEmptyEnv(env.botToken);
   const actions = telegramBotStartupActions(env);
 
-  if (actions.commands === 'register' && token) {
-    void registerTelegramCommandMenu(token, postTelegram)
-      .then((result) => {
+  const commands = (async () => {
+    if (actions.commands === 'register' && token) {
+      try {
+        const result = await registerTelegramCommandMenu(token, postTelegram);
         logger.log(`[telegram-commands] ${result.status}: ${result.detail}`);
-      })
-      .catch((err: unknown) => {
+      } catch (err: unknown) {
         logger.warn(
           `[telegram-commands] unexpected error: ${err instanceof Error ? err.message : String(err)}`,
         );
-      });
-  } else {
+      }
+      return;
+    }
     logger.log('[telegram-commands] skipping — missing TELEGRAM_BOT_TOKEN');
-  }
+  })();
 
-  if (actions.webhook === 'skip-non-production') return;
-  if (actions.webhook === 'skip-missing' || !token) {
-    logger.log(`[telegram-webhook] skipping — missing ${actions.missingWebhook.join(', ')}`);
-    return;
-  }
+  const webhook = (async () => {
+    if (actions.webhook === 'skip-non-production') return;
+    if (actions.webhook === 'skip-missing' || !token) {
+      logger.log(`[telegram-webhook] skipping — missing ${actions.missingWebhook.join(', ')}`);
+      return;
+    }
 
-  const secret = nonEmptyEnv(env.webhookSecret);
-  const authUrl = nonEmptyEnv(env.authUrl);
-  if (!secret || !authUrl) return;
+    const secret = nonEmptyEnv(env.webhookSecret);
+    const authUrl = nonEmptyEnv(env.authUrl);
+    if (!secret || !authUrl) return;
 
-  void registerTelegramWebhook({ botToken: token, webhookSecret: secret, authUrl }, postTelegram)
-    .then((result) => {
+    try {
+      const result = await registerTelegramWebhook(
+        { botToken: token, webhookSecret: secret, authUrl },
+        postTelegram,
+      );
       logger.log(`[telegram-webhook] ${result.status}: ${result.detail}`);
-    })
-    .catch((err: unknown) => {
+    } catch (err: unknown) {
       logger.warn(
         `[telegram-webhook] unexpected error: ${err instanceof Error ? err.message : String(err)}`,
       );
-    });
+    }
+  })();
+
+  return { commands, webhook };
 }

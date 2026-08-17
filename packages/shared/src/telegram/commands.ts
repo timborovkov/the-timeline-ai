@@ -136,6 +136,9 @@ export const TELEGRAM_GROUP_HELP =
   `Commands (group):\n` +
   TELEGRAM_GROUP_COMMANDS.map((command) => command.helpLine).join('\n');
 
+export type TelegramDmCommandName = (typeof TELEGRAM_DM_COMMANDS)[number]['command'];
+export type TelegramGroupCommandName = (typeof TELEGRAM_GROUP_COMMANDS)[number]['command'];
+
 function botApiCommands(
   specs: readonly TelegramBotCommand[],
 ): Pick<TelegramBotCommand, 'command' | 'description'>[] {
@@ -155,7 +158,17 @@ export const TELEGRAM_BOT_COMMAND_REGISTRATIONS: readonly TelegramBotCommandRegi
 export async function registerTelegramBotCommands(
   setMyCommands: (registration: TelegramBotCommandRegistration) => Promise<void>,
 ): Promise<void> {
+  const errors: string[] = [];
   for (const registration of TELEGRAM_BOT_COMMAND_REGISTRATIONS) {
-    await setMyCommands(registration);
+    try {
+      await setMyCommands(registration);
+    } catch (err) {
+      errors.push(
+        `${registration.scope.type}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+  if (errors.length > 0) {
+    throw new Error(`setMyCommands failed (${errors.length} scope(s)): ${errors.join('; ')}`);
   }
 }

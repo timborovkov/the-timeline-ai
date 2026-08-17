@@ -117,8 +117,9 @@ export class HttpTelegramApi implements TelegramApi {
   }
 
   /**
-   * Replace the `/` menu for one Bot API command scope. Startup registration
-   * uses this so Telegram clients can list the same commands `/help` prints.
+   * Replace the `/` menu for one Bot API command scope. The web startup path
+   * posts `setMyCommands` through the command catalog; this method is the
+   * shared client equivalent for tests and other callers.
    */
   async setMyCommands(input: {
     commands: { command: string; description: string }[];

@@ -48,7 +48,12 @@ import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.
 import { inlineSourceSnapshotMetadata } from '#src/reconciliation/source-snapshot.js';
 import { withTeam } from '#src/team-scope.js';
 import { type TelegramApi } from '#src/telegram/api.js';
-import { TELEGRAM_DM_HELP, TELEGRAM_GROUP_HELP } from '#src/telegram/commands.js';
+import {
+  TELEGRAM_DM_HELP,
+  TELEGRAM_GROUP_HELP,
+  type TelegramDmCommandName,
+  type TelegramGroupCommandName,
+} from '#src/telegram/commands.js';
 import { createTelegramConversationDeliveryAdapter } from '#src/telegram/conversation-adapter.js';
 import {
   tgUpdateSchema,
@@ -368,46 +373,6 @@ async function handleDm(ctx: DmContext, isEdit: boolean): Promise<void> {
   }
 }
 
-async function dispatchCommand(
-  ctx: DmContext,
-  command: { name: string; arg: string },
-): Promise<void> {
-  switch (command.name) {
-    case '/start':
-      await cmdStartDm(ctx, command.arg);
-      return;
-    case '/link':
-      await cmdLinkDm(ctx, command.arg);
-      return;
-    case '/team':
-      await cmdTeamDm(ctx, command.arg);
-      return;
-    case '/whereami':
-      await cmdWhereamiDm(ctx);
-      return;
-    case '/unlink':
-      await cmdUnlinkDm(ctx, command.arg);
-      return;
-    case '/help':
-      await cmdHelpDm(ctx);
-      return;
-    case '/ask':
-      await queueDmAgentTurn(ctx, command.arg);
-      return;
-    case '/note':
-      await cmdNoteDm(ctx, command.arg);
-      return;
-    case '/new':
-      await cmdNewDm(ctx);
-      return;
-    case '/join':
-      await cmdJoinDm(ctx, command.arg);
-      return;
-    default:
-      await replyToTelegramDm(ctx, `Unknown command. Try /help.`);
-  }
-}
-
 async function cmdJoinDm(ctx: DmContext, arg: string): Promise<void> {
   if (!ctx.activeTeamId || !ctx.tgUserRow.userId) {
     await replyToTelegramDm(ctx, 'Link your Telegram identity to Timeline before using /join.');
@@ -719,6 +684,35 @@ async function cmdNewDm(ctx: DmContext): Promise<void> {
     directTelegramIdentity(ctx, ctx.activeTeamId, ctx.tgUserRow.userId),
   );
   await replyToTelegramDm(ctx, 'Started a new conversation.');
+}
+
+type TelegramDmCommandHandler = (ctx: DmContext, arg: string) => Promise<void>;
+
+const DM_COMMAND_HANDLERS: {
+  [Name in TelegramDmCommandName as `/${Name}`]: TelegramDmCommandHandler;
+} = {
+  '/start': (ctx, arg) => cmdStartDm(ctx, arg),
+  '/link': (ctx, arg) => cmdLinkDm(ctx, arg),
+  '/team': (ctx, arg) => cmdTeamDm(ctx, arg),
+  '/whereami': (ctx) => cmdWhereamiDm(ctx),
+  '/unlink': (ctx, arg) => cmdUnlinkDm(ctx, arg),
+  '/help': (ctx) => cmdHelpDm(ctx),
+  '/ask': (ctx, arg) => queueDmAgentTurn(ctx, arg),
+  '/note': (ctx, arg) => cmdNoteDm(ctx, arg),
+  '/new': (ctx) => cmdNewDm(ctx),
+  '/join': (ctx, arg) => cmdJoinDm(ctx, arg),
+};
+
+async function dispatchCommand(
+  ctx: DmContext,
+  command: { name: string; arg: string },
+): Promise<void> {
+  const handler = DM_COMMAND_HANDLERS[command.name as `/${TelegramDmCommandName}`];
+  if (!handler) {
+    await replyToTelegramDm(ctx, `Unknown command. Try /help.`);
+    return;
+  }
+  await handler(ctx, command.arg);
 }
 
 function directTelegramIdentity(
@@ -1409,97 +1403,6 @@ async function handleGroup(ctx: GroupContext, isEdit: boolean): Promise<void> {
   }
 }
 
-async function dispatchGroupCommand(
-  ctx: GroupContext,
-  command: { name: string; arg: string },
-): Promise<void> {
-  switch (command.name) {
-    case '/start':
-      // groupstart deep link sends /start <token>
-      if (command.arg) {
-        await cmdLinkGroup(ctx, command.arg);
-      } else {
-        await ctx.tg.sendMessage({
-          chat_id: ctx.message.chat.id,
-          text: 'Hi! To bind this group to a team, an admin should run /link <token>.',
-        });
-      }
-      return;
-    case '/link':
-      await cmdLinkGroup(ctx, command.arg);
-      return;
-    case '/whereami':
-      await ctx.tg.sendMessage({
-        chat_id: ctx.message.chat.id,
-        text: ctx.binding
-          ? `This group is bound to team ${ctx.binding.teamId}.`
-          : 'This group is not bound to any team.',
-      });
-      return;
-    case '/unlink':
-      await cmdUnlinkGroup(ctx);
-      return;
-    case '/help':
-      await ctx.tg.sendMessage({
-        chat_id: ctx.message.chat.id,
-        text: TELEGRAM_GROUP_HELP,
-      });
-      return;
-    case '/ask':
-      if (!ctx.tgUser) {
-        await ctx.tg.sendMessage({
-          chat_id: ctx.message.chat.id,
-          text: 'Cannot identify the sender. /ask needs a Telegram user.',
-        });
-        return;
-      }
-      await runAsk({
-        tg: ctx.tg,
-        db: ctx.db,
-        chatId: ctx.message.chat.id,
-        tgUserId: ctx.tgUser.id,
-        updateId: ctx.updateId,
-        teamId: ctx.binding?.teamId ?? null,
-        userId: ctx.tgUserRow?.userId ?? null,
-        userName: tgDisplayName(ctx.tgUser),
-        trustedTeamActor: !ctx.tgUserRow?.userId && !!ctx.binding,
-        question: command.arg,
-        onAgentToolError: ctx.onAgentToolError,
-        onAgentError: ctx.onAgentError,
-        agentDeps: ctx.agentDeps,
-      });
-      return;
-    case '/join':
-      if (!ctx.binding || !ctx.tgUser || !ctx.tgUserRow?.userId) {
-        await ctx.tg.sendMessage({
-          chat_id: ctx.message.chat.id,
-          text: 'This group must be bound and your Telegram user must be linked before using /join.',
-        });
-        return;
-      }
-      await runTelegramJoinCommand({
-        db: ctx.db,
-        tg: ctx.tg,
-        chatId: ctx.message.chat.id,
-        messageId: ctx.message.message_id,
-        teamId: ctx.binding.teamId,
-        userId: ctx.tgUserRow.userId,
-        tgUserId: ctx.tgUser.id,
-        arg: command.arg,
-      });
-      return;
-    case '/team':
-      await ctx.tg.sendMessage({
-        chat_id: ctx.message.chat.id,
-        text: '/team only works in a DM. Groups are permanently bound to one team.',
-      });
-      return;
-    default:
-      // ignore unknown commands in groups to avoid noise
-      return;
-  }
-}
-
 async function cmdLinkGroup(ctx: GroupContext, arg: string): Promise<void> {
   const token = arg.trim();
   if (!token) {
@@ -1659,6 +1562,97 @@ async function cmdUnlinkGroup(ctx: GroupContext): Promise<void> {
     chat_id: ctx.message.chat.id,
     text: 'Unbound. New messages here will not be recorded.',
   });
+}
+
+type TelegramGroupCommandHandler = (ctx: GroupContext, arg: string) => Promise<void>;
+
+const GROUP_COMMAND_HANDLERS: {
+  [Name in TelegramGroupCommandName as `/${Name}`]: TelegramGroupCommandHandler;
+} = {
+  '/start': async (ctx, arg) => {
+    if (arg) {
+      await cmdLinkGroup(ctx, arg);
+      return;
+    }
+    await ctx.tg.sendMessage({
+      chat_id: ctx.message.chat.id,
+      text: 'Hi! To bind this group to a team, an admin should run /link <token>.',
+    });
+  },
+  '/link': (ctx, arg) => cmdLinkGroup(ctx, arg),
+  '/whereami': async (ctx) => {
+    await ctx.tg.sendMessage({
+      chat_id: ctx.message.chat.id,
+      text: ctx.binding
+        ? `This group is bound to team ${ctx.binding.teamId}.`
+        : 'This group is not bound to any team.',
+    });
+  },
+  '/unlink': (ctx) => cmdUnlinkGroup(ctx),
+  '/help': async (ctx) => {
+    await ctx.tg.sendMessage({
+      chat_id: ctx.message.chat.id,
+      text: TELEGRAM_GROUP_HELP,
+    });
+  },
+  '/ask': async (ctx, arg) => {
+    if (!ctx.tgUser) {
+      await ctx.tg.sendMessage({
+        chat_id: ctx.message.chat.id,
+        text: 'Cannot identify the sender. /ask needs a Telegram user.',
+      });
+      return;
+    }
+    await runAsk({
+      tg: ctx.tg,
+      db: ctx.db,
+      chatId: ctx.message.chat.id,
+      tgUserId: ctx.tgUser.id,
+      updateId: ctx.updateId,
+      teamId: ctx.binding?.teamId ?? null,
+      userId: ctx.tgUserRow?.userId ?? null,
+      userName: tgDisplayName(ctx.tgUser),
+      trustedTeamActor: !ctx.tgUserRow?.userId && !!ctx.binding,
+      question: arg,
+      onAgentToolError: ctx.onAgentToolError,
+      onAgentError: ctx.onAgentError,
+      agentDeps: ctx.agentDeps,
+    });
+  },
+  '/join': async (ctx, arg) => {
+    if (!ctx.binding || !ctx.tgUser || !ctx.tgUserRow?.userId) {
+      await ctx.tg.sendMessage({
+        chat_id: ctx.message.chat.id,
+        text: 'This group must be bound and your Telegram user must be linked before using /join.',
+      });
+      return;
+    }
+    await runTelegramJoinCommand({
+      db: ctx.db,
+      tg: ctx.tg,
+      chatId: ctx.message.chat.id,
+      messageId: ctx.message.message_id,
+      teamId: ctx.binding.teamId,
+      userId: ctx.tgUserRow.userId,
+      tgUserId: ctx.tgUser.id,
+      arg,
+    });
+  },
+  '/team': async (ctx) => {
+    await ctx.tg.sendMessage({
+      chat_id: ctx.message.chat.id,
+      text: '/team only works in a DM. Groups are permanently bound to one team.',
+    });
+  },
+};
+
+async function dispatchGroupCommand(
+  ctx: GroupContext,
+  command: { name: string; arg: string },
+): Promise<void> {
+  const handler = GROUP_COMMAND_HANDLERS[command.name as `/${TelegramGroupCommandName}`];
+  if (!handler) return;
+  await handler(ctx, command.arg);
 }
 
 // ---------- helpers ----------

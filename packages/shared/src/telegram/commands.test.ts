@@ -67,4 +67,19 @@ describe('Telegram bot command catalog', () => {
       'all_group_chats',
     ]);
   });
+
+  it('registers remaining scopes when one setMyCommands call fails', async () => {
+    const setMyCommands = vi.fn(
+      (registration: (typeof TELEGRAM_BOT_COMMAND_REGISTRATIONS)[number]) => {
+        if (registration.scope.type === 'all_private_chats') {
+          return Promise.reject(new Error('private scope rejected'));
+        }
+        return Promise.resolve();
+      },
+    );
+    await expect(registerTelegramBotCommands(setMyCommands)).rejects.toThrow(
+      /all_private_chats: private scope rejected/,
+    );
+    expect(setMyCommands).toHaveBeenCalledTimes(3);
+  });
 });

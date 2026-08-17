@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   registerTelegramCommandMenu,
   registerTelegramWebhook,
+  startTelegramBotRegistration,
   telegramBotStartupActions,
   type TelegramBotApiPost,
 } from '@/lib/telegram-bot-startup';
@@ -78,5 +79,60 @@ describe('telegram bot startup', () => {
       allowed_updates: ['message', 'edited_message', 'callback_query'],
       drop_pending_updates: false,
     });
+  });
+
+  it('registers commands in development without touching the webhook', async () => {
+    const logs: string[] = [];
+    const postTelegram = vi.fn<TelegramBotApiPost>((_token, method) => {
+      if (method === 'setMyCommands') return Promise.resolve(true);
+      return Promise.reject(new Error(`unexpected ${method}`));
+    });
+    const work = startTelegramBotRegistration(
+      {
+        nodeEnv: 'development',
+        botToken: 'token',
+        webhookSecret: 'secret',
+        authUrl: 'https://app.test',
+      },
+      { log: (message) => logs.push(message), warn: (message) => logs.push(message) },
+      postTelegram,
+    );
+    await Promise.all([work.commands, work.webhook]);
+    expect(logs).toEqual([
+      '[telegram-commands] registered: scopes=default,all_private_chats,all_group_chats',
+    ]);
+    expect(postTelegram.mock.calls.every(([, method]) => method === 'setMyCommands')).toBe(true);
+  });
+
+  it('registers commands and the webhook together in production', async () => {
+    const logs: string[] = [];
+    const postTelegram = vi.fn<TelegramBotApiPost>((_token, method) => {
+      if (method === 'setMyCommands' || method === 'setWebhook') return Promise.resolve(true);
+      if (method === 'getWebhookInfo') {
+        return Promise.resolve({
+          url: 'https://app.test/api/telegram/webhook',
+          pending_update_count: 0,
+        });
+      }
+      return Promise.reject(new Error(`unexpected ${method}`));
+    });
+    const work = startTelegramBotRegistration(
+      {
+        nodeEnv: 'production',
+        botToken: 'token',
+        webhookSecret: 'secret',
+        authUrl: 'https://app.test',
+      },
+      { log: (message) => logs.push(message), warn: (message) => logs.push(message) },
+      postTelegram,
+    );
+    await Promise.all([work.commands, work.webhook]);
+    expect(logs).toHaveLength(2);
+    expect(logs).toContain(
+      '[telegram-commands] registered: scopes=default,all_private_chats,all_group_chats',
+    );
+    expect(logs).toContain(
+      '[telegram-webhook] registered: url=https://app.test/api/telegram/webhook pending=0',
+    );
   });
 });
