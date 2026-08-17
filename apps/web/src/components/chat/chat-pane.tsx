@@ -56,7 +56,6 @@ export function ChatSurface(
     contextTrail?: ChatContextRef[];
     emptyHint?: string | null;
     onSessionIdChange?: (sessionId: string) => void;
-    onStatusChange?: (status: string) => void;
     updateUrlOnSessionCreate?: boolean;
   },
 ) {
@@ -80,7 +79,6 @@ function ChatSurfaceContent({
   contextTrail,
   emptyHint,
   onSessionIdChange,
-  onStatusChange,
   updateUrlOnSessionCreate = false,
 }: Props & {
   compact?: boolean;
@@ -88,7 +86,6 @@ function ChatSurfaceContent({
   contextTrail?: ChatContextRef[];
   emptyHint?: string | null;
   onSessionIdChange?: (sessionId: string) => void;
-  onStatusChange?: (status: string) => void;
   updateUrlOnSessionCreate?: boolean;
 }) {
   const router = useRouter();
@@ -116,9 +113,6 @@ function ChatSurfaceContent({
   const handoffConsumedRef = useRef(false);
 
   const isStreaming = status === 'streaming' || status === 'submitted';
-  useEffect(() => {
-    onStatusChange?.(status);
-  }, [onStatusChange, status]);
   const handoffPin = initialSessionId === null ? consumedHandoff : null;
   const visiblePinnedEntity = handoffPin?.pinnedEntityId
     ? { id: handoffPin.pinnedEntityId, name: handoffPin.pinnedEntityName ?? null }

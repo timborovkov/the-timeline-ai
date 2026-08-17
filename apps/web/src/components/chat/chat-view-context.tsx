@@ -65,29 +65,57 @@ export function useCurrentChatView(): {
   );
 }
 
-export function ChatViewContextBinder(props: ChatViewOverlay) {
+export function ChatViewContextBinder({
+  viewKey,
+  kind,
+  href,
+  label,
+  objectId,
+  documentId,
+  boardId,
+  boardItemId,
+  taskId,
+  calendarEventId,
+  timelineEventId,
+  timelineMomentId,
+  meetingId,
+}: ChatViewOverlay) {
   const registry = useChatViewRegistry();
   useEffect(() => {
     if (!registry) return;
-    registry.register(props);
+    registry.register({
+      viewKey,
+      kind,
+      href,
+      label,
+      ...(objectId ? { objectId } : {}),
+      ...(documentId ? { documentId } : {}),
+      ...(boardId ? { boardId } : {}),
+      ...(boardItemId ? { boardItemId } : {}),
+      ...(taskId ? { taskId } : {}),
+      ...(calendarEventId ? { calendarEventId } : {}),
+      ...(timelineEventId ? { timelineEventId } : {}),
+      ...(timelineMomentId ? { timelineMomentId } : {}),
+      ...(meetingId ? { meetingId } : {}),
+    });
     return () => {
-      registry.unregister(props.viewKey);
+      registry.unregister(viewKey);
     };
   }, [
-    props.boardId,
-    props.boardItemId,
-    props.calendarEventId,
-    props.documentId,
-    props.href,
-    props.viewKey,
-    props.kind,
-    props.label,
-    props.meetingId,
-    props.objectId,
-    props.taskId,
-    props.timelineEventId,
-    props.timelineMomentId,
+    boardId,
+    boardItemId,
+    calendarEventId,
+    documentId,
+    href,
+    kind,
+    label,
+    meetingId,
+    objectId,
     registry,
+    taskId,
+    timelineEventId,
+    timelineMomentId,
+    viewKey,
   ]);
   return null;
 }
