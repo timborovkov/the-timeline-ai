@@ -249,7 +249,10 @@ packages/
             module (Phase 11 — Drive/Linear/GitHub/Monday.com/Slack/Sentry
             providers, person-owned provider connections, team resource
             shares, active source paths, connection attention, event-writer,
-            registry catalog, AES-GCM secrets helper), artifact/workspace
+            registry catalog, AES-GCM secrets helper), event-class taxonomy
+            (provider-agnostic communication / work_record / pulse / incident /
+            artifact / schedule; ingest webhooks set class in settings),
+            artifact/workspace
             reconciliation modules (evidence clusters, anchors, source refs,
             raw-event normalization, anchor resolution, reconciliation outputs,
             approval projection outbox, and field-scoped authority policy),

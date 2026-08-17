@@ -3,6 +3,8 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { type Db, ingestWebhookCredentials, ingestWebhooks } from '@timeline/db';
 import { and, eq, isNull } from 'drizzle-orm';
 
+import { isTimelineEventClass, type TimelineEventClass } from '#src/event-class.js';
+
 const PREFIX = 'tli_';
 
 export interface MintedIngestWebhookCredential {
@@ -32,6 +34,7 @@ export interface ResolvedIngestWebhookCredential {
   name: string;
   ownerUserId: string | null;
   visibilityDefault: 'private' | 'team' | 'specific_users';
+  eventClass: TimelineEventClass;
   proposalGenerationEnabled: boolean;
 }
 
@@ -50,6 +53,7 @@ export async function resolveCredential(
       name: ingestWebhooks.name,
       ownerUserId: ingestWebhooks.ownerUserId,
       visibilityDefault: ingestWebhooks.visibilityDefault,
+      eventClass: ingestWebhooks.eventClass,
       proposalGenerationEnabled: ingestWebhooks.proposalGenerationEnabled,
     })
     .from(ingestWebhookCredentials)
@@ -79,6 +83,7 @@ export async function resolveCredential(
     name: row.name,
     ownerUserId: row.ownerUserId,
     visibilityDefault: row.visibilityDefault,
+    eventClass: isTimelineEventClass(row.eventClass) ? row.eventClass : 'pulse',
     proposalGenerationEnabled: row.proposalGenerationEnabled,
   };
 }
