@@ -24,7 +24,7 @@ describe('ObjectTextFilter', () => {
       />,
     );
 
-    expect(screen.getByRole('status').textContent).toBe('2 / 8');
+    expect(screen.getByRole('status').textContent).toBe('2 of 8');
     const input = screen.getByRole('searchbox', { name: 'Filter objects' });
     const clear = screen.getByRole('button', { name: 'Clear object filter' });
     expect(clear.className).toContain('size-6');
@@ -43,7 +43,7 @@ describe('ObjectTextFilter', () => {
   it('keeps the clear action out of the tab order until there is a query to clear', () => {
     render(<ObjectTextFilter query="" onQueryChange={vi.fn()} resultCount={8} totalCount={8} />);
 
-    expect(screen.getByRole('status').textContent).toBe('8 visible');
+    expect(screen.getByRole('status').textContent).toBe('8');
     expect(screen.queryByRole('button', { name: 'Clear object filter' })).toBeNull();
   });
 });

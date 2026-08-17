@@ -6,6 +6,8 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { ReactNode } from 'react';
+
 interface ObjectSectionQueryData {
   pages: { items: Record<string, unknown>[] }[];
 }
@@ -172,6 +174,24 @@ function emptyEventResponse() {
 
 vi.mock('@/lib/use-paginated-queries', () => ({
   useObjectSectionQuery: () => fakes.query,
+}));
+vi.mock('@/components/collections/virtual-list', () => ({
+  VirtualList: ({
+    items,
+    renderItem,
+    getItemKey,
+  }: {
+    items: Record<string, unknown>[];
+    renderItem: (item: Record<string, unknown>, index: number) => ReactNode;
+    getItemKey: (item: Record<string, unknown>, index: number) => string;
+  }) =>
+    createElement(
+      'div',
+      null,
+      items.map((item, index) =>
+        createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+      ),
+    ),
 }));
 
 const { ObjectSectionFeed } = await import('./object-section-feed.js');

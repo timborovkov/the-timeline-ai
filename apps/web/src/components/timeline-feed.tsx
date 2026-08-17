@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef } from 'react';
+import { useMemo } from 'react';
 
 import type {
   ImpactKind,
@@ -9,6 +9,7 @@ import type {
   WebTimelineMomentDto,
 } from '@/lib/timeline-moments';
 
+import { InfiniteScroll } from '@/components/collections/infinite-scroll';
 import { InlineError } from '@/components/inline-error';
 import { TimelineList } from '@/components/timeline-list';
 import {
@@ -112,7 +113,6 @@ export function TimelineFeed({
     enabled: live,
     timezone,
   });
-  const paginationControlRef = useRef<HTMLElement>(null);
   const pages = query.data.pages;
   const events = useMemo(() => {
     const seen = new Set<string>();
@@ -167,12 +167,6 @@ export function TimelineFeed({
   const queryErrorDetails = query.error instanceof Error ? query.error.message : undefined;
   const hasTimelineContent = events.length > 0 || (serverMoments?.length ?? 0) > 0;
   const hasLoadMoreError = query.isFetchNextPageError && hasTimelineContent;
-  const restorePaginationFocus = () => {
-    requestAnimationFrame(() => paginationControlRef.current?.focus());
-  };
-  const setPaginationControlRef = (node: HTMLButtonElement | HTMLParagraphElement | null) => {
-    paginationControlRef.current = node;
-  };
 
   return (
     <div className="space-y-3">
@@ -210,7 +204,7 @@ export function TimelineFeed({
           details={queryErrorDetails}
           onRetry={() => {
             if (hasLoadMoreError) {
-              void query.fetchNextPage().finally(restorePaginationFocus);
+              void query.fetchNextPage();
               return;
             }
             void query.refetch();
@@ -220,30 +214,14 @@ export function TimelineFeed({
         />
       ) : null}
       {!compact && !(query.isError && (!hasTimelineContent || hasLoadMoreError)) ? (
-        <div className="flex justify-center">
-          {query.hasNextPage || query.isFetchingNextPage ? (
-            <button
-              type="button"
-              disabled={query.isFetchingNextPage}
-              onClick={() => {
-                void query.fetchNextPage().finally(restorePaginationFocus);
-              }}
-              ref={setPaginationControlRef}
-              className="rounded-sm border border-border px-3 py-2 text-xs text-fg-muted transition-colors hover:bg-surface disabled:opacity-40"
-            >
-              {query.isFetchingNextPage ? 'Loading…' : 'Load more'}
-            </button>
-          ) : (
-            <p
-              ref={setPaginationControlRef}
-              role="status"
-              tabIndex={-1}
-              className="m-0 px-3 py-2 text-xs text-fg-dim"
-            >
-              You've reached the end of the timeline.
-            </p>
-          )}
-        </div>
+        <InfiniteScroll
+          hasMore={query.hasNextPage}
+          loading={query.isFetchingNextPage}
+          onLoadMore={() => {
+            void query.fetchNextPage();
+          }}
+          boundLabel="No older activity"
+        />
       ) : null}
     </div>
   );

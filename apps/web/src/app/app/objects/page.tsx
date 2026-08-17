@@ -1,7 +1,6 @@
 import { users } from '@timeline/db';
 import { getEnv } from '@timeline/shared/env';
 import { OBJECT_TYPES } from '@timeline/shared/objects/types';
-import { decodeCursor, encodeCursor } from '@timeline/shared/pagination';
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
 import Link from 'next/link';
@@ -22,6 +21,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
+import { OBJECTS_SECTION_PREVIEW_SIZE, loadObjectRowsPage } from '@/lib/object-page';
 import { OBJECT_TYPE_LABELS } from '@/lib/object-type-labels';
 import { loadProjectFilterRows } from '@/lib/project-filter-options';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
@@ -38,9 +38,6 @@ export const metadata: Metadata = {
   title: 'Objects',
   description: 'Browse tracked timeline objects.',
 };
-
-const OBJECTS_PAGE_SIZE = 48;
-const OBJECTS_SECTION_PREVIEW_SIZE = 8;
 
 type ObjectCountFilter = Omit<objects.ObjectListFilter, 'cursor' | 'limit' | 'offset'>;
 
@@ -106,18 +103,25 @@ export default async function ObjectsIndexPage({
   const singleType = selectedTypes.length === 1 ? selectedTypes[0] : undefined;
   const hasTypeFilter = selectedTypes.length > 0;
   const filterBarHiddenParams = filters.type ? { type: filters.type } : undefined;
-  const cursor = parseCursorParam(firstParam(params.cursor));
   const activeFilters = hasActiveWorkFilters(filters);
+  const unfilteredObjectFilter = {
+    ...objectListFilterFromWorkFilters(
+      parseWorkFilters({}, { taskCategoriesEnabled: getEnv().TASK_CATEGORY_UI_ENABLED }),
+      filterTime,
+    ),
+    archived: false,
+  } satisfies objects.ObjectListFilter;
 
-  const [projects, objectWindow, suggestionBundles, members] = await Promise.all([
+  const [projects, objectWindow, inventoryTotal, suggestionBundles, members] = await Promise.all([
     loadProjectFilterRows({
       listObjects: (filter) => scope.objects.listObjects(filter),
       selected: filters.project,
       includeArchivedSelected: true,
     }),
     hasTypeFilter
-      ? loadTypedObjectPage(scope.objects, { filter: objectFilter, cursor })
+      ? loadTypedObjectPage(scope.objects, { filter: objectFilter })
       : loadObjectSectionPreviews(scope.objects, { filter: objectFilter, filterParams }),
+    activeFilters ? scope.objects.countObjects(unfilteredObjectFilter) : Promise.resolve(null),
     scope.suggestions.listPendingSuggestions(),
     scope.timeline.listMembers(),
   ]);
@@ -141,13 +145,6 @@ export default async function ObjectsIndexPage({
   const objectPinState = await scope.pins.isPinnedMany(
     rows.map((row) => ({ kind: 'object' as const, key: row.id })),
   );
-  const nextHref =
-    hasTypeFilter && objectWindow.nextCursor
-      ? objectsPageHref({
-          filters: filterParams,
-          cursor: objectWindow.nextCursor,
-        })
-      : null;
   const cleanupSuggestions: ReturnType<typeof serializeSuggestionBundle>[] = [];
   const mergeSuggestionItems: {
     id: string;
@@ -192,7 +189,7 @@ export default async function ObjectsIndexPage({
         title="Objects"
         subtitle="Projects, people, decisions, and other durable team context."
         metadata={[
-          { label: 'Shown', value: rows.length, mono: true },
+          { label: 'Total', value: objectWindow.totalCount, mono: true },
           ...(singleType
             ? [{ label: 'Type', value: OBJECT_TYPE_LABELS[singleType] ?? singleType }]
             : []),
@@ -210,8 +207,8 @@ export default async function ObjectsIndexPage({
         basePath="/app/objects"
         filters={filters}
         active={hasActiveWorkFilters(filters)}
-        resultCount={rows.length}
-        totalCount={objectWindow.totalCount}
+        resultCount={objectWindow.totalCount}
+        totalCount={inventoryTotal ?? objectWindow.totalCount}
         hiddenParams={filterBarHiddenParams}
         members={memberOptions}
         projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}
@@ -232,32 +229,10 @@ export default async function ObjectsIndexPage({
 
       {rows.length === 0 ? (
         <EmptyAction
-          title={
-            hasTypeFilter && cursor
-              ? 'No objects on this page'
-              : activeFilters
-                ? 'No objects match this filter'
-                : 'No objects yet'
-          }
-          body={
-            hasTypeFilter && cursor
-              ? 'This page is empty. Earlier pages may still have objects.'
-              : 'Objects are extracted from captured work. You can also create one manually when you already know what should be tracked.'
-          }
-          href={
-            hasTypeFilter && cursor
-              ? objectsPageHref({ filters: filterParams })
-              : activeFilters
-                ? '/app/objects'
-                : '/app#capture'
-          }
-          action={
-            hasTypeFilter && cursor
-              ? 'Open first page'
-              : activeFilters
-                ? 'Clear filter'
-                : 'Capture first note'
-          }
+          title={activeFilters ? 'No objects match this filter' : 'No objects yet'}
+          body="Objects are extracted from captured work. You can also create one manually when you already know what should be tracked."
+          href={activeFilters ? '/app/objects' : '/app#capture'}
+          action={activeFilters ? 'Clear filter' : 'Capture first note'}
         />
       ) : (
         <ObjectCleanupList
@@ -266,14 +241,8 @@ export default async function ObjectsIndexPage({
             pinned: objectPinState[`object:${row.id}`] ?? false,
           }))}
           typeLabels={OBJECT_TYPE_LABELS}
-          pageInfo={
-            hasTypeFilter
-              ? {
-                  shownCount: rows.length,
-                  nextHref,
-                }
-              : undefined
-          }
+          nextCursor={hasTypeFilter ? objectWindow.nextCursor : null}
+          filterParams={hasTypeFilter ? filterParams : undefined}
           sectionMoreHrefs={objectWindow.sectionMoreHrefs}
         />
       )}
@@ -285,10 +254,8 @@ async function loadTypedObjectPage(
   objectScope: ObjectListScope,
   {
     filter,
-    cursor,
   }: {
     filter: objects.ObjectListFilter;
-    cursor: string | undefined;
   },
 ): Promise<{
   rows: objects.ObjectRow[];
@@ -297,23 +264,14 @@ async function loadTypedObjectPage(
   totalCount: number;
   sectionMoreHrefs?: Record<string, string>;
 }> {
-  const [pageRows, totalCount] = await Promise.all([
-    objectScope.listObjects({
-      ...filter,
-      limit: OBJECTS_PAGE_SIZE + 1,
-      cursor,
-    }),
+  const [page, totalCount] = await Promise.all([
+    loadObjectRowsPage(objectScope, null, filter),
     objectScope.countObjects(filter),
   ]);
-  const rows = pageRows.slice(0, OBJECTS_PAGE_SIZE);
-  const last = rows.at(-1);
   return {
-    rows,
-    hasNextPage: pageRows.length > OBJECTS_PAGE_SIZE,
-    nextCursor:
-      pageRows.length > OBJECTS_PAGE_SIZE && last
-        ? encodeCursor({ at: last.updatedAt.toISOString(), id: last.id })
-        : null,
+    rows: page.rows,
+    hasNextPage: Boolean(page.nextCursor),
+    nextCursor: page.nextCursor,
     totalCount,
   };
 }
@@ -359,21 +317,8 @@ async function loadObjectSectionPreviews(
   return { rows, hasNextPage: false, nextCursor: null, totalCount, sectionMoreHrefs };
 }
 
-function parseCursorParam(value: string | undefined): string | undefined {
-  return decodeCursor(value) ? value : undefined;
-}
-
-function objectsPageHref(params: {
-  filters?: Record<string, string>;
-  cursor?: string | null;
-}): string {
+function objectsPageHref(params: { filters?: Record<string, string> }): string {
   const query = new URLSearchParams(params.filters ?? {});
-  if (params.cursor) query.set('cursor', params.cursor);
   const qs = query.toString();
   return qs ? `/app/objects?${qs}` : '/app/objects';
-}
-
-function firstParam(value: string | string[] | undefined): string {
-  const first = Array.isArray(value) ? value[0] : value;
-  return typeof first === 'string' ? first : '';
 }
