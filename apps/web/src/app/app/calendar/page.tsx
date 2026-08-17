@@ -4,9 +4,9 @@ import { withTeam } from '@timeline/shared/team-scope';
 import { and, eq, inArray } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
-import type { CalendarEvent } from '@/components/calendar/calendar-overlay';
 import type { Metadata } from 'next';
 
+import { CALENDAR_EVENT_LIST_PAGE_SIZE } from '@/app/actions/collection-pages';
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { CalendarSubscriptionPanel } from '@/components/calendar/calendar-subscription-panel';
 import { CalendarView } from '@/components/calendar/calendar-view';
@@ -17,6 +17,7 @@ import { auth } from '@/lib/auth';
 import { calendarEventListWindow } from '@/lib/calendar-event-list-range';
 import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
+import { serializeCalendarEvent } from '@/lib/serialize-calendar-event';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
 
 export const metadata: Metadata = {
@@ -30,72 +31,11 @@ interface PageProps {
     view?: string;
     eventScope?: string;
     eventQ?: string;
-    eventPage?: string;
     event?: string;
   }>;
 }
 
-function calendarShowAs(showAs: string): CalendarEvent['showAs'] {
-  return showAs === 'free' || showAs === 'tentative' ? showAs : 'busy';
-}
-
-function serializeCalendarEvent(
-  e: {
-    id: string;
-    title: string;
-    description: string | null;
-    startAt: Date;
-    endAt: Date;
-    timezone: string;
-    allDay: boolean;
-    location: string | null;
-    showAs: string;
-    rrule: string | null;
-    recurringParentId: string | null;
-    originalStartAt: Date | null;
-    isException: boolean;
-    metadata: Record<string, unknown>;
-    redacted: boolean;
-    visibility: CalendarEvent['visibility'];
-    visibilityUserIds: string[] | null;
-  },
-  pinned: boolean,
-): CalendarEvent {
-  return {
-    id: e.id,
-    title: e.title,
-    description: e.description,
-    startAt: e.startAt.toISOString(),
-    endAt: e.endAt.toISOString(),
-    timezone: e.timezone,
-    allDay: e.allDay,
-    location: e.location,
-    showAs: calendarShowAs(e.showAs),
-    rrule: e.rrule,
-    recurringParentId: e.recurringParentId,
-    originalStartAt: e.originalStartAt?.toISOString() ?? null,
-    isException: e.isException,
-    metadata: e.metadata,
-    redacted: e.redacted,
-    visibility: e.visibility,
-    visibilityUserIds: e.visibilityUserIds,
-    pinned,
-  };
-}
-
-const EVENT_LIST_PAGE_SIZE = 12;
 const EVENT_LIST_RANGE_DAYS = 730;
-
-function calendarEventPageUrl(params: Awaited<PageProps['searchParams']>, page: number): string {
-  const next = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (typeof value === 'string') next.set(key, value);
-  }
-  if (page > 1) next.set('eventPage', String(page));
-  else next.delete('eventPage');
-  const query = next.toString();
-  return query ? `/app/calendar?${query}` : '/app/calendar';
-}
 
 export default async function CalendarPage({ searchParams }: PageProps) {
   const session = await auth();
@@ -124,8 +64,6 @@ export default async function CalendarPage({ searchParams }: PageProps) {
   const eventScope =
     params.eventScope === 'past' || params.eventScope === 'all' ? params.eventScope : 'future';
   const eventQuery = params.eventQ?.trim() ?? '';
-  const parsedEventPage = Number.parseInt(params.eventPage ?? '1', 10);
-  const eventPage = Number.isFinite(parsedEventPage) && parsedEventPage > 0 ? parsedEventPage : 1;
   const rangeDays = view === 'day' ? 2 : view === 'week' ? 14 : 70;
 
   const from = new Date(anchorDate);
@@ -153,14 +91,14 @@ export default async function CalendarPage({ searchParams }: PageProps) {
   const eventListInput = {
     ...eventListRange,
     search: eventQuery,
-    limit: EVENT_LIST_PAGE_SIZE,
+    limit: CALENDAR_EVENT_LIST_PAGE_SIZE + 1,
   };
 
   const [events, initialEventList, defaultRow, members, subscriptionRows] = await Promise.all([
     scope.calendar.listCalendarEvents({ from, to }),
     scope.calendar.listCalendarEventPage({
       ...eventListInput,
-      offset: (eventPage - 1) * EVENT_LIST_PAGE_SIZE,
+      offset: 0,
     }),
     scope.timeline.resolveVisibilityDefault('calendar'),
     scope.timeline.listMembers(),
@@ -186,11 +124,14 @@ export default async function CalendarPage({ searchParams }: PageProps) {
       event.redacted ? [] : [{ kind: 'calendar_event' as const, key: event.id }],
     ),
   );
-  const eventList = initialEventList;
-  const eventPageCount = Math.max(1, Math.ceil(eventList.total / EVENT_LIST_PAGE_SIZE));
-  if (eventPage > eventPageCount) {
-    redirect(calendarEventPageUrl(params, eventPageCount));
-  }
+  const eventList = {
+    ...initialEventList,
+    events: initialEventList.events.slice(0, CALENDAR_EVENT_LIST_PAGE_SIZE),
+  };
+  const eventListNextOffset =
+    initialEventList.events.length > CALENDAR_EVENT_LIST_PAGE_SIZE
+      ? CALENDAR_EVENT_LIST_PAGE_SIZE
+      : null;
   const memberIds = members.map((m) => m.userId);
   const memberUsers =
     memberIds.length > 0
@@ -226,7 +167,7 @@ export default async function CalendarPage({ searchParams }: PageProps) {
         events={serialized}
         eventListEvents={serializedEventList}
         eventListTotal={eventList.total}
-        eventListPage={eventPage - 1}
+        eventListNextOffset={eventListNextOffset}
         eventListQuery={eventQuery}
         eventListScope={eventScope}
         timezone={settings.defaultTimezone}

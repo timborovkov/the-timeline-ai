@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as objects from '@timeline/shared/objects/types';
+import type { ReactNode } from 'react';
 
 const fakes = vi.hoisted(() => ({ refresh: vi.fn() }));
 
@@ -14,6 +15,24 @@ vi.mock('@/app/actions/objects', () => ({
 vi.mock('@/app/actions/suggestions', () => ({
   acceptSuggestionItemAction: vi.fn(),
   rejectSuggestionItemAction: vi.fn(),
+}));
+vi.mock('@/components/collections/virtual-list', () => ({
+  VirtualList: ({
+    items,
+    renderItem,
+    getItemKey,
+  }: {
+    items: { item: { id: string } }[];
+    renderItem: (entry: { item: { id: string } }, index: number) => ReactNode;
+    getItemKey: (entry: { item: { id: string } }, index: number) => string;
+  }) =>
+    createElement(
+      'div',
+      null,
+      items.map((entry, index) =>
+        createElement('div', { key: getItemKey(entry, index) }, renderItem(entry, index)),
+      ),
+    ),
 }));
 
 const { ObjectCleanupSuggestions } = await import('./object-cleanup-suggestions.js');
@@ -147,7 +166,7 @@ describe('ObjectCleanupSuggestions', () => {
     expect(html).not.toContain('disabled=""');
   });
 
-  it('renders paged cleanup suggestions when more than one page is pending', () => {
+  it('renders every pending cleanup suggestion in one scrolling list', () => {
     const suggestions = Array.from({ length: 12 }, (_, index) => ({
       id: `bundle-${index}`,
       title: 'Object cleanup',
@@ -169,9 +188,10 @@ describe('ObjectCleanupSuggestions', () => {
 
     const html = renderToStaticMarkup(createElement(ObjectCleanupSuggestions, { suggestions }));
 
-    expect(html).toContain('1-10 of 12');
-    expect(html).toContain('Page 1 / 2');
     expect(html).toContain('Archive object 10');
-    expect(html).not.toContain('Archive object 11');
+    expect(html).toContain('Archive object 11');
+    expect(html).toContain('Archive object 12');
+    expect(html).not.toContain('1-10 of 12');
+    expect(html).not.toContain('Page 1 / 2');
   });
 });
