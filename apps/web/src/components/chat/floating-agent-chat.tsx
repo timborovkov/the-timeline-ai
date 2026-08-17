@@ -29,10 +29,47 @@ interface FloatingSessionState {
 }
 
 const EXCLUDED_PREFIXES = ['/app/chat'];
+const COMPACT_VIEWPORT_QUERY = '(max-width: 767px)';
 
 function isExcludedPath(pathname: string | null): boolean {
   if (!pathname) return true;
   return pathname === '/app' || EXCLUDED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
+function useCompactViewport(): boolean {
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(COMPACT_VIEWPORT_QUERY);
+    const sync = () => {
+      setCompact(mq.matches);
+    };
+    sync();
+    mq.addEventListener('change', sync);
+    return () => {
+      mq.removeEventListener('change', sync);
+    };
+  }, []);
+  return compact;
+}
+
+function openFloatingDialog(dialog: HTMLDialogElement, modal: boolean): void {
+  if (modal && typeof dialog.showModal === 'function') {
+    if (!dialog.open) dialog.showModal();
+    return;
+  }
+  if (typeof dialog.show === 'function') {
+    if (!dialog.open) dialog.show();
+    return;
+  }
+  dialog.setAttribute('open', '');
+}
+
+function closeFloatingDialog(dialog: HTMLDialogElement): void {
+  if (dialog.open && typeof dialog.close === 'function') {
+    dialog.close();
+    return;
+  }
+  dialog.removeAttribute('open');
 }
 
 export function FloatingAgentChat({ teamId, teamName }: FloatingAgentChatProps) {
@@ -61,6 +98,8 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
   const hydratedSessionIdRef = useRef<string | null>(null);
   const sessionGenerationRef = useRef(0);
   const launcherRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const compactViewport = useCompactViewport();
   const trailRef = useRef<ChatContextRef[]>([]);
   const openRef = useRef(open);
   const pathnameRef = useRef(pathname);
@@ -170,6 +209,25 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
     };
   }, [showPanel]);
 
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (showPanel) {
+      let isModal = false;
+      try {
+        isModal = typeof dialog.matches === 'function' && dialog.matches(':modal');
+      } catch {
+        isModal = false;
+      }
+      if (dialog.open && isModal !== compactViewport) {
+        closeFloatingDialog(dialog);
+      }
+      openFloatingDialog(dialog, compactViewport);
+      return;
+    }
+    closeFloatingDialog(dialog);
+  }, [compactViewport, showPanel]);
+
   const fullChatHref = sessionId ? `/app/chat?session=${sessionId}` : '/app/chat';
   const activeSessionGeneration = sessionGenerationRef.current;
   const shortcut = chatShortcutLabel();
@@ -198,109 +256,119 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
         </Button>
       ) : null}
 
-      {showPanel ? (
-        <button
-          type="button"
-          aria-label="Dismiss chat overlay"
-          className="fixed inset-0 z-[60] bg-bg/50 md:hidden"
-          onClick={closePanel}
-        />
-      ) : null}
-
       <dialog
+        ref={dialogRef}
         id="floating-agent-chat-panel"
         aria-labelledby="floating-agent-chat-title"
-        open={showPanel}
-        aria-modal="false"
+        aria-modal={showPanel && compactViewport ? 'true' : 'false'}
         inert={!showPanel}
+        onCancel={(event) => {
+          event.preventDefault();
+          closePanel();
+        }}
         className={cn(
-          'fixed z-[60] m-0 flex-col border-border bg-bg p-0 shadow-2xl shadow-black/20',
-          'inset-x-0 top-auto bottom-0 h-[min(82dvh,42rem)] max-h-none w-screen max-w-none rounded-t-md border-t',
-          'md:inset-auto md:bottom-20 md:right-5 md:h-[min(36rem,calc(100dvh-8rem))] md:w-[min(26rem,calc(100vw-2.5rem))] md:rounded-sm md:border',
+          'fixed z-[60] m-0 border-0 bg-transparent p-0',
+          'inset-0 h-dvh max-h-none w-screen max-w-none',
+          'md:inset-auto md:bottom-20 md:right-5 md:h-[min(36rem,calc(100dvh-8rem))] md:w-[min(26rem,calc(100vw-2.5rem))] md:rounded-sm md:border md:border-border md:bg-bg md:shadow-2xl md:shadow-black/20',
         )}
       >
-        <div className="flex items-start justify-between gap-2 border-b border-border px-3 py-2.5">
-          <div className="min-w-0">
-            <h2 id="floating-agent-chat-title" className="truncate text-sm font-semibold text-fg">
-              {current.label}
-            </h2>
-            <p className="truncate text-xs text-fg-muted">
-              {shortcut}
-              {liveTrail.length > 1 ? ` · ${String(liveTrail.length - 1)} earlier` : ''}
-            </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-0.5">
-            <Button
-              variant="ghost"
-              size="icon"
-              type="button"
-              className="size-8"
-              aria-label="Start new conversation"
-              title="New"
-              onClick={resetFloatingSession}
-            >
-              <MessageSquarePlus className="size-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-8"
-              asChild
-              aria-label="Open full chat"
-            >
-              <Link
-                href={fullChatHref}
-                onClick={() => {
-                  storeChatContextHandoff(window.sessionStorage, teamId, {
-                    context: dashboardContext,
-                    contextTrail: liveTrail,
-                    ...(pinnedEntityId
-                      ? {
-                          pinnedEntityId,
-                          pinnedEntityName: current.label,
-                        }
-                      : {}),
-                  });
-                }}
-              >
-                <ExternalLink className="size-4" />
-              </Link>
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              type="button"
-              className="size-8"
-              aria-label="Close floating agent chat"
-              onClick={closePanel}
-            >
-              <X className="size-4" />
-            </Button>
-          </div>
-        </div>
-        {mountChat ? (
-          <div className="min-h-0 flex-1 px-3 py-3">
-            <ChatSurface
-              key={activeSessionGeneration}
-              compact
-              teamId={teamId}
-              teamName={teamName}
-              sessionId={sessionId}
-              initialMessages={initialMessages}
-              pinnedEntityId={pinnedEntityId}
-              pinnedEntityName={pinnedEntityId ? current.label : null}
-              dashboardContext={dashboardContext}
-              contextTrail={liveTrail}
-              emptyHint={`Ask about ${current.label}`}
-              consumeHandoff={false}
-              onSessionIdChange={(id) => {
-                if (activeSessionGeneration !== sessionGenerationRef.current) return;
-                window.localStorage.setItem(storageKey, id);
-                setSessionState((state) => ({ ...state, sessionId: id, ready: true }));
-              }}
-            />
-          </div>
+        {showPanel ? (
+          <button
+            type="button"
+            aria-label="Dismiss chat overlay"
+            className="absolute inset-0 bg-bg/50 md:hidden"
+            onClick={closePanel}
+          />
         ) : null}
+        <div
+          className={cn(
+            'absolute inset-x-0 bottom-0 flex h-[min(82dvh,42rem)] max-h-none w-full flex-col border-t border-border bg-bg shadow-2xl shadow-black/20',
+            'md:static md:inset-auto md:h-full md:border-0 md:shadow-none',
+          )}
+        >
+          <div className="flex items-start justify-between gap-2 border-b border-border px-3 py-2.5">
+            <div className="min-w-0">
+              <h2 id="floating-agent-chat-title" className="truncate text-sm font-semibold text-fg">
+                {current.label}
+              </h2>
+              <p className="truncate text-xs text-fg-muted">
+                {shortcut}
+                {liveTrail.length > 1 ? ` · ${String(liveTrail.length - 1)} earlier` : ''}
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-0.5">
+              <Button
+                variant="ghost"
+                size="icon"
+                type="button"
+                className="size-8"
+                aria-label="Start new conversation"
+                title="New"
+                onClick={resetFloatingSession}
+              >
+                <MessageSquarePlus className="size-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8"
+                asChild
+                aria-label="Open full chat"
+              >
+                <Link
+                  href={fullChatHref}
+                  onClick={() => {
+                    storeChatContextHandoff(window.sessionStorage, teamId, {
+                      context: dashboardContext,
+                      contextTrail: liveTrail,
+                      ...(pinnedEntityId
+                        ? {
+                            pinnedEntityId,
+                            pinnedEntityName: current.label,
+                          }
+                        : {}),
+                    });
+                  }}
+                >
+                  <ExternalLink className="size-4" />
+                </Link>
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                type="button"
+                className="size-8"
+                aria-label="Close floating agent chat"
+                onClick={closePanel}
+              >
+                <X className="size-4" />
+              </Button>
+            </div>
+          </div>
+          {mountChat ? (
+            <div className="min-h-0 flex-1 px-3 py-3">
+              <ChatSurface
+                key={activeSessionGeneration}
+                compact
+                teamId={teamId}
+                teamName={teamName}
+                sessionId={sessionId}
+                initialMessages={initialMessages}
+                pinnedEntityId={pinnedEntityId}
+                pinnedEntityName={pinnedEntityId ? current.label : null}
+                dashboardContext={dashboardContext}
+                contextTrail={liveTrail}
+                emptyHint={`Ask about ${current.label}`}
+                consumeHandoff={false}
+                onSessionIdChange={(id) => {
+                  if (activeSessionGeneration !== sessionGenerationRef.current) return;
+                  window.localStorage.setItem(storageKey, id);
+                  setSessionState((state) => ({ ...state, sessionId: id, ready: true }));
+                }}
+              />
+            </div>
+          ) : null}
+        </div>
       </dialog>
     </>
   );

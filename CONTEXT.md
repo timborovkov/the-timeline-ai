@@ -989,7 +989,9 @@ _Avoid_: Timeline when referring to the landing page
 The agent chat surface. Full Ask is the research view with session history.
 Elsewhere in the dashboard, a floating Ask opens on the current page, keeps
 one thread per team until New, and remembers a short trail of views the
-conversation touched. Home still hands questions into full Ask.
+conversation touched. Selected timeline, calendar, task, search, and folder
+items supply their names; other list pages keep the route label. Home still
+hands questions into full Ask.
 _Avoid_: Copilot, chatbot, assistant sidebar
 
 **Workspace Time Context**:

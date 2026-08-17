@@ -48,4 +48,24 @@ describe('ChatViewContextBinder', () => {
     expect(screen.getByText('Project Atlas')).toBeTruthy();
     expect(renders).toBeLessThan(8);
   });
+
+  it('names selected list items instead of the route label', () => {
+    fakes.pathname.mockReturnValue('/app/tasks');
+    fakes.searchParams.mockReturnValue(
+      new URLSearchParams('task=77777777-7777-4777-8777-777777777777'),
+    );
+    render(
+      <ChatViewProvider>
+        <ChatViewContextBinder
+          viewKey="task:1"
+          kind="task"
+          href="/app/tasks?task=77777777-7777-4777-8777-777777777777"
+          label="Approve vendor security appendix"
+          taskId="77777777-7777-4777-8777-777777777777"
+        />
+        <LabelProbe onRender={() => undefined} />
+      </ChatViewProvider>,
+    );
+    expect(screen.getByText('Approve vendor security appendix')).toBeTruthy();
+  });
 });

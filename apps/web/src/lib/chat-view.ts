@@ -49,8 +49,18 @@ const PAGE_LABELS: Record<string, string> = {
   'me/mcp-servers': 'Personal MCP',
 };
 
+const CHAT_VIEW_LABEL_MAX = 80;
+
 function isUuid(value: string | undefined): value is string {
   return typeof value === 'string' && UUID_RE.test(value);
+}
+
+export function chatViewLabel(value: string | null | undefined, fallback: string): string {
+  const trimmed = value?.trim() ?? '';
+  if (!trimmed) return fallback;
+  return trimmed.length > CHAT_VIEW_LABEL_MAX
+    ? `${trimmed.slice(0, CHAT_VIEW_LABEL_MAX - 1)}…`
+    : trimmed;
 }
 
 function pageLabel(segments: string[]): string {

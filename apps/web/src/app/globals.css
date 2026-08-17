@@ -179,6 +179,9 @@ dialog#floating-agent-chat-panel:not([open]) {
 }
 
 dialog#floating-agent-chat-panel[open] {
-  display: flex;
-  flex-direction: column;
+  display: block;
+}
+
+dialog#floating-agent-chat-panel::backdrop {
+  background: transparent;
 }

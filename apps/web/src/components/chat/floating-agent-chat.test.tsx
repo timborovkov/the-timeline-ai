@@ -305,6 +305,48 @@ describe('FloatingAgentChat', () => {
     expect(window.sessionStorage.getItem('timeline:chat-handoff:team-1')).not.toBeNull();
   });
 
+  it('opens a modal sheet on compact viewports and a non-modal panel on desktop', async () => {
+    const user = userEvent.setup();
+    const showModal = vi.fn(function (this: HTMLDialogElement) {
+      this.setAttribute('open', '');
+    });
+    const show = vi.fn(function (this: HTMLDialogElement) {
+      this.setAttribute('open', '');
+    });
+    const showModalSpy = vi
+      .spyOn(HTMLDialogElement.prototype, 'showModal')
+      .mockImplementation(showModal);
+    const showSpy = vi.spyOn(HTMLDialogElement.prototype, 'show').mockImplementation(show);
+    const matchMediaSpy = vi.spyOn(window, 'matchMedia').mockImplementation((query) => {
+      const compact = query.includes('max-width: 767px');
+      return {
+        matches: compact,
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      };
+    });
+
+    try {
+      renderChat();
+      await user.click(screen.getByRole('button', { name: /Open floating agent chat/ }));
+      await waitFor(() => {
+        expect(showModal).toHaveBeenCalled();
+      });
+      expect(document.getElementById('floating-agent-chat-panel')?.getAttribute('aria-modal')).toBe(
+        'true',
+      );
+    } finally {
+      showModalSpy.mockRestore();
+      showSpy.mockRestore();
+      matchMediaSpy.mockRestore();
+    }
+  });
+
   it('writes the live trail when opening full Ask', async () => {
     const user = userEvent.setup();
     renderChat();

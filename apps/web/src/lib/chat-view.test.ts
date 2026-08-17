@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildChatView } from '@/lib/chat-view';
+import { buildChatView, chatViewLabel } from '@/lib/chat-view';
 
 describe('buildChatView', () => {
   it('reads object, document, meeting, and task ids from the route', () => {
@@ -82,6 +82,12 @@ describe('buildChatView', () => {
         searchParams: new URLSearchParams(),
       }).current,
     ).toMatchObject({ kind: 'page', label: 'Provider accounts' });
+  });
+
+  it('truncates overlay labels and keeps a fallback', () => {
+    expect(chatViewLabel('  Project Atlas  ', 'Object')).toBe('Project Atlas');
+    expect(chatViewLabel('', 'Task')).toBe('Task');
+    expect(chatViewLabel('x'.repeat(90), 'Object')).toBe(`${'x'.repeat(79)}…`);
   });
 
   it('does not treat a non-task ?id= as a task', () => {

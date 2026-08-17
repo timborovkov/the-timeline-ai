@@ -25,6 +25,7 @@ import type { TimelineCapturedFile } from '@/lib/timeline-captured-files';
 import type { TimelineArtifactCluster, TimelineEvent } from '@/lib/use-paginated-queries';
 
 import { removeConversationalEventAction } from '@/app/actions/events';
+import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { VirtualList } from '@/components/collections/virtual-list';
 import { DocumentPreview } from '@/components/documents/document-preview';
 import { EmptyAction } from '@/components/empty-action';
@@ -44,6 +45,7 @@ import {
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { chatViewLabel } from '@/lib/chat-view';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { statusLabel } from '@/lib/status-labels';
 import {
@@ -1425,8 +1427,37 @@ export function TimelineList({
     );
   }
 
+  const focusedEvent =
+    focusEventId === null ? null : (events.find((event) => event.id === focusEventId) ?? null);
+  const focusedLabel = focusedMoment
+    ? chatViewLabel(
+        displayMomentTitle(focusedMoment),
+        focusMomentId ? 'Timeline moment' : 'Timeline event',
+      )
+    : chatViewLabel(
+        focusedEvent?.contentText?.split(/\r?\n/, 1)[0] ?? '',
+        focusEventId ? 'Timeline event' : 'Timeline moment',
+      );
+  const focusedHref = (() => {
+    const params = new URLSearchParams();
+    if (focusEventId) params.set('event', focusEventId);
+    if (focusMomentId) params.set('moment', focusMomentId);
+    const query = params.toString();
+    return query ? `/app/timeline?${query}` : '/app/timeline';
+  })();
+
   return (
     <div aria-label={compact ? 'Recent timeline moments' : 'Timeline moments'}>
+      {focusEventId || focusMomentId ? (
+        <ChatViewContextBinder
+          viewKey={`timeline:${focusMomentId ?? focusEventId ?? 'focus'}`}
+          kind={focusEventId ? 'timeline-event' : 'timeline-moment'}
+          href={focusedHref}
+          label={focusedLabel}
+          {...(focusEventId ? { timelineEventId: focusEventId } : {})}
+          {...(focusMomentId ? { timelineMomentId: focusMomentId } : {})}
+        />
+      ) : null}
       {compact || typeof maxMoments === 'number' ? (
         dateGroups.map(([date, group]) => (
           <section key={date} aria-labelledby={`timeline-date-${date}`}>

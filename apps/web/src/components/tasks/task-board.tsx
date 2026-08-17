@@ -40,6 +40,7 @@ import {
   setTaskCategoryAction,
   updateObjectAction,
 } from '@/app/actions/objects';
+import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
 import {
@@ -64,6 +65,7 @@ import { taskViewHref, type TaskView } from '@/components/tasks/task-view-toggle
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { chatViewLabel } from '@/lib/chat-view';
 import { displayText } from '@/lib/display-dates';
 import { kanbanCollisionDetection } from '@/lib/kanban-collision';
 import { objectDetailHref } from '@/lib/object-links';
@@ -999,6 +1001,19 @@ function TaskBoardView({
           ) : null}
         </DragOverlay>
       </DndContext>
+      {selectedTask ? (
+        <ChatViewContextBinder
+          viewKey={`task:${selectedTask.id}`}
+          kind="task"
+          href={
+            view === 'kanban'
+              ? taskHref(selectedTask.id, filterParams)
+              : taskViewHref(view, selectedTask.id, filterParams)
+          }
+          label={chatViewLabel(displayObjectTitle(selectedTask), 'Task')}
+          taskId={selectedTask.id}
+        />
+      ) : null}
       {selectedTask ? (
         <TaskDetailPanel
           task={selectedTask}
