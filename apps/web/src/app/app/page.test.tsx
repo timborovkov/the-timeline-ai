@@ -67,7 +67,7 @@ vi.mock('@/components/home/home-ask-composer', () => ({
   HomeAskComposer: ({ actions }: { actions?: ReactNode }) => <div>{actions}</div>,
 }));
 vi.mock('@/components/onboarding-checklist', () => ({
-  OnboardingChecklist: () => <div data-testid="home-onboarding">Getting started</div>,
+  OnboardingChecklist: () => <div data-testid="home-onboarding">Team setup checklist</div>,
 }));
 vi.mock('@/components/pins/pinned-workspace-preview', () => ({
   PinnedWorkspacePreview: () => null,

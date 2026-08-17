@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.5 · Getting started onboarding on Home (2026-08-17). Replaces v3.4 Quiet Home attention and dense recent moments.
+**Version:** v3.5 · Team setup checklist on Home (2026-08-17). Replaces v3.4 Quiet Home attention and dense recent moments.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -270,11 +270,11 @@ not render the derived proposal at all.
 
 Home does not repeat its navigation label as a visible page title. It starts
 with a quiet Capture action and the same compact, icon-only-send Ask composer
-used in chat. Getting started is the team onboarding checklist. For a member
-who has not hidden it, the full list sits open directly under Ask: completed
+used in chat. The team setup checklist is Home onboarding. For a member who
+has not hidden it, the full list sits open directly under Ask: completed
 steps, the current step with one outline action, later steps in quieter type,
 and a text Hide control. It is not a setup wizard and not a primary button.
-After a member hides it, the same slot keeps a quiet “Show getting started”
+After a member hides it, the same slot keeps a quiet “Team setup checklist”
 text toggle with the remaining count. The account menu also reopens it.
 Attention has no visible heading; the region is named for assistive tech only.
 It shows only non-zero groups: pending approvals, overdue work, open tasks,
@@ -605,4 +605,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Work overview and task canvas density | Puts pinned boards above the work queue, removes extra task-list gutters, matches the default list loading skeleton, puts Kanban/List on the search/filter row, and compacts task kanban cards to a clamped title plus one metadata row. |
 | 2026-08-17 | Home open objects and inline queue edits | Adds open tasks, people, companies, projects, deals, and follow-ups to Home Attention, stops repeating “Task” on work-queue rows, and lets queue status, assignee, due date, and priority change inline. |
 | 2026-08-17 | Quiet Home attention and dense recent moments | Collapses typed open-people/company/project rows into one open-objects count, drops the Attention and Recent moments headings, and replaces the Home timeline preview with denser title-only rows plus a clear Open timeline path. |
-| 2026-08-17 | Getting started onboarding on Home | Moves the team checklist under Ask, opens the full list for new members, and replaces the Reopen setup button with a quiet Show getting started toggle. |
+| 2026-08-17 | Team setup checklist on Home | Moves the team checklist under Ask, opens the full list for new members, and replaces the Reopen setup button with a quiet Team setup checklist toggle. |

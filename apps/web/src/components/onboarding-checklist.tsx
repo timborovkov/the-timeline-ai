@@ -9,7 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useOnboardingChecklistQuery } from '@/lib/use-paginated-queries';
 import { cn } from '@/lib/utils';
 
-const GETTING_STARTED_PANEL_ID = 'getting-started-panel';
+const TEAM_SETUP_CHECKLIST_PANEL_ID = 'team-setup-checklist-panel';
 
 export function OnboardingChecklist() {
   const {
@@ -63,7 +63,7 @@ export function OnboardingChecklist() {
   }, [checklistMutationFailed, checklistPending, data]);
   const updateStatus = (
     <output aria-live="polite" aria-atomic="true" className="sr-only">
-      {checklistPending ? 'Updating getting started…' : ''}
+      {checklistPending ? 'Updating checklist…' : ''}
     </output>
   );
 
@@ -73,7 +73,7 @@ export function OnboardingChecklist() {
         {updateStatus}
         <section
           aria-busy="true"
-          aria-label="Loading getting started"
+          aria-label="Loading team setup checklist"
           className="border-y border-border py-4"
         >
           <Skeleton className="h-5 w-36 motion-reduce:animate-none" />
@@ -92,10 +92,10 @@ export function OnboardingChecklist() {
         {updateStatus}
         <section aria-labelledby="onboarding-heading" className="border-y border-border py-4">
           <h2 id="onboarding-heading" className="text-base font-semibold text-fg">
-            Getting started
+            Team setup checklist
           </h2>
           <p role="alert" className="mt-2 text-sm text-danger">
-            Unable to load getting started. Check your connection and try again.
+            Unable to load the team setup checklist. Check your connection and try again.
           </p>
           <Button
             type="button"
@@ -132,18 +132,18 @@ export function OnboardingChecklist() {
             ref={reopenButtonRef}
             disabled={checklistPending}
             aria-expanded={false}
-            aria-controls={GETTING_STARTED_PANEL_ID}
+            aria-controls={TEAM_SETUP_CHECKLIST_PANEL_ID}
             onClick={() => {
               lastMutationKind.current = 'reopen';
               pendingFocusTarget.current = 'dismiss';
               mutateChecklist({ action: 'reopen' });
             }}
           >
-            Show getting started
+            Team setup checklist
           </QuietTextButton>
           {data.items.length > 0 ? (
             <span
-              aria-label={`${completedCount} of ${data.items.length} getting started steps complete`}
+              aria-label={`${completedCount} of ${data.items.length} checklist steps complete`}
               className="font-mono text-[11px] text-fg-dim"
             >
               {completedCount}/{data.items.length}
@@ -165,17 +165,17 @@ export function OnboardingChecklist() {
     <>
       {updateStatus}
       <section
-        id={GETTING_STARTED_PANEL_ID}
+        id={TEAM_SETUP_CHECKLIST_PANEL_ID}
         aria-labelledby="onboarding-heading"
         className="border-y border-border py-4"
       >
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
           <div className="flex min-w-0 flex-wrap items-baseline gap-2">
             <h2 id="onboarding-heading" className="text-base font-semibold text-fg">
-              Getting started
+              Team setup checklist
             </h2>
             <span
-              aria-label={`${completedCount} of ${data.items.length} getting started steps complete`}
+              aria-label={`${completedCount} of ${data.items.length} checklist steps complete`}
               className="font-mono text-xs text-fg-dim"
             >
               {completedCount}/{data.items.length}
@@ -185,8 +185,8 @@ export function OnboardingChecklist() {
             ref={dismissButtonRef}
             disabled={checklistPending}
             aria-expanded={true}
-            aria-controls={GETTING_STARTED_PANEL_ID}
-            aria-label="Hide getting started"
+            aria-controls={TEAM_SETUP_CHECKLIST_PANEL_ID}
+            aria-label="Hide team setup checklist"
             onClick={() => {
               lastMutationKind.current = 'dismiss';
               pendingFocusTarget.current = 'reopen';
@@ -320,7 +320,7 @@ function ChecklistMutationFailure({
   return (
     <div className="mt-3 flex flex-wrap items-center gap-3">
       <p role="alert" className="text-xs text-danger">
-        Unable to update getting started. Your previous state was restored.
+        Unable to update the team setup checklist. Your previous state was restored.
       </p>
       <Button
         ref={retryButtonRef}

@@ -67,9 +67,11 @@ test('Home primary controls reflow at 320px', async ({ browser }) => {
   await page.keyboard.press('Escape');
 
   await page
-    .getByRole('heading', { name: 'Getting started', exact: true })
+    .getByRole('heading', { name: 'Team setup checklist', exact: true })
     .scrollIntoViewIfNeeded();
-  await expect(page.getByRole('heading', { name: 'Getting started', exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Team setup checklist', exact: true }),
+  ).toBeVisible();
   const dimensions = await page.evaluate(() => ({
     clientWidth: document.documentElement.clientWidth,
     scrollWidth: document.documentElement.scrollWidth,

@@ -56,11 +56,13 @@ function renderChecklist(
 describe('OnboardingChecklist', () => {
   it('renders a structure-matching busy state while loading and nothing without data', () => {
     renderChecklist(null, { isPending: true });
-    expect(screen.getByLabelText('Loading getting started').getAttribute('aria-busy')).toBe('true');
+    expect(screen.getByLabelText('Loading team setup checklist').getAttribute('aria-busy')).toBe(
+      'true',
+    );
 
     cleanup();
     renderChecklist(null);
-    expect(screen.queryByText('Getting started')).toBeNull();
+    expect(screen.queryByText('Team setup checklist')).toBeNull();
   });
 
   it('explains a loading failure and retries from the keyboard', async () => {
@@ -68,7 +70,7 @@ describe('OnboardingChecklist', () => {
     const { retryChecklist } = renderChecklist(null, { checklistLoadFailed: true });
 
     expect(screen.getByRole('alert').textContent).toBe(
-      'Unable to load getting started. Check your connection and try again.',
+      'Unable to load the team setup checklist. Check your connection and try again.',
     );
     await user.tab();
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Retry' }));
@@ -92,7 +94,7 @@ describe('OnboardingChecklist', () => {
   it('reopens dismissed checklists', () => {
     const { mutateChecklist } = renderChecklist({ dismissed: true, items: [] });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Show getting started' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Team setup checklist' }));
 
     expect(mutateChecklist).toHaveBeenCalledWith({ action: 'reopen' });
   });
@@ -106,18 +108,18 @@ describe('OnboardingChecklist', () => {
       ],
     });
 
-    const toggle = screen.getByRole('button', { name: 'Show getting started' });
+    const toggle = screen.getByRole('button', { name: 'Team setup checklist' });
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(toggle.className).toContain('text-fg-dim');
     expect(toggle.className).not.toMatch(/(?:^|\s)border(?:\s|$)/);
     expect(screen.getByText('1/2')).toBeTruthy();
-    expect(screen.queryByRole('heading', { name: 'Getting started' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Team setup checklist' })).toBeNull();
   });
 
   it('restores focus to dismiss setup after reopening the checklist', () => {
     const { mutateChecklist, view } = renderChecklist({ dismissed: true, items: [] });
 
-    const reopen = screen.getByRole('button', { name: 'Show getting started' });
+    const reopen = screen.getByRole('button', { name: 'Team setup checklist' });
     reopen.focus();
     fireEvent.click(reopen);
     expect(mutateChecklist).toHaveBeenCalledWith({ action: 'reopen' });
@@ -135,7 +137,7 @@ describe('OnboardingChecklist', () => {
     view.rerender(<OnboardingChecklist />);
 
     expect(document.activeElement).toBe(
-      screen.getByRole('button', { name: 'Hide getting started' }),
+      screen.getByRole('button', { name: 'Hide team setup checklist' }),
     );
   });
 
@@ -146,7 +148,7 @@ describe('OnboardingChecklist', () => {
     );
 
     expect(screen.getByRole('alert').textContent).toBe(
-      'Unable to update getting started. Your previous state was restored.',
+      'Unable to update the team setup checklist. Your previous state was restored.',
     );
     fireEvent.click(screen.getByRole('button', { name: 'Retry update' }));
     expect(retryChecklistMutation).toHaveBeenCalledOnce();
@@ -162,9 +164,11 @@ describe('OnboardingChecklist', () => {
       ],
     });
 
-    expect(screen.getByText('Getting started')).toBeTruthy();
+    expect(screen.getByText('Team setup checklist')).toBeTruthy();
     expect(
-      screen.getByRole('button', { name: 'Hide getting started' }).getAttribute('aria-expanded'),
+      screen
+        .getByRole('button', { name: 'Hide team setup checklist' })
+        .getAttribute('aria-expanded'),
     ).toBe('true');
     expect(screen.getByText('1/3')).toBeTruthy();
     expect(screen.getByText('Capture one timeline event')).toBeTruthy();
@@ -236,7 +240,7 @@ describe('OnboardingChecklist', () => {
     view.rerender(<OnboardingChecklist />);
 
     expect(document.activeElement).toBe(
-      screen.getByRole('button', { name: 'Hide getting started' }),
+      screen.getByRole('button', { name: 'Hide team setup checklist' }),
     );
   });
 
@@ -298,7 +302,7 @@ describe('OnboardingChecklist', () => {
     view.rerender(<OnboardingChecklist />);
 
     expect(document.activeElement).toBe(
-      screen.getByRole('button', { name: 'Hide getting started' }),
+      screen.getByRole('button', { name: 'Hide team setup checklist' }),
     );
   });
 
@@ -312,9 +316,9 @@ describe('OnboardingChecklist', () => {
     );
 
     expect(screen.getByText('0/1').getAttribute('aria-label')).toBe(
-      '0 of 1 getting started steps complete',
+      '0 of 1 checklist steps complete',
     );
-    expect(screen.getByText('Updating getting started…').getAttribute('aria-live')).toBe('polite');
+    expect(screen.getByText('Updating checklist…').getAttribute('aria-live')).toBe('polite');
   });
 
   it('dismisses the checklist and disables mutation controls while pending', () => {
@@ -327,7 +331,7 @@ describe('OnboardingChecklist', () => {
     );
 
     const dismiss = screen.getByRole<HTMLButtonElement>('button', {
-      name: 'Hide getting started',
+      name: 'Hide team setup checklist',
     });
     const complete = screen.getByRole<HTMLButtonElement>('button', {
       name: 'Mark Link Telegram complete',
@@ -344,7 +348,7 @@ describe('OnboardingChecklist', () => {
       items: [{ key: 'telegram', label: 'Link Telegram', completed: false }],
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Hide getting started' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Hide team setup checklist' }));
     expect(active.mutateChecklist).toHaveBeenCalledWith({ action: 'dismiss' });
   });
 
@@ -354,7 +358,9 @@ describe('OnboardingChecklist', () => {
       items: [{ key: 'telegram', label: 'Link Telegram', completed: false }],
     });
 
-    const dismiss = screen.getByRole<HTMLButtonElement>('button', { name: 'Hide getting started' });
+    const dismiss = screen.getByRole<HTMLButtonElement>('button', {
+      name: 'Hide team setup checklist',
+    });
     dismiss.focus();
     fireEvent.click(dismiss);
     expect(mutateChecklist).toHaveBeenCalledWith({ action: 'dismiss' });
@@ -372,7 +378,7 @@ describe('OnboardingChecklist', () => {
     view.rerender(<OnboardingChecklist />);
 
     expect(document.activeElement).toBe(
-      screen.getByRole('button', { name: 'Show getting started' }),
+      screen.getByRole('button', { name: 'Team setup checklist' }),
     );
   });
 
@@ -382,7 +388,7 @@ describe('OnboardingChecklist', () => {
       items: [{ key: 'telegram', label: 'Link Telegram', completed: false }],
     });
 
-    const dismiss = screen.getByRole('button', { name: 'Hide getting started' });
+    const dismiss = screen.getByRole('button', { name: 'Hide team setup checklist' });
     dismiss.focus();
     fireEvent.click(dismiss);
     expect(mutateChecklist).toHaveBeenCalledWith({ action: 'dismiss' });
@@ -415,14 +421,14 @@ describe('OnboardingChecklist', () => {
     view.rerender(<OnboardingChecklist />);
 
     expect(document.activeElement).toBe(
-      screen.getByRole('button', { name: 'Hide getting started' }),
+      screen.getByRole('button', { name: 'Hide team setup checklist' }),
     );
   });
 
   it('restores focus to reopen setup when a reopening is rolled back', () => {
     const { mutateChecklist, view } = renderChecklist({ dismissed: true, items: [] });
 
-    const reopen = screen.getByRole('button', { name: 'Show getting started' });
+    const reopen = screen.getByRole('button', { name: 'Team setup checklist' });
     reopen.focus();
     fireEvent.click(reopen);
     expect(mutateChecklist).toHaveBeenCalledWith({ action: 'reopen' });
@@ -452,7 +458,7 @@ describe('OnboardingChecklist', () => {
     view.rerender(<OnboardingChecklist />);
 
     expect(document.activeElement).toBe(
-      screen.getByRole('button', { name: 'Show getting started' }),
+      screen.getByRole('button', { name: 'Team setup checklist' }),
     );
   });
 
@@ -466,7 +472,7 @@ describe('OnboardingChecklist', () => {
     );
 
     expect(screen.getByRole('alert').textContent).toBe(
-      'Unable to update getting started. Your previous state was restored.',
+      'Unable to update the team setup checklist. Your previous state was restored.',
     );
     fireEvent.click(screen.getByRole('button', { name: 'Retry update' }));
     expect(retryChecklistMutation).toHaveBeenCalledOnce();
@@ -509,7 +515,7 @@ describe('OnboardingChecklist', () => {
     view.rerender(<OnboardingChecklist />);
 
     expect(document.activeElement).toBe(
-      screen.getByRole('button', { name: 'Show getting started' }),
+      screen.getByRole('button', { name: 'Team setup checklist' }),
     );
   });
 
@@ -547,7 +553,7 @@ describe('OnboardingChecklist', () => {
     view.rerender(<OnboardingChecklist />);
 
     expect(document.activeElement).toBe(
-      screen.getByRole('button', { name: 'Show getting started' }),
+      screen.getByRole('button', { name: 'Team setup checklist' }),
     );
   });
 });

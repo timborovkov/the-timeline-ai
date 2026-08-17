@@ -73,7 +73,7 @@ export function UserMenu({ user }: Props) {
           <DropdownMenuItem asChild>
             <button type="submit" className="flex w-full items-center gap-2">
               <LifeBuoy className="size-4" />
-              Getting started
+              Team setup checklist
             </button>
           </DropdownMenuItem>
         </form>
