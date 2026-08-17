@@ -20,11 +20,7 @@ import {
   SavedMeetingForm,
   ScheduleMeetingBotForm,
 } from '@/components/meeting-forms';
-import {
-  CAPTURE_FILTERS,
-  MeetingCapturesList,
-  type CaptureFilter,
-} from '@/components/meetings/meeting-captures-list';
+import { MeetingCapturesList } from '@/components/meetings/meeting-captures-list';
 import { PageHeader } from '@/components/page-header';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { SectionHeading } from '@/components/section-heading';
@@ -35,6 +31,7 @@ import { auth } from '@/lib/auth';
 import { formatCollectionCount } from '@/lib/collection-count';
 import { db } from '@/lib/db';
 import { displayMeetingLabel, displayMemberLabel, displaySourceLabel } from '@/lib/display-labels';
+import { CAPTURE_FILTERS, type CaptureFilter } from '@/lib/meeting-capture-filters';
 
 export const metadata: Metadata = {
   title: 'Meetings',

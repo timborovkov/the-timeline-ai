@@ -215,7 +215,7 @@ export function TimelineFeed({
       ) : null}
       {!compact && !(query.isError && (!hasTimelineContent || hasLoadMoreError)) ? (
         <InfiniteScroll
-          hasMore={Boolean(query.hasNextPage)}
+          hasMore={query.hasNextPage}
           loading={query.isFetchingNextPage}
           onLoadMore={() => {
             void query.fetchNextPage();

@@ -28,11 +28,13 @@ function filterLabelText(label: ReactNode, fallback: string): string {
   return typeof label === 'string' || typeof label === 'number' ? String(label) : fallback;
 }
 
+const EMPTY_ACTIVE_FILTERS: ActiveFilter[] = [];
+
 export function CollectionToolbar({
   search,
   count,
   filters,
-  activeFilters = [],
+  activeFilters = EMPTY_ACTIVE_FILTERS,
   clearAll,
   view,
   viewControls,

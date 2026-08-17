@@ -3,9 +3,9 @@
 import { presentDueDate } from '@timeline/shared/time';
 import { ExternalLink } from 'lucide-react';
 
-import { EvidenceLink } from '@/components/evidence-link';
 import { InfiniteScroll } from '@/components/collections/infinite-scroll';
 import { VirtualList } from '@/components/collections/virtual-list';
+import { EvidenceLink } from '@/components/evidence-link';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { formatTaskCategoryChangeValue } from '@/lib/object-change-format';
@@ -31,7 +31,7 @@ export function ObjectSectionFeed({ objectId, section, title, showTitle = true }
       ) : (
         <VirtualList
           items={items}
-          getItemKey={(item, index) => String((item as { id?: unknown }).id ?? index)}
+          getItemKey={(item, index) => sectionItemKey(item, index)}
           estimateSize={72}
           gap={8}
           renderItem={(item) => (
@@ -42,7 +42,7 @@ export function ObjectSectionFeed({ objectId, section, title, showTitle = true }
         />
       )}
       <InfiniteScroll
-        hasMore={Boolean(query.hasNextPage)}
+        hasMore={query.hasNextPage}
         loading={query.isFetchingNextPage}
         error={query.isFetchNextPageError ? 'Could not load more.' : null}
         onLoadMore={() => {
@@ -152,6 +152,12 @@ function text(value: unknown, fallback = ''): string {
   if (typeof value === 'string') return displayText(value);
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   return fallback;
+}
+
+function sectionItemKey(item: unknown, index: number): string {
+  if (!item || typeof item !== 'object') return String(index);
+  const id = text((item as Record<string, unknown>).id);
+  return id || String(index);
 }
 
 function rawText(value: unknown, fallback = ''): string {

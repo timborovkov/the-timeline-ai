@@ -30,7 +30,7 @@ vi.mock('@/app/actions/suggestions', () => ({
 }));
 vi.mock('@/app/actions/objects', () => ({ searchObjectsAction: fakes.searchObjectsAction }));
 vi.mock('@/app/actions/collection-pages', () => ({
-  loadSuggestionsPageAction: vi.fn(async () => ({ suggestions: [], nextCursor: null })),
+  loadSuggestionsPageAction: vi.fn(() => Promise.resolve({ suggestions: [], nextCursor: null })),
 }));
 vi.mock('@/components/collections/virtual-list', async () => {
   const { createElement: h } = await import('react');

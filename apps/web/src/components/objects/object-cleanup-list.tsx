@@ -159,7 +159,10 @@ export function ObjectCleanupList({
     loadError: null,
   });
   const [loadingMore, startLoadMore] = useTransition();
-  const loadedAppendedRows = loadedKey === paginationKey ? appendedRows : [];
+  const loadedAppendedRows = useMemo(
+    () => (loadedKey === paginationKey ? appendedRows : []),
+    [appendedRows, loadedKey, paginationKey],
+  );
   const pageCursor = loadedKey === paginationKey ? cursor : nextCursor;
   const pageLoadError = loadedKey === paginationKey ? loadError : null;
   const [isPending, startTransition] = useTransition();
@@ -626,7 +629,7 @@ function ObjectDueDateEditor({
   value: Date | string | null;
   onSave: (value: Date | null) => void;
 }) {
-  const [draft, setDraft] = useState(dateInputValue(value));
+  const [draft, setDraft] = useState(() => dateInputValue(value));
   return (
     <form
       className="flex items-center gap-2"

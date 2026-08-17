@@ -54,10 +54,7 @@ export function VirtualList<T>({
       const item = itemsRef.current[index];
       return item === undefined ? String(index) : getItemKey(item, index);
     },
-    measureElement:
-      typeof window !== 'undefined' && !window.ResizeObserver
-        ? undefined
-        : (element) => element.getBoundingClientRect().height,
+    measureElement: (element) => element.getBoundingClientRect().height,
     initialRect: { width: 1024, height: 900 },
   });
 
@@ -79,6 +76,9 @@ export function VirtualList<T>({
               className={cn('absolute top-0 left-0 w-full', itemClassName)}
               style={{ transform: `translateY(${String(virtualRow.start)}px)` }}
             >
+              {/* Virtualizer windows rows through a callback; the item component
+                  owns its own state. */}
+              {/* react-doctor-disable-next-line react-doctor/no-render-in-render */}
               {renderItem(item, virtualRow.index)}
             </div>
           );

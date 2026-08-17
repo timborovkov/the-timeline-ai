@@ -812,7 +812,7 @@ function DocumentList({
         />
       </div>
       <InfiniteScroll
-        hasMore={Boolean(query.hasNextPage)}
+        hasMore={query.hasNextPage}
         loading={query.isFetchingNextPage}
         error={query.isFetchNextPageError ? 'Could not load more documents.' : null}
         onLoadMore={() => {

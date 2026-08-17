@@ -6,8 +6,8 @@ import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 
 import type * as jobRecovery from '@timeline/shared/job-recovery';
 
-import { TechnicalDetails } from '@/components/technical-details';
 import { InfiniteScroll } from '@/components/collections/infinite-scroll';
+import { TechnicalDetails } from '@/components/technical-details';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -739,7 +739,7 @@ function FinishedJobsArchive({
         </table>
       </div>
       <InfiniteScroll
-        hasMore={Boolean(query.hasNextPage)}
+        hasMore={query.hasNextPage}
         loading={query.isFetchingNextPage}
         error={query.isFetchNextPageError ? 'Could not load more jobs.' : null}
         onLoadMore={() => {

@@ -14,7 +14,6 @@ import { CollectionStatus } from '@/components/collections/collection-status';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { InfiniteScroll } from '@/components/collections/infinite-scroll';
 import { VirtualList } from '@/components/collections/virtual-list';
-import { formatCollectionCount } from '@/lib/collection-count';
 import { DocumentPreview } from '@/components/documents/document-preview';
 import { EvidenceLink } from '@/components/evidence-link';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
@@ -32,6 +31,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { ItemActionGroup } from '@/components/ui/item-actions';
+import { formatCollectionCount } from '@/lib/collection-count';
 import { displaySourceLabel } from '@/lib/display-labels';
 import { selectedValues } from '@/lib/filter-values';
 import { statusLabel } from '@/lib/status-labels';

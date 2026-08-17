@@ -4,9 +4,9 @@ import { Search } from 'lucide-react';
 import Link from 'next/link';
 import { useId, useRef, useState } from 'react';
 
-import { InlineError } from '@/components/inline-error';
 import { InfiniteScroll } from '@/components/collections/infinite-scroll';
 import { VirtualList } from '@/components/collections/virtual-list';
+import { InlineError } from '@/components/inline-error';
 import { useDocumentSearchQuery } from '@/lib/use-paginated-queries';
 import { searchErrorMessage } from '@/lib/ux-errors';
 
@@ -124,7 +124,7 @@ export function DocumentSearch() {
                 )}
               />
               <InfiniteScroll
-                hasMore={Boolean(search.hasNextPage)}
+                hasMore={search.hasNextPage}
                 loading={search.isFetchingNextPage}
                 error={search.isFetchNextPageError ? 'Could not load more documents.' : null}
                 onLoadMore={() => {

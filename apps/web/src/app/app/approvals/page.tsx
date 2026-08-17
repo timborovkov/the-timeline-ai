@@ -123,6 +123,7 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
         }
       />
       <ApprovalsClient
+        key={status}
         suggestions={visibleSuggestions}
         nextCursor={page.nextCursor}
         status={status}

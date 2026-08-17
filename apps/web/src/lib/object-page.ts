@@ -2,7 +2,7 @@ import { encodeCursor } from '@timeline/shared/pagination';
 
 import type * as objects from '@timeline/shared/objects';
 
-export const OBJECTS_PAGE_SIZE = 48;
+const OBJECTS_PAGE_SIZE = 48;
 export const OBJECTS_SECTION_PREVIEW_SIZE = 8;
 
 export interface ObjectListScope {

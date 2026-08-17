@@ -19,7 +19,7 @@ const fakes = vi.hoisted(() => ({
 
 vi.mock('@/app/actions/chat', () => ({ archiveChatSessionAction: fakes.archive }));
 vi.mock('@/app/actions/collection-pages', () => ({
-  loadChatSessionsPageAction: vi.fn(async () => ({ sessions: [], nextCursor: null })),
+  loadChatSessionsPageAction: vi.fn(() => Promise.resolve({ sessions: [], nextCursor: null })),
 }));
 vi.mock('@/components/collections/virtual-list', async () => {
   const { createElement: h } = await import('react');

@@ -76,7 +76,7 @@ describe('InfiniteScroll', () => {
     expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
   });
 
-  it('keeps Retry as the only visible control after a load failure', async () => {
+  it('keeps Retry as the only visible control after a load failure', () => {
     const onRetry = vi.fn();
     render(
       <InfiniteScroll

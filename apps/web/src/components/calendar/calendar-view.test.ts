@@ -418,7 +418,7 @@ describe('CalendarView recurrence and tentative UI', () => {
     }
   });
 
-  it('ignores stale eventPage URL params after infinite scroll replaced numbered pages', async () => {
+  it('ignores stale eventPage URL params after infinite scroll replaced numbered pages', () => {
     fakes.searchParams = 'view=month&date=2026-06-03&eventPage=999';
 
     render(

@@ -48,6 +48,9 @@ export function InfiniteScroll({
     onLoadMoreRef.current();
   }
 
+  // The observer callback reads onLoadMore/loading through refs so attaching
+  // stays stable while those values change.
+  // react-doctor-disable-next-line react-doctor/exhaustive-deps
   useEffect(() => {
     const node = sentinelRef.current;
     if (!node || !hasMore || disabled) return;
@@ -62,7 +65,9 @@ export function InfiniteScroll({
       },
     );
     observer.observe(node);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+    };
   }, [disabled, hasMore, root]);
 
   if (error) {

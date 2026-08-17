@@ -103,9 +103,9 @@ afterEach(() => {
 
 beforeEach(() => {
   class FakeIntersectionObserver {
-    observe(): void {}
-    unobserve(): void {}
-    disconnect(): void {}
+    observe = vi.fn();
+    unobserve = vi.fn();
+    disconnect = vi.fn();
   }
   vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
 });

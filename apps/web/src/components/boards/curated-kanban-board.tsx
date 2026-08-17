@@ -40,9 +40,9 @@ import {
   type CuratedKanbanSaveState,
 } from '@/components/boards/curated-kanban-state';
 import { CollectionStatus, priorityTone } from '@/components/collections/collection-status';
-import { VirtualList } from '@/components/collections/virtual-list';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
+import { VirtualList } from '@/components/collections/virtual-list';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { boardViewHref } from '@/lib/board-links';

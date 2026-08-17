@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useState, useTransition } from 'react';
 
 import { loadNotificationsPageAction } from '@/app/actions/collection-pages';
 import { InfiniteScroll } from '@/components/collections/infinite-scroll';
@@ -18,24 +18,34 @@ export interface InboxNotification {
   readAt: string | null;
 }
 
-export function InboxList({
-  initialRows,
-  nextOffset,
-  unreadOnly,
-  matchingCount,
-  totalCount,
-}: {
+type InboxListProps = {
   initialRows: InboxNotification[];
   nextOffset: number | null;
   unreadOnly: boolean;
   matchingCount: number;
   totalCount: number;
-}) {
-  const [rows, setRows] = useState(initialRows);
-  const [offset, setOffset] = useState(nextOffset);
+};
+
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- Unread vs all remounts extra pages without copying the first page into state.
+export function InboxList(props: InboxListProps) {
+  return <InboxListPages key={props.unreadOnly ? 'unread' : 'all'} {...props} />;
+}
+
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- Unread vs all remounts extra pages without copying the first page into state.
+function InboxListPages({
+  initialRows,
+  nextOffset,
+  unreadOnly,
+  matchingCount,
+  totalCount,
+}: InboxListProps) {
+  const [extraRows, setExtraRows] = useState<InboxNotification[]>([]);
+  const [extraOffset, setExtraOffset] = useState<number | null>(null);
+  const [paged, setPaged] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, startLoading] = useTransition();
-  const seen = useMemo(() => new Set(rows.map((row) => row.id)), [rows]);
+  const rows = [...initialRows, ...extraRows];
+  const offset = paged ? extraOffset : nextOffset;
 
   function loadMore(): void {
     if (offset === null || loading) return;
@@ -46,13 +56,12 @@ export function InboxList({
         return;
       }
       setError(null);
-      setRows((current) => [
-        ...current,
-        ...page.rows.filter(
-          (row) => !seen.has(row.id) && !current.some((item) => item.id === row.id),
-        ),
-      ]);
-      setOffset(page.nextOffset);
+      setPaged(true);
+      setExtraRows((current) => {
+        const seen = new Set([...initialRows, ...current].map((row) => row.id));
+        return [...current, ...page.rows.filter((row) => !seen.has(row.id))];
+      });
+      setExtraOffset(page.nextOffset);
     });
   }
 

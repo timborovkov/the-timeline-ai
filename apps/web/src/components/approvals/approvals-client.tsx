@@ -647,14 +647,21 @@ export function ApprovalsClient({
   const resolvedTimezone = timezone ?? workspaceTimezone;
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [extraSuggestions, setExtraSuggestions] = useState<SuggestionBundle[]>([]);
-  const [pageCursor, setPageCursor] = useState(nextCursor);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [pageState, setPageState] = useState<{
+    extraSuggestions: SuggestionBundle[];
+    extraCursor: string | null;
+    paged: boolean;
+    loadError: string | null;
+  }>({ extraSuggestions: [], extraCursor: null, paged: false, loadError: null });
   const [loadingMore, startLoadingMore] = useTransition();
+  const pageCursor = pageState.paged ? pageState.extraCursor : nextCursor;
   const loadedSuggestions = useMemo(() => {
     const seen = new Set(suggestions.map((bundle) => bundle.id));
-    return [...suggestions, ...extraSuggestions.filter((bundle) => !seen.has(bundle.id))];
-  }, [extraSuggestions, suggestions]);
+    return [
+      ...suggestions,
+      ...pageState.extraSuggestions.filter((bundle) => !seen.has(bundle.id)),
+    ];
+  }, [pageState.extraSuggestions, suggestions]);
   const [error, setError] = useState<string | null>(null);
   const [resolvedItemSignatures, setResolvedItemSignatures] = useState<Map<string, string>>(
     () => new Map(),
@@ -818,15 +825,21 @@ export function ApprovalsClient({
     startLoadingMore(async () => {
       const page = await loadSuggestionsPageAction({ cursor: pageCursor, status });
       if (page.error) {
-        setLoadError(page.error);
+        setPageState((current) => ({ ...current, loadError: page.error }));
         return;
       }
-      setLoadError(null);
-      setExtraSuggestions((current) => {
-        const seen = new Set(current.map((bundle) => bundle.id));
-        return [...current, ...page.suggestions.filter((bundle) => !seen.has(bundle.id))];
+      setPageState((current) => {
+        const seen = new Set(current.extraSuggestions.map((bundle) => bundle.id));
+        return {
+          extraSuggestions: [
+            ...current.extraSuggestions,
+            ...page.suggestions.filter((bundle) => !seen.has(bundle.id)),
+          ],
+          extraCursor: page.nextCursor,
+          paged: true,
+          loadError: null,
+        };
       });
-      setPageCursor(page.nextCursor);
     });
   }
 
@@ -855,7 +868,7 @@ export function ApprovalsClient({
       bulkRejectSuggestions={bulkRejectSuggestions}
       actionFailedItemIds={actionFailedItemIds}
       busyItemIds={busyItemIds}
-      error={error ?? loadError}
+      error={error ?? pageState.loadError}
       hasMore={pageCursor !== null}
       loadingMore={loadingMore}
       onLoadMore={loadMore}

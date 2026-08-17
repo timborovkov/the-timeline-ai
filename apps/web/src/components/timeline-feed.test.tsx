@@ -318,7 +318,7 @@ describe('TimelineFeed', () => {
     expect(refetch).toHaveBeenCalledTimes(1);
   });
 
-  it('retries the failed next page without offering a competing load-more action', async () => {
+  it('retries the failed next page without offering a competing load-more action', () => {
     const initialPage = page([timelineEvent('event-1')]);
     const fetchNextPage = vi.fn(() => Promise.resolve());
     const refetch = vi.fn();

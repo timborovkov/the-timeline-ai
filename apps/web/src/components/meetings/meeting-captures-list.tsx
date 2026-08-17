@@ -15,17 +15,7 @@ import { ItemActionGroup } from '@/components/ui/item-actions';
 import { formatCollectionCount } from '@/lib/collection-count';
 import { formatDisplayDateTime } from '@/lib/display-dates';
 import { displayMeetingLabel, displaySourceLabel } from '@/lib/display-labels';
-
-export const CAPTURE_FILTERS = [
-  { value: 'all', label: 'All statuses' },
-  { value: 'scheduled', label: 'Scheduled' },
-  { value: 'in_progress', label: 'In progress' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'attention', label: 'Needs attention' },
-  { value: 'ended', label: 'Not captured' },
-] as const;
-
-export type CaptureFilter = (typeof CAPTURE_FILTERS)[number]['value'];
+import { type CaptureFilter } from '@/lib/meeting-capture-filters';
 
 export interface MeetingCaptureItem {
   id: string;
@@ -37,7 +27,7 @@ export interface MeetingCaptureItem {
   pinned: boolean;
 }
 
-export function matchesCaptureFilter(status: string, filter: CaptureFilter): boolean {
+function matchesCaptureFilter(status: string, filter: CaptureFilter): boolean {
   switch (filter) {
     case 'scheduled':
       return status === 'scheduled';
@@ -73,8 +63,14 @@ export function MeetingCapturesList({
   tab: 'captures' | 'saved';
   clearHref: string;
 }) {
-  const [meetings, setMeetings] = useState(initialMeetings);
-  const [cursor, setCursor] = useState(nextCursor);
+  const [extraMeetings, setExtraMeetings] = useState<MeetingCaptureItem[]>([]);
+  const [extraCursor, setExtraCursor] = useState<string | null>(null);
+  const [paged, setPaged] = useState(false);
+  const meetings = useMemo(
+    () => [...initialMeetings, ...extraMeetings],
+    [extraMeetings, initialMeetings],
+  );
+  const cursor = paged ? extraCursor : nextCursor;
   const [error, setError] = useState<string | null>(null);
   const [loading, startLoading] = useTransition();
   const normalizedQuery = query.toLocaleLowerCase();
@@ -100,11 +96,12 @@ export function MeetingCapturesList({
         return;
       }
       setError(null);
-      setMeetings((current) => {
-        const seen = new Set(current.map((meeting) => meeting.id));
+      setPaged(true);
+      setExtraMeetings((current) => {
+        const seen = new Set([...initialMeetings, ...current].map((meeting) => meeting.id));
         return [...current, ...page.meetings.filter((meeting) => !seen.has(meeting.id))];
       });
-      setCursor(page.nextCursor);
+      setExtraCursor(page.nextCursor);
     });
   }
 

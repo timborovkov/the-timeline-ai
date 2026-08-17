@@ -804,19 +804,7 @@ function CalendarViewLayout({ model }: { model: ReturnType<typeof useCalendarVie
   );
 }
 
-function CalendarEventList({
-  events,
-  total,
-  nextOffset,
-  timezone,
-  query,
-  scope,
-  onQueryChange,
-  onScopeChange,
-  onCreate,
-  onClearFilters,
-  onEdit,
-}: {
+type CalendarEventListProps = {
   events: CalendarEvent[];
   total: number;
   nextOffset: number | null;
@@ -828,23 +816,36 @@ function CalendarEventList({
   onCreate: () => void;
   onClearFilters: () => void;
   onEdit: (event: CalendarEvent) => void;
-}) {
+};
+
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- Extra pages remount with the filter key instead of syncing props in an effect.
+function CalendarEventList(props: CalendarEventListProps) {
+  return <CalendarEventListPages key={`${props.scope}:${props.query}`} {...props} />;
+}
+
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- Extra pages remount with the filter key instead of syncing props in an effect.
+function CalendarEventListPages({
+  events,
+  total,
+  nextOffset,
+  timezone,
+  query,
+  scope,
+  onQueryChange,
+  onScopeChange,
+  onCreate,
+  onClearFilters,
+  onEdit,
+}: CalendarEventListProps) {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const committedSearchRef = useRef(query);
   const [extraEvents, setExtraEvents] = useState<CalendarEvent[]>([]);
-  const [offset, setOffset] = useState(nextOffset);
+  const [extraOffset, setExtraOffset] = useState<number | null>(null);
+  const [paged, setPaged] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, startLoading] = useTransition();
-  const filterKey = `${scope}:${query}`;
-  const filterKeyRef = useRef(filterKey);
-  useEffect(() => {
-    if (filterKeyRef.current === filterKey) return;
-    filterKeyRef.current = filterKey;
-    setExtraEvents([]);
-    setOffset(nextOffset);
-    setError(null);
-  }, [filterKey, nextOffset]);
+  const offset = paged ? extraOffset : nextOffset;
   const loadedEvents = useMemo(() => {
     const seen = new Set(events.map((event) => event.id));
     return [...events, ...extraEvents.filter((event) => !seen.has(event.id))];
@@ -1031,11 +1032,12 @@ function CalendarEventList({
               return;
             }
             setError(null);
+            setPaged(true);
             setExtraEvents((current) => {
               const seen = new Set(current.map((event) => event.id));
               return [...current, ...page.events.filter((event) => !seen.has(event.id))];
             });
-            setOffset(page.nextOffset);
+            setExtraOffset(page.nextOffset);
           });
         }}
         boundLabel="No more matching events"
