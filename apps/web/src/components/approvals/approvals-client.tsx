@@ -822,7 +822,10 @@ export function ApprovalsClient({
     startLoadingMore(async () => {
       const page = await loadSuggestionsPageAction({ cursor: pageCursor, status });
       if (page.error) {
-        setPageState((current) => ({ ...current, loadError: page.error }));
+        setPageState((current) => ({
+          ...current,
+          loadError: page.error ?? 'Could not load more.',
+        }));
         return;
       }
       setPageState((current) => {
