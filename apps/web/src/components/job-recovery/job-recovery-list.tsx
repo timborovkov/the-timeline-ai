@@ -7,6 +7,7 @@ import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type * as jobRecovery from '@timeline/shared/job-recovery';
 
 import { CollectionGroup } from '@/components/collections/collection-group';
+import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import {
   DISMISS_MATCHING_CLIENT_MAX_ROUNDS,
@@ -659,12 +660,9 @@ function JobRecoveryRows({
       {items.map((item) => {
         const retry = retryStates[item.id];
         return (
-          <li
-            key={item.id}
-            className="flex flex-col gap-2 border-b border-border/80 px-2 py-2 last:border-b-0 sm:flex-row sm:items-center sm:px-3"
-          >
-            <div className="min-w-0 flex-1 space-y-1">
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <li key={item.id}>
+            <CollectionRow
+              leading={
                 <CollectionStatus
                   value={retry?.status === 'queued' ? 'retrying' : item.status}
                   tone={
@@ -675,41 +673,14 @@ function JobRecoveryRows({
                         : 'progress'
                   }
                 />
-                <span className="truncate text-sm font-medium text-fg">{item.label}</span>
-              </div>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-muted">
-                <span>{new Date(item.detectedAt).toLocaleString()}</span>
-                {item.error ? (
-                  <span className="text-destructive">
-                    Processing failed. Retry this job or dismiss it.
-                  </span>
-                ) : null}
-              </div>
-              {retry ? <RetryStatus snapshot={retry} /> : null}
-              <TechnicalDetails
-                items={[
-                  { label: 'Job ID', value: item.id, copyValue: item.id },
-                  {
-                    label: 'Artifact ID',
-                    value: item.artifactId,
-                    copyValue: item.artifactId,
-                  },
-                  ...(item.error
-                    ? [{ label: 'Raw error', value: item.error, copyValue: item.error }]
-                    : []),
-                  ...(retry?.status === 'failed' && retry.error
-                    ? [
-                        {
-                          label: 'Raw retry error',
-                          value: retry.error,
-                          copyValue: retry.error,
-                        },
-                      ]
-                    : []),
-                ]}
-              />
-            </div>
-            <JobRecoveryItemActions busy={busy} item={item} onAction={onAction} retry={retry} />
+              }
+              title={item.label}
+              context={new Date(item.detectedAt).toLocaleString()}
+              metadata={retry ? <RetryStatus snapshot={retry} /> : null}
+              actions={
+                <JobRecoveryItemActions busy={busy} item={item} onAction={onAction} retry={retry} />
+              }
+            />
           </li>
         );
       })}
@@ -881,25 +852,25 @@ function itemSnapshotKey(item: Pick<JobRecoveryItem, 'detectedAt' | 'id'>) {
 function RetryStatus({ snapshot }: { snapshot: RetrySnapshot }) {
   if (snapshot.status === 'completed') {
     return (
-      <p className="flex items-center gap-1 text-xs text-fg-muted">
+      <span className="flex items-center gap-1 text-xs text-fg-muted">
         <CheckCircle2 aria-hidden="true" className="size-3.5" />
-        Retry run completed. This item remains listed until recovery clears.
-      </p>
+        Retry completed
+      </span>
     );
   }
   if (snapshot.status === 'failed') {
     return (
-      <p className="flex items-center gap-1 text-xs text-destructive">
+      <span className="flex items-center gap-1 text-xs text-destructive">
         <CircleAlert aria-hidden="true" className="size-3.5" />
-        Retry failed. Review technical details, then retry the job or dismiss it.
-      </p>
+        Retry failed
+      </span>
     );
   }
   return (
-    <p className="flex items-center gap-1 text-xs text-fg-muted">
+    <span className="flex items-center gap-1 text-xs text-fg-muted">
       <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
       Retry queued.
-    </p>
+    </span>
   );
 }
 
@@ -956,24 +927,6 @@ function FinishedJobsArchive({
                   </td>
                   <td className="px-3 py-2">
                     <div className="font-medium">{item.label}</div>
-                    <TechnicalDetails
-                      className="mt-1"
-                      items={[
-                        { label: 'Job ID', value: item.id, copyValue: item.id },
-                        ...(item.artifactId
-                          ? [
-                              {
-                                label: 'Artifact ID',
-                                value: item.artifactId,
-                                copyValue: item.artifactId,
-                              },
-                            ]
-                          : []),
-                        ...(item.error
-                          ? [{ label: 'Raw error', value: item.error, copyValue: item.error }]
-                          : []),
-                      ]}
-                    />
                   </td>
                   <td className="px-3 py-2 font-mono text-xs text-fg-muted">{item.queue}</td>
                   <td className="px-3 py-2 text-fg-muted">{item.attemptsMade}</td>

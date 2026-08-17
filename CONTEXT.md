@@ -939,7 +939,9 @@ finalization, and integration sync. Home “recoverable jobs” uses this same
 7-day count and is hidden from members. Members who open the page see an
 Admins-only empty state. Older failed or stuck work is hidden from attention;
 workers retry it a few times, then give up. Admins can dismiss that older set in
-bulk; the page continues until the hidden count is cleared. Unprocessed backlog (events that never
+bulk; the page continues until the hidden count is cleared. The list shows
+status, artifact label, and time — not job IDs, artifact IDs, or raw provider
+errors. Unprocessed backlog (events that never
 started extraction or embedding) is inventory, not this recovery queue.
 _Avoid_: Operator dashboard, BullMQ dashboard, queue admin, processing inventory
 

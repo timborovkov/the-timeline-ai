@@ -158,6 +158,11 @@ describe('JobRecoveryList', () => {
     expect(screen.getByText('Sync Sentry issues')).toBeTruthy();
     expect(screen.queryByText('BullMQ')).toBeNull();
     expect(screen.queryByText('jobId')).toBeNull();
+    expect(screen.queryByText('Technical details')).toBeNull();
+    expect(screen.queryByText('Job ID')).toBeNull();
+    expect(screen.queryByText('Artifact ID')).toBeNull();
+    expect(screen.queryByText('Provider budget paused')).toBeNull();
+    expect(screen.queryByText('Audio service timed out')).toBeNull();
 
     await user.click(screen.getByRole('button', { name: 'Integrations' }));
 
@@ -217,7 +222,7 @@ describe('JobRecoveryList', () => {
     expect(fakes.routerRefresh).toHaveBeenCalledOnce();
   });
 
-  it('keeps a failed retry error inside the closed technical disclosure', async () => {
+  it('shows a failed retry without dumping raw provider errors', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.setSystemTime(new Date('2026-07-02T10:00:00.000Z'));
     const rawError =
@@ -244,14 +249,10 @@ describe('JobRecoveryList', () => {
     const recoveryRow = screen.getAllByText('Transcribe customer call')[0]?.closest('li');
     expect(recoveryRow).not.toBeNull();
     await waitFor(() => {
-      expect(
-        within(recoveryRow as HTMLElement).getByText(
-          'Retry failed. Review technical details, then retry the job or dismiss it.',
-        ),
-      ).toBeTruthy();
+      expect(within(recoveryRow as HTMLElement).getByText('Retry failed')).toBeTruthy();
     });
-    const rawErrorValue = within(recoveryRow as HTMLElement).getByText(rawError);
-    expect(rawErrorValue.closest('details')?.open).toBe(false);
+    expect(within(recoveryRow as HTMLElement).queryByText(rawError)).toBeNull();
+    expect(within(recoveryRow as HTMLElement).queryByText('Technical details')).toBeNull();
   });
 
   it('bulk retries visible failed jobs and reports partial queue failures', async () => {
@@ -490,7 +491,8 @@ describe('JobRecoveryList', () => {
     const archive = screen.getByRole('table');
     expect(within(archive).getByText('Transcribe customer call')).toBeTruthy();
     expect(within(archive).getByText('Sync Sentry issues')).toBeTruthy();
-    expect(within(archive).getByText('provider unavailable')).toBeTruthy();
+    expect(within(archive).queryByText('provider unavailable')).toBeNull();
+    expect(within(archive).queryByText('Technical details')).toBeNull();
 
     await user.click(screen.getByRole('button', { name: 'Load more' }));
     expect(fakes.fetchNextPage).toHaveBeenCalledOnce();

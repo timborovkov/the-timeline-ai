@@ -326,8 +326,9 @@ Members who open `/app/team/jobs` see an Admins-only empty state. Home
 “recoverable jobs” and the jobs page share the same 7-day failed/stuck count,
 and only admins see that Home link. The page uses a sentence-case `PageHeader`
 with an “Admins only” access label, groups Failed then Stuck, and keeps
-retry/dismiss on each row. Kind filters appear only when more than one job kind
-is present. Jobs older than 7 days are hidden from attention; admins can dismiss
+retry/dismiss on each dense collection row. Kind filters appear only when more than one job kind
+is present. Rows show status, label, and time — not job IDs, artifact IDs, or raw
+provider errors. Jobs older than 7 days are hidden from attention; admins can dismiss
 them in bulk, and the action keeps going with a loading toast until the hidden
 count is cleared. The visible 7-day list uses a Load more window over the
 current snapshot so a later shared virtualizer can replace it. Retry and dismiss
@@ -590,3 +591,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-16 | Unified workspace collection density | Replaces stacked form chrome and card grids with compact headers, one filter toolbar, 44px rows, semantic status glyphs, optimistic metadata triggers, and contextual selection without changing domain behavior. |
 | 2026-08-17 | 7-day job recovery queue | Makes Home and Background jobs share one recent failed/stuck count, hides older backlog from attention, and keeps unprocessed inventory in Advanced tools. |
 | 2026-08-17 | Jobs recovery dismiss at scale | Makes older-job dismiss a batch write with progress toasts, windows the 7-day snapshot behind Load more, and keeps retry/dismiss on the shared mutation-toast path. |
+| 2026-08-17 | Dense jobs recovery rows | Drops per-row Technical details so the admin queue is status, label, time, and retry/dismiss. |
