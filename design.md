@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.8 · Infinite scroll with Linear timeline rows (2026-08-17). Replaces v3.7 Citation previews on current Home and Ask.
+**Version:** v3.9 · Digest date header, footer window, and activity strip (2026-08-17). Replaces v3.8 Infinite scroll with Linear timeline rows.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -319,6 +319,26 @@ when every group is zero. Pinned work, digest, and a dense recent-moments scan
 follow as full-width sections without duplicating Timeline or Connections.
 These sections prefer horizontal rules and rows over bordered dashboard cards.
 
+The latest digest stays folded until opened. Its summary and section bodies are
+readable prose, not inventories of pull requests or IDs. The generator bans
+pull-request numbers, commit hashes, CI run IDs, ticket keys, and object
+UUIDs: it scrubs them from the briefing packet, retries a draft that still
+lists them, and discards that draft if the rewrite fails. Narrative sections
+use Highlights, Status, Completed, In progress, Decisions, Risks, and
+Follow-ups; Status is the current state of work, not a product-specific label.
+Empty sections and empty task, object, or calendar groups are omitted. The
+header shows the digest date; the covering time range stays footer metadata.
+Activity is a hairline count strip using the same mono lime numbers as Home
+Attention, and is hidden when every count is zero. Task, object, and
+calendar blocks are ordinary linked lists: newly created or completed tasks,
+new non-task objects, calendar events that fell in the digest window, and
+upcoming events. Titles use the same underlined Home treatment in the app and
+the same lime underlined links as other mail. Repeating calendar series
+collapse to one upcoming entry. Titles open the object or the specific calendar
+event on the dashboard. Work → Digests lists generated days as collapsed rows
+so a teammate can open a specific day. Quiet windows stay skipped and are not
+emailed; upcoming calendar alone does not make an inactive team look busy.
+
 Pinned work is one personal, mixed collection. It may contain canonical
 objects (including tasks, projects, deals, people, and object-type documents),
 boards, library documents and captured files, meetings and saved meetings,
@@ -394,15 +414,16 @@ requests for more detail may expand within the provider-safe reply limit.
 ### Work and settings
 
 Work pages share one subnavigation and lead with the task at hand, not a grid of
-links. Work overview puts pinned and team boards above the work queue so saved
-surfaces stay in reach before due and assigned items. Tasks default to the
-grouped list; the list table is full-bleed inside the work canvas, without extra
-page gutters around the rows. Kanban/List view controls sit on the CollectionToolbar
-row with search and filters, not on a second strip. Loading placeholders match the
-requested view and default to list. Kanban cards stay compact: a clamped title plus
-one metadata row, with no redundant type label. Team settings render one URL-selected
-section at a time. Save state stays local to the edited form. Member, object, source,
-and artifact labels never fall back to UUIDs.
+links. Work → Digests is the day-by-day archive of those briefings. Work overview
+puts pinned and team boards above the work queue so saved surfaces stay in reach
+before due and assigned items. Tasks default to the grouped list; the list table
+is full-bleed inside the work canvas, without extra page gutters around the rows.
+Kanban/List view controls sit on the CollectionToolbar row with search and
+filters, not on a second strip. Loading placeholders match the requested view
+and default to list. Kanban cards stay compact: a clamped title plus one
+metadata row, with no redundant type label. Team settings render one URL-selected
+section at a time. Save state stays local to the edited form. Member, object,
+source, and artifact labels never fall back to UUIDs.
 
 Work → Pinned is the complete pin-management surface. It is a single
 side-to-side list with infinite scroll, virtualization, and All, Objects, Boards, Documents,
@@ -675,3 +696,5 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Ask mobile session title | Reuses the resolved conversation title in the mobile session summary, including deep-linked chats outside the recent list. |
 | 2026-08-17 | Quiet sidebar brand and fold control | Aligns the product mark with primary nav, sends it to Home, and replaces the boxed fold glyph with a lighter chevron. |
 | 2026-08-17 | Infinite scroll with Linear timeline rows | Replaces Load more and numbered pagers with sentinel paging and virtualized rows; Timeline keeps Linear archive rows, sticky dates under the toolbar, and no inventory chip. |
+| 2026-08-17 | Digest status, window range, and linked lists | Replaces Product status with Status, shows the covering time range, lists tasks/objects/calendar with existing Home and email type, and omits empty groups including source inventories. |
+| 2026-08-17 | Digest date header, footer window, and activity strip | Puts the digest date in the header, moves the covering range to footer metadata, and turns web activity into a Home-style mono lime count strip. |

@@ -87,6 +87,10 @@
         "rules": ["react-doctor/webhook-signature-risk"]
       },
       {
+        "files": ["src/app/sign-in/page.tsx"],
+        "rules": ["react-doctor/clickjacking-redirect-risk"]
+      },
+      {
         "files": [
           "src/app/app/boards/page.tsx",
           "src/app/app/meetings/page.tsx",
@@ -122,8 +126,7 @@
       {
         "files": [
           "src/components/collections/collection-status.tsx",
-          "src/components/meetings/meeting-captures-list.tsx",
-          "src/components/tasks/task-view-toggle.tsx"
+          "src/components/meetings/meeting-captures-list.tsx"
         ],
         "rules": ["react-doctor/only-export-components"]
       },

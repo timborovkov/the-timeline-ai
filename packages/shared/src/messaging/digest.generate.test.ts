@@ -12,6 +12,7 @@ function chainResult(rows: unknown[]) {
   const thenable = {
     limit: vi.fn().mockResolvedValue(rows),
     groupBy: vi.fn().mockResolvedValue(rows),
+    orderBy: vi.fn(() => thenable),
     then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) =>
       Promise.resolve(rows).then(resolve, reject),
   };
@@ -56,6 +57,7 @@ describe('generateDailyDigest conflict handling', () => {
       },
       suggestions: {
         getApprovalItemCounts: vi.fn().mockResolvedValue({ failed: 0, pending: 2 }),
+        listSuggestions: vi.fn().mockResolvedValue([]),
       },
       objects: { listObjects: vi.fn().mockResolvedValue([]) },
       calendar: { listCalendarEvents: vi.fn().mockResolvedValue([]) },
@@ -66,7 +68,7 @@ describe('generateDailyDigest conflict handling', () => {
     const updates: unknown[] = [];
     const db = {
       select: vi
-        .fn()
+        .fn(() => chainResult([]))
         .mockReturnValueOnce(
           chainResult([{ dailyDigestEnabled: true, dailyDigestHour: 12, timezone: 'UTC' }]),
         )
@@ -130,7 +132,7 @@ describe('generateDailyDigest conflict handling', () => {
     const updates: unknown[] = [];
     const db = {
       select: vi
-        .fn()
+        .fn(() => chainResult([]))
         .mockReturnValueOnce(chainResult([]))
         .mockReturnValueOnce(chainResult([{ defaultTimezone: 'Europe/Helsinki' }]))
         .mockReturnValueOnce(chainResult([{ id: 'digest-1', status: 'skipped', payload: {} }]))
@@ -178,11 +180,158 @@ describe('generateDailyDigest conflict handling', () => {
     expect(generatedUpdate?.payload).toMatchObject({ timezone: 'Europe/Helsinki' });
   });
 
+  it('stores uncapped activity counts and completed tasks from applied status changes', async () => {
+    const createdTask = {
+      id: 'task-new',
+      type: 'task',
+      canonicalName: 'Write launch recap',
+      metadata: {},
+      status: 'todo',
+      dueAt: null,
+    };
+    const completedTask = {
+      id: 'task-done',
+      type: 'task',
+      canonicalName: 'Close review',
+      metadata: {},
+      status: 'done',
+      dueAt: null,
+    };
+    const listObjects = vi
+      .fn()
+      .mockImplementation((filter: { type?: string | string[]; id?: string[] } = {}) => {
+        if (filter.id) return Promise.resolve([completedTask]);
+        const types = Array.isArray(filter.type) ? filter.type : filter.type ? [filter.type] : [];
+        if (types.includes('task') || types.includes('follow_up')) {
+          return Promise.resolve([createdTask]);
+        }
+        return Promise.resolve([
+          {
+            id: 'person-new',
+            type: 'person',
+            canonicalName: 'Ada Lovelace',
+            status: 'open',
+            dueAt: null,
+            metadata: {},
+          },
+        ]);
+      });
+    fakes.withTeam.mockReturnValue({
+      requireMembership: vi.fn().mockResolvedValue('member'),
+      timeline: {
+        team: vi.fn().mockResolvedValue({ name: 'AuditAI' }),
+        listAllEventsInWindow: vi.fn().mockResolvedValue([]),
+        listMomentPresentations: vi.fn().mockResolvedValue({}),
+      },
+      suggestions: {
+        getApprovalItemCounts: vi.fn().mockResolvedValue({ failed: 0, pending: 3 }),
+        listSuggestions: vi.fn().mockResolvedValue([]),
+      },
+      objects: { listObjects },
+      calendar: { listCalendarEvents: vi.fn().mockResolvedValue([]) },
+    });
+    const updates: unknown[] = [];
+    const db = {
+      select: vi
+        .fn(() => chainResult([]))
+        .mockReturnValueOnce(
+          chainResult([{ dailyDigestEnabled: true, dailyDigestHour: 12, timezone: 'UTC' }]),
+        )
+        .mockReturnValueOnce(chainResult([{ id: 'digest-1', status: 'skipped', payload: {} }]))
+        .mockReturnValueOnce(chainResult([{ name: 'Tim', email: 'tim@example.test' }]))
+        .mockReturnValueOnce(chainResult([]))
+        .mockReturnValueOnce(chainResult([]))
+        .mockReturnValueOnce(
+          chainResult([
+            { type: 'task', total: 40 },
+            { type: 'project', total: 2 },
+            { type: 'deal', total: 5 },
+          ]),
+        )
+        .mockReturnValueOnce(chainResult([{ total: 7 }]))
+        .mockReturnValueOnce(chainResult([{ entityId: 'task-done' }]))
+        .mockReturnValueOnce(chainResult([{ total: 17 }])),
+      insert: vi.fn(() => insertConflict()),
+      update: vi.fn(() => ({
+        set: vi.fn((values: unknown) => {
+          updates.push(values);
+          return {
+            where: vi.fn(() => ({
+              returning: vi.fn().mockResolvedValue([{ id: 'digest-1' }]),
+            })),
+          };
+        }),
+      })),
+    };
+
+    const result = await generateDailyDigest({
+      db: db as never,
+      teamId: 'team-1',
+      userId: 'user-1',
+      windowStart: new Date('2026-06-13T12:00:00Z'),
+      windowEnd: new Date('2026-06-14T12:00:00Z'),
+      now: new Date('2026-06-14T12:05:00Z'),
+      summarize: vi.fn().mockResolvedValue('Task changes landed in the briefing window.'),
+    });
+
+    expect(result.payload.activity).toMatchObject({
+      newMoments: 0,
+      newProposals: 17,
+      pendingApprovals: 3,
+      newTasks: 40,
+      completedTasks: 7,
+      newProjects: 2,
+      newObjectsByType: { task: 40, project: 2, deal: 5 },
+    });
+    expect(result.payload.tasks).toEqual([
+      expect.objectContaining({ id: 'task-new', title: 'Write launch recap' }),
+    ]);
+    expect(result.payload.newObjects).toEqual([
+      expect.objectContaining({
+        id: 'person-new',
+        title: 'Ada Lovelace',
+        type: 'person',
+        href: '/app/objects/person-new',
+      }),
+    ]);
+    expect(result.payload.completedTasks).toEqual([
+      expect.objectContaining({ id: 'task-done', title: 'Close review', status: 'done' }),
+    ]);
+    const listFilters = listObjects.mock.calls.map(
+      (call) => call[0] as { type?: string[]; id?: string[]; createdAfter?: Date; limit?: number },
+    );
+    expect(listFilters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: ['task', 'follow_up'], limit: 12 }),
+        expect.objectContaining({
+          id: ['task-done'],
+          type: ['task', 'follow_up'],
+          archived: false,
+          limit: 12,
+        }),
+      ]),
+    );
+    expect(listObjects).toHaveBeenCalledTimes(3);
+    const generatedUpdate = updates.find(
+      (update): update is { status: unknown; payload: { activity?: unknown } } =>
+        typeof update === 'object' &&
+        update !== null &&
+        'status' in update &&
+        update.status === 'generated',
+    );
+    expect(generatedUpdate?.payload.activity).toMatchObject({
+      newTasks: 40,
+      completedTasks: 7,
+      newProposals: 17,
+      pendingApprovals: 3,
+    });
+  });
+
   it('returns an existing generated digest without rebuilding the summary', async () => {
     const summarize = vi.fn().mockResolvedValue('Should not be used.');
     const db = {
       select: vi
-        .fn()
+        .fn(() => chainResult([]))
         .mockReturnValueOnce(
           chainResult([{ dailyDigestEnabled: true, dailyDigestHour: 12, timezone: 'UTC' }]),
         )
@@ -229,7 +378,7 @@ describe('generateDailyDigest conflict handling', () => {
     const summarize = vi.fn().mockResolvedValue('Should not be used.');
     const db = {
       select: vi
-        .fn()
+        .fn(() => chainResult([]))
         .mockReturnValueOnce(
           chainResult([{ dailyDigestEnabled: true, dailyDigestHour: 12, timezone: 'UTC' }]),
         )

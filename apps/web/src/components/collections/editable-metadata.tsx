@@ -42,11 +42,10 @@ export function EditableMetadata({
   useEffect(() => {
     const completedSave = wasPendingRef.current && !pending;
     const receivedError = Boolean(error && error !== previousErrorRef.current);
-    if (completedSave || receivedError) {
-      internalTriggerRef.current?.focus();
-    }
     wasPendingRef.current = pending;
     previousErrorRef.current = error;
+    if (!completedSave && !receivedError) return;
+    internalTriggerRef.current?.focus();
   }, [error, pending]);
 
   return (
