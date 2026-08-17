@@ -31,17 +31,12 @@ export default function TasksLoading() {
           inert
           className="shrink-0 border-y border-border bg-bg/80 px-2 py-3 sm:px-3"
         >
-          <div className="flex flex-wrap items-end gap-2">
-            <div className="space-y-1">
-              <Skeleton className="h-3 w-12" />
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="min-w-48 flex-1 sm:max-w-sm">
               <Skeleton className="h-9 w-56" />
             </div>
-            {Array.from({ length: 6 }).map((_, index) => (
-              <div key={index} className="space-y-1">
-                <Skeleton className="h-3 w-12" />
-                <Skeleton className="h-9 w-20" />
-              </div>
-            ))}
+            <Skeleton className="h-9 w-20" />
+            <Skeleton className="ml-auto h-9 w-32" />
           </div>
         </div>
         <div
@@ -50,9 +45,6 @@ export default function TasksLoading() {
           data-tasks-loading-view={isKanban ? 'kanban' : 'list'}
           className="flex min-h-0 flex-1 flex-col"
         >
-          <div className="flex min-h-10 shrink-0 items-center justify-end border-b border-border px-2 sm:px-3">
-            <Skeleton className="h-9 w-32" />
-          </div>
           {isKanban ? (
             <section className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-2 pb-4 sm:px-3">
               {Array.from({ length: 5 }).map((_, col) => (

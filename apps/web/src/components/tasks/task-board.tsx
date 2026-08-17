@@ -57,6 +57,7 @@ import { TaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { useTaskCategoryPolling } from '@/components/tasks/task-category-polling';
 import { TaskCategorySelect } from '@/components/tasks/task-category-select';
 import { TaskProjectSelect } from '@/components/tasks/task-project-select';
+import { taskViewHref, type TaskView } from '@/components/tasks/task-view-toggle';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
@@ -108,7 +109,6 @@ interface TaskPatchOverlay {
   pendingValues: TaskPatchPendingValues;
   patch: TaskPatch;
 }
-type TaskView = 'kanban' | 'list';
 type BulkField = 'status' | 'assignee' | 'due' | 'priority' | 'category';
 
 interface BulkState {
@@ -294,16 +294,6 @@ function closeHref(view: TaskView, extraParams: Record<string, string> = {}): st
   return view === 'kanban'
     ? hrefWithParams('/app/tasks', extraParams)
     : taskViewHref(view, null, extraParams);
-}
-
-function taskViewHref(
-  view: TaskView,
-  taskId: string | null,
-  extraParams: Record<string, string> = {},
-): string {
-  const params = new URLSearchParams({ ...extraParams, view });
-  if (taskId) params.set('task', taskId);
-  return `/app/tasks?${params.toString()}`;
 }
 
 function hrefWithParams(basePath: string, params: Record<string, string>): string {
@@ -908,35 +898,13 @@ function TaskBoardView({
         onDragEnd={onDragEnd}
       >
         <div className="flex h-full min-h-0 min-w-0 flex-col">
-          <div className="flex min-h-10 w-full shrink-0 items-center justify-end gap-3 border-b border-border px-2 sm:px-3">
-            <div className="flex items-center gap-3">
-              {moveUi.saveState !== 'idle' ? (
-                <output className="text-xs text-fg-dim" aria-live="polite">
-                  {moveUi.saveState === 'saving'
-                    ? `Saving${moveUi.savingCount > 1 ? ` ${moveUi.savingCount} moves` : ''}...`
-                    : 'Saved'}
-                </output>
-              ) : null}
-              <nav
-                aria-label="Task view"
-                className="inline-flex overflow-hidden rounded-sm bg-surface"
-              >
-                {(['kanban', 'list'] as const).map((nextView) => (
-                  <Link
-                    key={nextView}
-                    href={taskViewHref(nextView, selectedTaskId, filterParams)}
-                    className={`min-h-9 px-3 py-2 text-xs capitalize transition-colors ${
-                      view === nextView
-                        ? 'bg-surface-2 text-fg'
-                        : 'text-fg-muted hover:bg-surface-2 hover:text-fg'
-                    }`}
-                  >
-                    {nextView}
-                  </Link>
-                ))}
-              </nav>
-            </div>
-          </div>
+          {moveUi.saveState !== 'idle' ? (
+            <output className="shrink-0 px-2 py-1.5 text-xs text-fg-dim sm:px-3" aria-live="polite">
+              {moveUi.saveState === 'saving'
+                ? `Saving${moveUi.savingCount > 1 ? ` ${moveUi.savingCount} moves` : ''}...`
+                : 'Saved'}
+            </output>
+          ) : null}
           {moveErrors.length > 0 ? (
             <p
               className="mx-2 mb-3 shrink-0 rounded-sm border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger sm:mx-3"

@@ -320,10 +320,11 @@ Work pages share one subnavigation and lead with the task at hand, not a grid of
 links. Work overview puts pinned and team boards above the work queue so saved
 surfaces stay in reach before due and assigned items. Tasks default to the
 grouped list; the list table is full-bleed inside the work canvas, without extra
-page gutters around the rows. Loading placeholders match the requested view and
-default to list. Kanban cards stay compact: a clamped title plus one metadata
-row, with no redundant type label. Team settings render one URL-selected section
-at a time. Save state stays local to the edited form. Member, object, source,
+page gutters around the rows. Kanban/List view controls sit on the CollectionToolbar
+row with search and filters, not on a second strip. Loading placeholders match the
+requested view and default to list. Kanban cards stay compact: a clamped title plus
+one metadata row, with no redundant type label. Team settings render one URL-selected
+section at a time. Save state stays local to the edited form. Member, object, source,
 and artifact labels never fall back to UUIDs.
 
 Work → Pinned is the complete pin-management surface. It is a single
@@ -581,4 +582,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-14 | Customer-facing public language | Keeps review cadence, implementation state, indexing terms, and capability taxonomy in metadata while public pages explain concrete actions and availability. |
 | 2026-08-15 | Evidence-backed public product story | Makes the working-history problem, deliberate capture boundary, cited-versus-unused evidence, Telegram entry point, inspectable answers, and human approval contract explicit across the landing and how-it-works journey. |
 | 2026-08-16 | Unified workspace collection density | Replaces stacked form chrome and card grids with compact headers, one filter toolbar, 44px rows, semantic status glyphs, optimistic metadata triggers, and contextual selection without changing domain behavior. |
-| 2026-08-17 | Work overview and task canvas density | Puts pinned boards above the work queue, removes extra task-list gutters, matches the default list loading skeleton, and compacts task kanban cards to a clamped title plus one metadata row. |
+| 2026-08-17 | Work overview and task canvas density | Puts pinned boards above the work queue, removes extra task-list gutters, matches the default list loading skeleton, puts Kanban/List on the search/filter row, and compacts task kanban cards to a clamped title plus one metadata row. |

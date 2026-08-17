@@ -746,12 +746,6 @@ describe('TaskBoard', () => {
   it('switches to list view and preserves list mode when opening a task', () => {
     renderBoard(null, [task()], 'list');
 
-    expect(screen.getByRole('link', { name: 'kanban' }).getAttribute('href')).toBe(
-      '/app/tasks?view=kanban',
-    );
-    expect(screen.getByRole('link', { name: 'list' }).getAttribute('href')).toBe(
-      '/app/tasks?view=list',
-    );
     expect(screen.getByRole('link', { name: 'Send proposal' }).getAttribute('href')).toBe(
       '/app/tasks?view=list&task=task-1',
     );
@@ -765,9 +759,6 @@ describe('TaskBoard', () => {
       q: 'proposal',
     });
 
-    expect(screen.getByRole('link', { name: 'kanban' }).getAttribute('href')).toBe(
-      '/app/tasks?assignee=user-1&due=next7&q=proposal&view=kanban&task=task-1',
-    );
     expect(screen.getByRole('link', { name: 'Send proposal' }).getAttribute('href')).toBe(
       '/app/tasks?assignee=user-1&due=next7&q=proposal&view=list&task=task-1',
     );
