@@ -15,11 +15,10 @@ function restoreFocusAfterSave(
 ): void {
   const completedSave = wasPendingRef.current && !pending;
   const receivedError = Boolean(error && error !== previousErrorRef.current);
-  if (completedSave || receivedError) {
-    trigger?.focus();
-  }
   wasPendingRef.current = pending;
   previousErrorRef.current = error;
+  if (!completedSave && !receivedError) return;
+  trigger?.focus();
 }
 
 export function EditableMetadata({

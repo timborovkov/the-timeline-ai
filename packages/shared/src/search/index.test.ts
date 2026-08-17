@@ -97,4 +97,8 @@ describe('global search ranking', () => {
       'monday-integration',
     );
   });
+
+  it('routes digest history searches to Work → Digests', () => {
+    expect(searchQuickLinks({ query: 'daily digest', includeAdmin: true })[0]?.id).toBe('digests');
+  });
 });

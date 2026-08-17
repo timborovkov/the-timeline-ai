@@ -1,4 +1,11 @@
-import { type Db, dailyDigests, entities } from '@timeline/db';
+import {
+  type Db,
+  agentSuggestionItems,
+  agentSuggestions,
+  dailyDigests,
+  entities,
+  objectChanges,
+} from '@timeline/db';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -129,6 +136,111 @@ describe('daily digest terminal object activity', () => {
         objectChangesByType: { task: 1 },
       },
     });
+    expect(summarize).toHaveBeenCalledOnce();
+  });
+
+  it('counts every created task and only still-completed status changes', async () => {
+    const createdAt = new Date('2026-07-27T10:00:00Z');
+    const doneId = '44444444-4444-4444-4444-444444444444';
+    const reopenedId = '55555555-5555-5555-5555-555555555555';
+    const suggestionId = '66666666-6666-6666-6666-666666666666';
+    await db.insert(entities).values([
+      ...Array.from({ length: 15 }, (_, index) => ({
+        id: `22222222-2222-2222-2222-2222222222${String(index).padStart(2, '0')}`,
+        teamId: TEAM_ID,
+        type: 'task' as const,
+        canonicalName: `New launch task ${String(index)}`,
+        status: 'todo',
+        createdAt,
+        updatedAt: createdAt,
+      })),
+      {
+        id: doneId,
+        teamId: TEAM_ID,
+        type: 'task' as const,
+        canonicalName: 'Finished launch recap',
+        status: 'done',
+        createdAt: new Date('2026-07-20T09:00:00Z'),
+        updatedAt: new Date('2026-07-27T11:00:00Z'),
+      },
+      {
+        id: reopenedId,
+        teamId: TEAM_ID,
+        type: 'task' as const,
+        canonicalName: 'Reopened launch recap',
+        status: 'todo',
+        createdAt: new Date('2026-07-20T09:00:00Z'),
+        updatedAt: new Date('2026-07-27T11:45:00Z'),
+      },
+    ]);
+    await db.insert(objectChanges).values([
+      {
+        teamId: TEAM_ID,
+        entityId: doneId,
+        actorKind: 'user',
+        status: 'applied',
+        field: 'status',
+        previousValue: 'todo',
+        newValue: 'done',
+        changedAt: new Date('2026-07-27T11:00:00Z'),
+      },
+      {
+        teamId: TEAM_ID,
+        entityId: reopenedId,
+        actorKind: 'user',
+        status: 'applied',
+        field: 'status',
+        previousValue: 'todo',
+        newValue: 'done',
+        changedAt: new Date('2026-07-27T11:30:00Z'),
+      },
+    ]);
+    await db.insert(agentSuggestions).values({
+      id: suggestionId,
+      teamId: TEAM_ID,
+      source: 'background',
+      status: 'pending',
+      title: 'Create follow-up task',
+      dedupeKey: 'digest-new-proposal',
+      visibility: 'team',
+      createdAt: new Date('2026-07-27T10:30:00Z'),
+      updatedAt: new Date('2026-07-27T10:30:00Z'),
+    });
+    await db.insert(agentSuggestionItems).values({
+      suggestionId,
+      teamId: TEAM_ID,
+      status: 'pending',
+      operation: 'create',
+      targetKind: 'task',
+      title: 'Create follow-up task',
+      dedupeKey: 'item-1',
+      proposedPayload: { canonicalName: 'Follow up' },
+      createdAt: new Date('2026-07-27T10:30:00Z'),
+      updatedAt: new Date('2026-07-27T10:30:00Z'),
+    });
+    const summarize = vi.fn().mockResolvedValue('Launch tasks moved and one recap closed.');
+
+    const result = await generateDailyDigest({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      windowStart: new Date('2026-07-26T11:00:00Z'),
+      windowEnd: new Date('2026-07-27T12:00:00Z'),
+      now: new Date('2026-07-27T12:05:00Z'),
+      summarize,
+    });
+
+    expect(result.skipped).toBe(false);
+    expect(result.payload.activity).toMatchObject({
+      newTasks: 15,
+      completedTasks: 1,
+      newProposals: 1,
+      newObjectsByType: { task: 15 },
+    });
+    expect(result.payload.tasks).toHaveLength(12);
+    expect(result.payload.completedTasks).toEqual([
+      expect.objectContaining({ id: doneId, title: 'Finished launch recap', status: 'done' }),
+    ]);
     expect(summarize).toHaveBeenCalledOnce();
   });
 });
