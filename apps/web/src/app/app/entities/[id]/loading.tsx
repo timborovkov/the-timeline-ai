@@ -1,4 +1,4 @@
-import { CardSkeleton, PageHeaderSkeleton } from '@/components/loading-states';
+import { HairlineSectionSkeleton, PageHeaderSkeleton } from '@/components/loading-states';
 import { WorkSubnav } from '@/components/work-subnav';
 
 export default function EntityLoading() {
@@ -23,13 +23,13 @@ export default function EntityLoading() {
           className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_23rem]"
         >
           <section className="space-y-3">
-            <CardSkeleton />
-            <CardSkeleton />
-            <CardSkeleton />
+            <HairlineSectionSkeleton />
+            <HairlineSectionSkeleton lines={4} />
+            <HairlineSectionSkeleton />
           </section>
           <aside className="space-y-3">
-            <CardSkeleton />
-            <CardSkeleton />
+            <HairlineSectionSkeleton lines={2} />
+            <HairlineSectionSkeleton lines={2} />
           </aside>
         </div>
       </div>

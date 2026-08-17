@@ -43,7 +43,7 @@ describe('Background jobs route states', () => {
     if (!dashboard) throw new Error('Expected the visual job dashboard placeholder');
     expect(dashboard.tagName).toBe('UL');
     expect(dashboard.children).toHaveLength(6);
-    expect(dashboard.firstElementChild?.className).toContain('rounded-lg');
+    expect(dashboard.firstElementChild?.className).toContain('rounded-sm');
     const recoveryControls = placeholder?.querySelector(
       '[aria-label="Job recovery controls loading placeholder"]',
     );

@@ -62,7 +62,7 @@ function JobDashboardFailure({
   const errorDetail = error.message || 'No error message was returned.';
 
   return (
-    <div role="alert" className="rounded-lg border border-danger/40 bg-danger/10 p-4">
+    <div role="alert" className="rounded-sm border border-danger/40 bg-danger/10 p-4">
       <div className="flex items-start gap-3">
         <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-danger" />
         <div className="min-w-0 space-y-1">
@@ -95,7 +95,7 @@ function JobDashboardLoading() {
         <li
           key={index}
           aria-hidden="true"
-          className="rounded-lg border border-border bg-surface p-4"
+          className="rounded-sm border border-border bg-surface p-4"
         >
           <Skeleton className="h-3 w-28 motion-reduce:animate-none" />
           <Skeleton className="mt-3 h-8 w-12 motion-reduce:animate-none" />
@@ -114,7 +114,7 @@ function JobDashboardSummaries({
   return (
     <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {summaries.map((summary) => (
-        <li key={summary.kind} className="rounded-lg border border-border bg-surface p-4">
+        <li key={summary.kind} className="rounded-sm border border-border bg-surface p-4">
           <p className="text-sm font-medium text-fg">{summary.label}</p>
           <p className="mt-3 font-mono text-2xl font-semibold tabular-nums text-fg">
             {summary.needsAttention}

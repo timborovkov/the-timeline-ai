@@ -42,7 +42,7 @@ export default function JobsLoading() {
                   <li
                     key={index}
                     aria-hidden="true"
-                    className="rounded-lg border border-border bg-surface p-4"
+                    className="rounded-sm border border-border bg-surface p-4"
                   >
                     <Skeleton className="h-3 w-28 motion-reduce:animate-none" />
                     <Skeleton className="mt-3 h-8 w-12 motion-reduce:animate-none" />
@@ -105,7 +105,7 @@ export default function JobsLoading() {
             <div className="border-y border-border py-2">
               <h2
                 id="finished-jobs-heading"
-                className="text-sm font-semibold uppercase tracking-[0.12em] text-fg-muted"
+                className="text-sm font-semibold text-fg"
               >
                 Finished jobs
               </h2>

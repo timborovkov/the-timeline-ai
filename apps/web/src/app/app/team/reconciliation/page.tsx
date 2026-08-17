@@ -169,7 +169,7 @@ export default async function ReconciliationDashboardPage({
         </div>
         <div className="overflow-x-auto rounded-sm border border-border bg-surface">
           <table className="min-w-full divide-y divide-border text-sm">
-            <thead className="bg-muted/30 text-left font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+            <thead className="bg-muted/30 text-left text-[11px] font-medium text-fg-dim">
               <tr>
                 <th className="px-3 py-2">Source</th>
                 <th className="px-3 py-2 text-right">Raw</th>
@@ -289,7 +289,7 @@ function ProcessStep({
       </div>
       <h3 className="mt-5 text-base font-semibold tracking-tight text-fg">{title}</h3>
       <p className="mt-1 text-sm leading-relaxed text-fg-muted">{description}</p>
-      <div className="mt-4 font-mono text-xs uppercase tracking-[0.1em] text-signal">{metric}</div>
+      <div className="mt-4 text-xs text-signal">{metric}</div>
     </article>
   );
 }
@@ -334,7 +334,7 @@ function ReplayPanel({ coverageLimit }: { coverageLimit: number }) {
         </div>
         <input type="hidden" name="dryRun" value="true" />
       </form>
-      <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+      <p className="text-[11px] text-fg-dim">
         Scanned window · {coverageLimit.toLocaleString()} items max
       </p>
     </section>
@@ -496,7 +496,7 @@ function ReleaseGatePanel({
                 <span className="font-medium">{sourceLabel(failure.source)}</span>
                 <span className="text-fg-muted">
                   {failure.message}
-                  <span className="ml-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+                  <span className="ml-2 font-mono text-[11px] text-fg-dim">
                     {failure.code}
                   </span>
                 </span>
@@ -531,7 +531,7 @@ function Metric({
           : 'text-fg';
   return (
     <div className="px-4 py-4">
-      <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">{label}</div>
+      <div className="text-[11px] text-fg-dim">{label}</div>
       <div className={`mt-2 text-2xl font-semibold tabular-nums ${toneClass}`}>{value}</div>
     </div>
   );
@@ -577,7 +577,7 @@ function ApprovalPanel({
 function MiniStat({ label, value }: { label: string; value: number | string }) {
   return (
     <div className="rounded-sm border border-border bg-background px-3 py-2">
-      <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">{label}</div>
+      <div className="text-[11px] text-fg-dim">{label}</div>
       <div className="mt-1 text-lg font-semibold tabular-nums text-fg">{value}</div>
     </div>
   );
@@ -586,7 +586,7 @@ function MiniStat({ label, value }: { label: string; value: number | string }) {
 function SectionTitle({ label, level = 2 }: { label: string; level?: 2 | 3 }) {
   const Heading = level === 3 ? 'h3' : 'h2';
   return (
-    <Heading className="text-sm font-semibold uppercase tracking-[0.12em] text-fg-muted">
+    <Heading className="text-sm font-semibold text-fg">
       {label}
     </Heading>
   );
@@ -639,7 +639,7 @@ function RecentRuns({
           basePath="/app/team/reconciliation"
           className="flex flex-wrap items-end gap-2"
         >
-          <label className="grid gap-1 text-[11px] font-medium uppercase tracking-[0.12em] text-fg-muted">
+          <label className="grid gap-1 text-[11px] font-medium text-fg-muted">
             Status
             <select
               name="runStatus"
@@ -654,7 +654,7 @@ function RecentRuns({
               ))}
             </select>
           </label>
-          <label className="grid gap-1 text-[11px] font-medium uppercase tracking-[0.12em] text-fg-muted">
+          <label className="grid gap-1 text-[11px] font-medium text-fg-muted">
             Trigger
             <select
               name="runTrigger"
@@ -682,7 +682,7 @@ function RecentRuns({
                   <Badge variant="outline" className="rounded-sm">
                     {row.status}
                   </Badge>
-                  <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+                  <span className="font-mono text-[11px] text-fg-dim">
                     {row.trigger}
                   </span>
                 </div>

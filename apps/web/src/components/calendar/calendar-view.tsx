@@ -1203,7 +1203,7 @@ function CalendarBody({
   const calendarLabel = `Calendar for ${titleFor(mode, anchor)}`;
   if (mode === 'day') {
     return (
-      <section className="rounded-md border bg-background" aria-label={calendarLabel}>
+      <section className="rounded-sm border bg-background" aria-label={calendarLabel}>
         <DayCell
           day={anchor}
           anchor={anchor}
@@ -1221,7 +1221,7 @@ function CalendarBody({
   }
   return (
     <section
-      className={`grid min-w-0 overflow-hidden ${gridCols} gap-px rounded-md border bg-border`}
+      className={`grid min-w-0 overflow-hidden ${gridCols} gap-px rounded-sm border bg-border`}
       aria-label={calendarLabel}
     >
       <div className="hidden bg-muted/40 p-2 text-center text-xs font-medium text-muted-foreground sm:block">
@@ -1424,7 +1424,7 @@ function CalendarDraftOptions({
   return (
     <>
       <div className="grid gap-4 sm:grid-cols-2">
-        <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+        <label className="flex items-center gap-2 rounded-sm border px-3 py-2 text-sm">
           <input
             type="checkbox"
             checked={draft.allDay}
@@ -1442,7 +1442,7 @@ function CalendarDraftOptions({
             onChange={(e) => {
               onDraftChange((d) => ({ ...d, visibility: e.target.value as Draft['visibility'] }));
             }}
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            className="w-full rounded-sm border bg-background px-3 py-2 text-sm"
           >
             <option value="team">Team</option>
             <option value="private">Private</option>
@@ -1457,7 +1457,7 @@ function CalendarDraftOptions({
             onChange={(e) => {
               onDraftChange((d) => ({ ...d, showAs: e.target.value as Draft['showAs'] }));
             }}
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            className="w-full rounded-sm border bg-background px-3 py-2 text-sm"
           >
             <option value="busy">Busy</option>
             <option value="tentative">Tentative</option>
@@ -1509,7 +1509,7 @@ function CalendarDraftRecurrence({
             if (!preset) return;
             onDraftChange((d) => ({ ...d, rrule: preset.rrule }));
           }}
-          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+          className="w-full rounded-sm border bg-background px-3 py-2 text-sm"
         >
           {RECURRENCE_PRESETS.map((preset) => (
             <option key={preset.value} value={preset.value}>
@@ -1542,7 +1542,7 @@ function CalendarDraftRecurrence({
               recurrenceEditMode: e.target.value as Draft['recurrenceEditMode'],
             }));
           }}
-          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+          className="w-full rounded-sm border bg-background px-3 py-2 text-sm"
         >
           <option value="single">This event</option>
           <option value="this_and_future">This and future</option>

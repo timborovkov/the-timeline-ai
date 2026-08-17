@@ -269,7 +269,7 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
     return (
       <section
         aria-label="Captured files"
-        className="rounded-md border border-border bg-surface px-4 py-10 text-center"
+        className="border-y border-border py-10 text-center"
       >
         <p className="text-sm font-semibold text-fg">No captured files yet</p>
         <p className="mx-auto mt-1 max-w-md text-sm leading-6 text-fg-muted">
@@ -425,7 +425,7 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
         ) : null}
       </Dialog>
       {visibleFiles.length === 0 ? (
-        <div className="rounded-md border border-border bg-surface px-4 py-8 text-center">
+        <div className="border-y border-border py-8 text-center">
           <p className="text-sm font-medium text-fg">No captured files match these filters</p>
           <p className="mt-1 text-sm leading-6 text-fg-muted">
             {cursor

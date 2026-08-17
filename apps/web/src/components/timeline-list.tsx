@@ -939,19 +939,30 @@ function EvidenceRemovalAction({
   const dialog = useAppDialog();
   const inspector = useInspector();
   const router = useRouter();
+  const toastIdRef = useRef<string | number | null>(null);
 
   useEffect(() => {
-    if (!state.ok) return;
-    inspector.hide();
-    router.refresh();
-    toast.success('Evidence removed from Timeline');
-    window.setTimeout(() => {
-      const active = document.activeElement;
-      if (!(active instanceof HTMLElement) || active === document.body || !active.isConnected) {
-        document.querySelector<HTMLElement>('[data-inspector-focus-fallback]')?.focus();
-      }
-    }, 0);
-  }, [inspector, router, state.ok]);
+    if (state.ok) {
+      inspector.hide();
+      router.refresh();
+      toast.success(
+        'Evidence removed from Timeline',
+        toastIdRef.current ? { id: toastIdRef.current } : undefined,
+      );
+      toastIdRef.current = null;
+      window.setTimeout(() => {
+        const active = document.activeElement;
+        if (!(active instanceof HTMLElement) || active === document.body || !active.isConnected) {
+          document.querySelector<HTMLElement>('[data-inspector-focus-fallback]')?.focus();
+        }
+      }, 0);
+      return;
+    }
+    if (state.error) {
+      toast.error(state.error, toastIdRef.current ? { id: toastIdRef.current } : undefined);
+      toastIdRef.current = null;
+    }
+  }, [inspector, router, state.error, state.ok]);
 
   const requestRemoval = () => {
     void dialog
@@ -965,6 +976,7 @@ function EvidenceRemovalAction({
       })
       .then((confirmed) => {
         if (!confirmed) return;
+        toastIdRef.current = toast.loading('Removing evidence');
         const formData = new FormData();
         formData.set('id', event.id);
         startTransition(() => {
@@ -1389,7 +1401,7 @@ export function TimelineList({
         <section key={date} aria-labelledby={`timeline-date-${date}`}>
           <h2
             id={`timeline-date-${date}`}
-            className="sticky top-0 z-10 -mx-3 border-y border-border bg-bg px-3 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim"
+            className="sticky top-0 z-10 -mx-3 border-y border-border bg-bg px-3 py-2 text-sm font-medium text-fg"
           >
             {date}
           </h2>

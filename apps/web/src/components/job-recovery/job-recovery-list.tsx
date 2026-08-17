@@ -659,9 +659,7 @@ function FinishedJobsArchive({
   return (
     <section className="space-y-3 pt-5">
       <div className="border-y border-border py-2">
-        <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-fg-muted">
-          Finished jobs
-        </h2>
+        <h2 className="text-sm font-semibold text-fg">Finished jobs</h2>
       </div>
       <div className="overflow-x-auto rounded-sm border border-border bg-surface">
         <table className="w-full min-w-[760px] text-left text-sm">

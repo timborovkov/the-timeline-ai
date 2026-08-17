@@ -15,6 +15,8 @@ const fakes = vi.hoisted(() => ({
   refresh: vi.fn(),
   removeConversationalEvent: vi.fn(),
   toastSuccess: vi.fn(),
+  toastLoading: vi.fn(() => 'toast-1'),
+  toastError: vi.fn(),
 }));
 
 vi.mock('@/app/actions/events', () => ({
@@ -47,7 +49,13 @@ vi.mock('@/components/inspector-context', () => ({
   }),
 }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
-vi.mock('sonner', () => ({ toast: { success: fakes.toastSuccess } }));
+vi.mock('sonner', () => ({
+  toast: {
+    success: fakes.toastSuccess,
+    loading: fakes.toastLoading,
+    error: fakes.toastError,
+  },
+}));
 
 const { TimelineList } = await import('./timeline-list.js');
 
@@ -593,7 +601,9 @@ describe('TimelineList evidence-owned actions', () => {
     await waitFor(() => {
       expect(fakes.hideInspector).toHaveBeenCalledTimes(1);
       expect(fakes.refresh).toHaveBeenCalledTimes(1);
-      expect(fakes.toastSuccess).toHaveBeenCalledWith('Evidence removed from Timeline');
+      expect(fakes.toastSuccess).toHaveBeenCalledWith('Evidence removed from Timeline', {
+        id: 'toast-1',
+      });
     });
   });
 });
