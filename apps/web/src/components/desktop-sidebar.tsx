@@ -76,12 +76,12 @@ export function DesktopSidebar({
                 'rounded-sm text-fg transition-colors',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg',
                 expanded
-                  ? 'flex h-9 min-w-0 flex-1 items-center px-3'
-                  : 'grid size-9 place-items-center',
+                  ? 'flex h-9 min-w-0 items-center px-3'
+                  : 'grid size-9 place-items-center hover:bg-surface-2',
               )}
             >
               {expanded ? (
-                <Wordmark compact className="min-w-0" />
+                <Wordmark compact className="min-w-0 gap-3" />
               ) : (
                 <Logo ariaHidden className="size-4 text-fg" />
               )}
@@ -99,9 +99,9 @@ export function DesktopSidebar({
               className="grid size-9 shrink-0 place-items-center rounded-sm text-fg-dim transition-colors hover:bg-surface-2 hover:text-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg"
             >
               {expanded ? (
-                <ChevronLeft aria-hidden="true" className="size-3.5" />
+                <ChevronLeft aria-hidden="true" className="size-4" />
               ) : (
-                <ChevronRight aria-hidden="true" className="size-3.5" />
+                <ChevronRight aria-hidden="true" className="size-4" />
               )}
             </button>
           </TooltipTrigger>

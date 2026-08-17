@@ -44,8 +44,12 @@ describe('DesktopSidebar branding', () => {
     const homeLink = screen.getByRole('link', { name: 'The Timeline home' });
     expect(homeLink.getAttribute('href')).toBe('/app');
     expect([...homeLink.classList]).toEqual(expect.arrayContaining(['h-9', 'px-3']));
+    expect(homeLink.classList.contains('flex-1')).toBe(false);
     expect([...screen.getByText('The Timeline').classList]).toEqual(
       expect.arrayContaining(['font-semibold', 'tracking-tight']),
+    );
+    expect([...screen.getByText('The Timeline').parentElement!.classList]).toEqual(
+      expect.arrayContaining(['gap-3']),
     );
     expect(screen.getByText('The Timeline').classList).not.toContain('font-mono');
     expect(container.querySelectorAll('svg[viewBox="0 0 48 48"] rect')).toHaveLength(5);

@@ -43,6 +43,8 @@ describe('DesktopSidebar', () => {
 
     expect(html).toContain('data-expanded="false"');
     expect(html).toContain('w-14 items-center px-0');
+    expect(html).toContain('href="/app"');
+    expect(html).toContain('aria-label="The Timeline home"');
     expect(html).toContain('>rail</button>');
     expect(html).not.toContain('min-w-0 flex-1 truncate font-mono');
   });
