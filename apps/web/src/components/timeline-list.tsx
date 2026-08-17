@@ -1114,7 +1114,8 @@ function momentInspectorContent({
 
 function compactTimelineMomentHref(moment: TimelineMoment): string {
   const params = new URLSearchParams({ moment: moment.id });
-  const eventId = moment.rawEvents.at(-1)?.id;
+  // Grouped moments store rawEvents newest-first; the lead event matches the row title.
+  const eventId = moment.rawEvents[0]?.id;
   if (eventId) params.set('event', eventId);
   return `/app/timeline?${params.toString()}#${moment.anchorId}`;
 }

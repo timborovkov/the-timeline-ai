@@ -63,8 +63,18 @@ describe('hub status helpers', () => {
     expect(homeOpenObjectTotal(counts)).toBe(12);
     expect(countObjects).toHaveBeenCalledWith({
       archived: false,
-      statusNotCaseInsensitive: ['done', 'cancelled', 'canceled', 'shipped'],
+      statusNotCaseInsensitive: ['archived'],
       type: 'person',
+    });
+    expect(countObjects).toHaveBeenCalledWith({
+      archived: false,
+      statusNotCaseInsensitive: ['won', 'lost', 'cancelled', 'canceled'],
+      type: 'deal',
+    });
+    expect(countObjects).toHaveBeenCalledWith({
+      archived: false,
+      statusNotCaseInsensitive: ['done', 'cancelled', 'canceled', 'shipped'],
+      type: 'task',
     });
   });
 

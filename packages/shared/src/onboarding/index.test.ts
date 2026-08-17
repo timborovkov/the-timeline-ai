@@ -176,6 +176,21 @@ describe('onboarding checklist scope', () => {
     ]);
   });
 
+  it('does not treat an expired invite as teammate setup', async () => {
+    await pg.exec(`
+      INSERT INTO team_invites (team_id, email, token, invited_by_user_id, expires_at)
+      VALUES (
+        '${OTHER_TEAM_ID}',
+        'stale@example.test',
+        'expired-invite-token',
+        '${OWNER_ID}',
+        now() - interval '1 day'
+      );
+    `);
+
+    expect(completedKeys(await scope(OTHER_TEAM_ID).getChecklistState())).toEqual([]);
+  });
+
   it('infers ask, meeting, proposal, digest, webhook, and outbound MCP steps', async () => {
     await pg.exec(`
       INSERT INTO chat_sessions (id, team_id, created_by)

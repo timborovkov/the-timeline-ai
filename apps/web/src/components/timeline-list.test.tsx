@@ -222,6 +222,23 @@ describe('TimelineList compact home rows', () => {
     expect(html).not.toContain('sticky top-0');
     expect(html).not.toContain(`id="ev-${eventId}"`);
   });
+
+  it('deep-links compact rows to the newest event in a grouped moment', () => {
+    const olderEventId = '11111111-1111-4111-8111-111111111111';
+    const newerEventId = '22222222-2222-4222-8222-222222222222';
+    const html = renderTimeline(
+      [
+        timelineEvent({ id: olderEventId, occurredAt: '2026-06-03T13:04:00.000Z' }),
+        timelineEvent({ id: newerEventId, occurredAt: '2026-06-03T13:12:00.000Z' }),
+      ],
+      { compact: true },
+    );
+
+    expect(html).toContain(
+      `href="/app/timeline?moment=moment%3Ameeting%3Ameeting-1&amp;event=${newerEventId}#tm-moment_3Ameeting_3Ameeting-1"`,
+    );
+    expect(html).not.toContain(`event=${olderEventId}`);
+  });
 });
 
 describe('TimelineList document attachments', () => {

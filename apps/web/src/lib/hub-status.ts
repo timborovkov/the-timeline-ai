@@ -95,6 +95,15 @@ const HOME_OPEN_OBJECT_TYPES = [
 type HomeOpenObjectType = (typeof HOME_OPEN_OBJECT_TYPES)[number];
 export type HomeOpenObjectCounts = Record<HomeOpenObjectType, number>;
 
+const HOME_OPEN_OBJECT_EXCLUDED_STATUSES: Record<HomeOpenObjectType, readonly string[]> = {
+  task: TASK_OPEN_STATUSES_EXCLUDED,
+  follow_up: TASK_OPEN_STATUSES_EXCLUDED,
+  project: ['shipped', 'cancelled', 'canceled', 'done'],
+  deal: ['won', 'lost', 'cancelled', 'canceled'],
+  person: ['archived'],
+  company: ['archived'],
+};
+
 /** People, companies, projects, deals, and follow-ups — not tasks. */
 export function homeOpenObjectTotal(counts: HomeOpenObjectCounts): number {
   return HOME_OPEN_OBJECT_TYPES.reduce((sum, type) => {
@@ -109,7 +118,7 @@ export async function getHomeOpenObjectCounts(scope: TeamScope): Promise<HomeOpe
       const count = await scope.objects.countObjects({
         type,
         archived: false,
-        statusNotCaseInsensitive: [...TASK_OPEN_STATUSES_EXCLUDED],
+        statusNotCaseInsensitive: [...HOME_OPEN_OBJECT_EXCLUDED_STATUSES[type]],
       });
       return [type, count] as const;
     }),

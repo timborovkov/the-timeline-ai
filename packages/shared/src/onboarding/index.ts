@@ -21,7 +21,7 @@ import {
   telegramUserTeams,
   userOnboardingDismissals,
 } from '@timeline/db';
-import { and, count, eq, inArray, isNull } from 'drizzle-orm';
+import { and, count, eq, gt, inArray, isNull } from 'drizzle-orm';
 
 import type { TeamRole } from '#src/team-scope.js';
 
@@ -205,6 +205,7 @@ export function createOnboardingScope({ db, teamId, userId, ensureMember }: Onbo
               eq(teamInvites.teamId, teamId),
               isNull(teamInvites.acceptedAt),
               isNull(teamInvites.revokedAt),
+              gt(teamInvites.expiresAt, new Date()),
             ),
           ),
         db
