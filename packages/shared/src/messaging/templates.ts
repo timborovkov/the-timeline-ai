@@ -125,18 +125,16 @@ function htmlNamedLinkedList(
   items: { href: string | null; label: string; detail: string }[],
 ): string {
   if (items.length === 0) return '';
-  const list = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse;">${items
+  const list = `<ul style="font-size: 14px; line-height: 1.55; padding-left: 20px;">${items
     .map((item) => {
       const label = item.href
-        ? `<a href="${escapeHtml(item.href)}" style="color: #171717; font-weight: 600; text-decoration: underline; text-decoration-color: #68a500;">${escapeHtml(item.label)}</a>`
-        : `<span style="color: #171717; font-weight: 600;">${escapeHtml(item.label)}</span>`;
-      const detail = item.detail
-        ? `<div style="font-size: 12px; color: #747b7b; margin-top: 2px;">${escapeHtml(item.detail.replace(/^\(|\)$/g, ''))}</div>`
-        : '';
-      return `<tr><td style="padding: 10px 0; border-bottom: 1px solid #e6eaea;">${label}${detail}</td></tr>`;
+        ? `<a href="${escapeHtml(item.href)}" style="color: #68a500; text-decoration: underline;">${escapeHtml(item.label)}</a>`
+        : escapeHtml(item.label);
+      const detail = item.detail ? ` ${escapeHtml(item.detail)}` : '';
+      return `<li>${label}${detail}</li>`;
     })
-    .join('')}</table>`;
-  return `<h2 style="font-size: 13px; letter-spacing: 0.02em; margin: 24px 0 4px">${escapeHtml(title)}</h2>\n${list}`;
+    .join('')}</ul>`;
+  return `<h2 style="font-size: 14px; margin: 20px 0 8px">${escapeHtml(title)}</h2>\n${list}`;
 }
 
 function textLinkedLines(items: { href: string | null; text: string }[]): string[] {
@@ -149,7 +147,7 @@ function htmlParagraphs(items: string[]): string {
   return items
     .map(
       (item) =>
-        `<p style="font-size: 15px; line-height: 1.6; margin: 0 0 14px">${escapeHtml(item)}</p>`,
+        `<p style="font-size: 15px; line-height: 1.55; margin: 0 0 14px">${escapeHtml(item)}</p>`,
     )
     .join('\n');
 }
@@ -157,15 +155,15 @@ function htmlParagraphs(items: string[]): string {
 function htmlActivityBlock(lines: string[]): string {
   if (lines.length === 0) return '';
   return [
-    `<h2 style="font-size: 13px; letter-spacing: 0.02em; margin: 24px 0 8px">Activity</h2>`,
-    `<p style="font-size: 13px; line-height: 1.6; color: #3d4444; margin: 0;">${lines
+    `<h2 style="font-size: 14px; margin: 20px 0 8px">Activity</h2>`,
+    `<p style="font-size: 14px; line-height: 1.55; margin: 0 0 8px">${lines
       .map((line) => escapeHtml(line))
       .join(' · ')}</p>`,
   ].join('\n');
 }
 
 function htmlWindowBlock(range: string): string {
-  return `<p style="font-size: 12px; line-height: 1.5; color: #747b7b; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin: 0 0 18px;">Covering ${escapeHtml(range)}</p>`;
+  return `<p style="font-size: 12px; color: #747b7b; margin: 0 0 16px;">Covering ${escapeHtml(range)}</p>`;
 }
 
 function htmlDigestSections(sections: ReturnType<typeof digestContentSections>): string {
@@ -173,13 +171,11 @@ function htmlDigestSections(sections: ReturnType<typeof digestContentSections>):
     .map((section) => {
       const body = digestSectionBody(section);
       const content = section.body
-        ? `<p style="font-size: 14px; line-height: 1.6; margin: 0; color: #3d4444;">${escapeHtml(body)}</p>`
+        ? `<p style="font-size: 14px; line-height: 1.55; margin: 0 0 8px">${escapeHtml(body)}</p>`
         : htmlList(section.items);
       return [
-        `<div style="border-top: 1px solid #e6eaea; padding: 16px 0 4px">`,
-        `<h2 style="font-size: 13px; letter-spacing: 0.02em; margin: 0 0 8px">${escapeHtml(section.title)}</h2>`,
+        `<h2 style="font-size: 14px; margin: 20px 0 8px">${escapeHtml(section.title)}</h2>`,
         content,
-        `</div>`,
       ].join('\n');
     })
     .join('\n');

@@ -116,12 +116,14 @@ describe('DailyDigestBlock', () => {
     expect(screen.getByRole('link', { name: 'Write launch recap' }).getAttribute('href')).toBe(
       '/app/objects/task-1',
     );
+    expect(screen.getByRole('link', { name: 'Write launch recap' }).className).toContain(
+      'underline decoration-border',
+    );
     expect(details?.textContent).toContain('Close review');
     expect(screen.getByRole('link', { name: 'Close review' }).getAttribute('href')).toBe(
       '/app/objects/task-2',
     );
-    expect(details?.textContent).toContain('Internal daily call');
-    expect(details?.textContent).toContain('repeating · next');
+    expect(details?.textContent).toContain('Internal daily call (repeating');
     expect(screen.getByRole('link', { name: 'Internal daily call' }).getAttribute('href')).toBe(
       '/app/calendar',
     );

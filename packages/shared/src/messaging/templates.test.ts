@@ -164,7 +164,14 @@ describe('messaging templates', () => {
       'href="https://timeline.test/app/calendar?view=day&amp;date=2026-06-14&amp;event=standup-id"',
     );
     expect(message.htmlBody).toContain('Send pilot recap');
-    expect(message.htmlBody).toContain('todo, Due soon · Jun 17, 2026');
+    expect(message.htmlBody).toContain('(todo, Due soon · Jun 17, 2026)');
+    expect(message.htmlBody).toContain(
+      '<a href="https://timeline.test/app/objects/task-id" style="color: #68a500; text-decoration: underline;">Send pilot recap</a> (todo, Due soon · Jun 17, 2026)',
+    );
+    expect(message.htmlBody).not.toContain('text-decoration-color');
+    expect(message.htmlBody).not.toContain('letter-spacing: 0.02em');
+    expect(message.htmlBody).not.toContain('color: #171717; font-weight: 600');
+    expect(message.htmlBody).toContain('<ul style="font-size: 14px; line-height: 1.55;');
     expect(message.htmlBody).toContain('href="https://timeline.test/app/calendar"');
     expect(message.htmlBody).toContain('href="https://timeline.test/app"');
     expect(message.htmlBody).toContain('Open on the dashboard:');
