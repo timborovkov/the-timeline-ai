@@ -48,9 +48,7 @@ describe('DesktopSidebar branding', () => {
     expect([...screen.getByText('The Timeline').classList]).toEqual(
       expect.arrayContaining(['font-semibold', 'tracking-tight']),
     );
-    expect([...screen.getByText('The Timeline').parentElement!.classList]).toEqual(
-      expect.arrayContaining(['gap-3']),
-    );
+    expect(screen.getByText('The Timeline').parentElement?.className).toContain('gap-3');
     expect(screen.getByText('The Timeline').classList).not.toContain('font-mono');
     expect(container.querySelectorAll('svg[viewBox="0 0 48 48"] rect')).toHaveLength(5);
     expect(container.textContent).not.toContain('▦');
