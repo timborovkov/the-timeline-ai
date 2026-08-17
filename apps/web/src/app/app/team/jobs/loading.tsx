@@ -103,10 +103,7 @@ export default function JobsLoading() {
 
           <section aria-labelledby="finished-jobs-heading" className="space-y-3 pt-5">
             <div className="border-y border-border py-2">
-              <h2
-                id="finished-jobs-heading"
-                className="text-sm font-semibold text-fg"
-              >
+              <h2 id="finished-jobs-heading" className="text-sm font-semibold text-fg">
                 Finished jobs
               </h2>
             </div>

@@ -108,9 +108,9 @@ function McpEndpointCard({ mcpUrl }: { mcpUrl: string }) {
         </Badge>
       </div>
       <p className="text-sm text-fg-muted">
-        Configure a remote MCP client with this URL plus a bearer key from this page. Pick Streamable
-        HTTP or HTTP URL in clients that ask for a transport. Do not choose legacy SSE; Timeline does
-        not expose an <code className="font-mono">/sse</code> endpoint.
+        Configure a remote MCP client with this URL plus a bearer key from this page. Pick
+        Streamable HTTP or HTTP URL in clients that ask for a transport. Do not choose legacy SSE;
+        Timeline does not expose an <code className="font-mono">/sse</code> endpoint.
       </p>
       <p className="text-sm text-fg-muted">
         The endpoint is read-only and exposes team-level retrieval for workspace context, timeline
@@ -133,9 +133,9 @@ function McpEndpointCard({ mcpUrl }: { mcpUrl: string }) {
         </Button>
       </div>
       <p className="text-xs text-fg-dim">
-        Timeline currently advertises MCP protocol <code className="font-mono">2024-11-05</code> during{' '}
-        <code className="font-mono">initialize</code>. Modern clients that support Streamable HTTP
-        compatibility should use this endpoint directly.
+        Timeline currently advertises MCP protocol <code className="font-mono">2024-11-05</code>{' '}
+        during <code className="font-mono">initialize</code>. Modern clients that support Streamable
+        HTTP compatibility should use this endpoint directly.
       </p>
     </section>
   );
@@ -192,8 +192,9 @@ function McpClientGuides({ mcpUrl, mintedKey }: { mcpUrl: string; mintedKey: Min
         <div className="space-y-3">
           <h3 className="text-sm font-semibold text-fg">Codex CLI</h3>
           <p className="text-sm text-fg-muted">
-            Codex supports Streamable HTTP MCP servers through <code>codex mcp add --url</code>. Store
-            the key in an environment variable so it is not written directly into shell history.
+            Codex supports Streamable HTTP MCP servers through <code>codex mcp add --url</code>.
+            Store the key in an environment variable so it is not written directly into shell
+            history.
           </p>
           <div className="overflow-hidden rounded-sm border border-border bg-surface-2">
             <pre className="overflow-x-auto p-3 font-mono text-xs leading-5">
@@ -212,9 +213,9 @@ function McpClientGuides({ mcpUrl, mintedKey }: { mcpUrl: string; mintedKey: Min
         <div className="space-y-3">
           <h3 className="text-sm font-semibold text-fg">Claude Desktop, Cursor, and URL clients</h3>
           <p className="text-sm text-fg-muted">
-            Clients with remote MCP JSON config usually need a transport type, URL, and Authorization
-            header. If your client only supports local command servers, use its remote-MCP bridge and
-            point the bridge at this same URL.
+            Clients with remote MCP JSON config usually need a transport type, URL, and
+            Authorization header. If your client only supports local command servers, use its
+            remote-MCP bridge and point the bridge at this same URL.
           </p>
           <div className="overflow-hidden rounded-sm border border-border bg-surface-2">
             <pre className="overflow-x-auto p-3 font-mono text-xs leading-5">
@@ -239,8 +240,8 @@ function McpClientGuides({ mcpUrl, mintedKey }: { mcpUrl: string; mintedKey: Min
           </div>
           <p className="text-sm text-fg-muted">
             ChatGPT can create apps from remote MCP servers in Developer mode. Use this endpoint as
-            the connector URL, but note that ChatGPT&apos;s app flow expects OAuth, no-auth, or mixed
-            auth; Timeline&apos;s current outbound endpoint uses static bearer keys.
+            the connector URL, but note that ChatGPT&apos;s app flow expects OAuth, no-auth, or
+            mixed auth; Timeline&apos;s current outbound endpoint uses static bearer keys.
           </p>
           <div className="overflow-hidden rounded-sm border border-border bg-surface-2">
             <pre className="overflow-x-auto p-3 font-mono text-xs leading-5">
@@ -363,10 +364,7 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
           if (!response.ok) {
             return {
               ok: false,
-              error: await readPublicApiError(
-                response,
-                'The key could not be revoked. Try again.',
-              ),
+              error: await readPublicApiError(response, 'The key could not be revoked. Try again.'),
             };
           }
           return { ok: true };

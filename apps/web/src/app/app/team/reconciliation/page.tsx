@@ -496,9 +496,7 @@ function ReleaseGatePanel({
                 <span className="font-medium">{sourceLabel(failure.source)}</span>
                 <span className="text-fg-muted">
                   {failure.message}
-                  <span className="ml-2 font-mono text-[11px] text-fg-dim">
-                    {failure.code}
-                  </span>
+                  <span className="ml-2 font-mono text-[11px] text-fg-dim">{failure.code}</span>
                 </span>
                 <span className="tabular-nums text-fg-muted">
                   {failure.rawEventCount.toLocaleString()} raw
@@ -585,11 +583,7 @@ function MiniStat({ label, value }: { label: string; value: number | string }) {
 
 function SectionTitle({ label, level = 2 }: { label: string; level?: 2 | 3 }) {
   const Heading = level === 3 ? 'h3' : 'h2';
-  return (
-    <Heading className="text-sm font-semibold text-fg">
-      {label}
-    </Heading>
-  );
+  return <Heading className="text-sm font-semibold text-fg">{label}</Heading>;
 }
 
 function StatusPanel({ title, rows }: { title: string; rows: { key: string; count: number }[] }) {
@@ -682,9 +676,7 @@ function RecentRuns({
                   <Badge variant="outline" className="rounded-sm">
                     {row.status}
                   </Badge>
-                  <span className="font-mono text-[11px] text-fg-dim">
-                    {row.trigger}
-                  </span>
+                  <span className="font-mono text-[11px] text-fg-dim">{row.trigger}</span>
                 </div>
                 <div className="mt-1 truncate font-medium">{row.scope}</div>
                 <RunMetricSummary metrics={row.metrics} />

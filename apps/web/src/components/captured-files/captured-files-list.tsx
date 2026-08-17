@@ -267,10 +267,7 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
 
   if (loadedFiles.length === 0) {
     return (
-      <section
-        aria-label="Captured files"
-        className="border-y border-border py-10 text-center"
-      >
+      <section aria-label="Captured files" className="border-y border-border py-10 text-center">
         <p className="text-sm font-semibold text-fg">No captured files yet</p>
         <p className="mx-auto mt-1 max-w-md text-sm leading-6 text-fg-muted">
           Attachments from conversations and connected sources appear here before you add them to
