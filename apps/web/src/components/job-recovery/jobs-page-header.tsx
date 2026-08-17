@@ -1,17 +1,15 @@
 import { Breadcrumb } from '@/components/breadcrumb';
-import { JOBS_ATTENTION_DAYS } from '@/components/job-recovery/jobs-attention';
+import {
+  JOBS_ATTENTION_DAYS,
+  JOB_RECOVERY_PAGE_TITLE,
+  jobsPageSubtitle,
+} from '@/components/job-recovery/jobs-attention';
 import { PageHeader } from '@/components/page-header';
-
-export const JOB_RECOVERY_PAGE_TITLE = 'Job recovery';
 
 const JOBS_BREADCRUMB = [
   { label: 'Team', href: '/app/team' },
   { label: JOB_RECOVERY_PAGE_TITLE },
 ] as const;
-
-export function jobsPageSubtitle(): string {
-  return `Admins can retry or dismiss failed processing from the last ${String(JOBS_ATTENTION_DAYS)} days.`;
-}
 
 export function JobsPageHeader({
   teamName,

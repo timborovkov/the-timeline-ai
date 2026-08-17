@@ -704,11 +704,8 @@ function JobRecoveryRows({
                   }
                 />
               }
-              title={
-                <span className="block truncate" title={hint}>
-                  {item.label}
-                </span>
-              }
+              title={item.label}
+              titleHint={hint}
               context={relative}
               contextTitle={isClient ? hint : undefined}
               metadata={retry ? <RetryStatus snapshot={retry} /> : null}

@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
-import { jobsPageSubtitle } from '@/components/job-recovery/jobs-page-header';
+import { jobsPageSubtitle } from '@/components/job-recovery/jobs-attention';
 import { JobsForbiddenView, JobsPageView } from '@/components/job-recovery/jobs-page-view';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';

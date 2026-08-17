@@ -1,5 +1,5 @@
 import { Breadcrumb } from '@/components/breadcrumb';
-import { JOB_RECOVERY_PAGE_TITLE } from '@/components/job-recovery/jobs-page-header';
+import { JOB_RECOVERY_PAGE_TITLE } from '@/components/job-recovery/jobs-attention';
 import { PageHeaderSkeleton } from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
 
