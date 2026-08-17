@@ -92,6 +92,16 @@ import {
 } from '#src/visibility.js';
 
 export { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
+export {
+  attachUniqueHubsToBundles,
+  hubEvidenceText,
+  hubsChanged,
+  qualifyWorkspaceHubs,
+  selectPromptObjects,
+  WORKSPACE_HUB_TYPES,
+  type QualifiedWorkspaceHubs,
+  type WorkspaceHub,
+} from '#src/suggestions/hub-context.js';
 
 type Visibility = 'private' | 'team' | 'specific_users';
 type SuggestionStatus = 'pending' | 'partially_resolved' | 'accepted' | 'rejected' | 'superseded';

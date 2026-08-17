@@ -91,6 +91,10 @@ month's email become one story when they point at the same hub, not when they
 share a provider id. Embeddings recall candidate hubs; they do not prove the
 link. Pending approvals against a hub stay alive: later captured-work
 completion refreshes the same proposal instead of leaving it to rot.
+Proposal writes qualify an existing company, vendor, deal, or project when
+the evidence uniquely names it (including meeting titles). Embeddings and
+"40 recently updated objects" do not prove that join. Later conversation in
+the same window may amend an unedited pending create with that hub.
 The living workflow is
 [docs/relational-memory.md](docs/relational-memory.md).
 _Avoid_: Conversation, thread, or source when describing cross-surface identity

@@ -2871,6 +2871,7 @@ describe('processSuggestionJobForTests', () => {
     const call = chat.mock.calls[0]?.[0] as { prompt: string; system: string } | undefined;
     const prompt = call?.prompt;
     expect(prompt).toContain('# Existing workspace objects');
+    expect(prompt).toContain('# Mentioned workspace hubs');
     expect(call?.system).toContain('proposedPayload.type="decision"');
     expect(call?.system).toContain('Keep canonicalName human-facing');
     expect(call?.system).toContain('Do not create tasks from automated review findings');
@@ -4079,6 +4080,269 @@ describe('processSuggestionJobForTests', () => {
         title: 'Prepare mobile wireframes',
         primaryProjectName: 'Faba website redesign',
       }),
+    );
+  });
+
+  it('attaches a Faba meeting task to the existing company and project even when they are not in the recency dump', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000c4';
+    const company = await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({
+      type: 'company',
+      canonicalName: 'Faba',
+      actor: { kind: 'user', userId: OWNER_ID },
+    });
+    const project = await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({
+      type: 'project',
+      canonicalName: 'Faba website redesign',
+      actor: { kind: 'user', userId: OWNER_ID },
+    });
+    for (let index = 0; index < 40; index += 1) {
+      await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({
+        type: 'topic',
+        canonicalName: `Noise topic ${String(index)}`,
+        actor: { kind: 'user', userId: OWNER_ID },
+      });
+    }
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      source: 'web',
+      text: 'We should prepare the login page.',
+      sourceMetadata: {
+        meeting_title: 'Faba weekly',
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Prepare the login page',
+            confidence: 'high',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'task',
+                title: 'Prepare the login page',
+                proposedPayload: { canonicalName: 'Prepare the login page' },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      {
+        getEnv: env,
+        chatStructured: chat,
+        classifyTaskCategory: vi.fn().mockResolvedValue({
+          category: 'engineering',
+          confidence: 0.9,
+          model: 'task-category-model',
+        }),
+        modelId: MODEL_ID,
+      },
+    );
+
+    const prompt = (chat.mock.calls[0]?.[0] as { prompt: string } | undefined)?.prompt;
+    expect(prompt).toContain('# Mentioned workspace hubs');
+    expect(prompt).toContain(`${company.id}: company "Faba"`);
+    expect(prompt).toContain(`${project.id}: project "Faba website redesign"`);
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundle?.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          targetKind: 'task',
+          proposedPayload: expect.objectContaining({
+            parentObjectId: project.id,
+            projectName: 'Faba website redesign',
+          }) as unknown,
+        }),
+        expect.objectContaining({
+          targetKind: 'object_relationship',
+          proposedPayload: expect.objectContaining({
+            kind: 'related',
+            toEntityId: company.id,
+          }) as unknown,
+        }),
+      ]),
+    );
+  });
+
+  it('does not guess a client when two companies are named in the same evidence', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000c5';
+    await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({
+      type: 'company',
+      canonicalName: 'Faba',
+      actor: { kind: 'user', userId: OWNER_ID },
+    });
+    await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({
+      type: 'company',
+      canonicalName: 'Acme Labs',
+      actor: { kind: 'user', userId: OWNER_ID },
+    });
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'After the Faba call, also ping Acme about the login page.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Prepare the login page',
+            confidence: 'high',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'task',
+                title: 'Prepare the login page',
+                proposedPayload: { canonicalName: 'Prepare the login page' },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      {
+        getEnv: env,
+        chatStructured: chat,
+        classifyTaskCategory: vi.fn().mockResolvedValue({
+          category: 'engineering',
+          confidence: 0.9,
+          model: 'task-category-model',
+        }),
+        modelId: MODEL_ID,
+      },
+    );
+
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundle?.items).toHaveLength(1);
+    expect(bundle?.items[0]?.proposedPayload).not.toHaveProperty('parentObjectId');
+    expect(bundle?.items.some((item) => item.targetKind === 'object_relationship')).toBe(false);
+  });
+
+  it('amends a pending task create when later conversation evidence uniquely names the client', async () => {
+    const firstEventId = '10000000-0000-0000-0000-0000000000c6';
+    const secondEventId = '10000000-0000-0000-0000-0000000000c7';
+    const reviewId = '20000000-0000-0000-0000-0000000000c6';
+    const company = await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({
+      type: 'company',
+      canonicalName: 'Faba',
+      actor: { kind: 'user', userId: OWNER_ID },
+    });
+    await seedTelegramConversationReview(db as never, {
+      rawEventId: firstEventId,
+      reviewId,
+      chatId: 'faba-amend',
+      text: 'We should prepare the login page.',
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+    });
+    const firstChat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Prepare the login page',
+            confidence: 'high',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'task',
+                title: 'Prepare the login page',
+                proposedPayload: { canonicalName: 'Prepare the login page' },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      {
+        getEnv: env,
+        chatStructured: firstChat,
+        classifyTaskCategory: vi.fn().mockResolvedValue({
+          category: 'engineering',
+          confidence: 0.9,
+          model: 'task-category-model',
+        }),
+        modelId: MODEL_ID,
+      },
+    );
+    const [initial] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(initial?.items.some((item) => item.targetKind === 'object_relationship')).toBe(false);
+
+    await seedRawEvent(db as never, {
+      id: secondEventId,
+      source: 'telegram',
+      text: "That's for Faba.",
+      occurredAt: new Date('2026-05-27T10:05:00.000Z'),
+      sourceMetadata: { tg_chat_id: 'faba-amend', tg_message_id: '2' },
+    });
+    await db
+      .update(conversationReviews)
+      .set({
+        status: 'pending',
+        lastRawEventId: secondEventId,
+        reviewedThroughRawEventId: null,
+        quietUntil: new Date('2026-05-27T09:00:00.000Z'),
+      })
+      .where(eq(conversationReviews.id, reviewId));
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: emptyModel(), modelId: MODEL_ID },
+    );
+
+    const [amended] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(amended?.id).toBe(initial?.id);
+    expect(amended?.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          targetKind: 'task',
+          proposedPayload: expect.objectContaining({
+            canonicalName: 'Prepare the login page',
+            localRef: 'prepare-the-login-page',
+          }) as unknown,
+        }),
+        expect.objectContaining({
+          targetKind: 'object_relationship',
+          proposedPayload: expect.objectContaining({
+            kind: 'related',
+            toEntityId: company.id,
+          }) as unknown,
+        }),
+      ]),
     );
   });
 

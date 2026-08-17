@@ -452,9 +452,15 @@ Rules:
   bundle.
 - Accepted memory is canonical until a new proposal is accepted. Pending
   bundles may merge or supersede as related evidence arrives.
+- Existing **company / vendor / deal / project** hubs participate in proposal
+  writes only when the evidence uniquely names them. Recency dumps and
+  embedding similarity are not join keys. A Faba meeting can attach a task to
+  the Faba company because "Faba" is a unique mention, not because Faba was
+  recently updated.
 
 Vectors do not sit on this write path as a join key. Stored embeddings may
-tie-break already-qualified pack candidates.
+tie-break already-qualified pack candidates. The prompt may list other recent
+objects for disambiguation; it does not mean the model "has" every client.
 
 ### Communication path — how five events become one task
 
@@ -472,11 +478,25 @@ tie-break already-qualified pack candidates.
    creates/updates (task, assignee, due, project edge, notes). Evidence quotes
    `rawEventId`s from the window or capture. Team-visible curated document
    chunks related to names already in the evidence may fill counterparties,
-   dates, and constraints; they cannot originate the bundle.
+   dates, and constraints; they cannot originate the bundle. **Mention-qualified
+   hubs** (existing companies, vendors, deals, projects whose name, alias, or
+   distinctive token appears in the window, capture, or meeting title) are
+   listed explicitly. After the model returns, a deterministic pass attaches a
+   unique project as `parentObjectId` and a unique client hub as
+   `object_relationship` when the model omitted them. Two named clients → no
+   silent attach.
 5. A teammate accepts in Approvals. That write creates the `entities` row —
    the hub. Category classification may run after accept.
 6. Later communication in the same conversation can merge or supersede the
-   pending bundle. It does not silently rewrite the accepted task.
+   pending bundle. If a later message uniquely names the client or project and
+   overlaps the pending create's evidence, the pending item is **amended in
+   place** (skip user-edited items). It does not silently rewrite the accepted
+   task.
+
+Certor-shaped teams (one product, one implicit whole) often look fine even
+when hubs are omitted: there is little client collision. Agency-shaped teams
+(several active clients) fail if a "Faba meeting" commitment lands as a bare
+task. That is a qualification bug, not a missing CRM type.
 
 ### Captured-work path — how a later PR proposes `done`
 
@@ -814,7 +834,7 @@ merge. Those two close most dogfood misses without a new model call.
 | Drive file-change pulses skip extract | Shipped | Envelope `signalClass=pulse` |
 | Intentional captures (web, Telegram `/note`) extract + propose | Shipped event-local | Unchanged; do not fold them into conversation-review debounce |
 | Curated documents in Ask / object summaries / proposal context | Shipped: object-profile retrieval, summary `document_chunk` refs, supporting proposal context | Pack admission for chunks; summary refresh on document extract |
-| Conversation review → approval-backed task create | Shipped | Migrate onto proposal packs |
+| Conversation review → approval-backed task create | Shipped, including mention-qualified company/project attach and living pending hub amend | Migrate onto proposal packs |
 | GitHub PR/issue lifecycle → coalesced task proposals | Shipped, GitHub-specific parser | Envelope-driven matcher on `objectMap` + status + aliases |
 | Match pending create bundles when the PR arrives first | Shipped for GitHub: refresh the pending create (status/aliases/actor) instead of letting it rot | Same living-proposal refresh on Linear/Monday captured work |
 | Topic-only PR → task `done` | Not shipped, and must not ship as cosine-write | Optional pairwise qualify after recall; still approval-backed |
@@ -859,6 +879,7 @@ When code changes ingest or proposals, update this file in the same change.
 - Persist + fan-out: `packages/shared/src/integrations/event-writer.ts`,
   `ingest-processing.ts`
 - Conversation reviews: `packages/shared/src/conversation-review/`
+- Mention-qualified hubs: `packages/shared/src/suggestions/hub-context.ts`
 - Captured-work proposals: `packages/shared/src/integrations/github-task-proposals.ts`
   (first slice; target matcher is envelope-driven)
 - Packs: `packages/shared/src/evidence-pack/`

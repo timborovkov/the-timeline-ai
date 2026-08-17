@@ -184,6 +184,15 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       they are not completion. Per-connection ingest processing is rate-limited.
       Daily object cleanup backfills the same proposals for already-ingested
       GitHub clusters.
+- [x] Attach communication task proposals to existing client/project hubs by
+      unique name mention: a Faba meeting can use the Faba company and Faba
+      project even when they are not in the 40 most recently updated objects.
+      Distinctive tokens match (`Faba` in `Faba website redesign`); generic
+      words (`website`, `meeting`) do not. Two named clients stay unattached.
+      Unedited pending creates whose evidence overlaps a later window are
+      amended in place when that later evidence uniquely names the hub. Ask
+      retrieval is unchanged — embeddings still recall; they still do not
+      write.
 - [ ] Classify ingest by signal class rather than by OAuth app, following
       [`docs/relational-memory.md`](./docs/relational-memory.md):
       communication may extract and review; structured captured work parses
