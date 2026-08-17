@@ -1233,9 +1233,14 @@ function TimelineMomentRow({
   const pulse = moment.visualWeight === 'pulse';
   const previewText = supportingText(moment, '');
   const contextParts = rowContextParts(moment);
+  const titleStem = title.replace(/…$/, '').trim().toLowerCase();
+  const previewOverlapsTitle =
+    Boolean(previewText) &&
+    Boolean(titleStem) &&
+    previewText.toLowerCase().startsWith(titleStem);
   const subtitleParts = [
     ...contextParts.filter((part) => !previewText || !previewText.includes(part)),
-    previewText || null,
+    previewOverlapsTitle ? null : previewText || null,
   ].filter((part): part is string => Boolean(part));
   return (
     <li

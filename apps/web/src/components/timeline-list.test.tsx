@@ -716,7 +716,7 @@ describe('TimelineList inspector source caps', () => {
     );
 
     fireEvent.click(
-      screen.getByRole('button', { name: /^Incident report for Apple Pay checkout ·/i }),
+      screen.getByRole('button', { name: /^Incident report for Apple Pay checkout/i }),
     );
     renderLastInspectorContent();
 
