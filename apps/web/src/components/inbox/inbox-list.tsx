@@ -8,7 +8,7 @@ import { VirtualList } from '@/components/collections/virtual-list';
 import { NotificationRow } from '@/components/inbox/notification-row';
 import { formatCollectionCount } from '@/lib/collection-count';
 
-export interface InboxNotification {
+interface InboxNotification {
   id: string;
   kind: string;
   summary: string;
