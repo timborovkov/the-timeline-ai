@@ -92,11 +92,15 @@ const HOME_OPEN_OBJECT_TYPES = [
   'deal',
 ] as const;
 
-export type HomeOpenObjectType = (typeof HOME_OPEN_OBJECT_TYPES)[number];
+type HomeOpenObjectType = (typeof HOME_OPEN_OBJECT_TYPES)[number];
 export type HomeOpenObjectCounts = Record<HomeOpenObjectType, number>;
 
-export function homeOpenObjectHref(type: HomeOpenObjectType): string {
-  return type === 'task' ? '/app/tasks' : `/app/objects?type=${type}`;
+/** People, companies, projects, deals, and follow-ups — not tasks. */
+export function homeOpenObjectTotal(counts: HomeOpenObjectCounts): number {
+  return HOME_OPEN_OBJECT_TYPES.reduce((sum, type) => {
+    if (type === 'task') return sum;
+    return sum + Math.max(0, counts[type]);
+  }, 0);
 }
 
 export async function getHomeOpenObjectCounts(scope: TeamScope): Promise<HomeOpenObjectCounts> {

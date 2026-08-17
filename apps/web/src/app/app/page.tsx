@@ -4,15 +4,12 @@ import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@time
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
 import {
-  Building2,
+  ArrowRight,
+  Boxes,
   CircleAlert,
   CircleCheckBig,
-  FolderKanban,
-  Handshake,
-  ListChecks,
   ListTodo,
   PlugZap,
-  UserRound,
   Wrench,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -27,9 +24,7 @@ import { HomeAskComposer } from '@/components/home/home-ask-composer';
 import { HomeAttention } from '@/components/home/home-attention';
 import { OnboardingChecklist } from '@/components/onboarding-checklist';
 import { PinnedWorkspacePreview } from '@/components/pins/pinned-workspace-preview';
-import { SectionHeading } from '@/components/section-heading';
 import { TimelineFeed } from '@/components/timeline-feed';
-import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -37,11 +32,9 @@ import { displayMemberLabel } from '@/lib/display-labels';
 import {
   getHomeOpenObjectCounts,
   getWorkAttentionSummary,
-  homeOpenObjectHref,
+  homeOpenObjectTotal,
   homeWorkNeedingAttentionCount,
-  type HomeOpenObjectType,
 } from '@/lib/hub-status';
-import { OBJECT_TYPE_LABELS } from '@/lib/object-type-labels';
 import { listTimelineCapturedFilesByEventId } from '@/lib/timeline-captured-files';
 import { buildTimelineMoments } from '@/lib/timeline-moments';
 
@@ -50,18 +43,8 @@ export const metadata: Metadata = {
   description: 'Ask what changed and review work that needs attention.',
 };
 
-const HOME_OPEN_OBJECT_ATTENTION: {
-  type: HomeOpenObjectType;
-  action: string;
-  icon: typeof ListTodo;
-}[] = [
-  { type: 'task', action: 'Open tasks', icon: ListTodo },
-  { type: 'follow_up', action: 'Open follow-ups', icon: ListChecks },
-  { type: 'person', action: 'Open people', icon: UserRound },
-  { type: 'company', action: 'Open companies', icon: Building2 },
-  { type: 'project', action: 'Open projects', icon: FolderKanban },
-  { type: 'deal', action: 'Open deals', icon: Handshake },
-];
+const HOME_TIMELINE_EVENT_LIMIT = 16;
+const HOME_TIMELINE_MOMENT_LIMIT = 8;
 
 async function signAudio(events: { id: string; contentAudioUrl: string | null }[]) {
   const audioEvents = events.filter((event) => event.contentAudioUrl);
@@ -113,7 +96,7 @@ export default async function HomeDashboardPage() {
   ] = await Promise.all([
     getWorkAttentionSummary(scope, now, calendarSettings.defaultTimezone),
     getHomeOpenObjectCounts(scope),
-    scope.timeline.listEventsPage({ limit: 3 }),
+    scope.timeline.listEventsPage({ limit: HOME_TIMELINE_EVENT_LIMIT }),
     scope.timeline.listMembers(),
     scope.timeline.resolveVisibilityDefault('web'),
     scope.pins.list({ limit: 6 }),
@@ -124,6 +107,7 @@ export default async function HomeDashboardPage() {
   const events = eventPage.items;
   const pendingApprovals = workAttention.pendingApprovals;
   const urgentWorkCount = homeWorkNeedingAttentionCount(workAttention);
+  const openObjectTotal = homeOpenObjectTotal(openObjectCounts);
 
   const [impactItems, artifactClusters, audioUrlMap, capturedFiles] = await Promise.all([
     scope.timeline.listImpactItems(events.map((event) => event.id)),
@@ -198,13 +182,20 @@ export default async function HomeDashboardPage() {
             icon: <CircleAlert aria-hidden="true" />,
             danger: true,
           },
-          ...HOME_OPEN_OBJECT_ATTENTION.map(({ type, action, icon: Icon }) => ({
-            href: homeOpenObjectHref(type),
-            label: `Open ${(OBJECT_TYPE_LABELS[type] ?? type).toLowerCase()}`,
-            count: openObjectCounts[type],
-            action,
-            icon: <Icon aria-hidden="true" />,
-          })),
+          {
+            href: '/app/tasks',
+            label: 'Open tasks',
+            count: openObjectCounts.task,
+            action: 'Open tasks',
+            icon: <ListTodo aria-hidden="true" />,
+          },
+          {
+            href: '/app/objects',
+            label: 'Open objects',
+            count: openObjectTotal,
+            action: 'People, companies, projects, and more',
+            icon: <Boxes aria-hidden="true" />,
+          },
           {
             href: '/app/team/jobs',
             label: 'Recoverable jobs',
@@ -228,16 +219,7 @@ export default async function HomeDashboardPage() {
 
       <DailyDigestBlock digest={latestDigest?.payload as DailyDigestPayload | undefined} />
 
-      <section className="space-y-3">
-        <SectionHeading
-          actions={
-            <Button asChild variant="ghost" size="sm">
-              <Link href="/app/timeline">Open timeline</Link>
-            </Button>
-          }
-        >
-          Recent moments
-        </SectionHeading>
+      <section className="space-y-2" aria-label="Recent moments">
         <TimelineFeed
           initialPage={{
             items: events.map((event) => ({
@@ -263,11 +245,23 @@ export default async function HomeDashboardPage() {
             label: displayMemberLabel(userMap.get(member.userId)),
           }))}
           compact
-          maxMoments={3}
+          maxMoments={HOME_TIMELINE_MOMENT_LIMIT}
           live={false}
           timezone={calendarSettings.defaultTimezone}
           emptyLabel="No recent moments yet"
         />
+        <p>
+          <Link
+            href="/app/timeline"
+            className="group inline-flex items-center gap-1.5 text-sm font-medium text-fg transition-colors hover:text-signal"
+          >
+            Open timeline
+            <ArrowRight
+              aria-hidden="true"
+              className="size-4 text-fg-dim transition-transform group-hover:translate-x-0.5"
+            />
+          </Link>
+        </p>
       </section>
 
       <OnboardingChecklist />

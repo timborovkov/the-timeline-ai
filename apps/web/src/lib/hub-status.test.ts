@@ -8,7 +8,7 @@ import {
   getHomeOpenObjectCounts,
   getNavWorkAttention,
   getWorkAttentionSummary,
-  homeOpenObjectHref,
+  homeOpenObjectTotal,
   homeWorkNeedingAttentionCount,
   workAttentionCount,
 } from '@/lib/hub-status';
@@ -60,8 +60,7 @@ describe('hub status helpers', () => {
       project: 3,
       deal: 0,
     });
-    expect(homeOpenObjectHref('task')).toBe('/app/tasks');
-    expect(homeOpenObjectHref('person')).toBe('/app/objects?type=person');
+    expect(homeOpenObjectTotal(counts)).toBe(12);
     expect(countObjects).toHaveBeenCalledWith({
       archived: false,
       statusNotCaseInsensitive: ['done', 'cancelled', 'canceled', 'shipped'],

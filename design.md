@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.3 · Home open-object attention and inline work queue (2026-08-17). Replaces v3.2 Work overview and task canvas density.
+**Version:** v3.4 · Quiet Home attention and dense recent moments (2026-08-17). Replaces v3.3 Home open-object attention and inline work queue.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -270,15 +270,17 @@ not render the derived proposal at all.
 
 Home does not repeat its navigation label as a visible page title. It starts
 with a quiet Capture action and the same compact, icon-only-send Ask composer
-used in chat. Attention shows only non-zero groups: pending approvals, overdue
-work, open tasks, open follow-ups, open people, open companies, open projects,
-open deals, recoverable jobs, and connection issues. Overdue work stays the
-danger row into the work queue. Open object groups link to Tasks or the typed
-Objects list rather than dumping those records onto Home. “You’re caught up”
-replaces empty dashboard grids when every group is zero. Pinned work, digest,
-recent moments, and one next setup step follow as full-width sections without
-duplicating Timeline or Connections. These sections prefer horizontal rules and
-rows over bordered dashboard cards.
+used in chat. Attention has no visible heading; the region is named for
+assistive tech only. It shows only non-zero groups: pending approvals, overdue
+work, open tasks, open objects, recoverable jobs, and connection issues.
+Overdue work stays the danger row into the work queue. Open tasks stay their
+own row into Tasks. Open objects is one generic count for people, companies,
+projects, deals, and follow-ups, linking to the Objects list rather than
+typed filters or dumping those records onto Home. “You’re caught up” replaces
+empty dashboard grids when every group is zero. Pinned work, digest, a dense
+recent-moments scan, and one next setup step follow as full-width sections
+without duplicating Timeline or Connections. These sections prefer horizontal
+rules and rows over bordered dashboard cards.
 
 Pinned work is one personal, mixed collection. It may contain canonical
 objects (including tasks, projects, deals, people, and object-type documents),
@@ -293,6 +295,12 @@ archived, or temporarily inaccessible targets do not become placeholders and
 do not consume a preview slot. Home never offers reordering; its Manage action
 opens Work → Pinned.
 
+Home recent moments have no visible heading. They show up to eight dense rows
+of time, source, and title, with quiet non-sticky date labels and no preview,
+evidence chip, impact strip, transcript link, or timeline rail. Each row opens
+the matching moment on Timeline. An “Open timeline” action always follows for
+the rest of the archive.
+
 ### Timeline
 
 Timeline is the strongest archive expression. Each row leads with time, source,
@@ -301,7 +309,8 @@ dates, evidence quick view, and pagination remain. Exact capture and provider
 details move into the inspector. The default view ends at the current instant so
 materialized calendar occurrences do not displace recent work. Upcoming context
 is an explicit seven-day view; the Calendar surface owns the complete future
-schedule. Compact Home moments reuse the same formatter.
+schedule. Compact Home moments are a denser scan of the same formatter: time,
+source, and title only, linking into this surface.
 
 ### Ask
 
@@ -590,3 +599,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-16 | Unified workspace collection density | Replaces stacked form chrome and card grids with compact headers, one filter toolbar, 44px rows, semantic status glyphs, optimistic metadata triggers, and contextual selection without changing domain behavior. |
 | 2026-08-17 | Work overview and task canvas density | Puts pinned boards above the work queue, removes extra task-list gutters, matches the default list loading skeleton, puts Kanban/List on the search/filter row, and compacts task kanban cards to a clamped title plus one metadata row. |
 | 2026-08-17 | Home open objects and inline queue edits | Adds open tasks, people, companies, projects, deals, and follow-ups to Home Attention, stops repeating “Task” on work-queue rows, and lets queue status, assignee, due date, and priority change inline. |
+| 2026-08-17 | Quiet Home attention and dense recent moments | Collapses typed open-people/company/project rows into one open-objects count, drops the Attention and Recent moments headings, and replaces the Home timeline preview with denser title-only rows plus a clear Open timeline path. |

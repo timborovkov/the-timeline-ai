@@ -204,6 +204,25 @@ describe('TimelineList event anchors', () => {
   });
 });
 
+describe('TimelineList compact home rows', () => {
+  it('links dense rows to the full timeline without evidence chrome', () => {
+    const eventId = '11111111-1111-4111-8111-111111111111';
+    const html = renderTimeline(
+      [timelineEvent({ id: eventId, occurredAt: '2026-06-03T13:04:00.000Z' })],
+      { compact: true },
+    );
+
+    expect(html).toContain(
+      'href="/app/timeline?moment=moment%3Ameeting%3Ameeting-1#tm-moment_3Ameeting_3Ameeting-1"',
+    );
+    expect(html).toContain('Daily');
+    expect(html).not.toContain('View evidence');
+    expect(html).not.toContain('Open transcript');
+    expect(html).not.toContain('sticky top-0');
+    expect(html).not.toContain(`id="ev-${eventId}"`);
+  });
+});
+
 describe('TimelineList document attachments', () => {
   it('moves document previews into the inspector and keeps lifecycle rules', () => {
     const uploadId = '66666666-6666-4666-8666-666666666666';
