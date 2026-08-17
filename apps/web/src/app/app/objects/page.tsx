@@ -266,6 +266,7 @@ export default async function ObjectsIndexPage({
             pinned: objectPinState[`object:${row.id}`] ?? false,
           }))}
           typeLabels={OBJECT_TYPE_LABELS}
+          returnTo={objectsIndexReturnTo(params)}
           pageInfo={
             hasTypeFilter
               ? {
@@ -361,6 +362,21 @@ async function loadObjectSectionPreviews(
 
 function parseCursorParam(value: string | undefined): string | undefined {
   return decodeCursor(value) ? value : undefined;
+}
+
+function objectsIndexReturnTo(params: Record<string, string | string[] | undefined>): string {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (item) query.append(key, item);
+      }
+    } else if (value) {
+      query.set(key, value);
+    }
+  }
+  const qs = query.toString();
+  return qs ? `/app/objects?${qs}` : '/app/objects';
 }
 
 function objectsPageHref(params: {

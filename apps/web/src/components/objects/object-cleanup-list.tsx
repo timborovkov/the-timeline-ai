@@ -2,7 +2,7 @@
 
 import { Archive, GitMerge, SquareCheckBig } from 'lucide-react';
 import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useMemo, useReducer, useState, useTransition } from 'react';
 import { toast } from 'sonner';
 
@@ -46,6 +46,7 @@ interface Props {
     nextHref: string | null;
   };
   sectionMoreHrefs?: Record<string, string>;
+  returnTo?: string;
 }
 
 interface CleanupListState {
@@ -90,12 +91,15 @@ function cleanupListReducer(state: CleanupListState, action: CleanupListAction):
   }
 }
 
-export function ObjectCleanupList({ rows, typeLabels, pageInfo, sectionMoreHrefs }: Props) {
+export function ObjectCleanupList({
+  rows,
+  typeLabels,
+  pageInfo,
+  sectionMoreHrefs,
+  returnTo = '/app/objects',
+}: Props) {
   const timezone = useWorkspaceTimezone();
   const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const returnTo = `${pathname}${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
   const dialog = useAppDialog();
   const [{ selecting, selected, archivedIds, error }, dispatchCleanupList] = useReducer(
     cleanupListReducer,

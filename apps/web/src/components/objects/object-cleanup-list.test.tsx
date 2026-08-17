@@ -16,8 +16,6 @@ const fakes = vi.hoisted(() => ({
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: fakes.refresh }),
-  usePathname: () => '/app/objects',
-  useSearchParams: () => new URLSearchParams(),
 }));
 vi.mock('@/components/ui/app-dialog', () => ({
   useAppDialog: () => ({ confirm: fakes.confirm }),

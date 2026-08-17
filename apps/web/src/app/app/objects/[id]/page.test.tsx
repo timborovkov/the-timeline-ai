@@ -15,6 +15,7 @@ const fakes = vi.hoisted(() => ({
   listPrimaryProjectsForTasks: vi.fn(),
   listObjectBoardContext: vi.fn(),
   listPendingSuggestions: vi.fn(),
+  listMembers: vi.fn(),
   objectDetailClientProps: vi.fn(),
   redirect: vi.fn((path: string) => {
     throw new Error(`redirect:${path}`);
@@ -42,6 +43,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
     boards: { listObjectBoardContext: fakes.listObjectBoardContext },
     suggestions: { listPendingSuggestions: fakes.listPendingSuggestions },
     pins: { isPinned: fakes.isPinned },
+    timeline: { listMembers: fakes.listMembers },
   }),
 }));
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
@@ -114,6 +116,7 @@ beforeEach(() => {
   fakes.getMergedObjectTarget.mockResolvedValue(null);
   fakes.listObjectBoardContext.mockResolvedValue([]);
   fakes.listPendingSuggestions.mockResolvedValue([]);
+  fakes.listMembers.mockResolvedValue([]);
 });
 
 describe('ObjectDetailPage', () => {
