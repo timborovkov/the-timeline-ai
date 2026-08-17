@@ -17,7 +17,8 @@ interface RelativeAgeOptions {
   now?: Date;
 }
 
-const RELATIVE_AGE_FORMATTER = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+// Pin English so server Node and the browser cannot disagree on unit labels.
+const RELATIVE_AGE_FORMATTER = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
 
 export function formatDisplayDateTime(value: Date | string, options: DisplayDateOptions): string {
   const date = value instanceof Date ? value : new Date(value);

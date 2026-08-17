@@ -2,6 +2,7 @@
 
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { formatDisplayDateTime } from '@/lib/display-dates';
@@ -49,6 +50,28 @@ function sessionFixture(
   };
 }
 
+function renderMobileNav({
+  sessions,
+  activeSessionId,
+  activeTitle,
+}: {
+  sessions: ReturnType<typeof sessionFixture>[];
+  activeSessionId: string | null;
+  activeTitle?: string | null;
+}) {
+  const resolvedTitle =
+    activeTitle !== undefined
+      ? activeTitle
+      : (sessions.find((session) => session.id === activeSessionId)?.title ?? null);
+  return render(
+    <MobileSessionNav
+      activeSessionId={activeSessionId}
+      activeTitle={resolvedTitle}
+      sessions={sessions}
+    />,
+  );
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   fakes.confirm.mockResolvedValue(true);
@@ -62,7 +85,7 @@ afterEach(() => {
 describe('MobileSessionNav', () => {
   it('archives the active chat and returns to a fresh session', async () => {
     const user = userEvent.setup();
-    render(<MobileSessionNav activeSessionId="session-1" sessions={[sessionFixture()]} />);
+    renderMobileNav({ activeSessionId: 'session-1', sessions: [sessionFixture()] });
 
     await user.click(screen.getByRole('button', { name: 'Archive chat: Launch review' }));
 
@@ -94,7 +117,7 @@ describe('MobileSessionNav', () => {
     render(
       <>
         <SessionSidebar activeSessionId={null} sessions={sessions} />
-        <MobileSessionNav activeSessionId={null} sessions={sessions} />
+        <MobileSessionNav activeSessionId={null} activeTitle={null} sessions={sessions} />
       </>,
     );
 
@@ -138,7 +161,7 @@ describe('MobileSessionNav', () => {
     render(
       <>
         <SessionSidebar activeSessionId={null} sessions={sessions} />
-        <MobileSessionNav activeSessionId={null} sessions={sessions} />
+        <MobileSessionNav activeSessionId={null} activeTitle={null} sessions={sessions} />
       </>,
     );
 
@@ -162,7 +185,7 @@ describe('MobileSessionNav', () => {
     const { container } = render(
       <>
         <SessionSidebar activeSessionId={null} sessions={[older, newer]} />
-        <MobileSessionNav activeSessionId={null} sessions={[older, newer]} />
+        <MobileSessionNav activeSessionId={null} activeTitle={null} sessions={[older, newer]} />
       </>,
     );
 
@@ -175,5 +198,27 @@ describe('MobileSessionNav', () => {
     );
     expect(container.querySelectorAll('[data-session-rule="true"]')).toHaveLength(2);
     expect(container.querySelector('[data-session-rule="true"]')?.className).toContain('w-[60%]');
+  });
+
+  it('uses the resolved title when the active session is outside the listed window', () => {
+    renderMobileNav({
+      sessions: [sessionFixture()],
+      activeSessionId: 'session-deep',
+      activeTitle: 'Deep linked recap',
+    });
+
+    expect(screen.getByText('Deep linked recap')).toBeTruthy();
+    expect(screen.queryByText('Current chat')).toBeNull();
+  });
+
+  it('omits clock-relative age during SSR', () => {
+    const session = sessionFixture();
+    const html = renderToStaticMarkup(
+      <SessionSidebar activeSessionId={null} sessions={[session]} />,
+    );
+
+    expect(html).not.toContain('days ago');
+    expect(html).toContain(`dateTime="${session.updatedAt}"`);
+    expect(html).not.toContain('title=');
   });
 });

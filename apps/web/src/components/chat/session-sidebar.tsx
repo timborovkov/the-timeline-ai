@@ -3,7 +3,7 @@
 import { Plus, Search, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useMemo, useState, useTransition } from 'react';
+import { Suspense, useMemo, useState, useSyncExternalStore, useTransition } from 'react';
 
 import { archiveChatSessionAction } from '@/app/actions/chat';
 import { useAppDialog } from '@/components/ui/app-dialog';
@@ -19,6 +19,20 @@ import { formatDisplayDateTime, formatRelativeAge } from '@/lib/display-dates';
 import { cn } from '@/lib/utils';
 
 type SessionEntry = ChatSessionListEntry;
+
+function unsubscribeClientRender(): void {}
+
+function subscribeClientRender(): () => void {
+  return unsubscribeClientRender;
+}
+
+function clientRenderSnapshot(): boolean {
+  return true;
+}
+
+function serverRenderSnapshot(): boolean {
+  return false;
+}
 
 function SurfaceBadge({ surface }: { surface: string }) {
   if (surface === 'web') return null;
@@ -42,14 +56,19 @@ function SurfaceBadge({ surface }: { surface: string }) {
 
 function SessionAge({ updatedAt }: { updatedAt: string }) {
   const timezone = useWorkspaceTimezone();
-  const absolute = formatDisplayDateTime(updatedAt, { timezone });
+  const isClient = useSyncExternalStore(
+    subscribeClientRender,
+    clientRenderSnapshot,
+    serverRenderSnapshot,
+  );
+  const absolute = isClient ? formatDisplayDateTime(updatedAt, { timezone }) : undefined;
   return (
     <time
       dateTime={updatedAt}
       title={absolute}
       className="mt-0.5 block truncate font-mono text-[11px] leading-4 text-fg-dim"
     >
-      {formatRelativeAge(updatedAt)}
+      {isClient ? formatRelativeAge(updatedAt) : '\u00a0'}
     </time>
   );
 }
@@ -236,6 +255,7 @@ function SessionSidebarContent({
 export function MobileSessionNav(props: {
   sessions: SessionEntry[];
   activeSessionId: string | null;
+  activeTitle: string | null;
 }) {
   return (
     <Suspense fallback={null}>
@@ -247,9 +267,11 @@ export function MobileSessionNav(props: {
 function MobileSessionNavContent({
   sessions,
   activeSessionId,
+  activeTitle,
 }: {
   sessions: SessionEntry[];
   activeSessionId: string | null;
+  activeTitle: string | null;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -258,8 +280,6 @@ function MobileSessionNavContent({
   const [pending, startTransition] = useTransition();
   const [query, setQuery] = useState('');
   const visibleSessions = useMemo(() => filterChatSessions(sessions, query), [sessions, query]);
-  const activeSession = sessions.find((session) => session.id === activeSessionId);
-  const activeTitle = activeSession ? chatSessionLabel(activeSession) : null;
 
   function newChat(): void {
     const params = new URLSearchParams(search.toString());

@@ -118,7 +118,11 @@ export default async function ChatPage({
     >
       <SessionSidebar activeSessionId={activeSessionId} sessions={sessionEntries} />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col px-4 py-5 md:px-8 md:py-6">
-        <MobileSessionNav activeSessionId={activeSessionId} sessions={sessionEntries} />
+        <MobileSessionNav
+          activeSessionId={activeSessionId}
+          activeTitle={activeTitle}
+          sessions={sessionEntries}
+        />
         <AskHeader activeTitle={activeTitle} teamName={team?.name ?? active.teamName} />
         <div className="flex min-h-0 flex-1 flex-col">
           <ChatPane

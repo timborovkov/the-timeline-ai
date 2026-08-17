@@ -316,8 +316,9 @@ timestamp. A search field under New chat filters the visible history. New chat
 uses the shared ghost `Button`. Touch session lists keep archive visible.
 
 The Ask heading stays on one row. When a conversation is selected, its title
-sits beside the heading as truncated muted text. Session counts do not appear
-in the header.
+sits beside the heading as truncated muted text. The mobile session summary
+uses that same resolved title, including deep-linked chats outside the recent
+list. Session counts do not appear in the header.
 
 The web Ask surface is the rich research view: answers may be thorough and use
 sections, lists, or tables, while inline citations remain inspectable links to
@@ -589,3 +590,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-16 | Unified workspace collection density | Replaces stacked form chrome and card grids with compact headers, one filter toolbar, 44px rows, semantic status glyphs, optimistic metadata triggers, and contextual selection without changing domain behavior. |
 | 2026-08-17 | Dense Ask session history | Reveals archive on hover/focus, shows relative last-activity age with a timestamp title, and uses a short centered hairline instead of a persistent trash column. |
 | 2026-08-17 | Ask session search and title | Filters chat history from the session rail and shows the selected title beside Ask instead of a session count. |
+| 2026-08-17 | Ask mobile session title | Reuses the resolved conversation title in the mobile session summary, including deep-linked chats outside the recent list. |
