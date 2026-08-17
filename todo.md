@@ -161,6 +161,11 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       calendar series, and timeline moments; add Home preview, Work management,
       detail/list/search controls, accessible reordering, visibility-safe
       restoration, merge/deletion handling, and explicit-intent Ask tools.
+- [x] U8 — Collection density, mutation toasts, and view-only approval
+      previews: Linear-style optimistic rows, selection-bar bulk actions,
+      live object/event diffs, title-first calendar chips, and the same
+      toolbar/button/toast/skeleton contract on Approvals, Calendar,
+      Connections, Team, Meetings, Timeline, and remaining work surfaces.
 
 ## Workspace Reconciliation
 

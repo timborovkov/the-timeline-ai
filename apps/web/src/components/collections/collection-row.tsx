@@ -2,6 +2,8 @@ import type { ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
 
+const ROW_ACTIVATE_IGNORE = 'a, button, input, textarea, select, label, [data-row-ignore]';
+
 export function CollectionRow({
   leading,
   title,
@@ -9,6 +11,7 @@ export function CollectionRow({
   metadata,
   actions,
   selected = false,
+  onActivate,
   className,
 }: {
   leading?: ReactNode;
@@ -17,6 +20,7 @@ export function CollectionRow({
   metadata?: ReactNode;
   actions?: ReactNode;
   selected?: boolean;
+  onActivate?: () => void;
   className?: string;
 }) {
   return (
@@ -24,8 +28,19 @@ export function CollectionRow({
       className={cn(
         'group/collection-row grid min-h-11 min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border-b border-border/80 px-2 transition-[background-color,border-color] duration-150 last:border-b-0 hover:bg-surface focus-within:bg-surface motion-reduce:transition-none sm:px-3',
         selected && 'bg-signal-soft shadow-[inset_2px_0_0_var(--color-signal)]',
+        onActivate && 'cursor-pointer',
         className,
       )}
+      onClick={
+        onActivate
+          ? (event) => {
+              const target = event.target;
+              if (!(target instanceof Element)) return;
+              if (target.closest(ROW_ACTIVATE_IGNORE)) return;
+              onActivate();
+            }
+          : undefined
+      }
     >
       <div className="flex min-h-10 shrink-0 items-center">{leading}</div>
       <div className="flex min-w-0 flex-col justify-center py-1 sm:flex-row sm:items-center sm:gap-3">

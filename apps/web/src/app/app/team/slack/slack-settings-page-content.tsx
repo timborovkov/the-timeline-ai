@@ -22,7 +22,7 @@ import { PageHeader } from '@/components/page-header';
 import { TechnicalDetails } from '@/components/technical-details';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { SettingsSection } from '@/components/section-heading';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -187,20 +187,14 @@ export function SlackSettingsPageView({ model }: { model: SlackSettingsViewModel
       />
 
       {!model.configured ? (
-        <Card className="rounded-md">
-          <CardContent className="py-4 text-sm text-muted-foreground">
+        <p className="text-sm text-fg-muted">
             Set <code className="font-mono">SLACK_CLIENT_ID</code>,{' '}
             <code className="font-mono">SLACK_CLIENT_SECRET</code>, and{' '}
             <code className="font-mono">SLACK_SIGNING_SECRET</code> to enable Slack.
-          </CardContent>
-        </Card>
+          </p>
       ) : null}
 
-      <Card className="rounded-md">
-        <CardHeader>
-          <CardTitle as="h2">Workspace install</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
+      <SettingsSection title="Workspace install">
           {model.install ? (
             <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0 flex-1 space-y-2">
@@ -236,29 +230,19 @@ export function SlackSettingsPageView({ model }: { model: SlackSettingsViewModel
               ) : null}
             </div>
           )}
-        </CardContent>
-      </Card>
+        </SettingsSection>
 
-      <Card className="rounded-md">
-        <CardHeader>
-          <CardTitle as="h2">Your Slack identity</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <SettingsSection title="Your Slack identity">
           <p className="text-sm text-muted-foreground">
             Linking lets Slack DMs route to this team and lets /ask run with your personal identity.
           </p>
           <Button asChild variant="outline" size="sm">
             <Link href="/api/slack/user-link/start">Connect identity</Link>
           </Button>
-        </CardContent>
-      </Card>
+        </SettingsSection>
 
       {model.isAdmin && model.install ? (
-        <Card className="rounded-md">
-          <CardHeader>
-            <CardTitle as="h2">Bind a conversation</CardTitle>
-          </CardHeader>
-          <CardContent>
+        <SettingsSection title="Bind a conversation">
             <form action={bindSlackConversationAction} className="flex gap-2">
               <label className="sr-only" htmlFor="slack-conversation-id">
                 Conversation to bind
@@ -287,15 +271,10 @@ export function SlackSettingsPageView({ model }: { model: SlackSettingsViewModel
               Channel capture is source-owned by the person who binds it. Sender context is still
               preserved for every message.
             </p>
-          </CardContent>
-        </Card>
+          </SettingsSection>
       ) : null}
 
-      <Card className="rounded-md">
-        <CardHeader>
-          <CardTitle as="h2">Bound conversations</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <SettingsSection title="Bound conversations">
           {model.bindings.length === 0 ? (
             <p className="text-sm text-muted-foreground">No Slack conversations bound yet.</p>
           ) : (
@@ -337,14 +316,9 @@ export function SlackSettingsPageView({ model }: { model: SlackSettingsViewModel
               ))}
             </ul>
           )}
-        </CardContent>
-      </Card>
+        </SettingsSection>
 
-      <Card className="rounded-md">
-        <CardHeader>
-          <CardTitle as="h2">Linked Slack users</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <SettingsSection title="Linked Slack users">
           {model.linkedSlackUsers.length === 0 ? (
             <p className="text-sm text-muted-foreground">No Slack identities linked yet.</p>
           ) : (
@@ -374,8 +348,7 @@ export function SlackSettingsPageView({ model }: { model: SlackSettingsViewModel
               })}
             </ul>
           )}
-        </CardContent>
-      </Card>
+        </SettingsSection>
     </div>
   );
 }

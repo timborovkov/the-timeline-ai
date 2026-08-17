@@ -19,7 +19,7 @@ export default function WorkLoading() {
       <div className="space-y-6" aria-busy="true" aria-label="Loading work">
         <h1 className="sr-only">Work</h1>
         <div aria-hidden="true">
-          <PageHeaderSkeleton />
+          <PageHeaderSkeleton variant="collection" />
         </div>
         <WorkSubnav current={current} />
         <div

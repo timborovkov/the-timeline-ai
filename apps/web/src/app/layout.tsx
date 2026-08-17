@@ -148,7 +148,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         />
         <ThemeProvider>
           {children}
-          <Toaster richColors />
+          <Toaster />
         </ThemeProvider>
       </body>
     </html>

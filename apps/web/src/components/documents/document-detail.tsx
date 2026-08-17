@@ -8,7 +8,7 @@ import { Download, EyeOff, FileText, Link2, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useId, useState, useTransition } from 'react';
-import { toast } from 'sonner';
+import { toastMutation } from '@/lib/mutation-toast';
 
 import type { ReactNode } from 'react';
 
@@ -22,11 +22,11 @@ import { ContextualAskLink } from '@/components/chat/contextual-ask-link';
 import { DocumentPreview } from '@/components/documents/document-preview';
 import { EvidenceLink } from '@/components/evidence-link';
 import { StatusBadge } from '@/components/status-badge';
+import { SectionHeading } from '@/components/section-heading';
 import { TechnicalDetails } from '@/components/technical-details';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { statusLabel } from '@/lib/status-labels';
 
 interface VersionItem {
@@ -142,10 +142,16 @@ export function DocumentDetail({
       updatedAt: new Date().toISOString(),
     });
     startTransition(async () => {
-      const res = await renameDocumentAction({ id: currentDocument.id, name: trimmedName });
+      const res = await toastMutation(
+        renameDocumentAction({ id: currentDocument.id, name: trimmedName }),
+        {
+          loading: 'Renaming document',
+          success: `Renamed ${trimmedName}`,
+          error: 'Rename failed',
+        },
+      );
       if (!res.ok) {
         setOptimisticRename(previousRename);
-        toast.error(res.error ?? 'Rename failed');
       } else {
         router.refresh();
       }
@@ -161,10 +167,12 @@ export function DocumentDetail({
     });
     if (!confirmed) return;
     startTransition(async () => {
-      const res = await deleteDocumentAction(currentDocument.id);
-      if (!res.ok) toast.error(res.error ?? 'Delete failed');
-      else {
-        toast.success('Document deleted');
+      const res = await toastMutation(deleteDocumentAction(currentDocument.id), {
+        loading: 'Deleting document',
+        success: 'Document deleted',
+        error: 'Delete failed',
+      });
+      if (res.ok) {
         router.push(
           currentDocument.folderId
             ? `/app/documents?folder=${currentDocument.folderId}`
@@ -177,9 +185,12 @@ export function DocumentDetail({
   async function onDownload(versionId: string): Promise<void> {
     setDownloading((prev) => (prev.includes(versionId) ? prev : [...prev, versionId]));
     try {
-      const res = await getDocumentDownloadUrlAction({ versionId });
+      const res = await toastMutation(getDocumentDownloadUrlAction({ versionId }), {
+        loading: 'Preparing download',
+        success: 'Download ready',
+        error: 'Failed to fetch download URL',
+      });
       if (!res.ok || !res.url) {
-        toast.error(res.error ?? 'Failed to fetch download URL');
         return;
       }
       window.open(res.url, '_blank', 'noopener,noreferrer');
@@ -202,8 +213,7 @@ export function DocumentDetail({
         ]}
       />
 
-      <Card>
-        <CardHeader className="flex flex-row items-start justify-between gap-4 max-sm:flex-col">
+      <section className="flex flex-row items-start justify-between gap-4 border-y border-border py-4 max-sm:flex-col">
           <div className="min-w-0 space-y-1">
             <h1
               className="max-w-full break-all text-2xl font-semibold leading-tight tracking-tight"
@@ -252,8 +262,7 @@ export function DocumentDetail({
               Delete
             </Button>
           </div>
-        </CardHeader>
-      </Card>
+      </section>
 
       {activeVersion ? (
         <CurrentVersionPanel
@@ -266,13 +275,8 @@ export function DocumentDetail({
         />
       ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle as="h2" className="text-base">
-            Version history
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+      <section className="space-y-3 border-y border-border py-4">
+        <SectionHeading>Version history</SectionHeading>
           <ul className="divide-y divide-border">
             {versions.map((v) => {
               const highlight = requestedVersion === v.version;
@@ -342,8 +346,7 @@ export function DocumentDetail({
               <li className="py-6 text-center text-sm text-muted-foreground">No versions yet</li>
             )}
           </ul>
-        </CardContent>
-      </Card>
+      </section>
       {dialog.node}
     </div>
   );
@@ -374,12 +377,10 @@ function CurrentVersionPanel({
       ? 'Manual upload'
       : `${document.provenance.source.replace(/_/g, ' ')} capture`;
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-start justify-between gap-4 max-sm:flex-col">
+    <section className="space-y-3 border-y border-border py-4">
+      <div className="flex flex-row items-start justify-between gap-4 max-sm:flex-col">
         <div>
-          <CardTitle as="h2" className="text-base">
-            {isCurrentVersion ? 'Current version' : 'Selected version'}
-          </CardTitle>
+          <SectionHeading>{isCurrentVersion ? 'Current version' : 'Selected version'}</SectionHeading>
           <p className="mt-1 text-xs text-muted-foreground">
             v{String(version.version)} · {formatBytes(version.byteSize)} ·{' '}
             {version.contentType ?? 'unknown'} · {new Date(version.createdAt).toLocaleString()}
@@ -396,8 +397,7 @@ function CurrentVersionPanel({
           <Download className="mr-1 size-3.5" />
           {downloading ? 'Opening…' : 'Download'}
         </Button>
-      </CardHeader>
-      <CardContent>
+      </div>
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
           <div className="min-w-0">
             {kind ? (
@@ -484,8 +484,7 @@ function CurrentVersionPanel({
             ) : null}
           </aside>
         </div>
-      </CardContent>
-    </Card>
+    </section>
   );
 }
 

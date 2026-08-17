@@ -19,7 +19,7 @@ import { TechnicalDetails } from '@/components/technical-details';
 import { GenerateGroupTokenForm, GeneratePersonalTokenForm } from '@/components/telegram-forms';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { SettingsSection } from '@/components/section-heading';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -121,54 +121,36 @@ export default async function TelegramSettingsPage() {
       />
 
       {!webhookConfigured ? (
-        <Card>
-          <CardContent className="py-4 text-sm text-muted-foreground">
-            <p>
-              Telegram is not configured in this environment. Set{' '}
-              <code className="font-mono">TELEGRAM_BOT_TOKEN</code> and{' '}
-              <code className="font-mono">TELEGRAM_WEBHOOK_SECRET</code> and register the webhook
-              (see <code className="font-mono">docs/setup/telegram.md</code>). Link tokens still
-              generate, but Telegram will not deliver messages until the webhook is live.
-            </p>
-          </CardContent>
-        </Card>
+        <p className="text-sm text-fg-muted">
+          Telegram is not configured in this environment. Set{' '}
+          <code className="font-mono">TELEGRAM_BOT_TOKEN</code> and{' '}
+          <code className="font-mono">TELEGRAM_WEBHOOK_SECRET</code> and register the webhook (see{' '}
+          <code className="font-mono">docs/setup/telegram.md</code>). Link tokens still generate,
+          but Telegram will not deliver messages until the webhook is live.
+        </p>
       ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle as="h2">Link a personal DM</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
+      <SettingsSection title="Link a personal DM">
           <p className="text-sm text-muted-foreground">
             Generate a single-use token, then DM the bot{' '}
             <code className="font-mono">/link &lt;token&gt;</code>. 15-minute TTL.
           </p>
           <GeneratePersonalTokenForm botUsername={botUsername} />
-        </CardContent>
-      </Card>
+        </SettingsSection>
 
       {isAdmin ? (
-        <Card>
-          <CardHeader>
-            <CardTitle as="h2">Bind a group chat</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
+        <SettingsSection title="Bind a group chat">
             <p className="text-sm text-muted-foreground">
               Add the bot to the group with the deep-link, or have an admin run{' '}
               <code className="font-mono">/link &lt;token&gt;</code> inside the group. Group binding
               lets everyone in the group capture messages and use /ask against team-visible history.
             </p>
             <GenerateGroupTokenForm botUsername={botUsername} />
-          </CardContent>
-        </Card>
+          </SettingsSection>
       ) : null}
 
       {activeTokens.length > 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle as="h2">Pending tokens</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
+        <SettingsSection title="Pending tokens">
             <p className="text-xs text-muted-foreground">
               Token values are only shown once, when you generate them. Lost a token? Revoke it and
               generate a new one.
@@ -205,15 +187,10 @@ export default async function TelegramSettingsPage() {
                 </li>
               ))}
             </ul>
-          </CardContent>
-        </Card>
+          </SettingsSection>
       ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle as="h2">Bound group chats</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <SettingsSection title="Bound group chats">
           {bindings.length === 0 ? (
             <p className="text-sm text-muted-foreground">No groups bound yet.</p>
           ) : (
@@ -257,14 +234,9 @@ export default async function TelegramSettingsPage() {
               ))}
             </ul>
           )}
-        </CardContent>
-      </Card>
+        </SettingsSection>
 
-      <Card>
-        <CardHeader>
-          <CardTitle as="h2">Linked Telegram users</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <SettingsSection title="Linked Telegram users">
           {linkedTgUsers.length === 0 ? (
             <p className="text-sm text-muted-foreground">No Telegram users linked yet.</p>
           ) : (
@@ -292,8 +264,7 @@ export default async function TelegramSettingsPage() {
               })}
             </ul>
           )}
-        </CardContent>
-      </Card>
+        </SettingsSection>
     </div>
   );
 }

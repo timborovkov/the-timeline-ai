@@ -12,8 +12,6 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  Clock,
-  Pencil,
   Plus,
   Search,
   Trash2,
@@ -65,6 +63,7 @@ import { ItemActionGroup } from '@/components/ui/item-actions';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { statusLabel } from '@/lib/status-labels';
+import { toastMutation } from '@/lib/mutation-toast';
 import { errorMessage } from '@/lib/utils';
 
 type CalendarViewMode = 'month' | 'week' | 'day';
@@ -656,9 +655,15 @@ function useCalendarViewModel({
       dispatchCalendarUi({ saveState: 'saving', open: false });
       dispatchEventOverlay({ type: 'upsert', event: optimisticEvent });
       try {
-        const result = editing
-          ? await updateCalendarEventAction({ id: editing.id, ...input })
-          : await createCalendarEventAction(input);
+        const result = await toastMutation(
+          editing
+            ? updateCalendarEventAction({ id: editing.id, ...input })
+            : createCalendarEventAction(input),
+          {
+            loading: editing ? 'Saving event' : 'Creating event',
+            success: editing ? `Saved ${title}` : `Created ${title}`,
+          },
+        );
         if (!result.ok) {
           throw new Error(result.error ?? 'Failed to save event.');
         }
@@ -694,9 +699,12 @@ function useCalendarViewModel({
   function remove() {
     if (!editing) return;
     startTransition(async () => {
-      const result = await deleteCalendarEventAction(editing.id, {
-        recurrenceEditMode: draft.recurrenceEditMode,
-      });
+      const result = await toastMutation(
+        deleteCalendarEventAction(editing.id, {
+          recurrenceEditMode: draft.recurrenceEditMode,
+        }),
+        { loading: 'Deleting event', success: 'Event deleted' },
+      );
       if (!result.ok) {
         dispatchCalendarUi({ error: result.error ?? 'Failed to delete event.' });
         return;
@@ -767,8 +775,12 @@ function CalendarViewLayout({ model }: { model: ReturnType<typeof useCalendarVie
         eventsByDay={model.eventsByDay}
         timezone={model.timezone}
         today={model.currentToday}
+        editingId={model.editing?.id ?? null}
         onCreate={model.openCreate}
         onEdit={model.openEdit}
+        onOpenDay={(day) => {
+          model.push('day', day);
+        }}
       />
       <CalendarEventList
         events={model.displayEventListEvents}
@@ -1097,7 +1109,7 @@ function CalendarToolbar({
             <Button
               key={view}
               type="button"
-              variant={mode === view ? 'secondary' : 'outline'}
+              variant={mode === view ? 'secondary' : 'ghost'}
               size="sm"
               aria-pressed={mode === view}
               onClick={() => {
@@ -1112,7 +1124,7 @@ function CalendarToolbar({
           <legend className="sr-only">Calendar navigation</legend>
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="sm"
             onClick={() => {
               onMove(-1);
@@ -1123,7 +1135,7 @@ function CalendarToolbar({
           </Button>
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="sm"
             onClick={() => {
               onPush(mode, today);
@@ -1133,7 +1145,7 @@ function CalendarToolbar({
           </Button>
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="sm"
             onClick={() => {
               onMove(1);
@@ -1179,8 +1191,10 @@ function CalendarBody({
   eventsByDay,
   timezone,
   today,
+  editingId,
   onCreate,
   onEdit,
+  onOpenDay,
 }: {
   mode: CalendarViewMode;
   gridCols: string;
@@ -1189,8 +1203,10 @@ function CalendarBody({
   eventsByDay: Map<string, CalendarEvent[]>;
   timezone: string;
   today: Temporal.PlainDate;
+  editingId: string | null;
   onCreate: (day: Temporal.PlainDate) => void;
   onEdit: (event: CalendarEvent) => void;
+  onOpenDay: (day: Temporal.PlainDate) => void;
 }) {
   const calendarLabel = `Calendar for ${titleFor(mode, anchor)}`;
   if (mode === 'day') {
@@ -1203,8 +1219,10 @@ function CalendarBody({
           events={eventsByDay.get(anchor.toString()) ?? []}
           timezone={timezone}
           today={today}
+          editingId={editingId}
           onCreate={onCreate}
           onEdit={onEdit}
+          onOpenDay={onOpenDay}
         />
       </section>
     );
@@ -1247,8 +1265,10 @@ function CalendarBody({
               events={eventsByDay.get(day.toString()) ?? []}
               timezone={timezone}
               today={today}
+              editingId={editingId}
               onCreate={onCreate}
               onEdit={onEdit}
+              onOpenDay={onOpenDay}
             />
           )),
         ];
@@ -1611,8 +1631,10 @@ function DayCell({
   events,
   timezone,
   today,
+  editingId,
   onCreate,
   onEdit,
+  onOpenDay,
 }: {
   day: Temporal.PlainDate;
   anchor: Temporal.PlainDate;
@@ -1620,8 +1642,10 @@ function DayCell({
   events: CalendarEvent[];
   timezone: string;
   today: Temporal.PlainDate;
+  editingId: string | null;
   onCreate: (day: Temporal.PlainDate) => void;
   onEdit: (event: CalendarEvent) => void;
+  onOpenDay: (day: Temporal.PlainDate) => void;
 }) {
   const muted = mode === 'month' && day.month !== anchor.month;
   const isToday = Temporal.PlainDate.compare(day, today) === 0;
@@ -1631,11 +1655,14 @@ function DayCell({
     day: 'numeric',
     year: 'numeric',
   });
+  const monthCap = 3;
+  const visibleEvents = mode === 'month' && events.length > monthCap ? events.slice(0, monthCap) : events;
+  const overflow = mode === 'month' ? Math.max(0, events.length - monthCap) : 0;
   return (
     <div
-      className={`min-w-0 bg-background p-1 sm:min-h-28 sm:p-2 ${isToday ? 'ring-2 ring-inset ring-signal' : ''}`}
+      className={`min-w-0 bg-background p-1 sm:min-h-28 ${isToday ? 'ring-2 ring-inset ring-signal' : ''}`}
     >
-      <div className="mb-2 flex items-center justify-between gap-2">
+      <div className="mb-1 flex items-center justify-between gap-1">
         <button
           type="button"
           aria-label={`Create event on ${dayLabel}`}
@@ -1648,48 +1675,66 @@ function DayCell({
         >
           {day.day}
         </button>
-        <span className="text-[10px] text-muted-foreground">W{day.weekOfYear}</span>
       </div>
-      <div className="space-y-1">
-        {events.map((event) => (
-          <button
-            key={event.id}
-            type="button"
-            disabled={event.redacted || event.id.startsWith('optimistic-')}
-            onClick={() => {
-              onEdit(event);
-            }}
-            className={`block w-full min-w-0 overflow-hidden rounded-sm px-2 py-1 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
-              event.redacted
-                ? 'bg-muted text-muted-foreground italic'
-                : event.showAs === 'tentative'
-                  ? 'border border-warning/40 bg-warning/10 text-foreground hover:bg-warning/15'
-                  : event.allDay
-                    ? 'bg-signal/15 text-signal hover:bg-signal/25'
-                    : 'bg-primary/10 text-foreground hover:bg-primary/15'
-            } disabled:opacity-70`}
-          >
-            <span className="flex min-w-0 items-center gap-1">
-              {event.allDay ? null : <Clock className="size-3" aria-hidden="true" />}
-              {event.showAs === 'tentative' ? <span className="text-[11px]">Tentative</span> : null}
-              {event.rrule || event.recurringParentId ? (
-                <span className="font-mono text-[10px]" aria-label="Recurring">
-                  R
-                </span>
-              ) : null}
-              <span className="min-w-0 truncate">
-                {event.allDay
-                  ? event.redacted
-                    ? 'Busy'
-                    : event.title
-                  : `${formatTime(event, timezone)} ${event.redacted ? 'Busy' : event.title}`}
+      <div className="space-y-0.5">
+        {visibleEvents.map((event) => {
+          const title = event.redacted ? 'Busy' : event.title;
+          const selected = editingId === event.id;
+          return (
+            <button
+              key={event.id}
+              type="button"
+              disabled={event.redacted || event.id.startsWith('optimistic-')}
+              onClick={() => {
+                onEdit(event);
+              }}
+              className={`block w-full min-w-0 overflow-hidden rounded-sm px-1 py-0.5 text-left text-[11px] leading-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                event.redacted
+                  ? 'bg-muted text-muted-foreground italic'
+                  : event.showAs === 'tentative'
+                    ? 'bg-warning/10 text-foreground hover:bg-warning/15'
+                    : event.allDay
+                      ? 'bg-signal/15 text-signal hover:bg-signal/25'
+                      : 'bg-primary/10 text-foreground hover:bg-primary/15'
+              } ${selected ? 'ring-1 ring-signal' : ''} disabled:opacity-70`}
+            >
+              <span className="flex min-w-0 items-center gap-1">
+                {event.showAs === 'tentative' ? (
+                  <span
+                    className="size-1.5 shrink-0 rounded-full bg-warning"
+                    aria-label={
+                      event.rrule || event.recurringParentId ? 'Tentative recurring' : 'Tentative'
+                    }
+                  />
+                ) : event.rrule || event.recurringParentId ? (
+                  <span
+                    className="size-1.5 shrink-0 rounded-full bg-current opacity-50"
+                    aria-label="Recurring"
+                  />
+                ) : (
+                  <span className="size-1.5 shrink-0 rounded-full bg-current opacity-40" aria-hidden="true" />
+                )}
+                {event.allDay ? null : (
+                  <span className="shrink-0 font-mono text-[10px] tabular-nums text-fg-dim">
+                    {formatTime(event, timezone)}
+                  </span>
+                )}
+                <span className="min-w-0 truncate">{title}</span>
               </span>
-              {!event.redacted ? (
-                <Pencil className="hidden size-3 shrink-0 opacity-50 sm:block" aria-hidden="true" />
-              ) : null}
-            </span>
+            </button>
+          );
+        })}
+        {overflow > 0 ? (
+          <button
+            type="button"
+            onClick={() => {
+              onOpenDay(day);
+            }}
+            className="w-full truncate px-1 text-left text-[11px] text-fg-dim hover:text-fg"
+          >
+            +{overflow} more
           </button>
-        ))}
+        ) : null}
       </div>
     </div>
   );

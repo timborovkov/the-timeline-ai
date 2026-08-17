@@ -5,7 +5,6 @@ import { useEffect, useReducer } from 'react';
 
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
@@ -210,54 +209,49 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
       </div>
 
       {minted ? (
-        <Card className="border-signal/40">
-          <CardContent className="space-y-3 pt-4">
-            <div>
-              <div className="text-sm font-medium">Copy the new URL for {minted.webhookName}</div>
-              <p className="text-sm text-fg-muted">
-                This is the only time the secret URL is shown.
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <code className="flex-1 break-all rounded-sm border border-signal/40 bg-surface-2 px-2 py-1.5 font-mono text-xs">
-                {endpointFor(minted.plaintext)}
-              </code>
-              <Button
-                size="sm"
-                onClick={() => {
-                  copyToClipboard(endpointFor(minted.plaintext));
-                }}
-              >
-                Copy
-              </Button>
-            </div>
+        <div className="space-y-3 border-y border-border py-4">
+          <div>
+            <div className="text-sm font-medium">Copy the new URL for {minted.webhookName}</div>
+            <p className="text-sm text-fg-muted">This is the only time the secret URL is shown.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 break-all rounded-sm border border-signal/40 bg-surface-2 px-2 py-1.5 font-mono text-xs">
+              {endpointFor(minted.plaintext)}
+            </code>
             <Button
               size="sm"
-              variant="ghost"
               onClick={() => {
-                dispatch({ type: 'minted', minted: null });
+                copyToClipboard(endpointFor(minted.plaintext));
               }}
             >
-              I&apos;ve copied it, dismiss
+              Copy
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              dispatch({ type: 'minted', minted: null });
+            }}
+          >
+            I&apos;ve copied it, dismiss
+          </Button>
+        </div>
       ) : null}
 
       {showCreate ? (
-        <Card>
-          <CardContent className="space-y-4 pt-4">
-            <div className="space-y-1">
-              <Label htmlFor="ingest-webhook-name">Name</Label>
-              <Input
-                id="ingest-webhook-name"
-                value={name}
-                onChange={(e) => {
-                  dispatch({ type: 'name', name: e.target.value });
-                }}
-                placeholder="Pipedrive webhook"
-              />
-            </div>
+        <div className="space-y-4 border-y border-border py-4">
+          <div className="space-y-1">
+            <Label htmlFor="ingest-webhook-name">Name</Label>
+            <Input
+              id="ingest-webhook-name"
+              value={name}
+              onChange={(e) => {
+                dispatch({ type: 'name', name: e.target.value });
+              }}
+              placeholder="Pipedrive webhook"
+            />
+          </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="flex items-center gap-2 text-sm">
                 <input
@@ -289,16 +283,13 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
             <Button size="sm" disabled={busy || !name.trim()} onClick={() => void create()}>
               {busy ? 'Creating…' : 'Create webhook'}
             </Button>
-          </CardContent>
-        </Card>
+        </div>
       ) : null}
 
       {webhooks.length === 0 ? (
-        <div className="rounded-lg border border-border bg-surface p-4 text-sm text-fg-muted">
-          No ingest webhooks yet.
-        </div>
+        <p className="border-y border-border py-4 text-sm text-fg-muted">No ingest webhooks yet.</p>
       ) : (
-        <ul className="divide-y divide-border rounded-md border border-border bg-surface">
+        <ul className="divide-y divide-border border-y border-border">
           {webhooks.map((webhook) => {
             const credential = webhook.credentials[0];
             return (

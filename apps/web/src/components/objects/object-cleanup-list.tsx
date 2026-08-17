@@ -4,7 +4,7 @@ import { Archive, GitMerge, SquareCheckBig } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useReducer, useState, useTransition } from 'react';
-import { toast } from 'sonner';
+import { toastMutation } from '@/lib/mutation-toast';
 
 import type * as objects from '@timeline/shared/objects/types';
 
@@ -374,15 +374,17 @@ function ObjectCollectionItem({
         ),
       },
     }));
-    void updateObjectAction({
-      id: object.id,
-      [key]: value instanceof Date ? value.toISOString() : value,
-    })
+    void toastMutation(
+      updateObjectAction({
+        id: object.id,
+        [key]: value instanceof Date ? value.toISOString() : value,
+      }),
+      { loading: 'Saving field', success: 'Saved', error: 'Update failed' },
+    )
       .then((result) => {
         if (result.error) {
           setOverlays((existing) => ({ ...existing, [key]: previous }));
           setError(result.error ?? 'Update failed');
-          toast.error(result.error ?? 'Update failed');
           return;
         }
         router.refresh();
@@ -390,7 +392,6 @@ function ObjectCollectionItem({
       .catch(() => {
         setOverlays((existing) => ({ ...existing, [key]: previous }));
         setError('Update failed');
-        toast.error('Update failed');
       })
       .finally(() => {
         setSaving(null);

@@ -4,7 +4,7 @@ import { documentKindLabel, truncateFilenameMiddle } from '@timeline/shared/docu
 import { FileText, Image as ImageIcon, Link2, Upload } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMemo, useReducer, useRef, useState, useTransition } from 'react';
-import { toast } from 'sonner';
+import { toastMutation } from '@/lib/mutation-toast';
 
 import type { ReactNode } from 'react';
 
@@ -256,7 +256,14 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
         const message =
           'Could not load older captured files. The files already shown remain available. Check your connection, then try again.';
         setLoadMoreError(message);
-        toast.error('Could not load older captured files');
+        await toastMutation(
+          Promise.resolve({ error: 'Could not load older captured files' }),
+          {
+            loading: 'Loading captured files',
+            success: 'Loaded captured files',
+            error: 'Could not load older captured files',
+          },
+        );
       }
     });
   }
@@ -670,22 +677,28 @@ function PromoteDialog({
     setPromotionError(null);
     startTransition(async () => {
       try {
-        const result = await promoteCapturedFileAction({
-          id: file.id,
-          name: form.name,
-          folderId: form.folderId || null,
-          visibility: form.visibility,
-          visibilityUserIds: form.visibility === 'specific_users' ? form.visibilityUserIds : [],
-        });
+        const result = await toastMutation(
+          promoteCapturedFileAction({
+            id: file.id,
+            name: form.name,
+            folderId: form.folderId || null,
+            visibility: form.visibility,
+            visibilityUserIds: form.visibility === 'specific_users' ? form.visibilityUserIds : [],
+          }),
+          {
+            loading: `Promoting ${form.name}`,
+            success: `Promoted ${form.name} to documents`,
+            error: 'Could not promote captured file',
+          },
+        );
         if (!result.ok || !result.documentId) {
-          throw new Error(result.error ?? 'Promotion failed');
+          setPromotionError(result.error ?? 'Promotion failed');
+          return;
         }
-        toast.success('Promoted to documents');
         router.push(`/app/documents/${result.documentId}`);
       } catch (error) {
         const details = error instanceof Error ? error.message : undefined;
         setPromotionError(details ?? 'Promotion failed');
-        toast.error('Could not promote captured file');
       }
     });
   }

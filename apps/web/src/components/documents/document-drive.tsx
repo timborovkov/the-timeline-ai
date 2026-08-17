@@ -37,6 +37,8 @@ import {
   createFolderAction,
   deleteFolderAction,
   finalizeDocumentVersionAction,
+  deleteFolderAction,
+  finalizeDocumentVersionAction,
   requestDocumentUploadAction,
 } from '@/app/actions/documents';
 import { CollectionGroup } from '@/components/collections/collection-group';
@@ -48,6 +50,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { queryKeys } from '@/lib/query-keys';
+import { toastMutation } from '@/lib/mutation-toast';
 import { type DocumentListPage, useDocumentListQuery } from '@/lib/use-paginated-queries';
 
 const LIST_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
@@ -311,6 +314,7 @@ export function DocumentDrive({
       upload: { id: uploadId, name: file.name, phase: 'preparing' },
     });
     let optimisticDocumentId: string | null = null;
+    const toastId = toast.loading(`Uploading ${file.name}`);
     try {
       const req = await requestDocumentUploadAction({
         folderId: currentFolderId,
@@ -322,13 +326,13 @@ export function DocumentDrive({
       });
       if (!req.ok || !req.url || !req.versionId) {
         const message = req.error ?? 'Upload failed';
-        toast.error(message);
+        toast.error(message, { id: toastId });
         failUpload(uploadId, message);
         return;
       }
       if (req.maxBytes && file.size > req.maxBytes) {
         const message = `File exceeds ${String(Math.round(req.maxBytes / 1024 / 1024))} MiB limit`;
-        toast.error(message);
+        toast.error(message, { id: toastId });
         failUpload(uploadId, message);
         return;
       }
@@ -370,7 +374,7 @@ export function DocumentDrive({
       if (!put.ok) {
         if (optimisticDocumentId) removeOptimisticDocument(optimisticDocumentId);
         const message = `Storage upload failed (${String(put.status)})`;
-        toast.error(message);
+        toast.error(message, { id: toastId });
         failUpload(uploadId, message);
         return;
       }
@@ -379,11 +383,11 @@ export function DocumentDrive({
       if (!fin.ok) {
         if (optimisticDocumentId) removeOptimisticDocument(optimisticDocumentId);
         const message = fin.error ?? 'Finalize failed';
-        toast.error(message);
+        toast.error(message, { id: toastId });
         failUpload(uploadId, message);
         return;
       }
-      toast.success(`Uploaded ${file.name}`);
+      toast.success(`Uploaded ${file.name}`, { id: toastId });
       clearUpload(uploadId);
       router.refresh();
     } catch (err) {
@@ -394,7 +398,7 @@ export function DocumentDrive({
           : err instanceof Error
             ? err.message
             : 'Upload error';
-      toast.error(message);
+      toast.error(message, { id: toastId });
       failUpload(uploadId, message);
     }
   }
@@ -424,15 +428,21 @@ export function DocumentDrive({
     };
     dispatchDriveUi({ type: 'add-optimistic-folder', folder: optimisticFolder });
     startTransition(async () => {
-      const res = await createFolderAction({
-        name: trimmedName,
-        parentFolderId: currentFolderId,
-        visibility,
-        visibilityUserIds: visibility === 'specific_users' ? visibilityUserIds : [],
-      });
+      const res = await toastMutation(
+        createFolderAction({
+          name: trimmedName,
+          parentFolderId: currentFolderId,
+          visibility,
+          visibilityUserIds: visibility === 'specific_users' ? visibilityUserIds : [],
+        }),
+        {
+          loading: `Creating ${trimmedName}`,
+          success: `Created ${trimmedName}`,
+          error: 'Failed to create folder',
+        },
+      );
       if (!res.ok) {
         dispatchDriveUi({ type: 'remove-optimistic-folder', id: tempId });
-        toast.error(res.error ?? 'Failed to create folder');
       } else {
         const createdId = typeof res.id === 'string' ? res.id : null;
         if (createdId) {
@@ -453,10 +463,13 @@ export function DocumentDrive({
     if (!confirmed) return;
     dispatchDriveUi({ type: 'hide-folder', id });
     startTransition(async () => {
-      const res = await deleteFolderAction(id);
+      const res = await toastMutation(deleteFolderAction(id), {
+        loading: 'Deleting folder',
+        success: 'Folder deleted',
+        error: 'Delete failed',
+      });
       if (!res.ok) {
         dispatchDriveUi({ type: 'restore-folder', id });
-        toast.error(res.error ?? 'Delete failed');
       } else router.refresh();
     });
   }

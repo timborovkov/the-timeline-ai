@@ -3,7 +3,26 @@ import { Skeleton } from '@/components/ui/skeleton';
 /**
  * Quiet page-header skeleton matching title, subtitle, and optional metadata.
  */
-export function PageHeaderSkeleton() {
+export function PageHeaderSkeleton({
+  variant = 'default',
+}: {
+  variant?: 'default' | 'collection';
+}) {
+  if (variant === 'collection') {
+    return (
+      <div
+        className="flex min-h-12 items-center justify-between gap-3 border-b border-border py-2"
+        aria-busy="true"
+        aria-label="Loading"
+      >
+        <Skeleton className="h-7 w-36" />
+        <div className="flex gap-3">
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="h-3 w-12" />
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="space-y-2 py-1" aria-busy="true" aria-label="Loading">
       <Skeleton className="h-7 w-40" />
@@ -12,6 +31,26 @@ export function PageHeaderSkeleton() {
         <Skeleton className="h-3 w-16" />
         <Skeleton className="h-3 w-20" />
       </div>
+    </div>
+  );
+}
+
+export function CollectionRowsSkeleton({ count = 6 }: { count?: number }) {
+  return (
+    <div className="border-t border-border" aria-busy="true" aria-label="Loading">
+      {Array.from({ length: count }).map((_, index) => (
+        <div
+          key={index}
+          className="grid min-h-11 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border-b border-border/80 px-3"
+        >
+          <Skeleton className="size-4 rounded-sm" />
+          <div className="flex min-w-0 items-center gap-3">
+            <Skeleton className="h-4 w-2/5 max-w-xs" />
+            <Skeleton className="hidden h-3 w-24 sm:block" />
+          </div>
+          <Skeleton className="h-7 w-16 rounded-sm" />
+        </div>
+      ))}
     </div>
   );
 }

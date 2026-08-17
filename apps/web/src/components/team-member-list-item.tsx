@@ -1,5 +1,6 @@
 import type { TeamMemberInfo, TeamMemberRow } from '@/components/team-member-types';
 
+import { CollectionRow } from '@/components/collections/collection-row';
 import { MemberRoleForm, RemoveMemberForm } from '@/components/team-member-actions';
 import { Badge } from '@/components/ui/badge';
 import { ItemActionGroup } from '@/components/ui/item-actions';
@@ -24,30 +25,28 @@ export function TeamMemberListItem({
     isAdmin && member.userId !== currentUserId && (isOwner || member.role === 'member');
 
   return (
-    <li className="flex flex-col gap-3 py-3 sm:flex-row sm:items-start sm:justify-between">
-      <div className="min-w-0 flex-1">
-        <p className="break-words text-sm font-medium">{memberLabel}</p>
-        {user?.email ? <p className="break-all text-xs text-fg-muted">{user.email}</p> : null}
-      </div>
-      {canManageRole || canRemove ? (
-        <ItemActionGroup
-          label={`Actions for ${memberLabel}`}
-          className="flex-col items-stretch sm:items-end"
-        >
-          {canManageRole ? (
-            <MemberRoleForm
-              memberLabel={memberLabel}
-              memberRole={member.role}
-              userId={member.userId}
-            />
-          ) : (
-            <Badge variant="outline">{member.role}</Badge>
-          )}
-          {canRemove ? <RemoveMemberForm memberLabel={memberLabel} userId={member.userId} /> : null}
-        </ItemActionGroup>
-      ) : (
-        <Badge variant="outline">{member.role}</Badge>
-      )}
+    <li>
+      <CollectionRow
+        title={memberLabel}
+        context={user?.email ?? undefined}
+        metadata={<Badge variant="outline">{member.role}</Badge>}
+        actions={
+          canManageRole || canRemove ? (
+            <ItemActionGroup label={`Actions for ${memberLabel}`}>
+              {canManageRole ? (
+                <MemberRoleForm
+                  memberLabel={memberLabel}
+                  memberRole={member.role}
+                  userId={member.userId}
+                />
+              ) : null}
+              {canRemove ? (
+                <RemoveMemberForm memberLabel={memberLabel} userId={member.userId} />
+              ) : null}
+            </ItemActionGroup>
+          ) : undefined
+        }
+      />
     </li>
   );
 }

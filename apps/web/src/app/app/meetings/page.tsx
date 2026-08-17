@@ -192,22 +192,28 @@ export default async function MeetingsPage({
       <MeetingsViewNavigation tab={tab} />
 
       {tab === 'captures' ? (
-        <div id="invite-notetaker" className="scroll-mt-24">
-          <ScheduleMeetingBotForm
-            defaultVisibility={defaultRow.visibility}
-            defaultVisibilityUserIds={defaultRow.visibilityUserIds}
-            members={memberOptions}
-          />
-        </div>
+        <details className="border-y border-border py-2">
+          <summary className="cursor-pointer text-sm font-medium text-fg">Invite notetaker</summary>
+          <div id="invite-notetaker" className="scroll-mt-24 pt-3">
+            <ScheduleMeetingBotForm
+              defaultVisibility={defaultRow.visibility}
+              defaultVisibilityUserIds={defaultRow.visibilityUserIds}
+              members={memberOptions}
+            />
+          </div>
+        </details>
       ) : (
-        <div id="save-meeting" className="scroll-mt-24">
-          <SavedMeetingForm
-            defaultVisibility={defaultRow.visibility}
-            defaultVisibilityUserIds={defaultRow.visibilityUserIds}
-            defaultTimezone={calendarSettings.defaultTimezone}
-            members={memberOptions}
-          />
-        </div>
+        <details className="border-y border-border py-2">
+          <summary className="cursor-pointer text-sm font-medium text-fg">Save a meeting</summary>
+          <div id="save-meeting" className="scroll-mt-24 pt-3">
+            <SavedMeetingForm
+              defaultVisibility={defaultRow.visibility}
+              defaultVisibilityUserIds={defaultRow.visibilityUserIds}
+              defaultTimezone={calendarSettings.defaultTimezone}
+              members={memberOptions}
+            />
+          </div>
+        </details>
       )}
 
       <MeetingSearchControls
@@ -421,9 +427,18 @@ function SavedMeetingsSection({
                   </ItemActionGroup>
                 }
               />
-              <div className="border-b border-border/80 px-3 pb-2">
-                <EditSavedMeetingForm saved={saved} defaultTimezone={timezone} members={members} />
-              </div>
+              <details className="border-b border-border/80 px-3 py-2">
+                <summary className="cursor-pointer text-xs text-fg-dim hover:text-fg">
+                  Edit details
+                </summary>
+                <div className="pt-2">
+                  <EditSavedMeetingForm
+                    saved={saved}
+                    defaultTimezone={timezone}
+                    members={members}
+                  />
+                </div>
+              </details>
             </li>
           ))}
         </ul>

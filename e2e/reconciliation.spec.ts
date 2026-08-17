@@ -879,11 +879,12 @@ test.describe.serial('reconciliation dashboard', () => {
 
     const approval = page.locator('article').filter({ hasText: fixtures.approval.title });
     await expect(approval).toBeVisible();
-    await approval.getByText('Technical details').click();
-    await approval.getByRole('link', { name: 'Open processing record' }).click();
-    await expect(page).toHaveURL(
-      new RegExp(`/app/team/reconciliation/clusters/${fixtures.team.cluster}`),
-    );
+    await expect(approval.getByText('Technical details')).toHaveCount(0);
+    await expect(approval.getByText('Open processing record')).toHaveCount(0);
+    await approval.getByRole('button', { name: new RegExp(`Preview ${fixtures.approval.title}`) }).click();
+    await expect(page.getByText(/Proposed record|Current record/)).toBeVisible();
+
+    await page.goto(`/app/team/reconciliation/clusters/${fixtures.team.cluster}`);
     await expect(
       page.getByRole('heading', { name: fixtures.team.title, exact: true }),
     ).toBeVisible();
@@ -908,7 +909,7 @@ test.describe.serial('reconciliation dashboard', () => {
       .locator('article')
       .filter({ hasText: fixtures.approvalActions.acceptTitle });
     await expect(acceptApproval).toBeVisible();
-    await acceptApproval.getByRole('button', { name: 'Accept' }).click();
+    await acceptApproval.getByRole('button', { name: `Accept ${fixtures.approvalActions.acceptItemTitle}` }).click();
     await expect(page.getByText(fixtures.approvalActions.acceptItemTitle)).toHaveCount(0);
     await expect.poll(() => countEntitiesByName(fixtures.approvalActions.acceptItemTitle)).toBe(1);
     await expect
@@ -921,7 +922,7 @@ test.describe.serial('reconciliation dashboard', () => {
       .locator('article')
       .filter({ hasText: fixtures.approvalActions.rejectTitle });
     await expect(rejectApproval).toBeVisible();
-    await rejectApproval.getByRole('button', { name: 'Reject' }).click();
+    await rejectApproval.getByRole('button', { name: `Reject ${fixtures.approvalActions.rejectItemTitle}` }).click();
     await expect(page.getByText(fixtures.approvalActions.rejectItemTitle)).toHaveCount(0);
     await expect.poll(() => countEntitiesByName(fixtures.approvalActions.rejectItemTitle)).toBe(0);
     await expect
@@ -940,7 +941,9 @@ test.describe.serial('reconciliation dashboard', () => {
       .locator('article')
       .filter({ hasText: fixtures.approvalBulkPartial.title });
     await expect(approval).toBeVisible();
-    await approval.getByRole('button', { name: 'Accept all' }).click();
+    await approval.getByRole('checkbox', { name: `Select ${fixtures.approvalBulkPartial.taskTitle}` }).check();
+    await approval.getByRole('checkbox', { name: `Select ${fixtures.approvalBulkPartial.calendarTitle}` }).check();
+    await page.getByRole('button', { name: 'Accept', exact: true }).click();
 
     await expect(approval.getByText(fixtures.approvalBulkPartial.taskTitle)).toHaveCount(0);
     await expect(

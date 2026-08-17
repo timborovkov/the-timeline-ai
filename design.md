@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.1 · Quiet Archive collection density (2026-08-16). Replaces v2 Operational Archive.
+**Version:** v3.2 · Feedback, preview, and collection density (2026-08-17). Replaces v3.1 Quiet Archive collection density.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -59,6 +59,11 @@ next before seeing how the system represented it.
   use shadows. Shadows are reserved for menus, dialogs, sheets, and overlays.
 - Dashed borders are prohibited.
 - Dense rows are welcome, but metadata is subordinate to the human title.
+- Async mutations announce progress and outcome with a viewport-sticky toast.
+  Route banners are for durable page-level failures, not the result of a click
+  that already left the viewport.
+- Collection indexes, queues, and directories use `CollectionRow` density.
+  Nested card grids and three-column review layouts are not collection chrome.
 - No gradients, emoji as interface symbols, or extra chromatic accents in the
   authenticated product. The public landing concept diagram may use a single
   signal-colored sweep gradient for the capture → memory motion.
@@ -167,8 +172,19 @@ table.
   type cue, human title, compact context, metadata, and overflow. Mobile uses
   two lines: title plus context, then wrapping metadata. Non-board collections
   must never force horizontal viewport scrolling. Row actions use the shared
-  `ItemActionGroup` and `ItemOverflowMenu` primitives so item-owned controls
-  stay labeled, wrap without scrolling, and remain visible without hover.
+  `ItemActionGroup`, `ItemIconButton`, and `ItemOverflowMenu` primitives so
+  item-owned controls stay labeled, wrap without scrolling, and remain visible
+  without hover. Hover background is the row affordance. When a row opens a
+  preview or detail, clicking the row (except interactive children) does that;
+  a quiet icon button may repeat the same action. Do not add a large text
+  “Preview” button.
+- Row decision and utility actions are ghost icon buttons (32px), with an
+  accessible name and `title`. They are not filled or outline buttons. Accept,
+  Change, and Reject stay inline as one coordinated set. Destructive hover may
+  use danger color; the resting state stays quiet.
+- Bulk work uses selection, then `SelectionBar`. Do not mount a persistent
+  filled Accept-all / Reject-all bar. Checkboxes may fade in on desktop hover
+  or focus and stay visible while selection is active.
 - `EditableMetadata` is a quiet, borderless trigger with a minimum 40px hit
   target. Select-like changes save immediately and optimistically. Text and
   date changes commit with Apply or Enter and cancel with Escape. Failed saves
@@ -240,6 +256,39 @@ approval queue rows. Search, previews, approval cards, daily digests, and
 overdue notifications use the same vocabulary. REST, MCP, export, retrieval,
 embedding, and evidence payloads retain their raw ISO values.
 
+### Feedback
+
+Authenticated mutations use one quiet toast stack (`sonner` via `Toaster` in
+the root layout). Toasts are viewport-sticky, bottom-right, and limited to
+three visible at a time. They use the popover surface, hairline border, and
+the existing success / danger / muted tokens. Do not enable rich color
+toasts. Honor reduced motion.
+
+Use `toastMutation()` for async work:
+
+1. Show a loading toast with a spinner and a short gerund (“Accepting
+   proposal”, “Saving event”, “Uploading file”).
+2. Replace that same toast with success or error copy when the promise
+   settles. Do not leave a loading toast up after the work finishes.
+3. On success, prefer a concrete object title (“Accepted Review planning
+   workbook”) over a generic “Saved”.
+4. Offer Undo on the success toast only when a reverse mutation already
+   exists (pin, category, complete). Do not invent undo for irreversible
+   canonical writes such as accepting an approval.
+5. Optimistic lists may hide the row immediately (Linear-style). If the
+   mutation fails, restore the row and show the error toast. Do not also
+   mount a page-top banner for the same failure.
+6. Forms with an explicit Save control may keep inline field errors and a
+   local save state. They still toast the terminal success or failure so a
+   scrolled-away user sees the outcome.
+7. Durable route failures (load error, missing permission, empty required
+   evidence) stay on the page. Toasts do not replace `ErrorState`.
+
+Loading skeletons must mirror the live chrome: collection headers use the
+collection `PageHeaderSkeleton`, indexes use `CollectionRowsSkeleton`, and
+Timeline uses the current rail layout. Never show card-grid skeletons for a
+row collection.
+
 ### TechnicalDetails
 
 A native `<details>` with the summary “Technical details,” closed by default.
@@ -255,14 +304,14 @@ operable. Opening the evidence inspector shows a human source summary first.
 Exact timestamps, ownership/visibility internals, source IDs, payloads, and raw
 provider data sit inside the inspector’s `TechnicalDetails`.
 
-Pack-backed approvals show a compact “Evidence for this change · N sources”
-disclosure beneath each proposed item, using source, sender, timestamp, bounded
-excerpt, and a source-event link. Bundle evidence remains contextual. Raw IDs,
-pack fingerprints, ranks, relationship strengths, and visibility internals stay
-out of the default view. If visible required evidence changed after proposal
-creation, show a plain-language stale warning, disable Accept and Change, and
-keep Reject available. If required evidence is no longer visible or active, do
-not render the derived proposal at all.
+Pack-backed approvals show a compact “Why · N sources” disclosure on the
+collection row and the same citations inside the view-only preview. Bundle
+evidence remains contextual. Raw IDs, pack fingerprints, ranks, relationship
+strengths, and visibility internals stay out of the default view. If visible
+required evidence changed after proposal creation, show a plain-language stale
+warning, disable Accept and Change, and keep Reject available. If required
+evidence is no longer visible or active, do not render the derived proposal at
+all.
 
 ## Surface examples
 
@@ -297,7 +346,8 @@ dates, evidence quick view, and pagination remain. Exact capture and provider
 details move into the inspector. The default view ends at the current instant so
 materialized calendar occurrences do not displace recent work. Upcoming context
 is an explicit seven-day view; the Calendar surface owns the complete future
-schedule. Compact Home moments reuse the same formatter.
+schedule. Compact Home moments reuse the same formatter. Timeline pin and overflow
+actions stay visible without hover, using the shared item-action primitives.
 
 ### Ask
 
@@ -318,8 +368,33 @@ requests for more detail may expand within the provider-safe reply limit.
 
 Work pages share one subnavigation and lead with the task at hand, not a grid of
 links. Team settings render one URL-selected section at a time. Save state stays
-local to the edited form. Member, object, source, and artifact labels never
-fall back to UUIDs.
+local to the edited form and still toasts the terminal result. Member, object,
+source, and artifact labels never fall back to UUIDs.
+
+Team → Members is a collection: compact header, `CollectionRow` members with
+visible role and actions, not a padded card list. Other settings sections stay
+forms, but they use hairline section structure instead of nested dashboard
+cards where a single form is the whole section.
+
+Connections is a collection directory. Provider and capture surfaces are
+`CollectionGroup` + `CollectionRow` rows (icon, name, status, one context
+line, quiet action). They are not bordered `p-4` cards. Status uses
+`CollectionStatus` or readable sentence-case text, not uppercase chips.
+
+Meetings keep the collection header and rows. Capture and saved-meeting setup
+forms sit in a closed disclosure so the list is the default view. Saved
+meeting edit is a closed disclosure or dialog, never an always-open form
+under every row. Meeting mutations use the shared toast contract.
+
+### Calendar
+
+Month and week cells are title-first. Time is a muted prefix that does not
+share the truncated title string. Tentative and recurring are a left rail or
+tiny icon, never the word “Tentative” or a pencil on the chip. Month cells
+show at most three events, then `+N more`, which opens day view for that
+date. Selected or editing events keep a quiet ring. Chips use `text-[11px]`
+and tight padding so names remain readable in a seven-column grid. Week
+numbers belong on the week column, not inside every month cell.
 
 Work → Pinned is the complete pin-management surface. It is a single
 side-to-side list with cursor pagination and All, Objects, Boards, Documents,
@@ -360,23 +435,39 @@ show it in task context lines and editable detail fields, not as another colored
 tag or a fourth dense card metadata cell. Archived tasks replace project and
 category controls with a short instruction to unarchive the task first.
 
-Approval rows lead with the proposed change and use human labels and localized
-values, such as `Due soon · <localized date>` and `Status To do`, rather than payload
-keys or JSON. Free-form names and notes stay literal. Reference-valued changes
-resolve current member, object, board, lane, and visibility labels at review
-time instead of trusting stored display text. Show up to four meaningful fields
-inline and keep additional changes in a collapsed disclosure. Calendar match
-warnings include the proposed schedule. Evidence uses plain-language source
-labels, while every distinct reconciliation record remains reachable through
-one closed `TechnicalDetails` disclosure.
+Approval rows use the same collection density as Tasks. One row per review
+item: selection checkbox, human title once, a short context line (`Create
+task · meeting transcript · 17 Aug`), up to three compact metadata values,
+and ghost icon actions. Bundle source is a quiet `CollectionGroup` only when
+a bundle contains more than one item; do not wrap items in nested cards or a
+three-column title/payload/actions grid. Sentence case throughout. Do not
+use uppercase mono operation labels, `PROJECT · NONE` pills, or a lime bulk
+action stripe.
 
-Actionable approval rows end with `Accept`, `Change`, and `Reject`. `Change`
-opens a compact feedback dialog instead of exposing payload fields: the
-reviewer explains what is wrong, Timeline rewrites the same unresolved
-proposal, and the refreshed row remains pending. The dialog states that no
-canonical change has been applied and that attached source evidence is
-preserved. Merge proposals keep their dedicated `Review merge` flow because
-their survivor and field choices require a structured preview.
+Show up to three meaningful fields as row metadata (`Due soon · Aug 20`,
+`To do`, assignee). The rest of the proposed record lives in the preview.
+Calendar match warnings stay on the row as one muted line. Evidence is a
+one-line disclosure under the row (`Why · 1 source`) and the same citations
+appear inside the preview. Do not render `TechnicalDetails`, cluster IDs, or
+output IDs on this queue; those stay on Team → Reconciliation.
+
+Clicking the row (or the quiet preview icon) opens a view-only preview
+dialog. Creates show the full proposed record as it would exist. Updates
+load a live snapshot of the current object or event and highlight every
+changed field against that snapshot. Preview every target kind: objects,
+tasks, calendar events, relationships, board memberships, board field
+updates, notes, identity facets, and merges. Existing records also show
+created and updated timestamps as dim metadata. The dialog is not an
+editor. `Change` remains a natural-language rewrite: the reviewer explains
+what is wrong, Timeline rewrites the same unresolved proposal, and the row
+stays pending. Merge proposals still offer `Review merge` for survivor
+choices and also open this preview.
+
+Actionable rows use ghost icon `Accept`, `Change`, `Preview`, and `Reject`.
+Accepting or rejecting hides the row immediately, shows a loading toast,
+then replaces it with success or error. Failures restore the row. Bulk
+accept and reject run from `SelectionBar` after the reviewer selects rows.
+The selection bar is the only bulk chrome.
 
 Approval counts use individual review items, not proposal bundles. “Pending”
 means the item status is literally pending. Failed items remain retryable or
@@ -507,8 +598,12 @@ UUIDs, raw IDs, refs, and JSON remain closed inside `TechnicalDetails`.
 
 ## States and responsive behavior
 
-- Loading skeletons mirror the new page structure and announce busy state.
+- Loading skeletons mirror the live page structure and announce busy state.
+  Collection routes use the collection header skeleton and `CollectionRowsSkeleton`.
+  Timeline uses the current time-rail row. Connections and Team members use
+  collection rows, not card placeholders.
 - Errors retain route context, explain the failure, and offer a specific retry.
+  Mutation failures also toast; they do not rely on a scrolled-away page banner.
 - Empty states use sentence case, one explanation, and one action.
 - All screens work at 320px, tablet, desktop, dark mode, and 200% zoom without
   document-level horizontal scrolling.
@@ -574,3 +669,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-14 | Customer-facing public language | Keeps review cadence, implementation state, indexing terms, and capability taxonomy in metadata while public pages explain concrete actions and availability. |
 | 2026-08-15 | Evidence-backed public product story | Makes the working-history problem, deliberate capture boundary, cited-versus-unused evidence, Telegram entry point, inspectable answers, and human approval contract explicit across the landing and how-it-works journey. |
 | 2026-08-16 | Unified workspace collection density | Replaces stacked form chrome and card grids with compact headers, one filter toolbar, 44px rows, semantic status glyphs, optimistic metadata triggers, and contextual selection without changing domain behavior. |
+| 2026-08-17 | Feedback, preview, and remaining collection density | Locks viewport-sticky mutation toasts, Linear-style optimistic rows, view-only approval previews with live diffs, selection-bar bulk actions, title-first calendar chips, and collection rows for Connections, Team members, Meetings, and Approvals. |

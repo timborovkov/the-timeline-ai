@@ -1294,7 +1294,7 @@ function ProvenanceSourceLink({
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
+      <span className="mb-1 block text-xs text-fg-dim">{label}</span>
         {label}
       </span>
       {children}
@@ -2120,9 +2120,7 @@ function ObjectRelationshipsSection({
     <ObjectPanel title="Related" eyebrow={String(relationships.length)}>
       <div className="mb-4 grid gap-2">
         <label>
-          <span className="mb-1 block text-[11px] uppercase tracking-wide text-muted-foreground">
-            Link to object
-          </span>
+          <span className="mb-1 block text-[11px] text-fg-dim">Link to object</span>
           <input
             value={linkQuery}
             onChange={(e) => {
@@ -2134,9 +2132,7 @@ function ObjectRelationshipsSection({
         </label>
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
           <label>
-            <span className="mb-1 block text-[11px] uppercase tracking-wide text-muted-foreground">
-              Kind
-            </span>
+            <span className="mb-1 block text-[11px] text-fg-dim">Kind</span>
             <select
               value={linkKind}
               onChange={(e) => {
@@ -2203,7 +2199,7 @@ function ObjectRelationshipsSection({
                 {displayText(relationship.otherName)}
               </a>
               <div className="flex items-center justify-between gap-3">
-                <span className="text-xs uppercase tracking-wide text-muted-foreground">
+                <span className="text-xs text-fg-dim">
                   {relationship.kind === 'related'
                     ? relationship.kind
                     : relationship.direction === 'out'
@@ -2294,7 +2290,7 @@ function ObjectRecentChangeItem({
     >
       <div className="flex min-w-0 items-start justify-between gap-3">
         <span className="min-w-0 break-words font-medium">{changeFieldLabel(change.field)}</span>
-        <span className="shrink-0 text-[11px] uppercase tracking-wide text-muted-foreground">
+        <span className="shrink-0 text-[11px] text-fg-dim">
           {statusLabel(change.actorKind)} · {statusLabel(change.status)}
         </span>
       </div>

@@ -9,6 +9,7 @@ import type { ComponentProps } from 'react';
 
 import { ActionChip } from '@/components/action-chip';
 import { PageHeader } from '@/components/page-header';
+import { SettingsSection } from '@/components/section-heading';
 import { SettingsNav } from '@/components/settings-nav';
 import {
   InboundEmailWhitelistForm,
@@ -18,7 +19,6 @@ import {
   TeamExportPanel,
 } from '@/components/team-forms';
 import { TeamMembersSettings } from '@/components/team-members-settings';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { VisibilityDefaultSettings } from '@/components/visibility-default-settings';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -181,6 +181,7 @@ export default async function TeamSettingsPage({
   return (
     <div className="space-y-6">
       <PageHeader
+        variant="collection"
         title="Team"
         subtitle="Manage members, defaults, and access."
         srLabel={`Team ${active.teamName} · your role: ${role} · ${memberRows.length} members`}
@@ -209,86 +210,61 @@ export default async function TeamSettingsPage({
             </>
           ) : null}
           {section === 'general' ? (
-            <Card>
-              <CardHeader>
-                <CardTitle as="h2">Team identity</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {isAdmin ? (
-                  <RenameTeamForm currentName={active.teamName} teamId={active.teamId} />
-                ) : (
-                  <p className="text-sm text-fg-muted">
-                    Only team administrators can rename this team.
-                  </p>
-                )}
-              </CardContent>
-            </Card>
+            <SettingsSection title="Team identity">
+              {isAdmin ? (
+                <RenameTeamForm currentName={active.teamName} teamId={active.teamId} />
+              ) : (
+                <p className="text-sm text-fg-muted">
+                  Only team administrators can rename this team.
+                </p>
+              )}
+            </SettingsSection>
           ) : null}
           {section === 'preferences' ? (
             <>
               <MessagingPreferencesCard enabled={digestPreference.enabled} />
               {isAdmin ? (
-                <Card>
-                  <CardHeader>
-                    <CardTitle as="h2">Team timezone</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <TeamTimezoneForm {...timezoneSettings} />
-                  </CardContent>
-                </Card>
+                <SettingsSection title="Team timezone">
+                  <TeamTimezoneForm {...timezoneSettings} />
+                </SettingsSection>
               ) : null}
             </>
           ) : null}
           {section === 'visibility' ? (
-            <Card>
-              <CardHeader>
-                <CardTitle as="h2">Visibility defaults</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {isAdmin ? (
-                  <VisibilityDefaultSettings
-                    defaults={visibilityDefaults}
-                    members={visibilityMembers}
-                  />
-                ) : (
-                  <p className="text-sm text-fg-muted">
-                    Only team administrators can change visibility defaults.
-                  </p>
-                )}
-              </CardContent>
-            </Card>
+            <SettingsSection title="Visibility defaults">
+              {isAdmin ? (
+                <VisibilityDefaultSettings
+                  defaults={visibilityDefaults}
+                  members={visibilityMembers}
+                />
+              ) : (
+                <p className="text-sm text-fg-muted">
+                  Only team administrators can change visibility defaults.
+                </p>
+              )}
+            </SettingsSection>
           ) : null}
           {section === 'email' ? (
-            <Card>
-              <CardHeader>
-                <CardTitle as="h2">Email sender whitelist</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {isAdmin ? (
-                  <InboundEmailWhitelistForm {...inboundEmailSettings} />
-                ) : (
-                  <p className="text-sm text-fg-muted">
-                    Only team administrators can change inbound email settings.
-                  </p>
-                )}
-              </CardContent>
-            </Card>
+            <SettingsSection title="Email sender whitelist">
+              {isAdmin ? (
+                <InboundEmailWhitelistForm {...inboundEmailSettings} />
+              ) : (
+                <p className="text-sm text-fg-muted">
+                  Only team administrators can change inbound email settings.
+                </p>
+              )}
+            </SettingsSection>
           ) : null}
           {section === 'exports' ? (
-            <Card>
-              <CardHeader>
-                <CardTitle as="h2">Team export</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {isAdmin ? (
-                  <TeamExportPanel exports={exportRows} downloadError={query.exportError} />
-                ) : (
-                  <p className="text-sm text-fg-muted">
-                    Only team administrators can create exports.
-                  </p>
-                )}
-              </CardContent>
-            </Card>
+            <SettingsSection title="Team export">
+              {isAdmin ? (
+                <TeamExportPanel exports={exportRows} downloadError={query.exportError} />
+              ) : (
+                <p className="text-sm text-fg-muted">
+                  Only team administrators can create exports.
+                </p>
+              )}
+            </SettingsSection>
           ) : null}
           {section === 'advanced' && isAdmin ? <AdminShortcuts isAdmin /> : null}
         </div>
@@ -299,14 +275,9 @@ export default async function TeamSettingsPage({
 
 function MessagingPreferencesCard({ enabled }: { enabled: boolean }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle as="h2">Messaging</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <DigestPreferenceForm enabled={enabled} />
-      </CardContent>
-    </Card>
+    <SettingsSection title="Messaging">
+      <DigestPreferenceForm enabled={enabled} />
+    </SettingsSection>
   );
 }
 

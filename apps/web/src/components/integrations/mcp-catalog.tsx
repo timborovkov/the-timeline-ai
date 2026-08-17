@@ -263,18 +263,18 @@ function CatalogCard({
           className="size-7 rounded-sm bg-surface-2 p-1"
         />
         <CardTitle className="text-sm font-medium">{entry.label}</CardTitle>
-        <span className="ml-auto rounded-sm border border-border bg-surface-2 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.14em] text-fg-muted">
+        <span className="ml-auto rounded-sm border border-border bg-surface-2 px-1.5 py-0.5 text-[10px] text-fg-muted">
           {entry.category}
         </span>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col">
         <p className="text-sm text-fg-muted">{entry.description}</p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span className="rounded-sm border border-border bg-surface-2 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.14em] text-fg-muted">
+          <span className="rounded-sm border border-border bg-surface-2 px-1.5 py-0.5 text-[10px] text-fg-muted">
             {statusLabel}
           </span>
           {entry.ingestStatus === 'coming_soon' ? (
-            <span className="rounded-sm border border-border bg-surface px-1.5 py-0.5 text-[10px] uppercase tracking-[0.14em] text-fg-dim">
+            <span className="rounded-sm border border-border bg-surface px-1.5 py-0.5 text-[10px] text-fg-dim">
               Native ingest planned
             </span>
           ) : null}

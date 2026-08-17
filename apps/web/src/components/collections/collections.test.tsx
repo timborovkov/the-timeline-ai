@@ -79,6 +79,24 @@ describe('collection primitives', () => {
     expect(screen.getByText('P2')).toBeTruthy();
   });
 
+  it('activates the row when clicking non-interactive content', async () => {
+    const user = userEvent.setup();
+    const onActivate = vi.fn();
+    render(
+      <CollectionRow
+        title="Review planning workbook"
+        onActivate={onActivate}
+        actions={<button type="button">Keep</button>}
+      />,
+    );
+
+    await user.click(screen.getByText('Review planning workbook'));
+    expect(onActivate).toHaveBeenCalledOnce();
+    onActivate.mockClear();
+    await user.click(screen.getByRole('button', { name: 'Keep' }));
+    expect(onActivate).not.toHaveBeenCalled();
+  });
+
   it('opens desktop filters, removes active chips, and exposes the mobile dialog variant', async () => {
     const user = userEvent.setup();
     const remove = vi.fn();

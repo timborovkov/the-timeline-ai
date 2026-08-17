@@ -642,13 +642,13 @@ function ArtifactEvidenceBundle({
           <p className="break-words text-sm font-medium leading-5 text-fg">
             {cluster.canonicalName}
           </p>
-          <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+          <p className="mt-1 text-[11px] text-fg-dim">
             {titleCase(cluster.artifactType)} · {titleCase(cluster.status)} ·{' '}
             {evidenceCountLabel(cluster.relatedEvidence.length)}
           </p>
         </div>
         {statusSources > 0 ? (
-          <span className="shrink-0 rounded-sm border border-signal/30 bg-signal-soft px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-signal">
+          <span className="shrink-0 rounded-sm border border-signal/30 bg-signal-soft px-1.5 py-0.5 text-[11px] text-signal">
             {statusSources} status source{statusSources === 1 ? '' : 's'}
           </span>
         ) : null}
@@ -664,7 +664,7 @@ function ArtifactEvidenceBundle({
               key={`${cluster.id}:${evidence.rawEventId ?? evidence.externalObjectId ?? index}`}
               className="rounded-sm border border-border bg-bg px-2.5 py-2"
             >
-              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-fg-dim">
                 {evidence.rawEventId ? (
                   <Link
                     href={`/app/timeline?event=${evidence.rawEventId}#ev-${evidence.rawEventId}`}
@@ -706,7 +706,7 @@ function RelatedEvidenceStrip({ clusters }: { clusters: TimelineArtifactCluster[
   }`;
   return (
     <span
-      className="inline-flex min-h-6 max-w-full min-w-0 items-center rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim"
+      className="inline-flex min-h-6 max-w-full min-w-0 items-center rounded-sm border border-border bg-surface px-2 py-1 text-[11px] text-fg-dim"
       title={`Related evidence for ${primary.canonicalName}`}
     >
       <span className="min-w-0 truncate">Related · {label}</span>
@@ -753,7 +753,7 @@ function SourceEvidenceCard({
     .join(' · ');
   return (
     <li className="min-w-0 overflow-hidden rounded-sm border border-border bg-bg px-2.5 py-2">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-fg-dim">
         <span className="text-fg-muted">{actorLabel}</span>
         <span>{formatSourceLabel(event.source)}</span>
         {context ? <span>{context}</span> : null}
@@ -1029,7 +1029,7 @@ function CapturedFileEvidence({ file }: { file: TimelineCapturedFile }) {
         ) : null}
       </div>
       {storedName ? (
-        <p className="mt-1 truncate font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
+        <p className="mt-1 truncate font-mono text-[11px] text-fg-dim">
           Stored as <span title={file.name}>{storedName}</span>
         </p>
       ) : null}
@@ -1241,7 +1241,7 @@ function TimelineMomentRow({
             <ImpactStrip items={moment.impactItems} timezone={timezone} />
             <RelatedEvidenceStrip clusters={moment.artifactClusters} />
             {transcriptionStatus ? (
-              <span className="inline-flex min-h-6 max-w-full min-w-0 items-center rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-muted">
+              <span className="inline-flex min-h-6 max-w-full min-w-0 items-center rounded-sm border border-border bg-surface px-2 py-1 text-[11px] text-fg-muted">
                 {transcriptionStatus}
               </span>
             ) : null}
@@ -1257,7 +1257,7 @@ function TimelineMomentRow({
           </Link>
         ) : null}
       </div>
-      <div className="absolute right-2 top-3 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+      <div className="absolute right-2 top-3">
         <PinOverflowMenu
           target={{ kind: 'timeline_moment', key: moment.id }}
           title={title}

@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { DEFAULT_TIMEZONE, timezoneOptions } from '@/lib/timezones';
+import { toastMutation } from '@/lib/mutation-toast';
 
 const EMPTY_MEMBERS: { id: string; label: string }[] = [];
 const INCOMPLETE_SCHEDULE_ERROR =
@@ -539,7 +540,7 @@ export function ScheduleMeetingBotForm({
     <form
       aria-busy={pending}
       onSubmit={onSubmit}
-      className="space-y-4 rounded-md border border-border bg-surface p-4"
+      className="space-y-4"
     >
       <div className="space-y-2">
         <Label htmlFor="meetingUrl">Meeting URL</Label>
@@ -609,7 +610,11 @@ export function CancelMeetingButton({ meetingId }: { meetingId: string }) {
           setError(null);
           setPending(true);
           try {
-            const result = await cancelMeetingBotAction(meetingId);
+            const result = await toastMutation(cancelMeetingBotAction(meetingId), {
+              loading: 'Cancelling notetaker',
+              success: 'Notetaker cancelled',
+              error: 'Unable to cancel the notetaker. Try again.',
+            });
             if (!result.ok) {
               setError(result.error ?? 'Unable to cancel the notetaker. Try again.');
               return;
@@ -722,7 +727,7 @@ export function SavedMeetingForm({
     <form
       aria-busy={pending}
       onSubmit={onSubmit}
-      className="space-y-4 rounded-md border border-border bg-surface p-4"
+      className="space-y-4"
     >
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
@@ -1033,14 +1038,17 @@ export function JoinSavedMeetingButton({ query }: { query: string }) {
     <div className="space-y-2">
       <Button
         aria-describedby={error ? errorId : undefined}
-        variant="outline"
         size="sm"
         disabled={pending}
         onClick={async () => {
           setError(null);
           setPending(true);
           try {
-            const result = await joinSavedMeetingAction({ query });
+            const result = await toastMutation(joinSavedMeetingAction({ query }), {
+              loading: 'Joining meeting',
+              success: 'Opened meeting',
+              error: 'Unable to join the meeting. Try again.',
+            });
             if (!result.ok) {
               setError(result.error ?? 'Unable to join the meeting. Try again.');
               return;
@@ -1077,7 +1085,11 @@ export function ArchiveSavedMeetingButton({ savedMeetingId }: { savedMeetingId: 
           setError(null);
           setPending(true);
           try {
-            const result = await archiveSavedMeetingAction(savedMeetingId);
+            const result = await toastMutation(archiveSavedMeetingAction(savedMeetingId), {
+              loading: 'Archiving meeting',
+              success: 'Meeting archived',
+              error: 'Unable to archive the saved meeting. Try again.',
+            });
             if (!result.ok) {
               setError(result.error ?? 'Unable to archive the saved meeting. Try again.');
               return;
@@ -1113,7 +1125,11 @@ export function SkipScheduledMeetingButton({ meetingId }: { meetingId: string })
           setError(null);
           setPending(true);
           try {
-            const result = await skipScheduledMeetingAction(meetingId);
+            const result = await toastMutation(skipScheduledMeetingAction(meetingId), {
+              loading: 'Skipping occurrence',
+              success: 'Occurrence skipped',
+              error: 'Unable to skip this occurrence. Try again.',
+            });
             if (!result.ok) {
               setError(result.error ?? 'Unable to skip this occurrence. Try again.');
               return;

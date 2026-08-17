@@ -2,11 +2,11 @@
 
 import { Pin, PinOff } from 'lucide-react';
 import { useState } from 'react';
-import { toast } from 'sonner';
 
 import type { PinTargetRef } from '@timeline/shared/pins';
 
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { toastMutation } from '@/lib/mutation-toast';
 
 async function mutatePin(target: PinTargetRef, pinned: boolean) {
   const { pinTargetAction, unpinTargetAction } = await import('@/app/actions/pins');
@@ -41,18 +41,20 @@ export function PinMenuItem({
         setPinned(next);
         setPending(true);
         setPendingAction(next ? 'pin' : 'unpin');
-        void mutatePin(target, next)
+        void toastMutation(mutatePin(target, next), {
+          loading: next ? `Pinning ${title}` : `Unpinning ${title}`,
+          success: next ? `Pinned ${title}` : `Unpinned ${title}`,
+          error: next ? 'Failed to pin item' : 'Failed to unpin item',
+        })
           .then((result) => {
             if (result.error) {
               setPinned(!next);
-              toast.error(result.error);
               return;
             }
             onPinnedChange?.(next);
           })
           .catch(() => {
             setPinned(!next);
-            toast.error(next ? 'Failed to pin item' : 'Failed to unpin item');
           })
           .finally(() => {
             setPending(false);

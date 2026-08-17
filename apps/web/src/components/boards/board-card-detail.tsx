@@ -4,7 +4,7 @@ import { presentDueDate } from '@timeline/shared/time';
 import { ExternalLink, Save } from 'lucide-react';
 import Link from 'next/link';
 import { useState, useTransition } from 'react';
-import { toast } from 'sonner';
+import { toastMutation } from '@/lib/mutation-toast';
 
 import type {
   BoardItemOptimisticPatch,
@@ -127,9 +127,12 @@ export function BoardCardDetail({
   function savePatch(patch: BoardItemOptimisticPatch, onSuccess?: () => void): void {
     if (!item || !onUpdateItem) return;
     startTransition(async () => {
-      const result = await onUpdateItem(item.id, patch);
+      const result = await toastMutation(onUpdateItem(item.id, patch), {
+        loading: 'Saving card',
+        success: 'Card saved',
+        error: 'Update failed',
+      });
       if ('error' in result && result.error) {
-        toast.error(result.error);
         return;
       }
       onSuccess?.();
@@ -674,9 +677,7 @@ function ObjectPreviewDialog({
         </dl>
         {item.object.type === 'task' ? (
           <section>
-            <h3 className="mb-1 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-              Category
-            </h3>
+            <h3 className="mb-1 text-xs text-fg-dim">Category</h3>
             <TaskCategorySelect
               taskId={item.object.id}
               category={item.object.taskCategory}

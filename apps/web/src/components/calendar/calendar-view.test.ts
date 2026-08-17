@@ -185,7 +185,7 @@ describe('CalendarView recurrence and tentative UI', () => {
     );
 
     expect(html).toContain('Tentative');
-    expect(html).toContain('aria-label="Recurring"');
+    expect(html).toContain('aria-label="Tentative recurring"');
     expect(html).toContain('Apple slot');
   });
 
