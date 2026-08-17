@@ -4176,6 +4176,253 @@ describe('processSuggestionJobForTests', () => {
     );
   });
 
+  it('attaches an Acme Slack-channel task even when Acme is missing from the recency dump', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000d1';
+    const company = await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({
+      type: 'company',
+      canonicalName: 'Acme Labs',
+      aliases: ['Acme'],
+      actor: { kind: 'user', userId: OWNER_ID },
+    });
+    const project = await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({
+      type: 'project',
+      canonicalName: 'Acme project',
+      aliases: ['Acme'],
+      actor: { kind: 'user', userId: OWNER_ID },
+    });
+    for (let index = 0; index < 40; index += 1) {
+      await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({
+        type: 'topic',
+        canonicalName: `Noise topic ${String(index)}`,
+        actor: { kind: 'user', userId: OWNER_ID },
+      });
+    }
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      source: 'slack',
+      text: 'yeah we should just ship the login, I can take it',
+      sourceMetadata: {
+        slack_channel_id: 'C_ACME_DEV',
+        slack_channel_name: 'acme-project-development',
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Ship the login',
+            confidence: 'high',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'task',
+                title: 'Ship the login',
+                proposedPayload: { canonicalName: 'Ship the login' },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      {
+        getEnv: env,
+        chatStructured: chat,
+        classifyTaskCategory: vi.fn().mockResolvedValue({
+          category: 'engineering',
+          confidence: 0.9,
+          model: 'task-category-model',
+        }),
+        modelId: MODEL_ID,
+      },
+    );
+
+    const prompt = (chat.mock.calls[0]?.[0] as { prompt: string } | undefined)?.prompt;
+    expect(prompt).toContain('# Mentioned workspace hubs');
+    expect(prompt).toContain(`${company.id}: company "Acme Labs"`);
+    expect(prompt).toContain(`${project.id}: project "Acme project"`);
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundle?.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          targetKind: 'task',
+          proposedPayload: expect.objectContaining({
+            parentObjectId: project.id,
+            projectName: 'Acme project',
+          }) as unknown,
+        }),
+        expect.objectContaining({
+          targetKind: 'object_relationship',
+          proposedPayload: expect.objectContaining({
+            kind: 'related',
+            toEntityId: company.id,
+          }) as unknown,
+        }),
+      ]),
+    );
+  });
+
+  it('attaches a Faba Monday-board task from the board container name', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000d2';
+    const company = await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({
+      type: 'company',
+      canonicalName: 'Faba',
+      actor: { kind: 'user', userId: OWNER_ID },
+    });
+    const project = await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({
+      type: 'project',
+      canonicalName: 'Faba website redesign',
+      actor: { kind: 'user', userId: OWNER_ID },
+    });
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'move login to done after QA, ping me if it slips',
+      sourceMetadata: {
+        monday_board_id: 'board-faba-ext',
+        monday_board_name: 'Faba-ext',
+        monday_item_board_name: 'Faba-ext',
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Finish login QA',
+            confidence: 'medium',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'task',
+                title: 'Finish login QA',
+                proposedPayload: { canonicalName: 'Finish login QA' },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      {
+        getEnv: env,
+        chatStructured: chat,
+        classifyTaskCategory: vi.fn().mockResolvedValue({
+          category: 'engineering',
+          confidence: 0.88,
+          model: 'task-category-model',
+        }),
+        modelId: MODEL_ID,
+      },
+    );
+
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundle?.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          targetKind: 'task',
+          proposedPayload: expect.objectContaining({
+            parentObjectId: project.id,
+            projectName: 'Faba website redesign',
+          }) as unknown,
+        }),
+        expect.objectContaining({
+          targetKind: 'object_relationship',
+          proposedPayload: expect.objectContaining({
+            kind: 'related',
+            toEntityId: company.id,
+          }) as unknown,
+        }),
+      ]),
+    );
+  });
+
+  it('does not attach a client from a generic Slack #general channel', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000d3';
+    await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({
+      type: 'project',
+      canonicalName: 'General website redesign',
+      actor: { kind: 'user', userId: OWNER_ID },
+    });
+    await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({
+      type: 'company',
+      canonicalName: 'Faba',
+      actor: { kind: 'user', userId: OWNER_ID },
+    });
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      source: 'slack',
+      text: 'we should update the website copy this week',
+      sourceMetadata: {
+        slack_channel_id: 'C_GENERAL',
+        slack_channel_name: 'general',
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Update website copy',
+            confidence: 'medium',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'task',
+                title: 'Update website copy',
+                proposedPayload: { canonicalName: 'Update website copy' },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      {
+        getEnv: env,
+        chatStructured: chat,
+        classifyTaskCategory: vi.fn().mockResolvedValue({
+          category: 'marketing',
+          confidence: 0.8,
+          model: 'task-category-model',
+        }),
+        modelId: MODEL_ID,
+      },
+    );
+
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundle?.items).toHaveLength(1);
+    expect(bundle?.items[0]?.proposedPayload).not.toHaveProperty('parentObjectId');
+    expect(bundle?.items.some((item) => item.targetKind === 'object_relationship')).toBe(false);
+  });
+
   it('does not guess a client when two companies are named in the same evidence', async () => {
     const rawEventId = '10000000-0000-0000-0000-0000000000c5';
     await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({

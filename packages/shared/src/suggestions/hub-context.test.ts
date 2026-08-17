@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   attachUniqueHubsToBundles,
+  CONTAINER_LABEL_METADATA_KEYS,
   hubEvidenceText,
   hubMentionedInText,
   hubsChanged,
@@ -35,6 +36,14 @@ const acmeCompany: WorkspaceHub = {
   status: 'active',
 };
 
+const acmeProject: WorkspaceHub = {
+  id: 'project-acme',
+  type: 'project',
+  name: 'Acme project',
+  aliases: ['Acme'],
+  status: 'active',
+};
+
 const otherProject: WorkspaceHub = {
   id: 'project-other',
   type: 'project',
@@ -42,6 +51,19 @@ const otherProject: WorkspaceHub = {
   aliases: [],
   status: 'active',
 };
+
+describe('container label metadata keys', () => {
+  it('keeps the envelope keys the qualify step reads', () => {
+    expect(CONTAINER_LABEL_METADATA_KEYS).toEqual([
+      'slack_channel_name',
+      'tg_chat_title',
+      'monday_board_name',
+      'monday_item_board_name',
+      'monday_workspace_name',
+      'github_repo',
+    ]);
+  });
+});
 
 describe('mentionKeysForHub', () => {
   it('keeps distinctive client tokens and drops generic project words', () => {
@@ -104,6 +126,104 @@ describe('hubEvidenceText', () => {
     });
     expect(text).toContain('We should prepare the login page.');
     expect(text).toContain('Faba weekly');
+  });
+
+  it('includes Slack channel, Monday board, and Telegram chat container labels', () => {
+    const text = hubEvidenceText({
+      text: 'ok lets just do the login thing tomorrow',
+      sourceMetadata: { slack_channel_name: 'acme-project-development' },
+      window: [
+        {
+          contentText: 'Status: Working on login',
+          sourceMetadata: { monday_board_name: 'Faba-ext' },
+        },
+      ],
+      linkedContext: [
+        {
+          contentText: 'Voice note from the client chat',
+          sourceMetadata: { tg_chat_title: 'Faba client' },
+        },
+      ],
+    });
+    expect(text).toContain('acme-project-development');
+    expect(text).toContain('Faba-ext');
+    expect(text).toContain('Faba client');
+  });
+
+  it('reads nested GitHub repo and Linear team names without a provider switch in callers', () => {
+    const text = hubEvidenceText({
+      text: 'merged the login fix',
+      sourceMetadata: {
+        github: { type: 'pull_request', repo: 'acme/app', number: 88 },
+        linear: { team: { name: 'Faba delivery', key: 'FAB' }, project: { name: 'Faba website' } },
+      },
+    });
+    expect(text).toContain('acme/app');
+    expect(text).toContain('Faba delivery');
+    expect(text).toContain('Faba website');
+  });
+});
+
+describe('qualifyWorkspaceHubs from container labels', () => {
+  it('qualifies Acme from a Slack channel named acme-project-development', () => {
+    const qualified = qualifyWorkspaceHubs({
+      hubs: [acmeProject, fabaProject, fabaCompany],
+      text: hubEvidenceText({
+        text: 'yeah we should just ship the login, I can take it',
+        sourceMetadata: { slack_channel_name: 'acme-project-development' },
+      }),
+    });
+    expect(qualified.uniqueProject).toEqual(acmeProject);
+    expect(qualified.mentioned.map((hub) => hub.id)).toEqual(['project-acme']);
+  });
+
+  it('qualifies Faba from a Monday board named Faba-ext', () => {
+    const qualified = qualifyWorkspaceHubs({
+      hubs: [fabaCompany, fabaProject, acmeCompany, otherProject],
+      text: hubEvidenceText({
+        text: 'move login to done after QA',
+        sourceMetadata: { monday_board_name: 'Faba-ext', monday_item_board_name: 'Faba-ext' },
+      }),
+    });
+    expect(qualified.uniqueCompany).toEqual(fabaCompany);
+    expect(qualified.uniqueProject).toEqual(fabaProject);
+  });
+
+  it('does not treat a generic #general channel as a unique hub', () => {
+    const generalProject: WorkspaceHub = {
+      id: 'project-general',
+      type: 'project',
+      name: 'General website redesign',
+      aliases: [],
+      status: 'active',
+    };
+    const qualified = qualifyWorkspaceHubs({
+      hubs: [generalProject, fabaProject],
+      text: hubEvidenceText({
+        text: 'we should update the website copy this week',
+        sourceMetadata: { slack_channel_name: 'general' },
+      }),
+    });
+    expect(qualified.mentioned).toEqual([]);
+    expect(qualified.uniqueProject).toBeNull();
+  });
+
+  it('refuses when a mixed channel name hits two companies and two projects', () => {
+    const qualified = qualifyWorkspaceHubs({
+      hubs: [fabaCompany, acmeCompany, fabaProject, acmeProject],
+      text: hubEvidenceText({
+        text: 'can someone take the login page',
+        sourceMetadata: { slack_channel_name: 'acme-faba-shared' },
+      }),
+    });
+    expect(qualified.uniqueCompany).toBeNull();
+    expect(qualified.uniqueProject).toBeNull();
+    expect(qualified.mentioned.map((hub) => hub.id).sort()).toEqual([
+      'company-acme',
+      'company-faba',
+      'project-acme',
+      'project-faba',
+    ]);
   });
 });
 

@@ -2926,6 +2926,7 @@ async function runSuggestionExtraction(
     text,
     sourceMetadata: row.sourceMetadata,
     window: args.conversation?.window ?? [],
+    linkedContext: args.conversation?.linkedContext ?? [],
   });
   const qualifiedHubs = suggestions.qualifyWorkspaceHubs({ hubs: hubRows, text: evidenceText });
   const mentionedHubIds = new Set(qualifiedHubs.mentioned.map((hub) => hub.id));

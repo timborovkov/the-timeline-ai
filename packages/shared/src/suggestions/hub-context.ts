@@ -57,6 +57,16 @@ const GENERIC_HUB_TOKENS = new Set([
 
 const TITLE_METADATA_KEYS = ['meeting_title', 'title', 'subject'] as const;
 
+/** Envelope keys adapters stamp for conversation/board/repo containers. */
+export const CONTAINER_LABEL_METADATA_KEYS = [
+  'slack_channel_name',
+  'tg_chat_title',
+  'monday_board_name',
+  'monday_item_board_name',
+  'monday_workspace_name',
+  'github_repo',
+] as const;
+
 export interface WorkspaceHub {
   id: string;
   type: string;
@@ -95,19 +105,51 @@ function metadataString(value: unknown, key: string): string | null {
   return text.length > 0 ? text : null;
 }
 
+function nestedContainerLabels(value: unknown): string[] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+  const record = value as Record<string, unknown>;
+  const labels: string[] = [];
+  const github = record.github;
+  if (github && typeof github === 'object' && !Array.isArray(github)) {
+    const repo = metadataString(github, 'repo');
+    if (repo) labels.push(repo);
+  }
+  const linear = record.linear;
+  if (linear && typeof linear === 'object' && !Array.isArray(linear)) {
+    const linearRecord = linear as Record<string, unknown>;
+    const teamName = metadataString(linearRecord.team, 'name');
+    const project = linearRecord.project;
+    const projectName =
+      typeof project === 'string' ? project.trim() || null : metadataString(project, 'name');
+    if (teamName) labels.push(teamName);
+    if (projectName) labels.push(projectName);
+  }
+  return labels;
+}
+
+function evidenceLabelsFromMetadata(value: unknown): string[] {
+  return [
+    ...TITLE_METADATA_KEYS.map((key) => metadataString(value, key)),
+    ...CONTAINER_LABEL_METADATA_KEYS.map((key) => metadataString(value, key)),
+    ...nestedContainerLabels(value),
+  ].filter((text): text is string => typeof text === 'string');
+}
+
 export function hubEvidenceText(args: {
   text: string;
   sourceMetadata?: unknown;
   window?: readonly { contentText: string; sourceMetadata?: unknown }[];
+  linkedContext?: readonly { contentText: string; sourceMetadata?: unknown }[];
 }): string {
-  const titles = [
-    ...TITLE_METADATA_KEYS.map((key) => metadataString(args.sourceMetadata, key)),
-    ...(args.window ?? []).flatMap((event) => [
+  const related = [...(args.window ?? []), ...(args.linkedContext ?? [])];
+  const labels = [
+    ...evidenceLabelsFromMetadata(args.sourceMetadata),
+    ...related.flatMap((event) => [
       event.contentText,
-      ...TITLE_METADATA_KEYS.map((key) => metadataString(event.sourceMetadata, key)),
+      ...evidenceLabelsFromMetadata(event.sourceMetadata),
     ]),
-  ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
-  return [args.text, ...titles].join('\n');
+  ].filter((value) => value.trim().length > 0);
+  return [args.text, ...labels].join('\n');
 }
 
 export function mentionKeysForHub(hub: Pick<WorkspaceHub, 'name' | 'aliases'>): string[] {
