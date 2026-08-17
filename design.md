@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.10 · Collection toolbar view and add (2026-08-17). Replaces v3.9 Board next step and row alignment.
+**Version:** v3.11 · Collection loading skeletons (2026-08-17). Replaces v3.10 Collection toolbar view and add.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -364,8 +364,11 @@ grouped list; the list table is full-bleed inside the work canvas, without extra
 page gutters around the rows. Kanban/List view controls sit on the CollectionToolbar
 row with search and filters, not on a second strip. Board kanban/table/list uses
 the same toolbar slot. Add item is a compact toolbar action that opens a popover,
-not a full-width boxed header. Loading placeholders match the
-requested view and default to list. Kanban cards stay compact: a clamped title plus
+not a full-width boxed header. Loading placeholders match the live
+CollectionToolbar (search, count, Filters, view toggle, and compact add on one
+row) and the requested view: Tasks default to list, boards default to kanban,
+and table/list/kanban each have a matching skeleton. Collection pages load as
+flat rows, not boxed card grids. Kanban cards stay compact: a clamped title plus
 one metadata row, with no redundant type label. Curated boards use the same
 full-bleed work canvas in kanban, table, and grouped list — no boxed inner
 container around the collection. Board kanban cards stay compact: a clamped title,
@@ -652,3 +655,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Board canvas and compact cards | Makes list and table boards full-bleed like Tasks, puts next step under the kanban title, removes the on-card Move row, and leaves lane names on table and card-detail. |
 | 2026-08-17 | Board next step and row alignment | Treats next step as a title subtitle instead of a table column, and vertically centers board checkboxes. |
 | 2026-08-17 | Collection toolbar view and add | Puts board view toggles on the search/filter row with Tasks, and turns Add item into a compact popover action. |
+| 2026-08-17 | Collection loading skeletons | Matches collection loading placeholders to the live toolbar row, compact add control, view-aware board/task canvases, and flat collection rows. |

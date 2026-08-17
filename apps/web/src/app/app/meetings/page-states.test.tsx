@@ -30,10 +30,10 @@ describe('Meetings route states', () => {
     const searchControls = screen.getByRole('region', {
       name: 'Meeting search controls loading placeholder',
     });
-    expect(searchControls.className).toContain('sm:grid-cols-[minmax(0,1fr)_11rem_auto]');
+    expect(searchControls.querySelector('[data-loading-toolbar="collection"]')).toBeTruthy();
     const captures = screen.getByRole('region', { name: 'Meeting captures loading placeholder' });
     expect(captures.querySelectorAll('li')).toHaveLength(4);
-    expect(captures.querySelector('li')?.className).toContain('sm:grid-cols-[minmax(0,1fr)_auto]');
+    expect(captures.querySelector('li .min-h-11')).toBeTruthy();
     for (const skeleton of document.querySelectorAll('.animate-pulse')) {
       expect(skeleton.closest('[class*="motion-reduce"]')).toBeTruthy();
     }

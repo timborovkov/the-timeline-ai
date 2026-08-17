@@ -1,8 +1,21 @@
-import { PageHeaderSkeleton } from '@/components/loading-states';
-import { Skeleton } from '@/components/ui/skeleton';
+'use client';
+
+import { useSearchParams } from 'next/navigation';
+
+import {
+  CollectionGroupSkeleton,
+  CollectionTableSkeleton,
+  CollectionToolbarSkeleton,
+  CompactKanbanSkeleton,
+  PageHeaderSkeleton,
+} from '@/components/loading-states';
 import { WorkSubnav } from '@/components/work-subnav';
 
 export default function BoardDetailLoading() {
+  const searchParams = useSearchParams();
+  const viewParam = searchParams.get('view');
+  const view = viewParam === 'table' || viewParam === 'list' ? viewParam : 'kanban';
+
   return (
     <>
       <output className="sr-only" aria-live="polite">
@@ -13,34 +26,27 @@ export default function BoardDetailLoading() {
         data-app-layout="full-bleed"
         className="-mx-4 -my-6 flex h-[calc(100dvh-3rem)] min-w-0 flex-col md:-mx-8 md:-my-8"
       >
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div aria-hidden="true" inert className="shrink-0 px-4 pt-5 md:px-8 md:pt-6">
-            <PageHeaderSkeleton />
+        <div aria-hidden="true" inert className="shrink-0 px-4 pt-5 md:px-8 md:pt-6">
+          <PageHeaderSkeleton />
+        </div>
+        <WorkSubnav current="/app/boards" className="shrink-0 px-4 md:px-8" />
+        <div
+          aria-hidden="true"
+          inert
+          aria-busy="true"
+          aria-label="Loading board"
+          className="flex min-h-0 flex-1 flex-col"
+        >
+          <CollectionToolbarSkeleton viewSegments={3} action />
+          <div data-board-loading-view={view} className="flex min-h-0 flex-1 flex-col">
+            {view === 'table' ? (
+              <CollectionTableSkeleton />
+            ) : view === 'list' ? (
+              <CollectionGroupSkeleton subtitle />
+            ) : (
+              <CompactKanbanSkeleton />
+            )}
           </div>
-          <WorkSubnav current="/app/boards" className="shrink-0 px-4 md:px-8" />
-          <section
-            aria-label="Loading board"
-            aria-hidden="true"
-            inert
-            aria-busy="true"
-            className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-4 pb-2 pt-5 md:px-8"
-          >
-            {Array.from({ length: 3 }).map((_, index) => (
-              <div
-                key={index}
-                className="flex w-[min(290px,calc(100vw-4rem))] shrink-0 flex-col rounded-sm border border-border bg-surface p-3"
-              >
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <Skeleton className="h-4 w-24 motion-reduce:animate-none" />
-                  <Skeleton className="h-3 w-6 motion-reduce:animate-none" />
-                </div>
-                <div className="space-y-2">
-                  <Skeleton className="h-20 w-full rounded-sm motion-reduce:animate-none" />
-                  <Skeleton className="h-16 w-full rounded-sm motion-reduce:animate-none" />
-                </div>
-              </div>
-            ))}
-          </section>
         </div>
       </div>
     </>
