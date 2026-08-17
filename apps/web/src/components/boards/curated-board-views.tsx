@@ -850,7 +850,7 @@ export function CuratedBoardList({
                           />
                           <EditableMetadata
                             label={`Lane for ${displayText(objectTitle)}`}
-                            value={group.name}
+                            value="Move"
                             disabled={optimistic || !onUpdateItem}
                             editor={
                               <select

@@ -607,7 +607,7 @@ function KanbanCard({
       {!optimistic ? (
         <EditableMetadata
           label={`Lane for ${displayText(title)}`}
-          value={lane.name}
+          value="Move"
           pending={saving}
           error={
             error

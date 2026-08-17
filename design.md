@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.6 · Team setup loop and Home timeline links (2026-08-17). Replaces v3.5 Team setup checklist on Home.
+**Version:** v3.7 · Board kanban lane control (2026-08-17). Replaces v3.6 Team setup loop and Home timeline links.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -364,7 +364,11 @@ grouped list; the list table is full-bleed inside the work canvas, without extra
 page gutters around the rows. Kanban/List view controls sit on the CollectionToolbar
 row with search and filters, not on a second strip. Loading placeholders match the
 requested view and default to list. Kanban cards stay compact: a clamped title plus
-one metadata row, with no redundant type label. Team settings render one URL-selected
+one metadata row, with no redundant type label. Board kanban and grouped board-list
+cards do not repeat the current lane name; the lane control stays a quiet Move
+trigger for keyboard and failed-move recovery. Table and card-detail keep the
+lane name because those views are not already organized by column. Do not style
+board lanes as badges. Team settings render one URL-selected
 section at a time. Save state stays local to the edited form. Member, object, source,
 and artifact labels never fall back to UUIDs.
 
@@ -634,3 +638,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Ask session search and title | Filters chat history from the session rail and shows the selected title beside Ask instead of a session count. |
 | 2026-08-17 | Ask mobile session title | Reuses the resolved conversation title in the mobile session summary, including deep-linked chats outside the recent list. |
 | 2026-08-17 | Quiet sidebar brand and fold control | Aligns the product mark with primary nav, sends it to Home, and replaces the boxed fold glyph with a lighter chevron. |
+| 2026-08-17 | Board kanban lane control | Stops repeating the current lane name on kanban and grouped list cards, keeps a quiet Move trigger, and leaves lane names on table and card-detail. |

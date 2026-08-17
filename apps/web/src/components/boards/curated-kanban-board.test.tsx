@@ -303,6 +303,8 @@ describe('CuratedKanbanBoard', () => {
     const title = screen.getByRole('link', { name: 'Keyboard card' });
     const dragHandle = screen.getByRole('button', { name: 'Drag Keyboard card' });
     const laneTrigger = screen.getByRole('button', { name: 'Lane for Keyboard card' });
+    expect(laneTrigger.textContent).toBe('Move');
+    expect(laneTrigger.textContent).not.toBe('Open');
     title.focus();
     await user.tab();
     expect(document.activeElement).toBe(dragHandle);
