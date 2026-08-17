@@ -105,7 +105,10 @@ evidence; documents are curated workspace knowledge.
   stored name is shown, while the full filename remains preserved for hover
   detail, storage, provenance, and extraction routing.
 - Timeline-oriented retrieval includes captured-file evidence, while document
-  search remains scoped to curated documents.
+  search remains scoped to curated documents. The operating-memory engine
+  treats curated documents as **reference knowledge** (Ask, object summaries,
+  proposal context) and treats Drive file-change pings plus "Uploaded X"
+  lifecycle rows as pulses. See [relational-memory.md](./relational-memory.md).
 
 ## Remaining Follow-Ups
 

@@ -9,7 +9,9 @@ export {
 } from '#src/integrations/github-task-proposals.js';
 export {
   GITHUB_TASK_PROPOSAL_COALESCE_MS,
+  integrationExtractSkipReason,
   integrationIdFromSourceMetadata,
+  integrationSkipsExtract,
   integrationSkipsLlmIngest,
   isDelayedIngestResult,
   providerFromSourceMetadata,

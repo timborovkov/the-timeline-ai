@@ -26,7 +26,9 @@ database implementation details in ordinary product views.
 - **Operational memory** is durable, queryable work state derived from history.
 - **Signal classes** (internal) split events into communication, captured
   work, and pulses so the product can relate evidence without treating every
-  source event as a model prompt. Do not put these labels in ordinary chrome.
+  source event as a model prompt. Intentional captures stay communication.
+  Curated documents are reference knowledge, not a fourth class. Do not put
+  these labels in ordinary chrome.
 - **Work hubs** (internal) are the tasks, projects, people, and artifact
   clusters that events from different surfaces attach to. Ordinary chrome
   still names the task or project, not "hub."

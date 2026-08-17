@@ -11,6 +11,9 @@ import {
   ingestWebhooks,
   integrations,
   objectNotes,
+  documents,
+  documentChunks,
+  documentVersions,
   rawEvents,
   reconciliationOutputs,
   reconciliationProjectionOutbox,
@@ -2872,6 +2875,7 @@ describe('processSuggestionJobForTests', () => {
     expect(call?.system).toContain('Keep canonicalName human-facing');
     expect(call?.system).toContain('Do not create tasks from automated review findings');
     expect(call?.system).toContain('proposedPayload.priority');
+    expect(call?.system).toContain('Curated document chunks in the prompt are reference knowledge');
     const bundle = (
       await withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.listPendingSuggestions()
     )[0];
@@ -2884,6 +2888,90 @@ describe('processSuggestionJobForTests', () => {
         canonicalName: 'Sunset Project X',
         status: 'accepted',
       },
+    });
+  });
+
+  it('includes related curated document chunks as reference knowledge in the proposal prompt', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000aa';
+    await db.insert(entities).values({
+      teamId: TEAM_ID,
+      type: 'company',
+      canonicalName: 'Acme Labs',
+      status: 'active',
+    });
+    const [document] = await db
+      .insert(documents)
+      .values({
+        teamId: TEAM_ID,
+        ownerUserId: OWNER_ID,
+        name: 'Acme MSA.pdf',
+        visibility: 'team',
+      })
+      .returning({ id: documents.id });
+    if (!document) throw new Error('failed to insert document');
+    const [version] = await db
+      .insert(documentVersions)
+      .values({
+        teamId: TEAM_ID,
+        documentId: document.id,
+        version: 1,
+        objectKey: 'team/acme-msa.pdf',
+        contentType: 'application/pdf',
+      })
+      .returning({ id: documentVersions.id });
+    if (!version) throw new Error('failed to insert version');
+    const [chunk] = await db
+      .insert(documentChunks)
+      .values({
+        teamId: TEAM_ID,
+        documentId: document.id,
+        documentVersionId: version.id,
+        chunkIndex: 0,
+        text: 'Payment terms for Acme Labs are net 30.',
+        tokenCount: 12,
+      })
+      .returning({ id: documentChunks.id });
+    if (!chunk) throw new Error('failed to insert chunk');
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: "I'll follow the Acme Labs MSA payment terms next Tuesday",
+    });
+    const chat = emptyModel();
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const prompt = (chat.mock.calls[0]?.[0] as { prompt: string } | undefined)?.prompt ?? '';
+    expect(prompt).toContain('# Reference knowledge (curated documents)');
+    expect(prompt).toContain(`[doc:${document.id}#v1:chunk:${chunk.id}]`);
+    expect(prompt).toContain('Payment terms for Acme Labs are net 30.');
+  });
+
+  it('skips document lifecycle events without calling the suggestion model', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000ab';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      source: 'document',
+      text: 'Uploaded Acme MSA.pdf',
+    });
+    const chat = emptyModel();
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    expect(chat).not.toHaveBeenCalled();
+    const [row] = await db
+      .select({ sourceMetadata: rawEvents.sourceMetadata })
+      .from(rawEvents)
+      .where(eq(rawEvents.id, rawEventId));
+    expect(row?.sourceMetadata).toMatchObject({
+      suggestions_skipped_reason: 'document_lifecycle_event',
     });
   });
 

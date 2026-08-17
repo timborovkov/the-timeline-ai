@@ -25,6 +25,7 @@ import { z } from 'zod';
 import type { TeamScopeCore } from '#src/team-scope.js';
 
 import { artifactRefCitation } from '#src/citation.js';
+import { listRelatedCuratedDocumentChunks } from '#src/documents/related-chunks.js';
 import { chatStructured } from '#src/llm/chat.js';
 import { TIMELINE_MODELS, truncateTextToTokenBudget } from '#src/llm/models.js';
 import * as queue from '#src/queue/queues.js';
@@ -42,6 +43,12 @@ const sourceRefSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('relationship'), id: z.string().regex(UUID_RE) }),
   z.object({ kind: z.literal('task'), id: z.string().regex(UUID_RE) }),
   z.object({ kind: z.literal('object_change'), id: z.string().regex(UUID_RE) }),
+  z.object({
+    kind: z.literal('document_chunk'),
+    id: z.string().regex(UUID_RE),
+    documentId: z.string().regex(UUID_RE),
+    version: z.number().int().positive(),
+  }),
 ]);
 
 const claimSchema = z.object({
@@ -586,6 +593,23 @@ async function buildObjectSummaryPacket(
     text: change.note ?? `${change.field}: ${textFromJson(change.newValue)}`,
     occurredAt: change.changedAt.toISOString(),
   }));
+  const relatedDocuments = await listRelatedCuratedDocumentChunks({
+    db,
+    teamId: scope.teamId,
+    names: [object.canonicalName, ...aliases(object.aliases)],
+    limit: 6,
+  });
+  const documentSources: SummaryPacketSource[] = relatedDocuments.map((chunk) => ({
+    ref: {
+      kind: 'document_chunk',
+      id: chunk.chunkId,
+      documentId: chunk.documentId,
+      version: chunk.version,
+    },
+    label: `Document ${chunk.documentName} v${String(chunk.version)}`,
+    text: chunk.text,
+    occurredAt: chunk.updatedAt.toISOString(),
+  }));
 
   const snapshot = objectSummarySourceSnapshot(object, {
     facts: factSources.length,
@@ -616,6 +640,7 @@ async function buildObjectSummaryPacket(
       ...eventSources,
       ...noteSources,
       ...changeSources,
+      ...documentSources,
     ],
     sourceCounts: snapshot.sourceCounts,
     canGenerate: enough.canGenerate,
@@ -632,6 +657,7 @@ function promptForPacket(packet: ObjectSummaryPacket): string {
           'Write a compact operational object summary.',
           'Infer current state from newer confirmed sources; older tentative facts can be superseded.',
           'If creation evidence is present, say what the source wrote, which system or repo, and when.',
+          'If curated document sources are present, use them for counterparties, contracts, constraints, and plans, and cite those document_chunk refs.',
           'Do not invent names, dates, owners, recommendations, or source ids.',
           'Use currentState for concrete source-backed dates, next steps, blockers, owners, or risks.',
           'Use conflicts only when sources materially disagree and recency does not resolve it.',
@@ -1170,6 +1196,14 @@ export function sourceRefCitation(ref: ObjectSummarySourceRef): string {
       return `[rel:${ref.id}]`;
     case 'object_change':
       return `[chg:${ref.id}]`;
+    case 'document_chunk':
+      return artifactRefCitation({
+        kind: 'document_chunk',
+        id: ref.id,
+        documentId: ref.documentId,
+        version: ref.version,
+        chunkId: ref.id,
+      });
     case 'field':
       return `[field:${ref.id}]`;
   }

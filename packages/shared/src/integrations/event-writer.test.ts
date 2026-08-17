@@ -1460,6 +1460,48 @@ describe('writeIntegrationEvents visibility', () => {
     expect(row?.sourceMetadata).not.toHaveProperty('extraction_skipped_reason');
   });
 
+  it('does not enqueue extract for Google Drive file-change pulses', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Drive',
+        externalAccountId: 'drive-acct',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const [eventId] = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'google_drive:change:file-1:2026-05-27',
+          provider: 'google_drive',
+          externalObjectId: 'file-1',
+          eventType: 'file.changed',
+          occurredAt: new Date('2026-05-27T09:00:00Z'),
+          contentText: 'Drive file "Acme MSA.pdf" (application/pdf) was modified',
+        },
+      ],
+    });
+    if (!eventId) throw new Error('event insert failed');
+
+    expect(enqueueExtractJob).not.toHaveBeenCalled();
+    expect(enqueueEmbedJob).toHaveBeenCalledWith({
+      scope: 'raw_event',
+      teamId: TEAM_ID,
+      rawEventId: eventId,
+    });
+    const [row] = await db.select().from(rawEvents).where(eq(rawEvents.id, eventId));
+    expect(row?.sourceMetadata).toMatchObject({
+      extraction_skipped_reason: 'integration_pulse_source',
+    });
+  });
+
   it('falls back to team visibility for private integration events without a connector owner', async () => {
     const [integration] = await db
       .insert(integrations)

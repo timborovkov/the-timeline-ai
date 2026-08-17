@@ -135,15 +135,10 @@ export async function processExtractJobForTests(
     return { rawEventId, skipped: true, reason: `visibility=${row.visibility}` };
   }
 
-  const provider = integrations.providerFromSourceMetadata(row.sourceMetadata);
-  if (
-    row.source === 'integration' &&
-    provider &&
-    integrations.integrationSkipsLlmIngest(provider)
-  ) {
+  if (row.source === 'document') {
     const skipPatch = JSON.stringify({
       extraction_skipped_at: new Date().toISOString(),
-      extraction_skipped_reason: 'integration_structured_source',
+      extraction_skipped_reason: 'document_lifecycle_event',
       extraction_model_version: modelVersion,
     });
     await deps.db
@@ -152,7 +147,27 @@ export async function processExtractJobForTests(
         sourceMetadata: sql`(COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) - 'extraction_failed_at' - 'extraction_error') || ${skipPatch}::jsonb`,
       })
       .where(eq(rawEvents.id, rawEventId));
-    return { rawEventId, skipped: true, reason: 'integration_structured_source' };
+    return { rawEventId, skipped: true, reason: 'document_lifecycle_event' };
+  }
+
+  const provider = integrations.providerFromSourceMetadata(row.sourceMetadata);
+  const extractSkipReason =
+    row.source === 'integration' && provider
+      ? integrations.integrationExtractSkipReason(provider)
+      : null;
+  if (extractSkipReason) {
+    const skipPatch = JSON.stringify({
+      extraction_skipped_at: new Date().toISOString(),
+      extraction_skipped_reason: extractSkipReason,
+      extraction_model_version: modelVersion,
+    });
+    await deps.db
+      .update(rawEvents)
+      .set({
+        sourceMetadata: sql`(COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) - 'extraction_failed_at' - 'extraction_error') || ${skipPatch}::jsonb`,
+      })
+      .where(eq(rawEvents.id, rawEventId));
+    return { rawEventId, skipped: true, reason: extractSkipReason };
   }
 
   const meta =

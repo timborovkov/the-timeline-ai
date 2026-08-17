@@ -56,8 +56,26 @@ _Avoid_: Sync event, webhook when discussing memory rights
 **Pulse Signal**:
 A signal class for telemetry and heartbeats. Pulses persist, embed, and attach
 to an existing cluster when a hard join key exists. They never call extract
-and never originate proposals. They may appear as supporting evidence.
+and never originate proposals. They may appear as supporting evidence. Drive
+file-changed pings and document-drive lifecycle rows ("Uploaded X") are pulses.
+The document body is not.
 _Avoid_: Noise, spam, unimportant event
+
+**Intentional Capture**:
+A communication event the team wrote on purpose: home Capture, Telegram
+`/note`, or a voice memo. High-intent communication, not a pulse and not a
+fourth class. Isolated firehose Slack/Telegram group messages still do not
+mint tasks; an intentional capture may propose from that single event.
+_Avoid_: Pulse, note dump, "just a message"
+
+**Reference Knowledge**:
+Curated document-drive files (manual upload, Drive harvest, promoted captured
+files) stored as versions and chunks. Ask, object summaries, and proposals may
+cite them with `[doc:…]`. They do not originate Timeline tasks by themselves.
+Unpromoted conversational attachments stay captured files, not reference
+knowledge. See [docs/captured-files.md](docs/captured-files.md) and
+[docs/relational-memory.md](docs/relational-memory.md).
+_Avoid_: Pulse, captured file when the team promoted or uploaded it into the drive
 
 **Source Envelope**:
 The provider-blind fields every adapter must emit: signal class, optional

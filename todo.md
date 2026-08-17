@@ -189,6 +189,10 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       communication may extract and review; structured captured work parses
       and may write coalesced approval-backed field changes; pulses persist,
       embed, and attach as supporting evidence without originating proposals.
+      Intentional captures (home Capture, Telegram `/note`) are high-intent
+      communication and may propose from that single event. Curated documents
+      are reference knowledge for Ask, object summaries, and proposal context;
+      Drive file-change pings and "Uploaded X" lifecycle rows are pulses.
       Replace the GitHub/Linear/Monday/Sentry extract skip list with this
       event-level classifier on the source envelope so GitHub PRs and GitHub
       CI can differ without a core `if (provider === "github")`. Replace the

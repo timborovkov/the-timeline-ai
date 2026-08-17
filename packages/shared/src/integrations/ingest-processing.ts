@@ -11,6 +11,19 @@ export function integrationSkipsLlmIngest(provider: string): boolean {
   return STRUCTURED_INGEST_PROVIDERS.has(provider);
 }
 
+/** Drive file-change telemetry is a pulse: persist + embed, never extract. */
+const PULSE_INGEST_PROVIDERS = new Set(['google_drive']);
+
+export function integrationExtractSkipReason(provider: string): string | null {
+  if (integrationSkipsLlmIngest(provider)) return 'integration_structured_source';
+  if (PULSE_INGEST_PROVIDERS.has(provider)) return 'integration_pulse_source';
+  return null;
+}
+
+export function integrationSkipsExtract(provider: string): boolean {
+  return integrationExtractSkipReason(provider) !== null;
+}
+
 export function integrationIdFromSourceMetadata(sourceMetadata: unknown): string | null {
   const metadata =
     sourceMetadata && typeof sourceMetadata === 'object' && !Array.isArray(sourceMetadata)

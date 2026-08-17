@@ -1093,6 +1093,15 @@ function summaryRefToArtifactRef(ref: objects.ObjectSummarySourceRef): ArtifactR
   if (ref.kind === 'fact') return { kind: 'fact', id: ref.id };
   if (ref.kind === 'relationship') return { kind: 'relationship', id: ref.id };
   if (ref.kind === 'object_change') return { kind: 'object_change', id: ref.id };
+  if (ref.kind === 'document_chunk') {
+    return {
+      kind: 'document_chunk',
+      id: ref.id,
+      documentId: ref.documentId,
+      version: ref.version,
+      chunkId: ref.id,
+    };
+  }
   return null;
 }
 
@@ -1100,6 +1109,7 @@ function sourceLabel(ref: objects.ObjectSummarySourceRef): string {
   if (ref.kind === 'timeline_event') return 'event';
   if (ref.kind === 'object_note') return 'note';
   if (ref.kind === 'object_change') return 'change';
+  if (ref.kind === 'document_chunk') return 'document';
   return ref.kind;
 }
 

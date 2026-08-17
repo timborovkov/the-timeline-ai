@@ -33,7 +33,10 @@ import {
   enqueueGithubTaskProposalJob,
   githubWorkItemFromIntegrationEvent,
 } from '#src/integrations/github-task-proposals.js';
-import { integrationSkipsLlmIngest } from '#src/integrations/ingest-processing.js';
+import {
+  integrationExtractSkipReason,
+  integrationSkipsExtract,
+} from '#src/integrations/ingest-processing.js';
 import { childLogger } from '#src/logger.js';
 import { invalidateObjectSummariesForRawEvent } from '#src/objects/summaries.js';
 import { enqueueEmbedJob, enqueueExtractJob } from '#src/queue/queues.js';
@@ -253,10 +256,11 @@ export async function writeIntegrationEvents(deps: {
         evt,
         tombstonesByTargetKey,
       );
-      const extractionSkip = integrationSkipsLlmIngest(evt.provider)
+      const extractSkipReason = integrationExtractSkipReason(evt.provider);
+      const extractionSkip = extractSkipReason
         ? {
             extraction_skipped_at: new Date().toISOString(),
-            extraction_skipped_reason: 'integration_structured_source',
+            extraction_skipped_reason: extractSkipReason,
           }
         : {};
 
@@ -315,7 +319,7 @@ export async function writeIntegrationEvents(deps: {
           enqueueEmbedJob({ scope: 'raw_event', teamId, rawEventId: row.id }),
         ),
       ];
-      if (!integrationSkipsLlmIngest(deps.integration.provider)) {
+      if (!integrationSkipsExtract(deps.integration.provider)) {
         jobs.unshift(
           enqueueIntegrationProcessingJob(deps.db, row.id, 'extraction', () =>
             enqueueExtractJob({ teamId, rawEventId: row.id }),

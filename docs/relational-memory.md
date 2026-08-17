@@ -236,16 +236,23 @@ Class is a property of the **event**, not the OAuth app.
 
 | Class | What it is | Examples | Default jobs |
 | --- | --- | --- | --- |
-| **Communication** | People talking, deciding, committing | Slack/Telegram threads, meetings, email, voice notes, PR review discussion | Persist, embed, extract facts, conversation review |
-| **Captured work** | A durable work record or lifecycle change | Merged PR, closed issue, Linear/Jira status, Monday item, CRM call log, signed contract | Persist, embed, reconcile; structured proposal only when Timeline memory should move |
-| **Pulse** | Telemetry that can explain or impact work | CI runs, Sentry events, deploy pings, noisy issue-alert repeats | Persist, embed, attach as supporting evidence; never originate a proposal |
+| **Communication** | People talking, deciding, committing | Slack/Telegram threads, meetings, email, voice notes, PR review discussion, **intentional captures** (home Capture, Telegram `/note`, Telegram/Slack voice memos) | Persist, embed, extract facts; conversation review for threaded firehose; **event-local proposal for intentional captures** |
+| **Captured work** | A durable work record or lifecycle change | Merged PR, closed issue, Linear/Jira status, Monday item, CRM call log, signed contract *as a work record* | Persist, embed, reconcile; structured proposal only when Timeline memory should move |
+| **Pulse** | Telemetry that can explain or impact work | CI runs, Sentry events, deploy pings, noisy issue-alert repeats, **Drive file-changed pings**, **document-drive lifecycle rows** ("Uploaded X") | Persist, embed, attach as supporting evidence; never originate a proposal |
+
+**Intentional captures are still communication**, not a fourth class and not pulses. The team took an extra step to write the note. That is high-intent conversation: extract + propose. Home Capture (`source: web`) and Telegram `/note` have no conversation identity, so they run the event-local suggestion path — the human already isolated the utterance. Telegram/Slack **group** messages stay on the debounced conversation review. Ordinary Telegram DMs that are not `/note` are Ask, not capture.
+
+**Curated documents are not a signal class.** They are a parallel **reference-knowledge** store (versions + chunks). Manual uploads, Drive harvest into the document drive, and promoted captured files live there. The `source: document` raw event is only the lifecycle ping ("Uploaded the MSA"). The bytes are chunked by document-extract, embedded, and cited as `[doc:<id>#v<n>:chunk:<chunkId>]`.
+
+Do not treat a Drive `file.changed` ping as equal to a human uploading a strategy PDF. The ping is a pulse. The harvested/uploaded document body is reference knowledge.
 
 Unstructured captured work (a CRM call log) may still extract. Structured
 captured work (PR merged, Linear state) must not. Pulses never extract.
 
-**Shipped:** skip extract/suggestion LLM for providers `github | linear | monday | sentry`.
+**Shipped:** skip extract/suggestion LLM for providers `github | linear | monday | sentry`. Drive `file.changed` events skip extract as pulses. Document lifecycle rows skip event extract/suggest.
 **Target:** stamp `signalClass` on the envelope so a GitHub PR and a GitHub CI
-run diverge without a provider skip list.
+run diverge without a provider skip list, and so Drive harvest vs Drive ping
+do not share a provider switch in core.
 
 ```mermaid
 flowchart TD
@@ -278,6 +285,33 @@ flowchart TD
     P1 --> P2 --> P3
   end
 ```
+
+### Intentional captures vs firehose
+
+| Surface | Signal class | Proposal path | Why |
+| --- | --- | --- | --- |
+| Home Capture text / voice | Communication (high intent) | Event-local extract + suggestion | The person isolated the thought |
+| Telegram `/note`, DM file+caption | Communication (high intent) | Event-local extract + suggestion | Explicit save |
+| Telegram/Slack group message | Communication | Debounced conversation review | Firehose; one message must not mint a task |
+| Ordinary Telegram DM (not `/note`) | Not a capture | Ask / conversation-agent | Questions are not notes |
+| Telegram/Slack attachment | Captured file (evidence) | Stays on the parent message | Unpromoted; not drive knowledge |
+| Manual document upload / promotion / Drive harvest | Reference knowledge | Document-extract → chunks; lifecycle row is a pulse | The file is the knowledge, not "Uploaded X" |
+| Drive `file.changed` / `file.removed` integration event | Pulse | Embed only | Telemetry that a file moved; harvest already has the body |
+
+**Shipped:** web Capture and Telegram `/note` extract + suggest; document finalize writes a lifecycle raw event and enqueues document-extract, not event extract/suggest; Drive change events persist + embed and skip extract.
+
+### How reference knowledge is used
+
+Curated documents (contracts, guidelines, strategy, plans, "who we work with") must be usable without minting a Timeline task from every upload.
+
+| Consumer | Admission | Cite as | Must not |
+| --- | --- | --- | --- |
+| Ask / chat | Semantic document search on object-profile, task-status, and document-knowledge recipes; dedicated `search_documents` / `get_document_chunk` | `[doc:…]` | Treat captured-file OCR as a curated policy doc |
+| Object summary | Team-visible curated chunks whose name/body mention the hub | `document_chunk` source refs | Generate a summary from a name collision in a handbook alone |
+| Proposal / conversation review | Team-visible curated chunks related to names already in the conversation | Reason text may mention `[doc:…]`; evidence ids stay raw events | Originate a create/update from the document with no conversational or captured-work evidence |
+| Evidence pack | Raw events only today, including document lifecycle rows | Pack item | Pretend a chunk is a raw event |
+
+**Target:** pack items may include document chunks as supporting evidence when a hard hub join already exists. Document extract may enqueue object-summary refresh for name-matched hubs. Do not add a fourth signal class for documents.
 
 Coalescing is by **work-item id**, not by clock. A burst of PR events for
 `acme/app#88` collapses into one delayed job that loads the latest team-visible
@@ -405,7 +439,9 @@ flowchart LR
 Rules:
 
 - **Communication** proposes through a conversation review (and, once migrated,
-  a proposal-policy pack). Isolated Slack messages do not mint tasks.
+  a proposal-policy pack). Isolated Slack/Telegram **group** messages do not
+  mint tasks. Intentional captures may propose from that single event.
+  Curated documents may inform the proposal; they must not originate it.
 - **Captured work** proposes only when a Timeline-owned field should change
   (task `done`, assignee, aliases). Provider-owned cluster status can move
   without a suggestion model.
@@ -424,14 +460,19 @@ tie-break already-qualified pack candidates.
 
 **Shipped.**
 
-1. Slack/Telegram/meeting/email rows persist as communication.
+1. Slack/Telegram/meeting/email rows persist as communication. Home Capture
+   and Telegram `/note` persist as the same class with high intent.
 2. Extract pulls facts and entity mentions. It does not create the task.
 3. If the event has a conversation identity and is team-visible, schedule a
    conversation review: debounce ~10 minutes, window last 2 days / ≤24 events,
    plus ≤8 linked-context events that already share fact-linked entities.
-4. One structured LLM call over that window proposes creates/updates
-   (task, assignee, due, project edge, notes). Evidence quotes multiple
-   `rawEventId`s from the window.
+   Intentional captures without a conversation identity skip this debounce and
+   run the event-local suggestion path.
+4. One structured LLM call over that window (or the single capture) proposes
+   creates/updates (task, assignee, due, project edge, notes). Evidence quotes
+   `rawEventId`s from the window or capture. Team-visible curated document
+   chunks related to names already in the evidence may fill counterparties,
+   dates, and constraints; they cannot originate the bundle.
 5. A teammate accepts in Approvals. That write creates the `entities` row —
    the hub. Category classification may run after accept.
 6. Later communication in the same conversation can merge or supersede the
@@ -695,7 +736,7 @@ not yet stamp `signalClass` on every event.
 | --- | --- |
 | GitHub / Sentry / Linear / Monday dumped into extract + suggestion LLMs | **Fixed for those providers.** `integrationSkipsLlmIngest` skips extract enqueue. The remaining leak is that skip is still an OAuth-app list, so a GitHub review thread cannot extract without turning CI extract back on. |
 | Timeline tasks stay open after the work is complete | **Fixed when a hub join exists**, including **pending creates**. Completion is work-item lifecycle (merged PR, closed issue, provider `status=done`), not a time window. Pending approvals are refreshed in place when later completion arrives. |
-| Extract used "5 recent team events" as context | **Fixed for structured providers** (they never call extract). **Still live** for Slack, Drive, email, meetings: `RECENT_CONTEXT_LIMIT = 5` in `apps/worker/src/workers/extract.ts` is a time-ordered team dump, not a conversation key. |
+| Extract used "5 recent team events" as context | **Fixed for structured providers** (they never call extract) **and Drive file-change pulses**. **Still live** for Slack, email, meetings: `RECENT_CONTEXT_LIMIT = 5` in `apps/worker/src/workers/extract.ts` is a time-ordered team dump, not a conversation key. |
 | GitHub assignee attributed to whoever connected the integration | **Fixed.** Assignee is the GitHub actor/assignee login when it uniquely matches a teammate (connection login map, compact name, or email local-part). Connecting GitHub is identity, not work ownership. |
 | CI / comments treated as work-item `done` | **Not a completion signal, and never should be.** The matcher refuses comments/reviews/commits/CI so a green check cannot close a task. That is not the same as "no proposals." |
 | Telegram + PR + Meet + last month's email as one write | **Designed, not finished.** Ask can retrieve them once embedded. A `done` write still needs a hub join. Packs default `off`. |
@@ -742,6 +783,11 @@ is half; source independence and packs are the rest.**
 | Slice | Code today | Remaining |
 | --- | --- | --- |
 | Skip extract/suggest on structured providers | Shipped as `STRUCTURED_INGEST_PROVIDERS` | Lift into `signalClass` on `IntegrationEvent` |
+| Drive file-change pulses skip extract | Shipped as `google_drive` pulse skip | Envelope `signalClass=pulse` |
+| Document lifecycle rows skip event extract/suggest | Shipped (`source=document`) | Unchanged; chunks stay on document-extract |
+| Ask object-profile includes curated documents | Shipped | Unchanged |
+| Object summaries cite related curated documents | Shipped | Document extract should enqueue summary refresh for name-matched hubs |
+| Proposals may read related curated documents | Shipped as supporting context; cannot originate | Pack admission for document chunks |
 | GitHub PR/issue → coalesced task proposal | Shipped in `github-task-proposals.ts` | Stop parsing `github.type` in shared code; match `objectMap` + status for any adapter |
 | Rate-limit extract/embed/proposal per connection | Shipped | Keep |
 | Stamp GitHub aliases onto accepted chat tasks | Only after a successful match | Conversation review should copy `acme/app#88` when the window already said it — highest-leverage quality fix |
@@ -765,6 +811,9 @@ merge. Those two close most dogfood misses without a new model call.
 | Immutable ingest + team isolation | Shipped | Unchanged |
 | Embed every selected integration event, rate-limited | Shipped | Unchanged |
 | Skip extract/suggestion LLM for GitHub, Linear, Monday, Sentry | Shipped as a provider list | Replace with signal class + payload shape |
+| Drive file-change pulses skip extract | Shipped | Envelope `signalClass=pulse` |
+| Intentional captures (web, Telegram `/note`) extract + propose | Shipped event-local | Unchanged; do not fold them into conversation-review debounce |
+| Curated documents in Ask / object summaries / proposal context | Shipped: object-profile retrieval, summary `document_chunk` refs, supporting proposal context | Pack admission for chunks; summary refresh on document extract |
 | Conversation review → approval-backed task create | Shipped | Migrate onto proposal packs |
 | GitHub PR/issue lifecycle → coalesced task proposals | Shipped, GitHub-specific parser | Envelope-driven matcher on `objectMap` + status + aliases |
 | Match pending create bundles when the PR arrives first | Shipped for GitHub: refresh the pending create (status/aliases/actor) instead of letting it rot | Same living-proposal refresh on Linear/Monday captured work |
@@ -788,8 +837,10 @@ merge. Those two close most dogfood misses without a new model call.
    Embeddings recall; hubs qualify.
 3. Pulses never originate proposals and never call extract.
 4. Structured captured work never calls extract or the suggestion model.
-5. Communication still requires a conversation review or pack, not one
-   isolated message.
+5. Firehose communication still requires a conversation review or pack, not one
+   isolated Slack/Telegram group message. Intentional captures (home Capture,
+   Telegram `/note`, voice memos) are complete utterances and may propose from
+   that single event.
 6. Team isolation and visibility apply before retrieval, ranking, model
    input, persistence, and display.
 7. A pack supplies evidence, not authority.
@@ -812,6 +863,8 @@ When code changes ingest or proposals, update this file in the same change.
   (first slice; target matcher is envelope-driven)
 - Packs: `packages/shared/src/evidence-pack/`
 - Objects: `packages/shared/src/objects/`
+- Reference knowledge: `packages/shared/src/documents/related-chunks.ts`,
+  document-extract worker, Ask `search_documents`
 - Embeddings: `packages/shared/src/embedding/raw-event-renderer.ts`,
   `sources.ts`
 - Rate limits: `packages/shared/src/rate-limit/buckets.ts`
@@ -836,6 +889,10 @@ qualify first.
 - Set pulse parent ids (`relatedExternalObjectId`).
 - Let pulses into proposal packs only as supporting evidence when a hard join
   already exists.
+- Admit curated document chunks into proposal packs the same way: supporting
+  only, hub already related, `[doc:…]` citations.
+- After document-extract chunks a curated file, enqueue object-summary refresh
+  for name-matched hubs.
 - Reuse the captured-work template for Linear/Jira-style status and assignee
   fields without an LLM.
 - Keep CRM, contracts, and call logs on the captured-work path even when the

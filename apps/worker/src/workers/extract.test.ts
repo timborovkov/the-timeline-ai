@@ -681,6 +681,41 @@ describe('processExtractJobForTests', () => {
     });
   });
 
+  it('skips document lifecycle events and Drive file-change pulses without calling the LLM', async () => {
+    const documentEventId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3';
+    const driveEventId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4';
+    await seedEvent(db, {
+      id: documentEventId,
+      source: 'document',
+      text: 'Uploaded Acme MSA.pdf',
+      metadata: { action: 'upload', document_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' },
+    });
+    await seedEvent(db, {
+      id: driveEventId,
+      source: 'integration',
+      text: 'Drive file "Acme MSA.pdf" (application/pdf) was modified',
+      metadata: {
+        provider: 'google_drive',
+        integration_id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        event_type: 'file.changed',
+      },
+    });
+    const chatStructured = modelWithFacts([]);
+    const testIO = io({
+      getEnv: () => ({ OPENROUTER_API_KEY: undefined }) as never,
+      chatStructured,
+    });
+
+    await expect(
+      processExtractJobForTests({ db }, { rawEventId: documentEventId, teamId: TEAM_ID }, testIO),
+    ).resolves.toMatchObject({ skipped: true, reason: 'document_lifecycle_event' });
+    await expect(
+      processExtractJobForTests({ db }, { rawEventId: driveEventId, teamId: TEAM_ID }, testIO),
+    ).resolves.toMatchObject({ skipped: true, reason: 'integration_pulse_source' });
+    expect(chatStructured).not.toHaveBeenCalled();
+    expect(testIO.enqueueSuggestionJob).not.toHaveBeenCalled();
+  });
+
   it('delays remaining integration extract jobs when the connection budget is exhausted', async () => {
     const rawEventId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2';
     await seedEvent(db, {

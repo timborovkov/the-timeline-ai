@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   GITHUB_TASK_PROPOSAL_COALESCE_MS,
+  integrationExtractSkipReason,
   integrationIdFromSourceMetadata,
+  integrationSkipsExtract,
   integrationSkipsLlmIngest,
   isDelayedIngestResult,
   takeConnectionIngestSlot,
@@ -16,6 +18,10 @@ describe('structured ingest processing', () => {
     expect(integrationSkipsLlmIngest('monday')).toBe(true);
     expect(integrationSkipsLlmIngest('slack')).toBe(false);
     expect(integrationSkipsLlmIngest('google_drive')).toBe(false);
+    expect(integrationSkipsExtract('google_drive')).toBe(true);
+    expect(integrationExtractSkipReason('google_drive')).toBe('integration_pulse_source');
+    expect(integrationSkipsExtract('slack')).toBe(false);
+    expect(integrationExtractSkipReason('github')).toBe('integration_structured_source');
   });
 
   it('reads the connection id from stored integration metadata', () => {
