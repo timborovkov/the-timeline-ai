@@ -37,6 +37,8 @@ describe('formatDigestActivityLines', () => {
         digestActivityStats({
           pendingApprovals: 3,
           eventCount: 1,
+          tasks: [],
+          objectChangesByType: {},
           activity: {
             newMoments: 1,
             newProposals: 0,
