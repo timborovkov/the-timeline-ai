@@ -69,9 +69,7 @@ export function TechnicalDetails({
       <details
         className={cn(
           'group',
-          compact
-            ? 'border-0 pt-1 text-xs'
-            : 'border-t border-border pt-3 text-sm',
+          compact ? 'border-0 pt-1 text-xs' : 'border-t border-border pt-3 text-sm',
           className,
         )}
       >

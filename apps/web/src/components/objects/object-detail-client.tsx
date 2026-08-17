@@ -1984,10 +1984,7 @@ function ObjectRelationshipsSection({
       {relationships.length === 0 ? null : (
         <ul className="space-y-1">
           {relationships.map((relationship) => (
-            <li
-              key={`${relationship.direction}-${relationship.id}`}
-              className="grid gap-0.5"
-            >
+            <li key={`${relationship.direction}-${relationship.id}`} className="grid gap-0.5">
               <a
                 href={`/app/objects/${relationship.otherId}`}
                 className={`min-w-0 truncate ${DETAIL_LINK_CLASS}`}
@@ -2083,7 +2080,9 @@ function ObjectRecentChangeItem({
       className={`min-w-0 py-1 ${isSuggested ? 'text-signal' : ''} ${isRejected ? 'opacity-60' : ''}`}
     >
       <div className="flex min-w-0 items-start justify-between gap-3">
-        <span className="min-w-0 break-words text-sm text-fg">{changeFieldLabel(change.field)}</span>
+        <span className="min-w-0 break-words text-sm text-fg">
+          {changeFieldLabel(change.field)}
+        </span>
         <span className={`shrink-0 ${DETAIL_META_CLASS}`}>
           {statusLabel(change.actorKind)} · {statusLabel(change.status)}
         </span>

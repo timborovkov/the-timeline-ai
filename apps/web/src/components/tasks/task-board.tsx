@@ -2173,7 +2173,10 @@ function TaskDetailPanel({
       <ObjectRelatedContext connectedWork={connectedWork} compact />
 
       <div className="px-3 py-1.5">
-        <Link href={objectHref} className="text-xs font-normal text-fg-muted hover:text-fg hover:underline">
+        <Link
+          href={objectHref}
+          className="text-xs font-normal text-fg-muted hover:text-fg hover:underline"
+        >
           Open object
         </Link>
       </div>
