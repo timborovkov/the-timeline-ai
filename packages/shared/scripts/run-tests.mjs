@@ -21,6 +21,7 @@ const pgliteChunks = [
   ],
   [
     'src/integrations/event-writer.test.ts',
+    'src/integrations/github-task-proposals.test.ts',
     'src/integrations/provider-budget.test.ts',
     'src/integrations/webhooks.test.ts',
     'src/job-recovery/index.test.ts',
