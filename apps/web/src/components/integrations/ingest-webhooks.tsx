@@ -354,61 +354,61 @@ function IngestWebhookCreateForm({
 }) {
   return (
     <div className="space-y-4 border-y border-border py-4">
-        <div className="space-y-1">
-          <Label htmlFor="ingest-webhook-name">Name</Label>
-          <Input
-            id="ingest-webhook-name"
-            value={name}
+      <div className="space-y-1">
+        <Label htmlFor="ingest-webhook-name">Name</Label>
+        <Input
+          id="ingest-webhook-name"
+          value={name}
+          onChange={(e) => {
+            dispatch({ type: 'name', name: e.target.value });
+          }}
+          placeholder="Pipedrive webhook"
+        />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={visibilityDefault === 'team'}
             onChange={(e) => {
-              dispatch({ type: 'name', name: e.target.value });
-            }}
-            placeholder="Pipedrive webhook"
-          />
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={visibilityDefault === 'team'}
-              onChange={(e) => {
-                dispatch({
-                  type: 'visibilityDefault',
-                  visibilityDefault: e.target.checked ? 'team' : 'private',
-                });
-              }}
-            />
-            Team-visible by default
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={proposalGenerationEnabled}
-              onChange={(e) => {
-                dispatch({
-                  type: 'proposalGenerationEnabled',
-                  proposalGenerationEnabled: e.target.checked,
-                });
-              }}
-            />
-            Generate approval proposals
-          </label>
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="ingest-webhook-event-class">Timeline type</Label>
-          <EventClassSelect
-            id="ingest-webhook-event-class"
-            value={eventClass}
-            onChange={(next) => {
-              dispatch({ type: 'eventClass', eventClass: next });
+              dispatch({
+                type: 'visibilityDefault',
+                visibilityDefault: e.target.checked ? 'team' : 'private',
+              });
             }}
           />
-          <p className="text-xs text-fg-muted">
-            {TIMELINE_EVENT_CLASS_OPTIONS.find((option) => option.value === eventClass)?.hint}
-          </p>
-        </div>
-        <Button size="sm" disabled={busy || !name.trim()} onClick={onCreate}>
-          {busy ? 'Creating…' : 'Create webhook'}
-        </Button>
+          Team-visible by default
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={proposalGenerationEnabled}
+            onChange={(e) => {
+              dispatch({
+                type: 'proposalGenerationEnabled',
+                proposalGenerationEnabled: e.target.checked,
+              });
+            }}
+          />
+          Generate approval proposals
+        </label>
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor="ingest-webhook-event-class">Timeline type</Label>
+        <EventClassSelect
+          id="ingest-webhook-event-class"
+          value={eventClass}
+          onChange={(next) => {
+            dispatch({ type: 'eventClass', eventClass: next });
+          }}
+        />
+        <p className="text-xs text-fg-muted">
+          {TIMELINE_EVENT_CLASS_OPTIONS.find((option) => option.value === eventClass)?.hint}
+        </p>
+      </div>
+      <Button size="sm" disabled={busy || !name.trim()} onClick={onCreate}>
+        {busy ? 'Creating…' : 'Create webhook'}
+      </Button>
     </div>
   );
 }

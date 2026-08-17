@@ -17,10 +17,7 @@ import { calendarEventListWindow } from '@/lib/calendar-event-list-range';
 import { CALENDAR_EVENT_LIST_PAGE_SIZE } from '@/lib/collection-page-sizes';
 import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
-import {
-  groupLinkedObjectsByEvent,
-  serializeCalendarEvent,
-} from '@/lib/serialize-calendar-event';
+import { groupLinkedObjectsByEvent, serializeCalendarEvent } from '@/lib/serialize-calendar-event';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
 
 export const metadata: Metadata = {

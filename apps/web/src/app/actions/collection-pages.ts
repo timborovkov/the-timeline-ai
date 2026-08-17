@@ -16,10 +16,7 @@ import {
 } from '@/lib/collection-page-sizes';
 import { displayObjectLabel } from '@/lib/display-labels';
 import { runSentryServerAction } from '@/lib/sentry-action';
-import {
-  groupLinkedObjectsByEvent,
-  serializeCalendarEvent,
-} from '@/lib/serialize-calendar-event';
+import { groupLinkedObjectsByEvent, serializeCalendarEvent } from '@/lib/serialize-calendar-event';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
 
 const cursorSchema = z.string().max(500).nullable().optional();
