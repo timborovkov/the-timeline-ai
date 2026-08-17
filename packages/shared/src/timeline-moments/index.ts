@@ -1143,10 +1143,8 @@ function titleForGroup(
 ): string {
   const meta = metaObject(displayLead.sourceMetadata);
   if (displayLead.source === 'telegram' || displayLead.source === 'slack') {
-    return clippedTitle(
-      stripConversationLeadIn(summaryForEvent(displayLead, timezone)),
-      `${displayLead.source === 'telegram' ? 'Telegram' : 'Slack'} message`,
-    );
+    const message = stripConversationLeadIn(summaryForEvent(displayLead, timezone));
+    return clipped(message, 92) || `${displayLead.source === 'telegram' ? 'Telegram' : 'Slack'} message`;
   }
   if (displayLead.source === 'meeting') {
     const title = stringMeta(meta, 'title');

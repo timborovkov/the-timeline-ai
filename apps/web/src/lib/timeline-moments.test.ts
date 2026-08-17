@@ -231,7 +231,7 @@ describe('timeline moment grouping', () => {
     );
 
     expect(moments[0]?.title).toBe(
-      'if importer reliability is the beta gate, we should keep the vendor appendix',
+      'if importer reliability is the beta gate, we should keep the vendor appendix.',
     );
     expect(moments[0]?.sourceLabel).toBe('Slack');
   });
