@@ -98,7 +98,7 @@ export function TaskCategorySelect({
         }}
         className={
           quiet
-            ? 'h-10 w-full rounded-sm border-0 bg-transparent px-2 text-xs text-fg-muted hover:bg-surface-2 hover:text-fg disabled:cursor-progress disabled:opacity-60'
+            ? 'h-8 w-full rounded-sm border-0 bg-transparent px-1.5 text-xs text-fg-muted hover:bg-surface-2 hover:text-fg disabled:cursor-progress disabled:opacity-60'
             : 'h-9 w-full rounded-sm border border-border bg-bg px-2 text-sm text-fg disabled:cursor-progress disabled:opacity-60'
         }
       >

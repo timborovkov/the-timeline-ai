@@ -1004,28 +1004,18 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
             </div>
           ) : null}
         </div>
-      ) : summary.canGenerate ? (
-        <p className="text-sm text-fg-muted">Summary is ready to generate.</p>
       ) : null}
 
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        {summary.generatedAt ||
-        summary.status === 'pending' ||
-        (summary.status === 'missing' && summary.canGenerate) ||
-        summary.lastErrorCode ? (
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        {generated && summary.generatedAt ? (
           <p className="text-xs text-fg-dim">
-            {summary.generatedAt
-              ? `Updated ${formatDisplayDateTime(summary.generatedAt, { timezone })} · ${
-                  summary.sourceRefs.length
-                } sources`
-              : summary.status === 'pending'
-                ? 'Generating'
-                : summary.status === 'missing' && summary.canGenerate
-                  ? 'Ready to generate'
-                  : summary.lastErrorCode
-                    ? 'Update failed'
-                    : null}
+            Updated {formatDisplayDateTime(summary.generatedAt, { timezone })} ·{' '}
+            {summary.sourceRefs.length} sources
           </p>
+        ) : summary.status === 'pending' ? (
+          <p className="text-xs text-fg-dim">Generating</p>
+        ) : summary.lastErrorCode ? (
+          <p className="text-xs text-fg-dim">Update failed</p>
         ) : null}
         {canRequest ? (
           <button
@@ -1271,6 +1261,7 @@ function ObjectEditableFields({
       <h2 className="px-2 text-xs text-fg-dim">Properties</h2>
       <EditableMetadata
         label={`Status for ${displayText(title)}`}
+        className="min-h-8 px-1.5"
         value={() => <CollectionStatus value={detail.status} label={statusLabel(detail.status)} />}
         editor={() => (
           <select
@@ -1294,6 +1285,7 @@ function ObjectEditableFields({
       />
       <EditableMetadata
         label={`Priority for ${displayText(title)}`}
+        className="min-h-8 px-1.5"
         value={() => (
           <CollectionStatus
             value={detail.priority ? `p${detail.priority}` : 'none'}
@@ -1321,6 +1313,7 @@ function ObjectEditableFields({
       {detail.type === 'task' ? (
         <EditableMetadata
           label={`Assignee for ${displayText(title)}`}
+          className="min-h-8 px-1.5"
           value={assignee?.label ?? (detail.assigneeUserId ? 'Assigned' : 'Unassigned')}
           editor={() => (
             <select
@@ -1344,6 +1337,7 @@ function ObjectEditableFields({
       {isSchedulableObjectType(detail.type) ? (
         <EditableMetadata
           label={`Due date for ${displayText(title)}`}
+          className="min-h-8 px-1.5"
           value={() => <DueDateDisplay value={detail.dueAt} variant="field-hint" />}
           editor={() => (
             <MetadataDateEditor
@@ -1387,7 +1381,7 @@ function ObjectEditableFields({
           ) : null}
         </>
       ) : null}
-      <label className="flex min-h-9 items-center gap-3 px-2">
+      <label className="flex min-h-8 items-center gap-3 px-2">
         <span className="w-16 shrink-0 text-xs text-fg-dim">Stage</span>
         <input
           aria-label="Stage"
@@ -1408,7 +1402,7 @@ function ObjectEditableFields({
           placeholder="No stage"
         />
       </label>
-      <label className="flex min-h-9 items-center gap-3 px-2">
+      <label className="flex min-h-8 items-center gap-3 px-2">
         <span className="w-16 shrink-0 text-xs text-fg-dim">Aliases</span>
         <input
           aria-label="Aliases"

@@ -819,8 +819,8 @@ describe('ObjectDetailClient', () => {
       }),
     );
 
-    expect(screen.getByText('Summary is ready to generate.')).toBeTruthy();
-    expect(screen.getByText('Ready to generate')).toBeTruthy();
+    expect(screen.queryByText('Summary is ready to generate.')).toBeNull();
+    expect(screen.queryByText('Ready to generate')).toBeNull();
     expect(screen.getByRole('button', { name: 'Generate summary' })).toBeTruthy();
   });
 

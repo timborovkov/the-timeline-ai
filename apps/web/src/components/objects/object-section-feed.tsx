@@ -114,7 +114,7 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
               previewText={previewText}
               source={source}
               occurredAt={occurredAt}
-              className="inline-flex shrink-0 items-center gap-1 text-xs text-fg-muted transition-colors hover:text-fg hover:underline"
+              className="inline-flex shrink-0 items-center gap-1 border-0 bg-transparent px-0 py-0 font-sans text-xs font-normal text-fg-muted no-underline hover:bg-transparent hover:text-fg hover:underline"
             >
               <ExternalLink className="size-3" />
               View evidence

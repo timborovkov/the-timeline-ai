@@ -435,8 +435,10 @@ content or an actionable generate/retry state, then only the provenance /
 connected-work / evidence / facts groups that have items. Empty “Not enough
 object memory,” “No connected work,” and “Nothing here yet” cards are
 prohibited. Notes keep a borderless composer. The right column is Properties:
-icon-and-value metadata rows, then Related search, recent changes when present,
-and a quiet Archive text control. Section labels, supporting copy, and
+32px icon-and-value metadata rows, then Related search, recent changes when
+present, and a quiet Archive text control. An empty summary is a single
+Generate summary control, not a “ready to generate” block. Evidence uses a
+quiet text control, not a signal chip. Section labels, supporting copy, and
 timestamps use 12px `--fg-dim`. Relationship and change metadata stay sentence
 case. Content is grouped by typography and spacing. Nested bordered boxes are
 not a layout system on these surfaces.
@@ -667,4 +669,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Ask mobile session title | Reuses the resolved conversation title in the mobile session summary, including deep-linked chats outside the recent list. |
 | 2026-08-17 | Quiet sidebar brand and fold control | Aligns the product mark with primary nav, sends it to Home, and replaces the boxed fold glyph with a lighter chevron. |
 | 2026-08-17 | Linear-density object and task detail | Replaces boxed field grids and empty memory cards with list-row metadata, why-this-exists lead copy, ghost icon actions, and list-preserving peek navigation. |
-| 2026-08-17 | Compact object and task detail rhythm | Tightens the object-page section stack to 16px, uses 20px titles and 1.35 body leading, and keeps peek/page chrome on `--fg` / `--fg-muted` / `--fg-dim` / `--danger` without uppercase metadata. |
+| 2026-08-17 | Compact object and task detail rhythm | Tightens the object-page section stack to 16px, uses 20px titles, 32px property rows, 1.35 body leading, and keeps peek/page chrome on `--fg` / `--fg-muted` / `--fg-dim` / `--danger` without uppercase metadata. |

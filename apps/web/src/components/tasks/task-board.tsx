@@ -2023,6 +2023,7 @@ function TaskDetailPanel({
       <div className="mt-0.5 flex flex-col px-1.5">
         <EditableMetadata
           label="Task status"
+          className="min-h-8 px-1.5"
           pending={saving === 'status'}
           value={() => (
             <CollectionStatus
@@ -2052,6 +2053,7 @@ function TaskDetailPanel({
         />
         <EditableMetadata
           label="Task priority"
+          className="min-h-8 px-1.5"
           pending={saving === 'priority'}
           value={() => (
             <CollectionStatus
@@ -2082,6 +2084,7 @@ function TaskDetailPanel({
         />
         <EditableMetadata
           label="Task assignee"
+          className="min-h-8 px-1.5"
           pending={saving === 'assignee'}
           value={assignee?.label ?? 'Unassigned'}
           editor={() => (
@@ -2104,6 +2107,7 @@ function TaskDetailPanel({
         />
         <EditableMetadata
           label="Task due date"
+          className="min-h-8 px-1.5"
           pending={saving === 'due date'}
           value={() => <DueDateDisplay value={task.dueAt} variant="field-hint" />}
           editor={() => (

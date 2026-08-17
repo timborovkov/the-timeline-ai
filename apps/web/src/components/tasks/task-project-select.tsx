@@ -60,7 +60,7 @@ export function TaskProjectSelect({
         triggerRef={selectorRef}
         className={
           quiet
-            ? 'h-10 border-0 bg-transparent px-2 text-xs text-fg-muted hover:bg-surface-2 hover:text-fg'
+            ? 'h-8 border-0 bg-transparent px-1.5 text-xs text-fg-muted hover:bg-surface-2 hover:text-fg'
             : undefined
         }
         onValueChange={(nextProject) => {
