@@ -35,6 +35,7 @@
     "validate": "pnpm format:check && pnpm typecheck && pnpm lint && pnpm knip",
     "dev:wipe": "NODE_OPTIONS=--conditions=development node --import tsx scripts/env-reset.ts",
     "dev:seed": "NODE_OPTIONS=--conditions=development tsx scripts/seed-dev.ts",
+    "dev:seed:heavy": "NODE_OPTIONS=--conditions=development tsx scripts/seed-dev.ts --heavy",
     "db:migrate": "pnpm --filter @timeline/db migrate",
     "db:generate": "pnpm --filter @timeline/db generate",
     "db:studio": "pnpm --filter @timeline/db studio",
