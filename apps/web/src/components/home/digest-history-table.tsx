@@ -22,13 +22,12 @@ export function DigestHistoryTable({
   digests: DigestHistoryRow[];
   selectedId?: string;
 }) {
-  const [userOpenId, setUserOpenId] = useState<string | null | undefined>(undefined);
-  const [prevSelectedId, setPrevSelectedId] = useState(selectedId);
-  if (selectedId !== prevSelectedId) {
-    setPrevSelectedId(selectedId);
-    setUserOpenId(undefined);
-  }
-  const openId = userOpenId === undefined ? (selectedId ?? null) : userOpenId;
+  const [override, setOverride] = useState<{
+    forSelectedId: string | undefined;
+    openId: string | null;
+  } | null>(null);
+  const openId =
+    override && override.forSelectedId === selectedId ? override.openId : (selectedId ?? null);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -55,7 +54,7 @@ export function DigestHistoryTable({
             const open = openId === digest.id;
             const timezone = digest.timezone ?? digest.payload.timezone;
             const toggleOpen = () => {
-              setUserOpenId(open ? null : digest.id);
+              setOverride({ forSelectedId: selectedId, openId: open ? null : digest.id });
             };
             return (
               <Fragment key={digest.id}>
