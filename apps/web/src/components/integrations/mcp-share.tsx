@@ -378,7 +378,7 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
       if (!result.ok) {
         setKeyMutations((current) => ({
           ...current,
-          [id]: { busy: false, error: result.error ?? 'The key could not be revoked. Try again.' },
+          [id]: { busy: false, error: result.error },
         }));
         return;
       }
