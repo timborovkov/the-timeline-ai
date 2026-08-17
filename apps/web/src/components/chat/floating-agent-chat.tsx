@@ -43,8 +43,7 @@ export function FloatingAgentChat({ teamId, teamName }: FloatingAgentChatProps) 
 function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) {
   const pathname = usePathname();
   const { current, dashboardContext } = useCurrentChatView();
-  const [open, setOpen] = useState(false);
-  const [activated, setActivated] = useState(false);
+  const [{ open, activated }, setPanel] = useState({ open: false, activated: false });
   const storageKey = `timeline:floating-agent-chat:${teamId}:session`;
   const [{ sessionId, initialMessages, contextTrail }, setSessionState] =
     useState<FloatingSessionState>(() => ({
@@ -55,15 +54,18 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
   const hydratedSessionIdRef = useRef<string | null>(null);
   const sessionGenerationRef = useRef(0);
   const launcherRef = useRef<HTMLButtonElement>(null);
+  const openRef = useRef(open);
+  const pathnameRef = useRef(pathname);
+  openRef.current = open;
+  pathnameRef.current = pathname;
   const excluded = isExcludedPath(pathname);
   const liveTrail = mergeChatContextTrail(contextTrail, [current]);
   const pinnedEntityId = current.objectId ?? null;
   const openPanel = useCallback(() => {
-    setActivated(true);
-    setOpen(true);
+    setPanel({ open: true, activated: true });
   }, []);
   const closePanel = useCallback(() => {
-    setOpen(false);
+    setPanel((panel) => ({ ...panel, open: false }));
     launcherRef.current?.focus();
   }, []);
   const resetFloatingSession = useCallback(() => {
@@ -113,34 +115,24 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (isExcludedPath(pathname)) return;
-      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'j') return;
-      event.preventDefault();
-      if (open) {
-        setOpen(false);
+      if (event.key === 'Escape' && openRef.current) {
+        event.preventDefault();
+        setPanel((panel) => ({ ...panel, open: false }));
+        launcherRef.current?.focus();
         return;
       }
-      setActivated(true);
-      setOpen(true);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [open, pathname]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
+      if (isExcludedPath(pathnameRef.current)) return;
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'j') return;
       event.preventDefault();
-      closePanel();
+      setPanel((panel) =>
+        panel.open ? { ...panel, open: false } : { open: true, activated: true },
+      );
     };
     window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('keydown', onKey);
     };
-  }, [closePanel, open]);
+  }, []);
 
   const showChrome = !excluded;
   const showPanel = open && showChrome;
