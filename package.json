@@ -40,7 +40,7 @@
     "demo:reset": "pnpm dev:wipe && pnpm demo:seed",
     "demo:index": "TIMELINE_ENV_FILE=$PWD/.env pnpm --filter @timeline/worker demo-index -- --team=20000000-0000-4000-8000-000000000001 --fixture-version=demo-seed-v1",
     "demo:verify": "NODE_OPTIONS=--conditions=development tsx scripts/verify-demo.ts",
-    "test:demo-fixture": "tsx scripts/demo-fixture.test.ts",
+    "test:demo-fixture": "NODE_OPTIONS=--conditions=development tsx scripts/demo-fixture.test.ts",
     "db:migrate": "pnpm --filter @timeline/db migrate",
     "db:generate": "pnpm --filter @timeline/db generate",
     "db:studio": "pnpm --filter @timeline/db studio",

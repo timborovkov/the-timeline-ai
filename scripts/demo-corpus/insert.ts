@@ -628,9 +628,17 @@ async function insertCaptureSurfaces(tx: SeedTx): Promise<void> {
       ownerUserId: CORPUS_PERSON.jordan.id,
       name: 'Ledger billing',
       visibilityDefault: 'team',
+      eventClass: 'pulse',
       proposalGenerationEnabled: true,
     })
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: ingestWebhooks.id,
+      set: {
+        eventClass: sql`excluded.event_class`,
+        visibilityDefault: sql`excluded.visibility_default`,
+        proposalGenerationEnabled: sql`excluded.proposal_generation_enabled`,
+      },
+    });
   await tx
     .insert(ingestWebhookCredentials)
     .values({

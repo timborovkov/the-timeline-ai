@@ -349,6 +349,12 @@ for (const event of CORPUS_EVENTS.filter((row) => row.source === 'slack')) {
   assert.equal(event.sourceMetadata.slack_workspace_id, CORPUS_SLACK.workspace, event.id);
   assert.equal(event.sourceMetadata.slack_team_id, 'T0ACMEDEMO', event.id);
 }
+for (const event of CORPUS_EVENTS) {
+  assert.equal(typeof event.sourceMetadata.event_class, 'string', event.id);
+}
+for (const event of CORPUS_EVENTS.filter((row) => row.source === 'email')) {
+  assert.equal(typeof event.sourceMetadata.html_body, 'string', event.id);
+}
 for (const event of CORPUS_EVENTS.filter((row) => row.source === 'document')) {
   assert.equal(typeof event.sourceMetadata.document_id, 'string', event.id);
 }

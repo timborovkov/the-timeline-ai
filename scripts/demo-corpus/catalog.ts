@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 
+import { classifyCapturedEvent } from '@timeline/shared/event-class';
+
 import { DEMO_FIXTURE_VERSION, DEMO_IDS, DEMO_LOGIN_PASSWORD } from '../demo-fixture.js';
 
 import {
@@ -2064,6 +2066,14 @@ function enrichCaptureMetadata(row: CorpusEvent): CorpusEvent {
   }
   if (row.source === 'email') {
     extra.thread_root_id ??= extra.message_id ?? row.id;
+    extra.html_body ??= `<p>${escapeHtml(row.contentText)}</p>`;
+    extra.source_snapshot ??= {
+      provider: 'postmark',
+      subject: extra.subject ?? 'Acme Labs email',
+      html_body: extra.html_body,
+      text_body: row.contentText,
+      from: { email: extra.from ?? 'owner@timeline.dev' },
+    };
   }
   if (row.source === 'telegram') {
     extra.tg_chat_id ??= '-100710000003';
@@ -2116,7 +2126,16 @@ function enrichCaptureMetadata(row: CorpusEvent): CorpusEvent {
   if (row.source === 'document') {
     extra.action ??= 'uploaded';
   }
+  extra.event_class ??= classifyCapturedEvent({ source: row.source, metadata: extra });
   return { ...row, sourceMetadata: extra };
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
 }
 
 export const CORPUS_EVENTS: CorpusEvent[] = RAW_CORPUS_EVENTS.map(enrichCaptureMetadata);
