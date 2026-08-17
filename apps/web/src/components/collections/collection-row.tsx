@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 export function CollectionRow({
   leading,
   title,
+  subtitle,
   context,
   metadata,
   actions,
@@ -13,6 +14,7 @@ export function CollectionRow({
 }: {
   leading?: ReactNode;
   title: ReactNode;
+  subtitle?: ReactNode;
   context?: ReactNode;
   metadata?: ReactNode;
   actions?: ReactNode;
@@ -31,6 +33,11 @@ export function CollectionRow({
       <div className="flex min-w-0 flex-col justify-center py-1 sm:flex-row sm:items-center sm:gap-3">
         <div className="min-w-0 flex-1">
           <div className="min-w-0 truncate text-sm font-medium leading-5 text-fg">{title}</div>
+          {subtitle ? (
+            <div className="min-w-0 truncate text-[11px] font-normal leading-4 text-fg-dim">
+              {subtitle}
+            </div>
+          ) : null}
           {context ? (
             <div className="min-w-0 truncate text-[11px] leading-4 text-fg-dim sm:hidden">
               {context}

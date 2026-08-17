@@ -203,30 +203,31 @@ export function CuratedBoardTable({
         />
       ) : null}
       <div className="min-h-0 flex-1 overflow-auto bg-bg">
-        <table className="w-full min-w-[56rem] text-sm">
+        <table className="w-full min-w-[48rem] text-sm">
           <thead className="border-b border-border bg-bg text-left text-xs text-fg-dim">
             <tr>
               {onUpdateItem ? (
-                <th className="w-10 px-3 py-2 font-normal">
-                  <input
-                    type="checkbox"
-                    checked={allVisibleSelected}
-                    disabled={selectableItems.length === 0}
-                    onChange={(event) => {
-                      toggleAll(event.currentTarget.checked);
-                    }}
-                    aria-label="Select all visible board items"
-                    className="size-4 rounded-sm border-border"
-                  />
+                <th className="w-10 px-3 py-2 align-middle font-normal">
+                  <span className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      disabled={selectableItems.length === 0}
+                      onChange={(event) => {
+                        toggleAll(event.currentTarget.checked);
+                      }}
+                      aria-label="Select all visible board items"
+                      className="size-4 rounded-sm border-border"
+                    />
+                  </span>
                 </th>
               ) : null}
-              <th className="px-3 py-2 font-normal">Name</th>
-              <th className="px-3 py-2 font-normal">Type</th>
-              <th className="px-3 py-2 font-normal">Responsible</th>
-              <th className="px-3 py-2 font-normal">Due</th>
-              <th className="px-3 py-2 font-normal">Priority</th>
-              <th className="px-3 py-2 font-normal">Lane</th>
-              <th className="px-3 py-2 font-normal">Next step</th>
+              <th className="px-3 py-2 align-middle font-normal">Name</th>
+              <th className="px-3 py-2 align-middle font-normal">Type</th>
+              <th className="px-3 py-2 align-middle font-normal">Responsible</th>
+              <th className="px-3 py-2 align-middle font-normal">Due</th>
+              <th className="px-3 py-2 align-middle font-normal">Priority</th>
+              <th className="px-3 py-2 align-middle font-normal">Lane</th>
             </tr>
           </thead>
           <tbody>
@@ -239,20 +240,22 @@ export function CuratedBoardTable({
                   className="border-t border-border transition-colors hover:bg-surface"
                 >
                   {onUpdateItem ? (
-                    <td className="px-3 py-2 align-top">
-                      <input
-                        type="checkbox"
-                        checked={visibleSelectedIds.has(item.id)}
-                        disabled={optimistic}
-                        onChange={(event) => {
-                          toggleOne(item.id, event.currentTarget.checked);
-                        }}
-                        aria-label={`Select ${displayText(objectTitle)}`}
-                        className="size-4 rounded-sm border-border disabled:opacity-50"
-                      />
+                    <td className="px-3 py-2 align-middle">
+                      <span className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={visibleSelectedIds.has(item.id)}
+                          disabled={optimistic}
+                          onChange={(event) => {
+                            toggleOne(item.id, event.currentTarget.checked);
+                          }}
+                          aria-label={`Select ${displayText(objectTitle)}`}
+                          className="size-4 rounded-sm border-border disabled:opacity-50"
+                        />
+                      </span>
                     </td>
                   ) : null}
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2 align-middle">
                     {optimistic ? (
                       <span className="font-medium text-fg">{displayText(objectTitle)}</span>
                     ) : (
@@ -263,8 +266,19 @@ export function CuratedBoardTable({
                         {displayText(objectTitle)}
                       </Link>
                     )}
+                    {item.nextStep ? (
+                      <p className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-fg-dim">
+                        {item.nextStep}
+                      </p>
+                    ) : null}
+                    <BoardItemSavingNotice field={saving[item.id]} />
+                    <BoardItemSaveError
+                      objectTitle={objectTitle}
+                      error={errors[item.id]}
+                      suppressAlert={bulkErrorIds.has(item.id)}
+                    />
                   </td>
-                  <td className="px-3 py-2 text-xs text-fg-muted">
+                  <td className="px-3 py-2 align-middle text-xs text-fg-muted">
                     <span className="flex flex-wrap items-center gap-1.5">
                       {statusLabel(item.object.type)}
                       {item.object.type === 'task' ? (
@@ -277,7 +291,7 @@ export function CuratedBoardTable({
                       ) : null}
                     </span>
                   </td>
-                  <td className="min-w-40 px-3 py-2">
+                  <td className="min-w-40 px-3 py-2 align-middle">
                     <EditableMetadata
                       label={`Responsible person for ${displayText(objectTitle)}`}
                       value={
@@ -308,7 +322,7 @@ export function CuratedBoardTable({
                       }
                     />
                   </td>
-                  <td className="min-w-36 px-3 py-2">
+                  <td className="min-w-36 px-3 py-2 align-middle">
                     <EditableMetadata
                       label={`Due date for ${displayText(objectTitle)}`}
                       value={<DueDateDisplay value={item.dueAt} variant="field-hint" />}
@@ -331,7 +345,7 @@ export function CuratedBoardTable({
                       }
                     />
                   </td>
-                  <td className="min-w-28 px-3 py-2">
+                  <td className="min-w-28 px-3 py-2 align-middle">
                     <EditableMetadata
                       label={`Priority for ${displayText(objectTitle)}`}
                       value={
@@ -365,7 +379,7 @@ export function CuratedBoardTable({
                       }
                     />
                   </td>
-                  <td className="min-w-36 px-3 py-2">
+                  <td className="min-w-36 px-3 py-2 align-middle">
                     <EditableMetadata
                       label={`Lane for ${displayText(objectTitle)}`}
                       value={lanes.find((lane) => lane.id === item.laneId)?.name ?? 'Unset'}
@@ -389,31 +403,6 @@ export function CuratedBoardTable({
                           ))}
                         </select>
                       }
-                    />
-                  </td>
-                  <td className="min-w-64 px-3 py-2">
-                    <EditableMetadata
-                      label={`Next step for ${displayText(objectTitle)}`}
-                      value={item.nextStep ?? 'No next step'}
-                      pending={saving[item.id] === 'nextStep'}
-                      disabled={optimistic || !onUpdateItem}
-                      editor={
-                        <BoardNextStepInput
-                          key={`${item.id}:${item.nextStep ?? ''}`}
-                          objectName={objectTitle}
-                          nextStep={item.nextStep}
-                          disabled={optimistic || !onUpdateItem}
-                          onSave={(nextStep) => {
-                            void updateItem(item.id, { nextStep });
-                          }}
-                        />
-                      }
-                    />
-                    <BoardItemSavingNotice field={saving[item.id]} />
-                    <BoardItemSaveError
-                      objectTitle={objectTitle}
-                      error={errors[item.id]}
-                      suppressAlert={bulkErrorIds.has(item.id)}
                     />
                   </td>
                 </tr>
@@ -608,39 +597,6 @@ function boardBulkReducer(state: BoardBulkState, action: BoardBulkAction): Board
   }
 }
 
-function BoardNextStepInput({
-  objectName,
-  nextStep,
-  disabled,
-  onSave,
-}: {
-  objectName: string;
-  nextStep: string | null;
-  disabled: boolean;
-  onSave: (nextStep: string | null) => void;
-}) {
-  const [draft, setDraft] = useState(nextStep ?? '');
-
-  return (
-    <input
-      value={draft}
-      disabled={disabled}
-      onChange={(event) => {
-        setDraft(event.currentTarget.value);
-      }}
-      onBlur={() => {
-        const trimmed = draft.trim();
-        if ((nextStep ?? '') !== trimmed) {
-          onSave(trimmed || null);
-        }
-      }}
-      className="h-8 w-full rounded-sm border border-border bg-bg px-2 text-xs disabled:opacity-60"
-      aria-label={`Next step for ${displayText(objectName)}`}
-      placeholder="Next step"
-    />
-  );
-}
-
 export function CuratedBoardList({
   boardId,
   view,
@@ -758,6 +714,7 @@ export function CuratedBoardList({
                         ) : null
                       }
                       title={title}
+                      subtitle={item.nextStep}
                       context={statusLabel(item.object.type)}
                       metadata={
                         <>
@@ -851,21 +808,6 @@ export function CuratedBoardList({
                               </select>
                             }
                           />
-                          {item.nextStep ? (
-                            <EditableMetadata
-                              label={`Next step for ${displayText(objectTitle)}`}
-                              value={item.nextStep}
-                              disabled={optimistic || !onUpdateItem}
-                              editor={
-                                <BoardNextStepInput
-                                  objectName={objectTitle}
-                                  nextStep={item.nextStep}
-                                  disabled={optimistic || !onUpdateItem}
-                                  onSave={(nextStep) => void onUpdateItem?.(item.id, { nextStep })}
-                                />
-                              }
-                            />
-                          ) : null}
                         </>
                       }
                     />

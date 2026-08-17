@@ -68,6 +68,11 @@ describe('collection primitives', () => {
     expect(screen.getByRole('button', { name: 'Clear selection' }).className).toContain('size-10');
   });
 
+  it('renders an optional subtitle under the title', () => {
+    render(<CollectionRow title="Launch plan" subtitle="Call the buyer" />);
+    expect(screen.getByText('Call the buyer').className).toContain('text-[11px]');
+  });
+
   it('uses a 44px desktop row with a two-line responsive content structure', () => {
     const { container } = render(
       <CollectionRow title="Launch plan" context="Acme" metadata={<span>P2</span>} />,

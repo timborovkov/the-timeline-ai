@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.8 · Board canvas and compact cards (2026-08-17). Replaces v3.7 Board kanban lane control.
+**Version:** v3.9 · Board next step and row alignment (2026-08-17). Replaces v3.8 Board canvas and compact cards.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -370,9 +370,13 @@ container around the collection. Board kanban cards stay compact: a clamped titl
 optional next-step line directly under the title, and one metadata row. Cards have
 no Move control; the drag handle is the on-card move path (Space or Enter, then
 arrow keys), and opening the card is the keyboard alternative. Grouped board list
-does not repeat the current lane name or add a Move row. Table and card-detail keep
-the lane name because those views are not already organized by column. Do not style
-board lanes as badges. Team settings render one URL-selected
+does not repeat the current lane name or add a Move row. Next step is the
+board-local immediate action on that card, not an object description and not a
+table column. It sits under the title in kanban, list, and table, and is edited
+in the open card. Table and card-detail keep the lane name because those views
+are not already organized by column. Board table and list checkboxes stay
+vertically centered with the row. Do not style board lanes as badges. Team
+settings render one URL-selected
 section at a time. Save state stays local to the edited form. Member, object, source,
 and artifact labels never fall back to UUIDs.
 
@@ -644,3 +648,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Quiet sidebar brand and fold control | Aligns the product mark with primary nav, sends it to Home, and replaces the boxed fold glyph with a lighter chevron. |
 | 2026-08-17 | Board kanban lane control | Stops repeating the current lane name on kanban and grouped list cards, keeps a quiet Move trigger, and leaves lane names on table and card-detail. |
 | 2026-08-17 | Board canvas and compact cards | Makes list and table boards full-bleed like Tasks, puts next step under the kanban title, removes the on-card Move row, and leaves lane names on table and card-detail. |
+| 2026-08-17 | Board next step and row alignment | Treats next step as a title subtitle instead of a table column, and vertically centers board checkboxes. |
