@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 export function EditableMetadata({
   label,
   value,
+  editor,
   pending = false,
   disabled = false,
   error,
@@ -20,12 +21,13 @@ export function EditableMetadata({
 }: {
   label: string;
   value: ReactNode;
+  editor?: ReactNode;
   pending?: boolean;
   disabled?: boolean;
   error?: string | null;
   className?: string;
   triggerRef?: (node: HTMLButtonElement | null) => void;
-  children: ReactNode;
+  children?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const internalTriggerRef = useRef<HTMLButtonElement>(null);
@@ -33,6 +35,7 @@ export function EditableMetadata({
   const wasPendingRef = useRef(false);
   const previousErrorRef = useRef<string | null | undefined>(undefined);
   const errorId = useId();
+  const resolvedEditor = children ?? editor;
 
   if (pending) suppressOpenRef.current = true;
   const popoverOpen = pending || suppressOpenRef.current ? false : open;
@@ -69,6 +72,7 @@ export function EditableMetadata({
             }}
             type="button"
             aria-label={label}
+            aria-invalid={error ? true : undefined}
             aria-describedby={error ? errorId : undefined}
             disabled={disabled || pending}
             className={cn(
@@ -87,7 +91,7 @@ export function EditableMetadata({
           </button>
         </PopoverTrigger>
         <PopoverContent role="dialog" aria-label={label} className="min-w-52 p-2">
-          {children}
+          {resolvedEditor}
         </PopoverContent>
       </Popover>
       {error ? (

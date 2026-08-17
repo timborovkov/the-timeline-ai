@@ -129,6 +129,23 @@ describe('collection primitives', () => {
     expect(screen.getByText('Refine the visible collection.')).toBeTruthy();
   });
 
+  it('accepts an editor prop for infinite-scroll list rows', async () => {
+    const user = userEvent.setup();
+    render(
+      <EditableMetadata
+        label="Priority for Launch plan"
+        value="P2"
+        editor={
+          <select aria-label="Priority" defaultValue="2">
+            <option value="2">P2</option>
+          </select>
+        }
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Priority for Launch plan' }));
+    expect(screen.getByRole('combobox', { name: 'Priority' })).toBeTruthy();
+  });
+
   it('keeps metadata triggers accessible, reports row errors, and restores focus on Escape', async () => {
     const user = userEvent.setup();
     render(
