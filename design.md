@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.1 · Quiet Archive collection density (2026-08-16). Replaces v2 Operational Archive.
+**Version:** v3.2 · Work overview and task canvas density (2026-08-17). Replaces v3.1 Quiet Archive collection density.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -317,9 +317,14 @@ requests for more detail may expand within the provider-safe reply limit.
 ### Work and settings
 
 Work pages share one subnavigation and lead with the task at hand, not a grid of
-links. Team settings render one URL-selected section at a time. Save state stays
-local to the edited form. Member, object, source, and artifact labels never
-fall back to UUIDs.
+links. Work overview puts pinned and team boards above the work queue so saved
+surfaces stay in reach before due and assigned items. Tasks default to the
+grouped list; the list table is full-bleed inside the work canvas, without extra
+page gutters around the rows. Loading placeholders match the requested view and
+default to list. Kanban cards stay compact: a clamped title plus one metadata
+row, with no redundant type label. Team settings render one URL-selected section
+at a time. Save state stays local to the edited form. Member, object, source,
+and artifact labels never fall back to UUIDs.
 
 Work → Pinned is the complete pin-management surface. It is a single
 side-to-side list with cursor pagination and All, Objects, Boards, Documents,
@@ -355,9 +360,11 @@ orphaned controls.
 
 Task category is a compact secondary label in the task/type line, subordinate
 to title, status, assignee, due date, and priority. Pending and failed states
-use readable text, never color alone. Project is a distinct named relation:
-show it in task context lines and editable detail fields, not as another colored
-tag or a fourth dense card metadata cell. Archived tasks replace project and
+use readable text, never color alone. Project is a distinct named relation.
+Task list rows show it once, as the editable project control, not also as a
+static context string. Kanban cards keep that same editable control in the
+compact metadata row rather than a colored tag or a second project label.
+Detail panels keep the labeled Project field. Archived tasks replace project and
 category controls with a short instruction to unarchive the task first.
 
 Approval rows lead with the proposed change and use human labels and localized
@@ -574,3 +581,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-14 | Customer-facing public language | Keeps review cadence, implementation state, indexing terms, and capability taxonomy in metadata while public pages explain concrete actions and availability. |
 | 2026-08-15 | Evidence-backed public product story | Makes the working-history problem, deliberate capture boundary, cited-versus-unused evidence, Telegram entry point, inspectable answers, and human approval contract explicit across the landing and how-it-works journey. |
 | 2026-08-16 | Unified workspace collection density | Replaces stacked form chrome and card grids with compact headers, one filter toolbar, 44px rows, semantic status glyphs, optimistic metadata triggers, and contextual selection without changing domain behavior. |
+| 2026-08-17 | Work overview and task canvas density | Puts pinned boards above the work queue, removes extra task-list gutters, matches the default list loading skeleton, and compacts task kanban cards to a clamped title plus one metadata row. |

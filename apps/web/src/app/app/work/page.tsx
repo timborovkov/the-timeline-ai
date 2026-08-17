@@ -146,25 +146,6 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
       <WorkSubnav current="/app/work" />
 
       <div className="space-y-7">
-        <CollectionGroup title="Work queue" count={queue.length}>
-          {queue.length === 0 ? (
-            <EmptyAction
-              title="Work queue clear"
-              body="Assigned work, due team items, and pending approvals will appear here when they need attention."
-              href="/app/boards"
-              action="Open boards"
-            />
-          ) : (
-            <TaskCategoryPollingProvider tasks={categoryPollingTasks}>
-              <div className="border-x border-border">
-                {queue.map((item) => (
-                  <WorkQueueRow key={item.id} item={item} timezone={timezone} />
-                ))}
-              </div>
-            </TaskCategoryPollingProvider>
-          )}
-        </CollectionGroup>
-
         <CollectionGroup title="Pinned and team boards" count={boardModules.length}>
           {boardModules.length === 0 ? (
             <EmptyPanel label="No boards yet" body="Create a board to give team work a surface." />
@@ -195,6 +176,25 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
                 />
               ))}
             </div>
+          )}
+        </CollectionGroup>
+
+        <CollectionGroup title="Work queue" count={queue.length}>
+          {queue.length === 0 ? (
+            <EmptyAction
+              title="Work queue clear"
+              body="Assigned work, due team items, and pending approvals will appear here when they need attention."
+              href="/app/boards"
+              action="Open boards"
+            />
+          ) : (
+            <TaskCategoryPollingProvider tasks={categoryPollingTasks}>
+              <div className="border-x border-border">
+                {queue.map((item) => (
+                  <WorkQueueRow key={item.id} item={item} timezone={timezone} />
+                ))}
+              </div>
+            </TaskCategoryPollingProvider>
           )}
         </CollectionGroup>
       </div>

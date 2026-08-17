@@ -97,7 +97,7 @@ test('Documents browser reflows at 320px', async ({ browser }) => {
 test('Task kanban retains an internal mobile scroll rail at 320px', async ({ browser }) => {
   const page = await newSignedInPage(browser, 'owner');
   await page.setViewportSize({ width: 320, height: 780 });
-  await page.goto('/app/tasks');
+  await page.goto('/app/tasks?view=kanban');
 
   await expect(page.locator('h1')).toHaveCount(1);
   const rail = page.getByRole('region', { name: 'Task status columns' });

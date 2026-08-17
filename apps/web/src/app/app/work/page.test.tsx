@@ -379,6 +379,7 @@ describe('WorkPage', () => {
     expect(html).toContain('Work queue clear');
     expect(html).toContain('Open boards');
     expect(html).toContain('Pinned and team boards');
+    expect(html.indexOf('Pinned and team boards')).toBeLessThan(html.indexOf('Work queue'));
     expect(html).not.toContain('Work surfaces');
   });
 

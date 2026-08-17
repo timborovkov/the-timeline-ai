@@ -908,7 +908,7 @@ function TaskBoardView({
         onDragEnd={onDragEnd}
       >
         <div className="flex h-full min-h-0 min-w-0 flex-col">
-          <div className="flex min-h-10 w-full shrink-0 items-center justify-end gap-3 border-b border-border px-4 md:px-8">
+          <div className="flex min-h-10 w-full shrink-0 items-center justify-end gap-3 border-b border-border px-2 sm:px-3">
             <div className="flex items-center gap-3">
               {moveUi.saveState !== 'idle' ? (
                 <output className="text-xs text-fg-dim" aria-live="polite">
@@ -939,7 +939,7 @@ function TaskBoardView({
           </div>
           {moveErrors.length > 0 ? (
             <p
-              className="mx-4 mb-3 shrink-0 rounded-sm border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger md:mx-8"
+              className="mx-2 mb-3 shrink-0 rounded-sm border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger sm:mx-3"
               role="alert"
             >
               {moveErrors.length === 1
@@ -950,7 +950,7 @@ function TaskBoardView({
           {view === 'kanban' ? (
             <section
               aria-label="Task status columns"
-              className="flex min-h-0 flex-1 gap-3 overflow-x-auto overflow-y-hidden px-4 pb-2 md:px-8"
+              className="flex min-h-0 flex-1 gap-3 overflow-x-auto overflow-y-hidden px-2 pb-2 sm:px-3"
             >
               {allColumns.map((column) => (
                 <TaskColumn
@@ -994,7 +994,7 @@ function TaskBoardView({
               pinnedObjectIds={pinnedObjectIdSet}
             />
           )}
-          <div className="flex shrink-0 flex-wrap items-center gap-3 px-4 pb-4 pt-3 md:px-8">
+          <div className="flex shrink-0 flex-wrap items-center gap-3 px-2 pb-4 pt-3 sm:px-3">
             <output className="text-xs text-fg-dim" aria-live="polite">
               {`${effectiveRows.length} loaded of ${totalCount}`}
             </output>
@@ -1094,7 +1094,7 @@ function TaskListView({
 }) {
   if (rows.length === 0) {
     return (
-      <p className="mx-4 rounded-sm border border-border bg-surface py-10 text-center text-xs text-fg-dim md:mx-8">
+      <p className="rounded-sm border-y border-border bg-surface py-10 text-center text-xs text-fg-dim">
         No visible tasks
       </p>
     );
@@ -1120,7 +1120,7 @@ function TaskListView({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col px-4 pb-4 md:px-8">
+    <div data-task-list className="flex min-h-0 flex-1 flex-col">
       <TaskBulkToolbar
         columns={columns}
         members={members}
@@ -1130,7 +1130,7 @@ function TaskListView({
         onUpdateTaskCategories={onUpdateTaskCategories}
         taskCategoriesEnabled={taskCategoriesEnabled}
       />
-      <div className="min-h-0 flex-1 overflow-y-auto border-x border-border bg-bg">
+      <div className="min-h-0 flex-1 overflow-y-auto bg-bg">
         {groupedRows.map((group) => {
           const groupSelected = group.rows.every((row) => selectedIds.has(row.id));
           return (
@@ -1293,9 +1293,7 @@ function TaskListRow({
             </span>
           ) : saving ? (
             <span>Saving {saving}…</span>
-          ) : (
-            (primaryProject?.projectName ?? 'No project')
-          )
+          ) : undefined
         }
         metadata={
           <>
@@ -1720,17 +1718,17 @@ function TaskColumn({
       ref={setNodeRef}
       aria-labelledby={headingId}
       className={cn(
-        'flex h-full w-[min(290px,calc(100vw-4rem))] shrink-0 flex-col rounded-sm border border-border bg-surface p-3',
+        'flex h-full w-[min(260px,calc(100vw-2.5rem))] shrink-0 flex-col rounded-sm border border-border bg-surface p-2',
         isOver && 'border-signal/40 bg-signal-soft',
       )}
     >
-      <div className="mb-3 flex shrink-0 items-baseline justify-between">
+      <div className="mb-2 flex shrink-0 items-baseline justify-between px-0.5">
         <h3 id={headingId} className="text-xs text-fg-dim">
           {statusLabel(id)}
         </h3>
         <span className="text-xs text-fg">{rows.length}</span>
       </div>
-      <ul className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
+      <ul className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto">
         {renderedRows.map((row) => (
           <TaskCard
             key={row.id}
@@ -1819,16 +1817,16 @@ function TaskCard({
   return (
     <li
       ref={setNodeRef}
-      style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 112px', ...style }}
+      style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 76px', ...style }}
       className={cn(
-        'rounded-sm border border-border/80 bg-bg px-2.5 py-2 text-sm transition-colors hover:bg-surface',
+        'rounded-sm border border-border/80 bg-bg px-2 py-1.5 text-sm transition-colors hover:bg-surface',
         selected && 'border-signal bg-signal-soft shadow-[inset_3px_0_0_var(--color-signal)]',
         isDragging && 'opacity-50',
         saving && 'opacity-80',
         error && 'border-danger/50',
       )}
     >
-      <div className="flex min-w-0 items-start gap-1">
+      <div className="flex min-w-0 items-start gap-0.5">
         <button
           type="button"
           {...attributes}
@@ -1837,15 +1835,15 @@ function TaskCard({
           className="-ml-1 inline-flex size-8 shrink-0 cursor-grab items-center justify-center rounded-sm text-fg-dim hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50 active:cursor-grabbing disabled:cursor-progress"
           aria-label={`Drag ${displayText(title)}`}
         >
-          <GripVertical aria-hidden="true" className="size-4" />
+          <GripVertical aria-hidden="true" className="size-3.5" />
         </button>
         <Link
           href={href}
-          className="min-w-0 flex-1 whitespace-normal break-words font-medium leading-snug hover:underline"
+          className="min-w-0 flex-1 line-clamp-2 whitespace-normal break-words font-medium leading-snug hover:underline"
         >
           {displayText(title)}
         </Link>
-        <ItemActionGroup label={`Actions for ${displayText(title)}`}>
+        <ItemActionGroup label={`Actions for ${displayText(title)}`} className="w-auto shrink-0">
           <PinOverflowMenu
             target={{ kind: 'object', key: row.id }}
             title={displayText(title)}
@@ -1853,8 +1851,7 @@ function TaskCard({
           />
         </ItemActionGroup>
       </div>
-      <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-fg-dim">
-        <span>Task</span>
+      <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-0 text-[11px]">
         {taskCategoriesEnabled ? (
           <EditableMetadata
             label={`Category for ${displayText(title)}`}
@@ -1894,8 +1891,6 @@ function TaskCard({
             />
           }
         />
-      </div>
-      <div className="mt-1 flex flex-wrap items-center gap-0.5 text-[11px]">
         <EditableMetadata
           label={`Assignee for ${displayText(title)}`}
           value={memberLabel(row.assigneeUserId, members)}
