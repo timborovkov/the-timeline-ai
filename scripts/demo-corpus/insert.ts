@@ -521,6 +521,17 @@ async function insertCaptureSurfaces(tx: SeedTx): Promise<void> {
         visibilityDefault: 'team',
         enabled: true,
       },
+      {
+        id: CORPUS_SLACK.hiringBinding,
+        workspaceId: CORPUS_SLACK.workspace,
+        teamId: TEAM_ID,
+        slackConversationId: 'C0HIRING',
+        conversationType: 'channel',
+        title: '#hiring',
+        boundByUserId: CORPUS_PERSON.quinn.id,
+        visibilityDefault: 'team',
+        enabled: true,
+      },
     ])
     .onConflictDoNothing();
 
@@ -646,6 +657,14 @@ async function insertCaptureSurfaces(tx: SeedTx): Promise<void> {
 }
 
 async function insertEventsAndFacts(tx: SeedTx): Promise<void> {
+  await tx
+    .update(calendarEvents)
+    .set({ scheduledRawEventId: null })
+    .where(eq(calendarEvents.teamId, TEAM_ID));
+  await tx.delete(rawEvents).where(
+    and(eq(rawEvents.teamId, TEAM_ID), sql`${rawEvents.id}::text LIKE '92000000-%'`),
+  );
+
   await tx
     .insert(rawEvents)
     .values(
@@ -811,6 +830,14 @@ async function insertObjects(tx: SeedTx): Promise<void> {
     { from: 'Northwind Capital lead', to: 'Series A process', kind: 'child' as const },
     { from: 'CSV preview 500s', to: 'CSV importer reliability', kind: 'related' as const },
     { from: 'Product designer', to: 'Maya Chen', kind: 'related' as const },
+    { from: 'Polar Studio', to: 'Polar Studio account', kind: 'related' as const },
+    { from: 'Moss & Co', to: 'Moss & Co account', kind: 'related' as const },
+    { from: 'Orchard Finance', to: 'Orchard Finance account', kind: 'related' as const },
+    { from: 'Kite Logistics', to: 'Kite Logistics account', kind: 'related' as const },
+    { from: 'Brightline Health', to: 'Brightline Health account', kind: 'related' as const },
+    { from: 'Linden Ventures follow', to: 'Linden Ventures', kind: 'related' as const },
+    { from: 'Harbor Peak catch-up', to: 'Harbor Peak', kind: 'related' as const },
+    { from: 'Atlas beta webinar', to: 'GTM launch system', kind: 'related' as const },
   ];
   await tx
     .insert(entityRelationships)

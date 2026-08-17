@@ -83,16 +83,16 @@ Ask “what did the team achieve last week?” as Avery to walk the cited recap.
 
 | Surface | What you should see |
 | --- | --- |
-| Timeline | ~150+ events from web notes, email, Slack, Telegram, GitHub, Linear, Monday.com, Sentry, meetings, calendar, documents, and the Ledger billing webhook |
+| Timeline | ~2,500 events across a month of use. Weekdays carry ~90–100 raw events that collapse into fewer moments (GitHub workflows/PRs, Slack threads in `#eng` `#product` `#gtm` `#hiring`, Linear/Monday/Sentry/Drive, email threads, Telegram bursts, notes, documents, and the Ledger webhook). Weekends stay lighter. |
 | Objects | Tasks, deals, companies, people, decisions, incidents, hiring loops, follow-ups, projects |
 | Boards | Atlas Launch (tasks plus launch work), Customer dealflow, Series A funding |
 | Documents | Code of conduct, office rules, DPA excerpt, MSA excerpt, contractor excerpt, strategy memo, one-pager, pitch narrative, onboarding, brand voice, security FAQ, plus the Northstar handoff brief |
-| Meetings | Weekly standups from 14 July through 11 August, importer incident review, Northwind partner meeting; saved weekly standup with auto-join and a scheduled 18 August occurrence |
-| Ask | Six historic sessions, including last-week recap, Northstar status, dealflow, and the code of conduct |
+| Meetings | Weekly standups from 14 July through 11 August, importer incident review, Northwind partner meeting, Brightline scoping, Maya Chen interview; saved weekly standup with auto-join and a scheduled 18 August occurrence |
+| Ask | Eight historic sessions, including last-week recap, Northstar status, dealflow, hiring, webinar blockers, and the code of conduct |
 | Approvals | Fourteen pending proposals plus one already-accepted CSV-replay decision |
 | Digests | Twenty weekdays of Avery’s daily digest history. Live digest send stays off so the worker can run without Postmark, Slack, or Telegram delivery. Team settings still show the default email destination plus disabled Slack `#product` and Telegram “Acme leadership” destinations. |
 | Setup | Team checklist completed and dismissed for Avery |
-| Capture | Slack `#product` `#gtm` `#eng`, Telegram “Acme leadership”, inbound email whitelist, Ledger webhook |
+| Capture | Slack `#product` `#gtm` `#eng` `#hiring`, Telegram “Acme leadership”, inbound email whitelist, Ledger webhook |
 
 Native GitHub, Linear, Monday.com, Sentry, and Google Drive connections are fake,
 encrypted, and **disabled for sync** so local workers do not call real providers.
@@ -165,3 +165,5 @@ Email attachment: `Northstar pilot handoff brief.txt` (canonical search fixture)
 - “What is blocking the Atlas importer?”
 - “Show the dealflow pipeline.”
 - “What does the code of conduct say about private events?”
+- “Where is Maya Chen in the designer loop?”
+- “What is still blocking the Atlas beta webinar?”

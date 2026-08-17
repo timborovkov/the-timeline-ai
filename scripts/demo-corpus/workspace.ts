@@ -22,6 +22,7 @@ export const CORPUS_SLACK = {
   productBinding: CORPUS_UUID.slack(3),
   gtmBinding: CORPUS_UUID.slack(4),
   engBinding: CORPUS_UUID.slack(5),
+  hiringBinding: CORPUS_UUID.slack(6),
 } as const;
 
 export const CORPUS_TELEGRAM = {
@@ -262,6 +263,22 @@ export const CORPUS_CALENDAR_EVENTS = [
     createdByUserId: CORPUS_PERSON.harper.id,
     rawEventId: corpusEventId('Avery sent Northwind the data-room link'),
   },
+  {
+    id: CORPUS_UUID.calendar(6),
+    title: 'Webinar dry run',
+    startAt: '2026-08-18T13:00:00.000Z',
+    endAt: '2026-08-18T13:40:00.000Z',
+    createdByUserId: CORPUS_PERSON.riley.id,
+    rawEventId: corpusEventId('Webinar dry-run blocked on Avery quote'),
+  },
+  {
+    id: CORPUS_UUID.calendar(7),
+    title: 'Harbor Peak courtesy call',
+    startAt: '2026-07-24T14:00:00.000Z',
+    endAt: '2026-07-24T14:20:00.000Z',
+    createdByUserId: CORPUS_PERSON.avery.id,
+    rawEventId: corpusEventId('Harbor Peak courtesy call stays off the lead slide'),
+  },
 ] as const;
 
 export const CORPUS_PROPOSALS = [
@@ -497,6 +514,8 @@ export const CORPUS_EVENT_NEEDLES = [
   'Elena Park at Northstar',
   'backgrounder on evidence-backed',
   'dealflow this week',
+  'Webinar dry-run blocked on Avery quote',
+  'Harbor Peak courtesy call stays off the lead slide',
 ] as const;
 
 export const CORPUS_CHATS = [
@@ -553,6 +572,24 @@ export const CORPUS_CHATS = [
     question: 'What does the code of conduct say about private events?',
     answer:
       'The code of conduct says not to share customer evidence outside the people named on the object. Quiet forwarding of private Timeline events is a firing offense. Report issues to Quinn or Avery.',
+  },
+  {
+    id: CORPUS_UUID.chat(7),
+    userId: CORPUS_PERSON.sam.id,
+    title: 'Where is Maya Chen in the designer loop?',
+    createdAt: '2026-08-12T16:10:00.000Z',
+    question: 'Where is Maya Chen in the designer loop?',
+    answer:
+      'Maya Chen is in the product designer final round on 15 August. Sam owns craft. Quinn owns the loop. The backend engineer loop produced no offer and reopens on 18 August.',
+  },
+  {
+    id: CORPUS_UUID.chat(8),
+    userId: CORPUS_PERSON.riley.id,
+    title: 'What is still blocking the webinar?',
+    createdAt: '2026-08-14T12:10:00.000Z',
+    question: 'What is still blocking the Atlas beta webinar?',
+    answer:
+      'The webinar stays 20 August. Riley still needs Avery’s quote, a cropped Northstar screenshot, and a 40-minute run of show by 18 August. Brand voice is quiet and citation-first.',
   },
 ] as const;
 
@@ -641,6 +678,9 @@ export const CORPUS_PINS = [
   { targetKind: 'board' as const, targetKey: SERIES_A_BOARD.id, sortKey: 3n },
   { targetKind: 'object' as const, targetKey: objectByName('Series A process'), sortKey: 4n },
   { targetKind: 'saved_meeting' as const, targetKey: CORPUS_UUID.meeting(20), sortKey: 5n },
+  { targetKind: 'board' as const, targetKey: ATLAS_LAUNCH_BOARD.id, sortKey: 6n },
+  { targetKind: 'object' as const, targetKey: objectByName('Brightline Health', 'deal'), sortKey: 7n },
+  { targetKind: 'object' as const, targetKey: objectByName('CSV preview 500s'), sortKey: 8n },
 ] as const;
 
 export const CORPUS_NOTES = [
@@ -661,5 +701,35 @@ export const CORPUS_NOTES = [
     entityId: objectByName('Product designer'),
     authorUserId: CORPUS_PERSON.sam.id,
     body: 'Maya Chen: strong systems craft, weaker product narrative. Final round 15 August.',
+  },
+  {
+    id: CORPUS_UUID.note(4),
+    entityId: objectByName('Northstar Works'),
+    authorUserId: CORPUS_PERSON.casey.id,
+    body: 'Field-mapping is delayed to 19 August. CSV fallback stands. Review should move to 26 August.',
+  },
+  {
+    id: CORPUS_UUID.note(5),
+    entityId: objectByName('Helio Retail pilot'),
+    authorUserId: CORPUS_PERSON.casey.id,
+    body: 'Technical validation is 21 August. Confirm attendees before the call.',
+  },
+  {
+    id: CORPUS_UUID.note(6),
+    entityId: objectByName('Atlas beta webinar'),
+    authorUserId: CORPUS_PERSON.riley.id,
+    body: 'Blocked on Avery quote, cropped screenshot, and the 18 August dry run.',
+  },
+  {
+    id: CORPUS_UUID.note(7),
+    entityId: objectByName('Senior backend engineer'),
+    authorUserId: CORPUS_PERSON.quinn.id,
+    body: 'No offer this week. Reopen sourcing 18 August. No on-prem customers.',
+  },
+  {
+    id: CORPUS_UUID.note(8),
+    entityId: objectByName('Replay CSV preview from stored bytes'),
+    authorUserId: CORPUS_PERSON.jordan.id,
+    body: 'Preview reads stored bytes. Live vendor calls stay out of CI.',
   },
 ] as const;

@@ -18,6 +18,13 @@ import {
   type DemoFixtureSnapshot,
 } from './demo-fixture.js';
 import {
+  buildCadenceBeats,
+  CADENCE_RANGE,
+  CADENCE_WEEKDAY_EVENT_FLOOR,
+  CADENCE_WEEKDAY_MOMENT_CEILING,
+  cadenceBeatGroupKey,
+} from './demo-corpus/cadence.js';
+import {
   assertExpandedDemoCorpus,
   CORPUS_DOCUMENTS,
   CORPUS_EVENT_NEEDLES,
@@ -250,6 +257,8 @@ assert.match(glossary, /pnpm demo:reset/);
 assert.match(glossary, /Polar Studio is inbound/);
 assert.match(glossary, /pending add-to-board/);
 assert.match(glossary, /Active lane holds the Northstar Works company/);
+assert.match(glossary, /90.100 raw events/);
+assert.match(glossary, /#hiring/);
 
 assert.ok(CORPUS_EVENTS.length + DEMO_EVENTS.length >= CORPUS_VOLUME_FLOORS.events);
 assert.ok(CORPUS_OBJECTS.length + DEMO_ENTITIES.length >= CORPUS_VOLUME_FLOORS.objects);
@@ -287,20 +296,55 @@ assert.equal(corpusObjectId('Brightline Health'), corpusObjectId('Brightline Hea
 assert.ok(
   CORPUS_PROPOSALS.every((row) => typeof row.eventId === 'string' && row.eventId.length > 0),
 );
+
+const cadenceBeats = buildCadenceBeats();
+const weekdayEvents = new Map<string, typeof cadenceBeats>();
+for (const beat of cadenceBeats) {
+  const day = beat.occurredAt.slice(0, 10);
+  const weekday = new Date(`${day}T00:00:00.000Z`).getUTCDay();
+  if (weekday === 0 || weekday === 6) continue;
+  const rows = weekdayEvents.get(day) ?? [];
+  rows.push(beat);
+  weekdayEvents.set(day, rows);
+}
+assert.ok(weekdayEvents.size >= 20, 'cadence should cover a month of weekdays');
+for (const [day, rows] of weekdayEvents) {
+  assert.ok(
+    rows.length >= CADENCE_WEEKDAY_EVENT_FLOOR,
+    `${day} cadence events ${String(rows.length)}`,
+  );
+  const groups = new Set(rows.map((row) => cadenceBeatGroupKey(row)));
+  assert.ok(
+    groups.size <= CADENCE_WEEKDAY_MOMENT_CEILING,
+    `${day} cadence moments ${String(groups.size)}`,
+  );
+  assert.ok(groups.size * 3 < rows.length, `${day} should collapse events into fewer moments`);
+}
+assert.equal(CADENCE_RANGE.start, '2026-07-14');
+assert.equal(CADENCE_RANGE.end, '2026-08-14');
+for (const beat of cadenceBeats) {
+  for (const needle of CORPUS_EVENT_NEEDLES) {
+    assert.equal(
+      beat.contentText.includes(needle),
+      false,
+      `cadence beat ${String(beat.n)} repeats needle ${needle}`,
+    );
+  }
+}
 assert.doesNotThrow(() =>
   assertExpandedDemoCorpus({
     people: CORPUS_PEOPLE.length,
     loginEmails: CORPUS_PEOPLE.map((person) => person.email),
     passwordUsableEmails: CORPUS_PEOPLE.map((person) => person.email),
-    events: 180,
+    events: 2500,
     objects: 55,
     documents: CORPUS_DOCUMENTS.length + 1,
-    meetings: 9,
+    meetings: 11,
     pendingProposals: 14,
     boardItems: 17,
-    chatSessions: 6,
+    chatSessions: 8,
     digests: 20,
-    facts: 22,
+    facts: 24,
     slackWorkspaces: 1,
     telegramBindings: 1,
     ingestWebhooks: 1,

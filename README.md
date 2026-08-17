@@ -73,8 +73,9 @@ pnpm dev
 `demo:seed` runs the idempotent local dev seed, indexes every fixture-version raw
 event, fact, document chunk, and meeting chunk through the production embedding
 worker path, then runs `demo:verify`. The seed is the Acme Labs / Atlas month of
-use: eight logins, dealflow and Series A boards, documents, meetings, Ask history,
-pending proposals, and digest history. Verification checks all eight login passwords,
+use: eight logins, a dense weekday timeline that collapses into moments, dealflow
+and Series A boards, documents, meetings, Ask history, pending proposals, and
+digest history. Verification checks all eight login passwords,
 downloads and hashes document bytes, uses team/user-scoped Qdrant searches to confirm
 every expected Northstar point is discoverable, then confirms expanded-corpus document
 versions are `embedded` with a Qdrant point for each corpus chunk id and that volume

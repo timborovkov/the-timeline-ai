@@ -12,15 +12,15 @@ export const TEAM_ID = DEMO_IDS.team;
 
 export const CORPUS_VOLUME_FLOORS = {
   people: 8,
-  events: 150,
+  events: 2000,
   objects: 55,
   documents: 11,
-  meetings: 8,
+  meetings: 10,
   pendingProposals: 14,
   boardItems: 16,
-  chatSessions: 6,
+  chatSessions: 8,
   digests: 20,
-  facts: 22,
+  facts: 24,
 } as const;
 
 export const CORPUS_SECRETS = {
@@ -670,6 +670,7 @@ const STORY_EVENTS: CorpusEvent[] = [
       provider: 'calendar',
       action: 'scheduled',
       title: 'Atlas beta webinar',
+      calendar_event_id: CORPUS_UUID.calendar(1),
     },
     'inline://timeline/demo-seed/calendar/webinar-scheduled',
   ),
@@ -797,6 +798,7 @@ const STORY_EVENTS: CorpusEvent[] = [
       provider: 'calendar',
       action: 'event',
       title: 'Northwind Capital partner meeting',
+      calendar_event_id: CORPUS_UUID.calendar(8),
     },
     'inline://timeline/demo-seed/calendar/northwind-event',
   ),
@@ -835,9 +837,55 @@ const STORY_EVENTS: CorpusEvent[] = [
     { capture_kind: 'explicit_chat_note', command: '/timeline note', surface: 'manual_note' },
     'inline://timeline/demo-seed/note/dealflow-week',
   ),
+  event(
+    3000,
+    'casey',
+    'meeting',
+    '2026-08-07T14:00:00.000Z',
+    'Brightline Health scoping call transcript: Dana accepted CSV plus evidence packs. HIPAA stays in the MSA excerpt. No clinical template in v1.',
+    { platform: 'meet', title: 'Brightline Health scoping' },
+    'inline://timeline/demo-seed/meeting/brightline-scoping-2026-08-07',
+  ),
+  event(
+    3001,
+    'sam',
+    'meeting',
+    '2026-07-30T15:00:00.000Z',
+    'Maya Chen designer interview transcript: strong systems craft, thinner product narrative. Quinn moved her to final round.',
+    { platform: 'meet', title: 'Maya Chen designer interview' },
+    'inline://timeline/demo-seed/meeting/maya-chen-2026-07-30',
+  ),
+  event(
+    3002,
+    'riley',
+    'calendar',
+    '2026-08-14T12:00:00.000Z',
+    'Webinar dry-run blocked on Avery quote | 2026-08-18T13:00:00.000Z to 2026-08-18T13:40:00.000Z | (Europe/Helsinki)',
+    {
+      provider: 'calendar',
+      action: 'scheduled',
+      title: 'Webinar dry run',
+      calendar_event_id: CORPUS_UUID.calendar(6),
+    },
+    'inline://timeline/demo-seed/calendar/webinar-dry-run',
+  ),
+  event(
+    3003,
+    'avery',
+    'calendar',
+    '2026-07-17T18:00:00.000Z',
+    'Harbor Peak courtesy call stays off the lead slide | 2026-07-24T14:00:00.000Z to 2026-07-24T14:20:00.000Z | (Europe/Helsinki)',
+    {
+      provider: 'calendar',
+      action: 'scheduled',
+      title: 'Harbor Peak courtesy call',
+      calendar_event_id: CORPUS_UUID.calendar(7),
+    },
+    'inline://timeline/demo-seed/calendar/harbor-peak-call',
+  ),
 ];
 
-export const CORPUS_EVENTS: CorpusEvent[] = [
+const RAW_CORPUS_EVENTS: CorpusEvent[] = [
   ...STORY_EVENTS,
   ...buildCadenceBeats().map((beat) =>
     event(
@@ -851,16 +899,6 @@ export const CORPUS_EVENTS: CorpusEvent[] = [
     ),
   ),
 ];
-
-export function corpusEventId(needle: string): string {
-  const matches = CORPUS_EVENTS.filter((row) => row.contentText.includes(needle));
-  if (matches.length !== 1 || !matches[0]) {
-    throw new Error(
-      `Expected exactly one corpus event containing ${JSON.stringify(needle)}, found ${String(matches.length)}`,
-    );
-  }
-  return matches[0].id;
-}
 
 const OBJECT_DEFS: Array<Omit<CorpusObject, 'id'> & { n: number }> = [
   {
@@ -1500,6 +1538,18 @@ export const CORPUS_FACTS = [
     entityId: objectId(16),
     statement: 'Polar Studio is inbound and not yet on the dealflow board.',
   },
+  {
+    id: CORPUS_UUID.fact(23),
+    rawEventId: eventId(3000),
+    entityId: objectId(12),
+    statement: 'Brightline scoping confirmed CSV plus evidence packs and no clinical template.',
+  },
+  {
+    id: CORPUS_UUID.fact(24),
+    rawEventId: eventId(3001),
+    entityId: objectId(23),
+    statement: 'Maya Chen advanced to the designer final round after the 30 July interview.',
+  },
 ] as const;
 
 function documentSpec(input: {
@@ -1856,7 +1906,127 @@ export const CORPUS_MEETINGS: CorpusMeeting[] = [
       'Northstar field-mapping is already the longer blocker. CSV fallback is the plan if they slip.',
     ]),
   },
+  {
+    id: CORPUS_UUID.meeting(8),
+    chunkIds: [CORPUS_UUID.meeting(115), CORPUS_UUID.meeting(116)],
+    rawEventId: eventId(3000),
+    title: 'Brightline Health scoping',
+    platform: 'meet',
+    meetingUrl: 'https://meet.example.test/brightline-scoping',
+    startedAt: '2026-08-07T14:00:00.000Z',
+    endedAt: '2026-08-07T14:35:00.000Z',
+    createdByUserId: CORPUS_PERSON.casey.id,
+    transcript: [
+      {
+        speaker: 'Dana Cole',
+        text: 'We can live on CSV plus evidence packs. Do not build us a clinical-ops template for v1.',
+        startMs: 8_000,
+        endMs: 24_000,
+      },
+      {
+        speaker: 'Mika Product',
+        text: 'HIPAA language stays in the MSA excerpt. Casey will send that, not a new template.',
+        startMs: 26_000,
+        endMs: 40_000,
+      },
+    ],
+  },
+  {
+    id: CORPUS_UUID.meeting(9),
+    chunkIds: [CORPUS_UUID.meeting(117), CORPUS_UUID.meeting(118)],
+    rawEventId: eventId(3001),
+    title: 'Maya Chen designer interview',
+    platform: 'meet',
+    meetingUrl: 'https://meet.example.test/maya-chen-interview',
+    startedAt: '2026-07-30T15:00:00.000Z',
+    endedAt: '2026-07-30T15:45:00.000Z',
+    createdByUserId: CORPUS_PERSON.sam.id,
+    transcript: [
+      {
+        speaker: 'Sam Rivera',
+        text: 'Maya, walk us through a systems-craft piece you would put on an evidence archive.',
+        startMs: 10_000,
+        endMs: 24_000,
+      },
+      {
+        speaker: 'Maya Chen',
+        text: 'I would start from the captured event, not a dashboard. The narrative is still the weaker part of my packet.',
+        startMs: 26_000,
+        endMs: 42_000,
+      },
+    ],
+  },
 ];
+
+function slackChannelId(name: unknown): string {
+  if (name === '#gtm') return 'C0GTM';
+  if (name === '#product') return 'C0PRODUCT';
+  if (name === '#hiring') return 'C0HIRING';
+  return 'C0ENG';
+}
+
+function enrichCaptureMetadata(row: CorpusEvent): CorpusEvent {
+  const extra: Record<string, unknown> = { ...row.sourceMetadata };
+  if (row.source === 'slack') {
+    extra.slack_channel_id ??= slackChannelId(extra.slack_channel_name);
+    extra.slack_message_ts ??= extra.slack_event_id ?? row.id;
+    extra.slack_thread_ts ??= extra.slack_message_ts;
+  }
+  if (row.source === 'email') {
+    extra.thread_root_id ??= extra.message_id ?? row.id;
+  }
+  if (row.source === 'telegram') {
+    extra.tg_chat_id ??= '-100710000003';
+    extra.tg_chat_title ??= extra.telegram_chat_title ?? 'Acme leadership';
+  }
+  if (row.source === 'ingest_webhook') {
+    extra.ingest_webhook_id ??= CORPUS_UUID.webhook(1);
+  }
+  if (row.source === 'integration' && extra.provider === 'github') {
+    const github = extra.github;
+    if (!github || typeof github !== 'object' || Array.isArray(github)) {
+      const workflow = /GitHub workflow "([^"]+)"/.exec(row.contentText);
+      const pr = /PR #(\d+)/.exec(row.contentText);
+      if (workflow?.[1]) {
+        extra.github = {
+          type: 'workflow_run',
+          repo: 'acme-labs/atlas',
+          head_branch: 'main',
+          workflow_name: workflow[1],
+        };
+      } else if (pr?.[1]) {
+        extra.github = {
+          type: 'pull_request',
+          repo: 'acme-labs/atlas',
+          pr_number: Number(pr[1]),
+        };
+      }
+    }
+  }
+  if (row.source === 'calendar') {
+    extra.calendar_event_id ??= extra.calendar_event_id;
+  }
+  if (row.source === 'meeting') {
+    const meeting = CORPUS_MEETINGS.find((item) => item.rawEventId === row.id);
+    if (meeting) extra.meeting_id ??= meeting.id;
+  }
+  if (row.source === 'document') {
+    extra.action ??= 'uploaded';
+  }
+  return { ...row, sourceMetadata: extra };
+}
+
+export const CORPUS_EVENTS: CorpusEvent[] = RAW_CORPUS_EVENTS.map(enrichCaptureMetadata);
+
+export function corpusEventId(needle: string): string {
+  const matches = CORPUS_EVENTS.filter((row) => row.contentText.includes(needle));
+  if (matches.length !== 1 || !matches[0]) {
+    throw new Error(
+      `Expected exactly one corpus event containing ${JSON.stringify(needle)}, found ${String(matches.length)}`,
+    );
+  }
+  return matches[0].id;
+}
 
 export const CORPUS_SAVED_MEETING = {
   id: CORPUS_UUID.meeting(20),

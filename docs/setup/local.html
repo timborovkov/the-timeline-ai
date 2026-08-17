@@ -105,7 +105,9 @@ pnpm demo:seed              # optional Acme Labs demo corpus; indexes vectors an
         <code>sam@timeline.dev</code>, <code>riley@timeline.dev</code>,
         <code>casey@timeline.dev</code>, <code>quinn@timeline.dev</code>, and
         <code>harper@timeline.dev</code>. The seeded GitHub, Linear, Monday.com, Sentry, and Google
-        Drive credentials are fake, encrypted, and disabled for sync. Daily digest send stays
+        Drive credentials are fake, encrypted, and disabled for sync. The timeline is a month of
+        weekday-scale capture: about a hundred raw events per workday that group into fewer moments.
+        Daily digest send stays
         disabled so the worker can run without outbound email or chat-bot configuration. Seed still
         creates the default email digest destination for the team, plus disabled Slack and Telegram
         destinations, and twenty weekdays of digest history. Verification checks all eight login
