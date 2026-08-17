@@ -42,7 +42,6 @@ import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { formatDisplayDateTime } from '@/lib/display-dates';
 
 export const metadata: Metadata = {
   title: 'Reconciliation',
@@ -97,32 +96,6 @@ export default async function ReconciliationDashboardPage({
     <div className="space-y-8">
       <ReconciliationPageHeader
         teamName={active.teamName}
-        metadata={[
-          { label: 'checked', value: coverage.totalRawEvents },
-          {
-            label: 'needs repair',
-            value: coverage.missingRawEvents + coverage.degradedReplayEvidence,
-            danger: coverage.missingRawEvents + coverage.degradedReplayEvidence > 0,
-          },
-          {
-            label: 'updated',
-            value: (
-              <span data-visual-dynamic="reconciliation-generated-at">
-                {formatDisplayDateTime(dashboard.generatedAt, { timezone })}
-              </span>
-            ),
-            mono: true,
-          },
-          ...(diagnostics.openConflicts > 0
-            ? ([
-                {
-                  label: 'conflicts',
-                  value: diagnostics.openConflicts,
-                  danger: true,
-                },
-              ] as const)
-            : []),
-        ]}
         srLabel={`Reconciliation for ${active.teamName}. Admins only. ${String(coverage.totalRawEvents)} captured items checked; ${String(coverage.missingRawEvents + coverage.degradedReplayEvidence)} need repair. Times in ${timezone}.`}
       />
       {notice ? <Notice tone={notice.tone} message={notice.message} /> : null}

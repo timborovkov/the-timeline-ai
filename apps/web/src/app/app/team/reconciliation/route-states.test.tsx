@@ -49,6 +49,7 @@ describe('Reconciliation route states', () => {
       expect(screen.queryByRole('button')).toBeNull();
 
       if (heading === 'Reconciliation') {
+        expect(screen.getByLabelText('Loading').children).toHaveLength(2);
         const placeholder = screen.getByRole('region', { name: placeholderLabel });
         expect(placeholder.querySelectorAll('.min-h-11')).toHaveLength(6);
         expect(placeholder.querySelector('[data-loading-section="advanced-tools"]')).toBeTruthy();

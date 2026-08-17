@@ -11,7 +11,7 @@ export default function ReconciliationLoading() {
       <div className="space-y-8" aria-busy="true" aria-label="Loading reconciliation">
         <h1 className="sr-only">Reconciliation</h1>
         <Breadcrumb items={[{ label: 'Team', href: '/app/team' }, { label: 'Reconciliation' }]} />
-        <PageHeaderSkeleton />
+        <PageHeaderSkeleton showMetadata={false} />
 
         <section aria-label="Reconciliation loading placeholder" className="space-y-8">
           <div

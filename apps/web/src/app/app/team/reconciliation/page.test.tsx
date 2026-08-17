@@ -113,6 +113,10 @@ describe('ReconciliationDashboardPage', () => {
     expect(html).not.toContain('Recently reconciled');
     expect(html).not.toContain('>access</dt>');
     expect(html).not.toContain('>team</dt>');
+    expect(html).not.toContain('>checked</dt>');
+    expect(html).not.toContain('>needs repair</dt>');
+    expect(html).not.toContain('>updated</dt>');
+    expect(html).not.toContain('>conflicts</dt>');
     expect(html).toMatch(/<h2[^>]*>Recent clusters<\/h2>/);
     expect(html).toMatch(/<h2[^>]*>Recent outputs<\/h2>/);
     expect(html).toContain('Lumen onboarding pilot');
