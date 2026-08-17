@@ -4,6 +4,7 @@ import {
   CHAT_CONTEXT_TRAIL_MAX,
   chatContextKey,
   chatContextPrompt,
+  chatContextTrailEqual,
   contextIdsFromTrail,
   mergeChatContextTrail,
   parseChatContextRef,
@@ -93,5 +94,11 @@ describe('chat context trail', () => {
     });
     expect(pinnedObjectIdFromContext([documentA, boardCard])).toBe(boardCard.objectId);
     expect(pinnedObjectIdFromContext([documentA])).toBeUndefined();
+  });
+
+  it('compares trails by key, href, and label', () => {
+    expect(chatContextTrailEqual([objectA], [objectA])).toBe(true);
+    expect(chatContextTrailEqual([objectA], [{ ...objectA, label: 'Renamed' }])).toBe(false);
+    expect(chatContextTrailEqual([objectA], [documentA])).toBe(false);
   });
 });

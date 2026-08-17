@@ -455,6 +455,12 @@ describe('POST /api/chat', () => {
       request(
         validBody({
           sessionId: SESSION_ID,
+          dashboardContext: {
+            pathname: '/app/documents/55555555-5555-4555-8555-555555555555',
+            routeKind: 'documents',
+            documentId: '55555555-5555-4555-8555-555555555555',
+            search: { tab: 'notes' },
+          },
           contextTrail: [
             {
               kind: 'document',
@@ -482,6 +488,8 @@ describe('POST /api/chat', () => {
     expect(streamCall?.[0].system).toEqual(expect.stringContaining('Q3 contract'));
     expect(streamCall?.[0].system).toEqual(expect.stringContaining('EARLIER VIEWS (background)'));
     expect(streamCall?.[0].system).toEqual(expect.stringContaining('Launch plan'));
+    expect(streamCall?.[0].system).toEqual(expect.stringContaining('query_params'));
+    expect(streamCall?.[0].system).toEqual(expect.stringContaining('notes'));
   });
 
   it('adds object tools when dashboard context points at an object', async () => {

@@ -83,4 +83,25 @@ describe('buildChatView', () => {
       }).current,
     ).toMatchObject({ kind: 'page', label: 'Provider accounts' });
   });
+
+  it('does not treat a non-task ?id= as a task', () => {
+    expect(
+      buildChatView({
+        pathname: '/app/objects/44444444-4444-4444-8444-444444444444',
+        searchParams: new URLSearchParams('id=77777777-7777-4777-8777-777777777777'),
+      }).current,
+    ).toMatchObject({
+      kind: 'object',
+      objectId: '44444444-4444-4444-8444-444444444444',
+    });
+    expect(
+      buildChatView({
+        pathname: '/app/tasks',
+        searchParams: new URLSearchParams('id=77777777-7777-4777-8777-777777777777'),
+      }).current,
+    ).toMatchObject({
+      kind: 'task',
+      taskId: '77777777-7777-4777-8777-777777777777',
+    });
+  });
 });

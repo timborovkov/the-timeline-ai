@@ -2883,6 +2883,16 @@ describe('object scope — chat session isolation', () => {
     expect(merged.map((ref) => ref.kind)).toEqual(['document', 'object']);
     const loaded = await ownerScope.getChatSession(session.id);
     expect(loaded?.session.contextTrail.map((ref) => ref.kind)).toEqual(['document', 'object']);
+
+    await ownerScope.archiveChatSession(session.id);
+    const afterArchive = await ownerScope.mergeChatSessionContextTrail(session.id, [
+      {
+        kind: 'page',
+        href: '/app/sources',
+        label: 'Connections',
+      },
+    ]);
+    expect(afterArchive).toEqual([]);
   });
 });
 

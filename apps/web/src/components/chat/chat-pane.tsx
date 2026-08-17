@@ -1,7 +1,11 @@
 'use client';
 
 import { useChat } from '@ai-sdk/react';
-import { mergeChatContextTrail, type ChatContextRef } from '@timeline/shared/chat-context';
+import {
+  chatContextKey,
+  mergeChatContextTrail,
+  type ChatContextRef,
+} from '@timeline/shared/chat-context';
 import {
   DefaultChatTransport,
   lastAssistantMessageIsCompleteWithApprovalResponses,
@@ -57,6 +61,7 @@ export function ChatSurface(
     emptyHint?: string | null;
     onSessionIdChange?: (sessionId: string) => void;
     updateUrlOnSessionCreate?: boolean;
+    consumeHandoff?: boolean;
   },
 ) {
   const initialSessionSeedRef = useRef(props.sessionId);
@@ -80,6 +85,7 @@ function ChatSurfaceContent({
   emptyHint,
   onSessionIdChange,
   updateUrlOnSessionCreate = false,
+  consumeHandoff = true,
 }: Props & {
   compact?: boolean;
   dashboardContext?: DashboardChatContext | null;
@@ -87,6 +93,7 @@ function ChatSurfaceContent({
   emptyHint?: string | null;
   onSessionIdChange?: (sessionId: string) => void;
   updateUrlOnSessionCreate?: boolean;
+  consumeHandoff?: boolean;
 }) {
   const router = useRouter();
   const search = useSearchParams();
@@ -125,7 +132,7 @@ function ChatSurfaceContent({
       : null;
 
   useEffect(() => {
-    if (handoffConsumedRef.current) return;
+    if (!consumeHandoff || handoffConsumedRef.current) return;
     handoffConsumedRef.current = true;
     let handoff: ChatHandoff | null = null;
     try {
@@ -134,13 +141,11 @@ function ChatSurfaceContent({
       return;
     }
     if (!handoff) return;
-    if (!initialSessionId && initialMessages.length === 0) {
-      chatHandoffRef.current = handoff;
-    }
+    chatHandoffRef.current = handoff;
     // react-doctor-disable-next-line react-doctor/no-adjust-state-on-prop-change, react-doctor/no-chain-state-updates -- This hydrates a consumed one-time sessionStorage message after SSR; it does not mirror a prop or chain derived state.
     setConsumedHandoff(handoff);
     if (!initialSessionId && handoff.prompt) void sendMessage({ text: handoff.prompt });
-  }, [initialMessages.length, initialSessionId, sendMessage, teamId]);
+  }, [consumeHandoff, initialMessages.length, initialSessionId, sendMessage, teamId]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -271,7 +276,8 @@ function useChatSessionTransport({
             pinnedEntityId: askForNew
               ? (handoff?.pinnedEntityId ?? pinnedEntityIdRef.current ?? undefined)
               : undefined,
-            dashboardContext: handoff?.context ?? dashboardContextRef.current ?? undefined,
+            dashboardContext:
+              chatHandoffRef.current?.context ?? dashboardContextRef.current ?? undefined,
             contextTrail: contextTrailRef.current,
           };
         },
@@ -369,7 +375,7 @@ function ChatContextBadges({ refs, compact }: { refs: ChatContextRef[]; compact:
     >
       {refs.map((ref, index) => (
         <Link
-          key={`${ref.kind}:${ref.href}`}
+          key={chatContextKey(ref)}
           href={ref.href}
           className={cn(
             'max-w-full truncate rounded-sm border px-2 py-0.5 text-xs no-underline',

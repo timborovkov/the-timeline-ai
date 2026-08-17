@@ -248,6 +248,63 @@ describe('FloatingAgentChat', () => {
     expect(body.contextTrail?.some((ref) => ref.kind === 'object')).toBe(true);
   });
 
+  it('does not add Home or full Ask to the context trail', async () => {
+    const user = userEvent.setup();
+    const { rerender } = renderChat();
+    await user.click(screen.getByRole('button', { name: /Open floating agent chat/ }));
+
+    fakes.pathname.mockReturnValue('/app');
+    fakes.searchParams.mockReturnValue(new URLSearchParams());
+    rerender(
+      <ChatViewProvider>
+        <FloatingAgentChat teamId="team-1" teamName="AuditAI" />
+      </ChatViewProvider>,
+    );
+    expect(screen.queryByRole('button', { name: /Open floating agent chat/ })).toBeNull();
+
+    fakes.pathname.mockReturnValue('/app/sources');
+    rerender(
+      <ChatViewProvider>
+        <FloatingAgentChat teamId="team-1" teamName="AuditAI" />
+      </ChatViewProvider>,
+    );
+    await user.click(screen.getByRole('button', { name: /Open floating agent chat/ }));
+    expect(await screen.findByRole('heading', { name: 'Connections' })).toBeTruthy();
+    expect(screen.getByText(/1 earlier/)).toBeTruthy();
+    const body = fakes.transports.at(-1)?.options.body?.() as {
+      contextTrail?: { kind: string; href?: string; label?: string }[];
+    };
+    expect(body.contextTrail?.some((ref) => ref.href === '/app' || ref.label === 'Home')).toBe(
+      false,
+    );
+    expect(body.contextTrail?.some((ref) => ref.kind === 'object')).toBe(true);
+  });
+
+  it('unmounts the floating chat on full Ask and leaves a pending handoff', async () => {
+    const user = userEvent.setup();
+    window.sessionStorage.setItem(
+      'timeline:chat-handoff:team-1',
+      JSON.stringify({
+        createdAt: Date.now(),
+        context: { pathname: '/app/sources', routeKind: 'sources' },
+        contextTrail: [{ kind: 'page', href: '/app/sources', label: 'Connections' }],
+      }),
+    );
+    const { rerender } = renderChat();
+    await user.click(screen.getByRole('button', { name: /Open floating agent chat/ }));
+    expect(window.sessionStorage.getItem('timeline:chat-handoff:team-1')).not.toBeNull();
+
+    fakes.pathname.mockReturnValue('/app/chat');
+    rerender(
+      <ChatViewProvider>
+        <FloatingAgentChat teamId="team-1" teamName="AuditAI" />
+      </ChatViewProvider>,
+    );
+    expect(screen.queryByRole('button', { name: /Open floating agent chat/ })).toBeNull();
+    expect(document.getElementById('floating-agent-chat-panel')?.hasAttribute('open')).toBe(false);
+    expect(window.sessionStorage.getItem('timeline:chat-handoff:team-1')).not.toBeNull();
+  });
+
   it('writes the live trail when opening full Ask', async () => {
     const user = userEvent.setup();
     renderChat();

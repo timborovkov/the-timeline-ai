@@ -152,12 +152,30 @@ function normalizeChatTitle(title: string, question: string): string {
   return fallbackChatTitle(compact || question);
 }
 
+function dashboardContextExtraLines(
+  context: z.infer<typeof dashboardContextSchema> | undefined,
+): string[] {
+  if (!context) return [];
+  const lines: string[] = [];
+  if (context.search && Object.keys(context.search).length > 0) {
+    lines.push(`- query_params: ${JSON.stringify(context.search)}`);
+  }
+  if (context.calendarDate) lines.push(`- calendar_date: ${context.calendarDate}`);
+  if (context.calendarView) lines.push(`- calendar_view: ${context.calendarView}`);
+  return lines;
+}
+
 function dashboardContextPrompt(
   context: z.infer<typeof dashboardContextSchema> | undefined,
   trail: ReturnType<typeof parseChatContextTrail>,
 ): string | null {
   const fromTrail = chatContextPrompt(trail);
-  if (fromTrail) return fromTrail;
+  const extras = dashboardContextExtraLines(context);
+  if (fromTrail) {
+    return extras.length > 0
+      ? `${fromTrail}\nCURRENT VIEW DETAILS:\n${extras.join('\n')}`
+      : fromTrail;
+  }
   if (!context) return null;
   const entries: [string, string | undefined][] = [
     ['route', context.pathname],

@@ -83,6 +83,7 @@ import {
 } from '#src/calendar/due-dates.js';
 import {
   type ChatContextRef,
+  chatContextTrailEqual,
   mergeChatContextTrail,
   parseChatContextTrail,
   pinnedObjectIdFromContext,
@@ -8570,7 +8571,9 @@ export async function mergeChatSessionContextTrail(
     )
     .limit(1);
   if (!rows[0]) return [];
-  const merged = mergeChatContextTrail(parseChatContextTrail(rows[0].contextTrail), nextTrail);
+  const existing = parseChatContextTrail(rows[0].contextTrail);
+  const merged = mergeChatContextTrail(existing, nextTrail);
+  if (chatContextTrailEqual(existing, merged)) return existing;
   await db
     .update(chatSessions)
     .set({ contextTrail: merged })
@@ -8579,6 +8582,7 @@ export async function mergeChatSessionContextTrail(
         eq(chatSessions.id, sessionId),
         eq(chatSessions.teamId, scope.teamId),
         eq(chatSessions.createdBy, scope.userId),
+        isNull(chatSessions.archivedAt),
       ),
     );
   return merged;

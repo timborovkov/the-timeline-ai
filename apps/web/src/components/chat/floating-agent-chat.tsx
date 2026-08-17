@@ -60,9 +60,18 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
   openRef.current = open;
   pathnameRef.current = pathname;
   const excluded = isExcludedPath(pathname);
-  const liveTrail = mergeChatContextTrail(trailRef.current, [current]);
-  trailRef.current = liveTrail;
+  const isFullAsk = pathname.startsWith('/app/chat');
+  // Accumulate during render so navigation is not one effect behind. Skip Home
+  // and full Ask so those routes do not become trail entries.
+  const liveTrail = excluded
+    ? trailRef.current
+    : mergeChatContextTrail(trailRef.current, [current]);
+  if (!excluded) trailRef.current = liveTrail;
   const pinnedEntityId = current.objectId ?? null;
+  const [restoreReady, setRestoreReady] = useState(() => !readStoredSessionId(storageKey));
+  const showChrome = !excluded;
+  const showPanel = open && showChrome;
+  const mountChat = activated && restoreReady && !isFullAsk;
   const openPanel = useCallback(() => {
     setPanel({ open: true, activated: true });
   }, []);
@@ -74,13 +83,15 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
     sessionGenerationRef.current += 1;
     window.localStorage.removeItem(storageKey);
     hydratedSessionIdRef.current = null;
-    trailRef.current = [current];
+    trailRef.current = excluded ? [] : [current];
+    setRestoreReady(true);
     setSessionState({ sessionId: null, initialMessages: [], contextTrail: [] });
-  }, [current, storageKey]);
+  }, [current, excluded, storageKey]);
 
   useEffect(() => {
     if (!sessionId) {
       hydratedSessionIdRef.current = null;
+      setRestoreReady(true);
       return;
     }
     if (hydratedSessionIdRef.current === sessionId) return;
@@ -90,7 +101,8 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
       if (hydratedSessionIdRef.current !== activeSessionId) return;
       window.localStorage.removeItem(storageKey);
       hydratedSessionIdRef.current = null;
-      trailRef.current = [current];
+      trailRef.current = excluded ? [] : [current];
+      setRestoreReady(true);
       setSessionState({ sessionId: null, initialMessages: [], contextTrail: [] });
     };
 
@@ -98,7 +110,10 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
       .then((loaded) => {
         if (hydratedSessionIdRef.current !== activeSessionId) return;
         if (loaded.ok) {
-          const nextTrail = mergeChatContextTrail(loaded.contextTrail ?? [], [current]);
+          const nextTrail = mergeChatContextTrail(
+            loaded.contextTrail ?? [],
+            excluded ? [] : [current],
+          );
           trailRef.current = mergeChatContextTrail(trailRef.current, nextTrail);
           setSessionState((state) =>
             state.sessionId === activeSessionId
@@ -109,6 +124,7 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
                 }
               : state,
           );
+          setRestoreReady(true);
         } else {
           clearStaleSession();
         }
@@ -117,7 +133,7 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
         if (hydratedSessionIdRef.current !== activeSessionId) return;
         clearStaleSession();
       });
-  }, [current, sessionId, storageKey]);
+  }, [current, excluded, sessionId, storageKey]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -140,9 +156,22 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
     };
   }, []);
 
-  const showChrome = !excluded;
-  const showPanel = open && showChrome;
-  const mountChat = activated;
+  useEffect(() => {
+    if (!excluded) return;
+    setPanel((panel) => (panel.open ? { ...panel, open: false } : panel));
+  }, [excluded]);
+
+  useEffect(() => {
+    if (!showPanel) return;
+    const main = document.getElementById('main');
+    if (!main) return;
+    const previous = main.style.overflowY;
+    main.style.overflowY = 'hidden';
+    return () => {
+      main.style.overflowY = previous;
+    };
+  }, [showPanel]);
+
   const fullChatHref = sessionId ? `/app/chat?session=${sessionId}` : '/app/chat';
   const activeSessionGeneration = sessionGenerationRef.current;
   const shortcut = chatShortcutLabel();
@@ -184,6 +213,7 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
         id="floating-agent-chat-panel"
         aria-labelledby="floating-agent-chat-title"
         open={showPanel}
+        aria-modal="false"
         inert={!showPanel}
         className={cn(
           'fixed z-[60] m-0 flex-col border-border bg-bg p-0 shadow-2xl shadow-black/20',
@@ -264,6 +294,7 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
               dashboardContext={dashboardContext}
               contextTrail={liveTrail}
               emptyHint={`Ask about ${current.label}`}
+              consumeHandoff={false}
               onSessionIdChange={(id) => {
                 if (activeSessionGeneration !== sessionGenerationRef.current) return;
                 window.localStorage.setItem(storageKey, id);

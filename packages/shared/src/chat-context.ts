@@ -111,14 +111,15 @@ export function parseChatContextTrail(value: unknown): ChatContextRef[] {
   return mergeChatContextTrail([], parsed);
 }
 
+/** Newest views first. `nextViews` is the current page; `priorTrail` is earlier background. */
 export function mergeChatContextTrail(
-  existing: readonly ChatContextRef[],
-  incoming: readonly ChatContextRef[],
+  priorTrail: readonly ChatContextRef[],
+  nextViews: readonly ChatContextRef[],
   max = CHAT_CONTEXT_TRAIL_MAX,
 ): ChatContextRef[] {
   const merged: ChatContextRef[] = [];
   const seen = new Set<string>();
-  for (const ref of [...incoming, ...existing]) {
+  for (const ref of [...nextViews, ...priorTrail]) {
     const parsed = parseChatContextRef(ref);
     if (!parsed) continue;
     const key = chatContextKey(parsed);
@@ -128,6 +129,22 @@ export function mergeChatContextTrail(
     if (merged.length >= max) break;
   }
   return merged;
+}
+
+export function chatContextTrailEqual(
+  left: readonly ChatContextRef[],
+  right: readonly ChatContextRef[],
+): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((ref, index) => {
+    const other = right[index];
+    return (
+      other !== undefined &&
+      chatContextKey(ref) === chatContextKey(other) &&
+      ref.href === other.href &&
+      ref.label === other.label
+    );
+  });
 }
 
 export function pinnedObjectIdFromContext(refs: readonly ChatContextRef[]): string | undefined {

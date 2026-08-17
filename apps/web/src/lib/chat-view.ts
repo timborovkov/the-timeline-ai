@@ -114,7 +114,7 @@ export function buildChatView(input: {
   const taskId =
     input.overlay?.taskId ??
     input.searchParams.get('task') ??
-    input.searchParams.get('id') ??
+    (segments[1] === 'tasks' ? input.searchParams.get('id') : null) ??
     undefined;
   const calendarEventId =
     input.overlay?.calendarEventId ?? input.searchParams.get('event') ?? undefined;
