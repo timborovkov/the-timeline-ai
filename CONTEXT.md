@@ -112,11 +112,11 @@ state. The header explains that captures are grouped into work and proposed
 updates wait for review. The header is the page title and that subtitle, with no
 access, team, or coverage-count metadata row. Sources that still need evidence
 appear as dense rows. Check coverage and Preview repair sit on a toolbar with
-hover hints. Recent clusters and Recent outputs use ordinary section titles. Cluster evidence/output lists show status,
-a human label, and relative time. Cluster IDs, output IDs, raw-event IDs, and raw
-enum keys stay in the row hover title. Copying an output payload lives in the
-row overflow menu. Evidence-by-source counts and manual UUID reconcile stay in
-Advanced tools.
+hover hints. Recent clusters and Recent outputs use ordinary section titles.
+Cluster evidence/output lists show status, a human label, and relative time.
+Cluster IDs, output IDs, raw-event IDs, and raw enum keys stay in the row hover
+title. Copying an output payload lives in the row overflow menu.
+Evidence-by-source counts and manual UUID reconcile stay in Advanced tools.
 _Avoid_: Recovery queue, retry dashboard, operator console, release gate, stat cards
 
 **Lifecycle Update**:
