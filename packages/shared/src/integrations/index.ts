@@ -1,6 +1,11 @@
 export * from '#src/integrations/types.js';
 export * from '#src/integrations/scope.js';
 export * from '#src/integrations/event-writer.js';
+export {
+  proposeGithubTaskUpdatesForTeam,
+  proposeGithubTaskUpdatesFromEvents,
+  proposeGithubTaskUpdatesFromRawEvent,
+} from '#src/integrations/github-task-proposals.js';
 export * from '#src/integrations/webhooks.js';
 export * from '#src/integrations/canary.js';
 export * from '#src/integrations/monday-repair.js';

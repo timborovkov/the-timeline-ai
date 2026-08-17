@@ -16,10 +16,12 @@ import {
   type Db,
 } from '@timeline/db';
 import {
+  childLogger,
   conversationReview,
   evidencePacks,
   extract,
   getEnv,
+  integrations,
   llm,
   objects,
   queue,
@@ -42,6 +44,7 @@ import { z } from 'zod';
 
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 
+const log = childLogger('worker:suggestions');
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
 const SUGGESTION_CODE_VERSION = '2026-07-b';
 const CONVERSATION_NO_ACTION_RECONCILIATION_VERSION = 'conversation-no-action-2026-06';
@@ -807,6 +810,25 @@ export async function processSuggestionJobForTests(
       suggestions_skipped_reason: 'integration_structured_source',
       suggestion_model_version: modelVersion,
     });
+    const metadata =
+      row.sourceMetadata &&
+      typeof row.sourceMetadata === 'object' &&
+      !Array.isArray(row.sourceMetadata)
+        ? (row.sourceMetadata as Record<string, unknown>)
+        : {};
+    // Structured GitHub PR/issue fields only. Comments, reviews, CI, and other
+    // providers stay off the suggestion model and off this proposal path.
+    if (metadata.provider === 'github') {
+      try {
+        await integrations.proposeGithubTaskUpdatesFromRawEvent({
+          db: deps.db,
+          teamId,
+          rawEvent: row,
+        });
+      } catch (err) {
+        log.warn({ err, rawEventId, teamId }, 'github task proposal generation failed');
+      }
+    }
     return;
   }
   if (await ingestWebhookProposalsDisabled(deps.db, row)) {
@@ -2448,6 +2470,16 @@ async function createObjectCleanupSuggestionsForTeam(
         relationshipDedupe.keys.add(relationshipKey);
       }
     }
+  }
+
+  try {
+    await integrations.proposeGithubTaskUpdatesForTeam({
+      db,
+      teamId,
+      ...(opts.objectId ? { restrictToObjectId: opts.objectId } : {}),
+    });
+  } catch (err) {
+    log.warn({ err, teamId }, 'github task proposal scan failed during object cleanup');
   }
 }
 

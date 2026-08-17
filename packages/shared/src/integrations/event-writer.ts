@@ -29,6 +29,8 @@ import {
   reconcileLinkArtifactsForRawEvent,
   textHasLinks,
 } from '#src/conversational/link-artifacts.js';
+import { proposeGithubTaskUpdatesFromEvents } from '#src/integrations/github-task-proposals.js';
+import { childLogger } from '#src/logger.js';
 import { invalidateObjectSummariesForRawEvent } from '#src/objects/summaries.js';
 import { enqueueEmbedJob, enqueueExtractJob } from '#src/queue/queues.js';
 import {
@@ -49,6 +51,8 @@ import {
   sourcePayloadRefFromMetadata,
 } from '#src/reconciliation/source-snapshot.js';
 import { withTeam } from '#src/team-scope.js';
+
+const log = childLogger('integrations:event-writer');
 
 // Phase 11 — Persist normalized integration events into raw_events with
 // source='integration' + dedup_key. The partial unique index
@@ -364,6 +368,19 @@ export async function writeIntegrationEvents(deps: {
       entityByExternalId,
       events: repairableArtifactEvents,
     });
+    try {
+      await proposeGithubTaskUpdatesFromEvents({
+        db: deps.db,
+        integration: deps.integration,
+        events: repairableArtifactEvents,
+        rawEventIdsByDedupKey,
+      });
+    } catch (err) {
+      log.warn(
+        { err, teamId, integrationId: deps.integration.id },
+        'github task proposal generation failed',
+      );
+    }
   }
 
   return inserted.map((r) => r.id);

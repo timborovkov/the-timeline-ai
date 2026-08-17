@@ -4,7 +4,7 @@
 
 **Audience:** Product, engineering, design, and website copy
 
-**Last updated:** 2026-08-07
+**Last updated:** 2026-08-17
 
 Timeline's cross-source evidence direction is one operating memory backed by the
 tools where work happened. The shared builder, proposal and answer adapters,
@@ -42,7 +42,7 @@ proposal and answer packs. Proposal behavior remains on the legacy path while
 | --- | --- |
 | Generic ingest webhooks | `off`: the existing event-local proposal remains unchanged. `shadow`: pack metrics only; pack failures are recorded without interrupting legacy extraction. `enforced`: recent time-only chronology is replaced by the anchor plus directly related pack evidence, and every proposed change requires exact citations. The existing proposal-generation source gate remains an inner gate. |
 | Slack, Telegram, email, meetings, and documents | Existing conversation-review and event-local proposal behavior remains unchanged regardless of the global rollout setting. These adapters must migrate and pass their own gates separately. |
-| GitHub, Linear, Monday, and Sentry | Structured events feed artifact reconciliation, associations, source references, and provider-authoritative outputs. They do not run the suggestion model. |
+| GitHub, Linear, Monday, and Sentry | Structured events feed artifact reconciliation, associations, source references, and provider-authoritative outputs. They do not run the suggestion model. GitHub PR and issue lifecycle fields also generate approval-backed Timeline task `done`/assignee proposals when an existing task matches the provider id, alias, or repo+number title. Comments, reviews, commits, and CI are not proposal sources. |
 | Agent Ask | Broad workspace retrieval returns a viewer-visible answer-policy pack for raw-event evidence while keeping objects, notes, tasks, boards, documents, and calendar results as typed adjacent context. Semantic matches are labeled as retrieval provenance, pack-only citations are included in the packet's top-level reference index, and partial packets disclose failed source adapters. |
 
 No proposal adapter is considered shipped until its shadow sample, safety,

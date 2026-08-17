@@ -9,6 +9,7 @@ import {
   factEntities,
   facts,
   ingestWebhooks,
+  integrations,
   objectNotes,
   rawEvents,
   reconciliationOutputs,
@@ -348,6 +349,106 @@ describe('processSuggestionJobForTests', () => {
       suggestion_model_version: `${MODEL_ID}@2026-07-b`,
     });
     expect(row?.sourceMetadata).toHaveProperty('suggestions_skipped_at');
+  });
+
+  it('creates structured GitHub task proposals without calling the LLM', async () => {
+    const rawEventId = '99999999-4444-4444-8444-444444444450';
+    await db.insert(integrations).values({
+      teamId: TEAM_ID,
+      connectedByUserId: OWNER_ID,
+      provider: 'github',
+      displayName: 'GitHub — timborovkov',
+      externalAccountId: '42',
+      visibilityDefault: 'team',
+    });
+    const [task] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'Fix command palette Engagements route 404 in audit-ai PR #88',
+        status: 'todo',
+      })
+      .returning();
+    if (!task) throw new Error('task insert failed');
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      source: 'integration',
+      text: 'GitHub PR timborovkov/audit-ai#88 — Fix command palette Engagements route 404',
+      sourceMetadata: {
+        provider: 'github',
+        event_type: 'pr.merged',
+        external_object_id: 'timborovkov/audit-ai#88',
+        actor: { externalId: 'timborovkov', name: 'timborovkov' },
+        github: {
+          type: 'pull_request',
+          repo: 'timborovkov/audit-ai',
+          number: 88,
+          merged_at: '2026-06-02T09:00:00Z',
+        },
+      },
+    });
+    const chat = emptyModel();
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    expect(chat).not.toHaveBeenCalled();
+    await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 1, items: 1 });
+    const [item] = await db.select().from(agentSuggestionItems);
+    expect(item?.targetId).toBe(task.id);
+    expect(item?.operation).toBe('update');
+    expect(item?.proposedPayload).toMatchObject({
+      status: 'done',
+      assigneeUserId: OWNER_ID,
+    });
+  });
+
+  it('does not create GitHub task proposals from comments or reviews', async () => {
+    const rawEventId = '99999999-4444-4444-8444-444444444451';
+    await db.insert(integrations).values({
+      teamId: TEAM_ID,
+      connectedByUserId: OWNER_ID,
+      provider: 'github',
+      displayName: 'GitHub — timborovkov',
+      externalAccountId: '43',
+      visibilityDefault: 'team',
+    });
+    await db.insert(entities).values({
+      teamId: TEAM_ID,
+      type: 'task',
+      canonicalName: 'Fix command palette Engagements route 404 in audit-ai PR #88',
+      status: 'todo',
+    });
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      source: 'integration',
+      text: 'Looks good, merging this.',
+      sourceMetadata: {
+        provider: 'github',
+        event_type: 'issue_comment.created',
+        external_object_id: 'timborovkov/audit-ai#88:comment:99',
+        actor: { externalId: 'timborovkov', name: 'timborovkov' },
+        github: {
+          type: 'issue_comment',
+          repo: 'timborovkov/audit-ai',
+          parent: { type: 'pull_request', number: 88 },
+        },
+      },
+    });
+    const chat = emptyModel();
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    expect(chat).not.toHaveBeenCalled();
+    await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 0, items: 0 });
   });
 
   it('skips integration-sourced events before requiring OPENROUTER_API_KEY', async () => {
