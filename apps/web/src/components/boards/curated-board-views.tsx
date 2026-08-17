@@ -821,7 +821,7 @@ export function CuratedBoardList({
           onUpdateItems={updateItems}
         />
       ) : null}
-      <div className="border-x border-border bg-surface">
+      <div>
         {laneGroups.map((group) => (
           <CollectionGroup key={group.id || 'unset'} title={group.name} count={group.items.length}>
             <VirtualList

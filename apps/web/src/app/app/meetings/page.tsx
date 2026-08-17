@@ -373,7 +373,7 @@ function SavedMeetingsSection({
           action={hasSearch ? 'Clear filters' : 'Save a meeting'}
         />
       ) : (
-        <ul aria-label="Saved meetings" className="border-x border-border">
+        <ul aria-label="Saved meetings">
           {meetings.map((saved) => (
             <li
               id={`saved-meeting-${saved.id}`}

@@ -62,7 +62,7 @@ export default async function BoardsIndexPage() {
           <div className="mt-4 flex justify-center">{BOARD_CREATE_DIALOG}</div>
         </section>
       ) : (
-        <ul className="overflow-hidden border-x border-border" aria-label="Boards">
+        <ul aria-label="Boards">
           {boards.map((board) => {
             const description = visibleBoardDescription(board.purpose);
             return (

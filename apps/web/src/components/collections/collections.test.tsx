@@ -79,6 +79,9 @@ describe('collection primitives', () => {
     );
     const row = container.firstElementChild;
     expect(row?.className).toContain('min-h-11');
+    expect(row?.className).toContain('border-b');
+    expect(row?.className).not.toContain('last:border-b-0');
+    expect(row?.className).not.toContain('border-x');
     expect(row?.querySelector('.sm\\:flex-row')).toBeTruthy();
     expect(screen.getAllByText('Acme')).toHaveLength(2);
     expect(screen.getByText('P2')).toBeTruthy();

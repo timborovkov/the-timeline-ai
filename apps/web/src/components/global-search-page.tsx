@@ -639,7 +639,7 @@ function SearchResultsPanel({
   return (
     <section
       aria-labelledby="search-results-heading"
-      className="overflow-hidden border-x border-border bg-bg"
+      className="bg-bg"
     >
       <div className="flex items-center justify-between border-b border-border px-3 py-2">
         <h2 id="search-results-heading" className="sr-only">

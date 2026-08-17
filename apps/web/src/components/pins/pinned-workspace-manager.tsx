@@ -319,9 +319,6 @@ function PinnedWorkspacePanel({
         Pinned work
       </h2>
       <CollectionToolbar>
-        {nextCursor ? null : (
-          <CollectionToolbar.Count>{String(items.length)}</CollectionToolbar.Count>
-        )}
         <CollectionToolbar.View>
           <nav aria-label="Pinned work filters" className="flex items-center gap-0.5">
             {FILTERS.map((entry) => (
@@ -361,96 +358,94 @@ function PinnedWorkspacePanel({
           </p>
         </div>
       ) : (
-        <div className="border-x border-border">
-          <VirtualList
-            items={items}
-            getItemKey={(item) => item.pinId}
-            estimateSize={52}
-            renderItem={(item, index) => (
-              <PinnedItemRow
-                item={item}
-                draggable={reorderMode}
-                onDragStart={() => {
-                  draggedIdRef.current = item.pinId;
-                }}
-                onDragOver={(event) => {
-                  event.preventDefault();
-                }}
-                onDrop={() => {
-                  const from = items.findIndex(
-                    (candidate) => candidate.pinId === draggedIdRef.current,
-                  );
-                  if (from < 0 || from === index) return;
-                  const moving = items[from];
-                  if (!moving) return;
-                  onCommitMove(
-                    moving,
-                    from < index ? { afterPinId: item.pinId } : { beforePinId: item.pinId },
-                    reorder(items, from, index),
-                  );
-                  draggedIdRef.current = null;
-                }}
-                onRemoved={() => {
-                  onRemoved(item.pinId);
-                }}
-                actions={
-                  reorderMode ? (
-                    <span className="flex items-center gap-0.5">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-8"
-                        disabled={pending || index === 0}
-                        onClick={() => {
-                          onMoveBy(index, 'up');
-                        }}
-                        aria-label={`Move ${item.title} up`}
-                      >
-                        <ArrowUp />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-8"
-                        disabled={pending || (index === items.length - 1 && !nextCursor)}
-                        onClick={() => {
-                          onMoveBy(index, 'down');
-                        }}
-                        aria-label={`Move ${item.title} down`}
-                      >
-                        <ArrowDown />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-8"
-                        disabled={pending || index === 0}
-                        onClick={() => {
-                          onMoveBy(index, 'top');
-                        }}
-                        aria-label={`Move ${item.title} to top`}
-                      >
-                        <ChevronsUp />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-8"
-                        disabled={pending || (index === items.length - 1 && !nextCursor)}
-                        onClick={() => {
-                          onMoveBy(index, 'bottom');
-                        }}
-                        aria-label={`Move ${item.title} to bottom`}
-                      >
-                        <ChevronsDown />
-                      </Button>
-                    </span>
-                  ) : null
-                }
-              />
-            )}
-          />
-        </div>
+        <VirtualList
+          items={items}
+          getItemKey={(item) => item.pinId}
+          estimateSize={52}
+          renderItem={(item, index) => (
+            <PinnedItemRow
+              item={item}
+              draggable={reorderMode}
+              onDragStart={() => {
+                draggedIdRef.current = item.pinId;
+              }}
+              onDragOver={(event) => {
+                event.preventDefault();
+              }}
+              onDrop={() => {
+                const from = items.findIndex(
+                  (candidate) => candidate.pinId === draggedIdRef.current,
+                );
+                if (from < 0 || from === index) return;
+                const moving = items[from];
+                if (!moving) return;
+                onCommitMove(
+                  moving,
+                  from < index ? { afterPinId: item.pinId } : { beforePinId: item.pinId },
+                  reorder(items, from, index),
+                );
+                draggedIdRef.current = null;
+              }}
+              onRemoved={() => {
+                onRemoved(item.pinId);
+              }}
+              actions={
+                reorderMode ? (
+                  <span className="flex items-center gap-0.5">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8"
+                      disabled={pending || index === 0}
+                      onClick={() => {
+                        onMoveBy(index, 'up');
+                      }}
+                      aria-label={`Move ${item.title} up`}
+                    >
+                      <ArrowUp />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8"
+                      disabled={pending || (index === items.length - 1 && !nextCursor)}
+                      onClick={() => {
+                        onMoveBy(index, 'down');
+                      }}
+                      aria-label={`Move ${item.title} down`}
+                    >
+                      <ArrowDown />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8"
+                      disabled={pending || index === 0}
+                      onClick={() => {
+                        onMoveBy(index, 'top');
+                      }}
+                      aria-label={`Move ${item.title} to top`}
+                    >
+                      <ChevronsUp />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8"
+                      disabled={pending || (index === items.length - 1 && !nextCursor)}
+                      onClick={() => {
+                        onMoveBy(index, 'bottom');
+                      }}
+                      aria-label={`Move ${item.title} to bottom`}
+                    >
+                      <ChevronsDown />
+                    </Button>
+                  </span>
+                ) : null
+              }
+            />
+          )}
+        />
       )}
 
       <InfiniteScroll

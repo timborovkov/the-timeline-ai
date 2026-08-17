@@ -134,4 +134,16 @@ describe('PinnedWorkspaceManager', () => {
 
     expect(screen.queryByRole('button', { name: 'Reorder' })).toBeNull();
   });
+
+  it('does not render a bare inventory count next to the pin filters', () => {
+    render(
+      <PinnedWorkspaceManager
+        initialPage={{ items: [pin(FIRST_ID, 'Alpha', '0')], nextCursor: null }}
+        filter="all"
+      />,
+    );
+
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.queryByText('1')).toBeNull();
+  });
 });
