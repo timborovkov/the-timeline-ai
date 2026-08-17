@@ -73,7 +73,8 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       source-specific adapters, AI-assisted titles/summaries, and an advanced
       raw source event mode.
       First slice shipped the Moments/All events mode split, quieter chrome,
-      weighted rows (story / record / pulse), a wider family-aware inspector,
+      weighted rows (story / record / pulse), Linear-style single-icon rows,
+      a wider family-aware inspector with collapsed original-source viewers,
       GitHub workflow bundling, and the
       `search_timeline_moments`/`get_timeline_moment` agent tools, and the
       shared `@timeline/shared/timeline-moments` projection. Outbound MCP now

@@ -19,7 +19,15 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { startTransition, useActionState, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Fragment,
+  startTransition,
+  useActionState,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { toast } from 'sonner';
 
 import type { TimelineCapturedFile } from '@/lib/timeline-captured-files';
@@ -31,6 +39,7 @@ import { EmptyAction } from '@/components/empty-action';
 import { EventVisibilityForm, type SavedEventVisibility } from '@/components/event-visibility-form';
 import { useInspector } from '@/components/inspector-context';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
+import { SourceOriginalDisclosure } from '@/components/source-original';
 import { TechnicalDetails } from '@/components/technical-details';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
@@ -241,6 +250,18 @@ function groupingCue(moment: TimelineMoment): string | null {
   if (moment.eventClass === 'communication') return `${count} messages`;
   if (moment.kind === 'ci_deploy') return `${count} runs`;
   return `${count} events`;
+}
+
+function rowContextParts(moment: TimelineMoment): string[] {
+  const title = displayMomentTitle(moment);
+  return [
+    isRepeatedContext(moment.sourceLabel, title) ? null : moment.sourceLabel,
+    isRepeatedContext(moment.actorLabel, moment.sourceLabel, title) ? null : moment.actorLabel,
+    isRepeatedContext(moment.contextLabel, moment.sourceLabel, title, moment.actorLabel)
+      ? null
+      : moment.contextLabel,
+    groupingCue(moment),
+  ].filter((part): part is string => Boolean(part));
 }
 
 function workspaceImpactItems(moment: TimelineMoment): ImpactItem[] {
@@ -572,6 +593,7 @@ function InspectorBody({
   const clusters = humanClusters(moment);
   const facts = inspectorFacts(moment, timezone);
   const href = externalSourceHref(moment);
+  const meetingHref = meetingDetailHrefForMoment(moment);
   const preview = supportingText(moment, '');
   const compactEvidence = moment.visualWeight === 'pulse';
 
@@ -590,16 +612,28 @@ function InspectorBody({
           ))}
         </dl>
       ) : null}
-      {href ? (
-        <a
-          href={href}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-1 text-sm text-fg-muted underline decoration-border underline-offset-4 transition-colors hover:text-signal hover:decoration-signal"
-        >
-          Open source
-          <ExternalLink aria-hidden="true" className="size-3" />
-        </a>
+      {href || meetingHref ? (
+        <div className="flex flex-wrap gap-x-3 gap-y-1">
+          {href ? (
+            <a
+              href={href}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-sm text-fg-muted underline decoration-border underline-offset-4 transition-colors hover:text-signal hover:decoration-signal"
+            >
+              Open source
+              <ExternalLink aria-hidden="true" className="size-3" />
+            </a>
+          ) : null}
+          {meetingHref ? (
+            <Link
+              href={meetingHref}
+              className="inline-flex items-center text-sm text-fg-muted underline decoration-border underline-offset-4 transition-colors hover:text-signal hover:decoration-signal"
+            >
+              Open transcript
+            </Link>
+          ) : null}
+        </div>
       ) : null}
       {impactItems.length > 0 ? (
         <section>
@@ -632,18 +666,26 @@ function InspectorBody({
           {compactEvidence ? 'Activity' : 'Source evidence'}
         </h3>
         {compactEvidence ? (
-          <ol className="space-y-1">
+          <ol className="space-y-2">
             {visibleRawEvents.map((event) => (
-              <li key={event.id} className="flex min-w-0 gap-2 text-sm">
-                <time
-                  dateTime={event.occurredAt}
-                  className="shrink-0 font-mono text-xs text-fg-dim"
-                >
-                  {formatTimestamp(event.occurredAt, timezone)}
-                </time>
-                <span className="min-w-0 truncate text-fg-muted">
-                  {rawEventBody(event, timezone)}
-                </span>
+              <li key={event.id} className="min-w-0">
+                <div className="flex min-w-0 gap-2 text-sm">
+                  <time
+                    dateTime={event.occurredAt}
+                    className="shrink-0 font-mono text-xs text-fg-dim"
+                  >
+                    {formatTimestamp(event.occurredAt, timezone)}
+                  </time>
+                  <span className="min-w-0 truncate text-fg-muted">
+                    {rawEventBody(event, timezone)}
+                  </span>
+                </div>
+                <SourceOriginalDisclosure
+                  source={event.source}
+                  contentText={event.contentText}
+                  sourceMetadata={event.sourceMetadata}
+                  className="mt-2"
+                />
               </li>
             ))}
           </ol>
@@ -897,6 +939,12 @@ function SourceEvidenceCard({
           </Dialog>
         </>
       ) : null}
+      <SourceOriginalDisclosure
+        source={event.source}
+        contentText={event.contentText}
+        sourceMetadata={event.sourceMetadata}
+        className="mt-3"
+      />
       {transcriptionStatus && body !== transcriptionStatus ? (
         <p className="mt-2 text-sm italic text-fg-dim">{transcriptionStatus}</p>
       ) : null}
@@ -1183,17 +1231,20 @@ function TimelineMomentRow({
   const title = displayMomentTitle(moment);
   const cue = groupingCue(moment);
   const pulse = moment.visualWeight === 'pulse';
-  const story = moment.visualWeight === 'story';
-  const previewText = story ? supportingText(moment, '') : '';
-  const showPreview = Boolean(previewText) && previewText !== title;
+  const previewText = supportingText(moment, '');
+  const contextParts = rowContextParts(moment);
+  const subtitleParts = [
+    ...contextParts.filter((part) => !previewText || !previewText.includes(part)),
+    previewText || null,
+  ].filter((part): part is string => Boolean(part));
   return (
     <li
       id={moment.anchorId}
       aria-current={selected ? 'true' : undefined}
       className={cn(
-        'group relative -mx-3 grid scroll-mt-24 grid-cols-1 border-b border-border px-3 transition-colors hover:bg-surface md:grid-cols-[5.75rem_minmax(0,1fr)]',
-        pulse ? 'min-h-9' : story ? 'min-h-12' : 'min-h-10',
-        selected && 'bg-surface shadow-[inset_3px_0_0_var(--signal)]',
+        'group relative -mx-3 scroll-mt-24 border-b border-border/80 px-3 transition-colors hover:bg-surface',
+        pulse ? 'min-h-11' : 'min-h-12',
+        selected && 'bg-surface shadow-[inset_2px_0_0_var(--signal)]',
       )}
       data-moment-id={moment.id}
       data-visual-weight={moment.visualWeight}
@@ -1209,111 +1260,74 @@ function TimelineMomentRow({
       ))}
       <div
         className={cn(
-          'relative px-0 font-mono text-xs text-fg-dim md:pr-3',
-          pulse ? 'pt-1.5 md:py-1.5' : 'pt-2 md:py-2.5',
+          'grid grid-cols-[3.5rem_minmax(0,1fr)] items-start gap-x-3 md:grid-cols-[4.5rem_1rem_minmax(0,1fr)]',
+          pulse || compact ? 'py-2.5' : 'py-3',
         )}
       >
-        <span data-visual-dynamic="timeline-time">{moment.timeLabel}</span>
-        <span
+        <time
+          data-visual-dynamic="timeline-time"
+          className="pt-0.5 font-mono text-[11px] tabular-nums leading-5 text-fg-dim"
+        >
+          {moment.timeLabel}
+        </time>
+        <KindIcon
           aria-hidden="true"
-          className="absolute right-1 top-0 hidden h-full w-px bg-border md:block"
+          className="mt-0.5 hidden size-4 shrink-0 text-fg-dim md:block"
         />
-        <span
-          aria-hidden="true"
-          className={cn(
-            'absolute right-[-7px] hidden size-3.5 items-center justify-center border border-border-strong bg-bg text-fg-dim transition-colors md:flex',
-            pulse ? 'top-2' : story ? 'top-3.5' : 'top-3',
-            selected && 'border-signal text-signal',
-          )}
-        >
-          <KindIcon aria-hidden="true" className="size-2.5" />
-        </span>
-      </div>
-      <div className={cn('min-w-0 md:pl-3 md:pr-2', pulse ? 'py-1.5' : story ? 'py-2' : 'py-1.5')}>
-        <button
-          type="button"
-          aria-label={[title, previewText, moment.timeLabel, cue].filter(Boolean).join(' · ')}
-          onClick={() => {
-            inspector.show(
-              momentInspectorContent({
-                moment,
-                audioUrlMap,
-                currentUserId,
-                isAdmin,
-                members,
-                capturedFilesByEventId,
-                timezone,
-              }),
-            );
-          }}
-          className="block w-full rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong"
-        >
-          {pulse ? (
-            <p className="flex min-w-0 items-baseline gap-x-2 text-sm leading-5 text-fg-muted">
-              <span className="inline-flex shrink-0 items-center gap-1 text-xs text-fg-dim">
-                <KindIcon aria-hidden="true" className="size-3.5" />
-                {moment.sourceLabel}
-              </span>
-              <span className="min-w-0 truncate">{title}</span>
-              {cue ? <span className="shrink-0 text-xs text-fg-dim">{cue}</span> : null}
-            </p>
-          ) : (
-            <>
-              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-fg-dim">
-                <span className="inline-flex items-center gap-1 font-medium text-fg-muted">
-                  <KindIcon aria-hidden="true" className="size-3.5" />
-                  {moment.sourceLabel}
-                </span>
-                {!isRepeatedContext(moment.actorLabel, moment.sourceLabel, title) ? (
-                  <span>{moment.actorLabel}</span>
-                ) : null}
-                {!isRepeatedContext(
-                  moment.contextLabel,
-                  moment.sourceLabel,
-                  title,
-                  moment.actorLabel,
-                ) ? (
-                  <span>{moment.contextLabel}</span>
-                ) : null}
-                {cue ? <span>{cue}</span> : null}
-              </div>
-              <p
-                className={cn(
-                  'mt-0.5 break-words text-sm leading-5 md:max-w-[88ch]',
-                  story ? 'line-clamp-2 font-medium text-fg' : 'line-clamp-1 font-medium text-fg',
-                )}
-              >
-                {title}
-              </p>
-              {showPreview ? (
-                <p
-                  className={cn(
-                    'line-clamp-2 break-words text-xs leading-4 text-fg-dim',
-                    !compact && 'md:max-w-[84ch]',
-                  )}
-                >
-                  {previewText}
-                </p>
-              ) : null}
-            </>
-          )}
-        </button>
-        {transcriptionStatus ? (
-          <span className="mt-1 inline-flex min-h-6 max-w-full min-w-0 items-center text-xs text-fg-muted">
-            {transcriptionStatus}
-          </span>
-        ) : null}
-        {meetingHref ? (
-          <Link
-            href={meetingHref}
-            className="mt-1 inline-flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs text-fg-muted transition-colors hover:bg-surface hover:text-signal"
+        <div className="min-w-0 pr-8">
+          <button
+            type="button"
+            aria-label={[title, previewText, moment.timeLabel, cue].filter(Boolean).join(' · ')}
+            onClick={() => {
+              inspector.show(
+                momentInspectorContent({
+                  moment,
+                  audioUrlMap,
+                  currentUserId,
+                  isAdmin,
+                  members,
+                  capturedFilesByEventId,
+                  timezone,
+                }),
+              );
+            }}
+            className="block w-full rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong"
           >
-            <ExternalLink aria-hidden="true" className="size-3" />
-            Open transcript
-          </Link>
-        ) : null}
+            <p
+              className={cn(
+                'truncate text-sm leading-5',
+                pulse ? 'text-fg-muted' : 'font-medium text-fg',
+              )}
+            >
+              {title}
+            </p>
+            {subtitleParts.length > 0 ? (
+              <p className="mt-0.5 truncate text-xs leading-4 text-fg-dim">
+                {subtitleParts.map((part, index) => (
+                  <Fragment key={`${part}:${index}`}>
+                    {index > 0 ? ' · ' : null}
+                    <span>{part}</span>
+                  </Fragment>
+                ))}
+              </p>
+            ) : null}
+          </button>
+          {transcriptionStatus ? (
+            <span className="mt-1 inline-flex min-h-6 max-w-full min-w-0 items-center text-xs text-fg-muted">
+              {transcriptionStatus}
+            </span>
+          ) : null}
+          {meetingHref ? (
+            <Link
+              href={meetingHref}
+              className="mt-1 inline-flex text-xs text-fg-dim transition-colors hover:text-signal"
+            >
+              Open transcript
+            </Link>
+          ) : null}
+        </div>
       </div>
-      <div className="absolute right-2 top-3 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+      <div className="absolute right-2 top-2.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
         <PinOverflowMenu
           target={{ kind: 'timeline_moment', key: moment.id }}
           title={title}

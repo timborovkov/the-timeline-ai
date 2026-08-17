@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.2 · Timeline event families (2026-08-17). Replaces v3.1 Quiet Archive collection density.
+**Version:** v3.3 · Timeline rows and original source (2026-08-17). Replaces v3.2 Timeline event families.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -12,9 +12,9 @@ update this document in the same change.
 Timeline is a calm working archive: concise enough to scan, rigorous enough to
 trust, and explicit about its evidence when a person asks for it.
 
-The evidence-driven identity remains structural through the timeline rail,
-citations, inspectors, and audit disclosures. It is not expressed by exposing
-database implementation details in ordinary product views.
+The evidence-driven identity remains structural through the timeline
+chronology, citations, inspectors, and audit disclosures. It is not expressed
+by exposing database implementation details in ordinary product views.
 
 ### Product language
 
@@ -254,9 +254,12 @@ audit view.
 Timeline rows themselves are the inspector affordance. Conversations and
 meetings read as stories; pull requests, issues, and other named records read
 as compact work records; CI, telemetry, and webhook chatter read as one-line
-pulses. Opening a row shows a human source summary first. Exact timestamps,
-ownership/visibility internals, source IDs, payloads, and raw provider data sit
-inside the inspector’s `TechnicalDetails`.
+pulses. Opening a row shows a human source summary first. Original source
+(full message, email HTML, transcript, or webhook/JSON payload) sits in a
+collapsed inspector disclosure with a readable preview: HTML in a sandboxed
+frame, text as prose, JSON in Commit Mono. Attached documents link to the
+document drive. Exact timestamps, ownership/visibility internals, source IDs,
+and other implementation keys stay inside `TechnicalDetails`.
 
 Pack-backed approvals show a compact “Evidence for this change · N sources”
 disclosure beneath each proposed item, using source, sender, timestamp, bounded
@@ -301,18 +304,16 @@ different visual weight. All events is a uniform compact log of every captured
 source event. The labels and the row density should make the difference
 obvious without a lecture.
 
-Each Moments row leads with time and source. Conversations and meetings are
-stories: a stronger title and a two-line preview. Work records (pull requests,
-issues, deals, incidents) are denser named records without chat-style previews.
-Pulses (CI, deploys, telemetry, generic webhooks) stay on one muted line, still
-visible, never competing with a transcript or Slack thread. Impact on the row
-is omitted; the inspector shows workspace consequences and structured facts
-(repository, branch, status) rather than LLM-written notes or machine IDs such
-as `repo#workflow_run:123`. The rail, sticky dates (`top-11` under the
-toolbar), and pagination remain. Exact capture and provider details move into
-the inspector. The default view ends at the current instant so materialized
-calendar occurrences do not displace recent work. Upcoming context is an
-explicit seven-day view; the Calendar surface owns the complete future
+Each Moments row is a Linear-style collection row: time, one source icon, a
+single title line, and at most one muted context line. Do not duplicate the
+icon on a rail node, and do not stack source, actor, title, and preview as
+separate competing headings. Stories and records share that same skeleton;
+pulses stay one muted line. Impact on the row is omitted; the inspector shows
+workspace consequences, structured facts, and a collapsed Original source
+disclosure. Attached files link to Documents. Sticky dates (`top-11` under the
+toolbar) and pagination remain. The default view ends at the current instant so
+materialized calendar occurrences do not displace recent work. Upcoming context
+is an explicit seven-day view; the Calendar surface owns the complete future
 schedule. Compact Home moments reuse the same formatter.
 
 ### Ask
@@ -590,3 +591,5 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-14 | Customer-facing public language | Keeps review cadence, implementation state, indexing terms, and capability taxonomy in metadata while public pages explain concrete actions and availability. |
 | 2026-08-15 | Evidence-backed public product story | Makes the working-history problem, deliberate capture boundary, cited-versus-unused evidence, Telegram entry point, inspectable answers, and human approval contract explicit across the landing and how-it-works journey. |
 | 2026-08-16 | Unified workspace collection density | Replaces stacked form chrome and card grids with compact headers, one filter toolbar, 44px rows, semantic status glyphs, optimistic metadata triggers, and contextual selection without changing domain behavior. |
+| 2026-08-17 | Timeline event families | Gives Moments weighted story/record/pulse rows and All events a uniform compact log, with provider-agnostic classification. |
+| 2026-08-17 | Linear timeline rows and original source | Drops duplicate rail icons and stacked row chrome; original payloads open from a collapsed inspector viewer. |

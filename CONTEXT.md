@@ -41,7 +41,9 @@ OCR text, and visual descriptions belong in event detail, citations, and agent
 tools. User-facing Moments chrome and digests count moments; All events,
 filters, and technical disclosures count source events. Conversation inspectors
 use evidence items; pulses use a compact activity log — do not pair moment and
-raw-event totals in the same chrome.
+raw-event totals in the same chrome. The inspector keeps original source
+(message, email HTML, transcript, webhook/JSON payload) in a collapsed
+disclosure; attached documents link to the document drive.
 _Avoid_: Raw Event when referring to the grouped browsing unit
 
 **Timeline event class**:

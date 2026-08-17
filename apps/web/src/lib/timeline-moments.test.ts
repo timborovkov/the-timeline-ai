@@ -207,9 +207,33 @@ describe('timeline moment grouping', () => {
 
     expect(moments).toHaveLength(1);
     expect(moments[0]?.kind).toBe('conversation');
-    expect(moments[0]?.title).toBe('Telegram conversation in Telegram');
+    expect(moments[0]?.title).toBe('hello');
     expect(moments[0]?.subtitle).toContain('2 messages');
     expect(moments[0]?.confidence).toBe('deterministic');
+  });
+
+  it('uses the message itself as a Slack title instead of repeating Slack and the channel', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'slack-1',
+          source: 'slack',
+          contentText:
+            'Slack #product: Maya: if importer reliability is the beta gate, we should keep the vendor appendix.',
+          sourceMetadata: {
+            slack_channel_name: '#product',
+            slack_sender_name: 'Maya',
+          },
+        }),
+      ],
+      authorMap,
+      new Date('2026-05-28T12:00:00.000Z'),
+    );
+
+    expect(moments[0]?.title).toBe(
+      'if importer reliability is the beta gate, we should keep the vendor appendix',
+    );
+    expect(moments[0]?.sourceLabel).toBe('Slack');
   });
 
   it('can render source-event mode without grouping raw events', () => {
@@ -282,7 +306,7 @@ describe('timeline moment grouping', () => {
 
     expect(moments).toHaveLength(1);
     expect(moments[0]?.kind).toBe('ci_deploy');
-    expect(moments[0]?.title).toBe('CI passed on timborovkov/audit-ai');
+    expect(moments[0]?.title).toBe('CI passed on timborovkov/audit-ai · main');
     expect(moments[0]?.subtitle).toBe('GitHub · workflow run success · 2 events');
     expect(moments[0]?.grouping.strategy).toBe('provider_workflow_window');
   });

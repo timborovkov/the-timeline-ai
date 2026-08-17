@@ -175,7 +175,7 @@ describe('TimelineList event anchors', () => {
     expect(html).toContain(`id="ev-${focusedEventId}"`);
     expect(html).toContain(`id="ev-${taskEventId}"`);
     expect(html.match(new RegExp(`id="ev-${focusedEventId}"`, 'g'))).toHaveLength(1);
-    expect(html).toContain('shadow-[inset_3px_0_0_var(--signal)]');
+    expect(html).toContain('shadow-[inset_2px_0_0_var(--signal)]');
   });
 
   it('keeps a focused moment visible through impact filters', () => {
@@ -200,7 +200,7 @@ describe('TimelineList event anchors', () => {
     expect(html).toContain('aria-current="true"');
     expect(html).toContain(`id="ev-${focusedEventId}"`);
     expect(html).toContain(`id="ev-${taskEventId}"`);
-    expect(html).toContain('shadow-[inset_3px_0_0_var(--signal)]');
+    expect(html).toContain('shadow-[inset_2px_0_0_var(--signal)]');
   });
 });
 
@@ -384,6 +384,8 @@ describe('TimelineList moment presentation', () => {
     expect(html).toContain('CI passed on acme/app · main');
     expect(html).not.toContain('View evidence');
     expect(html).not.toContain('workflow_run:1603');
+    expect(html).not.toContain('right-[-7px]');
+    expect(html).not.toContain('w-px bg-border');
   });
 
   it('keeps All events as a uniform compact log', () => {
@@ -747,6 +749,41 @@ describe('TimelineList inspector source caps', () => {
     renderLastInspectorContent();
 
     expect(screen.queryByRole('button', { name: 'View full evidence' })).toBeNull();
+  });
+
+  it('keeps original email HTML behind a collapsed inspector disclosure', () => {
+    render(
+      createElement(TimelineList, {
+        events: [
+          timelineEvent({
+            id: '19191919-1919-4191-8191-191919191918',
+            occurredAt: '2026-06-03T13:04:00.000Z',
+            source: 'email',
+            contentText: 'Please review the appendix.',
+            sourceMetadata: {
+              subject: 'Vendor contract review',
+              html_body: '<p>Please review the <b>appendix</b>.</p>',
+              source_snapshot: {
+                provider: 'postmark',
+                subject: 'Vendor contract review',
+                html_body: '<p>Please review the <b>appendix</b>.</p>',
+                from: { email: 'mika@example.com' },
+              },
+            },
+          }),
+        ],
+        authorMap: new Map(),
+        currentUserId: 'user-1',
+        isAdmin: false,
+      }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^Vendor contract review/i }));
+    const inspector = renderLastInspector();
+    expect(inspector).toContain('Original email');
+    expect(inspector).toContain('sandbox=""');
+    expect(inspector).toContain('Please review the &lt;b&gt;appendix&lt;/b&gt;.');
+    expect(inspector).not.toContain('sha256:deadbeef');
   });
 });
 

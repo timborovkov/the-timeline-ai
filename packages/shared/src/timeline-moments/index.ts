@@ -859,6 +859,13 @@ function clippedTitle(text: string, fallback: string): string {
   return clipped(firstLine && firstLine.length > 0 ? firstLine : fallback, 92);
 }
 
+function stripConversationLeadIn(text: string): string {
+  const stripped = text
+    .replace(/^(?:Slack|Telegram)\s+[^:]{1,80}:\s+(?:[^:]{1,80}:\s+)?/i, '')
+    .trim();
+  return stripped.length > 0 ? stripped : text;
+}
+
 function plural(count: number, singular: string, pluralLabel = `${singular}s`): string {
   return `${String(count)} ${count === 1 ? singular : pluralLabel}`;
 }
@@ -1136,18 +1143,16 @@ function titleForGroup(
 ): string {
   const meta = metaObject(displayLead.sourceMetadata);
   if (displayLead.source === 'telegram' || displayLead.source === 'slack') {
-    const context = contextLabel(displayLead, timezone);
-    if (sorted.length > 1)
-      return `${displayLead.source === 'telegram' ? 'Telegram' : 'Slack'} conversation in ${context}`;
     return clippedTitle(
-      summaryForEvent(displayLead, timezone),
+      stripConversationLeadIn(summaryForEvent(displayLead, timezone)),
       `${displayLead.source === 'telegram' ? 'Telegram' : 'Slack'} message`,
     );
   }
   if (displayLead.source === 'meeting') {
     const title = stringMeta(meta, 'title');
     if (title) return displayText(title, { timezone });
-    if (stringMeta(meta, 'summary')) return 'Meeting summary captured';
+    const summary = stringMeta(meta, 'summary');
+    if (summary) return clippedTitle(summary, 'Meeting summary captured');
     return displayLead.contentText
       ? clippedTitle(summaryForEvent(displayLead, timezone), 'Meeting captured')
       : 'Meeting captured without transcript';
