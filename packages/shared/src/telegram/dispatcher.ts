@@ -48,6 +48,7 @@ import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.
 import { inlineSourceSnapshotMetadata } from '#src/reconciliation/source-snapshot.js';
 import { withTeam } from '#src/team-scope.js';
 import { type TelegramApi } from '#src/telegram/api.js';
+import { TELEGRAM_DM_HELP, TELEGRAM_GROUP_HELP } from '#src/telegram/commands.js';
 import { createTelegramConversationDeliveryAdapter } from '#src/telegram/conversation-adapter.js';
 import {
   tgUpdateSchema,
@@ -61,34 +62,6 @@ import {
 
 const log = childLogger('telegram');
 const TELEGRAM_SOURCE_SNAPSHOT_VERSION = 'telegram-source-snapshot-2026-07';
-
-const TELEGRAM_DM_HELP =
-  `Plain text here is a private agent conversation (🤔 = answering).\n` +
-  `Voice, images, and files are saved to your team's timeline (👀 = received).\n\n` +
-  `Commands (DM):\n` +
-  `/start           show connection guidance\n` +
-  `/ask <question>  backward-compatible agent alias\n` +
-  `/note <text>     explicitly save a text note\n` +
-  `/new             start a new agent conversation\n` +
-  `/join <alias-or-url> [title]  capture a meeting now\n` +
-  `/link <token>    connect this DM to a team\n` +
-  `/team            list teams; /team N switches\n` +
-  `/whereami        show current active team\n` +
-  `/unlink          disconnect all teams\n` +
-  `/help            this message`;
-
-const TELEGRAM_GROUP_HELP =
-  `Plain messages here are saved to the bound team's timeline (👀 = received).\n` +
-  `Use /ask to query the timeline.\n\n` +
-  `Commands (group):\n` +
-  `/start           show binding guidance; /start <token> binds\n` +
-  `/ask <question>  ask the timeline\n` +
-  `/join <alias-or-url> [title]  capture a meeting now\n` +
-  `/link <token>    bind this group to a team (admin only)\n` +
-  `/team            explain how to switch teams in a DM\n` +
-  `/whereami        show the bound team\n` +
-  `/unlink          unbind (admin only)\n` +
-  `/help            this message`;
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
