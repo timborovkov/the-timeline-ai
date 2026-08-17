@@ -70,11 +70,13 @@ function makeScope(
       listSuggestions: vi.fn().mockResolvedValue(input.suggestions ?? []),
     },
     objects: {
-      listObjects: vi.fn().mockImplementation((filter: { createdAfter?: Date; status?: unknown } = {}) => {
-        if (filter.status) return Promise.resolve(input.completedTasks ?? []);
-        if (filter.createdAfter) return Promise.resolve(input.createdTasks ?? []);
-        return Promise.resolve(input.tasks ?? []);
-      }),
+      listObjects: vi
+        .fn()
+        .mockImplementation((filter: { createdAfter?: Date; status?: unknown } = {}) => {
+          if (filter.status) return Promise.resolve(input.completedTasks ?? []);
+          if (filter.createdAfter) return Promise.resolve(input.createdTasks ?? []);
+          return Promise.resolve(input.tasks ?? []);
+        }),
     },
     calendar: { listCalendarEvents: vi.fn().mockResolvedValue(input.upcomingCalendar ?? []) },
   };

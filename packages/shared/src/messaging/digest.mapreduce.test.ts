@@ -506,7 +506,11 @@ describe('digest map-reduce summarization', () => {
     });
 
     expect(result.payload.sections).toEqual([
-      { title: 'Highlights', body: 'Shared highlight Shared highlight Unique highlight', items: [] },
+      {
+        title: 'Highlights',
+        body: 'Shared highlight Shared highlight Unique highlight',
+        items: [],
+      },
       { title: 'Completed', body: 'Done thing', items: [] },
       { title: 'Risks', body: 'Risk A Risk B', items: [] },
     ]);

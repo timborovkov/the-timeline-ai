@@ -84,7 +84,9 @@ describe('DailyDigestBlock', () => {
     const details = screen.getByText('Open digest').closest('details');
     expect(details).toBeTruthy();
     expect(details?.hasAttribute('open')).toBe(false);
-    expect(details?.textContent).toContain('The launch moved forward after customer feedback arrived.');
+    expect(details?.textContent).toContain(
+      'The launch moved forward after customer feedback arrived.',
+    );
     expect(details?.textContent).toContain('The launch review finished');
     expect(details?.textContent).toContain('Activity over the past day');
     expect(details?.textContent).toContain('7 new moments');

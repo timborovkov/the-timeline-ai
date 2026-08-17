@@ -63,7 +63,9 @@ describe('DigestHistoryTable', () => {
     );
 
     expect(
-      screen.getByRole('button', { name: 'The launch moved forward.' }).getAttribute('aria-expanded'),
+      screen
+        .getByRole('button', { name: 'The launch moved forward.' })
+        .getAttribute('aria-expanded'),
     ).toBe('true');
     expect(screen.getByText('The invite flow is ready for the next review.')).toBeTruthy();
     expect(
