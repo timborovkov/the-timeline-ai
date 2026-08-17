@@ -82,9 +82,7 @@ test.describe('Infinite scroll collections', () => {
     const sourceName = matching[0]?.canonicalName ?? '';
     await page.goto(`/app/tasks?view=kanban&q=${query}`);
     const dragHandle = page.getByRole('button', { name: `Drag ${sourceName}` });
-    const doneColumn = page
-      .locator('section')
-      .filter({ has: page.getByRole('heading', { name: 'Done' }) });
+    const doneColumn = page.getByRole('region', { name: 'Done' });
     await expect(dragHandle).toBeVisible();
     await expect(doneColumn).toBeVisible();
     await doneColumn.scrollIntoViewIfNeeded();
