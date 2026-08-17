@@ -95,6 +95,7 @@
           "src/app/app/work/page.tsx",
           "src/app/app/team/reconciliation/clusters/[id]/page.tsx",
           "src/app/app/team/reconciliation/page.tsx",
+          "src/components/reconciliation/advanced-tools.tsx",
           "src/components/approvals/approvals-client.tsx",
           "src/components/boards/curated-board-views.tsx",
           "src/components/boards/curated-kanban-board.tsx",

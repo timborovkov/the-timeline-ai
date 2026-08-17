@@ -5,16 +5,24 @@ import {
   artifactTypeLabel,
   clusterStatusLabel,
   confidenceLabel,
+  eventSourceLabel,
   evidenceRoleLabel,
   evidenceStrengthLabel,
+  legacyProvenanceLabel,
   outputActionLabel,
   outputKindLabel,
   outputStatusLabel,
+  runTriggerLabel,
 } from '@/components/reconciliation/presentation';
 
 describe('reconciliation presentation', () => {
   it('replaces storage tokens with concise operator labels', () => {
     expect(artifactClusterKindLabel('customer_project')).toBe('Customer project');
+    expect(runTriggerLabel('backfill')).toBe('Repair preview');
+    expect(runTriggerLabel('raw_event')).toBe('Capture');
+    expect(legacyProvenanceLabel('object source_event_id')).toBe('Object source event ID');
+    expect(eventSourceLabel('slack')).toBe('Slack');
+    expect(eventSourceLabel('legacy_object_source_event')).toBe('Legacy object source event');
     expect(artifactTypeLabel('monday_board')).toBe('Monday board');
     expect(clusterStatusLabel('candidate')).toBe('Candidate');
     expect(evidenceRoleLabel('related_context')).toBe('Related context');

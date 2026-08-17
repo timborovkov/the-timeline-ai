@@ -19,14 +19,14 @@ import {
 import { JobsPageHeader } from '@/components/job-recovery/jobs-page-header';
 import { jobsMutationToast, postJson } from '@/components/job-recovery/jobs-page-toast';
 import { JobDashboard } from '@/components/jobs/job-dashboard';
+import { SectionHeading } from '@/components/section-heading';
 import { TechnicalDetails } from '@/components/technical-details';
 import { useAppDialog } from '@/components/ui/app-dialog';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
-import { formatRelativeAge } from '@/lib/display-dates';
+import { formatDisplayDateTime, formatRelativeAge } from '@/lib/display-dates';
 import { isoTimestamp } from '@/lib/iso-timestamp';
 import {
   type FinishedJobArchivePage,
@@ -764,14 +764,7 @@ function AdvancedJobTools({
   return (
     <TechnicalDetails summary="Advanced tools">
       <div className="space-y-8">
-        <section className="space-y-3">
-          <h2 className="text-sm font-medium text-fg">Unprocessed backlog</h2>
-          <p className="text-xs text-fg-muted">
-            These counts are events still waiting for extraction or embedding. They are not the
-            recovery queue on this page. Workers keep retrying them automatically.
-          </p>
-          <JobDashboard />
-        </section>
+        <JobDashboard />
         <ConversationSuggestionRecovery onQueued={onQueued} />
         <FinishedJobsArchive items={finishedItems} query={finishedQuery} />
       </div>
@@ -816,45 +809,48 @@ function ConversationSuggestionRecovery({ onQueued }: { onQueued: () => void }) 
   }
 
   return (
-    <div className="flex flex-col gap-2 rounded-sm border border-border bg-surface p-3 md:flex-row md:items-center md:justify-between">
-      <div className="space-y-1">
-        <h2 className="text-sm font-medium">Conversation suggestions</h2>
-        <p className="text-xs text-fg-muted">
-          Re-queue reviews if suggestions did not appear. Leave this unless support asks.
-        </p>
-        {status ? <p className="text-xs text-fg-muted">{status}</p> : null}
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <select
-          value={windowDays}
-          onChange={(event) => {
-            setWindowDays(Number(event.target.value) as ResuggestWindowDays);
-          }}
-          className="h-8 rounded-sm border border-border bg-bg px-2 text-sm text-fg"
-          aria-label="Suggestion recovery window"
-        >
-          <option value={7}>7 days</option>
-          <option value={30}>30 days</option>
-          <option value={90}>90 days</option>
-        </select>
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          disabled={queueing}
-          onClick={() => {
-            void queueConversationSuggestions();
-          }}
-        >
-          {queueing ? (
-            <LoaderCircle aria-hidden="true" className="mr-1 size-3.5 animate-spin" />
-          ) : (
-            <RotateCcw aria-hidden="true" className="mr-1 size-3.5" />
-          )}
-          {queueing ? 'Queueing' : 'Queue suggestions'}
-        </Button>
-      </div>
-    </div>
+    <section className="space-y-3">
+      <SectionHeading
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={windowDays}
+              onChange={(event) => {
+                setWindowDays(Number(event.target.value) as ResuggestWindowDays);
+              }}
+              className="h-8 rounded-sm border border-border bg-bg px-2 text-sm text-fg"
+              aria-label="Suggestion recovery window"
+            >
+              <option value={7}>7 days</option>
+              <option value={30}>30 days</option>
+              <option value={90}>90 days</option>
+            </select>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={queueing}
+              onClick={() => {
+                void queueConversationSuggestions();
+              }}
+            >
+              {queueing ? (
+                <LoaderCircle aria-hidden="true" className="mr-1 size-3.5 animate-spin" />
+              ) : (
+                <RotateCcw aria-hidden="true" className="mr-1 size-3.5" />
+              )}
+              {queueing ? 'Queueing' : 'Queue suggestions'}
+            </Button>
+          </div>
+        }
+      >
+        Conversation suggestions
+      </SectionHeading>
+      <p className="text-xs text-fg-muted">
+        Re-queue reviews if suggestions did not appear. Leave this unless support asks.
+      </p>
+      {status ? <p className="text-xs text-fg-muted">{status}</p> : null}
+    </section>
   );
 }
 
@@ -896,6 +892,16 @@ function RetryStatus({ snapshot }: { snapshot: RetrySnapshot }) {
   );
 }
 
+function finishedJobHint(item: FinishedJobArchivePage['items'][number], timezone: string): string {
+  const lines = [
+    formatDisplayDateTime(item.finishedAt, { timezone }),
+    `Queue: ${item.queue} · Attempts: ${String(item.attemptsMade)}`,
+    `Job ID: ${item.id}`,
+  ];
+  if (item.error) lines.push(item.error);
+  return lines.join('\n');
+}
+
 function FinishedJobsArchive({
   items,
   query,
@@ -903,67 +909,41 @@ function FinishedJobsArchive({
   items: FinishedJobArchivePage['items'];
   query: ReturnType<typeof useFinishedJobsInfiniteQuery>;
 }) {
+  const timezone = useWorkspaceTimezone();
+  const isClient = useSyncExternalStore(
+    subscribeClientRender,
+    clientRenderSnapshot,
+    serverRenderSnapshot,
+  );
   return (
-    <section className="space-y-3 pt-5">
-      <div className="border-y border-border py-2">
-        <h2 className="text-sm font-semibold text-fg-muted">Finished jobs</h2>
-      </div>
-      <div className="overflow-x-auto rounded-sm border border-border bg-surface">
-        <table className="w-full min-w-[760px] text-left text-sm">
-          <thead className="border-b border-border text-[11px] text-fg-dim">
-            <tr>
-              <th className="px-3 py-2 font-medium">Status</th>
-              <th className="px-3 py-2 font-medium">Job</th>
-              <th className="px-3 py-2 font-medium">Queue</th>
-              <th className="px-3 py-2 font-medium">Attempts</th>
-              <th className="px-3 py-2 font-medium">Finished</th>
-              <th className="px-3 py-2 font-medium">Error</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {query.isPending ? (
-              <tr>
-                <td className="px-3 py-4 text-fg-muted" colSpan={6}>
-                  Loading finished jobs…
-                </td>
-              </tr>
-            ) : query.isError ? (
-              <tr>
-                <td className="px-3 py-4 text-destructive" colSpan={6}>
-                  {query.error.message}
-                </td>
-              </tr>
-            ) : items.length === 0 ? (
-              <tr>
-                <td className="px-3 py-4 text-fg-muted" colSpan={6}>
-                  No finished jobs are currently retained.
-                </td>
-              </tr>
-            ) : (
-              items.map((item) => (
-                <tr key={item.id}>
-                  <td className="px-3 py-2">
-                    <Badge variant={item.status === 'failed' ? 'destructive' : 'outline'}>
-                      {item.status}
-                    </Badge>
-                  </td>
-                  <td className="px-3 py-2">
-                    <div className="font-medium">{item.label}</div>
-                  </td>
-                  <td className="px-3 py-2 font-mono text-xs text-fg-muted">{item.queue}</td>
-                  <td className="px-3 py-2 text-fg-muted">{item.attemptsMade}</td>
-                  <td className="px-3 py-2 text-fg-muted">
-                    {new Date(item.finishedAt).toLocaleString()}
-                  </td>
-                  <td className="max-w-xs px-3 py-2 text-destructive">
-                    {item.error ? 'Failed' : ''}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+    <section className="space-y-3">
+      <SectionHeading>Finished jobs</SectionHeading>
+      {query.isPending ? (
+        <p className="px-1 py-3 text-sm text-fg-muted">Loading finished jobs…</p>
+      ) : query.isError ? (
+        <p className="px-1 py-3 text-sm text-destructive">{query.error.message}</p>
+      ) : items.length === 0 ? (
+        <p className="px-1 py-3 text-sm text-fg-muted">No finished jobs are currently retained.</p>
+      ) : (
+        <ul className="border-y border-border">
+          {items.map((item) => {
+            const hint = finishedJobHint(item, timezone);
+            const iso = isoTimestamp(item.finishedAt);
+            const relative = isClient && iso ? formatRelativeAge(iso) : '\u00a0';
+            return (
+              <li key={item.id}>
+                <CollectionRow
+                  leading={<CollectionStatus value={item.status} />}
+                  title={item.label}
+                  titleHint={hint}
+                  context={relative}
+                  contextTitle={isClient ? hint : undefined}
+                />
+              </li>
+            );
+          })}
+        </ul>
+      )}
       <InfiniteScroll
         hasMore={query.hasNextPage}
         loading={query.isFetchingNextPage}

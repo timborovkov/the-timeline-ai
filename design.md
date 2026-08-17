@@ -389,7 +389,8 @@ snapshot with the shared infinite-scroll sentinel. Retry and dismiss
 use a loading toast that becomes success, warning, or error. Unprocessed
 backlog counts (events still waiting for extraction or embedding) and the
 conversation-suggestion backfill stay inside closed Advanced tools and never
-use “needs attention” language.
+use “needs attention” language. That fold lists backlog counts as dense rows,
+not a card grid, and shows finished jobs as status, label, and time.
 
 Reconciliation is an admin-only health view, not a retry queue. Members who
 open `/app/team/reconciliation` see an Admins-only empty state. The page
@@ -400,7 +401,9 @@ hints, then Recent clusters and Recent outputs as ordinary section titles. There
 is no How it works primer,
 Recently reconciled heading, release-gate banner, or stat-card strip.
 Evidence-by-source counts, manual UUID reconcile, and run history stay inside
-closed Advanced tools. Cluster IDs, output IDs, raw-event IDs, and raw enum keys
+closed Advanced tools. That fold uses the same quiet disclosure, sentence-case
+section titles, and dense count/history rows as the rest of the page — not
+uppercase eyebrows, badge clouds, or a metric strip. Cluster IDs, output IDs, raw-event IDs, and raw enum keys
 stay in the row hover title. Cluster output JSON copy lives in the row overflow
 menu. Cluster detail uses Team / Reconciliation breadcrumbs without a second
 back link; Reconcile and View workspace item sit in the header.
@@ -600,7 +603,10 @@ stat-card strip and no release-gate banner; coverage actions sit on a toolbar
 with hover hints. The dashboard header is title and subtitle only; coverage
 counts stay in the screen-reader summary and Advanced tools. Recent clusters
 and Recent outputs use the same sentence-case section title as
-the rest of the product. Manual UUID reconcile stays in Advanced tools.
+the rest of the product. Manual UUID reconcile stays in Advanced tools. Job
+recovery Advanced tools uses the same quiet disclosure: unprocessed backlog as
+count rows, conversation suggestions as a heading with actions, and finished
+jobs as status/label/time rows with queue names in the hover title.
 
 ## States and responsive behavior
 
@@ -689,3 +695,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Job recovery infinite scroll | Pages the 7-day snapshot and finished archive with the shared InfiniteScroll sentinel instead of a Load more button. |
 | 2026-08-17 | Quiet job recovery header | Drops the access, team, last-7-days, and older-hidden metadata row so the page leads with title and subtitle. |
 | 2026-08-17 | Quiet reconciliation header | Drops the checked / needs repair / updated metadata row so Reconciliation also leads with title and subtitle. |
+| 2026-08-17 | Quiet admin Advanced tools | Replaces job-recovery stat cards and reconciliation uppercase/badge chrome with sentence-case headings and dense count or history rows. |

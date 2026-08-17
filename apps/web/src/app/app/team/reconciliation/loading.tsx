@@ -59,13 +59,9 @@ function AdvancedToolsSkeleton() {
     <div
       aria-hidden="true"
       data-loading-section="advanced-tools"
-      className="flex items-center justify-between gap-4 rounded-sm border border-border bg-surface px-4 py-3"
+      className="border-t border-border pt-3"
     >
-      <div className="space-y-2">
-        <Skeleton className="h-4 w-52 max-w-full" />
-        <Skeleton className="h-3 w-72 max-w-full" />
-      </div>
-      <Skeleton className="size-4 shrink-0" />
+      <Skeleton className="h-4 w-32 max-w-full" />
     </div>
   );
 }

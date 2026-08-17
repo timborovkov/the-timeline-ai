@@ -543,11 +543,13 @@ describe('JobRecoveryList', () => {
     renderList([]);
 
     await user.click(screen.getByText('Advanced tools'));
-    const archive = screen.getByRole('table');
-    expect(within(archive).getByText('Transcribe customer call')).toBeTruthy();
-    expect(within(archive).getByText('Sync Sentry issues')).toBeTruthy();
-    expect(within(archive).queryByText('provider unavailable')).toBeNull();
-    expect(within(archive).queryByText('Technical details')).toBeNull();
+    const advanced = screen.getByText('Advanced tools').closest('details');
+    if (!advanced) throw new Error('Expected Advanced tools');
+    expect(within(advanced).getByText('Transcribe customer call')).toBeTruthy();
+    expect(within(advanced).getByText('Sync Sentry issues')).toBeTruthy();
+    expect(within(advanced).queryByText('provider unavailable')).toBeNull();
+    expect(within(advanced).queryByText('Technical details')).toBeNull();
+    expect(within(advanced).queryByRole('table')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
     expect(fakes.fetchNextPage).toHaveBeenCalledOnce();

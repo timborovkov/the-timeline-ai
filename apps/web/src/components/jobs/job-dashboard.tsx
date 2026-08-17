@@ -2,6 +2,8 @@
 
 import { AlertTriangle, RefreshCw, RotateCw } from 'lucide-react';
 
+import { CountList } from '@/components/collections/count-list';
+import { SectionHeading } from '@/components/section-heading';
 import { TechnicalDetails } from '@/components/technical-details';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -14,29 +16,36 @@ export function JobDashboard() {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        {query.data ? (
-          <p role="status" className="text-xs text-fg-dim">
-            Unprocessed backlog, not the recovery queue. Updated{' '}
-            <time dateTime={query.data.updatedAt} className="font-mono tabular-nums">
-              {new Date(query.data.updatedAt).toLocaleTimeString()}
-            </time>
-          </p>
-        ) : (
-          <p className="text-xs text-fg-dim">Unprocessed backlog</p>
-        )}
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={retryDashboard}
-          disabled={query.isFetching}
-          aria-label="Refresh job dashboard"
-        >
-          <RefreshCw aria-hidden="true" className="size-4" />
-          {query.isFetching ? 'Refreshing…' : 'Refresh'}
-        </Button>
-      </div>
+    <section className="space-y-3">
+      <SectionHeading
+        actions={
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={retryDashboard}
+            disabled={query.isFetching}
+            aria-label="Refresh job dashboard"
+          >
+            <RefreshCw aria-hidden="true" className="size-4" />
+            {query.isFetching ? 'Refreshing…' : 'Refresh'}
+          </Button>
+        }
+      >
+        Unprocessed backlog
+      </SectionHeading>
+      <p className="text-xs text-fg-muted">
+        Events still waiting for extraction or embedding. They are not the recovery queue on this
+        page. Workers keep retrying them automatically.
+      </p>
+      {query.data ? (
+        <p role="status" className="text-xs text-fg-dim">
+          Updated{' '}
+          <time dateTime={query.data.updatedAt} className="font-mono tabular-nums">
+            {new Date(query.data.updatedAt).toLocaleTimeString()}
+          </time>
+        </p>
+      ) : null}
       {query.isError ? (
         <JobDashboardFailure
           error={query.error}
@@ -46,7 +55,7 @@ export function JobDashboard() {
       ) : null}
       {query.isPending ? <JobDashboardLoading /> : null}
       {query.data ? <JobDashboardSummaries summaries={query.data.summaries} /> : null}
-    </div>
+    </section>
   );
 }
 
@@ -62,7 +71,7 @@ function JobDashboardFailure({
   const errorDetail = error.message || 'No error message was returned.';
 
   return (
-    <div role="alert" className="rounded-lg border border-danger/40 bg-danger/10 p-4">
+    <div role="alert" className="rounded-sm border border-danger/40 bg-danger/10 p-4">
       <div className="flex items-start gap-3">
         <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-danger" />
         <div className="min-w-0 space-y-1">
@@ -86,20 +95,15 @@ function JobDashboardFailure({
 
 function JobDashboardLoading() {
   return (
-    <ul
-      aria-busy="true"
-      aria-label="Loading job dashboard"
-      className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
-    >
+    <ul aria-busy="true" aria-label="Loading job dashboard" className="border-y border-border">
       {Array.from({ length: 6 }, (_, index) => (
         <li
           key={index}
           aria-hidden="true"
-          className="rounded-lg border border-border bg-surface p-4"
+          className="flex min-h-11 items-center justify-between px-3"
         >
-          <Skeleton className="h-3 w-28 motion-reduce:animate-none" />
-          <Skeleton className="mt-3 h-8 w-12 motion-reduce:animate-none" />
-          <Skeleton className="mt-2 h-3 w-32 motion-reduce:animate-none" />
+          <Skeleton className="h-4 w-32 motion-reduce:animate-none" />
+          <Skeleton className="h-4 w-8 motion-reduce:animate-none" />
         </li>
       ))}
     </ul>
@@ -112,18 +116,14 @@ function JobDashboardSummaries({
   summaries: { kind: string; label: string; needsAttention: number }[];
 }) {
   return (
-    <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      {summaries.map((summary) => (
-        <li key={summary.kind} className="rounded-lg border border-border bg-surface p-4">
-          <p className="text-sm font-medium text-fg">{summary.label}</p>
-          <p className="mt-3 font-mono text-2xl font-semibold tabular-nums text-fg">
-            {summary.needsAttention}
-          </p>
-          <p className="mt-1 text-xs text-fg-muted">
-            {summary.needsAttention === 1 ? 'unprocessed event' : 'unprocessed events'}
-          </p>
-        </li>
-      ))}
-    </ul>
+    <CountList
+      items={summaries.map((summary) => ({
+        danger: summary.needsAttention > 0,
+        hint: `${summary.label} · ${String(summary.needsAttention)} unprocessed ${summary.needsAttention === 1 ? 'event' : 'events'}`,
+        key: summary.kind,
+        label: summary.label,
+        value: summary.needsAttention,
+      }))}
+    />
   );
 }

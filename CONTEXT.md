@@ -116,7 +116,9 @@ hover hints. Recent clusters and Recent outputs use ordinary section titles.
 Cluster evidence/output lists show status, a human label, and relative time.
 Cluster IDs, output IDs, raw-event IDs, and raw enum keys stay in the row hover
 title. Copying an output payload lives in the row overflow menu.
-Evidence-by-source counts and manual UUID reconcile stay in Advanced tools.
+Evidence-by-source counts and manual UUID reconcile stay in Advanced tools,
+using sentence-case headings and dense count or history rows rather than
+uppercase labels, badge clouds, or a metric strip.
 _Avoid_: Recovery queue, retry dashboard, operator console, release gate, stat cards
 
 **Lifecycle Update**:
@@ -966,7 +968,9 @@ bulk; the page continues until the hidden count is cleared. The list shows
 status, artifact label, and relative time. Job IDs, artifact UUIDs, and raw
 provider errors stay in the row hover title. Per-row retry and dismiss live in
 the overflow menu. Unprocessed backlog (events that never started extraction or
-embedding) and conversation-suggestion backfill stay in Advanced tools.
+embedding) and conversation-suggestion backfill stay in Advanced tools as
+count rows and a heading with actions, not a card grid. Finished jobs in that
+fold use the same status, label, and time rows as the recovery queue.
 _Avoid_: Operator dashboard, BullMQ dashboard, queue admin, processing inventory
 
 **Environment Reset**:
