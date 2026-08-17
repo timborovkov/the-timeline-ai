@@ -679,7 +679,11 @@ export const CORPUS_PINS = [
   { targetKind: 'object' as const, targetKey: objectByName('Series A process'), sortKey: 4n },
   { targetKind: 'saved_meeting' as const, targetKey: CORPUS_UUID.meeting(20), sortKey: 5n },
   { targetKind: 'board' as const, targetKey: ATLAS_LAUNCH_BOARD.id, sortKey: 6n },
-  { targetKind: 'object' as const, targetKey: objectByName('Brightline Health', 'deal'), sortKey: 7n },
+  {
+    targetKind: 'object' as const,
+    targetKey: objectByName('Brightline Health', 'deal'),
+    sortKey: 7n,
+  },
   { targetKind: 'object' as const, targetKey: objectByName('CSV preview 500s'), sortKey: 8n },
 ] as const;
 

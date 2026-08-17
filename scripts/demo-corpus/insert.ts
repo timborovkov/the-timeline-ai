@@ -661,9 +661,9 @@ async function insertEventsAndFacts(tx: SeedTx): Promise<void> {
     .update(calendarEvents)
     .set({ scheduledRawEventId: null })
     .where(eq(calendarEvents.teamId, TEAM_ID));
-  await tx.delete(rawEvents).where(
-    and(eq(rawEvents.teamId, TEAM_ID), sql`${rawEvents.id}::text LIKE '92000000-%'`),
-  );
+  await tx
+    .delete(rawEvents)
+    .where(and(eq(rawEvents.teamId, TEAM_ID), sql`${rawEvents.id}::text LIKE '92000000-%'`));
 
   await tx
     .insert(rawEvents)
