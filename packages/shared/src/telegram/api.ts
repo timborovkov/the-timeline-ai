@@ -199,3 +199,13 @@ export class NoopTelegramApi implements TelegramApi {
     return Promise.reject(new Error('TELEGRAM_BOT_TOKEN unset — cannot download files'));
   }
 }
+
+export async function sendTelegramBotMessage(input: {
+  chatId: number;
+  text: string;
+  token: string;
+  api?: TelegramApi;
+}): Promise<void> {
+  const api = input.api ?? new HttpTelegramApi(input.token);
+  await api.sendMessage({ chat_id: input.chatId, text: input.text });
+}

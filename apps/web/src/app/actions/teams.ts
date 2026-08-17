@@ -21,8 +21,17 @@ import {
   users,
 } from '@timeline/db';
 import { resetSurfaceSessionsForTeamUserInTransaction } from '@timeline/shared/conversation-surfaces';
+import { getEnv } from '@timeline/shared/env';
 import * as integrationsLib from '@timeline/shared/integrations';
-import { sendMessage } from '@timeline/shared/messaging';
+import {
+  addTeamDigestDestination,
+  insertDefaultDigestDestination,
+  parseAddDigestDestinationInput,
+  removeTeamDigestDestination,
+  sendMessage,
+  type AddDigestDestinationInput,
+} from '@timeline/shared/messaging';
+import { hasSlackInstallForTeam, listSlackConversationsForTeam } from '@timeline/shared/slack';
 import { buildInboundEmail, randomSlugSuffix, randomToken, slugify } from '@timeline/shared/slug';
 import { assertNotLastOwner } from '@timeline/shared/team-roles';
 import { withTeam } from '@timeline/shared/team-scope';
@@ -96,6 +105,7 @@ export async function createTeamAction(
           teamId: id,
           defaultTimezone,
         });
+        await insertDefaultDigestDestination(tx, id);
         return id;
       });
     } catch (err) {
@@ -175,6 +185,11 @@ export interface InboundEmailWhitelistState {
 }
 
 export interface DigestPreferenceState {
+  error?: string;
+  ok?: boolean;
+}
+
+export interface DigestDestinationState {
   error?: string;
   ok?: boolean;
 }
@@ -320,6 +335,174 @@ export async function updateDigestPreferenceAction(
 
     await safeMarkOnboardingStep(scope, 'daily_digest');
     revalidatePath('/app');
+    revalidatePath('/app/team');
+    return { ok: true };
+  });
+}
+
+function splitDestinationTarget(raw: FormDataEntryValue | null): {
+  targetId?: string;
+  label?: string;
+} {
+  if (typeof raw !== 'string' || raw.trim().length === 0) return {};
+  const [targetId, ...labelParts] = raw.split('::');
+  const label = labelParts.join('::').trim();
+  return {
+    ...(targetId?.trim() ? { targetId: targetId.trim() } : {}),
+    ...(label ? { label } : {}),
+  };
+}
+
+async function assertDigestDestinationAvailable(
+  teamId: string,
+  destination: AddDigestDestinationInput,
+): Promise<string | null> {
+  if (destination.kind === 'slack_channel' || destination.kind === 'slack_dm_members') {
+    if (!(await hasSlackInstallForTeam({ db, teamId }))) {
+      return 'Connect Slack before adding a Slack digest destination.';
+    }
+  }
+  if (destination.kind === 'telegram_chat' || destination.kind === 'telegram_dm_members') {
+    if (!getEnv().TELEGRAM_BOT_TOKEN) {
+      return 'Connect Telegram before adding a Telegram digest destination.';
+    }
+  }
+  if (destination.kind === 'telegram_chat') {
+    const chatId = Number(destination.targetId);
+    if (!Number.isSafeInteger(chatId)) {
+      return 'That Telegram chat is not bound to this team.';
+    }
+    const rows = await db
+      .select({ id: telegramChatBindings.id })
+      .from(telegramChatBindings)
+      .where(
+        and(eq(telegramChatBindings.teamId, teamId), eq(telegramChatBindings.tgChatId, chatId)),
+      )
+      .limit(1);
+    if (!rows[0]) return 'That Telegram chat is not bound to this team.';
+  }
+  if (destination.kind === 'slack_channel') {
+    try {
+      const conversations = await listSlackConversationsForTeam({ db, teamId });
+      const match = conversations.find(
+        (conversation) =>
+          conversation.id === destination.targetId && conversation.is_member !== false,
+      );
+      if (!match) return 'The Slack bot must be a member of that channel.';
+    } catch (err) {
+      reportCaughtError(err, {
+        surface: 'server_action',
+        operation: 'add_digest_destination_slack_channel',
+      });
+      return 'Could not verify that Slack channel.';
+    }
+  }
+  return null;
+}
+
+export async function addDigestDestinationAction(
+  _prev: DigestDestinationState,
+  formData: FormData,
+): Promise<DigestDestinationState> {
+  return runSentryServerAction('add_digest_destination', async () => {
+    const session = await auth();
+    if (!session?.user) return { error: 'Not signed in' };
+    const { active } = await resolveActiveTeam(session.user.id);
+    if (!active) return { error: 'No active team' };
+
+    const scope = withTeam(db, active.teamId, session.user.id);
+    try {
+      await scope.requireMembership('admin');
+    } catch (err) {
+      reportCaughtError(err, {
+        surface: 'server_action',
+        operation: 'add_digest_destination_auth',
+      });
+      return { error: 'Only admins can change digest destinations' };
+    }
+
+    const parsed = parseAddDigestDestinationInput({
+      kind: formData.get('kind'),
+      ...splitDestinationTarget(formData.get('target')),
+    });
+    if (!parsed.ok) return { error: parsed.error };
+
+    const unavailable = await assertDigestDestinationAvailable(active.teamId, parsed.value);
+    if (unavailable) return { error: unavailable };
+
+    const result = await addTeamDigestDestination({
+      db,
+      teamId: active.teamId,
+      createdByUserId: session.user.id,
+      destination: parsed.value,
+    });
+    if ('error' in result) return { error: result.error };
+
+    await db.insert(auditLog).values({
+      teamId: active.teamId,
+      actorUserId: session.user.id,
+      action: 'settings.change',
+      targetType: 'team',
+      targetId: active.teamId,
+      targetVisibility: 'team',
+      metadata: {
+        setting: 'team.digest.destination.add',
+        kind: parsed.value.kind,
+        targetId: parsed.value.targetId ?? null,
+      },
+    });
+
+    revalidatePath('/app/team');
+    return { ok: true };
+  });
+}
+
+export async function removeDigestDestinationAction(
+  _prev: DigestDestinationState,
+  formData: FormData,
+): Promise<DigestDestinationState> {
+  return runSentryServerAction('remove_digest_destination', async () => {
+    const session = await auth();
+    if (!session?.user) return { error: 'Not signed in' };
+    const { active } = await resolveActiveTeam(session.user.id);
+    if (!active) return { error: 'No active team' };
+
+    const scope = withTeam(db, active.teamId, session.user.id);
+    try {
+      await scope.requireMembership('admin');
+    } catch (err) {
+      reportCaughtError(err, {
+        surface: 'server_action',
+        operation: 'remove_digest_destination_auth',
+      });
+      return { error: 'Only admins can change digest destinations' };
+    }
+
+    const destinationId = formData.get('destinationId');
+    if (typeof destinationId !== 'string' || !z.uuid().safeParse(destinationId).success) {
+      return { error: 'Choose a digest destination to remove.' };
+    }
+
+    const removed = await removeTeamDigestDestination({
+      db,
+      teamId: active.teamId,
+      destinationId,
+    });
+    if (!removed) return { error: 'That digest destination was already removed.' };
+
+    await db.insert(auditLog).values({
+      teamId: active.teamId,
+      actorUserId: session.user.id,
+      action: 'settings.change',
+      targetType: 'team',
+      targetId: active.teamId,
+      targetVisibility: 'team',
+      metadata: {
+        setting: 'team.digest.destination.remove',
+        destinationId,
+      },
+    });
+
     revalidatePath('/app/team');
     return { ok: true };
   });

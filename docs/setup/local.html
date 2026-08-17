@@ -101,7 +101,8 @@ pnpm demo:seed              # optional fixed fictional corpus; seeds and verifie
         <code>owner@timeline.dev</code> and <code>member@timeline.dev</code> with password
         <code>timeline-dev</code>. The seeded GitHub and Linear credentials are fake, encrypted, and
         disabled for sync. Daily digest email is disabled for the demo users so the worker can run
-        without outbound email configuration. Verification checks both login identities, active team
+        without outbound email or chat-bot configuration. Seed still creates the default email
+        digest destination for the team. Verification checks both login identities, active team
         roles, and password usability without printing password hashes. It downloads the canonical
         RustFS object and verifies its actual SHA-256 bytes, then uses a real query embedding and
         team/user-scoped Qdrant searches to confirm every expected raw-event, fact, document-chunk,

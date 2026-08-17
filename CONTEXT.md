@@ -910,6 +910,14 @@ inside a Slack workspace. Installation creates a shared capture surface; it is
 separate from a member's Slack user link.
 _Avoid_: Personal Slack link
 
+**Digest Destination**:
+A workspace-configured place the daily digest is sent. Email every member is
+the default. Admins can add Slack channels, Telegram groups, and bot DMs to
+linked members, and can remove email so the digest is chat-only. Shared chats
+receive one team-visible digest; email and DMs stay personalized and honor the
+personal opt-out.
+_Avoid_: Notification channel when referring to digest routing
+
 **Visibility Default**:
 The initial visibility applied to future items from a capture surface. Changing
 a default does not retroactively change existing items.

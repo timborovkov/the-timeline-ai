@@ -101,6 +101,22 @@ describe('SlackApi deterministic E2E seam', () => {
     );
     expect(supportInfo).toEqual(expect.objectContaining({ id: 'C_E2E_SUPPORT', name: 'support' }));
   });
+
+  it('opens a direct-message conversation before posting', async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(Response.json({ ok: true, channel: { id: 'D123' } })),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(new SlackApi('xoxb-test').conversationsOpen('U123')).resolves.toEqual({
+      id: 'D123',
+    });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('https://slack.com/api/conversations.open');
+    expect(init.body).toBeInstanceOf(URLSearchParams);
+    const body = init.body as URLSearchParams;
+    expect(body.get('users')).toBe('U123');
+  });
 });
 
 describe('SlackApi file downloads', () => {

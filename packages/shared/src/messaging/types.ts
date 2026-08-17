@@ -8,7 +8,7 @@ export type MessageIntent =
   | 'daily_digest'
   | 'connection_attention';
 
-export type MessageChannel = 'email' | 'in_app_digest';
+export type MessageChannel = 'email' | 'in_app_digest' | 'slack' | 'telegram';
 
 export type MessageDeliveryStatus = 'pending' | 'sent' | 'failed' | 'skipped';
 

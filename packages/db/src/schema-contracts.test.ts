@@ -1061,6 +1061,66 @@ describe('database schema contracts', () => {
     }
   }, 20_000);
 
+  it('backfills existing teams with email digest destinations', async () => {
+    const migrationPg = new PGlite();
+    try {
+      await applyMigrations(migrationPg, {
+        throughFile: '0068_onboarding_setup_loop.sql',
+      });
+      await seedBase(migrationPg);
+      await applyMigrationFile(migrationPg, '0069_digest_destinations.sql');
+
+      const rows = await migrationPg.query<{
+        team_id: string;
+        kind: string;
+        target_id: string | null;
+      }>(`
+        SELECT team_id::text, kind::text, target_id
+        FROM team_digest_destinations
+        ORDER BY team_id, kind
+      `);
+      expect(rows.rows).toEqual([
+        { team_id: TEAM_ID, kind: 'email_members', target_id: null },
+        { team_id: OTHER_TEAM_ID, kind: 'email_members', target_id: null },
+      ]);
+    } finally {
+      await migrationPg.close();
+    }
+  }, 20_000);
+
+  it('enforces digest destination uniqueness and target shape', async () => {
+    await pg.exec(`
+      INSERT INTO team_digest_destinations (team_id, kind)
+      VALUES ('${TEAM_ID}', 'email_members')
+    `);
+    await expect(
+      pg.exec(`
+        INSERT INTO team_digest_destinations (team_id, kind)
+        VALUES ('${TEAM_ID}', 'email_members')
+      `),
+    ).rejects.toThrow();
+    await expect(
+      pg.exec(`
+        INSERT INTO team_digest_destinations (team_id, kind, target_id)
+        VALUES ('${TEAM_ID}', 'slack_channel', NULL)
+      `),
+    ).rejects.toThrow();
+    await pg.exec(`
+      INSERT INTO team_digest_destinations (team_id, kind, target_id, label)
+      VALUES ('${TEAM_ID}', 'slack_channel', 'C123', '#general')
+    `);
+    await expect(
+      pg.exec(`
+        INSERT INTO team_digest_destinations (team_id, kind, target_id)
+        VALUES ('${TEAM_ID}', 'slack_channel', 'C123')
+      `),
+    ).rejects.toThrow();
+    await pg.exec(`
+      INSERT INTO team_digest_destinations (team_id, kind, target_id, label)
+      VALUES ('${TEAM_ID}', 'slack_channel', 'C456', '#product')
+    `);
+  });
+
   it('enforces member, invite, visibility-default, and enum invariants', async () => {
     await expect(
       pg.exec(`INSERT INTO team_members (team_id, user_id, role)
