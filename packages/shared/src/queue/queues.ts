@@ -162,16 +162,11 @@ export function getExtractQueue(): TimelineQueue<ExtractJobData> {
   return _extractQueue;
 }
 
-export async function enqueueExtractJob(
-  data: ExtractJobData,
-  opts: { delayMs?: number } = {},
-): Promise<void> {
+export async function enqueueExtractJob(data: ExtractJobData): Promise<void> {
   // Same no-jobId-dedup rationale as transcribe: row-level idempotency lives
   // in the worker, which skips when facts for (rawEventId, modelVersion)
   // already exist. A duplicate enqueue costs at most one extra DB lookup.
-  await getExtractQueue().add('extract', data, {
-    ...(opts.delayMs && opts.delayMs > 0 ? { delay: opts.delayMs } : {}),
-  });
+  await getExtractQueue().add('extract', data);
 }
 
 export async function closeExtractQueue(): Promise<void> {
@@ -481,17 +476,12 @@ export function getEmbedQueue(): TimelineQueue<EmbedJobData> {
   return _embedQueue;
 }
 
-export async function enqueueEmbedJob(
-  data: EmbedJobData,
-  opts: { delayMs?: number } = {},
-): Promise<void> {
+export async function enqueueEmbedJob(data: EmbedJobData): Promise<void> {
   // Same no-jobId-dedup rationale as the other queues. Worker-side idempotency
   // is provided by deterministic Qdrant point ids derived from
   // (scope, sourceId, embedding_model, chunk_index) — duplicate enqueues upsert
   // the same point(s). Oversized sources continue through bounded child jobs.
-  await getEmbedQueue().add('embed', data, {
-    ...(opts.delayMs && opts.delayMs > 0 ? { delay: opts.delayMs } : {}),
-  });
+  await getEmbedQueue().add('embed', data);
 }
 
 export async function enqueueObjectEmbedJob(
