@@ -23,9 +23,11 @@ import {
   CADENCE_WEEKDAY_EVENT_FLOOR,
   CADENCE_WEEKDAY_MOMENT_CEILING,
   cadenceBeatGroupKey,
+  isSlackUnixTs,
 } from './demo-corpus/cadence.js';
 import {
   assertExpandedDemoCorpus,
+  CORPUS_CALENDAR_EVENTS,
   CORPUS_DOCUMENTS,
   CORPUS_EVENT_NEEDLES,
   CORPUS_EVENTS,
@@ -339,6 +341,24 @@ assertUnique(
   }),
   'GitHub workflow run numbers',
 );
+for (const event of CORPUS_EVENTS.filter((row) => row.source === 'slack')) {
+  assert.equal(isSlackUnixTs(event.sourceMetadata.slack_thread_ts), true, event.id);
+  assert.equal(isSlackUnixTs(event.sourceMetadata.slack_message_ts), true, event.id);
+}
+for (const row of CORPUS_CALENDAR_EVENTS) {
+  const event = CORPUS_EVENTS.find((item) => item.id === row.rawEventId);
+  assert.equal(event?.source, 'calendar', row.title);
+  assert.equal(event?.sourceMetadata.calendar_event_id, row.id, row.title);
+  assert.equal(event?.sourceMetadata.action, 'scheduled', row.title);
+}
+for (const event of CORPUS_EVENTS.filter(
+  (row) =>
+    row.source === 'integration' &&
+    (row.sourceMetadata.github as { type?: string } | undefined)?.type === 'pull_request',
+)) {
+  const github = event.sourceMetadata.github as { number?: number; pr_number?: number };
+  assert.equal(typeof github.number, 'number', event.id);
+}
 assert.equal(
   new Set(CORPUS_DOCUMENTS.flatMap((doc) => [doc.id, doc.versionId, ...doc.chunkIds])).size,
   CORPUS_DOCUMENTS.reduce((count, doc) => count + 2 + doc.chunkIds.length, 0),

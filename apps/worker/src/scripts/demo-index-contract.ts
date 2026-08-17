@@ -3,7 +3,7 @@ import { type queue } from '@timeline/shared';
 const REMOTE_DEV_OVERRIDE = 'I_UNDERSTAND_THIS_SEEDS_KNOWN_DEV_CREDENTIALS';
 
 export const DEMO_VECTOR_SOURCE_MINIMUMS = {
-  rawEvents: 2000,
+  rawEvents: 2500,
   facts: 20,
   documentChunks: 15,
   meetingChunks: 8,

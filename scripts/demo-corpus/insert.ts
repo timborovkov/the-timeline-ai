@@ -334,7 +334,14 @@ async function insertConnections(tx: SeedTx): Promise<void> {
         lastSyncedAt: new Date('2026-08-11T13:20:00.000Z'),
       },
     ])
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: integrations.id,
+      set: {
+        enabled: sql`excluded.enabled`,
+        displayName: sql`excluded.display_name`,
+        providerConnectionId: sql`excluded.provider_connection_id`,
+      },
+    });
 
   await tx
     .insert(teamProviderResourceShares)
@@ -439,7 +446,13 @@ async function insertConnections(tx: SeedTx): Promise<void> {
       lastConnectedAt: new Date('2026-07-24T06:00:00.000Z'),
       lastError: 'Demo seed: outbound MCP sync stays disabled',
     })
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: mcpServers.id,
+      set: {
+        enabled: sql`excluded.enabled`,
+        lastError: sql`excluded.last_error`,
+      },
+    });
 
   await tx
     .insert(mcpOutboundKeys)
@@ -653,14 +666,25 @@ async function insertCaptureSurfaces(tx: SeedTx): Promise<void> {
         createdByUserId: DEMO_IDS.owner,
       },
     ])
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: teamDigestDestinations.id,
+      set: {
+        enabled: sql`excluded.enabled`,
+        label: sql`excluded.label`,
+      },
+    });
 }
 
 async function insertEventsAndFacts(tx: SeedTx): Promise<void> {
   await tx
     .update(calendarEvents)
     .set({ scheduledRawEventId: null })
-    .where(eq(calendarEvents.teamId, TEAM_ID));
+    .where(
+      inArray(
+        calendarEvents.id,
+        CORPUS_CALENDAR_EVENTS.map((row) => row.id),
+      ),
+    );
   await tx
     .delete(rawEvents)
     .where(and(eq(rawEvents.teamId, TEAM_ID), sql`${rawEvents.id}::text LIKE '92000000-%'`));

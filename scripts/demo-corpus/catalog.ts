@@ -2,7 +2,12 @@ import { createHash } from 'node:crypto';
 
 import { DEMO_FIXTURE_VERSION, DEMO_IDS, DEMO_LOGIN_PASSWORD } from '../demo-fixture.js';
 
-import { buildCadenceBeats, type CadenceEventSource } from './cadence.js';
+import {
+  buildCadenceBeats,
+  isSlackUnixTs,
+  slackUnixTs,
+  type CadenceEventSource,
+} from './cadence.js';
 import { CORPUS_UUID } from './ids.js';
 import { buildSimplePdf } from './pdf.js';
 import { CORPUS_PERSON, type CorpusPerson } from './people.js';
@@ -12,12 +17,12 @@ export const TEAM_ID = DEMO_IDS.team;
 
 export const CORPUS_VOLUME_FLOORS = {
   people: 8,
-  events: 2000,
+  events: 2500,
   objects: 55,
   documents: 11,
-  meetings: 10,
+  meetings: 11,
   pendingProposals: 14,
-  boardItems: 16,
+  boardItems: 17,
   chatSessions: 8,
   digests: 20,
   facts: 24,
@@ -882,6 +887,62 @@ const STORY_EVENTS: CorpusEvent[] = [
       calendar_event_id: CORPUS_UUID.calendar(7),
     },
     'inline://timeline/demo-seed/calendar/harbor-peak-call',
+  ),
+  event(
+    3004,
+    'quinn',
+    'calendar',
+    '2026-08-08T10:20:00.000Z',
+    'Maya Chen final round | 2026-08-15T13:00:00.000Z to 2026-08-15T14:00:00.000Z | (Europe/Helsinki)',
+    {
+      provider: 'calendar',
+      action: 'scheduled',
+      title: 'Maya Chen final round',
+      calendar_event_id: CORPUS_UUID.calendar(2),
+    },
+    'inline://timeline/demo-seed/calendar/maya-chen-final',
+  ),
+  event(
+    3005,
+    'casey',
+    'calendar',
+    '2026-08-13T16:40:00.000Z',
+    'Helio Retail technical validation | 2026-08-21T15:00:00.000Z to 2026-08-21T16:00:00.000Z | (Europe/Helsinki)',
+    {
+      provider: 'calendar',
+      action: 'scheduled',
+      title: 'Helio Retail technical validation',
+      calendar_event_id: CORPUS_UUID.calendar(3),
+    },
+    'inline://timeline/demo-seed/calendar/helio-validation',
+  ),
+  event(
+    3006,
+    'casey',
+    'calendar',
+    '2026-08-04T15:55:00.000Z',
+    'Polar Studio founder demo | 2026-08-19T14:00:00.000Z to 2026-08-19T14:30:00.000Z | (Europe/Helsinki)',
+    {
+      provider: 'calendar',
+      action: 'scheduled',
+      title: 'Polar Studio founder demo',
+      calendar_event_id: CORPUS_UUID.calendar(4),
+    },
+    'inline://timeline/demo-seed/calendar/polar-founder-demo',
+  ),
+  event(
+    3007,
+    'harper',
+    'calendar',
+    '2026-08-13T18:45:00.000Z',
+    'Northwind diligence working session | 2026-08-19T09:00:00.000Z to 2026-08-19T10:30:00.000Z | (Europe/Helsinki)',
+    {
+      provider: 'calendar',
+      action: 'scheduled',
+      title: 'Northwind diligence working session',
+      calendar_event_id: CORPUS_UUID.calendar(5),
+    },
+    'inline://timeline/demo-seed/calendar/northwind-diligence',
   ),
 ];
 
@@ -1979,8 +2040,13 @@ function enrichCaptureMetadata(row: CorpusEvent): CorpusEvent {
   const extra: Record<string, unknown> = { ...row.sourceMetadata };
   if (row.source === 'slack') {
     extra.slack_channel_id ??= slackChannelId(extra.slack_channel_name);
-    extra.slack_message_ts ??= extra.slack_event_id ?? row.id;
-    extra.slack_thread_ts ??= extra.slack_message_ts;
+    const unixTs = slackUnixTs(row.occurredAt, eventSerial(row.id));
+    extra.slack_message_ts = isSlackUnixTs(extra.slack_message_ts)
+      ? extra.slack_message_ts
+      : unixTs;
+    extra.slack_thread_ts = isSlackUnixTs(extra.slack_thread_ts)
+      ? extra.slack_thread_ts
+      : extra.slack_message_ts;
   }
   if (row.source === 'email') {
     extra.thread_root_id ??= extra.message_id ?? row.id;
@@ -2013,6 +2079,7 @@ function enrichCaptureMetadata(row: CorpusEvent): CorpusEvent {
         extra.github = {
           type: 'pull_request',
           repo: 'acme-labs/atlas',
+          number: Number(pr[1]),
           pr_number: Number(pr[1]),
         };
       }

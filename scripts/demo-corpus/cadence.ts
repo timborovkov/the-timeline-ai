@@ -282,8 +282,18 @@ function stamp(day: string): string {
   return day.replaceAll('-', '');
 }
 
-function slackTs(day: string, hhmm: string, index: number): string {
-  return `${stamp(day)}.${hhmm}${String(index).padStart(2, '0')}`;
+export function slackUnixTs(iso: string, salt = 0): string {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) throw new Error(`invalid slack time ${iso}`);
+  const seconds = Math.floor(ms / 1000);
+  const micros = `${String(ms % 1000).padStart(3, '0')}${String(salt).padStart(3, '0')}`;
+  return `${seconds}.${micros}`;
+}
+
+export function isSlackUnixTs(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^\d{10}\.\d{6}$/.test(value)) return false;
+  const seconds = Number(value);
+  return Number.isFinite(seconds) && seconds > 1_000_000_000;
 }
 
 function workflowRunNumber(name: string, dayIndex: number, index: number): number {
@@ -308,7 +318,7 @@ function githubPr(prNumber: number, type: 'pull_request' | 'review'): Record<str
   return {
     provider: 'github',
     event_type: type === 'review' ? 'pull_request_review.submitted' : 'pull_request.synchronize',
-    github: { type, repo: REPO, pr_number: prNumber },
+    github: { type, repo: REPO, number: prNumber, pr_number: prNumber },
     external_object_id: `${REPO}#${String(prNumber)}`,
   };
 }
@@ -409,16 +419,17 @@ function pushSlackThread(
     authors: readonly CorpusPerson['key'][];
   },
 ): void {
-  const threadTs = slackTs(input.day, input.threadKey, 0);
+  const threadTs = slackUnixTs(at(input.day, input.startHour, input.startMinute));
   for (const [index, line] of input.lines.entries()) {
     const minute = input.startMinute + index * 2;
     const hour = input.startHour + Math.floor(minute / 60);
     const clock = minute % 60;
-    const messageTs = slackTs(input.day, input.threadKey, index + 1);
+    const occurredAt = at(input.day, hour, clock);
+    const messageTs = index === 0 ? threadTs : slackUnixTs(occurredAt, index);
     push({
       author: pick(input.authors, index),
       source: 'slack',
-      occurredAt: at(input.day, hour, clock),
+      occurredAt,
       contentText: `Slack ${input.channelName}: ${line}`,
       extra: slackMeta(
         input.channelId,
@@ -685,18 +696,19 @@ function pushWeekend(
   day: string,
   dayIndex: number,
 ): void {
-  const threadTs = slackTs(day, '1100', 0);
+  const threadTs = slackUnixTs(at(day, 11, 0));
   for (let index = 0; index < 4; index += 1) {
+    const occurredAt = at(day, 11, index * 4);
     push({
       author: pick(['riley', 'casey'] as const, index),
       source: 'slack',
-      occurredAt: at(day, 11, index * 4),
+      occurredAt,
       contentText: `Slack #gtm: ${pick(SLACK_GTM, dayIndex + index)} Weekend catch-up only.`,
       extra: slackMeta(
         'C0GTM',
         '#gtm',
         threadTs,
-        slackTs(day, '1100', index + 1),
+        index === 0 ? threadTs : slackUnixTs(occurredAt, index),
         `EvWEEKEND${stamp(day)}${String(index)}`,
       ),
       payloadRef: `inline://timeline/demo-seed/slack/weekend-gtm-${day}-${String(index)}`,

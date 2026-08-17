@@ -9,4 +9,9 @@ export {
   corpusObjectId,
 } from './catalog.js';
 export { CORPUS_PEOPLE } from './people.js';
-export { CORPUS_EVENT_NEEDLES, CORPUS_PROPOSALS, DEALFLOW_ITEMS } from './workspace.js';
+export {
+  CORPUS_CALENDAR_EVENTS,
+  CORPUS_EVENT_NEEDLES,
+  CORPUS_PROPOSALS,
+  DEALFLOW_ITEMS,
+} from './workspace.js';

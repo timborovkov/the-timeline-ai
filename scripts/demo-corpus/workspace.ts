@@ -237,7 +237,7 @@ export const CORPUS_CALENDAR_EVENTS = [
     startAt: '2026-08-15T13:00:00.000Z',
     endAt: '2026-08-15T14:00:00.000Z',
     createdByUserId: CORPUS_PERSON.quinn.id,
-    rawEventId: corpusEventId('Designer final round with Maya Chen is August 15'),
+    rawEventId: corpusEventId('Maya Chen final round | 2026-08-15'),
   },
   {
     id: CORPUS_UUID.calendar(3),
@@ -245,7 +245,7 @@ export const CORPUS_CALENDAR_EVENTS = [
     startAt: '2026-08-21T15:00:00.000Z',
     endAt: '2026-08-21T16:00:00.000Z',
     createdByUserId: CORPUS_PERSON.casey.id,
-    rawEventId: corpusEventId('proposing a technical validation on August 21'),
+    rawEventId: corpusEventId('Helio Retail technical validation | 2026-08-21'),
   },
   {
     id: CORPUS_UUID.calendar(4),
@@ -253,7 +253,7 @@ export const CORPUS_CALENDAR_EVENTS = [
     startAt: '2026-08-19T14:00:00.000Z',
     endAt: '2026-08-19T14:30:00.000Z',
     createdByUserId: CORPUS_PERSON.casey.id,
-    rawEventId: corpusEventId('Polar Studio asked'),
+    rawEventId: corpusEventId('Polar Studio founder demo | 2026-08-19'),
   },
   {
     id: CORPUS_UUID.calendar(5),
@@ -261,7 +261,7 @@ export const CORPUS_CALENDAR_EVENTS = [
     startAt: '2026-08-19T09:00:00.000Z',
     endAt: '2026-08-19T10:30:00.000Z',
     createdByUserId: CORPUS_PERSON.harper.id,
-    rawEventId: corpusEventId('Avery sent Northwind the data-room link'),
+    rawEventId: corpusEventId('Northwind diligence working session | 2026-08-19'),
   },
   {
     id: CORPUS_UUID.calendar(6),
@@ -501,6 +501,10 @@ export const CORPUS_EVENT_NEEDLES = [
   'proposing a technical validation on August 21',
   'Polar Studio asked',
   'Avery sent Northwind the data-room link',
+  'Maya Chen final round | 2026-08-15',
+  'Helio Retail technical validation | 2026-08-21',
+  'Polar Studio founder demo | 2026-08-19',
+  'Northwind diligence working session | 2026-08-19',
   'field-mapping confirmation is delayed',
   'accepted CSV + evidence packs',
   'Need 40-minute run of show',
