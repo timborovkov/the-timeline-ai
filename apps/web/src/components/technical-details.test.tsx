@@ -39,9 +39,7 @@ describe('TechnicalDetails', () => {
     await waitFor(() => {
       expect(writeText).toHaveBeenCalledWith('evt_123');
       expect(screen.getByRole('status').textContent).toBe('Copied Event ID.');
-      expect(screen.getByRole('button', { name: 'Copied Event ID.' }).textContent).toContain(
-        'Copied',
-      );
+      expect(screen.getByRole('button', { name: 'Copy Event ID' }).textContent).toContain('Copied');
     });
   });
 

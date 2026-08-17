@@ -71,7 +71,8 @@ function FormFeedback({
   toastId: string;
   fieldError?: boolean;
 }) {
-  const failure = fieldError ? error : undefined;
+  const { pending } = useFormStatus();
+  const failure = fieldError && !pending ? error : undefined;
 
   return (
     <>

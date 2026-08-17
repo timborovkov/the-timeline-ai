@@ -35,7 +35,7 @@ describe('CopyButton', () => {
 
     await waitFor(() => {
       expect(writeText).toHaveBeenCalledWith('token');
-      expect(screen.getByRole('button', { name: 'Copied token.' }).textContent).toContain('Copied');
+      expect(screen.getByRole('button', { name: 'Copy token' }).textContent).toContain('Copied');
       expect(screen.getByRole('status').textContent).toBe('Copied token.');
     });
   });

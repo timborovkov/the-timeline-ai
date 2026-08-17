@@ -44,7 +44,7 @@ export function CopyButton({
         type="button"
         size={appearance === 'icon' ? 'sm' : 'sm'}
         variant="ghost"
-        aria-label={copied ? copyAnnouncement(label) : accessibleLabel}
+        aria-label={accessibleLabel}
         className={cn(appearance === 'icon' && 'h-7 shrink-0 px-2', className)}
         onClick={() => {
           const clipboard = Reflect.get(navigator, 'clipboard') as Clipboard | undefined;
