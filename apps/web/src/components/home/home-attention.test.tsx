@@ -31,4 +31,10 @@ describe('HomeAttention', () => {
     render(<HomeAttention groups={[group('Approvals', 2), group('Jobs', 1)]} />);
     expect(screen.getAllByRole('link')).toHaveLength(2);
   });
+
+  it('names the region Attention without a visible heading', () => {
+    render(<HomeAttention groups={[group('Approvals', 2)]} />);
+    expect(screen.getByRole('region', { name: 'Attention' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Attention' })).toBeNull();
+  });
 });

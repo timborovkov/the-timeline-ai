@@ -2,6 +2,7 @@ import {
   type Db,
   agentSuggestionItems,
   agentSuggestions,
+  dailyDigests,
   entities,
   objectChanges,
 } from '@timeline/db';
@@ -10,6 +11,13 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 
 import type { PGlite } from '@electric-sql/pglite';
 
+import {
+  addTeamDigestDestination,
+  insertDefaultDigestDestination,
+  listTeamDigestDestinations,
+  listWorkspaceDigestTeamIds,
+  removeTeamDigestDestination,
+} from '#src/messaging/destinations.js';
 import { generateDailyDigest } from '#src/messaging/digest.js';
 import { createResettablePGliteTestDb, type ResettablePGliteTestDb } from '#src/test/pglite.js';
 
@@ -234,5 +242,58 @@ describe('daily digest terminal object activity', () => {
       expect.objectContaining({ id: doneId, title: 'Finished launch recap', status: 'done' }),
     ]);
     expect(summarize).toHaveBeenCalledOnce();
+  });
+});
+
+describe('workspace digest destinations', () => {
+  it('persists default email and shared chat destinations', async () => {
+    await insertDefaultDigestDestination(db, TEAM_ID);
+    await insertDefaultDigestDestination(db, TEAM_ID);
+    const added = await addTeamDigestDestination({
+      db,
+      teamId: TEAM_ID,
+      createdByUserId: USER_ID,
+      destination: { kind: 'slack_channel', targetId: 'C123', label: '#general' },
+    });
+    if ('error' in added) throw new Error(added.error);
+    expect(typeof added.id).toBe('string');
+    const destinations = await listTeamDigestDestinations(db, TEAM_ID);
+    expect(destinations.map((row) => row.kind).sort()).toEqual(['email_members', 'slack_channel']);
+    expect(await listWorkspaceDigestTeamIds(db)).toEqual([TEAM_ID]);
+    await expect(
+      removeTeamDigestDestination({ db, teamId: TEAM_ID, destinationId: added.id }),
+    ).resolves.toBe(true);
+    expect(await listWorkspaceDigestTeamIds(db)).toEqual([]);
+  });
+
+  it('generates a workspace digest without persisting a member row', async () => {
+    await db.insert(entities).values({
+      id: '44444444-4444-4444-4444-444444444444',
+      teamId: TEAM_ID,
+      type: 'task',
+      canonicalName: 'Archived launch task',
+      archivedAt: new Date('2026-07-27T11:30:00Z'),
+      createdAt: new Date('2026-07-20T09:00:00Z'),
+      updatedAt: new Date('2026-07-27T11:30:00Z'),
+    });
+    const summarize = vi.fn().mockResolvedValue('The launch task was archived.');
+    await expect(
+      generateDailyDigest({
+        db,
+        teamId: TEAM_ID,
+        userId: USER_ID,
+        audience: 'workspace',
+        windowStart: new Date('2026-07-26T11:00:00Z'),
+        windowEnd: new Date('2026-07-27T12:00:00Z'),
+        now: new Date('2026-07-27T12:05:00Z'),
+        summarize,
+      }),
+    ).resolves.toMatchObject({
+      digestId: '',
+      skipped: false,
+      payload: { summary: 'The launch task was archived.', userName: null },
+    });
+    const rows = await db.select({ id: dailyDigests.id }).from(dailyDigests);
+    expect(rows).toEqual([]);
   });
 });

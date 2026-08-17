@@ -233,6 +233,21 @@ const checks = [
       }
     },
   },
+  {
+    name: '@timeline/shared telegram commands',
+    run: async () => {
+      const commands = await import('@timeline/shared/telegram/commands');
+      const names = commands.TELEGRAM_DM_COMMANDS.map((command) => command.command);
+      if (!names.includes('help') || !names.includes('note')) {
+        throw new Error(`Telegram DM command catalog missing help/note: ${names.join(', ')}`);
+      }
+      if (commands.TELEGRAM_BOT_COMMAND_REGISTRATIONS.length !== 3) {
+        throw new Error(
+          `Expected 3 Telegram command scopes, got ${commands.TELEGRAM_BOT_COMMAND_REGISTRATIONS.length}`,
+        );
+      }
+    },
+  },
 ];
 
 for (const check of checks) {

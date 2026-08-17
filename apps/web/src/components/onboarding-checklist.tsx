@@ -1,12 +1,15 @@
 'use client';
 
-import { Check, CheckCircle2, RotateCcw, X } from 'lucide-react';
+import { Check, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useRef, type RefObject } from 'react';
+import { useEffect, useRef, type ButtonHTMLAttributes, type RefObject } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useOnboardingChecklistQuery } from '@/lib/use-paginated-queries';
+import { cn } from '@/lib/utils';
+
+export const TEAM_SETUP_CHECKLIST_PANEL_ID = 'team-setup-checklist-panel';
 
 export function OnboardingChecklist() {
   const {
@@ -58,9 +61,16 @@ export function OnboardingChecklist() {
     }
     pendingFocusTarget.current = null;
   }, [checklistMutationFailed, checklistPending, data]);
+
+  useEffect(() => {
+    if (!data || data.dismissed) return;
+    if (window.location.hash !== `#${TEAM_SETUP_CHECKLIST_PANEL_ID}`) return;
+    document.getElementById(TEAM_SETUP_CHECKLIST_PANEL_ID)?.scrollIntoView({ block: 'start' });
+  }, [data]);
+
   const updateStatus = (
     <output aria-live="polite" aria-atomic="true" className="sr-only">
-      {checklistPending ? 'Updating setup…' : ''}
+      {checklistPending ? 'Updating checklist…' : ''}
     </output>
   );
 
@@ -70,16 +80,14 @@ export function OnboardingChecklist() {
         {updateStatus}
         <section
           aria-busy="true"
-          aria-label="Loading next setup step"
+          aria-label="Loading team setup checklist"
           className="border-y border-border py-4"
         >
-          <Skeleton className="h-5 w-32 motion-reduce:animate-none" />
-          <div className="mt-3 flex items-start gap-3">
-            <Skeleton className="size-5 rounded-full motion-reduce:animate-none" />
-            <div className="flex-1 space-y-2">
-              <Skeleton className="h-4 w-48 motion-reduce:animate-none" />
-              <Skeleton className="h-3 w-full max-w-lg motion-reduce:animate-none" />
-            </div>
+          <Skeleton className="h-5 w-36 motion-reduce:animate-none" />
+          <div className="mt-3 space-y-3">
+            <Skeleton className="h-4 w-56 motion-reduce:animate-none" />
+            <Skeleton className="h-4 w-full max-w-lg motion-reduce:animate-none" />
+            <Skeleton className="h-4 w-48 motion-reduce:animate-none" />
           </div>
         </section>
       </>
@@ -90,11 +98,11 @@ export function OnboardingChecklist() {
       <>
         {updateStatus}
         <section aria-labelledby="onboarding-heading" className="border-y border-border py-4">
-          <h2 id="onboarding-heading" className="text-base font-semibold text-fg">
-            Next setup step
+          <h2 id="onboarding-heading" className="text-xs font-normal text-fg-dim">
+            Team setup checklist
           </h2>
           <p role="alert" className="mt-2 text-sm text-danger">
-            Unable to load setup. Check your connection and try again.
+            Unable to load the team setup checklist. Check your connection and try again.
           </p>
           <Button
             type="button"
@@ -120,132 +128,157 @@ export function OnboardingChecklist() {
           : 'reopen';
     retryChecklistMutation();
   };
+  const completedCount = data.items.filter((item) => item.completed).length;
 
   if (data.dismissed) {
     return (
       <>
         {updateStatus}
-        <div className="space-y-3">
-          <Button
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <QuietTextButton
             ref={reopenButtonRef}
-            type="button"
             disabled={checklistPending}
+            aria-expanded={false}
+            aria-controls={TEAM_SETUP_CHECKLIST_PANEL_ID}
             onClick={() => {
               lastMutationKind.current = 'reopen';
               pendingFocusTarget.current = 'dismiss';
               mutateChecklist({ action: 'reopen' });
             }}
-            variant="outline"
-            size="sm"
+            className="inline-flex items-center gap-1"
           >
-            <RotateCcw className="size-3" />
-            Reopen setup
-          </Button>
-          <ChecklistMutationFailure
-            failed={checklistMutationFailed}
-            pending={checklistPending}
-            onRetry={retryMutation}
-            retryButtonRef={retryButtonRef}
-          />
+            Team setup checklist
+            <ChevronRight aria-hidden="true" className="size-3" />
+          </QuietTextButton>
+          {data.items.length > 0 ? (
+            <span
+              aria-label={`${completedCount} of ${data.items.length} checklist steps complete`}
+              className="font-mono text-[11px] text-fg-dim"
+            >
+              {completedCount}/{data.items.length}
+            </span>
+          ) : null}
         </div>
+        <ChecklistMutationFailure
+          failed={checklistMutationFailed}
+          pending={checklistPending}
+          onRetry={retryMutation}
+          retryButtonRef={retryButtonRef}
+        />
       </>
     );
   }
-  const completedCount = data.items.filter((item) => item.completed).length;
   const nextItem = data.items.find((item) => !item.completed);
-  const nextItemMeta = nextItem ? onboardingMeta(nextItem.key) : null;
 
   return (
     <>
       {updateStatus}
-      <section aria-labelledby="onboarding-heading" className="border-y border-border py-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-baseline gap-2">
-              <h2 id="onboarding-heading" className="text-base font-semibold text-fg">
-                Next setup step
-              </h2>
-              <span
-                aria-label={`${completedCount} of ${data.items.length} setup steps complete`}
-                className="font-mono text-xs text-fg-dim"
-              >
-                {completedCount}/{data.items.length}
-              </span>
-            </div>
-            {nextItem ? (
-              <div className="mt-3 flex items-start gap-3">
-                <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border border-border font-mono text-[10px] text-fg-muted">
-                  {completedCount + 1}
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-sm font-medium text-fg">{nextItem.label}</span>
-                  <span className="mt-0.5 block text-xs text-fg-muted">
-                    {nextItemMeta?.description}
-                  </span>
-                </span>
-              </div>
-            ) : (
-              <p className="mt-3 flex items-center gap-2 text-sm text-fg-muted">
-                <CheckCircle2 aria-hidden="true" className="size-4 text-signal" />
-                Setup is complete
-              </p>
-            )}
+      <section
+        id={TEAM_SETUP_CHECKLIST_PANEL_ID}
+        aria-labelledby="onboarding-heading"
+        className="scroll-mt-16 border-y border-border py-4"
+      >
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <div className="flex min-w-0 flex-wrap items-baseline gap-2">
+            <h2 id="onboarding-heading" className="text-xs font-normal text-fg-dim">
+              Team setup checklist
+            </h2>
+            <span
+              aria-label={`${completedCount} of ${data.items.length} checklist steps complete`}
+              className="font-mono text-[11px] text-fg-dim"
+            >
+              {completedCount}/{data.items.length}
+            </span>
           </div>
-          <Button
+          <QuietTextButton
             ref={dismissButtonRef}
-            type="button"
             disabled={checklistPending}
+            aria-expanded={true}
+            aria-controls={TEAM_SETUP_CHECKLIST_PANEL_ID}
+            aria-label="Hide team setup checklist"
             onClick={() => {
               lastMutationKind.current = 'dismiss';
               pendingFocusTarget.current = 'reopen';
               mutateChecklist({ action: 'dismiss' });
             }}
-            aria-label="Dismiss setup"
-            variant="ghost"
-            size="sm"
-            className="gap-1.5 text-fg-muted"
           >
-            <X aria-hidden="true" className="size-3.5" />
-            Dismiss
-          </Button>
+            Hide
+          </QuietTextButton>
         </div>
-        {nextItem && nextItemMeta ? (
-          <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-3">
-            {nextItem.key === 'first_note' ? (
-              <Button
-                type="button"
-                onClick={() => {
-                  window.location.hash = 'capture';
-                }}
-                variant="outline"
-                size="sm"
-              >
-                {nextItemMeta.cta}
-              </Button>
-            ) : (
-              <Button asChild variant="outline" size="sm">
-                <Link href={nextItemMeta.href}>{nextItemMeta.cta}</Link>
-              </Button>
-            )}
-            <Button
-              ref={nextActionRef}
-              type="button"
-              disabled={checklistPending}
-              onClick={() => {
-                lastMutationKind.current = 'complete';
-                pendingFocusTarget.current = 'next-action';
-                mutateChecklist({ action: 'complete', key: nextItem.key });
-              }}
-              aria-label={`Mark ${nextItem.label} complete`}
-              variant="ghost"
-              size="sm"
-              className="gap-1.5 px-2 text-fg-muted"
-            >
-              <Check className="size-3.5" />
-              Mark complete
-            </Button>
-          </div>
-        ) : null}
+        <ol className="mt-3 divide-y divide-border border-t border-border">
+          {data.items.map((item, index) => {
+            const meta = onboardingMeta(item.key);
+            const isNext = nextItem?.key === item.key;
+            return (
+              <li key={item.key} className="flex items-start gap-3 py-3">
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border font-mono text-[10px]',
+                    item.completed
+                      ? 'border-signal/40 text-signal'
+                      : isNext
+                        ? 'border-border-strong text-fg'
+                        : 'border-border text-fg-dim',
+                  )}
+                >
+                  {item.completed ? <Check className="size-3" /> : index + 1}
+                </span>
+                <div className="min-w-0 flex-1">
+                  {item.completed ? (
+                    <p className="text-sm text-fg-muted">{item.label}</p>
+                  ) : isNext ? (
+                    <p className="text-sm font-medium text-fg">{item.label}</p>
+                  ) : (
+                    <p className="text-sm text-fg-dim">
+                      <Link
+                        href={meta.href}
+                        className="underline decoration-fg-dim underline-offset-2 transition-colors hover:text-fg hover:decoration-fg"
+                      >
+                        {item.label}
+                      </Link>
+                    </p>
+                  )}
+                  {isNext ? (
+                    <>
+                      <p className="mt-0.5 text-xs text-fg-muted">{meta.description}</p>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        {item.key === 'first_note' ? (
+                          <Button
+                            type="button"
+                            onClick={() => {
+                              window.location.hash = 'capture';
+                            }}
+                            variant="outline"
+                            size="sm"
+                          >
+                            {meta.cta}
+                          </Button>
+                        ) : (
+                          <Button asChild variant="outline" size="sm">
+                            <Link href={meta.href}>{meta.cta}</Link>
+                          </Button>
+                        )}
+                        <QuietTextButton
+                          ref={nextActionRef}
+                          disabled={checklistPending}
+                          aria-label={`Mark ${item.label} complete`}
+                          onClick={() => {
+                            lastMutationKind.current = 'complete';
+                            pendingFocusTarget.current = 'next-action';
+                            mutateChecklist({ action: 'complete', key: item.key });
+                          }}
+                        >
+                          Mark complete
+                        </QuietTextButton>
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+              </li>
+            );
+          })}
+        </ol>
         <ChecklistMutationFailure
           failed={checklistMutationFailed}
           pending={checklistPending}
@@ -254,6 +287,26 @@ export function OnboardingChecklist() {
         />
       </section>
     </>
+  );
+}
+
+function QuietTextButton({
+  ref,
+  className,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  ref?: RefObject<HTMLButtonElement | null>;
+}) {
+  return (
+    <button
+      {...props}
+      ref={ref}
+      type="button"
+      className={cn(
+        'rounded-sm text-xs text-fg-dim transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong disabled:opacity-40',
+        className,
+      )}
+    />
   );
 }
 
@@ -273,7 +326,7 @@ function ChecklistMutationFailure({
   return (
     <div className="mt-3 flex flex-wrap items-center gap-3">
       <p role="alert" className="text-xs text-danger">
-        Unable to update setup. Your previous setup state was restored.
+        Unable to update the team setup checklist. Your previous state was restored.
       </p>
       <Button
         ref={retryButtonRef}
@@ -297,6 +350,12 @@ function onboardingMeta(key: string): { href: string; cta: string; description: 
         cta: 'Capture',
         description: 'Save one note, decision, or follow-up into the team log.',
       };
+    case 'invite_teammate':
+      return {
+        href: '/app/team?section=members',
+        cta: 'Invite',
+        description: 'Bring someone else onto the team so capture and memory are shared.',
+      };
     case 'telegram':
       return {
         href: '/app/team/telegram',
@@ -319,19 +378,44 @@ function onboardingMeta(key: string): { href: string; cta: string; description: 
       return {
         href: '/app/documents',
         cta: 'Upload',
-        description: 'Add a document the agent can search and cite.',
+        description: 'Add a file to the team drive so the agent can search and cite it.',
+      };
+    case 'first_ask':
+      return {
+        href: '/app/chat',
+        cta: 'Ask',
+        description: 'Ask what changed, who owns something, or what is overdue.',
+      };
+    case 'first_meeting':
+      return {
+        href: '/app/meetings',
+        cta: 'Schedule',
+        description: 'Send the silent bot to a call so the transcript lands in the timeline.',
+      };
+    case 'review_proposal':
+      return {
+        href: '/app/approvals',
+        cta: 'Open approvals',
+        description: 'Accept or reject one suggested change to a task, object, or board.',
+      };
+    case 'daily_digest':
+      return {
+        href: '/app/team?section=general',
+        cta: 'Open settings',
+        description: 'Choose whether the morning summary should arrive, and at what hour.',
       };
     case 'first_integration':
       return {
         href: '/app/sources',
         cta: 'Connect',
-        description: 'Wire in external systems or an MCP server.',
+        description:
+          'Connect Drive, Linear, or GitHub, add a custom webhook, or share Timeline as MCP with Claude Desktop.',
       };
     default:
       return {
         href: '/app',
         cta: 'Open',
-        description: 'Complete this setup step when ready.',
+        description: 'Complete this step when ready.',
       };
   }
 }

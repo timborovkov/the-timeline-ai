@@ -1,4 +1,5 @@
 import { teamMembers, teams } from '@timeline/db';
+import { insertDefaultDigestDestination } from '@timeline/shared/messaging';
 import { buildInboundEmail, randomSlugSuffix, slugify } from '@timeline/shared/slug';
 import { and, eq, isNull } from 'drizzle-orm';
 
@@ -38,6 +39,7 @@ export async function ensureSoloTeam(
     const teamId = inserted[0]?.id;
     if (!teamId) throw new Error('Failed to create default team');
     await tx.insert(teamMembers).values({ teamId, userId, role: 'owner' });
+    await insertDefaultDigestDestination(tx, teamId);
     return teamId;
   });
 }

@@ -394,6 +394,12 @@
       "import": "./dist/telegram/index.js",
       "default": "./dist/telegram/index.js"
     },
+    "./telegram/commands": {
+      "types": "./src/telegram/commands.ts",
+      "development": "./src/telegram/commands.ts",
+      "import": "./dist/telegram/commands.js",
+      "default": "./dist/telegram/commands.js"
+    },
     "./rate-limit": {
       "types": "./src/rate-limit/index.ts",
       "development": "./src/rate-limit/index.ts",

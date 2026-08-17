@@ -333,10 +333,10 @@ export function DigestPreferenceForm({ enabled }: { enabled: boolean }) {
           className="size-4 rounded-sm border-input accent-signal transition-colors hover:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         />
         <span>
-          <span className="block font-medium">Send me the daily team digest</span>
+          <span className="block font-medium">Send me a personal daily digest</span>
           <span className="block text-muted-foreground">
-            One email per day with the generated summary and team updates. Individual inbox
-            notifications are not emailed.
+            Email or bot DMs configured for this workspace. Shared Slack or Telegram chats still
+            receive the team digest. Individual inbox notifications are not emailed.
           </span>
         </span>
       </label>

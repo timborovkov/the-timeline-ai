@@ -4,9 +4,13 @@ import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const fakes = vi.hoisted(() => ({ reportCaughtError: vi.fn() }));
+const fakes = vi.hoisted(() => ({
+  reportCaughtError: vi.fn(),
+  searchParams: new URLSearchParams(),
+}));
 
 vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
+vi.mock('next/navigation', () => ({ useSearchParams: () => fakes.searchParams }));
 
 import TasksError from '@/app/app/tasks/error';
 import TasksLoading from '@/app/app/tasks/loading';
@@ -14,6 +18,7 @@ import TasksLoading from '@/app/app/tasks/loading';
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  fakes.searchParams = new URLSearchParams();
 });
 
 describe('Tasks route states', () => {
@@ -77,5 +82,20 @@ describe('Tasks route states', () => {
     for (const skeleton of skeletons) {
       expect(skeleton.className).toContain('motion-reduce:animate-none');
     }
+    expect(container.querySelector('[data-tasks-loading-view="list"]')).toBeTruthy();
+    expect(container.querySelector('[data-tasks-loading-view="kanban"]')).toBeNull();
+  });
+
+  it('uses a kanban-shaped loading fallback only when that view is requested', () => {
+    fakes.searchParams = new URLSearchParams('view=kanban');
+    const { container } = render(<TasksLoading />);
+
+    const view = container.querySelector('[data-tasks-loading-view="kanban"]');
+    expect(view).toBeTruthy();
+    expect(container.querySelector('[data-tasks-loading-view="list"]')).toBeNull();
+    const columns = [...(view?.querySelectorAll('div') ?? [])].filter((element) =>
+      element.className.includes('min(260px'),
+    );
+    expect(columns).toHaveLength(5);
   });
 });

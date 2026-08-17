@@ -89,6 +89,24 @@ describe('WorkFilterBar', () => {
     expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull();
   });
 
+  it('renders view controls on the same toolbar row as search', () => {
+    render(
+      <WorkFilterBar
+        mode="tasks"
+        basePath="/app/tasks"
+        filters={EMPTY_FILTERS}
+        active={false}
+        resultCount={10}
+        totalCount={10}
+        viewControls={<nav aria-label="Task view">list</nav>}
+      />,
+    );
+
+    const search = screen.getByLabelText('Search');
+    const view = screen.getByRole('navigation', { name: 'Task view' });
+    expect(search.closest('.flex.min-h-11')).toBe(view.closest('.flex.min-h-11'));
+  });
+
   it('submits multiple dropdown values as comma-separated filters', async () => {
     const user = userEvent.setup();
     render(

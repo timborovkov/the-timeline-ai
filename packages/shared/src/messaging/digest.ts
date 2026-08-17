@@ -37,6 +37,7 @@ import {
 const log = childLogger('digest');
 const DEFAULT_WORKSPACE_TIMEZONE = 'Europe/Helsinki';
 const DEFAULT_DIGEST_HOUR = 12;
+const WORKSPACE_DIGEST_ACTOR_USER_ID = '00000000-0000-0000-0000-000000000000';
 const QUIET_DIGEST_SUMMARY = 'No useful activity for this digest window.';
 const QUIET_DIGEST_REASON = 'No useful digest content in this window.';
 
@@ -379,6 +380,8 @@ function expiredDigestPayload(
   };
 }
 
+export type DailyDigestAudience = 'member' | 'workspace';
+
 export interface GenerateDailyDigestInput {
   db: Db;
   teamId: string;
@@ -387,6 +390,7 @@ export interface GenerateDailyDigestInput {
   windowEnd: Date;
   now?: Date;
   summarize?: (prompt: string) => Promise<string>;
+  audience?: DailyDigestAudience;
 }
 
 export interface GenerateDailyDigestResult {
@@ -542,6 +546,16 @@ function momentBrief(moment: TimelineMoment): MomentBrief {
     contextLabels: moment.evidenceSummary.contextLabels,
     rawEventCount: moment.rawEvents.length,
     rawEventIds: moment.rawEvents.map((event) => event.id),
+  };
+}
+
+export async function getWorkspaceDigestSchedule(
+  db: Db,
+  teamId: string,
+): Promise<{ hour: number; timezone: string }> {
+  return {
+    hour: DEFAULT_DIGEST_HOUR,
+    timezone: await getTeamDigestTimezone(db, teamId),
   };
 }
 
@@ -723,7 +737,12 @@ async function persistQuietDailyDigest(input: {
 export async function generateDailyDigest(
   input: GenerateDailyDigestInput,
 ): Promise<GenerateDailyDigestResult> {
-  const preference = await getDigestPreference(input);
+  const audience = input.audience ?? 'member';
+  const persist = audience === 'member';
+  const preference =
+    audience === 'workspace'
+      ? { enabled: true, ...(await getWorkspaceDigestSchedule(input.db, input.teamId)) }
+      : await getDigestPreference(input);
   const now = input.now ?? new Date();
   if (!preference.enabled) {
     const payload = disabledDigestPayload(input, preference.timezone);
@@ -768,6 +787,7 @@ export async function generateDailyDigest(
 
   if (isDigestWindowExpired(input.windowEnd, now, preference.timezone, preference.hour)) {
     const payload = expiredDigestPayload(input, preference.timezone);
+    if (!persist) return { digestId: '', payload, skipped: true };
     const [row] = await input.db
       .insert(dailyDigests)
       .values({
@@ -814,20 +834,28 @@ export async function generateDailyDigest(
     };
   }
 
-  const scope = withTeam(input.db, input.teamId, input.userId);
-  await scope.requireMembership();
-  const existingRows = await input.db
-    .select({ id: dailyDigests.id, payload: dailyDigests.payload, status: dailyDigests.status })
-    .from(dailyDigests)
-    .where(
-      and(
-        eq(dailyDigests.teamId, input.teamId),
-        eq(dailyDigests.userId, input.userId),
-        eq(dailyDigests.windowStart, input.windowStart),
-        eq(dailyDigests.windowEnd, input.windowEnd),
-      ),
-    )
-    .limit(1);
+  const actorUserId = audience === 'workspace' ? WORKSPACE_DIGEST_ACTOR_USER_ID : input.userId;
+  const scope = withTeam(
+    input.db,
+    input.teamId,
+    actorUserId,
+    audience === 'workspace' ? { skipMembershipCheck: true } : {},
+  );
+  if (persist) await scope.requireMembership();
+  const existingRows = persist
+    ? await input.db
+        .select({ id: dailyDigests.id, payload: dailyDigests.payload, status: dailyDigests.status })
+        .from(dailyDigests)
+        .where(
+          and(
+            eq(dailyDigests.teamId, input.teamId),
+            eq(dailyDigests.userId, input.userId),
+            eq(dailyDigests.windowStart, input.windowStart),
+            eq(dailyDigests.windowEnd, input.windowEnd),
+          ),
+        )
+        .limit(1)
+    : [];
   const existingDigest = existingRows[0];
   if (existingDigest && existingDigest.status !== 'skipped' && existingDigest.status !== 'failed') {
     return {
@@ -848,11 +876,13 @@ export async function generateDailyDigest(
     newMembers,
   ] = await Promise.all([
     scope.timeline.team(),
-    input.db
-      .select({ name: users.name, email: users.email })
-      .from(users)
-      .where(eq(users.id, input.userId))
-      .limit(1),
+    persist
+      ? input.db
+          .select({ name: users.name, email: users.email })
+          .from(users)
+          .where(eq(users.id, input.userId))
+          .limit(1)
+      : Promise.resolve([]),
     scope.timeline.listAllEventsInWindow({ from: input.windowStart, to: input.windowEnd }),
     scope.suggestions.getApprovalItemCounts().then((counts) => counts.pending),
     scope.objects.listObjects({
@@ -992,7 +1022,7 @@ export async function generateDailyDigest(
   ).slice(0, 12);
 
   const teamName = team?.name ?? 'your team';
-  const user = userRows[0] ?? null;
+  const user = persist ? (userRows[0] ?? null) : null;
   const builtMoments = buildTimelineMoments(events, new Map(), {
     timezone: preference.timezone,
     groupingMode: 'moments',
@@ -1047,15 +1077,25 @@ export async function generateDailyDigest(
       upcomingCalendarCount: calendarRows.length,
     })
   ) {
-    return persistQuietDailyDigest({
-      request: input,
-      existingDigest,
-      payload: {
-        ...payloadBase,
-        summary: QUIET_DIGEST_SUMMARY,
-        sections: [],
-      },
-    });
+    return persist
+      ? persistQuietDailyDigest({
+          request: input,
+          existingDigest,
+          payload: {
+            ...payloadBase,
+            summary: QUIET_DIGEST_SUMMARY,
+            sections: [],
+          },
+        })
+      : {
+          digestId: '',
+          payload: {
+            ...payloadBase,
+            summary: QUIET_DIGEST_SUMMARY,
+            sections: [],
+          },
+          skipped: true,
+        };
   }
   const moments = await applyCachedDigestMomentPresentations({
     teamId: input.teamId,
@@ -1072,7 +1112,7 @@ export async function generateDailyDigest(
   const momentBriefs = moments.map(momentBrief);
   const ctx: DigestPromptContext = {
     team: teamName,
-    recipient: user?.name ?? user?.email ?? input.userId,
+    recipient: persist ? (user?.name ?? user?.email ?? input.userId) : teamName,
     window: {
       start: input.windowStart.toISOString(),
       end: input.windowEnd.toISOString(),
@@ -1125,6 +1165,8 @@ export async function generateDailyDigest(
       newMoments: moments.length,
     },
   };
+
+  if (!persist) return { digestId: '', payload, skipped: false };
 
   const [inserted] = await input.db
     .insert(dailyDigests)

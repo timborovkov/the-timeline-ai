@@ -54,6 +54,21 @@ export async function processDailyDigestJob(
         });
       }),
     );
+    const sharedTeamIds = await messaging.listWorkspaceDigestTeamIds(deps.db);
+    await Promise.all(
+      sharedTeamIds.map(async (teamId) => {
+        const schedule = await messaging.getWorkspaceDigestSchedule(deps.db, teamId);
+        const window = explicitWindow
+          ? { start: new Date(explicitWindow.start), end: new Date(explicitWindow.end) }
+          : messaging.defaultDigestWindow(new Date(), schedule.timezone, schedule.hour);
+        await queue.enqueueDailyDigestWorkspaceSendJob({
+          kind: 'workspace-send',
+          teamId,
+          windowStart: window.start.toISOString(),
+          windowEnd: window.end.toISOString(),
+        });
+      }),
+    );
     return { recipients: recipients.length };
   }
 
@@ -73,6 +88,24 @@ export async function processDailyDigestJob(
       });
     }
     return { digestId: result.digestId, skipped: result.skipped };
+  }
+
+  if (job.kind === 'workspace-send') {
+    const result = await messaging.sendWorkspaceDailyDigest({
+      db: deps.db,
+      teamId: job.teamId,
+      windowStart: new Date(job.windowStart),
+      windowEnd: new Date(job.windowEnd),
+      digestUrl: `${siteUrl()}/app`,
+    });
+    if (!result.ok && !result.skipped && result.retryable !== false) {
+      throw new Error(result.error ?? 'Workspace daily digest send failed');
+    }
+    return {
+      sent: result.ok,
+      ...(result.skipped ? { skipped: result.skipped } : {}),
+      ...(!result.ok && result.retryable === false ? { permanentFailure: true } : {}),
+    };
   }
 
   const result = await messaging.sendDailyDigest({
