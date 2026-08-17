@@ -20,7 +20,9 @@ import { cn } from '@/lib/utils';
 
 type SessionEntry = ChatSessionListEntry;
 
-function unsubscribeClientRender(): void {}
+function unsubscribeClientRender(): void {
+  return undefined;
+}
 
 function subscribeClientRender(): () => void {
   return unsubscribeClientRender;
