@@ -31,9 +31,10 @@ if (process.env.PROPOSAL_ENGINE_LIVE_ENV_FILE) {
  * Real OpenRouter models generate the bundles. Deterministic hub attach,
  * alias stamp, and envelope signal class still have to land. About 90% of
  * fixtures are noisy (Sentry, CI pulses, overlapping clients, typos,
- * fragments). Safe name-maps are the minority. When Qdrant is configured,
- * real embeddings prove recall without becoming the write join. Each run
- * uses an isolated PGlite team and deletes any Qdrant points it wrote.
+ * fragments, mention soup, truncated paste, outcome evidence without
+ * "this is complete"). Safe name-maps are the minority. When Qdrant is
+ * configured, real embeddings prove recall without becoming the write join.
+ * Each run uses an isolated PGlite team and deletes any Qdrant points it wrote.
  */
 const maybeDescribe = process.env.PROPOSAL_ENGINE_LIVE_EVAL === '1' ? describe : describe.skip;
 
@@ -43,6 +44,8 @@ const FABA_COMPANY_ID = 'faba0001-0000-4000-8000-000000000001';
 const FABA_PROJECT_ID = 'faba0001-0000-4000-8000-000000000002';
 const ACME_COMPANY_ID = 'a0ce0001-0000-4000-8000-000000000001';
 const ACME_PROJECT_ID = 'a0ce0001-0000-4000-8000-000000000002';
+const BRANDING_TASK_ID = 'b0ad0001-0000-4000-8000-000000000001';
+const BRAND_PRINT_TASK_ID = 'b0ad0001-0000-4000-8000-000000000002';
 
 type Db = ReturnType<typeof drizzle>;
 type PendingItem = Awaited<
@@ -76,7 +79,7 @@ maybeDescribe('live messy proposal-engine eval', () => {
       reviewId,
       channelId: 'C_ACME_DEV',
       channelName: 'acme-project-development',
-      text: 'yeah can someone just take the login thing tomorrow, I think we said we would, whatever',
+      text: 'yeah <@U0ABC> can someone just take the login thing tomorrow, I think we said we would, whatever \u200b😅',
     });
 
     await runConversationReview(db, reviewId);
@@ -106,7 +109,7 @@ maybeDescribe('live messy proposal-engine eval', () => {
     const eventId = seedId('21');
     await seedCapture(db, {
       id: eventId,
-      text: 'move login to done after qa, ping me if it slips lol',
+      text: 'move login to done after qa, ping me if it slips lol — wait the json from monday dumped {status:Working on it,item:logi',
       sourceMetadata: {
         monday_board_id: 'board-faba-ext',
         monday_board_name: 'Faba-ext',
@@ -221,7 +224,7 @@ maybeDescribe('live messy proposal-engine eval', () => {
       reviewId,
       channelId: 'C_OPS',
       channelName: 'ops',
-      text: 'we should prepare the login page tomorrow I guess',
+      text: 'we should prepare the login page tomorrow I guess??? wait nvm actually yes do it',
     });
     await runConversationReview(db, reviewId);
     const [initial] = await withTeam(
@@ -576,6 +579,107 @@ maybeDescribe('live messy proposal-engine eval', () => {
     ).toBe(true);
   }, 240_000);
 
+  it('proposes done on a week-old branding task when later captures show the deliverable', async () => {
+    await db.insert(entities).values({
+      id: BRANDING_TASK_ID,
+      teamId: TEAM_ID,
+      type: 'task',
+      canonicalName: 'Create branding and name proposal',
+      status: 'open',
+      updatedAt: new Date('2026-05-18T10:00:00.000Z'),
+    });
+    const eventId = seedId('91');
+    await seedCapture(db, {
+      id: eventId,
+      text: 'brand book v3 is in drive, we went with Helix, already sent the pdf to Faba lol',
+      sourceMetadata: {},
+    });
+
+    await runEventLocal(db, eventId);
+
+    const updates = await pendingTaskUpdates(db);
+    expect(
+      updates.some(
+        (item) => item.targetId === BRANDING_TASK_ID && item.proposedPayload.status === 'done',
+      ),
+    ).toBe(true);
+    expect(
+      (await pendingTaskCreates(db)).every((item) => {
+        const canonical =
+          typeof item.proposedPayload.canonicalName === 'string'
+            ? item.proposedPayload.canonicalName
+            : '';
+        return !/brand/i.test(`${item.title} ${canonical}`);
+      }),
+    ).toBe(true);
+  }, 240_000);
+
+  it('refuses implicit done when two open branding tasks could own the brand book', async () => {
+    await db.insert(entities).values([
+      {
+        id: BRANDING_TASK_ID,
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'Create branding and name proposal',
+        status: 'open',
+        updatedAt: new Date('2026-05-18T10:00:00.000Z'),
+      },
+      {
+        id: BRAND_PRINT_TASK_ID,
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'Print the brand book',
+        status: 'open',
+        updatedAt: new Date('2026-05-18T10:00:00.000Z'),
+      },
+    ]);
+    const eventId = seedId('92');
+    await seedCapture(db, {
+      id: eventId,
+      text: 'brand book v3 is in drive, sending to print today',
+      sourceMetadata: {},
+    });
+
+    await runEventLocal(db, eventId);
+
+    expect(
+      (await pendingTaskUpdates(db)).every((item) => item.proposedPayload.status !== 'done'),
+    ).toBe(true);
+  }, 240_000);
+
+  it('does not mint a task from a file share that matches no open work', async () => {
+    const eventId = seedId('93');
+    await seedCapture(db, {
+      id: eventId,
+      text: 'fyi https://drive.google.com/file/d/abc123/view shared the pdf',
+      sourceMetadata: {},
+    });
+
+    await runEventLocal(db, eventId);
+
+    expect(await pendingTaskCreates(db)).toEqual([]);
+  }, 240_000);
+
+  it('mints from a truncated Slack paste that still names the work', async () => {
+    const eventId = seedId('94');
+    const reviewId = seedId('95');
+    await seedSlackThread(db, {
+      eventId,
+      reviewId,
+      channelId: 'C_ACME_TRUNC',
+      channelName: 'acme-project-development',
+      text: 'ok so like we shou— take login tmrw?? <!here> wait nvm actually yes take it',
+    });
+
+    await runConversationReview(db, reviewId);
+
+    const tasks = await pendingTaskCreates(db);
+    expect(tasks.length).toBeGreaterThan(0);
+    expect(tasks.some((item) => item.proposedPayload.parentObjectId === ACME_PROJECT_ID)).toBe(
+      true,
+    );
+  }, 240_000);
+
   it.skipIf(!process.env.QDRANT_URL?.trim())(
     'recalls the messy Slack event with real vectors without using cosine as the write join',
     async () => {
@@ -784,6 +888,12 @@ async function pendingItems(db: Db): Promise<PendingItem[]> {
 async function pendingTaskCreates(db: Db): Promise<PendingItem[]> {
   return (await pendingItems(db)).filter(
     (item) => item.targetKind === 'task' && item.operation === 'create',
+  );
+}
+
+async function pendingTaskUpdates(db: Db): Promise<PendingItem[]> {
+  return (await pendingItems(db)).filter(
+    (item) => item.targetKind === 'task' && item.operation === 'update',
   );
 }
 
