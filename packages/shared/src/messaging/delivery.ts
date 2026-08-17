@@ -31,7 +31,11 @@ import {
   type TeamDigestDestination,
 } from '#src/messaging/destinations.js';
 import { formatDigestChatText } from '#src/messaging/digest-format.js';
-import { generateDailyDigest, getDigestPreference, isDigestWindowExpired } from '#src/messaging/digest.js';
+import {
+  generateDailyDigest,
+  getDigestPreference,
+  isDigestWindowExpired,
+} from '#src/messaging/digest.js';
 import { renderMessage } from '#src/messaging/templates.js';
 import { sendTeamSlackDirectMessage, sendTeamSlackMessage } from '#src/slack/dispatcher.js';
 import { sendTelegramBotMessage } from '#src/telegram/api.js';
@@ -534,7 +538,8 @@ export async function sendWorkspaceDailyDigest(input: {
 function rollupDeliveryResults(results: SendMessageResult[]): SendMessageResult {
   const failed = results.find((result) => !result.ok && !result.skipped);
   if (failed) return failed;
-  const sent = [...results].reverse().find((result) => result.ok && !result.skipped) ??
+  const sent =
+    [...results].reverse().find((result) => result.ok && !result.skipped) ??
     results.find((result) => result.skipped && result.skippedStatus === 'sent');
   if (sent) {
     return { ...sent, ok: true };
@@ -586,12 +591,13 @@ async function deliverPersonalDigestDestination(input: {
       subject: `Daily digest for ${input.payload.teamName}`,
       dedupeKey,
       metadata: { slack_user_id: slackUserId },
-      send: () => sendTeamSlackDirectMessage({
-        db: input.db,
-        teamId: input.digest.teamId,
-        slackUserId,
-        text,
-      }),
+      send: () =>
+        sendTeamSlackDirectMessage({
+          db: input.db,
+          teamId: input.digest.teamId,
+          slackUserId,
+          text,
+        }),
     });
   }
   const telegramChatId = await linkedTelegramChatId(
@@ -771,7 +777,11 @@ async function linkedSlackUserId(db: Db, teamId: string, userId: string): Promis
   return rows[0]?.slackUserId ?? null;
 }
 
-async function linkedTelegramChatId(db: Db, teamId: string, userId: string): Promise<number | null> {
+async function linkedTelegramChatId(
+  db: Db,
+  teamId: string,
+  userId: string,
+): Promise<number | null> {
   const rows = await db
     .select({ tgUserId: telegramUsers.tgUserId })
     .from(telegramUserTeams)

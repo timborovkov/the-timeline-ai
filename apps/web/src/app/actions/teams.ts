@@ -412,7 +412,10 @@ export async function addDigestDestinationAction(
     try {
       await scope.requireMembership('admin');
     } catch (err) {
-      reportCaughtError(err, { surface: 'server_action', operation: 'add_digest_destination_auth' });
+      reportCaughtError(err, {
+        surface: 'server_action',
+        operation: 'add_digest_destination_auth',
+      });
       return { error: 'Only admins can change digest destinations' };
     }
 

@@ -1,4 +1,11 @@
-import { telegramChatBindings, teamExports, teamInvites, teamMembers, teams, users } from '@timeline/db';
+import {
+  telegramChatBindings,
+  teamExports,
+  teamInvites,
+  teamMembers,
+  teams,
+  users,
+} from '@timeline/db';
 import { getEnv } from '@timeline/shared/env';
 import { listTeamDigestDestinations, getDigestPreference } from '@timeline/shared/messaging';
 import { hasSlackInstallForTeam, listSlackConversationsForTeam } from '@timeline/shared/slack';

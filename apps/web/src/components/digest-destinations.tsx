@@ -145,7 +145,10 @@ function AddDestinationForm({
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <Submit label="Add destination" />
-        <FormStatus error={state.error} success={state.ok ? 'Digest destination added.' : undefined} />
+        <FormStatus
+          error={state.error}
+          success={state.ok ? 'Digest destination added.' : undefined}
+        />
       </div>
     </form>
   );

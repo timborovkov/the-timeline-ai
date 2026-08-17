@@ -1064,7 +1064,9 @@ describe('database schema contracts', () => {
   it('backfills existing teams with email digest destinations', async () => {
     const migrationPg = new PGlite();
     try {
-      await applyMigrations(migrationPg, { throughFile: '0067_canonical_link_evidence_strength.sql' });
+      await applyMigrations(migrationPg, {
+        throughFile: '0067_canonical_link_evidence_strength.sql',
+      });
       await seedBase(migrationPg);
       await applyMigrationFile(migrationPg, '0068_digest_destinations.sql');
 

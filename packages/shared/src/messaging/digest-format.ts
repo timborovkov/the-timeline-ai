@@ -120,8 +120,8 @@ export function formatDigestChatText(input: {
       ? [
           '',
           'Tasks',
-          ...tasks.map((task) =>
-            `• ${formatDigestTask(task, timezone, new Date(payload.windowEnd))}`,
+          ...tasks.map(
+            (task) => `• ${formatDigestTask(task, timezone, new Date(payload.windowEnd))}`,
           ),
         ]
       : []),

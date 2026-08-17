@@ -92,4 +92,3 @@ describe('formatDigestChatText', () => {
     expect(text).toContain('…');
   });
 });
-

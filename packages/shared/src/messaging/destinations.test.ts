@@ -94,6 +94,8 @@ describe('digest destinations', () => {
     expect(personalDigestDestinations(destinations).map((row) => row.kind)).toEqual([
       'email_members',
     ]);
-    expect(sharedDigestDestinations(destinations).map((row) => row.kind)).toEqual(['slack_channel']);
+    expect(sharedDigestDestinations(destinations).map((row) => row.kind)).toEqual([
+      'slack_channel',
+    ]);
   });
 });
