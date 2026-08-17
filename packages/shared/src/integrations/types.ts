@@ -58,10 +58,18 @@ export interface ObjectMapping {
  * dedup_key drives the per-team partial unique index that makes
  * webhook replay / backfill rerun a no-op.
  */
+export type SignalClass = 'communication' | 'captured_work' | 'pulse' | 'finding';
+
 export interface IntegrationEvent {
   /** Stable provider-scoped dedup key, e.g. `linear:issue:ABC-123:updated:1716000000`. */
   dedupKey: string;
   provider: string;
+  /**
+   * Envelope signal class. Adapters should stamp this. The event-writer
+   * persists it as `source_metadata.signal_class` and fills a conservative
+   * fallback when omitted so already-ingested rows keep their ingest rights.
+   */
+  signalClass?: SignalClass;
   externalObjectId: string;
   externalEventId?: string | null;
   eventType: string;

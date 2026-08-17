@@ -341,6 +341,7 @@ function issueToEvent(
   return {
     dedupKey: linearIssueDedupKey(node, opts),
     provider: 'linear',
+    signalClass: 'captured_work',
     externalObjectId: node.id,
     externalEventId: node.updatedAt,
     eventType,
@@ -392,6 +393,7 @@ function commentToEvent(node: LinearCommentNode): IntegrationEvent {
   return {
     dedupKey: `linear:comment:${node.id}:${bodyDigest}`,
     provider: 'linear',
+    signalClass: 'finding',
     externalObjectId: `${node.issue.id}#comment:${node.id}`,
     externalEventId: node.updatedAt,
     eventType: 'comment.updated',
@@ -433,6 +435,7 @@ function projectToEvent(node: LinearProjectNode): IntegrationEvent {
   return {
     dedupKey: `linear:project:${node.id}:${node.state}:${revision}`,
     provider: 'linear',
+    signalClass: 'pulse',
     externalObjectId: node.id,
     externalEventId: node.updatedAt,
     eventType: `project.${node.state}`,

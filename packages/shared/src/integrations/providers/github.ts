@@ -2,6 +2,7 @@ import { createHash, createSign } from 'node:crypto';
 
 import { getEnv } from '#src/env.js';
 import { externalFetch as fetch } from '#src/http/external-fetch.js';
+import { resolveSignalClassForEvent } from '#src/integrations/signal-class.js';
 import {
   attachSyncContinuation,
   attachSyncContinuations,
@@ -1193,6 +1194,10 @@ function githubSyncPullRequestTransitionAction(
   return 'closed';
 }
 
+function githubEnvelope(event: IntegrationEvent): IntegrationEvent {
+  return { ...event, signalClass: resolveSignalClassForEvent(event) };
+}
+
 function prToEvent(repo: string, pr: GhPullRequest, action?: string | null): IntegrationEvent {
   const eventType = pr.merged_at ? 'pr.merged' : pr.state === 'closed' ? 'pr.closed' : 'pr.updated';
   const status: 'open' | 'done' | 'cancelled' = pr.merged_at
@@ -1201,7 +1206,7 @@ function prToEvent(repo: string, pr: GhPullRequest, action?: string | null): Int
       ? 'cancelled'
       : 'open';
   const externalId = `${repo}#${String(pr.number)}`;
-  return {
+  return githubEnvelope({
     dedupKey: githubPullRequestDedupKey(pr, action),
     provider: 'github',
     externalObjectId: externalId,
@@ -1236,7 +1241,7 @@ function prToEvent(repo: string, pr: GhPullRequest, action?: string | null): Int
       url: pr.html_url,
       aliases: [`PR-${repo}-${String(pr.number)}`],
     },
-  };
+  });
 }
 
 function issueToEvent(
@@ -1246,7 +1251,7 @@ function issueToEvent(
 ): IntegrationEvent | null {
   if (issue.pull_request) return null;
   const externalId = `${repo}#issue:${String(issue.number)}`;
-  return {
+  return githubEnvelope({
     dedupKey: githubIssueDedupKey(issue, action),
     provider: 'github',
     externalObjectId: externalId,
@@ -1283,7 +1288,7 @@ function issueToEvent(
       url: issue.html_url,
       aliases: [`ISSUE-${repo}-${String(issue.number)}`],
     },
-  };
+  });
 }
 
 interface GithubConversationParent {
@@ -1657,7 +1662,7 @@ function commitToEvent(repo: string, commit: GhCommit): IntegrationEvent {
 function workflowRunToEvent(repo: string, run: GhWorkflowRun): IntegrationEvent {
   const lifecycle = run.conclusion ?? run.status ?? 'updated';
   const attempt = Number.isFinite(run.run_attempt) && run.run_attempt > 0 ? run.run_attempt : 1;
-  return {
+  return githubEnvelope({
     dedupKey: `github:workflow_run:${String(run.id)}:${lifecycle}:${String(attempt)}`,
     provider: 'github',
     externalObjectId: `${repo}#workflow_run:${String(run.id)}`,
@@ -1681,7 +1686,7 @@ function workflowRunToEvent(repo: string, run: GhWorkflowRun): IntegrationEvent 
         event: run.event,
       },
     },
-  };
+  });
 }
 
 function recordValue(value: unknown): Record<string, unknown> | null {

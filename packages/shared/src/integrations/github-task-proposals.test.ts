@@ -12,10 +12,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { writeIntegrationEvents } from '#src/integrations/event-writer.js';
 import {
+  capturedWorkItemFromIntegrationEvent,
   compactGithubPersonKey,
   githubLoginFromConnectionDisplayName,
   githubWorkItemFromIntegrationEvent,
   githubWorkItemFromRawMetadata,
+  matchOpenTasksToCapturedWorkItem,
   matchOpenTasksToGithubWorkItem,
   planGithubTaskProposal,
   proposeGithubTaskUpdatesForTeam,
@@ -285,6 +287,108 @@ describe('GitHub task proposal matching', () => {
             state: 'approved',
           },
         },
+      }),
+    ).toBeNull();
+  });
+
+  it('matches Linear captured-work completion by envelope objectMap aliases', () => {
+    const workItem = capturedWorkItemFromIntegrationEvent({
+      dedupKey: 'linear:issue:ENG-42:completed',
+      provider: 'linear',
+      externalObjectId: 'linear-issue-1',
+      eventType: 'issue.completed',
+      occurredAt: new Date('2026-06-01T12:00:00Z'),
+      contentText: 'Linear ENG-42: Fix login',
+      extra: { linear: { kind: 'issue', identifier: 'ENG-42' } },
+      objectMap: {
+        type: 'task',
+        canonicalName: 'ENG-42: Fix login',
+        displayTitle: 'Fix login',
+        externalId: 'linear-issue-1',
+        status: 'done',
+        aliases: ['ENG-42'],
+      },
+    });
+    if (!workItem) throw new Error('expected captured work item');
+    expect(workItem.provider).toBe('linear');
+    const matches = matchOpenTasksToCapturedWorkItem(workItem, [
+      {
+        id: '66666666-6666-4666-8666-666666666666',
+        canonicalName: 'Fix login',
+        aliases: ['ENG-42'],
+        metadata: {},
+        status: 'todo',
+        ownerUserId: null,
+        assigneeUserId: null,
+      },
+    ]);
+    expect(matches).toHaveLength(1);
+    expect(matches[0]?.match).toBe('alias');
+    expect(matches[0]?.task.canonicalName).toBe('Fix login');
+  });
+
+  it('matches Monday captured-work completion by envelope objectMap aliases', () => {
+    const workItem = capturedWorkItemFromIntegrationEvent({
+      dedupKey: 'monday:item:1771812728:done',
+      provider: 'monday',
+      signalClass: 'captured_work',
+      externalObjectId: '1771812728',
+      eventType: 'item.updated',
+      occurredAt: new Date('2026-06-01T12:00:00Z'),
+      contentText: 'Monday item updated on Faba-ext: login QA',
+      objectMap: {
+        type: 'task',
+        canonicalName: 'Monday record 1771812728: login QA',
+        displayTitle: 'login QA',
+        externalId: '1771812728',
+        status: 'done',
+        aliases: ['1771812728', 'monday:1771812728'],
+      },
+    });
+    if (!workItem) throw new Error('expected captured work item');
+    expect(workItem.provider).toBe('monday');
+    const matches = matchOpenTasksToCapturedWorkItem(workItem, [
+      {
+        id: '77777777-7777-4777-8777-777777777777',
+        canonicalName: 'Login QA',
+        aliases: ['1771812728'],
+        metadata: {},
+        status: 'todo',
+        ownerUserId: null,
+        assigneeUserId: null,
+      },
+    ]);
+    expect(matches).toHaveLength(1);
+    expect(matches[0]?.match).toBe('alias');
+  });
+
+  it('does not treat Sentry incidents or GitHub workflow pulses as captured work', () => {
+    expect(
+      capturedWorkItemFromIntegrationEvent({
+        dedupKey: 'sentry:issue:1',
+        provider: 'sentry',
+        externalObjectId: '1',
+        eventType: 'issue.created',
+        occurredAt: new Date('2026-06-01T12:00:00Z'),
+        contentText: 'Sentry issue FABA-APP-1: TypeError',
+        objectMap: {
+          type: 'incident',
+          canonicalName: 'FABA-APP-1: TypeError',
+          externalId: '1',
+          status: 'open',
+          aliases: ['FABA-APP-1'],
+        },
+      }),
+    ).toBeNull();
+    expect(
+      capturedWorkItemFromIntegrationEvent({
+        dedupKey: 'github:workflow:1',
+        provider: 'github',
+        externalObjectId: 'acme/app#workflow_run:9',
+        eventType: 'workflow_run.success',
+        occurredAt: new Date('2026-06-01T12:00:00Z'),
+        contentText: 'GitHub workflow CI #9 success',
+        extra: { github: { type: 'workflow_run', repo: 'acme/app' } },
       }),
     ).toBeNull();
   });

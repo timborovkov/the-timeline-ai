@@ -2,6 +2,18 @@ export * from '#src/integrations/types.js';
 export * from '#src/integrations/scope.js';
 export * from '#src/integrations/event-writer.js';
 export {
+  compactObjectMap,
+  extractSkipReasonForSignalClass,
+  isSignalClass,
+  objectMapFromUnknown,
+  resolveSignalClass,
+  resolveSignalClassForEvent,
+  SIGNAL_CLASSES,
+  type SignalClassInput,
+} from '#src/integrations/signal-class.js';
+export {
+  capturedWorkItemFromIntegrationEvent,
+  capturedWorkItemFromRawMetadata,
   enqueueGithubTaskProposalJob,
   proposeGithubTaskUpdatesForExternalObject,
   proposeGithubTaskUpdatesForTeam,

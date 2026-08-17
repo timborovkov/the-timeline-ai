@@ -176,7 +176,7 @@ export function hubMentionedInText(
   return keys.length > 0 && textMentionsAnyValue(text, keys);
 }
 
-function uniqueHubOfType(
+export function uniqueHubOfType(
   mentioned: readonly WorkspaceHub[],
   type: WorkspaceHubType,
 ): WorkspaceHub | null {
@@ -184,7 +184,7 @@ function uniqueHubOfType(
   return matches.length === 1 ? (matches[0] ?? null) : null;
 }
 
-function uniqueAccountHub(mentioned: readonly WorkspaceHub[]): WorkspaceHub | null {
+export function uniqueAccountHub(mentioned: readonly WorkspaceHub[]): WorkspaceHub | null {
   const matches = mentioned.filter((hub) => ACCOUNT_HUB_TYPES.has(hub.type));
   return matches.length === 1 ? (matches[0] ?? null) : null;
 }

@@ -454,6 +454,62 @@ describe('processSuggestionJobForTests', () => {
     await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 0, items: 0 });
   });
 
+  it('creates Linear captured-work proposals without calling the LLM', async () => {
+    const rawEventId = '99999999-4444-4444-8444-444444444460';
+    await db.insert(integrations).values({
+      teamId: TEAM_ID,
+      connectedByUserId: OWNER_ID,
+      provider: 'linear',
+      displayName: 'Linear — owner',
+      externalAccountId: 'lin-1',
+      visibilityDefault: 'team',
+    });
+    const [task] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'Fix login',
+        aliases: ['ENG-42'],
+        status: 'todo',
+      })
+      .returning();
+    if (!task) throw new Error('task insert failed');
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      source: 'integration',
+      text: 'Linear ENG-42: Fix login',
+      sourceMetadata: {
+        provider: 'linear',
+        signal_class: 'captured_work',
+        event_type: 'issue.completed',
+        external_object_id: 'linear-issue-1',
+        linear: { kind: 'issue', identifier: 'ENG-42' },
+        object_map: {
+          type: 'task',
+          canonicalName: 'ENG-42: Fix login',
+          displayTitle: 'Fix login',
+          externalId: 'linear-issue-1',
+          status: 'done',
+          aliases: ['ENG-42'],
+        },
+      },
+    });
+    const chat = emptyModel();
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    expect(chat).not.toHaveBeenCalled();
+    await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 1, items: 1 });
+    const [item] = await db.select().from(agentSuggestionItems);
+    expect(item?.targetId).toBe(task.id);
+    expect(item?.proposedPayload).toMatchObject({ status: 'done' });
+  });
+
   it('runs coalesced GitHub task proposal jobs without calling the LLM', async () => {
     await db.insert(integrations).values({
       teamId: TEAM_ID,

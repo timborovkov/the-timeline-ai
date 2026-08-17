@@ -102,6 +102,14 @@ export {
   type QualifiedWorkspaceHubs,
   type WorkspaceHub,
 } from '#src/suggestions/hub-context.js';
+export {
+  mergeInheritedLinkedHubs,
+  loadLinkedWorkspaceHubsForRawEvent,
+} from '#src/suggestions/linked-hubs.js';
+export {
+  stampUniqueWorkItemAliasesOntoBundles,
+  uniqueWorkItemAliasesFromText,
+} from '#src/suggestions/work-item-aliases.js';
 
 type Visibility = 'private' | 'team' | 'specific_users';
 type SuggestionStatus = 'pending' | 'partially_resolved' | 'accepted' | 'rejected' | 'superseded';

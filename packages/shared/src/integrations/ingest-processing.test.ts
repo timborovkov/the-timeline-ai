@@ -11,17 +11,26 @@ import {
 } from '#src/integrations/ingest-processing.js';
 
 describe('structured ingest processing', () => {
-  it('skips LLM ingest for GitHub, Sentry, Linear, and Monday', () => {
+  it('skips LLM ingest by envelope signal class, not by OAuth app name alone', () => {
     expect(integrationSkipsLlmIngest('github')).toBe(true);
     expect(integrationSkipsLlmIngest('sentry')).toBe(true);
     expect(integrationSkipsLlmIngest('linear')).toBe(true);
     expect(integrationSkipsLlmIngest('monday')).toBe(true);
     expect(integrationSkipsLlmIngest('slack')).toBe(false);
-    expect(integrationSkipsLlmIngest('google_drive')).toBe(false);
+    expect(integrationSkipsLlmIngest('google_drive')).toBe(true);
     expect(integrationSkipsExtract('google_drive')).toBe(true);
     expect(integrationExtractSkipReason('google_drive')).toBe('integration_pulse_source');
     expect(integrationSkipsExtract('slack')).toBe(false);
     expect(integrationExtractSkipReason('github')).toBe('integration_structured_source');
+    expect(integrationExtractSkipReason({ extra: { github: { type: 'workflow_run' } } })).toBe(
+      'integration_pulse_source',
+    );
+    expect(integrationExtractSkipReason({ extra: { github: { type: 'pull_request' } } })).toBe(
+      'integration_structured_source',
+    );
+    expect(integrationExtractSkipReason({ extra: { github: { type: 'commit' } } })).toBe(
+      'integration_finding_source',
+    );
   });
 
   it('reads the connection id from stored integration metadata', () => {

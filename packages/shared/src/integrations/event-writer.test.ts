@@ -912,9 +912,15 @@ describe('writeIntegrationEvents visibility', () => {
     const persisted = await db.select().from(rawEvents);
     expect(persisted).toHaveLength(3);
     for (const row of persisted) {
-      expect(row.sourceMetadata).toMatchObject({
-        extraction_skipped_reason: 'integration_structured_source',
-      });
+      const metadata = row.sourceMetadata as {
+        extraction_skipped_reason?: string;
+        event_type?: string;
+      };
+      if (metadata.event_type === 'comment.created') {
+        expect(metadata.extraction_skipped_reason).toBe('integration_finding_source');
+      } else {
+        expect(metadata.extraction_skipped_reason).toBe('integration_structured_source');
+      }
     }
     for (const rawEventId of insertedIds) {
       expect(enqueueEmbedJob).toHaveBeenCalledWith({

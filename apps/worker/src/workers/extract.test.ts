@@ -797,6 +797,44 @@ describe('processExtractJobForTests', () => {
     expect(prompt).not.toContain('Private context must not leak');
   });
 
+  it('does not dump unrelated sources into extract recent context', async () => {
+    const currentId = '77777777-7777-4777-8777-777777777778';
+    await seedEvent(db, {
+      id: '88888888-8888-4888-8888-888888888889',
+      text: 'Slack firehose from another client must not leak into this note',
+      source: 'slack',
+      occurredAt: new Date('2026-06-01T09:45:00.000Z'),
+      metadata: {
+        slack_workspace_id: 'T1',
+        slack_channel_id: 'C1',
+        slack_channel_name: 'general',
+      },
+    });
+    await seedEvent(db, {
+      id: '99999999-9999-4999-8999-999999999998',
+      text: 'Same-source web note may be included',
+      source: 'web',
+      occurredAt: new Date('2026-06-01T09:50:00.000Z'),
+    });
+    await seedEvent(db, {
+      id: currentId,
+      text: 'Extract this current web note',
+      source: 'web',
+      occurredAt: new Date('2026-06-01T10:00:00.000Z'),
+    });
+    const chatStructured = modelWithFacts([]);
+
+    await processExtractJobForTests(
+      { db },
+      { rawEventId: currentId, teamId: TEAM_ID },
+      io({ chatStructured }),
+    );
+
+    const prompt = (chatStructured.mock.calls[0]?.[0] as { prompt: string }).prompt;
+    expect(prompt).toContain('Same-source web note may be included');
+    expect(prompt).not.toContain('Slack firehose from another client must not leak into this note');
+  });
+
   it('throws unrecoverable failures for missing rows, team mismatch, and missing text', async () => {
     const noTextId = 'aaaaaaaa-0000-4000-8000-000000000000';
     await seedEvent(db, { id: noTextId, text: null });

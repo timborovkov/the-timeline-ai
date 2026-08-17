@@ -31,12 +31,13 @@ import {
 } from '#src/conversational/link-artifacts.js';
 import {
   enqueueGithubTaskProposalJob,
-  githubWorkItemFromIntegrationEvent,
+  capturedWorkItemFromIntegrationEvent,
 } from '#src/integrations/github-task-proposals.js';
 import {
   integrationExtractSkipReason,
   integrationSkipsExtract,
 } from '#src/integrations/ingest-processing.js';
+import { compactObjectMap, resolveSignalClassForEvent } from '#src/integrations/signal-class.js';
 import { childLogger } from '#src/logger.js';
 import { invalidateObjectSummariesForRawEvent } from '#src/objects/summaries.js';
 import { enqueueEmbedJob, enqueueExtractJob } from '#src/queue/queues.js';
@@ -256,13 +257,21 @@ export async function writeIntegrationEvents(deps: {
         evt,
         tombstonesByTargetKey,
       );
-      const extractSkipReason = integrationExtractSkipReason(evt.provider);
+      const signalClass = resolveSignalClassForEvent(evt);
+      const extractSkipReason = integrationExtractSkipReason({
+        signalClass,
+        provider: evt.provider,
+        eventType: evt.eventType,
+        extra: evt.extra ?? null,
+        objectMap: evt.objectMap ?? null,
+      });
       const extractionSkip = extractSkipReason
         ? {
             extraction_skipped_at: new Date().toISOString(),
             extraction_skipped_reason: extractSkipReason,
           }
         : {};
+      const objectMap = compactObjectMap(evt.objectMap);
 
       return {
         teamId,
@@ -285,6 +294,8 @@ export async function writeIntegrationEvents(deps: {
             dedup_key: evt.dedupKey,
             sync_at: new Date().toISOString(),
             source_kind: 'integration_event',
+            signal_class: signalClass,
+            ...(objectMap ? { object_map: objectMap } : {}),
             ...sourcePayloadMetadata,
             ...deletionMetadata,
             ...extractionSkip,
@@ -312,14 +323,25 @@ export async function writeIntegrationEvents(deps: {
     (row) => (row.sourceMetadata as { deleted?: unknown }).deleted !== true,
   );
 
+  const eventByDedupKey = new Map(writableEvents.map((event) => [event.dedupKey, event]));
   await Promise.all(
     activeInserted.flatMap((row) => {
+      const matchingEvent = eventByDedupKey.get(row.dedupKey);
       const jobs = [
         enqueueIntegrationProcessingJob(deps.db, row.id, 'embedding', () =>
           enqueueEmbedJob({ scope: 'raw_event', teamId, rawEventId: row.id }),
         ),
       ];
-      if (!integrationSkipsExtract(deps.integration.provider)) {
+      if (
+        !integrationSkipsExtract({
+          sourceMetadata: row.sourceMetadata,
+          extra: matchingEvent?.extra,
+          objectMap: matchingEvent?.objectMap,
+          provider: matchingEvent?.provider ?? deps.integration.provider,
+          eventType: matchingEvent?.eventType,
+          signalClass: matchingEvent?.signalClass,
+        })
+      ) {
         jobs.unshift(
           enqueueIntegrationProcessingJob(deps.db, row.id, 'extraction', () =>
             enqueueExtractJob({ teamId, rawEventId: row.id }),
@@ -390,15 +412,15 @@ export async function writeIntegrationEvents(deps: {
       entityByExternalId,
       events: repairableArtifactEvents,
     });
-    const githubWorkItems = [
+    const capturedWorkItems = [
       ...new Set(
         repairableArtifactEvents
-          .map((event) => githubWorkItemFromIntegrationEvent(event)?.externalId)
+          .map((event) => capturedWorkItemFromIntegrationEvent(event)?.externalId)
           .filter((externalId): externalId is string => typeof externalId === 'string'),
       ),
     ];
     await Promise.all(
-      githubWorkItems.map(async (externalObjectId) => {
+      capturedWorkItems.map(async (externalObjectId) => {
         try {
           await enqueueGithubTaskProposalJob({
             teamId,
@@ -408,7 +430,7 @@ export async function writeIntegrationEvents(deps: {
         } catch (err) {
           log.warn(
             { err, teamId, integrationId: deps.integration.id, externalObjectId },
-            'failed to enqueue GitHub task proposal job',
+            'failed to enqueue captured-work task proposal job',
           );
         }
       }),
@@ -932,6 +954,7 @@ async function reconcileIntegrationArtifacts(deps: {
         event_type: event.eventType,
         integration_id: deps.integration.id,
         artifact_cluster_kind: artifactClusterKindForIntegrationEvent(event),
+        signal_class: resolveSignalClassForEvent(event),
       },
     });
     await attachReconciliationAssociationForIntegrationEvent(deps.db, {

@@ -1,6 +1,7 @@
 import { type Db, entities, facts as factsTable, factEntities, rawEvents } from '@timeline/db';
 import {
   childLogger,
+  conversationReview,
   embedding,
   extract,
   getEnv,
@@ -29,6 +30,74 @@ interface ExtractWorkerDeps {
 
 const RECENT_CONTEXT_LIMIT = 5;
 
+function metadataString(value: unknown, key: string): string | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const raw = (value as Record<string, unknown>)[key];
+  if (typeof raw !== 'string' && typeof raw !== 'number') return null;
+  const text = String(raw).trim();
+  return text.length > 0 ? text : null;
+}
+
+async function loadExtractRecentContext(
+  db: ExtractWorkerDeps['db'],
+  row: RawEventRow,
+  teamId: string,
+): Promise<
+  {
+    contentText: string | null;
+    occurredAt: Date;
+    source: (typeof rawEvents.$inferSelect)['source'];
+    sourceMetadata: unknown;
+  }[]
+> {
+  const identity = conversationReview.conversationIdentityForRawEvent(row);
+  if (identity) {
+    const window = await conversationReview.buildConversationEvidenceWindow(db, {
+      teamId,
+      identity,
+      anchorOccurredAt: row.occurredAt,
+      limit: RECENT_CONTEXT_LIMIT + 1,
+    });
+    return window
+      .filter((event) => event.id !== row.id)
+      .slice(-RECENT_CONTEXT_LIMIT)
+      .map((event) => ({
+        contentText: event.contentText,
+        occurredAt: event.occurredAt,
+        source: identity.source,
+        sourceMetadata: event.sourceMetadata,
+      }));
+  }
+
+  const meetingId = metadataString(row.sourceMetadata, 'meeting_id');
+  const calendarEventId = metadataString(row.sourceMetadata, 'calendar_event_id');
+  const sameThread =
+    meetingId !== null
+      ? sql`${rawEvents.sourceMetadata} ->> 'meeting_id' = ${meetingId}`
+      : calendarEventId !== null
+        ? sql`${rawEvents.sourceMetadata} ->> 'calendar_event_id' = ${calendarEventId}`
+        : eq(rawEvents.source, row.source);
+
+  return db
+    .select({
+      contentText: rawEvents.contentText,
+      occurredAt: rawEvents.occurredAt,
+      source: rawEvents.source,
+      sourceMetadata: rawEvents.sourceMetadata,
+    })
+    .from(rawEvents)
+    .where(
+      and(
+        eq(rawEvents.teamId, teamId),
+        lt(rawEvents.occurredAt, row.occurredAt),
+        eq(rawEvents.visibility, 'team'),
+        sameThread,
+      ),
+    )
+    .orderBy(desc(rawEvents.occurredAt))
+    .limit(RECENT_CONTEXT_LIMIT);
+}
+
 export interface ExtractProcessorIO {
   getEnv?: typeof getEnv;
   chatStructured?: typeof llm.chatStructured;
@@ -44,7 +113,7 @@ interface RawEventRow {
   teamId: string;
   contentText: string | null;
   occurredAt: Date;
-  source: string;
+  source: (typeof rawEvents.$inferSelect)['source'];
   visibility: 'private' | 'team' | 'specific_users';
   sourceMetadata: unknown;
 }
@@ -152,8 +221,11 @@ export async function processExtractJobForTests(
 
   const provider = integrations.providerFromSourceMetadata(row.sourceMetadata);
   const extractSkipReason =
-    row.source === 'integration' && provider
-      ? integrations.integrationExtractSkipReason(provider)
+    row.source === 'integration'
+      ? integrations.integrationExtractSkipReason({
+          provider,
+          sourceMetadata: row.sourceMetadata,
+        })
       : null;
   if (extractSkipReason) {
     const skipPatch = JSON.stringify({
@@ -198,28 +270,7 @@ export async function processExtractJobForTests(
     }
   }
 
-  const recentRows = (await deps.db
-    .select({
-      contentText: rawEvents.contentText,
-      occurredAt: rawEvents.occurredAt,
-      source: rawEvents.source,
-      sourceMetadata: rawEvents.sourceMetadata,
-    })
-    .from(rawEvents)
-    .where(
-      and(
-        eq(rawEvents.teamId, teamId),
-        lt(rawEvents.occurredAt, row.occurredAt),
-        eq(rawEvents.visibility, 'team'),
-      ),
-    )
-    .orderBy(desc(rawEvents.occurredAt))
-    .limit(RECENT_CONTEXT_LIMIT)) as {
-    contentText: string | null;
-    occurredAt: Date;
-    source: string;
-    sourceMetadata: unknown;
-  }[];
+  const recentRows = await loadExtractRecentContext(deps.db, row, teamId);
 
   const prompt = llm.truncateTextToTokenBudget(
     extract.buildExtractionPrompt({

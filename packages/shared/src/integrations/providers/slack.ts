@@ -248,6 +248,7 @@ function messageEvent(teamId: string, channel: string, message: SlackMessage): I
   return {
     dedupKey: `slack:message:${teamId}:${channel}:${message.ts}:${message.edited?.ts ?? ''}`,
     provider: 'slack',
+    signalClass: 'communication',
     externalObjectId: `${channel}:${message.thread_ts ?? message.ts}`,
     externalEventId: message.ts,
     eventType: isEdit

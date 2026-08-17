@@ -791,11 +791,12 @@ function mondayRecordMap(
   const status = semantics.columns.find((column) => isMondayStatusColumnType(column.type));
   const parent = item.parent_item;
   return {
-    type: 'other',
+    type: 'task',
     canonicalName: `Monday ${kind} ${item.id}: ${item.name}`,
     displayTitle: item.name,
     externalId: item.id,
     status: mondayStatus(status?.text),
+    aliases: [item.id, `monday:${item.id}`],
     ...(item.url ? { url: item.url } : {}),
     metadata: {
       monday_record_kind: kind,
@@ -879,11 +880,12 @@ function activityEvent(board: MondayBoard, log: MondayActivityLog): IntegrationE
       monday_activity_data: data,
     },
     objectMap: {
-      type: 'other',
+      type: 'task',
       canonicalName: `Monday record ${itemId}: ${title}`,
       displayTitle: title,
       externalId: itemId,
       status: mondayStatus(stringValue(data.value)),
+      aliases: [itemId, `monday:${itemId}`],
       metadata: {
         monday_record_kind: 'activity-record',
         ...boardMetadata(board),
@@ -912,6 +914,7 @@ function itemEvent(
       ? `monday:${kind}:${board.id}:${item.id}:${status}:${occurredAt.toISOString()}`
       : `monday:${kind}:${board.id}:${item.id}:${status}`,
     provider: 'monday',
+    signalClass: 'captured_work',
     externalObjectId: item.id,
     eventType: kind === 'subitem' ? 'subitem.updated' : 'item.updated',
     occurredAt,
@@ -953,6 +956,7 @@ function updateEvent(
   return {
     dedupKey: `monday:update:${item.id}:${update.id}:${occurredAt.toISOString()}`,
     provider: 'monday',
+    signalClass: 'finding',
     externalObjectId: item.id,
     externalEventId: update.id,
     eventType: `update.${operation}`,
@@ -1355,10 +1359,11 @@ function mondayWebhookEvent(payload: unknown): IntegrationEvent[] {
         monday_group_id: stringValue(event.groupId),
       },
       objectMap: {
-        type: 'other',
+        type: updateId ? 'other' : 'task',
         canonicalName: `Monday record ${itemId}: ${title}`,
         displayTitle: title,
         externalId: itemId,
+        aliases: [itemId, `monday:${itemId}`],
         ...(status ? { status } : {}),
         metadata: {
           monday_record_kind: isSubitem ? 'subitem' : 'webhook-record',

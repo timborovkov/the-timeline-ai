@@ -16,6 +16,11 @@ import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import type { IntegrationEvent, ObjectMapping } from '#src/integrations/types.js';
 
 import { GITHUB_TASK_PROPOSAL_COALESCE_MS } from '#src/integrations/ingest-processing.js';
+import {
+  isSignalClass,
+  objectMapFromUnknown,
+  resolveSignalClass,
+} from '#src/integrations/signal-class.js';
 import { childLogger } from '#src/logger.js';
 import { enqueueSuggestionJob } from '#src/queue/queues.js';
 import { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
@@ -68,6 +73,19 @@ export interface GithubTaskProposalPlan {
   match: 'provider_id' | 'alias' | 'title';
 }
 
+export interface CapturedWorkItem {
+  provider: string;
+  externalId: string;
+  title: string;
+  status: 'open' | 'done' | 'cancelled';
+  eventType: string;
+  url: string | null;
+  aliases: string[];
+  actorLogin: string | null;
+  assigneeLogins: string[];
+  github: GithubWorkItem | null;
+}
+
 interface OpenTaskRow {
   id: string;
   canonicalName: string;
@@ -79,7 +97,7 @@ interface OpenTaskRow {
 }
 
 interface GithubProposalSource {
-  workItem: GithubWorkItem;
+  workItem: CapturedWorkItem;
   rawEventId: string;
   contentText: string;
   canonicalEntityId?: string | null;
@@ -165,7 +183,57 @@ export function githubWorkItemFromRawMetadata(
     contentText: contentText ?? '',
     actor: recordFromUnknown(metadata.actor),
     extra: metadata,
-    objectMap: null,
+    objectMap: objectMapFromUnknown(metadata.object_map),
+  });
+}
+
+function capturedWorkItemFromGithub(workItem: GithubWorkItem): CapturedWorkItem {
+  return {
+    provider: 'github',
+    externalId: workItem.externalId,
+    title: workItem.title,
+    status: workItem.status,
+    eventType: workItem.eventType,
+    url: workItem.url,
+    aliases: workItemAliases(workItem),
+    actorLogin: workItem.actorLogin,
+    assigneeLogins: workItem.assigneeLogins,
+    github: workItem,
+  };
+}
+
+export function capturedWorkItemFromIntegrationEvent(
+  event: IntegrationEvent,
+): CapturedWorkItem | null {
+  const github = githubWorkItemFromIntegrationEvent(event);
+  if (github) return capturedWorkItemFromGithub(github);
+  return capturedWorkItemFromObjectMap({
+    provider: event.provider,
+    eventType: event.eventType,
+    contentText: event.contentText,
+    actor: event.actor ?? null,
+    extra: event.extra ?? {},
+    objectMap: event.objectMap ?? null,
+    signalClass: event.signalClass,
+  });
+}
+
+export function capturedWorkItemFromRawMetadata(
+  sourceMetadata: unknown,
+  contentText: string | null,
+): CapturedWorkItem | null {
+  const github = githubWorkItemFromRawMetadata(sourceMetadata, contentText);
+  if (github) return capturedWorkItemFromGithub(github);
+  const metadata = recordFromUnknown(sourceMetadata);
+  return capturedWorkItemFromObjectMap({
+    provider: stringValue(metadata.provider),
+    eventType: stringValue(metadata.event_type) ?? '',
+    contentText: contentText ?? '',
+    actor: recordFromUnknown(metadata.actor),
+    extra: metadata,
+    objectMap: objectMapFromUnknown(metadata.object_map),
+    signalClass: metadata.signal_class,
+    sourceMetadata: metadata,
   });
 }
 
@@ -174,9 +242,21 @@ export function matchOpenTasksToGithubWorkItem(
   tasks: readonly OpenTaskRow[],
   canonicalEntityId?: string | null,
 ): { task: OpenTaskRow; match: GithubTaskProposalPlan['match'] }[] {
+  return matchOpenTasksToCapturedWorkItem(
+    capturedWorkItemFromGithub(workItem),
+    tasks,
+    canonicalEntityId,
+  );
+}
+
+export function matchOpenTasksToCapturedWorkItem(
+  workItem: CapturedWorkItem,
+  tasks: readonly OpenTaskRow[],
+  canonicalEntityId?: string | null,
+): { task: OpenTaskRow; match: GithubTaskProposalPlan['match'] }[] {
   const hard: { task: OpenTaskRow; match: GithubTaskProposalPlan['match'] }[] = [];
   const fuzzy: { task: OpenTaskRow; match: GithubTaskProposalPlan['match'] }[] = [];
-  const aliasNeedles = new Set(workItemAliases(workItem).map((alias) => alias.toLowerCase()));
+  const aliasNeedles = new Set(workItem.aliases.map((alias) => alias.toLowerCase()));
 
   for (const task of tasks) {
     if (canonicalEntityId && task.id === canonicalEntityId) {
@@ -186,7 +266,7 @@ export function matchOpenTasksToGithubWorkItem(
     const metadata = recordFromUnknown(task.metadata);
     const externalId = stringValue(metadata.integration_external_id);
     const provider = stringValue(metadata.integration_provider);
-    if (provider === 'github' && externalId && externalId === workItem.externalId) {
+    if (provider === workItem.provider && externalId && externalId === workItem.externalId) {
       hard.push({ task, match: 'provider_id' });
       continue;
     }
@@ -195,7 +275,7 @@ export function matchOpenTasksToGithubWorkItem(
       hard.push({ task, match: 'alias' });
       continue;
     }
-    if (taskMentionsGithubWorkItem(task, workItem) && titlesAlign(task.canonicalName, workItem)) {
+    if (taskMentionsCapturedWorkItem(task, workItem) && titlesAlign(task.canonicalName, workItem)) {
       fuzzy.push({ task, match: 'title' });
     }
   }
@@ -206,12 +286,15 @@ export function matchOpenTasksToGithubWorkItem(
 }
 
 export function planGithubTaskProposal(input: {
-  workItem: GithubWorkItem;
+  workItem: GithubWorkItem | CapturedWorkItem;
   task: OpenTaskRow;
   match: GithubTaskProposalPlan['match'];
   assigneeUserId: string | null;
 }): GithubTaskProposalPlan | null {
-  const status = shouldProposeDone(input.workItem) ? 'done' : null;
+  const workItem = isGithubWorkItem(input.workItem)
+    ? capturedWorkItemFromGithub(input.workItem)
+    : input.workItem;
+  const status = shouldProposeDone(workItem) ? 'done' : null;
   const assigneeUserId =
     input.task.assigneeUserId || !input.assigneeUserId ? null : input.assigneeUserId;
   const ownerUserId = input.task.ownerUserId || !input.assigneeUserId ? null : input.assigneeUserId;
@@ -222,7 +305,7 @@ export function planGithubTaskProposal(input: {
     status,
     assigneeUserId,
     ownerUserId,
-    aliases: mergeAliases(stringArray(input.task.aliases), workItemAliases(input.workItem)),
+    aliases: mergeAliases(stringArray(input.task.aliases), workItem.aliases),
     match: input.match,
   };
 }
@@ -240,7 +323,7 @@ export async function proposeGithubTaskUpdatesFromRawEvent(input: {
 }): Promise<number> {
   if (input.rawEvent.source !== 'integration') return 0;
   if (input.rawEvent.visibility !== 'team') return 0;
-  const workItem = githubWorkItemFromRawMetadata(
+  const workItem = capturedWorkItemFromRawMetadata(
     input.rawEvent.sourceMetadata,
     input.rawEvent.contentText,
   );
@@ -282,7 +365,6 @@ export async function proposeGithubTaskUpdatesForExternalObject(input: {
   const scope = withTeam(input.db, input.teamId, PSEUDO_USER, { skipMembershipCheck: true });
   const [row] = await scope.timeline.listEvents({
     source: 'integration',
-    origins: [{ kind: 'provider', provider: 'github' }],
     externalObjectId: input.externalObjectId,
     limit: 1,
   });
@@ -316,7 +398,11 @@ export async function proposeGithubTaskUpdatesForTeam(input: {
         eq(artifactEvidenceAssociations.teamId, input.teamId),
         eq(artifactClusters.teamId, input.teamId),
         isNull(artifactClusters.archivedAt),
-        sql`${artifactEvidenceAssociations.metadata} ->> 'provider' = 'github'`,
+        eq(artifactClusters.artifactType, 'task'),
+        or(
+          sql`${artifactEvidenceAssociations.metadata} ->> 'signal_class' = 'captured_work'`,
+          sql`${artifactEvidenceAssociations.metadata} ->> 'provider' in ('github', 'linear', 'monday')`,
+        ),
         input.restrictToExternalObjectId
           ? sql`${artifactEvidenceAssociations.metadata} ->> 'external_object_id' = ${input.restrictToExternalObjectId}`
           : undefined,
@@ -365,8 +451,8 @@ export async function proposeGithubTaskUpdatesForTeam(input: {
     const rawEvent = rawEventById.get(row.rawEventId);
     if (!rawEvent) continue;
     const workItem =
-      githubWorkItemFromRawMetadata(rawEvent.sourceMetadata, rawEvent.contentText) ??
-      githubWorkItemFromClusterRow(row);
+      capturedWorkItemFromRawMetadata(rawEvent.sourceMetadata, rawEvent.contentText) ??
+      capturedWorkItemFromClusterRow(row);
     if (!workItem) continue;
     sources.push({
       workItem,
@@ -401,7 +487,7 @@ async function proposeGithubTaskUpdates(input: {
   const scope = withTeam(input.db, input.teamId, PSEUDO_USER, { skipMembershipCheck: true });
   let created = 0;
   for (const source of input.sources) {
-    const entityMatches = matchOpenTasksToGithubWorkItem(
+    const entityMatches = matchOpenTasksToCapturedWorkItem(
       source.workItem,
       tasks,
       source.canonicalEntityId,
@@ -439,7 +525,7 @@ async function proposeGithubTaskUpdates(input: {
       }
     }
     if (entityMatches.length > 0 || input.restrictToObjectId) continue;
-    const pendingMatches = matchOpenTasksToGithubWorkItem(
+    const pendingMatches = matchOpenTasksToCapturedWorkItem(
       source.workItem,
       pendingCreates.map((row) => row.task),
     );
@@ -494,7 +580,11 @@ async function writeGithubTaskProposal(input: {
   }
   if (input.plan.assigneeUserId) {
     payload.assigneeUserId = input.plan.assigneeUserId;
-    changes.push('assign the GitHub actor');
+    changes.push(
+      workItem.provider === 'github'
+        ? 'assign the GitHub actor'
+        : `assign the ${workItem.provider} actor`,
+    );
   }
   if (input.plan.ownerUserId) {
     payload.ownerUserId = input.plan.ownerUserId;
@@ -514,10 +604,11 @@ async function writeGithubTaskProposal(input: {
       taskId: input.plan.taskId,
       externalId: workItem.externalId,
     });
+  const sourceLabel = workItem.provider === 'github' ? 'GitHub' : workItem.provider;
   await input.scope.suggestions.createOrMergeSuggestionBundle({
     source: 'background',
     title: `Update ${input.plan.taskName}`,
-    summary: `GitHub ${ref} is enough evidence to ${changes.join(' and ')}.`,
+    summary: `${sourceLabel} ${ref} is enough evidence to ${changes.join(' and ')}.`,
     reason,
     confidence: input.plan.match === 'title' ? 'medium' : 'high',
     dedupeKey,
@@ -538,8 +629,9 @@ async function writeGithubTaskProposal(input: {
       kind: 'github_task_proposal',
       github_external_id: workItem.externalId,
       github_event_type: workItem.eventType,
-      github_repo: workItem.repo,
-      github_number: workItem.number,
+      github_repo: workItem.github?.repo ?? null,
+      github_number: workItem.github?.number ?? null,
+      captured_work_provider: workItem.provider,
       match: input.plan.match,
     },
     items: [
@@ -559,7 +651,7 @@ async function writeGithubTaskProposal(input: {
 }
 
 function planPendingCreateRefresh(input: {
-  workItem: GithubWorkItem;
+  workItem: CapturedWorkItem;
   pending: PendingTaskCreate;
   match: GithubTaskProposalPlan['match'];
   assigneeUserId: string | null;
@@ -569,10 +661,7 @@ function planPendingCreateRefresh(input: {
     input.pending.task.assigneeUserId || !input.assigneeUserId ? null : input.assigneeUserId;
   const ownerUserId =
     input.pending.task.ownerUserId || !input.assigneeUserId ? null : input.assigneeUserId;
-  const aliases = mergeAliases(
-    stringArray(input.pending.task.aliases),
-    workItemAliases(input.workItem),
-  );
+  const aliases = mergeAliases(stringArray(input.pending.task.aliases), input.workItem.aliases);
   const aliasesChanged = aliases.length > stringArray(input.pending.task.aliases).length;
   const statusChanged = Boolean(status) && status !== normalizeLifecycle(input.pending.task.status);
   if (!statusChanged && !assigneeUserId && !ownerUserId && !aliasesChanged) return null;
@@ -637,8 +726,9 @@ async function refreshPendingTaskCreate(input: {
       kind: 'github_task_proposal',
       github_external_id: workItem.externalId,
       github_event_type: workItem.eventType,
-      github_repo: workItem.repo,
-      github_number: workItem.number,
+      github_repo: workItem.github?.repo ?? null,
+      github_number: workItem.github?.number ?? null,
+      captured_work_provider: workItem.provider,
       match: input.plan.match,
     },
     items: [
@@ -656,14 +746,19 @@ async function refreshPendingTaskCreate(input: {
   return true;
 }
 
-function capturedWorkReason(workItem: GithubWorkItem, plan: GithubTaskProposalPlan): string {
+function capturedWorkReason(workItem: CapturedWorkItem, plan: GithubTaskProposalPlan): string {
   const ref = githubRefLabel(workItem);
+  const sourceLabel = workItem.provider === 'github' ? 'GitHub' : workItem.provider;
   if (plan.status === 'done') {
-    return workItem.kind === 'issue'
-      ? `${ref} is closed on GitHub, so this Timeline task should move to done.`
-      : `${ref} is merged on GitHub, so this Timeline task should move to done.`;
+    if (workItem.github?.kind === 'issue') {
+      return `${ref} is closed on GitHub, so this Timeline task should move to done.`;
+    }
+    if (workItem.github?.kind === 'pull_request') {
+      return `${ref} is merged on GitHub, so this Timeline task should move to done.`;
+    }
+    return `${ref} is done on ${sourceLabel}, so this Timeline task should move to done.`;
   }
-  return `${ref} is ${workItem.actorLogin ? `@${workItem.actorLogin}'s` : 'this teammate’s'} GitHub activity.`;
+  return `${ref} is ${workItem.actorLogin ? `@${workItem.actorLogin}'s` : 'this teammate’s'} ${sourceLabel} activity.`;
 }
 
 function normalizeLifecycle(status: string): string {
@@ -703,10 +798,11 @@ async function existingGithubProposalDedupeKey(
 }
 
 function resolveWorkItemAssignee(
-  workItem: GithubWorkItem,
+  workItem: CapturedWorkItem,
   members: readonly { userId: string; name: string | null; email?: string | null }[],
   githubLoginsByUserId: ReadonlyMap<string, readonly string[]>,
 ): string | null {
+  if (workItem.provider !== 'github') return null;
   const logins =
     workItem.assigneeLogins.length > 0
       ? workItem.assigneeLogins
@@ -723,11 +819,101 @@ function resolveWorkItemAssignee(
   return userIds.length === 1 ? (userIds[0] ?? null) : null;
 }
 
-function shouldProposeDone(workItem: GithubWorkItem): boolean {
-  if (workItem.kind === 'pull_request') {
+function shouldProposeDone(workItem: CapturedWorkItem): boolean {
+  if (workItem.github?.kind === 'pull_request') {
     return workItem.eventType === 'pr.merged' || workItem.status === 'done';
   }
-  return workItem.eventType === 'issue.closed' || workItem.status === 'done';
+  if (workItem.github?.kind === 'issue') {
+    return workItem.eventType === 'issue.closed' || workItem.status === 'done';
+  }
+  return workItem.status === 'done';
+}
+
+function isGithubWorkItem(value: GithubWorkItem | CapturedWorkItem): value is GithubWorkItem {
+  return 'repo' in value && 'number' in value && 'kind' in value && !('github' in value);
+}
+
+function capturedWorkItemFromObjectMap(input: {
+  provider: string | null;
+  eventType: string;
+  contentText: string;
+  actor: unknown;
+  extra: Record<string, unknown>;
+  objectMap: ObjectMapping | null;
+  signalClass?: unknown;
+  sourceMetadata?: unknown;
+}): CapturedWorkItem | null {
+  const objectMap = input.objectMap;
+  if (!objectMap || !input.provider) return null;
+  const signal = resolveSignalClass({
+    signalClass: isSignalClass(input.signalClass) ? input.signalClass : null,
+    provider: input.provider,
+    eventType: input.eventType,
+    extra: input.extra,
+    objectMap,
+    sourceMetadata: input.sourceMetadata,
+  });
+  if (signal !== 'captured_work') return null;
+  if (objectMap.type !== 'task' && objectMap.type !== 'follow_up') return null;
+  const status =
+    objectMap.status === 'done' || objectMap.status === 'cancelled' ? objectMap.status : 'open';
+  const actor = recordFromUnknown(input.actor);
+  const aliases = [
+    ...new Set(
+      [...(objectMap.aliases ?? []), objectMap.externalId]
+        .map((alias) => alias.trim())
+        .filter(Boolean),
+    ),
+  ];
+  return {
+    provider: input.provider,
+    externalId: objectMap.externalId,
+    title:
+      workItemTitleFromObjectMap(objectMap) ??
+      workItemTitleFromContent(input.contentText) ??
+      objectMap.displayTitle ??
+      objectMap.canonicalName,
+    status,
+    eventType: input.eventType,
+    url: objectMap.url ?? null,
+    aliases,
+    actorLogin: stringValue(actor.externalId) ?? stringValue(actor.name),
+    assigneeLogins: [],
+    github: null,
+  };
+}
+
+function capturedWorkItemFromClusterRow(row: {
+  status: string;
+  canonicalName: string;
+  externalObjectId: string | null;
+  metadata: unknown;
+}): CapturedWorkItem | null {
+  const github = githubWorkItemFromClusterRow(row);
+  if (github) return capturedWorkItemFromGithub(github);
+  const externalId = row.externalObjectId;
+  if (!externalId) return null;
+  const metadata = recordFromUnknown(row.metadata);
+  const provider = stringValue(metadata.provider);
+  if (!provider) return null;
+  const signal = resolveSignalClass({
+    sourceMetadata: metadata,
+    provider,
+    eventType: stringValue(metadata.event_type),
+  });
+  if (signal !== 'captured_work') return null;
+  return {
+    provider,
+    externalId,
+    title: workItemTitleFromDisplay(row.canonicalName) ?? row.canonicalName,
+    status: row.status === 'resolved' ? 'done' : row.status === 'cancelled' ? 'cancelled' : 'open',
+    eventType: stringValue(metadata.event_type) ?? '',
+    url: null,
+    aliases: [externalId],
+    actorLogin: null,
+    assigneeLogins: [],
+    github: null,
+  };
 }
 
 function githubWorkItemFromParts(input: {
@@ -848,15 +1034,20 @@ async function loadOpenTaskCandidates(
   ];
   const repoNames = [
     ...new Set(
-      sources.flatMap((source) => [source.workItem.repo, repoDisplayName(source.workItem.repo)]),
+      sources.flatMap((source) => {
+        const github = source.workItem.github;
+        if (github) return [github.repo, repoDisplayName(github.repo)];
+        return source.workItem.aliases;
+      }),
     ),
-  ];
+  ].filter((name) => name.length >= 3);
   const likeClauses = repoNames.map(
     (name) => sql`lower(${entities.canonicalName}) like ${`%${escapeLike(name.toLowerCase())}%`}`,
   );
+  const providers = [...new Set(sources.map((source) => source.workItem.provider))];
   const identityClauses = [
     and(
-      sql`(${entities.metadata} ->> 'integration_provider') = 'github'`,
+      inArray(sql`${entities.metadata} ->> 'integration_provider'`, providers),
       inArray(sql`${entities.metadata} ->> 'integration_external_id'`, externalIds),
     ),
     ...(canonicalEntityIds.length > 0 ? [inArray(entities.id, canonicalEntityIds)] : []),
@@ -1021,10 +1212,18 @@ function taskMentionsGithubWorkItem(task: OpenTaskRow, workItem: GithubWorkItem)
   return mentionsRepo && mentionsNumber;
 }
 
-function titlesAlign(taskName: string, workItem: GithubWorkItem): boolean {
+function taskMentionsCapturedWorkItem(task: OpenTaskRow, workItem: CapturedWorkItem): boolean {
+  if (workItem.github) return taskMentionsGithubWorkItem(task, workItem.github);
+  const haystack = `${task.canonicalName} ${stringArray(task.aliases).join(' ')}`.toLowerCase();
+  return workItem.aliases.some((alias) => haystack.includes(alias.toLowerCase()));
+}
+
+function titlesAlign(taskName: string, workItem: CapturedWorkItem): boolean {
   const task = normalizeTitle(taskName);
   const work = normalizeTitle(workItem.title);
-  if (!work || work.length < 8) return mentionsNumberOnly(taskName, workItem);
+  if (!work || work.length < 8) {
+    return workItem.github ? mentionsNumberOnly(taskName, workItem.github) : false;
+  }
   if (task.includes(work) || work.includes(task)) return true;
   const taskTokens = new Set(task.split(' ').filter((token) => token.length >= 3));
   const workTokens = [...new Set(work.split(' ').filter((token) => token.length >= 3))];
@@ -1126,8 +1325,9 @@ function parseGithubExternalId(
   return null;
 }
 
-function githubRefLabel(workItem: GithubWorkItem): string {
-  return `${workItem.repo}#${String(workItem.number)}`;
+function githubRefLabel(workItem: CapturedWorkItem): string {
+  if (workItem.github) return `${workItem.github.repo}#${String(workItem.github.number)}`;
+  return workItem.aliases[0] ?? workItem.externalId;
 }
 
 function repoDisplayName(repo: string): string {

@@ -565,8 +565,15 @@ async function amendPendingTaskCreatesWithUniqueHubs(args: {
   relationshipDedupe: RelationshipDedupeContext;
   evidenceEventIds: string[];
   quoteByEventId: Map<string, string>;
+  evidenceText: string;
 }): Promise<number> {
-  if (!args.qualified.uniqueProject && !args.qualified.uniqueCompany) return 0;
+  if (
+    !args.qualified.uniqueProject &&
+    !args.qualified.uniqueCompany &&
+    !suggestions.uniqueWorkItemAliasesFromText(args.evidenceText)
+  ) {
+    return 0;
+  }
   if (args.evidenceEventIds.length === 0) return 0;
 
   const overlapping = await args.db
@@ -654,9 +661,12 @@ async function amendPendingTaskCreatesWithUniqueHubs(args: {
           ? (row.payload as Record<string, unknown>)
           : {},
     }));
-    const [attached] = suggestions.attachUniqueHubsToBundles({
-      bundles: [{ items: before }],
-      qualified: args.qualified,
+    const [attached] = suggestions.stampUniqueWorkItemAliasesOntoBundles({
+      bundles: suggestions.attachUniqueHubsToBundles({
+        bundles: [{ items: before }],
+        qualified: args.qualified,
+      }),
+      text: args.evidenceText,
     });
     const filtered = attached
       ? filterExistingRelationshipItems(attached as SuggestionBundleOutput, args.relationshipDedupe)
@@ -1000,27 +1010,19 @@ export async function processSuggestionJobForTests(
   if (row.source === 'integration') {
     await stampSuggestionMetadata(deps.db, rawEventId, {
       suggestions_skipped_at: new Date().toISOString(),
-      suggestions_skipped_reason: 'integration_structured_source',
+      suggestions_skipped_reason:
+        integrations.integrationExtractSkipReason({ sourceMetadata: row.sourceMetadata }) ??
+        'integration_structured_source',
       suggestion_model_version: modelVersion,
     });
-    const metadata =
-      row.sourceMetadata &&
-      typeof row.sourceMetadata === 'object' &&
-      !Array.isArray(row.sourceMetadata)
-        ? (row.sourceMetadata as Record<string, unknown>)
-        : {};
-    // Structured GitHub PR/issue fields only. Comments, reviews, CI, and other
-    // providers stay off the suggestion model and off this proposal path.
-    if (metadata.provider === 'github') {
-      try {
-        await integrations.proposeGithubTaskUpdatesFromRawEvent({
-          db: deps.db,
-          teamId,
-          rawEvent: row,
-        });
-      } catch (err) {
-        log.warn({ err, rawEventId, teamId }, 'github task proposal generation failed');
-      }
+    try {
+      await integrations.proposeGithubTaskUpdatesFromRawEvent({
+        db: deps.db,
+        teamId,
+        rawEvent: row,
+      });
+    } catch (err) {
+      log.warn({ err, rawEventId, teamId }, 'captured-work task proposal generation failed');
     }
     return;
   }
@@ -2711,7 +2713,9 @@ async function runSuggestionExtraction(
   if (row.source === 'integration') {
     await stampSuggestionMetadata(deps.db, rawEventId, {
       suggestions_skipped_at: new Date().toISOString(),
-      suggestions_skipped_reason: 'integration_structured_source',
+      suggestions_skipped_reason:
+        integrations.integrationExtractSkipReason({ sourceMetadata: row.sourceMetadata }) ??
+        'integration_structured_source',
       suggestion_model_version: modelVersion,
     });
     return 0;
@@ -2928,7 +2932,16 @@ async function runSuggestionExtraction(
     window: args.conversation?.window ?? [],
     linkedContext: args.conversation?.linkedContext ?? [],
   });
-  const qualifiedHubs = suggestions.qualifyWorkspaceHubs({ hubs: hubRows, text: evidenceText });
+  const mentionedHubs = suggestions.qualifyWorkspaceHubs({ hubs: hubRows, text: evidenceText });
+  const linkedHubs = await suggestions.loadLinkedWorkspaceHubsForRawEvent({
+    db: deps.db,
+    teamId,
+    sourceMetadata: row.sourceMetadata,
+  });
+  const qualifiedHubs = suggestions.mergeInheritedLinkedHubs({
+    qualified: mentionedHubs,
+    linked: linkedHubs,
+  });
   const mentionedHubIds = new Set(qualifiedHubs.mentioned.map((hub) => hub.id));
   const mentionedNames = namesMentionedInText(
     evidenceText,
@@ -3122,9 +3135,12 @@ async function runSuggestionExtraction(
     io,
   });
   const bundles = suggestions
-    .attachUniqueHubsToBundles({
-      bundles: enrichedBundles,
-      qualified: qualifiedHubs,
+    .stampUniqueWorkItemAliasesOntoBundles({
+      bundles: suggestions.attachUniqueHubsToBundles({
+        bundles: enrichedBundles,
+        qualified: qualifiedHubs,
+      }),
+      text: evidenceText,
     })
     .map((bundle) =>
       filterExistingRelationshipItems(bundle as SuggestionBundleOutput, relationshipDedupe),
@@ -3274,6 +3290,7 @@ async function runSuggestionExtraction(
     relationshipDedupe,
     evidenceEventIds,
     quoteByEventId,
+    evidenceText,
   });
 
   await stampSuggestionMetadata(

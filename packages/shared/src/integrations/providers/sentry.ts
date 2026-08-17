@@ -387,6 +387,7 @@ function issueEvent(
   return {
     dedupKey: issueDedupKey(issue.id, lifecycleBucket),
     provider: 'sentry',
+    signalClass: 'finding',
     externalObjectId: issue.id,
     eventType:
       issue.status === 'resolved'

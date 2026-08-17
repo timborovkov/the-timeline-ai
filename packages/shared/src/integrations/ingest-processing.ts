@@ -1,27 +1,36 @@
-import { checkRateLimit, RATE_LIMITS, rateLimitKey } from '#src/rate-limit/index.js';
+import type { SignalClass } from '#src/integrations/types.js';
 
-/** High-volume structured providers. Persist, embed, and reconcile; do not LLM. */
-const STRUCTURED_INGEST_PROVIDERS = new Set(['github', 'linear', 'monday', 'sentry']);
+import {
+  extractSkipReasonForSignalClass,
+  resolveSignalClass,
+  type SignalClassInput,
+} from '#src/integrations/signal-class.js';
+import { checkRateLimit, RATE_LIMITS, rateLimitKey } from '#src/rate-limit/index.js';
 
 export const GITHUB_TASK_PROPOSAL_COALESCE_MS = 8_000;
 
 export type IngestProcessingStage = 'extract' | 'embed' | 'github_task_proposal';
 
-export function integrationSkipsLlmIngest(provider: string): boolean {
-  return STRUCTURED_INGEST_PROVIDERS.has(provider);
+export type IntegrationSignalInput = SignalClassInput | string;
+
+function envelopeFromInput(input: IntegrationSignalInput): SignalClassInput {
+  return typeof input === 'string' ? { provider: input } : input;
 }
 
-/** Drive file-change telemetry is a pulse: persist + embed, never extract. */
-const PULSE_INGEST_PROVIDERS = new Set(['google_drive']);
-
-export function integrationExtractSkipReason(provider: string): string | null {
-  if (integrationSkipsLlmIngest(provider)) return 'integration_structured_source';
-  if (PULSE_INGEST_PROVIDERS.has(provider)) return 'integration_pulse_source';
-  return null;
+function signalClassForIngest(input: IntegrationSignalInput): SignalClass {
+  return resolveSignalClass(envelopeFromInput(input));
 }
 
-export function integrationSkipsExtract(provider: string): boolean {
-  return integrationExtractSkipReason(provider) !== null;
+export function integrationSkipsLlmIngest(input: IntegrationSignalInput): boolean {
+  return signalClassForIngest(input) !== 'communication';
+}
+
+export function integrationExtractSkipReason(input: IntegrationSignalInput): string | null {
+  return extractSkipReasonForSignalClass(signalClassForIngest(input));
+}
+
+export function integrationSkipsExtract(input: IntegrationSignalInput): boolean {
+  return integrationExtractSkipReason(input) !== null;
 }
 
 export function integrationIdFromSourceMetadata(sourceMetadata: unknown): string | null {
