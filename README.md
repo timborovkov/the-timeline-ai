@@ -124,6 +124,7 @@ agent behavior, or reconciliation have additional gates documented in
 
 - [Documentation index](./docs/index.html)
 - [Product brief](./docs/product-brief.html)
+- [Relational operating memory](./docs/relational-memory.md)
 - [Local development](./docs/setup/local.html)
 - [Integrations and custom MCP servers](./docs/setup/integrations.html)
 - [Railway deployment](./docs/railway.html)

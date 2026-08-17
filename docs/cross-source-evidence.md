@@ -7,12 +7,14 @@
 **Last updated:** 2026-08-17
 
 Timeline's cross-source evidence direction is one operating memory backed by the
-tools where work happened. The shared builder, proposal and answer adapters,
-exact citations, revision handling, approval UI, and redacted metrics are now
-implemented, but pack-backed proposals remain disabled by default and are not
-shipped. Current product copy must describe today's behavior;
-present-tense cross-source proposal claims remain gated on each source path
-shipping.
+tools where work happened. Signal class, cheap relations, and LLM spend are
+defined in [`relational-memory.md`](./relational-memory.md). This brief covers
+the evidence-pack builder that sits on top of that contract. The shared
+builder, proposal and answer adapters, exact citations, revision handling,
+approval UI, and redacted metrics are now implemented, but pack-backed
+proposals remain disabled by default and are not shipped. Current product copy
+must describe today's behavior; present-tense cross-source proposal claims
+remain gated on each source path shipping.
 
 ## The promise
 
@@ -42,7 +44,7 @@ proposal and answer packs. Proposal behavior remains on the legacy path while
 | --- | --- |
 | Generic ingest webhooks | `off`: the existing event-local proposal remains unchanged. `shadow`: pack metrics only; pack failures are recorded without interrupting legacy extraction. `enforced`: recent time-only chronology is replaced by the anchor plus directly related pack evidence, and every proposed change requires exact citations. The existing proposal-generation source gate remains an inner gate. |
 | Slack, Telegram, email, meetings, and documents | Existing conversation-review and event-local proposal behavior remains unchanged regardless of the global rollout setting. These adapters must migrate and pass their own gates separately. |
-| GitHub, Linear, Monday, and Sentry | Structured events feed artifact reconciliation, associations, source references, and provider-authoritative outputs. They do not run the suggestion model or the extract model. GitHub PR and issue lifecycle fields enqueue a coalesced, approval-backed Timeline task `done`/assignee job keyed by `repo#number` rather than by ingest time. Comments, reviews, commits, and CI are not proposal sources. Per-connection ingest processing is rate-limited so a noisy repo cannot stampede extract/embed/proposal workers. |
+| GitHub, Linear, Monday, and Sentry | Classified in [`relational-memory.md`](./relational-memory.md). Structured captured work and pulses persist, embed, and reconcile without the extract or suggestion models. GitHub PR and issue lifecycle fields enqueue a coalesced approval-backed Timeline task `done`/assignee job keyed by `repo#number`. Comments, reviews, commits, CI, and Sentry events are pulses or communication-lite: they are not proposal sources. Per-connection ingest processing is rate-limited. |
 | Agent Ask | Broad workspace retrieval returns a viewer-visible answer-policy pack for raw-event evidence while keeping objects, notes, tasks, boards, documents, and calendar results as typed adjacent context. Semantic matches are labeled as retrieval provenance, pack-only citations are included in the packet's top-level reference index, and partial packets disclose failed source adapters. |
 
 No proposal adapter is considered shipped until its shadow sample, safety,

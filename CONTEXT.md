@@ -31,6 +31,33 @@ An immutable source record captured into the timeline. Raw events are the
 evidence layer behind facts, objects, agent answers, and later exports.
 _Avoid_: Message, activity, log entry
 
+**Signal Class**:
+The processing role of one raw event, independent of which OAuth app emitted
+it. Communication is people talking or deciding (Slack, meetings, email).
+Captured work is a durable work record or lifecycle change (merged PR, Jira
+status, CRM call log). A pulse is telemetry that can explain or impact work
+(CI runs, Sentry events) without originating proposals. Classify the event,
+not the integration. See [docs/relational-memory.md](docs/relational-memory.md).
+_Avoid_: Source, provider, integration type when discussing LLM spend or proposal rights
+
+**Communication Signal**:
+A signal class for conversational evidence. It may extract facts and run a
+conversation review. Isolated messages still do not mint tasks.
+_Avoid_: Chat log, transcript dump
+
+**Captured Work Signal**:
+A signal class for durable work records. Structured lifecycle fields parse
+without an extract or suggestion model. Unstructured records such as a CRM
+call log may extract. Captured work may write approval-backed Timeline field
+changes coalesced by work-item id.
+_Avoid_: Sync event, webhook when discussing memory rights
+
+**Pulse Signal**:
+A signal class for telemetry and heartbeats. Pulses persist, embed, and attach
+to an existing cluster when a hard join key exists. They never call extract
+and never originate proposals. They may appear as supporting evidence.
+_Avoid_: Noise, spam, unimportant event
+
 **Timeline Moment**:
 A user-facing cluster of related raw events shown together on the timeline so
 team members can understand a meaningful slice of work before drilling into

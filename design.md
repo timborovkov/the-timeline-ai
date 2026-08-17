@@ -24,6 +24,9 @@ database implementation details in ordinary product views.
 - **Digests** are recurring summaries of change and attention.
 - **Handoffs** are evidence-backed context packs for a teammate or stakeholder.
 - **Operational memory** is durable, queryable work state derived from history.
+- **Signal classes** (internal) split events into communication, captured
+  work, and pulses so the product can relate evidence without treating every
+  source event as a model prompt. Do not put these labels in ordinary chrome.
 - **Artifact clusters** connect evidence that describes the same real-world
   work while keeping evidence association separate from source authority.
 - **Approval-backed state** is durable work state that passed human review.

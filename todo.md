@@ -35,7 +35,9 @@ records:
   did.
 - Object/project/account state: durable operational memory emerges from the
   event history through extraction, retrieval, and approval-backed state
-  changes.
+  changes. Events are classified as communication, captured work, or pulses
+  so related records can join without dumping high-volume streams into LLMs.
+  See [`docs/relational-memory.md`](./docs/relational-memory.md).
 - Self-maintaining CRM/project layer: for teams that trust the evidence and
   approval path, Timeline should reduce or replace manual CRM and project
   tracker upkeep rather than asking people to maintain parallel records.
@@ -178,8 +180,15 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       Comments, reviews, commits, and CI stay out of this path. Per-connection
       ingest processing is rate-limited. Daily object cleanup backfills the
       same proposals for already-ingested GitHub clusters.
-- [ ] Wire workspace reconciliation into future authoritative external sync
-      paths when calendar/provider imports directly update artifacts they own.
+- [ ] Classify ingest by signal class rather than by OAuth app, following
+      [`docs/relational-memory.md`](./docs/relational-memory.md):
+      communication may extract and review; structured captured work parses
+      and may write coalesced approval-backed field changes; pulses persist,
+      embed, and attach as supporting evidence without originating proposals.
+      Replace the GitHub/Linear/Monday/Sentry extract skip list with this
+      event-level classifier. Reuse the GitHub PR/issue proposal template for
+      other captured-work lifecycle fields. Do not use time windows as the
+      join key.
 - [ ] Ship the cross-source evidence pack north star in
       [`docs/cross-source-evidence.md`](./docs/cross-source-evidence.md): a shared
       visibility-safe pack builder with policy-bound admission, deterministic

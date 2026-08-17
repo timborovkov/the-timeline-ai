@@ -78,11 +78,13 @@ A "handoff" means any of:
 `/document-release` audits every `*.md` in the repo against the diff:
 [README.md](README.md), [design.md](design.md), [todo.md](todo.md),
 [docs/product-brief.html](docs/product-brief.html), [docs/railway.html](docs/railway.html),
+[docs/relational-memory.md](docs/relational-memory.md),
 and [`docs/setup/*`](docs/setup/). It catches stale facts, broken cross-references,
 missing entries in lists/tables, and architecture diagram drift. **Do not skip
 it.** A redesign that doesn't update [design.md](design.md), a new env var that
-doesn't show up in setup docs, or a finished TODO item that's still in the
-"open" section are all bugs.
+doesn't show up in setup docs, a signal-class ingest change that doesn't match
+[docs/relational-memory.md](docs/relational-memory.md), or a finished TODO item
+that's still in the "open" section are all bugs.
 
 If a handoff happens without a meaningful diff (you only read code, or did
 exploratory work), `/document-release` will exit with "All documentation is up
@@ -112,8 +114,9 @@ Treat this file as an operating contract for agents, not a loose README.
 - When instructions here conflict with code, package scripts, or CI, fix the
   stale instruction or the stale implementation before handing back.
 - Prefer concise hard rules in `AGENTS.md`; put long product explanation in
-  [CONTEXT.md](CONTEXT.md), roadmap state in [todo.md](todo.md), and design
-  language in [design.md](design.md).
+  [CONTEXT.md](CONTEXT.md), ingest/proposal architecture in
+  [docs/relational-memory.md](docs/relational-memory.md), roadmap state in
+  [todo.md](todo.md), and design language in [design.md](design.md).
 
 ## Project-specific guardrails
 
