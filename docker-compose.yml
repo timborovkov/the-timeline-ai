@@ -54,6 +54,9 @@ services:
       - qdrant_data:/qdrant/storage
     environment:
       QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:-dev_qdrant_key}
+      # Keep snapshots on the data volume. Overlayfs cannot rename across devices
+      # into ./snapshots/tmp (EXDEV / CrossesDevices) in some Cloud Agent hosts.
+      QDRANT__STORAGE__SNAPSHOTS_PATH: /qdrant/storage/snapshots
     healthcheck:
       test:
         [

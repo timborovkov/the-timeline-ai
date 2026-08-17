@@ -29,24 +29,28 @@ describe('demo vector indexing contract', () => {
       qdrantUrl: 'http://localhost:6333',
       allowDevSeed: undefined,
     };
-    expect(() => assertDemoVectorIndexEnvironment(local)).not.toThrow();
-    expect(() =>
-      assertDemoVectorIndexEnvironment({ ...local, openRouterApiKey: undefined }),
-    ).toThrow(/OPENROUTER_API_KEY/);
-    expect(() => assertDemoVectorIndexEnvironment({ ...local, qdrantUrl: 'not-a-url' })).toThrow(
-      /QDRANT_URL must be a valid URL/,
-    );
-    expect(() =>
-      assertDemoVectorIndexEnvironment({ ...local, qdrantUrl: 'https://qdrant.example.com' }),
-    ).toThrow(/Refusing to use non-local Qdrant host/);
-    expect(() => assertDemoVectorIndexEnvironment({ ...local, nodeEnv: 'production' })).toThrow(
-      /NODE_ENV=production/,
-    );
+    expect(() => {
+      assertDemoVectorIndexEnvironment(local);
+    }).not.toThrow();
+    expect(() => {
+      assertDemoVectorIndexEnvironment({ ...local, openRouterApiKey: undefined });
+    }).toThrow(/OPENROUTER_API_KEY/);
+    expect(() => {
+      assertDemoVectorIndexEnvironment({ ...local, qdrantUrl: 'not-a-url' });
+    }).toThrow(/QDRANT_URL must be a valid URL/);
+    expect(() => {
+      assertDemoVectorIndexEnvironment({ ...local, qdrantUrl: 'https://qdrant.example.com' });
+    }).toThrow(/Refusing to use non-local Qdrant host/);
+    expect(() => {
+      assertDemoVectorIndexEnvironment({ ...local, nodeEnv: 'production' });
+    }).toThrow(/NODE_ENV=production/);
   });
 
   it('builds production embed jobs for every required fixture source kind', () => {
     const fixtureRows = rows();
-    expect(() => assertExpectedDemoVectorSources(fixtureRows)).not.toThrow();
+    expect(() => {
+      assertExpectedDemoVectorSources(fixtureRows);
+    }).not.toThrow();
     expect(buildDemoVectorJobs(TEAM_ID, fixtureRows)).toEqual([
       ...fixtureRows.rawEvents.map(({ id }) => ({
         scope: 'raw_event',
@@ -75,14 +79,16 @@ describe('demo vector indexing contract', () => {
   it('accepts larger fixture source sets than the Northstar minimum', () => {
     const fixtureRows = rows();
     fixtureRows.rawEvents.push({ id: 'event-extra' });
-    expect(() => assertExpectedDemoVectorSources(fixtureRows)).not.toThrow();
+    expect(() => {
+      assertExpectedDemoVectorSources(fixtureRows);
+    }).not.toThrow();
   });
 
   it('fails closed when any fixture source kind is incomplete', () => {
     const fixtureRows = rows();
     fixtureRows.documentChunks = [];
-    expect(() => assertExpectedDemoVectorSources(fixtureRows)).toThrow(
-      /documentChunks expected at least 1, found 0/,
-    );
+    expect(() => {
+      assertExpectedDemoVectorSources(fixtureRows);
+    }).toThrow(/documentChunks expected at least 1, found 0/);
   });
 });

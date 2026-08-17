@@ -147,6 +147,7 @@ export async function insertExpandedDemoCorpus(tx: SeedTx): Promise<void> {
   await insertCaptureSurfaces(tx);
   await insertEventsAndFacts(tx);
   await insertObjects(tx);
+  await insertFactLinks(tx);
   await insertDocuments(tx);
   await insertMeetings(tx);
   await insertBoards(tx);
@@ -669,13 +670,6 @@ async function insertEventsAndFacts(tx: SeedTx): Promise<void> {
     .onConflictDoNothing();
 
   await tx
-    .insert(factEntities)
-    .values(
-      CORPUS_FACTS.map((row) => ({ factId: row.id, entityId: row.entityId, role: 'subject' })),
-    )
-    .onConflictDoNothing();
-
-  await tx
     .insert(reconciliationEvidence)
     .values(
       CORPUS_EVENTS.map((row, index) => ({
@@ -865,6 +859,15 @@ async function insertObjects(tx: SeedTx): Promise<void> {
         metadata: { fixture_version: DEMO_FIXTURE_VERSION },
         dedupeKey: `demo-seed:assoc:${row.id}`,
       })),
+    )
+    .onConflictDoNothing();
+}
+
+async function insertFactLinks(tx: SeedTx): Promise<void> {
+  await tx
+    .insert(factEntities)
+    .values(
+      CORPUS_FACTS.map((row) => ({ factId: row.id, entityId: row.entityId, role: 'subject' })),
     )
     .onConflictDoNothing();
 }

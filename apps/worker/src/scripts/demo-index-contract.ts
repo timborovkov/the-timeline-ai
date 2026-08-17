@@ -10,10 +10,10 @@ export const DEMO_VECTOR_SOURCE_MINIMUMS = {
 } as const;
 
 export interface DemoVectorRows {
-  rawEvents: Array<{ id: string }>;
-  facts: Array<{ id: string; rawEventId: string }>;
-  documentChunks: Array<{ id: string; versionId: string }>;
-  meetingChunks: Array<{ id: string }>;
+  rawEvents: { id: string }[];
+  facts: { id: string; rawEventId: string }[];
+  documentChunks: { id: string; versionId: string }[];
+  meetingChunks: { id: string }[];
 }
 
 export function assertDemoVectorIndexEnvironment(input: {

@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- demo indexing CLI output */
 import { existsSync, readFileSync } from 'node:fs';
 
 import {
@@ -15,13 +14,13 @@ import {
 import { getEnv, qdrant } from '@timeline/shared';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 
-import { processEmbedJob } from '#src/workers/embed.js';
 import {
   assertDemoVectorIndexEnvironment,
   assertExpectedDemoVectorSources,
   buildDemoVectorJobs,
   type DemoVectorRows,
 } from '#src/scripts/demo-index-contract.js';
+import { processEmbedJob } from '#src/workers/embed.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
