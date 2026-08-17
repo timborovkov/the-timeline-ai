@@ -191,15 +191,21 @@ export function contextIdsFromTrail(trail: readonly ChatContextRef[]): {
 } {
   const ids: ReturnType<typeof contextIdsFromTrail> = {};
   for (const ref of trail) {
-    ids.objectId ??= ref.objectId;
-    ids.documentId ??= ref.documentId;
-    ids.boardId ??= ref.boardId;
-    ids.boardItemId ??= ref.boardItemId;
-    ids.taskId ??= ref.taskId;
-    ids.calendarEventId ??= ref.calendarEventId;
-    ids.timelineEventId ??= ref.timelineEventId;
-    ids.timelineMomentId ??= ref.timelineMomentId;
-    ids.meetingId ??= ref.meetingId;
+    if (ids.objectId === undefined && ref.objectId) ids.objectId = ref.objectId;
+    if (ids.documentId === undefined && ref.documentId) ids.documentId = ref.documentId;
+    if (ids.boardId === undefined && ref.boardId) ids.boardId = ref.boardId;
+    if (ids.boardItemId === undefined && ref.boardItemId) ids.boardItemId = ref.boardItemId;
+    if (ids.taskId === undefined && ref.taskId) ids.taskId = ref.taskId;
+    if (ids.calendarEventId === undefined && ref.calendarEventId) {
+      ids.calendarEventId = ref.calendarEventId;
+    }
+    if (ids.timelineEventId === undefined && ref.timelineEventId) {
+      ids.timelineEventId = ref.timelineEventId;
+    }
+    if (ids.timelineMomentId === undefined && ref.timelineMomentId) {
+      ids.timelineMomentId = ref.timelineMomentId;
+    }
+    if (ids.meetingId === undefined && ref.meetingId) ids.meetingId = ref.meetingId;
   }
   return ids;
 }
