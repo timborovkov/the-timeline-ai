@@ -134,7 +134,9 @@ function AddDestinationForm({
           id="digest-destination"
           className={SELECT_CLASS}
           value={selected}
-          onChange={(event) => onSelectedChange(event.target.value)}
+          onChange={(event) => {
+            onSelectedChange(event.target.value);
+          }}
         >
           {available.map((option) => (
             <option key={optionValue(option)} value={optionValue(option)}>
