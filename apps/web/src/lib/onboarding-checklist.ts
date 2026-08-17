@@ -4,7 +4,7 @@ import type { OnboardingChecklistState, OnboardingStep } from '@timeline/shared/
 
 export const ONBOARDING_CHECKLIST_CACHE_TTL_SECONDS = 30;
 
-export const ONBOARDING_STEP_LABELS: Record<OnboardingStep, string> = {
+const ONBOARDING_STEP_LABELS: Record<OnboardingStep, string> = {
   first_note: 'Capture one timeline event',
   invite_teammate: 'Invite a teammate',
   telegram: 'Link Telegram',
