@@ -163,26 +163,32 @@ export function digestActivityStats(
   };
 }
 
-export function formatDigestActivityLines(activity: DailyDigestActivity): string[] {
-  const lines = [
-    formatDigestCount(activity.newMoments, 'new moment'),
-    formatDigestCount(activity.newProposals, 'new proposal'),
-    formatDigestCount(activity.pendingApprovals ?? 0, 'pending approval'),
-    formatDigestCount(activity.newTasks, 'new task'),
-    formatDigestCount(activity.completedTasks, 'completed task'),
-    formatDigestCount(activity.newProjects, 'new project'),
+export function formatDigestActivityItems(
+  activity: DailyDigestActivity,
+): { count: number; label: string }[] {
+  return [
+    digestCountItem(activity.newMoments, 'new moment'),
+    digestCountItem(activity.newProposals, 'new proposal'),
+    digestCountItem(activity.pendingApprovals ?? 0, 'pending approval'),
+    digestCountItem(activity.newTasks, 'new task'),
+    digestCountItem(activity.completedTasks, 'completed task'),
+    digestCountItem(activity.newProjects, 'new project'),
     ...Object.entries(activity.newObjectsByType)
       .filter(
         ([type, count]) =>
           type !== 'task' && type !== 'follow_up' && type !== 'project' && count > 0,
       )
-      .map(([type, count]) => formatDigestCount(count, `new ${type.replaceAll('_', ' ')}`)),
-  ].filter((line) => !line.startsWith('0 '));
-  return lines;
+      .map(([type, count]) => digestCountItem(count, `new ${type.replaceAll('_', ' ')}`)),
+  ].filter((item): item is { count: number; label: string } => item !== null);
 }
 
-function formatDigestCount(count: number, singular: string): string {
-  return `${String(count)} ${count === 1 ? singular : `${singular}s`}`;
+export function formatDigestActivityLines(activity: DailyDigestActivity): string[] {
+  return formatDigestActivityItems(activity).map((item) => `${String(item.count)} ${item.label}`);
+}
+
+function digestCountItem(count: number, singular: string): { count: number; label: string } | null {
+  if (count <= 0) return null;
+  return { count, label: count === 1 ? singular : `${singular}s` };
 }
 
 export function formatDigestDate(value: string, timezone?: string): string {
@@ -405,6 +411,7 @@ export function formatDigestChatText(input: {
 }): string {
   const payload = input.payload;
   const timezone = payload.timezone;
+  const date = formatDigestDate(payload.windowEnd, timezone);
   const range = formatDigestWindowRange(payload.windowStart, payload.windowEnd, timezone);
   const sections = digestContentSections(payload);
   const summaryParagraphs = digestSummaryParagraphs(payload.summary);
@@ -415,7 +422,7 @@ export function formatDigestChatText(input: {
   const activity = formatDigestActivityLines(digestActivityStats(payload));
   const lines = [
     `Daily digest · ${payload.teamName}`,
-    `Covering ${range}`,
+    date,
     '',
     ...summaryParagraphs,
     '',
@@ -455,6 +462,7 @@ export function formatDigestChatText(input: {
         ]
       : []),
     '',
+    `Covering ${range}`,
     `Open digest: ${input.digestUrl}`,
   ];
   const text = lines

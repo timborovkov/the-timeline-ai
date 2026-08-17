@@ -4,7 +4,7 @@ import {
   digestContentSections,
   digestSectionBody,
   digestSummaryParagraphs,
-  formatDigestActivityLines,
+  formatDigestActivityItems,
   formatDigestCalendarEventDetail,
   formatDigestDate,
   formatDigestObjectType,
@@ -26,8 +26,7 @@ export function DigestBody({
 }) {
   const summary = digestSummaryParagraphs(digest.summary);
   const sections = digestContentSections(digest);
-  const activity = digestActivityStats(digest);
-  const activityLines = formatDigestActivityLines(activity);
+  const activityItems = formatDigestActivityItems(digestActivityStats(digest));
   const completedTasks = digest.completedTasks ?? [];
   const newObjects = digest.newObjects ?? [];
   const windowCalendar = digest.windowCalendar ?? [];
@@ -51,41 +50,35 @@ export function DigestBody({
 
   return (
     <div className={cn('space-y-6 text-sm', className)}>
-      <p className="font-mono text-xs text-fg-dim">Covering {windowRange}</p>
-
-      <div className="max-w-3xl space-y-3">
+      <div className="max-w-3xl space-y-5">
         {summary.map((paragraph, index) => (
           <p key={`${paragraph}:${String(index)}`} className="leading-6 text-fg">
             {paragraph}
           </p>
         ))}
+        {sections.map((section) => (
+          <section key={section.title}>
+            <h3 className="font-semibold text-fg">{section.title}</h3>
+            {section.body ? (
+              <p className="mt-2 leading-6 text-fg-muted">{digestSectionBody(section)}</p>
+            ) : (
+              <ul className="mt-2 space-y-1 text-fg-muted">
+                {section.items.map((item, index) => (
+                  <li key={`${item}:${String(index)}`}>{item}</li>
+                ))}
+              </ul>
+            )}
+          </section>
+        ))}
       </div>
 
-      {sections.length > 0 ? (
-        <div className="grid gap-6 md:grid-cols-2">
-          {sections.map((section) => (
-            <section key={section.title} className="min-w-0">
-              <h3 className="font-semibold text-fg">{section.title}</h3>
-              {section.body ? (
-                <p className="mt-2 leading-6 text-fg-muted">{digestSectionBody(section)}</p>
-              ) : (
-                <ul className="mt-2 space-y-1 text-fg-muted">
-                  {section.items.map((item, index) => (
-                    <li key={`${item}:${String(index)}`}>{item}</li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          ))}
-        </div>
-      ) : null}
-
-      {activityLines.length > 0 ? (
-        <section>
-          <h3 className="font-semibold text-fg">Activity</h3>
-          <p className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-fg-muted">
-            {activityLines.map((line) => (
-              <span key={line}>{line}</span>
+      {activityItems.length > 0 ? (
+        <section aria-label="Activity" className="border-y border-border py-3">
+          <p className="flex flex-wrap gap-x-5 gap-y-1 font-mono text-xs text-fg-muted">
+            {activityItems.map((item) => (
+              <span key={item.label}>
+                <span className="text-signal">{item.count}</span> {item.label}
+              </span>
             ))}
           </p>
         </section>
@@ -153,9 +146,7 @@ export function DigestBody({
         </p>
       ) : null}
 
-      <p className="font-mono text-xs text-fg-dim">
-        Window {windowRange}. Built from timeline activity in this period.
-      </p>
+      <p className="font-mono text-xs text-fg-dim">Covering {windowRange}</p>
     </div>
   );
 }

@@ -118,7 +118,11 @@ describe('messaging templates', () => {
     });
 
     expect(message.subject).toBe('Daily digest for AuditAI');
+    expect(message.textBody).toMatch(/^Daily digest for AuditAI\nJun 14, 2026/);
     expect(message.textBody).toContain('Covering');
+    expect(message.textBody.indexOf('Open on the dashboard:')).toBeLessThan(
+      message.textBody.indexOf('Covering'),
+    );
     expect(message.textBody).toContain('Activity');
     expect(message.textBody).not.toContain('Activity over the past day');
     expect(message.textBody).toContain('5 new moments');
@@ -175,7 +179,13 @@ describe('messaging templates', () => {
     expect(message.htmlBody).toContain('href="https://timeline.test/app/calendar"');
     expect(message.htmlBody).toContain('href="https://timeline.test/app"');
     expect(message.htmlBody).toContain('Open on the dashboard:');
+    expect(message.htmlBody).toContain(
+      '<p style="font-size: 14px; margin: 0 0 16px">Jun 14, 2026</p>',
+    );
     expect(message.htmlBody).toContain('Covering');
+    expect(message.htmlBody.indexOf('Open on the dashboard:')).toBeLessThan(
+      message.htmlBody.indexOf('Covering'),
+    );
     expect(message.htmlBody).toContain('5 new moments');
     expect(message.htmlBody).toContain('Activity');
     expect(message.htmlBody).not.toContain('Activity over the past day');

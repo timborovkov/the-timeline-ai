@@ -96,6 +96,7 @@ describe('DailyDigestBlock', () => {
     render(<DailyDigestBlock digest={DIGEST} />);
 
     expect(screen.getByText('Latest digest')).toBeTruthy();
+    expect(screen.getByText('Jul 16, 2026')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'All digests' }).getAttribute('href')).toBe(
       '/app/digests',
     );
@@ -106,12 +107,15 @@ describe('DailyDigestBlock', () => {
       'The launch moved forward after customer feedback arrived.',
     );
     expect(details?.textContent).toContain('The launch review finished');
-    expect(details?.textContent).toContain('Activity');
+    expect(screen.getByRole('region', { name: 'Activity' })).toBeTruthy();
     expect(details?.textContent).not.toContain('Activity over the past day');
     expect(details?.textContent).toContain('7 new moments');
     expect(details?.textContent).toContain('2 new proposals');
     expect(details?.textContent).toContain('2 pending approvals');
     expect(details?.textContent).toContain('3 new tasks');
+    expect(
+      screen.getByRole('region', { name: 'Activity' }).querySelector('.text-signal')?.textContent,
+    ).toBe('7');
     expect(details?.textContent).toContain('Write launch recap');
     expect(screen.getByRole('link', { name: 'Write launch recap' }).getAttribute('href')).toBe(
       '/app/objects/task-1',

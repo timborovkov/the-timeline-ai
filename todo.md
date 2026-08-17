@@ -120,8 +120,10 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       ticket keys, and object UUIDs are banned from digest text: the generator
       scrubs them from the briefing packet and rejects a draft that still lists
       them. Home, Work → Digests, and email reuse that
-      payload: the latest digest stays folded, activity counts new moments,
-      proposals, pending approvals, tasks, and objects, task and object blocks
+      payload: the latest digest stays folded, the header shows the digest
+      date, and the covering range stays footer metadata. Activity is a count
+      strip of new moments, proposals, pending approvals, tasks, and objects.
+      Task and object blocks
       cover created or completed work and link to the object on the dashboard,
       calendar rows in the window and upcoming link to the specific event, and
       email includes dashboard shortcuts. Repeating calendar series collapse to

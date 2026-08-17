@@ -23,6 +23,7 @@ import {
   formatDigestActivityLines,
   formatDigestCalendarEvent,
   formatDigestCalendarEventDetail,
+  formatDigestDate,
   formatDigestObjectType,
   formatDigestTask,
   formatDigestTaskDetail,
@@ -162,8 +163,12 @@ function htmlActivityBlock(lines: string[]): string {
   ].join('\n');
 }
 
+function htmlDateBlock(date: string): string {
+  return `<p style="font-size: 14px; margin: 0 0 16px">${escapeHtml(date)}</p>`;
+}
+
 function htmlWindowBlock(range: string): string {
-  return `<p style="font-size: 12px; color: #747b7b; margin: 0 0 16px;">Covering ${escapeHtml(range)}</p>`;
+  return `<p style="font-size: 12px; color: #747b7b; margin: 20px 0 0;">Covering ${escapeHtml(range)}</p>`;
 }
 
 function htmlDigestSections(sections: ReturnType<typeof digestContentSections>): string {
@@ -347,6 +352,7 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
   const subject = `Daily digest for ${p.teamName}`;
   const timezone = p.timezone;
   const windowRange = formatDigestWindowRange(p.windowStart, p.windowEnd, timezone);
+  const digestDate = formatDigestDate(p.windowEnd, timezone);
   const summaryParagraphs = digestSummaryParagraphs(p.summary);
   const sections = digestContentSections(p);
   const activity = digestActivityStats(p);
@@ -391,7 +397,7 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
   }));
   const textBody = [
     `Daily digest for ${p.teamName}`,
-    `Covering ${windowRange}`,
+    digestDate,
     '',
     ...summaryParagraphs.flatMap((paragraph) => [paragraph, '']),
     ...sections.flatMap((section) => {
@@ -416,6 +422,7 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
           '',
         ]
       : []),
+    `Covering ${windowRange}`,
     `Open digest: ${input.digestUrl}`,
   ].join('\n');
   const htmlBody = htmlLayout({
@@ -425,6 +432,7 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
       'daily-digest',
       {},
       {
+        dateBlock: htmlDateBlock(digestDate),
         windowBlock: htmlWindowBlock(windowRange),
         summaryBlock: htmlParagraphs(summaryParagraphs),
         summarySections: htmlDigestSections(sections),

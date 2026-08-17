@@ -1,7 +1,4 @@
-import {
-  formatDigestWindowRange,
-  type DailyDigestPayload,
-} from '@timeline/shared/messaging/format';
+import { formatDigestDate, type DailyDigestPayload } from '@timeline/shared/messaging/format';
 import Link from 'next/link';
 
 import { DigestBody } from '@/components/home/digest-body';
@@ -19,7 +16,7 @@ export function DailyDigestBlock({ digest }: { digest: DailyDigestPayload | unde
         <SectionHeading id="latest-digest-heading">Latest digest</SectionHeading>
         <div className="flex flex-wrap items-baseline gap-3">
           <span className="font-mono text-xs text-fg-dim">
-            {formatDigestWindowRange(digest.windowStart, digest.windowEnd, digest.timezone)}
+            {formatDigestDate(digest.windowEnd, digest.timezone)}
           </span>
           <Link href="/app/digests" className="text-xs text-fg-muted hover:text-fg">
             All digests

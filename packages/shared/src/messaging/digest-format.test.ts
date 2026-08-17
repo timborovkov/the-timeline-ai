@@ -239,6 +239,12 @@ describe('formatDigestChatText', () => {
         payload,
         digestUrl: 'https://timeline.test/app',
       }),
+    ).toContain('Jun 14, 2026');
+    expect(
+      formatDigestChatText({
+        payload,
+        digestUrl: 'https://timeline.test/app',
+      }),
     ).toContain('Covering');
     expect(
       formatDigestChatText({
