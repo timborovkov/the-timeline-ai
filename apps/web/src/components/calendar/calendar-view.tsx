@@ -818,13 +818,8 @@ interface CalendarEventListProps {
   onEdit: (event: CalendarEvent) => void;
 }
 
-// react-doctor-disable-next-line react-doctor/no-multi-comp -- Extra pages remount with the filter key instead of syncing props in an effect.
-function CalendarEventList(props: CalendarEventListProps) {
-  return <CalendarEventListPages key={`${props.scope}:${props.query}`} {...props} />;
-}
-
-// react-doctor-disable-next-line react-doctor/no-multi-comp -- Extra pages remount with the filter key instead of syncing props in an effect.
-function CalendarEventListPages({
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- Search stays mounted while extra pages remount on filter changes.
+function CalendarEventList({
   events,
   total,
   nextOffset,
@@ -840,16 +835,6 @@ function CalendarEventListPages({
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const committedSearchRef = useRef(query);
-  const [extraEvents, setExtraEvents] = useState<CalendarEvent[]>([]);
-  const [extraOffset, setExtraOffset] = useState<number | null>(null);
-  const [paged, setPaged] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, startLoading] = useTransition();
-  const offset = paged ? extraOffset : nextOffset;
-  const loadedEvents = useMemo(() => {
-    const seen = new Set(events.map((event) => event.id));
-    return [...events, ...extraEvents.filter((event) => !seen.has(event.id))];
-  }, [events, extraEvents]);
   const hasActiveFilters = Boolean(query) || scope !== 'future';
   const eventCountLabel = formatCollectionCount({
     matching: total,
@@ -945,7 +930,59 @@ function CalendarEventListPages({
           </fieldset>
         }
       />
+      <CalendarEventListPages
+        key={`${scope}:${query}`}
+        events={events}
+        nextOffset={nextOffset}
+        timezone={timezone}
+        query={query}
+        scope={scope}
+        hasActiveFilters={hasActiveFilters}
+        onCreate={onCreate}
+        onClearFilters={onClearFilters}
+        onEdit={onEdit}
+      />
+    </section>
+  );
+}
 
+interface CalendarEventListPagesProps {
+  events: CalendarEvent[];
+  nextOffset: number | null;
+  timezone: string;
+  query: string;
+  scope: 'future' | 'past' | 'all';
+  hasActiveFilters: boolean;
+  onCreate: () => void;
+  onClearFilters: () => void;
+  onEdit: (event: CalendarEvent) => void;
+}
+
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- Extra pages remount with the filter key instead of syncing props in an effect.
+function CalendarEventListPages({
+  events,
+  nextOffset,
+  timezone,
+  query,
+  scope,
+  hasActiveFilters,
+  onCreate,
+  onClearFilters,
+  onEdit,
+}: CalendarEventListPagesProps) {
+  const [extraEvents, setExtraEvents] = useState<CalendarEvent[]>([]);
+  const [extraOffset, setExtraOffset] = useState<number | null>(null);
+  const [paged, setPaged] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, startLoading] = useTransition();
+  const offset = paged ? extraOffset : nextOffset;
+  const loadedEvents = useMemo(() => {
+    const seen = new Set(events.map((event) => event.id));
+    return [...events, ...extraEvents.filter((event) => !seen.has(event.id))];
+  }, [events, extraEvents]);
+
+  return (
+    <>
       <div className="border-x border-border bg-bg">
         {loadedEvents.length > 0 ? (
           <VirtualList
@@ -1043,7 +1080,7 @@ function CalendarEventListPages({
         boundLabel="No more matching events"
         hideBound={loadedEvents.length === 0}
       />
-    </section>
+    </>
   );
 }
 

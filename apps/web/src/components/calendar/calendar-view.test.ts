@@ -324,7 +324,7 @@ describe('CalendarView recurrence and tentative UI', () => {
       }),
     );
 
-    expect(screen.getByText('13')).toBeTruthy();
+    expect(screen.getByRole('status', { name: '13' })).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'Past' }));
     expect(screen.getByRole('button', { name: 'Past' }).getAttribute('aria-pressed')).toBe('true');
@@ -363,7 +363,7 @@ describe('CalendarView recurrence and tentative UI', () => {
     if (!eventList) throw new Error('Calendar events section not found');
 
     expect(screen.getByPlaceholderText('Search events')).toHaveProperty('value', 'budget');
-    expect(within(eventList).getByText('1')).toBeTruthy();
+    expect(within(eventList).getByRole('status', { name: '1' })).toBeTruthy();
     expect(within(eventList).getByRole('button', { name: 'Budget review' })).toBeTruthy();
     expect(within(eventList).getAllByText('Finance room')).toHaveLength(2);
     expect(within(eventList).queryByRole('button', { name: /Roadmap review/ })).toBeNull();
@@ -459,7 +459,7 @@ describe('CalendarView recurrence and tentative UI', () => {
     await user.click(screen.getByRole('button', { name: /^Save$/ }));
 
     expect(await screen.findByRole('button', { name: /New sales sync/ })).toBeTruthy();
-    expect(screen.getByText('1')).toBeTruthy();
+    expect(screen.getByRole('status', { name: '1' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Roadmap review' })).toBeTruthy();
     const eventList = screen.getByText('Calendar events').closest('section');
     if (!eventList) throw new Error('Calendar events section not found');

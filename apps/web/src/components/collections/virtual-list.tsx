@@ -16,6 +16,7 @@ interface VirtualListProps<T> {
   getScrollElement?: () => HTMLElement | null;
   className?: string;
   itemClassName?: string;
+  ariaLabel?: string;
   renderSticky?: (firstVisible: T | undefined) => ReactNode;
 }
 
@@ -29,6 +30,7 @@ export function VirtualList<T>({
   getScrollElement,
   className,
   itemClassName,
+  ariaLabel,
   renderSticky,
 }: VirtualListProps<T>) {
   const fallbackParentRef = useRef<HTMLDivElement | null>(null);
@@ -62,7 +64,11 @@ export function VirtualList<T>({
   const firstVisible = virtualItems[0] ? items[virtualItems[0].index] : items[0];
 
   return (
-    <div ref={fallbackParentRef} className={cn('relative w-full', className)}>
+    <div
+      ref={fallbackParentRef}
+      className={cn('relative w-full', className)}
+      aria-label={ariaLabel}
+    >
       {renderSticky?.(firstVisible)}
       <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
         {virtualItems.map((virtualRow) => {

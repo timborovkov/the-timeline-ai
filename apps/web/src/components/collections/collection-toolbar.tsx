@@ -76,7 +76,14 @@ export function CollectionToolbar({
       <div className="flex min-h-11 min-w-0 flex-wrap items-center gap-1.5 px-2 sm:px-3">
         {search ? <div className="min-w-48 flex-1 sm:max-w-sm">{search}</div> : null}
         {count ? (
-          <output className="px-1.5 text-xs tabular-nums text-fg-dim">{count}</output>
+          <output
+            aria-label={
+              typeof count === 'string' || typeof count === 'number' ? String(count) : undefined
+            }
+            className="px-1.5 text-xs tabular-nums text-fg-dim"
+          >
+            {count}
+          </output>
         ) : null}
         {filters ? (
           <>

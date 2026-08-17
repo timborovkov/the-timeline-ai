@@ -44,12 +44,14 @@ vi.mock('@/components/collections/virtual-list', () => ({
     items,
     renderItem,
     getItemKey,
+    ariaLabel,
   }: {
     items: { id: string }[];
     renderItem: (item: { id: string }, index: number) => ReactNode;
     getItemKey: (item: { id: string }, index: number) => string;
+    ariaLabel?: string;
   }) => (
-    <div>
+    <div aria-label={ariaLabel}>
       {items.map((item, index) => (
         <div key={getItemKey(item, index)}>{renderItem(item, index)}</div>
       ))}

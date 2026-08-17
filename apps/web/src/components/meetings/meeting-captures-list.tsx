@@ -149,6 +149,7 @@ export function MeetingCapturesList({
         items={visibleMeetings}
         getItemKey={(meeting) => meeting.id}
         estimateSize={52}
+        ariaLabel="Meeting captures"
         renderItem={(meeting) => (
           <CollectionRow
             title={

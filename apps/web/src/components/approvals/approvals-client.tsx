@@ -987,7 +987,10 @@ function ApprovalListBody({
 
 function ApprovalUpdatingState() {
   return (
-    <output className="border border-border bg-muted/30 px-3 py-2 text-xs text-fg-dim">
+    <output
+      aria-label="Updating approvals"
+      className="border border-border bg-muted/30 px-3 py-2 text-xs text-fg-dim"
+    >
       Updating approvals...
     </output>
   );
