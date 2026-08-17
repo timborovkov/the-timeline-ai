@@ -656,15 +656,37 @@ describe('processSuggestionJobForTests', () => {
       },
     );
 
-    const call = chat.mock.calls[0]?.[0] as { prompt: string; system: string } | undefined;
-    expect(call?.prompt).toContain('# Cross-source evidence pack');
-    expect(call?.prompt).toContain(rawEventId);
-    expect(call?.prompt).toContain(
+    const call = chat.mock.calls[0]?.[0] as {
+      prompt: string;
+      system: string;
+      schema: { parse: (value: unknown) => { bundles: { items: Record<string, unknown>[] }[] } };
+    };
+    expect(call.prompt).toContain('# Cross-source evidence pack');
+    expect(call.prompt).toContain(rawEventId);
+    expect(call.prompt).toContain(
       `surface=<external_content source="evidence-pack-surface" event_id="${rawEventId}">Acme delivery</external_content>`,
     );
-    expect(call?.prompt).toContain('sender_context=<external_content');
-    expect(call?.prompt).toContain(`"verifiedTimelineMemberId":"${OWNER_ID}"`);
-    expect(call?.system).toContain('evidenceRawEventIds');
+    expect(call.prompt).toContain('sender_context=<external_content');
+    expect(call.prompt).toContain(`"verifiedTimelineMemberId":"${OWNER_ID}"`);
+    expect(call.system).toContain('evidenceRawEventIds');
+    expect(
+      call.schema.parse({
+        bundles: [
+          {
+            title: 'Send the Acme proposal',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'task',
+                title: 'Send the Acme proposal',
+                proposedPayload: { canonicalName: 'Send the Acme proposal' },
+                evidenceRawEventIds: [rawEventId],
+              },
+            ],
+          },
+        ],
+      }).bundles[0]?.items[0],
+    ).toMatchObject({ evidenceRawEventIds: [rawEventId] });
     const [item] = await db
       .select({ metadata: agentSuggestionItems.metadata })
       .from(agentSuggestionItems)
@@ -909,9 +931,31 @@ describe('processSuggestionJobForTests', () => {
       },
     );
 
-    const call = chat.mock.calls[0]?.[0] as { prompt: string; system: string } | undefined;
-    expect(call?.prompt).not.toContain('# Cross-source evidence pack');
-    expect(call?.system).not.toContain('evidenceRawEventIds');
+    const call = chat.mock.calls[0]?.[0] as {
+      prompt: string;
+      system: string;
+      schema: { parse: (value: unknown) => { bundles: { items: Record<string, unknown>[] }[] } };
+    };
+    expect(call.prompt).not.toContain('# Cross-source evidence pack');
+    expect(call.system).not.toContain('evidenceRawEventIds');
+    expect(
+      call.schema.parse({
+        bundles: [
+          {
+            title: 'Send the Acme proposal',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'task',
+                title: 'Send the Acme proposal',
+                proposedPayload: { canonicalName: 'Send the Acme proposal' },
+                evidenceRawEventIds: [rawEventId],
+              },
+            ],
+          },
+        ],
+      }).bundles[0]?.items[0],
+    ).not.toHaveProperty('evidenceRawEventIds');
     await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 1, items: 2 });
   });
 
@@ -5605,7 +5649,7 @@ describe('processSuggestionJobForTests', () => {
     });
   });
 
-  it('keeps conversation-review item citations that lexical bundle evidence omitted', async () => {
+  it('ignores conversation-review item citations that lexical bundle evidence omitted', async () => {
     const citedId = '10000000-0000-4000-8000-0000000000a1';
     const anchorId = '10000000-0000-4000-8000-0000000000a2';
     const reviewId = '20000000-0000-4000-8000-0000000000a1';
@@ -5657,23 +5701,47 @@ describe('processSuggestionJobForTests', () => {
       { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
     );
 
+    const call = chat.mock.calls[0]?.[0] as {
+      schema: { parse: (value: unknown) => { bundles: { items: Record<string, unknown>[] }[] } };
+      system: string;
+    };
+    expect(call.system).not.toContain('evidenceRawEventIds');
+    expect(
+      call.schema.parse({
+        bundles: [
+          {
+            title: 'Send the Acme proposal',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'task',
+                title: 'Send the Acme proposal',
+                proposedPayload: { canonicalName: 'Send the Acme proposal' },
+                evidenceRawEventIds: [citedId],
+              },
+            ],
+          },
+        ],
+      }).bundles[0]?.items[0],
+    ).not.toHaveProperty('evidenceRawEventIds');
+
     const [bundle] = await withTeam(
       db as never,
       TEAM_ID,
       OWNER_ID,
     ).suggestions.listPendingSuggestions();
-    expect(bundle?.evidence.map((entry) => entry.rawEventId).sort()).toEqual(
-      [anchorId, citedId].sort(),
-    );
+    expect(bundle?.evidence).toEqual([expect.objectContaining({ rawEventId: anchorId })]);
     expect(bundle?.items[0]).toMatchObject({
-      evidenceStatus: 'current',
-      evidence: [{ rawEventId: citedId }],
+      evidenceStatus: 'legacy',
+      evidence: [],
     });
     const [item] = await db
       .select({ metadata: agentSuggestionItems.metadata })
       .from(agentSuggestionItems)
       .limit(1);
-    expect(item?.metadata).toMatchObject({ evidence_raw_event_ids: [citedId] });
+    expect(
+      (item?.metadata as { evidence_raw_event_ids?: string[] } | null)?.evidence_raw_event_ids,
+    ).toBeUndefined();
   });
 
   it('drops event-local item citations that are not the current raw event', async () => {
