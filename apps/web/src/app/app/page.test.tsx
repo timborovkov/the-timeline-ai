@@ -233,7 +233,7 @@ describe('HomeDashboardPage', () => {
     };
     fakes.loadOnboardingChecklistView.mockResolvedValue(snapshot);
 
-    await HomeDashboardPage();
+    renderToStaticMarkup(await HomeDashboardPage());
 
     expect(fakes.loadOnboardingChecklistView).toHaveBeenCalledWith({
       teamId: 'team-1',
