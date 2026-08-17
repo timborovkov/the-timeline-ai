@@ -339,14 +339,15 @@ export function JobRecoveryList({
               ? `Dismissing ${startOlder.toLocaleString()} older jobs…`
               : 'Dismissing jobs…',
           success: (result) => {
-            const jobWord = result.dismissedTotal === 1 ? 'job' : 'jobs';
             if (window === 'older') {
+              const jobWord = result.dismissedTotal === 1 ? 'job' : 'jobs';
               if (result.remainingOlder > 0) {
                 return `Dismissed ${result.dismissedTotal.toLocaleString()} older ${jobWord}. ${result.remainingOlder.toLocaleString()} still hidden — dismiss again to continue.`;
               }
               return `Dismissed ${result.dismissedTotal.toLocaleString()} older ${jobWord}.`;
             }
-            return `Dismissed ${result.dismissedTotal.toLocaleString()} ${jobWord}.`;
+            const count = recentKeys.length;
+            return `Dismissed ${count.toLocaleString()} ${count === 1 ? 'job' : 'jobs'}.`;
           },
           tone: (result) =>
             window === 'older' && result.remainingOlder > 0 ? 'warning' : 'success',
