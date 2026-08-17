@@ -49,6 +49,17 @@ describe('app guide route metadata', () => {
     );
   });
 
+  it('routes floating Ask and keyboard-shortcut questions to the Ask guide', () => {
+    const results = searchAppGuide('how do I ask about this page with command j?', 5);
+
+    expect(results.map((result) => result.id)).toContain('chat');
+    expect(results[0]).toMatchObject({
+      id: 'chat',
+      citation: '[route:chat]',
+    });
+    expect(getAppGuideRoute('chat')?.guide).toMatch(/floating Ask/i);
+  });
+
   it('routes Monday.com board, subitem, and WorkDoc questions to integrations', () => {
     const results = searchAppGuide('where do I choose monday boards subitems and WorkDocs?', 5);
 

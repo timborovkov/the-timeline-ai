@@ -82,6 +82,12 @@ describe('buildChatView', () => {
         searchParams: new URLSearchParams(),
       }).current,
     ).toMatchObject({ kind: 'page', label: 'Provider accounts' });
+    expect(
+      buildChatView({
+        pathname: '/app/digests',
+        searchParams: new URLSearchParams(),
+      }).current,
+    ).toMatchObject({ kind: 'page', label: 'Digests' });
   });
 
   it('truncates overlay labels and keeps a fallback', () => {

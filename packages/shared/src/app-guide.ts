@@ -36,7 +36,7 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
       'pinned work',
     ],
     guide:
-      'Use Home to ask the timeline, capture a quick note, revisit pinned boards or objects, and review current team activity.',
+      'Use Home to ask the timeline, capture a quick note, revisit pinned boards or objects, and review current team activity. The Home Ask composer opens the full Ask page. On other dashboard pages, use the floating Ask button or ⌘J / Ctrl+J instead of a per-page Ask-about link.',
     relatedRouteIds: ['timeline', 'chat'],
   },
   {
@@ -54,13 +54,26 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
   {
     id: 'chat',
     title: 'Ask',
-    description: 'Full-screen agent chat for asking questions about the operational record.',
+    description:
+      'Full-screen agent chat, plus a context-aware floating Ask on other dashboard pages.',
     href: '/app/chat',
     group: 'dashboard',
     minRole: 'member',
-    intents: ['ask', 'agent chat', 'question', 'operational record', 'timeline answer'],
+    intents: [
+      'ask',
+      'agent chat',
+      'question',
+      'operational record',
+      'timeline answer',
+      'floating ask',
+      'ask about this',
+      'ask about this page',
+      'keyboard shortcut',
+      'command j',
+      'ctrl j',
+    ],
     guide:
-      'Use Ask for the full-screen agent chat. It is the power surface for longer questions, citations, tool steps, and persisted private chat sessions.',
+      'Use Ask for the full-screen agent chat. It is the power surface for longer questions, citations, tool steps, and persisted private chat sessions. On every other authenticated dashboard page except Home, a floating Ask button (⌘J / Ctrl+J) opens a panel on the current view — document, timeline event, meeting, calendar event, task, board, or setup page — and keeps one thread when you close it. New starts a blank conversation. The agent sees the current view first and a short trail of earlier views from the same conversation. Full Ask shows those views as linked badges. Telegram and Slack stay on their own chat surfaces.',
     relatedRouteIds: ['home', 'timeline'],
   },
   {

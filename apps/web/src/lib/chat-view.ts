@@ -29,6 +29,7 @@ const PAGE_LABELS: Record<string, string> = {
   tasks: 'Tasks',
   boards: 'Boards',
   calendar: 'Calendar',
+  digests: 'Digests',
   documents: 'Documents',
   'documents/captured': 'Captured files',
   meetings: 'Meetings',

@@ -184,6 +184,16 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       calendar series, and timeline moments; add Home preview, Work management,
       detail/list/search controls, accessible reordering, visibility-safe
       restoration, merge/deletion handling, and explicit-intent Ask tools.
+- [x] Floating Ask: replace per-page Ask-about buttons with one context-aware
+      float on every authenticated page except Home and full Ask. Close keeps
+      the thread; New resets it. The agent sees the current view first and a
+      capped trail of earlier views (documents, timeline events/moments,
+      meetings, calendar events, tasks, boards, and setup pages). Selected
+      items supply names; empty list pages keep the route label. `⌘J` /
+      `Ctrl+J` lives on the launcher. Desktop is a non-modal panel; mobile is
+      a modal sheet. Home still hands questions into `/app/chat`. Full Ask
+      shows linked context badges. `search_app_guide` / `get_app_route` cover
+      the float; Telegram and suggestions stay out.
 
 ## Workspace Reconciliation
 
