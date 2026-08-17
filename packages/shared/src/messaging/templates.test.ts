@@ -145,6 +145,7 @@ describe('messaging templates', () => {
     expect(message.htmlBody).toContain(
       'The team kept the pilot recap moving after new Slack follow-ups arrived.',
     );
+    expect(message.htmlBody).toContain('<meta charset="utf-8" />');
     expect(message.htmlBody).toContain('Open this digest');
   });
 
