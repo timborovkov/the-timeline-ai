@@ -128,7 +128,8 @@ Ask, Work, Documents, Meetings, Connections, and Team.
   badge in desktop and mobile history. Web-created sessions remain unbadged;
   provider identity must not replace the human-readable session title. Each
   row shows last-activity age; archive stays hidden until hover or focus on
-  desktop.
+  desktop. A search field under New chat filters history. The Ask heading keeps
+  the selected title on the same row and does not show a session count.
 - Inspector: hidden until content exists. Desktop uses the right pane; mobile
   uses a focus-managed bottom sheet.
 - Work routes share `WorkSubnav`: Overview, Pinned, Objects, Tasks, Boards,
@@ -311,7 +312,12 @@ briefly in team-scoped session storage and never in the URL.
 The desktop session list stays dense: last-activity age under each title in
 mono 11px, a centered 60% hairline between rows, and archive revealed on row
 hover or keyboard focus. Hovering the relative age shows the localized
-timestamp. Touch session lists keep archive visible.
+timestamp. A search field under New chat filters the visible history. Touch
+session lists keep archive visible.
+
+The Ask heading stays on one row. When a conversation is selected, its title
+sits beside the heading as truncated muted text. Session counts do not appear
+in the header.
 
 The web Ask surface is the rich research view: answers may be thorough and use
 sections, lists, or tables, while inline citations remain inspectable links to
@@ -582,3 +588,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-15 | Evidence-backed public product story | Makes the working-history problem, deliberate capture boundary, cited-versus-unused evidence, Telegram entry point, inspectable answers, and human approval contract explicit across the landing and how-it-works journey. |
 | 2026-08-16 | Unified workspace collection density | Replaces stacked form chrome and card grids with compact headers, one filter toolbar, 44px rows, semantic status glyphs, optimistic metadata triggers, and contextual selection without changing domain behavior. |
 | 2026-08-17 | Dense Ask session history | Reveals archive on hover/focus, shows relative last-activity age with a timestamp title, and uses a short centered hairline instead of a persistent trash column. |
+| 2026-08-17 | Ask session search and title | Filters chat history from the session rail and shows the selected title beside Ask instead of a session count. |

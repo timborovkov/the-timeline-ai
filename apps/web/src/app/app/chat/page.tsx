@@ -6,11 +6,13 @@ import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
+import { AskHeader } from '@/components/chat/ask-header';
 import { ChatPane } from '@/components/chat/chat-pane';
 import { MobileSessionNav, SessionSidebar } from '@/components/chat/session-sidebar';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { hydrateChatSessionMessages } from '@/lib/chat-session';
+import { chatSessionLabel } from '@/lib/chat-session-list';
 import { db } from '@/lib/db';
 import { displayObjectLabel } from '@/lib/display-labels';
 
@@ -65,11 +67,13 @@ export default async function ChatPage({
   let initialMessages: UIMessage[] = [];
   let pinnedEntityId: string | null = null;
   let pinnedEntityName: string | null = null;
+  let loadedTitle: string | null = null;
   if (requestedSessionId) {
     const loaded = await scope.objects.getChatSession(requestedSessionId);
     if (loaded) {
       activeSessionId = requestedSessionId;
       initialMessages = hydrateChatSessionMessages(loaded);
+      loadedTitle = loaded.session.title;
       pinnedEntityId = loaded.session.pinnedEntityId;
       // Deep-linked or older sessions can fall outside the top-50 sidebar
       // window, so their pinnedEntityId isn't in `pinnedNames`. Fetch the
@@ -93,6 +97,15 @@ export default async function ChatPage({
       : null,
     updatedAt: chatSession.updatedAt.toISOString(),
   }));
+  const listedActive = sessionEntries.find((entry) => entry.id === activeSessionId);
+  const activeTitle = listedActive
+    ? chatSessionLabel(listedActive)
+    : activeSessionId
+      ? chatSessionLabel({
+          title: loadedTitle,
+          pinnedEntityName,
+        })
+      : null;
 
   return (
     // Escape main's px/py with negative margins so the chat fills the
@@ -106,20 +119,7 @@ export default async function ChatPage({
       <SessionSidebar activeSessionId={activeSessionId} sessions={sessionEntries} />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col px-4 py-5 md:px-8 md:py-6">
         <MobileSessionNav activeSessionId={activeSessionId} sessions={sessionEntries} />
-        <header
-          className="mb-5 flex shrink-0 items-baseline gap-x-4 border-b border-border pb-3 text-sm text-fg-muted"
-          aria-label={`Chat with ${team?.name ?? active.teamName}'s timeline`}
-        >
-          <h1 className="text-2xl font-semibold tracking-tight text-fg">Ask</h1>
-          <span
-            className="ml-auto hidden w-20 text-right font-mono text-xs text-fg-dim md:block"
-            data-visual-dynamic="chat-session-count"
-          >
-            <span aria-hidden="true">
-              {sessions.length} session{sessions.length === 1 ? '' : 's'}
-            </span>
-          </span>
-        </header>
+        <AskHeader activeTitle={activeTitle} teamName={team?.name ?? active.teamName} />
         <div className="flex min-h-0 flex-1 flex-col">
           <ChatPane
             // Key on activeSessionId (or "new" when none) so React remounts

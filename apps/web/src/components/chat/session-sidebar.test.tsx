@@ -116,6 +116,32 @@ describe('MobileSessionNav', () => {
     expect(archive.closest('fieldset')?.className).toContain('focus-within:opacity-100');
   });
 
+  it('filters desktop and mobile session lists from the search field', async () => {
+    const user = userEvent.setup();
+    const sessions = [
+      sessionFixture(),
+      sessionFixture({
+        id: 'session-2',
+        title: 'Website requirements',
+        updatedAt: new Date(Date.now() - 2 * WEEK_MS).toISOString(),
+      }),
+    ];
+    render(
+      <>
+        <SessionSidebar activeSessionId={null} sessions={sessions} />
+        <MobileSessionNav activeSessionId={null} sessions={sessions} />
+      </>,
+    );
+
+    const searchFields = screen.getAllByRole('searchbox', { name: 'Search chats' });
+    expect(searchFields).toHaveLength(2);
+    await user.type(searchFields[0]!, 'website');
+    await user.type(searchFields[1]!, 'website');
+
+    expect(screen.getAllByRole('link', { name: /Website requirements/ })).toHaveLength(2);
+    expect(screen.queryByRole('link', { name: /Launch review/ })).toBeNull();
+  });
+
   it('shows last-activity age, a timestamp title, and short hairlines between rows', () => {
     const older = sessionFixture();
     const newer = sessionFixture({

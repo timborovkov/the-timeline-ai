@@ -1,25 +1,23 @@
 'use client';
 
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Search, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useTransition } from 'react';
+import { Suspense, useMemo, useState, useTransition } from 'react';
 
 import { archiveChatSessionAction } from '@/app/actions/chat';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import {
+  chatSessionLabel,
+  filterChatSessions,
+  type ChatSessionListEntry,
+} from '@/lib/chat-session-list';
 import { formatDisplayDateTime, formatRelativeAge } from '@/lib/display-dates';
 import { cn } from '@/lib/utils';
 
-interface SessionEntry {
-  id: string;
-  surface: string;
-  title: string | null;
-  pinnedEntityId: string | null;
-  pinnedEntityName: string | null;
-  updatedAt: string;
-}
+type SessionEntry = ChatSessionListEntry;
 
 function SurfaceBadge({ surface }: { surface: string }) {
   if (surface === 'web') return null;
@@ -38,13 +36,6 @@ function SurfaceBadge({ surface }: { surface: string }) {
     >
       {label}
     </span>
-  );
-}
-
-function sessionLabel(session: SessionEntry): string {
-  return (
-    session.title ??
-    (session.pinnedEntityName ? `Chat about ${session.pinnedEntityName}` : 'Untitled chat')
   );
 }
 
@@ -67,7 +58,7 @@ function SessionSummary({ session }: { session: SessionEntry }) {
     <>
       <span className="flex min-w-0 items-center gap-1.5">
         <SurfaceBadge surface={session.surface} />
-        <span className="truncate">{sessionLabel(session)}</span>
+        <span className="truncate">{chatSessionLabel(session)}</span>
       </span>
       {session.pinnedEntityName && !session.title && (
         <span className="block truncate text-[10px] text-fg-dim">
@@ -86,6 +77,34 @@ function SessionHairline() {
       data-session-rule="true"
       className="mx-auto block h-px w-[60%] bg-border/40"
     />
+  );
+}
+
+function SessionSearch({
+  id,
+  query,
+  onQueryChange,
+}: {
+  id: string;
+  query: string;
+  onQueryChange: (value: string) => void;
+}) {
+  return (
+    <label className="relative mb-3 block">
+      <span className="sr-only">Search chats</span>
+      <Search
+        aria-hidden="true"
+        className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-fg-dim"
+      />
+      <input
+        id={id}
+        type="search"
+        value={query}
+        onChange={(event) => onQueryChange(event.target.value)}
+        placeholder="Search chats"
+        className="h-9 w-full rounded-sm border border-border bg-bg py-1 pl-8 pr-2 text-sm text-fg outline-none transition-colors placeholder:text-fg-dim focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+      />
+    </label>
   );
 }
 
@@ -112,6 +131,8 @@ function SessionSidebarContent({
   const search = useSearchParams();
   const dialog = useAppDialog();
   const [pending, startTransition] = useTransition();
+  const [query, setQuery] = useState('');
+  const visibleSessions = useMemo(() => filterChatSessions(sessions, query), [sessions, query]);
 
   function newChat(): void {
     const params = new URLSearchParams(search.toString());
@@ -125,20 +146,23 @@ function SessionSidebarContent({
       <button
         type="button"
         onClick={newChat}
-        className="mb-3 flex min-h-9 items-center gap-2 rounded-sm border border-border px-3 text-sm font-medium text-fg transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+        className="mb-2 flex min-h-9 items-center gap-2 rounded-sm border border-border px-3 text-sm font-medium text-fg transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
       >
         <Plus aria-hidden="true" className="size-3.5" /> New chat
       </button>
+      <SessionSearch id="desktop-chat-search" query={query} onQueryChange={setQuery} />
       <div data-visual-dynamic="chat-sessions" className="min-h-0 flex-1">
         {sessions.length === 0 ? (
           <p className="px-1 text-xs text-fg-muted">
             No chats yet. Start a new chat to ask about your timeline.
           </p>
+        ) : visibleSessions.length === 0 ? (
+          <p className="px-1 text-xs text-fg-muted">No chats match that search.</p>
         ) : (
           <ul className="h-full overflow-y-auto">
-            {sessions.map((s, index) => {
+            {visibleSessions.map((s, index) => {
               const isActive = s.id === activeSessionId;
-              const label = sessionLabel(s);
+              const label = chatSessionLabel(s);
               return (
                 <li key={s.id} className="group relative">
                   {index > 0 ? <SessionHairline /> : null}
@@ -156,7 +180,7 @@ function SessionSidebarContent({
                   </Link>
                   <ItemActionGroup
                     label={`Actions for ${label}`}
-                    className="absolute right-0.5 top-1 w-auto opacity-0 pointer-events-none transition-opacity duration-[80ms] ease-out group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100 motion-reduce:transition-none"
+                    className="pointer-events-none absolute right-0.5 top-1 w-auto opacity-0 transition-opacity duration-[80ms] ease-out group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100 motion-reduce:transition-none"
                   >
                     <button
                       type="button"
@@ -221,6 +245,10 @@ function MobileSessionNavContent({
   const search = useSearchParams();
   const dialog = useAppDialog();
   const [pending, startTransition] = useTransition();
+  const [query, setQuery] = useState('');
+  const visibleSessions = useMemo(() => filterChatSessions(sessions, query), [sessions, query]);
+  const activeSession = sessions.find((session) => session.id === activeSessionId);
+  const activeTitle = activeSession ? chatSessionLabel(activeSession) : null;
 
   function newChat(): void {
     const params = new URLSearchParams(search.toString());
@@ -233,9 +261,8 @@ function MobileSessionNavContent({
     <nav aria-label="Chat sessions" className="mb-3 shrink-0 md:hidden">
       <details className="group rounded-sm border border-border bg-surface">
         <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-3 text-sm font-medium marker:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg">
-          <span>{activeSessionId ? 'Current chat' : 'Chats'}</span>
-          <span className="font-mono text-xs text-fg-muted">
-            {sessions.length} session{sessions.length === 1 ? '' : 's'}
+          <span className="min-w-0 truncate">
+            {activeTitle ?? (activeSessionId ? 'Current chat' : 'Chats')}
           </span>
         </summary>
         <div className="max-h-56 space-y-2 overflow-y-auto border-t p-2">
@@ -246,13 +273,16 @@ function MobileSessionNavContent({
           >
             <Plus aria-hidden="true" className="size-3.5" /> New chat
           </button>
+          <SessionSearch id="mobile-chat-search" query={query} onQueryChange={setQuery} />
           {sessions.length === 0 ? (
             <p className="px-1 py-2 text-xs text-fg-muted">
               No chats yet. Start a new chat to ask about your timeline.
             </p>
+          ) : visibleSessions.length === 0 ? (
+            <p className="px-1 py-2 text-xs text-fg-muted">No chats match that search.</p>
           ) : (
             <ul data-visual-dynamic="mobile-chat-sessions">
-              {sessions.map((session, index) => {
+              {visibleSessions.map((session, index) => {
                 const isActive = session.id === activeSessionId;
                 return (
                   <li key={session.id}>
@@ -270,11 +300,11 @@ function MobileSessionNavContent({
                       >
                         <SessionSummary session={session} />
                       </Link>
-                      <ItemActionGroup label={`Actions for ${sessionLabel(session)}`}>
+                      <ItemActionGroup label={`Actions for ${chatSessionLabel(session)}`}>
                         <button
                           type="button"
                           disabled={pending}
-                          aria-label={`Archive chat: ${sessionLabel(session)}`}
+                          aria-label={`Archive chat: ${chatSessionLabel(session)}`}
                           onClick={async () => {
                             const confirmed = await dialog.confirm({
                               title: 'Archive chat?',
