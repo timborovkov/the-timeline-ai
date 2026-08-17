@@ -7,6 +7,7 @@ import { Suspense, useMemo, useState, useTransition } from 'react';
 
 import { archiveChatSessionAction } from '@/app/actions/chat';
 import { useAppDialog } from '@/components/ui/app-dialog';
+import { Button } from '@/components/ui/button';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import {
@@ -110,6 +111,15 @@ function SessionSearch({
   );
 }
 
+function NewChatButton({ onClick, className }: { onClick: () => void; className?: string }) {
+  return (
+    <Button type="button" onClick={onClick} className={className}>
+      <Plus aria-hidden="true" />
+      New chat
+    </Button>
+  );
+}
+
 export function SessionSidebar(props: {
   sessions: SessionEntry[];
   activeSessionId: string | null;
@@ -145,13 +155,7 @@ function SessionSidebarContent({
 
   return (
     <aside className="hidden h-full w-60 shrink-0 flex-col border-r border-border bg-surface p-3 md:flex">
-      <button
-        type="button"
-        onClick={newChat}
-        className="mb-2 flex min-h-9 items-center gap-2 rounded-sm border border-border px-3 text-sm font-medium text-fg transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
-      >
-        <Plus aria-hidden="true" className="size-3.5" /> New chat
-      </button>
+      <NewChatButton onClick={newChat} className="mb-2 w-full" />
       <SessionSearch id="desktop-chat-search" query={query} onQueryChange={setQuery} />
       <div data-visual-dynamic="chat-sessions" className="min-h-0 flex-1">
         {sessions.length === 0 ? (
@@ -268,13 +272,7 @@ function MobileSessionNavContent({
           </span>
         </summary>
         <div className="max-h-56 space-y-2 overflow-y-auto border-t p-2">
-          <button
-            type="button"
-            onClick={newChat}
-            className="flex min-h-9 w-full items-center gap-2 rounded-sm border border-border px-2 text-left text-sm font-medium text-fg transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
-          >
-            <Plus aria-hidden="true" className="size-3.5" /> New chat
-          </button>
+          <NewChatButton onClick={newChat} className="w-full" />
           <SessionSearch id="mobile-chat-search" query={query} onQueryChange={setQuery} />
           {sessions.length === 0 ? (
             <p className="px-1 py-2 text-xs text-fg-muted">
