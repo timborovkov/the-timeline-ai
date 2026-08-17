@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -549,7 +549,7 @@ describe('JobRecoveryList', () => {
     expect(within(archive).queryByText('provider unavailable')).toBeNull();
     expect(within(archive).queryByText('Technical details')).toBeNull();
 
-    await user.click(screen.getByRole('button', { name: 'Load more' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
     expect(fakes.fetchNextPage).toHaveBeenCalledOnce();
 
     cleanup();
