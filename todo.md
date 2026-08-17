@@ -185,24 +185,36 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       Daily object cleanup backfills the same proposals for already-ingested
       GitHub clusters.
 - [x] Attach communication task proposals to existing client/project hubs by
-      unique name mention: a Faba meeting can use the Faba company and Faba
-      project even when they are not in the 40 most recently updated objects.
-      Distinctive tokens match (`Faba` in `Faba website redesign`); generic
-      words (`website`, `meeting`) do not. Two named clients stay unattached.
-      Unedited pending creates whose evidence overlaps a later window are
-      amended in place when that later evidence uniquely names the hub. Ask
-      retrieval is unchanged — embeddings still recall; they still do not
-      write.
+      unique name mention **and container labels**: a Faba meeting, Slack
+      channel `acme-project-development`, or Monday board `Faba-ext` can use
+      the matching company/project even when they are not in the 40 most
+      recently updated objects. Distinctive tokens match (`Faba` in
+      `Faba website redesign`, `acme` in `acme-project-development`); generic
+      words and generic containers (`website`, `meeting`, `#general`) do not.
+      Two named clients stay unattached. Unedited pending creates whose
+      evidence overlaps a later window are amended in place when that later
+      evidence uniquely names the hub. Ask retrieval is unchanged —
+      embeddings still recall; they still do not write. Frozen by
+      [ADR 0015](./docs/adr/0015-proposal-writes-qualify-hubs-from-mentions-and-container-labels.md).
+      Path from this point to the ideal engine:
+      [`docs/relational-memory.md`](./docs/relational-memory.md)
+      (Path from here to the ideal engine).
+- [x] Opt-in live messy proposal-engine eval
+      (`pnpm test:proposal-engine:live`): real models, real embeddings/Qdrant
+      when configured, realistic noisy payloads, isolated team, cleanup
+      afterwards. Not part of CI. Covers Slack/Monday/meeting qualify, generic
+      `#general` refuse, mixed-client refuse, living pending amend, pulse skip,
+      and cosine-recall-is-not-a-write.
 - [ ] Stamp unique provider work-item aliases from the conversation window
       onto proposed tasks (`acme/app#88`, Linear keys, Monday item ids) so a
       later captured-work matcher can hard-join. Deterministic copy only when
       one id is named. Highest-leverage remaining close-the-loop slice; do
       not start pairwise cosine-qualify first.
-- [ ] When a meeting transcript never names the client, inherit a unique
-      company/project hub from the owning calendar event or Saved Meeting's
-      existing object links. Still refuse when two hubs are linked. Do not
-      silently rewrite already-accepted unscoped tasks; propose a relationship
-      or use memory repair.
+- [ ] When a meeting transcript never names the client **and** the container
+      is silent, inherit a unique company/project hub from the owning
+      calendar event or Saved Meeting's existing object links. Still refuse
+      when two hubs are linked. Do not silently rewrite already-accepted
+      unscoped tasks; propose a relationship or use memory repair.
 - [ ] Replace extract's time-ordered team dump (`RECENT_CONTEXT_LIMIT = 5`)
       with conversation-keyed / same-source context so facts that feed linked
       context are not five unrelated recent events.

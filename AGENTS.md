@@ -31,6 +31,11 @@ After **any** code, configuration, or documentation change:
      compiled output, or Node runtime loader boundaries.
    - Run `pnpm test:eval` when a change touches agent tools, retrieval,
      visibility filters, MCP tool handling, or answer synthesis.
+   - Run `pnpm test:proposal-engine:live` with
+     `PROPOSAL_ENGINE_LIVE_ENV_FILE=/path/to/.env` when proposal-engine
+     qualify/attach, container-label hubs, or messy live fixtures change **and**
+     a real `OPENROUTER_API_KEY` (and Qdrant, for the vector cases) is
+     available. This is an opt-in live eval, not CI.
    - Run `pnpm test:task-category-eval:live` with
      `TASK_CATEGORY_LIVE_ENV_FILE=/path/to/.env` when the task-category
      taxonomy, classifier packet, prompt, schema, or pinned model changes.
@@ -134,11 +139,14 @@ Treat this file as an operating contract for agents, not a loose README.
   refresh their timeline text, occurrence time, and visibility when the owning
   calendar event changes.
 - **Proposal writes qualify hubs; they do not cosine-write.** Communication
-  proposals attach existing company/project objects only on unique name mention
-  ([docs/relational-memory.md](docs/relational-memory.md) Layer 6). Recency
-  dumps and embeddings recall. Captured-work parsers join on provider id, alias,
-  or unique `repo#n`. Do not add an ingest summarizer whose only job is prettier
-  embeddings.
+  proposals attach existing company/project objects only on unique name
+  mention or container label (Slack channel, Monday board, meeting title,
+  Telegram chat title, repo/team name). See
+  [docs/relational-memory.md](docs/relational-memory.md) Layer 6 and
+  [ADR 0015](docs/adr/0015-proposal-writes-qualify-hubs-from-mentions-and-container-labels.md).
+  Recency dumps and embeddings recall. Captured-work parsers join on provider
+  id, alias, or unique `repo#n`. Do not add an ingest summarizer whose only
+  job is prettier embeddings.
 - **Design system lives in [design.md](design.md).** If a screen disagrees with
   it, fix the screen — not the doc. If you're intentionally evolving the design
   language, update [design.md](design.md) in the same PR.

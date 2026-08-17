@@ -33,7 +33,8 @@ database implementation details in ordinary product views.
   clusters that events from different surfaces attach to. Ordinary chrome
   still names the task or project, not "hub." Proposal chrome should show the
   attached client or project when one was qualified; it should not invent a
-  "hub" label.
+  "hub" label. Channel and board names that uniquely name a client are qualify
+  evidence, not chrome.
 - **Memory grade** (internal) is the hub's role: goal, work, finding, or
   mention. Ordinary chrome still names the task or company. Do not add a
   second importance slider; `priority` 1–4 stays urgency on goals and work.

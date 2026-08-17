@@ -322,10 +322,13 @@
         <code>suggest_task</code>, <code>suggest_object_memory</code>, and background conversation
         review all normalize the same existing/new-project contract before classification.
         Background proposals also mention-qualify existing company, vendor, deal, and project hubs
-        from the evidence (including meeting titles): a unique project becomes
-        <code>parentObjectId</code>; a unique client becomes an <code>object_relationship</code>
-        <code>related</code> edge. Recency dumps and embedding similarity are not that join.
-        Background review classifies its maximum 25 proposed tasks in one bounded structured LLM
+        from the evidence (including meeting titles, Slack channel names, Monday board names, and
+        other container labels): a unique project becomes <code>parentObjectId</code>; a unique
+        client becomes an <code>object_relationship</code> <code>related</code> edge. Recency dumps
+        and embedding similarity are not that join. See
+        <a href="./adr/0015-proposal-writes-qualify-hubs-from-mentions-and-container-labels.md"
+          >ADR 0015</a
+        >. Background review classifies its maximum 25 proposed tasks in one bounded structured LLM
         call, preserving proposal-time previews without serial provider calls. Legacy pending task
         approvals that predate the primary-project contract may still reference another object type;
         acceptance preserves that reference as a generic <code>child</code> relationship, not as the

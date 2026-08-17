@@ -92,21 +92,29 @@ share a provider id. Embeddings recall candidate hubs; they do not prove the
 link. Pending approvals against a hub stay alive: later captured-work
 completion refreshes the same proposal instead of leaving it to rot.
 Proposal writes qualify an existing company, vendor, deal, or project when
-the evidence uniquely names it (including meeting titles). Embeddings and
+the evidence uniquely names it: canonical name, alias, distinctive token,
+meeting title, or container label (Slack channel, Monday board, Telegram chat
+title, GitHub repo, Linear team/project). Embeddings and
 "40 recently updated objects" do not prove that join. Later conversation in
 the same window may amend an unedited pending create with that hub.
 The living workflow is
 [docs/relational-memory.md](docs/relational-memory.md).
+The freeze is
+[docs/adr/0015-proposal-writes-qualify-hubs-from-mentions-and-container-labels.md](docs/adr/0015-proposal-writes-qualify-hubs-from-mentions-and-container-labels.md).
 _Avoid_: Conversation, thread, or source when describing cross-surface identity
 
 **Mention-Qualified Hub**:
 An existing company, vendor, deal, or project that the proposal engine may
-attach because the evidence uniquely names it (canonical name, alias, or a
-distinctive token such as `Faba` in `Faba website redesign`). Generic words
-do not qualify. Two hits of the same type refuse rather than guess. The
-primary-project edge is `parentObjectId`; a client attaches as
-`object_relationship` `related`. This is a write-path qualify step, not Ask
-retrieval and not a recency dump of workspace objects.
+attach because the evidence uniquely names it (canonical name, alias, a
+distinctive token such as `Faba` in `Faba website redesign`, a meeting title,
+or a container label such as Slack `#acme-project-development`, Monday board
+`Faba-ext`, or Telegram chat title). Generic words and generic containers
+(`#general`, `#dev`, "Customer Projects") do not qualify. Two hits of the
+same type refuse rather than guess. The primary-project edge is
+`parentObjectId`; a client attaches as `object_relationship` `related`. This
+is a write-path qualify step, not Ask retrieval and not a recency dump of
+workspace objects. Frozen by
+[ADR 0015](docs/adr/0015-proposal-writes-qualify-hubs-from-mentions-and-container-labels.md).
 _Avoid_: Similar object, related client, cosine match
 
 **Memory Grade**:
