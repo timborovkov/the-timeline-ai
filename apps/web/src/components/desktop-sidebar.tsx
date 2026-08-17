@@ -95,8 +95,9 @@ export function DesktopSidebar({
             <button
               type="button"
               aria-label={expanded ? 'Collapse sidebar' : 'Expand sidebar'}
+              aria-expanded={expanded}
               onClick={toggleExpanded}
-              className="grid size-9 shrink-0 place-items-center rounded-sm text-fg-dim transition-colors hover:bg-surface-2 hover:text-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg"
+              className="grid size-9 shrink-0 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg"
             >
               {expanded ? (
                 <ChevronLeft aria-hidden="true" className="size-4" />

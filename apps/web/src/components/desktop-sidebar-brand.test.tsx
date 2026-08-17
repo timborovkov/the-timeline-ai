@@ -79,12 +79,14 @@ describe('DesktopSidebar branding', () => {
     );
 
     const collapse = screen.getByRole('button', { name: 'Collapse sidebar' });
+    expect(collapse.getAttribute('aria-expanded')).toBe('true');
     expect(collapse.querySelector('svg.lucide-chevron-left')).not.toBeNull();
     expect(collapse.querySelector('svg.lucide-panel-left-close')).toBeNull();
 
     await user.click(collapse);
 
     const expand = screen.getByRole('button', { name: 'Expand sidebar' });
+    expect(expand.getAttribute('aria-expanded')).toBe('false');
     expect(expand.querySelector('svg.lucide-chevron-right')).not.toBeNull();
     expect(expand.querySelector('svg.lucide-panel-left-open')).toBeNull();
   });
