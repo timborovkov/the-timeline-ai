@@ -38,6 +38,11 @@ export function DigestBody({
         digest.timezone,
       )}`,
   );
+  const dashboardLinks: { label: string; href: string }[] = [];
+  for (const link of digest.links) {
+    const href = digestAppHref(link.href);
+    if (href) dashboardLinks.push({ label: link.label, href });
+  }
 
   return (
     <div className={cn('space-y-6 text-sm', className)}>
@@ -115,18 +120,13 @@ export function DigestBody({
         />
       </div>
 
-      {digest.links.length > 0 ? (
+      {dashboardLinks.length > 0 ? (
         <div className="flex flex-wrap gap-2">
-          {digest.links
-            .flatMap((link) => {
-              const href = digestAppHref(link.href);
-              return href ? [{ label: link.label, href }] : [];
-            })
-            .map((link) => (
-              <Button key={link.href} asChild variant="outline" size="sm">
-                <Link href={link.href}>{link.label}</Link>
-              </Button>
-            ))}
+          {dashboardLinks.map((link) => (
+            <Button key={link.href} asChild variant="outline" size="sm">
+              <Link href={link.href}>{link.label}</Link>
+            </Button>
+          ))}
         </div>
       ) : null}
     </div>
