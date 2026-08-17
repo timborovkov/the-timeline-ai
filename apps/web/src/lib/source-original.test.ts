@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { framedHtmlDocument, hasSourceOriginal, sourceOriginalFromEvent } from './source-original';
+import {
+  framedHtmlDocument,
+  hasSourceOriginal,
+  sourceOriginalFromEvent,
+} from '@/lib/source-original';
 
 describe('sourceOriginalFromEvent', () => {
   it('prefers email HTML and keeps a readable text fallback plus cleaned JSON', () => {

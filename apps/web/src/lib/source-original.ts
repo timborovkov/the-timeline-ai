@@ -52,7 +52,7 @@ export interface SourceOriginal {
   label: string;
   text: string | null;
   html: string | null;
-  json: unknown | null;
+  json: unknown;
 }
 
 export function sourceOriginalFromEvent(input: {
@@ -85,7 +85,7 @@ export function sourceOriginalFromEvent(input: {
 }
 
 export function hasSourceOriginal(original: SourceOriginal): boolean {
-  return Boolean(original.html || original.json || original.text);
+  return Boolean(original.html ?? original.json ?? original.text);
 }
 
 export function framedHtmlDocument(html: string): string {
@@ -124,7 +124,7 @@ function originalJson(
   snapshot: Record<string, unknown>,
   hasHtml: boolean,
   hasText: boolean,
-): unknown | null {
+): unknown {
   if (Object.keys(snapshot).length > 0) {
     return cleanJson(preferParsedBody(snapshot), hasHtml, hasText);
   }
@@ -149,7 +149,7 @@ function preferParsedBody(snapshot: Record<string, unknown>): Record<string, unk
   return next;
 }
 
-function cleanJson(value: unknown, hasHtml: boolean, hasText: boolean): unknown | null {
+function cleanJson(value: unknown, hasHtml: boolean, hasText: boolean): unknown {
   if (Array.isArray(value)) {
     const items = value
       .map((item) => cleanJson(item, hasHtml, hasText))
