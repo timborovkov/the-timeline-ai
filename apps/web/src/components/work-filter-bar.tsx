@@ -295,9 +295,7 @@ export function WorkFilterBar({
             />
           </div>
         </CollectionToolbar.Filters>
-        {viewControls ? (
-          <CollectionToolbar.View>{viewControls}</CollectionToolbar.View>
-        ) : null}
+        {viewControls ? <CollectionToolbar.View>{viewControls}</CollectionToolbar.View> : null}
         <CollectionToolbar.ClearAll>{clearControl}</CollectionToolbar.ClearAll>
       </CollectionToolbar>
     </DebouncedFilterForm>
