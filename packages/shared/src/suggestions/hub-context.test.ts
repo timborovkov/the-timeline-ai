@@ -303,8 +303,10 @@ describe('attachUniqueHubsToBundles', () => {
       },
     });
     expect(bundle?.items).toHaveLength(2);
-    expect(bundle?.items[0]?.proposedPayload.parentObjectId).toBe('project-faba');
-    expect(bundle?.items[0]?.proposedPayload.projectName).toBe('Faba website redesign');
+    expect(bundle?.items[0]?.proposedPayload).toMatchObject({
+      parentObjectId: 'project-faba',
+      projectName: 'Faba website redesign',
+    });
   });
 
   it('strips a model-proposed project when qualify is silent', () => {
