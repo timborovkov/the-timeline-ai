@@ -3,7 +3,7 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import type { DailyDigestPayload } from '@timeline/shared/messaging';
+import type { DailyDigestPayload } from '@timeline/shared/messaging/format';
 
 import { DailyDigestBlock } from '@/components/home/daily-digest-block';
 

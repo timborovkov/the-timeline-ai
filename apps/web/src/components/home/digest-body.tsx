@@ -8,7 +8,7 @@ import {
   formatDigestDate,
   formatDigestTask,
   type DailyDigestPayload,
-} from '@timeline/shared/messaging';
+} from '@timeline/shared/messaging/format';
 import Link from 'next/link';
 
 import { Button } from '@/components/ui/button';

@@ -1,4 +1,4 @@
-import { formatDigestDate, type DailyDigestPayload } from '@timeline/shared/messaging';
+import { formatDigestDate, type DailyDigestPayload } from '@timeline/shared/messaging/format';
 import Link from 'next/link';
 
 import { DigestBody } from '@/components/home/digest-body';

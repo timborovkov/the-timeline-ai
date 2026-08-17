@@ -161,7 +161,8 @@ Treat this file as an operating contract for agents, not a loose README.
 - **Use the repo's canonical import paths.** In `apps/web/src`, use the `@/`
   alias for source imports and exports instead of relative paths (`../`,
   `./foo`). The only expected relative side-effect import there is local CSS,
-  such as `./globals.css`. In `apps/worker/src`, `packages/shared/src`, and
+  such as `./globals.css`. Client digest UI imports `@timeline/shared/messaging/format`
+  rather than the Node messaging barrel. In `apps/worker/src`, `packages/shared/src`, and
   `packages/db/src`, use the package-local Node `imports` alias (`#src/...`) for
   internal source imports/exports. Across package boundaries, use the workspace
   package names (`@timeline/db`, `@timeline/shared`, and exported subpaths)

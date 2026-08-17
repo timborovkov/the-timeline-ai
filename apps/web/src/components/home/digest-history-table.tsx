@@ -1,6 +1,6 @@
 'use client';
 
-import { formatDigestDate, type DailyDigestPayload } from '@timeline/shared/messaging';
+import { formatDigestDate, type DailyDigestPayload } from '@timeline/shared/messaging/format';
 import { Fragment, useEffect, useState } from 'react';
 
 import { DigestBody } from '@/components/home/digest-body';

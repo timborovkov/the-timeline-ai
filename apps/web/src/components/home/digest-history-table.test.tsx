@@ -4,7 +4,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import type { DailyDigestPayload } from '@timeline/shared/messaging';
+import type { DailyDigestPayload } from '@timeline/shared/messaging/format';
 
 import { DigestHistoryTable } from '@/components/home/digest-history-table';
 

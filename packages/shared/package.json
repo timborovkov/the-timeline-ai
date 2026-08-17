@@ -113,6 +113,12 @@
       "import": "./dist/messaging/index.js",
       "default": "./dist/messaging/index.js"
     },
+    "./messaging/format": {
+      "types": "./src/messaging/format.ts",
+      "development": "./src/messaging/format.ts",
+      "import": "./dist/messaging/format.js",
+      "default": "./dist/messaging/format.js"
+    },
     "./env": {
       "types": "./src/env.ts",
       "development": "./src/env.ts",
