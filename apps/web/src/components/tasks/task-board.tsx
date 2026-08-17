@@ -2004,8 +2004,8 @@ function TaskDetailPanel({
 
   return (
     <aside className="h-full overflow-y-auto bg-bg" aria-label="Task detail">
-      <div className="flex items-start gap-2 px-4 pt-3">
-        <h2 className="min-w-0 flex-1 whitespace-normal break-words text-base font-semibold leading-snug text-fg">
+      <div className="flex items-start gap-2 px-3 pt-2">
+        <h2 className="min-w-0 flex-1 whitespace-normal break-words text-sm font-semibold leading-snug text-fg">
           {displayText(title)}
         </h2>
         <div className="flex shrink-0 items-center">
@@ -2020,7 +2020,7 @@ function TaskDetailPanel({
         </div>
       </div>
 
-      <div className="mt-1 flex flex-col px-2">
+      <div className="mt-0.5 flex flex-col px-1.5">
         <EditableMetadata
           label="Task status"
           pending={saving === 'status'}
@@ -2128,6 +2128,7 @@ function TaskDetailPanel({
             onProjectChange={onProjectChange}
             onProjectChangeCommitted={onProjectChangeCommitted}
             onProjectChangeReverted={onProjectChangeReverted}
+            quiet
           />
         </div>
         {taskCategoriesEnabled ? (
@@ -2138,6 +2139,7 @@ function TaskDetailPanel({
               mode={task.taskCategoryMode}
               status={task.taskCategoryStatus}
               updatedAt={task.taskCategoryUpdatedAt}
+              quiet
             />
           </div>
         ) : null}
@@ -2153,10 +2155,10 @@ function TaskDetailPanel({
       <ObjectOrigin provenance={provenance} compact />
 
       {visibleNotes.length > 0 ? (
-        <section className="px-4 py-3" aria-label="Notes">
-          <ul className="space-y-2">
+        <section className="px-4 py-2" aria-label="Notes">
+          <ul className="space-y-1.5">
             {visibleNotes.map((note) => (
-              <li key={note.id} className="text-sm leading-6 text-fg">
+              <li key={note.id} className="text-sm leading-5 text-fg">
                 {displayText(note.body, { timezone })}
               </li>
             ))}
@@ -2166,7 +2168,7 @@ function TaskDetailPanel({
 
       <ObjectRelatedContext connectedWork={connectedWork} compact />
 
-      <div className="px-4 py-3">
+      <div className="px-4 py-2">
         <Link href={objectHref} className="text-xs text-fg-muted hover:text-fg hover:underline">
           Open object
         </Link>

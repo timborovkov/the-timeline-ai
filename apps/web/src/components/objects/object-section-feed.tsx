@@ -22,13 +22,13 @@ export function ObjectSectionFeed({ objectId, section, title, showTitle = true }
   if (!query.isPending && items.length === 0) return null;
   return (
     <section>
-      {showTitle ? <h2 className="mb-3 text-xs text-fg-dim">{title}</h2> : null}
+      {showTitle ? <h2 className="mb-1.5 text-xs text-fg-dim">{title}</h2> : null}
       {items.length === 0 && query.isPending ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <p className="text-sm text-fg-dim">Loading…</p>
       ) : (
-        <ul className="space-y-2 text-sm">
+        <ul className="space-y-1.5 text-sm">
           {items.map((item) => (
-            <li key={String((item as { id?: unknown }).id)} className="py-1.5">
+            <li key={String((item as { id?: unknown }).id)}>
               <ObjectSectionItem section={section} item={item} />
             </li>
           ))}
@@ -41,7 +41,7 @@ export function ObjectSectionFeed({ objectId, section, title, showTitle = true }
           onClick={() => {
             void query.fetchNextPage();
           }}
-          className="mt-3 rounded-sm border border-border px-3 py-1.5 text-xs text-fg-muted hover:bg-surface disabled:opacity-40"
+          className="mt-2 text-xs text-fg-muted hover:text-fg hover:underline disabled:opacity-40"
         >
           {query.isFetchingNextPage ? 'Loading…' : 'Load more'}
         </button>
@@ -59,7 +59,7 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
         <a href={`/app/objects/${String(row.id)}`} className="font-medium hover:underline">
           {text(row.canonicalName, 'Task')}
         </a>
-        <span className="text-xs text-muted-foreground">{text(row.status)}</span>
+        <span className="text-xs text-fg-dim">{text(row.status)}</span>
       </div>
     );
   }
@@ -69,7 +69,7 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
         <a href={`/app/objects/${String(row.otherId)}`} className="font-medium hover:underline">
           {text(row.otherName, 'Object')}
         </a>
-        <span className="text-xs uppercase tracking-wide text-muted-foreground">
+        <span className="text-xs text-fg-dim">
           {text(row.direction)} · {text(row.kind)}
         </span>
       </div>
@@ -84,12 +84,12 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
       : 'unknown time';
     const sourceLabel = source ? ` · ${source}` : '';
     return (
-      <div className="space-y-2">
+      <div className="space-y-1">
         <div className="flex flex-wrap items-start gap-2">
-          <p className="min-w-0 flex-1">{text(row.statement)}</p>
+          <p className="min-w-0 flex-1 leading-5">{text(row.statement)}</p>
           {sharedObjects.length > 0 ? <SharedFactObjects objects={sharedObjects} /> : null}
         </div>
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-xs text-fg-dim">
           Observed {observedAt}
           {sourceLabel} · confidence {text(row.confidence)}
         </p>
@@ -103,9 +103,9 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
     const occurredAt = rawText(row.occurredAt);
     const source = text(row.source);
     return (
-      <div className="grid gap-3">
-        <div className="flex min-w-0 items-start gap-4">
-          <p className="line-clamp-5 min-w-0 flex-1 whitespace-pre-wrap text-pretty leading-6">
+      <div className="grid gap-1">
+        <div className="flex min-w-0 items-start gap-3">
+          <p className="line-clamp-5 min-w-0 flex-1 whitespace-pre-wrap text-pretty leading-5">
             {contentText}
           </p>
           {eventId ? (
@@ -114,14 +114,14 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
               previewText={previewText}
               source={source}
               occurredAt={occurredAt}
-              className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-sm border border-border px-3 text-[11px] text-muted-foreground transition-[border-color,color,background-color,scale] duration-150 ease-out hover:border-border-strong hover:bg-background hover:text-foreground active:scale-[0.96]"
+              className="inline-flex shrink-0 items-center gap-1 text-xs text-fg-muted transition-colors hover:text-fg hover:underline"
             >
               <ExternalLink className="size-3" />
               View evidence
             </EvidenceLink>
           ) : null}
         </div>
-        <p className="text-[11px] text-fg-dim">
+        <p className="text-xs text-fg-dim">
           {formatDisplayDateTime(occurredAt, { timezone })} · {source}
         </p>
       </div>
@@ -131,11 +131,11 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
     <div className="min-w-0">
       <div className="flex min-w-0 items-start justify-between gap-3">
         <span className="min-w-0 break-words font-medium">{changeFieldLabel(text(row.field))}</span>
-        <span className="shrink-0 text-[11px] uppercase tracking-wide text-muted-foreground">
+        <span className="shrink-0 text-xs text-fg-dim">
           {text(row.actorKind)} · {text(row.status)}
         </span>
       </div>
-      <p className="mt-1 break-words text-xs text-muted-foreground">
+      <p className="mt-1 break-words text-xs text-fg-dim">
         {formatChangeValue(text(row.field), row.previousValue, timezone)} →{' '}
         {formatChangeValue(text(row.field), row.newValue, timezone)}
       </p>
@@ -249,8 +249,8 @@ function SharedFactObjects({ objects }: { objects: SharedFactObject[] }) {
         </span>
       </summary>
       <div className="absolute right-0 top-full z-20 hidden w-64 pt-2 group-open:block">
-        <div className="rounded-sm border border-border bg-background p-2 shadow-lg">
-          <p className="px-2 pb-1 text-[11px] text-fg-dim">Objects sharing this fact</p>
+        <div className="rounded-sm border border-border bg-bg p-2 shadow-lg">
+          <p className="px-2 pb-1 text-xs text-fg-dim">Objects sharing this fact</p>
           <ul className="max-h-56 overflow-y-auto">
             {objects.map((object) => (
               <li key={`${object.id}:${object.role}`}>
@@ -261,7 +261,7 @@ function SharedFactObjects({ objects }: { objects: SharedFactObject[] }) {
                   <span className="block truncate font-medium">
                     {displayText(object.canonicalName)}
                   </span>
-                  <span className="block text-[11px] text-fg-dim">
+                  <span className="block text-xs text-fg-dim">
                     {displayText(object.type)} · {displayText(object.role)}
                   </span>
                 </a>

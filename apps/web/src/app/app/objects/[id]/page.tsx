@@ -140,7 +140,7 @@ export default async function ObjectDetailPage({ params, searchParams }: PagePro
   });
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <HistoryBackLink
         fallbackHref={safeSameOriginPath(firstParam(query.returnTo), '/app/objects')}
         label="Back"

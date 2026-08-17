@@ -794,7 +794,7 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
 function ObjectDetailView(props: Props) {
   const view = useObjectDetailController(props);
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       <ObjectDetailHeader
         detail={view.viewDetail}
         nameDraft={view.nameDraft}
@@ -815,8 +815,8 @@ function ObjectDetailView(props: Props) {
         onRepairMemory={view.repairMemory}
       />
 
-      <div className="grid items-start gap-10 xl:grid-cols-[minmax(0,1fr)_16rem]">
-        <main className="min-w-0 space-y-8">
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_15rem]">
+        <main className="min-w-0 space-y-4">
           {view.suggestions.length > 0 ? (
             <ApprovalsClient
               suggestions={view.suggestions}
@@ -828,12 +828,12 @@ function ObjectDetailView(props: Props) {
                   singular: 'waiting',
                   plural: 'waiting',
                 },
-                className: 'border border-signal/40 bg-signal-soft/20',
-                summaryClassName: 'cursor-pointer list-none px-4 py-3',
-                bodyClassName: 'border-t border-border p-4',
-                titleClassName: 'text-sm font-semibold tracking-tight',
-                countClassName: 'mt-1 text-xs text-fg-muted',
-                openLabelClassName: 'text-[11px] text-fg-dim',
+                className: 'border-b border-border',
+                summaryClassName: 'cursor-pointer list-none py-2',
+                bodyClassName: 'border-t border-border py-3',
+                titleClassName: 'text-sm font-semibold',
+                countClassName: 'mt-0.5 text-xs text-fg-dim',
+                openLabelClassName: 'text-xs text-fg-dim',
               }}
             />
           ) : null}
@@ -860,7 +860,7 @@ function ObjectDetailView(props: Props) {
           />
         </main>
 
-        <aside className="min-w-0 space-y-6 xl:sticky xl:top-6">
+        <aside className="min-w-0 space-y-4 xl:sticky xl:top-4">
           <ObjectContactSection detail={view.viewDetail} />
 
           <ObjectEditableFields
@@ -936,7 +936,7 @@ function ObjectContactSection({ detail }: { detail: ObjectDetail }) {
               className="flex min-w-0 items-center justify-between gap-3 text-sm hover:underline"
             >
               <span className="min-w-0 truncate">{facet.value}</span>
-              <span className="shrink-0 text-[11px] text-fg-dim">{statusLabel(facet.kind)}</span>
+              <span className="shrink-0 text-xs text-fg-dim">{statusLabel(facet.kind)}</span>
             </a>
           );
         })}
@@ -981,12 +981,12 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
   return (
     <section aria-label="Summary">
       {generated ? (
-        <div className="space-y-3">
-          <p className="max-w-4xl text-sm leading-6 text-fg">{generated.overview}</p>
+        <div className="space-y-2">
+          <p className="max-w-4xl text-sm leading-5 text-fg">{generated.overview}</p>
           {generated.currentState.length > 0 ? (
-            <ul className="space-y-2">
+            <ul className="space-y-1.5">
               {generated.currentState.map((item) => (
-                <li key={`${item.label}:${item.text}`} className="text-sm leading-6 text-fg-muted">
+                <li key={`${item.label}:${item.text}`} className="text-sm leading-5 text-fg-muted">
                   <span className="font-medium text-fg">{item.label}:</span> {item.text}
                   <SourceChips refs={item.sourceRefs} />
                 </li>
@@ -994,9 +994,9 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
             </ul>
           ) : null}
           {generated.conflicts.length > 0 || generated.openQuestions.length > 0 ? (
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {[...generated.conflicts, ...generated.openQuestions].map((item) => (
-                <p key={`${item.label}:${item.text}`} className="text-sm leading-6 text-fg-muted">
+                <p key={`${item.label}:${item.text}`} className="text-sm leading-5 text-fg-muted">
                   <span className="font-medium text-fg">{item.label}:</span> {item.text}
                   <SourceChips refs={item.sourceRefs} />
                 </p>
@@ -1008,7 +1008,7 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
         <p className="text-sm text-fg-muted">Summary is ready to generate.</p>
       ) : null}
 
-      <div className="mt-3 flex flex-wrap items-center gap-3">
+      <div className="mt-2 flex flex-wrap items-center gap-2">
         {summary.generatedAt ||
         summary.status === 'pending' ||
         (summary.status === 'missing' && summary.canGenerate) ||
@@ -1050,7 +1050,7 @@ function SourceChips({ refs }: { refs: objects.ObjectSummarySourceRef[] }) {
       {refs.slice(0, 3).map((ref) => {
         const artifactRef = summaryRefToArtifactRef(ref);
         const className =
-          'border border-border bg-bg px-1.5 py-0.5 text-[11px] text-fg-dim hover:border-signal hover:text-signal';
+          'border border-border bg-bg px-1.5 py-0.5 text-xs text-fg-dim hover:border-signal hover:text-signal';
         return artifactRef ? (
           <ArtifactReferenceChip
             key={`${ref.kind}:${ref.id}`}
@@ -1160,7 +1160,7 @@ function ObjectDetailHeader({
               if (value === editableObjectName(detail)) return;
               onNameCommit(value);
             }}
-            className="mt-1 w-full bg-transparent text-2xl font-semibold tracking-tight text-fg outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
+            className="mt-0.5 w-full bg-transparent text-xl font-semibold leading-snug tracking-tight text-fg outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
           />
           {visibleAliases.length > 0 ? (
             <p className="mt-1 text-xs text-fg-dim">
@@ -1204,7 +1204,7 @@ function ObjectDetailHeader({
         </div>
       </div>
       {hasAlerts ? (
-        <div className="mt-3 flex flex-col gap-1.5">
+        <div className="mt-2 flex flex-col gap-1">
           {detail.newSinceLastVisit > 0 ? (
             <output className="text-xs text-signal">
               {detail.newSinceLastVisit} new change
@@ -1231,7 +1231,7 @@ function ObjectDetailHeader({
         </div>
       ) : null}
       <TechnicalDetails
-        className="mt-3"
+        className="mt-2"
         items={[{ label: 'Object ID', value: detail.id, copyValue: detail.id }]}
       />
     </header>
@@ -1370,6 +1370,7 @@ function ObjectEditableFields({
               currentProjectLabel={primaryProject?.projectName}
               projectArchived={Boolean(primaryProject?.archivedAt)}
               projects={projects}
+              quiet
             />
           </div>
           {taskCategoriesEnabled ? (
@@ -1380,6 +1381,7 @@ function ObjectEditableFields({
                 mode={detail.taskCategoryMode}
                 status={detail.taskCategoryStatus}
                 updatedAt={detail.taskCategoryUpdatedAt}
+                quiet
               />
             </div>
           ) : null}
@@ -1478,7 +1480,7 @@ function ObjectNotesSection({
         </button>
       </div>
       {notes.length > 0 ? (
-        <ul className="mt-4 space-y-3">
+        <ul className="mt-2 space-y-2">
           {notes.map((note) => (
             <ObjectNoteItem
               key={note.id}
@@ -1528,7 +1530,7 @@ function ObjectNoteItem({
             onChange={(e) => {
               dispatchObjectUi({ editingBody: e.target.value });
             }}
-            className="w-full rounded-md border bg-surface px-3 py-2 text-sm"
+            className="w-full border-0 border-b border-border bg-transparent px-0 py-1.5 text-sm outline-none focus-visible:border-signal"
             rows={3}
           />
           <div className="flex gap-2">
@@ -1556,7 +1558,7 @@ function ObjectNoteItem({
       ) : (
         <div className="whitespace-pre-wrap">{displayText(note.body, { timezone })}</div>
       )}
-      <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
+      <div className="mt-1 flex items-center justify-between text-xs text-fg-dim">
         <span>{formatDisplayDateTime(note.createdAt, { timezone })}</span>
         {isOwner && !isEditing ? (
           <ItemActionGroup
@@ -1578,7 +1580,7 @@ function ObjectNoteItem({
               onClick={() => {
                 onDeleteNote(note.id);
               }}
-              className="text-destructive hover:underline"
+              className="text-danger hover:underline"
             >
               Delete
             </button>
@@ -1608,7 +1610,7 @@ function ObjectConnectedWorkSection({
   return (
     <section>
       <h2 className="text-xs text-fg-dim">Connected work</h2>
-      <div className="mt-3 grid gap-5 lg:grid-cols-2">
+      <div className="mt-1.5 grid gap-3 lg:grid-cols-2">
         <ConnectedTaskList title="Open tasks" tasks={connectedWork.openTasks} />
         <ConnectedCalendarList events={connectedWork.calendarEvents} />
         <ConnectedObjectList objects={connectedWork.objects} />
@@ -1626,7 +1628,7 @@ function ObjectConnectedWorkSection({
 function ConnectedWorkSection({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="min-w-0">
-      <h3 className="mb-2 text-xs text-fg-muted">{title}</h3>
+      <h3 className="mb-1 text-xs text-fg-dim">{title}</h3>
       {children}
     </section>
   );
@@ -1648,7 +1650,7 @@ function ConnectedTaskList({
             <a href={`/app/objects/${task.id}`} className="font-medium hover:underline">
               {displayText(displayObjectTitle(task))}
             </a>
-            <span className="flex flex-wrap items-center gap-1.5 text-[11px] text-fg-dim">
+            <span className="flex flex-wrap items-center gap-1.5 text-xs text-fg-dim">
               <span>{statusLabel(task.status)}</span>
               <DueDateDisplay value={task.dueAt} variant="compact" />
             </span>
@@ -1672,7 +1674,7 @@ function ConnectedCalendarList({
         {events.map((event) => (
           <li key={event.id} className="grid gap-0.5 text-sm">
             <span className="font-medium">{displayText(event.title)}</span>
-            <span className="text-[11px] text-fg-dim">
+            <span className="text-xs text-fg-dim">
               {formatDisplayDateTime(event.startAt, { timezone })} · {statusLabel(event.showAs)}
             </span>
           </li>
@@ -1692,7 +1694,7 @@ function ConnectedObjectList({ objects }: { objects: ObjectDetail['connectedWork
             <a href={`/app/objects/${object.id}`} className="font-medium hover:underline">
               {displayText(object.canonicalName)}
             </a>
-            <span className="text-[11px] text-fg-dim">
+            <span className="text-xs text-fg-dim">
               {statusLabel(object.type)} · {object.factCount} fact
               {object.factCount === 1 ? '' : 's'}
             </span>
@@ -1708,7 +1710,7 @@ function ConnectedBoardList({ boards }: { boards: ObjectDetail['connectedWork'][
   return (
     <ConnectedWorkSection title="Boards">
       {boards.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No board context found.</p>
+        <p className="text-sm text-fg-dim">No board context found.</p>
       ) : (
         <ul className="space-y-2">
           {boards.map((board) => (
@@ -1719,13 +1721,13 @@ function ConnectedBoardList({ boards }: { boards: ObjectDetail['connectedWork'][
               >
                 {displayText(board.boardName)}
               </a>
-              <span className="flex flex-wrap items-center gap-1.5 text-[11px] text-fg-dim">
+              <span className="flex flex-wrap items-center gap-1.5 text-xs text-fg-dim">
                 <span>{board.laneName ?? 'no lane'}</span>
                 <DueDateDisplay value={board.dueAt} variant="compact" />
                 {board.priority !== null ? <span>· P{board.priority}</span> : null}
               </span>
               {board.nextStep ? (
-                <span className="text-xs text-muted-foreground">{displayText(board.nextStep)}</span>
+                <span className="text-xs text-fg-dim">{displayText(board.nextStep)}</span>
               ) : null}
             </li>
           ))}
@@ -1744,18 +1746,15 @@ function ConnectedApprovalList({
   return (
     <ConnectedWorkSection title="Pending approvals">
       {approvals.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No related approvals found.</p>
+        <p className="text-sm text-fg-dim">No related approvals found.</p>
       ) : (
         <ul className="space-y-2">
           {approvals.map((approval) => (
-            <li
-              key={approval.itemId}
-              className="grid gap-1 rounded-sm border border-signal/40 bg-signal-soft/20 px-3 py-2 text-sm"
-            >
+            <li key={approval.itemId} className="grid gap-0.5 text-sm">
               <Link href="/app/approvals" className="font-medium hover:underline">
                 {displayText(approval.title)}
               </Link>
-              <span className="text-[11px] text-fg-dim">
+              <span className="text-xs text-fg-dim">
                 {approval.operation} · {approval.targetKind}
               </span>
             </li>
@@ -1776,7 +1775,7 @@ function ConnectedDocumentList({
   return (
     <ConnectedWorkSection title="Documents">
       {documents.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No related documents found.</p>
+        <p className="text-sm text-fg-dim">No related documents found.</p>
       ) : (
         <ul className="space-y-2">
           {documents.map((document) => (
@@ -1788,7 +1787,7 @@ function ConnectedDocumentList({
               >
                 {displayText(truncateFilenameMiddle(document.name))}
               </a>
-              <span className="text-[11px] text-fg-dim">
+              <span className="text-xs text-fg-dim">
                 {document.fileKind} · updated{' '}
                 {formatDisplayDateTime(document.updatedAt, { timezone })}
               </span>
@@ -1806,7 +1805,7 @@ function ConnectedLinkList({ links }: { links: ObjectDetail['connectedWork']['li
   return (
     <ConnectedWorkSection title="Links">
       {links.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No related links found.</p>
+        <p className="text-sm text-fg-dim">No related links found.</p>
       ) : (
         <ul className="space-y-2">
           {links.map((link) => (
@@ -1823,7 +1822,7 @@ function ConnectedLinkList({ links }: { links: ObjectDetail['connectedWork']['li
               ) : (
                 <span className="font-medium">{displayText(link.canonicalName)}</span>
               )}
-              <span className="text-[11px] text-fg-dim">
+              <span className="text-xs text-fg-dim">
                 {link.provider ?? link.domain ?? 'shared link'} · updated{' '}
                 {formatDisplayDateTime(link.updatedAt, { timezone })}
               </span>
@@ -1845,7 +1844,7 @@ function ConnectedCapturedFileList({
   return (
     <ConnectedWorkSection title="Files">
       {files.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No related files found.</p>
+        <p className="text-sm text-fg-dim">No related files found.</p>
       ) : (
         <ul className="space-y-2">
           {files.map((file) => (
@@ -1853,7 +1852,7 @@ function ConnectedCapturedFileList({
               <Link href="/app/documents/captured" className="font-medium hover:underline">
                 {displayText(truncateFilenameMiddle(file.name))}
               </Link>
-              <span className="text-[11px] text-fg-dim">
+              <span className="text-xs text-fg-dim">
                 {file.contentType ?? 'captured file'} · updated{' '}
                 {formatDisplayDateTime(file.updatedAt, { timezone })}
               </span>
@@ -1941,7 +1940,7 @@ function ObjectRelationshipsSection({
         </div>
       </div>
       {selectedLink ? (
-        <p className="mb-3 text-xs text-muted-foreground">
+        <p className="mb-3 text-xs text-fg-dim">
           Selected {displayText(selectedLink.canonicalName)} · {selectedLink.type}
           {projectFieldOwnsLink ? ' · use the Project field for primary membership' : ''}
         </p>
@@ -1958,7 +1957,7 @@ function ObjectRelationshipsSection({
                 }}
               >
                 <span className="font-medium">{displayText(result.canonicalName)}</span>{' '}
-                <span className="text-xs text-muted-foreground">{statusLabel(result.type)}</span>
+                <span className="text-xs text-fg-dim">{statusLabel(result.type)}</span>
               </button>
             </li>
           ))}
@@ -1978,13 +1977,13 @@ function ObjectRelationshipsSection({
                 {displayText(relationship.otherName)}
               </a>
               <div className="flex items-center justify-between gap-3">
-                <span className="text-xs uppercase tracking-wide text-muted-foreground">
+                <span className="text-xs text-fg-dim">
                   {relationship.kind === 'related'
-                    ? relationship.kind
+                    ? statusLabel(relationship.kind)
                     : relationship.direction === 'out'
-                      ? relationship.kind
-                      : `← ${relationship.kind}`}{' '}
-                  · {relationship.otherType}
+                      ? statusLabel(relationship.kind)
+                      : `← ${statusLabel(relationship.kind)}`}{' '}
+                  · {statusLabel(relationship.otherType)}
                 </span>
                 {(relationship.direction === 'out' || relationship.kind === 'related') &&
                 !(
@@ -2002,7 +2001,7 @@ function ObjectRelationshipsSection({
                       onClick={() => {
                         onRemoveRelationship(relationship.id, relationship.otherId);
                       }}
-                      className="text-xs text-destructive hover:underline"
+                      className="text-xs text-danger hover:underline"
                     >
                       Unlink
                     </button>
@@ -2067,15 +2066,15 @@ function ObjectRecentChangeItem({
     >
       <div className="flex min-w-0 items-start justify-between gap-3">
         <span className="min-w-0 break-words font-medium">{changeFieldLabel(change.field)}</span>
-        <span className="shrink-0 text-[11px] uppercase tracking-wide text-muted-foreground">
+        <span className="shrink-0 text-xs text-fg-dim">
           {statusLabel(change.actorKind)} · {statusLabel(change.status)}
         </span>
       </div>
-      <div className="mt-1 break-words text-xs text-muted-foreground">
+      <div className="mt-1 break-words text-xs text-fg-dim">
         {formatValue(change.previousValue, timezone, change.field)} →{' '}
         {formatValue(change.newValue, timezone, change.field)}
       </div>
-      <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
+      <div className="mt-1 flex items-center justify-between text-xs text-fg-dim">
         <span>{formatDisplayDateTime(change.changedAt, { timezone })}</span>
         {isSuggested ? (
           <div className="flex gap-2">
@@ -2121,7 +2120,7 @@ function ObjectArchiveFooter({
         type="button"
         disabled={pending || archivedAt !== null}
         onClick={onArchiveObject}
-        className="text-xs text-destructive hover:underline disabled:opacity-50"
+        className="text-xs text-danger hover:underline disabled:opacity-50"
       >
         {archivedAt ? 'Archived' : 'Archive object'}
       </button>

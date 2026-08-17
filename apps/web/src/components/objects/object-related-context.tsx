@@ -47,9 +47,9 @@ export function ObjectRelatedContext({
   if (!connectedWork || contextCount(connectedWork) === 0) return null;
 
   return (
-    <section className={compact ? 'px-4 py-3' : undefined}>
+    <section className={compact ? 'px-4 py-2' : undefined}>
       <h3 className="text-xs text-fg-dim">Related context</h3>
-      <div className={compact ? 'mt-2 space-y-3' : 'mt-3 space-y-4'}>
+      <div className={compact ? 'mt-1.5 space-y-2' : 'mt-2 space-y-3'}>
         <ContextGroup
           title="Links"
           icon={<LinkIcon className="size-3.5" aria-hidden="true" />}
@@ -121,7 +121,7 @@ function ContextGroup({
 
   return (
     <div className="min-w-0">
-      <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-fg-dim">
+      <div className="mb-1 flex items-center gap-1.5 text-xs text-fg-dim">
         {icon}
         <span>{title}</span>
       </div>
@@ -152,7 +152,7 @@ function ContextGroup({
             ) : (
               <span className="block truncate text-sm">{displayText(item.label)}</span>
             )}
-            <div className="truncate text-[11px] text-fg-dim">{displayText(item.detail)}</div>
+            <div className="truncate text-xs text-fg-dim">{displayText(item.detail)}</div>
           </li>
         ))}
       </ul>

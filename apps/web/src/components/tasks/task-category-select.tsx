@@ -29,12 +29,14 @@ export function TaskCategorySelect({
   mode,
   status,
   updatedAt = null,
+  quiet = false,
 }: {
   taskId: string;
   category: TaskCategory | null;
   mode: TaskCategoryMode | null;
   status: TaskCategoryStatus | null;
   updatedAt?: Date | string | null;
+  quiet?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -81,7 +83,7 @@ export function TaskCategorySelect({
   }
 
   return (
-    <div className="task-category-ui space-y-2">
+    <div className={quiet ? 'task-category-ui' : 'task-category-ui space-y-2'}>
       <select
         aria-label="Task category"
         value={value}
@@ -94,7 +96,11 @@ export function TaskCategorySelect({
             run(() => setTaskCategoryAction({ id: taskId, category: next }));
           }
         }}
-        className="h-9 w-full rounded-sm border border-border bg-bg px-2 text-sm text-fg disabled:cursor-progress disabled:opacity-60"
+        className={
+          quiet
+            ? 'h-10 w-full rounded-sm border-0 bg-transparent px-2 text-xs text-fg-muted hover:bg-surface-2 hover:text-fg disabled:cursor-progress disabled:opacity-60'
+            : 'h-9 w-full rounded-sm border border-border bg-bg px-2 text-sm text-fg disabled:cursor-progress disabled:opacity-60'
+        }
       >
         <option value={AUTOMATIC_VALUE}>
           {effectiveStatus === 'pending' ? 'Automatic · Categorizing…' : 'Use automatic category'}
@@ -112,7 +118,7 @@ export function TaskCategorySelect({
           onClick={() => {
             run(() => retryTaskCategoryAction({ id: taskId }));
           }}
-          className="font-mono text-[10px] uppercase tracking-[0.1em] text-signal hover:underline disabled:opacity-60"
+          className="text-xs text-fg-muted hover:text-fg hover:underline disabled:opacity-60"
         >
           Retry automatic category
         </button>

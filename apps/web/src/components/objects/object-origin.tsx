@@ -31,8 +31,8 @@ export function ObjectOrigin({
   if (!body) return null;
 
   return (
-    <section className={compact ? 'px-4 py-3' : undefined} aria-label="Why this exists">
-      <p className="text-sm leading-6 text-fg">{timelinePreview(body, compact ? 220 : 360)}</p>
+    <section className={compact ? 'px-4 py-2' : undefined} aria-label="Why this exists">
+      <p className="text-sm leading-5 text-fg">{timelinePreview(body, compact ? 220 : 360)}</p>
       <ProvenanceSourceLinks evidence={why.evidence} />
     </section>
   );
@@ -61,7 +61,7 @@ export function ObjectProvenanceGroups({
   if (groups.length === 0) return null;
 
   return (
-    <section className="space-y-5" aria-label="Provenance">
+    <section className="space-y-3" aria-label="Provenance">
       {groups.map((group) => (
         <ProvenanceGroup
           key={group.title}
@@ -129,7 +129,7 @@ function ProvenanceEntryList({
       {entries.map((entry) => (
         <li key={`${entry.targetKind}:${entry.operation}:${entry.id}`} className="min-w-0 text-sm">
           <p
-            className={`line-clamp-2 break-words leading-5 ${muted ? 'text-fg-muted' : 'font-medium text-fg'}`}
+            className={`line-clamp-2 break-words text-sm leading-5 ${muted ? 'text-fg-muted' : 'font-medium text-fg'}`}
           >
             {timelinePreview(entry.title, 160)}
           </p>

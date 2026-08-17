@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.7 · Linear-density object and task detail (2026-08-17). Replaces v3.6 Team setup loop and Home timeline links.
+**Version:** v3.8 · Compact object and task detail rhythm (2026-08-17). Replaces v3.7 Linear-density object and task detail.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -99,7 +99,7 @@ Both families are self-hosted with `next/font/local`.
 
 | Role | Font and size |
 | --- | --- |
-| Page title | Switzer 600, 24px default / 18px collection variant |
+| Page title | Switzer 600, 24px default / 20px object and task detail / 18px collection variant |
 | Auth and help marketing hero | Switzer 600, 32px mobile / 48px tablet / 60px desktop |
 | Public acquisition display | Switzer 600, 64px mobile / fluid up to 150px desktop |
 | Section heading | Switzer 600, 16px |
@@ -417,25 +417,29 @@ rows and the peek’s “Open object” link go to `/app/objects/[id]` with `ret
 so Back restores the originating list. In-list selection links use
 `scroll={false}` so opening a peek does not jump the page.
 
-The peek is a dense inspector, not a form card: title, ghost icon Pin/Close,
-then the same status / priority / assignee / due / project / category triggers
-used in the list. Do not duplicate those values in a second “current” grid. Do
-not label the peek “side panel.” If accepted creation evidence exists, lead with
-that “why this exists” excerpt. Notes and related links follow as unboxed rows.
-Empty memory, empty related context, and empty notes stay out of the peek.
+The peek is a dense inspector, not a form card: 14px title, ghost icon
+Pin/Close, then the same status / priority / assignee / due / project /
+category triggers used in the list. Project and category pickers on this
+surface are borderless. Do not duplicate those values in a second “current”
+grid. Do not label the peek “side panel.” If accepted creation evidence exists,
+lead with that “why this exists” excerpt. Notes and related links follow as
+unboxed rows. Empty memory, empty related context, and empty notes stay out of
+the peek.
 
 The full object page is a Linear-style issue view, not a work-index. It has no
-`WorkSubnav`. The type (and task category) sit as quiet metadata above an
+`WorkSubnav`. The type (and task category) sit as quiet metadata above a 20px
 editable title. Pin and Ask are ghost icon buttons; Repair memory and Add task
-live in the overflow menu. The main column is the working description: why this
-exists, a generated summary only when it has content or an actionable
-generate/retry state, then only the provenance / connected-work / evidence /
-facts groups that have items. Empty “Not enough object memory,” “No connected
-work,” and “Nothing here yet” cards are prohibited. Notes keep a borderless
-composer. The right column is Properties: icon-and-value metadata rows, then
-Related search, recent changes when present, and a quiet Archive text control.
-Content is grouped by typography and spacing. Nested bordered boxes are not a
-layout system on these surfaces.
+live in the overflow menu. The main column uses a 16px section stack and 14px
+body at 1.35 line-height: why this exists, a generated summary only when it has
+content or an actionable generate/retry state, then only the provenance /
+connected-work / evidence / facts groups that have items. Empty “Not enough
+object memory,” “No connected work,” and “Nothing here yet” cards are
+prohibited. Notes keep a borderless composer. The right column is Properties:
+icon-and-value metadata rows, then Related search, recent changes when present,
+and a quiet Archive text control. Section labels, supporting copy, and
+timestamps use 12px `--fg-dim`. Relationship and change metadata stay sentence
+case. Content is grouped by typography and spacing. Nested bordered boxes are
+not a layout system on these surfaces.
 
 Approval rows lead with the proposed change and use human labels and localized
 values, such as `Due soon · <localized date>` and `Status To do`, rather than payload
@@ -663,3 +667,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Ask mobile session title | Reuses the resolved conversation title in the mobile session summary, including deep-linked chats outside the recent list. |
 | 2026-08-17 | Quiet sidebar brand and fold control | Aligns the product mark with primary nav, sends it to Home, and replaces the boxed fold glyph with a lighter chevron. |
 | 2026-08-17 | Linear-density object and task detail | Replaces boxed field grids and empty memory cards with list-row metadata, why-this-exists lead copy, ghost icon actions, and list-preserving peek navigation. |
+| 2026-08-17 | Compact object and task detail rhythm | Tightens the object-page section stack to 16px, uses 20px titles and 1.35 body leading, and keeps peek/page chrome on `--fg` / `--fg-muted` / `--fg-dim` / `--danger` without uppercase metadata. |
