@@ -368,20 +368,24 @@ one metadata row, with no redundant type label. Team settings render one URL-sel
 section at a time. Save state stays local to the edited form. Member, object, source,
 and artifact labels never fall back to UUIDs.
 
-Background jobs is an admin-only recovery queue, not a processing inventory.
+Job recovery is an admin-only queue, not a processing inventory.
 Members who open `/app/team/jobs` see an Admins-only empty state. Home
 “recoverable jobs” and the jobs page share the same 7-day failed/stuck count,
 and only admins see that Home link. The page uses a sentence-case `PageHeader`
-with an “Admins only” access label, groups Failed then Stuck, and keeps
-retry/dismiss on each dense collection row. Kind filters appear only when more than one job kind
-is present. Rows show status, label, and time — not job IDs, artifact IDs, or raw
-provider errors. Jobs older than 7 days are hidden from attention; admins can dismiss
-them in bulk, and the action keeps going with a loading toast until the hidden
-count is cleared. The visible 7-day list uses a Load more window over the
+titled Job recovery, with Team breadcrumbs like other team drill-downs and an
+“Admins only” access label. It groups Failed then Stuck. Kind filters appear
+only when more than one job kind is present. Rows show status, label, and
+relative time. Retry and dismiss live in the row overflow menu; bulk Retry
+failed and Dismiss all stay on the toolbar. Hovering a row’s label or time
+shows the formatted timestamp, job ID, artifact UUID, and raw provider error
+when one exists. Jobs older than 7 days are hidden from attention; admins can
+dismiss them in bulk, and the action keeps going with a loading toast until the
+hidden count is cleared. The visible 7-day list uses a Load more window over the
 current snapshot so a later shared virtualizer can replace it. Retry and dismiss
 use a loading toast that becomes success, warning, or error. Unprocessed
-backlog counts (events still waiting for extraction or embedding) stay inside
-closed Advanced tools and never use “needs attention” language.
+backlog counts (events still waiting for extraction or embedding) and the
+conversation-suggestion backfill stay inside closed Advanced tools and never
+use “needs attention” language.
 
 Work → Pinned is the complete pin-management surface. It is a single
 side-to-side list with cursor pagination and All, Objects, Boards, Documents,
@@ -652,3 +656,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | 7-day job recovery queue | Makes Home and Background jobs share one recent failed/stuck count, hides older backlog from attention, and keeps unprocessed inventory in Advanced tools. |
 | 2026-08-17 | Jobs recovery dismiss at scale | Makes older-job dismiss a batch write with progress toasts, windows the 7-day snapshot behind Load more, and keeps retry/dismiss on the shared mutation-toast path. |
 | 2026-08-17 | Dense jobs recovery rows | Drops per-row Technical details so the admin queue is status, label, time, and retry/dismiss. |
+| 2026-08-17 | Job recovery row overflow | Renames the page Job recovery, moves per-row retry/dismiss into the overflow menu, and keeps IDs plus raw errors in the row hover title. |

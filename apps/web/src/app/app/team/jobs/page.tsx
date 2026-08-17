@@ -10,7 +10,7 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 
 export const metadata: Metadata = {
-  title: 'Jobs',
+  title: 'Job recovery',
   description: jobsPageSubtitle(),
 };
 

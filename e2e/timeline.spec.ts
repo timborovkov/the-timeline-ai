@@ -1415,7 +1415,7 @@ test('job recovery dashboard retries and dismisses failed work from the browser'
   try {
     await signIn(page, e2eUsers.owner.email);
     await page.goto('/app/team/jobs');
-    await expect(page.getByRole('heading', { name: 'Background jobs' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Job recovery' })).toBeVisible();
 
     await page.getByRole('button', { name: 'Embedding' }).click();
     const retryRow = page.locator('li').filter({ hasText: 'E2E retry embedding failed' });
@@ -1424,11 +1424,11 @@ test('job recovery dashboard retries and dismisses failed work from the browser'
     await expect(dismissRow).toBeVisible();
     await expect(retryRow.getByText('Embedding · web event from')).toBeVisible();
 
+    await retryRow.getByRole('button', { name: 'Actions for E2E retry embedding failed' }).click();
     await Promise.all([
       page.waitForResponse((res) => res.url().includes('/retry') && res.ok()),
-      retryRow.getByRole('button', { name: 'Retry' }).click(),
+      page.getByRole('menuitem', { name: 'Retry' }).click(),
     ]);
-    await expect(retryRow.getByText('Retrying')).toBeVisible();
     await expect(retryRow.getByText('Retry queued.')).toBeVisible();
     await expect
       .poll(() => rawEventMetadataHasKey(seed.retryEventId, 'embedding_failed_at'))
@@ -1437,9 +1437,10 @@ test('job recovery dashboard retries and dismisses failed work from the browser'
       .poll(() => rawEventMetadataHasKey(seed.retryEventId, 'embedding_error'))
       .toBe(false);
 
+    await dismissRow.getByRole('button', { name: 'Actions for E2E dismiss embedding failed' }).click();
     await Promise.all([
       page.waitForResponse((res) => res.url().includes('/dismiss') && res.ok()),
-      dismissRow.getByRole('button', { name: 'Dismiss' }).click(),
+      page.getByRole('menuitem', { name: 'Dismiss' }).click(),
     ]);
     await expect(dismissRow).toHaveCount(0);
     await expect.poll(() => jobRecoveryDismissalExists(seed.dismissEventId)).toBe(true);

@@ -14,8 +14,8 @@ export default function JobsError({
     <div className="space-y-8">
       <JobsPageHeader />
       <ErrorState
-        title="Unable to load background jobs"
-        description="No background work has been retried, dismissed, or changed. Check your connection, then try again."
+        title="Unable to load job recovery"
+        description="No jobs have been retried, dismissed, or changed. Check your connection, then try again."
         error={error}
         reset={reset}
       />

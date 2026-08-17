@@ -17,15 +17,15 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('Background jobs route states', () => {
+describe('Job recovery route states', () => {
   it('announces loading outside an inert, motion-safe placeholder while retaining route context', () => {
     const { container } = render(<JobsLoading />);
 
     const announcement = screen.getByRole('status');
-    expect(announcement.textContent).toBe('Loading background jobs');
+    expect(announcement.textContent).toBe('Loading job recovery');
     expect(announcement.parentElement?.getAttribute('aria-busy')).toBeNull();
-    expect(screen.getByLabelText('Loading background jobs').getAttribute('aria-busy')).toBe('true');
-    expect(screen.getAllByRole('heading', { level: 1, name: 'Background jobs' })).toHaveLength(1);
+    expect(screen.getByLabelText('Loading job recovery').getAttribute('aria-busy')).toBe('true');
+    expect(screen.getAllByRole('heading', { level: 1, name: 'Job recovery' })).toHaveLength(1);
     expect(screen.getByRole('link', { name: 'Back' }).getAttribute('href')).toBe('/app/team');
     expect(screen.queryByRole('region')).toBeNull();
     expect(screen.queryByRole('heading', { level: 2, name: 'Processing summary' })).toBeNull();
@@ -63,16 +63,14 @@ describe('Background jobs route states', () => {
 
     render(<JobsError error={new Error('route failed')} reset={reset} />);
 
-    expect(screen.getAllByRole('heading', { level: 1, name: 'Background jobs' })).toHaveLength(1);
+    expect(screen.getAllByRole('heading', { level: 1, name: 'Job recovery' })).toHaveLength(1);
     expect(screen.getByText('Admins only')).toBeTruthy();
     expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Back' }).getAttribute('href')).toBe('/app/team');
-    expect(
-      screen.getByRole('heading', { level: 2, name: 'Unable to load background jobs' }),
-    ).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 2, name: 'Unable to load job recovery' })).toBeTruthy();
     expect(
       screen.getByText(
-        'No background work has been retried, dismissed, or changed. Check your connection, then try again.',
+        'No jobs have been retried, dismissed, or changed. Check your connection, then try again.',
       ),
     ).toBeTruthy();
 

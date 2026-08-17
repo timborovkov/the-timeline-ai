@@ -1,4 +1,5 @@
 import { Breadcrumb } from '@/components/breadcrumb';
+import { JOB_RECOVERY_PAGE_TITLE } from '@/components/job-recovery/jobs-page-header';
 import { PageHeaderSkeleton } from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -6,11 +7,11 @@ export default function JobsLoading() {
   return (
     <>
       <output className="sr-only" aria-live="polite">
-        Loading background jobs
+        Loading job recovery
       </output>
-      <div className="space-y-8" aria-busy="true" aria-label="Loading background jobs">
-        <h1 className="sr-only">Background jobs</h1>
-        <Breadcrumb items={[{ label: 'Team', href: '/app/team' }, { label: 'Background jobs' }]} />
+      <div className="space-y-8" aria-busy="true" aria-label="Loading job recovery">
+        <h1 className="sr-only">{JOB_RECOVERY_PAGE_TITLE}</h1>
+        <Breadcrumb items={[{ label: 'Team', href: '/app/team' }, { label: JOB_RECOVERY_PAGE_TITLE }]} />
         <PageHeaderSkeleton />
 
         <section

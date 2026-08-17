@@ -72,7 +72,7 @@ beforeEach(() => {
   });
 });
 
-describe('Background jobs page', () => {
+describe('Job recovery page', () => {
   it('shows the admin recovery queue and keeps older backlog out of the list', async () => {
     const html = renderToStaticMarkup(await JobRecoveryPage({ searchParams: Promise.resolve({}) }));
 

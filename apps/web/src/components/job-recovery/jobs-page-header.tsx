@@ -2,9 +2,11 @@ import { Breadcrumb } from '@/components/breadcrumb';
 import { JOBS_ATTENTION_DAYS } from '@/components/job-recovery/jobs-attention';
 import { PageHeader } from '@/components/page-header';
 
+export const JOB_RECOVERY_PAGE_TITLE = 'Job recovery';
+
 const JOBS_BREADCRUMB = [
   { label: 'Team', href: '/app/team' },
-  { label: 'Background jobs' },
+  { label: JOB_RECOVERY_PAGE_TITLE },
 ] as const;
 
 export function jobsPageSubtitle(): string {
@@ -24,7 +26,7 @@ export function JobsPageHeader({
     <>
       <Breadcrumb items={[...JOBS_BREADCRUMB]} />
       <PageHeader
-        title="Background jobs"
+        title={JOB_RECOVERY_PAGE_TITLE}
         subtitle={jobsPageSubtitle()}
         metadata={[
           { label: 'access', value: 'Admins only' },
@@ -43,7 +45,7 @@ export function JobsPageHeader({
             ? ([{ label: 'older hidden', value: olderCount, mono: true }] as const)
             : []),
         ]}
-        srLabel={`Background jobs${teamName ? ` for ${teamName}` : ''}. Admins only.${typeof itemCount === 'number' ? ` ${String(itemCount)} from the last ${String(JOBS_ATTENTION_DAYS)} days.` : ''}${olderCount > 0 ? ` ${String(olderCount)} older jobs are hidden.` : ''}`}
+        srLabel={`${JOB_RECOVERY_PAGE_TITLE}${teamName ? ` for ${teamName}` : ''}. Admins only.${typeof itemCount === 'number' ? ` ${String(itemCount)} from the last ${String(JOBS_ATTENTION_DAYS)} days.` : ''}${olderCount > 0 ? ` ${String(olderCount)} older jobs are hidden.` : ''}`}
       />
     </>
   );

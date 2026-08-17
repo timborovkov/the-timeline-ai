@@ -35,7 +35,7 @@ export function JobsForbiddenView({ teamName }: { teamName: string }): ReactNode
       <JobsPageHeader teamName={teamName} />
       <EmptyAction
         title="Admins only"
-        body="Background jobs is a team-admin recovery queue. Ask an admin to retry or dismiss failed processing."
+        body="Job recovery is a team-admin queue. Ask an admin to retry or dismiss failed processing."
         href="/app"
         action="Back to Home"
       />

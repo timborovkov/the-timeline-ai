@@ -6,6 +6,7 @@ export function CollectionRow({
   leading,
   title,
   context,
+  contextTitle,
   metadata,
   actions,
   selected = false,
@@ -14,6 +15,7 @@ export function CollectionRow({
   leading?: ReactNode;
   title: ReactNode;
   context?: ReactNode;
+  contextTitle?: string;
   metadata?: ReactNode;
   actions?: ReactNode;
   selected?: boolean;
@@ -32,13 +34,19 @@ export function CollectionRow({
         <div className="min-w-0 flex-1">
           <div className="min-w-0 truncate text-sm font-medium leading-5 text-fg">{title}</div>
           {context ? (
-            <div className="min-w-0 truncate text-[11px] leading-4 text-fg-dim sm:hidden">
+            <div
+              className="min-w-0 truncate text-[11px] leading-4 text-fg-dim sm:hidden"
+              title={contextTitle}
+            >
               {context}
             </div>
           ) : null}
         </div>
         {context ? (
-          <div className="hidden min-w-0 max-w-[22rem] truncate text-xs text-fg-dim sm:block">
+          <div
+            className="hidden min-w-0 max-w-[22rem] truncate text-xs text-fg-dim sm:block"
+            title={contextTitle}
+          >
             {context}
           </div>
         ) : null}

@@ -2,13 +2,14 @@
 
 import { CheckCircle2, CircleAlert, LoaderCircle, RotateCcw, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react';
 
 import type * as jobRecovery from '@timeline/shared/job-recovery';
 
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
+import { jobRecoveryRowHint } from '@/components/job-recovery/job-recovery-row-hint';
 import {
   DISMISS_MATCHING_CLIENT_MAX_ROUNDS,
   JOBS_ATTENTION_DAYS,
@@ -21,7 +22,11 @@ import { TechnicalDetails } from '@/components/technical-details';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ItemActionGroup } from '@/components/ui/item-actions';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
+import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { formatRelativeAge } from '@/lib/display-dates';
+import { isoTimestamp } from '@/lib/iso-timestamp';
 import {
   type FinishedJobArchivePage,
   useFinishedJobsInfiniteQuery,
@@ -644,6 +649,22 @@ function JobRecoveryItems({
   );
 }
 
+function unsubscribeClientRender(): void {
+  return undefined;
+}
+
+function subscribeClientRender(): () => void {
+  return unsubscribeClientRender;
+}
+
+function clientRenderSnapshot(): boolean {
+  return true;
+}
+
+function serverRenderSnapshot(): boolean {
+  return false;
+}
+
 function JobRecoveryRows({
   busy,
   items,
@@ -655,10 +676,19 @@ function JobRecoveryRows({
   onAction: (action: 'retry' | 'dismiss', id: string) => Promise<void>;
   retryStates: RetryStates;
 }) {
+  const timezone = useWorkspaceTimezone();
+  const isClient = useSyncExternalStore(
+    subscribeClientRender,
+    clientRenderSnapshot,
+    serverRenderSnapshot,
+  );
   return (
     <ul>
       {items.map((item) => {
         const retry = retryStates[item.id];
+        const hint = jobRecoveryRowHint(item, timezone);
+        const iso = isoTimestamp(item.detectedAt);
+        const relative = isClient && iso ? formatRelativeAge(iso) : '\u00a0';
         return (
           <li key={item.id}>
             <CollectionRow
@@ -674,8 +704,13 @@ function JobRecoveryRows({
                   }
                 />
               }
-              title={item.label}
-              context={new Date(item.detectedAt).toLocaleString()}
+              title={
+                <span className="block truncate" title={hint}>
+                  {item.label}
+                </span>
+              }
+              context={relative}
+              contextTitle={isClient ? hint : undefined}
               metadata={retry ? <RetryStatus snapshot={retry} /> : null}
               actions={
                 <JobRecoveryItemActions busy={busy} item={item} onAction={onAction} retry={retry} />
@@ -701,34 +736,27 @@ function JobRecoveryItemActions({
 }) {
   return (
     <ItemActionGroup label={`Actions for ${item.label}`}>
-      {item.retryable ? (
-        <Button
-          size="sm"
-          variant="secondary"
-          disabled={busy !== null || retry?.status === 'queued'}
-          onClick={() => {
-            void onAction('retry', item.id);
+      <ItemOverflowMenu targetLabel={item.label}>
+        {item.retryable ? (
+          <DropdownMenuItem
+            disabled={busy !== null || retry?.status === 'queued'}
+            onSelect={() => {
+              void onAction('retry', item.id);
+            }}
+          >
+            Retry
+          </DropdownMenuItem>
+        ) : null}
+        <DropdownMenuItem
+          disabled={busy !== null}
+          className="text-destructive focus:text-destructive"
+          onSelect={() => {
+            void onAction('dismiss', item.id);
           }}
         >
-          {retry?.status === 'queued' ? (
-            <LoaderCircle aria-hidden="true" className="mr-1 size-3.5 animate-spin" />
-          ) : (
-            <RotateCcw aria-hidden="true" className="mr-1 size-3.5" />
-          )}
-          {busy === `retry:${item.id}` ? 'Retrying' : 'Retry'}
-        </Button>
-      ) : null}
-      <Button
-        size="sm"
-        variant="ghost"
-        disabled={busy !== null}
-        onClick={() => {
-          void onAction('dismiss', item.id);
-        }}
-      >
-        <X aria-hidden="true" className="mr-1 size-3.5" />
-        {busy === `dismiss:${item.id}` ? 'Dismissing' : 'Dismiss'}
-      </Button>
+          Dismiss
+        </DropdownMenuItem>
+      </ItemOverflowMenu>
     </ItemActionGroup>
   );
 }
@@ -800,6 +828,9 @@ function ConversationSuggestionRecovery({ onQueued }: { onQueued: () => void }) 
     <div className="flex flex-col gap-2 rounded-sm border border-border bg-surface p-3 md:flex-row md:items-center md:justify-between">
       <div className="space-y-1">
         <h2 className="text-sm font-medium">Conversation suggestions</h2>
+        <p className="text-xs text-fg-muted">
+          Re-queue reviews if suggestions did not appear. Leave this unless support asks.
+        </p>
         {status ? <p className="text-xs text-fg-muted">{status}</p> : null}
       </div>
       <div className="flex flex-wrap items-center gap-2">
