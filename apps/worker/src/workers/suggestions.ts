@@ -76,51 +76,69 @@ interface SuggestionWorkerIO {
   buildEvidencePack?: typeof evidencePacks.buildEvidencePack;
 }
 
-const suggestionItemSchema = z
-  .object({
-    operation: z.enum(['create', 'update', 'archive_or_cancel']),
-    targetKind: z.enum([
-      'task',
-      'object',
-      'calendar_event',
-      'object_note',
-      'board_membership',
-      'board_item_update',
-      'object_relationship',
-    ]),
-    targetId: z.uuid().nullable().optional(),
-    title: z.string().min(1).max(200),
-    description: z.string().max(500).nullable().optional(),
-    proposedPayload: z.record(z.string(), z.unknown()),
+const suggestionItemObjectSchema = z.object({
+  operation: z.enum(['create', 'update', 'archive_or_cancel']),
+  targetKind: z.enum([
+    'task',
+    'object',
+    'calendar_event',
+    'object_note',
+    'board_membership',
+    'board_item_update',
+    'object_relationship',
+  ]),
+  targetId: z.uuid().nullable().optional(),
+  title: z.string().min(1).max(200),
+  description: z.string().max(500).nullable().optional(),
+  proposedPayload: z.record(z.string(), z.unknown()),
+});
+
+function refineSuggestionItemTarget(
+  item: z.infer<typeof suggestionItemObjectSchema>,
+  ctx: z.RefinementCtx,
+): void {
+  if (
+    item.operation !== 'create' &&
+    (item.targetKind === 'task' ||
+      item.targetKind === 'object' ||
+      item.targetKind === 'calendar_event') &&
+    !item.targetId
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['targetId'],
+      message: 'targetId is required for updates and cancellations',
+    });
+  }
+}
+
+const suggestionItemBaseSchema = suggestionItemObjectSchema.superRefine(refineSuggestionItemTarget);
+
+const suggestionItemSchema = suggestionItemObjectSchema
+  .extend({
     evidenceRawEventIds: z.array(z.uuid()).min(1).max(32).optional(),
   })
-  .superRefine((item, ctx) => {
-    if (
-      item.operation !== 'create' &&
-      (item.targetKind === 'task' ||
-        item.targetKind === 'object' ||
-        item.targetKind === 'calendar_event') &&
-      !item.targetId
-    ) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['targetId'],
-        message: 'targetId is required for updates and cancellations',
-      });
-    }
-  });
+  .superRefine(refineSuggestionItemTarget);
 
-const suggestionBundleSchema = z.object({
+const suggestionBundleBaseSchema = z.object({
   title: z.string().min(1).max(200),
   summary: z.string().max(1000).nullable().optional(),
   reason: z.string().max(1000).nullable().optional(),
   confidence: z.enum(['low', 'medium', 'high']).default('medium'),
   quote: z.string().max(1000).nullable().optional(),
+  items: z.array(suggestionItemBaseSchema).max(5),
+});
+
+const suggestionBundleSchema = suggestionBundleBaseSchema.extend({
   items: z.array(suggestionItemSchema).max(5),
 });
 
 const suggestionExtractionSchema = z.object({
   bundles: z.array(suggestionBundleSchema).max(5),
+});
+
+const suggestionExtractionSchemaLegacy = z.object({
+  bundles: z.array(suggestionBundleBaseSchema).max(5),
 });
 
 /**
@@ -181,6 +199,12 @@ function tokenizeEvidence(text: string): Map<string, number> {
   return tokens;
 }
 
+function quoteForEvidenceEvent(bundle: SuggestionBundleOutput, contentText: string): string {
+  return bundle.quote && contentText.includes(bundle.quote)
+    ? bundle.quote
+    : truncate(contentText, 500);
+}
+
 function minimalEvidenceForBundle(args: {
   bundle: SuggestionBundleOutput;
   fallbackRawEventId: string;
@@ -233,10 +257,7 @@ function minimalEvidenceForBundle(args: {
   const picked = relevant.length > 0 ? relevant.map((entry) => entry.event) : [fallbackEvent];
   return picked.map((event) => ({
     rawEventId: event.id,
-    quote:
-      args.bundle.quote && event.contentText.includes(args.bundle.quote)
-        ? args.bundle.quote
-        : truncate(event.contentText, 500),
+    quote: quoteForEvidenceEvent(args.bundle, event.contentText),
     metadata: { conversation_evidence: true },
   }));
 }
@@ -2779,7 +2800,9 @@ async function runSuggestionExtraction(
     ? ' Every returned item must include evidenceRawEventIds containing one or more exact raw event UUIDs from the cross-source evidence pack. Cite only pack rows that directly support that item; never invent, transform, or cite an id from another prompt section.'
     : '';
   const result = await chatStructured({
-    schema: suggestionExtractionSchema,
+    schema: (evidencePackEnforced
+      ? suggestionExtractionSchema
+      : suggestionExtractionSchemaLegacy) as typeof suggestionExtractionSchema,
     model: modelId,
     maxOutputTokens: SUGGESTION_EXTRACTION_MAX_OUTPUT_TOKENS,
     system:
@@ -2936,7 +2959,9 @@ async function runSuggestionExtraction(
             proposedPayload,
           }),
           proposedPayload,
-          ...(item.evidenceRawEventIds ? { evidenceRawEventIds: item.evidenceRawEventIds } : {}),
+          ...(evidencePackEnforced && item.evidenceRawEventIds
+            ? { evidenceRawEventIds: item.evidenceRawEventIds }
+            : {}),
         };
       }),
     });

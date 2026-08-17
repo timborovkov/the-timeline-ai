@@ -119,14 +119,19 @@ Ask, Work, Documents, Meetings, Connections, and Team.
   labeled groups: Overview (Home, Timeline, Ask), Workspace (Work, Documents,
   Meetings), and Manage (Connections, Team). Collapsed rails retain the same
   order and expose every destination through its icon label and tooltip.
-- Expanded sidebar: 240px. Collapsed rail: 56px.
+- Expanded sidebar: 240px. Collapsed rail: 56px. The product mark uses the
+  same 12px inset as primary destinations and links to Home (`/app`). Fold and
+  unfold is a quiet chevron, not a boxed panel glyph.
 - Shell header: 48px.
 - Main page container: one shell-owned `max-w-6xl`; routes must not create a
   competing outer page width.
 - Full-canvas chat and boards may opt into full bleed.
 - Provider-created chat sessions use a compact `TG`, `SL`, or neutral `EXT`
   badge in desktop and mobile history. Web-created sessions remain unbadged;
-  provider identity must not replace the human-readable session title.
+  provider identity must not replace the human-readable session title. Each
+  row shows last-activity age; archive stays hidden until hover or focus on
+  desktop. A search field under New chat filters history. The Ask heading keeps
+  the selected title on the same row and does not show a session count.
 - Inspector: hidden until content exists. Desktop uses the right pane; mobile
   uses a focus-managed bottom sheet.
 - Work routes share `WorkSubnav`: Overview, Pinned, Objects, Tasks, Boards,
@@ -330,6 +335,17 @@ Ask uses a standard sans header. Human/assistant role labels are quiet 12px
 text; citations remain mono and lime. Tool execution is collapsed. Pinned
 objects always have a human label. Prompts handed off from Home are stored
 briefly in team-scoped session storage and never in the URL.
+
+The desktop session list stays dense: last-activity age under each title in
+mono 11px, a centered 60% hairline between rows, and archive revealed on row
+hover or keyboard focus. Hovering the relative age shows the localized
+timestamp. A search field under New chat filters the visible history. New chat
+uses the shared ghost `Button`. Touch session lists keep archive visible.
+
+The Ask heading stays on one row. When a conversation is selected, its title
+sits beside the heading as truncated muted text. The mobile session summary
+uses that same resolved title, including deep-linked chats outside the recent
+list. Session counts do not appear in the header.
 
 The web Ask surface is the rich research view: answers may be thorough and use
 sections, lists, or tables, while inline citations remain inspectable links to
@@ -614,3 +630,7 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Quiet Home attention and dense recent moments | Collapses typed open-people/company/project rows into one open-objects count, drops the Attention and Recent moments headings, and replaces the Home timeline preview with denser title-only rows plus a clear Open timeline path. |
 | 2026-08-17 | Team setup checklist on Home | Moves the team checklist under Ask, opens the full list for new members, and replaces the Reopen setup button with a quiet Team setup checklist toggle. |
 | 2026-08-17 | Team setup loop and Home timeline links | Expands the checklist into a product-loop set, keeps the open header as quiet as the folded toggle, persists Hide, adds a folded chevron and off-Home chip, and turns Home moment titles into Timeline links with a quiet full-timeline path. |
+| 2026-08-17 | Dense Ask session history | Reveals archive on hover/focus, shows relative last-activity age with a timestamp title, and uses a short centered hairline instead of a persistent trash column. |
+| 2026-08-17 | Ask session search and title | Filters chat history from the session rail and shows the selected title beside Ask instead of a session count. |
+| 2026-08-17 | Ask mobile session title | Reuses the resolved conversation title in the mobile session summary, including deep-linked chats outside the recent list. |
+| 2026-08-17 | Quiet sidebar brand and fold control | Aligns the product mark with primary nav, sends it to Home, and replaces the boxed fold glyph with a lighter chevron. |

@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Slack conversations and capture setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-27</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-08-17</span></div>
       <p class="tldr">
         Slack is a first-party conversational surface like Telegram: direct text talks to the agent,
         files and explicit notes are captured, and channels stay ingestion-first unless someone
@@ -98,6 +98,15 @@ SLACK_SIGNING_SECRET=
       <p>
         The events, slash-command, and interaction endpoints verify Slack's
         <code>X-Slack-Signature</code> and reject timestamps older than five minutes.
+      </p>
+      <p>
+        Slack's <code>/</code> picker is the workspace slash-command list, not a Telegram-style bot
+        menu. After the two commands above exist on the Slack app, <code>/ask</code> and
+        <code>/timeline</code> appear when someone types <code>/</code>. Nested actions such as
+        <code>note</code>, <code>new</code>, and <code>help</code> are arguments to
+        <code>/timeline</code>, so they will not show as their own slash commands. There is no
+        runtime <code>setMyCommands</code> equivalent; adding or renaming slash commands is Slack
+        app configuration.
       </p>
 
       <h2 id="scopes">3. Add scopes and events</h2>
