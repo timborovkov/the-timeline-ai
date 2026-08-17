@@ -1,4 +1,4 @@
-import { type Db, dailyDigests, entities, teamDigestDestinations } from '@timeline/db';
+import { type Db, dailyDigests, entities } from '@timeline/db';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
