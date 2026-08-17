@@ -1154,6 +1154,16 @@ function TimelineMomentRow({
   const sourceTruth = sourceTruthSummary(moment);
   const title = displayMomentTitle(moment);
   const previewText = supportingText(moment, sourceTruth.body ?? 'Evidence available');
+  const selectedChatBinder = selected ? (
+    <ChatViewContextBinder
+      viewKey={`timeline:${moment.id}`}
+      kind={moment.rawEvents[0]?.id ? 'timeline-event' : 'timeline-moment'}
+      href={compactTimelineMomentHref(moment)}
+      label={chatViewLabel(title, 'Timeline moment')}
+      {...(moment.rawEvents[0]?.id ? { timelineEventId: moment.rawEvents[0].id } : {})}
+      timelineMomentId={moment.id}
+    />
+  ) : null;
   const sourceCountLabel =
     moment.rawEvents.length === 1 ? '1 signal' : `${moment.rawEvents.length} signals`;
   const hasSupportingContext =
@@ -1171,6 +1181,7 @@ function TimelineMomentRow({
         )}
         data-moment-id={moment.id}
       >
+        {selectedChatBinder}
         <Link
           href={compactTimelineMomentHref(moment)}
           className="flex min-h-9 min-w-0 items-center gap-3 py-1.5 text-left"
@@ -1208,6 +1219,7 @@ function TimelineMomentRow({
       )}
       data-moment-id={moment.id}
     >
+      {selectedChatBinder}
       {moment.rawEvents.map((event) => (
         <span
           key={event.id}
