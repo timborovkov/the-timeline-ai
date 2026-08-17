@@ -165,10 +165,13 @@ function AddCustomMcpServerForm({
     event.preventDefault();
     if (!formRef.current?.reportValidity()) return;
     setFormState({ busy: true });
+    const outcome = { success: 'Server added' };
     const result = await notifyAction({
       id: 'mcp:add-server',
       loading: 'Adding server…',
-      success: 'Server added',
+      get success() {
+        return outcome.success;
+      },
       error: 'Couldn’t add server',
       run: async () => {
         const body: Record<string, unknown> = { name, url, authType };
@@ -203,7 +206,7 @@ function AddCustomMcpServerForm({
           } catch {
             // The server was created, so OAuth failure is recoverable from its Connect action.
           }
-          notifyError('mcp:oauth-start', 'Server added. Connect it again to finish authorization.');
+          outcome.success = 'Server added. Connect it again to finish authorization.';
         }
         return { ok: true };
       },

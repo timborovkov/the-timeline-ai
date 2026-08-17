@@ -147,7 +147,10 @@ export function ConnectedIntegrations({
       error: method === 'sync' ? 'Couldn’t sync integration' : 'Couldn’t disconnect integration',
       run: async () => {
         const res = await fetch(`/api/integrations/manage/${id}/${method}`, { method: 'POST' });
-        if (!res.ok) return { error: 'request_failed' };
+        if (!res.ok) {
+          const data = (await res.json().catch(() => ({}))) as { error?: string };
+          return { error: connectionErrorMessage(data.error, res.status) };
+        }
         return { ok: true };
       },
     });

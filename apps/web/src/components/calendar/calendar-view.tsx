@@ -664,7 +664,9 @@ function useCalendarViewModel({
           const saved = editing
             ? await updateCalendarEventAction({ id: editing.id, ...input })
             : await createCalendarEventAction(input);
-          return saved.ok ? saved : { error: saved.error ?? 'Failed to save event.' };
+          return saved.ok
+            ? saved
+            : { error: saved.error ?? (editing ? 'Couldn’t update event' : 'Couldn’t create event') };
         },
         undo:
           editing && originalEvent
@@ -735,7 +737,7 @@ function useCalendarViewModel({
           const deleted = await deleteCalendarEventAction(editing.id, {
             recurrenceEditMode: draft.recurrenceEditMode,
           });
-          return deleted.ok ? deleted : { error: deleted.error ?? 'Failed to delete event.' };
+          return deleted.ok ? deleted : { error: deleted.error ?? 'Couldn’t delete event' };
         },
       });
       if (result.error) return;

@@ -298,13 +298,14 @@ export function JobRecoveryList({ items, defaultFilter }: JobRecoveryListProps) 
           startedAt: retryStartedAt,
         });
         if ((body.failed ?? failedRetryIds.size) > 0) {
-          return { error: 'partial' };
+          const failed = body.failed ?? failedRetryIds.size;
+          return { error: `${failed} of ${failedItems.length} jobs couldn’t be queued.` };
         }
         return { ok: true };
       },
     });
     dispatchUi({ type: 'busy', busy: null });
-    if (result.error && result.error !== 'partial') return;
+    if (result.error && !result.error.includes('couldn’t be queued')) return;
     void finishedJobs.refetch();
     router.refresh();
   }

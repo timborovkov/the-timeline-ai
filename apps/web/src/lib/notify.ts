@@ -45,6 +45,16 @@ function resultError(result: ActionResult | undefined): string | undefined {
   return result?.error;
 }
 
+const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i;
+
+export function displayActionError(resultMessage: string | undefined, fallback: string): string {
+  if (!resultMessage || resultMessage === fallback) return fallback;
+  if (!/[\s'’]/.test(resultMessage)) return fallback;
+  if (UUID_RE.test(resultMessage)) return fallback;
+  if (/^update failed\b/i.test(resultMessage)) return fallback;
+  return resultMessage;
+}
+
 export async function notifyAction<T extends ActionResult>(
   options: NotifyActionOptions<T>,
 ): Promise<T | { error: string }> {
@@ -86,7 +96,7 @@ export async function notifyAction<T extends ActionResult>(
     const failed = Boolean(resultError(result));
     finish(
       failed,
-      failed ? options.error : options.success,
+      failed ? displayActionError(resultError(result), options.error) : options.success,
       failed ? undefined : options.undo,
       result,
     );

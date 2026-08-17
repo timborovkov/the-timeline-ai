@@ -33,6 +33,16 @@ async function movePin(input: {
   return movePinAction(input);
 }
 
+function restorePinOrder(
+  previous: PinnedItem[],
+  pinId: string,
+): { beforePinId?: string; afterPinId?: string; edge?: 'top' | 'bottom' } {
+  const index = previous.findIndex((item) => item.pinId === pinId);
+  if (index <= 0) return { edge: 'top' };
+  const before = previous[index - 1];
+  return before ? { afterPinId: before.pinId } : { edge: 'top' };
+}
+
 function reorder(items: PinnedItem[], from: number, to: number): PinnedItem[] {
   if (from === to) return items;
   const next = [...items];
@@ -135,6 +145,17 @@ export function PinnedWorkspaceManager({
         success: 'Pin reordered',
         error: 'Couldn’t reorder pin',
         run: () => movePin({ pinId: item.pinId, ...input }),
+        undo: {
+          run: async () => {
+            dispatch({ type: 'optimistic-move', items: previous });
+            const undone = await movePin({
+              pinId: item.pinId,
+              ...restorePinOrder(previous, item.pinId),
+            });
+            if (undone.error) dispatch({ type: 'optimistic-move', items: nextItems });
+            return undone;
+          },
+        },
       });
       if (result.error) {
         dispatch({ type: 'move-failed', items: previous, error: result.error });
@@ -179,6 +200,19 @@ export function PinnedWorkspaceManager({
               success: 'Pin reordered',
               error: 'Couldn’t reorder pin',
               run: () => movePin({ pinId: item.pinId, afterPinId: adjacent.pinId }),
+              undo: {
+                run: async () => {
+                  dispatch({ type: 'optimistic-move', items: previous });
+                  const undone = await movePin({
+                    pinId: item.pinId,
+                    ...restorePinOrder(previous, item.pinId),
+                  });
+                  if (undone.error) {
+                    dispatch({ type: 'optimistic-move', items: expanded });
+                  }
+                  return undone;
+                },
+              },
             });
             if (result.error) {
               dispatch({ type: 'move-failed', items: previous, error: result.error });

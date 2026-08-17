@@ -1,19 +1,34 @@
+// @vitest-environment happy-dom
+
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as objects from '@timeline/shared/objects/types';
 
-const fakes = vi.hoisted(() => ({ refresh: vi.fn() }));
-
-vi.mock('next/navigation', () => ({ useRouter: () => fakes }));
-vi.mock('@/app/actions/objects', () => ({
+const fakes = vi.hoisted(() => ({
+  refresh: vi.fn(),
   findObjectCleanupSuggestionsAction: vi.fn(),
+  acceptSuggestionItemAction: vi.fn(),
+  rejectSuggestionItemAction: vi.fn(),
+  notifyAction: vi.fn(async ({ run }: { run: () => Promise<{ error?: string }> }) => run()),
+  notifySuccess: vi.fn(),
+}));
+
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
+vi.mock('@/app/actions/objects', () => ({
+  findObjectCleanupSuggestionsAction: fakes.findObjectCleanupSuggestionsAction,
   mergeObjectsAction: vi.fn(),
 }));
 vi.mock('@/app/actions/suggestions', () => ({
-  acceptSuggestionItemAction: vi.fn(),
-  rejectSuggestionItemAction: vi.fn(),
+  acceptSuggestionItemAction: fakes.acceptSuggestionItemAction,
+  rejectSuggestionItemAction: fakes.rejectSuggestionItemAction,
+}));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: (options: { run: () => Promise<{ error?: string }> }) => fakes.notifyAction(options),
+  notifySuccess: fakes.notifySuccess,
 }));
 
 const { ObjectCleanupSuggestions } = await import('./object-cleanup-suggestions.js');
@@ -41,6 +56,13 @@ const baseObject = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fakes.findObjectCleanupSuggestionsAction.mockResolvedValue({ ok: true, message: 'Scan queued' });
+  fakes.acceptSuggestionItemAction.mockResolvedValue({ ok: true });
+  fakes.rejectSuggestionItemAction.mockResolvedValue({ ok: true });
+});
+
+afterEach(() => {
+  cleanup();
 });
 
 describe('ObjectCleanupSuggestions', () => {
@@ -173,5 +195,63 @@ describe('ObjectCleanupSuggestions', () => {
     expect(html).toContain('Page 1 / 2');
     expect(html).toContain('Archive object 10');
     expect(html).not.toContain('Archive object 11');
+  });
+
+  it('toasts archive and find outcomes instead of writing an inline banner', async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(ObjectCleanupSuggestions, {
+        suggestions: [
+          {
+            id: 'bundle-1',
+            title: 'Object cleanup',
+            summary: null,
+            confidence: 'medium',
+            items: [
+              {
+                id: 'item-archive',
+                status: 'pending',
+                operation: 'archive_or_cancel',
+                targetKind: 'object',
+                targetId: 'object-1',
+                title: 'Archive leftover object',
+                description: 'Archive this low-signal object.',
+                proposedPayload: {},
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    await user.click(screen.getByText('Open'));
+    await user.click(screen.getByRole('button', { name: 'Archive' }));
+    await waitFor(() => {
+      expect(fakes.notifyAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'cleanup:item-archive',
+          loading: 'Archiving…',
+          error: 'Couldn’t archive suggestion',
+        }),
+      );
+    });
+    expect(fakes.acceptSuggestionItemAction).toHaveBeenCalledWith({ itemId: 'item-archive' });
+    expect(screen.queryByText('Suggestion archived')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Find suggestions' }));
+    await waitFor(() => {
+      expect(fakes.notifyAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'cleanup:find',
+          loading: 'Finding suggestions…',
+          error: 'Couldn’t find suggestions',
+        }),
+      );
+    });
+    const findOptions = fakes.notifyAction.mock.calls.find(
+      (call) => call[0]?.id === 'cleanup:find',
+    )?.[0] as { success?: string } | undefined;
+    expect(findOptions?.success).toBe('Scan queued');
+    expect(screen.queryByText('Scan queued')).toBeNull();
   });
 });

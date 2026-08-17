@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useRef, type SyntheticEvent } from 'react';
 import { useFormStatus } from 'react-dom';
 
@@ -8,6 +9,7 @@ import {
   removeMemberAction,
   resendInviteAction,
   revokeInviteAction,
+  type TeamMutationResult,
 } from '@/app/actions/teams';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
@@ -15,6 +17,14 @@ import { ItemActionGroup } from '@/components/ui/item-actions';
 import { notifyAction } from '@/lib/notify';
 
 type TeamAction = (formData: FormData) => void | Promise<void>;
+
+async function runTeamMutation(
+  action: (formData: FormData) => Promise<TeamMutationResult>,
+  formData: FormData,
+): Promise<TeamMutationResult> {
+  const result = await action(formData);
+  return result.error ? { error: result.error } : { ok: true };
+}
 
 function SubmitButton({
   label,
@@ -93,22 +103,31 @@ export function MemberRoleForm({
   memberRole: string;
   userId: string;
 }) {
+  const router = useRouter();
   const controlId = `member-role-${userId}`;
   const helpId = `${controlId}-help`;
 
   return (
     <form
       action={async (formData) => {
-        await notifyAction({
+        const result = await notifyAction({
           id: `member-role:${userId}`,
           loading: 'Updating role…',
           success: 'Role updated',
           error: 'Couldn’t update role',
-          run: async () => {
-            await changeMemberRoleAction(formData);
-            return { ok: true };
+          run: () => runTeamMutation(changeMemberRoleAction, formData),
+          undo: {
+            run: async () => {
+              const undoData = new FormData();
+              undoData.set('userId', userId);
+              undoData.set('role', memberRole);
+              const undone = await runTeamMutation(changeMemberRoleAction, undoData);
+              if (!undone.error) router.refresh();
+              return undone;
+            },
           },
         });
+        if (!result.error) router.refresh();
       }}
       className="w-full space-y-2 sm:w-auto"
     >
@@ -141,19 +160,18 @@ export function MemberRoleForm({
 }
 
 export function RemoveMemberForm({ memberLabel, userId }: { memberLabel: string; userId: string }) {
+  const router = useRouter();
   return (
     <ConfirmingActionForm
       action={async (formData) => {
-        await notifyAction({
+        const result = await notifyAction({
           id: `member:remove:${userId}`,
           loading: 'Removing member…',
           success: 'Member removed',
           error: 'Couldn’t remove member',
-          run: async () => {
-            await removeMemberAction(formData);
-            return { ok: true };
-          },
+          run: () => runTeamMutation(removeMemberAction, formData),
         });
+        if (!result.error) router.refresh();
       }}
       title={`Remove ${memberLabel}?`}
       description={`${memberLabel} will lose access to this team. You can review removed members below.`}
@@ -172,20 +190,19 @@ export function PendingInviteActions({
   inviteEmail: string;
   inviteId: string;
 }) {
+  const router = useRouter();
   return (
     <ItemActionGroup label={`Actions for invite to ${inviteEmail}`}>
       <form
         action={async (formData) => {
-          await notifyAction({
+          const result = await notifyAction({
             id: `invite:resend:${inviteId}`,
             loading: 'Resending invite…',
             success: 'Invite resent',
             error: 'Couldn’t resend invite',
-            run: async () => {
-              await resendInviteAction(formData);
-              return { ok: true };
-            },
+            run: () => runTeamMutation(resendInviteAction, formData),
           });
+          if (!result.error) router.refresh();
         }}
         className="w-full sm:w-auto"
       >
@@ -194,16 +211,14 @@ export function PendingInviteActions({
       </form>
       <ConfirmingActionForm
         action={async (formData) => {
-          await notifyAction({
+          const result = await notifyAction({
             id: `invite:revoke:${inviteId}`,
             loading: 'Revoking invite…',
             success: 'Invite revoked',
             error: 'Couldn’t revoke invite',
-            run: async () => {
-              await revokeInviteAction(formData);
-              return { ok: true };
-            },
+            run: () => runTeamMutation(revokeInviteAction, formData),
           });
+          if (!result.error) router.refresh();
         }}
         title={`Revoke invite for ${inviteEmail}?`}
         description="The current invite link will stop working. You can create a new invite later."

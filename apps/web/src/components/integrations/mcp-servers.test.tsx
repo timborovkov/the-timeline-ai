@@ -216,13 +216,14 @@ describe('McpServersUi', () => {
       await user.click(screen.getByRole('button', { name: 'Add server' }));
 
       await waitFor(() => {
-        expect(notify.notifyError).toHaveBeenCalledWith(
-          'mcp:oauth-start',
-          'Server added. Connect it again to finish authorization.',
-        );
+        expect(notify.notifyAction).toHaveBeenCalled();
         expect(routerRefresh).toHaveBeenCalledOnce();
         expect(screen.queryByText('Add MCP server')).toBeNull();
       });
+      const addOptions = notify.notifyAction.mock.calls.find(
+        (call) => call[0]?.id === 'mcp:add-server',
+      )?.[0] as { success?: string } | undefined;
+      expect(addOptions?.success).toBe('Server added. Connect it again to finish authorization.');
       expect(screen.queryByText('Unable to start authorization')).toBeNull();
     },
   );

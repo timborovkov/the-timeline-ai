@@ -9,11 +9,16 @@ const fakes = vi.hoisted(() => ({
   removeMemberAction: vi.fn(),
   resendInviteAction: vi.fn(),
   revokeInviteAction: vi.fn(),
+  refresh: vi.fn(),
+  notifyAction: vi.fn(async ({ run }: { run: () => Promise<{ error?: string }> }) => run()),
 }));
 
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ refresh: fakes.refresh }),
+}));
 vi.mock('@/app/actions/teams', () => fakes);
 vi.mock('@/lib/notify', () => ({
-  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
+  notifyAction: (options: { run: () => Promise<{ error?: string }> }) => fakes.notifyAction(options),
 }));
 
 const { MemberRoleForm, PendingInviteActions, RemoveMemberForm } =
@@ -46,6 +51,21 @@ describe('MemberRoleForm', () => {
     const controlRow = control.closest('div')?.parentElement;
     expect(controlRow?.className).toContain('flex-col');
     expect(controlRow?.className).toContain('sm:flex-row');
+  });
+
+  it('does not treat a permission failure as a successful role update', async () => {
+    const user = userEvent.setup();
+    fakes.changeMemberRoleAction.mockResolvedValue({ error: 'Only owners can change roles' });
+    render(<MemberRoleForm memberLabel="Ada Lovelace" memberRole="member" userId="member-1" />);
+
+    await user.click(screen.getByRole('button', { name: 'Save role' }));
+
+    await waitFor(() => {
+      expect(fakes.changeMemberRoleAction).toHaveBeenCalledOnce();
+    });
+    const result = await fakes.notifyAction.mock.results[0]?.value;
+    expect(result).toEqual({ error: 'Only owners can change roles' });
+    expect(fakes.refresh).not.toHaveBeenCalled();
   });
 });
 

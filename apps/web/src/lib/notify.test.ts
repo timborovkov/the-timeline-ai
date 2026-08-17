@@ -9,12 +9,35 @@ const toast = vi.hoisted(() => ({
 vi.mock('sonner', () => ({ toast }));
 
 const {
+  displayActionError,
   notifyAction,
   notifyError,
   notifySuccess,
   resetNotifyActionState,
   ACTION_TOAST_LOADING_DELAY_MS,
 } = await import('@/lib/notify');
+
+describe('displayActionError', () => {
+  it('keeps sentence-like action errors and rejects codes, UUIDs, and raw Update failed', () => {
+    expect(displayActionError('2 of 3 updates failed.', 'Couldn’t update items')).toBe(
+      '2 of 3 updates failed.',
+    );
+    expect(displayActionError('Only an admin can do this. Ask a team admin to help.', 'Couldn’t sync')).toBe(
+      'Only an admin can do this. Ask a team admin to help.',
+    );
+    expect(displayActionError('failed', 'Couldn’t retry failed jobs')).toBe('Couldn’t retry failed jobs');
+    expect(displayActionError('partial', 'Couldn’t retry failed jobs')).toBe(
+      'Couldn’t retry failed jobs',
+    );
+    expect(displayActionError('request_failed', 'Couldn’t sync integration')).toBe(
+      'Couldn’t sync integration',
+    );
+    expect(displayActionError('Update failed', 'Couldn’t update status')).toBe('Couldn’t update status');
+    expect(
+      displayActionError('11111111-1111-4111-8111-111111111111', 'Couldn’t update status'),
+    ).toBe('Couldn’t update status');
+  });
+});
 
 describe('notifyAction', () => {
   beforeEach(() => {
@@ -103,6 +126,33 @@ describe('notifyAction', () => {
     expect(result).toEqual({ error: 'stale' });
     expect(toast.error).toHaveBeenCalledWith('Couldn’t update status', {
       id: 'object:1',
+      duration: 6_000,
+    });
+  });
+
+  it('toasts a bounded result error and keeps raw codes on the fallback', async () => {
+    await notifyAction({
+      id: 'object:1',
+      loading: 'Updating items…',
+      success: 'Items updated',
+      error: 'Couldn’t update items',
+      run: () => Promise.resolve({ error: '2 of 3 updates failed.' }),
+    });
+    expect(toast.error).toHaveBeenCalledWith('2 of 3 updates failed.', {
+      id: 'object:1',
+      duration: 6_000,
+    });
+
+    toast.error.mockReset();
+    await notifyAction({
+      id: 'object:2',
+      loading: 'Updating status…',
+      success: 'Status updated',
+      error: 'Couldn’t update status',
+      run: () => Promise.resolve({ error: 'Update failed' }),
+    });
+    expect(toast.error).toHaveBeenCalledWith('Couldn’t update status', {
+      id: 'object:2',
       duration: 6_000,
     });
   });

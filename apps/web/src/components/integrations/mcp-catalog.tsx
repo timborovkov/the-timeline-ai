@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { networkActionError, readPublicApiError } from '@/lib/client-api-error';
-import { notifyAction, notifyError } from '@/lib/notify';
+import { notifyAction } from '@/lib/notify';
 
 interface CatalogEntryProps {
   id: string;
@@ -187,10 +187,13 @@ function CatalogCard({
 
   async function connect(body: Record<string, unknown>) {
     setCardState({ busy: true, fieldError: null });
+    const outcome = { success: 'Server connected' };
     const result = await notifyAction({
       id: `mcp-catalog:${entry.id}:connect`,
       loading: 'Connecting…',
-      success: 'Server connected',
+      get success() {
+        return outcome.success;
+      },
       error: 'Couldn’t connect server',
       run: async () => {
         const res = await fetch('/api/team/mcp-servers', {
@@ -220,7 +223,7 @@ function CatalogCard({
           } catch {
             // The server was created, so OAuth failure is recoverable from its Connect action.
           }
-          notifyError('mcp:oauth-start', 'Server added. Connect it again to finish authorization.');
+          outcome.success = 'Server added. Connect it again to finish authorization.';
         }
         return { ok: true };
       },
