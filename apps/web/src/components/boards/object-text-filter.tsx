@@ -2,6 +2,7 @@
 
 import { Search, X } from 'lucide-react';
 
+import { formatCollectionCount } from '@/lib/collection-count';
 import { cn } from '@/lib/utils';
 
 interface Props {
@@ -54,7 +55,9 @@ export function ObjectTextFilter({
         ) : null}
       </label>
       <output className="text-xs text-fg-dim" aria-live="polite">
-        {active ? `${resultCount} / ${totalCount}` : `${totalCount} visible`}
+        {active
+          ? formatCollectionCount({ matching: resultCount, total: totalCount, filtered: true })
+          : formatCollectionCount({ matching: totalCount, total: totalCount, filtered: false })}
       </output>
     </div>
   );

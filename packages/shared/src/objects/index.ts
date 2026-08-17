@@ -8206,7 +8206,12 @@ function dedupeStoredChatTitle(title: string, existingTitles: string[]): string 
 export async function listChatSessions(
   db: Db,
   scope: TeamScopeCore,
-  filter: { pinnedEntityId?: string; limit?: number; includeArchived?: boolean } = {},
+  filter: {
+    pinnedEntityId?: string;
+    limit?: number;
+    cursor?: string | null;
+    includeArchived?: boolean;
+  } = {},
 ): Promise<ChatSessionRow[]> {
   await scope.requireMembership();
   // Chat sessions are private to their creator within a team. Without
@@ -8220,11 +8225,13 @@ export async function listChatSessions(
   if (filter.pinnedEntityId && UUID_RE.test(filter.pinnedEntityId)) {
     conds.push(eq(chatSessions.pinnedEntityId, filter.pinnedEntityId));
   }
+  const cursorSql = cursorCondition(filter.cursor, chatSessions.updatedAt, chatSessions.id);
+  if (cursorSql) conds.push(cursorSql);
   const rows = await db
     .select()
     .from(chatSessions)
     .where(and(...conds))
-    .orderBy(desc(chatSessions.updatedAt))
+    .orderBy(desc(chatSessions.updatedAt), desc(chatSessions.id))
     .limit(Math.min(Math.max(filter.limit ?? 50, 1), 200));
   return rows.map((r) => ({
     id: r.id,

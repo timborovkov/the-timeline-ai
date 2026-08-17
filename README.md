@@ -67,6 +67,8 @@ set +a
 
 pnpm db:migrate
 pnpm dev:seed
+# Optional volume fixture for infinite-scroll / virtualization:
+# pnpm dev:seed:heavy
 pnpm dev
 ```
 

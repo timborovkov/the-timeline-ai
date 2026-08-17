@@ -3,6 +3,8 @@
 import { presentDueDate } from '@timeline/shared/time';
 import { ExternalLink } from 'lucide-react';
 
+import { InfiniteScroll } from '@/components/collections/infinite-scroll';
+import { VirtualList } from '@/components/collections/virtual-list';
 import { EvidenceLink } from '@/components/evidence-link';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
@@ -27,29 +29,28 @@ export function ObjectSectionFeed({ objectId, section, title, showTitle = true }
       ) : items.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nothing here yet.</p>
       ) : (
-        <ul className="space-y-2 text-sm">
-          {items.map((item) => (
-            <li
-              key={String((item as { id?: unknown }).id)}
-              className="rounded-sm border border-border bg-surface px-4 py-3"
-            >
+        <VirtualList
+          items={items}
+          getItemKey={(item, index) => sectionItemKey(item, index)}
+          estimateSize={72}
+          gap={8}
+          renderItem={(item) => (
+            <div className="rounded-sm border border-border bg-surface px-4 py-3">
               <ObjectSectionItem section={section} item={item} />
-            </li>
-          ))}
-        </ul>
+            </div>
+          )}
+        />
       )}
-      {query.hasNextPage || query.isFetchingNextPage ? (
-        <button
-          type="button"
-          disabled={!query.hasNextPage || query.isFetchingNextPage}
-          onClick={() => {
-            void query.fetchNextPage();
-          }}
-          className="mt-3 rounded-sm border border-border px-3 py-1.5 text-xs text-fg-muted hover:bg-surface disabled:opacity-40"
-        >
-          {query.isFetchingNextPage ? 'Loading…' : 'Load more'}
-        </button>
-      ) : null}
+      <InfiniteScroll
+        hasMore={query.hasNextPage}
+        loading={query.isFetchingNextPage}
+        error={query.isFetchNextPageError ? 'Could not load more.' : null}
+        onLoadMore={() => {
+          void query.fetchNextPage();
+        }}
+        boundLabel="No more matching activity"
+        hideBound={items.length === 0}
+      />
     </section>
   );
 }
@@ -151,6 +152,12 @@ function text(value: unknown, fallback = ''): string {
   if (typeof value === 'string') return displayText(value);
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   return fallback;
+}
+
+function sectionItemKey(item: unknown, index: number): string {
+  if (!item || typeof item !== 'object') return String(index);
+  const id = text((item as Record<string, unknown>).id);
+  return id || String(index);
 }
 
 function rawText(value: unknown, fallback = ''): string {

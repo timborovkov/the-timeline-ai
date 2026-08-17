@@ -4,10 +4,6 @@ import { SlidersHorizontal, X } from 'lucide-react';
 
 import type { ReactNode } from 'react';
 
-import { findSlot } from '@/components/collections/collection-slots';
-import { CollectionToolbarClearAll } from '@/components/collections/collection-toolbar-clear-all';
-import { CollectionToolbarFilters } from '@/components/collections/collection-toolbar-filters';
-import { CollectionToolbarSearch } from '@/components/collections/collection-toolbar-search';
 import {
   Dialog,
   DialogContent,
@@ -28,24 +24,27 @@ interface ActiveFilter {
   onRemove?: () => void;
 }
 
-const EMPTY_ACTIVE_FILTERS: ActiveFilter[] = [];
-
 function filterLabelText(label: ReactNode, fallback: string): string {
   return typeof label === 'string' || typeof label === 'number' ? String(label) : fallback;
 }
 
+const EMPTY_ACTIVE_FILTERS: ActiveFilter[] = [];
+
 export function CollectionToolbar({
+  search,
   count,
-  activeFilters,
+  filters,
+  activeFilters = EMPTY_ACTIVE_FILTERS,
   clearAll,
   view,
   viewControls,
   actions,
   filterTitle = 'Filters',
   className,
-  children,
 }: {
+  search?: ReactNode;
   count?: ReactNode;
+  filters?: ReactNode;
   activeFilters?: ActiveFilter[];
   clearAll?: ReactNode;
   view?: ReactNode;
@@ -53,15 +52,9 @@ export function CollectionToolbar({
   actions?: ReactNode;
   filterTitle?: string;
   className?: string;
-  children?: ReactNode;
 }) {
-  const resolvedActiveFilters = activeFilters ?? EMPTY_ACTIVE_FILTERS;
-  const filterCount = resolvedActiveFilters.length;
+  const filterCount = activeFilters.length;
   const resolvedView = viewControls ?? view;
-  const search = findSlot(children, CollectionToolbarSearch);
-  const filters = findSlot(children, CollectionToolbarFilters);
-  const clearAllSlot = findSlot(children, CollectionToolbarClearAll);
-  const resolvedClearAll = clearAllSlot ?? clearAll;
   const filterTrigger = (
     <button
       type="button"
@@ -81,9 +74,16 @@ export function CollectionToolbar({
   return (
     <div className={cn('border-b border-border bg-bg', className)}>
       <div className="flex min-h-11 min-w-0 flex-wrap items-center gap-1.5 px-2 sm:px-3">
-        {search}
+        {search ? <div className="min-w-48 flex-1 sm:max-w-sm">{search}</div> : null}
         {count ? (
-          <output className="px-1.5 text-xs tabular-nums text-fg-dim">{count}</output>
+          <output
+            aria-label={
+              typeof count === 'string' || typeof count === 'number' ? String(count) : undefined
+            }
+            className="px-1.5 text-xs tabular-nums text-fg-dim"
+          >
+            {count}
+          </output>
         ) : null}
         {filters ? (
           <>
@@ -93,7 +93,7 @@ export function CollectionToolbar({
                 <PopoverContent align="end" className="w-[min(48rem,calc(100vw-2rem))] p-3">
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <p className="text-sm font-semibold text-fg">{filterTitle}</p>
-                    {resolvedClearAll}
+                    {clearAll}
                   </div>
                   {filters}
                 </PopoverContent>
@@ -108,7 +108,7 @@ export function CollectionToolbar({
                     <DialogDescription>Refine the visible collection.</DialogDescription>
                   </DialogHeader>
                   <div className="max-h-[65dvh] overflow-y-auto overscroll-contain">{filters}</div>
-                  {resolvedClearAll}
+                  {clearAll}
                 </DialogContent>
               </Dialog>
             </div>
@@ -125,7 +125,7 @@ export function CollectionToolbar({
       </div>
       {filterCount > 0 ? (
         <div className="flex min-h-9 items-center gap-1 overflow-x-auto border-t border-border/70 px-2 sm:px-3">
-          {resolvedActiveFilters.map((filter) => (
+          {activeFilters.map((filter) => (
             <span
               key={filter.key}
               className="inline-flex min-h-7 shrink-0 items-center gap-1.5 rounded-sm bg-surface-2 px-2 text-[11px] text-fg-muted"
@@ -155,7 +155,7 @@ export function CollectionToolbar({
                 ))}
             </span>
           ))}
-          {resolvedClearAll ? <span className="ml-1 shrink-0">{resolvedClearAll}</span> : null}
+          {clearAll ? <span className="ml-1 shrink-0">{clearAll}</span> : null}
         </div>
       ) : null}
     </div>

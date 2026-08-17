@@ -10,7 +10,6 @@ import { CollectionRowMetadata } from '@/components/collections/collection-row-m
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { priorityTone, statusTone } from '@/components/collections/collection-status-tone';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
-import { CollectionToolbarFilters } from '@/components/collections/collection-toolbar-filters';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { SelectionBar } from '@/components/collections/selection-bar';
@@ -82,20 +81,33 @@ describe('collection primitives', () => {
     expect(screen.getByText('P2')).toBeTruthy();
   });
 
+  it('accepts leading, context, and metadata as props for infinite-scroll lists', () => {
+    render(
+      <CollectionRow
+        leading={<span>Lead</span>}
+        title="Launch plan"
+        context="Acme"
+        metadata={<span>P2</span>}
+      />,
+    );
+    expect(screen.getByText('Lead')).toBeTruthy();
+    expect(screen.getAllByText('Acme')).toHaveLength(2);
+    expect(screen.getByText('P2')).toBeTruthy();
+  });
+
   it('opens desktop filters, removes active chips, and exposes the mobile dialog variant', async () => {
     const user = userEvent.setup();
     const remove = vi.fn();
     render(
       <CollectionToolbar
         count="4 results"
-        activeFilters={[{ key: 'owner', label: 'Owner', value: 'Ada', onRemove: remove }]}
-      >
-        <CollectionToolbarFilters>
+        filters={
           <label>
             Owner <input aria-label="Owner" />
           </label>
-        </CollectionToolbarFilters>
-      </CollectionToolbar>,
+        }
+        activeFilters={[{ key: 'owner', label: 'Owner', value: 'Ada', onRemove: remove }]}
+      />,
     );
 
     expect(screen.getByRole('button', { name: 'Remove Owner filter' }).className).toContain(

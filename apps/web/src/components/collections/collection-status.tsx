@@ -10,6 +10,12 @@ import {
 import { statusLabel } from '@/lib/status-labels';
 import { cn } from '@/lib/utils';
 
+export {
+  priorityTone,
+  statusTone,
+  type StatusTone,
+} from '@/components/collections/collection-status-tone';
+
 const TONE_ICON: Record<StatusTone, ComponentType<SVGProps<SVGSVGElement>>> = {
   neutral: Circle,
   progress: CircleDot,

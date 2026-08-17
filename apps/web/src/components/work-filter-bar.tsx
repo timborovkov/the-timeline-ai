@@ -9,12 +9,10 @@ import type * as boards from '@timeline/shared/boards';
 import type { ReactNode } from 'react';
 
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
-import { CollectionToolbarClearAll } from '@/components/collections/collection-toolbar-clear-all';
-import { CollectionToolbarFilters } from '@/components/collections/collection-toolbar-filters';
-import { CollectionToolbarSearch } from '@/components/collections/collection-toolbar-search';
 import { DebouncedFilterForm } from '@/components/debounced-filter-form';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
 import { useProjectSearch } from '@/hooks/use-project-search';
+import { formatCollectionCount } from '@/lib/collection-count';
 import { displayText } from '@/lib/display-dates';
 import { cn } from '@/lib/utils';
 import { NONE_FILTER_VALUE, UNASSIGNED_FILTER_VALUE } from '@/lib/work-filters';
@@ -98,6 +96,16 @@ export function WorkFilterBar({
     dateRangeToggle.state === 'open' || (hasRangeFilters && !dateRangesManuallyClosed);
   const activeFilterEntries = workFilterEntries(filters);
   const currentParams = { ...hiddenParams, ...workFilterParams(filters) };
+  const clearControl = active ? (
+    <a
+      href={clearHref}
+      className="inline-flex min-h-9 items-center gap-1.5 rounded-sm px-2 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
+    >
+      <X className="size-3.5" aria-hidden />
+      Clear all
+    </a>
+  ) : null;
+
   return (
     <DebouncedFilterForm
       id={domFormId}
@@ -106,29 +114,35 @@ export function WorkFilterBar({
       className={className}
     >
       <CollectionToolbar
-        count={active ? `${resultCount} / ${totalCount}` : `${totalCount} visible`}
-        activeFilters={activeFilterEntries.map(([key, label]) => ({
-          key,
-          label,
-          href: hrefWithParams(basePath, omitParam(currentParams, key)),
-        }))}
-        viewControls={viewControls}
-      >
-        {active ? (
-          <CollectionToolbarClearAll>
-            <a
-              href={clearHref}
-              className="inline-flex min-h-9 items-center gap-1.5 rounded-sm px-2 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
-            >
-              <X className="size-3.5" aria-hidden />
-              Clear all
-            </a>
-          </CollectionToolbarClearAll>
-        ) : null}
-        <CollectionToolbarSearch>
-          <WorkFilterSearch mode={mode} query={filters.q} />
-        </CollectionToolbarSearch>
-        <CollectionToolbarFilters>
+        count={formatCollectionCount({
+          matching: resultCount,
+          total: totalCount,
+          filtered: active,
+        })}
+        search={
+          <label className="relative block min-w-0">
+            <span className="sr-only">Search</span>
+            <Search
+              className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-fg-dim"
+              aria-hidden
+            />
+            <input
+              key={`search:${filters.q}`}
+              name="q"
+              type="search"
+              defaultValue={filters.q}
+              placeholder={
+                mode === 'board'
+                  ? 'Search board items…'
+                  : mode === 'tasks'
+                    ? 'Search tasks…'
+                    : 'Search objects…'
+              }
+              className="h-9 w-full rounded-sm border-0 bg-transparent py-1 pl-8 pr-2 text-sm text-fg outline-none transition-colors placeholder:text-fg-dim focus-visible:ring-2 focus-visible:ring-signal/40"
+            />
+          </label>
+        }
+        filters={
           <div key={filterKey} className="flex min-w-0 flex-wrap items-end gap-2">
             {mode === 'board' ? (
               <FilterSelect name="lane" label="Lane" defaultValue={filters.lane} form={domFormId}>
@@ -336,35 +350,24 @@ export function WorkFilterBar({
               />
             </div>
           </div>
-        </CollectionToolbarFilters>
-      </CollectionToolbar>
-    </DebouncedFilterForm>
-  );
-}
-
-function WorkFilterSearch({ mode, query }: { mode: Props['mode']; query: string }) {
-  return (
-    <label className="relative block min-w-0">
-      <span className="sr-only">Search</span>
-      <Search
-        className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-fg-dim"
-        aria-hidden
-      />
-      <input
-        key={`search:${query}`}
-        name="q"
-        type="search"
-        defaultValue={query}
-        placeholder={
-          mode === 'board'
-            ? 'Search board items…'
-            : mode === 'tasks'
-              ? 'Search tasks…'
-              : 'Search objects…'
         }
-        className="h-9 w-full rounded-sm border-0 bg-transparent py-1 pl-8 pr-2 text-sm text-fg outline-none transition-colors placeholder:text-fg-dim focus-visible:ring-2 focus-visible:ring-signal/40"
+        activeFilters={activeFilterEntries.map(([key, label]) => ({
+          key,
+          label,
+          clear: (
+            <a
+              href={hrefWithParams(basePath, omitParam(currentParams, key))}
+              aria-label={`Remove ${label} filter`}
+              className="inline-flex size-6 items-center justify-center rounded-sm hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
+            >
+              <X aria-hidden="true" className="size-3" />
+            </a>
+          ),
+        }))}
+        clearAll={clearControl}
+        viewControls={viewControls}
       />
-    </label>
+    </DebouncedFilterForm>
   );
 }
 

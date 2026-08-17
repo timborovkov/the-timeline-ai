@@ -2,13 +2,14 @@
 
 import {
   DndContext,
+  DragOverlay,
   PointerSensor,
-  closestCenter,
   useDraggable,
   useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragStartEvent,
 } from '@dnd-kit/core';
 import { useQueries } from '@tanstack/react-query';
 import { TASK_CATEGORY_OPTIONS, type TaskCategory } from '@timeline/shared/task-categories/types';
@@ -41,14 +42,16 @@ import {
 } from '@/app/actions/objects';
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
-import { CollectionRowContext } from '@/components/collections/collection-row-context';
-import { CollectionRowLeading } from '@/components/collections/collection-row-leading';
-import { CollectionRowMetadata } from '@/components/collections/collection-row-metadata';
-import { CollectionStatus } from '@/components/collections/collection-status';
-import { priorityTone, statusTone } from '@/components/collections/collection-status-tone';
+import {
+  CollectionStatus,
+  priorityTone,
+  statusTone,
+} from '@/components/collections/collection-status';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
+import { InfiniteScroll } from '@/components/collections/infinite-scroll';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { SelectionBar } from '@/components/collections/selection-bar';
+import { VirtualList } from '@/components/collections/virtual-list';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { ObjectPinButton } from '@/components/objects/object-pin-button';
 import { ObjectRelatedContext } from '@/components/objects/object-related-context';
@@ -57,19 +60,15 @@ import { TaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { useTaskCategoryPolling } from '@/components/tasks/task-category-polling';
 import { TaskCategorySelect } from '@/components/tasks/task-category-select';
 import { TaskProjectSelect } from '@/components/tasks/task-project-select';
-import { taskViewHref, type TaskView } from '@/components/tasks/task-view';
+import { taskViewHref, type TaskView } from '@/components/tasks/task-view-toggle';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText } from '@/lib/display-dates';
+import { kanbanCollisionDetection } from '@/lib/kanban-collision';
 import { objectDetailHref } from '@/lib/object-links';
 import { displayObjectTitle } from '@/lib/object-title';
 import { statusLabel } from '@/lib/status-labels';
-import {
-  TASK_BOARD_COLUMN_RENDER_LIMIT,
-  TASK_BOARD_LIST_RENDER_LIMIT,
-  TASK_BOARD_TOTAL_LIMIT,
-} from '@/lib/task-board-config';
 import { taskDisplayStatus } from '@/lib/task-statuses';
 import { cn, errorMessage } from '@/lib/utils';
 
@@ -469,7 +468,6 @@ function useTaskBoardController({
   rows,
   columns,
   selectedTaskId,
-  totalCount,
   nextCursor,
   filterParams = EMPTY_FILTER_PARAMS,
   categoryFilterRefreshToken = null,
@@ -651,8 +649,7 @@ function useTaskBoardController({
     const visibleIds = new Set(visibleRows.map((row) => row.id));
     return new Set([...selectedIds].filter((id) => visibleIds.has(id)));
   }, [selectedIds, visibleRows]);
-  const canLoadMore =
-    Boolean(cursor) && loadedRows.length < Math.min(totalCount, TASK_BOARD_TOTAL_LIMIT);
+  const canLoadMore = Boolean(cursor);
 
   const clearSavedTimer = useCallback(() => {
     if (savedTimer.current) {
@@ -870,7 +867,6 @@ function TaskBoardView({
   sensors,
   setSelectedIds,
   filterParams = EMPTY_FILTER_PARAMS,
-  totalCount,
   taskCategoriesEnabled = true,
   updateTask,
   updateTasks,
@@ -883,6 +879,20 @@ function TaskBoardView({
   hydratedPrimaryProjects,
   pinnedObjectIdSet,
 }: Props & ReturnType<typeof useTaskBoardController>) {
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const activeDragRow = activeDragId
+    ? (effectiveRows.find((row) => row.id === activeDragId) ?? null)
+    : null;
+
+  function handleDragStart(event: DragStartEvent): void {
+    setActiveDragId(String(event.active.id));
+  }
+
+  function handleDragEnd(event: DragEndEvent): void {
+    setActiveDragId(null);
+    onDragEnd(event);
+  }
+
   return (
     <div
       className={
@@ -894,8 +904,9 @@ function TaskBoardView({
       <DndContext
         id={dndContextId}
         sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={onDragEnd}
+        collisionDetection={kanbanCollisionDetection}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
       >
         <div className="flex h-full min-h-0 min-w-0 flex-col">
           {moveUi.saveState !== 'idle' ? (
@@ -938,6 +949,10 @@ function TaskBoardView({
                   onProjectChangeReverted={revertPrimaryProject}
                   taskHref={(taskId) => taskHref(taskId, filterParams)}
                   pinnedObjectIds={pinnedObjectIdSet}
+                  canLoadMore={canLoadMore}
+                  loadingMore={loadingMore}
+                  loadError={loadError}
+                  onLoadMore={loadMoreTasks}
                 />
               ))}
             </section>
@@ -960,29 +975,29 @@ function TaskBoardView({
               taskCategoriesEnabled={taskCategoriesEnabled}
               filterParams={filterParams}
               pinnedObjectIds={pinnedObjectIdSet}
+              canLoadMore={canLoadMore}
+              loadingMore={loadingMore}
+              loadError={loadError}
+              onLoadMore={loadMoreTasks}
             />
           )}
-          <div className="flex shrink-0 flex-wrap items-center gap-3 px-2 pb-4 pt-3 sm:px-3">
-            <output className="text-xs text-fg-dim" aria-live="polite">
-              {`${effectiveRows.length} loaded of ${totalCount}`}
-            </output>
-            {canLoadMore ? (
-              <button
-                type="button"
-                onClick={loadMoreTasks}
-                disabled={loadingMore}
-                className="h-8 rounded-sm border border-border bg-bg px-3 text-xs font-medium hover:bg-signal-soft disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {loadingMore ? 'Loading…' : 'Load older tasks'}
-              </button>
-            ) : null}
-            {loadError ? (
-              <span className="text-xs text-danger" role="alert">
-                {loadError}
-              </span>
-            ) : null}
-          </div>
+          {view === 'kanban' &&
+          effectiveRows.length > 0 &&
+          !canLoadMore &&
+          !loadingMore &&
+          !loadError ? (
+            <p role="status" className="shrink-0 px-4 py-2 text-center text-xs text-fg-dim md:px-8">
+              No more matching tasks
+            </p>
+          ) : null}
         </div>
+        <DragOverlay>
+          {activeDragRow ? (
+            <div className="rounded-sm border border-signal bg-bg px-2.5 py-2 text-sm shadow-md">
+              {displayObjectTitle(activeDragRow)}
+            </div>
+          ) : null}
+        </DragOverlay>
       </DndContext>
       {selectedTask ? (
         <TaskDetailPanel
@@ -1038,6 +1053,10 @@ function TaskListView({
   taskCategoriesEnabled,
   filterParams,
   pinnedObjectIds,
+  canLoadMore,
+  loadingMore,
+  loadError,
+  onLoadMore,
 }: {
   rows: objects.ObjectRow[];
   columns: string[];
@@ -1059,7 +1078,12 @@ function TaskListView({
   taskCategoriesEnabled: boolean;
   filterParams: Record<string, string>;
   pinnedObjectIds: ReadonlySet<string>;
+  canLoadMore: boolean;
+  loadingMore: boolean;
+  loadError: string | null;
+  onLoadMore: () => void;
 }) {
+  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
   if (rows.length === 0) {
     return (
       <p className="rounded-sm border-y border-border bg-surface py-10 text-center text-xs text-fg-dim">
@@ -1068,13 +1092,11 @@ function TaskListView({
     );
   }
 
-  const renderedRows = rows.slice(0, TASK_BOARD_LIST_RENDER_LIMIT);
-  const hiddenRows = rows.length - renderedRows.length;
   const orderedStatuses = Array.from(
-    new Set([...columns, ...renderedRows.map((row) => taskDisplayStatus(row.status))]),
+    new Set([...columns, ...rows.map((row) => taskDisplayStatus(row.status))]),
   );
   const groupedRows = orderedStatuses.flatMap((status) => {
-    const groupRows = renderedRows.filter((row) => taskDisplayStatus(row.status) === status);
+    const groupRows = rows.filter((row) => taskDisplayStatus(row.status) === status);
     return groupRows.length > 0 ? [{ status, rows: groupRows }] : [];
   });
 
@@ -1098,7 +1120,7 @@ function TaskListView({
         onUpdateTaskCategories={onUpdateTaskCategories}
         taskCategoriesEnabled={taskCategoriesEnabled}
       />
-      <div className="min-h-0 flex-1 overflow-y-auto bg-bg">
+      <div ref={setScrollEl} className="min-h-0 flex-1 overflow-y-auto bg-bg">
         {groupedRows.map((group) => {
           const groupSelected = group.rows.every((row) => selectedIds.has(row.id));
           return (
@@ -1132,10 +1154,13 @@ function TaskListView({
                 </label>
               }
             >
-              <ul>
-                {group.rows.map((row) => (
+              <VirtualList
+                items={group.rows}
+                getItemKey={(row) => row.id}
+                estimateSize={48}
+                getScrollElement={() => scrollEl}
+                renderItem={(row) => (
                   <TaskListRow
-                    key={row.id}
                     row={row}
                     columns={columns}
                     members={members}
@@ -1156,16 +1181,19 @@ function TaskListView({
                     filterParams={filterParams}
                     pinned={pinnedObjectIds.has(row.id)}
                   />
-                ))}
-              </ul>
+                )}
+              />
             </CollectionGroup>
           );
         })}
-        {hiddenRows > 0 ? (
-          <p className="border-b border-border bg-surface px-3 py-3 text-center text-xs text-fg-dim">
-            {hiddenRows} loaded tasks hidden. Narrow the filter to inspect them.
-          </p>
-        ) : null}
+        <InfiniteScroll
+          hasMore={canLoadMore}
+          loading={loadingMore}
+          error={loadError}
+          onLoadMore={onLoadMore}
+          boundLabel="No more matching tasks"
+          root={scrollEl}
+        />
       </div>
     </div>
   );
@@ -1229,28 +1257,10 @@ function TaskListRow({
   const assignee = members.find((member) => member.id === row.assigneeUserId);
 
   return (
-    <li style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 44px' }}>
+    <div style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 44px' }}>
       <CollectionRow
         selected={highlighted || selected}
-        title={
-          <Link
-            href={taskViewHref('list', row.id, filterParams)}
-            className="block truncate hover:underline"
-          >
-            {displayText(title)}
-          </Link>
-        }
-        actions={
-          <ItemActionGroup label={`Actions for ${displayText(title)}`}>
-            <PinOverflowMenu
-              target={{ kind: 'object', key: row.id }}
-              title={displayText(title)}
-              initialPinned={pinned}
-            />
-          </ItemActionGroup>
-        }
-      >
-        <CollectionRowLeading>
+        leading={
           <input
             type="checkbox"
             checked={selected}
@@ -1263,17 +1273,25 @@ function TaskListRow({
               selected && 'md:opacity-100',
             )}
           />
-        </CollectionRowLeading>
-        <CollectionRowContext>
-          {error ? (
+        }
+        title={
+          <Link
+            href={taskViewHref('list', row.id, filterParams)}
+            className="block truncate hover:underline"
+          >
+            {displayText(title)}
+          </Link>
+        }
+        context={
+          error ? (
             <span className="text-danger" role="alert">
               {error}
             </span>
           ) : saving ? (
             <span>Saving {saving}…</span>
-          ) : undefined}
-        </CollectionRowContext>
-        <CollectionRowMetadata>
+          ) : undefined
+        }
+        metadata={
           <>
             <EditableMetadata
               label={`Status for ${displayText(title)}`}
@@ -1284,97 +1302,102 @@ function TaskListRow({
                   label={statusLabel(taskDisplayStatus(row.status))}
                 />
               }
-            >
-              <select
-                value={taskDisplayStatus(row.status)}
-                onChange={(event) => {
-                  save('status', { status: event.currentTarget.value });
-                }}
-                className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-                aria-label="Status"
-              >
-                {columns.map((column) => (
-                  <option key={column} value={column}>
-                    {statusLabel(column)}
-                  </option>
-                ))}
-                {!columns.includes(taskDisplayStatus(row.status)) ? (
-                  <option value={row.status}>{statusLabel(row.status)}</option>
-                ) : null}
-              </select>
-            </EditableMetadata>
+              editor={
+                <select
+                  value={taskDisplayStatus(row.status)}
+                  onChange={(event) => {
+                    save('status', { status: event.currentTarget.value });
+                  }}
+                  className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+                  aria-label="Status"
+                >
+                  {columns.map((column) => (
+                    <option key={column} value={column}>
+                      {statusLabel(column)}
+                    </option>
+                  ))}
+                  {!columns.includes(taskDisplayStatus(row.status)) ? (
+                    <option value={row.status}>{statusLabel(row.status)}</option>
+                  ) : null}
+                </select>
+              }
+            />
             {taskCategoriesEnabled ? (
               <EditableMetadata
                 label={`Category for ${displayText(title)}`}
                 value={
                   <TaskCategoryBadge category={row.taskCategory} status={row.taskCategoryStatus} />
                 }
-              >
-                <TaskCategorySelect
-                  taskId={row.id}
-                  category={row.taskCategory}
-                  mode={row.taskCategoryMode}
-                  status={row.taskCategoryStatus}
-                  updatedAt={row.taskCategoryUpdatedAt}
-                />
-              </EditableMetadata>
+                editor={
+                  <TaskCategorySelect
+                    taskId={row.id}
+                    category={row.taskCategory}
+                    mode={row.taskCategoryMode}
+                    status={row.taskCategoryStatus}
+                    updatedAt={row.taskCategoryUpdatedAt}
+                  />
+                }
+              />
             ) : null}
             <EditableMetadata
               label={`Project for ${displayText(title)}`}
               value={primaryProject?.projectName ?? 'No project'}
-            >
-              <TaskProjectSelect
-                taskId={row.id}
-                projectId={primaryProject?.projectId ?? null}
-                currentProjectLabel={primaryProject?.projectName}
-                projectArchived={Boolean(primaryProject?.archivedAt)}
-                projects={projects}
-                onProjectChange={(project) => {
-                  onProjectChange(row.id, project);
-                }}
-                onProjectChangeCommitted={() => {
-                  onProjectChangeCommitted(row.id);
-                }}
-                onProjectChangeReverted={() => {
-                  onProjectChangeReverted(row.id);
-                }}
-              />
-            </EditableMetadata>
+              editor={
+                <TaskProjectSelect
+                  taskId={row.id}
+                  projectId={primaryProject?.projectId ?? null}
+                  currentProjectLabel={primaryProject?.projectName}
+                  projectArchived={Boolean(primaryProject?.archivedAt)}
+                  projects={projects}
+                  onProjectChange={(project) => {
+                    onProjectChange(row.id, project);
+                  }}
+                  onProjectChangeCommitted={() => {
+                    onProjectChangeCommitted(row.id);
+                  }}
+                  onProjectChangeReverted={() => {
+                    onProjectChangeReverted(row.id);
+                  }}
+                />
+              }
+            />
             <EditableMetadata
               label={`Assignee for ${displayText(title)}`}
               pending={saving === 'assignee'}
               value={assignee?.label ?? 'Unassigned'}
-            >
-              <select
-                value={row.assigneeUserId ?? ''}
-                onChange={(event) => {
-                  save('assignee', { assigneeUserId: event.currentTarget.value || null });
-                }}
-                className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-                aria-label="Assignee"
-              >
-                <option value="">Unassigned</option>
-                {members.map((member) => (
-                  <option key={member.id} value={member.id}>
-                    {member.label}
-                  </option>
-                ))}
-              </select>
-            </EditableMetadata>
+              editor={
+                <select
+                  value={row.assigneeUserId ?? ''}
+                  onChange={(event) => {
+                    save('assignee', { assigneeUserId: event.currentTarget.value || null });
+                  }}
+                  className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+                  aria-label="Assignee"
+                >
+                  <option value="">Unassigned</option>
+                  {members.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.label}
+                    </option>
+                  ))}
+                </select>
+              }
+            />
             <EditableMetadata
               label={`Due date for ${displayText(title)}`}
               pending={saving === 'due date'}
               value={<DueDateDisplay value={row.dueAt} variant="field-hint" />}
-            >
-              <MetadataDateEditor
-                defaultValue={row.dueAt ? dateInputValue(row.dueAt, timezone) : ''}
-                onApply={(value) => {
-                  save('due date', {
-                    dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
-                  });
-                }}
-              />
-            </EditableMetadata>
+              editor={
+                <MetadataDateEditor
+                  defaultValue={row.dueAt ? dateInputValue(row.dueAt, timezone) : ''}
+                  onApply={(value) => {
+                    save('due date', {
+                      dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
+                    });
+                  }}
+                />
+              }
+            />
             <EditableMetadata
               label={`Priority for ${displayText(title)}`}
               pending={saving === 'priority'}
@@ -1385,29 +1408,41 @@ function TaskListRow({
                   label={row.priority ? `P${row.priority}` : 'No priority'}
                 />
               }
-            >
-              <select
-                value={row.priority ?? ''}
-                onChange={(event) => {
-                  save('priority', {
-                    priority: event.currentTarget.value ? Number(event.currentTarget.value) : null,
-                  });
-                }}
-                className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-                aria-label="Priority"
-              >
-                <option value="">None</option>
-                {[1, 2, 3, 4].map((priority) => (
-                  <option key={priority} value={priority}>
-                    P{priority}
-                  </option>
-                ))}
-              </select>
-            </EditableMetadata>
+              editor={
+                <select
+                  value={row.priority ?? ''}
+                  onChange={(event) => {
+                    save('priority', {
+                      priority: event.currentTarget.value
+                        ? Number(event.currentTarget.value)
+                        : null,
+                    });
+                  }}
+                  className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+                  aria-label="Priority"
+                >
+                  <option value="">None</option>
+                  {[1, 2, 3, 4].map((priority) => (
+                    <option key={priority} value={priority}>
+                      P{priority}
+                    </option>
+                  ))}
+                </select>
+              }
+            />
           </>
-        </CollectionRowMetadata>
-      </CollectionRow>
-    </li>
+        }
+        actions={
+          <ItemActionGroup label={`Actions for ${displayText(title)}`}>
+            <PinOverflowMenu
+              target={{ kind: 'object', key: row.id }}
+              title={displayText(title)}
+              initialPinned={pinned}
+            />
+          </ItemActionGroup>
+        }
+      />
+    </div>
   );
 }
 
@@ -1653,6 +1688,10 @@ function TaskColumn({
   onProjectChangeReverted,
   taskHref,
   pinnedObjectIds,
+  canLoadMore,
+  loadingMore,
+  loadError,
+  onLoadMore,
 }: {
   id: string;
   rows: objects.ObjectRow[];
@@ -1669,11 +1708,14 @@ function TaskColumn({
   onProjectChangeReverted: (taskId: string) => void;
   taskHref: (taskId: string) => string;
   pinnedObjectIds: ReadonlySet<string>;
+  canLoadMore: boolean;
+  loadingMore: boolean;
+  loadError: string | null;
+  onLoadMore: () => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id });
   const headingId = useId();
-  const renderedRows = rows.slice(0, TASK_BOARD_COLUMN_RENDER_LIMIT);
-  const hiddenRows = rows.length - renderedRows.length;
+  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
   return (
     <section
       ref={setNodeRef}
@@ -1689,32 +1731,42 @@ function TaskColumn({
         </h3>
         <span className="text-xs text-fg">{rows.length}</span>
       </div>
-      <ul className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto">
-        {renderedRows.map((row) => (
-          <TaskCard
-            key={row.id}
-            row={row}
-            href={taskHref(row.id)}
-            selected={row.id === selectedTaskId}
-            saving={savingCardIds.has(row.id)}
-            error={cardErrors[row.id]}
-            members={members}
-            projects={projects}
-            primaryProject={primaryProjects.find((project) => project.taskId === row.id) ?? null}
-            taskCategoriesEnabled={taskCategoriesEnabled}
-            onUpdateTask={onUpdateTask}
-            onProjectChange={onProjectChange}
-            onProjectChangeCommitted={onProjectChangeCommitted}
-            onProjectChangeReverted={onProjectChangeReverted}
-            pinned={pinnedObjectIds.has(row.id)}
-          />
-        ))}
-        {hiddenRows > 0 ? (
-          <li className="rounded-sm border border-border bg-bg px-3 py-2 text-center text-xs text-fg-dim">
-            {hiddenRows} loaded tasks hidden. Narrow filter.
-          </li>
-        ) : null}
-      </ul>
+      <div ref={setScrollEl} className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <VirtualList
+          items={rows}
+          getItemKey={(row) => row.id}
+          estimateSize={120}
+          gap={8}
+          getScrollElement={() => scrollEl}
+          renderItem={(row) => (
+            <TaskCard
+              row={row}
+              href={taskHref(row.id)}
+              selected={row.id === selectedTaskId}
+              saving={savingCardIds.has(row.id)}
+              error={cardErrors[row.id]}
+              members={members}
+              projects={projects}
+              primaryProject={primaryProjects.find((project) => project.taskId === row.id) ?? null}
+              taskCategoriesEnabled={taskCategoriesEnabled}
+              onUpdateTask={onUpdateTask}
+              onProjectChange={onProjectChange}
+              onProjectChangeCommitted={onProjectChangeCommitted}
+              onProjectChangeReverted={onProjectChangeReverted}
+              pinned={pinnedObjectIds.has(row.id)}
+            />
+          )}
+        />
+        <InfiniteScroll
+          hasMore={canLoadMore}
+          loading={loadingMore}
+          error={loadError}
+          onLoadMore={onLoadMore}
+          boundLabel="No more matching tasks"
+          hideBound
+          root={scrollEl}
+        />
+      </div>
     </section>
   );
 }
@@ -1776,7 +1828,7 @@ function TaskCard({
       });
   };
   return (
-    <li
+    <article
       ref={setNodeRef}
       style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 76px', ...style }}
       className={cn(
@@ -1819,71 +1871,75 @@ function TaskCard({
             value={
               <TaskCategoryBadge category={row.taskCategory} status={row.taskCategoryStatus} />
             }
-          >
-            <TaskCategorySelect
-              taskId={row.id}
-              category={row.taskCategory}
-              mode={row.taskCategoryMode}
-              status={row.taskCategoryStatus}
-              updatedAt={row.taskCategoryUpdatedAt}
-            />
-          </EditableMetadata>
+            editor={
+              <TaskCategorySelect
+                taskId={row.id}
+                category={row.taskCategory}
+                mode={row.taskCategoryMode}
+                status={row.taskCategoryStatus}
+                updatedAt={row.taskCategoryUpdatedAt}
+              />
+            }
+          />
         ) : null}
         <EditableMetadata
           label={`Project for ${displayText(title)}`}
           value={primaryProject?.projectName ?? 'No project'}
-        >
-          <TaskProjectSelect
-            taskId={row.id}
-            projectId={primaryProject?.projectId ?? null}
-            currentProjectLabel={primaryProject?.projectName}
-            projectArchived={Boolean(primaryProject?.archivedAt)}
-            projects={projects}
-            onProjectChange={(project) => {
-              onProjectChange(row.id, project);
-            }}
-            onProjectChangeCommitted={() => {
-              onProjectChangeCommitted(row.id);
-            }}
-            onProjectChangeReverted={() => {
-              onProjectChangeReverted(row.id);
-            }}
-          />
-        </EditableMetadata>
+          editor={
+            <TaskProjectSelect
+              taskId={row.id}
+              projectId={primaryProject?.projectId ?? null}
+              currentProjectLabel={primaryProject?.projectName}
+              projectArchived={Boolean(primaryProject?.archivedAt)}
+              projects={projects}
+              onProjectChange={(project) => {
+                onProjectChange(row.id, project);
+              }}
+              onProjectChangeCommitted={() => {
+                onProjectChangeCommitted(row.id);
+              }}
+              onProjectChangeReverted={() => {
+                onProjectChangeReverted(row.id);
+              }}
+            />
+          }
+        />
         <EditableMetadata
           label={`Assignee for ${displayText(title)}`}
           value={memberLabel(row.assigneeUserId, members)}
           pending={metadataSaving}
-        >
-          <select
-            value={row.assigneeUserId ?? ''}
-            onChange={(event) => {
-              saveMetadata({ assigneeUserId: event.currentTarget.value || null });
-            }}
-            className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-          >
-            <option value="">Unassigned</option>
-            {members.map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.label}
-              </option>
-            ))}
-          </select>
-        </EditableMetadata>
+          editor={
+            <select
+              value={row.assigneeUserId ?? ''}
+              onChange={(event) => {
+                saveMetadata({ assigneeUserId: event.currentTarget.value || null });
+              }}
+              className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+            >
+              <option value="">Unassigned</option>
+              {members.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.label}
+                </option>
+              ))}
+            </select>
+          }
+        />
         <EditableMetadata
           label={`Due date for ${displayText(title)}`}
           value={<DueDateDisplay value={row.dueAt} variant="compact" />}
           pending={metadataSaving}
-        >
-          <MetadataDateEditor
-            defaultValue={row.dueAt ? row.dueAt.toISOString().slice(0, 10) : ''}
-            onApply={(value) => {
-              saveMetadata({
-                dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
-              });
-            }}
-          />
-        </EditableMetadata>
+          editor={
+            <MetadataDateEditor
+              defaultValue={row.dueAt ? row.dueAt.toISOString().slice(0, 10) : ''}
+              onApply={(value) => {
+                saveMetadata({
+                  dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
+                });
+              }}
+            />
+          }
+        />
         <EditableMetadata
           label={`Priority for ${displayText(title)}`}
           value={
@@ -1894,24 +1950,25 @@ function TaskCard({
             />
           }
           pending={metadataSaving}
-        >
-          <select
-            value={row.priority ?? ''}
-            onChange={(event) => {
-              saveMetadata({
-                priority: event.currentTarget.value ? Number(event.currentTarget.value) : null,
-              });
-            }}
-            className="h-10 rounded-sm border border-border bg-bg px-2 text-xs"
-          >
-            <option value="">None</option>
-            {[1, 2, 3, 4].map((priority) => (
-              <option key={priority} value={priority}>
-                P{priority}
-              </option>
-            ))}
-          </select>
-        </EditableMetadata>
+          editor={
+            <select
+              value={row.priority ?? ''}
+              onChange={(event) => {
+                saveMetadata({
+                  priority: event.currentTarget.value ? Number(event.currentTarget.value) : null,
+                });
+              }}
+              className="h-10 rounded-sm border border-border bg-bg px-2 text-xs"
+            >
+              <option value="">None</option>
+              {[1, 2, 3, 4].map((priority) => (
+                <option key={priority} value={priority}>
+                  P{priority}
+                </option>
+              ))}
+            </select>
+          }
+        />
       </div>
       {metadataError ? (
         <p className="mt-1 text-xs text-danger" role="alert">
@@ -1919,7 +1976,7 @@ function TaskCard({
         </p>
       ) : null}
       {error ? <p className="mt-2 text-xs text-danger">{error}</p> : null}
-    </li>
+    </article>
   );
 }
 
