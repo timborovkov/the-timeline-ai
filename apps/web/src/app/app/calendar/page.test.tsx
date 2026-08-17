@@ -5,6 +5,7 @@ const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   getCalendarSettings: vi.fn(),
   listCalendarEventPage: vi.fn(),
+  listCalendarEvents: vi.fn(),
   listLinkedObjectsForEvents: vi.fn(),
   listMembers: vi.fn(),
   listPendingSuggestions: vi.fn(),
@@ -62,12 +63,12 @@ vi.mock('@/components/calendar/calendar-view', () => ({
   CalendarView: ({
     events,
   }: {
-    events: Array<{
+    events: {
       id: string;
       title: string;
       redacted: boolean;
-      linkedObjects?: Array<{ title: string }>;
-    }>;
+      linkedObjects?: { title: string }[];
+    }[];
   }) => (
     <div data-testid="calendar-view">
       {events.map((event) => (

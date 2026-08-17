@@ -28,13 +28,13 @@ import {
   validateRRule,
 } from '#src/calendar/recurrence.js';
 import { sourceMetadataWithConversationArtifacts } from '#src/conversational/contact-artifacts.js';
-import { displayObjectTitle } from '#src/objects/types.js';
 import {
   refreshLinkArtifactsForRawEvent,
   reconcileLinkArtifactsForRawEvent,
 } from '#src/conversational/link-artifacts.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
+import { displayObjectTitle } from '#src/objects/types.js';
 import { getQdrantClient } from '#src/qdrant/client.js';
 import { buildPointId } from '#src/qdrant/point-id.js';
 import { enqueueCalendarEventEmbedJob } from '#src/queue/queues.js';

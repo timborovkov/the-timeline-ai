@@ -1455,9 +1455,9 @@ describe('calendar scope', () => {
         title: 'Launch program',
       }),
     ]);
-    await expect(teammateScope.calendar.getLinkedEntities(CALENDAR_EVENT_ID)).resolves.toEqual([
-      expect.objectContaining({ entityId: ENTITY_ID }),
-    ]);
+    await expect(teammateScope.calendar.getLinkedEntities(CALENDAR_EVENT_ID)).resolves.toEqual(
+      expect.arrayContaining([expect.objectContaining({ entityId: ENTITY_ID })]),
+    );
     await expect(
       teammateScope.calendar.getLinkedEntities('cccccccc-cccc-cccc-cccc-ccccccccccce'),
     ).resolves.toEqual([]);

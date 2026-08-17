@@ -146,7 +146,7 @@ export function calendarEventsSignature(events: CalendarEvent[]): string {
         String(event.redacted),
         event.visibility,
         event.visibilityUserIds?.join(',') ?? '',
-        (event.linkedObjects ?? [])
+        event.linkedObjects
           .map((object) => `${object.id}:${object.relationshipType}:${object.title}`)
           .join(','),
       ].join('\u001f'),

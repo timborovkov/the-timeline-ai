@@ -15,6 +15,11 @@ const fakes = vi.hoisted(() => ({
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => fakes }));
+vi.mock('@/lib/auth', () => ({ auth: vi.fn() }));
+vi.mock('next-auth', () => ({
+  default: () => ({ handlers: {}, auth: vi.fn(), signIn: vi.fn(), signOut: vi.fn() }),
+  CredentialsSignin: class CredentialsSignin extends Error {},
+}));
 vi.mock('@tanstack/react-query', async (importOriginal) => {
   const actual = await importOriginal<typeof ReactQuery>();
   return {

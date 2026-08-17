@@ -1,11 +1,11 @@
 import { teamCalendarSubscriptions, users } from '@timeline/db';
-import type { CalendarLinkedObjectRow } from '@timeline/shared/calendar';
 import { getEnv } from '@timeline/shared/env';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, eq, inArray } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
 import type { CalendarEvent, CalendarLinkedObject } from '@/components/calendar/calendar-overlay';
+import type { CalendarLinkedObjectRow } from '@timeline/shared/calendar';
 import type { Metadata } from 'next';
 
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
