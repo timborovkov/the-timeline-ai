@@ -329,7 +329,7 @@ Follow-ups; Status is the current state of work, not a product-specific label.
 Empty sections and empty task, object, or calendar groups are omitted. The
 header shows the digest date; the covering time range stays footer metadata.
 Activity is a hairline count strip using the same mono lime numbers as Home
-and Timeline, and is hidden when every count is zero. Task, object, and
+Attention, and is hidden when every count is zero. Task, object, and
 calendar blocks are ordinary linked lists: newly created or completed tasks,
 new non-task objects, calendar events that fell in the digest window, and
 upcoming events. Titles use the same underlined Home treatment in the app and

@@ -98,14 +98,15 @@ SUPPORT_EMAIL=contact@thetimeline.cc
         their original occurrence time is older. Each generated digest covers <em>all</em> timeline
         events in its window (paginated, not capped), with every visible moment surfaced to the
         summarizer. Email, in-app digest, and chat destinations reuse the same payload; the CTA
-        opens that day's row on Work → Digests. The covering time range is shown on web, email, and
-        chat. New and completed task titles and new object titles link to the object on the
-        dashboard, calendar rows link to the specific event, and the footer links to Dashboard,
-        Timeline, Tasks, and the other app surfaces. The worker registers the noon UTC scheduler on
-        boot and also queues one idempotent catch-up tick, so a deploy or missed scheduler state
-        still creates the current expected digest rows. In-app notifications remain inbox-only;
-        digest email or bot delivery may summarize pending approvals and inbox state, but individual
-        notification rows are not fanned out as standalone messages.
+        opens that day's row on Work → Digests. The digest date is the header; the covering time
+        range stays footer metadata on web, email, and chat. New and completed task titles and new
+        object titles link to the object on the dashboard, calendar rows link to the specific event,
+        and the footer links to Dashboard, Timeline, Tasks, and the other app surfaces. The worker
+        registers the noon UTC scheduler on boot and also queues one idempotent catch-up tick, so a
+        deploy or missed scheduler state still creates the current expected digest rows. In-app
+        notifications remain inbox-only; digest email or bot delivery may summarize pending
+        approvals and inbox state, but individual notification rows are not fanned out as standalone
+        messages.
       </p>
       <p>
         New signups receive a non-blocking verification email through the same messaging module.

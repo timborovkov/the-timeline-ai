@@ -1001,10 +1001,11 @@ _Avoid_: Setup wizard, activation gate
 The signed-in landing surface for a team member. It leads with Ask, the team
 setup checklist, and actionable attention, keeps capture in a focused dialog,
 and follows with a folded latest digest, pinned work, and a dense scan of
-recent moments. The digest opens into a covering time range, narrative
-summaries of what changed, and linked task, object, and calendar rows; Work →
-Digests lists generated days. It does not duplicate the canonical
-Timeline, Work navigation, or Connections management.
+recent moments. The digest header is the day; the covering time range stays
+footer metadata. Opened digests show narrative summaries of what changed and
+linked task, object, and calendar rows; Work → Digests lists generated days.
+It does not duplicate the canonical Timeline, Work navigation, or Connections
+management.
 _Avoid_: Timeline when referring to the landing page
 
 **Workspace Time Context**:
