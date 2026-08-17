@@ -244,6 +244,10 @@ assert.equal(
   'pnpm dev:seed && pnpm demo:index && pnpm demo:verify',
 );
 assert.equal(packageJson.scripts?.['demo:reset'], 'pnpm dev:wipe && pnpm demo:seed');
+assert.equal(
+  packageJson.scripts?.['dev:seed:heavy'],
+  'NODE_OPTIONS=--conditions=development tsx scripts/seed-dev.ts --heavy',
+);
 assert.equal(packageJson.scripts?.['demo:index']?.includes('fixture-version=demo-seed-v1'), true);
 
 const glossary = readFileSync('docs/demo-corpus.md', 'utf8');
@@ -254,6 +258,7 @@ assert.match(glossary, /Customer dealflow/);
 assert.match(glossary, /Series A funding/);
 assert.match(glossary, /pnpm demo:seed/);
 assert.match(glossary, /pnpm demo:reset/);
+assert.match(glossary, /pnpm dev:seed:heavy/);
 assert.match(glossary, /Polar Studio is inbound/);
 assert.match(glossary, /pending add-to-board/);
 assert.match(glossary, /Active lane holds the Northstar Works company/);

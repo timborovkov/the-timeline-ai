@@ -59,6 +59,7 @@ import {
   DEMO_SOURCE_REFS,
   DEMO_TIMES,
 } from './demo-fixture.js';
+import { seedHeavyAcmeLabs } from './seed-dev-heavy.js';
 
 loadDotEnv(resolve(process.cwd(), '.env'));
 
@@ -286,6 +287,7 @@ function demoAssociation(input: {
 
 async function main(): Promise<void> {
   assertDemoSeedEnvironment();
+  const heavy = process.argv.includes('--heavy');
 
   const db = getDb();
   await assertReservedSeedRowsAreCompatible(db);
@@ -2161,6 +2163,21 @@ async function main(): Promise<void> {
 
       await insertExpandedDemoCorpus(tx);
     });
+
+    if (heavy) {
+      await db.transaction(async (tx) => {
+        await seedHeavyAcmeLabs(tx, {
+          team: IDS.team,
+          owner: IDS.owner,
+          member: IDS.member,
+          board: IDS.board,
+          laneTodo: IDS.laneTodo,
+          laneDoing: IDS.laneDoing,
+          laneDone: IDS.laneDone,
+        });
+      });
+      console.log('[seed-dev] seeded heavy Acme Labs volume for infinite-scroll testing');
+    }
 
     console.log('[seed-dev] seeded Acme Labs demo workspace');
     console.log('[seed-dev] logins (password timeline-dev):');

@@ -151,7 +151,8 @@ Treat this file as an operating contract for agents, not a loose README.
   visibility, source links, canonical support drift, or expanded-corpus volume floors. The commands refuse production and
   unapproved remote databases/Qdrant; S3 writes additionally require the local endpoint and
   `timeline-documents` bucket unless `ALLOW_DEV_SEED_STORAGE` carries the documented explicit
-  isolated-storage acknowledgement. The fake
+  isolated-storage acknowledgement. `pnpm dev:seed:heavy` adds extra Acme Labs rows after that
+  corpus so infinite-scroll fetches and virtualization have enough volume. The fake
   integrations stay disabled for sync so local workers do not call real
   providers. Live daily-digest send stays off; historical digest rows are still seeded.
   Keep the credential list in [README.md](README.md) and the glossary in

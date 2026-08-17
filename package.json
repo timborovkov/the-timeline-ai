@@ -35,6 +35,7 @@
     "validate": "pnpm format:check && pnpm typecheck && pnpm lint && pnpm knip",
     "dev:wipe": "NODE_OPTIONS=--conditions=development node --import tsx scripts/env-reset.ts",
     "dev:seed": "NODE_OPTIONS=--conditions=development tsx scripts/seed-dev.ts",
+    "dev:seed:heavy": "NODE_OPTIONS=--conditions=development tsx scripts/seed-dev.ts --heavy",
     "demo:seed": "pnpm dev:seed && pnpm demo:index && pnpm demo:verify",
     "demo:reset": "pnpm dev:wipe && pnpm demo:seed",
     "demo:index": "TIMELINE_ENV_FILE=$PWD/.env pnpm --filter @timeline/worker demo-index -- --team=20000000-0000-4000-8000-000000000001 --fixture-version=demo-seed-v1",

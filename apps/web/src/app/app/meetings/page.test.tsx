@@ -1,6 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { ReactNode } from 'react';
+
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   getCalendarSettings: vi.fn(),
@@ -36,6 +38,25 @@ vi.mock('@timeline/shared/team-scope', () => ({
       resolveVisibilityDefault: fakes.resolveVisibilityDefault,
     },
   }),
+}));
+vi.mock('@/components/collections/virtual-list', () => ({
+  VirtualList: ({
+    items,
+    renderItem,
+    getItemKey,
+    ariaLabel,
+  }: {
+    items: { id: string }[];
+    renderItem: (item: { id: string }, index: number) => ReactNode;
+    getItemKey: (item: { id: string }, index: number) => string;
+    ariaLabel?: string;
+  }) => (
+    <div aria-label={ariaLabel}>
+      {items.map((item, index) => (
+        <div key={getItemKey(item, index)}>{renderItem(item, index)}</div>
+      ))}
+    </div>
+  ),
 }));
 vi.mock('@/components/meeting-forms', () => ({
   ArchiveSavedMeetingButton: () => null,
@@ -85,7 +106,7 @@ describe('MeetingsPage', () => {
       }),
     );
 
-    expect(fakes.listMeetings).toHaveBeenCalledWith({ limit: 50 });
+    expect(fakes.listMeetings).toHaveBeenCalledWith({ limit: 31, cursor: null });
     expect(html).toContain('role="search"');
     expect(html).toContain('aria-label="Meeting views"');
     expect(html).toContain('aria-current="page"');
@@ -93,7 +114,7 @@ describe('MeetingsPage', () => {
     expect(html).toContain('Filters');
     expect(html).toContain('Launch review');
     expect(html).not.toContain('Daily sync');
-    expect(html).toContain('Showing 1 of 2 captures.');
+    expect(html).toContain('1 of 2');
     expect(html).toContain('href="/app/meetings"');
   });
 
@@ -109,10 +130,10 @@ describe('MeetingsPage', () => {
     expect(html).toContain('Search saved meetings');
     expect(html).not.toContain('Filter captures');
     expect(html).toContain('No saved meetings match your search');
-    expect(html).toContain('Showing 0 of 1 saved meetings.');
+    expect(html).toContain('0 of 1');
     expect(html).toContain('href="/app/meetings?tab=saved"');
     expect(html).toContain('Scheduled and recent captures');
-    expect(fakes.listMeetings).toHaveBeenCalledWith({ limit: 50 });
+    expect(fakes.listMeetings).toHaveBeenCalledWith({ limit: 31, cursor: null });
   });
 
   it('keeps scheduled and recent captures visible when searching saved meetings', async () => {

@@ -67,6 +67,8 @@ set +a
 
 pnpm db:migrate
 pnpm demo:seed
+# Optional extra volume for infinite-scroll / virtualization:
+# pnpm dev:seed:heavy
 pnpm dev
 ```
 
@@ -83,6 +85,8 @@ floors hold. A real development
 `OPENROUTER_API_KEY` is therefore required; a missing key or unavailable Qdrant fails closed without
 marking the document embedded. The commands refuse production, unapproved remote databases or
 Qdrant, and non-local/nonstandard S3 storage without its separate explicit acknowledgement.
+`pnpm dev:seed:heavy` is optional extra Acme Labs volume for infinite-scroll and virtualization
+tests; recorded demos should keep using `demo:seed`.
 
 Open <http://localhost:3000> and sign in with any seeded Acme Labs member. Password
 for every login is `timeline-dev`. Start demos as Avery:

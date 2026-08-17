@@ -3,7 +3,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ReactNode } from 'react';
 
@@ -29,6 +29,24 @@ vi.mock('@/components/documents/document-preview', () => ({
 vi.mock('@/components/evidence-link', () => ({
   EvidenceLink: ({ children }: { children: ReactNode }) =>
     createElement('a', { href: '/app/timeline?event=event-1#ev-event-1' }, children),
+}));
+vi.mock('@/components/collections/virtual-list', () => ({
+  VirtualList: ({
+    items,
+    renderItem,
+    getItemKey,
+  }: {
+    items: { id: string }[];
+    renderItem: (item: { id: string }, index: number) => ReactNode;
+    getItemKey: (item: { id: string }, index: number) => string;
+  }) =>
+    createElement(
+      'div',
+      null,
+      items.map((item, index) =>
+        createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+      ),
+    ),
 }));
 
 const { CapturedFilesList } = await import('./captured-files-list.js');
@@ -83,6 +101,15 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+beforeEach(() => {
+  class FakeIntersectionObserver {
+    observe = vi.fn();
+    unobserve = vi.fn();
+    disconnect = vi.fn();
+  }
+  vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
+});
+
 describe('CapturedFilesList', () => {
   it('uses friendly labels for captured files and keeps evidence visible', () => {
     const html = renderToStaticMarkup(
@@ -102,7 +129,8 @@ describe('CapturedFilesList', () => {
     expect(html).toContain('Telegram');
     expect(html).toContain('Ready for search');
     expect(html).toContain('Team visibility');
-    expect(html).toContain('Showing 1 captured file');
+    expect(html).toContain('>1<');
+    expect(html).not.toContain('Showing 1 captured file');
     expect(html).toContain('Preview');
     expect(html).toContain('View evidence');
     expect(html).toContain('Promote');
@@ -360,7 +388,7 @@ describe('CapturedFilesList', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Load older captured files' }));
+    await user.click(screen.getByRole('button', { name: 'Load more' }));
 
     await waitFor(() => {
       expect(screen.queryByText('Old contract')).not.toBeNull();
@@ -380,7 +408,7 @@ describe('CapturedFilesList', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Load older captured files' }));
+    await user.click(screen.getByRole('button', { name: 'Load more' }));
 
     expect(
       await screen.findByText(
@@ -390,11 +418,11 @@ describe('CapturedFilesList', () => {
     expect(screen.getByText('Whiteboard planning photo')).toBeTruthy();
 
     await waitFor(() => {
-      expect(
-        screen.getByRole('button', { name: 'Retry loading older files' }).hasAttribute('disabled'),
-      ).toBe(false);
+      expect(screen.getByRole('button', { name: 'Try again' }).hasAttribute('disabled')).toBe(
+        false,
+      );
     });
-    const retry = screen.getByRole('button', { name: 'Retry loading older files' });
+    const retry = screen.getByRole('button', { name: 'Try again' });
     retry.focus();
     await user.keyboard('{Enter}');
     await waitFor(() => {

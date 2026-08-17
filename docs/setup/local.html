@@ -81,6 +81,7 @@ set +a
 pnpm db:generate            # only if you changed schema
 pnpm db:migrate
 pnpm demo:seed              # optional Acme Labs demo corpus; indexes vectors and verifies evidence
+pnpm dev:seed:heavy         # optional extra volume for infinite-scroll / virtualization
 </code></pre>
       <p>
         Exporting the root environment is required for the database and worker commands. The root
@@ -242,6 +243,7 @@ pnpm e2e:setup / pnpm e2e:cleanup     # seed/remove deterministic e2e users and 
 pnpm dev:seed                         # seed local demo data with disabled fake integrations and reconciliation provenance
 pnpm demo:seed                        # seed, production-path index, and verify the private/local fictional demo corpus
 pnpm demo:reset                       # wipe local Postgres/Qdrant/S3/Redis, migrate, and seed again
+pnpm dev:seed:heavy                   # extra Acme Labs volume for infinite-scroll / virtualization after the corpus
 pnpm demo:index                       # re-index fixture vectors through the real embed worker path
 pnpm demo:verify                      # verify logins, downloaded document bytes, scoped Qdrant points, and corpus floors
 pnpm lint &amp;&amp; pnpm typecheck           # quick static checks

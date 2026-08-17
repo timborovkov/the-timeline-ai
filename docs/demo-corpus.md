@@ -26,6 +26,10 @@ pnpm demo:reset    # wipe local Postgres/Qdrant/S3/Redis, migrate, and seed agai
 remote databases/Qdrant, and non-local S3 unless `ALLOW_DEV_SEED` /
 `ALLOW_DEV_SEED_STORAGE` carry the documented acknowledgements.
 
+`pnpm dev:seed:heavy` is optional extra Acme Labs volume for infinite-scroll and
+virtualization tests. It runs after the verified corpus and is not part of
+`demo:seed`.
+
 A development `OPENROUTER_API_KEY` is required so search vectors are real. Documents
 are marked `embedded` only after Qdrant confirms the points. Verification checks every
 seeded login password, downloads document bytes and hashes them (same-size tampering
