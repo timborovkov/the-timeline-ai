@@ -25,6 +25,7 @@ import type { PGlite, Transaction } from '@electric-sql/pglite';
 import { calendarEventMutationLockKey } from '#src/calendar/locking.js';
 import { resetEnvForTests } from '#src/env.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
+import { encodeCursor } from '#src/pagination.js';
 import { suggestionDedupeKey } from '#src/suggestions/index.js';
 import { buildTaskCategoryPacket, taskCategoryInputHash } from '#src/task-categories/classifier.js';
 import { withTeam } from '#src/team-scope.js';
@@ -2126,6 +2127,59 @@ describe('suggestion scope', () => {
     await expect(scope.suggestions.listSuggestions({ status: 'all', limit: 1 })).resolves.toEqual([
       expect.objectContaining({ id: olderPending.id }),
     ]);
+  });
+
+  it('lists pending approvals after a created-at cursor', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const older = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Older cursor approval',
+      dedupeKey: 'list-cursor:older',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Older cursor task',
+          dedupeKey: 'list-cursor:older:item',
+          proposedPayload: { canonicalName: 'Older cursor task' },
+        },
+      ],
+    });
+    const newer = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Newer cursor approval',
+      dedupeKey: 'list-cursor:newer',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Newer cursor task',
+          dedupeKey: 'list-cursor:newer:item',
+          proposedPayload: { canonicalName: 'Newer cursor task' },
+        },
+      ],
+    });
+    await Promise.all([
+      db
+        .update(agentSuggestions)
+        .set({ createdAt: new Date('2026-07-15T09:00:00.000Z') })
+        .where(eq(agentSuggestions.id, older.id)),
+      db
+        .update(agentSuggestions)
+        .set({ createdAt: new Date('2026-07-16T09:00:00.000Z') })
+        .where(eq(agentSuggestions.id, newer.id)),
+    ]);
+
+    const firstPage = await scope.suggestions.listSuggestions({ status: 'pending', limit: 1 });
+    expect(firstPage.map((bundle) => bundle.id)).toEqual([newer.id]);
+    const secondPage = await scope.suggestions.listSuggestions({
+      status: 'pending',
+      limit: 1,
+      cursor: encodeCursor({ at: '2026-07-16T09:00:00.000Z', id: newer.id }),
+    });
+    expect(secondPage.map((bundle) => bundle.id)).toEqual([older.id]);
   });
 
   it('counts only approval items visible to the current member', async () => {

@@ -48,6 +48,27 @@ vi.mock('@/components/inspector-context', () => ({
 }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
 vi.mock('sonner', () => ({ toast: { success: fakes.toastSuccess } }));
+vi.mock('@/components/collections/virtual-list', () => ({
+  VirtualList: ({
+    items,
+    renderItem,
+    renderSticky,
+    getItemKey,
+  }: {
+    items: { id: string }[];
+    renderItem: (item: { id: string }, index: number) => ReactNode;
+    renderSticky?: (item: { id: string } | undefined) => ReactNode;
+    getItemKey: (item: { id: string }, index: number) => string;
+  }) =>
+    createElement(
+      'div',
+      null,
+      renderSticky?.(items[0]),
+      items.map((item, index) =>
+        createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+      ),
+    ),
+}));
 
 const { TimelineList } = await import('./timeline-list.js');
 

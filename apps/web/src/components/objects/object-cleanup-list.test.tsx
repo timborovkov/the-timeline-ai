@@ -2,9 +2,11 @@
 
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { createElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as objects from '@timeline/shared/objects/types';
+import type { ReactNode } from 'react';
 
 const fakes = vi.hoisted(() => ({
   refresh: vi.fn(),
@@ -21,6 +23,25 @@ vi.mock('@/components/ui/app-dialog', () => ({
 vi.mock('@/app/actions/objects', () => ({
   bulkArchiveObjectsAction: fakes.bulkArchiveObjectsAction,
   updateObjectAction: fakes.updateObjectAction,
+  loadObjectRowsAction: vi.fn(),
+}));
+vi.mock('@/components/collections/virtual-list', () => ({
+  VirtualList: ({
+    items,
+    renderItem,
+    getItemKey,
+  }: {
+    items: { id: string }[];
+    renderItem: (item: { id: string }, index: number) => ReactNode;
+    getItemKey: (item: { id: string }, index: number) => string;
+  }) =>
+    createElement(
+      'div',
+      null,
+      items.map((item, index) =>
+        createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+      ),
+    ),
 }));
 vi.mock('sonner', () => ({ toast: { error: fakes.toastError, success: vi.fn() } }));
 
@@ -101,12 +122,16 @@ describe('ObjectCleanupList', () => {
     expect(screen.queryByText('Merge')).toBeNull();
 
     await user.click(screen.getByRole('checkbox', { name: 'Select First object' }));
-    expect(screen.getByRole('status').textContent).toBe('1 object selected');
+    expect(screen.getByRole('status', { name: '1 object selected' }).textContent).toBe(
+      '1 object selected',
+    );
     expect(screen.getByText('Merge').getAttribute('aria-disabled')).toBe('true');
     expect(screen.queryByRole('link', { name: 'Merge' })).toBeNull();
 
     await user.click(screen.getByRole('checkbox', { name: 'Select Second object' }));
-    expect(screen.getByRole('status').textContent).toBe('2 objects selected');
+    expect(screen.getByRole('status', { name: '2 objects selected' }).textContent).toBe(
+      '2 objects selected',
+    );
     expect(screen.getByRole('link', { name: 'Merge' }).getAttribute('href')).toContain(
       '/app/objects/merge?ids=object-1%2Cobject-2',
     );

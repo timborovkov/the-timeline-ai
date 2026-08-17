@@ -140,7 +140,9 @@ Treat this file as an operating contract for agents, not a loose README.
   Turborepo; `pnpm -r build` is the canonical build.
 - **Use the dev seed for local demo data.** `pnpm dev:seed` creates the
   documented Acme Labs team, fake login users, events, objects, board, and
-  encrypted fake integration credentials after migrations. The fake
+  encrypted fake integration credentials after migrations. `pnpm dev:seed:heavy`
+  adds enough extra Acme Labs rows to force infinite-scroll fetches and
+  virtualization. The fake
   integrations stay disabled for sync so local workers do not call real
   providers. Keep the credential list in [README.md](README.md) current when
   the seed changes.

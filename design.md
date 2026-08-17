@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.7 · Citation previews on current Home and Ask (2026-08-17). Replaces v3.6 Team setup loop and Home timeline links.
+**Version:** v3.8 · Infinite scroll with Linear timeline rows (2026-08-17). Replaces v3.7 Citation previews on current Home and Ask.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -194,8 +194,11 @@ signal.
 
 Collection transitions last 150–200ms and are limited to background, border,
 opacity, and transform. They honor reduced motion. No collection introduces a
-new global keyboard shortcut; existing inspectors, drag handles, pagination,
-evidence links, and URL state remain the interaction contract.
+new global keyboard shortcut; existing inspectors, drag handles, infinite
+scroll with virtualization, evidence links, and URL state remain the interaction
+contract. Collection inventories use `24 of 847` when a filter is on and `847`
+when it is not. Timeline has no inventory chip; Moments versus All events is
+the page mode.
 
 ### SectionHeading
 
@@ -343,7 +346,8 @@ Timeline is the strongest archive expression. Chrome is a sticky
 events** as the view control. Moments group related activity and give rows
 different visual weight. All events is a uniform compact log of every captured
 source event. The labels and the row density should make the difference
-obvious without a lecture.
+obvious without a lecture. Timeline has no inventory chip; Moments versus All
+events is the page mode.
 
 Each Moments row is a Linear-style collection row: time, one source icon, a
 single title line, and at most one muted context line. Do not duplicate the
@@ -353,7 +357,7 @@ pulses stay one muted line. Impact on the row is omitted; the inspector shows
 workspace consequences, structured facts, a matching `[ev:…]` citation chip per
 source evidence item, and a collapsed Original source
 disclosure. Attached files link to Documents. Sticky dates (`top-11` under the
-toolbar) and pagination remain. The default view ends at the current instant so
+toolbar) and infinite scroll with virtualized rows remain. The default view ends at the current instant so
 materialized calendar occurrences do not displace recent work. Upcoming context
 is an explicit seven-day view; the Calendar surface owns the complete future
 schedule. Compact Home moments are a denser scan of the same formatter: time,
@@ -401,7 +405,7 @@ section at a time. Save state stays local to the edited form. Member, object, so
 and artifact labels never fall back to UUIDs.
 
 Work → Pinned is the complete pin-management surface. It is a single
-side-to-side list with cursor pagination and All, Objects, Boards, Documents,
+side-to-side list with infinite scroll, virtualization, and All, Objects, Boards, Documents,
 Meetings, Calendar, and Timeline filters. Reordering is available only under
 All so filtered adjacency never changes the mixed global order implicitly.
 Drag reorder has equivalent keyboard actions for move up, down, top, and
@@ -670,3 +674,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Ask session search and title | Filters chat history from the session rail and shows the selected title beside Ask instead of a session count. |
 | 2026-08-17 | Ask mobile session title | Reuses the resolved conversation title in the mobile session summary, including deep-linked chats outside the recent list. |
 | 2026-08-17 | Quiet sidebar brand and fold control | Aligns the product mark with primary nav, sends it to Home, and replaces the boxed fold glyph with a lighter chevron. |
+| 2026-08-17 | Infinite scroll with Linear timeline rows | Replaces Load more and numbered pagers with sentinel paging and virtualized rows; Timeline keeps Linear archive rows, sticky dates under the toolbar, and no inventory chip. |

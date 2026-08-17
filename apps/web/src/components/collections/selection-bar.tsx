@@ -25,7 +25,11 @@ export function SelectionBar({
         className,
       )}
     >
-      <output className="mr-auto text-xs font-medium text-fg" aria-live="polite">
+      <output
+        className="mr-auto text-xs font-medium text-fg"
+        aria-live="polite"
+        aria-label={`${String(count)} ${label}`}
+      >
         <span className="font-mono tabular-nums">{count}</span> {label}
       </output>
       {actions}

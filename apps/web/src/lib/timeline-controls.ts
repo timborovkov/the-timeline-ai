@@ -338,31 +338,3 @@ export function timelineHref(
   const query = sp.toString();
   return query ? `/app/timeline?${query}` : '/app/timeline';
 }
-
-/** Primary loaded count: moments in Moments mode, events in All events. */
-export function timelineLoadedCount(
-  mode: 'moments' | 'events',
-  momentCount: number,
-  eventCount: number,
-): number {
-  return mode === 'moments' ? momentCount : eventCount;
-}
-
-export function timelineLoadedSrLabel(mode: 'moments' | 'events', loadedCount: number): string {
-  if (mode === 'moments') {
-    return loadedCount === 1 ? '1 moment loaded' : `${loadedCount} moments loaded`;
-  }
-  return loadedCount === 1 ? '1 event loaded' : `${loadedCount} events loaded`;
-}
-
-/** Preset footer: one primary count matching the active mode. */
-export function timelinePresetCountLabel(
-  mode: 'moments' | 'events',
-  momentCount: number,
-  eventCount: number,
-): string {
-  if (mode === 'moments') {
-    return momentCount === 1 ? '1 moment' : `${momentCount} moments`;
-  }
-  return eventCount === 1 ? '1 source event' : `${eventCount} source events`;
-}
