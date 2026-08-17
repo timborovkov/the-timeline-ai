@@ -35,6 +35,23 @@ interface MintedCredential {
   plaintext: string;
 }
 
+async function webhookActionError(response: Response, fallback: string): Promise<string> {
+  const payload = (await response.json().catch(() => null)) as { error?: unknown } | null;
+  const code = typeof payload?.error === 'string' ? payload.error : null;
+  switch (code) {
+    case 'forbidden':
+      return 'You do not have permission to make this change.';
+    case 'not_found':
+      return 'This webhook no longer exists. Refresh the page and try again.';
+    case 'unauthorized':
+      return 'Sign in again to manage ingest webhooks.';
+    case 'no_team':
+      return 'Choose a team before managing ingest webhooks.';
+    default:
+      return fallback;
+  }
+}
+
 interface State {
   showCreate: boolean;
   name: string;
@@ -105,23 +122,6 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
 
   function endpointFor(plaintext: string): string {
     return `${origin || 'https://thetimeline.cc'}/api/webhooks/ingest/${plaintext}`;
-  }
-
-  async function webhookActionError(response: Response, fallback: string): Promise<string> {
-    const payload = (await response.json().catch(() => null)) as { error?: unknown } | null;
-    const code = typeof payload?.error === 'string' ? payload.error : null;
-    switch (code) {
-      case 'forbidden':
-        return 'You do not have permission to make this change.';
-      case 'not_found':
-        return 'This webhook no longer exists. Refresh the page and try again.';
-      case 'unauthorized':
-        return 'Sign in again to manage ingest webhooks.';
-      case 'no_team':
-        return 'Choose a team before managing ingest webhooks.';
-      default:
-        return fallback;
-    }
   }
 
   async function create() {
