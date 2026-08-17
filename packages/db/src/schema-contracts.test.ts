@@ -1065,10 +1065,10 @@ describe('database schema contracts', () => {
     const migrationPg = new PGlite();
     try {
       await applyMigrations(migrationPg, {
-        throughFile: '0067_canonical_link_evidence_strength.sql',
+        throughFile: '0068_onboarding_setup_loop.sql',
       });
       await seedBase(migrationPg);
-      await applyMigrationFile(migrationPg, '0068_digest_destinations.sql');
+      await applyMigrationFile(migrationPg, '0069_digest_destinations.sql');
 
       const rows = await migrationPg.query<{
         team_id: string;

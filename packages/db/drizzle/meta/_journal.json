@@ -482,7 +482,14 @@
       "idx": 68,
       "version": "7",
       "when": 1795654440000,
-      "tag": "0068_digest_destinations",
+      "tag": "0068_onboarding_setup_loop",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1795654500000,
+      "tag": "0069_digest_destinations",
       "breakpoints": true
     }
   ]

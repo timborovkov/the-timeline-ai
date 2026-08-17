@@ -5,8 +5,10 @@ import {
   countDismissibleMeetingFailures,
   countMeetingFailuresForSources,
   displayInboundEmail,
+  getHomeOpenObjectCounts,
   getNavWorkAttention,
   getWorkAttentionSummary,
+  homeOpenObjectTotal,
   homeWorkNeedingAttentionCount,
   workAttentionCount,
 } from '@/lib/hub-status';
@@ -33,6 +35,47 @@ describe('hub status helpers', () => {
         overdueTasks: 2,
       }),
     ).toBe(2);
+  });
+
+  it('counts open objects by type for Home attention without changing nav work badges', async () => {
+    const countObjects = vi.fn().mockImplementation((filter: { type: string }) => {
+      const counts: Record<string, number> = {
+        task: 4,
+        follow_up: 1,
+        person: 6,
+        company: 2,
+        project: 3,
+        deal: 0,
+      };
+      return Promise.resolve(counts[filter.type] ?? 0);
+    });
+
+    const counts = await getHomeOpenObjectCounts({ objects: { countObjects } } as never);
+
+    expect(counts).toEqual({
+      task: 4,
+      follow_up: 1,
+      person: 6,
+      company: 2,
+      project: 3,
+      deal: 0,
+    });
+    expect(homeOpenObjectTotal(counts)).toBe(12);
+    expect(countObjects).toHaveBeenCalledWith({
+      archived: false,
+      statusNotCaseInsensitive: ['archived'],
+      type: 'person',
+    });
+    expect(countObjects).toHaveBeenCalledWith({
+      archived: false,
+      statusNotCaseInsensitive: ['won', 'lost', 'cancelled', 'canceled'],
+      type: 'deal',
+    });
+    expect(countObjects).toHaveBeenCalledWith({
+      archived: false,
+      statusNotCaseInsensitive: ['done', 'cancelled', 'canceled', 'shipped'],
+      type: 'task',
+    });
   });
 
   it('ignores negative work attention inputs', () => {

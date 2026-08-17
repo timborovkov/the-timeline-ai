@@ -44,6 +44,7 @@ import { z } from 'zod';
 import { ACTIVE_TEAM_COOKIE, resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { safeMarkOnboardingStep } from '@/lib/onboarding';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
 import { getSiteUrl } from '@/lib/site-url';
@@ -332,6 +333,7 @@ export async function updateDigestPreferenceAction(
       });
     }
 
+    await safeMarkOnboardingStep(scope, 'daily_digest');
     revalidatePath('/app');
     revalidatePath('/app/team');
     return { ok: true };

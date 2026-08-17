@@ -118,10 +118,15 @@ export interface ProductEventPayloads {
     userId: string;
     step:
       | 'first_note'
+      | 'invite_teammate'
       | 'telegram'
       | 'slack'
       | 'email_forwarding'
       | 'first_document'
+      | 'first_ask'
+      | 'first_meeting'
+      | 'review_proposal'
+      | 'daily_digest'
       | 'first_integration';
     source: 'manual' | 'automatic';
   };
