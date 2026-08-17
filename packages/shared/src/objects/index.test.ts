@@ -4399,8 +4399,7 @@ describe('object scope — merge cleanup', () => {
       suggestionId: suggestion.id,
       teamId: TEAM_A,
       rawEventId: event.id,
-      quote:
-        'Cursor Bugbot flagged a Medium-severity defect in timborovkov/audit-ai#88.',
+      quote: 'Cursor Bugbot flagged a Medium-severity defect in timborovkov/audit-ai#88.',
     });
 
     const detail = await workspace.objects.getObject(object.id);

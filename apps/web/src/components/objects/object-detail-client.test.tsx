@@ -788,9 +788,7 @@ describe('ObjectDetailClient', () => {
     expect(relatedDisclosure.closest('details')?.open).toBe(true);
     expect(screen.getAllByRole('link', { name: /^integration ·/ })).toHaveLength(8);
     expect(screen.queryByText(longBody)).toBeNull();
-    expect(
-      screen.getAllByText(/GitHub evidence multi-kilobyte payload/).length,
-    ).toBeGreaterThan(0);
+    expect(screen.getAllByText(/GitHub evidence multi-kilobyte payload/).length).toBeGreaterThan(0);
     expect(
       screen.getAllByText(/GitHub evidence multi-kilobyte payload/)[0]?.textContent.length,
     ).toBe(320);
