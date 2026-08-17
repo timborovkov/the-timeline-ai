@@ -174,12 +174,16 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       PRs and closed issues enqueue a coalesced approval-backed `done` job
       keyed by GitHub work-item id, not by a time window of unrelated events.
       GitHub actor/assignee logins map to team members through the person-owned
-      GitHub connection (or a unique compact name match) instead of attributing
-      work to the teammate who connected the integration. Matching uses
-      provider ids, aliases, and high-confidence repo+PR-number titles.
-      Comments, reviews, commits, and CI stay out of this path. Per-connection
-      ingest processing is rate-limited. Daily object cleanup backfills the
-      same proposals for already-ingested GitHub clusters.
+      GitHub connection (identity: that login belongs to this teammate), a unique
+      compact name match, or a unique email local-part — never by attributing
+      work to whoever connected the integration. Matching uses provider ids,
+      aliases, and high-confidence repo+PR-number titles. Pending unaccepted
+      task creates are living: later merged PRs or closed issues refresh the
+      same approval in place (status, aliases, actor, new evidence) instead of
+      rotting. Comments, reviews, commits, and CI stay out of this path because
+      they are not completion. Per-connection ingest processing is rate-limited.
+      Daily object cleanup backfills the same proposals for already-ingested
+      GitHub clusters.
 - [ ] Classify ingest by signal class rather than by OAuth app, following
       [`docs/relational-memory.md`](./docs/relational-memory.md):
       communication may extract and review; structured captured work parses

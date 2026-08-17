@@ -1,5 +1,11 @@
 import { PGlite } from '@electric-sql/pglite';
-import { agentSuggestionItems, agentSuggestions, entities, integrations } from '@timeline/db';
+import {
+  agentSuggestionEvidence,
+  agentSuggestionItems,
+  agentSuggestions,
+  entities,
+  integrations,
+} from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -80,6 +86,13 @@ describe('GitHub task proposal matching', () => {
     ).toBe(USER_ID);
     expect(resolveGithubLoginToUserId('timborovkov', members, new Map())).toBe(USER_ID);
     expect(compactGithubPersonKey('Tim Borovkov')).toBe('timborovkov');
+    expect(
+      resolveGithubLoginToUserId(
+        'octocat',
+        [{ userId: USER_ID, name: 'Other Person', email: 'octocat@example.com' }],
+        new Map(),
+      ),
+    ).toBe(USER_ID);
     expect(resolveGithubLoginToUserId('octocat', members, new Map())).toBeNull();
   });
 
@@ -558,5 +571,281 @@ describe('GitHub task proposal persistence', () => {
       status: 'done',
       assigneeUserId: USER_ID,
     });
+  });
+
+  it('refreshes a pending create to done when the matching GitHub work item completes', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: OTHER_USER_ID,
+        provider: 'github',
+        displayName: 'GitHub — other-person',
+        externalAccountId: '42',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const [suggestion] = await db
+      .insert(agentSuggestions)
+      .values({
+        teamId: TEAM_ID,
+        source: 'background',
+        title: 'Create theme-system task',
+        dedupeKey: 'pending-theme-create',
+        visibility: 'team',
+        reason: 'Chat asked for a task.',
+      })
+      .returning();
+    if (!suggestion) throw new Error('suggestion insert failed');
+    await db.insert(agentSuggestionItems).values({
+      suggestionId: suggestion.id,
+      teamId: TEAM_ID,
+      status: 'pending',
+      operation: 'create',
+      targetKind: 'task',
+      title: 'Fix theme system detection broken until page reload in audit-ai PR #10',
+      dedupeKey: 'pending-theme-create:item',
+      proposedPayload: {
+        canonicalName: 'Fix theme system detection broken until page reload in audit-ai PR #10',
+        status: 'open',
+      },
+    });
+
+    await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'github:pr:10:merged',
+          provider: 'github',
+          externalObjectId: 'timborovkov/audit-ai#10',
+          eventType: 'pr.merged',
+          occurredAt: new Date('2026-06-01T12:00:00Z'),
+          actor: { externalId: 'timborovkov', name: 'timborovkov' },
+          contentText:
+            'GitHub PR timborovkov/audit-ai#10 — Fix theme system detection broken until page reload',
+          extra: {
+            github: {
+              type: 'pull_request',
+              repo: 'timborovkov/audit-ai',
+              number: 10,
+              merged_at: '2026-06-01T12:00:00Z',
+              state: 'closed',
+            },
+          },
+          objectMap: {
+            type: 'task',
+            canonicalName:
+              'timborovkov/audit-ai#10: Fix theme system detection broken until page reload',
+            displayTitle: 'audit-ai: Fix theme system detection broken until page reload',
+            externalId: 'timborovkov/audit-ai#10',
+            status: 'done',
+            aliases: ['PR-timborovkov/audit-ai-10'],
+          },
+        },
+      ],
+    });
+
+    await proposeGithubTaskUpdatesForTeam({ db: db as never, teamId: TEAM_ID });
+
+    const bundles = await db.select().from(agentSuggestions);
+    expect(bundles).toHaveLength(1);
+    expect(bundles[0]?.id).toBe(suggestion.id);
+    const items = await db.select().from(agentSuggestionItems);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      operation: 'create',
+      targetKind: 'task',
+      targetId: null,
+    });
+    expect(items[0]?.proposedPayload).toMatchObject({
+      status: 'done',
+      assigneeUserId: USER_ID,
+    });
+    expect(items[0]?.proposedPayload).toEqual(
+      expect.objectContaining({
+        aliases: expect.arrayContaining(['PR-timborovkov/audit-ai-10']),
+      }),
+    );
+    const evidence = await db.select().from(agentSuggestionEvidence);
+    expect(evidence).toHaveLength(1);
+  });
+
+  it('keeps a pending GitHub update alive when later evidence marks the work done', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'github',
+        displayName: 'GitHub — timborovkov',
+        externalAccountId: '42',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const [task] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'Fix theme system detection broken until page reload in audit-ai PR #10',
+        status: 'todo',
+      })
+      .returning();
+    if (!task) throw new Error('task insert failed');
+
+    await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'github:pr:10:opened',
+          provider: 'github',
+          externalObjectId: 'timborovkov/audit-ai#10',
+          eventType: 'pr.opened',
+          occurredAt: new Date('2026-06-01T11:00:00Z'),
+          actor: { externalId: 'timborovkov', name: 'timborovkov' },
+          contentText:
+            'GitHub PR timborovkov/audit-ai#10 — Fix theme system detection broken until page reload',
+          extra: {
+            github: {
+              type: 'pull_request',
+              repo: 'timborovkov/audit-ai',
+              number: 10,
+              state: 'open',
+            },
+          },
+          objectMap: {
+            type: 'task',
+            canonicalName:
+              'timborovkov/audit-ai#10: Fix theme system detection broken until page reload',
+            displayTitle: 'audit-ai: Fix theme system detection broken until page reload',
+            externalId: 'timborovkov/audit-ai#10',
+            status: 'open',
+            aliases: ['PR-timborovkov/audit-ai-10'],
+          },
+        },
+      ],
+    });
+    await proposeGithubTaskUpdatesForTeam({ db: db as never, teamId: TEAM_ID });
+    const firstItems = await db.select().from(agentSuggestionItems);
+    expect(firstItems).toHaveLength(1);
+    expect(firstItems[0]?.proposedPayload).toMatchObject({ assigneeUserId: USER_ID });
+    expect(firstItems[0]?.proposedPayload).not.toMatchObject({ status: 'done' });
+    const firstSuggestionId = firstItems[0]?.suggestionId;
+
+    await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'github:pr:10:merged',
+          provider: 'github',
+          externalObjectId: 'timborovkov/audit-ai#10',
+          eventType: 'pr.merged',
+          occurredAt: new Date('2026-06-01T12:00:00Z'),
+          actor: { externalId: 'timborovkov', name: 'timborovkov' },
+          contentText:
+            'GitHub PR timborovkov/audit-ai#10 — Fix theme system detection broken until page reload',
+          extra: {
+            github: {
+              type: 'pull_request',
+              repo: 'timborovkov/audit-ai',
+              number: 10,
+              merged_at: '2026-06-01T12:00:00Z',
+              state: 'closed',
+            },
+          },
+          objectMap: {
+            type: 'task',
+            canonicalName:
+              'timborovkov/audit-ai#10: Fix theme system detection broken until page reload',
+            displayTitle: 'audit-ai: Fix theme system detection broken until page reload',
+            externalId: 'timborovkov/audit-ai#10',
+            status: 'done',
+            aliases: ['PR-timborovkov/audit-ai-10'],
+          },
+        },
+      ],
+    });
+    await proposeGithubTaskUpdatesForTeam({ db: db as never, teamId: TEAM_ID });
+
+    const bundles = await db.select().from(agentSuggestions);
+    expect(bundles).toHaveLength(1);
+    expect(bundles[0]?.id).toBe(firstSuggestionId);
+    const items = await db.select().from(agentSuggestionItems);
+    expect(items).toHaveLength(1);
+    expect(items[0]?.proposedPayload).toMatchObject({
+      status: 'done',
+      assigneeUserId: USER_ID,
+    });
+  });
+
+  it('proposes done when a matching GitHub issue is closed', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'github',
+        displayName: 'GitHub — timborovkov',
+        externalAccountId: '42',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const [task] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'Document the audit seed contract in audit-ai issue #22',
+        status: 'todo',
+      })
+      .returning();
+    if (!task) throw new Error('task insert failed');
+
+    await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'github:issue:22:closed',
+          provider: 'github',
+          externalObjectId: 'timborovkov/audit-ai#issue:22',
+          eventType: 'issue.closed',
+          occurredAt: new Date('2026-06-03T12:00:00Z'),
+          actor: { externalId: 'timborovkov', name: 'timborovkov' },
+          contentText: 'GitHub Issue timborovkov/audit-ai#22 — Document the audit seed contract',
+          extra: {
+            github: {
+              type: 'issue',
+              repo: 'timborovkov/audit-ai',
+              number: 22,
+              state: 'closed',
+            },
+          },
+          objectMap: {
+            type: 'task',
+            canonicalName: 'timborovkov/audit-ai#issue:22: Document the audit seed contract',
+            displayTitle: 'audit-ai: Document the audit seed contract',
+            externalId: 'timborovkov/audit-ai#issue:22',
+            status: 'done',
+            aliases: ['ISSUE-timborovkov/audit-ai-22'],
+          },
+        },
+      ],
+    });
+
+    await proposeGithubTaskUpdatesForTeam({ db: db as never, teamId: TEAM_ID });
+    const items = await db.select().from(agentSuggestionItems);
+    expect(items).toHaveLength(1);
+    expect(items[0]?.targetId).toBe(task.id);
+    expect(items[0]?.proposedPayload).toMatchObject({ status: 'done' });
   });
 });

@@ -60,8 +60,8 @@ enough. "Looks related" is Ask, not a write.
 | Hard join: same GitHub id already on the task (`metadata.integration_external_id`), cluster `canonicalEntityId`, or an alias such as `PR-acme/app-88` / `acme/app#88` | **Yes.** Coalesced non-LLM `done` (and assignee if the task has none) | Same, via envelope `objectMap`, not `github.type` |
 | Unique title match: the open task's name/aliases mention that repo **and** `#88` / `PR #88`, and titles align, and no other open task also matches | **Yes**, one fuzzy hit | Same; still refuse if two tasks match |
 | PR body says "fixed the Engagements 404" / "this issue is solved", task is titled "Fix Engagements 404", no repo, number, URL, or alias overlap | **No.** Matcher never runs on prose similarity | Embeddings may **recall** the task. A second qualify step (unique title, explicit ref, or one pairwise confirm on a shortlist) may propose a **link**, then `done`. Cosine alone never writes |
-| CI run, review comment, or Sentry spike on the same SHA | **No.** Not a captured-work work item | Pulse **attaches** to the PR/SHA hub. Still never originates `done` |
-| The 5-item task proposal is still pending; nobody accepted it | **No.** Matcher only sees open `entities` rows | Pending create and later captured work **merge/supersede** into one bundle (`create` already `done`, or create + `status: done`) |
+| CI run, review comment, or Sentry spike on the same SHA | **No.** Pulses are not completion. A green check or a "lgtm" comment does not mean the task is done. | Pulse **attaches** to the PR/SHA hub. Still never originates `done` |
+| The 5-item task proposal is still pending; nobody accepted it | **Yes, when the later event is real captured-work completion** (merged PR, closed issue, provider `status=done`) and it can join the pending create (alias, provider id, or unique `repo#n` title). The pending bundle is **refreshed in place** — status, aliases, actor assignee, new evidence — instead of rotting until someone accepts a stale create. | Same refresh for Linear/Monday envelope completion |
 
 The five source events do not get dumped into a second LLM when the PR arrives.
 They already created the hub. The PR is structured captured work: parse
@@ -694,10 +694,10 @@ not yet stamp `signalClass` on every event.
 | Failure | Status |
 | --- | --- |
 | GitHub / Sentry / Linear / Monday dumped into extract + suggestion LLMs | **Fixed for those providers.** `integrationSkipsLlmIngest` skips extract enqueue. The remaining leak is that skip is still an OAuth-app list, so a GitHub review thread cannot extract without turning CI extract back on. |
-| Timeline tasks stay open after a merged PR | **Fixed when the task already carries a GitHub id, alias, or unique `repo#n` title.** Dogfood tasks titled only `PR #10` still miss: the matcher requires repo + number in the name/aliases. Pending (unaccepted) creates are also invisible to the matcher. |
+| Timeline tasks stay open after the work is complete | **Fixed when a hub join exists**, including **pending creates**. Completion is work-item lifecycle (merged PR, closed issue, provider `status=done`), not a time window. Pending approvals are refreshed in place when later completion arrives. |
 | Extract used "5 recent team events" as context | **Fixed for structured providers** (they never call extract). **Still live** for Slack, Drive, email, meetings: `RECENT_CONTEXT_LIMIT = 5` in `apps/worker/src/workers/extract.ts` is a time-ordered team dump, not a conversation key. |
-| GitHub assignee attributed to whoever connected the integration | **Fixed** for the GitHub matcher: login → person facet / unique name; connector is not the default. |
-| CI / comments treated as work-item `done` | **Fixed** in the GitHub matcher (`githubKind` refuses comments/reviews/commits/CI). |
+| GitHub assignee attributed to whoever connected the integration | **Fixed.** Assignee is the GitHub actor/assignee login when it uniquely matches a teammate (connection login map, compact name, or email local-part). Connecting GitHub is identity, not work ownership. |
+| CI / comments treated as work-item `done` | **Not a completion signal, and never should be.** The matcher refuses comments/reviews/commits/CI so a green check cannot close a task. That is not the same as "no proposals." |
 | Telegram + PR + Meet + last month's email as one write | **Designed, not finished.** Ask can retrieve them once embedded. A `done` write still needs a hub join. Packs default `off`. |
 
 ### Cost impact
@@ -745,7 +745,7 @@ is half; source independence and packs are the rest.**
 | GitHub PR/issue → coalesced task proposal | Shipped in `github-task-proposals.ts` | Stop parsing `github.type` in shared code; match `objectMap` + status for any adapter |
 | Rate-limit extract/embed/proposal per connection | Shipped | Keep |
 | Stamp GitHub aliases onto accepted chat tasks | Only after a successful match | Conversation review should copy `acme/app#88` when the window already said it — highest-leverage quality fix |
-| Pending create + later PR as one bundle | Matcher sees only `entities` | Merge/supersede pending suggestion items |
+| Pending create + later PR as one bundle | Shipped: GitHub matcher refreshes the pending create in place | Linear/Monday envelope completion uses the same refresh |
 | `relatedExternalObjectId` for CI/Sentry | `head_sha` in metadata | Envelope field + pulse attach |
 | Evidence packs | Builder exists, default `off`; Ask uses answer packs | Enforce per adapter after gates in [`cross-source-evidence.md`](./cross-source-evidence.md) |
 | Pairwise qualify after vector recall | Not started | Shortlist only; never cosine-as-write |
@@ -767,7 +767,7 @@ merge. Those two close most dogfood misses without a new model call.
 | Skip extract/suggestion LLM for GitHub, Linear, Monday, Sentry | Shipped as a provider list | Replace with signal class + payload shape |
 | Conversation review → approval-backed task create | Shipped | Migrate onto proposal packs |
 | GitHub PR/issue lifecycle → coalesced task proposals | Shipped, GitHub-specific parser | Envelope-driven matcher on `objectMap` + status + aliases |
-| Match pending create bundles when the PR arrives first | Not shipped | Merge/supersede with captured-work lifecycle |
+| Match pending create bundles when the PR arrives first | Shipped for GitHub: refresh the pending create (status/aliases/actor) instead of letting it rot | Same living-proposal refresh on Linear/Monday captured work |
 | Topic-only PR → task `done` | Not shipped, and must not ship as cosine-write | Optional pairwise qualify after recall; still approval-backed |
 | Artifact clusters + authority policy | Shipped | Pulses attach; they do not gain authority |
 | Evidence-pack builder | Implemented, default off | Enforced per adapter after gates |
@@ -820,8 +820,9 @@ When code changes ingest or proposals, update this file in the same change.
 ## Open work this contract implies
 
 Detail and sequencing: [Cost, quality, and distance](#cost-quality-and-distance-from-ideal).
-Highest leverage next: stamp PR aliases from conversation windows, then merge
-pending creates with later captured work. Do not start pairwise qualify first.
+Highest leverage next: stamp PR aliases from conversation windows, then reuse
+the living pending-create refresh for Linear/Monday. Do not start pairwise
+qualify first.
 
 - Lift the provider skip list into an event-level `signalClass` on the envelope.
 - Replace GitHub-specific proposal parsing in shared code with an
@@ -829,6 +830,8 @@ pending creates with later captured work. Do not start pairwise qualify first.
 - When a conversation window already names `acme/app#88`, stamp that alias on
   the proposed task so the later matcher can hard-join.
 - Merge pending communication creates with later captured-work lifecycle.
+  GitHub already refreshes the pending create in place; reuse that for
+  Linear/Monday.
 - Treat GitHub review discussion as communication attached to a PR cluster.
 - Set pulse parent ids (`relatedExternalObjectId`).
 - Let pulses into proposal packs only as supporting evidence when a hard join

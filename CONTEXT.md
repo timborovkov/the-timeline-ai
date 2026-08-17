@@ -71,7 +71,9 @@ The Timeline task, project, person, or artifact cluster that events from
 different surfaces attach to. Telegram, a GitHub PR, a meeting, and last
 month's email become one story when they point at the same hub, not when they
 share a provider id. Embeddings recall candidate hubs; they do not prove the
-link. The living workflow is
+link. Pending approvals against a hub stay alive: later captured-work
+completion refreshes the same proposal instead of leaving it to rot.
+The living workflow is
 [docs/relational-memory.md](docs/relational-memory.md).
 _Avoid_: Conversation, thread, or source when describing cross-surface identity
 

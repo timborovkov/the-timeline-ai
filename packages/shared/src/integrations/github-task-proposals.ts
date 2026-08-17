@@ -1,4 +1,6 @@
 import {
+  agentSuggestionItems,
+  agentSuggestions,
   artifactClusters,
   artifactEvidenceAssociations,
   entities,
@@ -23,6 +25,7 @@ const log = childLogger('integrations:github-task-proposals');
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
 const OPEN_TASK_STATUSES_EXCLUDED = ['done', 'cancelled', 'canceled', 'shipped'] as const;
 const TASK_CANDIDATE_LIMIT = 500;
+const PENDING_CREATE_LIMIT = 200;
 const CLUSTER_SCAN_LIMIT = 200;
 const GITHUB_DISPLAY_NAME_LOGIN = /^GitHub\s+[—–-]\s+(\S+)$/u;
 const GITHUB_PULL_REQUEST_EVENT_TYPES = new Set([
@@ -82,6 +85,17 @@ interface GithubProposalSource {
   canonicalEntityId?: string | null;
 }
 
+interface PendingTaskCreate {
+  suggestionId: string;
+  suggestionDedupeKey: string;
+  itemDedupeKey: string;
+  targetKind: 'task' | 'object';
+  title: string;
+  editedByUser: boolean;
+  task: OpenTaskRow;
+  payload: Record<string, unknown>;
+}
+
 export function githubLoginFromConnectionDisplayName(displayName: string): string | null {
   const match = GITHUB_DISPLAY_NAME_LOGIN.exec(displayName.trim());
   const login = match?.[1]?.trim();
@@ -98,7 +112,7 @@ export function compactGithubPersonKey(value: string): string {
 
 export function resolveGithubLoginToUserId(
   login: string,
-  members: readonly { userId: string; name: string | null }[],
+  members: readonly { userId: string; name: string | null; email?: string | null }[],
   githubLoginsByUserId: ReadonlyMap<string, readonly string[]>,
 ): string | null {
   const needle = login.trim().toLowerCase();
@@ -115,8 +129,14 @@ export function resolveGithubLoginToUserId(
   const nameMatches = members.filter(
     (member) => member.name !== null && compactGithubPersonKey(member.name) === compact,
   );
-  if (nameMatches.length === 1) return nameMatches[0]?.userId ?? null;
-  return null;
+  const emailMatches = members.filter((member) => {
+    const local = member.email?.split('@')[0];
+    return Boolean(local) && compactGithubPersonKey(local ?? '') === compact;
+  });
+  const uniqueName = nameMatches.length === 1 ? (nameMatches[0]?.userId ?? null) : null;
+  const uniqueEmail = emailMatches.length === 1 ? (emailMatches[0]?.userId ?? null) : null;
+  if (uniqueName && uniqueEmail && uniqueName !== uniqueEmail) return null;
+  return uniqueName ?? uniqueEmail;
 }
 
 export function githubWorkItemFromIntegrationEvent(event: IntegrationEvent): GithubWorkItem | null {
@@ -370,17 +390,18 @@ async function proposeGithubTaskUpdates(input: {
   restrictToObjectId?: string;
 }): Promise<number> {
   if (input.sources.length === 0) return 0;
-  const [tasks, members, githubLoginsByUserId] = await Promise.all([
+  const [tasks, pendingCreates, members, githubLoginsByUserId] = await Promise.all([
     loadOpenTaskCandidates(input.db, input.teamId, input.sources, input.restrictToObjectId ?? null),
+    loadPendingTaskCreates(input.db, input.teamId),
     loadTeamMembers(input.db, input.teamId),
     loadGithubLoginsByUserId(input.db, input.teamId),
   ]);
-  if (tasks.length === 0) return 0;
+  if (tasks.length === 0 && pendingCreates.length === 0) return 0;
 
   const scope = withTeam(input.db, input.teamId, PSEUDO_USER, { skipMembershipCheck: true });
   let created = 0;
   for (const source of input.sources) {
-    const matches = matchOpenTasksToGithubWorkItem(
+    const entityMatches = matchOpenTasksToGithubWorkItem(
       source.workItem,
       tasks,
       source.canonicalEntityId,
@@ -388,7 +409,7 @@ async function proposeGithubTaskUpdates(input: {
       input.restrictToObjectId ? match.task.id === input.restrictToObjectId : true,
     );
     const assigneeUserId = resolveWorkItemAssignee(source.workItem, members, githubLoginsByUserId);
-    for (const match of matches) {
+    for (const match of entityMatches) {
       const plan = planGithubTaskProposal({
         workItem: source.workItem,
         task: match.task,
@@ -399,6 +420,8 @@ async function proposeGithubTaskUpdates(input: {
       try {
         const wrote = await writeGithubTaskProposal({
           scope,
+          db: input.db,
+          teamId: input.teamId,
           source,
           plan,
         });
@@ -415,12 +438,49 @@ async function proposeGithubTaskUpdates(input: {
         );
       }
     }
+    if (entityMatches.length > 0 || input.restrictToObjectId) continue;
+    const pendingMatches = matchOpenTasksToGithubWorkItem(
+      source.workItem,
+      pendingCreates.map((row) => row.task),
+    );
+    for (const match of pendingMatches) {
+      const pending = pendingCreates.find((row) => row.task.id === match.task.id);
+      if (!pending || pending.editedByUser) continue;
+      const plan = planPendingCreateRefresh({
+        workItem: source.workItem,
+        pending,
+        match: match.match,
+        assigneeUserId,
+      });
+      if (!plan) continue;
+      try {
+        const wrote = await refreshPendingTaskCreate({
+          scope,
+          source,
+          pending,
+          plan,
+        });
+        if (wrote) created += 1;
+      } catch (err) {
+        log.warn(
+          {
+            err,
+            teamId: input.teamId,
+            suggestionId: pending.suggestionId,
+            externalId: source.workItem.externalId,
+          },
+          'failed to refresh pending GitHub task create',
+        );
+      }
+    }
   }
   return created;
 }
 
 async function writeGithubTaskProposal(input: {
   scope: ReturnType<typeof withTeam>;
+  db: Db;
+  teamId: string;
   source: GithubProposalSource;
   plan: GithubTaskProposalPlan;
 }): Promise<boolean> {
@@ -440,17 +500,20 @@ async function writeGithubTaskProposal(input: {
     payload.ownerUserId = input.plan.ownerUserId;
   }
   if (input.plan.aliases.length > 0) payload.aliases = input.plan.aliases;
-  const reason = input.plan.status
-    ? `${ref} is merged on GitHub, so this Timeline task should move to done.`
-    : `${ref} is ${workItem.actorLogin ? `@${workItem.actorLogin}'s` : 'this teammate’s'} GitHub activity.`;
-  const dedupeKey = suggestionDedupeKey({
-    kind: 'github_task_proposal',
-    taskId: input.plan.taskId,
-    externalId: workItem.externalId,
-    status: input.plan.status,
-    assigneeUserId: input.plan.assigneeUserId,
-    ownerUserId: input.plan.ownerUserId,
-  });
+  const reason = capturedWorkReason(workItem, input.plan);
+  const existingDedupeKey = await existingGithubProposalDedupeKey(
+    input.db,
+    input.teamId,
+    input.plan.taskId,
+    workItem.externalId,
+  );
+  const dedupeKey =
+    existingDedupeKey ??
+    suggestionDedupeKey({
+      kind: 'github_task_proposal',
+      taskId: input.plan.taskId,
+      externalId: workItem.externalId,
+    });
   await input.scope.suggestions.createOrMergeSuggestionBundle({
     source: 'background',
     title: `Update ${input.plan.taskName}`,
@@ -495,9 +558,153 @@ async function writeGithubTaskProposal(input: {
   return true;
 }
 
+function planPendingCreateRefresh(input: {
+  workItem: GithubWorkItem;
+  pending: PendingTaskCreate;
+  match: GithubTaskProposalPlan['match'];
+  assigneeUserId: string | null;
+}): GithubTaskProposalPlan | null {
+  const status = shouldProposeDone(input.workItem) ? 'done' : null;
+  const assigneeUserId =
+    input.pending.task.assigneeUserId || !input.assigneeUserId ? null : input.assigneeUserId;
+  const ownerUserId =
+    input.pending.task.ownerUserId || !input.assigneeUserId ? null : input.assigneeUserId;
+  const aliases = mergeAliases(
+    stringArray(input.pending.task.aliases),
+    workItemAliases(input.workItem),
+  );
+  const aliasesChanged = aliases.length > stringArray(input.pending.task.aliases).length;
+  const statusChanged = Boolean(status) && status !== normalizeLifecycle(input.pending.task.status);
+  if (!statusChanged && !assigneeUserId && !ownerUserId && !aliasesChanged) return null;
+  return {
+    taskId: input.pending.task.id,
+    taskName: input.pending.task.canonicalName,
+    status: statusChanged ? status : null,
+    assigneeUserId,
+    ownerUserId,
+    aliases,
+    match: input.match,
+  };
+}
+
+async function refreshPendingTaskCreate(input: {
+  scope: ReturnType<typeof withTeam>;
+  source: GithubProposalSource;
+  pending: PendingTaskCreate;
+  plan: GithubTaskProposalPlan;
+}): Promise<boolean> {
+  const { workItem } = input.source;
+  const ref = githubRefLabel(workItem);
+  const payload = { ...input.pending.payload };
+  const changes: string[] = [];
+  if (input.plan.status) {
+    payload.status = input.plan.status;
+    changes.push(`mark ${input.plan.status}`);
+  }
+  if (input.plan.assigneeUserId) {
+    payload.assigneeUserId = input.plan.assigneeUserId;
+    changes.push('assign the GitHub actor');
+  }
+  if (input.plan.ownerUserId) {
+    payload.ownerUserId = input.plan.ownerUserId;
+  }
+  if (input.plan.aliases.length > 0) payload.aliases = input.plan.aliases;
+  const reason = capturedWorkReason(workItem, input.plan);
+  await input.scope.suggestions.createOrMergeSuggestionBundle({
+    source: 'background',
+    title: input.pending.title,
+    summary:
+      changes.length > 0
+        ? `GitHub ${ref} is enough evidence to ${changes.join(' and ')}.`
+        : `GitHub ${ref} is now linked to this pending task.`,
+    reason,
+    confidence: input.plan.match === 'title' ? 'medium' : 'high',
+    dedupeKey: input.pending.suggestionDedupeKey,
+    visibility: 'team',
+    evidence: [
+      {
+        rawEventId: input.source.rawEventId,
+        quote: truncate(input.source.contentText, 500),
+        metadata: {
+          kind: 'github_task_proposal',
+          github_external_id: workItem.externalId,
+          github_event_type: workItem.eventType,
+          match: input.plan.match,
+        },
+      },
+    ],
+    metadata: {
+      kind: 'github_task_proposal',
+      github_external_id: workItem.externalId,
+      github_event_type: workItem.eventType,
+      github_repo: workItem.repo,
+      github_number: workItem.number,
+      match: input.plan.match,
+    },
+    items: [
+      {
+        operation: 'create',
+        targetKind: input.pending.targetKind,
+        title: input.pending.title,
+        description: reason,
+        dedupeKey: input.pending.itemDedupeKey,
+        proposedPayload: payload,
+        evidenceRawEventIds: [input.source.rawEventId],
+      },
+    ],
+  });
+  return true;
+}
+
+function capturedWorkReason(workItem: GithubWorkItem, plan: GithubTaskProposalPlan): string {
+  const ref = githubRefLabel(workItem);
+  if (plan.status === 'done') {
+    return workItem.kind === 'issue'
+      ? `${ref} is closed on GitHub, so this Timeline task should move to done.`
+      : `${ref} is merged on GitHub, so this Timeline task should move to done.`;
+  }
+  return `${ref} is ${workItem.actorLogin ? `@${workItem.actorLogin}'s` : 'this teammate’s'} GitHub activity.`;
+}
+
+function normalizeLifecycle(status: string): string {
+  const normalized = status.trim().toLowerCase();
+  if (normalized === 'complete' || normalized === 'completed' || normalized === 'resolved') {
+    return 'done';
+  }
+  return normalized;
+}
+
+async function existingGithubProposalDedupeKey(
+  db: Db,
+  teamId: string,
+  taskId: string,
+  externalId: string,
+): Promise<string | null> {
+  const [row] = await db
+    .select({ dedupeKey: agentSuggestions.dedupeKey })
+    .from(agentSuggestionItems)
+    .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+    .where(
+      and(
+        eq(agentSuggestionItems.teamId, teamId),
+        eq(agentSuggestions.teamId, teamId),
+        eq(agentSuggestionItems.status, 'pending'),
+        inArray(agentSuggestions.status, ['pending', 'partially_resolved']),
+        eq(agentSuggestionItems.operation, 'update'),
+        eq(agentSuggestionItems.targetKind, 'task'),
+        eq(agentSuggestionItems.targetId, taskId),
+        eq(agentSuggestions.visibility, 'team'),
+        sql`${agentSuggestions.metadata} ->> 'kind' = 'github_task_proposal'`,
+        sql`${agentSuggestions.metadata} ->> 'github_external_id' = ${externalId}`,
+      ),
+    )
+    .limit(1);
+  return row?.dedupeKey ?? null;
+}
+
 function resolveWorkItemAssignee(
   workItem: GithubWorkItem,
-  members: readonly { userId: string; name: string | null }[],
+  members: readonly { userId: string; name: string | null; email?: string | null }[],
   githubLoginsByUserId: ReadonlyMap<string, readonly string[]>,
 ): string | null {
   const logins =
@@ -682,12 +889,90 @@ async function loadOpenTaskCandidates(
   );
 }
 
+async function loadPendingTaskCreates(db: Db, teamId: string): Promise<PendingTaskCreate[]> {
+  const rows = await db
+    .select({
+      itemId: agentSuggestionItems.id,
+      suggestionId: agentSuggestions.id,
+      suggestionDedupeKey: agentSuggestions.dedupeKey,
+      itemDedupeKey: agentSuggestionItems.dedupeKey,
+      targetKind: agentSuggestionItems.targetKind,
+      title: agentSuggestionItems.title,
+      payload: agentSuggestionItems.proposedPayload,
+      itemMetadata: agentSuggestionItems.metadata,
+    })
+    .from(agentSuggestionItems)
+    .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+    .where(
+      and(
+        eq(agentSuggestionItems.teamId, teamId),
+        eq(agentSuggestions.teamId, teamId),
+        eq(agentSuggestionItems.status, 'pending'),
+        inArray(agentSuggestions.status, ['pending', 'partially_resolved']),
+        eq(agentSuggestionItems.operation, 'create'),
+        inArray(agentSuggestionItems.targetKind, ['task', 'object']),
+        eq(agentSuggestions.visibility, 'team'),
+        isNull(agentSuggestionItems.targetId),
+      ),
+    )
+    .orderBy(desc(agentSuggestionItems.updatedAt))
+    .limit(PENDING_CREATE_LIMIT);
+  return rows.flatMap((row) => {
+    const pending = pendingCreateFromRow(row);
+    return pending ? [pending] : [];
+  });
+}
+
+function pendingCreateFromRow(row: {
+  itemId: string;
+  suggestionId: string;
+  suggestionDedupeKey: string;
+  itemDedupeKey: string;
+  targetKind: string;
+  title: string;
+  payload: unknown;
+  itemMetadata: unknown;
+}): PendingTaskCreate | null {
+  if (row.targetKind !== 'task' && row.targetKind !== 'object') return null;
+  const payload = recordFromUnknown(row.payload);
+  const type = stringValue(payload.type);
+  if (row.targetKind === 'object' && type && type !== 'task') return null;
+  const canonicalName = stringValue(payload.canonicalName) ?? row.title.trim();
+  if (!canonicalName) return null;
+  const nestedMetadata = recordFromUnknown(payload.metadata);
+  return {
+    suggestionId: row.suggestionId,
+    suggestionDedupeKey: row.suggestionDedupeKey,
+    itemDedupeKey: row.itemDedupeKey,
+    targetKind: row.targetKind,
+    title: row.title,
+    editedByUser: Object.hasOwn(recordFromUnknown(row.itemMetadata), 'proposal_edited_by_user_id'),
+    payload,
+    task: {
+      id: row.itemId,
+      canonicalName,
+      aliases: stringArray(payload.aliases),
+      metadata: {
+        integration_provider:
+          stringValue(payload.integration_provider) ??
+          stringValue(nestedMetadata.integration_provider),
+        integration_external_id:
+          stringValue(payload.integration_external_id) ??
+          stringValue(nestedMetadata.integration_external_id),
+      },
+      status: stringValue(payload.status) ?? 'open',
+      ownerUserId: stringValue(payload.ownerUserId),
+      assigneeUserId: stringValue(payload.assigneeUserId),
+    },
+  };
+}
+
 async function loadTeamMembers(
   db: Db,
   teamId: string,
-): Promise<{ userId: string; name: string | null }[]> {
+): Promise<{ userId: string; name: string | null; email: string | null }[]> {
   return db
-    .select({ userId: teamMembers.userId, name: users.name })
+    .select({ userId: teamMembers.userId, name: users.name, email: users.email })
     .from(teamMembers)
     .innerJoin(users, eq(users.id, teamMembers.userId))
     .where(and(eq(teamMembers.teamId, teamId), isNull(teamMembers.removedAt)))
