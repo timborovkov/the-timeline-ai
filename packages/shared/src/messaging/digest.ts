@@ -16,7 +16,7 @@ import type { TeamScope } from '#src/team-scope.js';
 
 import { chatStructured } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
-import { displayObjectTitle } from '#src/objects/index.js';
+import { displayObjectTitle } from '#src/objects/types.js';
 import { withTeam } from '#src/team-scope.js';
 import { assertValidTimezone, dateFromInstant, zonedDateTimeFromDate } from '#src/time/index.js';
 import { buildTimelineMoments, type TimelineMoment } from '#src/timeline-moments/index.js';

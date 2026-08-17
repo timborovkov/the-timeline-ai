@@ -69,8 +69,8 @@ import {
 } from '#src/calendar/locking.js';
 import { chatStructured as defaultChatStructured } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
-import { OBJECT_TYPES } from '#src/objects/index.js';
 import { suggestedProjectIsUnusedCondition } from '#src/objects/suggested-projects.js';
+import { OBJECT_TYPES } from '#src/objects/types.js';
 import { decodeCursor } from '#src/pagination.js';
 import {
   buildOutputDedupeKey,
@@ -6071,7 +6071,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (item.targetKind === 'task') return 'task';
     if (item.targetKind !== 'object') return null;
     const payloadType = stringPayloadValue(payload, 'type');
-    return payloadType && OBJECT_TYPES.includes(payloadType as ArtifactType)
+    return payloadType && (OBJECT_TYPES as readonly string[]).includes(payloadType)
       ? (payloadType as ArtifactType)
       : null;
   }
