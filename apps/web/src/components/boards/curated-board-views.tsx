@@ -283,7 +283,7 @@ export function CuratedBoardTable({
                       }
                       pending={saving[item.id] === 'responsibleUserId'}
                       disabled={optimistic || !onUpdateItem}
-                      editor={
+                      editor={() => (
                         <select
                           value={item.responsibleUserId ?? ''}
                           disabled={optimistic || !onUpdateItem}
@@ -302,16 +302,16 @@ export function CuratedBoardTable({
                             </option>
                           ))}
                         </select>
-                      }
+                      )}
                     />
                   </td>
                   <td className="min-w-36 px-3 py-2">
                     <EditableMetadata
                       label={`Due date for ${displayText(objectTitle)}`}
-                      value={<DueDateDisplay value={item.dueAt} variant="field-hint" />}
+                      value={() => <DueDateDisplay value={item.dueAt} variant="field-hint" />}
                       pending={saving[item.id] === 'dueAt'}
                       disabled={optimistic || !onUpdateItem}
-                      editor={
+                      editor={() => (
                         <MetadataDateEditor
                           defaultValue={
                             item.dueAt
@@ -325,22 +325,22 @@ export function CuratedBoardTable({
                             });
                           }}
                         />
-                      }
+                      )}
                     />
                   </td>
                   <td className="min-w-28 px-3 py-2">
                     <EditableMetadata
                       label={`Priority for ${displayText(objectTitle)}`}
-                      value={
+                      value={() => (
                         <CollectionStatus
                           value={item.priority ? `p${item.priority}` : 'none'}
                           tone={priorityTone(item.priority)}
                           label={item.priority ? `P${item.priority}` : 'No priority'}
                         />
-                      }
+                      )}
                       pending={saving[item.id] === 'priority'}
                       disabled={optimistic || !onUpdateItem}
-                      editor={
+                      editor={() => (
                         <select
                           value={item.priority ?? ''}
                           disabled={optimistic || !onUpdateItem}
@@ -359,7 +359,7 @@ export function CuratedBoardTable({
                             </option>
                           ))}
                         </select>
-                      }
+                      )}
                     />
                   </td>
                   <td className="min-w-36 px-3 py-2">
@@ -368,7 +368,7 @@ export function CuratedBoardTable({
                       value={lanes.find((lane) => lane.id === item.laneId)?.name ?? 'Unset'}
                       pending={saving[item.id] === 'laneId'}
                       disabled={optimistic || !onUpdateItem}
-                      editor={
+                      editor={() => (
                         <select
                           value={item.laneId ?? ''}
                           disabled={optimistic || !onUpdateItem}
@@ -385,7 +385,7 @@ export function CuratedBoardTable({
                             </option>
                           ))}
                         </select>
-                      }
+                      )}
                     />
                   </td>
                   <td className="min-w-64 px-3 py-2">
@@ -394,7 +394,7 @@ export function CuratedBoardTable({
                       value={item.nextStep ?? 'No next step'}
                       pending={saving[item.id] === 'nextStep'}
                       disabled={optimistic || !onUpdateItem}
-                      editor={
+                      editor={() => (
                         <BoardNextStepInput
                           key={`${item.id}:${item.nextStep ?? ''}`}
                           objectName={objectTitle}
@@ -404,7 +404,7 @@ export function CuratedBoardTable({
                             void updateItem(item.id, { nextStep });
                           }}
                         />
-                      }
+                      )}
                     />
                     <BoardItemSavingNotice field={saving[item.id]} />
                     <BoardItemSaveError
@@ -773,7 +773,7 @@ export function CuratedBoardList({
                                 ?.label ?? 'Unassigned'
                             }
                             disabled={optimistic || !onUpdateItem}
-                            editor={
+                            editor={() => (
                               <select
                                 value={item.responsibleUserId ?? ''}
                                 onChange={(event) =>
@@ -790,19 +790,19 @@ export function CuratedBoardList({
                                   </option>
                                 ))}
                               </select>
-                            }
+                            )}
                           />
                           <EditableMetadata
                             label={`Due date for ${displayText(objectTitle)}`}
-                            value={
+                            value={() => (
                               <DueDateDisplay
                                 value={item.dueAt}
                                 timezone={timezone}
                                 variant="compact"
                               />
-                            }
+                            )}
                             disabled={optimistic || !onUpdateItem}
-                            editor={
+                            editor={() => (
                               <MetadataDateEditor
                                 defaultValue={
                                   item.dueAt
@@ -815,19 +815,19 @@ export function CuratedBoardList({
                                   })
                                 }
                               />
-                            }
+                            )}
                           />
                           <EditableMetadata
                             label={`Priority for ${displayText(objectTitle)}`}
-                            value={
+                            value={() => (
                               <CollectionStatus
                                 value={item.priority ? `p${item.priority}` : 'none'}
                                 tone={priorityTone(item.priority)}
                                 label={item.priority ? `P${item.priority}` : 'No priority'}
                               />
-                            }
+                            )}
                             disabled={optimistic || !onUpdateItem}
-                            editor={
+                            editor={() => (
                               <select
                                 value={item.priority ?? ''}
                                 onChange={(event) =>
@@ -846,13 +846,13 @@ export function CuratedBoardList({
                                   </option>
                                 ))}
                               </select>
-                            }
+                            )}
                           />
                           <EditableMetadata
                             label={`Lane for ${displayText(objectTitle)}`}
                             value={group.name}
                             disabled={optimistic || !onUpdateItem}
-                            editor={
+                            editor={() => (
                               <select
                                 value={item.laneId ?? ''}
                                 onChange={(event) =>
@@ -869,20 +869,20 @@ export function CuratedBoardList({
                                   </option>
                                 ))}
                               </select>
-                            }
+                            )}
                           />
                           <EditableMetadata
                             label={`Next step for ${displayText(objectTitle)}`}
                             value={item.nextStep ?? 'No next step'}
                             disabled={optimistic || !onUpdateItem}
-                            editor={
+                            editor={() => (
                               <BoardNextStepInput
                                 objectName={objectTitle}
                                 nextStep={item.nextStep}
                                 disabled={optimistic || !onUpdateItem}
                                 onSave={(nextStep) => void onUpdateItem?.(item.id, { nextStep })}
                               />
-                            }
+                            )}
                           />
                         </>
                       }

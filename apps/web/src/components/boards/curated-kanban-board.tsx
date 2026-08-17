@@ -507,7 +507,7 @@ function KanbanCard({
           value={ownerLabel(item.responsibleUserId, members)}
           pending={saving}
           disabled={optimistic}
-          editor={
+          editor={() => (
             <select
               value={item.responsibleUserId ?? ''}
               onChange={(event) => {
@@ -523,14 +523,14 @@ function KanbanCard({
                 </option>
               ))}
             </select>
-          }
+          )}
         />
         <EditableMetadata
           label={`Due date for ${displayText(title)}`}
-          value={<DueDateDisplay value={item.dueAt} variant="compact" />}
+          value={() => <DueDateDisplay value={item.dueAt} variant="compact" />}
           pending={saving}
           disabled={optimistic}
-          editor={
+          editor={() => (
             <MetadataDateEditor
               defaultValue={item.dueAt ? item.dueAt.toISOString().slice(0, 10) : ''}
               onApply={(value) => {
@@ -539,20 +539,20 @@ function KanbanCard({
                 });
               }}
             />
-          }
+          )}
         />
         <EditableMetadata
           label={`Priority for ${displayText(title)}`}
-          value={
+          value={() => (
             <CollectionStatus
               value={item.priority ? `p${item.priority}` : 'none'}
               tone={priorityTone(item.priority)}
               label={item.priority ? `P${item.priority}` : 'No priority'}
             />
-          }
+          )}
           pending={saving}
           disabled={optimistic}
-          editor={
+          editor={() => (
             <select
               value={item.priority ?? ''}
               onChange={(event) => {
@@ -570,14 +570,14 @@ function KanbanCard({
                 </option>
               ))}
             </select>
-          }
+          )}
         />
         <EditableMetadata
           label={`Next step for ${displayText(title)}`}
           value={item.nextStep ?? 'No next step'}
           pending={saving}
           disabled={optimistic}
-          editor={
+          editor={() => (
             <form
               onSubmit={(event) => {
                 event.preventDefault();
@@ -601,7 +601,7 @@ function KanbanCard({
                 Apply
               </button>
             </form>
-          }
+          )}
         />
       </div>
       {!optimistic ? (
@@ -616,7 +616,7 @@ function KanbanCard({
           }
           className="mt-1"
           triggerRef={registerMoveControl}
-          editor={
+          editor={() => (
             <select
               id={moveControlId}
               value={lane.id}
@@ -640,7 +640,7 @@ function KanbanCard({
                 </option>
               ))}
             </select>
-          }
+          )}
         />
       ) : null}
     </li>

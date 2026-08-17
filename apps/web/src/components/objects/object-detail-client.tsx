@@ -37,10 +37,7 @@ import {
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { ArtifactReferenceChip } from '@/components/artifact-reference-chip';
 import { ContextualAskLink } from '@/components/chat/contextual-ask-link';
-import {
-  CollectionStatus,
-  priorityTone,
-} from '@/components/collections/collection-status';
+import { CollectionStatus, priorityTone } from '@/components/collections/collection-status';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { DueDateDisplay } from '@/components/due-date-display';
@@ -976,7 +973,8 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
     });
   }
 
-  if (!generated && !canRequest && summary?.status !== 'pending' && summary?.status !== 'failed') {
+  if (!summary) return null;
+  if (!generated && !canRequest && summary.status !== 'pending' && summary.status !== 'failed') {
     return null;
   }
 
@@ -1006,25 +1004,25 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
             </div>
           ) : null}
         </div>
-      ) : summary?.canGenerate ? (
+      ) : summary.canGenerate ? (
         <p className="text-sm text-fg-muted">Summary is ready to generate.</p>
       ) : null}
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
-        {summary?.generatedAt ||
-        summary?.status === 'pending' ||
-        (summary?.status === 'missing' && summary.canGenerate) ||
-        summary?.lastErrorCode ? (
+        {summary.generatedAt ||
+        summary.status === 'pending' ||
+        (summary.status === 'missing' && summary.canGenerate) ||
+        summary.lastErrorCode ? (
           <p className="text-xs text-fg-dim">
-            {summary?.generatedAt
+            {summary.generatedAt
               ? `Updated ${formatDisplayDateTime(summary.generatedAt, { timezone })} · ${
                   summary.sourceRefs.length
                 } sources`
-              : summary?.status === 'pending'
+              : summary.status === 'pending'
                 ? 'Generating'
-                : summary?.status === 'missing' && summary.canGenerate
+                : summary.status === 'missing' && summary.canGenerate
                   ? 'Ready to generate'
-                  : summary?.lastErrorCode
+                  : summary.lastErrorCode
                     ? 'Update failed'
                     : null}
           </p>
@@ -1273,8 +1271,8 @@ function ObjectEditableFields({
       <h2 className="px-2 text-xs text-fg-dim">Properties</h2>
       <EditableMetadata
         label={`Status for ${displayText(title)}`}
-        value={<CollectionStatus value={detail.status} label={statusLabel(detail.status)} />}
-        editor={
+        value={() => <CollectionStatus value={detail.status} label={statusLabel(detail.status)} />}
+        editor={() => (
           <select
             value={detail.status}
             onChange={(event) => {
@@ -1292,18 +1290,18 @@ function ObjectEditableFields({
               <option value={detail.status}>{statusLabel(detail.status)}</option>
             )}
           </select>
-        }
+        )}
       />
       <EditableMetadata
         label={`Priority for ${displayText(title)}`}
-        value={
+        value={() => (
           <CollectionStatus
             value={detail.priority ? `p${detail.priority}` : 'none'}
             tone={priorityTone(detail.priority)}
             label={detail.priority ? `P${detail.priority}` : 'No priority'}
           />
-        }
-        editor={
+        )}
+        editor={() => (
           <select
             value={detail.priority ?? ''}
             onChange={(event) => {
@@ -1318,13 +1316,13 @@ function ObjectEditableFields({
             <option value="3">P3</option>
             <option value="4">P4</option>
           </select>
-        }
+        )}
       />
       {detail.type === 'task' ? (
         <EditableMetadata
           label={`Assignee for ${displayText(title)}`}
           value={assignee?.label ?? (detail.assigneeUserId ? 'Assigned' : 'Unassigned')}
-          editor={
+          editor={() => (
             <select
               value={detail.assigneeUserId ?? ''}
               onChange={(event) => {
@@ -1340,14 +1338,14 @@ function ObjectEditableFields({
                 </option>
               ))}
             </select>
-          }
+          )}
         />
       ) : null}
       {isSchedulableObjectType(detail.type) ? (
         <EditableMetadata
           label={`Due date for ${displayText(title)}`}
-          value={<DueDateDisplay value={detail.dueAt} variant="field-hint" />}
-          editor={
+          value={() => <DueDateDisplay value={detail.dueAt} variant="field-hint" />}
+          editor={() => (
             <MetadataDateEditor
               defaultValue={dueDraft}
               onApply={(value) => {
@@ -1356,7 +1354,7 @@ function ObjectEditableFields({
                 patch('dueAt', value === '' ? null : new Date(`${value}T00:00:00.000Z`));
               }}
             />
-          }
+          )}
         />
       ) : null}
       {detail.type === 'task' && detail.archivedAt ? (
@@ -1714,10 +1712,7 @@ function ConnectedBoardList({ boards }: { boards: ObjectDetail['connectedWork'][
       ) : (
         <ul className="space-y-2">
           {boards.map((board) => (
-            <li
-              key={board.itemId}
-              className="grid gap-0.5 text-sm"
-            >
+            <li key={board.itemId} className="grid gap-0.5 text-sm">
               <a
                 href={`/app/boards/${board.boardId}?item=${board.itemId}`}
                 className="font-medium hover:underline"
@@ -1785,10 +1780,7 @@ function ConnectedDocumentList({
       ) : (
         <ul className="space-y-2">
           {documents.map((document) => (
-            <li
-              key={document.id}
-              className="grid gap-0.5 text-sm"
-            >
+            <li key={document.id} className="grid gap-0.5 text-sm">
               <a
                 href={`/app/documents/${document.id}`}
                 title={document.name}
@@ -1818,10 +1810,7 @@ function ConnectedLinkList({ links }: { links: ObjectDetail['connectedWork']['li
       ) : (
         <ul className="space-y-2">
           {links.map((link) => (
-            <li
-              key={link.id}
-              className="grid gap-0.5 text-sm"
-            >
+            <li key={link.id} className="grid gap-0.5 text-sm">
               {link.canonicalUrl ? (
                 <a
                   href={link.canonicalUrl}
@@ -1860,10 +1849,7 @@ function ConnectedCapturedFileList({
       ) : (
         <ul className="space-y-2">
           {files.map((file) => (
-            <li
-              key={file.id}
-              className="grid gap-0.5 text-sm"
-            >
+            <li key={file.id} className="grid gap-0.5 text-sm">
               <Link href="/app/documents/captured" className="font-medium hover:underline">
                 {displayText(truncateFilenameMiddle(file.name))}
               </Link>

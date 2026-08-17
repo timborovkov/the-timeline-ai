@@ -8,6 +8,12 @@ import type { ReactNode } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 
+export type MetadataSlot = ReactNode | (() => ReactNode);
+
+function renderMetadataSlot(slot: MetadataSlot): ReactNode {
+  return typeof slot === 'function' ? slot() : slot;
+}
+
 export function EditableMetadata({
   label,
   value,
@@ -19,14 +25,16 @@ export function EditableMetadata({
   triggerRef,
 }: {
   label: string;
-  value: ReactNode;
-  editor: ReactNode;
+  value: MetadataSlot;
+  editor: MetadataSlot;
   pending?: boolean;
   disabled?: boolean;
   error?: string | null;
   className?: string;
   triggerRef?: (node: HTMLButtonElement | null) => void;
 }) {
+  const renderedValue = renderMetadataSlot(value);
+  const renderedEditor = renderMetadataSlot(editor);
   const [open, setOpen] = useState(false);
   const internalTriggerRef = useRef<HTMLButtonElement>(null);
   const wasPendingRef = useRef(pending);
@@ -74,11 +82,11 @@ export function EditableMetadata({
                 className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none"
               />
             ) : null}
-            <span className="min-w-0 truncate">{value}</span>
+            <span className="min-w-0 truncate">{renderedValue}</span>
           </button>
         </PopoverTrigger>
         <PopoverContent role="dialog" aria-label={label} className="min-w-52 p-2">
-          {editor}
+          {renderedEditor}
         </PopoverContent>
       </Popover>
       {error ? (

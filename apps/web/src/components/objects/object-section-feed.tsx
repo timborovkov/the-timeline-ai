@@ -28,10 +28,7 @@ export function ObjectSectionFeed({ objectId, section, title, showTitle = true }
       ) : (
         <ul className="space-y-2 text-sm">
           {items.map((item) => (
-            <li
-              key={String((item as { id?: unknown }).id)}
-              className="py-1.5"
-            >
+            <li key={String((item as { id?: unknown }).id)} className="py-1.5">
               <ObjectSectionItem section={section} item={item} />
             </li>
           ))}

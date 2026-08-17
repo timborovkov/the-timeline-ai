@@ -27,7 +27,7 @@ export function ObjectOrigin({
 }) {
   const why = provenance?.whyThisExists[0];
   if (!why) return null;
-  const body = why.reason || why.title;
+  const body = why.reason?.trim() ? why.reason : why.title;
   if (!body) return null;
 
   return (

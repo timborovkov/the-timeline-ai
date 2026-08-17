@@ -120,11 +120,11 @@ describe('collection primitives', () => {
         label="Priority for Launch plan"
         value="P2"
         error="Save failed"
-        editor={
+        editor={() => (
           <select aria-label="Priority" defaultValue="2">
             <option value="2">P2</option>
           </select>
-        }
+        )}
       />,
     );
 
@@ -148,7 +148,7 @@ describe('collection primitives', () => {
       <EditableMetadata
         label="Due date for Launch plan"
         value="Jul 1"
-        editor={<MetadataDateEditor defaultValue="2026-07-01" onApply={apply} />}
+        editor={() => <MetadataDateEditor defaultValue="2026-07-01" onApply={apply} />}
       />,
     );
 

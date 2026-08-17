@@ -681,9 +681,7 @@ describe('TaskBoard', () => {
       />,
     );
 
-    expect(
-      screen.getByText(/Cursor Bugbot flagged a Medium-severity defect/),
-    ).toBeTruthy();
+    expect(screen.getByText(/Cursor Bugbot flagged a Medium-severity defect/)).toBeTruthy();
     expect(screen.getByText('Related context')).toBeTruthy();
     expect(screen.getByRole('link', { name: /example.com\/pilot/ })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Pilot brief.pdf' })).toBeTruthy();

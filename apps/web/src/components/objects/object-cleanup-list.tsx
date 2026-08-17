@@ -428,15 +428,15 @@ function ObjectCollectionItem({
             {object.type === 'task' ? (
               <EditableMetadata
                 label={`Category for ${displayText(object.canonicalName)}`}
-                value={
+                value={() => (
                   <LiveTaskCategoryBadge
                     taskId={object.id}
                     category={object.taskCategory}
                     status={object.taskCategoryStatus}
                     updatedAt={object.taskCategoryUpdatedAt}
                   />
-                }
-                editor={
+                )}
+                editor={() => (
                   <TaskCategorySelect
                     taskId={object.id}
                     category={object.taskCategory}
@@ -444,21 +444,21 @@ function ObjectCollectionItem({
                     status={object.taskCategoryStatus}
                     updatedAt={object.taskCategoryUpdatedAt}
                   />
-                }
+                )}
               />
             ) : null}
             <EditableMetadata
               label={`Status for ${displayText(object.canonicalName)}`}
               pending={saving === 'status'}
               error={error}
-              value={
+              value={() => (
                 <CollectionStatus
                   value={status}
                   label={statusLabel(status)}
                   tone={statusTone(status)}
                 />
-              }
-              editor={
+              )}
+              editor={() => (
                 <select
                   aria-label="Status"
                   value={status}
@@ -476,19 +476,19 @@ function ObjectCollectionItem({
                     <option value={status}>{statusLabel(status)}</option>
                   ) : null}
                 </select>
-              }
+              )}
             />
             <EditableMetadata
               label={`Priority for ${displayText(object.canonicalName)}`}
               pending={saving === 'priority'}
-              value={
+              value={() => (
                 <CollectionStatus
                   value={priority ? `p${priority}` : 'none'}
                   tone={priorityTone(priority)}
                   label={priority ? `P${priority}` : 'No priority'}
                 />
-              }
-              editor={
+              )}
+              editor={() => (
                 <select
                   aria-label="Priority"
                   value={priority ?? ''}
@@ -507,21 +507,21 @@ function ObjectCollectionItem({
                     </option>
                   ))}
                 </select>
-              }
+              )}
             />
             {isSchedulableObjectType(object.type) ? (
               <EditableMetadata
                 label={`Due date for ${displayText(object.canonicalName)}`}
                 pending={saving === 'dueAt'}
-                value={<DueDateDisplay value={dueAt} timezone={timezone} variant="compact" />}
-                editor={
+                value={() => <DueDateDisplay value={dueAt} timezone={timezone} variant="compact" />}
+                editor={() => (
                   <ObjectDueDateEditor
                     value={dueAt}
                     onSave={(value) => {
                       save('dueAt', value);
                     }}
                   />
-                }
+                )}
               />
             ) : null}
           </>
