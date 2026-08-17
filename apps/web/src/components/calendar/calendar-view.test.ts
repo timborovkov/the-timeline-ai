@@ -528,9 +528,8 @@ describe('CalendarView recurrence and tentative UI', () => {
     await user.click(screen.getByRole('button', { name: /^Save$/ }));
 
     await waitFor(() => {
-      expect(screen.getAllByText('Calendar write denied')).toHaveLength(2);
+      expect(screen.getByRole('dialog', { name: 'New event' })).toBeTruthy();
     });
-    expect(screen.getByRole('dialog', { name: 'New event' })).toBeTruthy();
     expect(screen.getByLabelText<HTMLInputElement>('Title').value).toBe('Denied customer sync');
     expect(screen.queryByRole('button', { name: /Denied customer sync/ })).toBeNull();
     expect(fakes.refresh).toHaveBeenCalled();

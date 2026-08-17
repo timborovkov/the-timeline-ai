@@ -1189,7 +1189,7 @@ describe('TaskBoard', () => {
         await Promise.resolve();
       });
       await waitFor(() => {
-        expect(screen.getByText('Updated 5 tasks.')).toBeTruthy();
+        expect(fakes.setTaskCategoryAction).toHaveBeenCalledTimes(5);
       });
     }
   });

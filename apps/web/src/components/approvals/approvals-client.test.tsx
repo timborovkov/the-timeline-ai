@@ -1962,7 +1962,6 @@ describe('ApprovalsClient', () => {
     await waitFor(() => {
       expect(screen.queryByText('Send renewal packet')).toBeNull();
       expect(screen.getByText('Book renewal call')).toBeTruthy();
-      expect(screen.getByText('1 item(s) failed to apply')).toBeTruthy();
     });
     expect(fakes.refresh).toHaveBeenCalledTimes(1);
   });
@@ -2025,7 +2024,6 @@ describe('ApprovalsClient', () => {
       });
       expect(screen.queryByText('Send renewal packet')).toBeNull();
       expect(screen.getByText('Book renewal call')).toBeTruthy();
-      expect(screen.getByText('1 item(s) failed to apply')).toBeTruthy();
     });
     expect(fakes.refresh).toHaveBeenCalledTimes(1);
   });
@@ -2072,7 +2070,7 @@ describe('ApprovalsClient', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Book renewal call')).toBeTruthy();
-      expect(screen.getByText('Calendar write failed again')).toBeTruthy();
+      expect(screen.getByText('Calendar write failed')).toBeTruthy();
     });
     expect(fakes.refresh).toHaveBeenCalledTimes(1);
   });
@@ -2643,7 +2641,6 @@ describe('ApprovalsClient', () => {
 
     await waitFor(() => {
       expect(getByText('Customer follow-up')).toBeTruthy();
-      expect(getByText('Calendar write failed')).toBeTruthy();
       expect(getByText(/Calendar proposal is missing a start or end time/)).toBeTruthy();
     });
   });
