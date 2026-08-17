@@ -25,6 +25,7 @@ import {
   reconciliationEvidence,
   reconciliationOutputs,
   reconciliationRuns,
+  teamDigestDestinations,
   teamMembers,
   teamProviderResourceShares,
   teams,
@@ -367,6 +368,15 @@ async function main(): Promise<void> {
             updatedAt: now,
           },
         });
+
+      await tx
+        .insert(teamDigestDestinations)
+        .values({
+          teamId: IDS.team,
+          kind: 'email_members',
+          enabled: true,
+        })
+        .onConflictDoNothing();
 
       await tx
         .insert(providerConnections)

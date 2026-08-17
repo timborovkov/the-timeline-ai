@@ -16,6 +16,7 @@ import { InspectorPane } from '@/components/inspector-pane';
 import { InspectorToggle } from '@/components/inspector-pane';
 import { MobileNav } from '@/components/mobile-nav';
 import { SkipLink } from '@/components/skip-link';
+import { TeamSetupChecklistChip } from '@/components/team-setup-checklist-chip';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { UserMenu } from '@/components/user-menu';
@@ -100,6 +101,7 @@ export function AppShell({
                   <Search aria-hidden="true" className="size-4" />
                 </Link>
                 <InboxBell unreadCount={inbox.unreadCount} notifications={inbox.notifications} />
+                <TeamSetupChecklistChip />
                 <InspectorToggle />
                 <ThemeToggle />
                 <UserMenu user={user} />

@@ -85,6 +85,7 @@ describe('GET /api/slack/install/start', () => {
     expect(target.searchParams.get('user_scope')).toBe('identity.basic');
     expect(target.searchParams.get('scope')).toContain('commands');
     expect(target.searchParams.get('scope')).toContain('channels:history');
+    expect(target.searchParams.get('scope')).toContain('im:write');
     expect(target.searchParams.get('redirect_uri')).toBe(
       'https://timeline.test/api/slack/install/callback',
     );

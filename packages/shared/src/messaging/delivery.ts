@@ -3,12 +3,17 @@ import {
   dailyDigests,
   messageDeliveries,
   messagePreferences,
+  slackUsers,
+  slackUserTeams,
   teamMembers,
+  telegramUsers,
+  telegramUserTeams,
   users,
 } from '@timeline/db';
 import { and, eq, isNull, lt } from 'drizzle-orm';
 
 import type {
+  DailyDigestPayload,
   MessageChannel,
   MessageDeliveryStatus,
   MessageInput,
@@ -18,8 +23,22 @@ import type {
 } from '#src/messaging/types.js';
 
 import { getEnv } from '#src/env.js';
-import { getDigestPreference, isDigestWindowExpired } from '#src/messaging/digest.js';
+import {
+  digestDestinationDedupeKey,
+  listTeamDigestDestinations,
+  personalDigestDestinations,
+  sharedDigestDestinations,
+  type TeamDigestDestination,
+} from '#src/messaging/destinations.js';
+import { formatDigestChatText } from '#src/messaging/digest-format.js';
+import {
+  generateDailyDigest,
+  getDigestPreference,
+  isDigestWindowExpired,
+} from '#src/messaging/digest.js';
 import { renderMessage } from '#src/messaging/templates.js';
+import { sendTeamSlackDirectMessage, sendTeamSlackMessage } from '#src/slack/dispatcher.js';
+import { sendTelegramBotMessage } from '#src/telegram/api.js';
 
 interface PostmarkResult {
   ok: boolean;
@@ -418,18 +437,39 @@ export async function sendDailyDigest(input: {
       .where(eq(dailyDigests.id, input.digestId));
     return { ok: true, skipped: true, skippedStatus: 'skipped' };
   }
-  const payload = digest.payload as Parameters<typeof sendMessage<'daily_digest'>>[1]['payload'];
-  const result = await sendMessage(
-    'daily_digest',
-    { to: recipient.email, digestUrl: input.digestUrl, payload },
-    {
-      db: input.db,
-      teamId: digest.teamId,
-      userId: digest.userId,
-      dedupeKey: `daily_digest:${digest.id}`,
-      ...(input.fetch ? { fetch: input.fetch } : {}),
-    },
-  );
+  const configuredDestinations = await listTeamDigestDestinations(input.db, digest.teamId);
+  const personal =
+    configuredDestinations.length === 0
+      ? [
+          {
+            id: 'email-default',
+            teamId: digest.teamId,
+            kind: 'email_members' as const,
+            targetId: null,
+            label: null,
+            enabled: true,
+          },
+        ]
+      : personalDigestDestinations(configuredDestinations);
+  if (personal.length === 0) {
+    return { ok: true, skipped: true, skippedStatus: 'skipped' };
+  }
+  const payload = digest.payload as DailyDigestPayload;
+  const results: SendMessageResult[] = [];
+  for (const destination of personal) {
+    results.push(
+      await deliverPersonalDigestDestination({
+        db: input.db,
+        digest,
+        destination,
+        email: recipient.email,
+        digestUrl: input.digestUrl,
+        payload,
+        ...(input.fetch ? { fetch: input.fetch } : {}),
+      }),
+    );
+  }
+  const result = rollupDeliveryResults(results);
   const digestUpdate =
     result.skipped && result.skippedStatus === 'sent'
       ? {
@@ -451,6 +491,304 @@ export async function sendDailyDigest(input: {
           };
   await input.db.update(dailyDigests).set(digestUpdate).where(eq(dailyDigests.id, input.digestId));
   return result;
+}
+
+export async function sendWorkspaceDailyDigest(input: {
+  db: Db;
+  teamId: string;
+  windowStart: Date;
+  windowEnd: Date;
+  digestUrl: string;
+  now?: Date;
+}): Promise<SendMessageResult> {
+  const destinations = sharedDigestDestinations(
+    await listTeamDigestDestinations(input.db, input.teamId),
+  );
+  if (destinations.length === 0) {
+    return { ok: true, skipped: true, skippedStatus: 'skipped' };
+  }
+  const generated = await generateDailyDigest({
+    db: input.db,
+    teamId: input.teamId,
+    userId: '00000000-0000-0000-0000-000000000000',
+    windowStart: input.windowStart,
+    windowEnd: input.windowEnd,
+    audience: 'workspace',
+    ...(input.now ? { now: input.now } : {}),
+  });
+  if (generated.skipped) {
+    return { ok: true, skipped: true, skippedStatus: 'skipped' };
+  }
+  const results: SendMessageResult[] = [];
+  for (const destination of destinations) {
+    results.push(
+      await deliverSharedDigestDestination({
+        db: input.db,
+        teamId: input.teamId,
+        windowEnd: input.windowEnd.toISOString(),
+        destination,
+        digestUrl: input.digestUrl,
+        payload: generated.payload,
+      }),
+    );
+  }
+  return rollupDeliveryResults(results);
+}
+
+function rollupDeliveryResults(results: SendMessageResult[]): SendMessageResult {
+  const failed = results.find((result) => !result.ok && !result.skipped);
+  if (failed) return failed;
+  const sent =
+    [...results].reverse().find((result) => result.ok && !result.skipped) ??
+    results.find((result) => result.skipped && result.skippedStatus === 'sent');
+  if (sent) {
+    return { ...sent, ok: true };
+  }
+  return results[0] ?? { ok: true, skipped: true, skippedStatus: 'skipped' };
+}
+
+async function deliverPersonalDigestDestination(input: {
+  db: Db;
+  digest: typeof dailyDigests.$inferSelect;
+  destination: TeamDigestDestination;
+  email: string;
+  digestUrl: string;
+  payload: DailyDigestPayload;
+  fetch?: typeof globalThis.fetch;
+}): Promise<SendMessageResult> {
+  const dedupeKey = digestDestinationDedupeKey({
+    scope: 'member',
+    digestId: input.digest.id,
+    teamId: input.digest.teamId,
+    windowEnd: input.digest.windowEnd.toISOString(),
+    destination: input.destination,
+  });
+  if (input.destination.kind === 'email_members') {
+    return sendMessage(
+      'daily_digest',
+      { to: input.email, digestUrl: input.digestUrl, payload: input.payload },
+      {
+        db: input.db,
+        teamId: input.digest.teamId,
+        userId: input.digest.userId,
+        dedupeKey,
+        ...(input.fetch ? { fetch: input.fetch } : {}),
+      },
+    );
+  }
+  const text = formatDigestChatText({ payload: input.payload, digestUrl: input.digestUrl });
+  if (input.destination.kind === 'slack_dm_members') {
+    const slackUserId = await linkedSlackUserId(input.db, input.digest.teamId, input.digest.userId);
+    if (!slackUserId) {
+      return { ok: true, skipped: true, skippedStatus: 'skipped' };
+    }
+    return deliverBotDigest({
+      db: input.db,
+      channel: 'slack',
+      provider: 'slack',
+      teamId: input.digest.teamId,
+      userId: input.digest.userId,
+      subject: `Daily digest for ${input.payload.teamName}`,
+      dedupeKey,
+      metadata: { slack_user_id: slackUserId },
+      send: () =>
+        sendTeamSlackDirectMessage({
+          db: input.db,
+          teamId: input.digest.teamId,
+          slackUserId,
+          text,
+        }),
+    });
+  }
+  const telegramChatId = await linkedTelegramChatId(
+    input.db,
+    input.digest.teamId,
+    input.digest.userId,
+  );
+  if (telegramChatId === null) {
+    return { ok: true, skipped: true, skippedStatus: 'skipped' };
+  }
+  const token = getEnv().TELEGRAM_BOT_TOKEN;
+  if (!token) {
+    return { ok: false, error: 'Telegram bot is not configured', retryable: false };
+  }
+  return deliverBotDigest({
+    db: input.db,
+    channel: 'telegram',
+    provider: 'telegram',
+    teamId: input.digest.teamId,
+    userId: input.digest.userId,
+    subject: `Daily digest for ${input.payload.teamName}`,
+    dedupeKey,
+    metadata: { telegram_chat_id: telegramChatId },
+    send: () => sendTelegramBotMessage({ chatId: telegramChatId, text, token }),
+  });
+}
+
+async function deliverSharedDigestDestination(input: {
+  db: Db;
+  teamId: string;
+  windowEnd: string;
+  destination: TeamDigestDestination;
+  digestUrl: string;
+  payload: DailyDigestPayload;
+}): Promise<SendMessageResult> {
+  const targetId = input.destination.targetId;
+  if (!targetId) {
+    return { ok: false, error: 'Digest destination is missing a chat.', retryable: false };
+  }
+  const text = formatDigestChatText({ payload: input.payload, digestUrl: input.digestUrl });
+  const dedupeKey = digestDestinationDedupeKey({
+    scope: 'workspace',
+    teamId: input.teamId,
+    windowEnd: input.windowEnd,
+    destination: input.destination,
+  });
+  if (input.destination.kind === 'slack_channel') {
+    return deliverBotDigest({
+      db: input.db,
+      channel: 'slack',
+      provider: 'slack',
+      teamId: input.teamId,
+      subject: `Daily digest for ${input.payload.teamName}`,
+      dedupeKey,
+      metadata: { slack_channel_id: targetId },
+      send: () =>
+        sendTeamSlackMessage({
+          db: input.db,
+          teamId: input.teamId,
+          channelId: targetId,
+          text,
+        }),
+    });
+  }
+  const chatId = Number(targetId);
+  if (!Number.isSafeInteger(chatId)) {
+    return { ok: false, error: 'Telegram digest chat is invalid.', retryable: false };
+  }
+  const token = getEnv().TELEGRAM_BOT_TOKEN;
+  if (!token) {
+    return { ok: false, error: 'Telegram bot is not configured', retryable: false };
+  }
+  return deliverBotDigest({
+    db: input.db,
+    channel: 'telegram',
+    provider: 'telegram',
+    teamId: input.teamId,
+    subject: `Daily digest for ${input.payload.teamName}`,
+    dedupeKey,
+    metadata: { telegram_chat_id: chatId },
+    send: () => sendTelegramBotMessage({ chatId, text, token }),
+  });
+}
+
+function isPermanentBotFailure(error: string): boolean {
+  return /not_in_channel|channel_not_found|account_inactive|invalid_auth|forbidden|chat not found|bot was blocked|bot is not a member/i.test(
+    error,
+  );
+}
+
+async function deliverBotDigest(input: {
+  db: Db;
+  channel: MessageChannel;
+  provider: string;
+  teamId: string;
+  userId?: string | null;
+  subject: string;
+  dedupeKey: string;
+  metadata?: Record<string, unknown>;
+  send: () => Promise<void>;
+}): Promise<SendMessageResult> {
+  let deliveryId = await recordDelivery({
+    db: input.db,
+    intent: 'daily_digest',
+    channel: input.channel,
+    teamId: input.teamId,
+    userId: input.userId ?? null,
+    subject: input.subject,
+    status: 'pending',
+    provider: input.provider,
+    dedupeKey: input.dedupeKey,
+    metadata: input.metadata ?? {},
+  });
+  if (!deliveryId) {
+    const existing = await findDeliveryByDedupeKey({ db: input.db, dedupeKey: input.dedupeKey });
+    if (existing?.status === 'sent') {
+      return { ok: true, deliveryId: existing.id, skipped: true, skippedStatus: 'sent' };
+    }
+    if (existing?.status === 'failed') {
+      const claimed = await claimFailedDeliveryForRetry({
+        db: input.db,
+        deliveryId: existing.id,
+      });
+      if (!claimed) {
+        return {
+          ok: false,
+          deliveryId: existing.id,
+          skipped: true,
+          skippedStatus: 'pending',
+          error: 'Delivery is already pending.',
+        };
+      }
+      deliveryId = existing.id;
+    } else if (existing?.status === 'pending') {
+      const claimed = await claimStalePendingDeliveryForRetry({
+        db: input.db,
+        deliveryId: existing.id,
+        staleBefore: new Date(Date.now() - PENDING_DELIVERY_RETRY_AFTER_MS),
+      });
+      if (!claimed) {
+        return {
+          ok: false,
+          deliveryId: existing.id,
+          skipped: true,
+          skippedStatus: 'pending',
+          error: 'Delivery is already pending.',
+        };
+      }
+      deliveryId = existing.id;
+    } else if (existing) {
+      return { ok: true, deliveryId: existing.id, skipped: true, skippedStatus: existing.status };
+    }
+  }
+  try {
+    await input.send();
+    if (deliveryId) {
+      await markDeliveryResult({ db: input.db, deliveryId, status: 'sent' });
+    }
+    return { ok: true, ...(deliveryId ? { deliveryId } : {}) };
+  } catch (err) {
+    const error = shortError(err, 'Failed to send digest');
+    const retryable = !isPermanentBotFailure(error);
+    if (deliveryId) {
+      await markDeliveryResult({ db: input.db, deliveryId, status: 'failed', error });
+    }
+    return { ok: false, ...(deliveryId ? { deliveryId } : {}), error, retryable };
+  }
+}
+
+async function linkedSlackUserId(db: Db, teamId: string, userId: string): Promise<string | null> {
+  const rows = await db
+    .select({ slackUserId: slackUsers.slackUserId })
+    .from(slackUserTeams)
+    .innerJoin(slackUsers, eq(slackUsers.id, slackUserTeams.slackUserId))
+    .where(and(eq(slackUserTeams.teamId, teamId), eq(slackUserTeams.userId, userId)))
+    .limit(1);
+  return rows[0]?.slackUserId ?? null;
+}
+
+async function linkedTelegramChatId(
+  db: Db,
+  teamId: string,
+  userId: string,
+): Promise<number | null> {
+  const rows = await db
+    .select({ tgUserId: telegramUsers.tgUserId })
+    .from(telegramUserTeams)
+    .innerJoin(telegramUsers, eq(telegramUserTeams.telegramUserId, telegramUsers.id))
+    .where(and(eq(telegramUserTeams.teamId, teamId), eq(telegramUsers.userId, userId)))
+    .limit(1);
+  return rows[0]?.tgUserId ?? null;
 }
 
 export const messagingInternals = { sendPostmarkEmail };

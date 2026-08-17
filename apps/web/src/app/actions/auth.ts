@@ -1,7 +1,7 @@
 'use server';
 
 import { teamInvites, teamMembers, teams, users } from '@timeline/db';
-import { sendMessage } from '@timeline/shared/messaging';
+import { insertDefaultDigestDestination, sendMessage } from '@timeline/shared/messaging';
 import { hashPassword } from '@timeline/shared/passwords';
 import * as rateLimit from '@timeline/shared/rate-limit';
 import { buildInboundEmail, randomSlugSuffix, slugify } from '@timeline/shared/slug';
@@ -186,6 +186,7 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
         const teamId = teamRows[0]?.id;
         if (!teamId) throw new Error('Failed to create team');
         await tx.insert(teamMembers).values({ teamId, userId, role: 'owner' });
+        await insertDefaultDigestDestination(tx, teamId);
         return { activeTeamId: teamId, userId, event: 'team_created' as const };
       });
     } catch (e) {

@@ -10,6 +10,11 @@ export const onboardingStep = pgEnum('onboarding_step', [
   'email_forwarding',
   'first_document',
   'first_integration',
+  'invite_teammate',
+  'first_ask',
+  'first_meeting',
+  'review_proposal',
+  'daily_digest',
 ]);
 
 export const teamOnboardingCompletions = pgTable(

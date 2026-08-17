@@ -345,11 +345,13 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       `team_calendar_settings.default_reminder_minutes`, overridden by
       per-event `calendar_events.reminder_minutes`.
 - [x] Add daily event digest per user. Delivery uses the shared messaging
-      module, stores a dashboard-readable digest payload, sends email only for
-      useful activity or actionable context, durably skips quiet windows,
-      preserves generated/sent rows across concurrent retries, uses
-      daylight-saving-safe local digest boundaries, supports per-user opt-out
-      in Team settings, and keeps individual in-app notifications inbox-only.
+      module, stores a dashboard-readable digest payload, and sends to workspace
+      digest destinations (email by default; Slack/Telegram chats and member DMs
+      are configurable). Email is only sent for useful activity or actionable
+      context. Quiet windows are durably skipped, generated/sent rows are
+      preserved across concurrent retries, local digest boundaries are
+      daylight-saving-safe, per-user opt-out applies to personal email/DMs, and
+      individual in-app notifications stay inbox-only.
 - [ ] Extend overdue/missed alerts to calendar events past `start_at` with no
       attendance or completion signal.
 

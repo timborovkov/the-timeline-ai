@@ -1209,6 +1209,14 @@ function momentInspectorContent({
   };
 }
 
+function compactTimelineMomentHref(moment: TimelineMoment): string {
+  const params = new URLSearchParams({ moment: moment.id });
+  // Grouped moments store rawEvents newest-first; the lead event matches the row title.
+  const eventId = moment.rawEvents[0]?.id;
+  if (eventId) params.set('event', eventId);
+  return `/app/timeline?${params.toString()}#${moment.anchorId}`;
+}
+
 function TimelineMomentRow({
   moment,
   audioUrlMap,
@@ -1249,6 +1257,44 @@ function TimelineMomentRow({
     ...contextParts.filter((part) => !previewText.includes(part)),
     previewOverlapsTitle ? null : previewText,
   ].filter((part): part is string => Boolean(part));
+  if (compact) {
+    return (
+      <li
+        id={moment.anchorId}
+        aria-current={selected ? 'true' : undefined}
+        className={cn(
+          'group relative -mx-3 scroll-mt-24 border-b border-border px-3 transition-colors hover:bg-surface',
+          selected && 'bg-surface shadow-[inset_2px_0_0_var(--signal)]',
+        )}
+        data-moment-id={moment.id}
+      >
+        <Link
+          href={compactTimelineMomentHref(moment)}
+          className="flex min-h-9 min-w-0 items-center gap-3 py-1.5 text-left"
+        >
+          <span
+            data-visual-dynamic="timeline-time"
+            className="w-[4.75rem] shrink-0 font-mono text-[11px] tabular-nums text-fg-dim"
+          >
+            {moment.timeLabel}
+          </span>
+          <span className="max-w-[8rem] shrink-0 truncate text-[11px] text-fg-muted">
+            {moment.sourceLabel}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-sm text-fg underline decoration-fg-dim underline-offset-2 group-hover:text-signal group-hover:decoration-signal">
+            {title}
+          </span>
+        </Link>
+        <div className="absolute right-2 top-1.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+          <PinOverflowMenu
+            target={{ kind: 'timeline_moment', key: moment.id }}
+            title={title}
+            initialPinned={pinned}
+          />
+        </div>
+      </li>
+    );
+  }
   return (
     <li
       id={moment.anchorId}
@@ -1273,7 +1319,7 @@ function TimelineMomentRow({
       <div
         className={cn(
           'grid grid-cols-[3.5rem_minmax(0,1fr)] items-start gap-x-3 md:grid-cols-[4.5rem_1rem_minmax(0,1fr)]',
-          pulse || compact ? 'py-2.5' : 'py-3',
+          pulse ? 'py-2.5' : 'py-3',
         )}
       >
         <time
@@ -1477,8 +1523,10 @@ export function TimelineList({
           <h2
             id={`timeline-date-${date}`}
             className={cn(
-              'sticky z-10 -mx-3 border-y border-border bg-bg px-3 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim',
-              compact ? 'top-0' : 'top-11',
+              '-mx-3 bg-bg px-3 font-mono uppercase tracking-[0.14em] text-fg-dim',
+              compact
+                ? 'py-1 text-[10px]'
+                : 'sticky top-11 z-10 border-y border-border py-2 text-[11px]',
             )}
           >
             {date}

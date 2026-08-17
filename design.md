@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.4 · Citation previews (2026-08-17). Replaces v3.3 Timeline rows and original source.
+**Version:** v3.7 · Citation previews on current Home and Ask (2026-08-17). Replaces v3.6 Team setup loop and Home timeline links.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -120,14 +120,19 @@ Ask, Work, Documents, Meetings, Connections, and Team.
   labeled groups: Overview (Home, Timeline, Ask), Workspace (Work, Documents,
   Meetings), and Manage (Connections, Team). Collapsed rails retain the same
   order and expose every destination through its icon label and tooltip.
-- Expanded sidebar: 240px. Collapsed rail: 56px.
+- Expanded sidebar: 240px. Collapsed rail: 56px. The product mark uses the
+  same 12px inset as primary destinations and links to Home (`/app`). Fold and
+  unfold is a quiet chevron, not a boxed panel glyph.
 - Shell header: 48px.
 - Main page container: one shell-owned `max-w-6xl`; routes must not create a
   competing outer page width.
 - Full-canvas chat and boards may opt into full bleed.
 - Provider-created chat sessions use a compact `TG`, `SL`, or neutral `EXT`
   badge in desktop and mobile history. Web-created sessions remain unbadged;
-  provider identity must not replace the human-readable session title.
+  provider identity must not replace the human-readable session title. Each
+  row shows last-activity age; archive stays hidden until hover or focus on
+  desktop. A search field under New chat filters history. The Ask heading keeps
+  the selected title on the same row and does not show a session count.
 - Inspector: hidden until content exists. Desktop uses a reading pane up to
   `min(40%, 36rem)`; mobile uses a taller focus-managed bottom sheet.
 - Work routes share `WorkSubnav`: Overview, Pinned, Objects, Tasks, Boards,
@@ -288,11 +293,28 @@ not render the derived proposal at all.
 
 Home does not repeat its navigation label as a visible page title. It starts
 with a quiet Capture action and the same compact, icon-only-send Ask composer
-used in chat. Attention shows only non-zero actionable groups. “You’re caught
-up” replaces empty dashboard grids. Pinned work, digest, recent moments, and one
-next setup step follow as full-width sections without duplicating Timeline or
-Connections. These sections prefer horizontal rules and rows over bordered
-dashboard cards.
+used in chat. The team setup checklist is Home onboarding. For a member who
+has not hidden it, the list sits open directly under Ask with the same small
+quiet label used when it is folded: completed steps, the current step with
+guidance and one outline action, later incomplete steps as underlined links,
+and a text Hide control. Hide persists per member even when nothing is
+complete, including after new steps appear. After a member hides it, the same
+slot keeps a quiet “Team setup checklist” text toggle with a tiny chevron and
+the remaining count. Off Home, a matching quiet header chip returns to the
+panel until the member hides it or every step is done. The account menu also
+reopens it. The checklist teaches the product loop (capture, people, sources,
+ask, meetings, trust memory, stay in the loop) rather than enumerating every
+work surface. Attention has no visible heading; the region is named for
+assistive tech only.
+It shows only non-zero groups: pending approvals, overdue work, open tasks,
+open objects, recoverable jobs, and connection issues. Overdue work stays the
+danger row into the work queue. Open tasks stay their own row into Tasks. Open
+objects is one generic count for people, companies, projects, deals, and
+follow-ups, linking to the Objects list rather than typed filters or dumping
+those records onto Home. “You’re caught up” replaces empty dashboard grids
+when every group is zero. Pinned work, digest, and a dense recent-moments scan
+follow as full-width sections without duplicating Timeline or Connections.
+These sections prefer horizontal rules and rows over bordered dashboard cards.
 
 Pinned work is one personal, mixed collection. It may contain canonical
 objects (including tasks, projects, deals, people, and object-type documents),
@@ -306,6 +328,13 @@ rows with a type icon, title, one context line, and overflow menu. Hidden,
 archived, or temporarily inaccessible targets do not become placeholders and
 do not consume a preview slot. Home never offers reordering; its Manage action
 opens Work → Pinned.
+
+Home recent moments have no visible heading. They show up to eight dense rows
+of time, source, and an underlined title, with quiet non-sticky date labels
+and no preview, evidence chip, impact strip, transcript link, or timeline
+rail. Each row opens Timeline at that moment with the inspector showing the
+event. A quiet “Go to the full timeline” text link always follows for the
+rest of the archive.
 
 ### Timeline
 
@@ -327,7 +356,8 @@ disclosure. Attached files link to Documents. Sticky dates (`top-11` under the
 toolbar) and pagination remain. The default view ends at the current instant so
 materialized calendar occurrences do not displace recent work. Upcoming context
 is an explicit seven-day view; the Calendar surface owns the complete future
-schedule. Compact Home moments reuse the same formatter.
+schedule. Compact Home moments are a denser scan of the same formatter: time,
+source, and title only, linking into this surface.
 
 ### Ask
 
@@ -335,6 +365,17 @@ Ask uses a standard sans header. Human/assistant role labels are quiet 12px
 text; citations remain mono and lime. Tool execution is collapsed. Pinned
 objects always have a human label. Prompts handed off from Home are stored
 briefly in team-scoped session storage and never in the URL.
+
+The desktop session list stays dense: last-activity age under each title in
+mono 11px, a centered 60% hairline between rows, and archive revealed on row
+hover or keyboard focus. Hovering the relative age shows the localized
+timestamp. A search field under New chat filters the visible history. New chat
+uses the shared ghost `Button`. Touch session lists keep archive visible.
+
+The Ask heading stays on one row. When a conversation is selected, its title
+sits beside the heading as truncated muted text. The mobile session summary
+uses that same resolved title, including deep-linked chats outside the recent
+list. Session counts do not appear in the header.
 
 The web Ask surface is the rich research view: answers may be thorough and use
 sections, lists, or tables, while inline citations remain inspectable links to
@@ -349,9 +390,15 @@ requests for more detail may expand within the provider-safe reply limit.
 ### Work and settings
 
 Work pages share one subnavigation and lead with the task at hand, not a grid of
-links. Team settings render one URL-selected section at a time. Save state stays
-local to the edited form. Member, object, source, and artifact labels never
-fall back to UUIDs.
+links. Work overview puts pinned and team boards above the work queue so saved
+surfaces stay in reach before due and assigned items. Tasks default to the
+grouped list; the list table is full-bleed inside the work canvas, without extra
+page gutters around the rows. Kanban/List view controls sit on the CollectionToolbar
+row with search and filters, not on a second strip. Loading placeholders match the
+requested view and default to list. Kanban cards stay compact: a clamped title plus
+one metadata row, with no redundant type label. Team settings render one URL-selected
+section at a time. Save state stays local to the edited form. Member, object, source,
+and artifact labels never fall back to UUIDs.
 
 Work → Pinned is the complete pin-management surface. It is a single
 side-to-side list with cursor pagination and All, Objects, Boards, Documents,
@@ -387,9 +434,11 @@ orphaned controls.
 
 Task category is a compact secondary label in the task/type line, subordinate
 to title, status, assignee, due date, and priority. Pending and failed states
-use readable text, never color alone. Project is a distinct named relation:
-show it in task context lines and editable detail fields, not as another colored
-tag or a fourth dense card metadata cell. Archived tasks replace project and
+use readable text, never color alone. Project is a distinct named relation.
+Task list rows show it once, as the editable project control, not also as a
+static context string. Kanban cards keep that same editable control in the
+compact metadata row rather than a colored tag or a second project label.
+Detail panels keep the labeled Project field. Archived tasks replace project and
 category controls with a short instruction to unarchive the task first.
 
 Approval rows lead with the proposed change and use human labels and localized
@@ -417,8 +466,10 @@ digest, or navigation attention. Work attention combines pending approval items
 with overdue open tasks. The Work header breaks that aggregate into linked
 Overdue and Approvals counts so every attention item has an obvious destination.
 Visible overdue tasks are eligible for the queue regardless of teammate assignment.
-Queue rows give due state a consistent right-aligned position and follow the
-shared due-date vocabulary above.
+Queue rows do not repeat the object type: status, assignee, due date, and priority
+are inline-editable on object and board items, matching the task list. Approval
+rows stay review-only. Due state keeps a consistent right-aligned position and
+follows the shared due-date vocabulary above.
 
 ### Marketing and public pages
 
@@ -610,3 +661,12 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Linear timeline rows and original source | Drops duplicate rail icons and stacked row chrome; original payloads open from a collapsed inspector viewer. |
 | 2026-08-17 | Inspector citation chips | Ask `[ev:…]` tokens stay off timeline rows and appear as copyable chips on inspector evidence items. |
 | 2026-08-17 | Citation preview destinations | Citation popups name the matching workspace page, Timeline moment, and original payload instead of a generic full-page jump. |
+| 2026-08-17 | Work overview and task canvas density | Puts pinned boards above the work queue, removes extra task-list gutters, matches the default list loading skeleton, puts Kanban/List on the search/filter row, and compacts task kanban cards to a clamped title plus one metadata row. |
+| 2026-08-17 | Home open objects and inline queue edits | Adds open tasks, people, companies, projects, deals, and follow-ups to Home Attention, stops repeating “Task” on work-queue rows, and lets queue status, assignee, due date, and priority change inline. |
+| 2026-08-17 | Quiet Home attention and dense recent moments | Collapses typed open-people/company/project rows into one open-objects count, drops the Attention and Recent moments headings, and replaces the Home timeline preview with denser title-only rows plus a clear Open timeline path. |
+| 2026-08-17 | Team setup checklist on Home | Moves the team checklist under Ask, opens the full list for new members, and replaces the Reopen setup button with a quiet Team setup checklist toggle. |
+| 2026-08-17 | Team setup loop and Home timeline links | Expands the checklist into a product-loop set, keeps the open header as quiet as the folded toggle, persists Hide, adds a folded chevron and off-Home chip, and turns Home moment titles into Timeline links with a quiet full-timeline path. |
+| 2026-08-17 | Dense Ask session history | Reveals archive on hover/focus, shows relative last-activity age with a timestamp title, and uses a short centered hairline instead of a persistent trash column. |
+| 2026-08-17 | Ask session search and title | Filters chat history from the session rail and shows the selected title beside Ask instead of a session count. |
+| 2026-08-17 | Ask mobile session title | Reuses the resolved conversation title in the mobile session summary, including deep-linked chats outside the recent list. |
+| 2026-08-17 | Quiet sidebar brand and fold control | Aligns the product mark with primary nav, sends it to Home, and replaces the boxed fold glyph with a lighter chevron. |

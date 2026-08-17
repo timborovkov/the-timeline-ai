@@ -41,9 +41,14 @@ describe('DesktopSidebar branding', () => {
       </TooltipProvider>,
     );
 
+    const homeLink = screen.getByRole('link', { name: 'The Timeline home' });
+    expect(homeLink.getAttribute('href')).toBe('/app');
+    expect([...homeLink.classList]).toEqual(expect.arrayContaining(['h-9', 'px-3']));
+    expect(homeLink.classList.contains('flex-1')).toBe(false);
     expect([...screen.getByText('The Timeline').classList]).toEqual(
       expect.arrayContaining(['font-semibold', 'tracking-tight']),
     );
+    expect(screen.getByText('The Timeline').parentElement?.className).toContain('gap-3');
     expect(screen.getByText('The Timeline').classList).not.toContain('font-mono');
     expect(container.querySelectorAll('svg[viewBox="0 0 48 48"] rect')).toHaveLength(5);
     expect(container.textContent).not.toContain('▦');
@@ -51,10 +56,38 @@ describe('DesktopSidebar branding', () => {
     await user.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
 
     expect(container.querySelector('span.text-sm.font-semibold')).toBeNull();
-    const collapsedLogo = screen.getByRole('img', { name: 'The Timeline' });
-    expect(container.querySelectorAll('svg[viewBox="0 0 48 48"] rect')).toHaveLength(5);
+    const collapsedHomeLink = screen.getByRole('link', { name: 'The Timeline home' });
+    expect(collapsedHomeLink.getAttribute('href')).toBe('/app');
+    expect([...collapsedHomeLink.classList]).toEqual(expect.arrayContaining(['size-9']));
+    expect(collapsedHomeLink.querySelectorAll('svg[viewBox="0 0 48 48"] rect')).toHaveLength(5);
 
-    await user.hover(collapsedLogo);
+    await user.hover(collapsedHomeLink);
     expect((await screen.findByRole('tooltip')).textContent).toBe('The Timeline');
+  });
+
+  it('uses a quiet chevron to fold and unfold the sidebar', async () => {
+    const user = userEvent.setup();
+    render(
+      <TooltipProvider delayDuration={0}>
+        <DesktopSidebar
+          active={active}
+          memberships={[active]}
+          recipientInvites={[]}
+          initialExpanded
+        />
+      </TooltipProvider>,
+    );
+
+    const collapse = screen.getByRole('button', { name: 'Collapse sidebar' });
+    expect(collapse.getAttribute('aria-expanded')).toBe('true');
+    expect(collapse.querySelector('svg.lucide-chevron-left')).not.toBeNull();
+    expect(collapse.querySelector('svg.lucide-panel-left-close')).toBeNull();
+
+    await user.click(collapse);
+
+    const expand = screen.getByRole('button', { name: 'Expand sidebar' });
+    expect(expand.getAttribute('aria-expanded')).toBe('false');
+    expect(expand.querySelector('svg.lucide-chevron-right')).not.toBeNull();
+    expect(expand.querySelector('svg.lucide-panel-left-open')).toBeNull();
   });
 });

@@ -3,8 +3,6 @@ import Link from 'next/link';
 
 import type { ReactNode } from 'react';
 
-import { SectionHeading } from '@/components/section-heading';
-
 export interface AttentionGroup {
   href: string;
   label: string;
@@ -17,8 +15,7 @@ export interface AttentionGroup {
 export function HomeAttention({ groups }: { groups: AttentionGroup[] }) {
   const visible = groups.filter((group) => group.count > 0);
   return (
-    <section aria-labelledby="attention-heading" className="space-y-3">
-      <SectionHeading id="attention-heading">Attention</SectionHeading>
+    <section aria-label="Attention">
       {visible.length === 0 ? (
         <div className="flex items-center gap-2 border-y border-border py-4 text-sm text-fg-muted">
           <CircleCheckBig aria-hidden="true" className="size-4 text-signal" />
