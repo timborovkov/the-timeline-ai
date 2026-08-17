@@ -116,13 +116,13 @@ describe('MobileSessionNav', () => {
     expect(archive.closest('fieldset')?.className).toContain('focus-within:opacity-100');
   });
 
-  it('uses the shared outline button for new chats', () => {
+  it('uses the shared ghost button for new chats', () => {
     render(<SessionSidebar activeSessionId={null} sessions={[sessionFixture()]} />);
 
     const newChat = screen.getByRole('button', { name: 'New chat' });
-    expect(newChat.className).toContain('border');
+    expect(newChat.className).toContain('hover:bg-accent');
     expect(newChat.className).not.toContain('bg-primary');
-    expect(newChat.className).toContain('h-9');
+    expect(newChat.className).not.toContain('border-input');
   });
 
   it('filters desktop and mobile session lists from the search field', async () => {

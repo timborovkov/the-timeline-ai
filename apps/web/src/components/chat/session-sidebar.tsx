@@ -113,7 +113,12 @@ function SessionSearch({
 
 function NewChatButton({ onClick, className }: { onClick: () => void; className?: string }) {
   return (
-    <Button type="button" variant="outline" onClick={onClick} className={className}>
+    <Button
+      type="button"
+      variant="ghost"
+      onClick={onClick}
+      className={cn('justify-start px-2 text-fg-muted', className)}
+    >
       <Plus aria-hidden="true" />
       New chat
     </Button>
