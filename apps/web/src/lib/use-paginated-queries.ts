@@ -354,7 +354,8 @@ export function useOnboardingChecklistQuery(initialData?: OnboardingChecklistVie
   const queryClient = useQueryClient();
   const { data, isPending, isError, refetch } = useQuery({
     queryKey: queryKeys.onboarding(),
-    queryFn: async () => readJson<OnboardingChecklistView>(await fetch('/api/onboarding/checklist')),
+    queryFn: async () =>
+      readJson<OnboardingChecklistView>(await fetch('/api/onboarding/checklist')),
     ...(initialData ? { initialData } : {}),
   });
   const mutation = useMutation({

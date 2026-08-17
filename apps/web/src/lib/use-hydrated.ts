@@ -9,5 +9,9 @@ function subscribeHydrated(): () => void {
 }
 
 export function useHydrated(): boolean {
-  return useSyncExternalStore(subscribeHydrated, () => true, () => false);
+  return useSyncExternalStore(
+    subscribeHydrated,
+    () => true,
+    () => false,
+  );
 }
