@@ -16,10 +16,12 @@ export function PinButton({
   target,
   initialPinned,
   compact = false,
+  icon = false,
 }: {
   target: PinTargetRef;
   initialPinned: boolean;
   compact?: boolean;
+  icon?: boolean;
 }) {
   const [pinned, setPinned] = useState(initialPinned);
   const [error, setError] = useState<string | null>(null);
@@ -48,25 +50,33 @@ export function PinButton({
   }
   const Icon = pinned ? PinOff : Pin;
 
+  const label = pending ? `Saving ${pinned ? 'pin' : 'unpin'}…` : pinned ? 'Unpin' : 'Pin';
+
   return (
     <span className="inline-flex flex-col items-start gap-1 lg:items-end">
       <button
         type="button"
+        aria-label={label}
         aria-pressed={pinned}
         aria-busy={pending}
         aria-describedby={error ? errorId : undefined}
         disabled={pending}
         onClick={toggle}
         className={cn(
-          'inline-flex h-9 items-center gap-2 rounded-sm border px-3 text-xs font-medium transition-colors motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-50',
-          pinned
-            ? 'border-signal/40 bg-signal-soft text-signal hover:bg-signal/20'
-            : 'border-border bg-bg text-fg-muted hover:border-signal/50 hover:text-signal',
-          compact && 'h-8 px-2',
+          'inline-flex items-center rounded-sm text-xs font-medium transition-colors motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-50',
+          icon
+            ? 'size-8 justify-center text-fg-muted hover:bg-surface-2 hover:text-fg'
+            : 'h-9 gap-2 border px-3',
+          !icon &&
+            (pinned
+              ? 'border-signal/40 bg-signal-soft text-signal hover:bg-signal/20'
+              : 'border-border bg-bg text-fg-muted hover:border-signal/50 hover:text-signal'),
+          !icon && compact && 'h-8 px-2',
+          icon && pinned && 'text-signal hover:bg-signal-soft',
         )}
       >
         <Icon aria-hidden="true" className="size-3.5" />
-        {pending ? `Saving ${pinned ? 'pin' : 'unpin'}…` : pinned ? 'Unpin' : 'Pin'}
+        {icon ? null : label}
       </button>
       {error ? (
         <span id={errorId} role="alert" className="text-xs text-danger">

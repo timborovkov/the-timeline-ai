@@ -17,6 +17,7 @@ interface Props {
   pinnedEntityName?: string;
   label?: string;
   className?: string;
+  icon?: boolean;
 }
 
 export function ContextualAskLink({
@@ -26,15 +27,17 @@ export function ContextualAskLink({
   pinnedEntityName,
   label = 'Ask',
   className,
+  icon = false,
 }: Props) {
   const router = useRouter();
 
   return (
     <Button
       type="button"
-      size="sm"
-      variant="outline"
-      className={cn('shrink-0', className)}
+      size={icon ? 'icon' : 'sm'}
+      variant={icon ? 'ghost' : 'outline'}
+      aria-label={label}
+      className={cn('shrink-0', icon && 'size-8 text-fg-muted hover:text-fg', className)}
       onClick={() => {
         try {
           storeChatContextHandoff(window.sessionStorage, teamId, {
@@ -51,7 +54,7 @@ export function ContextualAskLink({
       }}
     >
       <MessageCircleQuestion aria-hidden="true" />
-      {label}
+      {icon ? null : label}
     </Button>
   );
 }

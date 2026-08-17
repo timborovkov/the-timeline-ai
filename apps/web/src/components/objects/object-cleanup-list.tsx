@@ -2,7 +2,7 @@
 
 import { Archive, GitMerge, SquareCheckBig } from 'lucide-react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useMemo, useReducer, useState, useTransition } from 'react';
 import { toast } from 'sonner';
 
@@ -31,6 +31,7 @@ import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText } from '@/lib/display-dates';
 import { isSchedulableObjectType } from '@/lib/due-dates';
 import { dateInputValue, toDateOrNull } from '@/lib/iso-timestamp';
+import { objectDetailHref } from '@/lib/object-links';
 import { MAX_OBJECT_MERGE_SELECTION, objectMergeHref } from '@/lib/object-merge';
 import { statusOptionsForType } from '@/lib/object-status-options';
 import { statusLabel } from '@/lib/status-labels';
@@ -92,6 +93,9 @@ function cleanupListReducer(state: CleanupListState, action: CleanupListAction):
 export function ObjectCleanupList({ rows, typeLabels, pageInfo, sectionMoreHrefs }: Props) {
   const timezone = useWorkspaceTimezone();
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const returnTo = `${pathname}${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
   const dialog = useAppDialog();
   const [{ selecting, selected, archivedIds, error }, dispatchCleanupList] = useReducer(
     cleanupListReducer,
@@ -274,6 +278,7 @@ export function ObjectCleanupList({ rows, typeLabels, pageInfo, sectionMoreHrefs
                           object={object}
                           typeLabel={typeLabels[object.type] ?? object.type}
                           timezone={timezone}
+                          returnTo={returnTo}
                           selecting={selecting}
                           selected={isSelected}
                           onToggle={() => {
@@ -314,6 +319,7 @@ function ObjectCollectionItem({
   object,
   typeLabel,
   timezone,
+  returnTo,
   selecting,
   selected,
   onToggle,
@@ -321,6 +327,7 @@ function ObjectCollectionItem({
   object: PinnableObjectRow;
   typeLabel: string;
   timezone: string;
+  returnTo: string;
   selecting: boolean;
   selected: boolean;
   onToggle: () => void;
@@ -407,7 +414,11 @@ function ObjectCollectionItem({
           ) : null
         }
         title={
-          <Link href={`/app/objects/${object.id}`} className="block truncate hover:underline">
+          <Link
+            href={objectDetailHref(object.id, returnTo)}
+            scroll={false}
+            className="block truncate hover:underline"
+          >
             {displayText(object.canonicalName)}
           </Link>
         }

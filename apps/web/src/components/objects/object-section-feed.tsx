@@ -19,19 +19,18 @@ interface Props {
 export function ObjectSectionFeed({ objectId, section, title, showTitle = true }: Props) {
   const query = useObjectSectionQuery(objectId, section);
   const items = query.data?.pages.flatMap((page) => page.items) ?? [];
+  if (!query.isPending && items.length === 0) return null;
   return (
     <section>
-      {showTitle ? <h2 className="mb-3 text-sm font-medium tracking-tight">{title}</h2> : null}
+      {showTitle ? <h2 className="mb-3 text-xs text-fg-dim">{title}</h2> : null}
       {items.length === 0 && query.isPending ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Nothing here yet.</p>
       ) : (
         <ul className="space-y-2 text-sm">
           {items.map((item) => (
             <li
               key={String((item as { id?: unknown }).id)}
-              className="rounded-sm border border-border bg-surface px-4 py-3"
+              className="py-1.5"
             >
               <ObjectSectionItem section={section} item={item} />
             </li>

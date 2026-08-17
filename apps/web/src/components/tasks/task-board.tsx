@@ -13,7 +13,7 @@ import {
 import { useQueries } from '@tanstack/react-query';
 import { TASK_CATEGORY_OPTIONS, type TaskCategory } from '@timeline/shared/task-categories/types';
 import { presentDueDate } from '@timeline/shared/time';
-import { GripVertical } from 'lucide-react';
+import { GripVertical, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -30,7 +30,7 @@ import {
 
 import type { SaveState } from '@/lib/utils';
 import type * as objects from '@timeline/shared/objects/types';
-import type { Dispatch, ReactNode, SetStateAction } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
 
 import {
   loadTaskPrimaryProjectsAction,
@@ -50,6 +50,7 @@ import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { SelectionBar } from '@/components/collections/selection-bar';
 import { DueDateDisplay } from '@/components/due-date-display';
+import { ObjectOrigin } from '@/components/objects/object-origin';
 import { ObjectPinButton } from '@/components/objects/object-pin-button';
 import { ObjectRelatedContext } from '@/components/objects/object-related-context';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
@@ -85,6 +86,8 @@ interface Props {
   columns: string[];
   selectedTaskId: string | null;
   selectedTaskContext?: objects.ObjectDetail['connectedWork'] | null;
+  selectedTaskProvenance?: objects.ObjectDetail['provenance'] | null;
+  selectedTaskNotes?: objects.ObjectDetail['notes'];
   selectedTaskPinned?: boolean;
   view: TaskView;
   members: TaskMemberOption[];
@@ -864,6 +867,8 @@ function TaskBoardView({
   onDragEnd,
   selectedTask,
   selectedTaskContext,
+  selectedTaskProvenance,
+  selectedTaskNotes,
   selectedTaskId,
   selectedTaskPinned = false,
   selectedVisibleIds,
@@ -988,6 +993,8 @@ function TaskBoardView({
         <TaskDetailPanel
           task={selectedTask}
           connectedWork={selectedTaskContext}
+          provenance={selectedTaskProvenance}
+          notes={selectedTaskNotes}
           initialPinned={selectedTaskPinned}
           columns={allColumns}
           members={members}
@@ -1249,6 +1256,7 @@ function TaskListRow({
         title={
           <Link
             href={taskViewHref('list', row.id, filterParams)}
+            scroll={false}
             className="block truncate hover:underline"
           >
             {displayText(title)}
@@ -1807,6 +1815,7 @@ function TaskCard({
         </button>
         <Link
           href={href}
+          scroll={false}
           className="min-w-0 flex-1 line-clamp-2 whitespace-normal break-words font-medium leading-snug hover:underline"
         >
           {displayText(title)}
@@ -1939,6 +1948,8 @@ function TaskCard({
 function TaskDetailPanel({
   task,
   connectedWork,
+  provenance,
+  notes,
   initialPinned,
   columns,
   members,
@@ -1954,6 +1965,8 @@ function TaskDetailPanel({
 }: {
   task: objects.ObjectRow;
   connectedWork?: objects.ObjectDetail['connectedWork'] | null;
+  provenance?: objects.ObjectDetail['provenance'] | null;
+  notes?: objects.ObjectDetail['notes'];
   initialPinned: boolean;
   columns: string[];
   members: TaskMemberOption[];
@@ -1971,6 +1984,8 @@ function TaskDetailPanel({
   const [error, setError] = useState<string | null>(null);
   const timezone = useWorkspaceTimezone();
   const title = displayObjectTitle(task);
+  const assignee = members.find((member) => member.id === task.assigneeUserId);
+  const visibleNotes = (notes ?? []).slice(0, 2);
 
   function save(field: string, patch: TaskPatch): void {
     setSaving(field);
@@ -1988,33 +2003,127 @@ function TaskDetailPanel({
   }
 
   return (
-    <aside
-      className="h-full overflow-y-auto rounded-sm border border-border bg-bg"
-      aria-label="Task detail"
-    >
-      <div className="border-b border-border p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <h2 className="whitespace-normal break-words text-lg font-semibold leading-snug text-fg">
-              {displayText(title)}
-            </h2>
-            <p className="mt-1 text-xs text-fg-dim">Task · side panel</p>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <ObjectPinButton
-              key={task.id}
-              objectId={task.id}
-              initialPinned={initialPinned}
-              compact
-            />
-            <Link href={closeHref} className="text-xs text-fg-muted hover:text-fg hover:underline">
-              Close
-            </Link>
-          </div>
+    <aside className="h-full overflow-y-auto bg-bg" aria-label="Task detail">
+      <div className="flex items-start gap-2 px-4 pt-3">
+        <h2 className="min-w-0 flex-1 whitespace-normal break-words text-base font-semibold leading-snug text-fg">
+          {displayText(title)}
+        </h2>
+        <div className="flex shrink-0 items-center">
+          <ObjectPinButton
+            key={task.id}
+            objectId={task.id}
+            initialPinned={initialPinned}
+            icon
+          />
+          <Link
+            href={closeHref}
+            aria-label="Close"
+            className="inline-flex size-8 items-center justify-center rounded-sm text-fg-muted hover:bg-surface-2 hover:text-fg"
+          >
+            <X aria-hidden="true" className="size-3.5" />
+          </Link>
         </div>
       </div>
-      <div className="grid border-b border-border sm:grid-cols-2">
-        <TaskField label="Project">
+
+      <div className="mt-1 flex flex-col px-2">
+        <EditableMetadata
+          label="Task status"
+          pending={saving === 'status'}
+          value={
+            <CollectionStatus
+              value={task.status}
+              label={statusLabel(taskDisplayStatus(task.status))}
+            />
+          }
+          editor={
+            <select
+              value={taskDisplayStatus(task.status)}
+              onChange={(event) => {
+                save('status', { status: event.currentTarget.value });
+              }}
+              className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+              aria-label="Status"
+            >
+              {columns.map((column) => (
+                <option key={column} value={column}>
+                  {statusLabel(column)}
+                </option>
+              ))}
+              {!columns.includes(taskDisplayStatus(task.status)) ? (
+                <option value={task.status}>{statusLabel(task.status)}</option>
+              ) : null}
+            </select>
+          }
+        />
+        <EditableMetadata
+          label="Task priority"
+          pending={saving === 'priority'}
+          value={
+            <CollectionStatus
+              value={task.priority ? `p${task.priority}` : 'none'}
+              tone={priorityTone(task.priority)}
+              label={task.priority ? `P${task.priority}` : 'No priority'}
+            />
+          }
+          editor={
+            <select
+              value={task.priority ?? ''}
+              onChange={(event) => {
+                save('priority', {
+                  priority: event.currentTarget.value ? Number(event.currentTarget.value) : null,
+                });
+              }}
+              className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+              aria-label="Task priority"
+            >
+              <option value="">No priority</option>
+              {[1, 2, 3, 4].map((priority) => (
+                <option key={priority} value={priority}>
+                  P{priority}
+                </option>
+              ))}
+            </select>
+          }
+        />
+        <EditableMetadata
+          label="Task assignee"
+          pending={saving === 'assignee'}
+          value={assignee?.label ?? 'Unassigned'}
+          editor={
+            <select
+              value={task.assigneeUserId ?? ''}
+              onChange={(event) => {
+                save('assignee', { assigneeUserId: event.currentTarget.value || null });
+              }}
+              className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+              aria-label="Task assignee"
+            >
+              <option value="">Unassigned</option>
+              {members.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.label}
+                </option>
+              ))}
+            </select>
+          }
+        />
+        <EditableMetadata
+          label="Task due date"
+          pending={saving === 'due date'}
+          value={<DueDateDisplay value={task.dueAt} variant="field-hint" />}
+          editor={
+            <MetadataDateEditor
+              defaultValue={task.dueAt ? dateInputValue(task.dueAt, timezone) : ''}
+              label="Due date"
+              onApply={(value) => {
+                save('due date', {
+                  dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
+                });
+              }}
+            />
+          }
+        />
+        <div className="px-2 py-1">
           <TaskProjectSelect
             taskId={task.id}
             projectId={primaryProject?.projectId ?? null}
@@ -2025,9 +2134,9 @@ function TaskDetailPanel({
             onProjectChangeCommitted={onProjectChangeCommitted}
             onProjectChangeReverted={onProjectChangeReverted}
           />
-        </TaskField>
+        </div>
         {taskCategoriesEnabled ? (
-          <TaskField label="Category">
+          <div className="px-2 py-1">
             <TaskCategorySelect
               taskId={task.id}
               category={task.taskCategory}
@@ -2035,123 +2144,39 @@ function TaskDetailPanel({
               status={task.taskCategoryStatus}
               updatedAt={task.taskCategoryUpdatedAt}
             />
-          </TaskField>
+          </div>
         ) : null}
-        <TaskField label="Status">
-          <select
-            value={taskDisplayStatus(task.status)}
-            onChange={(event) => {
-              save('status', { status: event.currentTarget.value });
-            }}
-            className="h-9 w-full rounded-sm border border-border bg-bg px-2 text-sm"
-          >
-            {columns.map((column) => (
-              <option key={column} value={column}>
-                {statusLabel(column)}
-              </option>
-            ))}
-            {!columns.includes(taskDisplayStatus(task.status)) ? (
-              <option value={task.status}>{statusLabel(task.status)}</option>
-            ) : null}
-          </select>
-        </TaskField>
-        <TaskField label="Assignee">
-          <select
-            value={task.assigneeUserId ?? ''}
-            onChange={(event) => {
-              save('assignee', { assigneeUserId: event.currentTarget.value || null });
-            }}
-            className="h-9 w-full rounded-sm border border-border bg-bg px-2 text-sm"
-            aria-label="Task assignee"
-          >
-            <option value="">Unassigned</option>
-            {members.map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.label}
-              </option>
-            ))}
-          </select>
-        </TaskField>
-        <TaskField label="Due">
-          <input
-            type="date"
-            value={task.dueAt ? dateInputValue(task.dueAt, timezone) : ''}
-            onChange={(event) => {
-              const value = event.currentTarget.value;
-              save('due date', { dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null });
-            }}
-            className="h-9 w-full rounded-sm border border-border bg-bg px-2 text-sm"
-            aria-label="Task due date"
-          />
-          <DueDateDisplay value={task.dueAt} variant="field-hint" className="mt-1 block" />
-        </TaskField>
-        <TaskField label="Priority">
-          <select
-            value={task.priority ?? ''}
-            onChange={(event) => {
-              save('priority', {
-                priority: event.currentTarget.value ? Number(event.currentTarget.value) : null,
-              });
-            }}
-            className="h-9 w-full rounded-sm border border-border bg-bg px-2 text-sm"
-            aria-label="Task priority"
-          >
-            <option value="">No priority</option>
-            {[1, 2, 3, 4].map((priority) => (
-              <option key={priority} value={priority}>
-                P{priority}
-              </option>
-            ))}
-          </select>
-        </TaskField>
       </div>
-      <div className="grid border-b border-border sm:grid-cols-2">
-        <Detail label="Current assignee" value={memberLabel(task.assigneeUserId, members)} />
-        <Detail
-          label="Current due"
-          value={<DueDateDisplay value={task.dueAt} variant="inline" />}
-        />
-        <Detail label="Current priority" value={task.priority ? `P${task.priority}` : '-'} />
-        <Detail label="Updated" value={dateLabel(task.updatedAt)} />
-      </div>
+
       {saving || error ? (
-        <div className="border-b border-border px-4 py-3 text-xs">
+        <div className="px-4 py-2 text-xs">
           {saving ? <span className="text-fg-dim">Saving {saving}…</span> : null}
           {error ? <span className="text-danger">{error}</span> : null}
         </div>
       ) : null}
+
+      <ObjectOrigin provenance={provenance} compact />
+
+      {visibleNotes.length > 0 ? (
+        <section className="px-4 py-3" aria-label="Notes">
+          <ul className="space-y-2">
+            {visibleNotes.map((note) => (
+              <li key={note.id} className="text-sm leading-6 text-fg">
+                {displayText(note.body, { timezone })}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <ObjectRelatedContext connectedWork={connectedWork} compact />
-      <div className="flex flex-wrap gap-2 p-4">
-        <Link
-          href={objectHref}
-          className="rounded-sm border border-border px-3 py-2 text-sm font-medium hover:bg-surface"
-        >
+
+      <div className="px-4 py-3">
+        <Link href={objectHref} className="text-xs text-fg-muted hover:text-fg hover:underline">
           Open object
         </Link>
       </div>
     </aside>
-  );
-}
-
-// react-doctor-disable-next-line react-doctor/no-multi-comp -- Tiny local field wrapper for the task detail panel.
-function TaskField({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className="border-b border-r border-border p-4">
-      <span className="mb-2 block text-xs text-fg-dim">{label}</span>
-      {children}
-    </label>
-  );
-}
-
-// react-doctor-disable-next-line react-doctor/no-multi-comp -- Tiny local read-only field wrapper for the task detail panel.
-function Detail({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div className="border-b border-r border-border p-4">
-      <div className="text-xs text-fg-dim">{label}</div>
-      <div className="mt-2 text-sm text-fg">
-        {typeof value === 'string' ? displayText(value) : value}
-      </div>
-    </div>
   );
 }
 
@@ -2162,8 +2187,4 @@ function memberLabel(userId: string | null, members: TaskMemberOption[]): string
 
 function dateInputValue(value: Date, timezone: string): string {
   return presentDueDate(value, { timezone }).dateKey ?? '';
-}
-
-function dateLabel(value: Date): string {
-  return new Date(value).toISOString().slice(0, 10);
 }

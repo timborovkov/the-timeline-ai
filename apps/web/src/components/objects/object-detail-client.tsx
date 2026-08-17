@@ -37,7 +37,14 @@ import {
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { ArtifactReferenceChip } from '@/components/artifact-reference-chip';
 import { ContextualAskLink } from '@/components/chat/contextual-ask-link';
+import {
+  CollectionStatus,
+  priorityTone,
+} from '@/components/collections/collection-status';
+import { EditableMetadata } from '@/components/collections/editable-metadata';
+import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { DueDateDisplay } from '@/components/due-date-display';
+import { ObjectOrigin, ObjectProvenanceGroups } from '@/components/objects/object-origin';
 import { ObjectPinButton } from '@/components/objects/object-pin-button';
 import {
   type ObjectSearchResponse,
@@ -49,8 +56,8 @@ import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { TaskCategorySelect } from '@/components/tasks/task-category-select';
 import { TaskProjectSelect } from '@/components/tasks/task-project-select';
 import { TechnicalDetails } from '@/components/technical-details';
-import { ItemActionGroup } from '@/components/ui/item-actions';
-import { WorkSubnav } from '@/components/work-subnav';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { isInternalIdentifier } from '@/lib/display-labels';
@@ -60,7 +67,7 @@ import { displayObjectTitle } from '@/lib/object-title';
 import { readJson } from '@/lib/paginated-api';
 import { queryKeys } from '@/lib/query-keys';
 import { statusLabel } from '@/lib/status-labels';
-import { cn, errorMessage } from '@/lib/utils';
+import { errorMessage } from '@/lib/utils';
 
 const RELATIONSHIP_KINDS = [
   'related',
@@ -73,7 +80,14 @@ const RELATIONSHIP_KINDS = [
 
 type ObjectDetail = objects.ObjectDetail;
 type LocalSuggestion = ComponentProps<typeof ApprovalsClient>['suggestions'][number];
-type EditableField = 'canonicalName' | 'aliases' | 'status' | 'stage' | 'priority' | 'dueAt';
+type EditableField =
+  | 'canonicalName'
+  | 'aliases'
+  | 'status'
+  | 'stage'
+  | 'priority'
+  | 'dueAt'
+  | 'assigneeUserId';
 type EditableValue = string | number | Date | readonly string[] | null;
 type DraftField = 'canonicalName' | 'aliases' | 'stage' | 'dueAt';
 
@@ -84,6 +98,7 @@ interface Props {
   initialPinned?: boolean;
   suggestions: LocalSuggestion[];
   projects?: { id: string; label: string }[];
+  members?: { id: string; label: string }[];
   primaryProject?: objects.TaskPrimaryProjectRow | null;
   taskCategoriesEnabled?: boolean;
 }
@@ -135,6 +150,7 @@ const STATUS_BY_TYPE: Record<string, string[]> = {
   decision: ['draft', 'proposed', 'accepted', 'rejected'],
 };
 const EMPTY_PROJECT_OPTIONS: { id: string; label: string }[] = [];
+const EMPTY_MEMBER_OPTIONS: { id: string; label: string }[] = [];
 
 function statusOptions(type: string): string[] {
   return STATUS_BY_TYPE[type] ?? ['open', 'active', 'archived'];
@@ -151,7 +167,8 @@ function isEditableFieldName(field: string): field is EditableField {
     field === 'status' ||
     field === 'stage' ||
     field === 'priority' ||
-    field === 'dueAt'
+    field === 'dueAt' ||
+    field === 'assigneeUserId'
   );
 }
 
@@ -322,6 +339,7 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
     stage: undefined,
     priority: undefined,
     dueAt: undefined,
+    assigneeUserId: undefined,
   });
   const savingCountRef = useRef(0);
   const batchHadFailureRef = useRef(false);
@@ -344,6 +362,7 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
     stage: 0,
     priority: 0,
     dueAt: 0,
+    assigneeUserId: 0,
   });
   localDetailRef.current = localDetail;
   serverDetailRef.current = detail;
@@ -361,6 +380,7 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
         stage: next.stage,
         priority: next.priority,
         dueAt: next.dueAt,
+        assigneeUserId: next.assigneeUserId,
       },
     }));
   }
@@ -777,9 +797,11 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
 function ObjectDetailView(props: Props) {
   const view = useObjectDetailController(props);
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <ObjectDetailHeader
         detail={view.viewDetail}
+        nameDraft={view.nameDraft}
+        focusedDraftsRef={view.focusedDraftsRef}
         teamId={props.teamId}
         initialPinned={props.initialPinned ?? false}
         error={view.error}
@@ -787,12 +809,17 @@ function ObjectDetailView(props: Props) {
         repairPending={view.repairPending}
         saveState={view.saveState}
         savingCount={view.savingCount}
+        onNameDraftChange={(nameDraft) => {
+          view.dispatchObjectUi({ nameDraft });
+        }}
+        onNameCommit={(value) => {
+          view.patch('canonicalName', value);
+        }}
         onRepairMemory={view.repairMemory}
       />
-      <WorkSubnav current={`/app/objects/${view.detail.id}`} />
 
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_23rem]">
-        <main className="min-w-0 space-y-6">
+      <div className="grid items-start gap-10 xl:grid-cols-[minmax(0,1fr)_16rem]">
+        <main className="min-w-0 space-y-8">
           {view.suggestions.length > 0 ? (
             <ApprovalsClient
               suggestions={view.suggestions}
@@ -814,27 +841,13 @@ function ObjectDetailView(props: Props) {
             />
           ) : null}
 
+          <ObjectOrigin provenance={view.viewDetail.provenance} />
           <ObjectSummaryPanel detail={view.viewDetail} />
-          <ObjectProvenancePanel provenance={view.viewDetail.provenance} />
+          <ObjectProvenanceGroups provenance={view.viewDetail.provenance} />
           <ObjectConnectedWorkSection connectedWork={view.detail.connectedWork} />
 
-          <ObjectPanel title="Evidence" eyebrow="events">
-            <ObjectSectionFeed
-              objectId={view.detail.id}
-              section="events"
-              title="Timeline events"
-              showTitle={false}
-            />
-          </ObjectPanel>
-
-          <ObjectPanel title="Facts" eyebrow="extracted">
-            <ObjectSectionFeed
-              objectId={view.detail.id}
-              section="facts"
-              title="Facts"
-              showTitle={false}
-            />
-          </ObjectPanel>
+          <ObjectSectionFeed objectId={view.detail.id} section="events" title="Evidence" />
+          <ObjectSectionFeed objectId={view.detail.id} section="facts" title="Facts" />
 
           <ObjectNotesSection
             notes={view.viewDetail.notes}
@@ -850,25 +863,22 @@ function ObjectDetailView(props: Props) {
           />
         </main>
 
-        <aside className="min-w-0 space-y-4 xl:sticky xl:top-6">
+        <aside className="min-w-0 space-y-6 xl:sticky xl:top-6">
           <ObjectContactSection detail={view.viewDetail} />
 
-          <ObjectPanel title="Fields" eyebrow="editable">
-            <ObjectEditableFields
-              detail={view.localDetail}
-              nameDraft={view.nameDraft}
-              aliasesDraft={view.aliasesDraft}
-              stageDraft={view.stageDraft}
-              dueDraft={view.dueDraft}
-              focusedDraftsRef={view.focusedDraftsRef}
-              patch={view.patch}
-              dispatchObjectUi={view.dispatchObjectUi}
-              projects={props.projects}
-              primaryProject={props.primaryProject}
-              taskCategoriesEnabled={props.taskCategoriesEnabled}
-              className="grid-cols-1 gap-4"
-            />
-          </ObjectPanel>
+          <ObjectEditableFields
+            detail={view.localDetail}
+            aliasesDraft={view.aliasesDraft}
+            stageDraft={view.stageDraft}
+            dueDraft={view.dueDraft}
+            focusedDraftsRef={view.focusedDraftsRef}
+            patch={view.patch}
+            dispatchObjectUi={view.dispatchObjectUi}
+            projects={props.projects}
+            members={props.members}
+            primaryProject={props.primaryProject}
+            taskCategoriesEnabled={props.taskCategoriesEnabled}
+          />
 
           <ObjectRelationshipsSection
             sourceType={view.viewDetail.type}
@@ -914,8 +924,9 @@ function ObjectContactSection({ detail }: { detail: ObjectDetail }) {
   if (detail.type !== 'person' || contacts.length === 0) return null;
 
   return (
-    <ObjectPanel title="Contact" eyebrow={`${contacts.length} saved`}>
-      <div className="space-y-2">
+    <section>
+      <h2 className="text-xs text-fg-dim">Contact</h2>
+      <div className="mt-2 space-y-1.5">
         {contacts.map((facet) => {
           const href =
             facet.kind === 'email'
@@ -925,7 +936,7 @@ function ObjectContactSection({ detail }: { detail: ObjectDetail }) {
             <a
               key={facet.id}
               href={href}
-              className="flex min-w-0 items-center justify-between gap-3 border border-border px-3 py-2 text-sm transition hover:border-signal/60 hover:bg-signal-soft/20"
+              className="flex min-w-0 items-center justify-between gap-3 text-sm hover:underline"
             >
               <span className="min-w-0 truncate">{facet.value}</span>
               <span className="shrink-0 text-[11px] text-fg-dim">{statusLabel(facet.kind)}</span>
@@ -933,28 +944,6 @@ function ObjectContactSection({ detail }: { detail: ObjectDetail }) {
           );
         })}
       </div>
-    </ObjectPanel>
-  );
-}
-
-function ObjectPanel({
-  title,
-  eyebrow,
-  className,
-  children,
-}: {
-  title: string;
-  eyebrow?: string;
-  className?: string;
-  children: ReactNode;
-}) {
-  return (
-    <section className={cn('border border-border bg-bg', className)}>
-      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2">
-        <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
-        {eyebrow ? <span className="text-[11px] text-fg-dim">{eyebrow}</span> : null}
-      </div>
-      <div className="p-4">{children}</div>
     </section>
   );
 }
@@ -973,16 +962,6 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
     Boolean(summary?.canGenerate) &&
     (summary?.status === 'missing' || summary?.status === 'failed' || summary?.status === 'stale');
   const actionLabel = summary?.status === 'failed' ? 'Retry' : 'Generate summary';
-  const eyebrow =
-    summary?.status === 'ready'
-      ? 'generated'
-      : summary?.status === 'stale'
-        ? 'updating'
-        : summary?.status === 'failed'
-          ? 'failed'
-          : summary?.status === 'pending'
-            ? 'pending'
-            : 'available';
 
   function requestSummary(): void {
     setError(null);
@@ -997,10 +976,14 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
     });
   }
 
+  if (!generated && !canRequest && summary?.status !== 'pending' && summary?.status !== 'failed') {
+    return null;
+  }
+
   return (
-    <ObjectPanel title="Summary" eyebrow={eyebrow}>
+    <section aria-label="Summary">
       {generated ? (
-        <div className="space-y-4">
+        <div className="space-y-3">
           <p className="max-w-4xl text-sm leading-6 text-fg">{generated.overview}</p>
           {generated.currentState.length > 0 ? (
             <ul className="space-y-2">
@@ -1013,7 +996,7 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
             </ul>
           ) : null}
           {generated.conflicts.length > 0 || generated.openQuestions.length > 0 ? (
-            <div className="space-y-2 border-t border-border pt-3">
+            <div className="space-y-2">
               {[...generated.conflicts, ...generated.openQuestions].map((item) => (
                 <p key={`${item.label}:${item.text}`} className="text-sm leading-6 text-fg-muted">
                   <span className="font-medium text-fg">{item.label}:</span> {item.text}
@@ -1023,30 +1006,33 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
             </div>
           ) : null}
         </div>
-      ) : (
-        <p className="text-sm text-fg-muted">
-          {summary?.canGenerate ? 'Summary is ready to generate.' : 'Not enough object memory yet.'}
-        </p>
-      )}
+      ) : summary?.canGenerate ? (
+        <p className="text-sm text-fg-muted">Summary is ready to generate.</p>
+      ) : null}
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
-        <p className="text-xs text-fg-dim">
-          {summary?.generatedAt
-            ? `Updated ${formatDisplayDateTime(summary.generatedAt, { timezone })} · ${
-                summary.sourceRefs.length
-              } sources`
-            : summary?.status === 'pending'
-              ? 'Generating'
-              : summary?.status === 'missing' && summary.canGenerate
-                ? 'Ready to generate'
-                : summary?.lastErrorCode
-                  ? 'Update failed'
-                  : 'No summary yet'}
-        </p>
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        {summary?.generatedAt ||
+        summary?.status === 'pending' ||
+        (summary?.status === 'missing' && summary.canGenerate) ||
+        summary?.lastErrorCode ? (
+          <p className="text-xs text-fg-dim">
+            {summary?.generatedAt
+              ? `Updated ${formatDisplayDateTime(summary.generatedAt, { timezone })} · ${
+                  summary.sourceRefs.length
+                } sources`
+              : summary?.status === 'pending'
+                ? 'Generating'
+                : summary?.status === 'missing' && summary.canGenerate
+                  ? 'Ready to generate'
+                  : summary?.lastErrorCode
+                    ? 'Update failed'
+                    : null}
+          </p>
+        ) : null}
         {canRequest ? (
           <button
             type="button"
-            className="border border-border bg-bg px-3 py-2 text-xs text-fg transition hover:border-fg disabled:cursor-not-allowed disabled:opacity-60"
+            className="text-xs text-fg-muted underline-offset-2 hover:text-fg hover:underline disabled:cursor-not-allowed disabled:opacity-60"
             disabled={pending}
             onClick={requestSummary}
           >
@@ -1055,7 +1041,7 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
         ) : null}
       </div>
       {error ? <p className="mt-2 text-sm text-danger">{error}</p> : null}
-    </ObjectPanel>
+    </section>
   );
 }
 
@@ -1103,207 +1089,10 @@ function sourceLabel(ref: objects.ObjectSummarySourceRef): string {
   return ref.kind;
 }
 
-function ObjectProvenancePanel({ provenance }: { provenance: ObjectDetail['provenance'] }) {
-  const hasProvenance =
-    provenance.whyThisExists.length > 0 ||
-    provenance.whatChangedIt.length > 0 ||
-    provenance.relatedEvidence.length > 0;
-  return (
-    <ObjectPanel title="Provenance" eyebrow="source backed">
-      {!hasProvenance ? (
-        <p className="text-sm text-fg-muted">No source provenance linked yet.</p>
-      ) : (
-        <div className="divide-y divide-border">
-          <ProvenanceGroup
-            title="Why this exists"
-            empty="No accepted creation evidence yet."
-            entries={provenance.whyThisExists}
-            previewCount={1}
-            sourceKind="creation"
-          />
-          <ProvenanceGroup
-            title="What changed it"
-            empty="No accepted update evidence yet."
-            entries={provenance.whatChangedIt}
-            previewCount={2}
-            sourceKind="change"
-          />
-          <ProvenanceGroup
-            title="Related evidence"
-            empty="No observed related evidence yet."
-            entries={provenance.relatedEvidence}
-            previewCount={0}
-            sourceKind="related"
-            muted
-          />
-        </div>
-      )}
-    </ObjectPanel>
-  );
-}
-
-function ProvenanceGroup({
-  title,
-  empty,
-  entries,
-  previewCount,
-  sourceKind,
-  muted = false,
-}: {
-  title: string;
-  empty: string;
-  entries: ObjectDetail['provenance']['whyThisExists'];
-  previewCount: number;
-  sourceKind: 'creation' | 'change' | 'related';
-  muted?: boolean;
-}) {
-  const previewEntries = entries.slice(0, previewCount);
-  const remainingEntries = entries.slice(previewCount);
-  const sourceCountValue = provenanceEvidenceCount(entries);
-  const remainingSourceCount = provenanceEvidenceCount(remainingEntries);
-  const sourceCount = `${sourceCountValue} source${sourceCountValue === 1 ? '' : 's'}`;
-  const reviewLabel = `Review ${remainingSourceCount}${
-    previewCount > 0 ? ' more' : ''
-  } ${sourceKind} source${remainingSourceCount === 1 ? '' : 's'}`;
-  return (
-    <section className="grid min-w-0 gap-3 py-4 first:pt-0 last:pb-0 sm:grid-cols-[10rem_minmax(0,1fr)]">
-      <div>
-        <h3 className="text-xs text-fg-muted">{title}</h3>
-        <p className="mt-1 text-[11px] text-fg-dim">{sourceCount}</p>
-      </div>
-      {entries.length === 0 ? (
-        <p className="text-sm text-fg-muted">{empty}</p>
-      ) : (
-        <div className="min-w-0">
-          {previewEntries.length > 0 ? (
-            <ProvenanceEntryList entries={previewEntries} muted={muted} />
-          ) : null}
-          {remainingEntries.length > 0 ? (
-            <details
-              className={cn('group border border-border', previewEntries.length > 0 && 'mt-3')}
-            >
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-surface px-3 py-2 text-xs text-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-bg">
-                <span>{reviewLabel}</span>
-                <span aria-hidden="true" className="text-fg-dim group-open:hidden">
-                  +
-                </span>
-                <span aria-hidden="true" className="hidden text-fg-dim group-open:inline">
-                  −
-                </span>
-              </summary>
-              <div className="max-h-80 overflow-y-auto overscroll-contain border-t border-border p-3">
-                <ProvenanceEntryList entries={remainingEntries} muted={muted} />
-              </div>
-            </details>
-          ) : null}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function provenanceEvidenceCount(entries: ObjectDetail['provenance']['whyThisExists']): number {
-  return entries.reduce((count, entry) => count + entry.evidence.length, 0);
-}
-
-function timelinePreview(contentText: string | null): string {
-  const cleaned = displayText(contentText ?? 'Timeline event')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (cleaned.length <= 160) return cleaned;
-  return `${cleaned.slice(0, 157)}...`;
-}
-
-function ProvenanceEntryList({
-  entries,
-  muted,
-}: {
-  entries: ObjectDetail['provenance']['whyThisExists'];
-  muted: boolean;
-}) {
-  return (
-    <ul className="space-y-3">
-      {entries.map((entry) => (
-        <li
-          key={`${entry.targetKind}:${entry.operation}:${entry.id}`}
-          className={cn(
-            'min-w-0 border-l-2 border-signal/50 bg-surface px-3 py-2 text-sm',
-            muted && 'border-border bg-bg text-fg-muted',
-          )}
-        >
-          <p className="line-clamp-2 break-words font-medium leading-5 text-fg">
-            {timelinePreview(entry.title)}
-          </p>
-          {entry.reason ? (
-            <p className="mt-1 line-clamp-2 break-words text-xs leading-5 text-fg-muted">
-              {displayText(entry.reason)}
-            </p>
-          ) : null}
-          <ProvenanceSourceLinks evidence={entry.evidence} />
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function ProvenanceSourceLinks({
-  evidence,
-}: {
-  evidence: ObjectDetail['provenance']['whyThisExists'][number]['evidence'];
-}) {
-  const visibleEvidence = evidence.slice(0, 3);
-  const remainingEvidence = evidence.slice(3);
-  return (
-    <div className="mt-2 space-y-1">
-      {visibleEvidence.map((source) => (
-        <ProvenanceSourceLink key={source.rawEventId} source={source} />
-      ))}
-      {remainingEvidence.length > 0 ? (
-        <details className="pt-1">
-          <summary className="cursor-pointer list-none text-[11px] text-fg-dim hover:text-fg">
-            Review {remainingEvidence.length} more source
-            {remainingEvidence.length === 1 ? '' : 's'}
-          </summary>
-          <div className="mt-2 max-h-40 space-y-1 overflow-y-auto overscroll-contain border-l border-border pl-2">
-            {remainingEvidence.map((source) => (
-              <ProvenanceSourceLink key={source.rawEventId} source={source} />
-            ))}
-          </div>
-        </details>
-      ) : null}
-    </div>
-  );
-}
-
-function ProvenanceSourceLink({
-  source,
-}: {
-  source: ObjectDetail['provenance']['whyThisExists'][number]['evidence'][number];
-}) {
-  const timezone = useWorkspaceTimezone();
-  return (
-    <Link
-      href={`/app/timeline?event=${source.rawEventId}#ev-${source.rawEventId}`}
-      className="block break-words text-xs text-fg-muted underline-offset-2 hover:text-fg hover:underline"
-    >
-      {displayText(source.source)} · {formatDisplayDateTime(source.occurredAt, { timezone })}
-    </Link>
-  );
-}
-
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
-        {label}
-      </span>
-      {children}
-    </label>
-  );
-}
-
 function ObjectDetailHeader({
   detail,
+  nameDraft,
+  focusedDraftsRef,
   teamId,
   initialPinned,
   error,
@@ -1311,9 +1100,13 @@ function ObjectDetailHeader({
   repairPending,
   saveState,
   savingCount,
+  onNameDraftChange,
+  onNameCommit,
   onRepairMemory,
 }: {
   detail: ObjectDetail;
+  nameDraft: string;
+  focusedDraftsRef: RefObject<Record<DraftField, boolean>>;
   teamId?: string;
   initialPinned: boolean;
   error: string | null;
@@ -1321,69 +1114,64 @@ function ObjectDetailHeader({
   repairPending: boolean;
   saveState: SaveState;
   savingCount: number;
+  onNameDraftChange: (value: string) => void;
+  onNameCommit: (value: string) => void;
   onRepairMemory: () => void;
 }) {
   const pendingCount = detail.recentChanges.filter((c) => c.status === 'suggested').length;
   const visibleAliases = detail.aliases.filter((alias) => !isInternalIdentifier(alias));
   const hasAlerts =
     detail.newSinceLastVisit > 0 || pendingCount > 0 || error !== null || saveState !== 'idle';
+  const addTaskHref =
+    detail.type === 'project' && detail.archivedAt === null
+      ? `/app/objects/new?project=${encodeURIComponent(detail.id)}&returnTo=${encodeURIComponent(`/app/objects/${detail.id}`)}`
+      : null;
   return (
-    <header className="border-b border-border pb-5">
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-dim">
-            <span className="text-fg-muted">{statusLabel(detail.type)}</span>
+    <header>
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-dim">
+            <span>{statusLabel(detail.type)}</span>
+            {detail.type === 'task' ? (
+              <LiveTaskCategoryBadge
+                taskId={detail.id}
+                category={detail.taskCategory}
+                status={detail.taskCategoryStatus}
+                updatedAt={detail.taskCategoryUpdatedAt}
+              />
+            ) : null}
           </div>
-          {detail.type === 'task' ? (
-            <LiveTaskCategoryBadge
-              taskId={detail.id}
-              category={detail.taskCategory}
-              status={detail.taskCategoryStatus}
-              updatedAt={detail.taskCategoryUpdatedAt}
-              className="mt-2"
-            />
-          ) : null}
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-fg">
-            {displayText(displayObjectTitle(detail))}
-          </h1>
-          {visibleAliases.length > 0 && (
-            <p className="mt-2 text-xs text-fg-dim">
+          <h1 className="sr-only">{displayText(displayObjectTitle(detail))}</h1>
+          <input
+            aria-label="Name"
+            value={nameDraft}
+            onFocus={() => {
+              focusedDraftsRef.current.canonicalName = true;
+            }}
+            onChange={(event) => {
+              onNameDraftChange(event.target.value);
+            }}
+            onBlur={(event) => {
+              focusedDraftsRef.current.canonicalName = false;
+              const value = event.target.value.trim();
+              if (value === '') {
+                onNameDraftChange(editableObjectName(detail));
+                return;
+              }
+              onNameDraftChange(value);
+              if (value === editableObjectName(detail)) return;
+              onNameCommit(value);
+            }}
+            className="mt-1 w-full bg-transparent text-2xl font-semibold tracking-tight text-fg outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
+          />
+          {visibleAliases.length > 0 ? (
+            <p className="mt-1 text-xs text-fg-dim">
               aka {visibleAliases.map((alias) => displayText(alias)).join(' · ')}
             </p>
-          )}
-          {hasAlerts ? (
-            <div className="mt-3 flex flex-col gap-2">
-              {detail.newSinceLastVisit > 0 && (
-                <output className="rounded-sm border border-signal/40 bg-signal-soft px-3 py-2 text-xs text-signal">
-                  {detail.newSinceLastVisit} new change
-                  {detail.newSinceLastVisit === 1 ? '' : 's'} since your last visit
-                </output>
-              )}
-              {pendingCount > 0 ? (
-                <output className="rounded-sm border border-signal/40 bg-signal-soft px-3 py-2 text-xs text-signal">
-                  {pendingCount} suggestion{pendingCount === 1 ? '' : 's'} awaiting review
-                </output>
-              ) : null}
-              {error ? (
-                <div
-                  role="alert"
-                  className="rounded-sm border border-danger/40 bg-bg px-3 py-2 text-xs text-danger"
-                >
-                  {error}
-                </div>
-              ) : null}
-              {saveState !== 'idle' ? (
-                <output aria-live="polite" className="text-xs text-fg-dim">
-                  {saveState === 'saving'
-                    ? `Saving${savingCount > 1 ? ` ${savingCount} changes` : ''}...`
-                    : 'Saved'}
-                </output>
-              ) : null}
-            </div>
           ) : null}
         </div>
-        <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-          <ObjectPinButton objectId={detail.id} initialPinned={initialPinned} compact />
+        <div className="flex shrink-0 items-center">
+          <ObjectPinButton objectId={detail.id} initialPinned={initialPinned} icon />
           {teamId ? (
             <ContextualAskLink
               teamId={teamId}
@@ -1395,37 +1183,57 @@ function ObjectDetailHeader({
               pinnedEntityId={detail.id}
               pinnedEntityName={displayObjectTitle(detail)}
               label="Ask about object"
+              icon
             />
           ) : null}
-          {detail.type === 'project' && detail.archivedAt === null ? (
-            <Link
-              href={`/app/objects/new?project=${encodeURIComponent(detail.id)}&returnTo=${encodeURIComponent(`/app/objects/${detail.id}`)}`}
-              className="rounded-sm border border-signal/40 bg-signal-soft px-3 py-1.5 text-xs font-medium text-signal hover:bg-signal/20"
+          <ItemOverflowMenu targetLabel={displayObjectTitle(detail)}>
+            {addTaskHref ? (
+              <DropdownMenuItem asChild>
+                <Link href={addTaskHref}>Add task</Link>
+              </DropdownMenuItem>
+            ) : null}
+            <DropdownMenuItem
+              disabled={pending || repairPending || detail.archivedAt !== null}
+              onSelect={onRepairMemory}
             >
-              Add task
-            </Link>
-          ) : null}
-          <button
-            type="button"
-            onClick={onRepairMemory}
-            disabled={pending || repairPending || detail.archivedAt !== null}
-            title={
-              detail.archivedAt
-                ? 'Unarchive this object before repairing memory'
-                : 'Queue object-scoped duplicate cleanup'
-            }
-            className="rounded-sm border border-border bg-surface px-3 py-1.5 text-xs text-fg-muted transition hover:border-signal/50 hover:text-signal disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {detail.archivedAt
-              ? 'Repair unavailable'
-              : repairPending
-                ? 'Repairing…'
-                : 'Repair memory'}
-          </button>
+              {detail.archivedAt
+                ? 'Repair unavailable'
+                : repairPending
+                  ? 'Repairing…'
+                  : 'Repair memory'}
+            </DropdownMenuItem>
+          </ItemOverflowMenu>
         </div>
       </div>
+      {hasAlerts ? (
+        <div className="mt-3 flex flex-col gap-1.5">
+          {detail.newSinceLastVisit > 0 ? (
+            <output className="text-xs text-signal">
+              {detail.newSinceLastVisit} new change
+              {detail.newSinceLastVisit === 1 ? '' : 's'} since your last visit
+            </output>
+          ) : null}
+          {pendingCount > 0 ? (
+            <output className="text-xs text-signal">
+              {pendingCount} suggestion{pendingCount === 1 ? '' : 's'} awaiting review
+            </output>
+          ) : null}
+          {error ? (
+            <div role="alert" className="text-xs text-danger">
+              {error}
+            </div>
+          ) : null}
+          {saveState !== 'idle' ? (
+            <output aria-live="polite" className="text-xs text-fg-dim">
+              {saveState === 'saving'
+                ? `Saving${savingCount > 1 ? ` ${savingCount} changes` : ''}...`
+                : 'Saved'}
+            </output>
+          ) : null}
+        </div>
+      ) : null}
       <TechnicalDetails
-        className="mt-4"
+        className="mt-3"
         items={[{ label: 'Object ID', value: detail.id, copyValue: detail.id }]}
       />
     </header>
@@ -1434,7 +1242,6 @@ function ObjectDetailHeader({
 
 function ObjectEditableFields({
   detail,
-  nameDraft,
   aliasesDraft,
   stageDraft,
   dueDraft,
@@ -1442,12 +1249,11 @@ function ObjectEditableFields({
   patch,
   dispatchObjectUi,
   projects = EMPTY_PROJECT_OPTIONS,
+  members = EMPTY_MEMBER_OPTIONS,
   primaryProject = null,
   taskCategoriesEnabled = true,
-  className = 'grid-cols-1 gap-6 sm:grid-cols-2',
 }: {
   detail: ObjectDetail;
-  nameDraft: string;
   aliasesDraft: string;
   stageDraft: string;
   dueDraft: string;
@@ -1455,20 +1261,111 @@ function ObjectEditableFields({
   patch: (field: EditableField, value: EditableValue) => void;
   dispatchObjectUi: Dispatch<ObjectDetailUiAction>;
   projects?: { id: string; label: string }[];
+  members?: { id: string; label: string }[];
   primaryProject?: objects.TaskPrimaryProjectRow | null;
   taskCategoriesEnabled?: boolean;
-  className?: string;
 }) {
   const options = statusOptions(detail.type);
+  const assignee = members.find((member) => member.id === detail.assigneeUserId);
+  const title = displayObjectTitle(detail);
   return (
-    <section className={cn('grid', className)}>
+    <section aria-label="Properties" className="flex flex-col">
+      <h2 className="px-2 text-xs text-fg-dim">Properties</h2>
+      <EditableMetadata
+        label={`Status for ${displayText(title)}`}
+        value={<CollectionStatus value={detail.status} label={statusLabel(detail.status)} />}
+        editor={
+          <select
+            value={detail.status}
+            onChange={(event) => {
+              patch('status', event.target.value);
+            }}
+            className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+            aria-label="Status"
+          >
+            {options.map((status) => (
+              <option key={status} value={status}>
+                {statusLabel(status)}
+              </option>
+            ))}
+            {options.includes(detail.status) ? null : (
+              <option value={detail.status}>{statusLabel(detail.status)}</option>
+            )}
+          </select>
+        }
+      />
+      <EditableMetadata
+        label={`Priority for ${displayText(title)}`}
+        value={
+          <CollectionStatus
+            value={detail.priority ? `p${detail.priority}` : 'none'}
+            tone={priorityTone(detail.priority)}
+            label={detail.priority ? `P${detail.priority}` : 'No priority'}
+          />
+        }
+        editor={
+          <select
+            value={detail.priority ?? ''}
+            onChange={(event) => {
+              patch('priority', event.target.value === '' ? null : Number(event.target.value));
+            }}
+            className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+            aria-label="Priority"
+          >
+            <option value="">None</option>
+            <option value="1">P1</option>
+            <option value="2">P2</option>
+            <option value="3">P3</option>
+            <option value="4">P4</option>
+          </select>
+        }
+      />
+      {detail.type === 'task' ? (
+        <EditableMetadata
+          label={`Assignee for ${displayText(title)}`}
+          value={assignee?.label ?? (detail.assigneeUserId ? 'Assigned' : 'Unassigned')}
+          editor={
+            <select
+              value={detail.assigneeUserId ?? ''}
+              onChange={(event) => {
+                patch('assigneeUserId', event.target.value || null);
+              }}
+              className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+              aria-label="Assignee"
+            >
+              <option value="">Unassigned</option>
+              {members.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.label}
+                </option>
+              ))}
+            </select>
+          }
+        />
+      ) : null}
+      {isSchedulableObjectType(detail.type) ? (
+        <EditableMetadata
+          label={`Due date for ${displayText(title)}`}
+          value={<DueDateDisplay value={detail.dueAt} variant="field-hint" />}
+          editor={
+            <MetadataDateEditor
+              defaultValue={dueDraft}
+              onApply={(value) => {
+                focusedDraftsRef.current.dueAt = false;
+                dispatchObjectUi({ dueDraft: value });
+                patch('dueAt', value === '' ? null : new Date(`${value}T00:00:00.000Z`));
+              }}
+            />
+          }
+        />
+      ) : null}
       {detail.type === 'task' && detail.archivedAt ? (
-        <p className="text-sm text-muted-foreground sm:col-span-2">
+        <p className="px-2 py-2 text-xs text-fg-muted">
           Unarchive this task to change its project or category.
         </p>
       ) : detail.type === 'task' ? (
         <>
-          <Field label="Project">
+          <div className="px-2 py-1">
             <TaskProjectSelect
               taskId={detail.id}
               projectId={primaryProject?.projectId ?? null}
@@ -1476,9 +1373,9 @@ function ObjectEditableFields({
               projectArchived={Boolean(primaryProject?.archivedAt)}
               projects={projects}
             />
-          </Field>
+          </div>
           {taskCategoriesEnabled ? (
-            <Field label="Category">
+            <div className="px-2 py-1">
               <TaskCategorySelect
                 taskId={detail.id}
                 category={detail.taskCategory}
@@ -1486,129 +1383,52 @@ function ObjectEditableFields({
                 status={detail.taskCategoryStatus}
                 updatedAt={detail.taskCategoryUpdatedAt}
               />
-            </Field>
+            </div>
           ) : null}
         </>
       ) : null}
-      <Field label="Name">
-        <input
-          aria-label="Name"
-          value={nameDraft}
-          onFocus={() => {
-            focusedDraftsRef.current.canonicalName = true;
-          }}
-          onChange={(e) => {
-            dispatchObjectUi({ nameDraft: e.target.value });
-          }}
-          onBlur={(e) => {
-            focusedDraftsRef.current.canonicalName = false;
-            const v = e.target.value.trim();
-            if (v === '') {
-              dispatchObjectUi({ nameDraft: editableObjectName(detail) });
-              return;
-            }
-            dispatchObjectUi({ nameDraft: v });
-            if (v === editableObjectName(detail)) return;
-            patch('canonicalName', v);
-          }}
-          className="w-full rounded-md border bg-surface px-3 py-2 text-sm"
-        />
-      </Field>
-      <Field label="Aliases">
-        <input
-          aria-label="Aliases"
-          value={aliasesDraft}
-          onFocus={() => {
-            focusedDraftsRef.current.aliases = true;
-          }}
-          onChange={(e) => {
-            dispatchObjectUi({ aliasesDraft: e.target.value });
-          }}
-          onBlur={(e) => {
-            focusedDraftsRef.current.aliases = false;
-            const aliases = parseAliases(e.target.value, nameDraft);
-            dispatchObjectUi({ aliasesDraft: aliases.join(', ') });
-            patch('aliases', aliases);
-          }}
-          placeholder="Acme, Acme Corp"
-          className="w-full rounded-md border bg-surface px-3 py-2 text-sm"
-        />
-      </Field>
-      <Field label="Status">
-        <select
-          value={detail.status}
-          onChange={(e) => {
-            patch('status', e.target.value);
-          }}
-          className="w-full rounded-md border bg-surface px-3 py-2 text-sm"
-        >
-          {options.map((s) => (
-            <option key={s} value={s}>
-              {statusLabel(s)}
-            </option>
-          ))}
-          {!options.includes(detail.status) && (
-            <option value={detail.status}>{statusLabel(detail.status)}</option>
-          )}
-        </select>
-      </Field>
-      <Field label="Stage">
+      <label className="flex min-h-9 items-center gap-3 px-2">
+        <span className="w-16 shrink-0 text-xs text-fg-dim">Stage</span>
         <input
           aria-label="Stage"
           value={stageDraft}
           onFocus={() => {
             focusedDraftsRef.current.stage = true;
           }}
-          onChange={(e) => {
-            dispatchObjectUi({ stageDraft: e.target.value });
+          onChange={(event) => {
+            dispatchObjectUi({ stageDraft: event.target.value });
           }}
-          onBlur={(e) => {
+          onBlur={(event) => {
             focusedDraftsRef.current.stage = false;
-            const v = e.target.value.trim();
-            dispatchObjectUi({ stageDraft: v });
-            patch('stage', v === '' ? null : v);
+            const value = event.target.value.trim();
+            dispatchObjectUi({ stageDraft: value });
+            patch('stage', value === '' ? null : value);
           }}
-          className="w-full rounded-md border bg-surface px-3 py-2 text-sm"
-          placeholder="e.g. discovery"
+          className="min-w-0 flex-1 bg-transparent text-xs text-fg outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
+          placeholder="No stage"
         />
-      </Field>
-      <Field label="Priority">
-        <select
-          value={detail.priority ?? ''}
-          onChange={(e) => {
-            patch('priority', e.target.value === '' ? null : Number(e.target.value));
+      </label>
+      <label className="flex min-h-9 items-center gap-3 px-2">
+        <span className="w-16 shrink-0 text-xs text-fg-dim">Aliases</span>
+        <input
+          aria-label="Aliases"
+          value={aliasesDraft}
+          onFocus={() => {
+            focusedDraftsRef.current.aliases = true;
           }}
-          className="w-full rounded-md border bg-surface px-3 py-2 text-sm"
-        >
-          <option value="">None</option>
-          <option value="1">1 (urgent)</option>
-          <option value="2">2 (high)</option>
-          <option value="3">3 (normal)</option>
-          <option value="4">4 (low)</option>
-        </select>
-      </Field>
-      {isSchedulableObjectType(detail.type) ? (
-        <Field label="Due date">
-          <input
-            aria-label="Due date"
-            type="date"
-            value={dueDraft}
-            onFocus={() => {
-              focusedDraftsRef.current.dueAt = true;
-            }}
-            onChange={(e) => {
-              dispatchObjectUi({ dueDraft: e.target.value });
-            }}
-            onBlur={(e) => {
-              focusedDraftsRef.current.dueAt = false;
-              const v = e.target.value;
-              patch('dueAt', v === '' ? null : new Date(`${v}T00:00:00.000Z`));
-            }}
-            className="w-full rounded-md border bg-surface px-3 py-2 text-sm"
-          />
-          <DueDateDisplay value={detail.dueAt} variant="field-hint" className="mt-1 block" />
-        </Field>
-      ) : null}
+          onChange={(event) => {
+            dispatchObjectUi({ aliasesDraft: event.target.value });
+          }}
+          onBlur={(event) => {
+            focusedDraftsRef.current.aliases = false;
+            const aliases = parseAliases(event.target.value, editableObjectName(detail));
+            dispatchObjectUi({ aliasesDraft: aliases.join(', ') });
+            patch('aliases', aliases);
+          }}
+          placeholder="No aliases"
+          className="min-w-0 flex-1 bg-transparent text-xs text-fg outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
+        />
+      </label>
     </section>
   );
 }
@@ -1637,31 +1457,30 @@ function ObjectNotesSection({
   onDeleteNote: (noteId: string) => void;
 }) {
   return (
-    <ObjectPanel title="Notes" eyebrow={`${notes.length} saved`}>
-      <div className="mb-4 space-y-2">
+    <section>
+      <h2 className="text-xs text-fg-dim">Notes</h2>
+      <div className="mt-2 space-y-2">
         <textarea
           aria-label="New note"
           value={noteBody}
           onChange={(e) => {
             dispatchObjectUi({ noteBody: e.target.value });
           }}
-          placeholder="Add a note. Each note also lands on the timeline."
-          className="w-full rounded-md border bg-surface px-3 py-2 text-sm"
-          rows={3}
+          placeholder="Add a note"
+          className="w-full border-0 border-b border-border bg-transparent px-0 py-2 text-sm outline-none focus-visible:border-signal"
+          rows={2}
         />
         <button
           type="button"
           onClick={onAddNote}
           disabled={pending || !noteBody.trim()}
-          className="rounded-md border border-signal/40 bg-signal-soft px-3 py-1.5 text-sm text-signal hover:bg-signal/25 disabled:opacity-50"
+          className="text-xs font-medium text-signal hover:underline disabled:opacity-50"
         >
           Add note
         </button>
       </div>
-      {notes.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No notes yet.</p>
-      ) : (
-        <ul className="space-y-3">
+      {notes.length > 0 ? (
+        <ul className="mt-4 space-y-3">
           {notes.map((note) => (
             <ObjectNoteItem
               key={note.id}
@@ -1676,8 +1495,8 @@ function ObjectNotesSection({
             />
           ))}
         </ul>
-      )}
-    </ObjectPanel>
+      ) : null}
+    </section>
   );
 }
 
@@ -1702,7 +1521,7 @@ function ObjectNoteItem({
 }) {
   const timezone = useWorkspaceTimezone();
   return (
-    <li className="rounded-sm border border-border bg-surface px-4 py-3 text-sm">
+    <li className="text-sm">
       {isEditing ? (
         <div className="space-y-2">
           <textarea
@@ -1721,7 +1540,7 @@ function ObjectNoteItem({
               onClick={() => {
                 onSaveNote(note.id, editingBody);
               }}
-              className="rounded-md border border-signal/40 bg-signal-soft px-3 py-1 text-xs text-signal hover:bg-signal/25 disabled:opacity-50"
+              className="text-xs font-medium text-signal hover:underline disabled:opacity-50"
             >
               Save
             </button>
@@ -1730,7 +1549,7 @@ function ObjectNoteItem({
               onClick={() => {
                 dispatchObjectUi({ editingNoteId: null });
               }}
-              className="rounded-md border px-3 py-1 text-xs text-muted-foreground hover:bg-accent"
+              className="text-xs text-fg-muted hover:underline"
             >
               Cancel
             </button>
@@ -1787,32 +1606,22 @@ function ObjectConnectedWorkSection({
     connectedWork.documents.length > 0 ||
     connectedWork.links.length > 0 ||
     connectedWork.capturedFiles.length > 0;
+  if (!hasWork) return null;
   return (
-    <ObjectPanel title="Connected work" eyebrow="live context">
-      {!hasWork ? (
-        <p className="text-sm text-muted-foreground">No connected work found yet.</p>
-      ) : (
-        <div className="grid gap-5 lg:grid-cols-2">
-          <ConnectedTaskList
-            title="Open tasks"
-            empty="No open tasks found."
-            tasks={connectedWork.openTasks}
-          />
-          <ConnectedCalendarList events={connectedWork.calendarEvents} />
-          <ConnectedObjectList objects={connectedWork.objects} />
-          <ConnectedBoardList boards={connectedWork.boards} />
-          <ConnectedApprovalList approvals={connectedWork.pendingApprovals} />
-          <ConnectedTaskList
-            title="Recent history"
-            empty="No completed tasks found."
-            tasks={connectedWork.recentTasks}
-          />
-          <ConnectedLinkList links={connectedWork.links} />
-          <ConnectedCapturedFileList files={connectedWork.capturedFiles} />
-          <ConnectedDocumentList documents={connectedWork.documents} />
-        </div>
-      )}
-    </ObjectPanel>
+    <section>
+      <h2 className="text-xs text-fg-dim">Connected work</h2>
+      <div className="mt-3 grid gap-5 lg:grid-cols-2">
+        <ConnectedTaskList title="Open tasks" tasks={connectedWork.openTasks} />
+        <ConnectedCalendarList events={connectedWork.calendarEvents} />
+        <ConnectedObjectList objects={connectedWork.objects} />
+        <ConnectedBoardList boards={connectedWork.boards} />
+        <ConnectedApprovalList approvals={connectedWork.pendingApprovals} />
+        <ConnectedTaskList title="Recent history" tasks={connectedWork.recentTasks} />
+        <ConnectedLinkList links={connectedWork.links} />
+        <ConnectedCapturedFileList files={connectedWork.capturedFiles} />
+        <ConnectedDocumentList documents={connectedWork.documents} />
+      </div>
+    </section>
   );
 }
 
@@ -1827,35 +1636,27 @@ function ConnectedWorkSection({ title, children }: { title: string; children: Re
 
 function ConnectedTaskList({
   title,
-  empty,
   tasks,
 }: {
   title: string;
-  empty: string;
   tasks: ObjectDetail['connectedWork']['openTasks'];
 }) {
+  if (tasks.length === 0) return null;
   return (
     <ConnectedWorkSection title={title}>
-      {tasks.length === 0 ? (
-        <p className="text-sm text-muted-foreground">{empty}</p>
-      ) : (
-        <ul className="space-y-2">
-          {tasks.map((task) => (
-            <li
-              key={task.id}
-              className="grid gap-1 rounded-sm border border-border bg-surface px-3 py-2 text-sm"
-            >
-              <a href={`/app/objects/${task.id}`} className="font-medium hover:underline">
-                {displayText(displayObjectTitle(task))}
-              </a>
-              <span className="flex flex-wrap items-center gap-1.5 text-[11px] text-fg-dim">
-                <span>{statusLabel(task.status)}</span>
-                <DueDateDisplay value={task.dueAt} variant="compact" />
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+      <ul className="space-y-1.5">
+        {tasks.map((task) => (
+          <li key={task.id} className="grid gap-0.5 text-sm">
+            <a href={`/app/objects/${task.id}`} className="font-medium hover:underline">
+              {displayText(displayObjectTitle(task))}
+            </a>
+            <span className="flex flex-wrap items-center gap-1.5 text-[11px] text-fg-dim">
+              <span>{statusLabel(task.status)}</span>
+              <DueDateDisplay value={task.dueAt} variant="compact" />
+            </span>
+          </li>
+        ))}
+      </ul>
     </ConnectedWorkSection>
   );
 }
@@ -1866,57 +1667,46 @@ function ConnectedCalendarList({
   events: ObjectDetail['connectedWork']['calendarEvents'];
 }) {
   const timezone = useWorkspaceTimezone();
+  if (events.length === 0) return null;
   return (
     <ConnectedWorkSection title="Calendar">
-      {events.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No calendar events found.</p>
-      ) : (
-        <ul className="space-y-2">
-          {events.map((event) => (
-            <li
-              key={event.id}
-              className="grid gap-1 rounded-sm border border-border bg-surface px-3 py-2 text-sm"
-            >
-              <span className="font-medium">{displayText(event.title)}</span>
-              <span className="text-[11px] text-fg-dim">
-                {formatDisplayDateTime(event.startAt, { timezone })} · {statusLabel(event.showAs)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+      <ul className="space-y-1.5">
+        {events.map((event) => (
+          <li key={event.id} className="grid gap-0.5 text-sm">
+            <span className="font-medium">{displayText(event.title)}</span>
+            <span className="text-[11px] text-fg-dim">
+              {formatDisplayDateTime(event.startAt, { timezone })} · {statusLabel(event.showAs)}
+            </span>
+          </li>
+        ))}
+      </ul>
     </ConnectedWorkSection>
   );
 }
 
 function ConnectedObjectList({ objects }: { objects: ObjectDetail['connectedWork']['objects'] }) {
+  if (objects.length === 0) return null;
   return (
     <ConnectedWorkSection title="People and objects">
-      {objects.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No repeated object context found.</p>
-      ) : (
-        <ul className="space-y-2">
-          {objects.map((object) => (
-            <li
-              key={object.id}
-              className="grid gap-1 rounded-sm border border-border bg-surface px-3 py-2 text-sm"
-            >
-              <a href={`/app/objects/${object.id}`} className="font-medium hover:underline">
-                {displayText(object.canonicalName)}
-              </a>
-              <span className="text-[11px] text-fg-dim">
-                {statusLabel(object.type)} · {object.factCount} fact
-                {object.factCount === 1 ? '' : 's'}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+      <ul className="space-y-1.5">
+        {objects.map((object) => (
+          <li key={object.id} className="grid gap-0.5 text-sm">
+            <a href={`/app/objects/${object.id}`} className="font-medium hover:underline">
+              {displayText(object.canonicalName)}
+            </a>
+            <span className="text-[11px] text-fg-dim">
+              {statusLabel(object.type)} · {object.factCount} fact
+              {object.factCount === 1 ? '' : 's'}
+            </span>
+          </li>
+        ))}
+      </ul>
     </ConnectedWorkSection>
   );
 }
 
 function ConnectedBoardList({ boards }: { boards: ObjectDetail['connectedWork']['boards'] }) {
+  if (boards.length === 0) return null;
   return (
     <ConnectedWorkSection title="Boards">
       {boards.length === 0 ? (
@@ -1926,7 +1716,7 @@ function ConnectedBoardList({ boards }: { boards: ObjectDetail['connectedWork'][
           {boards.map((board) => (
             <li
               key={board.itemId}
-              className="grid gap-1 rounded-sm border border-border bg-surface px-3 py-2 text-sm"
+              className="grid gap-0.5 text-sm"
             >
               <a
                 href={`/app/boards/${board.boardId}?item=${board.itemId}`}
@@ -1955,6 +1745,7 @@ function ConnectedApprovalList({
 }: {
   approvals: ObjectDetail['connectedWork']['pendingApprovals'];
 }) {
+  if (approvals.length === 0) return null;
   return (
     <ConnectedWorkSection title="Pending approvals">
       {approvals.length === 0 ? (
@@ -1986,6 +1777,7 @@ function ConnectedDocumentList({
   documents: ObjectDetail['connectedWork']['documents'];
 }) {
   const timezone = useWorkspaceTimezone();
+  if (documents.length === 0) return null;
   return (
     <ConnectedWorkSection title="Documents">
       {documents.length === 0 ? (
@@ -1995,7 +1787,7 @@ function ConnectedDocumentList({
           {documents.map((document) => (
             <li
               key={document.id}
-              className="grid gap-1 rounded-sm border border-border bg-surface px-3 py-2 text-sm"
+              className="grid gap-0.5 text-sm"
             >
               <a
                 href={`/app/documents/${document.id}`}
@@ -2018,6 +1810,7 @@ function ConnectedDocumentList({
 
 function ConnectedLinkList({ links }: { links: ObjectDetail['connectedWork']['links'] }) {
   const timezone = useWorkspaceTimezone();
+  if (links.length === 0) return null;
   return (
     <ConnectedWorkSection title="Links">
       {links.length === 0 ? (
@@ -2027,7 +1820,7 @@ function ConnectedLinkList({ links }: { links: ObjectDetail['connectedWork']['li
           {links.map((link) => (
             <li
               key={link.id}
-              className="grid gap-1 rounded-sm border border-border bg-surface px-3 py-2 text-sm"
+              className="grid gap-0.5 text-sm"
             >
               {link.canonicalUrl ? (
                 <a
@@ -2059,6 +1852,7 @@ function ConnectedCapturedFileList({
   files: ObjectDetail['connectedWork']['capturedFiles'];
 }) {
   const timezone = useWorkspaceTimezone();
+  if (files.length === 0) return null;
   return (
     <ConnectedWorkSection title="Files">
       {files.length === 0 ? (
@@ -2068,7 +1862,7 @@ function ConnectedCapturedFileList({
           {files.map((file) => (
             <li
               key={file.id}
-              className="grid gap-1 rounded-sm border border-border bg-surface px-3 py-2 text-sm"
+              className="grid gap-0.5 text-sm"
             >
               <Link href="/app/documents/captured" className="font-medium hover:underline">
                 {displayText(truncateFilenameMiddle(file.name))}
@@ -2117,26 +1911,23 @@ function ObjectRelationshipsSection({
     ? RELATIONSHIP_KINDS.filter((kind) => kind !== 'child')
     : RELATIONSHIP_KINDS;
   return (
-    <ObjectPanel title="Related" eyebrow={String(relationships.length)}>
-      <div className="mb-4 grid gap-2">
+    <section>
+      <h2 className="text-xs text-fg-dim">Related</h2>
+      <div className="mt-2 grid gap-2">
         <label>
-          <span className="mb-1 block text-[11px] uppercase tracking-wide text-muted-foreground">
-            Link to object
-          </span>
+          <span className="sr-only">Link to object</span>
           <input
             value={linkQuery}
             onChange={(e) => {
               onLinkQueryChange(e.target.value);
             }}
             placeholder="Search objects"
-            className="w-full rounded-md border bg-surface px-3 py-2 text-sm"
+            className="w-full border-0 border-b border-border bg-transparent px-0 py-1.5 text-sm outline-none focus-visible:border-signal"
           />
         </label>
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
           <label>
-            <span className="mb-1 block text-[11px] uppercase tracking-wide text-muted-foreground">
-              Kind
-            </span>
+            <span className="sr-only">Kind</span>
             <select
               value={linkKind}
               onChange={(e) => {
@@ -2144,7 +1935,7 @@ function ObjectRelationshipsSection({
                   linkKind: e.target.value as (typeof RELATIONSHIP_KINDS)[number],
                 });
               }}
-              className="w-full rounded-md border bg-surface px-3 py-2 text-sm"
+              className="w-full border-0 border-b border-border bg-transparent py-1.5 text-sm outline-none"
             >
               {availableKinds.map((kind) => (
                 <option key={kind} value={kind}>
@@ -2157,7 +1948,7 @@ function ObjectRelationshipsSection({
             type="button"
             disabled={pending || !selectedLink || (projectFieldOwnsLink && linkKind === 'child')}
             onClick={onAddRelationship}
-            className="rounded-md border border-signal/40 bg-signal-soft px-3 py-2 text-sm text-signal hover:bg-signal/25 disabled:opacity-50"
+            className="text-sm font-medium text-signal hover:underline disabled:opacity-50"
           >
             Link
           </button>
@@ -2174,7 +1965,7 @@ function ObjectRelationshipsSection({
             <li key={result.id}>
               <button
                 type="button"
-                className="w-full rounded-sm border border-border px-3 py-2 text-left text-sm hover:bg-surface"
+                className="w-full px-0 py-1.5 text-left text-sm hover:underline"
                 onClick={() => {
                   onLinkQueryChange(result.canonicalName);
                   onSelectLink(result);
@@ -2187,14 +1978,12 @@ function ObjectRelationshipsSection({
           ))}
         </ul>
       ) : null}
-      {relationships.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No relationships yet.</p>
-      ) : (
+      {relationships.length === 0 ? null : (
         <ul className="space-y-2">
           {relationships.map((relationship) => (
             <li
               key={`${relationship.direction}-${relationship.id}`}
-              className="grid gap-1 rounded-sm border border-border bg-surface px-3 py-2 text-sm"
+              className="grid gap-0.5 text-sm"
             >
               <a
                 href={`/app/objects/${relationship.otherId}`}
@@ -2238,7 +2027,7 @@ function ObjectRelationshipsSection({
           ))}
         </ul>
       )}
-    </ObjectPanel>
+    </section>
   );
 }
 
@@ -2253,24 +2042,22 @@ function ObjectRecentChangesSection({
   onAcceptChange: (changeId: string) => void;
   onRejectChange: (changeId: string) => void;
 }) {
+  if (changes.length === 0) return null;
   return (
-    <ObjectPanel title="Recent changes" eyebrow={String(changes.length)}>
-      {changes.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No changes recorded.</p>
-      ) : (
-        <ul className="space-y-2 text-sm">
-          {changes.slice(0, 20).map((change) => (
-            <ObjectRecentChangeItem
-              key={change.id}
-              change={change}
-              pending={pending}
-              onAcceptChange={onAcceptChange}
-              onRejectChange={onRejectChange}
-            />
-          ))}
-        </ul>
-      )}
-    </ObjectPanel>
+    <section>
+      <h2 className="text-xs text-fg-dim">Recent changes</h2>
+      <ul className="mt-2 space-y-2 text-sm">
+        {changes.slice(0, 20).map((change) => (
+          <ObjectRecentChangeItem
+            key={change.id}
+            change={change}
+            pending={pending}
+            onAcceptChange={onAcceptChange}
+            onRejectChange={onRejectChange}
+          />
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -2290,7 +2077,7 @@ function ObjectRecentChangeItem({
   const isRejected = change.status === 'rejected';
   return (
     <li
-      className={`min-w-0 rounded-sm border border-border bg-surface px-4 py-2 ${isSuggested ? 'border-signal/40 bg-signal-soft' : ''} ${isRejected ? 'opacity-60' : ''}`}
+      className={`min-w-0 py-1.5 ${isSuggested ? 'text-signal' : ''} ${isRejected ? 'opacity-60' : ''}`}
     >
       <div className="flex min-w-0 items-start justify-between gap-3">
         <span className="min-w-0 break-words font-medium">{changeFieldLabel(change.field)}</span>
@@ -2312,7 +2099,7 @@ function ObjectRecentChangeItem({
               onClick={() => {
                 onAcceptChange(change.id);
               }}
-              className="rounded-md border border-signal/40 bg-signal-soft px-2 py-0.5 text-signal hover:bg-signal/25 disabled:opacity-50"
+              className="text-xs text-signal hover:underline disabled:opacity-50"
             >
               Accept
             </button>
@@ -2322,7 +2109,7 @@ function ObjectRecentChangeItem({
               onClick={() => {
                 onRejectChange(change.id);
               }}
-              className="rounded-md border px-2 py-0.5 text-muted-foreground hover:bg-accent disabled:opacity-50"
+              className="text-xs text-fg-muted hover:underline disabled:opacity-50"
             >
               Reject
             </button>
@@ -2343,12 +2130,12 @@ function ObjectArchiveFooter({
   onArchiveObject: () => void;
 }) {
   return (
-    <footer className="border border-border bg-bg p-4">
+    <footer>
       <button
         type="button"
         disabled={pending || archivedAt !== null}
         onClick={onArchiveObject}
-        className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 disabled:opacity-50"
+        className="text-xs text-destructive hover:underline disabled:opacity-50"
       >
         {archivedAt ? 'Archived' : 'Archive object'}
       </button>
