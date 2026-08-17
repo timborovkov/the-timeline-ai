@@ -24,6 +24,7 @@ interface FloatingSessionState {
   sessionId: string | null;
   initialMessages: UIMessage[];
   contextTrail: ChatContextRef[];
+  ready: boolean;
 }
 
 const EXCLUDED_PREFIXES = ['/app/chat'];
@@ -46,11 +47,16 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
   const { current, dashboardContext } = useCurrentChatView();
   const [{ open, activated }, setPanel] = useState({ open: false, activated: false });
   const storageKey = `timeline:floating-agent-chat:${teamId}:session`;
-  const [{ sessionId, initialMessages }, setSessionState] = useState<FloatingSessionState>(() => ({
-    sessionId: readStoredSessionId(storageKey),
-    initialMessages: [],
-    contextTrail: [],
-  }));
+  const [{ sessionId, initialMessages, ready: sessionReady }, setSessionState] =
+    useState<FloatingSessionState>(() => {
+      const storedSessionId = readStoredSessionId(storageKey);
+      return {
+        sessionId: storedSessionId,
+        initialMessages: [],
+        contextTrail: [],
+        ready: storedSessionId === null,
+      };
+    });
   const hydratedSessionIdRef = useRef<string | null>(null);
   const sessionGenerationRef = useRef(0);
   const launcherRef = useRef<HTMLButtonElement>(null);
@@ -68,10 +74,9 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
     : mergeChatContextTrail(trailRef.current, [current]);
   if (!excluded) trailRef.current = liveTrail;
   const pinnedEntityId = current.objectId ?? null;
-  const [restoreReady, setRestoreReady] = useState(() => !readStoredSessionId(storageKey));
   const showChrome = !excluded;
   const showPanel = open && showChrome;
-  const mountChat = activated && restoreReady && !isFullAsk;
+  const mountChat = activated && sessionReady && !isFullAsk;
   const openPanel = useCallback(() => {
     setPanel({ open: true, activated: true });
   }, []);
@@ -84,14 +89,12 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
     window.localStorage.removeItem(storageKey);
     hydratedSessionIdRef.current = null;
     trailRef.current = excluded ? [] : [current];
-    setRestoreReady(true);
-    setSessionState({ sessionId: null, initialMessages: [], contextTrail: [] });
+    setSessionState({ sessionId: null, initialMessages: [], contextTrail: [], ready: true });
   }, [current, excluded, storageKey]);
 
   useEffect(() => {
     if (!sessionId) {
       hydratedSessionIdRef.current = null;
-      setRestoreReady(true);
       return;
     }
     if (hydratedSessionIdRef.current === sessionId) return;
@@ -102,8 +105,7 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
       window.localStorage.removeItem(storageKey);
       hydratedSessionIdRef.current = null;
       trailRef.current = excluded ? [] : [current];
-      setRestoreReady(true);
-      setSessionState({ sessionId: null, initialMessages: [], contextTrail: [] });
+      setSessionState({ sessionId: null, initialMessages: [], contextTrail: [], ready: true });
     };
 
     void loadChatSessionAction({ sessionId: activeSessionId })
@@ -121,10 +123,10 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
                   ...state,
                   initialMessages: loaded.messages ?? [],
                   contextTrail: trailRef.current,
+                  ready: true,
                 }
               : state,
           );
-          setRestoreReady(true);
         } else {
           clearStaleSession();
         }
@@ -155,11 +157,6 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
       window.removeEventListener('keydown', onKey);
     };
   }, []);
-
-  useEffect(() => {
-    if (!excluded) return;
-    setPanel((panel) => (panel.open ? { ...panel, open: false } : panel));
-  }, [excluded]);
 
   useEffect(() => {
     if (!showPanel) return;
@@ -298,7 +295,7 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
               onSessionIdChange={(id) => {
                 if (activeSessionGeneration !== sessionGenerationRef.current) return;
                 window.localStorage.setItem(storageKey, id);
-                setSessionState((state) => ({ ...state, sessionId: id }));
+                setSessionState((state) => ({ ...state, sessionId: id, ready: true }));
               }}
             />
           </div>
