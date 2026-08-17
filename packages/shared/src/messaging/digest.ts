@@ -424,7 +424,7 @@ function toDigestTask(task: {
 }
 
 function totalsByType(rows: { type: string; total: number }[]): Record<string, number> {
-  return Object.fromEntries(rows.map((row) => [row.type, Number(row.total) || 0]));
+  return Object.fromEntries(rows.map((row) => [row.type, row.total]));
 }
 
 function digestVisibleSuggestionPredicate(teamId: string, userId: string) {

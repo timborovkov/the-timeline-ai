@@ -274,25 +274,35 @@ describe('generateDailyDigest conflict handling', () => {
     expect(result.payload.completedTasks).toEqual([
       expect.objectContaining({ id: 'task-done', title: 'Close review', status: 'done' }),
     ]);
-    expect(listObjects).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        type: ['task', 'follow_up'],
-        createdAfter: expect.any(Date),
-        createdBefore: expect.any(Date),
-        limit: 12,
-      }),
-    );
-    expect(listObjects).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        id: ['task-done'],
-        type: ['task', 'follow_up'],
-        limit: 12,
-      }),
-    );
-    expect(listObjects.mock.calls.some((call) => 'updatedAfter' in (call[0] ?? {}))).toBe(false);
-    expect(listObjects.mock.calls.some((call) => 'status' in (call[0] ?? {}))).toBe(false);
+    const createdListFilter = listObjects.mock.calls[0]?.[0] as
+      | {
+          type?: string[];
+          createdAfter?: Date;
+          createdBefore?: Date;
+          limit?: number;
+        }
+      | undefined;
+    const completedListFilter = listObjects.mock.calls[1]?.[0] as
+      | {
+          id?: string[];
+          type?: string[];
+          archived?: boolean;
+          limit?: number;
+        }
+      | undefined;
+    expect(createdListFilter).toMatchObject({
+      type: ['task', 'follow_up'],
+      limit: 12,
+    });
+    expect(createdListFilter?.createdAfter).toBeInstanceOf(Date);
+    expect(createdListFilter?.createdBefore).toBeInstanceOf(Date);
+    expect(completedListFilter).toEqual({
+      id: ['task-done'],
+      type: ['task', 'follow_up'],
+      archived: false,
+      limit: 12,
+    });
+    expect(listObjects).toHaveBeenCalledTimes(2);
     const generatedUpdate = updates.find(
       (update): update is { status: unknown; payload: { activity?: unknown } } =>
         typeof update === 'object' &&
