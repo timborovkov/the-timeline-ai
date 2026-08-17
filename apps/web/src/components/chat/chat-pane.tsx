@@ -361,13 +361,7 @@ function PinnedEntityBanner({
   );
 }
 
-function ChatContextBadges({
-  refs,
-  compact,
-}: {
-  refs: ChatContextRef[];
-  compact: boolean;
-}) {
+function ChatContextBadges({ refs, compact }: { refs: ChatContextRef[]; compact: boolean }) {
   if (refs.length === 0) return null;
   return (
     <div

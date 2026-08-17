@@ -224,7 +224,13 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
             >
               <MessageSquarePlus className="size-4" />
             </Button>
-            <Button variant="ghost" size="icon" className="size-8" asChild aria-label="Open full chat">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              asChild
+              aria-label="Open full chat"
+            >
               <Link href={fullChatHref}>
                 <ExternalLink className="size-4" />
               </Link>

@@ -214,9 +214,10 @@ describe('FloatingAgentChat', () => {
     const transport = fakes.transports.at(-1)?.options;
 
     await user.click(screen.getByRole('button', { name: 'Start new conversation' }));
-    await (
-      transport as { fetch?: (url: string, init?: RequestInit) => Promise<Response> }
-    ).fetch?.('/api/chat', {});
+    await (transport as { fetch?: (url: string, init?: RequestInit) => Promise<Response> }).fetch?.(
+      '/api/chat',
+      {},
+    );
 
     expect(window.localStorage.getItem(storageKey)).toBeNull();
   });

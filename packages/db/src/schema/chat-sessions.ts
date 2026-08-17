@@ -22,7 +22,10 @@ export const chatSessions = pgTable(
     pinnedEntityId: uuid('pinned_entity_id').references(() => entities.id, {
       onDelete: 'set null',
     }),
-    contextTrail: jsonb('context_trail').$type<unknown[]>().notNull().default(sql`'[]'::jsonb`),
+    contextTrail: jsonb('context_trail')
+      .$type<unknown[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
     archivedAt: timestamp('archived_at', { withTimezone: true }),

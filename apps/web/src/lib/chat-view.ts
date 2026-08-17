@@ -154,13 +154,9 @@ export function buildChatView(input: {
         ...(isUuid(boardId) ? { boardId } : {}),
         ...(isUuid(boardItemId) ? { boardItemId } : {}),
         ...(isUuid(taskId) ? { taskId } : {}),
-        ...(isUuid(calendarEventId) && segments[1] === 'calendar'
-          ? { calendarEventId }
-          : {}),
+        ...(isUuid(calendarEventId) && segments[1] === 'calendar' ? { calendarEventId } : {}),
         ...(isUuid(timelineEventId) ? { timelineEventId } : {}),
-        ...(timelineMomentId && MOMENT_ID_RE.test(timelineMomentId)
-          ? { timelineMomentId }
-          : {}),
+        ...(timelineMomentId && MOMENT_ID_RE.test(timelineMomentId) ? { timelineMomentId } : {}),
         ...(isUuid(meetingId) ? { meetingId } : {}),
       },
       dashboardContext,
@@ -254,9 +250,7 @@ export function buildChatView(input: {
         href: hrefWithSearch(pathname, input.searchParams, ['event', 'moment']),
         label: 'Timeline event',
         timelineEventId,
-        ...(timelineMomentId && MOMENT_ID_RE.test(timelineMomentId)
-          ? { timelineMomentId }
-          : {}),
+        ...(timelineMomentId && MOMENT_ID_RE.test(timelineMomentId) ? { timelineMomentId } : {}),
       },
       dashboardContext,
     };

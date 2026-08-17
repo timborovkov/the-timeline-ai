@@ -301,10 +301,7 @@ function selectAgentToolGroups(input: {
     groups.add('boards');
   }
 
-  if (
-    documentId ||
-    matchesAny(text, [/\b(document|doc|file|pdf|contract|policy|drive|chunk)\b/])
-  ) {
+  if (documentId || matchesAny(text, [/\b(document|doc|file|pdf|contract|policy|drive|chunk)\b/])) {
     groups.add('documents');
   }
 
