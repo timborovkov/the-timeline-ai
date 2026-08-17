@@ -76,6 +76,20 @@ describe('InfiniteScroll', () => {
     expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
   });
 
+  it('does not observe the page scroller while a nested root is still mounting', () => {
+    const onLoadMore = vi.fn();
+    render(
+      <InfiniteScroll
+        hasMore
+        root={null}
+        onLoadMore={onLoadMore}
+        boundLabel="No more matching tasks"
+      />,
+    );
+    expect(FakeIntersectionObserver.instances).toHaveLength(0);
+    expect(onLoadMore).not.toHaveBeenCalled();
+  });
+
   it('keeps Retry as the only visible control after a load failure', () => {
     const onRetry = vi.fn();
     render(

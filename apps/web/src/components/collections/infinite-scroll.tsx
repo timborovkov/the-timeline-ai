@@ -54,6 +54,9 @@ export function InfiniteScroll({
   useEffect(() => {
     const node = sentinelRef.current;
     if (!node || !hasMore || disabled) return;
+    // A passed-in root of null means the overflow parent is not mounted yet.
+    // Do not fall back to #main — that auto-fetches every page from a nested list.
+    if (root === null) return;
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) requestMore();
