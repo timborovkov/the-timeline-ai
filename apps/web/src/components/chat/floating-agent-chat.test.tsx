@@ -96,7 +96,11 @@ describe('FloatingAgentChat', () => {
     await user.click(trigger);
 
     expect(await screen.findByRole('heading', { name: 'Object' })).toBeTruthy();
-    expect(screen.getAllByText(/⌘J/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/earlier/)).toBeNull();
+    expect(trigger.getAttribute('title')).toContain('⌘J');
+    expect(
+      document.getElementById('floating-agent-chat-title')?.nextElementSibling?.textContent,
+    ).not.toMatch(/⌘J|earlier/);
     const body = fakes.transports.at(-1)?.options.body?.() as {
       dashboardContext?: Record<string, unknown>;
       contextTrail?: { kind: string; objectId?: string }[];
@@ -240,7 +244,7 @@ describe('FloatingAgentChat', () => {
     );
 
     expect(await screen.findByRole('heading', { name: 'Connections' })).toBeTruthy();
-    expect(screen.getByText(/1 earlier/)).toBeTruthy();
+    expect(screen.queryByText(/earlier/)).toBeNull();
     const body = fakes.transports.at(-1)?.options.body?.() as {
       contextTrail?: { kind: string; href?: string }[];
     };
@@ -270,7 +274,7 @@ describe('FloatingAgentChat', () => {
     );
     await user.click(screen.getByRole('button', { name: /Open floating agent chat/ }));
     expect(await screen.findByRole('heading', { name: 'Connections' })).toBeTruthy();
-    expect(screen.getByText(/1 earlier/)).toBeTruthy();
+    expect(screen.queryByText(/earlier/)).toBeNull();
     const body = fakes.transports.at(-1)?.options.body?.() as {
       contextTrail?: { kind: string; href?: string; label?: string }[];
     };

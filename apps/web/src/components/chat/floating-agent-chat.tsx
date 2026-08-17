@@ -298,16 +298,13 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
             'md:static md:inset-auto md:h-full md:border-0 md:shadow-none',
           )}
         >
-          <div className="flex items-start justify-between gap-2 border-b border-border px-3 py-2.5">
-            <div className="min-w-0">
-              <h2 id="floating-agent-chat-title" className="truncate text-sm font-semibold text-fg">
-                {current.label}
-              </h2>
-              <p className="truncate text-xs text-fg-muted">
-                {shortcut}
-                {liveTrail.length > 1 ? ` · ${String(liveTrail.length - 1)} earlier` : ''}
-              </p>
-            </div>
+          <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2.5">
+            <h2
+              id="floating-agent-chat-title"
+              className="min-w-0 truncate text-sm font-semibold text-fg"
+            >
+              {current.label}
+            </h2>
             <div className="flex shrink-0 items-center gap-0.5">
               <Button
                 variant="ghost"

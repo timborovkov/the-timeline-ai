@@ -352,14 +352,14 @@ list. Session counts do not appear in the header.
 
 A context-aware floating Ask sits on every authenticated page except Home and
 the full Ask route. It is a quiet icon button in the bottom-right corner, with
-`⌘J` / `Ctrl+J` as the shortcut. Desktop opens a non-modal panel over the page
-so the board, object, or document stays usable. Mobile opens a modal bottom
-sheet with a dimmed backdrop. The header shows the current view label — the
-selected item name when a list page has one, otherwise the route label — a New
-control, and a link into full Ask. Closing keeps the thread; New starts a
-blank one. The agent receives the current view first and a capped trail of
-earlier views from the same conversation. Full Ask shows those views as
-compact linked badges on the conversation.
+`⌘J` / `Ctrl+J` as the shortcut on the launcher. Desktop opens a non-modal
+panel over the page so the board, object, or document stays usable. Mobile
+opens a modal bottom sheet with a dimmed backdrop. The header shows only the
+current view label — the selected item name when a list page has one,
+otherwise the route label — plus New, full Ask, and close. Closing keeps the
+thread; New starts a blank one. The agent receives the current view first and
+a capped trail of earlier views from the same conversation. Full Ask shows
+those views as compact linked badges on the conversation.
 
 The web Ask surface is the rich research view: answers may be thorough and use
 sections, lists, or tables, while inline citations remain inspectable links to
@@ -650,3 +650,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Quiet sidebar brand and fold control | Aligns the product mark with primary nav, sends it to Home, and replaces the boxed fold glyph with a lighter chevron. |
 | 2026-08-17 | Floating Ask | Replaces per-page Ask-about buttons with a context-aware float, keeps one thread on close, and shows linked context badges in full Ask. |
 | 2026-08-17 | Floating Ask context names | Names the float from the selected timeline, calendar, task, search, or folder item, and makes the mobile sheet modal while desktop stays non-modal. |
+| 2026-08-17 | Quiet floating Ask header | Keeps the shortcut on the launcher and drops the header shortcut plus earlier-count line. |
