@@ -11,11 +11,8 @@ import type * as objects from '@timeline/shared/objects/types';
 import { bulkArchiveObjectsAction, updateObjectAction } from '@/app/actions/objects';
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
-import {
-  CollectionStatus,
-  priorityTone,
-  statusTone,
-} from '@/components/collections/collection-status';
+import { CollectionStatus } from '@/components/collections/collection-status';
+import { priorityTone, statusTone } from '@/components/collections/collection-status-tone';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { SelectionBar } from '@/components/collections/selection-bar';
 import { DueDateDisplay } from '@/components/due-date-display';
@@ -536,12 +533,11 @@ function ObjectDueDateEditor({
   value: Date | string | null;
   onSave: (value: Date | null) => void;
 }) {
-  const [draft, setDraft] = useState(dateInputValue(value));
+  const [draft, setDraft] = useState(() => dateInputValue(value));
   return (
     <form
       className="flex items-center gap-2"
-      onSubmit={(event) => {
-        event.preventDefault();
+      action={() => {
         onSave(draft ? new Date(`${draft}T00:00:00.000Z`) : null);
       }}
     >

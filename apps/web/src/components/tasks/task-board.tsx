@@ -41,11 +41,8 @@ import {
 } from '@/app/actions/objects';
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
-import {
-  CollectionStatus,
-  priorityTone,
-  statusTone,
-} from '@/components/collections/collection-status';
+import { CollectionStatus } from '@/components/collections/collection-status';
+import { priorityTone, statusTone } from '@/components/collections/collection-status-tone';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { SelectionBar } from '@/components/collections/selection-bar';
@@ -57,7 +54,7 @@ import { TaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { useTaskCategoryPolling } from '@/components/tasks/task-category-polling';
 import { TaskCategorySelect } from '@/components/tasks/task-category-select';
 import { TaskProjectSelect } from '@/components/tasks/task-project-select';
-import { taskViewHref, type TaskView } from '@/components/tasks/task-view-toggle';
+import { taskViewHref, type TaskView } from '@/components/tasks/task-view';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';

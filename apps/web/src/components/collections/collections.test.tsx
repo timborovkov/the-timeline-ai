@@ -6,11 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
-import {
-  CollectionStatus,
-  priorityTone,
-  statusTone,
-} from '@/components/collections/collection-status';
+import { CollectionStatus } from '@/components/collections/collection-status';
+import { priorityTone, statusTone } from '@/components/collections/collection-status-tone';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
@@ -130,7 +127,7 @@ describe('collection primitives', () => {
 
     const trigger = screen.getByRole('button', { name: 'Priority for Launch plan' });
     expect(trigger.className).toContain('min-h-10');
-    expect(trigger.getAttribute('aria-invalid')).toBe('true');
+    expect(trigger.getAttribute('aria-describedby')).toBe('priority-for-launch-plan-error');
     expect(screen.getByRole('alert').textContent).toBe('Save failed');
 
     await user.click(trigger);

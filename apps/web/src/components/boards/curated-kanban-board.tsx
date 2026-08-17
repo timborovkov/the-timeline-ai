@@ -37,7 +37,8 @@ import {
   curatedKanbanSaveState,
   type CuratedKanbanSaveState,
 } from '@/components/boards/curated-kanban-state';
-import { CollectionStatus, priorityTone } from '@/components/collections/collection-status';
+import { CollectionStatus } from '@/components/collections/collection-status';
+import { priorityTone } from '@/components/collections/collection-status-tone';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { DueDateDisplay } from '@/components/due-date-display';
@@ -579,10 +580,8 @@ function KanbanCard({
           disabled={optimistic}
           editor={
             <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                const data = new FormData(event.currentTarget);
-                const rawNextStep = data.get('nextStep');
+              action={(formData) => {
+                const rawNextStep = formData.get('nextStep');
                 const nextStep = (typeof rawNextStep === 'string' ? rawNextStep : '').trim();
                 onUpdateItem(item.id, { nextStep: nextStep || null });
               }}
