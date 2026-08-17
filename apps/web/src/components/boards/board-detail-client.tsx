@@ -43,7 +43,6 @@ interface BoardItemPatchOverlay {
 }
 
 interface Props {
-  teamId?: string;
   boardId: string;
   boardName: string;
   purpose: string | null;
@@ -90,7 +89,6 @@ const EMPTY_FILTER_PARAMS: Record<string, string> = {};
 const EMPTY_TYPE_LABELS: Record<string, string> = {};
 
 export function BoardDetailClient({
-  teamId,
   boardId,
   boardName,
   purpose,
@@ -368,7 +366,6 @@ export function BoardDetailClient({
         {selectedItem ? (
           <BoardCardDetail
             key={selectedItem.id}
-            teamId={teamId}
             boardId={boardId}
             view={view}
             item={selectedItem}

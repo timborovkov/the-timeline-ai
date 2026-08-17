@@ -59,7 +59,11 @@ function pageLabel(segments: string[]): string {
   if (rest.length === 0) return 'Home';
   const exact = PAGE_LABELS[rest.join('/')];
   if (exact) return exact;
-  if (rest[0] && PAGE_LABELS[rest[0]]) return PAGE_LABELS[rest[0]];
+  const section = rest[0];
+  if (section) {
+    const labeled = PAGE_LABELS[section];
+    if (labeled) return labeled;
+  }
   return rest[0] ?? 'Dashboard';
 }
 

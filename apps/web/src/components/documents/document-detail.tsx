@@ -63,7 +63,6 @@ interface DocumentSummary {
 }
 
 interface Props {
-  teamId?: string;
   document: DocumentSummary;
   versions: VersionItem[];
   requestedVersion: number | null;

@@ -79,7 +79,6 @@ type DraftField = 'canonicalName' | 'aliases' | 'stage' | 'dueAt';
 
 interface Props {
   detail: ObjectDetail;
-  teamId?: string;
   userId: string;
   initialPinned?: boolean;
   suggestions: LocalSuggestion[];

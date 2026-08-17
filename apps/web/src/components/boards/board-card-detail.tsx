@@ -40,7 +40,6 @@ import { statusLabel } from '@/lib/status-labels';
 import { cn } from '@/lib/utils';
 
 interface Props {
-  teamId?: string;
   boardId: string;
   view: BoardLayout;
   item: boards.BoardItemRow | null;
@@ -99,7 +98,6 @@ function reconcileDraftState(state: DraftState, item: boards.BoardItemRow | null
 }
 
 export function BoardCardDetail({
-  teamId,
   boardId,
   view,
   item,
@@ -196,7 +194,6 @@ export function BoardCardDetail({
       />
       <BoardActions
         boardId={boardId}
-        teamId={teamId}
         view={view}
         item={item}
         filterParams={filterParams}
@@ -460,14 +457,12 @@ function BoardNotesSection({
 
 function BoardActions({
   boardId,
-  teamId,
   view,
   item,
   filterParams,
   onItemRemoved,
 }: {
   boardId: string;
-  teamId?: string;
   view: BoardLayout;
   item: boards.BoardItemRow;
   filterParams: Record<string, string>;
