@@ -1144,7 +1144,9 @@ function titleForGroup(
   const meta = metaObject(displayLead.sourceMetadata);
   if (displayLead.source === 'telegram' || displayLead.source === 'slack') {
     const message = stripConversationLeadIn(summaryForEvent(displayLead, timezone));
-    return clipped(message, 92) || `${displayLead.source === 'telegram' ? 'Telegram' : 'Slack'} message`;
+    return (
+      clipped(message, 92) || `${displayLead.source === 'telegram' ? 'Telegram' : 'Slack'} message`
+    );
   }
   if (displayLead.source === 'meeting') {
     const title = stringMeta(meta, 'title');

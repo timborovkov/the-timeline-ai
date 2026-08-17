@@ -90,7 +90,7 @@ export function hasSourceOriginal(original: SourceOriginal): boolean {
 
 export function framedHtmlDocument(html: string): string {
   const csp =
-    '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data:; style-src \'unsafe-inline\'; font-src \'none\';">';
+    "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src 'none';\">";
   const style =
     '<style>html,body{margin:0;padding:12px;background:transparent;color:#1c1917;font:14px/1.5 ui-sans-serif,system-ui,sans-serif;word-break:break-word;}a{color:inherit}</style>';
   if (/<html[\s>]/i.test(html)) {
@@ -174,11 +174,7 @@ function cleanJson(value: unknown, hasHtml: boolean, hasText: boolean): unknown 
 
 function redactFilenameValue(key: string, value: unknown): unknown {
   if (typeof value !== 'string' || !FILENAME_KEYS.has(key)) return value;
-  if (
-    key === 'name' &&
-    !isLikelyGeneratedDocumentName(value) &&
-    !/\.[a-z0-9]{2,8}$/i.test(value)
-  ) {
+  if (key === 'name' && !isLikelyGeneratedDocumentName(value) && !/\.[a-z0-9]{2,8}$/i.test(value)) {
     return value;
   }
   return truncateFilenameMiddle(value);

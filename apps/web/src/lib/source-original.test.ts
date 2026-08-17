@@ -88,8 +88,7 @@ describe('framedHtmlDocument', () => {
 
 describe('source original filename redaction', () => {
   it('truncates generated attachment names in leftover JSON', () => {
-    const filename =
-      'AgACAgQAAyEFAATcv6dYAAP3aimENrbqY6kNAAEqxvEv6YGMrdExAAK5DmsbjOI.jpg';
+    const filename = 'AgACAgQAAyEFAATcv6dYAAP3aimENrbqY6kNAAEqxvEv6YGMrdExAAK5DmsbjOI.jpg';
     const original = sourceOriginalFromEvent({
       source: 'slack',
       contentText: '',

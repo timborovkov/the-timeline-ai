@@ -1235,9 +1235,7 @@ function TimelineMomentRow({
   const contextParts = rowContextParts(moment);
   const titleStem = title.replace(/…$/, '').trim().toLowerCase();
   const previewOverlapsTitle =
-    Boolean(previewText) &&
-    Boolean(titleStem) &&
-    previewText.toLowerCase().startsWith(titleStem);
+    Boolean(previewText) && Boolean(titleStem) && previewText.toLowerCase().startsWith(titleStem);
   const subtitleParts = [
     ...contextParts.filter((part) => !previewText || !previewText.includes(part)),
     previewOverlapsTitle ? null : previewText || null,
