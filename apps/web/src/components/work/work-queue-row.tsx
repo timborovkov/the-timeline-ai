@@ -282,7 +282,9 @@ function uniqueStatuses(values: string[]): string[] {
 
 function sameValue(left: EditableValue, right: EditableValue): boolean {
   if (left instanceof Date || right instanceof Date) {
-    return toDateOrNull(left)?.getTime() === toDateOrNull(right)?.getTime();
+    const leftDate = typeof left === 'number' ? null : toDateOrNull(left);
+    const rightDate = typeof right === 'number' ? null : toDateOrNull(right);
+    return leftDate?.getTime() === rightDate?.getTime();
   }
   return left === right;
 }

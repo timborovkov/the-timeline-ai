@@ -200,7 +200,7 @@ export default async function HomeDashboardPage() {
           },
           ...HOME_OPEN_OBJECT_ATTENTION.map(({ type, action, icon: Icon }) => ({
             href: homeOpenObjectHref(type),
-            label: `Open ${OBJECT_TYPE_LABELS[type].toLowerCase()}`,
+            label: `Open ${(OBJECT_TYPE_LABELS[type] ?? type).toLowerCase()}`,
             count: openObjectCounts[type],
             action,
             icon: <Icon aria-hidden="true" />,

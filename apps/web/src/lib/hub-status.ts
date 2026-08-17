@@ -83,7 +83,7 @@ export function homeWorkNeedingAttentionCount(summary: WorkAttentionSummary): nu
   return Math.max(0, summary.overdueTasks);
 }
 
-export const HOME_OPEN_OBJECT_TYPES = [
+const HOME_OPEN_OBJECT_TYPES = [
   'task',
   'follow_up',
   'person',
