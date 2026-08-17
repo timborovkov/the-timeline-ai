@@ -83,6 +83,36 @@ export function homeWorkNeedingAttentionCount(summary: WorkAttentionSummary): nu
   return Math.max(0, summary.overdueTasks);
 }
 
+export const HOME_OPEN_OBJECT_TYPES = [
+  'task',
+  'follow_up',
+  'person',
+  'company',
+  'project',
+  'deal',
+] as const;
+
+export type HomeOpenObjectType = (typeof HOME_OPEN_OBJECT_TYPES)[number];
+export type HomeOpenObjectCounts = Record<HomeOpenObjectType, number>;
+
+export function homeOpenObjectHref(type: HomeOpenObjectType): string {
+  return type === 'task' ? '/app/tasks' : `/app/objects?type=${type}`;
+}
+
+export async function getHomeOpenObjectCounts(scope: TeamScope): Promise<HomeOpenObjectCounts> {
+  const entries = await Promise.all(
+    HOME_OPEN_OBJECT_TYPES.map(async (type) => {
+      const count = await scope.objects.countObjects({
+        type,
+        archived: false,
+        statusNotCaseInsensitive: [...TASK_OPEN_STATUSES_EXCLUDED],
+      });
+      return [type, count] as const;
+    }),
+  );
+  return Object.fromEntries(entries) as HomeOpenObjectCounts;
+}
+
 function countIntegrationErrors(rows: IntegrationRow[]): number {
   return rows.filter((row) => row.lastError).length;
 }

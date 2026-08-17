@@ -7,32 +7,25 @@ import type { Metadata } from 'next';
 
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
-import { CollectionStatus, priorityTone } from '@/components/collections/collection-status';
-import { DueDateDisplay } from '@/components/due-date-display';
 import { EmptyAction } from '@/components/empty-action';
 import { PageHeader } from '@/components/page-header';
 import { PinnedWorkspaceManager } from '@/components/pins/pinned-workspace-manager';
-import {
-  LiveTaskCategoryBadge,
-  TaskCategoryPollingProvider,
-} from '@/components/tasks/task-category-badge';
+import { TaskCategoryPollingProvider } from '@/components/tasks/task-category-badge';
+import { WorkQueueRow } from '@/components/work/work-queue-row';
 import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { displayText, formatDisplayDate } from '@/lib/display-dates';
+import { formatDisplayDate } from '@/lib/display-dates';
+import { displayMemberLabel } from '@/lib/display-labels';
 import { getWorkAttentionSummary } from '@/lib/hub-status';
-import { statusLabel } from '@/lib/status-labels';
 import {
   approvalQueueItem,
   boardQueueItem,
   dedupeWorkQueueItems,
   listWorkQueueObjects,
   objectQueueItem,
-  reasonLabel,
-  reasonTone,
   sortWorkQueueItems,
-  type WorkQueueItem,
 } from '@/lib/work-queue';
 
 export const metadata: Metadata = {
@@ -82,7 +75,7 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
   const calendarSettings = await scope.calendar.getCalendarSettings();
   const timezone = calendarSettings.defaultTimezone;
   const dueBoundaries = workspaceDueDateBoundaries(timezone, now);
-  const [attention, boardItems, queueObjects, pinnedBoards, boards] = await Promise.all([
+  const [attention, boardItems, queueObjects, pinnedBoards, boards, members] = await Promise.all([
     getWorkAttentionSummary(scope, now, timezone),
     scope.boards.listWorkQueueItems({
       dueDateRange: { timezone, to: dueBoundaries.dueSoonEnd },
@@ -91,6 +84,7 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
     listWorkQueueObjects(scope.objects, { userId: session.user.id, now, timezone }),
     scope.boards.listPinnedBoards({ timezone, now }),
     scope.boards.listBoards(),
+    scope.timeline.listMembers(),
   ]);
 
   const approvalsItem = approvalQueueItem(attention.pendingApprovals, now);
@@ -105,6 +99,10 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
     ]),
   ).slice(0, QUEUE_LIMIT);
   const boardModules = uniqueBoards([...pinnedBoards, ...boards]).slice(0, 6);
+  const memberOptions = members.map((member) => ({
+    id: member.userId,
+    label: displayMemberLabel(member),
+  }));
   const categoryPollingTasks = queue.flatMap((item) =>
     item.objectType === 'task'
       ? [
@@ -191,7 +189,12 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
             <TaskCategoryPollingProvider tasks={categoryPollingTasks}>
               <div className="border-x border-border">
                 {queue.map((item) => (
-                  <WorkQueueRow key={item.id} item={item} timezone={timezone} />
+                  <WorkQueueRow
+                    key={item.id}
+                    item={item}
+                    members={memberOptions}
+                    timezone={timezone}
+                  />
                 ))}
               </div>
             </TaskCategoryPollingProvider>
@@ -199,68 +202,6 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
         </CollectionGroup>
       </div>
     </div>
-  );
-}
-
-function WorkQueueRow({ item, timezone }: { item: WorkQueueItem; timezone: string }) {
-  const contextReasons = item.reasons.filter(
-    (reason) => reason !== 'overdue' && reason !== 'due_soon',
-  );
-  return (
-    <CollectionRow
-      title={
-        <Link href={item.href} className="block truncate hover:underline">
-          {displayText(item.title)}
-        </Link>
-      }
-      context={displayText(item.subtitle)}
-      metadata={
-        <>
-          <span className="px-2 text-xs text-fg-dim">{item.sourceLabel}</span>
-          {contextReasons.map((reason) => (
-            <ReasonBadge key={reason} reason={reason} />
-          ))}
-          {item.source !== 'approval' ? (
-            <DueDateDisplay value={item.dueAt} timezone={timezone} variant="compact" />
-          ) : null}
-          {item.priority ? (
-            <CollectionStatus
-              value={`p${item.priority}`}
-              tone={priorityTone(item.priority)}
-              label={`P${item.priority}`}
-            />
-          ) : null}
-          {item.objectType ? (
-            <CollectionStatus value={item.objectType} label={statusLabel(item.objectType)} />
-          ) : null}
-          {item.objectType === 'task' ? (
-            <LiveTaskCategoryBadge
-              taskId={item.entityId ?? item.id}
-              category={item.taskCategory ?? null}
-              status={item.taskCategoryStatus ?? null}
-              updatedAt={item.updatedAt}
-            />
-          ) : null}
-        </>
-      }
-    />
-  );
-}
-
-function ReasonBadge({ reason }: { reason: WorkQueueItem['reasons'][number] }) {
-  const tone = reasonTone(reason);
-  return (
-    <span
-      className={`inline-flex min-h-6 items-center rounded-sm border px-2 text-xs ${
-        tone === 'danger'
-          ? 'border-danger/40 text-danger'
-          : tone === 'signal'
-            ? 'border-signal/40 bg-signal-soft text-signal'
-            : 'border-border text-fg-muted'
-      }`}
-    >
-      {reasonLabel(reason)}
-    </span>
   );
 }
 

@@ -10,6 +10,7 @@ const fakes = vi.hoisted(() => ({
   captureVisibility: null as 'private' | 'team' | null,
   getCalendarSettings: vi.fn(),
   getWorkAttentionSummary: vi.fn(),
+  getHomeOpenObjectCounts: vi.fn(),
   isPinnedMany: vi.fn(),
   latestDailyDigest: vi.fn(),
   listArtifactClusters: vi.fn(),
@@ -80,6 +81,9 @@ vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
 vi.mock('@/lib/db', () => ({ db: {} }));
 vi.mock('@/lib/hub-status', () => ({
   getWorkAttentionSummary: fakes.getWorkAttentionSummary,
+  getHomeOpenObjectCounts: fakes.getHomeOpenObjectCounts,
+  homeOpenObjectHref: (type: string) =>
+    type === 'task' ? '/app/tasks' : `/app/objects?type=${type}`,
   homeWorkNeedingAttentionCount: (summary: { overdueTasks: number }) => summary.overdueTasks,
 }));
 vi.mock('@/lib/timeline-captured-files', () => ({
@@ -101,6 +105,14 @@ beforeEach(() => {
     attention: 0,
     overdueTasks: 0,
     pendingApprovals: 0,
+  });
+  fakes.getHomeOpenObjectCounts.mockResolvedValue({
+    task: 0,
+    follow_up: 0,
+    person: 0,
+    company: 0,
+    project: 0,
+    deal: 0,
   });
   fakes.listEventsPage.mockResolvedValue({ items: [], nextCursor: null });
   fakes.listMembers.mockResolvedValue([]);
@@ -124,6 +136,8 @@ describe('HomeDashboardPage', () => {
     expect(html).toContain('You’re caught up');
     expect(html).not.toContain('href="/app/approvals"');
     expect(html).not.toContain('href="/app/work"');
+    expect(html).not.toContain('href="/app/tasks"');
+    expect(html).not.toContain('href="/app/objects?type=person"');
     expect(html).not.toContain('href="/app/team/jobs"');
     expect(html).not.toContain('href="/app/sources"');
     expect(fakes.listRecoverableJobs).not.toHaveBeenCalled();
@@ -151,6 +165,30 @@ describe('HomeDashboardPage', () => {
     expect(html).toContain('recoverable jobs');
     expect(html).toContain('connection issues');
     expect(fakes.captureVisibility).toBe('private');
+  });
+
+  it('lists open tasks and other open objects as attention groups', async () => {
+    fakes.getHomeOpenObjectCounts.mockResolvedValue({
+      task: 4,
+      follow_up: 0,
+      person: 6,
+      company: 2,
+      project: 1,
+      deal: 0,
+    });
+
+    const html = renderToStaticMarkup(await HomeDashboardPage());
+
+    expect(html).toContain('href="/app/tasks"');
+    expect(html).toContain('open tasks');
+    expect(html).toContain('href="/app/objects?type=person"');
+    expect(html).toContain('open people');
+    expect(html).toContain('href="/app/objects?type=company"');
+    expect(html).toContain('open companies');
+    expect(html).toContain('href="/app/objects?type=project"');
+    expect(html).toContain('open projects');
+    expect(html).not.toContain('open follow-ups');
+    expect(html).not.toContain('open deals');
   });
 
   it('keeps Home previews bounded and its recent-moments feed static', async () => {

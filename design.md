@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.2 · Work overview and task canvas density (2026-08-17). Replaces v3.1 Quiet Archive collection density.
+**Version:** v3.3 · Home open-object attention and inline work queue (2026-08-17). Replaces v3.2 Work overview and task canvas density.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -270,11 +270,15 @@ not render the derived proposal at all.
 
 Home does not repeat its navigation label as a visible page title. It starts
 with a quiet Capture action and the same compact, icon-only-send Ask composer
-used in chat. Attention shows only non-zero actionable groups. “You’re caught
-up” replaces empty dashboard grids. Pinned work, digest, recent moments, and one
-next setup step follow as full-width sections without duplicating Timeline or
-Connections. These sections prefer horizontal rules and rows over bordered
-dashboard cards.
+used in chat. Attention shows only non-zero groups: pending approvals, overdue
+work, open tasks, open follow-ups, open people, open companies, open projects,
+open deals, recoverable jobs, and connection issues. Overdue work stays the
+danger row into the work queue. Open object groups link to Tasks or the typed
+Objects list rather than dumping those records onto Home. “You’re caught up”
+replaces empty dashboard grids when every group is zero. Pinned work, digest,
+recent moments, and one next setup step follow as full-width sections without
+duplicating Timeline or Connections. These sections prefer horizontal rules and
+rows over bordered dashboard cards.
 
 Pinned work is one personal, mixed collection. It may contain canonical
 objects (including tasks, projects, deals, people, and object-type documents),
@@ -393,8 +397,10 @@ digest, or navigation attention. Work attention combines pending approval items
 with overdue open tasks. The Work header breaks that aggregate into linked
 Overdue and Approvals counts so every attention item has an obvious destination.
 Visible overdue tasks are eligible for the queue regardless of teammate assignment.
-Queue rows give due state a consistent right-aligned position and follow the
-shared due-date vocabulary above.
+Queue rows do not repeat the object type: status, assignee, due date, and priority
+are inline-editable on object and board items, matching the task list. Approval
+rows stay review-only. Due state keeps a consistent right-aligned position and
+follows the shared due-date vocabulary above.
 
 ### Marketing and public pages
 
@@ -583,3 +589,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-15 | Evidence-backed public product story | Makes the working-history problem, deliberate capture boundary, cited-versus-unused evidence, Telegram entry point, inspectable answers, and human approval contract explicit across the landing and how-it-works journey. |
 | 2026-08-16 | Unified workspace collection density | Replaces stacked form chrome and card grids with compact headers, one filter toolbar, 44px rows, semantic status glyphs, optimistic metadata triggers, and contextual selection without changing domain behavior. |
 | 2026-08-17 | Work overview and task canvas density | Puts pinned boards above the work queue, removes extra task-list gutters, matches the default list loading skeleton, puts Kanban/List on the search/filter row, and compacts task kanban cards to a clamped title plus one metadata row. |
+| 2026-08-17 | Home open objects and inline queue edits | Adds open tasks, people, companies, projects, deals, and follow-ups to Home Attention, stops repeating “Task” on work-queue rows, and lets queue status, assignee, due date, and priority change inline. |

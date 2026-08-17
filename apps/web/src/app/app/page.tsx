@@ -3,7 +3,18 @@ import { latestDailyDigest, type DailyDigestPayload } from '@timeline/shared/mes
 import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
-import { CircleAlert, CircleCheckBig, PlugZap, Wrench } from 'lucide-react';
+import {
+  Building2,
+  CircleAlert,
+  CircleCheckBig,
+  FolderKanban,
+  Handshake,
+  ListChecks,
+  ListTodo,
+  PlugZap,
+  UserRound,
+  Wrench,
+} from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -23,7 +34,14 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
-import { getWorkAttentionSummary, homeWorkNeedingAttentionCount } from '@/lib/hub-status';
+import {
+  getHomeOpenObjectCounts,
+  getWorkAttentionSummary,
+  homeOpenObjectHref,
+  homeWorkNeedingAttentionCount,
+  type HomeOpenObjectType,
+} from '@/lib/hub-status';
+import { OBJECT_TYPE_LABELS } from '@/lib/object-type-labels';
 import { listTimelineCapturedFilesByEventId } from '@/lib/timeline-captured-files';
 import { buildTimelineMoments } from '@/lib/timeline-moments';
 
@@ -31,6 +49,19 @@ export const metadata: Metadata = {
   title: 'Home',
   description: 'Ask what changed and review work that needs attention.',
 };
+
+const HOME_OPEN_OBJECT_ATTENTION: {
+  type: HomeOpenObjectType;
+  action: string;
+  icon: typeof ListTodo;
+}[] = [
+  { type: 'task', action: 'Open tasks', icon: ListTodo },
+  { type: 'follow_up', action: 'Open follow-ups', icon: ListChecks },
+  { type: 'person', action: 'Open people', icon: UserRound },
+  { type: 'company', action: 'Open companies', icon: Building2 },
+  { type: 'project', action: 'Open projects', icon: FolderKanban },
+  { type: 'deal', action: 'Open deals', icon: Handshake },
+];
 
 async function signAudio(events: { id: string; contentAudioUrl: string | null }[]) {
   const audioEvents = events.filter((event) => event.contentAudioUrl);
@@ -72,6 +103,7 @@ export default async function HomeDashboardPage() {
 
   const [
     workAttention,
+    openObjectCounts,
     eventPage,
     members,
     webDefault,
@@ -80,6 +112,7 @@ export default async function HomeDashboardPage() {
     connectionAttention,
   ] = await Promise.all([
     getWorkAttentionSummary(scope, now, calendarSettings.defaultTimezone),
+    getHomeOpenObjectCounts(scope),
     scope.timeline.listEventsPage({ limit: 3 }),
     scope.timeline.listMembers(),
     scope.timeline.resolveVisibilityDefault('web'),
@@ -165,6 +198,13 @@ export default async function HomeDashboardPage() {
             icon: <CircleAlert aria-hidden="true" />,
             danger: true,
           },
+          ...HOME_OPEN_OBJECT_ATTENTION.map(({ type, action, icon: Icon }) => ({
+            href: homeOpenObjectHref(type),
+            label: `Open ${OBJECT_TYPE_LABELS[type].toLowerCase()}`,
+            count: openObjectCounts[type],
+            action,
+            icon: <Icon aria-hidden="true" />,
+          })),
           {
             href: '/app/team/jobs',
             label: 'Recoverable jobs',

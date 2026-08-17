@@ -5,8 +5,10 @@ import {
   countDismissibleMeetingFailures,
   countMeetingFailuresForSources,
   displayInboundEmail,
+  getHomeOpenObjectCounts,
   getNavWorkAttention,
   getWorkAttentionSummary,
+  homeOpenObjectHref,
   homeWorkNeedingAttentionCount,
   workAttentionCount,
 } from '@/lib/hub-status';
@@ -33,6 +35,38 @@ describe('hub status helpers', () => {
         overdueTasks: 2,
       }),
     ).toBe(2);
+  });
+
+  it('counts open objects by type for Home attention without changing nav work badges', async () => {
+    const countObjects = vi.fn().mockImplementation((filter: { type: string }) => {
+      const counts: Record<string, number> = {
+        task: 4,
+        follow_up: 1,
+        person: 6,
+        company: 2,
+        project: 3,
+        deal: 0,
+      };
+      return Promise.resolve(counts[filter.type] ?? 0);
+    });
+
+    const counts = await getHomeOpenObjectCounts({ objects: { countObjects } } as never);
+
+    expect(counts).toEqual({
+      task: 4,
+      follow_up: 1,
+      person: 6,
+      company: 2,
+      project: 3,
+      deal: 0,
+    });
+    expect(homeOpenObjectHref('task')).toBe('/app/tasks');
+    expect(homeOpenObjectHref('person')).toBe('/app/objects?type=person');
+    expect(countObjects).toHaveBeenCalledWith({
+      archived: false,
+      statusNotCaseInsensitive: ['done', 'cancelled', 'canceled', 'shipped'],
+      type: 'person',
+    });
   });
 
   it('ignores negative work attention inputs', () => {

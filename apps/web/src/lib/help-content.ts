@@ -80,6 +80,8 @@ export const HELP_PAGES: HelpPage[] = [
         body: 'Work is the operating surface Timeline keeps current from captured evidence. It brings tasks, boards, objects, comments, updates, digests, and handoffs together without asking teammates to maintain a separate tracker.',
         items: [
           'Overview leads with pinned and team boards, then the work queue for due and assigned items.',
+          'Queue rows keep the object type off the metadata chips; status, assignee, due date, and priority change inline.',
+          'Home Attention also lists open tasks, people, companies, projects, deals, and follow-ups when those counts are not zero.',
           'Tasks and boards show owners, status, blockers, due dates, and source evidence.',
           'Object pages keep people, companies, projects, deals, documents, and tasks tied to the event history.',
           'Updates, digests, and handoffs are generated from the current work state with citations.',

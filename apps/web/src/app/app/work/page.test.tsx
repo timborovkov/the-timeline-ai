@@ -15,13 +15,21 @@ const fakes = vi.hoisted(() => ({
   listPinnedBoards: vi.fn(),
   listBoards: vi.fn(),
   listEventsPage: vi.fn(),
+  listMembers: vi.fn(),
   getCalendarSettings: vi.fn(),
   redirect: vi.fn((path: string) => {
     throw new Error(`redirect:${path}`);
   }),
 }));
 
-vi.mock('next/navigation', () => ({ redirect: fakes.redirect, usePathname: () => '/app/work' }));
+vi.mock('next/navigation', () => ({
+  redirect: fakes.redirect,
+  usePathname: () => '/app/work',
+  useRouter: () => ({ refresh: vi.fn() }),
+}));
+vi.mock('@/app/actions/objects', () => ({
+  updateObjectAction: vi.fn(),
+}));
 vi.mock('@/components/ui/tooltip', () => ({
   Tooltip: ({ children }: { children: ReactNode }) => children,
   TooltipContent: ({ children }: { children: ReactNode }) => <span>{children}</span>,
@@ -36,7 +44,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
     },
     objects: { countObjects: fakes.countObjects, listObjects: fakes.listObjects },
     suggestions: { getApprovalItemCounts: fakes.getApprovalItemCounts },
-    timeline: { listEventsPage: fakes.listEventsPage },
+    timeline: { listEventsPage: fakes.listEventsPage, listMembers: fakes.listMembers },
     calendar: { getCalendarSettings: fakes.getCalendarSettings },
   }),
 }));
@@ -112,6 +120,7 @@ beforeEach(() => {
   fakes.listPinnedBoards.mockResolvedValue([]);
   fakes.listBoards.mockResolvedValue([]);
   fakes.listEventsPage.mockResolvedValue({ items: [], nextCursor: null });
+  fakes.listMembers.mockResolvedValue([]);
   fakes.getCalendarSettings.mockResolvedValue({ defaultTimezone: 'America/Los_Angeles' });
 });
 
@@ -254,6 +263,10 @@ describe('WorkPage', () => {
     expect(html).toContain('Unassigned due deal');
     expect(html).toContain('Team due');
     expect(html).not.toContain('Completed task');
+    expect(html).toContain('Status for Owned task');
+    expect(html).toContain('Assignee for Owned task');
+    expect((html.match(/>Task</g) ?? []).length).toBe(0);
+    expect(html).not.toContain('Task ·');
   });
 
   it('never renders a UUID-only object name in the work queue', async () => {
