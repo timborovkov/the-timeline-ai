@@ -149,10 +149,7 @@
       },
       {
         "files": ["src/components/collections/editable-metadata.tsx"],
-        "rules": [
-          "react-doctor/no-event-handler",
-          "react-doctor/role-supports-aria-props"
-        ]
+        "rules": ["react-doctor/no-event-handler", "react-doctor/role-supports-aria-props"]
       },
       {
         "files": ["src/components/global-search-page.tsx"],

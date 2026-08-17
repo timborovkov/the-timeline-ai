@@ -657,10 +657,7 @@ export function ApprovalsClient({
   const pageCursor = pageState.paged ? pageState.extraCursor : nextCursor;
   const loadedSuggestions = useMemo(() => {
     const seen = new Set(suggestions.map((bundle) => bundle.id));
-    return [
-      ...suggestions,
-      ...pageState.extraSuggestions.filter((bundle) => !seen.has(bundle.id)),
-    ];
+    return [...suggestions, ...pageState.extraSuggestions.filter((bundle) => !seen.has(bundle.id))];
   }, [pageState.extraSuggestions, suggestions]);
   const [error, setError] = useState<string | null>(null);
   const [resolvedItemSignatures, setResolvedItemSignatures] = useState<Map<string, string>>(
