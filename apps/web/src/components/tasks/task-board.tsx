@@ -1250,17 +1250,17 @@ function TaskListRow({
             {displayText(title)}
           </Link>
         </CollectionRow.Title>
-        <CollectionRow.Context>
-          {error ? (
-            <span className="text-danger" role="alert">
-              {error}
-            </span>
-          ) : saving ? (
-            <span>Saving {saving}…</span>
-          ) : (
-            (primaryProject?.projectName ?? 'No project')
-          )}
-        </CollectionRow.Context>
+        {error || saving ? (
+          <CollectionRow.Context>
+            {error ? (
+              <span className="text-danger" role="alert">
+                {error}
+              </span>
+            ) : (
+              <span>Saving {saving}…</span>
+            )}
+          </CollectionRow.Context>
+        ) : null}
         <CollectionRow.Metadata>
           <>
             <EditableMetadata
