@@ -34,8 +34,8 @@ const Toaster = ({ ...props }: ToasterProps) => {
           toast: 'group toast border border-border bg-popover text-popover-foreground shadow-md',
           title: 'text-sm text-fg',
           description: 'text-xs text-fg-muted',
-          actionButton: 'bg-surface-2 text-fg hover:bg-surface',
-          cancelButton: 'bg-transparent text-fg-muted',
+          actionButton: '!bg-surface-2 !text-fg hover:!bg-surface !border !border-border',
+          cancelButton: '!bg-transparent !text-fg-muted',
           closeButton: 'border-border bg-popover text-fg-muted',
         },
       }}

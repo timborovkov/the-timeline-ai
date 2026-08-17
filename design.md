@@ -583,7 +583,9 @@ the mutation (previous field value, pin toggle, archive/unarchive, or a server
 undo token). Hard deletes and canonical approval decisions have no Undo.
 
 Toasts use the popover surface, a hairline border, 6px radius, and an overlay
-shadow. Color lives on the icon only. Position is bottom-right on desktop and
+shadow. Color lives on the icon only. Undo is a same-surface control with a
+hairline border, not an inverted fill. In light mode the button stays light;
+in dark mode it stays dark. Position is bottom-right on desktop and
 bottom-center on small screens, above a `SelectionBar`. Reduced motion replaces
 the spinner with a static glyph. Feature code calls `notifyAction`,
 `notifyError`, or `notifySuccess` rather than `toast` from `sonner`. Completed
