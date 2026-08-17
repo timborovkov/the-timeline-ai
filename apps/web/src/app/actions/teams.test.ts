@@ -68,7 +68,14 @@ vi.mock('@timeline/shared/team-scope', () => ({
     },
   }),
 }));
-vi.mock('@timeline/shared/messaging', () => ({ sendMessage: fakes.fakeSendMessage }));
+vi.mock('@timeline/shared/messaging', () => ({
+  sendMessage: fakes.fakeSendMessage,
+  insertDefaultDigestDestination: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock('@timeline/shared/slack', () => ({
+  hasSlackInstallForTeam: vi.fn(),
+  listSlackConversationsForTeam: vi.fn(),
+}));
 vi.mock('@timeline/shared/team-roles', () => ({
   assertNotLastOwner: fakes.fakeAssertNotLastOwner,
 }));

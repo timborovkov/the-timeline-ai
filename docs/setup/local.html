@@ -91,7 +91,8 @@ pnpm dev:seed               # optional demo team, users, events, objects, integr
         <code>SECRETS_ENCRYPTION_KEY</code>. It creates <code>owner@timeline.dev</code> and
         <code>member@timeline.dev</code> with password <code>timeline-dev</code>. The seeded GitHub
         and Linear credentials are fake, encrypted, and disabled for sync. Daily digest email is
-        disabled for the demo users so the worker can run without outbound email configuration.
+        disabled for the demo users so the worker can run without outbound email or chat-bot
+        configuration. Seed still creates the default email digest destination for the team.
         Seeded canonical objects leave legacy <code>source_event_id</code> empty and expose demo
         provenance through reconciliation evidence, associations, and applied outputs.
       </p>

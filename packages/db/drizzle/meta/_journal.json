@@ -477,6 +477,13 @@
       "when": 1795654380000,
       "tag": "0067_canonical_link_evidence_strength",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1795654440000,
+      "tag": "0068_digest_destinations",
+      "breakpoints": true
     }
   ]
 }
