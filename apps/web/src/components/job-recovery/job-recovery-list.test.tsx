@@ -10,11 +10,24 @@ const fakes = vi.hoisted(() => ({
   fetchNextPage: vi.fn(),
   refetchFinishedJobs: vi.fn(),
   routerRefresh: vi.fn(),
+  toastError: vi.fn(),
+  toastLoading: vi.fn(() => 'toast-1'),
+  toastSuccess: vi.fn(),
+  toastWarning: vi.fn(),
   useFinishedJobsInfiniteQuery: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: fakes.routerRefresh }),
+}));
+
+vi.mock('sonner', () => ({
+  toast: {
+    error: fakes.toastError,
+    loading: fakes.toastLoading,
+    success: fakes.toastSuccess,
+    warning: fakes.toastWarning,
+  },
 }));
 
 vi.mock('@/lib/use-paginated-queries', () => ({
@@ -186,6 +199,7 @@ describe('JobRecoveryList', () => {
     });
     expect(screen.getByText('Retrying')).toBeTruthy();
     expect(screen.getByText('Retry queued.')).toBeTruthy();
+    expect(fakes.toastSuccess).toHaveBeenCalledWith('Retry queued.', { id: 'toast-1' });
     expect(fakes.refetchFinishedJobs).toHaveBeenCalledOnce();
 
     await user.click(screen.getByRole('button', { name: 'Dismiss' }));
@@ -198,6 +212,7 @@ describe('JobRecoveryList', () => {
     });
     expect(screen.queryByText('Transcribe customer call')).toBeNull();
     expect(screen.getByText('Nothing needs attention from the last 7 days.')).toBeTruthy();
+    expect(fakes.toastSuccess).toHaveBeenCalledWith('Dismissed.', { id: 'toast-1' });
     expect(fakes.routerRefresh).toHaveBeenCalledOnce();
   });
 
@@ -282,7 +297,10 @@ describe('JobRecoveryList', () => {
         { id: 'job-2', detectedAt: '2026-07-02T11:00:00.000Z' },
       ],
     });
-    expect(screen.getByText('Retried 1 failed jobs; 1 could not be queued.')).toBeTruthy();
+    expect(fakes.toastWarning).toHaveBeenCalledWith(
+      'Retried 1 failed jobs; 1 could not be queued.',
+      { id: 'toast-1' },
+    );
     expect(screen.getByText('Retry queued.')).toBeTruthy();
     expect(fakes.refetchFinishedJobs).toHaveBeenCalledOnce();
     expect(fakes.routerRefresh).toHaveBeenCalledOnce();
@@ -339,6 +357,7 @@ describe('JobRecoveryList', () => {
     });
     expect(screen.queryByText('Sync Sentry issues')).toBeNull();
     expect(screen.getByText('Nothing needs attention from the last 7 days.')).toBeTruthy();
+    expect(fakes.toastSuccess).toHaveBeenCalledWith('Dismissed 1 job.', { id: 'toast-1' });
     expect(fakes.routerRefresh).toHaveBeenCalledOnce();
   });
 
@@ -379,7 +398,68 @@ describe('JobRecoveryList', () => {
       });
     });
     expect(requests[0]?.body).toEqual({ window: 'older' });
+    expect(fakes.toastSuccess).toHaveBeenCalledWith('Dismissed 12 older jobs.', { id: 'toast-1' });
+    expect(screen.queryByText(/older jobs are hidden/)).toBeNull();
     expect(fakes.routerRefresh).toHaveBeenCalledOnce();
+  });
+
+  it('keeps dismissing older jobs until the server reports none remaining', async () => {
+    const user = userEvent.setup();
+    const requests: { body: unknown; method: string; url: string }[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        requests.push({
+          url: fetchUrl(input),
+          method: init?.method ?? 'GET',
+          body: fetchJsonBody(init),
+        });
+        const dismissed = requests.length === 1 ? 500 : 12;
+        const remaining = requests.length === 1 ? 12 : 0;
+        return Promise.resolve(
+          new Response(JSON.stringify({ dismissed, remaining }), { status: 200 }),
+        );
+      }),
+    );
+
+    renderList([], { olderCount: 512 });
+    await user.click(screen.getByRole('button', { name: 'Dismiss older jobs' }));
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Dismiss older jobs' }),
+    );
+
+    await waitFor(() => {
+      expect(requests).toHaveLength(2);
+    });
+    expect(fakes.toastLoading).toHaveBeenCalledWith('Dismissed 500 of 512 older jobs…', {
+      id: 'toast-1',
+    });
+    expect(fakes.toastSuccess).toHaveBeenCalledWith('Dismissed 512 older jobs.', { id: 'toast-1' });
+    expect(screen.queryByText(/older jobs are hidden/)).toBeNull();
+  });
+
+  it('windows a large snapshot with Load more without changing Dismiss all', async () => {
+    const user = userEvent.setup();
+    const items = Array.from({ length: 51 }, (_, index) =>
+      recoverableJob({
+        id: `job-${String(index + 1)}`,
+        artifactId: `raw-event-${String(index + 1)}`,
+        label: `Transcribe job ${String(index + 1)}`,
+        detectedAt: new Date(Date.UTC(2026, 6, 2, 10, index)),
+      }),
+    );
+    renderList(items);
+
+    expect(screen.getByText('Transcribe job 1')).toBeTruthy();
+    expect(screen.queryByText('Transcribe job 51')).toBeNull();
+    expect(screen.getByText('Showing 50 of 51')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Dismiss all (51)' })).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: 'Load more' }));
+
+    expect(screen.getByText('Transcribe job 51')).toBeTruthy();
+    expect(screen.queryByText('Showing 50 of 51')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Dismiss all (51)' })).toBeTruthy();
   });
 
   it('renders finished archive states and paginates retained jobs', async () => {

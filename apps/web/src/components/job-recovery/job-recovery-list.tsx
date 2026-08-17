@@ -8,7 +8,12 @@ import type * as jobRecovery from '@timeline/shared/job-recovery';
 
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionStatus } from '@/components/collections/collection-status';
-import { JOBS_ATTENTION_DAYS } from '@/components/job-recovery/jobs-attention';
+import {
+  DISMISS_MATCHING_CLIENT_MAX_ROUNDS,
+  JOBS_ATTENTION_DAYS,
+  JOB_RECOVERY_LIST_WINDOW_SIZE,
+} from '@/components/job-recovery/jobs-attention';
+import { jobsMutationToast, postJson } from '@/components/job-recovery/jobs-page-toast';
 import { JobDashboard } from '@/components/jobs/job-dashboard';
 import { TechnicalDetails } from '@/components/technical-details';
 import { useAppDialog } from '@/components/ui/app-dialog';
@@ -48,10 +53,10 @@ interface JobRecoveryListProps {
   items: JobRecoveryItem[];
   olderCount: number;
   defaultFilter?: JobRecoveryKind;
+  onOlderCountChange?: (count: number) => void;
 }
 
 interface JobRecoveryUiState {
-  actionError: string | null;
   busy: string | null;
   dismissedKeys: Set<string>;
   filter: JobRecoveryKind | 'all';
@@ -62,7 +67,6 @@ type JobRecoveryUiAction =
   | { type: 'busy'; busy: string | null }
   | { type: 'dismiss'; key: string }
   | { type: 'dismissMany'; keys: string[] }
-  | { type: 'error'; error: string | null }
   | { type: 'filter'; filter: JobRecoveryKind | 'all' }
   | { type: 'retryQueued'; id: string; startedAt: number }
   | { type: 'retryQueuedMany'; ids: string[]; startedAt: number };
@@ -78,7 +82,6 @@ const FILTERS: { kind: JobRecoveryKind | 'all'; label: string }[] = [
 ];
 
 const initialJobRecoveryUiState: JobRecoveryUiState = {
-  actionError: null,
   busy: null,
   dismissedKeys: new Set<string>(),
   filter: 'all',
@@ -102,8 +105,6 @@ function jobRecoveryUiReducer(
       for (const key of action.keys) dismissedKeys.add(key);
       return { ...state, dismissedKeys };
     }
-    case 'error':
-      return { ...state, actionError: action.error };
     case 'filter':
       return { ...state, filter: action.filter };
     case 'retryQueued':
@@ -124,16 +125,36 @@ function jobRecoveryUiReducer(
   }
 }
 
-export function JobRecoveryList({ items, olderCount, defaultFilter }: JobRecoveryListProps) {
+export function JobRecoveryList({
+  items,
+  olderCount,
+  defaultFilter,
+  onOlderCountChange,
+}: JobRecoveryListProps) {
   const router = useRouter();
   const dialog = useAppDialog();
   const finishedJobs = useFinishedJobsInfiniteQuery();
-  const [{ actionError, busy, dismissedKeys, filter, retrySnapshots }, dispatchUi] = useReducer(
+  const [{ busy, dismissedKeys, filter, retrySnapshots }, dispatchUi] = useReducer(
     jobRecoveryUiReducer,
     initialJobRecoveryUiState,
     (initial): JobRecoveryUiState => ({ ...initial, filter: defaultFilter ?? 'all' }),
   );
   const refreshedRetrySnapshots = useRef<Set<string> | null>(null);
+  const [pendingOlderCount, setPendingOlderCount] = useState(olderCount);
+  const [listWindow, setListWindow] = useState(JOB_RECOVERY_LIST_WINDOW_SIZE);
+
+  useEffect(() => {
+    setPendingOlderCount(olderCount);
+  }, [olderCount]);
+
+  useEffect(() => {
+    setListWindow(JOB_RECOVERY_LIST_WINDOW_SIZE);
+  }, [filter, items.length]);
+
+  function reportOlderCount(count: number) {
+    setPendingOlderCount(count);
+    onOlderCountChange?.(count);
+  }
 
   const visibleItems = useMemo(
     () => items.filter((item) => !dismissedKeys.has(itemSnapshotKey(item))),
@@ -213,23 +234,21 @@ export function JobRecoveryList({ items, olderCount, defaultFilter }: JobRecover
   const hasQueuedFailedRetry = failedItems.some(
     (item) => retryStates[item.id]?.status === 'queued',
   );
+  const shownItems = filtered.slice(0, listWindow);
 
   async function call(action: 'retry' | 'dismiss', id: string) {
     const retryStartedAt = Date.now();
     dispatchUi({ type: 'busy', busy: `${action}:${id}` });
-    dispatchUi({ type: 'error', error: null });
     try {
-      const res = await fetch(`/api/team/job-recovery/${encodeURIComponent(id)}/${action}`, {
-        method: 'POST',
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        dispatchUi({
-          type: 'error',
-          error: `${action === 'retry' ? 'Retry' : 'Dismiss'} failed: ${text}`,
-        });
-        return;
-      }
+      await jobsMutationToast(
+        async () => {
+          await postJson(`/api/team/job-recovery/${encodeURIComponent(id)}/${action}`);
+        },
+        {
+          loading: action === 'retry' ? 'Retrying…' : 'Dismissing…',
+          success: action === 'retry' ? 'Retry queued.' : 'Dismissed.',
+        },
+      );
       if (action === 'retry') {
         dispatchUi({ type: 'retryQueued', id, startedAt: retryStartedAt });
         void finishedJobs.refetch();
@@ -240,6 +259,8 @@ export function JobRecoveryList({ items, olderCount, defaultFilter }: JobRecover
         }
         router.refresh();
       }
+    } catch {
+      // Toast already shows the failure.
     } finally {
       dispatchUi({ type: 'busy', busy: null });
     }
@@ -260,10 +281,10 @@ export function JobRecoveryList({ items, olderCount, defaultFilter }: JobRecover
   }
 
   async function dismissOlder() {
-    if (olderCount === 0) return;
+    if (pendingOlderCount === 0) return;
     const confirmed = await dialog.confirm({
       title: 'Dismiss older jobs?',
-      description: `Dismiss ${String(olderCount)} jobs older than ${String(JOBS_ATTENTION_DAYS)} days? Timeline will stop asking you to recover them. Background workers may still retry a few times, then give up.`,
+      description: `Dismiss ${String(pendingOlderCount)} jobs older than ${String(JOBS_ATTENTION_DAYS)} days? Timeline will stop asking you to recover them. Background workers may still retry a few times, then give up.`,
       confirmLabel: 'Dismiss older jobs',
       destructive: true,
     });
@@ -273,36 +294,63 @@ export function JobRecoveryList({ items, olderCount, defaultFilter }: JobRecover
 
   async function dismissMatching(window: 'recent' | 'older', busyKey: string) {
     dispatchUi({ type: 'busy', busy: busyKey });
-    dispatchUi({ type: 'error', error: null });
+    const startOlder = pendingOlderCount;
+    const recentKeys = filtered.map((item) => itemSnapshotKey(item));
     try {
-      const res = await fetch('/api/team/job-recovery/dismiss-matching', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          window,
-          ...(window === 'older' || filter === 'all' ? {} : { kind: filter }),
-        }),
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        dispatchUi({ type: 'error', error: `Dismiss failed: ${text}` });
-        return;
-      }
-      const body = (await res.json().catch(() => ({}))) as DismissMatchingResponse;
-      if (window === 'recent') {
-        dispatchUi({
-          type: 'dismissMany',
-          keys: filtered.map((item) => itemSnapshotKey(item)),
-        });
-      }
-      if ((body.remaining ?? 0) > 0) {
-        const remainingLabel = window === 'older' ? 'older jobs' : 'jobs';
-        dispatchUi({
-          type: 'error',
-          error: `Dismissed ${String(body.dismissed ?? 0)} ${remainingLabel}; ${String(body.remaining)} remain. Dismiss again to continue.`,
-        });
-      }
+      await jobsMutationToast(
+        async (update) => {
+          let dismissedTotal = 0;
+          let remainingOlder = startOlder;
+          for (let round = 0; round < DISMISS_MATCHING_CLIENT_MAX_ROUNDS; round += 1) {
+            const result = await postJson<DismissMatchingResponse>(
+              '/api/team/job-recovery/dismiss-matching',
+              {
+                window,
+                ...(window === 'older' || filter === 'all' ? {} : { kind: filter }),
+              },
+            );
+            const dismissed = result.dismissed ?? 0;
+            dismissedTotal += dismissed;
+            if (window === 'recent') {
+              dispatchUi({ type: 'dismissMany', keys: recentKeys });
+            } else {
+              remainingOlder =
+                (result.remaining ?? 0) === 0 ? 0 : Math.max(0, remainingOlder - dismissed);
+              reportOlderCount(remainingOlder);
+              if (remainingOlder > 0) {
+                update(
+                  `Dismissed ${dismissedTotal.toLocaleString()} of ${startOlder.toLocaleString()} older jobs…`,
+                );
+              }
+            }
+            if (dismissed === 0 || (result.remaining ?? 0) === 0) {
+              return { dismissedTotal, remainingOlder };
+            }
+          }
+          return { dismissedTotal, remainingOlder };
+        },
+        {
+          loading:
+            window === 'older'
+              ? `Dismissing ${startOlder.toLocaleString()} older jobs…`
+              : 'Dismissing jobs…',
+          success: (result) => {
+            const jobWord = result.dismissedTotal === 1 ? 'job' : 'jobs';
+            if (window === 'older') {
+              if (result.remainingOlder > 0) {
+                return `Dismissed ${result.dismissedTotal.toLocaleString()} older ${jobWord}. ${result.remainingOlder.toLocaleString()} still hidden — dismiss again to continue.`;
+              }
+              return `Dismissed ${result.dismissedTotal.toLocaleString()} older ${jobWord}.`;
+            }
+            return `Dismissed ${result.dismissedTotal.toLocaleString()} ${jobWord}.`;
+          },
+          tone: (result) =>
+            window === 'older' && result.remainingOlder > 0 ? 'warning' : 'success',
+        },
+      );
       router.refresh();
+    } catch {
+      // Toast already shows the failure.
     } finally {
       dispatchUi({ type: 'busy', busy: null });
     }
@@ -312,26 +360,31 @@ export function JobRecoveryList({ items, olderCount, defaultFilter }: JobRecover
     if (failedCount === 0) return;
     const retryStartedAt = Date.now();
     dispatchUi({ type: 'busy', busy: 'retry-failed' });
-    dispatchUi({ type: 'error', error: null });
     try {
-      const res = await fetch('/api/team/job-recovery/retry-failed', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          ...(filter === 'all' ? {} : { kind: filter }),
-          items: failedItems.map((item) => ({
-            id: item.id,
-            detectedAt: new Date(item.detectedAt).toISOString(),
-          })),
-          expectedCount: failedCount,
-        }),
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        dispatchUi({ type: 'error', error: `Retry failed jobs failed: ${text}` });
-        return;
-      }
-      const body = (await res.json().catch(() => ({}))) as RetryFailedResponse;
+      const body = await jobsMutationToast(
+        async () =>
+          postJson<RetryFailedResponse>('/api/team/job-recovery/retry-failed', {
+            ...(filter === 'all' ? {} : { kind: filter }),
+            items: failedItems.map((item) => ({
+              id: item.id,
+              detectedAt: new Date(item.detectedAt).toISOString(),
+            })),
+            expectedCount: failedCount,
+          }),
+        {
+          loading: `Retrying ${String(failedCount)} failed jobs…`,
+          success: (result) => {
+            const failed = result.failed ?? result.failedIds?.length ?? 0;
+            const retried = result.retried ?? failedCount - failed;
+            if (failed > 0) {
+              return `Retried ${String(retried)} failed jobs; ${String(failed)} could not be queued.`;
+            }
+            return `Retry queued for ${String(retried)} failed jobs.`;
+          },
+          tone: (result) =>
+            (result.failed ?? result.failedIds?.length ?? 0) > 0 ? 'warning' : 'success',
+        },
+      );
       const failedRetryIds = new Set(body.failedIds ?? []);
       const retryQueuedIds: string[] = [];
       for (const item of failedItems) {
@@ -342,29 +395,23 @@ export function JobRecoveryList({ items, olderCount, defaultFilter }: JobRecover
         ids: retryQueuedIds,
         startedAt: retryStartedAt,
       });
-      if ((body.failed ?? failedRetryIds.size) > 0) {
-        dispatchUi({
-          type: 'error',
-          error: `Retried ${String(body.retried ?? failedCount - failedRetryIds.size)} failed jobs; ${String(
-            body.failed ?? failedRetryIds.size,
-          )} could not be queued.`,
-        });
-      }
       void finishedJobs.refetch();
       router.refresh();
+    } catch {
+      // Toast already shows the failure.
     } finally {
       dispatchUi({ type: 'busy', busy: null });
     }
   }
 
   return (
-    <section className="space-y-6">
-      {olderCount > 0 ? (
+    <section className="space-y-6" aria-busy={busy !== null}>
+      {pendingOlderCount > 0 ? (
         <div className="flex flex-col gap-3 rounded-sm border border-border bg-surface px-3 py-3 md:flex-row md:items-center md:justify-between">
           <div className="space-y-1">
             <p className="text-sm font-medium text-fg">
-              <span className="font-mono tabular-nums">{olderCount.toLocaleString()}</span> older
-              jobs are hidden
+              <span className="font-mono tabular-nums">{pendingOlderCount.toLocaleString()}</span>{' '}
+              older jobs are hidden
             </p>
             <p className="text-xs text-fg-muted">
               These are more than {String(JOBS_ATTENTION_DAYS)} days old. Workers retry them a few
@@ -390,12 +437,6 @@ export function JobRecoveryList({ items, olderCount, defaultFilter }: JobRecover
         </div>
       ) : null}
 
-      {actionError ? (
-        <div className="rounded-sm border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {actionError}
-        </div>
-      ) : null}
-
       <JobRecoveryToolbar
         busy={busy}
         failedCount={failedCount}
@@ -410,7 +451,31 @@ export function JobRecoveryList({ items, olderCount, defaultFilter }: JobRecover
         }}
       />
 
-      <JobRecoveryItems busy={busy} items={filtered} onAction={call} retryStates={retryStates} />
+      <JobRecoveryItems
+        busy={busy}
+        items={filtered}
+        onAction={call}
+        retryStates={retryStates}
+        shownItems={shownItems}
+      />
+      {filtered.length > shownItems.length ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+          <p className="text-xs text-fg-muted">
+            Showing {shownItems.length.toLocaleString()} of {filtered.length.toLocaleString()}
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={busy !== null}
+            onClick={() => {
+              setListWindow((current) => current + JOB_RECOVERY_LIST_WINDOW_SIZE);
+            }}
+          >
+            Load more
+          </Button>
+        </div>
+      ) : null}
       <AdvancedJobTools
         finishedItems={finishedArchiveItems}
         finishedQuery={finishedJobs}
@@ -500,7 +565,11 @@ function JobRecoveryToolbar({
             void onDismissVisible();
           }}
         >
-          <X aria-hidden="true" className="mr-1 size-3.5" />
+          {busy === 'dismiss-visible' ? (
+            <LoaderCircle aria-hidden="true" className="mr-1 size-3.5 animate-spin" />
+          ) : (
+            <X aria-hidden="true" className="mr-1 size-3.5" />
+          )}
           {busy === 'dismiss-visible'
             ? 'Dismissing'
             : `Dismiss all${visibleCount > 0 ? ` (${String(visibleCount)})` : ''}`}
@@ -515,14 +584,18 @@ function JobRecoveryItems({
   items,
   onAction,
   retryStates,
+  shownItems,
 }: {
   busy: string | null;
   items: JobRecoveryItem[];
   onAction: (action: 'retry' | 'dismiss', id: string) => Promise<void>;
   retryStates: RetryStates;
+  shownItems: JobRecoveryItem[];
 }) {
   const failedItems = items.filter((item) => item.status === 'failed');
   const stuckItems = items.filter((item) => item.status !== 'failed');
+  const shownFailed = shownItems.filter((item) => item.status === 'failed');
+  const shownStuck = shownItems.filter((item) => item.status !== 'failed');
 
   if (items.length === 0) {
     return (
@@ -534,21 +607,21 @@ function JobRecoveryItems({
 
   return (
     <div className="space-y-4">
-      {failedItems.length > 0 ? (
+      {failedItems.length > 0 && shownFailed.length > 0 ? (
         <CollectionGroup title="Failed" count={failedItems.length} tone="danger">
           <JobRecoveryRows
             busy={busy}
-            items={failedItems}
+            items={shownFailed}
             onAction={onAction}
             retryStates={retryStates}
           />
         </CollectionGroup>
       ) : null}
-      {stuckItems.length > 0 ? (
+      {stuckItems.length > 0 && shownStuck.length > 0 ? (
         <CollectionGroup title="Stuck" count={stuckItems.length} tone="progress">
           <JobRecoveryRows
             busy={busy}
-            items={stuckItems}
+            items={shownStuck}
             onAction={onAction}
             retryStates={retryStates}
           />
@@ -711,29 +784,30 @@ function ConversationSuggestionRecovery({ onQueued }: { onQueued: () => void }) 
 
   async function queueConversationSuggestions() {
     setQueueing(true);
-    setStatus(null);
     try {
-      const res = await fetch('/api/team/job-recovery/resuggest', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ windowDays, source: 'all' }),
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        setStatus(`Queue suggestions failed: ${text}`);
-        return;
-      }
-      const body = (await res.json()) as {
-        enqueued?: number;
-        scanned?: number;
-        truncated?: boolean;
-      };
+      const body = await jobsMutationToast(
+        async () =>
+          postJson<{
+            enqueued?: number;
+            scanned?: number;
+            truncated?: boolean;
+          }>('/api/team/job-recovery/resuggest', { windowDays, source: 'all' }),
+        {
+          loading: 'Queueing conversation suggestions…',
+          success: (result) =>
+            `Queued ${String(result.enqueued ?? 0)} conversation reviews from ${String(result.scanned ?? 0)} events${
+              result.truncated ? ' (conversation limit reached)' : ''
+            }.`,
+        },
+      );
       setStatus(
         `Queued ${String(body.enqueued ?? 0)} conversation reviews from ${String(body.scanned ?? 0)} events${
           body.truncated ? ' (conversation limit reached)' : ''
         }.`,
       );
       onQueued();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Queue suggestions failed.');
     } finally {
       setQueueing(false);
     }

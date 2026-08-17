@@ -328,9 +328,12 @@ and only admins see that Home link. The page uses a sentence-case `PageHeader`
 with an “Admins only” access label, groups Failed then Stuck, and keeps
 retry/dismiss on each row. Kind filters appear only when more than one job kind
 is present. Jobs older than 7 days are hidden from attention; admins can dismiss
-them in bulk. Unprocessed backlog counts (events still waiting for extraction or
-embedding) stay inside closed Advanced tools and never use “needs attention”
-language.
+them in bulk, and the action keeps going with a loading toast until the hidden
+count is cleared. The visible 7-day list uses a Load more window over the
+current snapshot so a later shared virtualizer can replace it. Retry and dismiss
+use a loading toast that becomes success, warning, or error. Unprocessed
+backlog counts (events still waiting for extraction or embedding) stay inside
+closed Advanced tools and never use “needs attention” language.
 
 Work → Pinned is the complete pin-management surface. It is a single
 side-to-side list with cursor pagination and All, Objects, Boards, Documents,
@@ -586,3 +589,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-15 | Evidence-backed public product story | Makes the working-history problem, deliberate capture boundary, cited-versus-unused evidence, Telegram entry point, inspectable answers, and human approval contract explicit across the landing and how-it-works journey. |
 | 2026-08-16 | Unified workspace collection density | Replaces stacked form chrome and card grids with compact headers, one filter toolbar, 44px rows, semantic status glyphs, optimistic metadata triggers, and contextual selection without changing domain behavior. |
 | 2026-08-17 | 7-day job recovery queue | Makes Home and Background jobs share one recent failed/stuck count, hides older backlog from attention, and keeps unprocessed inventory in Advanced tools. |
+| 2026-08-17 | Jobs recovery dismiss at scale | Makes older-job dismiss a batch write with progress toasts, windows the 7-day snapshot behind Load more, and keeps retry/dismiss on the shared mutation-toast path. |

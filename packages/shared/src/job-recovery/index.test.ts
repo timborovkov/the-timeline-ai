@@ -98,6 +98,23 @@ describe('job recovery scope', () => {
     expect(queue.olderCount).toBe(0);
   });
 
+  it('dismisses hundreds of older stuck jobs in one matching request', async () => {
+    await seedManyOldStuckExtractions(pg, 650);
+    const scope = scopeFor(ADMIN_ID, 'admin');
+    const before = await scope.getRecoverableJobQueue();
+    expect(before.olderCount).toBe(650);
+
+    const result = await scope.dismissMatchingRecoverableJobs({
+      window: 'older',
+      reason: 'dismiss older jobs',
+    });
+
+    expect(result).toEqual({ dismissed: 650, remaining: 0 });
+    const queue = await scope.getRecoverableJobQueue();
+    expect(queue.olderCount).toBe(0);
+    expect(queue.items).toEqual([]);
+  });
+
   it('dismisses recent failed and stuck jobs together', async () => {
     await seedRawEventFailure(pg, RAW_ID, TEAM_ID, ADMIN_ID, 'team');
     await seedTextRawEvent(pg, ZERO_FACT_RAW_ID, { sourceMetadata: '{}' });
@@ -1046,6 +1063,33 @@ async function seedOldStuckExtraction(pg: PGlite, id: string): Promise<void> {
       'team',
       '{}'::jsonb
     );
+  `);
+}
+
+async function seedManyOldStuckExtractions(pg: PGlite, count: number): Promise<void> {
+  await pg.exec(`
+    INSERT INTO raw_events (
+      id,
+      team_id,
+      author_user_id,
+      source,
+      content_text,
+      occurred_at,
+      created_at,
+      visibility,
+      source_metadata
+    )
+    SELECT
+      ('00000000-0000-4000-8000-' || lpad(g::text, 12, '0'))::uuid,
+      '${TEAM_ID}',
+      '${ADMIN_ID}',
+      'web',
+      'Old backlog ' || g::text,
+      now() - interval '10 days',
+      now() - interval '10 days' - (g * interval '1 second'),
+      'team',
+      '{"embedded_at":"2026-01-01T00:00:00.000Z"}'::jsonb
+    FROM generate_series(1, ${String(count)}) AS g;
   `);
 }
 

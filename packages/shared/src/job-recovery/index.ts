@@ -381,6 +381,9 @@ export function createJobRecoveryScope(deps: JobRecoveryScopeDeps) {
         remaining = 0;
         break;
       }
+      // Matching dismiss only sees currently undismissed jobs, so a single
+      // conflict upsert is enough. The per-row preserveNewer path is O(n)
+      // statements and times out on thousands of older stuck jobs.
       await insertDismissals(
         deps.db,
         deps.teamId,
@@ -392,7 +395,6 @@ export function createJobRecoveryScope(deps: JobRecoveryScopeDeps) {
           detectedAt: candidate.detectedAt,
         })),
         reason,
-        { preserveNewerDismissals: true },
       );
       dismissed += selected.length;
       if (selected.length < collectLimit) {
@@ -525,6 +527,7 @@ async function insertDismissals(
   reason?: string,
   opts: { preserveNewerDismissals?: boolean } = {},
 ): Promise<void> {
+  if (jobs.length === 0) return;
   const normalizedReason = reason?.trim() ? reason.trim().slice(0, 500) : null;
   const createdAt = new Date();
   if (opts.preserveNewerDismissals) {
@@ -790,6 +793,23 @@ function archiveItemIdentity(
   return { kind, artifactKind, artifactId, label };
 }
 
+function notDismissedExtractionStuck(db: Db, teamId: string) {
+  return notExists(
+    db
+      .select({ one: sql`1` })
+      .from(jobRecoveryDismissals)
+      .where(
+        and(
+          eq(jobRecoveryDismissals.teamId, teamId),
+          eq(jobRecoveryDismissals.jobKind, 'extraction'),
+          eq(jobRecoveryDismissals.artifactKind, 'raw_event'),
+          eq(jobRecoveryDismissals.artifactId, rawEvents.id),
+          sql`${jobRecoveryDismissals.createdAt} >= ${rawEvents.createdAt}`,
+        ),
+      ),
+  );
+}
+
 async function collectRawEventCandidates(
   db: Db,
   teamId: string,
@@ -891,6 +911,7 @@ async function collectRawEventCandidates(
             .from(facts)
             .where(eq(facts.rawEventId, rawEvents.id)),
         ),
+        notDismissedExtractionStuck(db, teamId),
       ),
     )
     .orderBy(desc(rawEvents.createdAt))
@@ -934,20 +955,7 @@ async function countStuckExtraction(
             .from(facts)
             .where(eq(facts.rawEventId, rawEvents.id)),
         ),
-        notExists(
-          db
-            .select({ one: sql`1` })
-            .from(jobRecoveryDismissals)
-            .where(
-              and(
-                eq(jobRecoveryDismissals.teamId, teamId),
-                eq(jobRecoveryDismissals.jobKind, 'extraction'),
-                eq(jobRecoveryDismissals.artifactKind, 'raw_event'),
-                eq(jobRecoveryDismissals.artifactId, rawEvents.id),
-                sql`${jobRecoveryDismissals.createdAt} >= ${rawEvents.createdAt}`,
-              ),
-            ),
-        ),
+        notDismissedExtractionStuck(db, teamId),
       ),
     );
   return rows[0]?.count ?? 0;
