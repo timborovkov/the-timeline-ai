@@ -66,6 +66,7 @@ describe('ingest webhook credentials', () => {
       name: 'Pipedrive webhook',
       ownerUserId: USER_ID,
       visibilityDefault: 'private',
+      eventClass: 'pulse',
       proposalGenerationEnabled: false,
     });
 

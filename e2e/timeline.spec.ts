@@ -1526,7 +1526,6 @@ test('saved meeting setup and finalized notes render in meetings and timeline', 
     ).toBeVisible();
 
     await page.goto('/app/timeline');
-    await expect(page.getByText('Meeting summary captured').first()).toBeVisible();
     await expect(page.getByText(summary).first()).toBeVisible();
     await expect(page.getByRole('link', { name: 'Open transcript' })).toHaveAttribute(
       'href',

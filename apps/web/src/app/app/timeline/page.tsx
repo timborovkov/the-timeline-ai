@@ -8,11 +8,9 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import type { ComponentProps } from 'react';
 
-import { Coachmark } from '@/components/coachmark';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { DebouncedFilterForm } from '@/components/debounced-filter-form';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
-import { IndexStrip } from '@/components/index-strip';
 import { TimelineFeed } from '@/components/timeline-feed';
 import { TimelineSourceFilterControls } from '@/components/timeline-source-filter-controls';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -24,7 +22,6 @@ import { listTimelineCapturedFilesByEventId } from '@/lib/timeline-captured-file
 import {
   TIMELINE_IMPACT_FILTERS,
   TIMELINE_PRESETS,
-  TIMELINE_SOURCES,
   TIMELINE_UPCOMING_DAYS,
   isTimelinePresetActive,
   parseTimelineImpacts,
@@ -268,16 +265,6 @@ export default async function TimelinePage({ searchParams }: Props) {
     impactFilters.length > 0;
   const hasFilters = hasPanelFilters;
   const originOptions = timelineOriginOptions(sourceFacets);
-  const sourceLabel =
-    originFilters.length === 1
-      ? originOptions.find((option) => option.value === originFilterValue)?.label
-      : originFilters.length > 1
-        ? `${String(originFilters.length)} specific sources`
-        : sourceFilters.length === 1
-          ? TIMELINE_SOURCES.find(([value]) => value === sourceFilters[0])?.[1]
-          : sourceFilters.length > 1
-            ? `${String(sourceFilters.length)} sources`
-            : undefined;
   let presentationCacheStats: TimelineMomentPresentationCacheStats =
     emptyTimelineMomentPresentationCacheStats();
   const initialMoments =
@@ -345,38 +332,8 @@ export default async function TimelinePage({ searchParams }: Props) {
     origin: originFilterValue || null,
   };
   return (
-    <div className="space-y-6">
-      <IndexStrip
-        srLabel={`${mode === 'events' ? 'Audit trail' : 'Timeline'} · ${active.teamName}${hasFilters ? ' · filters on' : ''}`}
-        segments={[
-          { value: mode === 'events' ? 'AUDIT TRAIL' : 'TIMELINE' },
-          { label: 'team', value: active.teamName },
-          { label: 'mode', value: mode === 'events' ? 'events' : 'moments' },
-          ...(sourceLabel
-            ? ([{ label: 'source', value: sourceLabel, signal: true }] as const)
-            : []),
-          ...(impactFilters.length > 0
-            ? ([
-                {
-                  label: 'impact',
-                  value:
-                    impactFilters.length === 1
-                      ? (impactFilters[0] ?? '')
-                      : `${String(impactFilters.length)} kinds`,
-                  signal: true,
-                },
-              ] as const)
-            : []),
-          ...(hasFilters && !sourceLabel
-            ? ([{ label: 'filter', value: 'ON', signal: true }] as const)
-            : []),
-        ]}
-      />
-
-      <Coachmark storageKey="citation-inspector">
-        Select a timeline row to inspect its cited source evidence.
-      </Coachmark>
-
+    <div>
+      <h1 className="sr-only">Timeline</h1>
       <TimelineBrowserSection
         sp={sp}
         members={members}
@@ -477,26 +434,28 @@ function TimelineBrowserSection({
   maxUpcomingInput: string;
 }) {
   return (
-    <section className="space-y-3">
-      <TimelineFilterPanel
-        members={members}
-        userMap={userMap}
-        baseParams={baseParams}
-        hasPanelFilters={hasPanelFilters}
-        sourceFilterValue={sourceFilterValue}
-        originFilterValue={originFilterValue}
-        originOptions={originOptions}
-        impactFilterValue={impactFilterValue}
-        authorFilterValue={authorFilterValue}
-        fromValue={toDateInputValue(sp.from)}
-        toValue={toDateInputValue(sp.to)}
-        todayInput={todayInput}
-        maxUpcomingInput={maxUpcomingInput}
-        mode={mode}
-        sourceFilters={sourceFilters}
-        impactFilters={impactFilters}
-        hasOriginFilter={Boolean(originFilterValue)}
-      />
+    <section>
+      <div className="sticky top-0 z-20 -mx-4 bg-bg/95 px-4 backdrop-blur md:-mx-8 md:px-8">
+        <TimelineFilterPanel
+          members={members}
+          userMap={userMap}
+          baseParams={baseParams}
+          hasPanelFilters={hasPanelFilters}
+          sourceFilterValue={sourceFilterValue}
+          originFilterValue={originFilterValue}
+          originOptions={originOptions}
+          impactFilterValue={impactFilterValue}
+          authorFilterValue={authorFilterValue}
+          fromValue={toDateInputValue(sp.from)}
+          toValue={toDateInputValue(sp.to)}
+          todayInput={todayInput}
+          maxUpcomingInput={maxUpcomingInput}
+          mode={mode}
+          sourceFilters={sourceFilters}
+          impactFilters={impactFilters}
+          hasOriginFilter={Boolean(originFilterValue)}
+        />
+      </div>
       <TimelineFeed
         initialPage={{
           version: 'timeline_moments_page.v1',
@@ -537,12 +496,22 @@ function TimelineBrowserSection({
         focusMomentId={focusMomentId ?? null}
         timezone={timezone}
         mode={mode}
-        emptyLabel={hasFilters ? 'No events match this view' : 'No events yet'}
+        emptyLabel={
+          hasFilters
+            ? mode === 'events'
+              ? 'No events match this view'
+              : 'No moments match this view'
+            : mode === 'events'
+              ? 'No events yet'
+              : 'No moments yet'
+        }
         emptyAction={{
           href: hasFilters ? '/app/timeline' : '/app#capture',
           label: hasFilters ? 'Clear timeline filters' : 'Capture first event',
           body: hasFilters
-            ? 'The archive is still intact. Clear the filters or broaden your search to see more events.'
+            ? mode === 'events'
+              ? 'The archive is still intact. Clear the filters or broaden your search to see more events.'
+              : 'The archive is still intact. Clear the filters or broaden your search to see more moments.'
             : 'Start from Home with one raw note, decision, or follow-up.',
         }}
       />
@@ -702,19 +671,25 @@ function TimelineFilterPanel({
           </nav>
         }
         viewControls={
-          <nav aria-label="Timeline mode" className="flex rounded-sm bg-surface p-0.5">
+          <nav aria-label="Timeline view" className="flex rounded-sm bg-surface p-0.5">
             {(
               [
                 ['moments', 'Moments'],
-                ['events', 'Audit trail'],
+                ['events', 'All events'],
               ] as const
             ).map(([value, label]) => {
               const active = mode === value;
+              const description =
+                value === 'moments'
+                  ? 'Moments, grouped related activity'
+                  : 'All events, every captured source event';
               return (
                 <Link
                   key={value}
                   href={timelineHref(baseParams, { mode: value === 'events' ? value : null })}
                   aria-current={active ? 'page' : undefined}
+                  aria-label={description}
+                  title={description}
                   className={`inline-flex min-h-8 items-center rounded-[3px] px-2.5 text-xs transition-colors ${active ? 'bg-bg text-fg shadow-sm' : 'text-fg-muted hover:text-fg'}`}
                 >
                   {label}

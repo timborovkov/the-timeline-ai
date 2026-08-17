@@ -1,8 +1,26 @@
-import { boolean, index, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  index,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
 import { eventVisibility } from '#src/schema/raw-events.js';
 import { teams } from '#src/schema/teams.js';
 import { users } from '#src/schema/users.js';
+
+export const ingestWebhookEventClass = pgEnum('ingest_webhook_event_class', [
+  'communication',
+  'work_record',
+  'pulse',
+  'incident',
+  'artifact',
+  'schedule',
+]);
 
 export const ingestWebhooks = pgTable(
   'ingest_webhooks',
@@ -14,6 +32,7 @@ export const ingestWebhooks = pgTable(
     ownerUserId: uuid('owner_user_id').references(() => users.id, { onDelete: 'set null' }),
     name: text('name').notNull(),
     visibilityDefault: eventVisibility('visibility_default').notNull().default('team'),
+    eventClass: ingestWebhookEventClass('event_class').notNull().default('pulse'),
     proposalGenerationEnabled: boolean('proposal_generation_enabled').notNull().default(true),
     disabledAt: timestamp('disabled_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

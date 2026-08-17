@@ -193,9 +193,9 @@ describe('DocumentDetail', () => {
     expect(init?.body).toBe(
       JSON.stringify({ ref: { kind: 'timeline_event', id: PARENT_EVENT_ID } }),
     );
-    expect((await screen.findByRole('link', { name: /Open full page/ })).getAttribute('href')).toBe(
-      `/app/timeline?event=${PARENT_EVENT_ID}#ev-${PARENT_EVENT_ID}`,
-    );
+    expect(
+      (await screen.findByRole('link', { name: /Open on Timeline/ })).getAttribute('href'),
+    ).toBe(`/app/timeline?event=${PARENT_EVENT_ID}#ev-${PARENT_EVENT_ID}`);
   });
 
   it('opens a signed download URL for the active version', async () => {
