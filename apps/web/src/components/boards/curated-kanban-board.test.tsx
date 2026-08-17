@@ -332,5 +332,4 @@ describe('CuratedKanbanBoard', () => {
     expect(screen.queryByText('No next step')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Next step for Has next step' })).toBeNull();
   });
-
 });

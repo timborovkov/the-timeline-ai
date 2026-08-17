@@ -234,7 +234,10 @@ export function CuratedBoardTable({
               const optimistic = isOptimisticItem(item);
               const objectTitle = displayObjectTitle(item.object);
               return (
-                <tr key={item.id} className="border-t border-border transition-colors hover:bg-surface">
+                <tr
+                  key={item.id}
+                  className="border-t border-border transition-colors hover:bg-surface"
+                >
                   {onUpdateItem ? (
                     <td className="px-3 py-2 align-top">
                       <input
