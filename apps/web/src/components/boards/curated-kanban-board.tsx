@@ -5,7 +5,6 @@ import {
   DragOverlay,
   KeyboardSensor,
   PointerSensor,
-  closestCenter,
   useDraggable,
   useDroppable,
   useSensor,
@@ -47,6 +46,7 @@ import { DueDateDisplay } from '@/components/due-date-display';
 import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { boardViewHref } from '@/lib/board-links';
 import { displayText } from '@/lib/display-dates';
+import { kanbanCollisionDetection } from '@/lib/kanban-collision';
 import { displayObjectTitle } from '@/lib/object-title';
 import { statusLabel } from '@/lib/status-labels';
 import { cn, errorMessage } from '@/lib/utils';
@@ -306,7 +306,7 @@ export function CuratedKanbanBoard({
     <DndContext
       id={dndContextId}
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={kanbanCollisionDetection}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       accessibility={{

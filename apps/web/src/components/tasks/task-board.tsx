@@ -4,7 +4,6 @@ import {
   DndContext,
   DragOverlay,
   PointerSensor,
-  closestCenter,
   useDraggable,
   useDroppable,
   useSensor,
@@ -66,6 +65,7 @@ import { useAppDialog } from '@/components/ui/app-dialog';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText } from '@/lib/display-dates';
+import { kanbanCollisionDetection } from '@/lib/kanban-collision';
 import { objectDetailHref } from '@/lib/object-links';
 import { displayObjectTitle } from '@/lib/object-title';
 import { statusLabel } from '@/lib/status-labels';
@@ -904,7 +904,7 @@ function TaskBoardView({
       <DndContext
         id={dndContextId}
         sensors={sensors}
-        collisionDetection={closestCenter}
+        collisionDetection={kanbanCollisionDetection}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >

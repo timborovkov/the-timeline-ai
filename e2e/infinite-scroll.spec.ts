@@ -79,19 +79,19 @@ test.describe('Infinite scroll collections', () => {
     await expect(page.getByRole('status', { name: /24 of \d+/ })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Load more' })).toHaveCount(0);
 
-    const sourceName = matching[0]?.canonicalName ?? '';
     await page.goto(`/app/tasks?view=kanban&q=${query}`);
-    const dragHandle = page.getByRole('button', { name: `Drag ${sourceName}` });
+    const dragHandle = page.getByRole('button', { name: new RegExp(`^Drag ${marker}`) }).first();
     const targetColumn = page.getByRole('region', { name: 'In progress' });
     await expect(dragHandle).toBeVisible();
     await expect(targetColumn).toBeVisible();
+    const sourceName = (await dragHandle.getAttribute('aria-label'))?.replace(/^Drag /, '') ?? '';
     const from = await dragHandle.boundingBox();
     const to = await targetColumn.boundingBox();
     if (!from || !to) throw new Error('Expected drag handle and In progress column boxes');
     await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
     await page.mouse.down();
     await page.mouse.move(from.x + from.width / 2 + 12, from.y + from.height / 2, { steps: 5 });
-    await page.mouse.move(to.x + to.width / 2, to.y + Math.min(48, to.height / 2), { steps: 20 });
+    await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 20 });
     await page.mouse.up();
     await expect(targetColumn.getByText(sourceName, { exact: true })).toBeVisible();
   });
