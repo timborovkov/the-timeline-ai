@@ -131,6 +131,7 @@ function ChatSurfaceContent({
       ? { id: pinnedEntityId, name: pinnedEntityName }
       : null;
 
+  // react-doctor-disable-next-line react-doctor/no-event-handler -- One-time sessionStorage handoff can only run after mount; sending a Home prompt is that hydration, not a click handler.
   useEffect(() => {
     if (!consumeHandoff || handoffConsumedRef.current) return;
     handoffConsumedRef.current = true;
@@ -144,6 +145,7 @@ function ChatSurfaceContent({
     chatHandoffRef.current = handoff;
     // react-doctor-disable-next-line react-doctor/no-adjust-state-on-prop-change, react-doctor/no-chain-state-updates -- This hydrates a consumed one-time sessionStorage message after SSR; it does not mirror a prop or chain derived state.
     setConsumedHandoff(handoff);
+    // react-doctor-disable-next-line react-doctor/no-event-handler -- Home Ask stores the prompt in sessionStorage; sending it after mount is hydration, not a click handler.
     if (!initialSessionId && handoff.prompt) void sendMessage({ text: handoff.prompt });
   }, [consumeHandoff, initialMessages.length, initialSessionId, sendMessage, teamId]);
 
