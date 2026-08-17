@@ -15,6 +15,7 @@ import {
   proposeGithubTaskUpdatesForTeam,
   resolveGithubLoginToUserId,
 } from '#src/integrations/github-task-proposals.js';
+import { GITHUB_TASK_PROPOSAL_COALESCE_MS } from '#src/integrations/ingest-processing.js';
 import { enqueueSuggestionJob } from '#src/queue/queues.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
@@ -393,7 +394,7 @@ describe('GitHub task proposal persistence', () => {
         integrationId: integration.id,
         externalObjectId: 'timborovkov/audit-ai#10',
       },
-      { delayMs: expect.any(Number) },
+      { delayMs: GITHUB_TASK_PROPOSAL_COALESCE_MS },
     );
 
     const [taskRow] = await db.select().from(entities).where(eq(entities.id, task.id));

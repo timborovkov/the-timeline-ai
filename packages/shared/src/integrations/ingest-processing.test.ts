@@ -4,6 +4,7 @@ import {
   GITHUB_TASK_PROPOSAL_COALESCE_MS,
   integrationIdFromSourceMetadata,
   integrationSkipsLlmIngest,
+  isDelayedIngestResult,
   takeConnectionIngestSlot,
 } from '#src/integrations/ingest-processing.js';
 
@@ -34,10 +35,12 @@ describe('structured ingest processing', () => {
 
   it('rate-limits ingest processing per connection and stage', async () => {
     let remaining = 1;
-    const checkRateLimit = async () => {
-      if (remaining <= 0) return { ok: false as const, remaining: 0, retryAfterMs: 1_000 };
+    const checkRateLimit = () => {
+      if (remaining <= 0) {
+        return Promise.resolve({ ok: false as const, remaining: 0, retryAfterMs: 1_000 });
+      }
       remaining -= 1;
-      return { ok: true as const, remaining };
+      return Promise.resolve({ ok: true as const, remaining });
     };
     await expect(
       takeConnectionIngestSlot({
@@ -53,5 +56,11 @@ describe('structured ingest processing', () => {
         checkRateLimit,
       }),
     ).resolves.toEqual({ allowed: false, retryAfterMs: 1_000 });
+  });
+
+  it('recognizes delayed ingest worker results', () => {
+    expect(isDelayedIngestResult({ delayed: true, retryAfterMs: 500 })).toBe(true);
+    expect(isDelayedIngestResult({ skipped: true })).toBe(false);
+    expect(isDelayedIngestResult(undefined)).toBe(false);
   });
 });

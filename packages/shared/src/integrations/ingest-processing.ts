@@ -1,7 +1,7 @@
 import { checkRateLimit, RATE_LIMITS, rateLimitKey } from '#src/rate-limit/index.js';
 
 /** High-volume structured providers. Persist, embed, and reconcile; do not LLM. */
-export const STRUCTURED_INGEST_PROVIDERS = new Set(['github', 'linear', 'monday', 'sentry']);
+const STRUCTURED_INGEST_PROVIDERS = new Set(['github', 'linear', 'monday', 'sentry']);
 
 export const GITHUB_TASK_PROPOSAL_COALESCE_MS = 8_000;
 
@@ -48,4 +48,15 @@ export async function takeConnectionIngestSlot(input: {
   });
   if (result.ok) return { allowed: true };
   return { allowed: false, retryAfterMs: Math.max(250, result.retryAfterMs) };
+}
+
+export function isDelayedIngestResult(
+  result: unknown,
+): result is { delayed: true; retryAfterMs: number } {
+  return (
+    typeof result === 'object' &&
+    result !== null &&
+    (result as { delayed?: unknown }).delayed === true &&
+    typeof (result as { retryAfterMs?: unknown }).retryAfterMs === 'number'
+  );
 }

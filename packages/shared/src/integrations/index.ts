@@ -11,6 +11,7 @@ export {
   GITHUB_TASK_PROPOSAL_COALESCE_MS,
   integrationIdFromSourceMetadata,
   integrationSkipsLlmIngest,
+  isDelayedIngestResult,
   providerFromSourceMetadata,
   takeConnectionIngestSlot,
 } from '#src/integrations/ingest-processing.js';

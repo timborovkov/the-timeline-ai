@@ -561,7 +561,7 @@ export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobDa
           maxAttempts: job.opts.attempts ?? 1,
         },
       );
-      if (result && typeof result === 'object' && 'delayed' in result && result.delayed) {
+      if (integrations.isDelayedIngestResult(result)) {
         await job.moveToDelayed(Date.now() + result.retryAfterMs, token);
         throw new DelayedError();
       }

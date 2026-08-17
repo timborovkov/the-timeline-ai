@@ -485,7 +485,7 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
     queue.QUEUE_NAMES.extract,
     async (job: Job<queue.ExtractJobData>, token?: string) => {
       const result = await processExtractJobForTests(deps, job.data);
-      if ('delayed' in result && result.delayed) {
+      if (integrations.isDelayedIngestResult(result)) {
         await job.moveToDelayed(Date.now() + result.retryAfterMs, token);
         throw new DelayedError();
       }

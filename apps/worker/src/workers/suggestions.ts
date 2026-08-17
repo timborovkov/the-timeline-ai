@@ -774,7 +774,7 @@ export async function processSuggestionJobForTests(
   deps: SuggestionWorkerDeps,
   data: queue.SuggestionJobData,
   io: SuggestionWorkerIO = {},
-): Promise<{ delayed: true; retryAfterMs: number } | void> {
+): Promise<{ delayed: true; retryAfterMs: number } | undefined> {
   if ('scope' in data && data.scope === 'object_cleanup') {
     await processObjectCleanupJob(deps, data);
     return;
@@ -3944,7 +3944,7 @@ export function startSuggestionWorker(deps: SuggestionWorkerDeps): Worker<queue.
     queue.QUEUE_NAMES.suggestions,
     async (job: Job<queue.SuggestionJobData>, token?: string) => {
       const result = await processSuggestionJobForTests(deps, job.data);
-      if (result?.delayed) {
+      if (integrations.isDelayedIngestResult(result)) {
         await job.moveToDelayed(Date.now() + result.retryAfterMs, token);
         throw new DelayedError();
       }
