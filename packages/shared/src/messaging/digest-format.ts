@@ -91,6 +91,61 @@ export function formatDigestCalendarEvent(
   return `${event.title} (${formatDigestDateTime(event.startAt, timezone)})`;
 }
 
+const CHAT_DIGEST_MAX_LENGTH = 3900;
+
+export function formatDigestChatText(input: {
+  payload: DailyDigestPayload;
+  digestUrl: string;
+  maxLength?: number;
+}): string {
+  const payload = input.payload;
+  const timezone = payload.timezone;
+  const date = formatDigestDate(payload.windowEnd, timezone);
+  const sections = digestContentSections(payload);
+  const summaryParagraphs = digestSummaryParagraphs(payload.summary);
+  const tasks = payload.tasks.slice(0, 5);
+  const calendar = payload.upcomingCalendar.slice(0, 3);
+  const lines = [
+    `Daily digest · ${payload.teamName} · ${date}`,
+    '',
+    ...summaryParagraphs,
+    '',
+    ...sections.flatMap((section) => [
+      section.title,
+      ...section.items.map((item) => `• ${item}`),
+      '',
+    ]),
+    `${payload.pendingApprovals} pending approvals · ${payload.momentCount ?? payload.eventCount} moments`,
+    ...(tasks.length
+      ? [
+          '',
+          'Tasks',
+          ...tasks.map(
+            (task) => `• ${formatDigestTask(task, timezone, new Date(payload.windowEnd))}`,
+          ),
+        ]
+      : []),
+    ...(calendar.length
+      ? [
+          '',
+          'Upcoming',
+          ...calendar.map((event) => `• ${formatDigestCalendarEvent(event, timezone)}`),
+        ]
+      : []),
+    '',
+    `Open digest: ${input.digestUrl}`,
+  ];
+  const text = lines
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  const maxLength = input.maxLength ?? CHAT_DIGEST_MAX_LENGTH;
+  if (text.length <= maxLength) return text;
+  const suffix = `\n\nOpen digest: ${input.digestUrl}`;
+  const budget = Math.max(0, maxLength - suffix.length - 1);
+  return `${text.slice(0, budget).trimEnd()}…${suffix}`;
+}
+
 function formatDigestDateValue(
   value: string,
   timezone: string | undefined,

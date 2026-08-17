@@ -26,8 +26,10 @@ import { ItemActionGroup } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText } from '@/lib/display-dates';
 import { isSchedulableObjectType } from '@/lib/due-dates';
+import { dateInputValue, toDateOrNull } from '@/lib/iso-timestamp';
 import { toastMutation } from '@/lib/mutation-toast';
 import { MAX_OBJECT_MERGE_SELECTION, objectMergeHref } from '@/lib/object-merge';
+import { statusOptionsForType } from '@/lib/object-status-options';
 import { statusLabel } from '@/lib/status-labels';
 
 type PinnableObjectRow = objects.ObjectRow & { pinned?: boolean };
@@ -295,21 +297,11 @@ interface ObjectFieldOverlay {
   pendingValues: ObjectEditableValue[];
 }
 
-const OBJECT_STATUS_OPTIONS: Record<string, string[]> = {
-  deal: ['open', 'qualified', 'proposal', 'won', 'lost'],
-  task: ['suggested', 'todo', 'doing', 'done', 'blocked', 'cancelled'],
-  follow_up: ['todo', 'doing', 'done', 'cancelled'],
-  project: ['planning', 'active', 'on_hold', 'shipped', 'cancelled'],
-  incident: ['open', 'mitigated', 'resolved', 'postmortem'],
-  hiring_loop: ['sourcing', 'interviewing', 'offer', 'hired', 'closed'],
-  decision: ['draft', 'proposed', 'accepted', 'rejected'],
-};
-
 function sameObjectFieldValue(left: ObjectEditableValue, right: ObjectEditableValue): boolean {
   if (left instanceof Date || right instanceof Date) {
     return (
-      (left instanceof Date ? left.getTime() : null) ===
-      (right instanceof Date ? right.getTime() : null)
+      toDateOrNull(left as Date | string | null)?.getTime() ===
+      toDateOrNull(right as Date | string | null)?.getTime()
     );
   }
   return left === right;
@@ -395,7 +387,7 @@ function ObjectCollectionItem({
       });
   }
 
-  const statusOptions = OBJECT_STATUS_OPTIONS[object.type] ?? ['open', 'active', 'archived'];
+  const statusOptions = statusOptionsForType(object.type, status);
 
   return (
     <li style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 44px' }}>
@@ -544,15 +536,14 @@ function ObjectDueDateEditor({
   value,
   onSave,
 }: {
-  value: Date | null;
+  value: Date | string | null;
   onSave: (value: Date | null) => void;
 }) {
-  const [draft, setDraft] = useState(value?.toISOString().slice(0, 10) ?? '');
+  const [draft, setDraft] = useState(dateInputValue(value));
 
   function commit() {
     onSave(draft ? new Date(`${draft}T00:00:00.000Z`) : null);
   }
-
   return (
     <div className="flex items-center gap-2">
       <input

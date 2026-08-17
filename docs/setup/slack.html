@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Slack conversations and capture setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-27</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-08-17</span></div>
       <p class="tldr">
         Slack is a first-party conversational surface like Telegram: direct text talks to the agent,
         files and explicit notes are captured, and channels stay ingestion-first unless someone
@@ -99,6 +99,15 @@ SLACK_SIGNING_SECRET=
         The events, slash-command, and interaction endpoints verify Slack's
         <code>X-Slack-Signature</code> and reject timestamps older than five minutes.
       </p>
+      <p>
+        Slack's <code>/</code> picker is the workspace slash-command list, not a Telegram-style bot
+        menu. After the two commands above exist on the Slack app, <code>/ask</code> and
+        <code>/timeline</code> appear when someone types <code>/</code>. Nested actions such as
+        <code>note</code>, <code>new</code>, and <code>help</code> are arguments to
+        <code>/timeline</code>, so they will not show as their own slash commands. There is no
+        runtime <code>setMyCommands</code> equivalent; adding or renaming slash commands is Slack
+        app configuration.
+      </p>
 
       <h2 id="scopes">3. Add scopes and events</h2>
       <p>Bot scopes used by conversational capture:</p>
@@ -106,7 +115,7 @@ SLACK_SIGNING_SECRET=
 channels:history channels:read
 chat:write commands files:read
 groups:history groups:read
-im:history im:read
+im:history im:read im:write
 reactions:write users:read users:read.email
 </code></pre>
       <p>
@@ -138,6 +147,9 @@ app_mention
       <p>
         The bot must be present in a private channel before Slack will deliver history/events for
         it. DMs need no channel binding; they route through the linked Slack user's active team.
+        Daily digest delivery uses the same bot token: a workspace can post the team-visible digest
+        to a channel the bot is in, or DM every linked member. Add <code>im:write</code> so the bot
+        can open those DMs. Configure destinations in Team settings → Preferences.
       </p>
       <p>
         In a DM, ordinary text and <code>/ask &lt;question&gt;</code> create durable agent turns.

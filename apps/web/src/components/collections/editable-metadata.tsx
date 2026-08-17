@@ -1,7 +1,7 @@
 'use client';
 
 import { Loader2 } from 'lucide-react';
-import { useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 import type { ReactNode } from 'react';
 
@@ -40,8 +40,23 @@ export function EditableMetadata({
   const slots = readCollectionSlots(children, METADATA_SLOTS);
   const [userOpen, setUserOpen] = useState(false);
   const internalTriggerRef = useRef<HTMLButtonElement>(null);
+  const wasPendingRef = useRef(pending);
+  const previousErrorRef = useRef(error);
   const errorId = useId();
   const open = userOpen && !pending && !disabled;
+
+  // Restore focus after a parent-driven save finishes. pending/error are the
+  // completion signals; there is no local event handler for that commit.
+  // react-doctor-disable-next-line react-doctor/no-event-handler -- Focus restoration is keyed to parent pending/error, not a local click.
+  useEffect(() => {
+    const completedSave = wasPendingRef.current && !pending;
+    const receivedError = Boolean(error && error !== previousErrorRef.current);
+    if (completedSave || receivedError) {
+      internalTriggerRef.current?.focus();
+    }
+    wasPendingRef.current = pending;
+    previousErrorRef.current = error;
+  }, [error, pending]);
 
   return (
     <span className="relative inline-flex min-w-0 flex-col">

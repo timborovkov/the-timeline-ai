@@ -30,6 +30,7 @@ interface Props {
   typeLabels?: Record<string, string>;
   statusOptions?: readonly string[];
   className?: string;
+  viewControls?: ReactNode;
 }
 
 type DateRangeToggle =
@@ -72,6 +73,7 @@ export function WorkFilterBar({
   typeLabels = EMPTY_LABELS,
   statusOptions = EMPTY_STATUS_OPTIONS,
   className,
+  viewControls,
 }: Props) {
   const formId = useId();
   const domFormId = `work-filters-${formId.replaceAll(':', '')}`;
@@ -293,6 +295,9 @@ export function WorkFilterBar({
             />
           </div>
         </CollectionToolbar.Filters>
+        {viewControls ? (
+          <CollectionToolbar.View>{viewControls}</CollectionToolbar.View>
+        ) : null}
         <CollectionToolbar.ClearAll>{clearControl}</CollectionToolbar.ClearAll>
       </CollectionToolbar>
     </DebouncedFilterForm>

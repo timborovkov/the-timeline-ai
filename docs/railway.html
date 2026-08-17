@@ -441,15 +441,16 @@ rclone sync s3:timeline-attachments backblaze-b2:timeline-backup-attachments
         <code>/api/integrations/sentry/callback</code>.
       </p>
       <p>
-        The Telegram webhook is registered automatically by the <code>web</code> service on startup.
-        The Next.js instrumentation hook at <code>apps/web/src/instrumentation.ts</code> runs once
-        per server process, reads <code>TELEGRAM_BOT_TOKEN</code>,
-        <code>TELEGRAM_WEBHOOK_SECRET</code>, and <code>AUTH_URL</code>, then always calls
-        <code>setWebhook</code> (idempotent; required to push a rotated secret since
-        <code>getWebhookInfo</code> doesn't expose Telegram's stored secret) and verifies via
-        <code>getWebhookInfo</code>. Production-only (<code>NODE_ENV=production</code>);
-        fire-and-forget so it never blocks readiness. Missing env vars → it logs a skip line and
-        continues.
+        The Telegram webhook and <code>/</code> command menu are registered automatically by the
+        <code>web</code> service on startup. The Next.js instrumentation hook at
+        <code>apps/web/src/instrumentation.ts</code> runs once per server process. If
+        <code>TELEGRAM_BOT_TOKEN</code> is set, it calls <code>setMyCommands</code> for the default,
+        private-chat, and group-chat scopes so Telegram clients can list bot commands when someone
+        types <code>/</code>. In production it also reads <code>TELEGRAM_WEBHOOK_SECRET</code> and
+        <code>AUTH_URL</code>, then always calls <code>setWebhook</code> (idempotent; required to
+        push a rotated secret since <code>getWebhookInfo</code> doesn't expose Telegram's stored
+        secret) and verifies via <code>getWebhookInfo</code>. Both calls are fire-and-forget so they
+        never block readiness. Missing env vars → it logs a skip line and continues.
       </p>
       <p>To register manually (e.g. from a laptop pointed at staging):</p>
       <pre><code>curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \

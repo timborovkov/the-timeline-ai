@@ -60,6 +60,17 @@ export default function WorkLoading() {
           ) : (
             <>
               <section className="space-y-3">
+                <Skeleton className="h-5 w-44" />
+                <div className="grid gap-px overflow-hidden border border-border">
+                  {Array.from({ length: 3 }).map((_, index) => (
+                    <div key={index} className="space-y-2 bg-bg p-3">
+                      <Skeleton className="h-4 w-3/5" />
+                      <Skeleton className="h-3 w-2/5" />
+                    </div>
+                  ))}
+                </div>
+              </section>
+              <section className="space-y-3">
                 <Skeleton className="h-5 w-24" />
                 <div className="overflow-hidden border border-border">
                   {Array.from({ length: 4 }).map((_, index) => (
@@ -69,17 +80,6 @@ export default function WorkLoading() {
                     >
                       <Skeleton className="h-4 w-3/5" />
                       <Skeleton className="h-3 w-4/5" />
-                    </div>
-                  ))}
-                </div>
-              </section>
-              <section className="space-y-3">
-                <Skeleton className="h-5 w-44" />
-                <div className="grid gap-px overflow-hidden border border-border">
-                  {Array.from({ length: 3 }).map((_, index) => (
-                    <div key={index} className="space-y-2 bg-bg p-3">
-                      <Skeleton className="h-4 w-3/5" />
-                      <Skeleton className="h-3 w-2/5" />
                     </div>
                   ))}
                 </div>

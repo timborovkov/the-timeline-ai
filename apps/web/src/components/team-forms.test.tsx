@@ -38,6 +38,8 @@ vi.mock('@/app/actions/teams', () => ({
   inviteMemberAction: vi.fn(),
   renameTeamAction: vi.fn(),
   updateDigestPreferenceAction: vi.fn(),
+  addDigestDestinationAction: vi.fn(),
+  removeDigestDestinationAction: vi.fn(),
   updateInboundEmailWhitelistAction: vi.fn(),
   updateTeamTimezoneAction: vi.fn(),
 }));
@@ -167,7 +169,7 @@ describe('DigestPreferenceForm', () => {
   it('gives the digest checkbox a 36px labelled target with a visible focus ring', () => {
     render(<DigestPreferenceForm enabled />);
 
-    const checkbox = screen.getByRole('checkbox', { name: /Send me the daily team digest/ });
+    const checkbox = screen.getByRole('checkbox', { name: /Send me a personal daily digest/ });
     expect(checkbox.className).toContain('focus-visible:ring-2');
     expect(checkbox.className).toContain('hover:border-border-strong');
     expect(checkbox.closest('label')?.className).toContain('min-h-9');

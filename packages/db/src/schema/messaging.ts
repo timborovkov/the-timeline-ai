@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -24,7 +25,20 @@ export const messageIntent = pgEnum('message_intent', [
   'connection_attention',
 ]);
 
-export const messageChannel = pgEnum('message_channel', ['email', 'in_app_digest']);
+export const messageChannel = pgEnum('message_channel', [
+  'email',
+  'in_app_digest',
+  'slack',
+  'telegram',
+]);
+
+export const digestDestinationKind = pgEnum('digest_destination_kind', [
+  'email_members',
+  'slack_channel',
+  'slack_dm_members',
+  'telegram_chat',
+  'telegram_dm_members',
+]);
 
 export const messageDeliveryStatus = pgEnum('message_delivery_status', [
   'pending',
@@ -126,5 +140,41 @@ export const messagePreferences = pgTable(
       .where(sql`${table.teamId} IS NOT NULL AND ${table.userId} IS NOT NULL`),
     index('message_preferences_team_idx').on(table.teamId),
     index('message_preferences_user_idx').on(table.userId),
+  ],
+);
+
+export const teamDigestDestinations = pgTable(
+  'team_digest_destinations',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    kind: digestDestinationKind('kind').notNull(),
+    targetId: text('target_id'),
+    label: text('label'),
+    enabled: boolean('enabled').notNull().default(true),
+    createdByUserId: uuid('created_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('team_digest_destinations_fanout_unq')
+      .on(table.teamId, table.kind)
+      .where(sql`${table.targetId} IS NULL`),
+    uniqueIndex('team_digest_destinations_target_unq')
+      .on(table.teamId, table.kind, table.targetId)
+      .where(sql`${table.targetId} IS NOT NULL`),
+    index('team_digest_destinations_team_idx').on(table.teamId),
+    check(
+      'team_digest_destinations_target_chk',
+      sql`(
+        (${table.kind} IN ('email_members', 'slack_dm_members', 'telegram_dm_members') AND ${table.targetId} IS NULL)
+        OR
+        (${table.kind} IN ('slack_channel', 'telegram_chat') AND ${table.targetId} IS NOT NULL)
+      )`,
+    ),
   ],
 );

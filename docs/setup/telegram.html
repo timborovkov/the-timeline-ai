@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Telegram bot setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-27</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-08-17</span></div>
       <blockquote>
         <p>
           Telegram is a first-party conversational surface. Direct text talks to the agent; explicit
@@ -20,7 +20,8 @@
       </blockquote>
       <p class="tldr">
         Create the bot, disable privacy mode so it can read group messages, point a secret-protected
-        webhook at the web service, and link teams from inside the app.
+        webhook at the web service, let startup register the <code>/</code> command menu, and link
+        teams from inside the app.
       </p>
 
       <nav class="toc" aria-label="On this page">
@@ -29,7 +30,7 @@
           <li><a href="#create-bot">1. Create the bot</a></li>
           <li><a href="#privacy">2. Disable privacy mode</a></li>
           <li><a href="#secret">3. Webhook secret</a></li>
-          <li><a href="#register">4. Register webhook</a></li>
+          <li><a href="#register">4. Register webhook and commands</a></li>
           <li><a href="#verify">5. Verify</a></li>
           <li><a href="#live-canary">6. Live canary</a></li>
           <li><a href="#username">7. Bot username</a></li>
@@ -69,11 +70,24 @@
       <pre><code>TELEGRAM_WEBHOOK_SECRET=&lt;the_hex_string&gt;
 </code></pre>
 
-      <h2 id="register">4. Register the webhook (once per environment)</h2>
+      <h2 id="register">4. Register the webhook and command menu</h2>
       <p>
         <strong>The web service does this automatically on startup.</strong> The Next.js
         instrumentation hook at <code>apps/web/src/instrumentation.ts</code> runs once per server
-        process. In production (<code>NODE_ENV=production</code>), if
+        process in the Node runtime.
+      </p>
+      <p>
+        Command menu: if <code>TELEGRAM_BOT_TOKEN</code> is set, it calls
+        <code>setMyCommands</code> for the default, private-chat, and group-chat scopes (idempotent
+        on Telegram's side). That is what fills the Telegram <code>/</code> picker in bot DMs and
+        groups. Direct messages get the DM command list (including <code>/note</code> and
+        <code>/new</code>); groups get the group list. Typed commands still work even if the menu
+        was never registered; <code>/help</code> prints the same catalog. Registration is
+        fire-and-forget and runs in production and local <code>next dev</code>, because unlike
+        <code>setWebhook</code> it does not need a public callback URL.
+      </p>
+      <p>
+        Webhook: in production (<code>NODE_ENV=production</code>), if
         <code>TELEGRAM_BOT_TOKEN</code>, <code>TELEGRAM_WEBHOOK_SECRET</code>, and
         <code>AUTH_URL</code> are all set, it always calls <code>setWebhook</code> (idempotent on
         Telegram's side, and the only way to push a rotated
@@ -82,7 +96,7 @@
         fire-and-forget — it never blocks server readiness. Missing env vars → logs a skip line and
         continues.
       </p>
-      <p>For local development (or to register manually):</p>
+      <p>For local development (or to register the webhook manually):</p>
       <pre><code>curl -F "url=https://thetimeline.cc/api/telegram/webhook" \
      -F "secret_token=$TELEGRAM_WEBHOOK_SECRET" \
      -F 'allowed_updates=["message","edited_message","callback_query"]' \
@@ -92,8 +106,18 @@
 
       <h2 id="verify">5. Verify</h2>
       <pre><code>curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getWebhookInfo"
+curl -H 'content-type: application/json' \
+     -d '{"scope":{"type":"all_private_chats"}}' \
+     "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getMyCommands"
 </code></pre>
-      <p>Should return your URL with <code>last_error_date: 0</code>.</p>
+      <p>
+        Webhook info should return your URL with <code>last_error_date: 0</code>. Command lookup
+        should list the DM commands (<code>start</code>, <code>ask</code>, <code>note</code>,
+        <code>new</code>, <code>join</code>, <code>link</code>, <code>team</code>,
+        <code>whereami</code>, <code>unlink</code>, <code>help</code>). Use
+        <code>{"type":"all_group_chats"}</code> to inspect the group menu, which omits
+        <code>note</code> and <code>new</code>.
+      </p>
 
       <h2 id="live-canary">6. Live canary</h2>
       <p>
@@ -136,7 +160,7 @@ pnpm dev
 # Terminal 2: expose it
 ngrok http 3000
 
-# Terminal 3: register the webhook with the secret
+# Terminal 3: register the webhook with the secret (command menu is registered by pnpm dev)
 curl -F "url=https://&lt;ngrok-id&gt;.ngrok-free.app/api/telegram/webhook" \
      -F "secret_token=$TELEGRAM_WEBHOOK_SECRET" \
      -F 'allowed_updates=["message","edited_message","callback_query"]' \
@@ -243,6 +267,11 @@ curl -F "url=https://&lt;ngrok-id&gt;.ngrok-free.app/api/telegram/webhook" \
         the opaque Telegram DM key to the active session, and <code>chat_surface_turns</code> is the
         durable idempotency, model, and delivery ledger consumed by the
         <code>conversation-agent</code> worker queue.
+      </p>
+      <p>
+        Daily digest delivery uses the same bot: a workspace can post the team-visible digest to a
+        bound group, or DM every linked member. Configure destinations in Team settings →
+        Preferences. The bot can only DM people who have already started a conversation with it.
       </p>
     </main>
   </body>

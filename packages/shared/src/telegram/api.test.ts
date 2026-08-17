@@ -46,4 +46,25 @@ describe('HttpTelegramApi file downloads', () => {
       new HttpTelegramApi('token', 5).sendChatAction({ chat_id: 42, action: 'typing' }),
     ).rejects.toThrow();
   });
+
+  it('registers bot commands for one Telegram scope', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(Response.json({ ok: true, result: true })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await new HttpTelegramApi('token').setMyCommands({
+      commands: [{ command: 'help', description: 'Show available commands' }],
+      scope: { type: 'all_private_chats' },
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.telegram.org/bottoken/setMyCommands',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          commands: [{ command: 'help', description: 'Show available commands' }],
+          scope: { type: 'all_private_chats' },
+        }),
+      }),
+    );
+  });
 });

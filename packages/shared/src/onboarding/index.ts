@@ -1,28 +1,41 @@
 import {
   type Db,
+  agentSuggestions,
+  chatMessages,
+  dailyDigests,
   documents,
+  ingestWebhooks,
   integrations,
+  mcpOutboundKeys,
   mcpServers,
+  meetings,
   rawEvents,
   slackConversationBindings,
   slackUserTeams,
   slackWorkspaceTeams,
+  teamInvites,
+  teamMembers,
   teamOnboardingCompletions,
   telegramChatBindings,
   telegramLinkTokens,
   telegramUserTeams,
   userOnboardingDismissals,
 } from '@timeline/db';
-import { and, count, eq, inArray, isNull } from 'drizzle-orm';
+import { and, count, eq, gt, inArray, isNull } from 'drizzle-orm';
 
 import type { TeamRole } from '#src/team-scope.js';
 
 export const ONBOARDING_STEPS = [
   'first_note',
+  'invite_teammate',
   'telegram',
   'slack',
   'email_forwarding',
   'first_document',
+  'first_ask',
+  'first_meeting',
+  'review_proposal',
+  'daily_digest',
   'first_integration',
 ] as const;
 
@@ -38,6 +51,8 @@ const CAPTURE_EVENT_SOURCES = [
   'slack',
   'ingest_webhook',
 ] as const;
+
+const REVIEWED_PROPOSAL_STATUSES = ['accepted', 'rejected'] as const;
 
 export interface OnboardingStepState {
   step: OnboardingStep;
@@ -58,6 +73,14 @@ export interface OnboardingChecklistState {
     slackUserTeams: number;
     nativeIntegrations: number;
     teamMcpServers: number;
+    activeMembers: number;
+    pendingInvites: number;
+    userChatMessages: number;
+    meetings: number;
+    reviewedProposals: number;
+    dailyDigests: number;
+    ingestWebhooks: number;
+    outboundMcpKeys: number;
   };
 }
 
@@ -100,6 +123,14 @@ export function createOnboardingScope({ db, teamId, userId, ensureMember }: Onbo
         uploadedDocuments,
         nativeIntegrations,
         teamMcpServers,
+        activeMembers,
+        pendingInvites,
+        userChatMessages,
+        scheduledMeetings,
+        reviewedProposals,
+        digestRows,
+        webhookRows,
+        outboundKeys,
       ] = await Promise.all([
         db
           .select()
@@ -162,6 +193,44 @@ export function createOnboardingScope({ db, teamId, userId, ensureMember }: Onbo
           .select({ total: count() })
           .from(mcpServers)
           .where(and(eq(mcpServers.teamId, teamId), isNull(mcpServers.userId))),
+        db
+          .select({ total: count() })
+          .from(teamMembers)
+          .where(and(eq(teamMembers.teamId, teamId), isNull(teamMembers.removedAt))),
+        db
+          .select({ total: count() })
+          .from(teamInvites)
+          .where(
+            and(
+              eq(teamInvites.teamId, teamId),
+              isNull(teamInvites.acceptedAt),
+              isNull(teamInvites.revokedAt),
+              gt(teamInvites.expiresAt, new Date()),
+            ),
+          ),
+        db
+          .select({ total: count() })
+          .from(chatMessages)
+          .where(and(eq(chatMessages.teamId, teamId), eq(chatMessages.role, 'user'))),
+        db.select({ total: count() }).from(meetings).where(eq(meetings.teamId, teamId)),
+        db
+          .select({ total: count() })
+          .from(agentSuggestions)
+          .where(
+            and(
+              eq(agentSuggestions.teamId, teamId),
+              inArray(agentSuggestions.status, REVIEWED_PROPOSAL_STATUSES),
+            ),
+          ),
+        db.select({ total: count() }).from(dailyDigests).where(eq(dailyDigests.teamId, teamId)),
+        db
+          .select({ total: count() })
+          .from(ingestWebhooks)
+          .where(and(eq(ingestWebhooks.teamId, teamId), isNull(ingestWebhooks.disabledAt))),
+        db
+          .select({ total: count() })
+          .from(mcpOutboundKeys)
+          .where(and(eq(mcpOutboundKeys.teamId, teamId), isNull(mcpOutboundKeys.revokedAt))),
       ]);
 
       const explicit = new Map(completions.map((row) => [row.step, row] as const));
@@ -174,9 +243,20 @@ export function createOnboardingScope({ db, teamId, userId, ensureMember }: Onbo
         slackUserTeams: firstCount(slackUsers),
         nativeIntegrations: firstCount(nativeIntegrations),
         teamMcpServers: firstCount(teamMcpServers),
+        activeMembers: firstCount(activeMembers),
+        pendingInvites: firstCount(pendingInvites),
+        userChatMessages: firstCount(userChatMessages),
+        meetings: firstCount(scheduledMeetings),
+        reviewedProposals: firstCount(reviewedProposals),
+        dailyDigests: firstCount(digestRows),
+        ingestWebhooks: firstCount(webhookRows),
+        outboundMcpKeys: firstCount(outboundKeys),
       };
       const inferred = new Set<OnboardingStep>();
       if (firstCount(capturedEvents) > 0) inferred.add('first_note');
+      if (connectionCounts.activeMembers > 1 || connectionCounts.pendingInvites > 0) {
+        inferred.add('invite_teammate');
+      }
       if (
         connectionCounts.telegramLinkTokens +
           connectionCounts.telegramChatBindings +
@@ -195,7 +275,17 @@ export function createOnboardingScope({ db, teamId, userId, ensureMember }: Onbo
       }
       if (firstCount(emailEvents) > 0) inferred.add('email_forwarding');
       if (firstCount(uploadedDocuments) > 0) inferred.add('first_document');
-      if (connectionCounts.nativeIntegrations + connectionCounts.teamMcpServers > 0) {
+      if (connectionCounts.userChatMessages > 0) inferred.add('first_ask');
+      if (connectionCounts.meetings > 0) inferred.add('first_meeting');
+      if (connectionCounts.reviewedProposals > 0) inferred.add('review_proposal');
+      if (connectionCounts.dailyDigests > 0) inferred.add('daily_digest');
+      if (
+        connectionCounts.nativeIntegrations +
+          connectionCounts.teamMcpServers +
+          connectionCounts.ingestWebhooks +
+          connectionCounts.outboundMcpKeys >
+        0
+      ) {
         inferred.add('first_integration');
       }
 

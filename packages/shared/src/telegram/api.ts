@@ -1,6 +1,7 @@
 /**
  * Minimal Telegram Bot API client. We only implement the handful of methods
- * the webhook flow needs. No SDK — `fetch` is enough and keeps the dependency
+ * the webhook flow needs, plus `setMyCommands` for startup `/` menu
+ * registration. No SDK — `fetch` is enough and keeps the dependency
  * surface tiny.
  */
 export interface TelegramAdminListEntry {
@@ -115,6 +116,18 @@ export class HttpTelegramApi implements TelegramApi {
     await this.call('sendChatAction', input);
   }
 
+  /**
+   * Replace the `/` menu for one Bot API command scope. The web startup path
+   * posts `setMyCommands` through the command catalog; this method is the
+   * shared client equivalent for tests and other callers.
+   */
+  async setMyCommands(input: {
+    commands: { command: string; description: string }[];
+    scope?: { type: string };
+  }): Promise<void> {
+    await this.call('setMyCommands', input);
+  }
+
   async downloadFile(filePath: string, maxBytes?: number): Promise<Buffer> {
     const res = await fetch(`https://api.telegram.org/file/bot${this.token}/${filePath}`, {
       signal: AbortSignal.timeout(this.requestTimeoutMs),
@@ -179,7 +192,20 @@ export class NoopTelegramApi implements TelegramApi {
   sendChatAction(): Promise<void> {
     return Promise.resolve();
   }
+  setMyCommands(): Promise<void> {
+    return Promise.resolve();
+  }
   downloadFile(_filePath?: string, _maxBytes?: number): Promise<Buffer> {
     return Promise.reject(new Error('TELEGRAM_BOT_TOKEN unset — cannot download files'));
   }
+}
+
+export async function sendTelegramBotMessage(input: {
+  chatId: number;
+  text: string;
+  token: string;
+  api?: TelegramApi;
+}): Promise<void> {
+  const api = input.api ?? new HttpTelegramApi(input.token);
+  await api.sendMessage({ chat_id: input.chatId, text: input.text });
 }
