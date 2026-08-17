@@ -349,7 +349,7 @@ describe('processSuggestionJobForTests', () => {
       .limit(1);
     expect(row?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'integration_structured_source',
-      suggestion_model_version: `${MODEL_ID}@2026-07-b`,
+      suggestion_model_version: `${MODEL_ID}@2026-08-a`,
     });
     expect(row?.sourceMetadata).toHaveProperty('suggestions_skipped_at');
   });
@@ -663,7 +663,7 @@ describe('processSuggestionJobForTests', () => {
       .limit(1);
     expect(row?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'ingest_webhook_proposals_disabled',
-      suggestion_model_version: `${MODEL_ID}@2026-07-b`,
+      suggestion_model_version: `${MODEL_ID}@2026-08-a`,
     });
     expect(row?.sourceMetadata).toHaveProperty('suggestions_skipped_at');
   });
@@ -706,7 +706,7 @@ describe('processSuggestionJobForTests', () => {
       .limit(1);
     expect(row?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'ingest_webhook_proposals_disabled',
-      suggestion_model_version: `${MODEL_ID}@2026-07-b`,
+      suggestion_model_version: `${MODEL_ID}@2026-08-a`,
     });
   });
 
@@ -2877,7 +2877,7 @@ describe('processSuggestionJobForTests', () => {
 
     const event = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
     expect(event?.sourceMetadata).toMatchObject({
-      suggestion_pre_extract_model_version: `${MODEL_ID}@2026-07-b`,
+      suggestion_pre_extract_model_version: `${MODEL_ID}@2026-08-a`,
     });
     expect(event?.sourceMetadata).toHaveProperty('suggestions_pre_extracted_at');
   });
@@ -2933,6 +2933,10 @@ describe('processSuggestionJobForTests', () => {
     expect(call?.system).toContain('Do not create tasks from automated review findings');
     expect(call?.system).toContain('proposedPayload.priority');
     expect(call?.system).toContain('Curated document chunks in the prompt are reference knowledge');
+    expect(call?.system).toContain('Named work the team is tracking is a task, not a follow_up');
+    expect(prompt).toContain(
+      'Open tasks listed here can be marked done from later outcome evidence',
+    );
     const bundle = (
       await withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.listPendingSuggestions()
     )[0];
@@ -2946,6 +2950,48 @@ describe('processSuggestionJobForTests', () => {
         status: 'accepted',
       },
     });
+  });
+
+  it('lists a week-old branding task in the prompt when later captures name the deliverable', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000bd';
+    await db.insert(entities).values([
+      {
+        id: OBJECT_ID,
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'Create branding and name proposal',
+        status: 'open',
+        updatedAt: new Date('2026-05-18T10:00:00.000Z'),
+      },
+      ...Array.from({ length: 40 }, (_, index) => ({
+        id: `eeeeeeee-eeee-4eee-8eee-${String(index).padStart(12, '0')}`,
+        teamId: TEAM_ID,
+        type: 'topic' as const,
+        canonicalName: `Noise topic ${String(index)}`,
+        status: 'active',
+        updatedAt: new Date('2026-05-27T12:00:00.000Z'),
+      })),
+    ]);
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'brand book v3 is in drive, we went with Helix, already sent the pdf to Faba lol',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = emptyModel();
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const call = chat.mock.calls[0]?.[0] as { prompt: string; system: string } | undefined;
+    expect(call?.prompt).toContain('Create branding and name proposal');
+    expect(call?.prompt).toContain(OBJECT_ID);
+    expect(call?.system).toContain('later outcome evidence');
   });
 
   it('includes related curated document chunks as reference knowledge in the proposal prompt', async () => {
@@ -5243,7 +5289,7 @@ describe('processSuggestionJobForTests', () => {
     const [event] = await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId));
     expect(event?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'visibility=private',
-      suggestion_model_version: `${MODEL_ID}@2026-07-b`,
+      suggestion_model_version: `${MODEL_ID}@2026-08-a`,
     });
   });
 
@@ -7197,7 +7243,11 @@ describe('processSuggestionJobForTests', () => {
 
     const call = chat.mock.calls[0]?.[0] as { system: string };
     expect(call.system).toContain('not "looked at" or "thinking about"');
-    expect(call.system).toContain('hedged guesses');
+    expect(call.system).toContain('Hedged guesses');
+    expect(call.system).toContain('later outcome evidence');
+    expect(call.system).toContain(
+      'Informal, typo-ridden, emoji-filled, or hedged phrasing still counts as a commitment',
+    );
     expect(await suggestionCounts(pg)).toEqual({ suggestions: 0, items: 0 });
   });
 
@@ -7747,11 +7797,11 @@ describe('processSuggestionJobForTests', () => {
       .from(rawEvents);
     expect(skipped.find((row) => row.id === privateEventId)?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'visibility=private',
-      suggestion_model_version: `${MODEL_ID}@2026-07-b`,
+      suggestion_model_version: `${MODEL_ID}@2026-08-a`,
     });
     expect(skipped.find((row) => row.id === specificEventId)?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'visibility=specific_users',
-      suggestion_model_version: `${MODEL_ID}@2026-07-b`,
+      suggestion_model_version: `${MODEL_ID}@2026-08-a`,
     });
   });
 
@@ -7787,11 +7837,11 @@ describe('processSuggestionJobForTests', () => {
       .from(rawEvents);
     expect(skipped.find((row) => row.id === inactivePrivateId)?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'visibility=private',
-      suggestion_model_version: `${MODEL_ID}@2026-07-b`,
+      suggestion_model_version: `${MODEL_ID}@2026-08-a`,
     });
     expect(skipped.find((row) => row.id === emptySpecificId)?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'visibility=specific_users',
-      suggestion_model_version: `${MODEL_ID}@2026-07-b`,
+      suggestion_model_version: `${MODEL_ID}@2026-08-a`,
     });
     expect(await suggestionCounts(pg)).toEqual({ suggestions: 0, items: 0 });
   });
@@ -7820,7 +7870,7 @@ describe('processSuggestionJobForTests', () => {
       .update(rawEvents)
       .set({
         sourceMetadata: {
-          suggestion_pre_extract_model_version: `${MODEL_ID}@2026-07-b`,
+          suggestion_pre_extract_model_version: `${MODEL_ID}@2026-08-a`,
           suggestions_pre_extracted_at: '2026-05-27T10:00:00.000Z',
           extracted_at: '2026-05-27T10:01:00.000Z',
           extraction_model_version: 'test-extract@1',
@@ -7840,8 +7890,8 @@ describe('processSuggestionJobForTests', () => {
     );
     const event = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
     expect(event?.sourceMetadata).toMatchObject({
-      suggestion_pre_extract_model_version: `${MODEL_ID}@2026-07-b`,
-      suggestion_model_version: `${MODEL_ID}@2026-07-b`,
+      suggestion_pre_extract_model_version: `${MODEL_ID}@2026-08-a`,
+      suggestion_model_version: `${MODEL_ID}@2026-08-a`,
     });
     expect(await suggestionCounts(pg)).toEqual({ suggestions: 1, items: 2 });
   });

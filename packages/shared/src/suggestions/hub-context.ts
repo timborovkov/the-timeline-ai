@@ -8,6 +8,38 @@ const MIN_FULL_NAME_LENGTH = 3;
 const MIN_TOKEN_LENGTH = 4;
 const MAX_BUNDLE_ITEMS_AFTER_ATTACH = 6;
 
+const GENERIC_WORK_TOKENS = new Set([
+  'book',
+  'complete',
+  'completed',
+  'create',
+  'creating',
+  'done',
+  'file',
+  'finish',
+  'finished',
+  'just',
+  'make',
+  'making',
+  'name',
+  'names',
+  'naming',
+  'page',
+  'proposal',
+  'select',
+  'selection',
+  'send',
+  'sending',
+  'someone',
+  'thing',
+  'tomorrow',
+  'whatever',
+  'yeah',
+]);
+
+const OPEN_WORK_TYPES = new Set(['task', 'follow_up']);
+const CLOSED_WORK_STATUSES = new Set(['done', 'cancelled', 'canceled']);
+
 const GENERIC_HUB_TOKENS = new Set([
   'about',
   'after',
@@ -205,18 +237,76 @@ export function qualifyWorkspaceHubs(args: {
 
 export function selectPromptObjects<T extends { id: string }>(args: {
   mentioned: readonly T[];
+  related?: readonly T[];
   recent: readonly T[];
   limit: number;
 }): T[] {
   const selected: T[] = [];
   const seen = new Set<string>();
-  for (const row of [...args.mentioned, ...args.recent]) {
+  for (const row of [...args.mentioned, ...(args.related ?? []), ...args.recent]) {
     if (seen.has(row.id)) continue;
     seen.add(row.id);
     selected.push(row);
     if (selected.length >= args.limit) break;
   }
   return selected;
+}
+
+function extractWorkTokens(value: string): string[] {
+  const tokens: string[] = [];
+  for (const raw of value.match(/[\p{L}\p{N}]+/gu) ?? []) {
+    const token = raw.toLocaleLowerCase('en-US');
+    if (token.length < MIN_TOKEN_LENGTH) continue;
+    if (GENERIC_HUB_TOKENS.has(token) || GENERIC_WORK_TOKENS.has(token)) continue;
+    tokens.push(token);
+  }
+  return tokens;
+}
+
+function workTokensOverlap(left: readonly string[], right: readonly string[]): boolean {
+  for (const a of left) {
+    for (const b of right) {
+      if (a === b) return true;
+      const min = Math.min(a.length, b.length);
+      if (min >= MIN_TOKEN_LENGTH && (a.startsWith(b) || b.startsWith(a))) return true;
+    }
+  }
+  return false;
+}
+
+function aliasStrings(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+}
+
+/**
+ * Recall open tasks/follow-ups whose distinctive title tokens overlap the
+ * evidence. This fills the suggestion prompt so a week-old branding task can
+ * be updated to done when later captures show the deliverable. It is not a
+ * write join: two overlaps stay listed, and the model must still refuse a
+ * lifecycle guess.
+ */
+export function recallRelatedOpenWork<
+  T extends {
+    id: string;
+    type: string;
+    name: string;
+    aliases?: unknown;
+    status?: string | null;
+  },
+>(args: { objects: readonly T[]; text: string; limit?: number }): T[] {
+  const evidenceTokens = extractWorkTokens(args.text);
+  if (evidenceTokens.length === 0) return [];
+  const matches: T[] = [];
+  for (const row of args.objects) {
+    if (!OPEN_WORK_TYPES.has(row.type)) continue;
+    if (CLOSED_WORK_STATUSES.has((row.status ?? '').toLowerCase())) continue;
+    const objectTokens = [row.name, ...aliasStrings(row.aliases)].flatMap(extractWorkTokens);
+    if (objectTokens.length === 0) continue;
+    if (workTokensOverlap(objectTokens, evidenceTokens)) matches.push(row);
+  }
+  return matches.slice(0, args.limit ?? 12);
 }
 
 function localRefSlug(value: string): string {

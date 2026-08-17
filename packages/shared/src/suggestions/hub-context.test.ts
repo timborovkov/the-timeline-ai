@@ -8,6 +8,7 @@ import {
   hubsChanged,
   mentionKeysForHub,
   qualifyWorkspaceHubs,
+  recallRelatedOpenWork,
   selectPromptObjects,
   type WorkspaceHub,
 } from '#src/suggestions/hub-context.js';
@@ -235,6 +236,88 @@ describe('selectPromptObjects', () => {
     expect(selected[0]).toEqual({ id: 'company-faba' });
     expect(selected).toHaveLength(40);
     expect(selected.some((row) => row.id === 'noise-39')).toBe(false);
+  });
+
+  it('keeps related open work ahead of recency fill', () => {
+    const related = [{ id: 'task-branding' }];
+    const recent = Array.from({ length: 40 }, (_, index) => ({ id: `noise-${String(index)}` }));
+    const selected = selectPromptObjects({ mentioned: [], related, recent, limit: 40 });
+    expect(selected[0]).toEqual({ id: 'task-branding' });
+    expect(selected).toHaveLength(40);
+  });
+});
+
+describe('recallRelatedOpenWork', () => {
+  it('recalls a week-old branding task from later brand-book evidence', () => {
+    const recalled = recallRelatedOpenWork({
+      objects: [
+        {
+          id: 'task-branding',
+          type: 'task',
+          name: 'Create branding and name proposal',
+          aliases: [],
+          status: 'open',
+        },
+        {
+          id: 'task-login',
+          type: 'task',
+          name: 'Prepare the login page',
+          aliases: [],
+          status: 'open',
+        },
+        ...Array.from({ length: 40 }, (_, index) => ({
+          id: `topic-${String(index)}`,
+          type: 'topic',
+          name: `Noise topic ${String(index)}`,
+          aliases: [],
+          status: 'active',
+        })),
+      ],
+      text: 'brand book v3 is in drive, we went with Helix, already sent the pdf to Faba lol',
+    });
+    expect(recalled.map((row) => row.id)).toEqual(['task-branding']);
+  });
+
+  it('lists both overlapping open tasks so the model can refuse a guess', () => {
+    const recalled = recallRelatedOpenWork({
+      objects: [
+        {
+          id: 'task-branding',
+          type: 'task',
+          name: 'Create branding and name proposal',
+          status: 'open',
+        },
+        {
+          id: 'task-print',
+          type: 'task',
+          name: 'Print the brand book',
+          status: 'open',
+        },
+      ],
+      text: 'brand book v3 is in drive',
+    });
+    expect(recalled.map((row) => row.id).sort()).toEqual(['task-branding', 'task-print']);
+  });
+
+  it('does not recall done work or generic website tasks from brand-book evidence', () => {
+    const recalled = recallRelatedOpenWork({
+      objects: [
+        {
+          id: 'task-done',
+          type: 'task',
+          name: 'Create branding and name proposal',
+          status: 'done',
+        },
+        {
+          id: 'task-website',
+          type: 'task',
+          name: 'Update the website copy',
+          status: 'open',
+        },
+      ],
+      text: 'brand book v3 is in drive',
+    });
+    expect(recalled).toEqual([]);
   });
 });
 

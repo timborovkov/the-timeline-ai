@@ -98,6 +98,7 @@ export {
   hubEvidenceText,
   hubsChanged,
   qualifyWorkspaceHubs,
+  recallRelatedOpenWork,
   selectPromptObjects,
   WORKSPACE_HUB_TYPES,
   type QualifiedWorkspaceHubs,
