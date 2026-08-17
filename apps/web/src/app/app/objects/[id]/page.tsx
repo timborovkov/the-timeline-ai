@@ -9,7 +9,6 @@ import type { Metadata } from 'next';
 
 import { suggestionTargetsObject } from '@/app/app/objects/[id]/suggestion-targets';
 import { HistoryBackLink } from '@/components/history-back-link';
-import { ObjectBoardContext } from '@/components/objects/object-board-context';
 import { ObjectDetailClient } from '@/components/objects/object-detail-client';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -140,12 +139,11 @@ export default async function ObjectDetailPage({ params, searchParams }: PagePro
   });
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       <HistoryBackLink
         fallbackHref={safeSameOriginPath(firstParam(query.returnTo), '/app/objects')}
         label="Back"
       />
-      <ObjectBoardContext rows={boardContext} />
       <ObjectDetailClient
         detail={detail}
         teamId={active.teamId}
@@ -156,6 +154,7 @@ export default async function ObjectDetailPage({ params, searchParams }: PagePro
         members={memberOptions}
         primaryProject={primaryProjects[0] ?? null}
         taskCategoriesEnabled={getEnv().TASK_CATEGORY_UI_ENABLED}
+        boardContext={boardContext}
       />
     </div>
   );

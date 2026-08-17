@@ -546,6 +546,49 @@ describe('ObjectDetailClient', () => {
     );
   });
 
+  it('shows board placement in the header and does not repeat it in connected work', () => {
+    const html = renderObjectDetail({
+      detail: {
+        ...detail,
+        connectedWork: {
+          ...detail.connectedWork,
+          boards: [
+            {
+              boardId: 'board-1',
+              boardName: 'Pilot pipeline',
+              itemId: 'item-1',
+              laneName: 'Proposal',
+              dueAt: null,
+              priority: null,
+              nextStep: 'Agree pilot scope',
+            },
+          ],
+        },
+      },
+      userId: 'user-1',
+      suggestions: [],
+      boardContext: [
+        {
+          boardId: 'board-1',
+          boardName: 'Pilot pipeline',
+          templateKind: 'custom',
+          purpose: 'work',
+          itemId: 'item-1',
+          laneId: 'lane-1',
+          laneName: 'Proposal',
+          responsibleUserId: null,
+          dueAt: null,
+          priority: null,
+        },
+      ],
+    });
+
+    expect(html).toContain('Pilot pipeline');
+    expect(html).toContain('Proposal');
+    expect(html).not.toContain('Connected work');
+    expect(html).not.toContain('Agree pilot scope');
+  });
+
   it('shows connected open tasks once on the object detail page', () => {
     const taskTitle = 'Send message to DFK with proposed meeting times';
     const html = renderObjectDetail({

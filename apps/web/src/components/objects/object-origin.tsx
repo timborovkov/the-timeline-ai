@@ -31,8 +31,10 @@ export function ObjectOrigin({
   if (!body) return null;
 
   return (
-    <section className={compact ? 'px-4 py-2' : undefined} aria-label="Why this exists">
-      <p className="text-sm leading-5 text-fg">{timelinePreview(body, compact ? 220 : 360)}</p>
+    <section className={compact ? 'px-3 py-1.5' : undefined} aria-label="Why this exists">
+      <p className="text-sm font-normal leading-5 text-fg">
+        {timelinePreview(body, compact ? 220 : 360)}
+      </p>
       <ProvenanceSourceLinks evidence={why.evidence} />
     </section>
   );
@@ -61,7 +63,7 @@ export function ObjectProvenanceGroups({
   if (groups.length === 0) return null;
 
   return (
-    <section className="space-y-3" aria-label="Provenance">
+    <section className="space-y-2" aria-label="Provenance">
       {groups.map((group) => (
         <ProvenanceGroup
           key={group.title}
@@ -95,15 +97,15 @@ function ProvenanceGroup({
 
   return (
     <section className="min-w-0">
-      <h2 className="text-xs text-fg-dim">{title}</h2>
-      <div className="mt-2 min-w-0">
+      <h2 className="text-xs font-normal text-fg-dim">{title}</h2>
+      <div className="mt-1 min-w-0">
         {previewEntries.length > 0 ? <ProvenanceEntryList entries={previewEntries} /> : null}
         {remainingEntries.length > 0 ? (
-          <details className={previewEntries.length > 0 ? 'mt-2' : undefined}>
-            <summary className="cursor-pointer list-none text-xs text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50">
+          <details className={previewEntries.length > 0 ? 'mt-1' : undefined}>
+            <summary className="cursor-pointer list-none text-xs font-normal text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50">
               {reviewLabel}
             </summary>
-            <div className="mt-2 max-h-80 overflow-y-auto overscroll-contain">
+            <div className="mt-1 max-h-80 overflow-y-auto overscroll-contain">
               <ProvenanceEntryList entries={remainingEntries} muted />
             </div>
           </details>
@@ -125,16 +127,16 @@ function ProvenanceEntryList({
   muted?: boolean;
 }) {
   return (
-    <ul className="space-y-3">
+    <ul className="space-y-1.5">
       {entries.map((entry) => (
         <li key={`${entry.targetKind}:${entry.operation}:${entry.id}`} className="min-w-0 text-sm">
           <p
-            className={`line-clamp-2 break-words text-sm leading-5 ${muted ? 'text-fg-muted' : 'font-medium text-fg'}`}
+            className={`line-clamp-2 break-words text-sm font-normal leading-5 ${muted ? 'text-fg-muted' : 'text-fg'}`}
           >
             {timelinePreview(entry.title, 160)}
           </p>
           {entry.reason ? (
-            <p className="mt-1 line-clamp-2 break-words text-xs leading-5 text-fg-muted">
+            <p className="mt-0.5 line-clamp-2 break-words text-xs font-normal leading-4 text-fg-muted">
               {displayText(entry.reason)}
             </p>
           ) : null}
@@ -149,13 +151,13 @@ function ProvenanceSourceLinks({ evidence }: { evidence: ProvenanceEntry['eviden
   const visibleEvidence = evidence.slice(0, 3);
   const remainingEvidence = evidence.slice(3);
   return (
-    <div className="mt-1.5 space-y-1">
+    <div className="mt-1 space-y-0.5">
       {visibleEvidence.map((source) => (
         <ProvenanceSourceLink key={source.rawEventId} source={source} />
       ))}
       {remainingEvidence.length > 0 ? (
         <details>
-          <summary className="cursor-pointer list-none text-[11px] text-fg-dim hover:text-fg">
+          <summary className="cursor-pointer list-none text-xs font-normal text-fg-dim hover:text-fg">
             Review {remainingEvidence.length} more source
             {remainingEvidence.length === 1 ? '' : 's'}
           </summary>
@@ -175,7 +177,7 @@ function ProvenanceSourceLink({ source }: { source: ProvenanceEntry['evidence'][
   return (
     <Link
       href={`/app/timeline?event=${source.rawEventId}#ev-${source.rawEventId}`}
-      className="block break-words text-xs text-fg-muted underline-offset-2 hover:text-fg hover:underline"
+      className="block break-words text-xs font-normal text-fg-muted underline-offset-2 hover:text-fg hover:underline"
     >
       {displayText(source.source)} · {formatDisplayDateTime(source.occurredAt, { timezone })}
     </Link>

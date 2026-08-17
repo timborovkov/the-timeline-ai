@@ -2150,7 +2150,7 @@ function TaskDetailPanel({
       </div>
 
       {saving || error ? (
-        <div className="px-4 py-2 text-xs">
+        <div className="px-3 py-1 text-xs">
           {saving ? <span className="text-fg-dim">Saving {saving}…</span> : null}
           {error ? <span className="text-danger">{error}</span> : null}
         </div>
@@ -2159,7 +2159,7 @@ function TaskDetailPanel({
       <ObjectOrigin provenance={provenance} compact />
 
       {visibleNotes.length > 0 ? (
-        <section className="px-4 py-2" aria-label="Notes">
+        <section className="px-3 py-1.5" aria-label="Notes">
           <ul className="space-y-1.5">
             {visibleNotes.map((note) => (
               <li key={note.id} className="text-sm leading-5 text-fg">
@@ -2172,8 +2172,8 @@ function TaskDetailPanel({
 
       <ObjectRelatedContext connectedWork={connectedWork} compact />
 
-      <div className="px-4 py-2">
-        <Link href={objectHref} className="text-xs text-fg-muted hover:text-fg hover:underline">
+      <div className="px-3 py-1.5">
+        <Link href={objectHref} className="text-xs font-normal text-fg-muted hover:text-fg hover:underline">
           Open object
         </Link>
       </div>

@@ -47,9 +47,9 @@ export function ObjectRelatedContext({
   if (!connectedWork || contextCount(connectedWork) === 0) return null;
 
   return (
-    <section className={compact ? 'px-4 py-2' : undefined}>
-      <h3 className="text-xs text-fg-dim">Related context</h3>
-      <div className={compact ? 'mt-1.5 space-y-2' : 'mt-2 space-y-3'}>
+    <section className={compact ? 'px-3 py-1.5' : undefined}>
+      <h3 className="text-xs font-normal text-fg-dim">Related context</h3>
+      <div className="mt-1 space-y-1.5">
         <ContextGroup
           title="Links"
           icon={<LinkIcon className="size-3.5" aria-hidden="true" />}
@@ -121,7 +121,7 @@ function ContextGroup({
 
   return (
     <div className="min-w-0">
-      <div className="mb-1 flex items-center gap-1.5 text-xs text-fg-dim">
+      <div className="mb-0.5 flex items-center gap-1.5 text-xs font-normal text-fg-dim">
         {icon}
         <span>{title}</span>
       </div>
@@ -134,7 +134,7 @@ function ContextGroup({
                   href={item.href}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex min-w-0 items-center gap-1.5 text-sm hover:underline"
+                  className="flex min-w-0 items-center gap-1.5 text-sm font-normal text-fg hover:underline"
                 >
                   {item.leading}
                   <span className="min-w-0 truncate">{displayText(item.label)}</span>
@@ -143,16 +143,20 @@ function ContextGroup({
               ) : (
                 <Link
                   href={item.href}
-                  className="flex min-w-0 items-center gap-1.5 text-sm hover:underline"
+                  className="flex min-w-0 items-center gap-1.5 text-sm font-normal text-fg hover:underline"
                 >
                   {item.leading}
                   <span className="min-w-0 truncate">{displayText(item.label)}</span>
                 </Link>
               )
             ) : (
-              <span className="block truncate text-sm">{displayText(item.label)}</span>
+              <span className="block truncate text-sm font-normal text-fg">
+                {displayText(item.label)}
+              </span>
             )}
-            <div className="truncate text-xs text-fg-dim">{displayText(item.detail)}</div>
+            <div className="truncate text-xs font-normal text-fg-dim">
+              {displayText(item.detail)}
+            </div>
           </li>
         ))}
       </ul>

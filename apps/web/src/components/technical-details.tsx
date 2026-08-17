@@ -18,6 +18,7 @@ interface TechnicalDetailsProps {
   children?: ReactNode;
   summary?: string;
   className?: string;
+  compact?: boolean;
 }
 
 const EMPTY_ITEMS: TechnicalDetailItem[] = [];
@@ -27,6 +28,7 @@ export function TechnicalDetails({
   children,
   summary = 'Technical details',
   className,
+  compact = false,
 }: TechnicalDetailsProps) {
   const [copied, setCopied] = useState<string | null>(null);
   const [copyAnnouncement, setCopyAnnouncement] = useState('');
@@ -64,14 +66,29 @@ export function TechnicalDetails({
 
   return (
     <>
-      <details className={cn('group border-t border-border pt-3 text-sm', className)}>
-        <summary className="cursor-pointer list-none text-sm font-medium text-fg-muted marker:hidden hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+      <details
+        className={cn(
+          'group',
+          compact
+            ? 'border-0 pt-1 text-xs'
+            : 'border-t border-border pt-3 text-sm',
+          className,
+        )}
+      >
+        <summary
+          className={cn(
+            'cursor-pointer list-none marker:hidden hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50',
+            compact
+              ? 'text-xs font-normal text-fg-dim'
+              : 'text-sm font-medium text-fg-muted focus-visible:ring-offset-2',
+          )}
+        >
           <span aria-hidden="true" className="mr-2 inline-block text-fg-dim group-open:rotate-90">
             ›
           </span>
           {summary}
         </summary>
-        <div className="mt-3 space-y-3">
+        <div className={compact ? 'mt-1.5 space-y-1.5' : 'mt-3 space-y-3'}>
           {items.length > 0 ? (
             <dl className="grid gap-3 sm:grid-cols-[minmax(8rem,0.35fr)_minmax(0,1fr)]">
               {items.map((item) => {

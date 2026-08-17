@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.8 · Compact object and task detail rhythm (2026-08-17). Replaces v3.7 Linear-density object and task detail.
+**Version:** v3.9 · Tighter object and task detail rhythm (2026-08-17). Replaces v3.8 Compact object and task detail rhythm.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -99,7 +99,7 @@ Both families are self-hosted with `next/font/local`.
 
 | Role | Font and size |
 | --- | --- |
-| Page title | Switzer 600, 24px default / 20px object and task detail / 18px collection variant |
+| Page title | Switzer 600, 24px default / 18px object, task detail, and collection variant |
 | Auth and help marketing hero | Switzer 600, 32px mobile / 48px tablet / 60px desktop |
 | Public acquisition display | Switzer 600, 64px mobile / fluid up to 150px desktop |
 | Section heading | Switzer 600, 16px |
@@ -427,21 +427,25 @@ unboxed rows. Empty memory, empty related context, and empty notes stay out of
 the peek.
 
 The full object page is a Linear-style issue view, not a work-index. It has no
-`WorkSubnav`. The type (and task category) sit as quiet metadata above a 20px
-editable title. Pin and Ask are ghost icon buttons; Repair memory and Add task
-live in the overflow menu. The main column uses a 16px section stack and 14px
-body at 1.35 line-height: why this exists, a generated summary only when it has
-content or an actionable generate/retry state, then only the provenance /
-connected-work / evidence / facts groups that have items. Empty “Not enough
-object memory,” “No connected work,” and “Nothing here yet” cards are
-prohibited. Notes keep a borderless composer. The right column is Properties:
-32px icon-and-value metadata rows, then Related search, recent changes when
-present, and a quiet Archive text control. An empty summary is a single
-Generate summary control, not a “ready to generate” block. Evidence uses a
-quiet text control, not a signal chip. Section labels, supporting copy, and
-timestamps use 12px `--fg-dim`. Relationship and change metadata stay sentence
-case. Content is grouped by typography and spacing. Nested bordered boxes are
-not a layout system on these surfaces.
+`WorkSubnav`. The type (and task category) sit as quiet metadata above an 18px
+editable title. Board placement is a muted header line, not a standalone
+section, and those same boards are not repeated under Connected work. Pin and
+Ask are ghost icon buttons; Repair memory and Add task live in the overflow
+menu. The main column uses an 8px section stack and 14px body at 1.35
+line-height: why this exists, a generated summary only when it has content or
+an actionable generate/retry state, then only the provenance / connected-work /
+evidence / facts groups that have items. Empty “Not enough object memory,” “No
+connected work,” and “Nothing here yet” cards are prohibited. Notes keep a
+borderless composer. The right column is Properties: 32px icon-and-value
+metadata rows, then Related search, recent changes when present, and a quiet
+Archive text control. An empty summary is a single Generate summary control,
+not a “ready to generate” block. Evidence uses a quiet text control, not a
+signal chip. Section labels, supporting copy, and timestamps use 12px
+`--fg-dim`. Body and links use 14px `--fg` at regular weight. Quiet actions
+use 12px `--fg-muted`. `--signal` is reserved for alerts and Accept. Object ID
+lives in a compact 12px Technical details disclosure. Relationship and change
+metadata stay sentence case. Content is grouped by typography and spacing.
+Nested bordered boxes are not a layout system on these surfaces.
 
 Approval rows lead with the proposed change and use human labels and localized
 values, such as `Due soon · <localized date>` and `Status To do`, rather than payload
@@ -670,3 +674,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Quiet sidebar brand and fold control | Aligns the product mark with primary nav, sends it to Home, and replaces the boxed fold glyph with a lighter chevron. |
 | 2026-08-17 | Linear-density object and task detail | Replaces boxed field grids and empty memory cards with list-row metadata, why-this-exists lead copy, ghost icon actions, and list-preserving peek navigation. |
 | 2026-08-17 | Compact object and task detail rhythm | Tightens the object-page section stack to 16px, uses 20px titles, 32px property rows, 1.35 body leading, and keeps peek/page chrome on `--fg` / `--fg-muted` / `--fg-dim` / `--danger` without uppercase metadata. |
+| 2026-08-17 | Tighter object and task detail rhythm | Compresses the object-page section stack to 8px, uses 18px titles, folds board placement into the header, and keeps body, labels, and quiet actions on one `--fg` / `--fg-muted` / `--fg-dim` set. |

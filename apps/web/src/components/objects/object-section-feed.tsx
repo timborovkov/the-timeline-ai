@@ -22,11 +22,11 @@ export function ObjectSectionFeed({ objectId, section, title, showTitle = true }
   if (!query.isPending && items.length === 0) return null;
   return (
     <section>
-      {showTitle ? <h2 className="mb-1.5 text-xs text-fg-dim">{title}</h2> : null}
+      {showTitle ? <h2 className="mb-1 text-xs font-normal text-fg-dim">{title}</h2> : null}
       {items.length === 0 && query.isPending ? (
-        <p className="text-sm text-fg-dim">Loading…</p>
+        <p className="text-sm font-normal text-fg-dim">Loading…</p>
       ) : (
-        <ul className="space-y-1.5 text-sm">
+        <ul className="space-y-1 text-sm font-normal text-fg">
           {items.map((item) => (
             <li key={String((item as { id?: unknown }).id)}>
               <ObjectSectionItem section={section} item={item} />
@@ -41,7 +41,7 @@ export function ObjectSectionFeed({ objectId, section, title, showTitle = true }
           onClick={() => {
             void query.fetchNextPage();
           }}
-          className="mt-2 text-xs text-fg-muted hover:text-fg hover:underline disabled:opacity-40"
+          className="mt-1 text-xs font-normal text-fg-muted hover:text-fg hover:underline disabled:opacity-40"
         >
           {query.isFetchingNextPage ? 'Loading…' : 'Load more'}
         </button>
@@ -56,7 +56,7 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
   if (section === 'tasks') {
     return (
       <div className="flex items-center justify-between">
-        <a href={`/app/objects/${String(row.id)}`} className="font-medium hover:underline">
+        <a href={`/app/objects/${String(row.id)}`} className="text-fg hover:underline">
           {text(row.canonicalName, 'Task')}
         </a>
         <span className="text-xs text-fg-dim">{text(row.status)}</span>
@@ -66,7 +66,7 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
   if (section === 'relationships') {
     return (
       <div className="flex items-center justify-between">
-        <a href={`/app/objects/${String(row.otherId)}`} className="font-medium hover:underline">
+        <a href={`/app/objects/${String(row.otherId)}`} className="text-fg hover:underline">
           {text(row.otherName, 'Object')}
         </a>
         <span className="text-xs text-fg-dim">
@@ -86,7 +86,7 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
     return (
       <div className="space-y-1">
         <div className="flex flex-wrap items-start gap-2">
-          <p className="min-w-0 flex-1 leading-5">{text(row.statement)}</p>
+          <p className="min-w-0 flex-1 leading-5 text-fg">{text(row.statement)}</p>
           {sharedObjects.length > 0 ? <SharedFactObjects objects={sharedObjects} /> : null}
         </div>
         <p className="text-xs text-fg-dim">
@@ -104,8 +104,8 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
     const source = text(row.source);
     return (
       <div className="grid gap-1">
-        <div className="flex min-w-0 items-start gap-3">
-          <p className="line-clamp-5 min-w-0 flex-1 whitespace-pre-wrap text-pretty leading-5">
+        <div className="flex min-w-0 items-start gap-2">
+          <p className="line-clamp-5 min-w-0 flex-1 whitespace-pre-wrap text-pretty leading-5 text-fg">
             {contentText}
           </p>
           {eventId ? (
@@ -130,7 +130,7 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
   return (
     <div className="min-w-0">
       <div className="flex min-w-0 items-start justify-between gap-3">
-        <span className="min-w-0 break-words font-medium">{changeFieldLabel(text(row.field))}</span>
+        <span className="min-w-0 break-words text-fg">{changeFieldLabel(text(row.field))}</span>
         <span className="shrink-0 text-xs text-fg-dim">
           {text(row.actorKind)} · {text(row.status)}
         </span>
@@ -242,7 +242,7 @@ function SharedFactObjects({ objects }: { objects: SharedFactObject[] }) {
   const objectNoun = `object${objects.length === 1 ? '' : 's'}`;
   return (
     <details className="group relative inline-flex shrink-0">
-      <summary className="cursor-pointer list-none rounded-sm border border-signal/30 bg-signal-soft px-2 py-0.5 text-xs text-signal transition hover:border-signal/60 hover:bg-signal/20 marker:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg">
+      <summary className="cursor-pointer list-none text-xs font-normal text-fg-muted marker:hidden hover:text-fg hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50">
         {label}
         <span className="sr-only">
           Show {objects.length} other {objectNoun} sharing this fact
@@ -258,7 +258,7 @@ function SharedFactObjects({ objects }: { objects: SharedFactObject[] }) {
                   href={`/app/objects/${object.id}`}
                   className="block rounded-sm px-2 py-1.5 hover:bg-surface focus-visible:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-inset"
                 >
-                  <span className="block truncate font-medium">
+                  <span className="block truncate text-sm text-fg">
                     {displayText(object.canonicalName)}
                   </span>
                   <span className="block text-xs text-fg-dim">

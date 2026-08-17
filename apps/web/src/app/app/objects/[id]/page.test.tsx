@@ -49,9 +49,6 @@ vi.mock('@timeline/shared/team-scope', () => ({
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
 vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
 vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@/components/objects/object-board-context', () => ({
-  ObjectBoardContext: () => <div data-testid="board-context" />,
-}));
 vi.mock('@/components/objects/object-detail-client', () => ({
   ObjectDetailClient: (props: unknown) => {
     fakes.objectDetailClientProps(props);
