@@ -66,7 +66,9 @@ vi.mock('@/components/home/daily-digest-block', () => ({ DailyDigestBlock: () =>
 vi.mock('@/components/home/home-ask-composer', () => ({
   HomeAskComposer: ({ actions }: { actions?: ReactNode }) => <div>{actions}</div>,
 }));
-vi.mock('@/components/onboarding-checklist', () => ({ OnboardingChecklist: () => null }));
+vi.mock('@/components/onboarding-checklist', () => ({
+  OnboardingChecklist: () => <div data-testid="home-onboarding">Getting started</div>,
+}));
 vi.mock('@/components/pins/pinned-workspace-preview', () => ({
   PinnedWorkspacePreview: () => null,
 }));
@@ -133,6 +135,10 @@ describe('HomeDashboardPage', () => {
     const html = renderToStaticMarkup(await HomeDashboardPage());
 
     expect(html).toContain('<h1 class="sr-only">Home</h1>');
+    expect(html).toContain('data-testid="home-onboarding"');
+    expect(html.indexOf('data-testid="home-onboarding"')).toBeLessThan(
+      html.indexOf('You’re caught up'),
+    );
     expect(html).toContain('You’re caught up');
     expect(html).not.toContain('href="/app/approvals"');
     expect(html).not.toContain('href="/app/work"');

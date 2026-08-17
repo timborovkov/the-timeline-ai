@@ -165,6 +165,8 @@ export default async function HomeDashboardPage() {
         }
       />
 
+      <OnboardingChecklist />
+
       <HomeAttention
         groups={[
           {
@@ -263,8 +265,6 @@ export default async function HomeDashboardPage() {
           </Link>
         </p>
       </section>
-
-      <OnboardingChecklist />
     </div>
   );
 }

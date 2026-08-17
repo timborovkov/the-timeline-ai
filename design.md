@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.4 · Quiet Home attention and dense recent moments (2026-08-17). Replaces v3.3 Home open-object attention and inline work queue.
+**Version:** v3.5 · Getting started onboarding on Home (2026-08-17). Replaces v3.4 Quiet Home attention and dense recent moments.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -270,17 +270,22 @@ not render the derived proposal at all.
 
 Home does not repeat its navigation label as a visible page title. It starts
 with a quiet Capture action and the same compact, icon-only-send Ask composer
-used in chat. Attention has no visible heading; the region is named for
-assistive tech only. It shows only non-zero groups: pending approvals, overdue
-work, open tasks, open objects, recoverable jobs, and connection issues.
-Overdue work stays the danger row into the work queue. Open tasks stay their
-own row into Tasks. Open objects is one generic count for people, companies,
-projects, deals, and follow-ups, linking to the Objects list rather than
-typed filters or dumping those records onto Home. “You’re caught up” replaces
-empty dashboard grids when every group is zero. Pinned work, digest, a dense
-recent-moments scan, and one next setup step follow as full-width sections
-without duplicating Timeline or Connections. These sections prefer horizontal
-rules and rows over bordered dashboard cards.
+used in chat. Getting started is the team onboarding checklist. For a member
+who has not hidden it, the full list sits open directly under Ask: completed
+steps, the current step with one outline action, later steps in quieter type,
+and a text Hide control. It is not a setup wizard and not a primary button.
+After a member hides it, the same slot keeps a quiet “Show getting started”
+text toggle with the remaining count. The account menu also reopens it.
+Attention has no visible heading; the region is named for assistive tech only.
+It shows only non-zero groups: pending approvals, overdue work, open tasks,
+open objects, recoverable jobs, and connection issues. Overdue work stays the
+danger row into the work queue. Open tasks stay their own row into Tasks. Open
+objects is one generic count for people, companies, projects, deals, and
+follow-ups, linking to the Objects list rather than typed filters or dumping
+those records onto Home. “You’re caught up” replaces empty dashboard grids
+when every group is zero. Pinned work, digest, and a dense recent-moments scan
+follow as full-width sections without duplicating Timeline or Connections.
+These sections prefer horizontal rules and rows over bordered dashboard cards.
 
 Pinned work is one personal, mixed collection. It may contain canonical
 objects (including tasks, projects, deals, people, and object-type documents),
@@ -600,3 +605,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Work overview and task canvas density | Puts pinned boards above the work queue, removes extra task-list gutters, matches the default list loading skeleton, puts Kanban/List on the search/filter row, and compacts task kanban cards to a clamped title plus one metadata row. |
 | 2026-08-17 | Home open objects and inline queue edits | Adds open tasks, people, companies, projects, deals, and follow-ups to Home Attention, stops repeating “Task” on work-queue rows, and lets queue status, assignee, due date, and priority change inline. |
 | 2026-08-17 | Quiet Home attention and dense recent moments | Collapses typed open-people/company/project rows into one open-objects count, drops the Attention and Recent moments headings, and replaces the Home timeline preview with denser title-only rows plus a clear Open timeline path. |
+| 2026-08-17 | Getting started onboarding on Home | Moves the team checklist under Ask, opens the full list for new members, and replaces the Reopen setup button with a quiet Show getting started toggle. |

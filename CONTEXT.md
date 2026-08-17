@@ -956,17 +956,20 @@ bypassing private or restricted items.
 _Avoid_: Backup, database dump
 
 **Onboarding Checklist**:
-A dismissible progress model that helps a team learn capture surfaces. Home
-surfaces only the next incomplete setup step and its direct action; full
-connection management belongs in Connections. It teaches the product loop; it
-is not a requirement that external data has successfully arrived.
+A dismissible Getting started list that helps a team learn capture surfaces.
+Home keeps it open under Ask until a member hides it, showing completed steps
+and the current action; a quiet Show getting started toggle remains in that
+slot afterward. Full connection management belongs in Connections. It teaches
+the product loop; it is not a requirement that external data has successfully
+arrived.
 _Avoid_: Setup wizard, activation gate
 
 **Home**:
-The signed-in landing surface for a team member. It leads with Ask and actionable
-attention, keeps capture in a focused dialog, and follows with the latest digest,
-pinned work, a dense scan of recent moments, and one next setup step. It does not
-duplicate the canonical Timeline, Work navigation, or Connections management.
+The signed-in landing surface for a team member. It leads with Ask, the Getting
+started checklist, and actionable attention, keeps capture in a focused dialog,
+and follows with the latest digest, pinned work, and a dense scan of recent
+moments. It does not duplicate the canonical Timeline, Work navigation, or
+Connections management.
 _Avoid_: Timeline when referring to the landing page
 
 **Workspace Time Context**:

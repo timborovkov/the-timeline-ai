@@ -81,6 +81,7 @@ export const HELP_PAGES: HelpPage[] = [
         items: [
           'Overview leads with pinned and team boards, then the work queue for due and assigned items.',
           'Queue rows keep the object type off the metadata chips; status, assignee, due date, and priority change inline.',
+          'Home opens Getting started under Ask for new teams; after Hide it stays as a quiet Show getting started toggle.',
           'Home lists open tasks and one open-objects count (people, companies, projects, deals, and follow-ups) when those counts are not zero.',
           'Tasks and boards show owners, status, blockers, due dates, and source evidence.',
           'Object pages keep people, companies, projects, deals, documents, and tasks tied to the event history.',
