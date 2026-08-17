@@ -1,5 +1,14 @@
-import { teamExports, teamInvites, teamMembers, teams, users } from '@timeline/db';
-import { getDigestPreference } from '@timeline/shared/messaging';
+import {
+  telegramChatBindings,
+  teamExports,
+  teamInvites,
+  teamMembers,
+  teams,
+  users,
+} from '@timeline/db';
+import { getEnv } from '@timeline/shared/env';
+import { listTeamDigestDestinations, getDigestPreference } from '@timeline/shared/messaging';
+import { hasSlackInstallForTeam, listSlackConversationsForTeam } from '@timeline/shared/slack';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, desc, eq, inArray, isNotNull, isNull, lt } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
@@ -8,6 +17,10 @@ import type { Metadata } from 'next';
 import type { ComponentProps } from 'react';
 
 import { ActionChip } from '@/components/action-chip';
+import {
+  DigestDestinationsForm,
+  type DigestDestinationOption,
+} from '@/components/digest-destinations';
 import { PageHeader } from '@/components/page-header';
 import { SettingsNav } from '@/components/settings-nav';
 import {
@@ -65,13 +78,14 @@ export default async function TeamSettingsPage({
     ? requestedSection
     : 'members';
 
-  const [memberRows, digestPreference] = await Promise.all([
+  const [memberRows, digestPreference, digestDestinations] = await Promise.all([
     scope.timeline.listMembers(),
     getDigestPreference({
       db,
       teamId: active.teamId,
       userId: session.user.id,
     }),
+    listTeamDigestDestinations(db, active.teamId),
   ]);
   const inboundEmailSettings: InboundEmailWhitelistSettings = isAdmin
     ? ((
@@ -177,6 +191,7 @@ export default async function TeamSettingsPage({
     const u = userMap.get(m.userId);
     return { id: m.userId, label: displayMemberLabel(u) };
   });
+  const destinationOptions = isAdmin ? await digestDestinationOptions(active.teamId) : [];
 
   return (
     <div className="space-y-6">
@@ -227,6 +242,19 @@ export default async function TeamSettingsPage({
           {section === 'preferences' ? (
             <>
               <MessagingPreferencesCard enabled={digestPreference.enabled} />
+              {isAdmin ? (
+                <Card>
+                  <CardHeader>
+                    <CardTitle as="h2">Digest destinations</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <DigestDestinationsForm
+                      destinations={digestDestinations}
+                      options={destinationOptions}
+                    />
+                  </CardContent>
+                </Card>
+              ) : null}
               {isAdmin ? (
                 <Card>
                   <CardHeader>
@@ -320,4 +348,46 @@ function AdminShortcuts({ isAdmin }: { isAdmin: boolean }) {
       <ActionChip href="/app/team/integrations/audit" label="Integration audit" />
     </div>
   );
+}
+
+async function digestDestinationOptions(teamId: string): Promise<DigestDestinationOption[]> {
+  const options: DigestDestinationOption[] = [
+    { kind: 'email_members', label: 'Email every member' },
+  ];
+  const env = getEnv();
+  const slackInstalled = await hasSlackInstallForTeam({ db, teamId });
+  if (slackInstalled) {
+    options.push({ kind: 'slack_dm_members', label: 'Slack DM every linked member' });
+    try {
+      const conversations = await listSlackConversationsForTeam({ db, teamId });
+      for (const conversation of conversations.filter((row) => row.is_member !== false)) {
+        const name = conversation.name ? `#${conversation.name}` : conversation.id;
+        options.push({
+          kind: 'slack_channel',
+          targetId: conversation.id,
+          label: `Slack ${name}`,
+        });
+      }
+    } catch {
+      // Channel picker stays empty when Slack listing fails; DMs remain available.
+    }
+  }
+  if (env.TELEGRAM_BOT_TOKEN) {
+    options.push({ kind: 'telegram_dm_members', label: 'Telegram DM every linked member' });
+    const chats = await db
+      .select({
+        chatId: telegramChatBindings.tgChatId,
+        title: telegramChatBindings.title,
+      })
+      .from(telegramChatBindings)
+      .where(eq(telegramChatBindings.teamId, teamId));
+    for (const chat of chats) {
+      options.push({
+        kind: 'telegram_chat',
+        targetId: String(chat.chatId),
+        label: `Telegram · ${chat.title ?? chat.chatId}`,
+      });
+    }
+  }
+  return options;
 }

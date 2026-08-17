@@ -268,6 +268,11 @@ curl -F "url=https://&lt;ngrok-id&gt;.ngrok-free.app/api/telegram/webhook" \
         durable idempotency, model, and delivery ledger consumed by the
         <code>conversation-agent</code> worker queue.
       </p>
+      <p>
+        Daily digest delivery uses the same bot: a workspace can post the team-visible digest to a
+        bound group, or DM every linked member. Configure destinations in Team settings →
+        Preferences. The bot can only DM people who have already started a conversation with it.
+      </p>
     </main>
   </body>
 </html>
