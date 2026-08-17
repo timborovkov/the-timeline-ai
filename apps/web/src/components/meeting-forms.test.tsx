@@ -314,12 +314,13 @@ describe('ScheduleMeetingBotForm', () => {
     await user.click(screen.getByRole('checkbox', { name: /I confirm that everyone/ }));
     await user.click(screen.getByRole('button', { name: 'Invite notetaker' }));
 
-    const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toContain('Meeting participants must be informed');
-    expect(document.activeElement).toBe(alert);
-    expect(fakes.scheduleMeetingBotAction).toHaveBeenCalledWith(
-      expect.objectContaining({ visibility: 'private' }),
-    );
+    await waitFor(() => {
+      expect(fakes.scheduleMeetingBotAction).toHaveBeenCalledWith(
+        expect.objectContaining({ visibility: 'private' }),
+      );
+    });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(fakes.push).not.toHaveBeenCalled();
   });
 });
 

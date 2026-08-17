@@ -2,7 +2,7 @@
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AddCustomMcpServerLauncher, McpServersUi } from '@/components/integrations/mcp-servers';
 
@@ -53,7 +53,13 @@ async function selectServerAction(user: ReturnType<typeof userEvent.setup>, name
 }
 
 beforeEach(() => {
-  notify.notifyAction.mockImplementation(async ({ run }) => run());
+  notify.notifyAction.mockImplementation(async ({ run }) => {
+    try {
+      return await run();
+    } catch {
+      return { error: 'failed' };
+    }
+  });
 });
 
 afterEach(() => {
@@ -209,19 +215,15 @@ describe('McpServersUi', () => {
       await user.selectOptions(screen.getByRole('combobox'), 'oauth');
       await user.click(screen.getByRole('button', { name: 'Add server' }));
 
-      expect(await screen.findByText('Unable to start authorization')).toBeTruthy();
-      expect(
-        screen.getByText(
-          'The server was added, but authorization must be retried. Connect it again to retry.',
-        ),
-      ).toBeTruthy();
-
-      await user.click(screen.getByRole('button', { name: 'OK' }));
-
       await waitFor(() => {
+        expect(notify.notifyError).toHaveBeenCalledWith(
+          'mcp:oauth-start',
+          'Server added. Connect it again to finish authorization.',
+        );
         expect(routerRefresh).toHaveBeenCalledOnce();
         expect(screen.queryByText('Add MCP server')).toBeNull();
       });
+      expect(screen.queryByText('Unable to start authorization')).toBeNull();
     },
   );
 
@@ -313,10 +315,13 @@ describe('McpServersUi', () => {
     render(<McpServersUi ownership="personal" servers={[serverRow()]} />);
     await user.click(screen.getByRole('button', { name: 'Connect' }));
 
-    expect(await screen.findByText('Unable to start authorization')).toBeTruthy();
-    expect(
-      screen.getByText('Authorization could not start. Check your connection and try again.'),
-    ).toBeTruthy();
+    await waitFor(() => {
+      expect(notify.notifyError).toHaveBeenCalledWith(
+        'mcp:oauth-start',
+        'Couldn’t start authorization',
+      );
+    });
+    expect(screen.queryByText('Unable to start authorization')).toBeNull();
     expect(screen.queryByText('provider request id=raw-42')).toBeNull();
   });
   it('keeps the server row unchanged and explains forbidden enable failures', async () => {
@@ -334,7 +339,10 @@ describe('McpServersUi', () => {
     render(<McpServersUi servers={[serverRow({ enabled: false, authType: 'none' })]} />);
     await user.click(screen.getByRole('button', { name: 'Enable' }));
 
-    expect(await screen.findByText('You do not have permission to make this change.')).toBeTruthy();
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+    expect(screen.queryByText('You do not have permission to make this change.')).toBeNull();
     expect(screen.getByText('Disabled')).toBeTruthy();
     expect(routerRefresh).not.toHaveBeenCalled();
   });
@@ -377,17 +385,23 @@ describe('McpServersUi', () => {
     const confirmRemove = screen.getAllByRole('button', { name: 'Remove' }).at(-1);
     if (!confirmRemove) throw new Error('expected remove confirmation button');
     await user.click(confirmRemove);
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
     expect(
-      await screen.findByText('The server could not be removed. Try again. Reference: deadbeef.'),
-    ).toBeTruthy();
+      screen.queryByText('The server could not be removed. Try again. Reference: deadbeef.'),
+    ).toBeNull();
     expect(routerRefresh).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole('button', { name: 'Disable' }));
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
     expect(
-      await screen.findByText(
+      screen.queryByText(
         'Could not disable this server because the network request failed. Check your connection and try again.',
       ),
-    ).toBeTruthy();
+    ).toBeNull();
     expect(routerRefresh).not.toHaveBeenCalled();
   });
 

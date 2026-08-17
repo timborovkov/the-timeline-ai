@@ -255,7 +255,7 @@ describe('IntegrationsPageView', () => {
       'integrations:oauth',
       'The provider denied access. Try connecting again.',
     );
-    expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.queryByText('oauth_denied')).toBeNull();
+    expect(screen.queryByText('The provider denied access. Try connecting again.')).toBeNull();
   });
 });

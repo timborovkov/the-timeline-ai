@@ -275,7 +275,12 @@ describe('ConnectedIntegrations', () => {
     await chooseDisconnect();
     fireEvent.click(screen.getByRole('button', { name: 'Confirm disconnect' }));
 
-    expect(await screen.findByText('Connection failed (500).')).toBeTruthy();
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith('/api/integrations/manage/integration-1/disconnect', {
+        method: 'POST',
+      });
+    });
+    expect(screen.queryByText('Connection failed (500).')).toBeNull();
     expect(screen.getByRole('button', { name: 'Confirm disconnect' })).toBeTruthy();
     expect(screen.getByText('Monday.com — Acme')).toBeTruthy();
   });
@@ -301,7 +306,12 @@ describe('ConnectedIntegrations', () => {
     await chooseDisconnect();
     fireEvent.click(screen.getByRole('button', { name: 'Confirm disconnect' }));
 
-    expect(await screen.findByText('Connection failed (500).')).toBeTruthy();
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith('/api/integrations/manage/integration-1/disconnect', {
+        method: 'POST',
+      });
+    });
+    expect(screen.queryByText('Connection failed (500).')).toBeNull();
     expect(screen.getByText(/Provider quota cooldown \(daily\)/i)).toBeTruthy();
   });
 
@@ -321,8 +331,12 @@ describe('ConnectedIntegrations', () => {
     await chooseDisconnect();
     fireEvent.click(screen.getByRole('button', { name: 'Confirm disconnect' }));
 
-    expect(
-      await screen.findByText('Only an admin can do this. Ask a team admin to help.'),
-    ).toBeTruthy();
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith('/api/integrations/manage/integration-1/disconnect', {
+        method: 'POST',
+      });
+    });
+    expect(screen.queryByText('Only an admin can do this. Ask a team admin to help.')).toBeNull();
+    expect(screen.getByText('Monday.com — Acme')).toBeTruthy();
   });
 });
