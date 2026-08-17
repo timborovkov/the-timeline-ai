@@ -172,6 +172,49 @@ describe('suggestion scope', () => {
     expect(bundle.items).toHaveLength(1);
   });
 
+  it('rejects item evidence that is not included in bundle evidence', async () => {
+    await db.insert(rawEvents).values([
+      {
+        id: TEAM_RAW_EVENT_ID,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'web',
+        contentText: 'Owner committed to the follow-up.',
+        occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+        visibility: 'team',
+      },
+      {
+        id: TEAM_SUPPORT_EVENT_ID,
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'web',
+        contentText: 'Legal signed off.',
+        occurredAt: new Date('2026-05-27T10:01:00.000Z'),
+        visibility: 'team',
+      },
+    ]);
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+
+    await expect(
+      scope.suggestions.createOrMergeSuggestionBundle({
+        source: 'background',
+        title: 'Create follow-up task',
+        dedupeKey: 'item-evidence-not-in-bundle',
+        evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }],
+        items: [
+          {
+            operation: 'create',
+            targetKind: 'task',
+            title: 'Follow up',
+            dedupeKey: 'item-evidence-not-in-bundle:item',
+            proposedPayload: { canonicalName: 'Follow up' },
+            evidenceRawEventIds: [TEAM_SUPPORT_EVENT_ID],
+          },
+        ],
+      }),
+    ).rejects.toThrow('Suggestion item evidence must be included in bundle evidence');
+  });
+
   it('creates a new revision and supersedes actionable items when the evidence pack changes', async () => {
     await db.insert(rawEvents).values({
       id: TEAM_RAW_EVENT_ID,
