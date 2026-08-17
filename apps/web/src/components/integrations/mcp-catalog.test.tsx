@@ -166,7 +166,7 @@ describe('McpCatalog', () => {
 
   it('keeps missing bearer tokens on the field', async () => {
     const user = userEvent.setup();
-    render(<McpCatalog entries={entries} />);
+    render(<McpCatalog entries={entries.filter((entry) => entry.id === 'support')} />);
 
     await user.click(screen.getByRole('button', { name: 'Connect with token' }));
     await user.click(screen.getByRole('button', { name: 'Connect' }));
