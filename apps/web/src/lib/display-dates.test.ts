@@ -59,27 +59,15 @@ describe('formatRelativeAge', () => {
   const now = new Date('2026-08-17T12:00:00.000Z');
 
   it('uses auto relative units and keeps a week in days', () => {
-    expect(formatRelativeAge(new Date('2026-08-17T11:59:40.000Z'), { now, locale: 'en' })).toBe(
-      'now',
-    );
-    expect(formatRelativeAge(new Date('2026-08-17T11:10:00.000Z'), { now, locale: 'en' })).toBe(
-      '50 minutes ago',
-    );
-    expect(formatRelativeAge(new Date('2026-08-17T09:00:00.000Z'), { now, locale: 'en' })).toBe(
-      '3 hours ago',
-    );
-    expect(formatRelativeAge(new Date('2026-08-16T12:00:00.000Z'), { now, locale: 'en' })).toBe(
-      'yesterday',
-    );
-    expect(formatRelativeAge(new Date('2026-08-10T12:00:00.000Z'), { now, locale: 'en' })).toBe(
-      '7 days ago',
-    );
-    expect(formatRelativeAge(new Date('2026-06-17T12:00:00.000Z'), { now, locale: 'en' })).toBe(
-      '2 months ago',
-    );
+    expect(formatRelativeAge(new Date('2026-08-17T11:59:40.000Z'), { now })).toBe('now');
+    expect(formatRelativeAge(new Date('2026-08-17T11:10:00.000Z'), { now })).toBe('50 minutes ago');
+    expect(formatRelativeAge(new Date('2026-08-17T09:00:00.000Z'), { now })).toBe('3 hours ago');
+    expect(formatRelativeAge(new Date('2026-08-16T12:00:00.000Z'), { now })).toBe('yesterday');
+    expect(formatRelativeAge(new Date('2026-08-10T12:00:00.000Z'), { now })).toBe('7 days ago');
+    expect(formatRelativeAge(new Date('2026-06-17T12:00:00.000Z'), { now })).toBe('2 months ago');
   });
 
   it('returns the raw value when the instant is invalid', () => {
-    expect(formatRelativeAge('not-a-date', { now, locale: 'en' })).toBe('not-a-date');
+    expect(formatRelativeAge('not-a-date', { now })).toBe('not-a-date');
   });
 });

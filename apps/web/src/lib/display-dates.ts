@@ -15,8 +15,9 @@ interface DisplayTextOptions {
 
 interface RelativeAgeOptions {
   now?: Date;
-  locale?: string;
 }
+
+const RELATIVE_AGE_FORMATTER = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
 
 export function formatDisplayDateTime(value: Date | string, options: DisplayDateOptions): string {
   const date = value instanceof Date ? value : new Date(value);
@@ -43,23 +44,22 @@ export function formatRelativeAge(value: Date | string, options: RelativeAgeOpti
   const now = options.now ?? new Date();
   const diffSeconds = Math.round((date.getTime() - now.getTime()) / 1000);
   const absSeconds = Math.abs(diffSeconds);
-  const formatter = new Intl.RelativeTimeFormat(options.locale, { numeric: 'auto' });
-  if (absSeconds < 45) return formatter.format(0, 'second');
+  if (absSeconds < 45) return RELATIVE_AGE_FORMATTER.format(0, 'second');
   if (absSeconds < HOUR_SECONDS) {
-    return formatter.format(Math.round(diffSeconds / MINUTE_SECONDS), 'minute');
+    return RELATIVE_AGE_FORMATTER.format(Math.round(diffSeconds / MINUTE_SECONDS), 'minute');
   }
   if (absSeconds < DAY_SECONDS) {
-    return formatter.format(Math.round(diffSeconds / HOUR_SECONDS), 'hour');
+    return RELATIVE_AGE_FORMATTER.format(Math.round(diffSeconds / HOUR_SECONDS), 'hour');
   }
   // Keep day units through the first month so "7 days ago" stays literal instead
   // of collapsing to "last week".
   if (absSeconds < MONTH_SECONDS) {
-    return formatter.format(Math.round(diffSeconds / DAY_SECONDS), 'day');
+    return RELATIVE_AGE_FORMATTER.format(Math.round(diffSeconds / DAY_SECONDS), 'day');
   }
   if (absSeconds < YEAR_SECONDS) {
-    return formatter.format(Math.round(diffSeconds / MONTH_SECONDS), 'month');
+    return RELATIVE_AGE_FORMATTER.format(Math.round(diffSeconds / MONTH_SECONDS), 'month');
   }
-  return formatter.format(Math.round(diffSeconds / YEAR_SECONDS), 'year');
+  return RELATIVE_AGE_FORMATTER.format(Math.round(diffSeconds / YEAR_SECONDS), 'year');
 }
 
 function formatEmbeddedIsoInstants(text: string, options: DisplayDateOptions): string {
