@@ -949,7 +949,8 @@ _Avoid_: Operator dashboard, BullMQ dashboard, queue admin
 **Environment Reset**:
 A development-only operational action that destroys all data and derived state
 in a non-production Timeline environment so it can be rebuilt from migrations
-and seed data.
+and seed data. Locally, `pnpm demo:reset` wipes then reseeds the Acme Labs
+demo corpus documented in `docs/demo-corpus.md`.
 _Avoid_: Team reset, clear everything, backup restore
 
 **Integration Audit Log**:

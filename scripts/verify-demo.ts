@@ -4,9 +4,13 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import {
+  agentSuggestions,
   artifactClusters,
   artifactEvidenceAssociations,
+  boardItems,
+  chatSessions,
   closeDb,
+  dailyDigests,
   documentChunks,
   documents,
   documentVersions,
@@ -14,21 +18,26 @@ import {
   factEntities,
   facts,
   getDb,
+  ingestWebhooks,
   integrations,
   integrationSelections,
   meetings,
   meetingTranscriptChunks,
   rawEvents,
   reconciliationEvidence,
+  slackWorkspaces,
   teamMembers,
+  teamOnboardingCompletions,
   teams,
+  telegramChatBindings,
   users,
 } from '@timeline/db';
 import { llm, qdrant } from '@timeline/shared';
 import { verifyPassword } from '@timeline/shared/passwords';
 import { getDocumentsBucket, getObjectBuffer, getS3Client } from '@timeline/shared/s3';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, count, eq, inArray, isNull } from 'drizzle-orm';
 
+import { assertExpandedDemoCorpus, CORPUS_DOCUMENTS, CORPUS_PEOPLE } from './demo-corpus/index.js';
 import {
   assertDemoFixture,
   assertDemoVectorEnvironment,
@@ -397,10 +406,117 @@ function matchingPointIds(hits: qdrant.SearchHit[], expectedPointIds: readonly s
   return [...new Set(hits.map((hit) => hit.id).filter((id) => expected.has(id)))];
 }
 
+async function readExpandedDemoCorpusSnapshot(): Promise<
+  import('./demo-corpus/index.js').ExpandedDemoCorpusSnapshot
+> {
+  const db = getDb();
+  const [
+    peopleRows,
+    eventCount,
+    objectCount,
+    documentCount,
+    meetingCount,
+    proposalCount,
+    boardItemCount,
+    chatCount,
+    digestCount,
+    factCount,
+    slackCount,
+    telegramCount,
+    webhookCount,
+    integrationRows,
+    onboardingCount,
+  ] = await Promise.all([
+    db
+      .select({ email: users.email })
+      .from(users)
+      .innerJoin(
+        teamMembers,
+        and(
+          eq(teamMembers.userId, users.id),
+          eq(teamMembers.teamId, DEMO_IDS.team),
+          isNull(teamMembers.removedAt),
+        ),
+      )
+      .where(
+        inArray(
+          users.id,
+          CORPUS_PEOPLE.map((person) => person.id),
+        ),
+      ),
+    db.select({ value: count() }).from(rawEvents).where(eq(rawEvents.teamId, DEMO_IDS.team)),
+    db.select({ value: count() }).from(entities).where(eq(entities.teamId, DEMO_IDS.team)),
+    db.select({ value: count() }).from(documents).where(eq(documents.teamId, DEMO_IDS.team)),
+    db.select({ value: count() }).from(meetings).where(eq(meetings.teamId, DEMO_IDS.team)),
+    db
+      .select({ value: count() })
+      .from(agentSuggestions)
+      .where(
+        and(eq(agentSuggestions.teamId, DEMO_IDS.team), eq(agentSuggestions.status, 'pending')),
+      ),
+    db.select({ value: count() }).from(boardItems).where(eq(boardItems.teamId, DEMO_IDS.team)),
+    db.select({ value: count() }).from(chatSessions).where(eq(chatSessions.teamId, DEMO_IDS.team)),
+    db.select({ value: count() }).from(dailyDigests).where(eq(dailyDigests.teamId, DEMO_IDS.team)),
+    db.select({ value: count() }).from(facts).where(eq(facts.teamId, DEMO_IDS.team)),
+    db.select({ value: count() }).from(slackWorkspaces),
+    db
+      .select({ value: count() })
+      .from(telegramChatBindings)
+      .where(eq(telegramChatBindings.teamId, DEMO_IDS.team)),
+    db
+      .select({ value: count() })
+      .from(ingestWebhooks)
+      .where(eq(ingestWebhooks.teamId, DEMO_IDS.team)),
+    db
+      .select({ provider: integrations.provider })
+      .from(integrations)
+      .where(eq(integrations.teamId, DEMO_IDS.team)),
+    db
+      .select({ value: count() })
+      .from(teamOnboardingCompletions)
+      .where(eq(teamOnboardingCompletions.teamId, DEMO_IDS.team)),
+  ]);
+
+  const documentChecksums: string[] = [];
+  for (const document of CORPUS_DOCUMENTS) {
+    const object = await getObjectBuffer(
+      getS3Client(),
+      getDocumentsBucket(),
+      document.objectKey,
+      document.byteSize,
+    );
+    documentChecksums.push(createHash('sha256').update(object.body).digest('hex'));
+    if (documentChecksums.at(-1) !== document.checksumSha256) {
+      throw new Error(`Corpus document ${document.name} bytes do not match the seeded checksum`);
+    }
+  }
+
+  return {
+    people: peopleRows.length,
+    loginEmails: peopleRows.map((row) => row.email),
+    events: Number(eventCount[0]?.value ?? 0),
+    objects: Number(objectCount[0]?.value ?? 0),
+    documents: Number(documentCount[0]?.value ?? 0),
+    meetings: Number(meetingCount[0]?.value ?? 0),
+    pendingProposals: Number(proposalCount[0]?.value ?? 0),
+    boardItems: Number(boardItemCount[0]?.value ?? 0),
+    chatSessions: Number(chatCount[0]?.value ?? 0),
+    digests: Number(digestCount[0]?.value ?? 0),
+    facts: Number(factCount[0]?.value ?? 0),
+    slackWorkspaces: Number(slackCount[0]?.value ?? 0),
+    telegramBindings: Number(telegramCount[0]?.value ?? 0),
+    ingestWebhooks: Number(webhookCount[0]?.value ?? 0),
+    extraProviders: integrationRows.map((row) => row.provider),
+    documentChecksums,
+    onboardingStepsCompleted: Number(onboardingCount[0]?.value ?? 0),
+  };
+}
+
 async function main(): Promise<void> {
   assertDemoVectorEnvironment();
   try {
     assertDemoFixture(await readDemoFixtureSnapshot());
+    assertExpandedDemoCorpus(await readExpandedDemoCorpusSnapshot());
     console.log('[demo:verify] deterministic demo fixture is intact');
   } finally {
     await closeDb();

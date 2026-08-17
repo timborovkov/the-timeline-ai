@@ -78,7 +78,7 @@ set +a
 
 pnpm db:generate            # only if you changed schema
 pnpm db:migrate
-pnpm demo:seed              # optional fixed fictional corpus; seeds and verifies exact evidence links
+pnpm demo:seed              # optional Acme Labs demo corpus; indexes vectors and verifies evidence
 </code></pre>
       <p>
         Exporting the root environment is required for the database and worker commands. The root
@@ -86,30 +86,37 @@ pnpm demo:seed              # optional fixed fictional corpus; seeds and verifie
         worker; Next.js reads the same values through <code>apps/web/.env</code>.
       </p>
       <p>
-        <code>pnpm demo:seed</code> runs the idempotent dev seed, indexes the fixture's raw events,
-        facts, document chunk, and meeting chunk through the production embed worker path, and then
-        runs <code>pnpm demo:verify</code>. The commands refuse production and only use local
+        <code>pnpm demo:seed</code> runs the idempotent dev seed, indexes every fixture-version raw
+        event, fact, document chunk, and meeting chunk through the production embed worker path, and
+        then runs <code>pnpm demo:verify</code>. The commands refuse production and only use local
         database and Qdrant hosts unless <code>ALLOW_DEV_SEED</code> is exactly
-        <code>I_UNDERSTAND_THIS_SEEDS_KNOWN_DEV_CREDENTIALS</code>. Before writing the fixture
-        document, the seed also requires a loopback <code>S3_ENDPOINT</code> and the
+        <code>I_UNDERSTAND_THIS_SEEDS_KNOWN_DEV_CREDENTIALS</code>. Before writing fixture
+        documents, the seed also requires a loopback <code>S3_ENDPOINT</code> and the
         <code>timeline-documents</code> bucket. Another isolated development store requires the
         separate exact acknowledgement
         <code>ALLOW_DEV_SEED_STORAGE=I_UNDERSTAND_THIS_WRITES_DEMO_DATA_TO_ISOLATED_STORAGE</code>;
         neither override permits <code>NODE_ENV=production</code>. The full command requires
         <code>AUTH_SECRET</code>, <code>DATABASE_URL</code>, <code>SECRETS_ENCRYPTION_KEY</code>,
-        <code>OPENROUTER_API_KEY</code>, and <code>QDRANT_URL</code>. It creates
-        <code>owner@timeline.dev</code> and <code>member@timeline.dev</code> with password
-        <code>timeline-dev</code>. The seeded GitHub and Linear credentials are fake, encrypted, and
-        disabled for sync. Daily digest email is disabled for the demo users so the worker can run
-        without outbound email or chat-bot configuration. Seed still creates the default email
-        digest destination for the team. Verification checks both login identities, active team
-        roles, and password usability without printing password hashes. It downloads the canonical
-        RustFS object and verifies its actual SHA-256 bytes, then uses a real query embedding and
-        team/user-scoped Qdrant searches to confirm every expected raw-event, fact, document-chunk,
-        and meeting-chunk point. A missing embedding prerequisite fails closed, and the document
-        remains <code>chunked</code> until Qdrant confirms applied point writes. Seeded canonical
-        objects leave legacy <code>source_event_id</code> empty and expose demo provenance through
-        reconciliation evidence, associations, and applied outputs.
+        <code>OPENROUTER_API_KEY</code>, and <code>QDRANT_URL</code>. It creates eight Acme Labs
+        logins, all with password <code>timeline-dev</code>: <code>owner@timeline.dev</code>,
+        <code>member@timeline.dev</code>, <code>jordan@timeline.dev</code>,
+        <code>sam@timeline.dev</code>, <code>riley@timeline.dev</code>,
+        <code>casey@timeline.dev</code>, <code>quinn@timeline.dev</code>, and
+        <code>harper@timeline.dev</code>. The seeded GitHub, Linear, Monday.com, Sentry, and Google
+        Drive credentials are fake, encrypted, and disabled for sync. Daily digest send stays
+        disabled so the worker can run without outbound email or chat-bot configuration. Seed still
+        creates the default email digest destination for the team, plus disabled Slack and Telegram
+        destinations, and twenty weekdays of digest history. Verification checks canonical login
+        identities, active team roles, and password usability without printing password hashes. It
+        downloads seeded RustFS objects and verifies their actual SHA-256 bytes, then uses a real
+        query embedding and team/user-scoped Qdrant searches to confirm every expected Northstar
+        raw-event, fact, document-chunk, and meeting-chunk point. A missing embedding prerequisite
+        fails closed, and documents remain <code>chunked</code> until Qdrant confirms applied point
+        writes. Seeded canonical objects leave legacy <code>source_event_id</code> empty and expose
+        demo provenance through reconciliation evidence, associations, and applied outputs. The
+        glossary, story, and fake credentials live in
+        <a href="../demo-corpus.md">docs/demo-corpus.md</a>. <code>pnpm demo:reset</code> wipes the
+        local stack and seeds again.
       </p>
 
       <p>Run the app:</p>
@@ -229,8 +236,9 @@ pnpm e2e:prod-smoke                   # build + standalone-server smoke; require
 pnpm e2e:setup / pnpm e2e:cleanup     # seed/remove deterministic e2e users and team
 pnpm dev:seed                         # seed local demo data with disabled fake integrations and reconciliation provenance
 pnpm demo:seed                        # seed, production-path index, and verify the private/local fictional demo corpus
+pnpm demo:reset                       # wipe local Postgres/Qdrant/S3/Redis, migrate, and seed again
 pnpm demo:index                       # re-index fixture vectors through the real embed worker path
-pnpm demo:verify                      # verify logins, downloaded document bytes, and scoped Qdrant points
+pnpm demo:verify                      # verify logins, downloaded document bytes, scoped Qdrant points, and corpus floors
 pnpm lint &amp;&amp; pnpm typecheck           # quick static checks
 pnpm knip                             # dead code / unused deps
 pnpm format                           # prettier write

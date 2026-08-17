@@ -293,6 +293,7 @@ describe('reconciliation cutover contracts', () => {
       'packages/shared/src/slack/dispatcher.ts',
       'packages/shared/src/team-scope.ts',
       'packages/shared/src/telegram/dispatcher.ts',
+      'scripts/demo-corpus/insert.ts',
       'scripts/seed-dev.ts',
     ]);
 

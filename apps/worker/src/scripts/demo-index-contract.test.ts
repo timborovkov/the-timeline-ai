@@ -72,11 +72,17 @@ describe('demo vector indexing contract', () => {
     ]);
   });
 
+  it('accepts larger fixture source sets than the Northstar minimum', () => {
+    const fixtureRows = rows();
+    fixtureRows.rawEvents.push({ id: 'event-extra' });
+    expect(() => assertExpectedDemoVectorSources(fixtureRows)).not.toThrow();
+  });
+
   it('fails closed when any fixture source kind is incomplete', () => {
     const fixtureRows = rows();
     fixtureRows.documentChunks = [];
     expect(() => assertExpectedDemoVectorSources(fixtureRows)).toThrow(
-      /documentChunks expected 1, found 0/,
+      /documentChunks expected at least 1, found 0/,
     );
   });
 });

@@ -2,7 +2,7 @@ import { type queue } from '@timeline/shared';
 
 const REMOTE_DEV_OVERRIDE = 'I_UNDERSTAND_THIS_SEEDS_KNOWN_DEV_CREDENTIALS';
 
-export const DEMO_VECTOR_SOURCE_COUNTS = {
+export const DEMO_VECTOR_SOURCE_MINIMUMS = {
   rawEvents: 4,
   facts: 5,
   documentChunks: 1,
@@ -50,11 +50,11 @@ export function assertDemoVectorIndexEnvironment(input: {
 }
 
 export function assertExpectedDemoVectorSources(rows: DemoVectorRows): void {
-  for (const [kind, expected] of Object.entries(DEMO_VECTOR_SOURCE_COUNTS)) {
+  for (const [kind, minimum] of Object.entries(DEMO_VECTOR_SOURCE_MINIMUMS)) {
     const actual = rows[kind as keyof DemoVectorRows].length;
-    if (actual !== expected) {
+    if (actual < minimum) {
       throw new Error(
-        `Demo vector source set is incomplete: ${kind} expected ${String(expected)}, found ${String(actual)}. Rerun pnpm dev:seed and inspect the deterministic fixture rows.`,
+        `Demo vector source set is incomplete: ${kind} expected at least ${String(minimum)}, found ${String(actual)}. Rerun pnpm dev:seed and inspect the deterministic fixture rows.`,
       );
     }
   }

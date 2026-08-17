@@ -41,6 +41,7 @@ import { hashPassword } from '@timeline/shared/passwords';
 import { getDocumentsBucket, getS3Client, putObject } from '@timeline/shared/s3';
 import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
 
+import { CORPUS_DOCUMENTS, CORPUS_PEOPLE, insertExpandedDemoCorpus } from './demo-corpus/index.js';
 import {
   assertDemoSeedEnvironment,
   DEMO_DOCUMENT_BYTE_SIZE,
@@ -129,8 +130,14 @@ async function assertReservedSeedRowsAreCompatible(db: ReturnType<typeof getDb>)
         .from(users)
         .where(
           or(
-            inArray(users.id, [IDS.owner, IDS.member]),
-            inArray(users.email, ['owner@timeline.dev', 'member@timeline.dev']),
+            inArray(
+              users.id,
+              CORPUS_PEOPLE.map((person) => person.id),
+            ),
+            inArray(
+              users.email,
+              CORPUS_PEOPLE.map((person) => person.email),
+            ),
           ),
         ),
       db
@@ -184,25 +191,16 @@ async function assertReservedSeedRowsAreCompatible(db: ReturnType<typeof getDb>)
     ]);
 
   for (const row of reservedUsers) {
-    const expected =
-      row.email === 'owner@timeline.dev'
-        ? IDS.owner
-        : row.email === 'member@timeline.dev'
-          ? IDS.member
-          : undefined;
-    if (expected && row.id !== expected) {
+    const expected = CORPUS_PEOPLE.find((person) => person.email === row.email);
+    if (expected && row.id !== expected.id) {
       throw new Error(
         `Cannot seed: ${row.email} already exists with id ${row.id}. Run pnpm dev:wipe or remove the conflicting dev row first.`,
       );
     }
-    if (row.id === IDS.owner && row.email !== 'owner@timeline.dev') {
+    const reserved = CORPUS_PEOPLE.find((person) => person.id === row.id);
+    if (reserved && row.email !== reserved.email) {
       throw new Error(
-        `Cannot seed: reserved owner id ${IDS.owner} already belongs to ${row.email}.`,
-      );
-    }
-    if (row.id === IDS.member && row.email !== 'member@timeline.dev') {
-      throw new Error(
-        `Cannot seed: reserved member id ${IDS.member} already belongs to ${row.email}.`,
+        `Cannot seed: reserved user id ${reserved.id} already belongs to ${row.email}.`,
       );
     }
   }
@@ -309,6 +307,14 @@ async function main(): Promise<void> {
       body: Buffer.from(DEMO_DOCUMENT_TEXT),
       contentType: DEMO_DOCUMENT_CONTENT_TYPE,
     });
+    for (const document of CORPUS_DOCUMENTS) {
+      await putObject(getS3Client(), {
+        bucket: getDocumentsBucket(),
+        key: document.objectKey,
+        body: document.bytes,
+        contentType: document.contentType,
+      });
+    }
 
     await db.transaction(async (tx) => {
       await tx
@@ -356,7 +362,13 @@ async function main(): Promise<void> {
           name: 'Acme Labs',
           inboundEmail: 'acme-labs@inbound.timeline.dev',
           inboundSenderWhitelistEnabled: true,
-          inboundSenderWhitelist: ['owner@timeline.dev', 'member@timeline.dev'],
+          inboundSenderWhitelist: [
+            ...CORPUS_PEOPLE.map((person) => person.email),
+            'elena.park@northstar.example',
+            'priya.shah@northwind.example',
+            'dana.cole@brightline.example',
+            'press@therecord.example',
+          ],
         })
         .onConflictDoUpdate({
           target: teams.slug,
@@ -954,6 +966,28 @@ async function main(): Promise<void> {
         );
 
       await tx
+        .update(rawEvents)
+        .set({
+          sourceMetadata: sql`jsonb_set(coalesce(${rawEvents.sourceMetadata}, '{}'::jsonb), '{fixture_version}', to_jsonb(${DEMO_FIXTURE_VERSION}::text), true)`,
+        })
+        .where(
+          and(
+            eq(rawEvents.teamId, IDS.team),
+            inArray(rawEvents.id, [
+              IDS.eventKickoff,
+              IDS.eventEmail,
+              IDS.eventSlack,
+              IDS.eventMeeting,
+              IDS.eventGithub,
+              IDS.eventGithubReview,
+              IDS.eventGithubWorkflowSuccess,
+              IDS.eventGithubWorkflowRetry,
+              IDS.eventLinear,
+            ]),
+          ),
+        );
+
+      await tx
         .insert(meetings)
         .values({
           id: DEMO_IDS.meeting,
@@ -1193,7 +1227,7 @@ async function main(): Promise<void> {
             rawEventId: IDS.eventKickoff,
             statement: 'Project Atlas aims to unify customer timelines before the July beta.',
             confidence: 0.96,
-            modelVersion: 'dev-seed',
+            modelVersion: DEMO_FIXTURE_VERSION,
             extractedAt: now,
           },
           {
@@ -1202,7 +1236,7 @@ async function main(): Promise<void> {
             rawEventId: IDS.eventEmail,
             statement: 'The vendor security appendix needs approval by Friday.',
             confidence: 0.92,
-            modelVersion: 'dev-seed',
+            modelVersion: DEMO_FIXTURE_VERSION,
             extractedAt: now,
           },
           {
@@ -1211,7 +1245,7 @@ async function main(): Promise<void> {
             rawEventId: IDS.eventMeeting,
             statement: 'Meeting bots should remain transcript-only and consent-gated for beta.',
             confidence: 0.95,
-            modelVersion: 'dev-seed',
+            modelVersion: DEMO_FIXTURE_VERSION,
             extractedAt: now,
           },
           {
@@ -2117,13 +2151,18 @@ async function main(): Promise<void> {
           },
         ])
         .onConflictDoNothing();
+
+      await insertExpandedDemoCorpus(tx);
     });
 
-    console.log('[seed-dev] seeded Acme Labs dev workspace');
-    console.log(`[seed-dev] owner login: owner@timeline.dev / ${DEMO_LOGIN_PASSWORD}`);
-    console.log(`[seed-dev] member login: member@timeline.dev / ${DEMO_LOGIN_PASSWORD}`);
+    console.log('[seed-dev] seeded Acme Labs demo workspace');
+    console.log('[seed-dev] logins (password timeline-dev):');
+    for (const person of CORPUS_PEOPLE) {
+      console.log(`[seed-dev]   ${person.email} (${person.role}, ${person.title})`);
+    }
     console.log('[seed-dev] fake GitHub access token: gho_dev_seed_access_token_123');
     console.log('[seed-dev] fake Linear access token: lin_api_dev_seed_access_token_456');
+    console.log('[seed-dev] extra fake tokens are listed in docs/demo-corpus.md');
   } finally {
     await closeDb();
   }

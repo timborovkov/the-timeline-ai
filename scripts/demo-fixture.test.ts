@@ -17,6 +17,16 @@ import {
   DEMO_IDS,
   type DemoFixtureSnapshot,
 } from './demo-fixture.js';
+import {
+  assertExpandedDemoCorpus,
+  CORPUS_DOCUMENTS,
+  CORPUS_EVENTS,
+  CORPUS_OBJECTS,
+  CORPUS_PEOPLE,
+  CORPUS_PROPOSALS,
+  CORPUS_VOLUME_FLOORS,
+  corpusObjectId,
+} from './demo-corpus/index.js';
 
 const localEnv = {
   DATABASE_URL: 'postgres://timeline:timeline_dev@localhost:5432/timeline',
@@ -221,6 +231,73 @@ assert.equal(
 assert.equal(
   packageJson.scripts?.['demo:seed'],
   'pnpm dev:seed && pnpm demo:index && pnpm demo:verify',
+);
+assert.equal(packageJson.scripts?.['demo:reset'], 'pnpm dev:wipe && pnpm demo:seed');
+assert.equal(packageJson.scripts?.['demo:index']?.includes('fixture-version=demo-seed-v1'), true);
+
+const glossary = readFileSync('docs/demo-corpus.md', 'utf8');
+for (const person of CORPUS_PEOPLE) {
+  assert.match(glossary, new RegExp(person.email.replaceAll('.', '\\.')));
+}
+assert.match(glossary, /Customer dealflow/);
+assert.match(glossary, /Series A funding/);
+assert.match(glossary, /pnpm demo:seed/);
+assert.match(glossary, /pnpm demo:reset/);
+
+assert.ok(CORPUS_EVENTS.length >= CORPUS_VOLUME_FLOORS.events - 20);
+assert.ok(CORPUS_OBJECTS.length >= CORPUS_VOLUME_FLOORS.objects);
+assert.ok(CORPUS_DOCUMENTS.length >= CORPUS_VOLUME_FLOORS.documents);
+assert.equal(
+  new Set(CORPUS_OBJECTS.map((row) => row.canonicalName.toLowerCase())).size,
+  CORPUS_OBJECTS.length,
+);
+assert.equal(corpusObjectId('Brightline Health'), corpusObjectId('Brightline Health', 'deal'));
+assert.ok(
+  CORPUS_PROPOSALS.every((row) => typeof row.eventId === 'string' && row.eventId.length > 0),
+);
+assert.doesNotThrow(() =>
+  assertExpandedDemoCorpus({
+    people: CORPUS_PEOPLE.length,
+    loginEmails: CORPUS_PEOPLE.map((person) => person.email),
+    events: 90,
+    objects: 50,
+    documents: CORPUS_DOCUMENTS.length + 1,
+    meetings: 8,
+    pendingProposals: 14,
+    boardItems: 12,
+    chatSessions: 4,
+    digests: 20,
+    facts: 20,
+    slackWorkspaces: 1,
+    telegramBindings: 1,
+    ingestWebhooks: 1,
+    extraProviders: ['github', 'linear', 'monday', 'sentry', 'google_drive'],
+    documentChecksums: CORPUS_DOCUMENTS.map((doc) => doc.checksumSha256),
+    onboardingStepsCompleted: 11,
+  }),
+);
+assert.throws(
+  () =>
+    assertExpandedDemoCorpus({
+      people: 2,
+      loginEmails: ['owner@timeline.dev'],
+      events: 4,
+      objects: 3,
+      documents: 1,
+      meetings: 1,
+      pendingProposals: 0,
+      boardItems: 2,
+      chatSessions: 0,
+      digests: 0,
+      facts: 5,
+      slackWorkspaces: 0,
+      telegramBindings: 0,
+      ingestWebhooks: 0,
+      extraProviders: ['github'],
+      documentChecksums: [],
+      onboardingStepsCompleted: 0,
+    }),
+  /Expanded demo corpus verification failed/,
 );
 
 console.log('demo fixture tests passed');

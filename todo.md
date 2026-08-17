@@ -50,8 +50,10 @@ records:
       more expensive than text extraction; text-based PDFs now extract locally
       via Daytona sandbox text extract, but scanned/mixed PDFs and images still need a clear
       budget guardrail before heavy dogfooding.
-- [ ] Add dogfood document content: contracts, deal docs, internal guides,
-      policies, office rules, onboarding docs, and customer notes.
+- [x] Add dogfood document content: contracts, deal docs, internal guides,
+      policies, office rules, onboarding docs, and customer notes. The reusable
+      Acme Labs demo corpus now seeds those documents plus the broader month of
+      use; see `docs/demo-corpus.md`.
 - [ ] Surface terminal meeting bot failed states in the operations/job dashboard
       with a manual retry or rejoin path. Scheduled Saved Meetings already retry
       one in-window no-show automatically; final failures are captured as
