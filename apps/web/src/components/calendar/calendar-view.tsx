@@ -666,7 +666,9 @@ function useCalendarViewModel({
             : await createCalendarEventAction(input);
           return saved.ok
             ? saved
-            : { error: saved.error ?? (editing ? 'Couldn’t update event' : 'Couldn’t create event') };
+            : {
+                error: saved.error ?? (editing ? 'Couldn’t update event' : 'Couldn’t create event'),
+              };
         },
         undo:
           editing && originalEvent

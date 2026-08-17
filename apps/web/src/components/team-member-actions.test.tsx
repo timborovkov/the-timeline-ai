@@ -18,7 +18,8 @@ vi.mock('next/navigation', () => ({
 }));
 vi.mock('@/app/actions/teams', () => fakes);
 vi.mock('@/lib/notify', () => ({
-  notifyAction: (options: { run: () => Promise<{ error?: string }> }) => fakes.notifyAction(options),
+  notifyAction: (options: { run: () => Promise<{ error?: string }> }) =>
+    fakes.notifyAction(options),
 }));
 
 const { MemberRoleForm, PendingInviteActions, RemoveMemberForm } =

@@ -27,7 +27,8 @@ vi.mock('@/app/actions/suggestions', () => ({
   rejectSuggestionItemAction: fakes.rejectSuggestionItemAction,
 }));
 vi.mock('@/lib/notify', () => ({
-  notifyAction: (options: { run: () => Promise<{ error?: string }> }) => fakes.notifyAction(options),
+  notifyAction: (options: { run: () => Promise<{ error?: string }> }) =>
+    fakes.notifyAction(options),
   notifySuccess: fakes.notifySuccess,
 }));
 
