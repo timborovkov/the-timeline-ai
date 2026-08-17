@@ -115,9 +115,13 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       reads without blocking the page/API response, then filled asynchronously
       by the worker after rebuilding the same visible cache key. Daily digest
       generation now summarizes bundled moment briefs, applies matching cached
-      AI presentations, and leads user-facing digest copy with moment counts
-      while retaining raw eventCount / sourceDistribution for internal metrics
-      and per-source detail. It durably skips quiet windows before summarization
+      AI presentations, and writes narrative overview and section prose instead
+      of PR or CI inventories. Home, Work → Digests, and email reuse that
+      payload: the latest digest stays folded, activity counts new moments,
+      proposals, tasks, and objects, task blocks cover created or completed
+      work, and repeating calendar series collapse to one upcoming entry. Raw
+      eventCount / sourceDistribution remain for internal metrics and per-source
+      detail. It durably skips quiet windows before summarization
       and email delivery unless the recipient has fresh local-cycle activity,
       pending approvals, or upcoming calendar context. Timeline Moments chrome
       and IndexStrip loaded counts also lead with moments (Audit trail keeps
