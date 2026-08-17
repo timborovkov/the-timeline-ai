@@ -559,7 +559,7 @@ describe('TimelineList evidence-owned actions', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /Telegram message 4/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Telegram message 4 ·/i }));
     renderLastInspectorContent();
 
     expect(
