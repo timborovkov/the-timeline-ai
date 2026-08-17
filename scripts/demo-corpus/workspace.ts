@@ -81,13 +81,6 @@ function objectByName(name: string, type?: (typeof CORPUS_OBJECTS)[number]['type
 
 export const DEALFLOW_ITEMS = [
   {
-    id: CORPUS_UUID.board(31),
-    entityName: 'Polar Studio',
-    laneName: 'New',
-    responsibleUserId: CORPUS_PERSON.casey.id,
-    nextStep: 'Founder demo on 19 August',
-  },
-  {
     id: CORPUS_UUID.board(32),
     entityName: 'Helio Retail pilot',
     laneName: 'Qualified',
@@ -168,6 +161,66 @@ export function dealflowEntityId(name: string): string {
   return objectByName(name);
 }
 
+export const ATLAS_LAUNCH_BOARD = {
+  id: 'b0000000-0000-4000-8000-000000000001',
+  lanes: {
+    todo: 'b0000000-0000-4000-8000-000000000002',
+    doing: 'b0000000-0000-4000-8000-000000000003',
+    done: 'b0000000-0000-4000-8000-000000000004',
+  },
+} as const;
+
+export const ATLAS_LAUNCH_ITEMS = [
+  {
+    id: CORPUS_UUID.board(51),
+    entityName: 'Write Avery webinar quote',
+    laneId: ATLAS_LAUNCH_BOARD.lanes.todo,
+    position: 1,
+    responsibleUserId: CORPUS_PERSON.avery.id,
+    nextStep: 'Avery writes the quote Riley can put on the landing page',
+  },
+  {
+    id: CORPUS_UUID.board(52),
+    entityName: 'Record webinar dry run',
+    laneId: ATLAS_LAUNCH_BOARD.lanes.todo,
+    position: 2,
+    responsibleUserId: CORPUS_PERSON.riley.id,
+    nextStep: 'Record after the 18 August run-of-show',
+  },
+  {
+    id: CORPUS_UUID.board(53),
+    entityName: 'Schedule Maya Chen final round',
+    laneId: ATLAS_LAUNCH_BOARD.lanes.doing,
+    position: 1,
+    responsibleUserId: CORPUS_PERSON.quinn.id,
+    nextStep: 'Final round 15 August',
+  },
+  {
+    id: CORPUS_UUID.board(54),
+    entityName: 'Prepare Brightline MSA excerpt',
+    laneId: ATLAS_LAUNCH_BOARD.lanes.doing,
+    position: 2,
+    responsibleUserId: CORPUS_PERSON.harper.id,
+    nextStep: 'Send the excerpt, not a new template',
+  },
+  {
+    id: CORPUS_UUID.board(55),
+    entityName: 'Answer Northwind diligence Q&A',
+    laneId: ATLAS_LAUNCH_BOARD.lanes.doing,
+    position: 3,
+    responsibleUserId: CORPUS_PERSON.harper.id,
+    nextStep: 'Keep answers in the Fundraising folder',
+  },
+  {
+    id: CORPUS_UUID.board(56),
+    entityName: 'Replay CSV preview from stored bytes',
+    laneId: ATLAS_LAUNCH_BOARD.lanes.done,
+    position: 1,
+    responsibleUserId: CORPUS_PERSON.jordan.id,
+    nextStep: 'Keep preview off the live vendor endpoint',
+  },
+] as const;
+
 export const CORPUS_CALENDAR_EVENTS = [
   {
     id: CORPUS_UUID.calendar(1),
@@ -175,7 +228,7 @@ export const CORPUS_CALENDAR_EVENTS = [
     startAt: '2026-08-20T15:00:00.000Z',
     endAt: '2026-08-20T16:00:00.000Z',
     createdByUserId: CORPUS_PERSON.riley.id,
-    rawEventId: CORPUS_EVENTS.find((row) => row.contentText.includes('Atlas beta webinar'))?.id,
+    rawEventId: CORPUS_EVENTS.find((row) => row.contentText.includes('public launch event'))?.id,
   },
   {
     id: CORPUS_UUID.calendar(2),
@@ -190,6 +243,20 @@ export const CORPUS_CALENDAR_EVENTS = [
     startAt: '2026-08-21T15:00:00.000Z',
     endAt: '2026-08-21T16:00:00.000Z',
     createdByUserId: CORPUS_PERSON.casey.id,
+  },
+  {
+    id: CORPUS_UUID.calendar(4),
+    title: 'Polar Studio founder demo',
+    startAt: '2026-08-19T14:00:00.000Z',
+    endAt: '2026-08-19T14:30:00.000Z',
+    createdByUserId: CORPUS_PERSON.casey.id,
+  },
+  {
+    id: CORPUS_UUID.calendar(5),
+    title: 'Northwind diligence working session',
+    startAt: '2026-08-19T09:00:00.000Z',
+    endAt: '2026-08-19T10:30:00.000Z',
+    createdByUserId: CORPUS_PERSON.harper.id,
   },
 ] as const;
 
@@ -217,13 +284,17 @@ export const CORPUS_PROPOSALS = [
     id: CORPUS_UUID.suggestion(2),
     itemId: CORPUS_UUID.suggestion(102),
     evidenceId: CORPUS_UUID.suggestion(202),
-    title: 'Move Brightline to Proposal',
-    summary: 'Scoping accepted CSV plus evidence packs.',
+    title: 'Create Brightline MSA send follow-up',
+    summary: 'Proposal work is the excerpt, not a new template.',
     source: 'background' as const,
-    operation: 'update' as const,
-    targetKind: 'object' as const,
-    targetId: objectByName('Brightline Health'),
-    proposedPayload: { status: 'proposal', stage: 'proposal' },
+    operation: 'create' as const,
+    targetKind: 'task' as const,
+    proposedPayload: {
+      type: 'follow_up',
+      canonicalName: 'Send Brightline MSA excerpt by 15 August',
+      dueAt: '2026-08-15T17:00:00.000Z',
+      assigneeUserId: CORPUS_PERSON.harper.id,
+    },
     eventId: CORPUS_EVENTS.find((row) => row.contentText.includes('accepted CSV + evidence packs'))
       ?.id,
   },
@@ -377,16 +448,16 @@ export const CORPUS_PROPOSALS = [
     id: CORPUS_UUID.suggestion(12),
     itemId: CORPUS_UUID.suggestion(112),
     evidenceId: CORPUS_UUID.suggestion(212),
-    title: 'Mark Kite Logistics lost on the board',
-    summary: 'On-prem request is a hard no for v1.',
+    title: 'Create Kite reopen follow-up',
+    summary: 'On-prem is a hard no; reopen only for EU SaaS.',
     source: 'background' as const,
-    operation: 'update' as const,
-    targetKind: 'board_item_update' as const,
+    operation: 'create' as const,
+    targetKind: 'task' as const,
     proposedPayload: {
-      boardItemId: CORPUS_UUID.board(36),
-      field: 'laneId',
-      newValue: boardLaneId(DEALFLOW_BOARD, 'Lost'),
-      laneName: 'Lost',
+      type: 'follow_up',
+      canonicalName: 'Reopen Kite only if they accept EU SaaS',
+      dueAt: '2026-09-01T17:00:00.000Z',
+      assigneeUserId: CORPUS_PERSON.casey.id,
     },
     eventId: CORPUS_EVENTS.find((row) => row.contentText.includes('Kite Logistics went cold'))?.id,
   },
@@ -415,6 +486,7 @@ export const CORPUS_PROPOSALS = [
     source: 'chat' as const,
     operation: 'archive_or_cancel' as const,
     targetKind: 'task' as const,
+    targetId: objectByName('Press backgrounder for The Record'),
     proposedPayload: { status: 'cancelled' },
     eventId: CORPUS_EVENTS.find((row) =>
       row.contentText.includes('backgrounder on evidence-backed'),
@@ -458,6 +530,24 @@ export const CORPUS_CHATS = [
     question: 'What is blocking the Atlas importer?',
     answer:
       'The live importer 500s on CSV preview (ATLAS-218) were the internal blocker; that is resolved by replaying stored bytes. The customer-facing blocker is still Northstar field-mapping, tracked on NORTH-42.',
+  },
+  {
+    id: CORPUS_UUID.chat(5),
+    userId: CORPUS_PERSON.casey.id,
+    title: 'Show the dealflow pipeline',
+    createdAt: '2026-08-14T16:55:00.000Z',
+    question: 'Show the dealflow pipeline.',
+    answer:
+      'Customer dealflow is Helio and Moss in Qualified, Orchard in Scoping, Brightline in Proposal, Northstar Active, and Kite Lost. Polar Studio is inbound and waiting on an add-to-board approval. Series A is Northwind in Diligence, Linden and Harbor Peak in Intro.',
+  },
+  {
+    id: CORPUS_UUID.chat(6),
+    userId: CORPUS_PERSON.quinn.id,
+    title: 'What does the code of conduct say about private events?',
+    createdAt: '2026-08-08T11:00:00.000Z',
+    question: 'What does the code of conduct say about private events?',
+    answer:
+      'The code of conduct says not to share customer evidence outside the people named on the object. Quiet forwarding of private Timeline events is a firing offense. Report issues to Quinn or Avery.',
   },
 ] as const;
 

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { DEMO_FIXTURE_VERSION, DEMO_IDS, DEMO_LOGIN_PASSWORD } from '../demo-fixture.js';
 
+import { buildCadenceBeats, type CadenceEventSource } from './cadence.js';
 import { CORPUS_UUID } from './ids.js';
 import { buildSimplePdf } from './pdf.js';
 import { CORPUS_PERSON, type CorpusPerson } from './people.js';
@@ -11,15 +12,15 @@ export const TEAM_ID = DEMO_IDS.team;
 
 export const CORPUS_VOLUME_FLOORS = {
   people: 8,
-  events: 70,
-  objects: 40,
-  documents: 8,
-  meetings: 6,
+  events: 150,
+  objects: 50,
+  documents: 10,
+  meetings: 7,
   pendingProposals: 12,
-  boardItems: 12,
-  chatSessions: 4,
+  boardItems: 14,
+  chatSessions: 5,
   digests: 15,
-  facts: 15,
+  facts: 20,
 } as const;
 
 export const CORPUS_SECRETS = {
@@ -37,16 +38,7 @@ export const CORPUS_SECRETS = {
   mcpInboundBearer: 'mcp_demo_seed_ledger_bearer_0001',
 } as const;
 
-type EventSource =
-  | 'web'
-  | 'email'
-  | 'slack'
-  | 'telegram'
-  | 'integration'
-  | 'meeting'
-  | 'calendar'
-  | 'document'
-  | 'ingest_webhook';
+type EventSource = CadenceEventSource;
 
 export interface CorpusEvent {
   id: string;
@@ -151,7 +143,7 @@ function event(
   };
 }
 
-export const CORPUS_EVENTS: CorpusEvent[] = [
+const STORY_EVENTS: CorpusEvent[] = [
   event(
     1,
     'jordan',
@@ -559,7 +551,7 @@ export const CORPUS_EVENTS: CorpusEvent[] = [
     'casey',
     'slack',
     '2026-08-10T17:36:00.000Z',
-    'Slack #gtm: Polar Studio asked for a founder-led demo on August 19. Tiny deal, useful logo. Casey put them in New.',
+    'Slack #gtm: Polar Studio asked for a founder-led demo on August 19. Tiny deal, useful logo. Casey wants them in New once the board proposal lands.',
     {
       slack_channel_name: '#gtm',
       slack_event_id: 'EvDEMOSEEDGTM006',
@@ -839,9 +831,24 @@ export const CORPUS_EVENTS: CorpusEvent[] = [
     'casey',
     'web',
     '2026-08-14T16:50:00.000Z',
-    'Explicit note from Casey: dealflow this week is Helio Qualified, Brightline Proposal, Orchard Scoping, Polar New, Moss Qualified, Kite Lost. Series A stays with Northwind lead and Linden follow.',
+    'Explicit note from Casey: dealflow this week is Helio Qualified, Brightline Proposal, Orchard Scoping, Polar inbound (not on the board yet), Moss Qualified, Kite Lost. Series A stays with Northwind lead and Linden follow.',
     { capture_kind: 'explicit_chat_note', command: '/timeline note', surface: 'manual_note' },
     'inline://timeline/demo-seed/note/dealflow-week',
+  ),
+];
+
+export const CORPUS_EVENTS: CorpusEvent[] = [
+  ...STORY_EVENTS,
+  ...buildCadenceBeats().map((beat) =>
+    event(
+      beat.n,
+      beat.author,
+      beat.source,
+      beat.occurredAt,
+      beat.contentText,
+      beat.extra,
+      beat.payloadRef,
+    ),
   ),
 ];
 
@@ -1217,6 +1224,108 @@ const OBJECT_DEFS: Array<Omit<CorpusObject, 'id'> & { n: number }> = [
     stage: 'decided',
     ownerUserId: CORPUS_PERSON.sam.id,
   },
+  {
+    n: 43,
+    type: 'company',
+    canonicalName: 'Polar Studio account',
+    status: 'active',
+    ownerUserId: CORPUS_PERSON.casey.id,
+    metadata: { domain: 'polarstudio.example' },
+  },
+  {
+    n: 44,
+    type: 'company',
+    canonicalName: 'Moss & Co account',
+    status: 'active',
+    ownerUserId: CORPUS_PERSON.casey.id,
+    metadata: { domain: 'moss.example' },
+  },
+  {
+    n: 45,
+    type: 'company',
+    canonicalName: 'Orchard Finance account',
+    status: 'active',
+    ownerUserId: CORPUS_PERSON.casey.id,
+    metadata: { domain: 'orchard.example' },
+  },
+  {
+    n: 46,
+    type: 'company',
+    canonicalName: 'Kite Logistics account',
+    status: 'archived',
+    ownerUserId: CORPUS_PERSON.casey.id,
+    metadata: { domain: 'kite.example', reason: 'on_prem' },
+  },
+  {
+    n: 47,
+    type: 'task',
+    canonicalName: 'Answer Northwind diligence Q&A',
+    status: 'doing',
+    stage: 'doing',
+    ownerUserId: CORPUS_PERSON.harper.id,
+    dueAt: '2026-08-19T17:00:00.000Z',
+    taskCategory: 'finance',
+  },
+  {
+    n: 48,
+    type: 'task',
+    canonicalName: 'Record webinar dry run',
+    status: 'todo',
+    stage: 'todo',
+    ownerUserId: CORPUS_PERSON.riley.id,
+    dueAt: '2026-08-18T16:00:00.000Z',
+    taskCategory: 'marketing',
+  },
+  {
+    n: 49,
+    type: 'follow_up',
+    canonicalName: 'Send one-pager to Linden Ventures',
+    status: 'todo',
+    ownerUserId: CORPUS_PERSON.avery.id,
+    dueAt: '2026-08-16T17:00:00.000Z',
+  },
+  {
+    n: 50,
+    type: 'follow_up',
+    canonicalName: 'Press backgrounder for The Record',
+    status: 'todo',
+    ownerUserId: CORPUS_PERSON.riley.id,
+    dueAt: '2026-08-22T17:00:00.000Z',
+  },
+  {
+    n: 51,
+    type: 'task',
+    canonicalName: 'Map Moss Monday.com keep-vs-replace',
+    status: 'todo',
+    stage: 'todo',
+    ownerUserId: CORPUS_PERSON.casey.id,
+    assigneeUserId: CORPUS_PERSON.mika.id,
+    dueAt: '2026-08-20T17:00:00.000Z',
+    taskCategory: 'customer_success',
+  },
+  {
+    n: 52,
+    type: 'decision',
+    canonicalName: 'Harbor Peak is not a Series A lead',
+    status: 'accepted',
+    stage: 'decided',
+    ownerUserId: CORPUS_PERSON.avery.id,
+  },
+  {
+    n: 53,
+    type: 'incident',
+    canonicalName: 'Ledger webhook signature mismatch',
+    aliases: ['ATLAS-241'],
+    status: 'resolved',
+    ownerUserId: CORPUS_PERSON.jordan.id,
+  },
+  {
+    n: 54,
+    type: 'document',
+    canonicalName: 'Helsinki office rules',
+    status: 'active',
+    ownerUserId: CORPUS_PERSON.quinn.id,
+  },
 ];
 
 export const CORPUS_OBJECTS: CorpusObject[] = OBJECT_DEFS.map((row) => {
@@ -1343,6 +1452,44 @@ export const CORPUS_FACTS = [
     entityId: objectId(21),
     statement: 'Open hiring loops this month are Senior backend engineer and Product designer.',
   },
+  {
+    id: CORPUS_UUID.fact(17),
+    rawEventId: eventId(61),
+    entityId: objectId(34),
+    statement: 'The 14 July standup named importer 500s as the week-one fire.',
+  },
+  {
+    id: CORPUS_UUID.fact(18),
+    rawEventId: eventId(51),
+    entityId: objectId(50),
+    statement:
+      'The Record asked for a backgrounder and can wait until the one-pager is public-safe.',
+  },
+  {
+    id: CORPUS_UUID.fact(19),
+    rawEventId: eventId(50),
+    entityId: objectId(52),
+    statement: 'Harbor Peak is a courtesy catch-up and is not on the Series A lead path.',
+  },
+  {
+    id: CORPUS_UUID.fact(20),
+    rawEventId: eventId(45),
+    entityId: objectId(47),
+    statement: 'Harper owns Northwind diligence Q&A from the data room.',
+  },
+  {
+    id: CORPUS_UUID.fact(21),
+    rawEventId: eventId(18),
+    entityId: objectId(51),
+    statement:
+      'Moss & Co wants to keep Monday.com; keep-vs-replace must be mapped before a proposal.',
+  },
+  {
+    id: CORPUS_UUID.fact(22),
+    rawEventId: eventId(60),
+    entityId: objectId(16),
+    statement: 'Polar Studio is inbound and not yet on the dealflow board.',
+  },
 ] as const;
 
 function documentSpec(input: {
@@ -1361,16 +1508,15 @@ function documentSpec(input: {
     ? buildSimplePdf(input.name.replace(/\.pdf$/i, ''), input.paragraphs)
     : Buffer.from(body, 'utf8');
   const id = CORPUS_UUID.document(input.n);
-  const versionId = CORPUS_UUID.document(input.n + 100);
-  const chunkSize = Math.ceil(input.paragraphs.length / 2) || 1;
+  const versionId = CORPUS_UUID.document(100 + input.n);
   const chunks = [
-    input.paragraphs.slice(0, chunkSize).join('\n\n'),
-    input.paragraphs.slice(chunkSize).join('\n\n'),
+    input.paragraphs.slice(0, Math.ceil(input.paragraphs.length / 2) || 1).join('\n\n'),
+    input.paragraphs.slice(Math.ceil(input.paragraphs.length / 2) || 1).join('\n\n'),
   ].filter((chunk) => chunk.length > 0);
   return {
     id,
     versionId,
-    chunkIds: chunks.map((_, index) => CORPUS_UUID.document(input.n + 200 + index)),
+    chunkIds: chunks.map((_, index) => CORPUS_UUID.document(400 + input.n * 10 + index)),
     folderId: CORPUS_UUID.folder(input.folderN),
     name: input.name,
     filename: input.filename,
@@ -1532,6 +1678,37 @@ export const CORPUS_DOCUMENTS: CorpusDocument[] = [
       'Preferred: evidence, approval, citation, handoff, field-mapping, CSV fallback.',
     ],
   }),
+  documentSpec({
+    n: 10,
+    folderN: 1,
+    name: 'Contractor agreement excerpt.pdf',
+    filename: 'contractor-agreement-excerpt.pdf',
+    contentType: 'application/pdf',
+    owner: 'quinn',
+    occurredAt: '2026-07-22T11:00:00.000Z',
+    asPdf: true,
+    paragraphs: [
+      'This excerpt is fictional. Contractors use Timeline as themselves, never a shared login.',
+      'Customer evidence stays on the objects named in the statement of work. Forwarding private events is a material breach.',
+      'Meeting bots join only after the host confirms participants will be told. Raw audio is not retained.',
+      'Governing law: Finland. Quinn Okonkwo is the hiring manager of record for people operations contractors.',
+    ],
+  }),
+  documentSpec({
+    n: 11,
+    folderN: 2,
+    name: 'Security FAQ.md',
+    filename: 'security-faq.md',
+    contentType: 'text/markdown',
+    owner: 'jordan',
+    occurredAt: '2026-08-01T16:10:00.000Z',
+    paragraphs: [
+      'Atlas stores team-scoped events. Outbound MCP bearer keys see only team-visibility rows.',
+      'Secrets at rest use AES-256-GCM. Integration tokens are never stored as plaintext.',
+      'CSV preview replay reads stored bytes. We do not call the customer vendor during preview.',
+      'Production deletes follow team export. Demo wipe is pnpm demo:reset on local stacks only.',
+    ],
+  }),
 ];
 
 function standupTranscript(beats: string[]): CorpusMeeting['transcript'] {
@@ -1652,6 +1829,21 @@ export const CORPUS_MEETINGS: CorpusMeeting[] = [
     transcript: standupTranscript([
       'Northstar remains the proof point. Field-mapping email still missing. Webinar stays August 20.',
       'Maya Chen goes to final round. Backend loop reopens next week.',
+    ]),
+  },
+  {
+    id: CORPUS_UUID.meeting(7),
+    chunkIds: [CORPUS_UUID.meeting(109), CORPUS_UUID.meeting(110)],
+    rawEventId: eventId(61),
+    title: 'Weekly product standup',
+    platform: 'meet',
+    meetingUrl: 'https://meet.example.test/acme-weekly-standup',
+    startedAt: '2026-07-14T09:30:00.000Z',
+    endedAt: '2026-07-14T10:00:00.000Z',
+    createdByUserId: CORPUS_PERSON.avery.id,
+    transcript: standupTranscript([
+      'Importer 500s are the week-one fire. Do not start webinar polish until replay is in.',
+      'Northstar field-mapping is already the longer blocker. CSV fallback is the plan if they slip.',
     ]),
   },
 ];

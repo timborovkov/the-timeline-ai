@@ -244,9 +244,14 @@ assert.match(glossary, /Series A funding/);
 assert.match(glossary, /pnpm demo:seed/);
 assert.match(glossary, /pnpm demo:reset/);
 
-assert.ok(CORPUS_EVENTS.length >= CORPUS_VOLUME_FLOORS.events - 20);
+assert.ok(CORPUS_EVENTS.length >= CORPUS_VOLUME_FLOORS.events);
 assert.ok(CORPUS_OBJECTS.length >= CORPUS_VOLUME_FLOORS.objects);
 assert.ok(CORPUS_DOCUMENTS.length >= CORPUS_VOLUME_FLOORS.documents);
+assert.equal(new Set(CORPUS_EVENTS.map((row) => row.id)).size, CORPUS_EVENTS.length);
+assert.equal(
+  new Set(CORPUS_DOCUMENTS.flatMap((doc) => [doc.id, doc.versionId, ...doc.chunkIds])).size,
+  CORPUS_DOCUMENTS.reduce((count, doc) => count + 2 + doc.chunkIds.length, 0),
+);
 assert.equal(
   new Set(CORPUS_OBJECTS.map((row) => row.canonicalName.toLowerCase())).size,
   CORPUS_OBJECTS.length,
@@ -259,15 +264,15 @@ assert.doesNotThrow(() =>
   assertExpandedDemoCorpus({
     people: CORPUS_PEOPLE.length,
     loginEmails: CORPUS_PEOPLE.map((person) => person.email),
-    events: 90,
-    objects: 50,
+    events: 180,
+    objects: 55,
     documents: CORPUS_DOCUMENTS.length + 1,
-    meetings: 8,
+    meetings: 9,
     pendingProposals: 14,
-    boardItems: 12,
-    chatSessions: 4,
+    boardItems: 17,
+    chatSessions: 6,
     digests: 20,
-    facts: 20,
+    facts: 22,
     slackWorkspaces: 1,
     telegramBindings: 1,
     ingestWebhooks: 1,

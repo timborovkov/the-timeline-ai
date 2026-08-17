@@ -80,12 +80,12 @@ Ask “what did the team achieve last week?” as Avery to walk the cited recap.
 
 | Surface | What you should see |
 | --- | --- |
-| Timeline | ~70+ events from web notes, email, Slack, Telegram, GitHub, Linear, Monday.com, Sentry, meetings, calendar, documents, and the Ledger billing webhook |
+| Timeline | ~150+ events from web notes, email, Slack, Telegram, GitHub, Linear, Monday.com, Sentry, meetings, calendar, documents, and the Ledger billing webhook |
 | Objects | Tasks, deals, companies, people, decisions, incidents, hiring loops, follow-ups, projects |
-| Boards | Atlas Launch (tasks), Customer dealflow, Series A funding |
-| Documents | Code of conduct, office rules, DPA excerpt, MSA excerpt, strategy memo, one-pager, pitch narrative, onboarding, brand voice, plus the Northstar handoff brief |
-| Meetings | Historical standups, importer incident review, Northwind partner meeting; saved weekly standup with auto-join and a scheduled 18 August occurrence |
-| Ask | Four historic sessions, including last-week recap and Northstar status |
+| Boards | Atlas Launch (tasks plus launch work), Customer dealflow, Series A funding |
+| Documents | Code of conduct, office rules, DPA excerpt, MSA excerpt, contractor excerpt, strategy memo, one-pager, pitch narrative, onboarding, brand voice, security FAQ, plus the Northstar handoff brief |
+| Meetings | Weekly standups from 14 July through 11 August, importer incident review, Northwind partner meeting; saved weekly standup with auto-join and a scheduled 18 August occurrence |
+| Ask | Six historic sessions, including last-week recap, Northstar status, dealflow, and the code of conduct |
 | Approvals | Fourteen pending proposals plus one already-accepted CSV-replay decision |
 | Digests | Twenty weekdays of Avery’s daily digest history. Live digest send stays off so the worker can run without Postmark, Slack, or Telegram delivery. Team settings still show the default email destination plus disabled Slack `#product` and Telegram “Acme leadership” destinations. |
 | Setup | Team checklist completed and dismissed for Avery |
@@ -129,7 +129,7 @@ These are not production secrets. They exist so settings screens look configured
 - **Brightline Health** — Proposal, CSV + evidence packs only. The company record is **Brightline Health account**.
 - **Moss & Co** — Qualified, wants to keep Monday.com
 - **Orchard Finance** — Scoping, 12-seat research workspace
-- **Polar Studio** — New, founder demo 19 August
+- **Polar Studio** — inbound logo, founder demo 19 August, pending add-to-board proposal
 - **Kite Logistics** — Lost (on-prem)
 - **Northwind Capital lead** — Diligence
 - **Linden Ventures follow** — Intro, same data room
@@ -148,8 +148,8 @@ These are not production secrets. They exist so settings screens look configured
 
 ### Documents
 
-People & Ops: `Code of conduct.pdf`, `Helsinki office rules.pdf`, `Vendor DPA excerpt.pdf`, `New-hire onboarding.md`
-Product: `Atlas strategy memo.md`, `Brand voice guide.md`
+People & Ops: `Code of conduct.pdf`, `Helsinki office rules.pdf`, `Vendor DPA excerpt.pdf`, `Contractor agreement excerpt.pdf`, `New-hire onboarding.md`
+Product: `Atlas strategy memo.md`, `Brand voice guide.md`, `Security FAQ.md`
 Fundraising: `Series A investor one-pager.md`, `Northstar MSA excerpt.md`
 GTM: `Pitch narrative.md`
 Email attachment: `Northstar pilot handoff brief.txt` (canonical search fixture)
