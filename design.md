@@ -313,7 +313,7 @@ The desktop session list stays dense: last-activity age under each title in
 mono 11px, a centered 60% hairline between rows, and archive revealed on row
 hover or keyboard focus. Hovering the relative age shows the localized
 timestamp. A search field under New chat filters the visible history. New chat
-uses the shared primary `Button`. Touch session lists keep archive visible.
+uses the shared outline `Button`. Touch session lists keep archive visible.
 
 The Ask heading stays on one row. When a conversation is selected, its title
 sits beside the heading as truncated muted text. Session counts do not appear
