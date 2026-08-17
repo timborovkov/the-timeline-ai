@@ -1,4 +1,5 @@
 import { cacheKey, cachedJson } from '@timeline/shared/cache';
+
 import type { OnboardingChecklistState, OnboardingStep } from '@timeline/shared/onboarding';
 
 export const ONBOARDING_CHECKLIST_CACHE_TTL_SECONDS = 30;

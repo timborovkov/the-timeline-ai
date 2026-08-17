@@ -21,7 +21,16 @@ const fakes = vi.hoisted(() => ({
   listPins: vi.fn(),
   listRecoverableJobs: vi.fn(),
   listTimelineCapturedFilesByEventId: vi.fn(),
-  loadOnboardingChecklistView: vi.fn(),
+  loadOnboardingChecklistView: vi.fn<
+    (input: {
+      teamId: string;
+      userId: string;
+      getChecklistState: () => Promise<unknown>;
+    }) => Promise<{
+      dismissed: boolean;
+      items: { key: string; label: string; completed: boolean }[];
+    }>
+  >(),
   onboardingInitialData: null as { dismissed: boolean } | null,
   reportCaughtError: vi.fn(),
   redirect: vi.fn((path: string) => {
@@ -235,6 +244,7 @@ describe('HomeDashboardPage', () => {
 
     renderToStaticMarkup(await HomeDashboardPage());
 
+    expect(fakes.loadOnboardingChecklistView).toHaveBeenCalledOnce();
     const loadArgs = fakes.loadOnboardingChecklistView.mock.calls[0]?.[0];
     expect(loadArgs?.teamId).toBe('team-1');
     expect(loadArgs?.userId).toBe('user-1');
