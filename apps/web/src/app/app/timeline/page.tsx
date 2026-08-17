@@ -32,11 +32,8 @@ import {
   parseTimelineSources,
   resolveTimelineDateWindow,
   timelineHref,
-  timelineLoadedCount,
-  timelineLoadedSrLabel,
   timelineOriginOptions,
   timelineOriginValue,
-  timelinePresetCountLabel,
   timelineSourceValues,
 } from '@/lib/timeline-controls';
 import {
@@ -281,7 +278,6 @@ export default async function TimelinePage({ searchParams }: Props) {
           : sourceFilters.length > 1
             ? `${String(sourceFilters.length)} sources`
             : undefined;
-  const eventCount = events.length;
   let presentationCacheStats: TimelineMomentPresentationCacheStats =
     emptyTimelineMomentPresentationCacheStats();
   const initialMoments =
@@ -313,8 +309,6 @@ export default async function TimelinePage({ searchParams }: Props) {
           )
         ).map(toTimelineMomentDto)
       : [];
-  const momentCount = initialMoments.length;
-  const loadedCount = timelineLoadedCount(mode, momentCount, eventCount);
   const momentPinState = await scope.pins.isPinnedMany(
     initialMoments.map((moment) => ({ kind: 'timeline_moment' as const, key: moment.id })),
   );
@@ -353,11 +347,11 @@ export default async function TimelinePage({ searchParams }: Props) {
   return (
     <div className="space-y-6">
       <IndexStrip
-        srLabel={`Timeline · ${active.teamName} · ${timelineLoadedSrLabel(mode, loadedCount)}${hasFilters ? ' · filters on' : ''}`}
+        srLabel={`${mode === 'events' ? 'Audit trail' : 'Timeline'} · ${active.teamName}${hasFilters ? ' · filters on' : ''}`}
         segments={[
-          { value: 'TIMELINE' },
+          { value: mode === 'events' ? 'AUDIT TRAIL' : 'TIMELINE' },
           { label: 'team', value: active.teamName },
-          { label: 'loaded', value: loadedCount },
+          { label: 'mode', value: mode === 'events' ? 'events' : 'moments' },
           ...(sourceLabel
             ? ([{ label: 'source', value: sourceLabel, signal: true }] as const)
             : []),
@@ -488,7 +482,6 @@ function TimelineBrowserSection({
         members={members}
         userMap={userMap}
         baseParams={baseParams}
-        hasFilters={hasFilters}
         hasPanelFilters={hasPanelFilters}
         sourceFilterValue={sourceFilterValue}
         originFilterValue={originFilterValue}
@@ -500,8 +493,6 @@ function TimelineBrowserSection({
         todayInput={todayInput}
         maxUpcomingInput={maxUpcomingInput}
         mode={mode}
-        eventCount={events.length}
-        momentCount={moments?.length ?? events.length}
         sourceFilters={sourceFilters}
         impactFilters={impactFilters}
         hasOriginFilter={Boolean(originFilterValue)}
@@ -563,7 +554,6 @@ function TimelineFilterPanel({
   members,
   userMap,
   baseParams,
-  hasFilters,
   hasPanelFilters,
   sourceFilterValue,
   originFilterValue,
@@ -575,8 +565,6 @@ function TimelineFilterPanel({
   todayInput,
   maxUpcomingInput,
   mode,
-  eventCount,
-  momentCount,
   sourceFilters,
   impactFilters,
   hasOriginFilter,
@@ -584,7 +572,6 @@ function TimelineFilterPanel({
   members: TimelineMember[];
   userMap: TimelineUserMap;
   baseParams: TimelineBaseParams;
-  hasFilters: boolean;
   hasPanelFilters: boolean;
   sourceFilterValue: string;
   originFilterValue: string;
@@ -596,8 +583,6 @@ function TimelineFilterPanel({
   todayInput: string;
   maxUpcomingInput: string;
   mode: TimelineMode;
-  eventCount: number;
-  momentCount: number;
   sourceFilters: ReturnType<typeof parseTimelineSources>;
   impactFilters: ReturnType<typeof parseTimelineImpacts>;
   hasOriginFilter: boolean;
@@ -613,7 +598,6 @@ function TimelineFilterPanel({
     <DebouncedFilterForm id={formId} basePath="/app/timeline">
       {baseParams.mode ? <input type="hidden" name="mode" value={baseParams.mode} /> : null}
       <CollectionToolbar
-        count={`${timelinePresetCountLabel(mode, momentCount, eventCount)}${hasFilters ? ' · filtered' : ''}`}
         filters={
           <div className="flex min-w-0 flex-wrap items-end gap-2">
             <TimelineSourceFilterControls

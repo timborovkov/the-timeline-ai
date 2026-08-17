@@ -458,6 +458,7 @@ export function GlobalSearchPage({
               <input
                 id="global-search-query"
                 type="search"
+                aria-label="Search everything"
                 value={state.draft}
                 onChange={(event) => {
                   dispatch({ type: 'draft', value: event.target.value });

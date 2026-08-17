@@ -461,6 +461,42 @@ describe('collectTimelinePage', () => {
     expect(secondPage.nextCursor).toBe('after-separate');
   });
 
+  it('keeps a moment cursor when the last raw page is short but moments overflow the limit', async () => {
+    const events = Array.from({ length: 5 }, (_, index) =>
+      event(`web-${String(index + 1)}`, `2026-05-28T12:0${String(5 - index)}:00.000Z`),
+    );
+
+    function loadPage(cursor: string | null) {
+      const start = cursor ? events.findIndex((item) => `after-${item.id}` === cursor) + 1 : 0;
+      return {
+        items: events.slice(Math.max(start, 0)),
+        nextCursor: null,
+      };
+    }
+
+    const firstPage = await collectTimelinePage({
+      limit: 3,
+      pageSize: 10,
+      cursorForEvent: (item) => `after-${item.id}`,
+      fetchPage: ({ cursor }) => Promise.resolve(loadPage(cursor)),
+      hydrateImpact: (ids) => Promise.resolve(Object.fromEntries(ids.map((id) => [id, []]))),
+    });
+    const secondPage = await collectTimelinePage({
+      cursor: firstPage.nextCursor,
+      limit: 3,
+      pageSize: 10,
+      cursorForEvent: (item) => `after-${item.id}`,
+      fetchPage: ({ cursor }) => Promise.resolve(loadPage(cursor)),
+      hydrateImpact: (ids) => Promise.resolve(Object.fromEntries(ids.map((id) => [id, []]))),
+    });
+
+    expect(firstPage.items.map((item) => item.id)).toEqual(['web-1', 'web-2', 'web-3']);
+    expect(firstPage.nextCursor).toBe('after-web-3');
+    expect(firstPage.diagnostics.boundaryCursorAdjusted).toBe(true);
+    expect(secondPage.items.map((item) => item.id)).toEqual(['web-4', 'web-5']);
+    expect(secondPage.nextCursor).toBeNull();
+  });
+
   it('keeps source event mode raw and page-sized', async () => {
     const page = await collectTimelinePage({
       mode: 'events',

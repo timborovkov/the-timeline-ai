@@ -11,6 +11,7 @@ import { loadChatSessionAction } from '@/app/actions/chat';
 import { ChatSurface } from '@/components/chat/chat-pane';
 import { useCurrentChatView } from '@/components/chat/chat-view-context';
 import { Button } from '@/components/ui/button';
+import { getAppMainScrollElement } from '@/lib/app-scroll';
 import { storeChatContextHandoff } from '@/lib/chat-handoff';
 import { chatShortcutLabel } from '@/lib/chat-view';
 import { cn } from '@/lib/utils';
@@ -160,7 +161,7 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
 
   useEffect(() => {
     if (!showPanel) return;
-    const main = document.getElementById('main');
+    const main = getAppMainScrollElement();
     if (!main) return;
     const previous = main.style.overflowY;
     main.style.overflowY = 'hidden';

@@ -7,6 +7,8 @@ import { useReducer, useRef, useTransition } from 'react';
 import type { PinPage, PinTargetKind, PinnedItem } from '@timeline/shared/pins';
 
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
+import { InfiniteScroll } from '@/components/collections/infinite-scroll';
+import { VirtualList } from '@/components/collections/virtual-list';
 import { PinnedItemRow } from '@/components/pins/pinned-item-row';
 import { Button } from '@/components/ui/button';
 import { readJson } from '@/lib/paginated-api';
@@ -110,6 +112,22 @@ export function PinnedWorkspaceManager({
   const canReorder = filter === 'all';
   const { items, nextCursor, reorderMode, announcement, error } = state;
 
+  function loadMorePins(): void {
+    if (!nextCursor || pending) return;
+    startTransition(() => {
+      const params = new URLSearchParams({ cursor: nextCursor });
+      if (filter !== 'all') params.set('kind', filter);
+      void fetch(`/api/pins?${params.toString()}`)
+        .then((response) => readJson<PinPage>(response))
+        .then((page) => {
+          dispatch({ type: 'append-page', page });
+        })
+        .catch(() => {
+          dispatch({ type: 'error', error: 'Could not load more pinned items.' });
+        });
+    });
+  }
+
   async function reloadFirstPage(): Promise<void> {
     try {
       const page = await readJson<PinPage>(await fetch('/api/pins?limit=50'));
@@ -193,7 +211,7 @@ export function PinnedWorkspaceManager({
         Pinned work
       </h2>
       <CollectionToolbar
-        count={`${items.length} pinned`}
+        count={nextCursor ? undefined : String(items.length)}
         viewControls={
           <nav aria-label="Pinned work filters" className="flex items-center gap-0.5">
             {FILTERS.map((entry) => (
@@ -240,121 +258,109 @@ export function PinnedWorkspaceManager({
         </div>
       ) : (
         <div className="border-x border-border">
-          {items.map((item, index) => (
-            <PinnedItemRow
-              key={item.pinId}
-              item={item}
-              draggable={reorderMode}
-              onDragStart={() => {
-                draggedIdRef.current = item.pinId;
-              }}
-              onDragOver={(event) => {
-                event.preventDefault();
-              }}
-              onDrop={() => {
-                const from = items.findIndex(
-                  (candidate) => candidate.pinId === draggedIdRef.current,
-                );
-                if (from < 0 || from === index) return;
-                const moving = items[from];
-                if (!moving) return;
-                commitMove(
-                  moving,
-                  from < index ? { afterPinId: item.pinId } : { beforePinId: item.pinId },
-                  reorder(items, from, index),
-                );
-                draggedIdRef.current = null;
-              }}
-              onRemoved={() => {
-                dispatch({ type: 'remove', pinId: item.pinId });
-              }}
-              actions={
-                reorderMode ? (
-                  <span className="flex items-center gap-0.5">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8"
-                      disabled={pending || index === 0}
-                      onClick={() => {
-                        moveBy(index, 'up');
-                      }}
-                      aria-label={`Move ${item.title} up`}
-                    >
-                      <ArrowUp />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8"
-                      disabled={pending || (index === items.length - 1 && !nextCursor)}
-                      onClick={() => {
-                        moveBy(index, 'down');
-                      }}
-                      aria-label={`Move ${item.title} down`}
-                    >
-                      <ArrowDown />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8"
-                      disabled={pending || index === 0}
-                      onClick={() => {
-                        moveBy(index, 'top');
-                      }}
-                      aria-label={`Move ${item.title} to top`}
-                    >
-                      <ChevronsUp />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8"
-                      disabled={pending || (index === items.length - 1 && !nextCursor)}
-                      onClick={() => {
-                        moveBy(index, 'bottom');
-                      }}
-                      aria-label={`Move ${item.title} to bottom`}
-                    >
-                      <ChevronsDown />
-                    </Button>
-                  </span>
-                ) : null
-              }
-            />
-          ))}
+          <VirtualList
+            items={items}
+            getItemKey={(item) => item.pinId}
+            estimateSize={52}
+            renderItem={(item, index) => (
+              <PinnedItemRow
+                item={item}
+                draggable={reorderMode}
+                onDragStart={() => {
+                  draggedIdRef.current = item.pinId;
+                }}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                }}
+                onDrop={() => {
+                  const from = items.findIndex(
+                    (candidate) => candidate.pinId === draggedIdRef.current,
+                  );
+                  if (from < 0 || from === index) return;
+                  const moving = items[from];
+                  if (!moving) return;
+                  commitMove(
+                    moving,
+                    from < index ? { afterPinId: item.pinId } : { beforePinId: item.pinId },
+                    reorder(items, from, index),
+                  );
+                  draggedIdRef.current = null;
+                }}
+                onRemoved={() => {
+                  dispatch({ type: 'remove', pinId: item.pinId });
+                }}
+                actions={
+                  reorderMode ? (
+                    <span className="flex items-center gap-0.5">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8"
+                        disabled={pending || index === 0}
+                        onClick={() => {
+                          moveBy(index, 'up');
+                        }}
+                        aria-label={`Move ${item.title} up`}
+                      >
+                        <ArrowUp />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8"
+                        disabled={pending || (index === items.length - 1 && !nextCursor)}
+                        onClick={() => {
+                          moveBy(index, 'down');
+                        }}
+                        aria-label={`Move ${item.title} down`}
+                      >
+                        <ArrowDown />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8"
+                        disabled={pending || index === 0}
+                        onClick={() => {
+                          moveBy(index, 'top');
+                        }}
+                        aria-label={`Move ${item.title} to top`}
+                      >
+                        <ChevronsUp />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8"
+                        disabled={pending || (index === items.length - 1 && !nextCursor)}
+                        onClick={() => {
+                          moveBy(index, 'bottom');
+                        }}
+                        aria-label={`Move ${item.title} to bottom`}
+                      >
+                        <ChevronsDown />
+                      </Button>
+                    </span>
+                  ) : null
+                }
+              />
+            )}
+          />
         </div>
       )}
 
-      {nextCursor ? (
-        <div className="flex justify-center">
-          <Button
-            variant="outline"
-            disabled={pending}
-            onClick={() => {
-              startTransition(() => {
-                const params = new URLSearchParams({ cursor: nextCursor });
-                if (filter !== 'all') params.set('kind', filter);
-                void fetch(`/api/pins?${params.toString()}`)
-                  .then((response) => readJson<PinPage>(response))
-                  .then((page) => {
-                    dispatch({ type: 'append-page', page });
-                  })
-                  .catch(() => {
-                    dispatch({ type: 'error', error: 'Could not load more pinned items.' });
-                  });
-              });
-            }}
-          >
-            {pending ? 'Loading…' : 'Load more'}
-          </Button>
-        </div>
-      ) : null}
+      <InfiniteScroll
+        hasMore={Boolean(nextCursor)}
+        loading={pending}
+        error={error === 'Could not load more pinned items.' ? error : null}
+        onLoadMore={loadMorePins}
+        boundLabel="No more matching pins"
+        hideBound={items.length === 0}
+      />
       <p aria-live="polite" className="sr-only">
         {announcement}
       </p>
-      {error ? (
+      {error && error !== 'Could not load more pinned items.' ? (
         <p role="alert" className="text-sm text-danger">
           {error}
         </p>

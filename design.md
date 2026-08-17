@@ -192,8 +192,11 @@ signal.
 
 Collection transitions last 150–200ms and are limited to background, border,
 opacity, and transform. They honor reduced motion. No collection introduces a
-new global keyboard shortcut; existing inspectors, drag handles, pagination,
-evidence links, and URL state remain the interaction contract.
+new global keyboard shortcut; existing inspectors, drag handles, infinite
+scroll with virtualization, evidence links, and URL state remain the interaction
+contract. Collection inventories use `24 of 847` when a filter is on and `847`
+when it is not. Timeline has no inventory chip; Moments versus Audit trail is
+the page mode.
 
 ### SectionHeading
 
@@ -322,7 +325,7 @@ rest of the archive.
 
 Timeline is the strongest archive expression. Each row leads with time, source,
 human title, one supporting line, and meaningful impact/status. The rail, sticky
-dates, evidence quick view, and pagination remain. Exact capture and provider
+dates, evidence quick view, and infinite scroll remain. Exact capture and provider
 details move into the inspector. The default view ends at the current instant so
 materialized calendar occurrences do not displace recent work. Upcoming context
 is an explicit seven-day view; the Calendar surface owns the complete future
@@ -378,7 +381,7 @@ section at a time. Save state stays local to the edited form. Member, object, so
 and artifact labels never fall back to UUIDs.
 
 Work → Pinned is the complete pin-management surface. It is a single
-side-to-side list with cursor pagination and All, Objects, Boards, Documents,
+side-to-side list with infinite scroll, virtualization, and All, Objects, Boards, Documents,
 Meetings, Calendar, and Timeline filters. Reordering is available only under
 All so filtered adjacency never changes the mixed global order implicitly.
 Drag reorder has equivalent keyboard actions for move up, down, top, and
