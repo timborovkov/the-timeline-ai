@@ -235,14 +235,14 @@ const TELEGRAM = [
 ] as const;
 
 const WEBHOOKS = [
-  'Ledger billing webhook: invoice inv_2041 still open, reminder sent to Northstar finance.',
+  'Ledger billing webhook: Northstar finance reminder logged, no new invoice.',
   'Ledger billing webhook: usage ping for 18 Northstar seats, no overage.',
   'Ledger billing webhook: Brightline trial workspace created, 6 seats, no invoice yet.',
 ] as const;
 
 const DOC_TOUCHES = [
-  { filename: 'Atlas strategy memo.md', folder: 'Product' },
-  { filename: 'Series A investor one-pager.md', folder: 'Fundraising' },
+  { n: 4, filename: 'Atlas strategy memo.md', folder: 'Product' },
+  { n: 3, filename: 'Series A investor one-pager.md', folder: 'Fundraising' },
 ] as const;
 
 function weekdayDates(startIso: string, endIso: string): string[] {
@@ -336,6 +336,8 @@ function slackMeta(
     slack_thread_ts: threadTs,
     slack_message_ts: messageTs,
     slack_event_id: eventId,
+    slack_workspace_id: CORPUS_UUID.slack(1),
+    slack_team_id: 'T0ACMEDEMO',
     capture_kind: 'channel_message',
   };
 }
@@ -683,7 +685,7 @@ function pushWorkday(
       extra: {
         filename: doc.filename,
         folder: doc.folder,
-        document_id: `demo-seed-doc-${doc.filename}`,
+        document_id: CORPUS_UUID.document(doc.n),
         action: 'updated',
       },
       payloadRef: `inline://timeline/demo-seed/document/${doc.filename}-${day}`,

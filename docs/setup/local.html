@@ -118,7 +118,7 @@ pnpm dev:seed:heavy         # optional extra volume for infinite-scroll / virtua
         point. It also requires every expanded corpus document version to be
         <code>embedded</code> with a confirmed Qdrant point for each corpus chunk id. A missing
         embedding prerequisite fails closed, and documents remain <code>chunked</code> until Qdrant
-        confirms applied point writes. Seeded canonical objects leave legacy
+        confirms applied point writes. Seeded canonical objects and document versions leave legacy
         <code>source_event_id</code> empty and expose demo provenance through reconciliation
         evidence, associations, and applied outputs. The glossary, story, and fake credentials live
         in <a href="../demo-corpus.md">docs/demo-corpus.md</a>. <code>pnpm demo:reset</code> wipes

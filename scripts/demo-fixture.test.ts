@@ -31,10 +31,12 @@ import {
   CORPUS_DOCUMENTS,
   CORPUS_EVENT_NEEDLES,
   CORPUS_EVENTS,
+  CORPUS_FACTS,
   CORPUS_MEETINGS,
   CORPUS_OBJECTS,
   CORPUS_PEOPLE,
   CORPUS_PROPOSALS,
+  CORPUS_SLACK,
   CORPUS_VOLUME_FLOORS,
   DEALFLOW_ITEMS,
   corpusEventId,
@@ -344,7 +346,19 @@ assertUnique(
 for (const event of CORPUS_EVENTS.filter((row) => row.source === 'slack')) {
   assert.equal(isSlackUnixTs(event.sourceMetadata.slack_thread_ts), true, event.id);
   assert.equal(isSlackUnixTs(event.sourceMetadata.slack_message_ts), true, event.id);
+  assert.equal(event.sourceMetadata.slack_workspace_id, CORPUS_SLACK.workspace, event.id);
+  assert.equal(event.sourceMetadata.slack_team_id, 'T0ACMEDEMO', event.id);
 }
+for (const event of CORPUS_EVENTS.filter((row) => row.source === 'document')) {
+  assert.equal(typeof event.sourceMetadata.document_id, 'string', event.id);
+}
+const atlasRelease = CORPUS_EVENTS.find((row) =>
+  row.contentText.includes('GitHub release atlas-0.8.0 tagged'),
+);
+assert.equal(
+  (atlasRelease?.sourceMetadata.github as { type?: string } | undefined)?.type,
+  'release',
+);
 for (const row of CORPUS_CALENDAR_EVENTS) {
   const event = CORPUS_EVENTS.find((item) => item.id === row.rawEventId);
   assert.equal(event?.source, 'calendar', row.title);
@@ -432,9 +446,18 @@ assert.doesNotThrow(() =>
     digests: 20,
     facts: 24,
     slackWorkspaces: 1,
+    slackWorkspaceId: CORPUS_SLACK.workspace,
+    slackWorkspaceEnabled: true,
     telegramBindings: 1,
     ingestWebhooks: 1,
     extraProviders: ['github', 'linear', 'monday', 'sentry', 'google_drive'],
+    disabledIntegrationProviders: ['github', 'linear', 'monday', 'sentry', 'google_drive'],
+    mcpEnabled: false,
+    mcpServerCount: 1,
+    corpusRawEventCount: CORPUS_EVENTS.length,
+    northstarRawEventCount: DEMO_EVENTS.length,
+    corpusFactCount: CORPUS_FACTS.length,
+    northstarFactCount: Object.keys(DEMO_FACTS).length,
     documentChecksums: CORPUS_DOCUMENTS.map((doc) => doc.checksumSha256),
     embeddedCorpusDocumentVersions: CORPUS_DOCUMENTS.length,
     corpusDocumentChunkPointsPresent: CORPUS_DOCUMENTS.reduce(
@@ -465,9 +488,18 @@ assert.throws(
       digests: 0,
       facts: 5,
       slackWorkspaces: 0,
+      slackWorkspaceId: null,
+      slackWorkspaceEnabled: false,
       telegramBindings: 0,
       ingestWebhooks: 0,
       extraProviders: ['github'],
+      disabledIntegrationProviders: [],
+      mcpEnabled: true,
+      mcpServerCount: 0,
+      corpusRawEventCount: 0,
+      northstarRawEventCount: 0,
+      corpusFactCount: 0,
+      northstarFactCount: 0,
       documentChecksums: [],
       embeddedCorpusDocumentVersions: 0,
       corpusDocumentChunkPointsPresent: 0,
@@ -677,7 +709,7 @@ function validSnapshot(): DemoFixtureSnapshot {
       currentVersionId: DEMO_IDS.documentVersion,
       versionId: DEMO_IDS.documentVersion,
       versionDocumentId: DEMO_IDS.document,
-      versionSourceEventId: DEMO_IDS.eventEmail,
+      versionSourceEventId: null,
       versionObjectKey: DEMO_DOCUMENT_OBJECT_KEY,
       versionByteSize: DEMO_DOCUMENT_BYTE_SIZE,
       versionContentType: DEMO_DOCUMENT_CONTENT_TYPE,

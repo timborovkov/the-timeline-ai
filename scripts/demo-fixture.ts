@@ -610,11 +610,7 @@ export function assertDemoFixture(snapshot: DemoFixtureSnapshot): void {
     snapshot.document?.versionDocumentId,
     DEMO_IDS.document,
   );
-  expectValue(
-    'document version source event',
-    snapshot.document?.versionSourceEventId,
-    DEMO_IDS.eventEmail,
-  );
+  expectValue('document version source event', snapshot.document?.versionSourceEventId, null);
   expectValue(
     'document version object key',
     snapshot.document?.versionObjectKey,

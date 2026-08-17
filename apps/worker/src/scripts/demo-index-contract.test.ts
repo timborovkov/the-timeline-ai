@@ -4,34 +4,48 @@ import {
   assertDemoVectorIndexEnvironment,
   assertExpectedDemoVectorSources,
   buildDemoVectorJobs,
+  DEMO_VECTOR_ID_FAMILIES,
   DEMO_VECTOR_SOURCE_MINIMUMS,
   type DemoVectorRows,
 } from '#src/scripts/demo-index-contract.js';
 
 const TEAM_ID = '20000000-0000-4000-8000-000000000001';
 
-function rows(): DemoVectorRows {
+function padded(n: number): string {
+  return n.toString(16).padStart(12, '0');
+}
+
+function familyIds(
+  family: (typeof DEMO_VECTOR_ID_FAMILIES)[keyof typeof DEMO_VECTOR_ID_FAMILIES],
+): { northstar: string[]; corpus: string[] } {
   return {
-    rawEvents: Array.from({ length: DEMO_VECTOR_SOURCE_MINIMUMS.rawEvents }, (_, index) => ({
-      id: `event-${String(index)}`,
-    })),
-    facts: Array.from({ length: DEMO_VECTOR_SOURCE_MINIMUMS.facts }, (_, index) => ({
-      id: `fact-${String(index)}`,
+    northstar: Array.from(
+      { length: family.northstarExact },
+      (_, index) => `${family.northstarPrefix}0000-4000-8000-${padded(index + 1)}`,
+    ),
+    corpus: Array.from(
+      { length: family.corpusMinimum },
+      (_, index) => `${family.corpusPrefix}0000-4000-8000-${padded(index + 1)}`,
+    ),
+  };
+}
+
+function rows(): DemoVectorRows {
+  const events = familyIds(DEMO_VECTOR_ID_FAMILIES.rawEvents);
+  const facts = familyIds(DEMO_VECTOR_ID_FAMILIES.facts);
+  const documentChunks = familyIds(DEMO_VECTOR_ID_FAMILIES.documentChunks);
+  const meetingChunks = familyIds(DEMO_VECTOR_ID_FAMILIES.meetingChunks);
+  return {
+    rawEvents: [...events.northstar, ...events.corpus].map((id) => ({ id })),
+    facts: [...facts.northstar, ...facts.corpus].map((id, index) => ({
+      id,
       rawEventId: `event-${String(index % DEMO_VECTOR_SOURCE_MINIMUMS.rawEvents)}`,
     })),
-    documentChunks: Array.from(
-      { length: DEMO_VECTOR_SOURCE_MINIMUMS.documentChunks },
-      (_, index) => ({
-        id: `document-chunk-${String(index)}`,
-        versionId: `document-version-${String(index)}`,
-      }),
-    ),
-    meetingChunks: Array.from(
-      { length: DEMO_VECTOR_SOURCE_MINIMUMS.meetingChunks },
-      (_, index) => ({
-        id: `meeting-chunk-${String(index)}`,
-      }),
-    ),
+    documentChunks: [...documentChunks.northstar, ...documentChunks.corpus].map((id) => ({
+      id,
+      versionId: `document-version-${id}`,
+    })),
+    meetingChunks: [...meetingChunks.northstar, ...meetingChunks.corpus].map((id) => ({ id })),
   };
 }
 
@@ -92,7 +106,9 @@ describe('demo vector indexing contract', () => {
 
   it('accepts larger fixture source sets than the Northstar minimum', () => {
     const fixtureRows = rows();
-    fixtureRows.rawEvents.push({ id: 'event-extra' });
+    fixtureRows.rawEvents.push({
+      id: `${DEMO_VECTOR_ID_FAMILIES.rawEvents.corpusPrefix}0000-4000-8000-${padded(9000)}`,
+    });
     expect(() => {
       assertExpectedDemoVectorSources(fixtureRows);
     }).not.toThrow();
@@ -104,5 +120,26 @@ describe('demo vector indexing contract', () => {
     expect(() => {
       assertExpectedDemoVectorSources(fixtureRows);
     }).toThrow(/documentChunks expected at least 15, found 0/);
+  });
+
+  it('fails closed when Northstar vector ids are missing from a complete-looking corpus', () => {
+    const fixtureRows = rows();
+    fixtureRows.rawEvents = fixtureRows.rawEvents.filter((row) =>
+      row.id.startsWith(DEMO_VECTOR_ID_FAMILIES.rawEvents.corpusPrefix),
+    );
+    expect(() => {
+      assertExpectedDemoVectorSources(fixtureRows);
+    }).toThrow(/rawEvents expected exactly 4 Northstar ids, found 0/);
+  });
+
+  it('fails closed when fixture-version rows use unexpected id families', () => {
+    const fixtureRows = rows();
+    fixtureRows.facts.push({
+      id: 'aa110001-0000-4000-8000-000000000001',
+      rawEventId: 'event-heavy',
+    });
+    expect(() => {
+      assertExpectedDemoVectorSources(fixtureRows);
+    }).toThrow(/unexpected facts ids/);
   });
 });

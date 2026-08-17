@@ -9,6 +9,33 @@ export const DEMO_VECTOR_SOURCE_MINIMUMS = {
   meetingChunks: 8,
 } as const;
 
+export const DEMO_VECTOR_ID_FAMILIES = {
+  rawEvents: {
+    northstarPrefix: '91000000-',
+    corpusPrefix: '92000000-',
+    northstarExact: 4,
+    corpusMinimum: 2500,
+  },
+  facts: {
+    northstarPrefix: 'c3000000-',
+    corpusPrefix: 'c4000000-',
+    northstarExact: 5,
+    corpusMinimum: 20,
+  },
+  documentChunks: {
+    northstarPrefix: '44000000-',
+    corpusPrefix: '45000000-',
+    northstarExact: 1,
+    corpusMinimum: 15,
+  },
+  meetingChunks: {
+    northstarPrefix: '55000000-',
+    corpusPrefix: '56000000-',
+    northstarExact: 1,
+    corpusMinimum: 8,
+  },
+} as const;
+
 export interface DemoVectorRows {
   rawEvents: { id: string }[];
   facts: { id: string; rawEventId: string }[];
@@ -49,6 +76,33 @@ export function assertDemoVectorIndexEnvironment(input: {
   }
 }
 
+function assertVectorIdFamily(
+  kind: keyof typeof DEMO_VECTOR_ID_FAMILIES,
+  ids: readonly string[],
+): void {
+  const family = DEMO_VECTOR_ID_FAMILIES[kind];
+  const unexpected = ids.filter(
+    (id) => !id.startsWith(family.northstarPrefix) && !id.startsWith(family.corpusPrefix),
+  );
+  if (unexpected.length > 0) {
+    throw new Error(
+      `Demo vector source set includes unexpected ${kind} ids: ${unexpected.slice(0, 5).join(', ')}`,
+    );
+  }
+  const northstar = ids.filter((id) => id.startsWith(family.northstarPrefix)).length;
+  const corpus = ids.filter((id) => id.startsWith(family.corpusPrefix)).length;
+  if (northstar !== family.northstarExact) {
+    throw new Error(
+      `Demo vector source set is incomplete: ${kind} expected exactly ${String(family.northstarExact)} Northstar ids, found ${String(northstar)}.`,
+    );
+  }
+  if (corpus < family.corpusMinimum) {
+    throw new Error(
+      `Demo vector source set is incomplete: ${kind} expected at least ${String(family.corpusMinimum)} corpus ids, found ${String(corpus)}. Rerun pnpm dev:seed and inspect the deterministic fixture rows.`,
+    );
+  }
+}
+
 export function assertExpectedDemoVectorSources(rows: DemoVectorRows): void {
   for (const [kind, minimum] of Object.entries(DEMO_VECTOR_SOURCE_MINIMUMS)) {
     const actual = rows[kind as keyof DemoVectorRows].length;
@@ -58,6 +112,22 @@ export function assertExpectedDemoVectorSources(rows: DemoVectorRows): void {
       );
     }
   }
+  assertVectorIdFamily(
+    'rawEvents',
+    rows.rawEvents.map((row) => row.id),
+  );
+  assertVectorIdFamily(
+    'facts',
+    rows.facts.map((row) => row.id),
+  );
+  assertVectorIdFamily(
+    'documentChunks',
+    rows.documentChunks.map((row) => row.id),
+  );
+  assertVectorIdFamily(
+    'meetingChunks',
+    rows.meetingChunks.map((row) => row.id),
+  );
 }
 
 export function buildDemoVectorJobs(teamId: string, rows: DemoVectorRows): queue.EmbedJobData[] {

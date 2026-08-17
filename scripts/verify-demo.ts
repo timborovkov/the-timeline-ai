@@ -22,11 +22,12 @@ import {
   ingestWebhooks,
   integrations,
   integrationSelections,
+  mcpServers,
   meetings,
   meetingTranscriptChunks,
   rawEvents,
   reconciliationEvidence,
-  slackWorkspaces,
+  slackWorkspaceTeams,
   teamMembers,
   teamOnboardingCompletions,
   teams,
@@ -36,13 +37,14 @@ import {
 import { llm, qdrant } from '@timeline/shared';
 import { verifyPassword } from '@timeline/shared/passwords';
 import { getDocumentsBucket, getObjectBuffer, getS3Client } from '@timeline/shared/s3';
-import { and, count, eq, inArray, isNull } from 'drizzle-orm';
+import { and, count, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import {
   assertExpandedDemoCorpus,
   CORPUS_DOCUMENTS,
   CORPUS_MEETINGS,
   CORPUS_PEOPLE,
+  CORPUS_SLACK,
 } from './demo-corpus/index.js';
 import {
   assertDemoFixture,
@@ -428,11 +430,17 @@ async function readExpandedDemoCorpusSnapshot(): Promise<
     digestCount,
     factCount,
     slackCount,
+    slackWorkspaceRows,
     telegramCount,
     webhookCount,
     integrationRows,
+    mcpRows,
     onboardingCount,
     polarDealflowCount,
+    corpusEventCount,
+    northstarEventCount,
+    corpusFactCount,
+    northstarFactCount,
   ] = await Promise.all([
     db
       .select({ email: users.email, passwordHash: users.passwordHash })
@@ -465,7 +473,22 @@ async function readExpandedDemoCorpusSnapshot(): Promise<
     db.select({ value: count() }).from(chatSessions).where(eq(chatSessions.teamId, DEMO_IDS.team)),
     db.select({ value: count() }).from(dailyDigests).where(eq(dailyDigests.teamId, DEMO_IDS.team)),
     db.select({ value: count() }).from(facts).where(eq(facts.teamId, DEMO_IDS.team)),
-    db.select({ value: count() }).from(slackWorkspaces),
+    db
+      .select({ value: count() })
+      .from(slackWorkspaceTeams)
+      .where(eq(slackWorkspaceTeams.teamId, DEMO_IDS.team)),
+    db
+      .select({
+        workspaceId: slackWorkspaceTeams.workspaceId,
+        enabled: slackWorkspaceTeams.enabled,
+      })
+      .from(slackWorkspaceTeams)
+      .where(
+        and(
+          eq(slackWorkspaceTeams.teamId, DEMO_IDS.team),
+          eq(slackWorkspaceTeams.workspaceId, CORPUS_SLACK.workspace),
+        ),
+      ),
     db
       .select({ value: count() })
       .from(telegramChatBindings)
@@ -475,9 +498,13 @@ async function readExpandedDemoCorpusSnapshot(): Promise<
       .from(ingestWebhooks)
       .where(eq(ingestWebhooks.teamId, DEMO_IDS.team)),
     db
-      .select({ provider: integrations.provider })
+      .select({ provider: integrations.provider, enabled: integrations.enabled })
       .from(integrations)
       .where(eq(integrations.teamId, DEMO_IDS.team)),
+    db
+      .select({ enabled: mcpServers.enabled })
+      .from(mcpServers)
+      .where(eq(mcpServers.teamId, DEMO_IDS.team)),
     db
       .select({ value: count() })
       .from(teamOnboardingCompletions)
@@ -495,6 +522,26 @@ async function readExpandedDemoCorpusSnapshot(): Promise<
           isNull(boardItems.archivedAt),
         ),
       ),
+    db
+      .select({ value: count() })
+      .from(rawEvents)
+      .where(
+        and(eq(rawEvents.teamId, DEMO_IDS.team), sql`${rawEvents.id}::text LIKE '92000000-%'`),
+      ),
+    db
+      .select({ value: count() })
+      .from(rawEvents)
+      .where(
+        and(eq(rawEvents.teamId, DEMO_IDS.team), sql`${rawEvents.id}::text LIKE '91000000-%'`),
+      ),
+    db
+      .select({ value: count() })
+      .from(facts)
+      .where(and(eq(facts.teamId, DEMO_IDS.team), sql`${facts.id}::text LIKE 'c4000000-%'`)),
+    db
+      .select({ value: count() })
+      .from(facts)
+      .where(and(eq(facts.teamId, DEMO_IDS.team), sql`${facts.id}::text LIKE 'c3000000-%'`)),
   ]);
 
   const documentChecksums: string[] = [];
@@ -578,9 +625,20 @@ async function readExpandedDemoCorpusSnapshot(): Promise<
     digests: Number(digestCount[0]?.value ?? 0),
     facts: Number(factCount[0]?.value ?? 0),
     slackWorkspaces: Number(slackCount[0]?.value ?? 0),
+    slackWorkspaceId: slackWorkspaceRows[0]?.workspaceId ?? null,
+    slackWorkspaceEnabled: slackWorkspaceRows[0]?.enabled === true,
     telegramBindings: Number(telegramCount[0]?.value ?? 0),
     ingestWebhooks: Number(webhookCount[0]?.value ?? 0),
     extraProviders: integrationRows.map((row) => row.provider),
+    disabledIntegrationProviders: integrationRows
+      .filter((row) => row.enabled === false)
+      .map((row) => row.provider),
+    mcpEnabled: mcpRows.some((row) => row.enabled),
+    mcpServerCount: mcpRows.length,
+    corpusRawEventCount: Number(corpusEventCount[0]?.value ?? 0),
+    northstarRawEventCount: Number(northstarEventCount[0]?.value ?? 0),
+    corpusFactCount: Number(corpusFactCount[0]?.value ?? 0),
+    northstarFactCount: Number(northstarFactCount[0]?.value ?? 0),
     documentChecksums,
     embeddedCorpusDocumentVersions,
     corpusDocumentChunkPointsPresent,

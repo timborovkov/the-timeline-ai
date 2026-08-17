@@ -390,7 +390,11 @@ const STORY_EVENTS: CorpusEvent[] = [
     'document',
     '2026-07-28T14:05:00.000Z',
     'Harper uploaded Vendor DPA excerpt.pdf to Documents / People & Ops. Legal wants this signed before Northwind sees the data room.',
-    { filename: 'Vendor DPA excerpt.pdf', folder: 'People & Ops' },
+    {
+      filename: 'Vendor DPA excerpt.pdf',
+      folder: 'People & Ops',
+      document_id: CORPUS_UUID.document(6),
+    },
     'inline://timeline/demo-seed/document/vendor-dpa',
   ),
   event(
@@ -491,7 +495,11 @@ const STORY_EVENTS: CorpusEvent[] = [
     'document',
     '2026-08-04T12:40:00.000Z',
     'Quinn uploaded Helsinki office rules.pdf and Code of conduct.pdf so new hires can be cited from Documents instead of a Notion page.',
-    { filename: 'Helsinki office rules.pdf', folder: 'People & Ops' },
+    {
+      filename: 'Helsinki office rules.pdf',
+      folder: 'People & Ops',
+      document_id: CORPUS_UUID.document(2),
+    },
     'inline://timeline/demo-seed/document/office-rules',
   ),
   event(
@@ -592,7 +600,11 @@ const STORY_EVENTS: CorpusEvent[] = [
     'document',
     '2026-08-11T13:20:00.000Z',
     'Harper uploaded Series A investor one-pager.md and Atlas strategy memo.md to Fundraising and Product folders.',
-    { filename: 'Series A investor one-pager.md', folder: 'Fundraising' },
+    {
+      filename: 'Series A investor one-pager.md',
+      folder: 'Fundraising',
+      document_id: CORPUS_UUID.document(3),
+    },
     'inline://timeline/demo-seed/document/one-pager',
   ),
   event(
@@ -2047,6 +2059,8 @@ function enrichCaptureMetadata(row: CorpusEvent): CorpusEvent {
     extra.slack_thread_ts = isSlackUnixTs(extra.slack_thread_ts)
       ? extra.slack_thread_ts
       : extra.slack_message_ts;
+    extra.slack_workspace_id ??= CORPUS_UUID.slack(1);
+    extra.slack_team_id ??= 'T0ACMEDEMO';
   }
   if (row.source === 'email') {
     extra.thread_root_id ??= extra.message_id ?? row.id;
@@ -2068,6 +2082,7 @@ function enrichCaptureMetadata(row: CorpusEvent): CorpusEvent {
     if (!github || typeof github !== 'object' || Array.isArray(github)) {
       const workflow = /GitHub workflow "([^"]+)"/.exec(row.contentText);
       const pr = /PR #(\d+)/.exec(row.contentText);
+      const release = /GitHub release ([^\s]+) tagged/.exec(row.contentText);
       if (workflow?.[1]) {
         extra.github = {
           type: 'workflow_run',
@@ -2081,6 +2096,12 @@ function enrichCaptureMetadata(row: CorpusEvent): CorpusEvent {
           repo: 'acme-labs/atlas',
           number: Number(pr[1]),
           pr_number: Number(pr[1]),
+        };
+      } else if (release?.[1]) {
+        extra.github = {
+          type: 'release',
+          repo: 'acme-labs/atlas',
+          tag: release[1],
         };
       }
     }

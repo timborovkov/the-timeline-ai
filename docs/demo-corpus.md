@@ -14,6 +14,8 @@ pnpm demo:seed
 
 `demo:seed` runs `dev:seed`, indexes every fixture-version raw event, fact, document
 chunk, and meeting chunk through the production embed worker, then runs `demo:verify`.
+`demo:seed` is safe to rerun. Use `pnpm demo:reset` when you need the workspace restored
+to the exact canonical fixture after local edits.
 
 ```bash
 pnpm demo:verify   # re-check a previously seeded workspace
