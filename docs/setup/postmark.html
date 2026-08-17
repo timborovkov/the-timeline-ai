@@ -90,7 +90,9 @@ SUPPORT_EMAIL=contact@thetimeline.cc
         events created during the window still count even when their original occurrence time is
         older. Each generated digest covers <em>all</em> timeline events in its window (paginated,
         not capped), with every visible moment surfaced to the summarizer. Email and in-app digest
-        use the same payload; the email CTA opens that day's row on Work → Digests. The worker
+        use the same payload; the email CTA opens that day's row on Work → Digests. New and completed
+        task titles in the email link to the object on the dashboard, calendar rows link to Calendar,
+        and the footer links to Dashboard, Timeline, Tasks, and the other app surfaces. The worker
         registers the noon UTC scheduler on boot and also queues one idempotent catch-up tick, so a
         deploy or missed scheduler state still creates the current expected digest rows. In-app
         notifications remain inbox-only; digest email may summarize pending approvals and inbox

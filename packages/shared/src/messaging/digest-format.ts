@@ -140,7 +140,7 @@ export function formatDigestTaskStatus(status: string): string {
   return status.replaceAll('_', ' ');
 }
 
-export function formatDigestTask(
+export function formatDigestTaskDetail(
   task: DailyDigestPayload['tasks'][number],
   timezone?: string,
   now?: Date,
@@ -152,16 +152,61 @@ export function formatDigestTask(
       : due.dateLabel
         ? `${due.label} · ${due.dateLabel}`
         : due.compactText;
-  return `${task.title} (${formatDigestTaskStatus(task.status)}, ${dueText})`;
+  return `(${formatDigestTaskStatus(task.status)}, ${dueText})`;
+}
+
+export function formatDigestTask(
+  task: DailyDigestPayload['tasks'][number],
+  timezone?: string,
+  now?: Date,
+): string {
+  return `${task.title} ${formatDigestTaskDetail(task, timezone, now)}`;
+}
+
+export function digestAppHref(href: string): string | null {
+  const path = href.trim();
+  if (path.startsWith('//') || path.includes('\\')) return null;
+  if (
+    path === '/app' ||
+    path.startsWith('/app/') ||
+    path.startsWith('/app?') ||
+    path.startsWith('/app#')
+  ) {
+    return path;
+  }
+  return null;
+}
+
+export function absoluteDigestAppUrl(baseUrl: string, href: string): string | null {
+  const relative = digestAppHref(href);
+  try {
+    const base = new URL(baseUrl);
+    const url = relative ? new URL(relative, base.origin) : new URL(href.trim());
+    if (url.origin !== base.origin || !isDigestAppPathname(url.pathname)) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function isDigestAppPathname(pathname: string): boolean {
+  return pathname === '/app' || pathname.startsWith('/app/');
+}
+
+export function formatDigestCalendarEventDetail(
+  event: DailyDigestPayload['upcomingCalendar'][number],
+  timezone?: string,
+): string {
+  const when = formatDigestDateTime(event.startAt, timezone);
+  if (!event.repeating) return `(${when})`;
+  return `(repeating · next ${when})`;
 }
 
 export function formatDigestCalendarEvent(
   event: DailyDigestPayload['upcomingCalendar'][number],
   timezone?: string,
 ): string {
-  const when = formatDigestDateTime(event.startAt, timezone);
-  if (!event.repeating) return `${event.title} (${when})`;
-  return `${event.title} (repeating · next ${when})`;
+  return `${event.title} ${formatDigestCalendarEventDetail(event, timezone)}`;
 }
 
 export function collapseDigestCalendarEvents(

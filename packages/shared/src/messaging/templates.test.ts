@@ -118,6 +118,10 @@ describe('messaging templates', () => {
     expect(message.textBody).toContain('Decisions\nLaunch timing still needs a decision.');
     expect(message.textBody).toContain('New tasks:');
     expect(message.textBody).toContain('Send pilot recap (todo, Due soon · Jun 17, 2026)');
+    expect(message.textBody).toContain('https://timeline.test/app/objects/task-id');
+    expect(message.textBody).toContain('https://timeline.test/app/calendar');
+    expect(message.textBody).toContain('Open on the dashboard:');
+    expect(message.textBody).toContain('Dashboard: https://timeline.test/app');
     expect(message.textBody.indexOf('Product status')).toBeLessThan(
       message.textBody.indexOf('Completed'),
     );
@@ -128,7 +132,12 @@ describe('messaging templates', () => {
     expect(message.textBody).not.toContain('2026-06-17T14:00:00.000Z');
     expect(message.htmlBody).toContain('Highlights');
     expect(message.htmlBody).toContain('Send the pilot recap before the next planning review.');
-    expect(message.htmlBody).toContain('Send pilot recap (todo, Due soon · Jun 17, 2026)');
+    expect(message.htmlBody).toContain('href="https://timeline.test/app/objects/task-id"');
+    expect(message.htmlBody).toContain('Send pilot recap');
+    expect(message.htmlBody).toContain('(todo, Due soon · Jun 17, 2026)');
+    expect(message.htmlBody).toContain('href="https://timeline.test/app/calendar"');
+    expect(message.htmlBody).toContain('href="https://timeline.test/app"');
+    expect(message.htmlBody).toContain('Open on the dashboard:');
     expect(message.htmlBody).toContain('Digest date: Jun 14, 2026');
     expect(message.htmlBody).toContain('5 new moments');
     expect(message.htmlBody).toContain('Activity over the past day');

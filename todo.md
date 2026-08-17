@@ -119,7 +119,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       of PR or CI inventories. Home, Work → Digests, and email reuse that
       payload: the latest digest stays folded, activity counts new moments,
       proposals, pending approvals, tasks, and objects, task blocks cover created or completed
-      work, and repeating calendar series collapse to one upcoming entry. Raw
+      work and link to the object on the dashboard, calendar rows link to Calendar, and email includes dashboard shortcuts. Repeating calendar series collapse to one upcoming entry. Raw
       eventCount / sourceDistribution remain for internal metrics and per-source
       detail. It durably skips quiet windows before summarization
       and email delivery unless the recipient has fresh local-cycle activity,

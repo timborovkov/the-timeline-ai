@@ -15,14 +15,17 @@ import type {
 } from '#src/messaging/types.js';
 
 import {
+  absoluteDigestAppUrl,
   digestActivityStats,
   digestContentSections,
   digestSectionBody,
   digestSummaryParagraphs,
   formatDigestActivityLines,
   formatDigestCalendarEvent,
+  formatDigestCalendarEventDetail,
   formatDigestDate,
   formatDigestTask,
+  formatDigestTaskDetail,
 } from '#src/messaging/digest-format.js';
 
 type TemplateName =
@@ -101,9 +104,43 @@ function htmlList(items: string[]): string {
     : '<p style="font-size: 14px; color: #747b7b;">None</p>';
 }
 
-function htmlNamedList(title: string, items: string[]): string {
+function htmlAppLinks(
+  title: string,
+  items: { href: string | null; label: string }[],
+): string {
+  const links = items.flatMap((item) => (item.href ? [{ href: item.href, label: item.label }] : []));
+  if (links.length === 0) return '';
+  return `<p style="font-size: 13px; line-height: 1.55; margin: 20px 0 0">${escapeHtml(
+    title,
+  )} ${links
+    .map(
+      (item) =>
+        `<a href="${escapeHtml(item.href)}" style="color: #68a500; text-decoration: underline;">${escapeHtml(item.label)}</a>`,
+    )
+    .join(' · ')}</p>`;
+}
+
+function htmlNamedLinkedList(
+  title: string,
+  items: { href: string | null; label: string; detail: string }[],
+): string {
   if (items.length === 0) return '';
-  return `<h2 style="font-size: 14px; margin: 20px 0 8px">${escapeHtml(title)}</h2>\n${htmlList(items)}`;
+  const list = `<ul style="font-size: 14px; line-height: 1.55; padding-left: 20px;">${items
+    .map((item) => {
+      const label = item.href
+        ? `<a href="${escapeHtml(item.href)}" style="color: #68a500; text-decoration: underline;">${escapeHtml(item.label)}</a>`
+        : escapeHtml(item.label);
+      const detail = item.detail ? ` ${escapeHtml(item.detail)}` : '';
+      return `<li>${label}${detail}</li>`;
+    })
+    .join('')}</ul>`;
+  return `<h2 style="font-size: 14px; margin: 20px 0 8px">${escapeHtml(title)}</h2>\n${list}`;
+}
+
+function textLinkedLines(items: { href: string | null; text: string }[]): string[] {
+  return items.flatMap((item) =>
+    item.href ? [`- ${item.text}`, `  ${item.href}`] : [`- ${item.text}`],
+  );
 }
 
 function htmlParagraphs(items: string[]): string {
@@ -301,6 +338,29 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
   const activity = digestActivityStats(p);
   const activityLines = formatDigestActivityLines(activity);
   const completedTasks = p.completedTasks ?? [];
+  const now = new Date(p.windowEnd);
+  const newTaskItems = p.tasks.map((task) => ({
+    href: absoluteDigestAppUrl(input.digestUrl, task.href),
+    label: task.title,
+    detail: formatDigestTaskDetail(task, timezone, now),
+    text: formatDigestTask(task, timezone, now),
+  }));
+  const completedTaskItems = completedTasks.map((task) => ({
+    href: absoluteDigestAppUrl(input.digestUrl, task.href),
+    label: task.title,
+    detail: formatDigestTaskDetail(task, timezone, now),
+    text: formatDigestTask(task, timezone, now),
+  }));
+  const calendarItems = p.upcomingCalendar.map((event) => ({
+    href: absoluteDigestAppUrl(input.digestUrl, event.href),
+    label: event.title,
+    detail: formatDigestCalendarEventDetail(event, timezone),
+    text: formatDigestCalendarEvent(event, timezone),
+  }));
+  const dashboardLinks = p.links.map((link) => ({
+    href: absoluteDigestAppUrl(input.digestUrl, link.href),
+    label: link.label,
+  }));
   const textBody = [
     `Daily digest for ${p.teamName} · ${windowEnd}`,
     '',
@@ -314,26 +374,17 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
     'Activity over the past day',
     ...activityLines.map((line) => `- ${line}`),
     '',
-    ...(p.tasks.length
-      ? [
-          'New tasks:',
-          ...p.tasks.map((task) => `- ${formatDigestTask(task, timezone, new Date(p.windowEnd))}`),
-          '',
-        ]
+    ...(newTaskItems.length ? ['New tasks:', ...textLinkedLines(newTaskItems), ''] : []),
+    ...(completedTaskItems.length
+      ? ['Completed tasks:', ...textLinkedLines(completedTaskItems), '']
       : []),
-    ...(completedTasks.length
+    ...(calendarItems.length ? ['Upcoming calendar:', ...textLinkedLines(calendarItems), ''] : []),
+    ...(dashboardLinks.some((link) => link.href)
       ? [
-          'Completed tasks:',
-          ...completedTasks.map(
-            (task) => `- ${formatDigestTask(task, timezone, new Date(p.windowEnd))}`,
+          'Open on the dashboard:',
+          ...dashboardLinks.flatMap((link) =>
+            link.href ? [`- ${link.label}: ${link.href}`] : [],
           ),
-          '',
-        ]
-      : []),
-    ...(p.upcomingCalendar.length
-      ? [
-          'Upcoming calendar:',
-          ...p.upcomingCalendar.map((event) => `- ${formatDigestCalendarEvent(event, timezone)}`),
           '',
         ]
       : []),
@@ -349,18 +400,10 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
         summaryBlock: htmlParagraphs(summaryParagraphs),
         summarySections: htmlDigestSections(sections),
         snapshotList: htmlList([`Digest date: ${windowEnd}`, ...activityLines]),
-        newTasksBlock: htmlNamedList(
-          'New tasks',
-          p.tasks.map((task) => formatDigestTask(task, timezone, new Date(p.windowEnd))),
-        ),
-        completedTasksBlock: htmlNamedList(
-          'Completed tasks',
-          completedTasks.map((task) => formatDigestTask(task, timezone, new Date(p.windowEnd))),
-        ),
-        calendarBlock: htmlNamedList(
-          'Upcoming calendar',
-          p.upcomingCalendar.map((event) => formatDigestCalendarEvent(event, timezone)),
-        ),
+        newTasksBlock: htmlNamedLinkedList('New tasks', newTaskItems),
+        completedTasksBlock: htmlNamedLinkedList('Completed tasks', completedTaskItems),
+        calendarBlock: htmlNamedLinkedList('Upcoming calendar', calendarItems),
+        linksBlock: htmlAppLinks('Open on the dashboard:', dashboardLinks),
       },
     ),
     cta: { href: input.digestUrl, label: 'Open this digest' },

@@ -1,12 +1,13 @@
 import {
   digestActivityStats,
+  digestAppHref,
   digestContentSections,
   digestSectionBody,
   digestSummaryParagraphs,
   formatDigestActivityLines,
-  formatDigestCalendarEvent,
+  formatDigestCalendarEventDetail,
   formatDigestDate,
-  formatDigestTask,
+  formatDigestTaskDetail,
   type DailyDigestPayload,
 } from '@timeline/shared/messaging/format';
 import Link from 'next/link';
@@ -79,43 +80,82 @@ export function DigestBody({
       <div className="grid gap-6 md:grid-cols-2">
         <DigestList
           label="New tasks"
-          items={digest.tasks.map((task) => formatDigestTask(task, digest.timezone))}
+          items={digest.tasks.map((task) => ({
+            key: task.id,
+            href: digestAppHref(task.href) ?? undefined,
+            label: task.title,
+            detail: formatDigestTaskDetail(task, digest.timezone),
+          }))}
         />
         <DigestList
           label="Completed tasks"
-          items={completedTasks.map((task) => formatDigestTask(task, digest.timezone))}
+          items={completedTasks.map((task) => ({
+            key: task.id,
+            href: digestAppHref(task.href) ?? undefined,
+            label: task.title,
+            detail: formatDigestTaskDetail(task, digest.timezone),
+          }))}
         />
         <DigestList
           label="Upcoming calendar"
-          items={digest.upcomingCalendar.map((event) =>
-            formatDigestCalendarEvent(event, digest.timezone),
-          )}
+          items={digest.upcomingCalendar.map((event) => ({
+            key: event.id,
+            href: digestAppHref(event.href) ?? undefined,
+            label: event.title,
+            detail: formatDigestCalendarEventDetail(event, digest.timezone),
+          }))}
         />
-        <DigestList label="Sources in this window" items={sourceItems} />
-        <DigestList label="New team members" items={memberItems} />
+        <DigestList
+          label="Sources in this window"
+          items={sourceItems.map((item) => ({ key: item, label: item }))}
+        />
+        <DigestList
+          label="New team members"
+          items={memberItems.map((item) => ({ key: item, label: item }))}
+        />
       </div>
 
       {digest.links.length > 0 ? (
         <div className="flex flex-wrap gap-2">
-          {digest.links.map((link) => (
-            <Button key={link.href} asChild variant="outline" size="sm">
-              <Link href={link.href}>{link.label}</Link>
-            </Button>
-          ))}
+          {digest.links
+            .flatMap((link) => {
+              const href = digestAppHref(link.href);
+              return href ? [{ label: link.label, href }] : [];
+            })
+            .map((link) => (
+              <Button key={link.href} asChild variant="outline" size="sm">
+                <Link href={link.href}>{link.label}</Link>
+              </Button>
+            ))}
         </div>
       ) : null}
     </div>
   );
 }
 
-function DigestList({ label, items }: { label: string; items: string[] }) {
+function DigestList({
+  label,
+  items,
+}: {
+  label: string;
+  items: { key: string; label: string; href?: string; detail?: string }[];
+}) {
   if (items.length === 0) return null;
   return (
     <section>
       <h3 className="font-semibold text-fg">{label}</h3>
       <ul className="mt-2 space-y-1 text-fg-muted">
-        {items.map((item, index) => (
-          <li key={`${item}:${String(index)}`}>{item}</li>
+        {items.map((item) => (
+          <li key={item.key}>
+            {item.href ? (
+              <Link href={item.href} className="text-fg hover:text-signal">
+                {item.label}
+              </Link>
+            ) : (
+              item.label
+            )}
+            {item.detail ? ` ${item.detail}` : null}
+          </li>
         ))}
       </ul>
     </section>

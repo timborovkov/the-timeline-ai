@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  absoluteDigestAppUrl,
   collapseDigestCalendarEvents,
   digestActivityStats,
+  digestAppHref,
   formatDigestActivityLines,
   formatDigestCalendarEvent,
   formatDigestTask,
@@ -89,6 +91,38 @@ describe('formatDigestTask', () => {
         NOW,
       ),
     ).toContain(expected);
+  });
+});
+
+describe('digestAppHref', () => {
+  it('keeps dashboard and nested app paths and rejects protocol-relative hrefs', () => {
+    expect(digestAppHref('/app')).toBe('/app');
+    expect(digestAppHref('/app/objects/t1')).toBe('/app/objects/t1');
+    expect(digestAppHref('/app/timeline')).toBe('/app/timeline');
+    expect(digestAppHref('//evil.test/app/x')).toBeNull();
+    expect(digestAppHref('/application')).toBeNull();
+    expect(digestAppHref('https://timeline.test/app/objects/t1')).toBeNull();
+  });
+});
+
+describe('absoluteDigestAppUrl', () => {
+  it('resolves app paths against the digest origin and rejects off-origin hrefs', () => {
+    expect(
+      absoluteDigestAppUrl('https://timeline.test/app/digests?digest=d1', '/app/objects/t1'),
+    ).toBe('https://timeline.test/app/objects/t1');
+    expect(absoluteDigestAppUrl('https://timeline.test/app/digests', '/app')).toBe(
+      'https://timeline.test/app',
+    );
+    expect(
+      absoluteDigestAppUrl(
+        'https://timeline.test/app/digests',
+        'https://timeline.test/app/calendar',
+      ),
+    ).toBe('https://timeline.test/app/calendar');
+    expect(
+      absoluteDigestAppUrl('https://timeline.test/app/digests', 'https://evil.test/app/objects/t1'),
+    ).toBeNull();
+    expect(absoluteDigestAppUrl('https://timeline.test/app/digests', '//evil.test/app/x')).toBeNull();
   });
 });
 

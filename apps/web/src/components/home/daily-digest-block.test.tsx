@@ -95,8 +95,17 @@ describe('DailyDigestBlock', () => {
     expect(details?.textContent).toContain('2 pending approvals');
     expect(details?.textContent).toContain('3 new tasks');
     expect(details?.textContent).toContain('Write launch recap');
+    expect(screen.getByRole('link', { name: 'Write launch recap' }).getAttribute('href')).toBe(
+      '/app/objects/task-1',
+    );
     expect(details?.textContent).toContain('Close review');
+    expect(screen.getByRole('link', { name: 'Close review' }).getAttribute('href')).toBe(
+      '/app/objects/task-2',
+    );
     expect(details?.textContent).toContain('Internal daily call (repeating');
+    expect(screen.getByRole('link', { name: 'Internal daily call' }).getAttribute('href')).toBe(
+      '/app/calendar',
+    );
     expect(details?.textContent).toContain('GitHub · 5');
     expect(details?.textContent).toContain('Grace Hopper');
   });

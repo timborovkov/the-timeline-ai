@@ -280,7 +280,9 @@ The latest digest stays folded until opened. Its summary and section bodies are
 readable prose, not inventories of pull requests or IDs. Activity counts new
 moments, proposals, pending approvals, tasks, and objects from the digest
 window. Task and calendar blocks show change: newly created or completed work,
-and repeating calendar series as one upcoming entry. Work → Digests lists every
+and repeating calendar series as one upcoming entry. Task titles open the
+object on the dashboard, calendar rows open Calendar, and both the in-app
+digest and the email include dashboard shortcuts. Work → Digests lists every
 stored digest as collapsed rows so a teammate can open a specific day.
 
 Pinned work is one personal, mixed collection. It may contain canonical
