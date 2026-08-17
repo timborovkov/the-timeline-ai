@@ -278,10 +278,10 @@ dashboard cards.
 
 The latest digest stays folded until opened. Its summary and section bodies are
 readable prose, not inventories of pull requests or IDs. Activity counts new
-moments, proposals, tasks, and objects from the digest window. Task and calendar
-blocks show change: newly created or completed work, and repeating calendar
-series as one upcoming entry. Work → Digests lists every stored digest as
-collapsed rows so a teammate can open a specific day.
+moments, proposals, pending approvals, tasks, and objects from the digest
+window. Task and calendar blocks show change: newly created or completed work,
+and repeating calendar series as one upcoming entry. Work → Digests lists every
+stored digest as collapsed rows so a teammate can open a specific day.
 
 Pinned work is one personal, mixed collection. It may contain canonical
 objects (including tasks, projects, deals, people, and object-type documents),

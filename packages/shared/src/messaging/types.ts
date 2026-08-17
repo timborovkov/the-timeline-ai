@@ -81,6 +81,7 @@ export interface DailyDigestSection {
 export interface DailyDigestActivity {
   newMoments: number;
   newProposals: number;
+  pendingApprovals?: number;
   newTasks: number;
   completedTasks: number;
   newProjects: number;

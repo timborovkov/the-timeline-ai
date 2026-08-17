@@ -27,6 +27,7 @@ const DIGEST: DailyDigestPayload = {
   activity: {
     newMoments: 7,
     newProposals: 2,
+    pendingApprovals: 2,
     newTasks: 3,
     completedTasks: 1,
     newProjects: 1,
@@ -91,6 +92,7 @@ describe('DailyDigestBlock', () => {
     expect(details?.textContent).toContain('Activity over the past day');
     expect(details?.textContent).toContain('7 new moments');
     expect(details?.textContent).toContain('2 new proposals');
+    expect(details?.textContent).toContain('2 pending approvals');
     expect(details?.textContent).toContain('3 new tasks');
     expect(details?.textContent).toContain('Write launch recap');
     expect(details?.textContent).toContain('Close review');
@@ -105,6 +107,7 @@ describe('DailyDigestBlock', () => {
 
     const details = screen.getByText('Open digest').closest('details');
     expect(details?.textContent).toContain('12 new moments');
-    expect(details?.textContent).toContain('2 new proposals');
+    expect(details?.textContent).toContain('2 pending approvals');
+    expect(details?.textContent).not.toContain('2 new proposals');
   });
 });

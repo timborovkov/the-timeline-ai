@@ -69,6 +69,7 @@ describe('messaging templates', () => {
         activity: {
           newMoments: 5,
           newProposals: 2,
+          pendingApprovals: 4,
           newTasks: 1,
           completedTasks: 0,
           newProjects: 0,
@@ -103,6 +104,7 @@ describe('messaging templates', () => {
     expect(message.textBody).toContain('Activity over the past day');
     expect(message.textBody).toContain('5 new moments');
     expect(message.textBody).toContain('2 new proposals');
+    expect(message.textBody).toContain('4 pending approvals');
     expect(message.textBody).toContain('1 new task');
     expect(message.textBody).not.toContain('from 12 source events');
     expect(message.textBody).toContain(

@@ -1,14 +1,17 @@
 import {
   type Db,
+  agentSuggestionItems,
+  agentSuggestions,
   dailyDigests,
   entities,
   messagePreferences,
+  objectChanges,
   teamCalendarSettings,
   teamMembers,
   teams,
   users,
 } from '@timeline/db';
-import { and, count, desc, eq, gte, inArray, isNull, lt } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type {
@@ -332,6 +335,7 @@ function emptyActivity(): DailyDigestActivity {
   return {
     newMoments: 0,
     newProposals: 0,
+    pendingApprovals: 0,
     newTasks: 0,
     completedTasks: 0,
     newProjects: 0,
@@ -417,6 +421,27 @@ function toDigestTask(task: {
     dueAt: task.dueAt ? iso(task.dueAt) : null,
     href: `/app/objects/${task.id}`,
   };
+}
+
+function totalsByType(rows: { type: string; total: number }[]): Record<string, number> {
+  return Object.fromEntries(rows.map((row) => [row.type, Number(row.total) || 0]));
+}
+
+function digestVisibleSuggestionPredicate(teamId: string, userId: string) {
+  return and(
+    eq(agentSuggestions.teamId, teamId),
+    or(
+      eq(agentSuggestions.visibility, 'team'),
+      and(
+        eq(agentSuggestions.visibility, 'private'),
+        eq(agentSuggestions.visibilityOwnerUserId, userId),
+      ),
+      and(
+        eq(agentSuggestions.visibility, 'specific_users'),
+        sql`${userId}::uuid = ANY(${agentSuggestions.visibilityUserIds})`,
+      ),
+    ),
+  );
 }
 
 function addDays(date: Date, days: number): Date {
@@ -819,10 +844,7 @@ export async function generateDailyDigest(
     eventsInEvidenceWindow,
     pendingApprovals,
     createdTaskObjects,
-    completedTaskObjects,
-    createdObjects,
     upcomingCalendar,
-    suggestionBundles,
     newMembers,
   ] = await Promise.all([
     scope.timeline.team(),
@@ -838,24 +860,9 @@ export async function generateDailyDigest(
       createdAfter: freshCutoff,
       createdBefore: input.windowEnd,
       archived: false,
-      limit: 20,
-    }),
-    scope.objects.listObjects({
-      type: ['task', 'follow_up'],
-      status: ['done', 'cancelled'],
-      updatedAfter: freshCutoff,
-      updatedBefore: input.windowEnd,
-      archived: false,
-      limit: 20,
-    }),
-    scope.objects.listObjects({
-      createdAfter: freshCutoff,
-      createdBefore: input.windowEnd,
-      archived: false,
-      limit: 200,
+      limit: 12,
     }),
     scope.calendar.listCalendarEvents({ from: now, to: upcomingTo, limit: 200 }),
-    scope.suggestions.listSuggestions({ status: 'all', limit: 200 }),
     input.db
       .select({
         userId: teamMembers.userId,
@@ -884,7 +891,7 @@ export async function generateDailyDigest(
   }
 
   const changedObjectRows = await input.db
-    .select({ type: entities.type, total: count() })
+    .select({ type: entities.type, total: sql<number>`count(*)::int` })
     .from(entities)
     .where(
       and(
@@ -894,23 +901,83 @@ export async function generateDailyDigest(
       ),
     )
     .groupBy(entities.type);
-  const objectChangesByType = Object.fromEntries(
-    changedObjectRows.map((row) => [row.type, row.total]),
-  );
+  const objectChangesByType = totalsByType(changedObjectRows);
 
-  const newObjectsByType: Record<string, number> = {};
-  for (const object of createdObjects) {
-    newObjectsByType[object.type] = (newObjectsByType[object.type] ?? 0) + 1;
-  }
+  const completedStatusCondition = and(
+    eq(objectChanges.teamId, input.teamId),
+    eq(objectChanges.status, 'applied'),
+    eq(objectChanges.field, 'status'),
+    sql`lower(${objectChanges.newValue} #>> '{}') in ('done', 'cancelled', 'canceled')`,
+    inArray(entities.type, ['task', 'follow_up']),
+    inArray(entities.status, ['done', 'cancelled']),
+    isNull(entities.archivedAt),
+    isNull(entities.mergedIntoId),
+    gte(objectChanges.changedAt, freshCutoff),
+    lt(objectChanges.changedAt, input.windowEnd),
+  );
+  const [createdObjectRows, completedCountRows, completedIdRows, proposalCountRows] =
+    await Promise.all([
+      input.db
+        .select({ type: entities.type, total: sql<number>`count(*)::int` })
+        .from(entities)
+        .where(
+          and(
+            eq(entities.teamId, input.teamId),
+            isNull(entities.archivedAt),
+            isNull(entities.mergedIntoId),
+            gte(entities.createdAt, freshCutoff),
+            lt(entities.createdAt, input.windowEnd),
+          ),
+        )
+        .groupBy(entities.type),
+      input.db
+        .select({ total: sql<number>`count(distinct ${objectChanges.entityId})::int` })
+        .from(objectChanges)
+        .innerJoin(entities, eq(entities.id, objectChanges.entityId))
+        .where(completedStatusCondition),
+      input.db
+        .select({ entityId: objectChanges.entityId })
+        .from(objectChanges)
+        .innerJoin(entities, eq(entities.id, objectChanges.entityId))
+        .where(completedStatusCondition)
+        .orderBy(desc(objectChanges.changedAt), desc(objectChanges.entityId))
+        .limit(12),
+      input.db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(agentSuggestions)
+        .where(
+          and(
+            digestVisibleSuggestionPredicate(input.teamId, input.userId),
+            gte(agentSuggestions.createdAt, freshCutoff),
+            lt(agentSuggestions.createdAt, input.windowEnd),
+            sql`exists (
+            select 1 from ${agentSuggestionItems}
+            where ${agentSuggestionItems.suggestionId} = ${agentSuggestions.id}
+              and ${agentSuggestionItems.status} <> 'failed'
+          )`,
+          ),
+        ),
+    ]);
+  const newObjectsByType = totalsByType(createdObjectRows);
+  const createdTaskCount = (newObjectsByType.task ?? 0) + (newObjectsByType.follow_up ?? 0);
+  const completedTaskCount = completedCountRows[0]?.total ?? 0;
+  const newProposalCount = proposalCountRows[0]?.total ?? 0;
 
   const createdTasks = createdTaskObjects.filter(
     (task) => task.type === 'task' || task.type === 'follow_up',
   );
-  const completedTasks = completedTaskObjects.filter(
-    (task) => task.type === 'task' || task.type === 'follow_up',
-  );
-  const taskRows = createdTasks.slice(0, 12).map(toDigestTask);
-  const completedTaskRows = completedTasks.slice(0, 12).map(toDigestTask);
+  const completedIds = [...new Set(completedIdRows.map((row) => row.entityId))];
+  const completedTaskObjects =
+    completedIds.length > 0
+      ? await scope.objects.listObjects({
+          id: completedIds,
+          type: ['task', 'follow_up'],
+          archived: false,
+          limit: 12,
+        })
+      : [];
+  const taskRows = createdTasks.map(toDigestTask);
+  const completedTaskRows = completedTaskObjects.map(toDigestTask);
 
   const calendarRows = collapseDigestCalendarEvents(
     upcomingCalendar.map((event) => ({
@@ -924,11 +991,6 @@ export async function generateDailyDigest(
     })),
   ).slice(0, 12);
 
-  const newProposalCount = suggestionBundles.filter((bundle) => {
-    const createdAt = bundle.createdAt.getTime();
-    return createdAt >= freshCutoff.getTime() && createdAt < input.windowEnd.getTime();
-  }).length;
-
   const teamName = team?.name ?? 'your team';
   const user = userRows[0] ?? null;
   const builtMoments = buildTimelineMoments(events, new Map(), {
@@ -938,8 +1000,9 @@ export async function generateDailyDigest(
   const activity = {
     newMoments: builtMoments.length,
     newProposals: newProposalCount,
-    newTasks: createdTasks.length,
-    completedTasks: completedTasks.length,
+    pendingApprovals,
+    newTasks: createdTaskCount,
+    completedTasks: completedTaskCount,
     newProjects: newObjectsByType.project ?? 0,
     newObjectsByType,
   };
@@ -1002,8 +1065,8 @@ export async function generateDailyDigest(
   const fallback = fallbackSummary({
     momentCount: moments.length,
     newProposalCount,
-    newTaskCount: taskRows.length,
-    completedTaskCount: completedTaskRows.length,
+    newTaskCount: createdTaskCount,
+    completedTaskCount,
     calendarCount: calendarRows.length,
   });
   const momentBriefs = moments.map(momentBrief);

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   collapseDigestCalendarEvents,
+  digestActivityStats,
   formatDigestActivityLines,
   formatDigestCalendarEvent,
   formatDigestTask,
@@ -15,12 +16,59 @@ describe('formatDigestActivityLines', () => {
       formatDigestActivityLines({
         newMoments: 10,
         newProposals: 0,
+        pendingApprovals: 1,
         newTasks: 2,
         completedTasks: 0,
         newProjects: 1,
         newObjectsByType: { task: 2, project: 1, person: 0, deal: 3 },
       }),
-    ).toEqual(['10 new moments', '2 new tasks', '1 new project', '3 new deals']);
+    ).toEqual([
+      '10 new moments',
+      '1 pending approval',
+      '2 new tasks',
+      '1 new project',
+      '3 new deals',
+    ]);
+  });
+
+  it('fills pending approvals from the payload when stored activity omitted them', () => {
+    expect(
+      formatDigestActivityLines(
+        digestActivityStats({
+          pendingApprovals: 3,
+          eventCount: 1,
+          activity: {
+            newMoments: 1,
+            newProposals: 0,
+            newTasks: 0,
+            completedTasks: 0,
+            newProjects: 0,
+            newObjectsByType: {},
+          },
+        }),
+      ),
+    ).toEqual(['1 new moment', '3 pending approvals']);
+  });
+
+  it('does not treat legacy pending approvals or open tasks as new work', () => {
+    expect(
+      formatDigestActivityLines(
+        digestActivityStats({
+          pendingApprovals: 4,
+          eventCount: 12,
+          tasks: [
+            {
+              id: 'task-1',
+              title: 'Standing backlog',
+              status: 'todo',
+              dueAt: null,
+              href: '/app/objects/task-1',
+            },
+          ],
+          objectChangesByType: { task: 9, project: 2 },
+        }),
+      ),
+    ).toEqual(['12 new moments', '4 pending approvals']);
   });
 });
 

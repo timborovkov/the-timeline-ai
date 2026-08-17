@@ -76,15 +76,20 @@ export function digestActivityStats(
     | 'completedTasks'
   >,
 ): DailyDigestActivity {
-  if (digest.activity) return digest.activity;
-  const newObjectsByType = digest.objectChangesByType;
+  if (digest.activity) {
+    return {
+      ...digest.activity,
+      pendingApprovals: digest.activity.pendingApprovals ?? digest.pendingApprovals,
+    };
+  }
   return {
     newMoments: digest.momentCount ?? digest.eventCount,
-    newProposals: digest.pendingApprovals,
-    newTasks: digest.tasks.length,
+    newProposals: 0,
+    pendingApprovals: digest.pendingApprovals,
+    newTasks: 0,
     completedTasks: digest.completedTasks?.length ?? 0,
-    newProjects: newObjectsByType.project ?? 0,
-    newObjectsByType,
+    newProjects: 0,
+    newObjectsByType: {},
   };
 }
 
@@ -92,6 +97,7 @@ export function formatDigestActivityLines(activity: DailyDigestActivity): string
   const lines = [
     formatDigestCount(activity.newMoments, 'new moment'),
     formatDigestCount(activity.newProposals, 'new proposal'),
+    formatDigestCount(activity.pendingApprovals ?? 0, 'pending approval'),
     formatDigestCount(activity.newTasks, 'new task'),
     formatDigestCount(activity.completedTasks, 'completed task'),
     formatDigestCount(activity.newProjects, 'new project'),
@@ -102,7 +108,9 @@ export function formatDigestActivityLines(activity: DailyDigestActivity): string
       )
       .map(([type, count]) => formatDigestCount(count, `new ${type.replaceAll('_', ' ')}`)),
   ].filter((line) => !line.startsWith('0 '));
-  return lines.length > 0 ? lines : ['No new moments, proposals, tasks, or objects'];
+  return lines.length > 0
+    ? lines
+    : ['No new moments, proposals, tasks, objects, or pending approvals'];
 }
 
 function formatDigestCount(count: number, singular: string): string {

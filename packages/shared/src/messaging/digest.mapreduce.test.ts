@@ -14,6 +14,7 @@ function chainResult(rows: unknown[]) {
   const thenable = {
     limit: vi.fn().mockResolvedValue(rows),
     groupBy: vi.fn().mockResolvedValue(rows),
+    orderBy: vi.fn(() => thenable),
     then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) =>
       Promise.resolve(rows).then(resolve, reject),
   };

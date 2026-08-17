@@ -21,6 +21,7 @@ function chainResult(rows: unknown[]) {
   const thenable = {
     limit: vi.fn().mockResolvedValue(rows),
     groupBy: vi.fn().mockResolvedValue(rows),
+    orderBy: vi.fn(() => thenable),
     then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) =>
       Promise.resolve(rows).then(resolve, reject),
   };
@@ -72,11 +73,14 @@ function makeScope(
     objects: {
       listObjects: vi
         .fn()
-        .mockImplementation((filter: { createdAfter?: Date; status?: unknown } = {}) => {
-          if (filter.status) return Promise.resolve(input.completedTasks ?? []);
-          if (filter.createdAfter) return Promise.resolve(input.createdTasks ?? []);
-          return Promise.resolve(input.tasks ?? []);
-        }),
+        .mockImplementation(
+          (filter: { createdAfter?: Date; status?: unknown; id?: unknown } = {}) => {
+            if (filter.id) return Promise.resolve(input.completedTasks ?? []);
+            if (filter.status) return Promise.resolve(input.completedTasks ?? []);
+            if (filter.createdAfter) return Promise.resolve(input.createdTasks ?? []);
+            return Promise.resolve(input.tasks ?? []);
+          },
+        ),
     },
     calendar: { listCalendarEvents: vi.fn().mockResolvedValue(input.upcomingCalendar ?? []) },
   };
@@ -88,6 +92,10 @@ function makeDb(input: {
   conflict?: { id: string; status: string; payload: unknown }[];
   newMembers?: unknown[];
   changedObjects?: unknown[];
+  createdObjects?: unknown[];
+  completedTaskCount?: unknown[];
+  completedTaskIds?: unknown[];
+  proposalCounts?: unknown[];
   insertId?: string | null;
   updateId?: string | null;
 }) {
@@ -107,6 +115,10 @@ function makeDb(input: {
     [{ name: 'Tim', email: 'tim@example.test' }],
     input.newMembers ?? [],
     input.changedObjects ?? [],
+    input.createdObjects ?? [],
+    input.completedTaskCount ?? [{ total: 0 }],
+    input.completedTaskIds ?? [],
+    input.proposalCounts ?? [{ total: 0 }],
     input.conflict ?? [],
   ];
   let selectIndex = 0;

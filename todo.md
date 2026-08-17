@@ -118,7 +118,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       AI presentations, and writes narrative overview and section prose instead
       of PR or CI inventories. Home, Work → Digests, and email reuse that
       payload: the latest digest stays folded, activity counts new moments,
-      proposals, tasks, and objects, task blocks cover created or completed
+      proposals, pending approvals, tasks, and objects, task blocks cover created or completed
       work, and repeating calendar series collapse to one upcoming entry. Raw
       eventCount / sourceDistribution remain for internal metrics and per-source
       detail. It durably skips quiet windows before summarization
