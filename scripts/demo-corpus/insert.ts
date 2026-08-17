@@ -59,7 +59,7 @@ import { encryptJson } from '@timeline/shared/crypto';
 import { hashCredential } from '@timeline/shared/ingest-webhooks';
 import { hashKey } from '@timeline/shared/mcp-server';
 import { hashPassword } from '@timeline/shared/passwords';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 
 import { DEMO_FIXTURE_VERSION, DEMO_IDS } from '../demo-fixture.js';
 
@@ -950,6 +950,11 @@ async function insertDocuments(tx: SeedTx): Promise<void> {
         },
       });
     await tx
+      .delete(documentChunks)
+      .where(
+        and(eq(documentChunks.teamId, TEAM_ID), eq(documentChunks.documentVersionId, doc.versionId)),
+      );
+    await tx
       .insert(documentChunks)
       .values(
         doc.chunks.map((text, index) => ({
@@ -1061,6 +1066,17 @@ async function insertMeetings(tx: SeedTx): Promise<void> {
     ])
     .onConflictDoNothing();
 
+  await tx
+    .delete(meetingTranscriptChunks)
+    .where(
+      and(
+        eq(meetingTranscriptChunks.teamId, TEAM_ID),
+        inArray(
+          meetingTranscriptChunks.meetingId,
+          CORPUS_MEETINGS.map((meeting) => meeting.id),
+        ),
+      ),
+    );
   await tx
     .insert(meetingTranscriptChunks)
     .values(
