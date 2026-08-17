@@ -27,7 +27,7 @@ export function DigestHistoryTable({
   useEffect(() => {
     if (!selectedId) return;
     setOpenId(selectedId);
-    document.getElementById(selectedId)?.scrollIntoView?.({ block: 'start' });
+    document.getElementById(selectedId)?.scrollIntoView({ block: 'start' });
   }, [selectedId]);
 
   if (digests.length === 0) {
@@ -49,6 +49,9 @@ export function DigestHistoryTable({
           {digests.map((digest) => {
             const open = openId === digest.id;
             const timezone = digest.timezone ?? digest.payload.timezone;
+            const toggleOpen = () => {
+              setOpenId(open ? null : digest.id);
+            };
             return (
               <Fragment key={digest.id}>
                 <tr id={digest.id} className="border-b border-border">
@@ -58,7 +61,7 @@ export function DigestHistoryTable({
                       aria-expanded={open}
                       aria-controls={`digest-panel-${digest.id}`}
                       className="font-mono text-xs text-fg-dim hover:text-fg"
-                      onClick={() => setOpenId(open ? null : digest.id)}
+                      onClick={toggleOpen}
                     >
                       {formatDigestDate(digest.windowEnd, timezone)}
                     </button>
@@ -69,7 +72,7 @@ export function DigestHistoryTable({
                       aria-expanded={open}
                       aria-controls={`digest-panel-${digest.id}`}
                       className="block w-full truncate text-left text-fg hover:text-signal"
-                      onClick={() => setOpenId(open ? null : digest.id)}
+                      onClick={toggleOpen}
                     >
                       {digest.summary || 'No summary'}
                     </button>

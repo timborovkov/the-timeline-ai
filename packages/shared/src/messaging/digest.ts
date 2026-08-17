@@ -11,7 +11,11 @@ import {
 import { and, count, desc, eq, gte, inArray, isNull, lt } from 'drizzle-orm';
 import { z } from 'zod';
 
-import type { DailyDigestPayload, DailyDigestSection } from '#src/messaging/types.js';
+import type {
+  DailyDigestActivity,
+  DailyDigestPayload,
+  DailyDigestSection,
+} from '#src/messaging/types.js';
 import type { TeamScope } from '#src/team-scope.js';
 
 import { chatStructured } from '#src/llm/chat.js';
@@ -324,7 +328,7 @@ function mergeSections(sections: DailyDigestSection[]): DailyDigestSection[] {
   });
 }
 
-function emptyActivity(): DailyDigestPayload['activity'] {
+function emptyActivity(): DailyDigestActivity {
   return {
     newMoments: 0,
     newProposals: 0,
@@ -1032,13 +1036,16 @@ export async function generateDailyDigest(
         dueAt: task.dueAt,
       })),
     },
-    upcomingCalendar: calendarRows.map((event) => ({
-      title: event.title,
-      startAt: event.startAt,
-      endAt: event.endAt,
-      repeating: event.repeating,
-      occurrenceCount: event.occurrenceCount,
-    })),
+    upcomingCalendar: calendarRows.map((event) => {
+      const row: DigestPromptContext['upcomingCalendar'][number] = {
+        title: event.title,
+        startAt: event.startAt,
+        endAt: event.endAt,
+      };
+      if (event.repeating) row.repeating = true;
+      if (typeof event.occurrenceCount === 'number') row.occurrenceCount = event.occurrenceCount;
+      return row;
+    }),
     newTeamMembers: newMembers.map((member) => ({
       label: member.name ?? member.email,
       createdAt: member.createdAt.toISOString(),

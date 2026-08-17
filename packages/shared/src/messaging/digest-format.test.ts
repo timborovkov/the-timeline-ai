@@ -69,6 +69,9 @@ describe('collapseDigestCalendarEvents', () => {
         href: '/app/calendar',
       },
     ]);
-    expect(formatDigestCalendarEvent(collapsed[0]!, 'UTC')).toContain('repeating · next');
+    const repeating = collapsed[0];
+    expect(repeating).toBeDefined();
+    if (!repeating) return;
+    expect(formatDigestCalendarEvent(repeating, 'UTC')).toContain('repeating · next');
   });
 });

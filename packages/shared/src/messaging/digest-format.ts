@@ -49,13 +49,16 @@ export function digestSectionBody(section: DailyDigestSection): string {
 
 export function digestContentSections(
   digest: Pick<DailyDigestPayload, 'summary' | 'sections'>,
-): NonNullable<DailyDigestPayload['sections']> {
+): DailyDigestSection[] {
   const sections =
-    digest.sections?.map((section) => ({
-      title: section.title,
-      body: section.body?.replace(/\s+/g, ' ').trim() || undefined,
-      items: section.items.map((item) => item.replace(/\s+/g, ' ').trim()).filter(Boolean),
-    })) ?? [];
+    digest.sections?.map((section) => {
+      const body = section.body?.replace(/\s+/g, ' ').trim();
+      return {
+        title: section.title,
+        ...(body ? { body } : {}),
+        items: section.items.map((item) => item.replace(/\s+/g, ' ').trim()).filter(Boolean),
+      };
+    }) ?? [];
   return sections
     .filter((section) => Boolean(section.body) || section.items.length > 0)
     .sort((a, b) => (SECTION_ORDER.get(a.title) ?? 99) - (SECTION_ORDER.get(b.title) ?? 99));
@@ -150,7 +153,7 @@ export function formatDigestCalendarEvent(
 }
 
 export function collapseDigestCalendarEvents(
-  events: Array<{
+  events: {
     id: string;
     title: string;
     startAt: Date | string;
@@ -158,7 +161,7 @@ export function collapseDigestCalendarEvents(
     href?: string;
     recurringParentId?: string | null;
     rrule?: string | null;
-  }>,
+  }[],
 ): DailyDigestCalendarEvent[] {
   type Group = DailyDigestCalendarEvent & { occurrenceCount: number };
   const groups = new Map<string, Group>();
@@ -167,7 +170,7 @@ export function collapseDigestCalendarEvents(
   for (const event of events) {
     const startAt = isoTimestamp(event.startAt);
     const endAt = isoTimestamp(event.endAt);
-    const repeating = Boolean(event.recurringParentId || event.rrule);
+    const repeating = Boolean(event.recurringParentId ?? event.rrule);
     const key = event.recurringParentId
       ? `series:${event.recurringParentId}`
       : event.rrule
