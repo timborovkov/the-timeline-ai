@@ -46,12 +46,11 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
   const { current, dashboardContext } = useCurrentChatView();
   const [{ open, activated }, setPanel] = useState({ open: false, activated: false });
   const storageKey = `timeline:floating-agent-chat:${teamId}:session`;
-  const [{ sessionId, initialMessages }, setSessionState] =
-    useState<FloatingSessionState>(() => ({
-      sessionId: readStoredSessionId(storageKey),
-      initialMessages: [],
-      contextTrail: [],
-    }));
+  const [{ sessionId, initialMessages }, setSessionState] = useState<FloatingSessionState>(() => ({
+    sessionId: readStoredSessionId(storageKey),
+    initialMessages: [],
+    contextTrail: [],
+  }));
   const hydratedSessionIdRef = useRef<string | null>(null);
   const sessionGenerationRef = useRef(0);
   const launcherRef = useRef<HTMLButtonElement>(null);

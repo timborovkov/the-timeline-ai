@@ -58,7 +58,10 @@ export function ChatViewProvider({ children }: { children: ReactNode }) {
         : current,
     );
   }, []);
-  const actions = useMemo<ChatViewActions>(() => ({ register, unregister }), [register, unregister]);
+  const actions = useMemo<ChatViewActions>(
+    () => ({ register, unregister }),
+    [register, unregister],
+  );
 
   return (
     <ChatViewActionsContext value={actions}>

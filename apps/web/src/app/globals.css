@@ -164,7 +164,6 @@
     background-color: var(--signal-soft);
     color: var(--fg);
   }
-
 }
 
 /* Keep this unlayered so native <dialog> UA styles and Tailwind layered

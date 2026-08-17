@@ -13,9 +13,8 @@ vi.mock('next/navigation', () => ({
   useSearchParams: fakes.searchParams,
 }));
 
-const { ChatViewContextBinder, ChatViewProvider, useCurrentChatView } = await import(
-  './chat-view-context.js'
-);
+const { ChatViewContextBinder, ChatViewProvider, useCurrentChatView } =
+  await import('./chat-view-context.js');
 
 function LabelProbe({ onRender }: { onRender: () => void }) {
   onRender();
