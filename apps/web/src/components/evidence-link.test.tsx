@@ -48,9 +48,9 @@ describe('EvidenceLink', () => {
     await user.click(screen.getByRole('button', { name: 'Open evidence' }));
     expect(await screen.findByText('Old evidence body')).toBeTruthy();
     expect(screen.getByRole('dialog').className).toContain('overflow-hidden');
-    expect(screen.getByRole('link', { name: 'Open full page' }).parentElement?.className).toContain(
-      'border-t',
-    );
+    expect(
+      screen.getByRole('link', { name: 'Open on Timeline' }).parentElement?.className,
+    ).toContain('border-t');
     await user.click(screen.getByRole('button', { name: 'Close' }));
     await waitFor(() => {
       expect(screen.queryByText('Old evidence body')).toBeNull();
