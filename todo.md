@@ -121,11 +121,25 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       reads without blocking the page/API response, then filled asynchronously
       by the worker after rebuilding the same visible cache key. Daily digest
       generation now summarizes bundled moment briefs, applies matching cached
-      AI presentations, and leads user-facing digest copy with moment counts
-      while retaining raw eventCount / sourceDistribution for internal metrics
-      and per-source detail. It durably skips quiet windows before summarization
-      and email delivery unless the recipient has fresh local-cycle activity,
-      pending approvals, or upcoming calendar context. Timeline Moments chrome
+      AI presentations, and writes narrative overview and section prose instead
+      of PR or CI inventories. Pull-request numbers, commit hashes, CI run IDs,
+      ticket keys, and object UUIDs are banned from digest text: the generator
+      scrubs them from the briefing packet and rejects a draft that still lists
+      them. Home, Work → Digests, and email reuse that
+      payload: the latest digest stays folded, the header shows the digest
+      date, and the covering range stays footer metadata. Activity is a count
+      strip of new moments, proposals, pending approvals, tasks, and objects.
+      Task and object blocks
+      cover created or completed work and link to the object on the dashboard,
+      calendar rows in the window and upcoming link to the specific event, and
+      email includes dashboard shortcuts. Repeating calendar series collapse to
+      one upcoming entry. Empty sections and empty groups are omitted. Quiet
+      windows skip summarization and outbound delivery unless the recipient has
+      fresh local-cycle activity, pending approvals, new or completed objects,
+      or calendar events in the digest window; upcoming calendar alone does not
+      trigger a send. Raw
+      eventCount / sourceDistribution remain for internal metrics and per-source
+      detail. Timeline Moments chrome
       no longer uses IndexStrip loaded counts; All events keeps source-event
       grouping with uniform pulse weight. The
       `timeline-moment-presentations` worker script now provides bounded,

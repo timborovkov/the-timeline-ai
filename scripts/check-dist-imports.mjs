@@ -236,6 +236,31 @@ const checks = [
     },
   },
   {
+    name: '@timeline/shared messaging format',
+    run: async () => {
+      const format = await import('@timeline/shared/messaging/format');
+      const labeled = format.formatDigestDate('2026-08-17T12:00:00.000Z', 'UTC');
+      if (!labeled.includes('Aug') || !labeled.includes('17')) {
+        throw new Error(`Unexpected digest date label: ${labeled}`);
+      }
+      if ('generateDailyDigest' in format) {
+        throw new Error('messaging/format must not export digest generation');
+      }
+      const { readFileSync } = await import('node:fs');
+      const source = readFileSync(
+        new URL('../packages/shared/dist/messaging/format.js', import.meta.url),
+        'utf8',
+      );
+      if (
+        source.includes('digest.js') ||
+        source.includes('templates.js') ||
+        source.includes('node:fs')
+      ) {
+        throw new Error('messaging/format compiled output pulled Node digest generation');
+      }
+    },
+  },
+  {
     name: '@timeline/shared telegram commands',
     run: async () => {
       const commands = await import('@timeline/shared/telegram/commands');

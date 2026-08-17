@@ -9,7 +9,8 @@ describe('WorkSubnav', () => {
   it('preserves every work destination and marks the current route', () => {
     render(<WorkSubnav current="/app/boards/board-1" />);
 
-    expect(screen.getAllByRole('link')).toHaveLength(7);
+    expect(screen.getAllByRole('link')).toHaveLength(8);
+    expect(screen.getByRole('link', { name: 'Digests' }).getAttribute('href')).toBe('/app/digests');
     expect(screen.getByRole('link', { name: 'Pinned' }).getAttribute('href')).toBe(
       '/app/work?view=pinned',
     );
