@@ -119,7 +119,9 @@ Ask, Work, Documents, Meetings, Connections, and Team.
   labeled groups: Overview (Home, Timeline, Ask), Workspace (Work, Documents,
   Meetings), and Manage (Connections, Team). Collapsed rails retain the same
   order and expose every destination through its icon label and tooltip.
-- Expanded sidebar: 240px. Collapsed rail: 56px.
+- Expanded sidebar: 240px. Collapsed rail: 56px. The product mark uses the
+  same 12px inset as primary destinations and links to Home (`/app`). Fold and
+  unfold is a quiet chevron, not a boxed panel glyph.
 - Shell header: 48px.
 - Main page container: one shell-owned `max-w-6xl`; routes must not create a
   competing outer page width.
@@ -591,3 +593,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Dense Ask session history | Reveals archive on hover/focus, shows relative last-activity age with a timestamp title, and uses a short centered hairline instead of a persistent trash column. |
 | 2026-08-17 | Ask session search and title | Filters chat history from the session rail and shows the selected title beside Ask instead of a session count. |
 | 2026-08-17 | Ask mobile session title | Reuses the resolved conversation title in the mobile session summary, including deep-linked chats outside the recent list. |
+| 2026-08-17 | Quiet sidebar brand and fold control | Aligns the product mark with primary nav, sends it to Home, and replaces the boxed fold glyph with a lighter chevron. |
