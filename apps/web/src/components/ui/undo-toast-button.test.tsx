@@ -1,7 +1,13 @@
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+// @vitest-environment happy-dom
+
+import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { UndoToastButton } from '@/components/ui/undo-toast-button';
+
+afterEach(() => {
+  cleanup();
+});
 
 describe('UndoToastButton', () => {
   it('stays on the toast surface instead of an inverted fill', () => {
