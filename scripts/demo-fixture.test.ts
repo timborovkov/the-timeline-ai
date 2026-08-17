@@ -21,6 +21,7 @@ import {
   assertExpandedDemoCorpus,
   CORPUS_DOCUMENTS,
   CORPUS_EVENTS,
+  CORPUS_MEETINGS,
   CORPUS_OBJECTS,
   CORPUS_PEOPLE,
   CORPUS_PROPOSALS,
@@ -261,6 +262,17 @@ assert.equal(
   new Set(CORPUS_DOCUMENTS.flatMap((doc) => [doc.id, doc.versionId, ...doc.chunkIds])).size,
   CORPUS_DOCUMENTS.reduce((count, doc) => count + 2 + doc.chunkIds.length, 0),
 );
+assert.equal(
+  new Set(CORPUS_MEETINGS.flatMap((meeting) => meeting.chunkIds)).size,
+  CORPUS_MEETINGS.reduce((count, meeting) => count + meeting.chunkIds.length, 0),
+);
+for (const meeting of CORPUS_MEETINGS) {
+  assert.equal(
+    meeting.chunkIds.length,
+    meeting.transcript.length,
+    `${meeting.title} ${meeting.startedAt} chunk ids`,
+  );
+}
 assert.equal(
   new Set(CORPUS_OBJECTS.map((row) => row.canonicalName.toLowerCase())).size,
   CORPUS_OBJECTS.length,

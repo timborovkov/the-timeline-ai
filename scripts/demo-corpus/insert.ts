@@ -126,6 +126,12 @@ function clusterKindFor(
   return 'other';
 }
 
+function requireChunkId(ids: readonly string[], index: number, label: string): string {
+  const id = ids[index];
+  if (!id) throw new Error(`${label} is missing chunk id ${String(index)}`);
+  return id;
+}
+
 function evidenceIdForEvent(eventId: string): string {
   const index = CORPUS_EVENTS.findIndex((row) => row.id === eventId);
   if (index < 0) throw new Error(`Missing corpus event ${eventId} for evidence`);
@@ -952,13 +958,16 @@ async function insertDocuments(tx: SeedTx): Promise<void> {
     await tx
       .delete(documentChunks)
       .where(
-        and(eq(documentChunks.teamId, TEAM_ID), eq(documentChunks.documentVersionId, doc.versionId)),
+        and(
+          eq(documentChunks.teamId, TEAM_ID),
+          eq(documentChunks.documentVersionId, doc.versionId),
+        ),
       );
     await tx
       .insert(documentChunks)
       .values(
         doc.chunks.map((text, index) => ({
-          id: doc.chunkIds[index] ?? CORPUS_UUID.document(900 + index),
+          id: requireChunkId(doc.chunkIds, index, `Document ${doc.name}`),
           teamId: TEAM_ID,
           documentId: doc.id,
           documentVersionId: doc.versionId,
@@ -1066,23 +1075,21 @@ async function insertMeetings(tx: SeedTx): Promise<void> {
     ])
     .onConflictDoNothing();
 
-  await tx
-    .delete(meetingTranscriptChunks)
-    .where(
-      and(
-        eq(meetingTranscriptChunks.teamId, TEAM_ID),
-        inArray(
-          meetingTranscriptChunks.meetingId,
-          CORPUS_MEETINGS.map((meeting) => meeting.id),
-        ),
+  await tx.delete(meetingTranscriptChunks).where(
+    and(
+      eq(meetingTranscriptChunks.teamId, TEAM_ID),
+      inArray(
+        meetingTranscriptChunks.meetingId,
+        CORPUS_MEETINGS.map((meeting) => meeting.id),
       ),
-    );
+    ),
+  );
   await tx
     .insert(meetingTranscriptChunks)
     .values(
       CORPUS_MEETINGS.flatMap((meeting) =>
         meeting.transcript.map((chunk, index) => ({
-          id: meeting.chunkIds[index] ?? CORPUS_UUID.meeting(300 + index),
+          id: requireChunkId(meeting.chunkIds, index, `Meeting ${meeting.title}`),
           meetingId: meeting.id,
           teamId: TEAM_ID,
           speaker: chunk.speaker,

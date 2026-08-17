@@ -1733,7 +1733,7 @@ function standupTranscript(beats: string[]): CorpusMeeting['transcript'] {
 export const CORPUS_MEETINGS: CorpusMeeting[] = [
   {
     id: CORPUS_UUID.meeting(1),
-    chunkIds: [CORPUS_UUID.meeting(101)],
+    chunkIds: [CORPUS_UUID.meeting(101), CORPUS_UUID.meeting(111)],
     rawEventId: eventId(56),
     title: 'Importer incident review',
     platform: 'meet',
@@ -1773,7 +1773,7 @@ export const CORPUS_MEETINGS: CorpusMeeting[] = [
   },
   {
     id: CORPUS_UUID.meeting(3),
-    chunkIds: [CORPUS_UUID.meeting(104)],
+    chunkIds: [CORPUS_UUID.meeting(104), CORPUS_UUID.meeting(112)],
     rawEventId: eventId(20),
     title: 'Weekly product standup',
     platform: 'meet',
@@ -1788,7 +1788,7 @@ export const CORPUS_MEETINGS: CorpusMeeting[] = [
   },
   {
     id: CORPUS_UUID.meeting(4),
-    chunkIds: [CORPUS_UUID.meeting(105)],
+    chunkIds: [CORPUS_UUID.meeting(105), CORPUS_UUID.meeting(113)],
     rawEventId: eventId(29),
     title: 'Weekly product standup',
     platform: 'meet',
@@ -1828,7 +1828,7 @@ export const CORPUS_MEETINGS: CorpusMeeting[] = [
   },
   {
     id: CORPUS_UUID.meeting(6),
-    chunkIds: [CORPUS_UUID.meeting(108)],
+    chunkIds: [CORPUS_UUID.meeting(108), CORPUS_UUID.meeting(114)],
     rawEventId: eventId(38),
     title: 'Weekly product standup',
     platform: 'meet',

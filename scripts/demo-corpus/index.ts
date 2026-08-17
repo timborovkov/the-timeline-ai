@@ -2,6 +2,7 @@ export { assertExpandedDemoCorpus, type ExpandedDemoCorpusSnapshot } from './ass
 export {
   CORPUS_DOCUMENTS,
   CORPUS_EVENTS,
+  CORPUS_MEETINGS,
   CORPUS_OBJECTS,
   CORPUS_VOLUME_FLOORS,
   corpusEventId,
