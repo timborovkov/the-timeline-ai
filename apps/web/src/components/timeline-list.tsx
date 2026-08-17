@@ -1180,7 +1180,7 @@ function TimelineMomentRow({
           <span className="max-w-[8rem] shrink-0 truncate text-[11px] text-fg-muted">
             {moment.sourceLabel}
           </span>
-          <span className="min-w-0 flex-1 truncate text-sm text-fg underline decoration-border underline-offset-2 group-hover:text-signal group-hover:decoration-signal">
+          <span className="min-w-0 flex-1 truncate text-sm text-fg underline decoration-fg-dim underline-offset-2 group-hover:text-signal group-hover:decoration-signal">
             {title}
           </span>
         </Link>

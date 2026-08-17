@@ -233,7 +233,7 @@ export function OnboardingChecklist() {
                     <p className="text-sm text-fg-dim">
                       <Link
                         href={meta.href}
-                        className="underline decoration-border underline-offset-2 transition-colors hover:text-fg hover:decoration-fg"
+                        className="underline decoration-fg-dim underline-offset-2 transition-colors hover:text-fg hover:decoration-fg"
                       >
                         {item.label}
                       </Link>
