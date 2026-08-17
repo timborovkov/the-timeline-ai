@@ -5,7 +5,7 @@ import { type UIMessage } from 'ai';
 import { ExternalLink, MessageSquare, MessageSquarePlus, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { loadChatSessionAction } from '@/app/actions/chat';
 import { ChatSurface } from '@/components/chat/chat-pane';
@@ -36,20 +36,31 @@ function isExcludedPath(pathname: string | null): boolean {
   return pathname === '/app' || EXCLUDED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 }
 
+function subscribeCompactViewport(onStoreChange: () => void): () => void {
+  if (typeof window.matchMedia !== 'function') return () => undefined;
+  const mq = window.matchMedia(COMPACT_VIEWPORT_QUERY);
+  mq.addEventListener('change', onStoreChange);
+  return () => {
+    mq.removeEventListener('change', onStoreChange);
+  };
+}
+
+function getCompactViewportSnapshot(): boolean {
+  return typeof window.matchMedia === 'function'
+    ? window.matchMedia(COMPACT_VIEWPORT_QUERY).matches
+    : false;
+}
+
+function getCompactViewportServerSnapshot(): boolean {
+  return false;
+}
+
 function useCompactViewport(): boolean {
-  const [compact, setCompact] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia(COMPACT_VIEWPORT_QUERY);
-    const sync = () => {
-      setCompact(mq.matches);
-    };
-    sync();
-    mq.addEventListener('change', sync);
-    return () => {
-      mq.removeEventListener('change', sync);
-    };
-  }, []);
-  return compact;
+  return useSyncExternalStore(
+    subscribeCompactViewport,
+    getCompactViewportSnapshot,
+    getCompactViewportServerSnapshot,
+  );
 }
 
 function openFloatingDialog(dialog: HTMLDialogElement, modal: boolean): void {
@@ -209,6 +220,7 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
     };
   }, [showPanel]);
 
+  // react-doctor-disable-next-line react-doctor/no-event-handler -- Native dialog open/modal mode has to follow route exclusion and viewport, not only the click that first opened it.
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
