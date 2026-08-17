@@ -334,8 +334,8 @@ retaining the same visibility and citation primitives.
 
 ## Related documents
 
-- [Cross-source evidence product brief](../cross-source-evidence.md)
-- [Cross-source evidence implementation plan](../cross-source-evidence-implementation-plan.md)
+- [Operating memory engine](../relational-memory.md)
+- [Evidence-pack rollout](../cross-source-evidence.md)
 - [ADR 0004](./0004-conversation-reviews-drive-conversational-proposals.md)
 - [ADR 0005](./0005-workspace-reconciliation-is-artifact-centered-and-approval-backed.md)
 - [ADR 0009](./0009-ingest-webhooks-are-evidence-only.md)

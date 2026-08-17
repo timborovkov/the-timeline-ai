@@ -181,10 +181,11 @@ Cross-source proposal behavior is shipped for a source path only when:
 - rollback monitoring is active; and
 - product copy names only the source paths that meet those conditions.
 
-The complete sequence, file map, test matrix, and release gates are in the
-[cross-source evidence implementation plan](./cross-source-evidence-implementation-plan.md).
-The durable contract is recorded in
+The complete sequence, file map, test matrix, and release gates used to live
+in a separate implementation plan. That plan is deleted. Remaining rollout
+work is this page plus [`todo.md`](../todo.md). The durable decision is
 [ADR 0014](./adr/0014-cross-source-evidence-packs-use-policy-bound-related-evidence.md).
+The engine is [`relational-memory.md`](./relational-memory.md).
 
 ## Website and landing messaging
 

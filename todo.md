@@ -189,7 +189,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       event-level classifier on the source envelope so GitHub PRs and GitHub
       CI can differ without a core `if (provider === "github")`. Replace the
       GitHub-specific proposal parser with an envelope-driven captured-work
-      matcher on `objectMap` + status. Merge pending communication-created task
+      matcher on `objectMap` + status. When a conversation window already names
+      a PR (`acme/app#88`), stamp that alias onto the proposed task so the later
+      matcher can hard-join. Merge pending communication-created task
       bundles with later captured-work lifecycle so a PR that arrives before
       accept still becomes one approval. Cross-source stories join at a work
       hub (task/cluster); embeddings recall candidates and do not prove
@@ -203,8 +205,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       ranking, exact per-item citations, conversation reviews and event-local
       paths that eventually cite multi-surface evidence, integrations remaining
       pack-eligible, evals/cost caps, and milestone-gated website copy. Follow
-      the [implementation plan](./docs/cross-source-evidence-implementation-plan.md)
-      and [ADR 0014](./docs/adr/0014-cross-source-evidence-packs-use-policy-bound-related-evidence.md).
+      [ADR 0014](./docs/adr/0014-cross-source-evidence-packs-use-policy-bound-related-evidence.md).
       First concrete slice: generic ingest webhook evidence combined with
       directly related conversation and provider events before proposal
       generation. The shared builder, Agent Ask adapter, and first generic

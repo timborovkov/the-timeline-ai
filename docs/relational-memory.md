@@ -18,6 +18,31 @@ restate this engine, they are stale.
 
 Glossary terms live in [`CONTEXT.md`](../CONTEXT.md). Use them.
 
+## Docs package
+
+Read in this order. Do not grow a second engine narrative.
+
+1. **This file** — how data moves and when memory may change.
+2. [`product-brief.html`](./product-brief.html) — why the product exists.
+3. [`objects.html`](./objects.html) — schema, routes, UI. Not the workflow.
+4. [`cross-source-evidence.md`](./cross-source-evidence.md) — pack rollout
+   gates and website copy only.
+5. ADRs in `docs/adr/` — frozen decisions. Start at 0003, 0004, 0005, 0014.
+6. [`todo.md`](../todo.md) — open work.
+
+Deleted: `docs/cross-source-evidence-implementation-plan.md`. The builder is
+code-complete; remaining work is rollout, listed in the pack page and
+[`todo.md`](../todo.md).
+
+## On this page
+
+- [The question this engine exists to answer](#the-question-this-engine-exists-to-answer)
+- [Thesis](#thesis)
+- [Layers](#how-to-read-the-rest-of-this-file)
+- [Cost, quality, and distance](#cost-quality-and-distance-from-ideal)
+- [Shipped vs target](#what-is-shipped-vs-target)
+- [Non-negotiables](#non-negotiables)
+
 ## The question this engine exists to answer
 
 Five historical evidence items (Slack, Telegram, a meeting, an email, a note)
@@ -619,6 +644,75 @@ What must not happen:
 - Drop Sentry so the later "why did this regress?" question has no evidence.
 - Run a summarizer LLM on the CI firehose so it "embeds more like Slack."
 
+## Cost, quality, and distance from ideal
+
+This approach solves the issues we have been seeing **where a hard hub join
+exists**. It does not magically close tasks from topic similarity, and it does
+not yet stamp `signalClass` on every event.
+
+### Does it fix the failures we saw?
+
+| Failure | Status |
+| --- | --- |
+| GitHub / Sentry / Linear / Monday dumped into extract + suggestion LLMs | **Fixed for those providers.** `integrationSkipsLlmIngest` skips extract enqueue. The remaining leak is that skip is still an OAuth-app list, so a GitHub review thread cannot extract without turning CI extract back on. |
+| Timeline tasks stay open after a merged PR | **Fixed when the task already carries a GitHub id, alias, or unique `repo#n` title.** Dogfood tasks titled only `PR #10` still miss: the matcher requires repo + number in the name/aliases. Pending (unaccepted) creates are also invisible to the matcher. |
+| Extract used "5 recent team events" as context | **Fixed for structured providers** (they never call extract). **Still live** for Slack, Drive, email, meetings: `RECENT_CONTEXT_LIMIT = 5` in `apps/worker/src/workers/extract.ts` is a time-ordered team dump, not a conversation key. |
+| GitHub assignee attributed to whoever connected the integration | **Fixed** for the GitHub matcher: login → person facet / unique name; connector is not the default. |
+| CI / comments treated as work-item `done` | **Fixed** in the GitHub matcher (`githubKind` refuses comments/reviews/commits/CI). |
+| Telegram + PR + Meet + last month's email as one write | **Designed, not finished.** Ask can retrieve them once embedded. A `done` write still needs a hub join. Packs default `off`. |
+
+### Cost impact
+
+The expensive call was **extract**, not suggestions. Structured ingest no
+longer pays it.
+
+| Spend | Direction |
+| --- | --- |
+| Extract + suggestion LLM on GitHub/Sentry/Linear/Monday firehose | **Down to zero** on those providers. Largest save. |
+| Embed every selected event, including pulses | **Unchanged on purpose.** ~60 embeds/min/connection. Cheaper than extract; required for Ask. |
+| Coalesced GitHub task proposals | **Parser only**, ~30 jobs/min/connection, 8s coalesce by work-item id. No model. |
+| Ingest summarizer "for better embeddings" | **Not added.** That would be a second extract pass on the firehose. |
+| Conversation extract + review | **Unchanged.** Still the correct paid path for Slack/Telegram/meetings. |
+| Target: pairwise "same work item?" on a shortlist | **Rare, paid, off the firehose.** Only after recall when no hard join exists. |
+| Evidence-pack ranking | **No extra embed.** Uses stored vectors as a tie-break (ADR 0014). |
+
+Net: high-volume structured ingest becomes persist + embed + occasional
+non-LLM proposal. Communication stays the LLM budget. Do not "save more" by
+skipping pulse embeddings or we lose "why did the release fail?"
+
+### Quality impact
+
+| Better | Still weak until later slices |
+| --- | --- |
+| No false `done` from CI, comments, or "happened in the same minute" | Tasks created from chat without GitHub identity will not auto-close |
+| Merged PR can close a Timeline task when aliases/ids exist | Conversation extract can still see 5 unrelated recent events |
+| Assignee mapping is identity-based | Pack-backed conversation proposals are not shipped (`MODE=off`) |
+| Pulses remain searchable | Core matcher still parses `github.type`; Linear/Jira cannot reuse it yet |
+| Ask can show the full story without rewriting memory | Topic-only PR → task still must not become a silent write |
+
+Quality improves by **refusing bad joins**, not by summarizing everything into
+comparable prose.
+
+### How far is the code?
+
+Roughly **the ingest cost path is most of the way there; the join/quality path
+is half; source independence and packs are the rest.**
+
+| Slice | Code today | Remaining |
+| --- | --- | --- |
+| Skip extract/suggest on structured providers | Shipped as `STRUCTURED_INGEST_PROVIDERS` | Lift into `signalClass` on `IntegrationEvent` |
+| GitHub PR/issue → coalesced task proposal | Shipped in `github-task-proposals.ts` | Stop parsing `github.type` in shared code; match `objectMap` + status for any adapter |
+| Rate-limit extract/embed/proposal per connection | Shipped | Keep |
+| Stamp GitHub aliases onto accepted chat tasks | Only after a successful match | Conversation review should copy `acme/app#88` when the window already said it — highest-leverage quality fix |
+| Pending create + later PR as one bundle | Matcher sees only `entities` | Merge/supersede pending suggestion items |
+| `relatedExternalObjectId` for CI/Sentry | `head_sha` in metadata | Envelope field + pulse attach |
+| Evidence packs | Builder exists, default `off`; Ask uses answer packs | Enforce per adapter after gates in [`cross-source-evidence.md`](./cross-source-evidence.md) |
+| Pairwise qualify after vector recall | Not started | Shortlist only; never cosine-as-write |
+| Linear/Jira/CRM captured-work matcher | Not started | Falls out of envelope matcher |
+
+Do not start the pairwise-qualify slice before alias stamping and pending-create
+merge. Those two close most dogfood misses without a new model call.
+
 ## What is shipped vs target
 
 | Piece | Today | Target |
@@ -675,9 +769,15 @@ When code changes ingest or proposals, update this file in the same change.
 
 ## Open work this contract implies
 
+Detail and sequencing: [Cost, quality, and distance](#cost-quality-and-distance-from-ideal).
+Highest leverage next: stamp PR aliases from conversation windows, then merge
+pending creates with later captured work. Do not start pairwise qualify first.
+
 - Lift the provider skip list into an event-level `signalClass` on the envelope.
 - Replace GitHub-specific proposal parsing in shared code with an
   envelope-driven captured-work matcher.
+- When a conversation window already names `acme/app#88`, stamp that alias on
+  the proposed task so the later matcher can hard-join.
 - Merge pending communication creates with later captured-work lifecycle.
 - Treat GitHub review discussion as communication attached to a PR cluster.
 - Set pulse parent ids (`relatedExternalObjectId`).
@@ -693,17 +793,13 @@ When code changes ingest or proposals, update this file in the same change.
 
 ## Doc map
 
-This file replaced the overlapping architecture narrative. Do not grow a
-second engine doc.
-
 | Keep | Role |
 | --- | --- |
 | This file | Living engine |
 | [`CONTEXT.md`](../CONTEXT.md) | Glossary |
 | [`design.md`](../design.md) | UI language; do not put signal class in chrome |
-| [`objects.html`](./objects.html) | Object schema, routes, helpers, Phase 8 surface |
-| [`cross-source-evidence.md`](./cross-source-evidence.md) | Pack product claims, rollout modes, website copy |
-| [`cross-source-evidence-implementation-plan.md`](./cross-source-evidence-implementation-plan.md) | Engineering checklist until promotion |
+| [`objects.html`](./objects.html) | Object schema, routes, helpers |
+| [`cross-source-evidence.md`](./cross-source-evidence.md) | Pack rollout gates and website copy |
 | ADRs 0003, 0004, 0005, 0006, 0009, 0010, 0011, 0014 | Frozen decisions |
 | [`todo.md`](../todo.md) | Open work |
 | [`product-brief.html`](./product-brief.html) | Product vision; points here |
