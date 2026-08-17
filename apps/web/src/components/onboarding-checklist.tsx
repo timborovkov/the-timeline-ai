@@ -1,6 +1,6 @@
 'use client';
 
-import { Check } from 'lucide-react';
+import { Check, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useRef, type ButtonHTMLAttributes, type RefObject } from 'react';
 
@@ -9,7 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useOnboardingChecklistQuery } from '@/lib/use-paginated-queries';
 import { cn } from '@/lib/utils';
 
-const TEAM_SETUP_CHECKLIST_PANEL_ID = 'team-setup-checklist-panel';
+export const TEAM_SETUP_CHECKLIST_PANEL_ID = 'team-setup-checklist-panel';
 
 export function OnboardingChecklist() {
   const {
@@ -61,6 +61,13 @@ export function OnboardingChecklist() {
     }
     pendingFocusTarget.current = null;
   }, [checklistMutationFailed, checklistPending, data]);
+
+  useEffect(() => {
+    if (!data || data.dismissed) return;
+    if (window.location.hash !== `#${TEAM_SETUP_CHECKLIST_PANEL_ID}`) return;
+    document.getElementById(TEAM_SETUP_CHECKLIST_PANEL_ID)?.scrollIntoView({ block: 'start' });
+  }, [data]);
+
   const updateStatus = (
     <output aria-live="polite" aria-atomic="true" className="sr-only">
       {checklistPending ? 'Updating checklist…' : ''}
@@ -91,7 +98,7 @@ export function OnboardingChecklist() {
       <>
         {updateStatus}
         <section aria-labelledby="onboarding-heading" className="border-y border-border py-4">
-          <h2 id="onboarding-heading" className="text-base font-semibold text-fg">
+          <h2 id="onboarding-heading" className="text-xs font-normal text-fg-dim">
             Team setup checklist
           </h2>
           <p role="alert" className="mt-2 text-sm text-danger">
@@ -138,8 +145,10 @@ export function OnboardingChecklist() {
               pendingFocusTarget.current = 'dismiss';
               mutateChecklist({ action: 'reopen' });
             }}
+            className="inline-flex items-center gap-1"
           >
             Team setup checklist
+            <ChevronRight aria-hidden="true" className="size-3" />
           </QuietTextButton>
           {data.items.length > 0 ? (
             <span
@@ -167,16 +176,16 @@ export function OnboardingChecklist() {
       <section
         id={TEAM_SETUP_CHECKLIST_PANEL_ID}
         aria-labelledby="onboarding-heading"
-        className="border-y border-border py-4"
+        className="scroll-mt-16 border-y border-border py-4"
       >
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
           <div className="flex min-w-0 flex-wrap items-baseline gap-2">
-            <h2 id="onboarding-heading" className="text-base font-semibold text-fg">
+            <h2 id="onboarding-heading" className="text-xs font-normal text-fg-dim">
               Team setup checklist
             </h2>
             <span
               aria-label={`${completedCount} of ${data.items.length} checklist steps complete`}
-              className="font-mono text-xs text-fg-dim"
+              className="font-mono text-[11px] text-fg-dim"
             >
               {completedCount}/{data.items.length}
             </span>
@@ -196,11 +205,6 @@ export function OnboardingChecklist() {
             Hide
           </QuietTextButton>
         </div>
-        <p className="mt-1 text-sm text-fg-muted">
-          {nextItem
-            ? 'Connect the places work already happens so the timeline can keep itself current.'
-            : 'This team is ready to keep capturing.'}
-        </p>
         <ol className="mt-3 divide-y divide-border border-t border-border">
           {data.items.map((item, index) => {
             const meta = onboardingMeta(item.key);
@@ -221,18 +225,20 @@ export function OnboardingChecklist() {
                   {item.completed ? <Check className="size-3" /> : index + 1}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p
-                    className={cn(
-                      'text-sm',
-                      item.completed
-                        ? 'text-fg-muted'
-                        : isNext
-                          ? 'font-medium text-fg'
-                          : 'text-fg-dim',
-                    )}
-                  >
-                    {item.label}
-                  </p>
+                  {item.completed ? (
+                    <p className="text-sm text-fg-muted">{item.label}</p>
+                  ) : isNext ? (
+                    <p className="text-sm font-medium text-fg">{item.label}</p>
+                  ) : (
+                    <p className="text-sm text-fg-dim">
+                      <Link
+                        href={meta.href}
+                        className="underline decoration-border underline-offset-2 transition-colors hover:text-fg hover:decoration-fg"
+                      >
+                        {item.label}
+                      </Link>
+                    </p>
+                  )}
                   {isNext ? (
                     <>
                       <p className="mt-0.5 text-xs text-fg-muted">{meta.description}</p>
@@ -344,6 +350,12 @@ function onboardingMeta(key: string): { href: string; cta: string; description: 
         cta: 'Capture',
         description: 'Save one note, decision, or follow-up into the team log.',
       };
+    case 'invite_teammate':
+      return {
+        href: '/app/team?section=members',
+        cta: 'Invite',
+        description: 'Bring someone else onto the team so capture and memory are shared.',
+      };
     case 'telegram':
       return {
         href: '/app/team/telegram',
@@ -366,13 +378,38 @@ function onboardingMeta(key: string): { href: string; cta: string; description: 
       return {
         href: '/app/documents',
         cta: 'Upload',
-        description: 'Add a document the agent can search and cite.',
+        description: 'Add a file to the team drive so the agent can search and cite it.',
+      };
+    case 'first_ask':
+      return {
+        href: '/app/chat',
+        cta: 'Ask',
+        description: 'Ask what changed, who owns something, or what is overdue.',
+      };
+    case 'first_meeting':
+      return {
+        href: '/app/meetings',
+        cta: 'Schedule',
+        description: 'Send the silent bot to a call so the transcript lands in the timeline.',
+      };
+    case 'review_proposal':
+      return {
+        href: '/app/approvals',
+        cta: 'Open approvals',
+        description: 'Accept or reject one suggested change to a task, object, or board.',
+      };
+    case 'daily_digest':
+      return {
+        href: '/app/team?section=general',
+        cta: 'Open settings',
+        description: 'Choose whether the morning summary should arrive, and at what hour.',
       };
     case 'first_integration':
       return {
         href: '/app/sources',
         cta: 'Connect',
-        description: 'Wire in external systems or an MCP server.',
+        description:
+          'Connect Drive, Linear, or GitHub, add a custom webhook, or share Timeline as MCP with Claude Desktop.',
       };
     default:
       return {

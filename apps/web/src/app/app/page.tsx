@@ -4,7 +4,6 @@ import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@time
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
 import {
-  ArrowRight,
   Boxes,
   CircleAlert,
   CircleCheckBig,
@@ -255,13 +254,9 @@ export default async function HomeDashboardPage() {
         <p>
           <Link
             href="/app/timeline"
-            className="group inline-flex items-center gap-1.5 text-sm font-medium text-fg transition-colors hover:text-signal"
+            className="text-xs text-fg-dim transition-colors hover:text-fg"
           >
-            Open timeline
-            <ArrowRight
-              aria-hidden="true"
-              className="size-4 text-fg-dim transition-transform group-hover:translate-x-0.5"
-            />
+            Go to the full timeline
           </Link>
         </p>
       </section>

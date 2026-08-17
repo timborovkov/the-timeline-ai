@@ -208,6 +208,6 @@ describe('HomeDashboardPage', () => {
     expect(html).not.toContain('>Recent moments<');
     expect(html).toContain('aria-label="Recent moments"');
     expect(html).toContain('href="/app/timeline"');
-    expect(html).toContain('Open timeline');
+    expect(html).toContain('Go to the full timeline');
   });
 });

@@ -1112,6 +1112,13 @@ function momentInspectorContent({
   };
 }
 
+function compactTimelineMomentHref(moment: TimelineMoment): string {
+  const params = new URLSearchParams({ moment: moment.id });
+  const eventId = moment.rawEvents.at(-1)?.id;
+  if (eventId) params.set('event', eventId);
+  return `/app/timeline?${params.toString()}#${moment.anchorId}`;
+}
+
 function TimelineMomentRow({
   moment,
   audioUrlMap,
@@ -1161,7 +1168,7 @@ function TimelineMomentRow({
         data-moment-id={moment.id}
       >
         <Link
-          href={`/app/timeline?moment=${encodeURIComponent(moment.id)}#${moment.anchorId}`}
+          href={compactTimelineMomentHref(moment)}
           className="flex min-h-9 min-w-0 items-center gap-3 py-1.5 text-left"
         >
           <span
@@ -1173,7 +1180,9 @@ function TimelineMomentRow({
           <span className="max-w-[8rem] shrink-0 truncate text-[11px] text-fg-muted">
             {moment.sourceLabel}
           </span>
-          <span className="min-w-0 flex-1 truncate text-sm text-fg">{title}</span>
+          <span className="min-w-0 flex-1 truncate text-sm text-fg underline decoration-border underline-offset-2 group-hover:text-signal group-hover:decoration-signal">
+            {title}
+          </span>
         </Link>
         <div className="absolute right-2 top-1.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
           <PinOverflowMenu

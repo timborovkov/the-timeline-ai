@@ -112,6 +112,7 @@ describe('OnboardingChecklist', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(toggle.className).toContain('text-fg-dim');
     expect(toggle.className).not.toMatch(/(?:^|\s)border(?:\s|$)/);
+    expect(toggle.querySelector('svg')).toBeTruthy();
     expect(screen.getByText('1/2')).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Team setup checklist' })).toBeNull();
   });
@@ -164,7 +165,12 @@ describe('OnboardingChecklist', () => {
       ],
     });
 
-    expect(screen.getByText('Team setup checklist')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Team setup checklist' }).className).toContain(
+      'text-xs',
+    );
+    expect(screen.getByRole('heading', { name: 'Team setup checklist' }).className).not.toContain(
+      'font-semibold',
+    );
     expect(
       screen
         .getByRole('button', { name: 'Hide team setup checklist' })
@@ -173,7 +179,9 @@ describe('OnboardingChecklist', () => {
     expect(screen.getByText('1/3')).toBeTruthy();
     expect(screen.getByText('Capture one timeline event')).toBeTruthy();
     expect(screen.getByText('Upload a document')).toBeTruthy();
-    expect(screen.getByText('Connect an integration')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Connect an integration' }).getAttribute('href')).toBe(
+      '/app/sources',
+    );
     expect(screen.getByRole('link', { name: 'Upload' }).getAttribute('href')).toBe(
       '/app/documents',
     );

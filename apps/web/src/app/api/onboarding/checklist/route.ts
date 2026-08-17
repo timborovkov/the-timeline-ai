@@ -13,11 +13,16 @@ export const dynamic = 'force-dynamic';
 
 const LABELS: Record<onboarding.OnboardingStep, string> = {
   first_note: 'Capture one timeline event',
+  invite_teammate: 'Invite a teammate',
   telegram: 'Link Telegram',
   slack: 'Install or link Slack',
   email_forwarding: 'Forward email into the timeline',
   first_document: 'Upload a document',
-  first_integration: 'Connect an integration or MCP server',
+  first_ask: 'Ask the agent a question',
+  first_meeting: 'Invite the agent to a call',
+  review_proposal: 'Review a proposal',
+  daily_digest: 'Set up daily digests',
+  first_integration: 'Connect a source, webhook, or MCP',
 };
 
 const patchSchema = z.object({

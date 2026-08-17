@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.5 · Team setup checklist on Home (2026-08-17). Replaces v3.4 Quiet Home attention and dense recent moments.
+**Version:** v3.6 · Team setup loop and Home timeline links (2026-08-17). Replaces v3.5 Team setup checklist on Home.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -271,12 +271,18 @@ not render the derived proposal at all.
 Home does not repeat its navigation label as a visible page title. It starts
 with a quiet Capture action and the same compact, icon-only-send Ask composer
 used in chat. The team setup checklist is Home onboarding. For a member who
-has not hidden it, the full list sits open directly under Ask: completed
-steps, the current step with one outline action, later steps in quieter type,
-and a text Hide control. It is not a setup wizard and not a primary button.
-After a member hides it, the same slot keeps a quiet “Team setup checklist”
-text toggle with the remaining count. The account menu also reopens it.
-Attention has no visible heading; the region is named for assistive tech only.
+has not hidden it, the list sits open directly under Ask with the same small
+quiet label used when it is folded: completed steps, the current step with
+guidance and one outline action, later incomplete steps as underlined links,
+and a text Hide control. Hide persists per member even when nothing is
+complete, including after new steps appear. After a member hides it, the same
+slot keeps a quiet “Team setup checklist” text toggle with a tiny chevron and
+the remaining count. Off Home, a matching quiet header chip returns to the
+panel until the member hides it or every step is done. The account menu also
+reopens it. The checklist teaches the product loop (capture, people, sources,
+ask, meetings, trust memory, stay in the loop) rather than enumerating every
+work surface. Attention has no visible heading; the region is named for
+assistive tech only.
 It shows only non-zero groups: pending approvals, overdue work, open tasks,
 open objects, recoverable jobs, and connection issues. Overdue work stays the
 danger row into the work queue. Open tasks stay their own row into Tasks. Open
@@ -301,10 +307,11 @@ do not consume a preview slot. Home never offers reordering; its Manage action
 opens Work → Pinned.
 
 Home recent moments have no visible heading. They show up to eight dense rows
-of time, source, and title, with quiet non-sticky date labels and no preview,
-evidence chip, impact strip, transcript link, or timeline rail. Each row opens
-the matching moment on Timeline. An “Open timeline” action always follows for
-the rest of the archive.
+of time, source, and an underlined title, with quiet non-sticky date labels
+and no preview, evidence chip, impact strip, transcript link, or timeline
+rail. Each row opens Timeline at that moment with the inspector showing the
+event. A quiet “Go to the full timeline” text link always follows for the
+rest of the archive.
 
 ### Timeline
 
@@ -606,3 +613,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Home open objects and inline queue edits | Adds open tasks, people, companies, projects, deals, and follow-ups to Home Attention, stops repeating “Task” on work-queue rows, and lets queue status, assignee, due date, and priority change inline. |
 | 2026-08-17 | Quiet Home attention and dense recent moments | Collapses typed open-people/company/project rows into one open-objects count, drops the Attention and Recent moments headings, and replaces the Home timeline preview with denser title-only rows plus a clear Open timeline path. |
 | 2026-08-17 | Team setup checklist on Home | Moves the team checklist under Ask, opens the full list for new members, and replaces the Reopen setup button with a quiet Team setup checklist toggle. |
+| 2026-08-17 | Team setup loop and Home timeline links | Expands the checklist into a product-loop set, keeps the open header as quiet as the folded toggle, persists Hide, adds a folded chevron and off-Home chip, and turns Home moment titles into Timeline links with a quiet full-timeline path. |

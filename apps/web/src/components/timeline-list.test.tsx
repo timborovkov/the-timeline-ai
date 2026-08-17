@@ -213,8 +213,9 @@ describe('TimelineList compact home rows', () => {
     );
 
     expect(html).toContain(
-      'href="/app/timeline?moment=moment%3Ameeting%3Ameeting-1#tm-moment_3Ameeting_3Ameeting-1"',
+      'href="/app/timeline?moment=moment%3Ameeting%3Ameeting-1&amp;event=11111111-1111-4111-8111-111111111111#tm-moment_3Ameeting_3Ameeting-1"',
     );
+    expect(html).toContain('underline decoration-border');
     expect(html).toContain('Daily');
     expect(html).not.toContain('View evidence');
     expect(html).not.toContain('Open transcript');

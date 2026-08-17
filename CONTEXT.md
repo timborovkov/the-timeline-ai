@@ -956,12 +956,17 @@ bypassing private or restricted items.
 _Avoid_: Backup, database dump
 
 **Onboarding Checklist**:
-A dismissible team setup checklist that helps a team learn capture surfaces.
-Home keeps it open under Ask until a member hides it, showing completed steps
-and the current action; a quiet Team setup checklist toggle remains in that
-slot afterward. Full connection management belongs in Connections. It teaches
-the product loop; it is not a requirement that external data has successfully
-arrived.
+A dismissible team setup checklist that teaches the product loop: capture,
+invite teammates, connect chat and email, upload a document, ask the agent,
+invite the bot to a call, review a proposal, configure daily digests, and
+connect a source, webhook, or Timeline MCP. Home keeps it open under Ask
+until a member hides it; Hide persists even with zero completions. The open
+panel uses the same quiet label as the folded toggle. Later incomplete steps
+are links so the list stays usable. After Hide, a quiet Team setup checklist
+toggle with a chevron remains in that slot, and a matching header chip on
+other app pages returns to the panel until setup is done or hidden. Full
+connection management belongs in Connections. It is not a requirement that
+external data has successfully arrived.
 _Avoid_: Setup wizard, activation gate
 
 **Home**:
