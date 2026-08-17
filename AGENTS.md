@@ -145,8 +145,10 @@ Treat this file as an operating contract for agents, not a loose README.
   [docs/relational-memory.md](docs/relational-memory.md) Layer 6 and
   [ADR 0015](docs/adr/0015-proposal-writes-qualify-hubs-from-mentions-and-container-labels.md).
   Recency dumps and embeddings recall. Captured-work parsers join on provider
-  id, alias, or unique `repo#n`. Do not add an ingest summarizer whose only
-  job is prettier embeddings.
+  id, alias, or unique `repo#n`. Envelope `signalClass` decides extract vs
+  parse vs pulse; see
+  [ADR 0016](docs/adr/0016-ingest-signal-class-lives-on-the-envelope.md).
+  Do not add an ingest summarizer whose only job is prettier embeddings.
 - **Design system lives in [design.md](design.md).** If a screen disagrees with
   it, fix the screen — not the doc. If you're intentionally evolving the design
   language, update [design.md](design.md) in the same PR.

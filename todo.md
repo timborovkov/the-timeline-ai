@@ -201,45 +201,35 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       (Path from here to the ideal engine).
 - [x] Opt-in live messy proposal-engine eval
       (`pnpm test:proposal-engine:live`): real models, real embeddings/Qdrant
-      when configured, realistic noisy payloads, isolated team, cleanup
-      afterwards. Not part of CI. Covers Slack/Monday/meeting qualify, generic
-      `#general` refuse, mixed-client refuse, living pending amend, pulse skip,
-      and cosine-recall-is-not-a-write.
-- [ ] Stamp unique provider work-item aliases from the conversation window
+      when configured, realistic noisy payloads (~90% messy: Sentry spikes,
+      GitHub Actions pulses, Bugbot findings, buried ids, typo fragments,
+      silent calendar-linked meetings), isolated team, cleanup afterwards.
+      Not part of CI. Safe name-maps are the minority. Covers Slack/Monday
+      qualify, generic `#general` refuse, mixed-client refuse, living pending
+      amend, pulse/finding skip, alias stamp, and cosine-recall-is-not-a-write.
+- [x] Stamp unique provider work-item aliases from the conversation window
       onto proposed tasks (`acme/app#88`, Linear keys, Monday item ids) so a
       later captured-work matcher can hard-join. Deterministic copy only when
-      one id is named. Highest-leverage remaining close-the-loop slice; do
-      not start pairwise cosine-qualify first.
-- [ ] When a meeting transcript never names the client **and** the container
+      one id is named.
+- [x] When a meeting transcript never names the client **and** the container
       is silent, inherit a unique company/project hub from the owning
       calendar event or Saved Meeting's existing object links. Still refuse
       when two hubs are linked. Do not silently rewrite already-accepted
       unscoped tasks; propose a relationship or use memory repair.
-- [ ] Replace extract's time-ordered team dump (`RECENT_CONTEXT_LIMIT = 5`)
+- [x] Replace extract's time-ordered team dump (`RECENT_CONTEXT_LIMIT = 5`)
       with conversation-keyed / same-source context so facts that feed linked
       context are not five unrelated recent events.
-- [ ] Classify ingest by signal class rather than by OAuth app, following
-      [`docs/relational-memory.md`](./docs/relational-memory.md):
+- [x] Classify ingest by signal class rather than by OAuth app, following
+      [`docs/relational-memory.md`](./docs/relational-memory.md) and
+      [ADR 0016](./docs/adr/0016-ingest-signal-class-lives-on-the-envelope.md):
       communication may extract and review; structured captured work parses
-      and may write coalesced approval-backed field changes; pulses persist,
-      embed, and attach as supporting evidence without originating proposals.
-      Intentional captures (home Capture, Telegram `/note`) are high-intent
-      communication and may propose from that single event. Curated documents
-      are reference knowledge for Ask, object summaries, and proposal context;
-      Drive file-change pings and "Uploaded X" lifecycle rows are pulses.
-      Replace the GitHub/Linear/Monday/Sentry extract skip list with this
-      event-level classifier on the source envelope so GitHub PRs and GitHub
-      CI can differ without a core `if (provider === "github")`. Replace the
-      GitHub-specific proposal parser with an envelope-driven captured-work
-      matcher on `objectMap` + status. Reuse the GitHub living-pending refresh
-      for Linear/Monday envelope completion. Cross-source stories join at a
-      work hub (task/cluster); embeddings recall candidates and do not prove
-      writes. Do not add an ingest summarizer whose only job is prettier
-      embeddings. Do not use time windows as the join key. Do not mint Timeline
-      tasks from automated findings (Bugbot, CI, Codex); attach those to the
-      parent PR/issue hub. Propose priority 1–4 on goals and tracked work.
-      Create already-done when the evidence shows the work is already
-      addressed.
+      `objectMap` and may write coalesced approval-backed field changes;
+      pulses persist, embed, and never originate; findings (Bugbot, CI,
+      Sentry incidents) attach to the parent hub and do not mint sibling
+      Timeline tasks. GitHub PRs and GitHub CI differ without a core
+      `if (provider === "github")`. Linear/Monday item completion reuses the
+      GitHub living-pending matcher. Opt-in live eval
+      (`pnpm test:proposal-engine:live`) stays messy-first and is not CI.
 - [ ] Ship the cross-source evidence pack north star in
       [`docs/cross-source-evidence.md`](./docs/cross-source-evidence.md) (rollout
       and copy; engine behavior is

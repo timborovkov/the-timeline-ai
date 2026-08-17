@@ -28,7 +28,7 @@ Read in this order. Do not grow a second engine narrative.
 4. [`cross-source-evidence.md`](./cross-source-evidence.md) — pack rollout
    gates and website copy only.
 5. ADRs in `docs/adr/` — frozen decisions. Start at 0003, 0004, 0005, 0014,
-   0015.
+   0015, 0016.
 6. [`todo.md`](../todo.md) — open work.
 
 Deleted: `docs/cross-source-evidence-implementation-plan.md`. The builder is
@@ -60,11 +60,11 @@ enough. "Looks related" is Ask, not a write.
 
 | What the later PR actually contains | Shipped | Target |
 | --- | --- | --- |
-| Hard join: same GitHub id already on the task (`metadata.integration_external_id`), cluster `canonicalEntityId`, or an alias such as `PR-acme/app-88` / `acme/app#88` | **Yes.** Coalesced non-LLM `done` (and assignee if the task has none) | Same, via envelope `objectMap`, not `github.type` |
+| Hard join: same GitHub id already on the task (`metadata.integration_external_id`), cluster `canonicalEntityId`, or an alias such as `PR-acme/app-88` / `acme/app#88` | **Yes.** Coalesced non-LLM `done` (and assignee if the task has none) | Same, via envelope `objectMap` + `signalClass=captured_work` |
 | Unique title match: the open task's name/aliases mention that repo **and** `#88` / `PR #88`, and titles align, and no other open task also matches | **Yes**, one fuzzy hit | Same; still refuse if two tasks match |
 | PR body says "fixed the Engagements 404" / "this issue is solved", task is titled "Fix Engagements 404", no repo, number, URL, or alias overlap | **No.** Matcher never runs on prose similarity | Embeddings may **recall** the task. A second qualify step (unique title, explicit ref, or one pairwise confirm on a shortlist) may propose a **link**, then `done`. Cosine alone never writes |
-| CI run, review comment, or Sentry spike on the same SHA | **No.** Pulses are not completion. A green check or a "lgtm" comment does not mean the task is done. | Pulse **attaches** to the PR/SHA hub. Still never originates `done` |
-| The 5-item task proposal is still pending; nobody accepted it | **Yes, when the later event is real captured-work completion** (merged PR, closed issue, provider `status=done`) and it can join the pending create (alias, provider id, or unique `repo#n` title). The pending bundle is **refreshed in place** — status, aliases, actor assignee, new evidence — instead of rotting until someone accepts a stale create. | Same refresh for Linear/Monday envelope completion |
+| CI run, review comment, or Sentry spike on the same SHA | **No.** Pulses and findings are not completion. A green check or a "lgtm" comment does not mean the task is done. | Pulse **attaches** to the PR/SHA hub. Still never originates `done` |
+| The 5-item task proposal is still pending; nobody accepted it | **Yes, when the later event is real captured-work completion** (merged PR, closed issue, Linear/Monday `objectMap.status=done`) and it can join the pending create (alias, provider id, or unique `repo#n` title). The pending bundle is **refreshed in place** — status, aliases, actor assignee, new evidence — instead of rotting until someone accepts a stale create. | Same |
 
 The five source events do not get dumped into a second LLM when the PR arrives.
 They already created the hub. The PR is structured captured work: parse
@@ -181,7 +181,7 @@ The envelope already exists as `IntegrationEvent` + optional `ObjectMapping` in
 
 | Field | Independent meaning | GitHub PR | GitHub CI |
 | --- | --- | --- | --- |
-| `signalClass` (**Target**) | Spend and proposal rights | `captured_work` | `pulse` |
+| `signalClass` (**Shipped**) | Spend and proposal rights | `captured_work` | `pulse` |
 | `objectMap` | Durable work record, if any. Does **not** create a Timeline task | `type=task`, `externalId=repo#88`, `status=done` | absent |
 | `externalObjectId` | Stable subject of this event | `acme/app#88` | `acme/app#workflow_run:123` |
 | `relatedExternalObjectId` (**Target**) | Work item this pulse attaches to | — | PR or SHA when known |
@@ -254,10 +254,8 @@ Do not treat a Drive `file.changed` ping as equal to a human uploading a strateg
 Unstructured captured work (a CRM call log) may still extract. Structured
 captured work (PR merged, Linear state) must not. Pulses never extract.
 
-**Shipped:** skip extract/suggestion LLM for providers `github | linear | monday | sentry`. Drive `file.changed` events skip extract as pulses. Document lifecycle rows skip event extract/suggest.
-**Target:** stamp `signalClass` on the envelope so a GitHub PR and a GitHub CI
-run diverge without a provider skip list, and so Drive harvest vs Drive ping
-do not share a provider switch in core.
+**Shipped:** skip extract/suggestion LLM by envelope `signalClass` ([ADR 0016](./adr/0016-ingest-signal-class-lives-on-the-envelope.md)). GitHub PRs are `captured_work`; GitHub CI is `pulse`; review comments and Sentry incidents are `finding`. Drive `file.changed` events skip extract as pulses. Document lifecycle rows skip event extract/suggest. A legacy provider fallback keeps already-ingested GitHub/Linear/Monday/Sentry rows skipping extract.
+**Target:** adapters keep stamping `signalClass` at emit time; `relatedExternalObjectId` lets pulses attach to a parent PR/SHA without originating.
 
 ```mermaid
 flowchart TD
@@ -542,18 +540,15 @@ not a missing CRM type, and not something Ask can paper over.
 
 **Still weak (Target, not a license to cosine-write):**
 
-- A meeting titled "Weekly" whose transcript never names the client. Unique
-  mention has nothing to qualify. Next join is the Saved Meeting / calendar
-  event's existing object links, not embeddings.
 - Mixed-client Slack **channels** (not threads) inside a 24-event window. Two
   clients named → refuse. Zero clients named **and** a generic channel
   (`#general`) → bare task. A channel that uniquely names one hub
   (`acme-project-development`) now qualifies that hub. A mixed name
   (`acme-faba-shared`) still refuses.
-- Extract's `RECENT_CONTEXT_LIMIT = 5` is still a time-ordered **team** dump,
-  not the conversation key. That pollutes facts that feed linked context.
-- Provider ticket keys spoken in chat (`acme/app#88`) are not yet copied onto
-  the proposed task as aliases, so a later PR cannot hard-join.
+- Already-accepted unscoped tasks stay unscoped. Propose a relationship or use
+  memory repair; do not silently rewrite them.
+- Topic-only PR → task still must not become a write. Packs default `off`.
+  Pulses are not yet supporting-only pack members.
 
 ### Captured-work path — how a later PR proposes `done`
 
@@ -818,18 +813,18 @@ What must not happen:
 ## Cost, quality, and distance from ideal
 
 This approach solves the issues we have been seeing **where a hard hub join
-exists**. It does not magically close tasks from topic similarity, and it does
-not yet stamp `signalClass` on every event.
+exists**. It does not magically close tasks from topic similarity. Envelope
+`signalClass` is stamped at persist time ([ADR 0016](./adr/0016-ingest-signal-class-lives-on-the-envelope.md)).
 
 ### Does it fix the failures we saw?
 
 | Failure | Status |
 | --- | --- |
-| GitHub / Sentry / Linear / Monday dumped into extract + suggestion LLMs | **Fixed for those providers.** `integrationSkipsLlmIngest` skips extract enqueue. The remaining leak is that skip is still an OAuth-app list, so a GitHub review thread cannot extract without turning CI extract back on. |
-| Timeline tasks stay open after the work is complete | **Fixed when a hub join exists**, including **pending creates**. Completion is work-item lifecycle (merged PR, closed issue, provider `status=done`), not a time window. Pending approvals are refreshed in place when later completion arrives. |
-| Extract used "5 recent team events" as context | **Fixed for structured providers** (they never call extract) **and Drive file-change pulses**. **Still live** for Slack, email, meetings: `RECENT_CONTEXT_LIMIT = 5` in `apps/worker/src/workers/extract.ts` is a time-ordered team dump, not a conversation key. |
+| GitHub / Sentry / Linear / Monday dumped into extract + suggestion LLMs | **Fixed by envelope signal class.** `integrationSkipsLlmIngest` reads `signalClass`, not the OAuth app name. A GitHub review thread is `finding`; a GitHub CI run is `pulse`; a merged PR is `captured_work`. Legacy provider fallback remains for old rows. |
+| Timeline tasks stay open after the work is complete | **Fixed when a hub join exists**, including **pending creates**. Completion is work-item lifecycle (merged PR, closed issue, provider `status=done`), not a time window. Pending approvals are refreshed in place when later completion arrives. Linear and Monday item completion reuse the same matcher. |
+| Extract used "5 recent team events" as context | **Fixed.** Conversation-keyed window when present; otherwise same meeting / calendar / source. Not a team-time dump. |
 | GitHub assignee attributed to whoever connected the integration | **Fixed.** Assignee is the GitHub actor/assignee login when it uniquely matches a teammate (connection login map, compact name, or email local-part). Connecting GitHub is identity, not work ownership. |
-| Multi-client board: "Faba meeting" task has no client | **Fixed when the evidence uniquely names one existing company/project**, including meeting titles and container labels (Slack `#acme-project-development`, Monday `Faba-ext`). Recency dump and cosine are not the join. **Still live** when the meeting and container never name the client, when two clients are in the window, and for already-accepted unscoped tasks (those need a new proposal or memory repair, not a silent rewrite). |
+| Multi-client board: "Faba meeting" task has no client | **Fixed when the evidence uniquely names one existing company/project**, including meeting titles, container labels, and unique calendar / Saved Meeting object links. Recency dump and cosine are not the join. **Still live** when two clients are in the window, and for already-accepted unscoped tasks (those need a new proposal or memory repair, not a silent rewrite). |
 | CI / comments treated as work-item `done` | **Not a completion signal, and never should be.** The matcher refuses comments/reviews/commits/CI so a green check cannot close a task. That is not the same as "no proposals." |
 | Telegram + PR + Meet + last month's email as one write | **Designed, not finished.** Ask can retrieve them once embedded. A `done` write still needs a hub join. Packs default `off`. |
 
@@ -856,14 +851,16 @@ skipping pulse embeddings or we lose "why did the release fail?"
 
 | Better | Still weak until later slices |
 | --- | --- |
-| No false `done` from CI, comments, or "happened in the same minute" | Tasks created from chat without GitHub identity will not auto-close |
-| Merged PR can close a Timeline task when aliases/ids exist | Conversation extract can still see 5 unrelated recent events |
-| Assignee mapping is identity-based | Pack-backed conversation proposals are not shipped (`MODE=off`) |
-| Pulses remain searchable | Core matcher still parses `github.type`; Linear/Jira cannot reuse it yet |
-| Ask can show the full story without rewriting memory | Topic-only PR → task still must not become a silent write |
-| Mention-qualified client/project attach on communication creates | Silent meetings still produce bare tasks until calendar/Saved Meeting inheritance ships |
-| One cited create-evidence event is enough to summarize | Historical Bugbot/CI tasks still exist until humans archive them |
-| Suggestion prompt refuses findings and asks for priority / create-as-done | Accept-time GitHub reconcile is not shipped; the model can still miss a merged PR |
+| No false `done` from CI, comments, or "happened in the same minute" | Pack-backed conversation proposals are not shipped (`MODE=off`) |
+| Merged PR / Linear / Monday completion can close a Timeline task when aliases/ids exist | Pulses are not yet supporting-only pack members |
+| Assignee mapping is identity-based for GitHub | Core does not map Linear/Monday actors onto Timeline users yet |
+| Pulses remain searchable | Topic-only PR → task still must not become a silent write |
+| Ask can show the full story without rewriting memory | Historical Bugbot/CI tasks still exist until humans archive them |
+| Mention-qualified client/project attach on communication creates | Accept-time GitHub reconcile is not shipped; the model can still miss a merged PR |
+| Silent meetings inherit unique calendar / Saved Meeting object links | — |
+| Extract recent context is conversation-keyed / same-source | — |
+| One cited create-evidence event is enough to summarize | — |
+| Suggestion prompt refuses findings and asks for priority / create-as-done | — |
 
 Quality improves by **refusing bad joins**, not by summarizing everything into
 comparable prose.
@@ -875,30 +872,30 @@ is half; source independence and packs are the rest.**
 
 | Slice | Code today | Remaining |
 | --- | --- | --- |
-| Skip extract/suggest on structured providers | Shipped as `STRUCTURED_INGEST_PROVIDERS` | Lift into `signalClass` on `IntegrationEvent` |
-| Drive file-change pulses skip extract | Shipped as `google_drive` pulse skip | Envelope `signalClass=pulse` |
+| Skip extract/suggest by envelope signal class | Shipped as `signalClass` + `source_metadata.signal_class` ([ADR 0016](./adr/0016-ingest-signal-class-lives-on-the-envelope.md)) | Keep adapters stamping the field; legacy provider fallback remains for old rows |
+| Drive file-change pulses skip extract | Shipped as `signalClass=pulse` | Unchanged |
 | Document lifecycle rows skip event extract/suggest | Shipped (`source=document`) | Unchanged; chunks stay on document-extract |
 | Ask object-profile includes curated documents | Shipped | Unchanged |
 | Object summaries cite related curated documents | Shipped | Document extract should enqueue summary refresh for name-matched hubs |
 | Proposals may read related curated documents | Shipped as supporting context; cannot originate | Pack admission for document chunks |
-| Mention-qualify existing company/project hubs on communication proposals | Shipped: unique mention + meeting title + container labels (Slack channel, Monday board, Telegram chat title, repo/team names), deterministic attach, living pending amend | Calendar/Saved Meeting object links when the transcript **and** the container are silent; do not cosine-write |
-| GitHub PR/issue → coalesced task proposal | Shipped in `github-task-proposals.ts` | Stop parsing `github.type` in shared code; match `objectMap` + status for any adapter |
+| Mention-qualify existing company/project hubs on communication proposals | Shipped: unique mention + meeting title + container labels + calendar/Saved Meeting inherit | Do not cosine-write |
+| Linear/Jira/CRM captured-work matcher | Shipped for Linear/Monday `objectMap` + aliases | Jira/CRM when those adapters exist |
+| Captured-work → coalesced task proposal | Shipped on envelope `objectMap` + status + aliases (GitHub, Linear, Monday) | Linear/Monday actor → Timeline user mapping |
 | Rate-limit extract/embed/proposal per connection | Shipped | Keep |
-| Stamp GitHub aliases onto accepted chat tasks | Only after a successful match | Conversation review should copy `acme/app#88` when the window already said it — highest-leverage remaining quality fix |
-| Pending create + later PR as one bundle | Shipped: GitHub matcher refreshes the pending create in place | Linear/Monday envelope completion uses the same refresh |
+| Stamp GitHub aliases onto accepted chat tasks | Shipped: unique `repo#n` / Linear / Monday id copied onto proposed create aliases | Keep one-id-only |
+| Pending create + later captured work as one bundle | Shipped: matcher refreshes the pending create in place for GitHub/Linear/Monday | Keep |
 | `relatedExternalObjectId` for CI/Sentry | `head_sha` in metadata | Envelope field + pulse attach |
 | Evidence packs | Builder exists, default `off`; Ask uses answer packs | Enforce per adapter after gates in [`cross-source-evidence.md`](./cross-source-evidence.md) |
 | Pairwise qualify after vector recall | Not started | Shortlist only; never cosine-as-write |
-| Linear/Jira/CRM captured-work matcher | Not started | Falls out of envelope matcher |
 | Object summary from accepted create evidence | Shipped: one cited event is enough; packet includes create-evidence | Unchanged |
 | Do not mint findings / one-off mentions as objects | Suggestion prompt shipped | `memory_grade` column after the behavioral rules hold |
 | Propose `priority` 1–4 on goal/work creates | Prompt shipped; schema already accepts | Captured-work matcher should copy provider priority when the envelope has it |
 | Create already-done when the PR was already fixed | Prompt only | Accept-time captured-work reconcile + pending-create merge |
 
-Do not start the pairwise-qualify slice before alias stamping. GitHub
-pending-create merge and mention-qualified client attach are already shipped.
-Alias stamping closes the remaining "chat task never joins the later PR" miss
-without a new model call.
+Do not start the pairwise-qualify slice before packs. Alias stamping, GitHub
+pending-create merge, mention-qualified client attach, calendar inherit,
+conversation-keyed extract, envelope `signalClass`, and the envelope captured-work
+matcher are already shipped.
 
 ## What is shipped vs target
 
@@ -906,18 +903,18 @@ without a new model call.
 | --- | --- | --- |
 | Immutable ingest + team isolation | Shipped | Unchanged |
 | Embed every selected integration event, rate-limited | Shipped | Unchanged |
-| Skip extract/suggestion LLM for GitHub, Linear, Monday, Sentry | Shipped as a provider list | Replace with signal class + payload shape |
-| Drive file-change pulses skip extract | Shipped | Envelope `signalClass=pulse` |
+| Skip extract/suggestion LLM for GitHub, Linear, Monday, Sentry | Shipped as envelope `signalClass` ([ADR 0016](./adr/0016-ingest-signal-class-lives-on-the-envelope.md)); legacy provider fallback for old rows | Adapters keep stamping the field |
+| Drive file-change pulses skip extract | Shipped as `signalClass=pulse` | Unchanged |
 | Intentional captures (web, Telegram `/note`) extract + propose | Shipped event-local | Unchanged; do not fold them into conversation-review debounce |
 | Curated documents in Ask / object summaries / proposal context | Shipped: object-profile retrieval, summary `document_chunk` refs, supporting proposal context | Pack admission for chunks; summary refresh on document extract |
-| Conversation review → approval-backed task create | Shipped, including mention-qualified and container-label company/project attach and living pending hub amend | Migrate onto proposal packs; inherit hubs from calendar/Saved Meeting links when the transcript and container are silent |
-| Stamp `repo#n` / ticket aliases from conversation onto the proposed task | Not shipped | Deterministic copy when the window uniquely names one work-item id |
-| GitHub PR/issue lifecycle → coalesced task proposals | Shipped, GitHub-specific parser | Envelope-driven matcher on `objectMap` + status + aliases |
-| Match pending create bundles when the PR arrives first | Shipped for GitHub: refresh the pending create (status/aliases/actor) instead of letting it rot | Same living-proposal refresh on Linear/Monday captured work |
+| Conversation review → approval-backed task create | Shipped, including mention-qualified and container-label company/project attach, living pending hub amend, and unique calendar / Saved Meeting inherit | Migrate onto proposal packs |
+| Stamp `repo#n` / ticket aliases from conversation onto the proposed task | Shipped: unique `repo#n` / Linear / Monday id copied onto proposed create aliases | Keep one-id-only |
+| GitHub PR/issue lifecycle → coalesced task proposals | Shipped as envelope matcher on `objectMap` + status + aliases (GitHub, Linear, Monday) | Linear/Monday actor → Timeline user mapping; Jira/CRM later |
+| Match pending create bundles when the PR arrives first | Shipped: refresh the pending create (status/aliases/actor) instead of letting it rot | Same living-proposal refresh already covers Linear/Monday captured work |
 | Topic-only PR → task `done` | Not shipped, and must not ship as cosine-write | Optional pairwise qualify after recall; still approval-backed |
 | Artifact clusters + authority policy | Shipped | Pulses attach; they do not gain authority |
 | Evidence-pack builder | Implemented, default off | Enforced per adapter after gates |
-| First-class `signalClass` on ingest | Not shipped | Classifier at write time on the envelope |
+| First-class `signalClass` on ingest | Shipped on the envelope and `source_metadata.signal_class` | `relatedExternalObjectId` for pulse attach |
 | `relatedExternalObjectId` for pulses | Partial (`head_sha` in metadata) | Core envelope field |
 | LLM rewrite of every event for embedding | Not done, and must not be | Reuse extract facts + object titles only |
 | Memory grade (`goal` / `work` / `finding` / `mention`) | Behavioral: prompt + summarizer + provenance excerpt | Optional `entities.memory_grade` after the rules are live. Not a second score. |
@@ -961,11 +958,15 @@ When code changes ingest or proposals, update this file in the same change.
 - Mention-qualified hubs: `packages/shared/src/suggestions/hub-context.ts`
   (names, aliases, meeting titles, container labels). Frozen by
   [ADR 0015](./adr/0015-proposal-writes-qualify-hubs-from-mentions-and-container-labels.md).
+- Unique work-item alias stamp: `packages/shared/src/suggestions/work-item-aliases.ts`
+- Calendar / Saved Meeting hub inherit: `packages/shared/src/suggestions/linked-hubs.ts`
+- Envelope signal class: `packages/shared/src/integrations/signal-class.ts`
+  ([ADR 0016](./adr/0016-ingest-signal-class-lives-on-the-envelope.md))
 - Live messy proposal eval (opt-in, not CI):
   `apps/worker/src/workers/proposal-engine.live-eval.test.ts`
   (`pnpm test:proposal-engine:live`)
 - Captured-work proposals: `packages/shared/src/integrations/github-task-proposals.ts`
-  (first slice; target matcher is envelope-driven)
+  (envelope matcher on `objectMap` + status + aliases; GitHub extra still enriches logins)
 - Packs: `packages/shared/src/evidence-pack/`
 - Objects: `packages/shared/src/objects/`
 - Reference knowledge: `packages/shared/src/documents/related-chunks.ts`,
@@ -984,81 +985,72 @@ pairwise cosine-qualify, an ingest summarizer, or a second importance score.
 
 ### Where we are
 
-Shipped and frozen ([ADR 0015](./adr/0015-proposal-writes-qualify-hubs-from-mentions-and-container-labels.md)):
+Shipped and frozen ([ADR 0015](./adr/0015-proposal-writes-qualify-hubs-from-mentions-and-container-labels.md),
+[ADR 0016](./adr/0016-ingest-signal-class-lives-on-the-envelope.md)):
 
 - Two write engines (communication LLM + attach; captured-work parser).
 - Unique mention, meeting title, and **container labels** (Slack channel,
   Monday board, Telegram chat title, GitHub repo, Linear team/project) qualify
   existing company/project hubs. Generic `#general` does not. Two named
   clients refuse. Living pending amends unedited creates.
-- GitHub PR/issue lifecycle → coalesced `done` / assignee; pending creates
-  refresh in place.
+- Unique `repo#n` / Linear / Monday ids in the conversation window are stamped
+  onto proposed task aliases (one id only). Silent "Weekly" meetings inherit a
+  unique hub from calendar / Saved Meeting object links. Extract recent
+  context is conversation-keyed or same-source, not a team-time dump.
+- Envelope `signalClass` (`communication` / `captured_work` / `pulse` /
+  `finding`) plus compact `object_map` persist on `source_metadata`. Core
+  ingest and the captured-work matcher read the envelope. GitHub PR/issue,
+  Linear issue, and Monday item completion share living-pending refresh.
+  Workflow pulses, review comments, and Sentry incidents do not originate.
 - Intentional captures may propose from one event; group firehose uses
   conversation review; pulses never originate.
 - Ask uses embeddings. Proposal writes do not.
 
-Still the main quality holes: chat tasks without ticket aliases never hard-join
-the later PR; silent "Weekly" meetings have nothing to qualify; extract still
-dumps five unrelated recent events; core still skips providers by OAuth app
-name; packs default `off`; Linear/Monday captured-work reuse is not shipped.
+Still open: packs default `off`; pulses and curated chunks are not yet
+supporting-only members of proposal packs; optional pairwise qualify after
+vector recall is last.
 
 ### How we get to the ideal
 
-1. **Stamp unique `repo#n` / Linear / Monday ids** from the conversation window
-   onto proposed task aliases. Deterministic, one id only. This is the
-   highest-leverage remaining close-the-loop slice: the later captured-work
-   matcher can hard-join without a new model call.
-2. **Inherit a unique hub from calendar / Saved Meeting object links** when the
-   transcript and the container are both silent. Still refuse two linked hubs.
-   Do not silently rewrite already-accepted unscoped tasks.
-3. **Replace extract `RECENT_CONTEXT_LIMIT = 5`** with conversation-keyed /
-   same-source context so facts that feed linked context are not noise.
-4. **Lift `STRUCTURED_INGEST_PROVIDERS` into `signalClass`** on the envelope.
-   Communication / captured work / pulse at write time. Core reads the
-   envelope, not `provider === 'github'`. Reuse GitHub living-pending refresh
-   for Linear/Monday completion. Findings (Bugbot, CI, Codex) attach to the
-   parent work hub; they do not mint sibling Timeline tasks.
-5. **Envelope-driven captured-work matcher** on `objectMap` + status + aliases,
-   replacing GitHub-specific parsing in shared code.
+1. **Stamp unique `repo#n` / Linear / Monday ids** — **Shipped.** Deterministic,
+   one id only.
+2. **Inherit a unique hub from calendar / Saved Meeting object links** —
+   **Shipped.** Still refuse two linked hubs. Do not silently rewrite
+   already-accepted unscoped tasks.
+3. **Replace extract `RECENT_CONTEXT_LIMIT = 5`** — **Shipped.** Conversation
+   window when present; otherwise same meeting / calendar / source.
+4. **Lift ingest rights into `signalClass`** — **Shipped.** Frozen by
+   [ADR 0016](./adr/0016-ingest-signal-class-lives-on-the-envelope.md).
+5. **Envelope-driven captured-work matcher** — **Shipped** on `objectMap` +
+   status + aliases. GitHub extra still enriches assignee logins.
 6. **Proposal packs on** after the gates in
    [`cross-source-evidence.md`](./cross-source-evidence.md). Conversation
    reviews migrate onto proposal-policy packs. Pulses and curated chunks enter
    only as supporting evidence when a hard join already exists.
 7. **Optional pairwise qualify after vector recall** — last, shortlist only,
    still approval-backed. Never cosine-as-write. Do not start this before
-   steps 1–4.
+   packs.
 
 Eval while building: deterministic `pnpm test:eval` on every prompt/retrieval
 change; opt-in `pnpm test:proposal-engine:live` with real models, real
 vectors, and messy payloads for the scenarios in this file. That live suite is
-not CI.
+not CI. About 90% of live fixtures should be messy (Sentry spikes, CI
+pulses, overlapping clients, typos, silent meetings). Safe name-maps are the
+minority.
 
 **Do next, in this order. Do not start pairwise cosine-qualify first.**
 
-1. Stamp unique `repo#n` / ticket keys from the conversation window onto the
-   proposed task as aliases so the later captured-work matcher can hard-join.
-2. When a meeting/transcript is silent, inherit a unique hub from the owning
-   calendar event or Saved Meeting's existing object links.
-3. Replace extract's team-time "5 recent events" dump with conversation-keyed
-   context.
-4. Then lift the provider skip list into `signalClass` and reuse the GitHub
-   living-pending refresh for Linear/Monday.
+1. Proposal packs on after the gates in
+   [`cross-source-evidence.md`](./cross-source-evidence.md).
+2. Let pulses and curated chunks into packs only as supporting evidence when a
+   hard join already exists.
+3. Optional pairwise qualify after vector recall — last.
 
 ## Open work this contract implies
 
 Detail and sequencing: [Cost, quality, and distance](#cost-quality-and-distance-from-ideal)
 and [Path from here to the ideal engine](#path-from-here-to-the-ideal-engine).
 
-- When a conversation window already names `acme/app#88`, stamp that alias on
-  the proposed task so the later matcher can hard-join.
-- Inherit unique client/project hubs from calendar / Saved Meeting object links
-  when the transcript never repeats the name.
-- Replace extract `RECENT_CONTEXT_LIMIT` team dumps with the conversation key.
-- Lift the provider skip list into an event-level `signalClass` on the envelope.
-- Replace GitHub-specific proposal parsing in shared code with an
-  envelope-driven captured-work matcher.
-- GitHub already refreshes pending communication creates when a later PR joins.
-  Reuse that for Linear/Monday.
 - Treat GitHub review discussion as communication attached to a PR cluster.
 - Set pulse parent ids (`relatedExternalObjectId`).
 - Let pulses into proposal packs only as supporting evidence when a hard join
@@ -1091,6 +1083,6 @@ and [Path from here to the ideal engine](#path-from-here-to-the-ideal-engine).
 | [`design.md`](../design.md) | UI language; do not put signal class or memory grade in chrome |
 | [`objects.html`](./objects.html) | Object schema, routes, helpers |
 | [`cross-source-evidence.md`](./cross-source-evidence.md) | Pack rollout gates and website copy |
-| ADRs 0003, 0004, 0005, 0006, 0009, 0010, 0011, 0014, 0015 | Frozen decisions |
+| ADRs 0003, 0004, 0005, 0006, 0009, 0010, 0011, 0014, 0015, 0016 | Frozen decisions |
 | [`todo.md`](../todo.md) | Open work |
 | [`product-brief.html`](./product-brief.html) | Product vision; points here |

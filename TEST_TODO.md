@@ -352,7 +352,9 @@ Legend:
   eval against seeded customer email evidence.
 - `pnpm test:proposal-engine:live` runs an opt-in messy proposal-engine eval
   with real models and, when Qdrant is configured, real embeddings. Isolated
-  PGlite team, realistic noisy Slack/Monday/meeting payloads, cleanup of any
+  PGlite team, ~90% noisy fixtures (Sentry spikes, GitHub Actions pulses,
+  Bugbot findings, buried `repo#n` / Linear keys, typo fragments, silent
+  calendar-linked meetings). Safe name-maps are the minority. Cleanup of any
   Qdrant points afterwards. Not CI. Set
   `PROPOSAL_ENGINE_LIVE_ENV_FILE=/path/to/.env` when the shell has not already
   loaded live credentials.
