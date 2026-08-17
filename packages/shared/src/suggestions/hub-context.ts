@@ -294,10 +294,16 @@ function attachUniqueHubsToTaskItem<T extends HubAttachableItem>(
   const payload = { ...item.proposedPayload };
   let changed = false;
 
-  if (!payload.parentObjectId && qualified.uniqueProject) {
-    payload.parentObjectId = qualified.uniqueProject.id;
-    payload.projectName = qualified.uniqueProject.name;
-    delete payload.createProjectName;
+  if (qualified.uniqueProject) {
+    if (payload.parentObjectId !== qualified.uniqueProject.id) {
+      payload.parentObjectId = qualified.uniqueProject.id;
+      payload.projectName = qualified.uniqueProject.name;
+      delete payload.createProjectName;
+      changed = true;
+    }
+  } else if (typeof payload.parentObjectId === 'string' && payload.parentObjectId) {
+    delete payload.parentObjectId;
+    delete payload.projectName;
     changed = true;
   }
 
@@ -337,7 +343,6 @@ export function attachUniqueHubsToBundles<T extends HubAttachableItem>(args: {
   bundles: HubAttachableBundle<T>[];
   qualified: QualifiedWorkspaceHubs;
 }): HubAttachableBundle<T>[] {
-  if (!args.qualified.uniqueProject && !args.qualified.uniqueCompany) return args.bundles;
   return args.bundles.map((bundle) => {
     const usedRefs = new Set<string>();
     for (const item of bundle.items) {

@@ -275,7 +275,7 @@ describe('attachUniqueHubsToBundles', () => {
     });
   });
 
-  it('does not overwrite an existing project or duplicate an existing company relation', () => {
+  it('overwrites a model-proposed project with the unique qualified hub', () => {
     const existing = [
       {
         operation: 'create',
@@ -303,7 +303,32 @@ describe('attachUniqueHubsToBundles', () => {
       },
     });
     expect(bundle?.items).toHaveLength(2);
-    expect(bundle?.items[0]?.proposedPayload.parentObjectId).toBe('project-other');
+    expect(bundle?.items[0]?.proposedPayload.parentObjectId).toBe('project-faba');
+    expect(bundle?.items[0]?.proposedPayload.projectName).toBe('Faba website redesign');
+  });
+
+  it('strips a model-proposed project when qualify is silent', () => {
+    const [bundle] = attachUniqueHubsToBundles({
+      bundles: [
+        {
+          items: [
+            {
+              operation: 'create',
+              targetKind: 'task',
+              title: 'Update the website copy',
+              proposedPayload: {
+                canonicalName: 'Update the website copy',
+                parentObjectId: 'project-faba',
+                projectName: 'Faba website redesign',
+              },
+            },
+          ],
+        },
+      ],
+      qualified: { mentioned: [], uniqueProject: null, uniqueCompany: null },
+    });
+    expect(bundle?.items[0]?.proposedPayload.parentObjectId).toBeUndefined();
+    expect(bundle?.items[0]?.proposedPayload.projectName).toBeUndefined();
   });
 
   it('reports when attached hubs changed the pending items', () => {
