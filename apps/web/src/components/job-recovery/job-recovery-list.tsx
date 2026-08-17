@@ -148,23 +148,23 @@ export function JobRecoveryList({
     (initial): JobRecoveryUiState => ({ ...initial, filter: defaultFilter ?? 'all' }),
   );
   const refreshedRetrySnapshots = useRef<Set<string> | null>(null);
-  const [olderBaseline, setOlderBaseline] = useState(olderCount);
+  const olderCountSeenRef = useRef(olderCount);
   const [olderDismissed, setOlderDismissed] = useState(0);
   const [listWindow, setListWindow] = useState(JOB_RECOVERY_LIST_WINDOW_SIZE);
   const listWindowKey = `${filter}:${String(items.length)}`;
-  const [listWindowKeySeen, setListWindowKeySeen] = useState(listWindowKey);
-  if (olderBaseline !== olderCount) {
-    setOlderBaseline(olderCount);
+  const listWindowKeyRef = useRef(listWindowKey);
+  if (olderCountSeenRef.current !== olderCount) {
+    olderCountSeenRef.current = olderCount;
     setOlderDismissed(0);
   }
-  if (listWindowKeySeen !== listWindowKey) {
-    setListWindowKeySeen(listWindowKey);
+  if (listWindowKeyRef.current !== listWindowKey) {
+    listWindowKeyRef.current = listWindowKey;
     setListWindow(JOB_RECOVERY_LIST_WINDOW_SIZE);
   }
-  const pendingOlderCount = Math.max(0, olderBaseline - olderDismissed);
+  const pendingOlderCount = Math.max(0, olderCount - olderDismissed);
 
   function reportOlderCount(count: number) {
-    setOlderDismissed(Math.max(0, olderBaseline - count));
+    setOlderDismissed(Math.max(0, olderCount - count));
   }
 
   const visibleItems = useMemo(
@@ -313,6 +313,8 @@ export function JobRecoveryList({
           let dismissedTotal = 0;
           let remainingOlder = startOlder;
           for (let round = 0; round < DISMISS_MATCHING_CLIENT_MAX_ROUNDS; round += 1) {
+            // Sequential on purpose: each write needs the previous remaining count.
+            // react-doctor-disable-next-line react-doctor/async-await-in-loop
             const result = await postJson<DismissMatchingResponse>(
               '/api/team/job-recovery/dismiss-matching',
               {

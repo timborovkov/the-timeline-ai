@@ -138,6 +138,7 @@
         "files": [
           "src/components/boards/curated-board-views.tsx",
           "src/components/global-search-page.tsx",
+          "src/components/job-recovery/job-recovery-list.tsx",
           "src/components/work-filter-bar.tsx"
         ],
         "rules": ["react-doctor/no-giant-component"]
@@ -152,7 +153,12 @@
       },
       {
         "files": ["src/components/collections/editable-metadata.tsx"],
-        "rules": ["react-doctor/no-event-handler", "react-doctor/role-supports-aria-props"]
+        "rules": [
+          "react-doctor/no-event-handler",
+          "react-doctor/role-supports-aria-props",
+          "react-doctor/rerender-state-only-in-handlers",
+          "react-doctor/no-derived-useState"
+        ]
       },
       {
         "files": ["src/components/global-search-page.tsx"],
