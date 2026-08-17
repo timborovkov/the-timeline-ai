@@ -31,6 +31,7 @@ interface Props {
   statusOptions?: readonly string[];
   className?: string;
   viewControls?: ReactNode;
+  actions?: ReactNode;
 }
 
 type DateRangeToggle =
@@ -74,6 +75,7 @@ export function WorkFilterBar({
   statusOptions = EMPTY_STATUS_OPTIONS,
   className,
   viewControls,
+  actions,
 }: Props) {
   const formId = useId();
   const domFormId = `work-filters-${formId.replaceAll(':', '')}`;
@@ -361,6 +363,7 @@ export function WorkFilterBar({
         }))}
         clearAll={clearControl}
         viewControls={viewControls}
+        actions={actions}
       />
     </DebouncedFilterForm>
   );

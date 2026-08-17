@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.9 · Board next step and row alignment (2026-08-17). Replaces v3.8 Board canvas and compact cards.
+**Version:** v3.10 · Collection toolbar view and add (2026-08-17). Replaces v3.9 Board next step and row alignment.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -362,7 +362,9 @@ links. Work overview puts pinned and team boards above the work queue so saved
 surfaces stay in reach before due and assigned items. Tasks default to the
 grouped list; the list table is full-bleed inside the work canvas, without extra
 page gutters around the rows. Kanban/List view controls sit on the CollectionToolbar
-row with search and filters, not on a second strip. Loading placeholders match the
+row with search and filters, not on a second strip. Board kanban/table/list uses
+the same toolbar slot. Add item is a compact toolbar action that opens a popover,
+not a full-width boxed header. Loading placeholders match the
 requested view and default to list. Kanban cards stay compact: a clamped title plus
 one metadata row, with no redundant type label. Curated boards use the same
 full-bleed work canvas in kanban, table, and grouped list — no boxed inner
@@ -649,3 +651,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Board kanban lane control | Stops repeating the current lane name on kanban and grouped list cards, keeps a quiet Move trigger, and leaves lane names on table and card-detail. |
 | 2026-08-17 | Board canvas and compact cards | Makes list and table boards full-bleed like Tasks, puts next step under the kanban title, removes the on-card Move row, and leaves lane names on table and card-detail. |
 | 2026-08-17 | Board next step and row alignment | Treats next step as a title subtitle instead of a table column, and vertically centers board checkboxes. |
+| 2026-08-17 | Collection toolbar view and add | Puts board view toggles on the search/filter row with Tasks, and turns Add item into a compact popover action. |

@@ -30,6 +30,7 @@ vi.mock('@/components/boards/board-add-item-form', () => ({
     });
     return (
       <>
+        <button type="button">Add item</button>
         <button
           type="button"
           onClick={() => {
@@ -231,7 +232,11 @@ describe('BoardDetailClient', () => {
     expect(heading.className).not.toContain('uppercase');
     expect(heading.parentElement?.textContent).toContain('Track pilots');
     expect(screen.getByRole('link', { name: 'Boards' }).getAttribute('aria-current')).toBe('page');
-    expect(screen.getByRole('navigation', { name: 'Board view' })).toBeTruthy();
+    const search = screen.getByLabelText('Search');
+    const view = screen.getByRole('navigation', { name: 'Board view' });
+    const addItem = screen.getByRole('button', { name: 'Add item' });
+    expect(search.closest('.flex.min-h-11')).toBe(view.closest('.flex.min-h-11'));
+    expect(addItem.closest('.flex.min-h-11')).toBe(view.closest('.flex.min-h-11'));
     expect(screen.getByRole('link', { name: 'list' }).getAttribute('aria-current')).toBe('page');
 
     await user.click(screen.getByRole('button', { name: 'Fake optimistic add' }));

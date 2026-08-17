@@ -89,7 +89,7 @@ describe('WorkFilterBar', () => {
     expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull();
   });
 
-  it('renders view controls on the same toolbar row as search', () => {
+  it('renders view controls and actions on the same toolbar row as search', () => {
     render(
       <WorkFilterBar
         mode="tasks"
@@ -99,12 +99,15 @@ describe('WorkFilterBar', () => {
         resultCount={10}
         totalCount={10}
         viewControls={<nav aria-label="Task view">list</nav>}
+        actions={<button type="button">Add item</button>}
       />,
     );
 
     const search = screen.getByLabelText('Search');
     const view = screen.getByRole('navigation', { name: 'Task view' });
+    const addItem = screen.getByRole('button', { name: 'Add item' });
     expect(search.closest('.flex.min-h-11')).toBe(view.closest('.flex.min-h-11'));
+    expect(addItem.closest('.flex.min-h-11')).toBe(view.closest('.flex.min-h-11'));
   });
 
   it('submits multiple dropdown values as comma-separated filters', async () => {

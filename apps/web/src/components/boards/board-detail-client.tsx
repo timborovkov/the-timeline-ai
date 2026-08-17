@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useMemo, useState } from 'react';
 
@@ -16,6 +15,7 @@ import { BoardCardDetail } from '@/components/boards/board-card-detail';
 import { CuratedBoardList, CuratedBoardTable } from '@/components/boards/curated-board-views';
 import { CuratedKanbanBoard } from '@/components/boards/curated-kanban-board';
 import { ContextualAskLink } from '@/components/chat/contextual-ask-link';
+import { CollectionViewToggle } from '@/components/collections/collection-view-toggle';
 import { HistoryBackLink } from '@/components/history-back-link';
 import { PageHeader } from '@/components/page-header';
 import { PinButton } from '@/components/pins/pin-button';
@@ -287,13 +287,6 @@ export function BoardDetailClient({
       />
       <WorkSubnav current={`/app/boards/${boardId}`} className="shrink-0 px-4 md:px-8" />
 
-      <BoardViewNavigation
-        boardId={boardId}
-        view={view}
-        selectedItemId={selectedItemId}
-        filterParams={filterParams}
-      />
-
       <WorkFilterBar
         mode="board"
         basePath={`/app/boards/${boardId}`}
@@ -307,19 +300,26 @@ export function BoardDetailClient({
         lanes={lanes}
         typeLabels={typeLabels}
         className="shrink-0"
+        viewControls={
+          <CollectionViewToggle
+            label="Board view"
+            views={['kanban', 'table', 'list'] as const}
+            current={view}
+            hrefFor={(nextView) => boardViewHref(boardId, nextView, selectedItemId, filterParams)}
+          />
+        }
+        actions={
+          <BoardAddItemForm
+            boardId={boardId}
+            defaultLaneId={defaultLaneId}
+            candidates={availableCandidates}
+            recommendedTypes={recommendedTypes}
+            onOptimisticItem={addOptimisticItem}
+            onItemAdded={commitAddedItem}
+            onItemAddFailed={rollbackAddedItem}
+          />
+        }
       />
-
-      <div className="w-full shrink-0 px-4 py-3 md:px-8">
-        <BoardAddItemForm
-          boardId={boardId}
-          defaultLaneId={defaultLaneId}
-          candidates={availableCandidates}
-          recommendedTypes={recommendedTypes}
-          onOptimisticItem={addOptimisticItem}
-          onItemAdded={commitAddedItem}
-          onItemAddFailed={rollbackAddedItem}
-        />
-      </div>
 
       <div
         className={
@@ -382,40 +382,6 @@ export function BoardDetailClient({
         ) : null}
       </div>
     </TaskCategoryPollingProvider>
-  );
-}
-
-function BoardViewNavigation({
-  boardId,
-  view,
-  selectedItemId,
-  filterParams,
-}: {
-  boardId: string;
-  view: BoardLayout;
-  selectedItemId: string | null;
-  filterParams: Record<string, string>;
-}) {
-  return (
-    <div className="flex w-full shrink-0 justify-end px-4 py-3 md:px-8">
-      <nav
-        aria-label="Board view"
-        className="inline-flex overflow-hidden rounded-sm border border-border"
-      >
-        {(['kanban', 'table', 'list'] as const).map((nextView) => (
-          <Link
-            key={nextView}
-            href={boardViewHref(boardId, nextView, selectedItemId, filterParams)}
-            aria-current={view === nextView ? 'page' : undefined}
-            className={`px-3 py-1.5 text-xs ${
-              view === nextView ? 'bg-signal text-signal-fg' : 'bg-bg text-fg-muted hover:text-fg'
-            }`}
-          >
-            {nextView}
-          </Link>
-        ))}
-      </nav>
-    </div>
   );
 }
 

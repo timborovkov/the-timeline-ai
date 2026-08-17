@@ -12,6 +12,7 @@ import {
   statusTone,
 } from '@/components/collections/collection-status';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
+import { CollectionViewToggle } from '@/components/collections/collection-view-toggle';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { SelectionBar } from '@/components/collections/selection-bar';
@@ -71,6 +72,22 @@ describe('collection primitives', () => {
   it('renders an optional subtitle under the title', () => {
     render(<CollectionRow title="Launch plan" subtitle="Call the buyer" />);
     expect(screen.getByText('Call the buyer').className).toContain('text-[11px]');
+  });
+
+  it('marks the current collection view without a second toolbar strip', () => {
+    render(
+      <CollectionViewToggle
+        label="Board view"
+        views={['kanban', 'table', 'list'] as const}
+        current="table"
+        hrefFor={(view) => `/app/boards/1?view=${view}`}
+      />,
+    );
+
+    expect(screen.getByRole('link', { name: 'table' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('link', { name: 'kanban' }).getAttribute('href')).toBe(
+      '/app/boards/1?view=kanban',
+    );
   });
 
   it('uses a 44px desktop row with a two-line responsive content structure', () => {

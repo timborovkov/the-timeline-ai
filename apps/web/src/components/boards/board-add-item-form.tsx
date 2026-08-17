@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, ChevronDown, Plus, Search, X } from 'lucide-react';
+import { Check, Plus, Search, X } from 'lucide-react';
 import { useId, useMemo, useReducer, useState, useTransition } from 'react';
 
 import type * as boards from '@timeline/shared/boards';
@@ -8,6 +8,7 @@ import type * as objects from '@timeline/shared/objects/types';
 import type { Dispatch } from 'react';
 
 import { addBoardItemAction, quickCreateBoardItemAction } from '@/app/actions/boards';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { displayText } from '@/lib/display-dates';
 import { displayObjectLabel, isInternalIdentifier } from '@/lib/display-labels';
 import { filterObjectsByText } from '@/lib/object-filter';
@@ -460,6 +461,7 @@ export function BoardAddItemForm({
           return;
         }
         onItemAdded?.(result.item, optimisticItem.id);
+        setExpanded(false);
         dispatch({ type: 'query', query: '' });
         dispatch({ type: 'entityId', entityId: '' });
         dispatch({ type: 'canonicalName', canonicalName: '' });
@@ -476,64 +478,62 @@ export function BoardAddItemForm({
     (state.mode === 'existing' ? !state.entityId : !state.canonicalName.trim() || !state.type);
 
   return (
-    <div className="rounded-sm border border-border bg-surface p-3">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-xs text-fg-dim">Add item</h2>
+    <Popover open={expanded} onOpenChange={setExpanded}>
+      <PopoverTrigger asChild>
         <button
           type="button"
-          onClick={() => {
-            setExpanded((current) => !current);
-          }}
           disabled={pending}
-          className="inline-flex size-8 items-center justify-center rounded-sm border border-border bg-bg text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
+          className={cn(
+            'inline-flex min-h-10 items-center gap-1.5 rounded-sm px-2.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50',
+            expanded && 'bg-surface-2 text-fg',
+          )}
           aria-expanded={expanded}
           aria-controls={expanded ? panelId : undefined}
-          aria-label={expanded ? 'Collapse add item' : 'Expand add item'}
-          title={expanded ? 'Collapse add item' : 'Expand add item'}
         >
-          <ChevronDown
-            className={cn('size-4 transition-transform', expanded && 'rotate-180')}
-            aria-hidden="true"
-          />
+          <Plus className="size-3.5" aria-hidden="true" />
+          Add item
         </button>
-      </div>
-      {expanded ? (
-        <div id={panelId} className="mt-3 border-t border-border pt-3">
-          <ModeSwitch mode={state.mode} dispatch={dispatch} />
-          {state.mode === 'existing' ? (
-            <ExistingObjectPicker
-              candidates={candidates}
-              existingTypeOptions={existingTypeOptions}
-              existingType={state.existingType}
-              selectableCandidates={selectableCandidates}
-              query={state.query}
-              entityId={state.entityId}
-              selectedCandidate={selectedCandidate}
-              dispatch={dispatch}
-            />
-          ) : (
-            <NewObjectFields
-              type={state.type}
-              canonicalName={state.canonicalName}
-              dispatch={dispatch}
-            />
-          )}
-          {state.error ? (
-            <p className="mt-2 text-xs text-danger" role="alert">
-              {state.error}
-            </p>
-          ) : null}
-          <button
-            type="button"
-            onClick={submit}
-            disabled={disabled}
-            className="mt-3 inline-flex items-center gap-2 rounded-sm bg-signal px-3 py-1.5 text-sm font-medium text-signal-fg hover:opacity-90 disabled:opacity-40"
-          >
-            <Plus className="size-3.5" aria-hidden="true" />
-            {pending ? 'Adding…' : 'Add to board'}
-          </button>
-        </div>
-      ) : null}
-    </div>
+      </PopoverTrigger>
+      <PopoverContent
+        id={panelId}
+        align="end"
+        className="w-[min(32rem,calc(100vw-2rem))] p-3"
+        aria-label="Add board item"
+      >
+        <ModeSwitch mode={state.mode} dispatch={dispatch} />
+        {state.mode === 'existing' ? (
+          <ExistingObjectPicker
+            candidates={candidates}
+            existingTypeOptions={existingTypeOptions}
+            existingType={state.existingType}
+            selectableCandidates={selectableCandidates}
+            query={state.query}
+            entityId={state.entityId}
+            selectedCandidate={selectedCandidate}
+            dispatch={dispatch}
+          />
+        ) : (
+          <NewObjectFields
+            type={state.type}
+            canonicalName={state.canonicalName}
+            dispatch={dispatch}
+          />
+        )}
+        {state.error ? (
+          <p className="mt-2 text-xs text-danger" role="alert">
+            {state.error}
+          </p>
+        ) : null}
+        <button
+          type="button"
+          onClick={submit}
+          disabled={disabled}
+          className="mt-3 inline-flex items-center gap-2 rounded-sm bg-signal px-3 py-1.5 text-sm font-medium text-signal-fg hover:opacity-90 disabled:opacity-40"
+        >
+          <Plus className="size-3.5" aria-hidden="true" />
+          {pending ? 'Adding…' : 'Add to board'}
+        </button>
+      </PopoverContent>
+    </Popover>
   );
 }
