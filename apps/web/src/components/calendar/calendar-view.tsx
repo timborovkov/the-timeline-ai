@@ -804,7 +804,7 @@ function CalendarViewLayout({ model }: { model: ReturnType<typeof useCalendarVie
   );
 }
 
-type CalendarEventListProps = {
+interface CalendarEventListProps {
   events: CalendarEvent[];
   total: number;
   nextOffset: number | null;
@@ -816,7 +816,7 @@ type CalendarEventListProps = {
   onCreate: () => void;
   onClearFilters: () => void;
   onEdit: (event: CalendarEvent) => void;
-};
+}
 
 // react-doctor-disable-next-line react-doctor/no-multi-comp -- Extra pages remount with the filter key instead of syncing props in an effect.
 function CalendarEventList(props: CalendarEventListProps) {

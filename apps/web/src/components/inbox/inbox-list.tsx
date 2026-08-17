@@ -18,13 +18,13 @@ export interface InboxNotification {
   readAt: string | null;
 }
 
-type InboxListProps = {
+interface InboxListProps {
   initialRows: InboxNotification[];
   nextOffset: number | null;
   unreadOnly: boolean;
   matchingCount: number;
   totalCount: number;
-};
+}
 
 // react-doctor-disable-next-line react-doctor/no-multi-comp -- Unread vs all remounts extra pages without copying the first page into state.
 export function InboxList(props: InboxListProps) {
