@@ -78,7 +78,7 @@ function makeFetcher(
       return Promise.resolve(new Response(JSON.stringify({ result: true }), { status: 200 }));
     }
     // PUT /collections/<name>/points — upsert
-    if (method === 'PUT' && url.endsWith('/points')) {
+    if (method === 'PUT' && url.endsWith('/points?wait=true')) {
       return Promise.resolve(
         new Response(JSON.stringify({ result: { operation_id: 1, status: 'acknowledged' } }), {
           status: 200,
@@ -181,6 +181,9 @@ describe('createQdrantClient', () => {
     const { fetcher, calls } = makeFetcher({ collectionExists: false });
     const client = createQdrantClient({ fetcher, vectorSize: 4 });
     await client.upsertVector('id-1', [0.1, 0.2, 0.3, 0.4], samplePayload);
+    expect(
+      calls.some((call) => call.method === 'PUT' && call.url.endsWith('/points?wait=true')),
+    ).toBe(true);
     const creates = calls.filter(
       (c) => c.method === 'PUT' && c.url.endsWith('/collections/events_test'),
     );
@@ -471,6 +474,7 @@ describe('createQdrantClient', () => {
       to: new Date('2026-05-21T00:00:00Z'),
       source: 'telegram',
       entityIds: ['ent-1', 'ent-2'],
+      embeddingModel: 'openai/text-embedding-3-small',
       limit: 5,
     });
     const search = calls.find((c) => c.url.endsWith('/points/search'));
@@ -485,6 +489,7 @@ describe('createQdrantClient', () => {
     expect(keys).toContain('occurred_at');
     expect(keys).toContain('source');
     expect(keys).toContain('entity_ids');
+    expect(keys).toContain('embedding_model');
   });
 
   it('forwards semantic pagination offsets to Qdrant', async () => {

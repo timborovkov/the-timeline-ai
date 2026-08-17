@@ -86,6 +86,7 @@ export const HELP_PAGES: HelpPage[] = [
           'Tasks and boards show owners, status, blockers, due dates, and source evidence.',
           'Object pages keep people, companies, projects, deals, documents, and tasks tied to the event history.',
           'Updates, digests, and handoffs are generated from the current work state with citations.',
+          'Work → Digests lists every stored daily briefing as collapsed rows so a teammate can open a specific day.',
         ],
         appLink: { href: '/app/work', label: 'Open Work' },
       },

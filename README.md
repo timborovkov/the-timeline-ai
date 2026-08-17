@@ -66,25 +66,55 @@ set -a
 set +a
 
 pnpm db:migrate
-pnpm dev:seed
-# Optional volume fixture for infinite-scroll / virtualization:
+pnpm demo:seed
+# Optional extra volume for infinite-scroll / virtualization:
 # pnpm dev:seed:heavy
 pnpm dev
 ```
 
-Open <http://localhost:3000> and sign in with:
+`demo:seed` runs the idempotent local dev seed, indexes every fixture-version raw
+event, fact, document chunk, and meeting chunk through the production embedding
+worker path, then runs `demo:verify`. The seed is the Acme Labs / Atlas month of
+use: eight logins, a dense weekday timeline that collapses into moments, dealflow
+and Series A boards, documents, meetings, Ask history, pending proposals, and
+digest history. Verification checks all eight login passwords,
+downloads and hashes document bytes, uses team/user-scoped Qdrant searches to confirm
+every expected Northstar point is discoverable, then confirms expanded-corpus document
+versions are `embedded` with a Qdrant point for each corpus chunk id and that volume
+floors hold. A real development
+`OPENROUTER_API_KEY` is therefore required; a missing key or unavailable Qdrant fails closed without
+marking the document embedded. The commands refuse production, unapproved remote databases or
+Qdrant, and non-local/nonstandard S3 storage without its separate explicit acknowledgement.
+`pnpm dev:seed:heavy` is optional extra Acme Labs volume for infinite-scroll and virtualization
+tests; recorded demos should keep using `demo:seed`.
 
-| Email | Password |
+Open <http://localhost:3000> and sign in with any seeded Acme Labs member. Password
+for every login is `timeline-dev`. Start demos as Avery:
+
+| Email | Role |
 | --- | --- |
-| `owner@timeline.dev` | `timeline-dev` |
-| `member@timeline.dev` | `timeline-dev` |
+| `owner@timeline.dev` | owner (Avery Timeline, CEO) |
+| `member@timeline.dev` | member (Mika Product) |
+| `jordan@timeline.dev` | admin (Jordan Hale) |
+| `sam@timeline.dev` | member (Sam Rivera) |
+| `riley@timeline.dev` | member (Riley Cho) |
+| `casey@timeline.dev` | member (Casey Novak) |
+| `quinn@timeline.dev` | member (Quinn Okonkwo) |
+| `harper@timeline.dev` | member (Harper Singh) |
 
-The seeded provider credentials are fake, encrypted, and disabled for sync:
+The seeded provider credentials are fake, encrypted, and disabled for sync.
+GitHub and Linear stay in the table below; Monday.com, Sentry, Google Drive, Slack,
+the Ledger ingest webhook, and MCP keys are listed in
+[docs/demo-corpus.md](./docs/demo-corpus.md) with the full glossary.
 
 | Provider | Access token | Refresh token |
 | --- | --- | --- |
 | GitHub | `gho_dev_seed_access_token_123` | `ghr_dev_seed_refresh_token_123` |
 | Linear | `lin_api_dev_seed_access_token_456` | `lin_refresh_dev_seed_refresh_token_456` |
+
+Reset a local stack with `pnpm demo:reset` (`dev:wipe` then `demo:seed`). The
+[demo corpus guide](./docs/demo-corpus.md) covers commands, story, boards,
+documents, Ask questions, and fake credentials.
 
 For environment details and troubleshooting, read the
 [local development guide](./docs/setup/local.html).
@@ -124,6 +154,7 @@ agent behavior, or reconciliation have additional gates documented in
 
 ## Documentation
 
+- [Demo corpus](./docs/demo-corpus.md)
 - [Documentation index](./docs/index.html)
 - [Product brief](./docs/product-brief.html)
 - [Local development](./docs/setup/local.html)

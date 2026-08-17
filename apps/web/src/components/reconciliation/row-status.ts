@@ -1,4 +1,4 @@
-import { statusTone, type StatusTone } from '@/components/collections/collection-status';
+import { statusTone, type StatusTone } from '@/components/collections/collection-status-tone';
 
 export function reconciliationOutputTone(status: string): StatusTone {
   if (status === 'rejected') return 'danger';

@@ -4,12 +4,14 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 import { TEAM_SETUP_CHECKLIST_PANEL_ID } from '@/components/onboarding-checklist';
+import { useHydrated } from '@/lib/use-hydrated';
 import { useOnboardingChecklistQuery } from '@/lib/use-paginated-queries';
 
 export function TeamSetupChecklistChip() {
   const pathname = usePathname();
+  const hydrated = useHydrated();
   const { data, isPending } = useOnboardingChecklistQuery();
-  if (isPending || !data || data.dismissed || pathname === '/app') return null;
+  if (!hydrated || isPending || !data || data.dismissed || pathname === '/app') return null;
   const completedCount = data.items.filter((item) => item.completed).length;
   if (data.items.length === 0 || completedCount === data.items.length) return null;
 

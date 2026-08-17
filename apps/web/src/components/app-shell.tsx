@@ -45,8 +45,9 @@ const EMPTY_INBOX = { unreadCount: 0, notifications: [] };
  * Quiet Archive shell. Three columns:
  *   • foldable desktop sidebar (mobile: hamburger sheet)
  *   • main column with persistent ⌘K global search palette
- *   • collapsible 384px right inspector pane (hidden by default, opens
- *     when a citation chip / object reference is activated)
+ *   • collapsible right inspector pane (hidden by default, opens
+ *     when a citation chip / object reference is activated; up to 40%
+ *     of the shell on desktop, bottom sheet on mobile)
  */
 export function AppShell({
   active,

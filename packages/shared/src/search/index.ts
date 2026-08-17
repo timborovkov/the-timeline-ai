@@ -151,6 +151,15 @@ export const QUICK_LINKS: readonly QuickLinkSeed[] = [
     keywords: ['calendar', 'schedule', 'meeting', 'deadline', 'events'],
   },
   {
+    id: 'digests',
+    kind: 'quick_link',
+    title: 'Digests',
+    snippet: 'Browse daily digest history and open a specific day.',
+    href: '/app/digests',
+    group: 'Work',
+    keywords: ['digest', 'digests', 'daily digest', 'summary', 'briefing'],
+  },
+  {
     id: 'inbox',
     kind: 'quick_link',
     title: 'Inbox',
