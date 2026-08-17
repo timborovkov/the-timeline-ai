@@ -168,13 +168,18 @@
 }
 
 /* Keep this unlayered so native <dialog> UA styles and Tailwind layered
-   width/margin utilities cannot shrink the floating Ask sheet. */
+   display/width/margin utilities cannot shrink or leak the floating Ask sheet. */
 dialog#floating-agent-chat-panel {
   margin: 0;
   max-width: none;
   padding: 0;
 }
 
+dialog#floating-agent-chat-panel:not([open]) {
+  display: none;
+}
+
 dialog#floating-agent-chat-panel[open] {
   display: flex;
+  flex-direction: column;
 }

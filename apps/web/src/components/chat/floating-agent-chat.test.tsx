@@ -128,6 +128,9 @@ describe('FloatingAgentChat', () => {
 
     await user.click(screen.getByRole('button', { name: 'Close floating agent chat' }));
     expect(window.localStorage.getItem(storageKey)).toBe(storedSession);
+    const closedPanel = document.getElementById('floating-agent-chat-panel');
+    expect(closedPanel?.hasAttribute('open')).toBe(false);
+    expect(closedPanel?.inert).toBe(true);
 
     await user.click(screen.getByRole('button', { name: /Open floating agent chat/ }));
     await waitFor(() => {

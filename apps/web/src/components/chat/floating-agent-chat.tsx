@@ -185,9 +185,9 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
         id="floating-agent-chat-panel"
         aria-labelledby="floating-agent-chat-title"
         open={showPanel}
-        hidden={!showPanel}
+        inert={!showPanel}
         className={cn(
-          'fixed z-[60] m-0 flex flex-col border-border bg-bg p-0 shadow-2xl shadow-black/20',
+          'fixed z-[60] m-0 flex-col border-border bg-bg p-0 shadow-2xl shadow-black/20',
           'inset-x-0 top-auto bottom-0 h-[min(82dvh,42rem)] max-h-none w-screen max-w-none rounded-t-md border-t',
           'md:inset-auto md:bottom-20 md:right-5 md:h-[min(36rem,calc(100dvh-8rem))] md:w-[min(26rem,calc(100vw-2.5rem))] md:rounded-sm md:border',
         )}
