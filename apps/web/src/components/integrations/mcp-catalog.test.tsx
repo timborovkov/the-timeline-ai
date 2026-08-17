@@ -15,6 +15,9 @@ vi.mock('next/image', () => ({
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: vi.fn() }),
 }));
+vi.mock('sonner', () => ({
+  toast: { loading: vi.fn(() => 'toast-1'), success: vi.fn(), error: vi.fn() },
+}));
 
 const entries = [
   {

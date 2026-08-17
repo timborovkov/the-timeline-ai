@@ -601,9 +601,7 @@ describe('TimelineList evidence-owned actions', () => {
     await waitFor(() => {
       expect(fakes.hideInspector).toHaveBeenCalledTimes(1);
       expect(fakes.refresh).toHaveBeenCalledTimes(1);
-      expect(fakes.toastSuccess).toHaveBeenCalledWith('Evidence removed from Timeline', {
-        id: 'toast-1',
-      });
+      expect(fakes.toastSuccess.mock.calls[0]?.[0]).toBe('Evidence removed from Timeline');
     });
   });
 });

@@ -19,7 +19,9 @@ const fakes = vi.hoisted(() => ({
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: fakes.useQueryClient }));
-vi.mock('sonner', () => ({ toast: { error: fakes.toastError, success: fakes.toastSuccess } }));
+vi.mock('sonner', () => ({
+  toast: { error: fakes.toastError, success: fakes.toastSuccess, loading: vi.fn(() => 'toast-1') },
+}));
 vi.mock('@/lib/use-paginated-queries', () => ({
   useDocumentListQuery: fakes.useDocumentListQuery,
 }));
@@ -251,6 +253,7 @@ describe('DocumentDrive', () => {
     await waitFor(() => {
       expect(fakes.toastError).toHaveBeenCalledWith(
         'Unable to reach document storage. Check your connection, then try again.',
+        { id: 'toast-1' },
       );
     });
     expect(fakes.toastError).not.toHaveBeenCalledWith(

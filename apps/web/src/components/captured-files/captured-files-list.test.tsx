@@ -7,7 +7,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ReactNode } from 'react';
 
-vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+vi.mock('sonner', () => ({
+  toast: { error: vi.fn(), success: vi.fn(), loading: vi.fn(() => 'toast-1') },
+}));
 const fakes = vi.hoisted(() => ({
   promoteCapturedFileAction: vi.fn(),
   routerPush: vi.fn(),
