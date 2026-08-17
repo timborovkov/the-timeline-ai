@@ -100,6 +100,7 @@ const CONFIDENCE_LABELS: Record<string, string> = {
 const CLUSTER_STATUS_LABELS: Record<string, string> = {
   open: 'Open',
   active: 'Active',
+  candidate: 'Candidate',
   blocked: 'Blocked',
   resolved: 'Resolved',
   cancelled: 'Cancelled',

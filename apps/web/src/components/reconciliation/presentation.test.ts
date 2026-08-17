@@ -3,18 +3,20 @@ import { describe, expect, it } from 'vitest';
 import {
   artifactClusterKindLabel,
   artifactTypeLabel,
+  clusterStatusLabel,
   confidenceLabel,
   evidenceRoleLabel,
   evidenceStrengthLabel,
   outputActionLabel,
   outputKindLabel,
   outputStatusLabel,
-} from '@/app/app/team/reconciliation/clusters/[id]/presentation';
+} from '@/components/reconciliation/presentation';
 
-describe('reconciliation cluster presentation', () => {
+describe('reconciliation presentation', () => {
   it('replaces storage tokens with concise operator labels', () => {
     expect(artifactClusterKindLabel('customer_project')).toBe('Customer project');
     expect(artifactTypeLabel('monday_board')).toBe('Monday board');
+    expect(clusterStatusLabel('candidate')).toBe('Candidate');
     expect(evidenceRoleLabel('related_context')).toBe('Related context');
     expect(evidenceStrengthLabel('provider')).toBe('Provider evidence');
     expect(outputKindLabel('agent_suggestion_projection')).toBe('Suggestion projection');

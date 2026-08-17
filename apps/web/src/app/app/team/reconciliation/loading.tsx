@@ -94,9 +94,10 @@ function RecentReconciliationSkeleton() {
             <Skeleton className="h-4 w-32 max-w-full" />
             <div className="divide-y divide-border rounded-sm border border-border bg-surface">
               {Array.from({ length: 3 }).map((_, rowIndex) => (
-                <div key={rowIndex} className="space-y-2 p-3">
-                  <Skeleton className="h-4 w-3/5 max-w-full" />
-                  <Skeleton className="h-3 w-full" />
+                <div key={rowIndex} className="flex min-h-11 items-center gap-3 px-3">
+                  <Skeleton className="h-3.5 w-16" />
+                  <Skeleton className="h-4 w-2/5 max-w-full" />
+                  <Skeleton className="ml-auto h-3 w-16" />
                 </div>
               ))}
             </div>

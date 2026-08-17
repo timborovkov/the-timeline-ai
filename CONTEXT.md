@@ -105,6 +105,15 @@ Semantic similarity can suggest review candidates but is not enough to merge
 evidence into the same artifact cluster by itself.
 _Avoid_: Cleanup, removal, sync, extraction
 
+**Reconciliation Dashboard**:
+A team-scoped owner/admin health view for evidence coverage, clusters, and
+proposed workspace updates. Members who open the page see an Admins-only empty
+state. Recent clusters, recent outputs, and cluster evidence/output lists show
+status, a human label, and relative time. Cluster IDs, output IDs, raw-event
+IDs, and raw enum keys stay in the row hover title. Copying an output payload
+lives in the row overflow menu. Manual UUID reconcile stays in Advanced tools.
+_Avoid_: Recovery queue, retry dashboard, operator console
+
 **Lifecycle Update**:
 A workspace reconciliation outcome that changes the state of a derived artifact
 because timeline evidence shows progress, completion, cancellation, blocking,

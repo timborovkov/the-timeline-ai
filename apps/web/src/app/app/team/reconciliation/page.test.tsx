@@ -3,11 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
-  resolveActiveTeam: vi.fn(),
+  getCalendarSettings: vi.fn(),
   getDashboardSnapshot: vi.fn(),
   redirect: vi.fn((path: string) => {
     throw new Error(`redirect:${path}`);
   }),
+  requireMembership: vi.fn(),
+  resolveActiveTeam: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({
@@ -16,6 +18,8 @@ vi.mock('next/navigation', () => ({
 }));
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
+    requireMembership: fakes.requireMembership,
+    calendar: { getCalendarSettings: fakes.getCalendarSettings },
     reconciliation: { getDashboardSnapshot: fakes.getDashboardSnapshot },
   }),
 }));
@@ -45,6 +49,8 @@ beforeEach(() => {
   fakes.resolveActiveTeam.mockResolvedValue({
     active: { teamId: 'team-1', teamName: 'Acme Labs' },
   });
+  fakes.requireMembership.mockResolvedValue('admin');
+  fakes.getCalendarSettings.mockResolvedValue({ defaultTimezone: 'UTC' });
   fakes.getDashboardSnapshot.mockResolvedValue(sampleDashboard());
 });
 
@@ -65,7 +71,8 @@ describe('ReconciliationDashboardPage', () => {
     expect(html).toContain('9 of 12 ready');
     expect(html).toContain('Connect related work');
     expect(html).toContain('Propose safe updates');
-    expect(html).toContain('Advanced tools and diagnostics');
+    expect(html).toContain('Advanced tools');
+    expect(html).not.toContain('Advanced tools and diagnostics');
     expect(html).toContain('Release gate');
     expect(html).toContain('2 failures');
     expect(html).toContain('missing_evidence');
@@ -97,7 +104,7 @@ describe('ReconciliationDashboardPage', () => {
     expect(html).toContain('href="/app/team/reconciliation/clusters/cluster-2"');
   });
 
-  it('leads recent rows with human labels and keeps their raw values in technical details', async () => {
+  it('leads recent rows with human labels and keeps ids in hover titles', async () => {
     const html = renderToStaticMarkup(
       await ReconciliationDashboardPage({ searchParams: Promise.resolve({}) }),
     );
@@ -105,16 +112,29 @@ describe('ReconciliationDashboardPage', () => {
     expect(html).toContain('Customer project');
     expect(html).toContain('Monday board');
     expect(html).toContain('Suggestion projection');
-    expect(html).toContain('Update Workspace memory');
+    expect(html).toContain('Update workspace memory');
     expect(html).toContain('High confidence');
-    expect(technicalDetailsContaining(html, 'customer_project')).toContain('Cluster kind');
-    expect(technicalDetailsContaining(html, 'monday_board')).toContain('Artifact type');
-    expect(technicalDetailsContaining(html, 'agent_suggestion_projection')).toContain(
-      'Output kind',
+    expect(html).toContain('Admins only');
+    expect(html).not.toContain('Technical details');
+    expect(html).toContain('Cluster ID: cluster-1');
+    expect(html).toContain('Output ID: output-1');
+    expect(html).toContain('customer_project · monday_board · active');
+    expect(html).toContain('agent_suggestion_projection');
+  });
+
+  it('tells members the dashboard is admins only without loading the snapshot', async () => {
+    fakes.requireMembership.mockRejectedValueOnce(new Error('Requires admin role'));
+
+    const html = renderToStaticMarkup(
+      await ReconciliationDashboardPage({ searchParams: Promise.resolve({}) }),
     );
-    expect(technicalDetailsContaining(html, 'object')).toContain('Target kind');
-    expect(technicalDetailsContaining(html, 'update')).toContain('Operation');
-    expect(technicalDetailsContaining(html, 'high')).toContain('Confidence');
+
+    expect(html).toContain('Admins only');
+    expect(html).toContain('Ask an admin if you need the latest snapshot.');
+    expect(html).toContain('Back to Home');
+    expect(html).not.toContain('How it works');
+    expect(fakes.getDashboardSnapshot).not.toHaveBeenCalled();
+    expect(fakes.getCalendarSettings).not.toHaveBeenCalled();
   });
 
   it('passes run-history filters to the dashboard snapshot and preserves them in pagination', async () => {
@@ -347,12 +367,4 @@ function defaultRunHistory(): RunHistoryFixture {
     hasPreviousPage: false,
     hasNextPage: false,
   };
-}
-
-function technicalDetailsContaining(html: string, value: string): string {
-  return (
-    [...html.matchAll(/<details[\s\S]*?<\/details>/g)].find(([details]) =>
-      details.includes(value),
-    )?.[0] ?? ''
-  );
 }

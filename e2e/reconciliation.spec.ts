@@ -763,7 +763,7 @@ async function seedWorkerRepairState(): Promise<void> {
 
 async function openAdvancedTools(page: Page): Promise<void> {
   await page.waitForLoadState('networkidle');
-  const details = page.locator('details').filter({ hasText: 'Advanced tools and diagnostics' });
+  const details = page.locator('details').filter({ hasText: 'Advanced tools' });
   await expect(details).toBeVisible();
   if (!(await details.evaluate((element: HTMLDetailsElement) => element.open))) {
     await details.locator('summary').click();
@@ -790,11 +790,12 @@ test.describe.serial('reconciliation dashboard', () => {
     await expect(currentHealth).toBeVisible();
     await expect(currentHealth.getByText(/Release gate/)).toBeVisible();
     await expect(page.getByText(fixtures.team.title).first()).toBeVisible();
+    await expect(page.getByText('Customer project').first()).toBeVisible();
+    await openAdvancedTools(page);
     await expect(page.getByText('customer_project').first()).toBeVisible();
     await expect(page.getByText('observed_association').first()).toBeVisible();
     await expect(page.getByText('approval_bundle').first()).toBeVisible();
     await expect(page.getByText('failed').first()).toBeVisible();
-    await openAdvancedTools(page);
     await expect(page.getByText('evidence').first()).toBeVisible();
     await expect(page.getByText('projections').first()).toBeVisible();
     await expect(page.getByText(fixtures.workerRepair.title).first()).toBeVisible();
@@ -815,10 +816,9 @@ test.describe.serial('reconciliation dashboard', () => {
       .locator('section')
       .filter({ has: page.getByRole('heading', { name: 'Evidence' }) });
     await expect(page.getByText(fixtures.team.rawText)).toBeVisible();
-    const teamRawEventId = teamEvidence.getByText(fixtures.team.rawEvent, { exact: true });
-    await expect(teamRawEventId).toBeHidden();
-    await teamEvidence.getByText('Technical details').first().click();
-    await expect(teamRawEventId).toBeVisible();
+    await expect(
+      teamEvidence.locator(`[title*="${fixtures.team.rawEvent}"]`).first(),
+    ).toBeVisible();
 
     await page.goto(`/app/team/reconciliation/clusters/${fixtures.workerRepair.cluster}`);
     await expect(
@@ -828,12 +828,9 @@ test.describe.serial('reconciliation dashboard', () => {
     const repairEvidence = page
       .locator('section')
       .filter({ has: page.getByRole('heading', { name: 'Evidence' }) });
-    const repairRawEventId = repairEvidence.getByText(fixtures.workerRepair.rawEvent, {
-      exact: true,
-    });
-    await expect(repairRawEventId).toBeHidden();
-    await repairEvidence.getByText('Technical details').first().click();
-    await expect(repairRawEventId).toBeVisible();
+    await expect(
+      repairEvidence.locator(`[title*="${fixtures.workerRepair.rawEvent}"]`).first(),
+    ).toBeVisible();
   });
 
   test('surfaces operator errors from invalid manual reconciliation requests', async ({ page }) => {
@@ -847,7 +844,7 @@ test.describe.serial('reconciliation dashboard', () => {
     await expect(
       page.getByText('Object and cluster reconciliation require a target id'),
     ).toBeVisible();
-    await expect(page.getByText('failed').first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Reconciliation', exact: true })).toBeVisible();
   });
 
   test('filters and paginates run history from the dashboard', async ({ page }) => {

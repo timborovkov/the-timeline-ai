@@ -25,16 +25,33 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
 import { queueReconciliationJobFormAction } from '@/app/actions/reconciliation';
-import { Breadcrumb } from '@/components/breadcrumb';
+import { CollectionRow } from '@/components/collections/collection-row';
+import { CollectionStatus } from '@/components/collections/collection-status';
 import { DebouncedFilterForm } from '@/components/debounced-filter-form';
-import { PageHeader } from '@/components/page-header';
+import { ReconciliationForbiddenView } from '@/components/reconciliation/forbidden-view';
+import { ReconciliationPageHeader } from '@/components/reconciliation/page-header';
+import {
+  artifactClusterKindLabel,
+  artifactTypeLabel,
+  clusterStatusLabel,
+  confidenceLabel,
+  outputActionLabel,
+  outputKindLabel,
+  outputStatusLabel,
+} from '@/components/reconciliation/presentation';
+import {
+  reconciliationClusterRowHint,
+  reconciliationOutputRowHint,
+} from '@/components/reconciliation/row-hint';
+import { reconciliationOutputTone } from '@/components/reconciliation/row-status';
+import { ReconciliationRowTime } from '@/components/reconciliation/row-time';
 import { SectionHeading } from '@/components/section-heading';
-import { TechnicalDetails } from '@/components/technical-details';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { formatDisplayDateTime } from '@/lib/display-dates';
 
 export const metadata: Metadata = {
   title: 'Reconciliation',
@@ -62,6 +79,12 @@ export default async function ReconciliationDashboardPage({
   const runHistoryInput = runHistoryInputFromParams(params);
 
   const scope = withTeam(db, active.teamId, session.user.id);
+  try {
+    await scope.requireMembership('admin');
+  } catch {
+    return <ReconciliationForbiddenView teamName={active.teamName} />;
+  }
+
   let dashboard: Awaited<ReturnType<typeof scope.reconciliation.getDashboardSnapshot>> | null =
     null;
   try {
@@ -70,6 +93,8 @@ export default async function ReconciliationDashboardPage({
     dashboard = null;
   }
   if (!dashboard) redirect('/app/team');
+  const calendarSettings = await scope.calendar.getCalendarSettings();
+  const timezone = calendarSettings.defaultTimezone;
 
   const coverage = dashboard.evidenceCoverage;
   const diagnostics = dashboard.diagnostics;
@@ -80,12 +105,9 @@ export default async function ReconciliationDashboardPage({
 
   return (
     <div className="space-y-10">
-      <Breadcrumb items={[{ label: 'Team', href: '/app/team' }, { label: 'Reconciliation' }]} />
-      <PageHeader
-        title="Reconciliation"
-        subtitle="Timeline connects activity from different sources, checks the evidence, and proposes trustworthy updates for review."
+      <ReconciliationPageHeader
+        teamName={active.teamName}
         metadata={[
-          { label: 'team', value: active.teamName, signal: true },
           { label: 'checked', value: coverage.totalRawEvents },
           {
             label: 'needs repair',
@@ -96,13 +118,13 @@ export default async function ReconciliationDashboardPage({
             label: 'updated',
             value: (
               <span data-visual-dynamic="reconciliation-generated-at">
-                {dashboard.generatedAt.toLocaleString()}
+                {formatDisplayDateTime(dashboard.generatedAt, { timezone })}
               </span>
             ),
             mono: true,
           },
         ]}
-        srLabel={`Reconciliation for ${active.teamName}. ${String(coverage.totalRawEvents)} captured items checked; ${String(coverage.missingRawEvents + coverage.degradedReplayEvidence)} need repair.`}
+        srLabel={`Reconciliation for ${active.teamName}. Admins only. ${String(coverage.totalRawEvents)} captured items checked; ${String(coverage.missingRawEvents + coverage.degradedReplayEvidence)} need repair. Times in ${timezone}.`}
       />
       {notice ? <Notice tone={notice.tone} message={notice.message} /> : null}
 
@@ -200,15 +222,15 @@ export default async function ReconciliationDashboardPage({
       <section className="space-y-4">
         <SectionHeading>Recently reconciled</SectionHeading>
         <div className="grid gap-6 xl:grid-cols-2">
-          <RecentClusters rows={dashboard.clusters.recent} />
-          <RecentOutputs rows={dashboard.outputs.recent} />
+          <RecentClusters rows={dashboard.clusters.recent} timeZone={timezone} />
+          <RecentOutputs rows={dashboard.outputs.recent} timeZone={timezone} />
         </div>
       </section>
 
       <details className="group rounded-sm border border-border bg-surface">
         <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-surface-2 [&::-webkit-details-marker]:hidden">
           <div>
-            <div className="font-semibold text-fg">Advanced tools and diagnostics</div>
+            <div className="font-semibold text-fg">Advanced tools</div>
             <div className="mt-0.5 text-sm text-fg-muted">
               Manual repair, system counters, and run history for operators.
             </div>
@@ -820,111 +842,120 @@ function RunMetricBadge({ label, value }: { label: string; value: number | null 
   );
 }
 
-function RecentClusters({ rows }: { rows: ReconciliationDashboardCluster[] }) {
+function RecentClusters({
+  rows,
+  timeZone,
+}: {
+  rows: ReconciliationDashboardCluster[];
+  timeZone: string;
+}) {
   return (
     <section className="space-y-3">
       <SectionTitle label="Recent clusters" level={3} />
-      <ul className="divide-y divide-border rounded-sm border border-border bg-surface text-sm">
-        {rows.length === 0 ? (
-          <li className="px-3 py-2 text-fg-muted">No reconciliation clusters yet.</li>
-        ) : (
-          rows.map((row) => (
-            <li key={row.id} className="p-3">
-              <Link
-                href={`/app/team/reconciliation/clusters/${row.id}`}
-                className="grid gap-2 hover:text-signal sm:grid-cols-[1fr_auto]"
-              >
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="outline" className="rounded-sm">
-                      {clusterStatusLabel(row.status)}
-                    </Badge>
-                    <span className="text-xs text-fg-muted">
-                      {artifactClusterKindLabel(row.artifactClusterKind)}
-                    </span>
-                  </div>
-                  <div className="mt-1 truncate font-medium">{row.canonicalName}</div>
-                  <div className="text-xs text-fg-dim">{artifactTypeLabel(row.artifactType)}</div>
-                </div>
-                <time className="text-xs text-fg-muted sm:text-right">
-                  {row.updatedAt.toLocaleString()}
-                </time>
-              </Link>
-              <TechnicalDetails
-                className="mt-3"
-                items={[
-                  { label: 'Cluster ID', value: row.id, copyValue: row.id },
-                  { label: 'Cluster kind', value: row.artifactClusterKind },
-                  { label: 'Artifact type', value: row.artifactType },
-                  { label: 'Status', value: row.status },
-                ]}
-              />
-            </li>
-          ))
-        )}
-      </ul>
+      {rows.length === 0 ? (
+        <p className="px-1 py-4 text-sm text-fg-muted">No reconciliation clusters yet.</p>
+      ) : (
+        <ul className="border-y border-border">
+          {rows.map((row) => {
+            const hint = reconciliationClusterRowHint({
+              artifactClusterKind: row.artifactClusterKind,
+              artifactType: row.artifactType,
+              clusterId: row.id,
+              status: row.status,
+              timeZone,
+              updatedAt: row.updatedAt,
+            });
+            return (
+              <li key={row.id}>
+                <CollectionRow
+                  leading={
+                    <CollectionStatus value={row.status} label={clusterStatusLabel(row.status)} />
+                  }
+                  title={
+                    <Link
+                      href={`/app/team/reconciliation/clusters/${row.id}`}
+                      className="block truncate hover:underline"
+                    >
+                      {row.canonicalName}
+                    </Link>
+                  }
+                  titleHint={hint}
+                  context={`${artifactClusterKindLabel(row.artifactClusterKind)} · ${artifactTypeLabel(row.artifactType)}`}
+                  contextTitle={hint}
+                  metadata={<ReconciliationRowTime value={row.updatedAt} hint={hint} />}
+                />
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </section>
   );
 }
 
-function RecentOutputs({ rows }: { rows: ReconciliationDashboardOutput[] }) {
+function RecentOutputs({
+  rows,
+  timeZone,
+}: {
+  rows: ReconciliationDashboardOutput[];
+  timeZone: string;
+}) {
   return (
     <section className="space-y-3">
       <SectionTitle label="Recent outputs" level={3} />
-      <ul className="divide-y divide-border rounded-sm border border-border bg-surface text-sm">
-        {rows.length === 0 ? (
-          <li className="px-3 py-2 text-fg-muted">No reconciliation outputs yet.</li>
-        ) : (
-          rows.map((row) => (
-            <li key={row.id} className="grid gap-2 p-3 sm:grid-cols-[1fr_auto]">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge
-                    variant={row.status === 'failed' ? 'destructive' : 'outline'}
-                    className="rounded-sm"
-                  >
-                    {outputStatusLabel(row.status)}
-                  </Badge>
-                  {row.requiresApproval ? (
-                    <Badge className="rounded-sm">Needs approval</Badge>
-                  ) : null}
-                  <span className="text-xs text-fg-muted">{outputKindLabel(row.outputKind)}</span>
-                </div>
-                <div className="mt-1 truncate font-medium">
-                  {row.clusterId ? (
-                    <Link
-                      href={`/app/team/reconciliation/clusters/${row.clusterId}`}
-                      className="hover:text-signal"
-                    >
-                      {outputActionLabel(row)}
-                    </Link>
-                  ) : (
-                    outputActionLabel(row)
-                  )}
-                </div>
-                <div className="text-xs text-fg-dim">{confidenceLabel(row.confidence)}</div>
-              </div>
-              <time className="text-xs text-fg-muted sm:text-right">
-                {row.createdAt.toLocaleString()}
-              </time>
-              <TechnicalDetails
-                className="sm:col-span-2"
-                items={[
-                  { label: 'Output ID', value: row.id, copyValue: row.id },
-                  ...(row.clusterId
-                    ? [{ label: 'Cluster ID', value: row.clusterId, copyValue: row.clusterId }]
-                    : []),
-                  { label: 'Output kind', value: row.outputKind },
-                  { label: 'Target kind', value: row.targetKind },
-                  { label: 'Operation', value: row.operation },
-                  { label: 'Confidence', value: row.confidence },
-                  { label: 'Status', value: row.status },
-                ]}
-              />
-            </li>
-          ))
-        )}
-      </ul>
+      {rows.length === 0 ? (
+        <p className="px-1 py-4 text-sm text-fg-muted">No reconciliation outputs yet.</p>
+      ) : (
+        <ul className="border-y border-border">
+          {rows.map((row) => {
+            const hint = reconciliationOutputRowHint({
+              clusterId: row.clusterId,
+              confidence: row.confidence,
+              createdAt: row.createdAt,
+              outputId: row.id,
+              outputKind: row.outputKind,
+              status: row.status,
+              targetKind: row.targetKind,
+              timeZone,
+            });
+            const action = outputActionLabel(row);
+            const contextParts = [
+              outputKindLabel(row.outputKind),
+              confidenceLabel(row.confidence),
+              row.requiresApproval ? 'Needs approval' : null,
+            ].filter((part): part is string => Boolean(part));
+            return (
+              <li key={row.id}>
+                <CollectionRow
+                  leading={
+                    <CollectionStatus
+                      value={row.status}
+                      label={outputStatusLabel(row.status)}
+                      tone={reconciliationOutputTone(row.status)}
+                    />
+                  }
+                  title={
+                    row.clusterId ? (
+                      <Link
+                        href={`/app/team/reconciliation/clusters/${row.clusterId}`}
+                        className="block truncate hover:underline"
+                      >
+                        {action}
+                      </Link>
+                    ) : (
+                      action
+                    )
+                  }
+                  titleHint={hint}
+                  context={contextParts.join(' · ')}
+                  contextTitle={hint}
+                  metadata={<ReconciliationRowTime value={row.createdAt} hint={hint} />}
+                />
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </section>
   );
 }
@@ -944,141 +975,6 @@ function sourceLabel(source: string): string {
     .split('_')
     .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
     .join(' ');
-}
-
-const ARTIFACT_CLUSTER_KIND_LABELS: Record<string, string> = {
-  customer_project: 'Customer project',
-  account: 'Account',
-  incident: 'Incident',
-  deal: 'Deal',
-  document: 'Document',
-  decision: 'Decision',
-  task: 'Task',
-  meeting: 'Meeting',
-  calendar_event: 'Calendar event',
-  provider_record: 'Connected record',
-  topic: 'Topic',
-  person_context: 'Person context',
-  relationship_bundle: 'Relationship',
-  system_workflow: 'System workflow',
-  other: 'Other work',
-};
-
-const ARTIFACT_TYPE_LABELS: Record<string, string> = {
-  person: 'Person',
-  company: 'Company',
-  project: 'Project',
-  topic: 'Topic',
-  other: 'Other item',
-  deal: 'Deal',
-  vendor: 'Vendor',
-  incident: 'Incident',
-  document: 'Document',
-  decision: 'Decision',
-  hiring_loop: 'Hiring loop',
-  task: 'Task',
-  follow_up: 'Follow-up',
-  link: 'Link',
-  monday_board: 'Monday board',
-  sentry_project: 'Sentry project',
-};
-
-const OUTPUT_KIND_LABELS: Record<string, string> = {
-  direct_write: 'Provider update',
-  approval_bundle: 'Approval request',
-  observed_association: 'Related evidence',
-  no_action: 'No change',
-  conflict: 'Conflicting evidence',
-  eval_observation: 'Evaluation observation',
-  agent_suggestion_projection: 'Suggestion projection',
-};
-
-const TARGET_KIND_LABELS: Record<string, string> = {
-  object: 'Workspace memory',
-  task: 'Task',
-  calendar_event: 'Calendar event',
-  identity_facet: 'Identity detail',
-  object_note: 'Workspace note',
-  object_relationship: 'Relationship',
-  object_merge: 'Duplicate records',
-  board_membership: 'Board membership',
-  board_item_update: 'Board item',
-  cluster_identity: 'Work identity',
-  cluster_lifecycle: 'Work status',
-};
-
-const OPERATION_LABELS: Record<string, string> = {
-  create: 'Create',
-  update: 'Update',
-  archive_or_cancel: 'Archive or cancel',
-  merge: 'Merge',
-  link: 'Link',
-  unlink: 'Remove link',
-  supersede: 'Supersede',
-  noop: 'No change',
-};
-
-const CONFIDENCE_LABELS: Record<string, string> = {
-  high: 'High confidence',
-  medium: 'Medium confidence',
-  low: 'Low confidence',
-};
-
-const CLUSTER_STATUS_LABELS: Record<string, string> = {
-  open: 'Open',
-  active: 'Active',
-  blocked: 'Blocked',
-  resolved: 'Resolved',
-  cancelled: 'Cancelled',
-  archived: 'Archived',
-};
-
-const OUTPUT_STATUS_LABELS: Record<string, string> = {
-  pending: 'Pending',
-  applied: 'Applied',
-  approval_created: 'Approval created',
-  rejected: 'Rejected',
-  superseded: 'Superseded',
-  failed: 'Failed',
-};
-
-function artifactClusterKindLabel(value: string): string {
-  return ARTIFACT_CLUSTER_KIND_LABELS[value] ?? humanizeToken(value);
-}
-
-function artifactTypeLabel(value: string): string {
-  return ARTIFACT_TYPE_LABELS[value] ?? humanizeToken(value);
-}
-
-function outputKindLabel(value: string): string {
-  return OUTPUT_KIND_LABELS[value] ?? humanizeToken(value);
-}
-
-function outputActionLabel({
-  operation,
-  targetKind,
-}: Pick<ReconciliationDashboardOutput, 'operation' | 'targetKind'>): string {
-  return `${OPERATION_LABELS[operation] ?? humanizeToken(operation)} ${TARGET_KIND_LABELS[targetKind] ?? humanizeToken(targetKind)}`;
-}
-
-function confidenceLabel(value: string): string {
-  return CONFIDENCE_LABELS[value] ?? `${humanizeToken(value)} confidence`;
-}
-
-function clusterStatusLabel(value: string): string {
-  return CLUSTER_STATUS_LABELS[value] ?? humanizeToken(value);
-}
-
-function outputStatusLabel(value: string): string {
-  return OUTPUT_STATUS_LABELS[value] ?? humanizeToken(value);
-}
-
-function humanizeToken(value: string): string {
-  const words = value
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .replace(/[_-]+/g, ' ')
-    .trim();
-  return words ? `${words.charAt(0).toUpperCase()}${words.slice(1)}` : value;
 }
 
 function jsonRecord(value: unknown): Record<string, unknown> | null {
