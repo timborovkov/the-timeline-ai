@@ -125,18 +125,21 @@
 }
 
 /* Sonner paints action buttons as inverted fills (toast text color on toast
-   background). Undo should stay on the same surface as the toast. */
-[data-sonner-toast][data-styled='true'] [data-button] {
+   background). Undo should stay on the same surface as the toast. The toaster
+   also mounts a matching override so this still wins Sonner's runtime sheet. */
+[data-sonner-toaster][data-sonner-theme] [data-sonner-toast][data-styled='true'] [data-button][data-action] {
   background: var(--surface-2) !important;
   color: var(--fg) !important;
   border: 1px solid var(--border) !important;
+  box-shadow: none !important;
 }
 
-[data-sonner-toast][data-styled='true'] [data-button]:hover {
+[data-sonner-toaster][data-sonner-theme] [data-sonner-toast][data-styled='true'] [data-button][data-action]:hover {
   background: var(--surface) !important;
+  color: var(--fg) !important;
 }
 
-[data-sonner-toast][data-styled='true'] [data-button]:focus-visible {
+[data-sonner-toaster][data-sonner-theme] [data-sonner-toast][data-styled='true'] [data-button][data-action]:focus-visible {
   box-shadow: 0 0 0 2px var(--ring);
 }
 
