@@ -32,7 +32,7 @@ test.describe('Infinite scroll collections', () => {
 
     const oldest = `${marker} moment 45`;
     const main = page.locator('#main');
-    for (let attempt = 0; attempt < 20; attempt += 1) {
+    for (let attempt = 0; attempt < 30; attempt += 1) {
       if ((await page.getByText(oldest).count()) > 0) break;
       await main.evaluate((node) => {
         node.scrollTo({ top: node.scrollHeight });
@@ -65,7 +65,7 @@ test.describe('Infinite scroll collections', () => {
       id: randomUUID(),
       teamId: e2eTeam.id,
       type: 'task' as const,
-      canonicalName: `Other scroll task ${marker} ${index + 1}`,
+      canonicalName: `Other scroll task ${index + 1}`,
       aliases: [],
       metadata: { e2e: true },
       status: index % 2 === 0 ? 'doing' : 'done',
@@ -74,15 +74,21 @@ test.describe('Infinite scroll collections', () => {
     await db.insert(entities).values([...matching, ...filler]);
 
     const page = await newSignedInPage(browser, 'owner');
-    await page.goto(`/app/tasks?q=${encodeURIComponent(marker)}`);
-    await expect(page.getByText(/24 of \d+/)).toBeVisible();
+    const query = encodeURIComponent(marker);
+    await page.goto(`/app/tasks?q=${query}`);
+    await expect(page.getByRole('status', { name: /24 of \d+/ })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Load more' })).toHaveCount(0);
 
-    await page.goto('/app/tasks?view=board');
-    const sourceCard = page.getByText(matching[0]?.canonicalName ?? '', { exact: true }).first();
-    const doneColumn = page.locator('[data-lane], [data-status="done"]').first();
-    if ((await sourceCard.count()) > 0 && (await doneColumn.count()) > 0) {
-      await sourceCard.dragTo(doneColumn);
-    }
+    const sourceName = matching[0]?.canonicalName ?? '';
+    await page.goto(`/app/tasks?view=kanban&q=${query}`);
+    const dragHandle = page.getByRole('button', { name: `Drag ${sourceName}` });
+    const doneColumn = page
+      .locator('section')
+      .filter({ has: page.getByRole('heading', { name: 'Done' }) });
+    await expect(dragHandle).toBeVisible();
+    await expect(doneColumn).toBeVisible();
+    await doneColumn.scrollIntoViewIfNeeded();
+    await dragHandle.dragTo(doneColumn);
+    await expect(doneColumn.getByText(sourceName, { exact: true })).toBeVisible();
   });
 });
