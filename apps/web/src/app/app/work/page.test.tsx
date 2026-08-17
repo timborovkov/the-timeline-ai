@@ -380,7 +380,7 @@ describe('WorkPage', () => {
 
     const html = renderToStaticMarkup(await WorkPage(pageProps()));
 
-    expect((html.match(/Revigo pilot/g) ?? []).length).toBe(1);
+    expect((html.match(/>Revigo pilot</g) ?? []).length).toBe(1);
     expect(html).toContain('/app/boards/board-1?item=board-item-1');
     expect(html).toContain('Queue');
   });

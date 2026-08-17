@@ -75,11 +75,7 @@ export function WorkQueueRow({
   const contextReasons = item.reasons.filter(
     (reason) => reason !== 'overdue' && reason !== 'due_soon',
   );
-  const context = error ? (
-    <span className="text-danger" role="alert">
-      {error}
-    </span>
-  ) : saving ? (
+  const context = saving ? (
     <span>Saving {fieldLabel(saving)}…</span>
   ) : item.subtitle ? (
     displayText(item.subtitle)
@@ -131,6 +127,11 @@ export function WorkQueueRow({
       context={context}
       metadata={
         <>
+          {error ? (
+            <span className="px-2 text-xs text-danger" role="alert">
+              {error}
+            </span>
+          ) : null}
           {item.source === 'approval' ? (
             <span className="px-2 text-xs text-fg-dim">{item.sourceLabel}</span>
           ) : null}
