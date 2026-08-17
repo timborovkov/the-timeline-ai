@@ -26,8 +26,8 @@ export function PinMenuItem({
 }) {
   const [pinned, setPinned] = useState(initialPinned);
   const [pending, setPending] = useState(false);
-  const Icon = pinned ? PinOff : Pin;
-  const action = pinned ? 'Unpin' : 'Pin';
+  const action = pending === pinned ? 'Pin' : 'Unpin';
+  const Icon = action === 'Unpin' ? PinOff : Pin;
   return (
     <DropdownMenuItem
       disabled={pending}
