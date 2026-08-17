@@ -192,7 +192,7 @@ export function CuratedBoardTable({
     selectableItems.length > 0 && selectableItems.every((item) => visibleSelectedIds.has(item.id));
 
   return (
-    <div className="space-y-3">
+    <div className="flex min-h-0 flex-1 flex-col">
       {onUpdateItem ? (
         <BoardBulkToolbar
           lanes={lanes}
@@ -202,8 +202,8 @@ export function CuratedBoardTable({
           onUpdateItems={updateItems}
         />
       ) : null}
-      <div className="overflow-x-auto rounded-sm border border-border bg-surface">
-        <table className="w-full text-sm">
+      <div className="min-h-0 flex-1 overflow-auto bg-bg">
+        <table className="w-full min-w-[56rem] text-sm">
           <thead className="border-b border-border bg-bg text-left text-xs text-fg-dim">
             <tr>
               {onUpdateItem ? (
@@ -234,7 +234,7 @@ export function CuratedBoardTable({
               const optimistic = isOptimisticItem(item);
               const objectTitle = displayObjectTitle(item.object);
               return (
-                <tr key={item.id} className="border-t border-border transition-colors hover:bg-bg">
+                <tr key={item.id} className="border-t border-border transition-colors hover:bg-surface">
                   {onUpdateItem ? (
                     <td className="px-3 py-2 align-top">
                       <input
@@ -706,7 +706,7 @@ export function CuratedBoardList({
   });
 
   return (
-    <div className="space-y-3">
+    <div className="flex min-h-0 flex-1 flex-col">
       {onUpdateItem ? (
         <BoardBulkToolbar
           lanes={lanes}
@@ -716,7 +716,7 @@ export function CuratedBoardList({
           onUpdateItems={updateItems}
         />
       ) : null}
-      <div className="border-x border-border bg-surface">
+      <div className="min-h-0 flex-1 overflow-y-auto bg-bg">
         {laneGroups.map((group) => (
           <CollectionGroup key={group.id || 'unset'} title={group.name} count={group.items.length}>
             <ul>
@@ -848,42 +848,21 @@ export function CuratedBoardList({
                               </select>
                             }
                           />
-                          <EditableMetadata
-                            label={`Lane for ${displayText(objectTitle)}`}
-                            value="Move"
-                            disabled={optimistic || !onUpdateItem}
-                            editor={
-                              <select
-                                value={item.laneId ?? ''}
-                                onChange={(event) =>
-                                  void onUpdateItem?.(item.id, {
-                                    laneId: event.currentTarget.value || null,
-                                  })
-                                }
-                                className="h-10 rounded-sm border border-border bg-bg px-2 text-xs"
-                              >
-                                <option value="">Unset</option>
-                                {lanes.map((lane) => (
-                                  <option key={lane.id} value={lane.id}>
-                                    {displayText(lane.name)}
-                                  </option>
-                                ))}
-                              </select>
-                            }
-                          />
-                          <EditableMetadata
-                            label={`Next step for ${displayText(objectTitle)}`}
-                            value={item.nextStep ?? 'No next step'}
-                            disabled={optimistic || !onUpdateItem}
-                            editor={
-                              <BoardNextStepInput
-                                objectName={objectTitle}
-                                nextStep={item.nextStep}
-                                disabled={optimistic || !onUpdateItem}
-                                onSave={(nextStep) => void onUpdateItem?.(item.id, { nextStep })}
-                              />
-                            }
-                          />
+                          {item.nextStep ? (
+                            <EditableMetadata
+                              label={`Next step for ${displayText(objectTitle)}`}
+                              value={item.nextStep}
+                              disabled={optimistic || !onUpdateItem}
+                              editor={
+                                <BoardNextStepInput
+                                  objectName={objectTitle}
+                                  nextStep={item.nextStep}
+                                  disabled={optimistic || !onUpdateItem}
+                                  onSave={(nextStep) => void onUpdateItem?.(item.id, { nextStep })}
+                                />
+                              }
+                            />
+                          ) : null}
                         </>
                       }
                     />
@@ -903,5 +882,9 @@ function isOptimisticItem(item: boards.BoardItemRow): boolean {
 }
 
 function EmptyBoardItems() {
-  return <p className="py-10 text-center text-sm text-fg-dim">No board items yet</p>;
+  return (
+    <p className="border-y border-border bg-bg py-10 text-center text-sm text-fg-dim">
+      No board items yet
+    </p>
+  );
 }

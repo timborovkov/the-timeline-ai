@@ -316,6 +316,24 @@ describe('CuratedBoardList', () => {
     expect(title.className).toContain('truncate');
   });
 
+  it('keeps grouped list rows on the full-bleed canvas without a Move control', () => {
+    const { container } = render(
+      <CuratedBoardList
+        boardId="board-1"
+        view="list"
+        lanes={LANES}
+        items={[boardItem()]}
+        members={[]}
+        onUpdateItem={fakes.updateItem}
+      />,
+    );
+
+    expect(container.querySelector('.border-x')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Lane for Launch review' })).toBeNull();
+    expect(screen.queryByText('Move')).toBeNull();
+    expect(screen.queryByText('No next step')).toBeNull();
+  });
+
   it('bulk sets due dates for selected board items in list view', async () => {
     const user = userEvent.setup();
     render(

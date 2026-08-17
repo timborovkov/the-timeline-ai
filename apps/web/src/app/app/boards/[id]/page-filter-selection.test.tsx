@@ -165,7 +165,7 @@ describe('BoardDetailPage', () => {
     expect(fakes.listBoardItemHistory).toHaveBeenCalledWith('item-1');
   });
 
-  it('keeps non-kanban board views inside the shared dashboard container', async () => {
+  it('keeps list and table board views on the same full-bleed canvas as kanban', async () => {
     const html = renderToStaticMarkup(
       await BoardDetailPage({
         params: Promise.resolve({ id: 'board-1' }),
@@ -173,7 +173,7 @@ describe('BoardDetailPage', () => {
       }),
     );
 
-    expect(html).not.toContain('data-app-layout="full-bleed"');
+    expect(html).toContain('data-app-layout="full-bleed"');
   });
 
   it('keeps an archived selected project in filters but not add-item candidates', async () => {

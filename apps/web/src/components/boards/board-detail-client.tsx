@@ -282,13 +282,10 @@ export function BoardDetailClient({
         title={boardName}
         subtitle={description ?? undefined}
         leading={boardHeaderLeading}
-        className={view === 'kanban' ? 'w-full shrink-0 px-4 md:px-8' : 'mb-4 shrink-0'}
+        className="w-full shrink-0 px-4 md:px-8"
         trailing={boardHeaderTrailing}
       />
-      <WorkSubnav
-        current={`/app/boards/${boardId}`}
-        className={view === 'kanban' ? 'shrink-0 px-4 md:px-8' : 'mb-4 shrink-0'}
-      />
+      <WorkSubnav current={`/app/boards/${boardId}`} className="shrink-0 px-4 md:px-8" />
 
       <BoardViewNavigation
         boardId={boardId}
@@ -309,10 +306,10 @@ export function BoardDetailClient({
         projects={projectOptions}
         lanes={lanes}
         typeLabels={typeLabels}
-        className={view === 'kanban' ? 'shrink-0' : 'mb-4'}
+        className="shrink-0"
       />
 
-      <div className={view === 'kanban' ? 'w-full shrink-0 px-4 py-4 md:px-8' : 'mb-4 shrink-0'}>
+      <div className="w-full shrink-0 px-4 py-3 md:px-8">
         <BoardAddItemForm
           boardId={boardId}
           defaultLaneId={defaultLaneId}
@@ -331,7 +328,7 @@ export function BoardDetailClient({
             : 'min-h-0 flex-1'
         }
       >
-        <div className={view === 'kanban' ? 'h-full min-h-0 min-w-0' : 'min-h-0'}>
+        <div className="h-full min-h-0 min-w-0">
           {view === 'kanban' && (
             <CuratedKanbanBoard
               boardId={boardId}
@@ -366,20 +363,22 @@ export function BoardDetailClient({
           )}
         </div>
         {selectedItem ? (
-          <BoardCardDetail
-            key={selectedItem.id}
-            teamId={teamId}
-            boardId={boardId}
-            view={view}
-            item={selectedItem}
-            connectedWork={selectedObjectContext}
-            history={history}
-            lanes={lanes}
-            members={members}
-            onUpdateItem={updateItem}
-            onItemRemoved={removeLocalItem}
-            filterParams={filterParams}
-          />
+          <div className="min-h-0 overflow-y-auto pr-4 md:pr-8">
+            <BoardCardDetail
+              key={selectedItem.id}
+              teamId={teamId}
+              boardId={boardId}
+              view={view}
+              item={selectedItem}
+              connectedWork={selectedObjectContext}
+              history={history}
+              lanes={lanes}
+              members={members}
+              onUpdateItem={updateItem}
+              onItemRemoved={removeLocalItem}
+              filterParams={filterParams}
+            />
+          </div>
         ) : null}
       </div>
     </TaskCategoryPollingProvider>
@@ -398,13 +397,7 @@ function BoardViewNavigation({
   filterParams: Record<string, string>;
 }) {
   return (
-    <div
-      className={
-        view === 'kanban'
-          ? 'flex w-full shrink-0 justify-end px-4 py-4 md:px-8'
-          : 'mb-4 flex shrink-0 justify-end'
-      }
-    >
+    <div className="flex w-full shrink-0 justify-end px-4 py-3 md:px-8">
       <nav
         aria-label="Board view"
         className="inline-flex overflow-hidden rounded-sm border border-border"
