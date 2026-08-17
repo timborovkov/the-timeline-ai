@@ -47,6 +47,10 @@ export function EditableMetadata({
   const previousErrorRef = useRef<string | null | undefined>(undefined);
   const errorId = `${label.replaceAll(/\s+/g, '-').toLowerCase()}-error`;
 
+  if (pending && open) {
+    setOpen(false);
+  }
+
   // react-doctor-disable-next-line react-doctor/no-event-handler -- Focus restoration is keyed to parent pending/error, not a local click.
   useEffect(() => {
     restoreFocusAfterSave(
@@ -60,7 +64,11 @@ export function EditableMetadata({
 
   return (
     <span className="relative inline-flex min-w-0 flex-col">
-      <Popover key={pending ? 'pending' : 'idle'} open={open} onOpenChange={setOpen}>
+      <Popover
+        key={pending ? 'pending' : 'idle'}
+        open={pending ? false : open}
+        onOpenChange={setOpen}
+      >
         <PopoverTrigger asChild>
           <button
             ref={(node) => {

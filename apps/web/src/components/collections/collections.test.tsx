@@ -138,6 +138,32 @@ describe('collection primitives', () => {
     });
   });
 
+  it('closes the editor while a parent save is pending and does not reopen when it settles', async () => {
+    const user = userEvent.setup();
+    const editor = (
+      <select aria-label="Priority" defaultValue="2">
+        <option value="2">P2</option>
+      </select>
+    );
+    const view = render(
+      <EditableMetadata label="Priority for Launch plan" value="P2" editor={editor} />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Priority for Launch plan' }));
+    expect(screen.getByRole('combobox', { name: 'Priority' })).toBeTruthy();
+
+    view.rerender(
+      <EditableMetadata pending label="Priority for Launch plan" value="P2" editor={editor} />,
+    );
+    expect(screen.queryByRole('combobox', { name: 'Priority' })).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'Priority for Launch plan' }).hasAttribute('disabled'),
+    ).toBe(true);
+
+    view.rerender(<EditableMetadata label="Priority for Launch plan" value="P2" editor={editor} />);
+    expect(screen.queryByRole('combobox', { name: 'Priority' })).toBeNull();
+  });
+
   it('cancels date drafts on Escape and commits them with Enter', async () => {
     const user = userEvent.setup();
     const apply = vi.fn();
