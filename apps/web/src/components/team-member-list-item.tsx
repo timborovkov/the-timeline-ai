@@ -26,12 +26,14 @@ export function TeamMemberListItem({
 
   return (
     <li>
-      <CollectionRow
-        title={memberLabel}
-        context={user?.email ?? undefined}
-        metadata={<Badge variant="outline">{member.role}</Badge>}
-        actions={
-          canManageRole || canRemove ? (
+      <CollectionRow>
+        <CollectionRow.Title>{memberLabel}</CollectionRow.Title>
+        <CollectionRow.Context>{user?.email ?? undefined}</CollectionRow.Context>
+        <CollectionRow.Metadata>
+          <Badge variant="outline">{member.role}</Badge>
+        </CollectionRow.Metadata>
+        <CollectionRow.Actions>
+          {canManageRole || canRemove ? (
             <ItemActionGroup label={`Actions for ${memberLabel}`}>
               {canManageRole ? (
                 <MemberRoleForm
@@ -44,9 +46,9 @@ export function TeamMemberListItem({
                 <RemoveMemberForm memberLabel={memberLabel} userId={member.userId} />
               ) : null}
             </ItemActionGroup>
-          ) : undefined
-        }
-      />
+          ) : undefined}
+        </CollectionRow.Actions>
+      </CollectionRow>
     </li>
   );
 }

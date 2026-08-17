@@ -186,10 +186,12 @@ function formatValue(
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   if (Array.isArray(value)) {
     if (value.length === 0) return 'None';
-    return value
-      .map((entry) => (typeof entry === 'string' || typeof entry === 'number' ? String(entry) : ''))
-      .filter(Boolean)
+    const joined = value
+      .flatMap((entry) =>
+        typeof entry === 'string' || typeof entry === 'number' ? [String(entry)] : [],
+      )
       .join(', ');
+    return joined || 'None';
   }
   return null;
 }
@@ -258,14 +260,19 @@ function mergeFieldKeys(
     'recurrenceEditMode',
   ]);
   const keys: string[] = [];
+  const seen = new Set<string>();
   for (const key of order) {
     if (skip.has(key)) continue;
-    if (current[key] !== undefined || proposed[key] !== undefined) keys.push(key);
+    if (current[key] !== undefined || proposed[key] !== undefined) {
+      keys.push(key);
+      seen.add(key);
+    }
   }
   for (const key of Object.keys(proposed)) {
-    if (skip.has(key) || keys.includes(key)) continue;
+    if (skip.has(key) || seen.has(key)) continue;
     if (key.toLowerCase().endsWith('id') || key.toLowerCase().endsWith('ids')) continue;
     keys.push(key);
+    seen.add(key);
   }
   return keys;
 }

@@ -6,11 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
-import {
-  CollectionStatus,
-  priorityTone,
-  statusTone,
-} from '@/components/collections/collection-status';
+import { CollectionStatus } from '@/components/collections/collection-status';
+import { priorityTone, statusTone } from '@/components/collections/collection-status-tone';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
@@ -70,7 +67,13 @@ describe('collection primitives', () => {
 
   it('uses a 44px desktop row with a two-line responsive content structure', () => {
     const { container } = render(
-      <CollectionRow title="Launch plan" context="Acme" metadata={<span>P2</span>} />,
+      <CollectionRow>
+        <CollectionRow.Title>Launch plan</CollectionRow.Title>
+        <CollectionRow.Context>Acme</CollectionRow.Context>
+        <CollectionRow.Metadata>
+          <span>P2</span>
+        </CollectionRow.Metadata>
+      </CollectionRow>,
     );
     const row = container.firstElementChild;
     expect(row?.className).toContain('min-h-11');
@@ -83,18 +86,37 @@ describe('collection primitives', () => {
     const user = userEvent.setup();
     const onActivate = vi.fn();
     render(
-      <CollectionRow
-        title="Review planning workbook"
-        onActivate={onActivate}
-        actions={<button type="button">Keep</button>}
-      />,
+      <CollectionRow onActivate={onActivate} activateLabel="Open Review planning workbook">
+        <CollectionRow.Title>Review planning workbook</CollectionRow.Title>
+        <CollectionRow.Actions>
+          <button type="button">Keep</button>
+        </CollectionRow.Actions>
+      </CollectionRow>,
     );
 
-    await user.click(screen.getByText('Review planning workbook'));
+    await user.click(screen.getByRole('button', { name: 'Open Review planning workbook' }));
     expect(onActivate).toHaveBeenCalledOnce();
     onActivate.mockClear();
     await user.click(screen.getByRole('button', { name: 'Keep' }));
     expect(onActivate).not.toHaveBeenCalled();
+  });
+
+  it('activates the row from the keyboard when it is focused', async () => {
+    const user = userEvent.setup();
+    const onActivate = vi.fn();
+    render(
+      <CollectionRow onActivate={onActivate} activateLabel="Open Review planning workbook">
+        <CollectionRow.Title>Review planning workbook</CollectionRow.Title>
+        <CollectionRow.Actions>
+          <button type="button">Keep</button>
+        </CollectionRow.Actions>
+      </CollectionRow>,
+    );
+
+    const row = screen.getByRole('button', { name: 'Open Review planning workbook' });
+    row.focus();
+    await user.keyboard('{Enter}');
+    expect(onActivate).toHaveBeenCalledOnce();
   });
 
   it('opens desktop filters, removes active chips, and exposes the mobile dialog variant', async () => {
@@ -102,14 +124,15 @@ describe('collection primitives', () => {
     const remove = vi.fn();
     render(
       <CollectionToolbar
-        count="4 results"
-        filters={
+        activeFilters={[{ key: 'owner', label: 'Owner', value: 'Ada', onRemove: remove }]}
+      >
+        <CollectionToolbar.Count>4 results</CollectionToolbar.Count>
+        <CollectionToolbar.Filters>
           <label>
             Owner <input aria-label="Owner" />
           </label>
-        }
-        activeFilters={[{ key: 'owner', label: 'Owner', value: 'Ada', onRemove: remove }]}
-      />,
+        </CollectionToolbar.Filters>
+      </CollectionToolbar>,
     );
 
     expect(screen.getByRole('button', { name: 'Remove Owner filter' }).className).toContain(
@@ -134,21 +157,19 @@ describe('collection primitives', () => {
   it('keeps metadata triggers accessible, reports row errors, and restores focus on Escape', async () => {
     const user = userEvent.setup();
     render(
-      <EditableMetadata
-        label="Priority for Launch plan"
-        value="P2"
-        error="Save failed"
-        editor={
+      <EditableMetadata label="Priority for Launch plan" error="Save failed">
+        <EditableMetadata.Value>P2</EditableMetadata.Value>
+        <EditableMetadata.Editor>
           <select aria-label="Priority" defaultValue="2">
             <option value="2">P2</option>
           </select>
-        }
-      />,
+        </EditableMetadata.Editor>
+      </EditableMetadata>,
     );
 
     const trigger = screen.getByRole('button', { name: 'Priority for Launch plan' });
     expect(trigger.className).toContain('min-h-10');
-    expect(trigger.getAttribute('aria-invalid')).toBe('true');
+    expect(trigger.getAttribute('aria-describedby')).toBeTruthy();
     expect(screen.getByRole('alert').textContent).toBe('Save failed');
 
     await user.click(trigger);
@@ -163,11 +184,12 @@ describe('collection primitives', () => {
     const user = userEvent.setup();
     const apply = vi.fn();
     render(
-      <EditableMetadata
-        label="Due date for Launch plan"
-        value="Jul 1"
-        editor={<MetadataDateEditor defaultValue="2026-07-01" onApply={apply} />}
-      />,
+      <EditableMetadata label="Due date for Launch plan">
+        <EditableMetadata.Value>Jul 1</EditableMetadata.Value>
+        <EditableMetadata.Editor>
+          <MetadataDateEditor defaultValue="2026-07-01" onApply={apply} />
+        </EditableMetadata.Editor>
+      </EditableMetadata>,
     );
 
     const trigger = screen.getByRole('button', { name: 'Due date for Launch plan' });

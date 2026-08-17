@@ -10,7 +10,8 @@ import type { Dispatch, SetStateAction } from 'react';
 
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
-import { CollectionStatus, priorityTone } from '@/components/collections/collection-status';
+import { CollectionStatus } from '@/components/collections/collection-status';
+import { priorityTone } from '@/components/collections/collection-status-tone';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { SelectionBar } from '@/components/collections/selection-bar';
@@ -229,197 +230,260 @@ export function CuratedBoardTable({
               <th className="px-3 py-2 font-normal">Next step</th>
             </tr>
           </thead>
-          <tbody>
-            {items.map((item) => {
-              const optimistic = isOptimisticItem(item);
-              const objectTitle = displayObjectTitle(item.object);
-              return (
-                <tr key={item.id} className="border-t border-border transition-colors hover:bg-bg">
-                  {onUpdateItem ? (
-                    <td className="px-3 py-2 align-top">
-                      <input
-                        type="checkbox"
-                        checked={visibleSelectedIds.has(item.id)}
-                        disabled={optimistic}
-                        onChange={(event) => {
-                          toggleOne(item.id, event.currentTarget.checked);
-                        }}
-                        aria-label={`Select ${displayText(objectTitle)}`}
-                        className="size-4 rounded-sm border-border disabled:opacity-50"
-                      />
-                    </td>
-                  ) : null}
-                  <td className="px-3 py-2">
-                    {optimistic ? (
-                      <span className="font-medium text-fg">{displayText(objectTitle)}</span>
-                    ) : (
-                      <Link
-                        href={boardViewHref(boardId, view, item.id, filterParams)}
-                        className="font-medium hover:underline"
-                      >
-                        {displayText(objectTitle)}
-                      </Link>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-xs text-fg-muted">
-                    <span className="flex flex-wrap items-center gap-1.5">
-                      {statusLabel(item.object.type)}
-                      {item.object.type === 'task' ? (
-                        <LiveTaskCategoryBadge
-                          taskId={item.object.id}
-                          category={item.object.taskCategory}
-                          status={item.object.taskCategoryStatus}
-                          updatedAt={item.object.taskCategoryUpdatedAt}
-                        />
-                      ) : null}
-                    </span>
-                  </td>
-                  <td className="min-w-40 px-3 py-2">
-                    <EditableMetadata
-                      label={`Responsible person for ${displayText(objectTitle)}`}
-                      value={
-                        members.find((member) => member.id === item.responsibleUserId)?.label ??
-                        'Unassigned'
-                      }
-                      pending={saving[item.id] === 'responsibleUserId'}
-                      disabled={optimistic || !onUpdateItem}
-                      editor={
-                        <select
-                          value={item.responsibleUserId ?? ''}
-                          disabled={optimistic || !onUpdateItem}
-                          onChange={(event) => {
-                            void updateItem(item.id, {
-                              responsibleUserId: event.target.value || null,
-                            });
-                          }}
-                          className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs disabled:opacity-60"
-                          aria-label="Responsible person"
-                        >
-                          <option value="">Unassigned</option>
-                          {members.map((member) => (
-                            <option key={member.id} value={member.id}>
-                              {member.label}
-                            </option>
-                          ))}
-                        </select>
-                      }
-                    />
-                  </td>
-                  <td className="min-w-36 px-3 py-2">
-                    <EditableMetadata
-                      label={`Due date for ${displayText(objectTitle)}`}
-                      value={<DueDateDisplay value={item.dueAt} variant="field-hint" />}
-                      pending={saving[item.id] === 'dueAt'}
-                      disabled={optimistic || !onUpdateItem}
-                      editor={
-                        <MetadataDateEditor
-                          defaultValue={
-                            item.dueAt
-                              ? (presentDueDate(item.dueAt, { timezone }).dateKey ?? '')
-                              : ''
-                          }
-                          disabled={optimistic || !onUpdateItem}
-                          onApply={(value) => {
-                            void updateItem(item.id, {
-                              dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
-                            });
-                          }}
-                        />
-                      }
-                    />
-                  </td>
-                  <td className="min-w-28 px-3 py-2">
-                    <EditableMetadata
-                      label={`Priority for ${displayText(objectTitle)}`}
-                      value={
-                        <CollectionStatus
-                          value={item.priority ? `p${item.priority}` : 'none'}
-                          tone={priorityTone(item.priority)}
-                          label={item.priority ? `P${item.priority}` : 'No priority'}
-                        />
-                      }
-                      pending={saving[item.id] === 'priority'}
-                      disabled={optimistic || !onUpdateItem}
-                      editor={
-                        <select
-                          value={item.priority ?? ''}
-                          disabled={optimistic || !onUpdateItem}
-                          onChange={(event) => {
-                            void updateItem(item.id, {
-                              priority: event.target.value ? Number(event.target.value) : null,
-                            });
-                          }}
-                          className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs disabled:opacity-60"
-                          aria-label="Priority"
-                        >
-                          <option value="">None</option>
-                          {[1, 2, 3, 4].map((priority) => (
-                            <option key={priority} value={priority}>
-                              P{priority}
-                            </option>
-                          ))}
-                        </select>
-                      }
-                    />
-                  </td>
-                  <td className="min-w-36 px-3 py-2">
-                    <EditableMetadata
-                      label={`Lane for ${displayText(objectTitle)}`}
-                      value={lanes.find((lane) => lane.id === item.laneId)?.name ?? 'Unset'}
-                      pending={saving[item.id] === 'laneId'}
-                      disabled={optimistic || !onUpdateItem}
-                      editor={
-                        <select
-                          value={item.laneId ?? ''}
-                          disabled={optimistic || !onUpdateItem}
-                          onChange={(event) => {
-                            void updateItem(item.id, { laneId: event.target.value || null });
-                          }}
-                          className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs disabled:opacity-60"
-                          aria-label="Lane"
-                        >
-                          <option value="">Unset</option>
-                          {lanes.map((lane) => (
-                            <option key={lane.id} value={lane.id}>
-                              {displayText(lane.name)}
-                            </option>
-                          ))}
-                        </select>
-                      }
-                    />
-                  </td>
-                  <td className="min-w-64 px-3 py-2">
-                    <EditableMetadata
-                      label={`Next step for ${displayText(objectTitle)}`}
-                      value={item.nextStep ?? 'No next step'}
-                      pending={saving[item.id] === 'nextStep'}
-                      disabled={optimistic || !onUpdateItem}
-                      editor={
-                        <BoardNextStepInput
-                          key={`${item.id}:${item.nextStep ?? ''}`}
-                          objectName={objectTitle}
-                          nextStep={item.nextStep}
-                          disabled={optimistic || !onUpdateItem}
-                          onSave={(nextStep) => {
-                            void updateItem(item.id, { nextStep });
-                          }}
-                        />
-                      }
-                    />
-                    <BoardItemSavingNotice field={saving[item.id]} />
-                    <BoardItemSaveError
-                      objectTitle={objectTitle}
-                      error={errors[item.id]}
-                      suppressAlert={bulkErrorIds.has(item.id)}
-                    />
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
+          <CuratedBoardTableBody
+            boardId={boardId}
+            view={view}
+            filterParams={filterParams}
+            items={items}
+            lanes={lanes}
+            members={members}
+            timezone={timezone}
+            canUpdate={Boolean(onUpdateItem)}
+            visibleSelectedIds={visibleSelectedIds}
+            saving={saving}
+            errors={errors}
+            bulkErrorIds={bulkErrorIds}
+            onToggle={toggleOne}
+            onUpdateItem={updateItem}
+          />
         </table>
       </div>
     </div>
+  );
+}
+
+function CuratedBoardTableBody({
+  boardId,
+  view,
+  filterParams,
+  items,
+  lanes,
+  members,
+  timezone,
+  canUpdate,
+  visibleSelectedIds,
+  saving,
+  errors,
+  bulkErrorIds,
+  onToggle,
+  onUpdateItem,
+}: {
+  boardId: string;
+  view: BoardLayout;
+  filterParams: Record<string, string>;
+  items: boards.BoardItemRow[];
+  lanes: boards.BoardLaneRow[];
+  members: BoardMemberOption[];
+  timezone: string;
+  canUpdate: boolean;
+  visibleSelectedIds: ReadonlySet<string>;
+  saving: Record<string, string>;
+  errors: Record<string, string>;
+  bulkErrorIds: ReadonlySet<string>;
+  onToggle: (id: string, checked: boolean) => void;
+  onUpdateItem: (
+    id: string,
+    patch: BoardItemOptimisticPatch,
+    suppressErrorAlert?: boolean,
+  ) => Promise<BoardItemUpdateResult>;
+}) {
+  return (
+    <tbody>
+      {items.map((item) => {
+        const optimistic = isOptimisticItem(item);
+        const objectTitle = displayObjectTitle(item.object);
+        const disabled = optimistic || !canUpdate;
+        return (
+          <tr key={item.id} className="border-t border-border transition-colors hover:bg-bg">
+            {canUpdate ? (
+              <td className="px-3 py-2 align-top">
+                <input
+                  type="checkbox"
+                  checked={visibleSelectedIds.has(item.id)}
+                  disabled={optimistic}
+                  onChange={(event) => {
+                    onToggle(item.id, event.currentTarget.checked);
+                  }}
+                  aria-label={`Select ${displayText(objectTitle)}`}
+                  className="size-4 rounded-sm border-border disabled:opacity-50"
+                />
+              </td>
+            ) : null}
+            <td className="px-3 py-2">
+              {optimistic ? (
+                <span className="font-medium text-fg">{displayText(objectTitle)}</span>
+              ) : (
+                <Link
+                  href={boardViewHref(boardId, view, item.id, filterParams)}
+                  className="font-medium hover:underline"
+                >
+                  {displayText(objectTitle)}
+                </Link>
+              )}
+            </td>
+            <td className="px-3 py-2 text-xs text-fg-muted">
+              <span className="flex flex-wrap items-center gap-1.5">
+                {statusLabel(item.object.type)}
+                {item.object.type === 'task' ? (
+                  <LiveTaskCategoryBadge
+                    taskId={item.object.id}
+                    category={item.object.taskCategory}
+                    status={item.object.taskCategoryStatus}
+                    updatedAt={item.object.taskCategoryUpdatedAt}
+                  />
+                ) : null}
+              </span>
+            </td>
+            <td className="min-w-40 px-3 py-2">
+              <EditableMetadata
+                label={`Responsible person for ${displayText(objectTitle)}`}
+                pending={saving[item.id] === 'responsibleUserId'}
+                disabled={disabled}
+              >
+                <EditableMetadata.Value>
+                  {members.find((member) => member.id === item.responsibleUserId)?.label ??
+                    'Unassigned'}
+                </EditableMetadata.Value>
+                <EditableMetadata.Editor>
+                  <select
+                    value={item.responsibleUserId ?? ''}
+                    disabled={disabled}
+                    onChange={(event) => {
+                      void onUpdateItem(item.id, {
+                        responsibleUserId: event.target.value || null,
+                      });
+                    }}
+                    className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs disabled:opacity-60"
+                    aria-label="Responsible person"
+                  >
+                    <option value="">Unassigned</option>
+                    {members.map((member) => (
+                      <option key={member.id} value={member.id}>
+                        {member.label}
+                      </option>
+                    ))}
+                  </select>
+                </EditableMetadata.Editor>
+              </EditableMetadata>
+            </td>
+            <td className="min-w-36 px-3 py-2">
+              <EditableMetadata
+                label={`Due date for ${displayText(objectTitle)}`}
+                pending={saving[item.id] === 'dueAt'}
+                disabled={disabled}
+              >
+                <EditableMetadata.Value>
+                  <DueDateDisplay value={item.dueAt} variant="field-hint" />
+                </EditableMetadata.Value>
+                <EditableMetadata.Editor>
+                  <MetadataDateEditor
+                    defaultValue={
+                      item.dueAt ? (presentDueDate(item.dueAt, { timezone }).dateKey ?? '') : ''
+                    }
+                    disabled={disabled}
+                    onApply={(value) => {
+                      void onUpdateItem(item.id, {
+                        dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
+                      });
+                    }}
+                  />
+                </EditableMetadata.Editor>
+              </EditableMetadata>
+            </td>
+            <td className="min-w-28 px-3 py-2">
+              <EditableMetadata
+                label={`Priority for ${displayText(objectTitle)}`}
+                pending={saving[item.id] === 'priority'}
+                disabled={disabled}
+              >
+                <EditableMetadata.Value>
+                  <CollectionStatus
+                    value={item.priority ? `p${item.priority}` : 'none'}
+                    tone={priorityTone(item.priority)}
+                    label={item.priority ? `P${item.priority}` : 'No priority'}
+                  />
+                </EditableMetadata.Value>
+                <EditableMetadata.Editor>
+                  <select
+                    value={item.priority ?? ''}
+                    disabled={disabled}
+                    onChange={(event) => {
+                      void onUpdateItem(item.id, {
+                        priority: event.target.value ? Number(event.target.value) : null,
+                      });
+                    }}
+                    className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs disabled:opacity-60"
+                    aria-label="Priority"
+                  >
+                    <option value="">None</option>
+                    {[1, 2, 3, 4].map((priority) => (
+                      <option key={priority} value={priority}>
+                        P{priority}
+                      </option>
+                    ))}
+                  </select>
+                </EditableMetadata.Editor>
+              </EditableMetadata>
+            </td>
+            <td className="min-w-36 px-3 py-2">
+              <EditableMetadata
+                label={`Lane for ${displayText(objectTitle)}`}
+                pending={saving[item.id] === 'laneId'}
+                disabled={disabled}
+              >
+                <EditableMetadata.Value>
+                  {lanes.find((lane) => lane.id === item.laneId)?.name ?? 'Unset'}
+                </EditableMetadata.Value>
+                <EditableMetadata.Editor>
+                  <select
+                    value={item.laneId ?? ''}
+                    disabled={disabled}
+                    onChange={(event) => {
+                      void onUpdateItem(item.id, { laneId: event.target.value || null });
+                    }}
+                    className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs disabled:opacity-60"
+                    aria-label="Lane"
+                  >
+                    <option value="">Unset</option>
+                    {lanes.map((lane) => (
+                      <option key={lane.id} value={lane.id}>
+                        {displayText(lane.name)}
+                      </option>
+                    ))}
+                  </select>
+                </EditableMetadata.Editor>
+              </EditableMetadata>
+            </td>
+            <td className="min-w-64 px-3 py-2">
+              <EditableMetadata
+                label={`Next step for ${displayText(objectTitle)}`}
+                pending={saving[item.id] === 'nextStep'}
+                disabled={disabled}
+              >
+                <EditableMetadata.Value>{item.nextStep ?? 'No next step'}</EditableMetadata.Value>
+                <EditableMetadata.Editor>
+                  <BoardNextStepInput
+                    key={`${item.id}:${item.nextStep ?? ''}`}
+                    objectName={objectTitle}
+                    nextStep={item.nextStep}
+                    disabled={disabled}
+                    onSave={(nextStep) => {
+                      void onUpdateItem(item.id, { nextStep });
+                    }}
+                  />
+                </EditableMetadata.Editor>
+              </EditableMetadata>
+              <BoardItemSavingNotice field={saving[item.id]} />
+              <BoardItemSaveError
+                objectTitle={objectTitle}
+                error={errors[item.id]}
+                suppressAlert={bulkErrorIds.has(item.id)}
+              />
+            </td>
+          </tr>
+        );
+      })}
+    </tbody>
   );
 }
 
@@ -738,10 +802,9 @@ export function CuratedBoardList({
                     key={item.id}
                     style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 44px' }}
                   >
-                    <CollectionRow
-                      selected={visibleSelectedIds.has(item.id)}
-                      leading={
-                        onUpdateItem ? (
+                    <CollectionRow selected={visibleSelectedIds.has(item.id)}>
+                      <CollectionRow.Leading>
+                        {onUpdateItem ? (
                           <input
                             type="checkbox"
                             checked={visibleSelectedIds.has(item.id)}
@@ -752,11 +815,11 @@ export function CuratedBoardList({
                             aria-label={`Select ${displayText(objectTitle)}`}
                             className="size-4 shrink-0 rounded-sm border-border disabled:opacity-50"
                           />
-                        ) : null
-                      }
-                      title={title}
-                      context={statusLabel(item.object.type)}
-                      metadata={
+                        ) : null}
+                      </CollectionRow.Leading>
+                      <CollectionRow.Title>{title}</CollectionRow.Title>
+                      <CollectionRow.Context>{statusLabel(item.object.type)}</CollectionRow.Context>
+                      <CollectionRow.Metadata>
                         <>
                           {item.object.type === 'task' ? (
                             <LiveTaskCategoryBadge
@@ -768,12 +831,13 @@ export function CuratedBoardList({
                           ) : null}
                           <EditableMetadata
                             label={`Responsible person for ${displayText(objectTitle)}`}
-                            value={
-                              members.find((member) => member.id === item.responsibleUserId)
-                                ?.label ?? 'Unassigned'
-                            }
                             disabled={optimistic || !onUpdateItem}
-                            editor={
+                          >
+                            <EditableMetadata.Value>
+                              {members.find((member) => member.id === item.responsibleUserId)
+                                ?.label ?? 'Unassigned'}
+                            </EditableMetadata.Value>
+                            <EditableMetadata.Editor>
                               <select
                                 value={item.responsibleUserId ?? ''}
                                 onChange={(event) =>
@@ -790,19 +854,20 @@ export function CuratedBoardList({
                                   </option>
                                 ))}
                               </select>
-                            }
-                          />
+                            </EditableMetadata.Editor>
+                          </EditableMetadata>
                           <EditableMetadata
                             label={`Due date for ${displayText(objectTitle)}`}
-                            value={
+                            disabled={optimistic || !onUpdateItem}
+                          >
+                            <EditableMetadata.Value>
                               <DueDateDisplay
                                 value={item.dueAt}
                                 timezone={timezone}
                                 variant="compact"
                               />
-                            }
-                            disabled={optimistic || !onUpdateItem}
-                            editor={
+                            </EditableMetadata.Value>
+                            <EditableMetadata.Editor>
                               <MetadataDateEditor
                                 defaultValue={
                                   item.dueAt
@@ -815,19 +880,20 @@ export function CuratedBoardList({
                                   })
                                 }
                               />
-                            }
-                          />
+                            </EditableMetadata.Editor>
+                          </EditableMetadata>
                           <EditableMetadata
                             label={`Priority for ${displayText(objectTitle)}`}
-                            value={
+                            disabled={optimistic || !onUpdateItem}
+                          >
+                            <EditableMetadata.Value>
                               <CollectionStatus
                                 value={item.priority ? `p${item.priority}` : 'none'}
                                 tone={priorityTone(item.priority)}
                                 label={item.priority ? `P${item.priority}` : 'No priority'}
                               />
-                            }
-                            disabled={optimistic || !onUpdateItem}
-                            editor={
+                            </EditableMetadata.Value>
+                            <EditableMetadata.Editor>
                               <select
                                 value={item.priority ?? ''}
                                 onChange={(event) =>
@@ -846,13 +912,14 @@ export function CuratedBoardList({
                                   </option>
                                 ))}
                               </select>
-                            }
-                          />
+                            </EditableMetadata.Editor>
+                          </EditableMetadata>
                           <EditableMetadata
                             label={`Lane for ${displayText(objectTitle)}`}
-                            value={group.name}
                             disabled={optimistic || !onUpdateItem}
-                            editor={
+                          >
+                            <EditableMetadata.Value>{group.name}</EditableMetadata.Value>
+                            <EditableMetadata.Editor>
                               <select
                                 value={item.laneId ?? ''}
                                 onChange={(event) =>
@@ -869,24 +936,27 @@ export function CuratedBoardList({
                                   </option>
                                 ))}
                               </select>
-                            }
-                          />
+                            </EditableMetadata.Editor>
+                          </EditableMetadata>
                           <EditableMetadata
                             label={`Next step for ${displayText(objectTitle)}`}
-                            value={item.nextStep ?? 'No next step'}
                             disabled={optimistic || !onUpdateItem}
-                            editor={
+                          >
+                            <EditableMetadata.Value>
+                              {item.nextStep ?? 'No next step'}
+                            </EditableMetadata.Value>
+                            <EditableMetadata.Editor>
                               <BoardNextStepInput
                                 objectName={objectTitle}
                                 nextStep={item.nextStep}
                                 disabled={optimistic || !onUpdateItem}
                                 onSave={(nextStep) => void onUpdateItem?.(item.id, { nextStep })}
                               />
-                            }
-                          />
+                            </EditableMetadata.Editor>
+                          </EditableMetadata>
                         </>
-                      }
-                    />
+                      </CollectionRow.Metadata>
+                    </CollectionRow>
                   </li>
                 );
               })}

@@ -88,9 +88,9 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
         ]}
       />
       <WorkSubnav current="/app/approvals" />
-      <CollectionToolbar
-        count={`${itemCount} proposals`}
-        viewControls={
+      <CollectionToolbar>
+        <CollectionToolbar.Count>{`${itemCount} proposals`}</CollectionToolbar.Count>
+        <CollectionToolbar.View>
           <nav className="flex flex-wrap gap-1" aria-label="Approval status filters">
             {STATUS_FILTERS.map((filter) => (
               <Link
@@ -108,8 +108,8 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
               </Link>
             ))}
           </nav>
-        }
-      />
+        </CollectionToolbar.View>
+      </CollectionToolbar>
       <ApprovalsClient
         suggestions={visibleSuggestions}
         timezone={calendarSettings.defaultTimezone}

@@ -330,11 +330,13 @@ function SourceRow({ source }: { source: SourceEntry }) {
         ? 'success'
         : 'neutral';
   return (
-    <CollectionRow
-      leading={<source.icon className="size-4 text-fg-dim" aria-hidden="true" />}
-      title={source.label}
-      context={source.description}
-      metadata={
+    <CollectionRow>
+      <CollectionRow.Leading>
+        <source.icon className="size-4 text-fg-dim" aria-hidden="true" />
+      </CollectionRow.Leading>
+      <CollectionRow.Title>{source.label}</CollectionRow.Title>
+      <CollectionRow.Context>{source.description}</CollectionRow.Context>
+      <CollectionRow.Metadata>
         <>
           <CollectionStatus value={source.status} label={source.statusLabel} tone={tone} />
           {source.copyValue ? (
@@ -349,8 +351,8 @@ function SourceRow({ source }: { source: SourceEntry }) {
           )}
           {source.note ? <span className="text-[11px] text-fg-dim">{source.note}</span> : null}
         </>
-      }
-      actions={
+      </CollectionRow.Metadata>
+      <CollectionRow.Actions>
         <ItemActionGroup label={`Actions for ${source.label}`}>
           {source.secondaryActionHref ? (
             <Link
@@ -369,7 +371,7 @@ function SourceRow({ source }: { source: SourceEntry }) {
             {source.actionLabel}
           </Link>
         </ItemActionGroup>
-      }
-    />
+      </CollectionRow.Actions>
+    </CollectionRow>
   );
 }

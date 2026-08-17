@@ -500,21 +500,21 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
             const mutation = keyMutations[k.id] ?? { busy: false, error: null };
             return (
               <li key={k.id}>
-                <CollectionRow
-                  title={k.name}
-                  context={`${k.prefix}… · created ${new Date(k.createdAt).toLocaleDateString()}${
+                <CollectionRow>
+                  <CollectionRow.Title>{k.name}</CollectionRow.Title>
+                  <CollectionRow.Context>{`${k.prefix}… · created ${new Date(k.createdAt).toLocaleDateString()}${
                     k.lastUsedAt
                       ? ` · last used ${new Date(k.lastUsedAt).toLocaleString()}`
                       : ' · never used'
-                  }`}
-                  metadata={
-                    mutation.error ? (
+                  }`}</CollectionRow.Context>
+                  <CollectionRow.Metadata>
+                    {mutation.error ? (
                       <p className="text-xs text-destructive" role="alert">
                         {mutation.error}
                       </p>
-                    ) : null
-                  }
-                  actions={
+                    ) : null}
+                  </CollectionRow.Metadata>
+                  <CollectionRow.Actions>
                     <ItemActionGroup label={`Actions for ${k.name}`}>
                       <Button
                         size="sm"
@@ -527,8 +527,8 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
                         {mutation.busy ? 'Revoking…' : 'Revoke'}
                       </Button>
                     </ItemActionGroup>
-                  }
-                />
+                  </CollectionRow.Actions>
+                </CollectionRow>
               </li>
             );
           })}

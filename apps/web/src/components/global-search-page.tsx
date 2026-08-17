@@ -244,6 +244,75 @@ function DateFilterInput({
   );
 }
 
+function GlobalSearchResults({
+  error,
+  hasSearchCriteria,
+  loading,
+  resultStatus,
+  results,
+  onRetry,
+}: {
+  error: string | null;
+  hasSearchCriteria: boolean;
+  loading: boolean;
+  resultStatus: string;
+  results: GlobalSearchResult[];
+  onRetry: () => void;
+}) {
+  return (
+    <section
+      aria-labelledby="search-results-heading"
+      className="overflow-hidden border-x border-border bg-bg"
+    >
+      <div className="flex items-center justify-between border-b border-border px-3 py-2">
+        <h2 id="search-results-heading" className="sr-only">
+          Search results
+        </h2>
+        <p aria-live="polite" className="text-xs text-fg-dim">
+          {resultStatus}
+        </p>
+        {loading ? (
+          <Loader2
+            aria-hidden="true"
+            className="size-4 animate-spin text-fg-dim motion-reduce:animate-none"
+          />
+        ) : null}
+      </div>
+      {error ? (
+        <div role="alert" className="space-y-3 px-3 py-8">
+          <p className="text-sm text-danger">Unable to search. {error}</p>
+          <button
+            type="button"
+            onClick={onRetry}
+            className="min-h-9 rounded-sm border border-border px-3 text-sm font-medium text-fg transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+          >
+            Try search again
+          </button>
+        </div>
+      ) : loading && results.length === 0 ? (
+        <SearchResultsLoading />
+      ) : results.length === 0 && !loading ? (
+        <div className="px-3 py-8">
+          <p className="text-sm font-medium text-fg">
+            {hasSearchCriteria ? 'No matches found' : 'Start with a search'}
+          </p>
+          <p className="mt-1 text-sm text-fg-muted">
+            {hasSearchCriteria
+              ? 'Try different words or adjust the filters.'
+              : 'Enter words, then narrow results by type, source, or date.'}
+          </p>
+        </div>
+      ) : (
+        <ul>
+          {results.map((result) => (
+            <SearchResultRow key={result.id} result={result} />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 function SearchResultRow({ result }: { result: GlobalSearchResult }) {
   const Icon = iconFor(result.kind);
   const date = resultDate(result);
@@ -265,12 +334,13 @@ function SearchResultRow({ result }: { result: GlobalSearchResult }) {
     </Link>
   );
   const row = (
-    <CollectionRow
-      className="min-h-13"
-      leading={<Icon aria-hidden="true" className="size-4 shrink-0 text-fg-muted" />}
-      title={title}
-      context={result.snippet}
-      metadata={
+    <CollectionRow className="min-h-13">
+      <CollectionRow.Leading>
+        <Icon aria-hidden="true" className="size-4 shrink-0 text-fg-muted" />
+      </CollectionRow.Leading>
+      <CollectionRow.Title>{title}</CollectionRow.Title>
+      <CollectionRow.Context>{result.snippet}</CollectionRow.Context>
+      <CollectionRow.Metadata>
         <>
           <span className="text-[11px] text-fg-dim">{kindLabel(result.kind)}</span>
           {date ? <span>{date}</span> : null}
@@ -283,9 +353,9 @@ function SearchResultRow({ result }: { result: GlobalSearchResult }) {
             <span className="truncate text-[11px] text-fg-dim">Evidence · {relatedEvidence}</span>
           ) : null}
         </>
-      }
-      actions={
-        result.externalHref ? (
+      </CollectionRow.Metadata>
+      <CollectionRow.Actions>
+        {result.externalHref ? (
           <ExternalLink aria-hidden="true" className="size-4 text-fg-dim" />
         ) : result.pinTarget ? (
           <ItemActionGroup label={`Actions for ${result.title}`}>
@@ -295,9 +365,9 @@ function SearchResultRow({ result }: { result: GlobalSearchResult }) {
               initialPinned={result.pinned ?? false}
             />
           </ItemActionGroup>
-        ) : null
-      }
-    />
+        ) : null}
+      </CollectionRow.Actions>
+    </CollectionRow>
   );
 
   return <li>{row}</li>;
@@ -445,74 +515,6 @@ export function GlobalSearchPage({
 
       <form onSubmit={submit}>
         <CollectionToolbar
-          count={resultStatus}
-          search={
-            <div className="relative">
-              <label htmlFor="global-search-query" className="sr-only">
-                Search everything
-              </label>
-              <Search
-                aria-hidden="true"
-                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-fg-dim"
-              />
-              <input
-                id="global-search-query"
-                type="search"
-                value={state.draft}
-                onChange={(event) => {
-                  dispatch({ type: 'draft', value: event.target.value });
-                }}
-                placeholder="Search everything"
-                className="h-9 w-full rounded-sm border-0 bg-transparent pl-10 pr-24 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 sm:text-sm"
-              />
-              <button
-                type="submit"
-                className="absolute right-2 top-1/2 h-8 -translate-y-1/2 rounded-sm px-3 text-xs text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
-              >
-                Search
-              </button>
-            </div>
-          }
-          filters={
-            <div className="flex min-w-0 flex-wrap items-end gap-2">
-              <FilterMultiSelect
-                label="Result types"
-                value={state.typeFilters}
-                onValueChange={(value) => {
-                  dispatch({ type: 'type_filters', value });
-                  replaceSearchUrl({ typeFilters: value });
-                }}
-                placeholder="All results"
-                options={RESULT_TYPE_OPTIONS}
-              />
-              <FilterMultiSelect
-                label="Source"
-                value={state.source}
-                onValueChange={(value) => {
-                  dispatch({ type: 'source', value });
-                  replaceSearchUrl({ source: value });
-                }}
-                placeholder="All sources"
-                options={SOURCE_OPTIONS}
-              />
-              <DateFilterInput
-                label="From"
-                value={state.from}
-                onChange={(value) => {
-                  dispatch({ type: 'from', value });
-                  replaceSearchUrl({ from: value });
-                }}
-              />
-              <DateFilterInput
-                label="To"
-                value={state.to}
-                onChange={(value) => {
-                  dispatch({ type: 'to', value });
-                  replaceSearchUrl({ to: value });
-                }}
-              />
-            </div>
-          }
           activeFilters={[
             ...(state.typeFilters
               ? [
@@ -567,8 +569,78 @@ export function GlobalSearchPage({
                 ]
               : []),
           ]}
-          actions={
-            filterCount > 0 ? (
+        >
+          <CollectionToolbar.Count>{resultStatus}</CollectionToolbar.Count>
+          <CollectionToolbar.Search>
+            <div className="relative">
+              <label htmlFor="global-search-query" className="sr-only">
+                Search everything
+              </label>
+              <Search
+                aria-hidden="true"
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-fg-dim"
+              />
+              <input
+                id="global-search-query"
+                type="search"
+                value={state.draft}
+                onChange={(event) => {
+                  dispatch({ type: 'draft', value: event.target.value });
+                }}
+                placeholder="Search everything"
+                aria-label="Search everything"
+                className="h-9 w-full rounded-sm border-0 bg-transparent pl-10 pr-24 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 sm:text-sm"
+              />
+              <button
+                type="submit"
+                className="absolute right-2 top-1/2 h-8 -translate-y-1/2 rounded-sm px-3 text-xs text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+              >
+                Search
+              </button>
+            </div>
+          </CollectionToolbar.Search>
+          <CollectionToolbar.Filters>
+            <div className="flex min-w-0 flex-wrap items-end gap-2">
+              <FilterMultiSelect
+                label="Result types"
+                value={state.typeFilters}
+                onValueChange={(value) => {
+                  dispatch({ type: 'type_filters', value });
+                  replaceSearchUrl({ typeFilters: value });
+                }}
+                placeholder="All results"
+                options={RESULT_TYPE_OPTIONS}
+              />
+              <FilterMultiSelect
+                label="Source"
+                value={state.source}
+                onValueChange={(value) => {
+                  dispatch({ type: 'source', value });
+                  replaceSearchUrl({ source: value });
+                }}
+                placeholder="All sources"
+                options={SOURCE_OPTIONS}
+              />
+              <DateFilterInput
+                label="From"
+                value={state.from}
+                onChange={(value) => {
+                  dispatch({ type: 'from', value });
+                  replaceSearchUrl({ from: value });
+                }}
+              />
+              <DateFilterInput
+                label="To"
+                value={state.to}
+                onChange={(value) => {
+                  dispatch({ type: 'to', value });
+                  replaceSearchUrl({ to: value });
+                }}
+              />
+            </div>
+          </CollectionToolbar.Filters>
+          <CollectionToolbar.Actions>
+            {filterCount > 0 ? (
               <button
                 type="button"
                 onClick={clearFilters}
@@ -576,9 +648,9 @@ export function GlobalSearchPage({
               >
                 Clear
               </button>
-            ) : null
-          }
-        />
+            ) : null}
+          </CollectionToolbar.Actions>
+        </CollectionToolbar>
       </form>
 
       {state.warnings.length > 0 ? (
@@ -587,58 +659,16 @@ export function GlobalSearchPage({
         </div>
       ) : null}
 
-      <section
-        aria-labelledby="search-results-heading"
-        className="overflow-hidden border-x border-border bg-bg"
-      >
-        <div className="flex items-center justify-between border-b border-border px-3 py-2">
-          <h2 id="search-results-heading" className="sr-only">
-            Search results
-          </h2>
-          <p aria-live="polite" className="text-xs text-fg-dim">
-            {resultStatus}
-          </p>
-          {state.loading ? (
-            <Loader2
-              aria-hidden="true"
-              className="size-4 animate-spin text-fg-dim motion-reduce:animate-none"
-            />
-          ) : null}
-        </div>
-        {state.error ? (
-          <div role="alert" className="space-y-3 px-3 py-8">
-            <p className="text-sm text-danger">Unable to search. {state.error}</p>
-            <button
-              type="button"
-              onClick={() => {
-                dispatch({ type: 'search_retry' });
-              }}
-              className="min-h-9 rounded-sm border border-border px-3 text-sm font-medium text-fg transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
-            >
-              Try search again
-            </button>
-          </div>
-        ) : state.loading && state.results.length === 0 ? (
-          <SearchResultsLoading />
-        ) : state.results.length === 0 && !state.loading ? (
-          <div className="px-3 py-8">
-            <p className="text-sm font-medium text-fg">
-              {hasSearchCriteria ? 'No matches found' : 'Start with a search'}
-            </p>
-            <p className="mt-1 text-sm text-fg-muted">
-              {hasSearchCriteria
-                ? 'Try different words or adjust the filters.'
-                : 'Enter words, then narrow results by type, source, or date.'}
-            </p>
-          </div>
-        ) : (
-          <ul>
-            {state.results.map((result) => (
-              <SearchResultRow key={result.id} result={result} />
-            ))}
-          </ul>
-        )}
-      </section>
+      <GlobalSearchResults
+        error={state.error}
+        hasSearchCriteria={hasSearchCriteria}
+        loading={state.loading}
+        resultStatus={resultStatus}
+        results={state.results}
+        onRetry={() => {
+          dispatch({ type: 'search_retry' });
+        }}
+      />
     </div>
   );
 }

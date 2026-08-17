@@ -257,8 +257,8 @@ function CatalogCard({
 
   return (
     <div>
-      <CollectionRow
-        leading={
+      <CollectionRow>
+        <CollectionRow.Leading>
           <Image
             src={entry.logo}
             alt=""
@@ -266,10 +266,10 @@ function CatalogCard({
             height={28}
             className="size-7 rounded-sm bg-surface-2 p-1"
           />
-        }
-        title={entry.label}
-        context={entry.description}
-        metadata={
+        </CollectionRow.Leading>
+        <CollectionRow.Title>{entry.label}</CollectionRow.Title>
+        <CollectionRow.Context>{entry.description}</CollectionRow.Context>
+        <CollectionRow.Metadata>
           <>
             <span className="text-[11px] text-fg-dim">{statusLabel}</span>
             <span className="text-[11px] text-fg-dim">{entry.category}</span>
@@ -277,9 +277,9 @@ function CatalogCard({
               <span className="text-[11px] text-fg-dim">Native ingest planned</span>
             ) : null}
           </>
-        }
-        actions={
-          open && (entry.authType === 'bearer' || entry.authType === 'header') ? (
+        </CollectionRow.Metadata>
+        <CollectionRow.Actions>
+          {open && (entry.authType === 'bearer' || entry.authType === 'header') ? (
             <div className="flex items-center gap-2">
               <Button
                 size="sm"
@@ -321,9 +321,9 @@ function CatalogCard({
                       ? 'Connect'
                       : 'Connect with token'}
             </Button>
-          )
-        }
-      />
+          )}
+        </CollectionRow.Actions>
+      </CollectionRow>
       {entry.authHint && isConnectable ? (
         <p className="px-3 pb-2 text-xs text-fg-dim">{entry.authHint}</p>
       ) : null}

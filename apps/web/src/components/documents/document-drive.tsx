@@ -207,6 +207,32 @@ function uploadPhaseLabel(upload: UploadState): string {
   return 'Finishing';
 }
 
+function driveUploadButtonLabel(activeUploads: UploadState[]): string {
+  const activeUpload = activeUploads[0];
+  if (activeUploads.length === 0) return 'Upload';
+  if (activeUploads.length === 1) {
+    return `${activeUpload ? uploadPhaseLabel(activeUpload) : 'Uploading'}...`;
+  }
+  return `Uploading ${String(activeUploads.length)} files...`;
+}
+
+function mergeVisibleFolders(
+  folders: readonly FolderItem[],
+  optimisticFolders: readonly FolderItem[],
+  deletedFolderIds: ReadonlySet<string>,
+): FolderItem[] {
+  const serverFolderIds = new Set(folders.map((folder) => folder.id));
+  const activeOptimisticFolders = optimisticFolders.filter(
+    (folder) => !serverFolderIds.has(folder.id),
+  );
+  const merged = [...activeOptimisticFolders, ...folders];
+  const byId = new Map<string, FolderItem>();
+  for (const folder of merged) {
+    if (!deletedFolderIds.has(folder.id) && !byId.has(folder.id)) byId.set(folder.id, folder);
+  }
+  return Array.from(byId.values());
+}
+
 export function DocumentDrive({
   currentFolderId,
   breadcrumbs,
@@ -238,26 +264,12 @@ export function DocumentDrive({
   );
   const documentQuery = useDocumentListQuery(currentFolderId, initialDocumentPage);
   const visibleDocuments: DocumentItem[] = documentQuery.data.pages.flatMap((page) => page.items);
-  const visibleFolders = useMemo(() => {
-    const serverFolderIds = new Set(folders.map((folder) => folder.id));
-    const activeOptimisticFolders = optimisticFolders.filter(
-      (folder) => !serverFolderIds.has(folder.id),
-    );
-    const merged = [...activeOptimisticFolders, ...folders];
-    const byId = new Map<string, FolderItem>();
-    for (const folder of merged) {
-      if (!deletedFolderIds.has(folder.id) && !byId.has(folder.id)) byId.set(folder.id, folder);
-    }
-    return Array.from(byId.values());
-  }, [deletedFolderIds, folders, optimisticFolders]);
+  const visibleFolders = useMemo(
+    () => mergeVisibleFolders(folders, optimisticFolders, deletedFolderIds),
+    [deletedFolderIds, folders, optimisticFolders],
+  );
   const activeUploads = uploads.filter((upload) => upload.phase !== 'failed');
-  const activeUpload = activeUploads[0];
-  const uploadButtonLabel =
-    activeUploads.length === 0
-      ? 'Upload'
-      : activeUploads.length === 1
-        ? `${activeUpload ? uploadPhaseLabel(activeUpload) : 'Uploading'}...`
-        : `Uploading ${String(activeUploads.length)} files...`;
+  const uploadButtonLabel = driveUploadButtonLabel(activeUploads);
 
   function updateUpload(id: string, patch: Partial<UploadState>): void {
     dispatchDriveUi({ type: 'update-upload', id, patch });
@@ -761,10 +773,12 @@ function FolderList({
       <ul className="border-x border-border">
         {folders.map((f) => (
           <li key={f.id}>
-            <CollectionRow
-              leading={<FolderIcon className="size-4 text-muted-foreground" aria-hidden />}
-              title={
-                f.optimistic ? (
+            <CollectionRow>
+              <CollectionRow.Leading>
+                <FolderIcon className="size-4 text-muted-foreground" aria-hidden />
+              </CollectionRow.Leading>
+              <CollectionRow.Title>
+                {f.optimistic ? (
                   <span className="opacity-70">{f.name}</span>
                 ) : (
                   <Link
@@ -773,11 +787,13 @@ function FolderList({
                   >
                     {f.name}
                   </Link>
-                )
-              }
-              context={f.visibility}
-              metadata={<time dateTime={f.updatedAt}>{formatDate(f.updatedAt)}</time>}
-              actions={
+                )}
+              </CollectionRow.Title>
+              <CollectionRow.Context>{f.visibility}</CollectionRow.Context>
+              <CollectionRow.Metadata>
+                <time dateTime={f.updatedAt}>{formatDate(f.updatedAt)}</time>
+              </CollectionRow.Metadata>
+              <CollectionRow.Actions>
                 <ItemActionGroup label={`Actions for ${f.name}`}>
                   <Button
                     type="button"
@@ -793,8 +809,8 @@ function FolderList({
                     Delete
                   </Button>
                 </ItemActionGroup>
-              }
-            />
+              </CollectionRow.Actions>
+            </CollectionRow>
           </li>
         ))}
       </ul>
@@ -867,9 +883,8 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
 
   return (
     <li style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 52px' }}>
-      <CollectionRow
-        className="min-h-13"
-        title={
+      <CollectionRow className="min-h-13">
+        <CollectionRow.Title>
           <DocumentTitleRow
             document={document}
             fileKind={fileKind}
@@ -877,17 +892,19 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
             storedName={usingFriendlyTitle ? truncateFilenameMiddle(document.name) : null}
             fullStoredName={usingFriendlyTitle ? document.name : null}
           />
-        }
-        context={summary ?? <DocumentMetaLine items={metaItems} />}
-        metadata={
+        </CollectionRow.Title>
+        <CollectionRow.Context>
+          {summary ?? <DocumentMetaLine items={metaItems} />}
+        </CollectionRow.Context>
+        <CollectionRow.Metadata>
           <>
             <SourceBadge source={source} />
             <ProcessingBadge status={status} optimistic={document.optimistic === true} />
             <VisibilityBadge visibility={document.visibility} />
             <span className="hidden text-xs text-fg-dim sm:inline">{updatedAt}</span>
           </>
-        }
-        actions={
+        </CollectionRow.Metadata>
+        <CollectionRow.Actions>
           <ItemActionGroup label={`Actions for ${title}`}>
             {sourceEventId ? (
               <EvidenceLink
@@ -909,8 +926,8 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
               />
             ) : null}
           </ItemActionGroup>
-        }
-      />
+        </CollectionRow.Actions>
+      </CollectionRow>
     </li>
   );
 }

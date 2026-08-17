@@ -882,30 +882,6 @@ function CalendarEventList({
         Calendar events
       </h2>
       <CollectionToolbar
-        count={eventCountLabel}
-        search={
-          <div className="flex w-full items-center gap-2 px-2">
-            <Search className="size-4 shrink-0 text-fg-dim" aria-hidden="true" />
-            <Label htmlFor="calendar-event-search" className="sr-only">
-              Search calendar events
-            </Label>
-            <Input
-              id="calendar-event-search"
-              ref={searchInputRef}
-              defaultValue={query}
-              onChange={(event) => {
-                const nextQuery = event.target.value;
-                if (searchTimer.current) clearTimeout(searchTimer.current);
-                searchTimer.current = setTimeout(() => {
-                  committedSearchRef.current = nextQuery.trim();
-                  onQueryChange(nextQuery);
-                }, 350);
-              }}
-              placeholder="Search events"
-              className="h-9 border-0 bg-transparent px-0"
-            />
-          </div>
-        }
         activeFilters={[
           ...(query
             ? [
@@ -932,7 +908,32 @@ function CalendarEventList({
               ]
             : []),
         ]}
-        viewControls={
+      >
+        <CollectionToolbar.Count>{eventCountLabel}</CollectionToolbar.Count>
+        <CollectionToolbar.Search>
+          <div className="flex w-full items-center gap-2 px-2">
+            <Search className="size-4 shrink-0 text-fg-dim" aria-hidden="true" />
+            <Label htmlFor="calendar-event-search" className="sr-only">
+              Search calendar events
+            </Label>
+            <Input
+              id="calendar-event-search"
+              ref={searchInputRef}
+              defaultValue={query}
+              onChange={(event) => {
+                const nextQuery = event.target.value;
+                if (searchTimer.current) clearTimeout(searchTimer.current);
+                searchTimer.current = setTimeout(() => {
+                  committedSearchRef.current = nextQuery.trim();
+                  onQueryChange(nextQuery);
+                }, 350);
+              }}
+              placeholder="Search events"
+              className="h-9 border-0 bg-transparent px-0"
+            />
+          </div>
+        </CollectionToolbar.Search>
+        <CollectionToolbar.View>
           <fieldset className="grid grid-cols-3 gap-1 border-0 p-0 sm:flex">
             <legend className="sr-only">Event range</legend>
             {(['future', 'past', 'all'] as const).map((nextScope) => (
@@ -950,16 +951,14 @@ function CalendarEventList({
               </Button>
             ))}
           </fieldset>
-        }
-      />
+        </CollectionToolbar.View>
+      </CollectionToolbar>
 
       <div className="border-x border-border bg-bg">
         {events.length > 0 ? (
           events.map((event) => (
-            <CollectionRow
-              key={event.id}
-              className="min-h-13"
-              title={
+            <CollectionRow key={event.id} className="min-h-13">
+              <CollectionRow.Title>
                 <button
                   type="button"
                   disabled={event.redacted}
@@ -970,20 +969,20 @@ function CalendarEventList({
                 >
                   {event.redacted ? 'Busy' : event.title}
                 </button>
-              }
-              context={
-                [event.location, event.description].filter(Boolean).join(' · ') ||
-                (event.allDay ? 'All day' : statusLabel(event.showAs))
-              }
-              metadata={
+              </CollectionRow.Title>
+              <CollectionRow.Context>
+                {[event.location, event.description].filter(Boolean).join(' · ') ||
+                  (event.allDay ? 'All day' : statusLabel(event.showAs))}
+              </CollectionRow.Context>
+              <CollectionRow.Metadata>
                 <>
                   <span className="text-xs text-fg-dim">{formatEventRange(event, timezone)}</span>
                   <CollectionStatus value={event.showAs} label={statusLabel(event.showAs)} />
                   <span className="text-xs text-fg-dim">{statusLabel(event.visibility)}</span>
                 </>
-              }
-              actions={
-                !event.redacted ? (
+              </CollectionRow.Metadata>
+              <CollectionRow.Actions>
+                {!event.redacted ? (
                   <ItemActionGroup label={`Actions for ${event.title}`}>
                     <PinOverflowMenu
                       target={{ kind: 'calendar_event', key: event.id }}
@@ -991,9 +990,9 @@ function CalendarEventList({
                       initialPinned={event.pinned}
                     />
                   </ItemActionGroup>
-                ) : null
-              }
-            />
+                ) : null}
+              </CollectionRow.Actions>
+            </CollectionRow>
           ))
         ) : (
           <div className="p-4">

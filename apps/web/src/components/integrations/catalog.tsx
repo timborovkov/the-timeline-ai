@@ -122,8 +122,8 @@ function ProviderRow({
 
   return (
     <div id={provider.id} className="scroll-mt-24">
-      <CollectionRow
-        leading={
+      <CollectionRow>
+        <CollectionRow.Leading>
           <Image
             src={provider.logo}
             alt=""
@@ -131,17 +131,17 @@ function ProviderRow({
             height={28}
             className="size-7 rounded-sm bg-surface-2 p-1"
           />
-        }
-        title={provider.label}
-        context={provider.description}
-        metadata={
-          !provider.available ? (
+        </CollectionRow.Leading>
+        <CollectionRow.Title>{provider.label}</CollectionRow.Title>
+        <CollectionRow.Context>{provider.description}</CollectionRow.Context>
+        <CollectionRow.Metadata>
+          {!provider.available ? (
             <span className="text-[11px] text-fg-dim">Setup required</span>
           ) : (
             <span className="text-[11px] text-fg-dim">Personal account first</span>
-          )
-        }
-        actions={
+          )}
+        </CollectionRow.Metadata>
+        <CollectionRow.Actions>
           <Button
             size="sm"
             variant={provider.available ? 'default' : 'outline'}
@@ -152,8 +152,8 @@ function ProviderRow({
           >
             {isPending ? 'Opening sign-in…' : 'Connect account'}
           </Button>
-        }
-      />
+        </CollectionRow.Actions>
+      </CollectionRow>
       {error?.id === provider.id ? (
         <div className="px-3 pb-3">
           <InlineError

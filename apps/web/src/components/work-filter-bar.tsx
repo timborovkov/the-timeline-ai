@@ -111,8 +111,16 @@ export function WorkFilterBar({
       className={className}
     >
       <CollectionToolbar
-        count={active ? `${resultCount} / ${totalCount}` : `${totalCount} visible`}
-        search={
+        activeFilters={activeFilterEntries.map(([key, label]) => ({
+          key,
+          label,
+          href: hrefWithParams(basePath, omitParam(currentParams, key)),
+        }))}
+      >
+        <CollectionToolbar.Count>
+          {active ? `${resultCount} / ${totalCount}` : `${totalCount} visible`}
+        </CollectionToolbar.Count>
+        <CollectionToolbar.Search>
           <label className="relative block min-w-0">
             <span className="sr-only">Search</span>
             <Search
@@ -134,8 +142,8 @@ export function WorkFilterBar({
               className="h-9 w-full rounded-sm border-0 bg-transparent py-1 pl-8 pr-2 text-sm text-fg outline-none transition-colors placeholder:text-fg-dim focus-visible:ring-2 focus-visible:ring-signal/40"
             />
           </label>
-        }
-        filters={
+        </CollectionToolbar.Search>
+        <CollectionToolbar.Filters>
           <div key={filterKey} className="flex min-w-0 flex-wrap items-end gap-2">
             {mode === 'board' ? (
               <FilterSelect name="lane" label="Lane" defaultValue={filters.lane} form={domFormId}>
@@ -270,96 +278,114 @@ export function WorkFilterBar({
               <option value="range">Date range</option>
             </FilterSelect>
 
-            <button
-              type="button"
-              aria-expanded={showDateRanges}
-              aria-controls={`${formId}-date-ranges`}
-              onClick={() => {
+            <WorkFilterDateRangeControls
+              formId={formId}
+              domFormId={domFormId}
+              filters={filters}
+              mode={mode}
+              showDateRanges={showDateRanges}
+              hasRangeFilters={hasRangeFilters}
+              onToggle={() => {
                 setDateRangeToggle(
                   showDateRanges ? { state: 'closed', filterKey } : { state: 'open' },
                 );
               }}
-              className={cn(
-                'inline-flex h-9 items-center gap-2 rounded-sm border border-border bg-surface px-3 text-xs text-fg-muted transition-colors hover:border-border-strong hover:text-fg focus-visible:border-signal/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
-                (showDateRanges || hasRangeFilters) && 'border-border-strong text-fg',
-              )}
-            >
-              Date ranges
-              <ChevronDown
-                className={cn(
-                  'size-3.5 text-fg-dim transition-transform',
-                  showDateRanges && 'rotate-180',
-                )}
-                aria-hidden
-              />
-            </button>
-
-            <div
-              id={`${formId}-date-ranges`}
-              hidden={!showDateRanges}
-              className="grid min-w-full gap-2 pt-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
-            >
-              <FilterInput
-                name="dueFrom"
-                label="Due from"
-                defaultValue={filters.dueFrom}
-                type="date"
-                form={domFormId}
-              />
-              <FilterInput
-                name="dueTo"
-                label="Due to"
-                defaultValue={filters.dueTo}
-                type="date"
-                form={domFormId}
-              />
-              <FilterInput
-                name="createdFrom"
-                label={mode === 'board' ? 'Item created from' : 'Created from'}
-                defaultValue={filters.createdFrom}
-                type="date"
-                form={domFormId}
-              />
-              <FilterInput
-                name="createdTo"
-                label={mode === 'board' ? 'Item created to' : 'Created to'}
-                defaultValue={filters.createdTo}
-                type="date"
-                form={domFormId}
-              />
-              <FilterInput
-                name="updatedFrom"
-                label={mode === 'board' ? 'Item updated from' : 'Updated from'}
-                defaultValue={filters.updatedFrom}
-                type="date"
-                form={domFormId}
-              />
-              <FilterInput
-                name="updatedTo"
-                label={mode === 'board' ? 'Item updated to' : 'Updated to'}
-                type="date"
-                defaultValue={filters.updatedTo}
-                form={domFormId}
-              />
-            </div>
+            />
           </div>
-        }
-        activeFilters={activeFilterEntries.map(([key, label]) => ({
-          key,
-          label,
-          clear: (
-            <a
-              href={hrefWithParams(basePath, omitParam(currentParams, key))}
-              aria-label={`Remove ${label} filter`}
-              className="inline-flex size-6 items-center justify-center rounded-sm hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
-            >
-              <X aria-hidden="true" className="size-3" />
-            </a>
-          ),
-        }))}
-        clearAll={clearControl}
-      />
+        </CollectionToolbar.Filters>
+        <CollectionToolbar.ClearAll>{clearControl}</CollectionToolbar.ClearAll>
+      </CollectionToolbar>
     </DebouncedFilterForm>
+  );
+}
+
+function WorkFilterDateRangeControls({
+  formId,
+  domFormId,
+  filters,
+  mode,
+  showDateRanges,
+  hasRangeFilters,
+  onToggle,
+}: {
+  formId: string;
+  domFormId: string;
+  filters: WorkFilterState;
+  mode: Props['mode'];
+  showDateRanges: boolean;
+  hasRangeFilters: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <>
+      <button
+        type="button"
+        aria-expanded={showDateRanges}
+        aria-controls={`${formId}-date-ranges`}
+        onClick={onToggle}
+        className={cn(
+          'inline-flex h-9 items-center gap-2 rounded-sm border border-border bg-surface px-3 text-xs text-fg-muted transition-colors hover:border-border-strong hover:text-fg focus-visible:border-signal/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
+          (showDateRanges || hasRangeFilters) && 'border-border-strong text-fg',
+        )}
+      >
+        Date ranges
+        <ChevronDown
+          className={cn(
+            'size-3.5 text-fg-dim transition-transform',
+            showDateRanges && 'rotate-180',
+          )}
+          aria-hidden
+        />
+      </button>
+      <div
+        id={`${formId}-date-ranges`}
+        hidden={!showDateRanges}
+        className="grid min-w-full gap-2 pt-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
+      >
+        <FilterInput
+          name="dueFrom"
+          label="Due from"
+          defaultValue={filters.dueFrom}
+          type="date"
+          form={domFormId}
+        />
+        <FilterInput
+          name="dueTo"
+          label="Due to"
+          defaultValue={filters.dueTo}
+          type="date"
+          form={domFormId}
+        />
+        <FilterInput
+          name="createdFrom"
+          label={mode === 'board' ? 'Item created from' : 'Created from'}
+          defaultValue={filters.createdFrom}
+          type="date"
+          form={domFormId}
+        />
+        <FilterInput
+          name="createdTo"
+          label={mode === 'board' ? 'Item created to' : 'Created to'}
+          defaultValue={filters.createdTo}
+          type="date"
+          form={domFormId}
+        />
+        <FilterInput
+          name="updatedFrom"
+          label={mode === 'board' ? 'Item updated from' : 'Updated from'}
+          defaultValue={filters.updatedFrom}
+          type="date"
+          form={domFormId}
+        />
+        <FilterInput
+          name="updatedTo"
+          label={mode === 'board' ? 'Item updated to' : 'Updated to'}
+          type="date"
+          defaultValue={filters.updatedTo}
+          form={domFormId}
+        />
+      </div>
+    </>
   );
 }
 

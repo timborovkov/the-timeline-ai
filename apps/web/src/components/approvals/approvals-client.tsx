@@ -5,7 +5,7 @@ import { presentDueDate } from '@timeline/shared/time';
 import { Check, ExternalLink, Eye, GitMerge, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useRef, useState, useTransition } from 'react';
+import { useMemo, useReducer, useRef, useTransition } from 'react';
 
 import {
   acceptSuggestionItemAction,
@@ -112,6 +112,99 @@ type ApprovalAction = (
   optimisticItemIds: string[],
   messages: { loading: string; success: string },
 ) => void;
+
+interface ApprovalsQueueState {
+  error: string | null;
+  selectedIds: Set<string>;
+  previewItem: { bundle: SuggestionBundle; item: SuggestionItem } | null;
+  resolvedItemSignatures: Map<string, string>;
+  busyItemIds: Set<string>;
+  actionFailedItemIds: Set<string>;
+}
+
+type ApprovalsQueueAction =
+  | { type: 'setError'; error: string | null }
+  | { type: 'selectChange'; itemId: string; checked: boolean }
+  | { type: 'clearSelection' }
+  | { type: 'openPreview'; bundle: SuggestionBundle; item: SuggestionItem }
+  | { type: 'closePreview' }
+  | { type: 'beginRun'; itemIds: string[]; signatures: Map<string, string> }
+  | { type: 'clearBusy'; itemIds: string[] }
+  | { type: 'restoreItems'; itemIds: string[] }
+  | { type: 'markFailures'; itemIds: string[] };
+
+function mutateSet(source: Set<string>, itemIds: string[], add: boolean): Set<string> {
+  const next = new Set(source);
+  for (const id of itemIds) {
+    if (add) next.add(id);
+    else next.delete(id);
+  }
+  return next;
+}
+
+function approvalsQueueReducer(
+  state: ApprovalsQueueState,
+  action: ApprovalsQueueAction,
+): ApprovalsQueueState {
+  switch (action.type) {
+    case 'setError':
+      return { ...state, error: action.error };
+    case 'selectChange': {
+      const selectedIds = new Set(state.selectedIds);
+      if (action.checked) selectedIds.add(action.itemId);
+      else selectedIds.delete(action.itemId);
+      return { ...state, selectedIds };
+    }
+    case 'clearSelection':
+      return { ...state, selectedIds: new Set() };
+    case 'openPreview':
+      return { ...state, previewItem: { bundle: action.bundle, item: action.item } };
+    case 'closePreview':
+      return { ...state, previewItem: null };
+    case 'beginRun': {
+      const resolvedItemSignatures = new Map(state.resolvedItemSignatures);
+      for (const id of action.itemIds) {
+        const signature = action.signatures.get(id);
+        if (signature) resolvedItemSignatures.set(id, signature);
+      }
+      const selectedIds = mutateSet(state.selectedIds, action.itemIds, false);
+      const previewItem =
+        state.previewItem && action.itemIds.includes(state.previewItem.item.id)
+          ? null
+          : state.previewItem;
+      return {
+        ...state,
+        error: null,
+        actionFailedItemIds: mutateSet(state.actionFailedItemIds, action.itemIds, false),
+        resolvedItemSignatures,
+        busyItemIds: mutateSet(state.busyItemIds, action.itemIds, true),
+        selectedIds,
+        previewItem,
+      };
+    }
+    case 'clearBusy':
+      return { ...state, busyItemIds: mutateSet(state.busyItemIds, action.itemIds, false) };
+    case 'restoreItems': {
+      const resolvedItemSignatures = new Map(state.resolvedItemSignatures);
+      for (const id of action.itemIds) resolvedItemSignatures.delete(id);
+      return { ...state, resolvedItemSignatures };
+    }
+    case 'markFailures':
+      return {
+        ...state,
+        actionFailedItemIds: mutateSet(state.actionFailedItemIds, action.itemIds, true),
+      };
+  }
+}
+
+const INITIAL_APPROVALS_QUEUE: ApprovalsQueueState = {
+  error: null,
+  selectedIds: new Set(),
+  previewItem: null,
+  resolvedItemSignatures: new Map(),
+  busyItemIds: new Set(),
+  actionFailedItemIds: new Set(),
+};
 
 interface Props {
   suggestions: SuggestionBundle[];
@@ -563,17 +656,10 @@ export function ApprovalsClient({
   const resolvedTimezone = timezone ?? workspaceTimezone;
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
-  const [previewItem, setPreviewItem] = useState<{
-    bundle: SuggestionBundle;
-    item: SuggestionItem;
-  } | null>(null);
-  const [resolvedItemSignatures, setResolvedItemSignatures] = useState<Map<string, string>>(
-    () => new Map(),
-  );
-  const [busyItemIds, setBusyItemIds] = useState<Set<string>>(() => new Set());
-  const [actionFailedItemIds, setActionFailedItemIds] = useState<Set<string>>(() => new Set());
+  const [
+    { error, selectedIds, previewItem, resolvedItemSignatures, busyItemIds, actionFailedItemIds },
+    dispatch,
+  ] = useReducer(approvalsQueueReducer, INITIAL_APPROVALS_QUEUE);
   const inFlightItemIdsRef = useRef<Set<string> | null>(null);
   inFlightItemIdsRef.current ??= new Set();
   const serverItemSignatures = useMemo(
@@ -606,53 +692,19 @@ export function ApprovalsClient({
     0,
   );
 
-  function markBusy(itemIds: string[]) {
-    if (itemIds.length === 0) return;
-    setBusyItemIds((previous) => new Set([...previous, ...itemIds]));
-  }
-
   function clearBusy(itemIds: string[]) {
     if (itemIds.length === 0) return;
-    setBusyItemIds((previous) => {
-      const next = new Set(previous);
-      for (const id of itemIds) next.delete(id);
-      return next;
-    });
-  }
-
-  function resolveItems(itemIds: string[]) {
-    if (itemIds.length === 0) return;
-    setResolvedItemSignatures((previous) => {
-      const next = new Map(previous);
-      for (const id of itemIds) {
-        const signature = serverItemSignatures.get(id);
-        if (signature) next.set(id, signature);
-      }
-      return next;
-    });
+    dispatch({ type: 'clearBusy', itemIds });
   }
 
   function restoreItems(itemIds: string[]) {
     if (itemIds.length === 0) return;
-    setResolvedItemSignatures((previous) => {
-      const next = new Map(previous);
-      for (const id of itemIds) next.delete(id);
-      return next;
-    });
-  }
-
-  function clearActionFailures(itemIds: string[]) {
-    if (itemIds.length === 0) return;
-    setActionFailedItemIds((previous) => {
-      const next = new Set(previous);
-      for (const id of itemIds) next.delete(id);
-      return next;
-    });
+    dispatch({ type: 'restoreItems', itemIds });
   }
 
   function markActionFailures(itemIds: string[]) {
     if (itemIds.length === 0) return;
-    setActionFailedItemIds((previous) => new Set([...previous, ...itemIds]));
+    dispatch({ type: 'markFailures', itemIds });
   }
 
   function run(
@@ -664,16 +716,11 @@ export function ApprovalsClient({
     if (!inFlightItemIds) return;
     if (optimisticItemIds.some((id) => inFlightItemIds.has(id))) return;
     for (const id of optimisticItemIds) inFlightItemIds.add(id);
-    setError(null);
-    clearActionFailures(optimisticItemIds);
-    resolveItems(optimisticItemIds);
-    markBusy(optimisticItemIds);
-    setSelectedIds((previous) => {
-      const next = new Set(previous);
-      for (const id of optimisticItemIds) next.delete(id);
-      return next;
+    dispatch({
+      type: 'beginRun',
+      itemIds: optimisticItemIds,
+      signatures: serverItemSignatures,
     });
-    if (previewItem && optimisticItemIds.includes(previewItem.item.id)) setPreviewItem(null);
     startTransition(async () => {
       try {
         const result = await toastMutation(action(), messages);
@@ -683,12 +730,15 @@ export function ApprovalsClient({
           const restoreItemIds = failedItemIds.length > 0 ? failedItemIds : optimisticItemIds;
           restoreItems(restoreItemIds);
           markActionFailures(restoreItemIds);
-          setError(result.error);
+          dispatch({ type: 'setError', error: result.error });
         }
       } catch (err) {
         restoreItems(optimisticItemIds);
         markActionFailures(optimisticItemIds);
-        setError(err instanceof Error ? err.message : 'Approval action failed');
+        dispatch({
+          type: 'setError',
+          error: err instanceof Error ? err.message : 'Approval action failed',
+        });
       } finally {
         for (const id of optimisticItemIds) inFlightItemIdsRef.current?.delete(id);
         clearBusy(optimisticItemIds);
@@ -726,25 +776,20 @@ export function ApprovalsClient({
         taskCategoriesEnabled={taskCategoriesEnabled}
         visibleSuggestions={visibleSuggestions}
         onPreview={(bundle, item) => {
-          setPreviewItem({ bundle, item });
+          dispatch({ type: 'openPreview', bundle, item });
         }}
         onSelectedChange={(itemId, checked) => {
-          setSelectedIds((previous) => {
-            const next = new Set(previous);
-            if (checked) next.add(itemId);
-            else next.delete(itemId);
-            return next;
-          });
+          dispatch({ type: 'selectChange', itemId, checked });
         }}
         onClearSelection={() => {
-          setSelectedIds(new Set());
+          dispatch({ type: 'clearSelection' });
         }}
       />
       {previewItem ? (
         <ApprovalPreviewDialog
           open
           onOpenChange={(open) => {
-            if (!open) setPreviewItem(null);
+            if (!open) dispatch({ type: 'closePreview' });
           }}
           item={previewItem.item}
           timezone={resolvedTimezone}
@@ -844,32 +889,29 @@ function ApprovalListBody({
   onClearSelection: () => void;
 }) {
   const selectable = allowBulkAccept || allowBulkReject;
-  const selectedItems = visibleSuggestions.flatMap((bundle) =>
-    bundle.items.filter(
-      (item) => selectedIds.has(item.id) && isActionableSuggestionStatus(item.status),
-    ),
-  );
-  const selectedAccept = selectedItems.filter(
-    (item) => item.targetKind !== 'object_merge' && item.evidenceStatus !== 'stale',
-  );
-  const selectedByBundle = visibleSuggestions.flatMap((bundle) => {
-    const itemIds = bundle.items
-      .filter((item) => selectedIds.has(item.id) && isActionableSuggestionStatus(item.status))
-      .map((item) => item.id);
-    return itemIds.length > 0 ? [{ suggestionId: bundle.id, itemIds }] : [];
-  });
-  const selectedAcceptByBundle = visibleSuggestions.flatMap((bundle) => {
-    const itemIds = bundle.items
-      .filter(
-        (item) =>
-          selectedIds.has(item.id) &&
-          isActionableSuggestionStatus(item.status) &&
-          item.targetKind !== 'object_merge' &&
-          item.evidenceStatus !== 'stale',
-      )
-      .map((item) => item.id);
-    return itemIds.length > 0 ? [{ suggestionId: bundle.id, itemIds }] : [];
-  });
+  const selectedItems: SuggestionItem[] = [];
+  const selectedAccept: SuggestionItem[] = [];
+  const selectedByBundle: { suggestionId: string; itemIds: string[] }[] = [];
+  const selectedAcceptByBundle: { suggestionId: string; itemIds: string[] }[] = [];
+  for (const bundle of visibleSuggestions) {
+    const bundleItemIds: string[] = [];
+    const acceptItemIds: string[] = [];
+    for (const item of bundle.items) {
+      if (!selectedIds.has(item.id) || !isActionableSuggestionStatus(item.status)) continue;
+      selectedItems.push(item);
+      bundleItemIds.push(item.id);
+      if (item.targetKind !== 'object_merge' && item.evidenceStatus !== 'stale') {
+        selectedAccept.push(item);
+        acceptItemIds.push(item.id);
+      }
+    }
+    if (bundleItemIds.length > 0) {
+      selectedByBundle.push({ suggestionId: bundle.id, itemIds: bundleItemIds });
+    }
+    if (acceptItemIds.length > 0) {
+      selectedAcceptByBundle.push({ suggestionId: bundle.id, itemIds: acceptItemIds });
+    }
+  }
 
   return (
     <div className="space-y-0">
@@ -1056,11 +1098,9 @@ function ApprovalItemRow({
   const actionFailureReason = actionFailed ? localActionFailureReason(item) : null;
   return (
     <div>
-      <CollectionRow
-        selected={selected}
-        onActivate={onPreview}
-        leading={
-          selectable && isActionableSuggestionStatus(item.status) ? (
+      <CollectionRow selected={selected} onActivate={onPreview} activateLabel={`Open ${title}`}>
+        <CollectionRow.Leading>
+          {selectable && isActionableSuggestionStatus(item.status) ? (
             <input
               type="checkbox"
               checked={selected}
@@ -1077,20 +1117,20 @@ function ApprovalItemRow({
             />
           ) : (
             <span className="size-4" aria-hidden="true" />
-          )
-        }
-        title={title}
-        context={context}
-        metadata={
+          )}
+        </CollectionRow.Leading>
+        <CollectionRow.Title>{title}</CollectionRow.Title>
+        <CollectionRow.Context>{context}</CollectionRow.Context>
+        <CollectionRow.Metadata>
           <ApprovalRowMetadata
             bundle={bundle}
             item={item}
             timezone={timezone}
             taskCategoriesEnabled={taskCategoriesEnabled}
           />
-        }
-        actions={
-          isActionableSuggestionStatus(item.status) ? (
+        </CollectionRow.Metadata>
+        <CollectionRow.Actions>
+          {isActionableSuggestionStatus(item.status) ? (
             <ApprovalItemActions
               acceptDisabled={item.evidenceStatus === 'stale'}
               busy={busy}
@@ -1101,9 +1141,9 @@ function ApprovalItemRow({
             />
           ) : (
             <span className="text-[11px] text-fg-dim">{itemStatusLabel(item.status)}</span>
-          )
-        }
-      />
+          )}
+        </CollectionRow.Actions>
+      </CollectionRow>
       {actionFailureReason ? (
         <p className="px-3 pb-2 text-xs text-danger">{actionFailureReason}</p>
       ) : actionFailed ? (

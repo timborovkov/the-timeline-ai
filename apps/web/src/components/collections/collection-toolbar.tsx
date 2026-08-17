@@ -5,6 +5,10 @@ import { SlidersHorizontal, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import {
+  createCollectionSlot,
+  readCollectionSlots,
+} from '@/components/collections/collection-slot';
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -19,40 +23,51 @@ interface ActiveFilter {
   key: string;
   label: ReactNode;
   value?: ReactNode;
-  clear?: ReactNode;
   href?: string;
   onRemove?: () => void;
 }
+
+const EMPTY_FILTERS: ActiveFilter[] = [];
+
+const CollectionToolbarSearch = createCollectionSlot('search');
+const CollectionToolbarCount = createCollectionSlot('count');
+const CollectionToolbarFilters = createCollectionSlot('filters');
+const CollectionToolbarClearAll = createCollectionSlot('clearAll');
+const CollectionToolbarView = createCollectionSlot('view');
+const CollectionToolbarActions = createCollectionSlot('actions');
+
+const TOOLBAR_SLOTS = {
+  search: CollectionToolbarSearch,
+  count: CollectionToolbarCount,
+  filters: CollectionToolbarFilters,
+  clearAll: CollectionToolbarClearAll,
+  view: CollectionToolbarView,
+  actions: CollectionToolbarActions,
+};
 
 function filterLabelText(label: ReactNode, fallback: string): string {
   return typeof label === 'string' || typeof label === 'number' ? String(label) : fallback;
 }
 
 export function CollectionToolbar({
-  search,
-  count,
-  filters,
-  activeFilters = [],
-  clearAll,
-  view,
-  viewControls,
-  actions,
+  children,
+  activeFilters = EMPTY_FILTERS,
   filterTitle = 'Filters',
   className,
 }: {
-  search?: ReactNode;
-  count?: ReactNode;
-  filters?: ReactNode;
+  children?: ReactNode;
   activeFilters?: ActiveFilter[];
-  clearAll?: ReactNode;
-  view?: ReactNode;
-  viewControls?: ReactNode;
-  actions?: ReactNode;
   filterTitle?: string;
   className?: string;
 }) {
+  const slots = readCollectionSlots(children, TOOLBAR_SLOTS);
+  const search = slots.search;
+  const resolvedCount = slots.count;
+  const filters = slots.filters;
+  const clearAll = slots.clearAll;
+  const resolvedView = slots.view;
+  const actions = slots.actions;
   const filterCount = activeFilters.length;
-  const resolvedView = viewControls ?? view;
   const filterTrigger = (
     <button
       type="button"
@@ -73,8 +88,8 @@ export function CollectionToolbar({
     <div className={cn('border-b border-border bg-bg', className)}>
       <div className="flex min-h-11 min-w-0 flex-wrap items-center gap-1.5 px-2 sm:px-3">
         {search ? <div className="min-w-48 flex-1 sm:max-w-sm">{search}</div> : null}
-        {count ? (
-          <output className="px-1.5 text-xs tabular-nums text-fg-dim">{count}</output>
+        {resolvedCount ? (
+          <output className="px-1.5 text-xs tabular-nums text-fg-dim">{resolvedCount}</output>
         ) : null}
         {filters ? (
           <>
@@ -123,27 +138,26 @@ export function CollectionToolbar({
             >
               <span>{filter.label}</span>
               {filter.value ? <span className="text-fg">{filter.value}</span> : null}
-              {filter.clear ??
-                (filter.href ? (
-                  <a
-                    href={filter.href}
-                    aria-label={`Remove ${filterLabelText(filter.label, filter.key)} filter`}
-                    className="inline-flex size-6 items-center justify-center rounded-sm hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
-                  >
-                    <X aria-hidden="true" className="size-3" />
-                  </a>
-                ) : filter.onRemove ? (
-                  <button
-                    type="button"
-                    onClick={filter.onRemove}
-                    aria-label={`Remove ${filterLabelText(filter.label, filter.key)} filter`}
-                    className="inline-flex size-6 items-center justify-center rounded-sm hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
-                  >
-                    <X aria-hidden="true" className="size-3" />
-                  </button>
-                ) : (
+              {filter.href ? (
+                <a
+                  href={filter.href}
+                  aria-label={`Remove ${filterLabelText(filter.label, filter.key)} filter`}
+                  className="inline-flex size-6 items-center justify-center rounded-sm hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
+                >
                   <X aria-hidden="true" className="size-3" />
-                ))}
+                </a>
+              ) : filter.onRemove ? (
+                <button
+                  type="button"
+                  onClick={filter.onRemove}
+                  aria-label={`Remove ${filterLabelText(filter.label, filter.key)} filter`}
+                  className="inline-flex size-6 items-center justify-center rounded-sm hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
+                >
+                  <X aria-hidden="true" className="size-3" />
+                </button>
+              ) : (
+                <X aria-hidden="true" className="size-3" />
+              )}
             </span>
           ))}
           {clearAll ? <span className="ml-1 shrink-0">{clearAll}</span> : null}
@@ -152,3 +166,10 @@ export function CollectionToolbar({
     </div>
   );
 }
+
+CollectionToolbar.Search = CollectionToolbarSearch;
+CollectionToolbar.Count = CollectionToolbarCount;
+CollectionToolbar.Filters = CollectionToolbarFilters;
+CollectionToolbar.ClearAll = CollectionToolbarClearAll;
+CollectionToolbar.View = CollectionToolbarView;
+CollectionToolbar.Actions = CollectionToolbarActions;

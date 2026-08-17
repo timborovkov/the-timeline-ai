@@ -164,20 +164,24 @@ table.
 - `CollectionToolbar` is one 44px control row for search, result count, a
   Filters trigger, view controls, and primary actions. Filters open in a
   popover on desktop and a bottom dialog on mobile. Active filters appear in a
-  removable chip row only while active.
+  removable chip row only while active. Pass chrome through named children
+  (`CollectionToolbar.Search`, `.Count`, `.Filters`, `.View`, `.Actions`,
+  `.ClearAll`) rather than JSX props.
 - `CollectionGroup` uses a 40px header with glyph, readable status label,
   count, and optional action. Groups start open; collapse state lasts only for
   the mounted session and is never saved as a preference.
 - `CollectionRow` is at least 44px on desktop. It favors one line: selection or
   type cue, human title, compact context, metadata, and overflow. Mobile uses
-  two lines: title plus context, then wrapping metadata. Non-board collections
-  must never force horizontal viewport scrolling. Row actions use the shared
-  `ItemActionGroup`, `ItemIconButton`, and `ItemOverflowMenu` primitives so
-  item-owned controls stay labeled, wrap without scrolling, and remain visible
-  without hover. Hover background is the row affordance. When a row opens a
-  preview or detail, clicking the row (except interactive children) does that;
-  a quiet icon button may repeat the same action. Do not add a large text
-  “Preview” button.
+  two lines: title plus context, then wrapping metadata. Domain content uses
+  named children (`CollectionRow.Leading`, `.Title`, `.Context`, `.Metadata`,
+  `.Actions`) rather than JSX props. Non-board collections must never force
+  horizontal viewport scrolling. Row actions use the shared `ItemActionGroup`,
+  `ItemIconButton`, and `ItemOverflowMenu` primitives so item-owned controls
+  stay labeled, wrap without scrolling, and remain visible without hover.
+  Hover background is the row affordance. When a row opens a preview or detail,
+  clicking the row (except interactive children) does that; keyboard users get
+  the same action from the row, and a quiet icon button may repeat it. Do not
+  add a large text “Preview” button.
 - Row decision and utility actions are ghost icon buttons (32px), with an
   accessible name and `title`. They are not filled or outline buttons. Accept,
   Change, and Reject stay inline as one coordinated set. Destructive hover may
@@ -186,10 +190,11 @@ table.
   filled Accept-all / Reject-all bar. Checkboxes may fade in on desktop hover
   or focus and stay visible while selection is active.
 - `EditableMetadata` is a quiet, borderless trigger with a minimum 40px hit
-  target. Select-like changes save immediately and optimistically. Text and
-  date changes commit with Apply or Enter and cancel with Escape. Failed saves
-  roll back, return focus, show an inline row error, and keep the existing
-  toast feedback.
+  target. Pass the displayed value and editor through `EditableMetadata.Value`
+  and `EditableMetadata.Editor` children. Select-like changes save immediately
+  and optimistically. Text and date changes commit with Apply or Enter and
+  cancel with Escape. Failed saves roll back, return focus, show an inline row
+  error, and keep the existing toast feedback.
 - `SelectionBar` appears only after selection. Desktop checkboxes may fade in
   on row hover or focus and remain visible while selection is active. Touch
   layouts expose selection explicitly and keep its checkboxes visible.

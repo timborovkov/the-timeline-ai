@@ -37,7 +37,8 @@ import {
   curatedKanbanSaveState,
   type CuratedKanbanSaveState,
 } from '@/components/boards/curated-kanban-state';
-import { CollectionStatus, priorityTone } from '@/components/collections/collection-status';
+import { CollectionStatus } from '@/components/collections/collection-status';
+import { priorityTone } from '@/components/collections/collection-status-tone';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { DueDateDisplay } from '@/components/due-date-display';
@@ -504,10 +505,13 @@ function KanbanCard({
       <div className="mt-1 flex flex-wrap items-center gap-0.5">
         <EditableMetadata
           label={`Responsible person for ${displayText(title)}`}
-          value={ownerLabel(item.responsibleUserId, members)}
           pending={saving}
           disabled={optimistic}
-          editor={
+        >
+          <EditableMetadata.Value>
+            {ownerLabel(item.responsibleUserId, members)}
+          </EditableMetadata.Value>
+          <EditableMetadata.Editor>
             <select
               value={item.responsibleUserId ?? ''}
               onChange={(event) => {
@@ -523,14 +527,17 @@ function KanbanCard({
                 </option>
               ))}
             </select>
-          }
-        />
+          </EditableMetadata.Editor>
+        </EditableMetadata>
         <EditableMetadata
           label={`Due date for ${displayText(title)}`}
-          value={<DueDateDisplay value={item.dueAt} variant="compact" />}
           pending={saving}
           disabled={optimistic}
-          editor={
+        >
+          <EditableMetadata.Value>
+            <DueDateDisplay value={item.dueAt} variant="compact" />
+          </EditableMetadata.Value>
+          <EditableMetadata.Editor>
             <MetadataDateEditor
               defaultValue={item.dueAt ? item.dueAt.toISOString().slice(0, 10) : ''}
               onApply={(value) => {
@@ -539,20 +546,21 @@ function KanbanCard({
                 });
               }}
             />
-          }
-        />
+          </EditableMetadata.Editor>
+        </EditableMetadata>
         <EditableMetadata
           label={`Priority for ${displayText(title)}`}
-          value={
+          pending={saving}
+          disabled={optimistic}
+        >
+          <EditableMetadata.Value>
             <CollectionStatus
               value={item.priority ? `p${item.priority}` : 'none'}
               tone={priorityTone(item.priority)}
               label={item.priority ? `P${item.priority}` : 'No priority'}
             />
-          }
-          pending={saving}
-          disabled={optimistic}
-          editor={
+          </EditableMetadata.Value>
+          <EditableMetadata.Editor>
             <select
               value={item.priority ?? ''}
               onChange={(event) => {
@@ -570,44 +578,27 @@ function KanbanCard({
                 </option>
               ))}
             </select>
-          }
-        />
+          </EditableMetadata.Editor>
+        </EditableMetadata>
         <EditableMetadata
           label={`Next step for ${displayText(title)}`}
-          value={item.nextStep ?? 'No next step'}
           pending={saving}
           disabled={optimistic}
-          editor={
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                const data = new FormData(event.currentTarget);
-                const rawNextStep = data.get('nextStep');
-                const nextStep = (typeof rawNextStep === 'string' ? rawNextStep : '').trim();
-                onUpdateItem(item.id, { nextStep: nextStep || null });
+        >
+          <EditableMetadata.Value>{item.nextStep ?? 'No next step'}</EditableMetadata.Value>
+          <EditableMetadata.Editor>
+            <KanbanNextStepEditor
+              nextStep={item.nextStep}
+              onSave={(nextStep) => {
+                onUpdateItem(item.id, { nextStep });
               }}
-              className="flex items-center gap-2"
-            >
-              <input
-                name="nextStep"
-                defaultValue={item.nextStep ?? ''}
-                className="h-10 min-w-56 rounded-sm border border-border bg-bg px-2 text-xs"
-                aria-label="Next step"
-              />
-              <button
-                type="submit"
-                className="min-h-10 rounded-sm bg-signal px-3 text-xs font-medium text-signal-fg"
-              >
-                Apply
-              </button>
-            </form>
-          }
-        />
+            />
+          </EditableMetadata.Editor>
+        </EditableMetadata>
       </div>
       {!optimistic ? (
         <EditableMetadata
           label={`Lane for ${displayText(title)}`}
-          value={lane.name}
           pending={saving}
           error={
             error
@@ -616,7 +607,9 @@ function KanbanCard({
           }
           className="mt-1"
           triggerRef={registerMoveControl}
-          editor={
+        >
+          <EditableMetadata.Value>{lane.name}</EditableMetadata.Value>
+          <EditableMetadata.Editor>
             <select
               id={moveControlId}
               value={lane.id}
@@ -640,8 +633,8 @@ function KanbanCard({
                 </option>
               ))}
             </select>
-          }
-        />
+          </EditableMetadata.Editor>
+        </EditableMetadata>
       ) : null}
     </li>
   );
@@ -650,4 +643,39 @@ function KanbanCard({
 function ownerLabel(userId: string | null, members: BoardMemberOption[]): string {
   if (!userId) return 'Unassigned';
   return members.find((member) => member.id === userId)?.label ?? 'Assigned';
+}
+
+function KanbanNextStepEditor({
+  nextStep,
+  onSave,
+}: {
+  nextStep: string | null;
+  onSave: (nextStep: string | null) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        name="nextStep"
+        defaultValue={nextStep ?? ''}
+        className="h-10 min-w-56 rounded-sm border border-border bg-bg px-2 text-xs"
+        aria-label="Next step"
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter') return;
+          const trimmed = event.currentTarget.value.trim();
+          onSave(trimmed || null);
+        }}
+      />
+      <button
+        type="button"
+        onClick={(event) => {
+          const input = event.currentTarget.parentElement?.querySelector('input');
+          const trimmed = (input instanceof HTMLInputElement ? input.value : '').trim();
+          onSave(trimmed || null);
+        }}
+        className="min-h-10 rounded-sm bg-signal px-3 text-xs font-medium text-signal-fg"
+      >
+        Apply
+      </button>
+    </div>
+  );
 }

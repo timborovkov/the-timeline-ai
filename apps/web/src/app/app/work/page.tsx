@@ -7,7 +7,8 @@ import type { Metadata } from 'next';
 
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
-import { CollectionStatus, priorityTone } from '@/components/collections/collection-status';
+import { CollectionStatus } from '@/components/collections/collection-status';
+import { priorityTone } from '@/components/collections/collection-status-tone';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { EmptyAction } from '@/components/empty-action';
 import { PageHeader } from '@/components/page-header';
@@ -171,18 +172,17 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
           ) : (
             <div className="border-x border-border">
               {boardModules.map((board) => (
-                <CollectionRow
-                  key={board.id}
-                  title={
+                <CollectionRow key={board.id}>
+                  <CollectionRow.Title>
                     <Link
                       href={`/app/boards/${board.id}`}
                       className="block truncate hover:underline"
                     >
                       {board.name}
                     </Link>
-                  }
-                  context={`Updated ${dateLabel(board.updatedAt, timezone)}`}
-                  metadata={
+                  </CollectionRow.Title>
+                  <CollectionRow.Context>{`Updated ${dateLabel(board.updatedAt, timezone)}`}</CollectionRow.Context>
+                  <CollectionRow.Metadata>
                     <>
                       <span className="px-2 text-xs tabular-nums text-fg-dim">
                         {board.itemCount} items
@@ -191,8 +191,8 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
                         <span className="px-2 text-xs font-medium text-signal">Pinned</span>
                       ) : null}
                     </>
-                  }
-                />
+                  </CollectionRow.Metadata>
+                </CollectionRow>
               ))}
             </div>
           )}
@@ -207,14 +207,14 @@ function WorkQueueRow({ item, timezone }: { item: WorkQueueItem; timezone: strin
     (reason) => reason !== 'overdue' && reason !== 'due_soon',
   );
   return (
-    <CollectionRow
-      title={
+    <CollectionRow>
+      <CollectionRow.Title>
         <Link href={item.href} className="block truncate hover:underline">
           {displayText(item.title)}
         </Link>
-      }
-      context={displayText(item.subtitle)}
-      metadata={
+      </CollectionRow.Title>
+      <CollectionRow.Context>{displayText(item.subtitle)}</CollectionRow.Context>
+      <CollectionRow.Metadata>
         <>
           <span className="px-2 text-xs text-fg-dim">{item.sourceLabel}</span>
           {contextReasons.map((reason) => (
@@ -242,8 +242,8 @@ function WorkQueueRow({ item, timezone }: { item: WorkQueueItem; timezone: strin
             />
           ) : null}
         </>
-      }
-    />
+      </CollectionRow.Metadata>
+    </CollectionRow>
   );
 }
 

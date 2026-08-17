@@ -280,53 +280,6 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
   return (
     <section aria-label="Captured files" className="space-y-4">
       <CollectionToolbar
-        count={
-          activeFilterCount > 0
-            ? `Showing ${capturedFileCountLabel(visibleFiles.length)} of ${String(loadedFiles.length)}`
-            : `Showing ${capturedFileCountLabel(loadedFiles.length)}`
-        }
-        filters={
-          <div className="flex min-w-0 flex-wrap items-end gap-2">
-            <FilterMultiSelect
-              label="Source"
-              value={uiState.sourceFilter}
-              onValueChange={(value) => {
-                dispatchUi({ type: 'source', value });
-              }}
-              placeholder="All sources"
-              options={sourceOptions}
-            />
-            <FilterMultiSelect
-              label="Type"
-              value={uiState.typeFilter}
-              onValueChange={(value) => {
-                dispatchUi({ type: 'fileType', value });
-              }}
-              placeholder="All types"
-              options={typeOptions}
-            />
-            <FilterMultiSelect
-              label="Status"
-              value={uiState.statusFilter}
-              onValueChange={(value) => {
-                dispatchUi({ type: 'status', value });
-              }}
-              placeholder="All statuses"
-              options={statusOptions}
-            />
-            <FilterSelect
-              label="Date"
-              value={uiState.dateFilter}
-              onChange={(value) => {
-                dispatchUi({ type: 'date', value });
-              }}
-            >
-              <option value={ALL}>Any time</option>
-              <option value="7d">Last 7 days</option>
-              <option value="30d">Last 30 days</option>
-            </FilterSelect>
-          </div>
-        }
         activeFilters={[
           ...(uiState.sourceFilter
             ? [
@@ -377,8 +330,56 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
               ]
             : []),
         ]}
-        actions={
-          activeFilterCount > 0 ? (
+      >
+        <CollectionToolbar.Count>
+          {activeFilterCount > 0
+            ? `Showing ${capturedFileCountLabel(visibleFiles.length)} of ${String(loadedFiles.length)}`
+            : `Showing ${capturedFileCountLabel(loadedFiles.length)}`}
+        </CollectionToolbar.Count>
+        <CollectionToolbar.Filters>
+          <div className="flex min-w-0 flex-wrap items-end gap-2">
+            <FilterMultiSelect
+              label="Source"
+              value={uiState.sourceFilter}
+              onValueChange={(value) => {
+                dispatchUi({ type: 'source', value });
+              }}
+              placeholder="All sources"
+              options={sourceOptions}
+            />
+            <FilterMultiSelect
+              label="Type"
+              value={uiState.typeFilter}
+              onValueChange={(value) => {
+                dispatchUi({ type: 'fileType', value });
+              }}
+              placeholder="All types"
+              options={typeOptions}
+            />
+            <FilterMultiSelect
+              label="Status"
+              value={uiState.statusFilter}
+              onValueChange={(value) => {
+                dispatchUi({ type: 'status', value });
+              }}
+              placeholder="All statuses"
+              options={statusOptions}
+            />
+            <FilterSelect
+              label="Date"
+              value={uiState.dateFilter}
+              onChange={(value) => {
+                dispatchUi({ type: 'date', value });
+              }}
+            >
+              <option value={ALL}>Any time</option>
+              <option value="7d">Last 7 days</option>
+              <option value="30d">Last 30 days</option>
+            </FilterSelect>
+          </div>
+        </CollectionToolbar.Filters>
+        <CollectionToolbar.Actions>
+          {activeFilterCount > 0 ? (
             <Button
               type="button"
               variant="ghost"
@@ -389,9 +390,9 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
             >
               Clear all
             </Button>
-          ) : null
-        }
-      />
+          ) : null}
+        </CollectionToolbar.Actions>
+      </CollectionToolbar>
 
       <Dialog
         open={uiState.promoting !== null}
@@ -507,14 +508,13 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
 
   return (
     <li style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 52px' }}>
-      <CollectionRow
-        className="min-h-13"
-        leading={
+      <CollectionRow className="min-h-13">
+        <CollectionRow.Leading>
           <span className="grid size-8 shrink-0 place-items-center rounded-sm bg-surface-2 text-fg-muted">
             <Icon aria-hidden="true" className="size-4" />
           </span>
-        }
-        title={
+        </CollectionRow.Leading>
+        <CollectionRow.Title>
           <span className="min-w-0">
             <span
               className="block truncate text-sm font-semibold leading-5 text-fg"
@@ -538,9 +538,11 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
               ) : null}
             </span>
           </span>
-        }
-        context={file.description ?? fileTypeLabel(contentType)}
-        metadata={
+        </CollectionRow.Title>
+        <CollectionRow.Context>
+          {file.description ?? fileTypeLabel(contentType)}
+        </CollectionRow.Context>
+        <CollectionRow.Metadata>
           <>
             <Badge variant="secondary" className="text-[11px] text-fg-muted">
               {displaySourceLabel(file.provenance.source)}
@@ -556,8 +558,8 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
               Updated {formatDate(file.updatedAt)}
             </span>
           </>
-        }
-        actions={
+        </CollectionRow.Metadata>
+        <CollectionRow.Actions>
           <ItemActionGroup label={`Actions for ${presentation.displayTitle}`}>
             <PinOverflowMenu
               target={{ kind: 'document', key: file.id }}
@@ -592,8 +594,8 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
               </Button>
             </DialogTrigger>
           </ItemActionGroup>
-        }
-      />
+        </CollectionRow.Actions>
+      </CollectionRow>
     </li>
   );
 }
