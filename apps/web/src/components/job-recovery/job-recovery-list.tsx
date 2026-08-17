@@ -13,6 +13,7 @@ import {
   JOBS_ATTENTION_DAYS,
   JOB_RECOVERY_LIST_WINDOW_SIZE,
 } from '@/components/job-recovery/jobs-attention';
+import { JobsPageHeader } from '@/components/job-recovery/jobs-page-header';
 import { jobsMutationToast, postJson } from '@/components/job-recovery/jobs-page-toast';
 import { JobDashboard } from '@/components/jobs/job-dashboard';
 import { TechnicalDetails } from '@/components/technical-details';
@@ -50,10 +51,10 @@ interface DismissMatchingResponse {
 }
 
 interface JobRecoveryListProps {
+  teamName: string;
   items: JobRecoveryItem[];
   olderCount: number;
   defaultFilter?: JobRecoveryKind;
-  onOlderCountChange?: (count: number) => void;
 }
 
 interface JobRecoveryUiState {
@@ -126,10 +127,10 @@ function jobRecoveryUiReducer(
 }
 
 export function JobRecoveryList({
+  teamName,
   items,
   olderCount,
   defaultFilter,
-  onOlderCountChange,
 }: JobRecoveryListProps) {
   const router = useRouter();
   const dialog = useAppDialog();
@@ -140,20 +141,23 @@ export function JobRecoveryList({
     (initial): JobRecoveryUiState => ({ ...initial, filter: defaultFilter ?? 'all' }),
   );
   const refreshedRetrySnapshots = useRef<Set<string> | null>(null);
-  const [pendingOlderCount, setPendingOlderCount] = useState(olderCount);
+  const [olderBaseline, setOlderBaseline] = useState(olderCount);
+  const [olderDismissed, setOlderDismissed] = useState(0);
   const [listWindow, setListWindow] = useState(JOB_RECOVERY_LIST_WINDOW_SIZE);
-
-  useEffect(() => {
-    setPendingOlderCount(olderCount);
-  }, [olderCount]);
-
-  useEffect(() => {
+  const listWindowKey = `${filter}:${String(items.length)}`;
+  const [listWindowKeySeen, setListWindowKeySeen] = useState(listWindowKey);
+  if (olderBaseline !== olderCount) {
+    setOlderBaseline(olderCount);
+    setOlderDismissed(0);
+  }
+  if (listWindowKeySeen !== listWindowKey) {
+    setListWindowKeySeen(listWindowKey);
     setListWindow(JOB_RECOVERY_LIST_WINDOW_SIZE);
-  }, [filter, items.length]);
+  }
+  const pendingOlderCount = Math.max(0, olderBaseline - olderDismissed);
 
   function reportOlderCount(count: number) {
-    setPendingOlderCount(count);
-    onOlderCountChange?.(count);
+    setOlderDismissed(Math.max(0, olderBaseline - count));
   }
 
   const visibleItems = useMemo(
@@ -405,86 +409,93 @@ export function JobRecoveryList({
   }
 
   return (
-    <section className="space-y-6" aria-busy={busy !== null}>
-      {pendingOlderCount > 0 ? (
-        <div className="flex flex-col gap-3 rounded-sm border border-border bg-surface px-3 py-3 md:flex-row md:items-center md:justify-between">
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-fg">
-              <span className="font-mono tabular-nums">{pendingOlderCount.toLocaleString()}</span>{' '}
-              older jobs are hidden
-            </p>
-            <p className="text-xs text-fg-muted">
-              These are more than {String(JOBS_ATTENTION_DAYS)} days old. Workers retry them a few
-              times, then stop. Dismiss them if you do not want them recovered.
-            </p>
+    <div className="space-y-8">
+      <JobsPageHeader
+        teamName={teamName}
+        itemCount={visibleItems.length}
+        olderCount={pendingOlderCount}
+      />
+      <section className="space-y-6" aria-busy={busy !== null}>
+        {pendingOlderCount > 0 ? (
+          <div className="flex flex-col gap-3 rounded-sm border border-border bg-surface px-3 py-3 md:flex-row md:items-center md:justify-between">
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-fg">
+                <span className="font-mono tabular-nums">{pendingOlderCount.toLocaleString()}</span>{' '}
+                older jobs are hidden
+              </p>
+              <p className="text-xs text-fg-muted">
+                These are more than {String(JOBS_ATTENTION_DAYS)} days old. Workers retry them a few
+                times, then stop. Dismiss them if you do not want them recovered.
+              </p>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={busy !== null}
+              onClick={() => {
+                void dismissOlder();
+              }}
+            >
+              {busy === 'dismiss-older' ? (
+                <LoaderCircle aria-hidden="true" className="mr-1 size-3.5 animate-spin" />
+              ) : (
+                <X aria-hidden="true" className="mr-1 size-3.5" />
+              )}
+              {busy === 'dismiss-older' ? 'Dismissing older' : 'Dismiss older jobs'}
+            </Button>
           </div>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            disabled={busy !== null}
-            onClick={() => {
-              void dismissOlder();
-            }}
-          >
-            {busy === 'dismiss-older' ? (
-              <LoaderCircle aria-hidden="true" className="mr-1 size-3.5 animate-spin" />
-            ) : (
-              <X aria-hidden="true" className="mr-1 size-3.5" />
-            )}
-            {busy === 'dismiss-older' ? 'Dismissing older' : 'Dismiss older jobs'}
-          </Button>
-        </div>
-      ) : null}
+        ) : null}
 
-      <JobRecoveryToolbar
-        busy={busy}
-        failedCount={failedCount}
-        filter={filter}
-        filters={showKindFilters ? filterOptions : []}
-        hasQueuedFailedRetry={hasQueuedFailedRetry}
-        visibleCount={filtered.length}
-        onDismissVisible={dismissVisible}
-        onRetryFailed={retryFailed}
-        onSetFilter={(nextFilter) => {
-          dispatchUi({ type: 'filter', filter: nextFilter });
-        }}
-      />
+        <JobRecoveryToolbar
+          busy={busy}
+          failedCount={failedCount}
+          filter={filter}
+          filters={showKindFilters ? filterOptions : []}
+          hasQueuedFailedRetry={hasQueuedFailedRetry}
+          visibleCount={filtered.length}
+          onDismissVisible={dismissVisible}
+          onRetryFailed={retryFailed}
+          onSetFilter={(nextFilter) => {
+            dispatchUi({ type: 'filter', filter: nextFilter });
+          }}
+        />
 
-      <JobRecoveryItems
-        busy={busy}
-        items={filtered}
-        onAction={call}
-        retryStates={retryStates}
-        shownItems={shownItems}
-      />
-      {filtered.length > shownItems.length ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 px-1">
-          <p className="text-xs text-fg-muted">
-            Showing {shownItems.length.toLocaleString()} of {filtered.length.toLocaleString()}
-          </p>
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            disabled={busy !== null}
-            onClick={() => {
-              setListWindow((current) => current + JOB_RECOVERY_LIST_WINDOW_SIZE);
-            }}
-          >
-            Load more
-          </Button>
-        </div>
-      ) : null}
-      <AdvancedJobTools
-        finishedItems={finishedArchiveItems}
-        finishedQuery={finishedJobs}
-        onQueued={() => {
-          router.refresh();
-        }}
-      />
-      {dialog.node}
-    </section>
+        <JobRecoveryItems
+          busy={busy}
+          items={filtered}
+          onAction={call}
+          retryStates={retryStates}
+          shownItems={shownItems}
+        />
+        {filtered.length > shownItems.length ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+            <p className="text-xs text-fg-muted">
+              Showing {shownItems.length.toLocaleString()} of {filtered.length.toLocaleString()}
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={busy !== null}
+              onClick={() => {
+                setListWindow((current) => current + JOB_RECOVERY_LIST_WINDOW_SIZE);
+              }}
+            >
+              Load more
+            </Button>
+          </div>
+        ) : null}
+        <AdvancedJobTools
+          finishedItems={finishedArchiveItems}
+          finishedQuery={finishedJobs}
+          onQueued={() => {
+            router.refresh();
+          }}
+        />
+        {dialog.node}
+      </section>
+    </div>
   );
 }
 

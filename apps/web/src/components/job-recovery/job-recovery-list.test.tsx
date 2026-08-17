@@ -54,6 +54,7 @@ function renderList(
 ) {
   return render(
     <JobRecoveryList
+      teamName="AuditAI"
       items={items}
       olderCount={props.olderCount ?? 0}
       defaultFilter={props.defaultFilter}
@@ -380,7 +381,7 @@ describe('JobRecoveryList', () => {
 
     renderList([], { olderCount: 12 });
 
-    expect(screen.getByText(/older jobs are hidden/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Dismiss older jobs' })).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Dismiss older jobs' }));
     expect(
       screen.getByText(
@@ -399,7 +400,7 @@ describe('JobRecoveryList', () => {
     });
     expect(requests[0]?.body).toEqual({ window: 'older' });
     expect(fakes.toastSuccess).toHaveBeenCalledWith('Dismissed 12 older jobs.', { id: 'toast-1' });
-    expect(screen.queryByText(/older jobs are hidden/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Dismiss older jobs' })).toBeNull();
     expect(fakes.routerRefresh).toHaveBeenCalledOnce();
   });
 
@@ -435,7 +436,7 @@ describe('JobRecoveryList', () => {
       id: 'toast-1',
     });
     expect(fakes.toastSuccess).toHaveBeenCalledWith('Dismissed 512 older jobs.', { id: 'toast-1' });
-    expect(screen.queryByText(/older jobs are hidden/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Dismiss older jobs' })).toBeNull();
   });
 
   it('windows a large snapshot with Load more without changing Dismiss all', async () => {

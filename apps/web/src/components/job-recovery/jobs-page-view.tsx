@@ -1,8 +1,5 @@
-'use client';
-
-import { useEffect, useState, type ReactNode } from 'react';
-
 import type * as jobRecovery from '@timeline/shared/job-recovery';
+import type { ReactNode } from 'react';
 
 import { EmptyAction } from '@/components/empty-action';
 import { JobRecoveryList } from '@/components/job-recovery/job-recovery-list';
@@ -22,21 +19,13 @@ export function JobsPageView({
   olderCount: number;
   defaultFilter?: JobRecoveryKind;
 }) {
-  const [hiddenOlderCount, setHiddenOlderCount] = useState(olderCount);
-  useEffect(() => {
-    setHiddenOlderCount(olderCount);
-  }, [olderCount]);
-
   return (
-    <div className="space-y-8">
-      <JobsPageHeader teamName={teamName} itemCount={items.length} olderCount={hiddenOlderCount} />
-      <JobRecoveryList
-        items={items}
-        olderCount={olderCount}
-        defaultFilter={defaultFilter}
-        onOlderCountChange={setHiddenOlderCount}
-      />
-    </div>
+    <JobRecoveryList
+      teamName={teamName}
+      items={items}
+      olderCount={olderCount}
+      defaultFilter={defaultFilter}
+    />
   );
 }
 

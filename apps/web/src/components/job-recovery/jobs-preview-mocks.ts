@@ -25,6 +25,12 @@ function requestBody(init?: RequestInit): Record<string, unknown> {
   return typeof init?.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : {};
 }
 
+function delayPreview(): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, 180);
+  });
+}
+
 /**
  * Preview-only fetch stubs so dismiss/retry/load-more can be click-tested
  * without a live recovery queue. Delay keeps loading toasts visible.
@@ -39,9 +45,6 @@ export function installJobsPreviewMocks(opts: { olderCount: number }): () => voi
     if (!url.includes('/api/team/job-recovery') && !url.includes('/api/jobs/dashboard')) {
       return originalFetch(input, init);
     }
-    await new Promise((resolve) => {
-      window.setTimeout(resolve, 180);
-    });
 
     if (url.includes('/api/jobs/dashboard')) {
       return jsonResponse({
@@ -92,6 +95,7 @@ export function installJobsPreviewMocks(opts: { olderCount: number }): () => voi
     }
 
     if (url.includes('/api/team/job-recovery/dismiss-matching') && method === 'POST') {
+      await delayPreview();
       const body = requestBody(init);
       if (body.window === 'older') {
         const dismissed = Math.min(DISMISS_OLDER_PREVIEW_BATCH, olderRemaining);
@@ -102,16 +106,19 @@ export function installJobsPreviewMocks(opts: { olderCount: number }): () => voi
     }
 
     if (url.includes('/api/team/job-recovery/retry-failed') && method === 'POST') {
+      await delayPreview();
       const body = requestBody(init);
       const expected = typeof body.expectedCount === 'number' ? body.expectedCount : 0;
       return jsonResponse({ retried: expected, failed: 0, failedIds: [] });
     }
 
     if (url.includes('/api/team/job-recovery/resuggest') && method === 'POST') {
+      await delayPreview();
       return jsonResponse({ enqueued: 4, scanned: 12, truncated: false });
     }
 
     if ((url.includes('/retry') || url.includes('/dismiss')) && method === 'POST') {
+      await delayPreview();
       return jsonResponse({ ok: true });
     }
 

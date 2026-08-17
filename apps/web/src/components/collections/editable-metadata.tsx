@@ -31,9 +31,13 @@ export function EditableMetadata({
   const internalTriggerRef = useRef<HTMLButtonElement>(null);
   const wasPendingRef = useRef(pending);
   const previousErrorRef = useRef(error);
+  const [pendingSeen, setPendingSeen] = useState(pending);
+  if (pendingSeen !== pending) {
+    setPendingSeen(pending);
+    if (pending) setOpen(false);
+  }
 
   useEffect(() => {
-    if (pending) setOpen(false);
     const completedSave = wasPendingRef.current && !pending;
     const receivedError = Boolean(error && error !== previousErrorRef.current);
     if (completedSave || receivedError) {
