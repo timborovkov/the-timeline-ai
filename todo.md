@@ -186,9 +186,13 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       and may write coalesced approval-backed field changes; pulses persist,
       embed, and attach as supporting evidence without originating proposals.
       Replace the GitHub/Linear/Monday/Sentry extract skip list with this
-      event-level classifier. Reuse the GitHub PR/issue proposal template for
-      other captured-work lifecycle fields. Do not use time windows as the
-      join key.
+      event-level classifier on the source envelope so GitHub PRs and GitHub
+      CI can differ without a core `if (provider === "github")`. Replace the
+      GitHub-specific proposal parser with an envelope-driven captured-work
+      matcher on `objectMap` + status. Cross-source stories join at a work
+      hub (task/cluster); embeddings recall candidates and do not prove
+      writes. Do not add an ingest summarizer whose only job is prettier
+      embeddings. Do not use time windows as the join key.
 - [ ] Ship the cross-source evidence pack north star in
       [`docs/cross-source-evidence.md`](./docs/cross-source-evidence.md): a shared
       visibility-safe pack builder with policy-bound admission, deterministic

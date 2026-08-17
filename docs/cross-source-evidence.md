@@ -7,8 +7,9 @@
 **Last updated:** 2026-08-17
 
 Timeline's cross-source evidence direction is one operating memory backed by the
-tools where work happened. Signal class, cheap relations, and LLM spend are
-defined in [`relational-memory.md`](./relational-memory.md). This brief covers
+tools where work happened. Signal class, the source-independent envelope, work
+hubs, and LLM spend are defined in [`relational-memory.md`](./relational-memory.md).
+This brief covers
 the evidence-pack builder that sits on top of that contract. The shared
 builder, proposal and answer adapters, exact citations, revision handling,
 approval UI, and redacted metrics are now implemented, but pack-backed

@@ -58,6 +58,21 @@ to an existing cluster when a hard join key exists. They never call extract
 and never originate proposals. They may appear as supporting evidence.
 _Avoid_: Noise, spam, unimportant event
 
+**Source Envelope**:
+The provider-blind fields every adapter must emit: signal class, optional
+object map, external object id, human-facing content text, URLs, and aliases.
+Core ingest, matching, and packs read the envelope. GitHub-specific parsing
+such as PR vs workflow run stays in the GitHub adapter.
+_Avoid_: Provider switch in shared proposal code, `github.type` outside the adapter
+
+**Work Hub**:
+The Timeline task, project, person, or artifact cluster that events from
+different surfaces attach to. Telegram, a GitHub PR, a meeting, and last
+month's email become one story when they point at the same hub, not when they
+share a provider id. Embeddings recall candidate hubs; they do not prove the
+link.
+_Avoid_: Conversation, thread, or source when describing cross-surface identity
+
 **Timeline Moment**:
 A user-facing cluster of related raw events shown together on the timeline so
 team members can understand a meaningful slice of work before drilling into
