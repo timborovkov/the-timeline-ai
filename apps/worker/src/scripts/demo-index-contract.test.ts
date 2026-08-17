@@ -26,9 +26,12 @@ function rows(): DemoVectorRows {
         versionId: `document-version-${String(index)}`,
       }),
     ),
-    meetingChunks: Array.from({ length: DEMO_VECTOR_SOURCE_MINIMUMS.meetingChunks }, (_, index) => ({
-      id: `meeting-chunk-${String(index)}`,
-    })),
+    meetingChunks: Array.from(
+      { length: DEMO_VECTOR_SOURCE_MINIMUMS.meetingChunks },
+      (_, index) => ({
+        id: `meeting-chunk-${String(index)}`,
+      }),
+    ),
   };
 }
 

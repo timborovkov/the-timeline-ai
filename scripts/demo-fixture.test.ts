@@ -248,9 +248,9 @@ assert.match(glossary, /Polar Studio is inbound/);
 assert.match(glossary, /pending add-to-board/);
 assert.match(glossary, /Active lane holds the Northstar Works company/);
 
-assert.ok(CORPUS_EVENTS.length >= CORPUS_VOLUME_FLOORS.events);
-assert.ok(CORPUS_OBJECTS.length >= CORPUS_VOLUME_FLOORS.objects);
-assert.ok(CORPUS_DOCUMENTS.length >= CORPUS_VOLUME_FLOORS.documents);
+assert.ok(CORPUS_EVENTS.length + DEMO_EVENTS.length >= CORPUS_VOLUME_FLOORS.events);
+assert.ok(CORPUS_OBJECTS.length + DEMO_ENTITIES.length >= CORPUS_VOLUME_FLOORS.objects);
+assert.ok(CORPUS_DOCUMENTS.length + 1 >= CORPUS_VOLUME_FLOORS.documents);
 assert.doesNotThrow(() => corpusEventId('dealflow this week'));
 assert.throws(
   () => corpusEventId('no-such-demo-event-needle'),

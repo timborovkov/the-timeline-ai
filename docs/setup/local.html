@@ -114,13 +114,12 @@ pnpm demo:seed              # optional Acme Labs demo corpus; indexes vectors an
         query embedding and team/user-scoped Qdrant searches to confirm every expected Northstar
         raw-event, fact, document-chunk, and meeting-chunk point. It also requires every expanded
         corpus document version to be <code>embedded</code> with a confirmed Qdrant point for each
-        corpus chunk id. A missing embedding prerequisite
-        fails closed, and documents remain <code>chunked</code> until Qdrant confirms applied point
-        writes. Seeded canonical objects leave legacy <code>source_event_id</code> empty and expose
-        demo provenance through reconciliation evidence, associations, and applied outputs. The
-        glossary, story, and fake credentials live in
-        <a href="../demo-corpus.md">docs/demo-corpus.md</a>. <code>pnpm demo:reset</code> wipes the
-        local stack and seeds again.
+        corpus chunk id. A missing embedding prerequisite fails closed, and documents remain
+        <code>chunked</code> until Qdrant confirms applied point writes. Seeded canonical objects
+        leave legacy <code>source_event_id</code> empty and expose demo provenance through
+        reconciliation evidence, associations, and applied outputs. The glossary, story, and fake
+        credentials live in <a href="../demo-corpus.md">docs/demo-corpus.md</a>.
+        <code>pnpm demo:reset</code> wipes the local stack and seeds again.
       </p>
 
       <p>Run the app:</p>
