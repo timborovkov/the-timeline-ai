@@ -46,7 +46,9 @@ raw-event totals in the same chrome. The inspector keeps original source
 disclosure; attached documents link to the document drive. Ask `[ev:]`
 citations name those raw source events; the inspector evidence item shows the
 matching chip so a cited source can be identified without putting IDs on the
-timeline list.
+timeline list. Citation previews open the matching workspace destination
+(transcript, document, calendar event, object, or Timeline moment) and reuse
+the inspector original-source viewer for payloads.
 _Avoid_: Raw Event when referring to the grouped browsing unit
 
 **Timeline event class**:

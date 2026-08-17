@@ -70,6 +70,20 @@ export interface ArtifactPreviewSection {
   items?: { label: string; value: string }[];
 }
 
+export interface ArtifactPreviewAction {
+  href: string;
+  label: string;
+  primary?: boolean;
+  external?: boolean;
+}
+
+export interface ArtifactPreviewOriginal {
+  label: string;
+  text?: string | null;
+  html?: string | null;
+  json?: unknown;
+}
+
 export interface ArtifactPreview {
   ref: ArtifactRef;
   title: string;
@@ -78,6 +92,8 @@ export interface ArtifactPreview {
   badges?: string[];
   sections?: ArtifactPreviewSection[];
   href?: string | null;
+  actions?: ArtifactPreviewAction[];
+  original?: ArtifactPreviewOriginal | null;
   media?: { kind: 'audio'; url: string; label?: string | null } | null;
 }
 
@@ -160,6 +176,70 @@ export function artifactRefLabel(ref: ArtifactRef): string {
     case 'route':
       return `[route:${ref.id}]`;
   }
+}
+
+export function timelineEventFocusHref(eventId: string): string {
+  return `/app/timeline?event=${eventId}#ev-${eventId}`;
+}
+
+export function meetingDetailHref(meetingId: string): string {
+  return `/app/meetings/${meetingId}`;
+}
+
+export function artifactPreviewActionLabel(kind: ArtifactKind): string {
+  switch (kind) {
+    case 'timeline_event':
+    case 'fact':
+      return 'Open on Timeline';
+    case 'document_chunk':
+      return 'Open in Documents';
+    case 'calendar_event':
+      return 'Open calendar';
+    case 'object':
+    case 'object_note':
+    case 'relationship':
+    case 'object_change':
+      return 'Open object';
+    case 'task':
+      return 'Open task';
+    case 'board':
+      return 'Open board';
+    case 'board_item':
+      return 'Open board item';
+    case 'route':
+      return 'Open page';
+  }
+}
+
+export function attachArtifactPreviewActions(
+  preview: Omit<ArtifactPreview, 'href' | 'actions'>,
+  actions: ArtifactPreviewAction[],
+): ArtifactPreview {
+  const list = actions.filter((action) => action.href.length > 0);
+  const hasExplicitPrimary = list.some((action) => action.primary === true);
+  const normalized = list.map((action, index) => ({
+    ...action,
+    primary: hasExplicitPrimary ? action.primary === true : index === 0,
+  }));
+  return {
+    ...preview,
+    href: normalized.find((action) => action.primary)?.href ?? normalized[0]?.href ?? null,
+    actions: normalized,
+  };
+}
+
+export function resolveArtifactPreviewActions(
+  preview: Pick<ArtifactPreview, 'ref' | 'href' | 'actions'>,
+): ArtifactPreviewAction[] {
+  if (preview.actions && preview.actions.length > 0) return preview.actions;
+  if (!preview.href) return [];
+  return [
+    {
+      href: preview.href,
+      label: artifactPreviewActionLabel(preview.ref.kind),
+      primary: true,
+    },
+  ];
 }
 
 export function artifactRefCitation(ref: ArtifactRef): string {

@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.3 · Timeline rows and original source (2026-08-17). Replaces v3.2 Timeline event families.
+**Version:** v3.4 · Citation previews (2026-08-17). Replaces v3.3 Timeline rows and original source.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -263,7 +263,15 @@ and other implementation keys stay inside `TechnicalDetails`. Ask answers cite
 raw source events as lime `[ev:…]` chips, objects as `[ent:…]`, and notes as
 `[note:…]`. Those tokens do not appear on timeline rows. Each inspector
 evidence item shows the matching copyable `[ev:…]` chip so a cited source can
-be identified without putting database IDs on the archive list.
+be identified without putting database IDs on the archive list. Clicking a
+citation opens a preview with the same evidence-first layout as the inspector:
+the readable excerpt, a collapsed original-source disclosure (HTML, text, or
+JSON payload), and named destinations instead of a generic “Open full page.”
+A meeting citation’s primary action is the transcript page, with calendar and
+Timeline moment links when those records exist. Document citations open the
+library (and the capturing timeline event when known); calendar citations open
+the event on Calendar and can jump to the mirrored Timeline moment. Other
+kinds keep one primary workspace page — object, task, board, or help route.
 
 Pack-backed approvals show a compact “Evidence for this change · N sources”
 disclosure beneath each proposed item, using source, sender, timestamp, bounded
@@ -330,7 +338,9 @@ briefly in team-scoped session storage and never in the URL.
 
 The web Ask surface is the rich research view: answers may be thorough and use
 sections, lists, or tables, while inline citations remain inspectable links to
-evidence. External chat delivery uses the same retrieval and grounding but a
+evidence. Citation previews reuse the inspector’s original-source viewer and
+named destinations (transcript, calendar, documents, Timeline moment) rather
+than a single unlabeled page jump. External chat delivery uses the same retrieval and grounding but a
 compact plain-text presentation, normally one short paragraph or three to five
 bullets. Telegram, Slack, and future external chat providers never expose
 Timeline citation syntax, raw-event IDs, or generic source footers. Explicit
@@ -599,3 +609,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Timeline event families | Gives Moments weighted story/record/pulse rows and All events a uniform compact log, with provider-agnostic classification. |
 | 2026-08-17 | Linear timeline rows and original source | Drops duplicate rail icons and stacked row chrome; original payloads open from a collapsed inspector viewer. |
 | 2026-08-17 | Inspector citation chips | Ask `[ev:…]` tokens stay off timeline rows and appear as copyable chips on inspector evidence items. |
+| 2026-08-17 | Citation preview destinations | Citation popups name the matching workspace page, Timeline moment, and original payload instead of a generic full-page jump. |

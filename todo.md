@@ -75,6 +75,8 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       First slice shipped the Moments/All events mode split, quieter chrome,
       weighted rows (story / record / pulse), Linear-style single-icon rows,
       a wider family-aware inspector with collapsed original-source viewers,
+      Ask citation previews that name transcript/calendar/document/Timeline
+      destinations and reuse that original-source viewer,
       GitHub workflow bundling, and the
       `search_timeline_moments`/`get_timeline_moment` agent tools, and the
       shared `@timeline/shared/timeline-moments` projection. Outbound MCP now

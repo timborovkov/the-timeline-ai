@@ -25,6 +25,16 @@ export function SourceOriginalDisclosure({
     () => sourceOriginalFromEvent({ source, contentText, sourceMetadata }),
     [source, contentText, sourceMetadata],
   );
+  return <SourceOriginalDetails original={original} className={className} />;
+}
+
+export function SourceOriginalDetails({
+  original,
+  className,
+}: {
+  original: SourceOriginal;
+  className?: string;
+}) {
   if (!hasSourceOriginal(original)) return null;
   return (
     <details className={cn('group border-t border-border/80 pt-2 text-sm', className)}>
