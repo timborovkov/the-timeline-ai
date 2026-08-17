@@ -221,7 +221,7 @@ describe('WorkPage', () => {
     const html = renderToStaticMarkup(await WorkPage(pageProps()));
 
     expect(html).toContain('Responsible deal');
-    expect(html).toContain('Responsible to you');
+    expect(html).toContain("You're responsible");
     expect(html).toContain('Team due project');
     expect(html).toContain('Team due');
     expect(html).toContain('/app/boards/board-1?item=team-due-item');
