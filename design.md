@@ -321,13 +321,16 @@ links. Team settings render one URL-selected section at a time. Save state stays
 local to the edited form. Member, object, source, and artifact labels never
 fall back to UUIDs.
 
-Background jobs is an admin recovery queue, not a processing inventory. Home
-“recoverable jobs” and `/app/team/jobs` share the same 7-day failed/stuck count.
-The page uses a sentence-case `PageHeader`, groups Failed then Stuck, and keeps
-retry/dismiss on each row. Jobs older than 7 days are hidden from attention;
-admins can dismiss them in bulk. Unprocessed backlog counts (events still
-waiting for extraction or embedding) stay inside closed Advanced tools and never
-use “needs attention” language.
+Background jobs is an admin-only recovery queue, not a processing inventory.
+Members who open `/app/team/jobs` see an Admins-only empty state. Home
+“recoverable jobs” and the jobs page share the same 7-day failed/stuck count,
+and only admins see that Home link. The page uses a sentence-case `PageHeader`
+with an “Admins only” access label, groups Failed then Stuck, and keeps
+retry/dismiss on each row. Kind filters appear only when more than one job kind
+is present. Jobs older than 7 days are hidden from attention; admins can dismiss
+them in bulk. Unprocessed backlog counts (events still waiting for extraction or
+embedding) stay inside closed Advanced tools and never use “needs attention”
+language.
 
 Work → Pinned is the complete pin-management surface. It is a single
 side-to-side list with cursor pagination and All, Objects, Boards, Documents,

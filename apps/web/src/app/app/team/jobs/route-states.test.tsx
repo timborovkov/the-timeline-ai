@@ -45,7 +45,7 @@ describe('Background jobs route states', () => {
       '[aria-label="Job recovery controls loading placeholder"]',
     );
     if (!recoveryControls) throw new Error('Expected the visual job recovery controls placeholder');
-    expect(recoveryControls.querySelectorAll('[data-loading-filter]')).toHaveLength(7);
+    expect(recoveryControls.querySelectorAll('[data-loading-filter]')).toHaveLength(0);
     expect(recoveryControls.querySelector('[data-loading-action="retry"]')?.className).toContain(
       'h-8 w-28',
     );
@@ -64,6 +64,7 @@ describe('Background jobs route states', () => {
     render(<JobsError error={new Error('route failed')} reset={reset} />);
 
     expect(screen.getAllByRole('heading', { level: 1, name: 'Background jobs' })).toHaveLength(1);
+    expect(screen.getByText('Admins only')).toBeTruthy();
     expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Back' }).getAttribute('href')).toBe('/app/team');
     expect(

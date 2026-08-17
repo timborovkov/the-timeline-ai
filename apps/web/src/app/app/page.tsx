@@ -165,14 +165,18 @@ export default async function HomeDashboardPage() {
             icon: <CircleAlert aria-hidden="true" />,
             danger: true,
           },
-          {
-            href: '/app/team/jobs',
-            label: 'Recoverable jobs',
-            count: recoverableJobs.length,
-            action: 'Retry processing',
-            icon: <Wrench aria-hidden="true" />,
-            danger: true,
-          },
+          ...(isAdmin
+            ? [
+                {
+                  href: '/app/team/jobs',
+                  label: 'Recoverable jobs',
+                  count: recoverableJobs.length,
+                  action: 'Retry processing',
+                  icon: <Wrench aria-hidden="true" />,
+                  danger: true,
+                },
+              ]
+            : []),
           {
             href: '/app/sources',
             label: 'Connection issues',

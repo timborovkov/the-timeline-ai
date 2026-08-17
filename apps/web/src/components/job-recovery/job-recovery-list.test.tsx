@@ -152,6 +152,13 @@ describe('JobRecoveryList', () => {
     expect(screen.getByRole('button', { name: 'Retry failed (1)' })).toBeTruthy();
   });
 
+  it('hides kind filters when every listed job is the same kind', () => {
+    renderList([recoverableJob()]);
+    expect(screen.queryByRole('button', { name: 'All' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Transcription' })).toBeNull();
+    expect(screen.getByText('Failed and stuck jobs from the last 7 days.')).toBeTruthy();
+  });
+
   it('queues individual retry and dismiss actions with visible optimistic state', async () => {
     const user = userEvent.setup();
     const requests: { body: unknown; method: string; url: string }[] = [];

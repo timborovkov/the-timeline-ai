@@ -936,8 +936,9 @@ A team-scoped owner/admin surface for retrying or dismissing failed and stuck
 product jobs from the last 7 days, tied to visible team artifacts such as
 transcription, extraction, embedding, document processing, meeting
 finalization, and integration sync. Home “recoverable jobs” uses this same
-7-day count. Older failed or stuck work is hidden from attention; workers
-retry it a few times, then give up. Unprocessed backlog (events that never
+7-day count and is hidden from members. Members who open the page see an
+Admins-only empty state. Older failed or stuck work is hidden from attention;
+workers retry it a few times, then give up. Unprocessed backlog (events that never
 started extraction or embedding) is inventory, not this recovery queue.
 _Avoid_: Operator dashboard, BullMQ dashboard, queue admin, processing inventory
 

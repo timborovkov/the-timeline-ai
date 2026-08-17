@@ -1,6 +1,5 @@
 'use client';
 
-import { JOB_RECOVERY_ATTENTION_DAYS } from '@timeline/shared/job-recovery';
 import { CheckCircle2, CircleAlert, LoaderCircle, RotateCcw, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
@@ -9,6 +8,7 @@ import type * as jobRecovery from '@timeline/shared/job-recovery';
 
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionStatus } from '@/components/collections/collection-status';
+import { JOBS_ATTENTION_DAYS } from '@/components/job-recovery/jobs-attention';
 import { JobDashboard } from '@/components/jobs/job-dashboard';
 import { TechnicalDetails } from '@/components/technical-details';
 import { useAppDialog } from '@/components/ui/app-dialog';
@@ -195,6 +195,15 @@ export function JobRecoveryList({ items, olderCount, defaultFilter }: JobRecover
     }
   }, [retryStates, router]);
 
+  const presentKinds = useMemo(
+    () => [...new Set(visibleItems.map((item) => item.kind))],
+    [visibleItems],
+  );
+  const filterOptions = useMemo(
+    () => FILTERS.filter((option) => option.kind === 'all' || presentKinds.includes(option.kind)),
+    [presentKinds],
+  );
+  const showKindFilters = presentKinds.length > 1 || filter !== 'all';
   const filtered = useMemo(
     () => (filter === 'all' ? visibleItems : visibleItems.filter((item) => item.kind === filter)),
     [filter, visibleItems],
@@ -242,7 +251,7 @@ export function JobRecoveryList({ items, olderCount, defaultFilter }: JobRecover
     const jobWord = filtered.length === 1 ? 'job' : 'jobs';
     const confirmed = await dialog.confirm({
       title: 'Dismiss these jobs?',
-      description: `Dismiss ${String(filtered.length)} ${kindLabel}${jobWord} from the last ${String(JOB_RECOVERY_ATTENTION_DAYS)} days? They leave this list. Timeline can still retry them in the background.`,
+      description: `Dismiss ${String(filtered.length)} ${kindLabel}${jobWord} from the last ${String(JOBS_ATTENTION_DAYS)} days? They leave this list. Timeline can still retry them in the background.`,
       confirmLabel: 'Dismiss all',
       destructive: true,
     });
@@ -254,7 +263,7 @@ export function JobRecoveryList({ items, olderCount, defaultFilter }: JobRecover
     if (olderCount === 0) return;
     const confirmed = await dialog.confirm({
       title: 'Dismiss older jobs?',
-      description: `Dismiss ${String(olderCount)} jobs older than ${String(JOB_RECOVERY_ATTENTION_DAYS)} days? Timeline will stop asking you to recover them. Background workers may still retry a few times, then give up.`,
+      description: `Dismiss ${String(olderCount)} jobs older than ${String(JOBS_ATTENTION_DAYS)} days? Timeline will stop asking you to recover them. Background workers may still retry a few times, then give up.`,
       confirmLabel: 'Dismiss older jobs',
       destructive: true,
     });
@@ -358,8 +367,8 @@ export function JobRecoveryList({ items, olderCount, defaultFilter }: JobRecover
               jobs are hidden
             </p>
             <p className="text-xs text-fg-muted">
-              These are more than {String(JOB_RECOVERY_ATTENTION_DAYS)} days old. Workers retry them
-              a few times, then stop. Dismiss them if you do not want them recovered.
+              These are more than {String(JOBS_ATTENTION_DAYS)} days old. Workers retry them a few
+              times, then stop. Dismiss them if you do not want them recovered.
             </p>
           </div>
           <Button
@@ -391,6 +400,7 @@ export function JobRecoveryList({ items, olderCount, defaultFilter }: JobRecover
         busy={busy}
         failedCount={failedCount}
         filter={filter}
+        filters={showKindFilters ? filterOptions : []}
         hasQueuedFailedRetry={hasQueuedFailedRetry}
         visibleCount={filtered.length}
         onDismissVisible={dismissVisible}
@@ -417,6 +427,7 @@ function JobRecoveryToolbar({
   busy,
   failedCount,
   filter,
+  filters,
   hasQueuedFailedRetry,
   visibleCount,
   onDismissVisible,
@@ -426,6 +437,7 @@ function JobRecoveryToolbar({
   busy: string | null;
   failedCount: number;
   filter: JobRecoveryKind | 'all';
+  filters: { kind: JobRecoveryKind | 'all'; label: string }[];
   hasQueuedFailedRetry: boolean;
   visibleCount: number;
   onDismissVisible: () => Promise<void>;
@@ -434,28 +446,32 @@ function JobRecoveryToolbar({
 }) {
   return (
     <div className="flex flex-col gap-2 border-y border-border py-2 md:flex-row md:items-center md:justify-between">
-      <div className="flex flex-wrap gap-2">
-        {FILTERS.map((f) => {
-          const active = filter === f.kind;
-          return (
-            <button
-              key={f.kind}
-              type="button"
-              onClick={() => {
-                onSetFilter(f.kind);
-              }}
-              className={cn(
-                'rounded-sm border px-2 py-1 text-[11px] transition-colors',
-                active
-                  ? 'border-signal bg-signal/10 text-signal'
-                  : 'border-border bg-surface text-fg-muted hover:border-border-strong hover:text-fg',
-              )}
-            >
-              {f.label}
-            </button>
-          );
-        })}
-      </div>
+      {filters.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {filters.map((f) => {
+            const active = filter === f.kind;
+            return (
+              <button
+                key={f.kind}
+                type="button"
+                onClick={() => {
+                  onSetFilter(f.kind);
+                }}
+                className={cn(
+                  'rounded-sm border px-2 py-1 text-[11px] transition-colors',
+                  active
+                    ? 'border-signal bg-signal/10 text-signal'
+                    : 'border-border bg-surface text-fg-muted hover:border-border-strong hover:text-fg',
+                )}
+              >
+                {f.label}
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="text-xs text-fg-muted">Failed and stuck jobs from the last 7 days.</p>
+      )}
       <div className="flex flex-wrap gap-2 self-start md:self-auto">
         <Button
           type="button"
@@ -511,7 +527,7 @@ function JobRecoveryItems({
   if (items.length === 0) {
     return (
       <p className="px-1 py-4 text-sm text-fg-muted">
-        Nothing needs attention from the last {String(JOB_RECOVERY_ATTENTION_DAYS)} days.
+        Nothing needs attention from the last {String(JOBS_ATTENTION_DAYS)} days.
       </p>
     );
   }

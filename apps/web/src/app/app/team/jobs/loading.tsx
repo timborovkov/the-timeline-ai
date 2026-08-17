@@ -20,18 +20,8 @@ export default function JobsLoading() {
         >
           <section
             aria-label="Job recovery controls loading placeholder"
-            className="flex flex-col gap-2 border-y border-border py-2 md:flex-row md:items-center md:justify-between"
+            className="flex flex-col gap-2 border-y border-border py-2 md:flex-row md:items-center md:justify-end"
           >
-            <div className="flex flex-wrap gap-2">
-              {Array.from({ length: 7 }).map((_, index) => (
-                <Skeleton
-                  // The live toolbar has seven job-kind filters.
-                  key={index}
-                  data-loading-filter
-                  className="h-7 w-20 rounded-sm motion-reduce:animate-none"
-                />
-              ))}
-            </div>
             <div className="flex flex-wrap gap-2 self-start md:self-auto">
               <Skeleton
                 data-loading-action="retry"
