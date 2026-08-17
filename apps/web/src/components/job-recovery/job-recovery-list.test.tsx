@@ -217,11 +217,16 @@ describe('JobRecoveryList', () => {
     const user = userEvent.setup();
     renderList([]);
 
-    expect(screen.queryByRole('button', { name: 'Queue suggestions' })).toBeNull();
+    const advanced = screen.getByText('Advanced tools').closest('details');
+    expect(advanced).not.toBeNull();
+    expect(advanced?.hasAttribute('open')).toBe(false);
     await user.click(screen.getByText('Advanced tools'));
-    expect(screen.getByRole('button', { name: 'Queue suggestions' })).toBeTruthy();
+    expect(advanced?.hasAttribute('open')).toBe(true);
+    expect(within(advanced as HTMLElement).getByRole('button', { name: 'Queue suggestions' })).toBeTruthy();
     expect(
-      screen.getByText('Re-queue reviews if suggestions did not appear. Leave this unless support asks.'),
+      within(advanced as HTMLElement).getByText(
+        'Re-queue reviews if suggestions did not appear. Leave this unless support asks.',
+      ),
     ).toBeTruthy();
   });
 
