@@ -348,6 +348,14 @@ Legend:
   dashboard chat action/HITL selection, Slack/Telegram ask-surface delivery,
   background proposal generation, and turn-observability capture, and
   deterministic/live agent evals share Qdrant `SearchHit` fixture builders.
+- `pnpm test:suggestions-eval:live` runs an opt-in real-model suggestion worker
+  eval against seeded customer email evidence.
+- `pnpm test:proposal-engine:live` runs an opt-in messy proposal-engine eval
+  with real models and, when Qdrant is configured, real embeddings. Isolated
+  PGlite team, realistic noisy Slack/Monday/meeting payloads, cleanup of any
+  Qdrant points afterwards. Not CI. Set
+  `PROPOSAL_ENGINE_LIVE_ENV_FILE=/path/to/.env` when the shell has not already
+  loaded live credentials.
 - `pnpm test:transcribe-eval:live` runs an opt-in live OpenRouter speech
   transcription eval through the worker finalization path. Set
   `TRANSCRIBE_LIVE_ENV_FILE=/path/to/.env` when the current shell has not
