@@ -18,9 +18,9 @@ describe('formatDigestActivityLines', () => {
         newTasks: 2,
         completedTasks: 0,
         newProjects: 1,
-        newObjectsByType: { task: 2, project: 1, person: 0, company: 3 },
+        newObjectsByType: { task: 2, project: 1, person: 0, deal: 3 },
       }),
-    ).toEqual(['10 new moments', '2 new tasks', '1 new project', '3 new companies']);
+    ).toEqual(['10 new moments', '2 new tasks', '1 new project', '3 new deals']);
   });
 });
 
