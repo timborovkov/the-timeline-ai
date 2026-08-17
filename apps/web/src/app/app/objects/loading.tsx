@@ -18,11 +18,11 @@ export default function ObjectsLoading() {
       >
         <h1 className="sr-only">Objects</h1>
         <div aria-hidden="true" inert>
-          <PageHeaderSkeleton action />
+          <PageHeaderSkeleton />
         </div>
         <WorkSubnav current="/app/objects" />
         <div aria-hidden="true" inert className="space-y-0">
-          <CollectionToolbarSkeleton />
+          <CollectionToolbarSkeleton action />
           <CollectionGroupSkeleton groups={2} rows={4} />
         </div>
       </div>

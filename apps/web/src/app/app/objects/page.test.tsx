@@ -1,6 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { ReactNode } from 'react';
+
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveActiveTeam: vi.fn(),
@@ -93,15 +95,18 @@ vi.mock('@/components/work-filter-bar', () => ({
     totalCount,
     hiddenParams,
     members = [],
+    actions,
   }: {
     resultCount: number;
     totalCount: number;
     hiddenParams?: Record<string, string>;
     members?: { id: string; label: string }[];
+    actions?: ReactNode;
   }) => (
     <div data-testid="work-filter-bar">
       {resultCount}/{totalCount}|hidden:{JSON.stringify(hiddenParams ?? {})}|members:
       {members.map((member) => member.label).join(',')}
+      {actions}
     </div>
   ),
 }));
@@ -185,6 +190,8 @@ describe('ObjectsIndexPage', () => {
     );
 
     expect(html).toContain('task-category-filter-refresh');
+    expect(html).toContain('href="/app/objects/new"');
+    expect(html).toContain('New object');
     expect(fakes.categoryRefresh?.surface).toBe('objects');
     expect(fakes.categoryRefresh?.filters.category).toBe('design');
     expect(fakes.categoryRefresh?.baselineToken).toBe('design:0');

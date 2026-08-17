@@ -368,7 +368,8 @@ not a full-width boxed header. Loading placeholders match the live
 CollectionToolbar (search, count, Filters, view toggle, and compact add on one
 row) and the requested view: Tasks default to list, boards default to kanban,
 and table/list/kanban each have a matching skeleton. Collection pages load as
-flat rows, not boxed card grids. Kanban cards stay compact: a clamped title plus
+flat rows, not boxed card grids. Objects New object and Boards Create board use
+the same compact toolbar/header action as Add item, not a filled primary chip. Kanban cards stay compact: a clamped title plus
 one metadata row, with no redundant type label. Curated boards use the same
 full-bleed work canvas in kanban, table, and grouped list — no boxed inner
 container around the collection. Board kanban cards stay compact: a clamped title,
