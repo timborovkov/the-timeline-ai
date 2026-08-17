@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { OnboardingChecklistState } from '@timeline/shared/onboarding';
+
 const fakes = vi.hoisted(() => ({
   cachedJson: vi.fn(async (_key: string, _ttl: number, load: () => Promise<unknown>) => load()),
   cacheKey: vi.fn((parts: unknown[]) => parts.join(':')),
@@ -17,6 +19,39 @@ const {
   toOnboardingChecklistView,
 } = await import('./onboarding-checklist.js');
 
+function checklistState(input: {
+  dismissed: boolean;
+  steps: { step: OnboardingChecklistState['steps'][number]['step']; completed: boolean }[];
+}): OnboardingChecklistState {
+  return {
+    dismissed: input.dismissed,
+    steps: input.steps.map((step) => ({
+      step: step.step,
+      completed: step.completed,
+      completedAt: null,
+      completedByUserId: null,
+    })),
+    connectionCounts: {
+      telegramLinkTokens: 0,
+      telegramChatBindings: 0,
+      telegramUserTeams: 0,
+      slackWorkspaceTeams: 0,
+      slackConversationBindings: 0,
+      slackUserTeams: 0,
+      nativeIntegrations: 0,
+      teamMcpServers: 0,
+      activeMembers: 0,
+      pendingInvites: 0,
+      userChatMessages: 0,
+      meetings: 0,
+      reviewedProposals: 0,
+      dailyDigests: 0,
+      ingestWebhooks: 0,
+      outboundMcpKeys: 0,
+    },
+  };
+}
+
 describe('onboarding checklist view', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -28,41 +63,15 @@ describe('onboarding checklist view', () => {
 
   it('maps scoped step state onto the client checklist view', () => {
     expect(
-      toOnboardingChecklistView({
-        dismissed: true,
-        steps: [
-          {
-            step: 'first_note',
-            completed: true,
-            completedAt: null,
-            completedByUserId: null,
-          },
-          {
-            step: 'invite_teammate',
-            completed: false,
-            completedAt: null,
-            completedByUserId: null,
-          },
-        ],
-        connectionCounts: {
-          telegramLinkTokens: 0,
-          telegramChatBindings: 0,
-          telegramUserTeams: 0,
-          slackWorkspaceTeams: 0,
-          slackConversationBindings: 0,
-          slackUserTeams: 0,
-          nativeIntegrations: 0,
-          teamMcpServers: 0,
-          activeMembers: 0,
-          pendingInvites: 0,
-          userChatMessages: 0,
-          meetings: 0,
-          reviewedProposals: 0,
-          dailyDigests: 0,
-          ingestWebhooks: 0,
-          outboundMcpKeys: 0,
-        },
-      }),
+      toOnboardingChecklistView(
+        checklistState({
+          dismissed: true,
+          steps: [
+            { step: 'first_note', completed: true },
+            { step: 'invite_teammate', completed: false },
+          ],
+        }),
+      ),
     ).toEqual({
       dismissed: true,
       items: [
@@ -73,35 +82,12 @@ describe('onboarding checklist view', () => {
   });
 
   it('loads the mapped view through the shared onboarding cache key', async () => {
-    const getChecklistState = vi.fn(async () => ({
-      dismissed: false,
-      steps: [
-        {
-          step: 'first_ask',
-          completed: false,
-          completedAt: null,
-          completedByUserId: null,
-        },
-      ],
-      connectionCounts: {
-        telegramLinkTokens: 0,
-        telegramChatBindings: 0,
-        telegramUserTeams: 0,
-        slackWorkspaceTeams: 0,
-        slackConversationBindings: 0,
-        slackUserTeams: 0,
-        nativeIntegrations: 0,
-        teamMcpServers: 0,
-        activeMembers: 0,
-        pendingInvites: 0,
-        userChatMessages: 0,
-        meetings: 0,
-        reviewedProposals: 0,
-        dailyDigests: 0,
-        ingestWebhooks: 0,
-        outboundMcpKeys: 0,
-      },
-    }));
+    const getChecklistState = vi.fn(async () =>
+      checklistState({
+        dismissed: false,
+        steps: [{ step: 'first_ask', completed: false }],
+      }),
+    );
 
     await expect(
       loadOnboardingChecklistView({
