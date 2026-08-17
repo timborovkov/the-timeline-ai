@@ -299,7 +299,10 @@ follow as full-width sections without duplicating Timeline or Connections.
 These sections prefer horizontal rules and rows over bordered dashboard cards.
 
 The latest digest stays folded until opened. Its summary and section bodies are
-readable prose, not inventories of pull requests or IDs. Activity counts new
+readable prose, not inventories of pull requests or IDs. The generator bans
+pull-request numbers, commit hashes, CI run IDs, ticket keys, and object
+UUIDs: it scrubs them from the briefing packet, retries a draft that still
+lists them, and discards that draft if the rewrite fails. Activity counts new
 moments, proposals, pending approvals, tasks, and objects from the digest
 window. Task and calendar blocks show change: newly created or completed work,
 and repeating calendar series as one upcoming entry. Task titles open the

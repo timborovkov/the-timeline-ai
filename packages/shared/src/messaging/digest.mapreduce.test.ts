@@ -126,6 +126,9 @@ describe('digest map-reduce summarization', () => {
     });
 
     expect(fakes.chatStructured).toHaveBeenCalledTimes(1);
+    const firstCall = fakes.chatStructured.mock.calls[0]?.[0] as { system?: string };
+    expect(firstCall.system).toContain('Pull-request numbers');
+    expect(firstCall.system).toContain('banned');
     expect(result.payload.summary).toBe('Single batch summary.');
     expect(result.payload.eventCount).toBe(10);
     expect(result.payload.momentCount).toBe(10);
@@ -167,13 +170,14 @@ describe('digest map-reduce summarization', () => {
     const packet = JSON.parse(prompt ?? '{}') as {
       metrics?: { eventCount?: number; momentCount?: number };
       visibleEvents?: unknown;
-      visibleMoments?: { rawEventCount: number; rawEventIds: string[]; title: string }[];
+      visibleMoments?: { rawEventCount: number; title: string }[];
     };
     expect(packet.metrics).toMatchObject({ eventCount: 10, momentCount: 1 });
     expect(packet.visibleEvents).toBeUndefined();
     expect(packet.visibleMoments).toHaveLength(1);
     expect(packet.visibleMoments?.[0]).toMatchObject({ rawEventCount: 10 });
-    expect(packet.visibleMoments?.[0]?.rawEventIds).toHaveLength(10);
+    expect(packet.visibleMoments?.[0]).not.toHaveProperty('rawEventIds');
+    expect(packet.visibleMoments?.[0]?.title).not.toMatch(/#\d{2,}/);
   });
 
   it('splits into batches and reduces when events exceed the batch size', async () => {
@@ -580,6 +584,73 @@ describe('digest map-reduce summarization', () => {
     expect(fakes.chatStructured).toHaveBeenCalledTimes(1);
     expect(result.payload.summary).toBe('No activity today.');
     expect(result.payload.eventCount).toBe(0);
+    expect(result.payload.sections).toEqual([]);
+  });
+
+  it('retries once when the model lists pull-request numbers, then keeps the clean rewrite', async () => {
+    const events = [
+      {
+        ...makeEventBrief(0),
+        source: 'github',
+        contentText: 'Merged login timeout fix #412',
+      },
+    ];
+    fakes.withTeam.mockReturnValue(makeScope(events));
+    fakes.chatStructured
+      .mockResolvedValueOnce(makeDigestResult('Merged #412, #413, and #414.'))
+      .mockResolvedValueOnce(
+        makeDigestResult('The login timeout fix shipped after review.', [
+          { title: 'Highlights', body: 'The timeout bug is gone from the invite flow.' },
+        ]),
+      );
+
+    const db = makeDb([
+      chainResult([{ dailyDigestEnabled: true, dailyDigestHour: 12, timezone: 'UTC' }]),
+      chainResult([]),
+      chainResult([{ name: 'Tim', email: 'tim@example.test' }]),
+      chainResult([]),
+    ]);
+
+    const result = await generateDailyDigest({
+      db: db as never,
+      teamId: 'team-1',
+      userId: 'user-1',
+      windowStart: new Date('2026-06-13T11:00:00Z'),
+      windowEnd: new Date('2026-06-14T12:00:00Z'),
+      now: new Date('2026-06-14T12:05:00Z'),
+    });
+
+    expect(fakes.chatStructured).toHaveBeenCalledTimes(2);
+    const retryPrompt = (fakes.chatStructured.mock.calls[1]?.[0] as { prompt?: string }).prompt;
+    expect(retryPrompt).toContain('Those identifiers are banned');
+    expect(result.payload.summary).toBe('The login timeout fix shipped after review.');
+    expect(result.payload.summary).not.toMatch(/#\d+/);
+  });
+
+  it('falls back when a rewrite still lists pull-request numbers', async () => {
+    const events = Array.from({ length: 3 }, (_, i) => makeEventBrief(i));
+    fakes.withTeam.mockReturnValue(makeScope(events));
+    fakes.chatStructured.mockResolvedValue(makeDigestResult('PRs merged: #12, #15, and #18.'));
+
+    const db = makeDb([
+      chainResult([{ dailyDigestEnabled: true, dailyDigestHour: 12, timezone: 'UTC' }]),
+      chainResult([]),
+      chainResult([{ name: 'Tim', email: 'tim@example.test' }]),
+      chainResult([]),
+    ]);
+
+    const result = await generateDailyDigest({
+      db: db as never,
+      teamId: 'team-1',
+      userId: 'user-1',
+      windowStart: new Date('2026-06-13T11:00:00Z'),
+      windowEnd: new Date('2026-06-14T12:00:00Z'),
+      now: new Date('2026-06-14T12:05:00Z'),
+    });
+
+    expect(fakes.chatStructured).toHaveBeenCalledTimes(2);
+    expect(result.payload.summary).toMatch(/3 new moments/);
+    expect(result.payload.summary).not.toMatch(/#\d+/);
     expect(result.payload.sections).toEqual([]);
   });
 });

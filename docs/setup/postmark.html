@@ -100,8 +100,8 @@ SUPPORT_EMAIL=contact@thetimeline.cc
         Dashboard, Timeline, Tasks, and the other app surfaces. The worker registers the noon UTC
         scheduler on boot and also queues one idempotent catch-up tick, so a deploy or missed
         scheduler state still creates the current expected digest rows. In-app notifications remain
-        inbox-only; digest email or bot delivery may summarize pending approvals and inbox state, but
-        individual notification rows are not fanned out as standalone messages.
+        inbox-only; digest email or bot delivery may summarize pending approvals and inbox state,
+        but individual notification rows are not fanned out as standalone messages.
       </p>
       <p>
         New signups receive a non-blocking verification email through the same messaging module.

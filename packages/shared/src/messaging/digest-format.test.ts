@@ -5,10 +5,12 @@ import {
   collapseDigestCalendarEvents,
   digestActivityStats,
   digestAppHref,
+  digestContainsBannedInventory,
   formatDigestActivityLines,
   formatDigestCalendarEvent,
   formatDigestChatText,
   formatDigestTask,
+  scrubDigestArtifactIds,
 } from '#src/messaging/digest-format.js';
 
 const NOW = new Date('2026-07-20T12:00:00.000Z');
@@ -247,5 +249,51 @@ describe('formatDigestChatText', () => {
     expect(text.length).toBeLessThanOrEqual(180);
     expect(text.endsWith('Open digest: https://timeline.test/app')).toBe(true);
     expect(text).toContain('…');
+  });
+
+  it('renders narrative section bodies without turning them into bullets', () => {
+    const text = formatDigestChatText({
+      payload: {
+        ...payload,
+        sections: [
+          {
+            title: 'Highlights',
+            body: 'The invite flow shipped after customer notes landed.',
+            items: [],
+          },
+        ],
+      },
+      digestUrl: 'https://timeline.test/app',
+    });
+    expect(text).toContain('The invite flow shipped after customer notes landed.');
+    expect(text).not.toContain('• The invite flow shipped');
+  });
+});
+
+describe('digestContainsBannedInventory', () => {
+  it('rejects pull-request numbers, SHAs, CI runs, tickets, and UUIDs', () => {
+    expect(digestContainsBannedInventory('Merged #412 and #413.')).toBe(true);
+    expect(digestContainsBannedInventory('Shipped PR 88 after review.')).toBe(true);
+    expect(digestContainsBannedInventory('Deployed abcdef0 to production.')).toBe(true);
+    expect(digestContainsBannedInventory('CI run 998877 finished green.')).toBe(true);
+    expect(digestContainsBannedInventory('Moved ENG-441 to done.')).toBe(true);
+    expect(digestContainsBannedInventory('Opened 11111111-1111-1111-1111-111111111111.')).toBe(
+      true,
+    );
+    expect(
+      digestContainsBannedInventory(
+        'The login timeout fix shipped after review. Invite copy still needs an owner.',
+      ),
+    ).toBe(false);
+    expect(digestContainsBannedInventory('The #1 priority is the invite copy.')).toBe(false);
+  });
+});
+
+describe('scrubDigestArtifactIds', () => {
+  it('strips PR numbers and ticket keys from moment titles', () => {
+    expect(scrubDigestArtifactIds('Merged login timeout fix #412')).toBe(
+      'Merged login timeout fix',
+    );
+    expect(scrubDigestArtifactIds('Legal review ENG-441 for Atlas')).toBe('Legal review for Atlas');
   });
 });

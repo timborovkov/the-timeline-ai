@@ -8,6 +8,11 @@ import type {
 import { presentDueDate } from '#src/time/index.js';
 
 const SENTENCE_BOUNDARY = /(?<=[.!?])\s+(?=[A-Z0-9])/;
+const BANNED_PR_NUMBER = /(?:\bPR\s*#?\s*\d+\b|\bpull requests?\s+#?\d+|#\d{2,}\b)/gi;
+const BANNED_GIT_SHA = /\b(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b/gi;
+const BANNED_TICKET_KEY = /\b[A-Z]{2,10}-\d+\b/g;
+const BANNED_UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+const BANNED_CI_RUN = /\b(?:workflow run|ci run|run id)\s*[#:]?\s*\d+\b/gi;
 const SECTION_ORDER = new Map<string, number>([
   ['Highlights', 0],
   ['Product status', 1],
@@ -17,6 +22,40 @@ const SECTION_ORDER = new Map<string, number>([
   ['Risks', 5],
   ['Follow-ups', 6],
 ]);
+
+export function digestContainsBannedInventory(text: string): boolean {
+  const normalized = text.trim();
+  if (!normalized) return false;
+  BANNED_PR_NUMBER.lastIndex = 0;
+  BANNED_CI_RUN.lastIndex = 0;
+  BANNED_TICKET_KEY.lastIndex = 0;
+  BANNED_UUID.lastIndex = 0;
+  BANNED_GIT_SHA.lastIndex = 0;
+  return (
+    BANNED_PR_NUMBER.test(normalized) ||
+    BANNED_CI_RUN.test(normalized) ||
+    BANNED_TICKET_KEY.test(normalized) ||
+    BANNED_UUID.test(normalized) ||
+    BANNED_GIT_SHA.test(normalized)
+  );
+}
+
+export function scrubDigestArtifactIds(text: string): string {
+  BANNED_PR_NUMBER.lastIndex = 0;
+  BANNED_CI_RUN.lastIndex = 0;
+  BANNED_TICKET_KEY.lastIndex = 0;
+  BANNED_UUID.lastIndex = 0;
+  BANNED_GIT_SHA.lastIndex = 0;
+  return text
+    .replace(BANNED_PR_NUMBER, '')
+    .replace(BANNED_CI_RUN, '')
+    .replace(BANNED_TICKET_KEY, '')
+    .replace(BANNED_UUID, '')
+    .replace(BANNED_GIT_SHA, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([,.;:!?])/g, '$1')
+    .trim();
+}
 
 export function digestSummaryParagraphs(summary: string): string[] {
   const explicitParagraphs = summary
@@ -305,11 +344,10 @@ export function formatDigestChatText(input: {
     '',
     ...summaryParagraphs,
     '',
-    ...sections.flatMap((section) => [
-      section.title,
-      ...section.items.map((item) => `• ${item}`),
-      '',
-    ]),
+    ...sections.flatMap((section) => {
+      if (section.body) return [section.title, digestSectionBody(section), ''];
+      return [section.title, ...section.items.map((item) => `• ${item}`), ''];
+    }),
     `${payload.pendingApprovals} pending approvals · ${payload.momentCount ?? payload.eventCount} moments`,
     ...(tasks.length
       ? [

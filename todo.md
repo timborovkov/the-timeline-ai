@@ -116,7 +116,10 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       by the worker after rebuilding the same visible cache key. Daily digest
       generation now summarizes bundled moment briefs, applies matching cached
       AI presentations, and writes narrative overview and section prose instead
-      of PR or CI inventories. Home, Work → Digests, and email reuse that
+      of PR or CI inventories. Pull-request numbers, commit hashes, CI run IDs,
+      ticket keys, and object UUIDs are banned from digest text: the generator
+      scrubs them from the briefing packet and rejects a draft that still lists
+      them. Home, Work → Digests, and email reuse that
       payload: the latest digest stays folded, activity counts new moments,
       proposals, pending approvals, tasks, and objects, task blocks cover created or completed
       work and link to the object on the dashboard, calendar rows link to Calendar, and email includes dashboard shortcuts. Repeating calendar series collapse to one upcoming entry. Raw
