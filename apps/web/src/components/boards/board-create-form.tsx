@@ -6,7 +6,6 @@ import { useReducer, useTransition } from 'react';
 
 import { createBoardAction } from '@/app/actions/boards';
 import { BoardStageEditor, type EditableBoardStage } from '@/components/boards/board-stage-editor';
-import { notifyAction } from '@/lib/notify';
 import {
   Dialog,
   DialogContent,
@@ -15,6 +14,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { notifyAction } from '@/lib/notify';
 import { cn } from '@/lib/utils';
 
 const PRESETS = [

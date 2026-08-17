@@ -24,11 +24,11 @@ import {
 } from '@/app/actions/teams';
 import { FormActionToast } from '@/components/form-action-toast';
 import { TechnicalDetails } from '@/components/technical-details';
-import { notifyError } from '@/lib/notify';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { notifyError } from '@/lib/notify';
 import { DEFAULT_TIMEZONE, timezoneOptions } from '@/lib/timezones';
 
 function unsubscribeTimezone(): void {

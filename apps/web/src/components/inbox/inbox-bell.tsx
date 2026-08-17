@@ -7,7 +7,6 @@ import { type MouseEvent, useState, useTransition } from 'react';
 
 import { markAllNotificationsReadAction, markNotificationReadAction } from '@/app/actions/objects';
 import { formatNavBadge } from '@/components/nav-items';
-import { notifyAction } from '@/lib/notify';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,6 +15,7 @@ import {
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { formatDisplayDate } from '@/lib/display-dates';
 import { notificationKindLabel } from '@/lib/notification-labels';
+import { notifyAction } from '@/lib/notify';
 import { cn } from '@/lib/utils';
 
 export interface InboxBellNotification {

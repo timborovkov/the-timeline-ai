@@ -10,13 +10,13 @@ import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
-import { notifyAction } from '@/lib/notify';
 import {
   chatSessionLabel,
   filterChatSessions,
   type ChatSessionListEntry,
 } from '@/lib/chat-session-list';
 import { formatDisplayDateTime, formatRelativeAge } from '@/lib/display-dates';
+import { notifyAction } from '@/lib/notify';
 import { cn } from '@/lib/utils';
 
 type SessionEntry = ChatSessionListEntry;

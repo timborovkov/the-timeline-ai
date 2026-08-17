@@ -7,9 +7,9 @@ import { setIntegrationVisibilityDefaultAction } from '@/app/actions/visibility'
 import { FormActionToast } from '@/components/form-action-toast';
 import { InlineError } from '@/components/inline-error';
 import { Button } from '@/components/ui/button';
-import { notifyAction } from '@/lib/notify';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
+import { notifyAction } from '@/lib/notify';
 import { providerLabel } from '@/lib/resource-labels';
 import { connectionErrorMessage } from '@/lib/ux-errors';
 

@@ -7,8 +7,8 @@ import { Suspense, useEffect, useRef, useState, useTransition } from 'react';
 import { markNotificationReadAction } from '@/app/actions/objects';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { formatDisplayDateTime } from '@/lib/display-dates';
-import { notifyAction } from '@/lib/notify';
 import { notificationKindLabel } from '@/lib/notification-labels';
+import { notifyAction } from '@/lib/notify';
 import { cn } from '@/lib/utils';
 
 interface Props {

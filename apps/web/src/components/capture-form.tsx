@@ -27,7 +27,7 @@ import {
 import { AudioRecorder, type RecordedClip } from '@/components/audio-recorder';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { notifyAction } from '@/lib/notify';
+import { notifyAction, type ActionResult } from '@/lib/notify';
 import { queryKeys } from '@/lib/query-keys';
 import { type TimelineEvent, type TimelinePage } from '@/lib/use-paginated-queries';
 import { cn } from '@/lib/utils';
@@ -356,9 +356,11 @@ function useCaptureSubmission({
     }
     inFlightRef.current = true;
     setCaptureUi({ pending: true, error: null });
-    let optimisticTextId: string | null = null;
-    let textCommitted = false;
-    let serverStateChanged = false;
+    const progress = {
+      optimisticTextId: null as string | null,
+      textCommitted: false,
+      serverStateChanged: false,
+    };
     const warnings: string[] = [];
     const outcome = { success: 'Saved to the timeline' };
     try {
@@ -369,20 +371,20 @@ function useCaptureSubmission({
           return outcome.success;
         },
         error: 'Couldn’t save to the timeline',
-        run: async () => {
+        run: async (): Promise<ActionResult> => {
           if (text.length > 0 && !clip) {
-            optimisticTextId = addOptimisticTextEvent(text);
+            progress.optimisticTextId = addOptimisticTextEvent(text);
             const posted = await submitTextOnly(text);
             if (!posted.ok) throw new Error(posted.error ?? 'Post failed');
             if (posted.warning) warnings.push(posted.warning);
-            textCommitted = true;
-            serverStateChanged = true;
+            progress.textCommitted = true;
+            progress.serverStateChanged = true;
             if (textareaRef.current) textareaRef.current.value = '';
           }
           if (clip) {
             const audioWarning = await submitAudio();
             if (audioWarning) warnings.push(audioWarning);
-            serverStateChanged = true;
+            progress.serverStateChanged = true;
             if (textareaRef.current) textareaRef.current.value = '';
             setCaptureUi((current) =>
               current.clip === clip
@@ -408,7 +410,7 @@ function useCaptureSubmission({
           const failureMessages: string[] = [];
           const attachmentWarnings = attachmentResults.flatMap((attachment, index) => {
             if (attachment.status === 'fulfilled') {
-              serverStateChanged = true;
+              progress.serverStateChanged = true;
               return attachment.value ? [attachment.value] : [];
             }
             const failedFile = files[index];
@@ -436,10 +438,10 @@ function useCaptureSubmission({
           return { ok: true };
         },
       });
-      if ('error' in result && result.error) {
-        if (!textCommitted && optimisticTextId) {
-          removeOptimisticTextEvent(optimisticTextId);
-        } else if (serverStateChanged) {
+      if (result.error) {
+        if (!progress.textCommitted && progress.optimisticTextId) {
+          removeOptimisticTextEvent(progress.optimisticTextId);
+        } else if (progress.serverStateChanged) {
           router.refresh();
         }
       }
