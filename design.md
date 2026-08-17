@@ -276,6 +276,13 @@ next setup step follow as full-width sections without duplicating Timeline or
 Connections. These sections prefer horizontal rules and rows over bordered
 dashboard cards.
 
+The latest digest stays folded until opened. Its summary and section bodies are
+readable prose, not inventories of pull requests or IDs. Activity counts new
+moments, proposals, tasks, and objects from the digest window. Task and calendar
+blocks show change: newly created or completed work, and repeating calendar
+series as one upcoming entry. Work → Digests lists every stored digest as
+collapsed rows so a teammate can open a specific day.
+
 Pinned work is one personal, mixed collection. It may contain canonical
 objects (including tasks, projects, deals, people, and object-type documents),
 boards, library documents and captured files, meetings and saved meetings,
@@ -317,7 +324,8 @@ requests for more detail may expand within the provider-safe reply limit.
 ### Work and settings
 
 Work pages share one subnavigation and lead with the task at hand, not a grid of
-links. Team settings render one URL-selected section at a time. Save state stays
+links. Work → Digests is the day-by-day archive of those briefings. Team settings
+render one URL-selected section at a time. Save state stays
 local to the edited form. Member, object, source, and artifact labels never
 fall back to UUIDs.
 

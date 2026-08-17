@@ -58,6 +58,7 @@ function makeScope(events: unknown[]) {
     },
     suggestions: {
       getApprovalItemCounts: vi.fn().mockResolvedValue({ failed: 0, pending: 0 }),
+      listSuggestions: vi.fn().mockResolvedValue([]),
     },
     objects: { listObjects: vi.fn().mockResolvedValue([]) },
     calendar: { listCalendarEvents: vi.fn().mockResolvedValue([]) },
@@ -77,9 +78,18 @@ function makeDb(selectMocks: unknown[]) {
   };
 }
 
-function makeDigestResult(summary: string, sections: { title: string; items: string[] }[] = []) {
+function makeDigestResult(
+  summary: string,
+  sections: { title: string; body?: string; items?: string[] }[] = [],
+) {
   return {
-    object: { summary, sections },
+    object: {
+      summary,
+      sections: sections.map((section) => ({
+        title: section.title,
+        body: section.body ?? section.items?.join(' ') ?? '',
+      })),
+    },
     model: 'test-model',
   };
 }
@@ -207,7 +217,7 @@ describe('digest map-reduce summarization', () => {
     expect(result.payload.eventCount).toBe(120);
     expect(result.payload.sections).toHaveLength(2);
     expect(result.payload.sections?.[0]?.title).toBe('Highlights');
-    expect(result.payload.sections?.[0]?.items).toEqual(['A', 'B']);
+    expect(result.payload.sections?.[0]?.body).toBe('A B');
   });
 
   it('falls back to merged batch summaries when reduce fails', async () => {
@@ -243,7 +253,7 @@ describe('digest map-reduce summarization', () => {
     expect(result.payload.summary).toContain('Batch 1 summary.');
     expect(result.payload.summary).toContain('Batch 2 summary.');
     expect(result.payload.sections?.[0]?.title).toBe('Highlights');
-    expect(result.payload.sections?.[0]?.items).toEqual(['A', 'B']);
+    expect(result.payload.sections?.[0]?.body).toBe('A B');
   });
 
   it('returns fallback when all batches fail', async () => {
@@ -268,7 +278,7 @@ describe('digest map-reduce summarization', () => {
       now: new Date('2026-06-14T12:05:00Z'),
     });
 
-    expect(result.payload.summary).toMatch(/60 work moments/);
+    expect(result.payload.summary).toMatch(/60 new moments/);
     expect(result.payload.summary).not.toMatch(/from 60 source events/);
     expect(result.payload.eventCount).toBe(60);
     expect(result.payload.sections).toEqual([]);
@@ -354,7 +364,7 @@ describe('digest map-reduce summarization', () => {
     });
 
     expect(fakes.chatStructured).toHaveBeenCalledTimes(1);
-    expect(result.payload.summary).toMatch(/5 work moments/);
+    expect(result.payload.summary).toMatch(/5 new moments/);
     expect(result.payload.summary).not.toMatch(/from 5 source events/);
     expect(result.payload.eventCount).toBe(5);
     expect(result.payload.sections).toEqual([]);
@@ -429,7 +439,7 @@ describe('digest map-reduce summarization', () => {
 
     expect(fakes.chatStructured).toHaveBeenCalledTimes(3);
     expect(result.payload.summary).toBe('Only batch 2 succeeded.');
-    expect(result.payload.sections?.[0]?.items).toEqual(['B']);
+    expect(result.payload.sections?.[0]?.body).toBe('B');
   });
 
   it('bypasses map-reduce when summarize injection is provided, even with many events', async () => {
@@ -496,9 +506,9 @@ describe('digest map-reduce summarization', () => {
     });
 
     expect(result.payload.sections).toEqual([
-      { title: 'Highlights', items: ['Shared highlight', 'Unique highlight'] },
-      { title: 'Completed', items: ['Done thing'] },
-      { title: 'Risks', items: ['Risk A', 'Risk B'] },
+      { title: 'Highlights', body: 'Shared highlight Shared highlight Unique highlight', items: [] },
+      { title: 'Completed', body: 'Done thing', items: [] },
+      { title: 'Risks', body: 'Risk A Risk B', items: [] },
     ]);
   });
 

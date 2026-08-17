@@ -964,9 +964,11 @@ _Avoid_: Setup wizard, activation gate
 
 **Home**:
 The signed-in landing surface for a team member. It leads with Ask and actionable
-attention, keeps capture in a focused dialog, and follows with the latest digest,
-pinned work, up to three recent moments, and one next setup step. It does not
-duplicate the canonical Timeline, Work navigation, or Connections management.
+attention, keeps capture in a focused dialog, and follows with a folded latest
+digest, pinned work, up to three recent moments, and one next setup step. The
+digest opens into narrative summaries of what changed; Work → Digests lists
+every stored day. It does not duplicate the canonical Timeline, Work navigation,
+or Connections management.
 _Avoid_: Timeline when referring to the landing page
 
 **Workspace Time Context**:

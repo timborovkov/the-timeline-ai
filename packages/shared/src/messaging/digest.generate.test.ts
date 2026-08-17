@@ -56,6 +56,7 @@ describe('generateDailyDigest conflict handling', () => {
       },
       suggestions: {
         getApprovalItemCounts: vi.fn().mockResolvedValue({ failed: 0, pending: 2 }),
+        listSuggestions: vi.fn().mockResolvedValue([]),
       },
       objects: { listObjects: vi.fn().mockResolvedValue([]) },
       calendar: { listCalendarEvents: vi.fn().mockResolvedValue([]) },

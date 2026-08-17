@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatDigestTask } from '#src/messaging/digest-format.js';
+import { collapseDigestCalendarEvents, formatDigestCalendarEvent, formatDigestTask } from '#src/messaging/digest-format.js';
 
 const NOW = new Date('2026-07-20T12:00:00.000Z');
 
@@ -19,5 +19,52 @@ describe('formatDigestTask', () => {
         NOW,
       ),
     ).toContain(expected);
+  });
+});
+
+describe('collapseDigestCalendarEvents', () => {
+  it('keeps one-off events and collapses a repeating series to the next occurrence', () => {
+    const collapsed = collapseDigestCalendarEvents([
+      {
+        id: 'occ-1',
+        title: 'Internal daily call',
+        startAt: '2026-08-17T08:00:00.000Z',
+        endAt: '2026-08-17T08:30:00.000Z',
+        recurringParentId: 'series-1',
+      },
+      {
+        id: 'occ-2',
+        title: 'Internal daily call',
+        startAt: '2026-08-18T08:00:00.000Z',
+        endAt: '2026-08-18T08:30:00.000Z',
+        recurringParentId: 'series-1',
+      },
+      {
+        id: 'retreat',
+        title: 'Team retreat',
+        startAt: '2026-08-17T12:00:00.000Z',
+        endAt: '2026-08-21T16:00:00.000Z',
+      },
+    ]);
+
+    expect(collapsed).toEqual([
+      {
+        id: 'series-1',
+        title: 'Internal daily call',
+        startAt: '2026-08-17T08:00:00.000Z',
+        endAt: '2026-08-17T08:30:00.000Z',
+        href: '/app/calendar',
+        repeating: true,
+        occurrenceCount: 2,
+      },
+      {
+        id: 'retreat',
+        title: 'Team retreat',
+        startAt: '2026-08-17T12:00:00.000Z',
+        endAt: '2026-08-21T16:00:00.000Z',
+        href: '/app/calendar',
+      },
+    ]);
+    expect(formatDigestCalendarEvent(collapsed[0]!, 'UTC')).toContain('repeating · next');
   });
 });

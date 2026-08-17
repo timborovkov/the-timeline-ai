@@ -79,7 +79,7 @@ export async function processDailyDigestJob(
     db: deps.db,
     digestId: job.digestId,
     to: job.email,
-    digestUrl: `${siteUrl()}/app`,
+        digestUrl: `${siteUrl()}/app/digests?digest=${job.digestId}`,
   });
   // Permanent provider failures (e.g. Postmark inactive recipient) are already
   // recorded on the digest/delivery rows — retrying only burns attempts + Sentry.

@@ -72,7 +72,37 @@ export interface DailyDigestSection {
     | 'Decisions'
     | 'Risks'
     | 'Follow-ups';
+  /** Narrative paragraph for this section. Preferred over `items` for new digests. */
+  body?: string;
+  /** Legacy bullet inventory. Rendered only when `body` is absent. */
   items: string[];
+}
+
+export interface DailyDigestActivity {
+  newMoments: number;
+  newProposals: number;
+  newTasks: number;
+  completedTasks: number;
+  newProjects: number;
+  newObjectsByType: Record<string, number>;
+}
+
+export interface DailyDigestTask {
+  id: string;
+  title: string;
+  status: string;
+  dueAt: string | null;
+  href: string;
+}
+
+export interface DailyDigestCalendarEvent {
+  id: string;
+  title: string;
+  startAt: string;
+  endAt: string;
+  href: string;
+  repeating?: boolean;
+  occurrenceCount?: number;
 }
 
 export interface DailyDigestPayload {
@@ -86,17 +116,15 @@ export interface DailyDigestPayload {
   pendingApprovals: number;
   eventCount: number;
   momentCount?: number;
+  activity?: DailyDigestActivity;
   sourceDistribution: Record<string, number>;
   objectChangesByType: Record<string, number>;
   newTeamMembers: { userId: string; label: string; createdAt: string }[];
-  tasks: { id: string; title: string; status: string; dueAt: string | null; href: string }[];
-  upcomingCalendar: {
-    id: string;
-    title: string;
-    startAt: string;
-    endAt: string;
-    href: string;
-  }[];
+  /** Tasks created during this digest window. */
+  tasks: DailyDigestTask[];
+  /** Tasks marked done or cancelled during this digest window. */
+  completedTasks?: DailyDigestTask[];
+  upcomingCalendar: DailyDigestCalendarEvent[];
   links: DailyDigestLink[];
 }
 

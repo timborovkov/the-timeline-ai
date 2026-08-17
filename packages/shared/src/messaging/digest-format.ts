@@ -1,4 +1,9 @@
-import type { DailyDigestPayload } from '#src/messaging/types.js';
+import type {
+  DailyDigestActivity,
+  DailyDigestCalendarEvent,
+  DailyDigestPayload,
+  DailyDigestSection,
+} from '#src/messaging/types.js';
 
 import { presentDueDate } from '#src/time/index.js';
 
@@ -33,17 +38,68 @@ export function digestSummaryParagraphs(summary: string): string[] {
   return paragraphs;
 }
 
+export function digestSectionBody(section: DailyDigestSection): string {
+  const body = section.body?.replace(/\s+/g, ' ').trim();
+  if (body) return body;
+  return section.items
+    .map((item) => item.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join(' ');
+}
+
 export function digestContentSections(
   digest: Pick<DailyDigestPayload, 'summary' | 'sections'>,
 ): NonNullable<DailyDigestPayload['sections']> {
   const sections =
     digest.sections?.map((section) => ({
       title: section.title,
+      body: section.body?.replace(/\s+/g, ' ').trim() || undefined,
       items: section.items.map((item) => item.replace(/\s+/g, ' ').trim()).filter(Boolean),
     })) ?? [];
   return sections
-    .filter((section) => section.items.length > 0)
+    .filter((section) => Boolean(section.body) || section.items.length > 0)
     .sort((a, b) => (SECTION_ORDER.get(a.title) ?? 99) - (SECTION_ORDER.get(b.title) ?? 99));
+}
+
+export function digestActivityStats(
+  digest: Pick<
+    DailyDigestPayload,
+    | 'activity'
+    | 'momentCount'
+    | 'eventCount'
+    | 'pendingApprovals'
+    | 'objectChangesByType'
+    | 'tasks'
+    | 'completedTasks'
+  >,
+): DailyDigestActivity {
+  if (digest.activity) return digest.activity;
+  const newObjectsByType = digest.objectChangesByType;
+  return {
+    newMoments: digest.momentCount ?? digest.eventCount,
+    newProposals: digest.pendingApprovals,
+    newTasks: digest.tasks.length,
+    completedTasks: digest.completedTasks?.length ?? 0,
+    newProjects: newObjectsByType.project ?? 0,
+    newObjectsByType,
+  };
+}
+
+export function formatDigestActivityLines(activity: DailyDigestActivity): string[] {
+  return [
+    formatDigestCount(activity.newMoments, 'new moment'),
+    formatDigestCount(activity.newProposals, 'new proposal'),
+    formatDigestCount(activity.newTasks, 'new task'),
+    formatDigestCount(activity.completedTasks, 'completed task'),
+    formatDigestCount(activity.newProjects, 'new project'),
+    ...Object.entries(activity.newObjectsByType)
+      .filter(([type]) => type !== 'task' && type !== 'follow_up' && type !== 'project')
+      .map(([type, count]) => formatDigestCount(count, `new ${type.replaceAll('_', ' ')}`)),
+  ];
+}
+
+function formatDigestCount(count: number, singular: string): string {
+  return `${String(count)} ${count === 1 ? singular : `${singular}s`}`;
 }
 
 export function formatDigestDate(value: string, timezone?: string): string {
@@ -88,7 +144,86 @@ export function formatDigestCalendarEvent(
   event: DailyDigestPayload['upcomingCalendar'][number],
   timezone?: string,
 ): string {
-  return `${event.title} (${formatDigestDateTime(event.startAt, timezone)})`;
+  const when = formatDigestDateTime(event.startAt, timezone);
+  if (!event.repeating) return `${event.title} (${when})`;
+  return `${event.title} (repeating · next ${when})`;
+}
+
+export function collapseDigestCalendarEvents(
+  events: Array<{
+    id: string;
+    title: string;
+    startAt: Date | string;
+    endAt: Date | string;
+    href?: string;
+    recurringParentId?: string | null;
+    rrule?: string | null;
+  }>,
+): DailyDigestCalendarEvent[] {
+  type Group = DailyDigestCalendarEvent & { occurrenceCount: number };
+  const groups = new Map<string, Group>();
+  const order: string[] = [];
+
+  for (const event of events) {
+    const startAt = isoTimestamp(event.startAt);
+    const endAt = isoTimestamp(event.endAt);
+    const repeating = Boolean(event.recurringParentId || event.rrule);
+    const key = event.recurringParentId
+      ? `series:${event.recurringParentId}`
+      : event.rrule
+        ? `self:${event.id}`
+        : `once:${event.id}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.occurrenceCount += 1;
+      if (startAt < existing.startAt) {
+        existing.id = event.recurringParentId ?? event.id;
+        existing.title = event.title;
+        existing.startAt = startAt;
+        existing.endAt = endAt;
+      }
+      continue;
+    }
+    groups.set(key, {
+      id: event.recurringParentId ?? event.id,
+      title: event.title,
+      startAt,
+      endAt,
+      href: event.href ?? '/app/calendar',
+      repeating,
+      occurrenceCount: 1,
+    });
+    order.push(key);
+  }
+
+  return order.map((key) => {
+    const group = groups.get(key);
+    if (!group) {
+      throw new Error(`Missing collapsed calendar group for ${key}`);
+    }
+    if (!group.repeating) {
+      return {
+        id: group.id,
+        title: group.title,
+        startAt: group.startAt,
+        endAt: group.endAt,
+        href: group.href,
+      };
+    }
+    return {
+      id: group.id,
+      title: group.title,
+      startAt: group.startAt,
+      endAt: group.endAt,
+      href: group.href,
+      repeating: true,
+      occurrenceCount: group.occurrenceCount,
+    };
+  });
+}
+
+function isoTimestamp(value: Date | string): string {
+  return value instanceof Date ? value.toISOString() : value;
 }
 
 function formatDigestDateValue(

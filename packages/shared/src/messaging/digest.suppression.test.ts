@@ -50,6 +50,9 @@ function makeScope(
     events?: ReturnType<typeof makeEvent>[];
     pendingApprovals?: number;
     tasks?: unknown[];
+    createdTasks?: unknown[];
+    completedTasks?: unknown[];
+    suggestions?: unknown[];
     upcomingCalendar?: unknown[];
   } = {},
 ) {
@@ -64,8 +67,15 @@ function makeScope(
       getApprovalItemCounts: vi
         .fn()
         .mockResolvedValue({ failed: 0, pending: input.pendingApprovals ?? 0 }),
+      listSuggestions: vi.fn().mockResolvedValue(input.suggestions ?? []),
     },
-    objects: { listObjects: vi.fn().mockResolvedValue(input.tasks ?? []) },
+    objects: {
+      listObjects: vi.fn().mockImplementation((filter: { createdAfter?: Date; status?: unknown } = {}) => {
+        if (filter.status) return Promise.resolve(input.completedTasks ?? []);
+        if (filter.createdAfter) return Promise.resolve(input.createdTasks ?? []);
+        return Promise.resolve(input.tasks ?? []);
+      }),
+    },
     calendar: { listCalendarEvents: vi.fn().mockResolvedValue(input.upcomingCalendar ?? []) },
   };
 }
@@ -201,7 +211,7 @@ describe('daily digest useful-content suppression', () => {
     const result = await generate({ db, summarize });
 
     expect(result.skipped).toBe(true);
-    expect(result.payload.tasks).toHaveLength(1);
+    expect(result.payload.tasks).toHaveLength(0);
     expect(summarize).not.toHaveBeenCalled();
   });
 
