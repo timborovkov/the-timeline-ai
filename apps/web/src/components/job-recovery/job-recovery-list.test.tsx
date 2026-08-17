@@ -204,9 +204,7 @@ describe('JobRecoveryList', () => {
 
     expect(screen.getAllByText('7 hours ago').length).toBeGreaterThan(0);
     expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
-    const hints = screen.getAllByTitle(
-      /Job ID: job-1 \| Artifact UUID: raw-event-1/,
-    );
+    const hints = screen.getAllByTitle(/Job ID: job-1 \| Artifact UUID: raw-event-1/);
     expect(hints.length).toBeGreaterThan(0);
     expect(hints[0]?.getAttribute('title')).toContain('Audio service timed out');
     expect(screen.queryByText('Job ID: job-1')).toBeNull();
@@ -222,7 +220,9 @@ describe('JobRecoveryList', () => {
     expect(advanced?.hasAttribute('open')).toBe(false);
     await user.click(screen.getByText('Advanced tools'));
     expect(advanced?.hasAttribute('open')).toBe(true);
-    expect(within(advanced as HTMLElement).getByRole('button', { name: 'Queue suggestions' })).toBeTruthy();
+    expect(
+      within(advanced as HTMLElement).getByRole('button', { name: 'Queue suggestions' }),
+    ).toBeTruthy();
     expect(
       within(advanced as HTMLElement).getByText(
         'Re-queue reviews if suggestions did not appear. Leave this unless support asks.',

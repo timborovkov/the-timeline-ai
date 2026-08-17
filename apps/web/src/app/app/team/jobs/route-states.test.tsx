@@ -67,7 +67,9 @@ describe('Job recovery route states', () => {
     expect(screen.getByText('Admins only')).toBeTruthy();
     expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Back' }).getAttribute('href')).toBe('/app/team');
-    expect(screen.getByRole('heading', { level: 2, name: 'Unable to load job recovery' })).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Unable to load job recovery' }),
+    ).toBeTruthy();
     expect(
       screen.getByText(
         'No jobs have been retried, dismissed, or changed. Check your connection, then try again.',

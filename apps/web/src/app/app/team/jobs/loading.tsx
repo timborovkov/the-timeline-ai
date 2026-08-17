@@ -11,7 +11,9 @@ export default function JobsLoading() {
       </output>
       <div className="space-y-8" aria-busy="true" aria-label="Loading job recovery">
         <h1 className="sr-only">{JOB_RECOVERY_PAGE_TITLE}</h1>
-        <Breadcrumb items={[{ label: 'Team', href: '/app/team' }, { label: JOB_RECOVERY_PAGE_TITLE }]} />
+        <Breadcrumb
+          items={[{ label: 'Team', href: '/app/team' }, { label: JOB_RECOVERY_PAGE_TITLE }]}
+        />
         <PageHeaderSkeleton />
 
         <section

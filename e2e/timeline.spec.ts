@@ -1437,7 +1437,9 @@ test('job recovery dashboard retries and dismisses failed work from the browser'
       .poll(() => rawEventMetadataHasKey(seed.retryEventId, 'embedding_error'))
       .toBe(false);
 
-    await dismissRow.getByRole('button', { name: 'Actions for E2E dismiss embedding failed' }).click();
+    await dismissRow
+      .getByRole('button', { name: 'Actions for E2E dismiss embedding failed' })
+      .click();
     await Promise.all([
       page.waitForResponse((res) => res.url().includes('/dismiss') && res.ok()),
       page.getByRole('menuitem', { name: 'Dismiss' }).click(),
