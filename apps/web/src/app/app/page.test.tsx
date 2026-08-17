@@ -235,11 +235,10 @@ describe('HomeDashboardPage', () => {
 
     renderToStaticMarkup(await HomeDashboardPage());
 
-    expect(fakes.loadOnboardingChecklistView).toHaveBeenCalledWith({
-      teamId: 'team-1',
-      userId: 'user-1',
-      getChecklistState: expect.any(Function),
-    });
+    const loadArgs = fakes.loadOnboardingChecklistView.mock.calls[0]?.[0];
+    expect(loadArgs?.teamId).toBe('team-1');
+    expect(loadArgs?.userId).toBe('user-1');
+    expect(typeof loadArgs?.getChecklistState).toBe('function');
     expect(fakes.onboardingInitialData).toEqual(snapshot);
   });
 

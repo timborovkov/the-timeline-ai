@@ -82,11 +82,13 @@ describe('onboarding checklist view', () => {
   });
 
   it('loads the mapped view through the shared onboarding cache key', async () => {
-    const getChecklistState = vi.fn(async () =>
-      checklistState({
-        dismissed: false,
-        steps: [{ step: 'first_ask', completed: false }],
-      }),
+    const getChecklistState = vi.fn(() =>
+      Promise.resolve(
+        checklistState({
+          dismissed: false,
+          steps: [{ step: 'first_ask', completed: false }],
+        }),
+      ),
     );
 
     await expect(
