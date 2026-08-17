@@ -56,6 +56,11 @@ insert default is enabled. Conversation replay and web hydration therefore
 preserve user/assistant insertion order even when one transaction gives both
 messages the same timestamp.
 
+Migration `0070_chat_session_context_trail.sql` stores the dashboard views
+attached to a web Ask conversation on `chat_sessions.context_trail`. The trail
+is current-view first, capped, and used for prompt context plus linked badges
+in full Ask.
+
 ## Connection guardrails
 
 Runtime Postgres clients should come from `createPgClient()` or `getDb()`, not a
