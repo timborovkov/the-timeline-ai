@@ -17,16 +17,14 @@ const fakes = vi.hoisted(() => ({
   notifyAction: vi.fn(
     async ({
       run,
-      success,
       error,
     }: {
       run: () => Promise<{ error?: string }>;
-      success: string | { toString?: () => string };
       error: string;
+      success?: string;
     }) => {
       try {
-        const result = await run();
-        return result;
+        return await run();
       } catch (caught) {
         return { error: caught instanceof Error ? caught.message : error };
       }

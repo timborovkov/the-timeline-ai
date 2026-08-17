@@ -180,7 +180,8 @@ function AddCustomMcpServerForm({
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(body),
         });
-        if (!res.ok) return { error: await readPublicApiError(res, networkActionError('add this server')) };
+        if (!res.ok)
+          return { error: await readPublicApiError(res, networkActionError('add this server')) };
         const data = (await res.json().catch(() => ({}))) as {
           id?: string;
           needsOauth?: boolean;
@@ -202,10 +203,7 @@ function AddCustomMcpServerForm({
           } catch {
             // The server was created, so OAuth failure is recoverable from its Connect action.
           }
-          notifyError(
-            'mcp:oauth-start',
-            'Server added. Connect it again to finish authorization.',
-          );
+          notifyError('mcp:oauth-start', 'Server added. Connect it again to finish authorization.');
         }
         return { ok: true };
       },
@@ -395,10 +393,7 @@ export function McpServersUi({
     return busyIds.current;
   }
 
-  function setRowMutation(
-    id: string,
-    patch: Partial<{ busy: 'toggle' | 'remove' | null }>,
-  ) {
+  function setRowMutation(id: string, patch: Partial<{ busy: 'toggle' | 'remove' | null }>) {
     setRowMutations((current) => ({
       ...current,
       [id]: { busy: null, ...current[id], ...patch },

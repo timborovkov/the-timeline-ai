@@ -2641,8 +2641,9 @@ describe('ApprovalsClient', () => {
 
     await waitFor(() => {
       expect(getByText('Customer follow-up')).toBeTruthy();
-      expect(getByText(/Calendar proposal is missing a start or end time/)).toBeTruthy();
     });
+    expect(screen.queryByText(/Calendar proposal is missing a start or end time/)).toBeNull();
+    expect(screen.queryByText('Needs attention')).toBeNull();
   });
 
   it('guards per-item actions against same-tick duplicate clicks', () => {

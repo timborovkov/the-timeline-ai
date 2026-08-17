@@ -358,10 +358,7 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
           const response = await fetch(`/api/team/mcp-keys/${id}`, { method: 'DELETE' });
           if (!response.ok) {
             return {
-              error: await readPublicApiError(
-                response,
-                'The key could not be revoked. Try again.',
-              ),
+              error: await readPublicApiError(response, 'The key could not be revoked. Try again.'),
             };
           }
           return { ok: true };

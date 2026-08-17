@@ -15,6 +15,10 @@ vi.mock('next/image', () => ({
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: vi.fn() }),
 }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: vi.fn(async ({ run }: { run: () => Promise<{ error?: string }> }) => run()),
+  notifyError: vi.fn(),
+}));
 
 const entries = [
   {
@@ -158,5 +162,15 @@ describe('McpCatalog', () => {
 
     expect(screen.getByRole('status').textContent).toBe('4 of 4 MCP servers');
     expect(screen.getByText('Research MCP')).toBeTruthy();
+  });
+
+  it('keeps missing bearer tokens on the field', async () => {
+    const user = userEvent.setup();
+    render(<McpCatalog entries={entries} />);
+
+    await user.click(screen.getByRole('button', { name: 'Connect with token' }));
+    await user.click(screen.getByRole('button', { name: 'Connect' }));
+
+    expect(screen.getByRole('alert').textContent).toBe('Enter a bearer token.');
   });
 });

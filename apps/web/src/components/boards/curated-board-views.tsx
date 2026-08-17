@@ -22,7 +22,6 @@ import { displayText } from '@/lib/display-dates';
 import { notifyAction } from '@/lib/notify';
 import { displayObjectTitle } from '@/lib/object-title';
 import { statusLabel } from '@/lib/status-labels';
-import { cn } from '@/lib/utils';
 
 export interface BoardMemberOption {
   id: string;
@@ -41,7 +40,6 @@ interface BoardBulkState {
   due: string;
   priority: string;
   laneId: string;
-  message: string | null;
 }
 
 type BoardBulkAction =
@@ -49,8 +47,7 @@ type BoardBulkAction =
   | { type: 'responsible'; responsibleUserId: string }
   | { type: 'due'; due: string }
   | { type: 'priority'; priority: string }
-  | { type: 'lane'; laneId: string }
-  | { type: 'message'; message: string | null };
+  | { type: 'lane'; laneId: string };
 
 interface BoardItemUpdateResult {
   ok?: boolean;
@@ -89,29 +86,37 @@ export function CuratedBoardTable({
   }, [selectableItems, selectedIds]);
   if (items.length === 0) return <EmptyBoardItems />;
 
-  function updateItem(
+  async function persistItem(
     id: string,
     patch: BoardItemOptimisticPatch,
-    _suppressErrorAlert = false,
   ): Promise<BoardItemUpdateResult> {
-    if (!onUpdateItem) return Promise.resolve({ error: 'Board item editing is unavailable.' });
+    if (!onUpdateItem) return { error: 'Board item editing is unavailable.' };
     const field = Object.keys(patch)[0] ?? 'field';
     setSaving((current) => ({ ...current, [id]: field }));
+    try {
+      return await onUpdateItem(id, patch);
+    } finally {
+      setSaving((current) => {
+        const { [id]: _done, ...rest } = current;
+        return rest;
+      });
+    }
+  }
+
+  function updateItem(id: string, patch: BoardItemOptimisticPatch): Promise<BoardItemUpdateResult> {
+    const field = Object.keys(patch)[0] ?? 'field';
+    const label = field === 'dueAt' ? 'due date' : field;
     return new Promise((resolve) => {
       startTransition(async () => {
-        const label = field === 'dueAt' ? 'due date' : field;
-        const result = await notifyAction({
-          id: `board-item:${id}`,
-          loading: `Updating ${label}…`,
-          success: `${label.slice(0, 1).toUpperCase()}${label.slice(1)} updated`,
-          error: `Couldn’t update ${label}`,
-          run: () => onUpdateItem(id, patch),
-        });
-        resolve(result);
-        setSaving((current) => {
-          const { [id]: _done, ...rest } = current;
-          return rest;
-        });
+        resolve(
+          await notifyAction({
+            id: `board-item:${id}`,
+            loading: `Updating ${label}…`,
+            success: `${label.slice(0, 1).toUpperCase()}${label.slice(1)} updated`,
+            error: `Couldn’t update ${label}`,
+            run: () => persistItem(id, patch),
+          }),
+        );
       });
     });
   }
@@ -120,7 +125,7 @@ export function CuratedBoardTable({
     ids: string[],
     patch: BoardItemOptimisticPatch,
   ): Promise<{ failed: number }> {
-    const results = await Promise.allSettled(ids.map((id) => updateItem(id, patch, true)));
+    const results = await Promise.allSettled(ids.map((id) => persistItem(id, patch)));
     return {
       failed: results.filter(
         (result) =>
@@ -397,7 +402,6 @@ function BoardBulkToolbar({
     due: '',
     priority: '',
     laneId,
-    message: null,
   }));
   const [pending, startTransition] = useTransition();
   const selectedCount = selectedIds.size;
@@ -414,23 +418,23 @@ function BoardBulkToolbar({
 
   function applyBulk(): void {
     if (selectedCount === 0) return;
-    dispatchBulk({ type: 'message', message: null });
     const ids = [...selectedIds];
     const patch = currentPatch();
     startTransition(async () => {
-      const result = await onUpdateItems(ids, patch);
-      if (result.failed > 0) {
-        dispatchBulk({
-          type: 'message',
-          message: `${result.failed} of ${ids.length} updates failed.`,
-        });
-        return;
-      }
-      setSelectedIds(new Set());
-      dispatchBulk({
-        type: 'message',
-        message: `Updated ${ids.length} ${ids.length === 1 ? 'item' : 'items'}.`,
+      const result = await notifyAction({
+        id: 'board-items:bulk',
+        loading: `Updating ${ids.length} ${ids.length === 1 ? 'item' : 'items'}…`,
+        success: `Updated ${ids.length} ${ids.length === 1 ? 'item' : 'items'}`,
+        error: 'Couldn’t update items',
+        run: async () => {
+          const outcome = await onUpdateItems(ids, patch);
+          return outcome.failed > 0
+            ? { error: `${outcome.failed} of ${ids.length} updates failed.` }
+            : { ok: true };
+        },
       });
+      if (result.error) return;
+      setSelectedIds(new Set());
     });
   }
 
@@ -526,17 +530,6 @@ function BoardBulkToolbar({
           >
             {pending ? 'Applying…' : 'Apply'}
           </button>
-          {bulk.message ? (
-            <span
-              className={cn(
-                'text-xs',
-                bulk.message.includes('failed') ? 'text-danger' : 'text-fg-dim',
-              )}
-              role={bulk.message.includes('failed') ? 'alert' : 'status'}
-            >
-              {bulk.message}
-            </span>
-          ) : null}
         </>
       }
     />
@@ -546,17 +539,15 @@ function BoardBulkToolbar({
 function boardBulkReducer(state: BoardBulkState, action: BoardBulkAction): BoardBulkState {
   switch (action.type) {
     case 'field':
-      return { ...state, field: action.field, message: null };
+      return { ...state, field: action.field };
     case 'responsible':
-      return { ...state, responsibleUserId: action.responsibleUserId, message: null };
+      return { ...state, responsibleUserId: action.responsibleUserId };
     case 'due':
-      return { ...state, due: action.due, message: null };
+      return { ...state, due: action.due };
     case 'priority':
-      return { ...state, priority: action.priority, message: null };
+      return { ...state, priority: action.priority };
     case 'lane':
-      return { ...state, laneId: action.laneId, message: null };
-    case 'message':
-      return { ...state, message: action.message };
+      return { ...state, laneId: action.laneId };
   }
 }
 

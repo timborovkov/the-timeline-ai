@@ -395,8 +395,7 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
   }, [connection.provider, resourceByKey, shares]);
   const selected = state.selectedOverride ?? savedSelected;
   const sourceLoadError = queryError instanceof Error ? queryError.message : null;
-  const error = state.error ?? sourceLoadError;
-  const canRetrySourceLoad = state.error === null && sourceLoadError !== null;
+  const error = sourceLoadError;
   const query = state.query;
 
   const activeShareByKey = useMemo(() => {
@@ -459,62 +458,82 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
     const chosen = [...selected]
       .map((key) => resourceByKey.get(key) ?? activeShareToResource(activeShareByKey.get(key)))
       .filter((resource): resource is ProviderResource => Boolean(resource));
-    try {
-      const res = await fetch(`/api/connections/${connection.id}/resources`, {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          resources: chosen.map((resource) => ({
-            kind: resource.kind,
-            externalId: resource.externalId,
-            label: resource.label,
-          })),
-        }),
-      });
-      if (!res.ok) await readJsonResponse(res);
-      await refetch();
-      dispatch({ type: 'resetSelection' });
-      router.refresh();
-    } catch (err) {
-      dispatch({ type: 'error', error: err instanceof Error ? err.message : 'Save failed' });
-    } finally {
-      dispatch({ type: 'busy', busy: null });
-    }
+    const result = await notifyAction({
+      id: `connection:${connection.id}:save`,
+      loading: 'Saving sources…',
+      success: 'Sources saved',
+      error: 'Couldn’t save sources',
+      run: async () => {
+        try {
+          const res = await fetch(`/api/connections/${connection.id}/resources`, {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              resources: chosen.map((resource) => ({
+                kind: resource.kind,
+                externalId: resource.externalId,
+                label: resource.label,
+              })),
+            }),
+          });
+          if (!res.ok) await readJsonResponse(res);
+          await refetch();
+          return { ok: true };
+        } catch {
+          return { error: 'failed' };
+        }
+      },
+    });
+    dispatch({ type: 'busy', busy: null });
+    if (result.error) return;
+    dispatch({ type: 'resetSelection' });
+    router.refresh();
   }
 
   async function deleteConnection() {
     dispatch({ type: 'busy', busy: 'delete' });
     dispatch({ type: 'error', error: null });
-    try {
-      const res = await fetch(`/api/connections/${connection.id}`, { method: 'DELETE' });
-      await readJsonResponse(res);
-      router.refresh();
-    } catch (err) {
-      dispatch({ type: 'error', error: err instanceof Error ? err.message : 'Delete failed' });
-    } finally {
-      dispatch({ type: 'busy', busy: null });
-    }
+    const result = await notifyAction({
+      id: `connection:${connection.id}:delete`,
+      loading: 'Deleting provider account…',
+      success: 'Provider account deleted',
+      error: 'Couldn’t delete provider account',
+      run: async () => {
+        try {
+          const res = await fetch(`/api/connections/${connection.id}`, { method: 'DELETE' });
+          await readJsonResponse(res);
+          return { ok: true };
+        } catch {
+          return { error: 'failed' };
+        }
+      },
+    });
+    dispatch({ type: 'busy', busy: null });
+    if (!result.error) router.refresh();
   }
 
   async function reconnect() {
     dispatch({ type: 'busy', busy: 'reconnect' });
     dispatch({ type: 'error', error: null });
-    try {
-      const res = await fetch(`/api/integrations/${connection.provider}/start`, {
-        method: 'POST',
-      });
-      const data = (await res.json()) as { url?: string; error?: string };
-      if (!res.ok || !data.url) {
-        throw new Error(data.error ?? connectionErrorMessage(data.error, res.status));
-      }
-      window.location.href = data.url;
-    } catch (err) {
-      dispatch({
-        type: 'error',
-        error: err instanceof Error ? err.message : 'Reconnect failed',
-      });
-      dispatch({ type: 'busy', busy: null });
-    }
+    const result = await notifyAction({
+      id: `connection:${connection.id}:reconnect`,
+      loading: 'Opening sign-in…',
+      success: 'Opening sign-in',
+      error: 'Couldn’t start reconnection',
+      run: async () => {
+        const res = await fetch(`/api/integrations/${connection.provider}/start`, {
+          method: 'POST',
+        });
+        const data = (await res.json()) as { url?: string; error?: string };
+        if (!res.ok || !data.url) {
+          return { error: data.error ?? connectionErrorMessage(data.error, res.status) };
+        }
+        window.location.href = data.url;
+        return { ok: true };
+      },
+    });
+    dispatch({ type: 'busy', busy: null });
+    if (result.error) return;
   }
 
   return (
@@ -612,11 +631,10 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
             message={connectionErrorMessage(error)}
             details={error}
             onRetry={() => {
-              if (canRetrySourceLoad) void retrySourceLoad();
-              else dispatch({ type: 'error', error: null });
+              void retrySourceLoad();
             }}
-            retryLabel={canRetrySourceLoad ? 'Retry loading sources' : 'Dismiss'}
-            retrying={canRetrySourceLoad && isFetching}
+            retryLabel="Retry loading sources"
+            retrying={isFetching}
           />
         ) : null}
         {isLoading ? <SourcePickerLoading /> : null}
@@ -844,7 +862,6 @@ export function TeamSourcesUi({
     [activeSelectedByConnection, selectedOverrides],
   );
   const [busy, setBusy] = useState<string | null>(null);
-  const [syncNotice, setSyncNotice] = useState<string | null>(null);
 
   if (rows.length === 0) {
     return (
@@ -863,11 +880,13 @@ export function TeamSourcesUi({
 
   async function activate(providerConnectionId: string) {
     setBusy(providerConnectionId);
-    setSyncNotice(null);
+    const outcome = { success: 'Team sync saved' };
     const result = await notifyAction({
       id: `integration:activate:${providerConnectionId}`,
       loading: 'Saving team sync…',
-      success: 'Team sync saved',
+      get success() {
+        return outcome.success;
+      },
       error: 'Couldn’t save team sync',
       run: async () => {
         const res = await fetch('/api/team/integrations/activate', {
@@ -884,13 +903,11 @@ export function TeamSourcesUi({
           syncQueued?: boolean;
         }>(res);
         if (payload.error) return { error: payload.error };
-        setSyncNotice(
-          !payload.syncRequired
-            ? 'Team sync sources saved. No historical import was needed.'
-            : payload.syncQueued
-              ? 'Initial import queued. Older items will be available after the first sync completes.'
-              : 'Sources were saved, but the initial import could not be queued. Retry team sync.',
-        );
+        outcome.success = !payload.syncRequired
+          ? 'Team sync sources saved. No historical import was needed.'
+          : payload.syncQueued
+            ? 'Initial import queued. Older items will be available after the first sync completes.'
+            : 'Sources were saved, but the initial import could not be queued. Retry team sync.';
         setSelectedOverrides({});
         return { ok: true };
       },
@@ -902,11 +919,6 @@ export function TeamSourcesUi({
   return (
     <div className="space-y-3">
       <TeamSyncFlow isAdmin={isAdmin} />
-      {syncNotice ? (
-        <output className="rounded-sm border border-signal/30 bg-signal-soft px-3 py-2 text-sm text-fg">
-          {syncNotice}
-        </output>
-      ) : null}
       {[...groups.entries()].map(([connectionId, groupRows]) => {
         const connection = groupRows[0]?.connection;
         if (!connection) return null;

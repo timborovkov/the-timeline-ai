@@ -8,13 +8,14 @@ import type * as boards from '@timeline/shared/boards';
 
 const fakes = vi.hoisted(() => ({
   updateItem: vi.fn(),
+  notifyAction: vi.fn(async ({ run }: { run: () => Promise<{ error?: string }> }) => run()),
 }));
 
 vi.mock('@/app/actions/objects', () => ({
   loadTaskCategoryStatesAction: vi.fn(),
 }));
 vi.mock('@/lib/notify', () => ({
-  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
+  notifyAction: fakes.notifyAction,
 }));
 
 const { CuratedBoardList, CuratedBoardTable } = await import('./curated-board-views.js');
@@ -89,6 +90,7 @@ describe('CuratedBoardTable', () => {
     cleanup();
     fakes.updateItem.mockReset();
     fakes.updateItem.mockResolvedValue({ ok: true });
+    fakes.notifyAction.mockClear();
   });
 
   it('edits board item fields inline', async () => {
@@ -200,7 +202,7 @@ describe('CuratedBoardTable', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('announces bulk update failures as errors', async () => {
+  it('reports bulk update failures through the shared toast', async () => {
     const user = userEvent.setup();
     fakes.updateItem.mockResolvedValueOnce({ error: 'Connection lost' });
     render(
@@ -218,11 +220,15 @@ describe('CuratedBoardTable', () => {
     await user.click(screen.getByRole('button', { name: 'Apply' }));
 
     await waitFor(() => {
-      const alert = screen.getByText('1 of 1 updates failed.');
-      expect(alert.getAttribute('role')).toBe('alert');
-      expect(alert.className).toContain('text-danger');
-      expect(screen.getAllByRole('alert')).toHaveLength(1);
+      expect(fakes.notifyAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'board-items:bulk',
+          error: 'Couldn’t update items',
+        }),
+      );
     });
+    expect(screen.queryByText('1 of 1 updates failed.')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('syncs the next step editor when refreshed item props change', async () => {
@@ -300,6 +306,7 @@ describe('CuratedBoardList', () => {
     cleanup();
     fakes.updateItem.mockReset();
     fakes.updateItem.mockResolvedValue({ ok: true });
+    fakes.notifyAction.mockClear();
   });
 
   it('wraps long board item titles', () => {

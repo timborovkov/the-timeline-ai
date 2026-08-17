@@ -235,10 +235,7 @@ describe('IntegrationsPageView', () => {
       />,
     );
 
-    expect(notify.notifySuccess).toHaveBeenCalledWith(
-      'integrations:oauth',
-      'MCP server connected',
-    );
+    expect(notify.notifySuccess).toHaveBeenCalledWith('integrations:oauth', 'MCP server connected');
     expect(screen.queryByText(/MCP server connected successfully/i)).toBeNull();
   });
 

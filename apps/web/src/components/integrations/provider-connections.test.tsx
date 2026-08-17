@@ -3,7 +3,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ReactElement } from 'react';
 
@@ -12,11 +12,41 @@ import {
   TeamSourcesUi,
 } from '@/components/integrations/provider-connections';
 
+const notify = vi.hoisted(() => ({
+  notifyAction: vi.fn(
+    async ({ run }: { run: () => Promise<{ error?: string }>; success?: string }) => {
+      try {
+        return await run();
+      } catch {
+        return { error: 'failed' };
+      }
+    },
+  ),
+}));
+
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+vi.mock('@/lib/notify', () => notify);
+
+function installNotifyAction() {
+  notify.notifyAction.mockImplementation(
+    async ({ run }: { run: () => Promise<{ error?: string }> }) => {
+      try {
+        return await run();
+      } catch {
+        return { error: 'failed' };
+      }
+    },
+  );
+}
+
+beforeEach(() => {
+  installNotifyAction();
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  notify.notifyAction.mockClear();
   cleanup();
 });
 
@@ -692,7 +722,15 @@ describe('PersonalConnectionsUi', () => {
     await user.click(await screen.findByRole('menuitem', { name: 'Delete account' }));
     await user.click(screen.getByRole('button', { name: 'Delete provider account' }));
 
-    expect(await screen.findByText(/Could not disconnect this connection/i)).toBeTruthy();
+    await waitFor(() => {
+      expect(notify.notifyAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'connection:github:delete',
+          error: 'Couldn’t delete provider account',
+        }),
+      );
+    });
+    expect(screen.queryByText(/Could not disconnect this connection/i)).toBeNull();
   });
 
   it('explains that admins activate shared team sources', () => {
@@ -732,8 +770,14 @@ describe('PersonalConnectionsUi', () => {
     await user.click(screen.getByRole('checkbox'));
     await user.click(screen.getByRole('button', { name: 'Activate team sync' }));
 
-    expect(await screen.findByText(/Initial import queued/i)).toBeTruthy();
-    expect(screen.getByText(/Older items will be available after the first sync/i)).toBeTruthy();
+    await waitFor(() => {
+      expect(notify.notifyAction).toHaveBeenCalled();
+    });
+    const success = notify.notifyAction.mock.calls.at(-1)?.[0]?.success;
+    expect(typeof success === 'string' ? success : String(success)).toBe(
+      'Initial import queued. Older items will be available after the first sync completes.',
+    );
+    expect(screen.queryByText(/Initial import queued/i)).toBeNull();
   });
 
   it('does not tell non-admins to select and save shared team sources', () => {

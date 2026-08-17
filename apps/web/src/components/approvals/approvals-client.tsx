@@ -426,18 +426,6 @@ function payloadBoolean(payload: Record<string, unknown>, key: string): boolean 
   return typeof value === 'boolean' ? value : null;
 }
 
-function localActionFailureReason(item: SuggestionItem): string | null {
-  if (
-    item.targetKind === 'calendar_event' &&
-    item.operation === 'create' &&
-    (!payloadString(item.proposedPayload, 'startAt') ||
-      !payloadString(item.proposedPayload, 'endAt'))
-  ) {
-    return 'Calendar proposal is missing a start or end time. Reject it or revise the source details before accepting.';
-  }
-  return null;
-}
-
 function metadataString(metadata: Record<string, unknown>, key: string): string | null {
   const value = metadata[key];
   return typeof value === 'string' && value.trim() ? value : null;
@@ -645,7 +633,6 @@ export function ApprovalsClient({
     () => new Map(),
   );
   const [busyItemIds, setBusyItemIds] = useState<Set<string>>(() => new Set());
-  const [actionFailedItemIds, setActionFailedItemIds] = useState<Set<string>>(() => new Set());
   const inFlightItemIdsRef = useRef<Set<string> | null>(null);
   inFlightItemIdsRef.current ??= new Set();
   const serverItemSignatures = useMemo(
@@ -749,20 +736,6 @@ export function ApprovalsClient({
     });
   }
 
-  function clearActionFailures(itemIds: string[]) {
-    if (itemIds.length === 0) return;
-    setActionFailedItemIds((previous) => {
-      const next = new Set(previous);
-      for (const id of itemIds) next.delete(id);
-      return next;
-    });
-  }
-
-  function markActionFailures(itemIds: string[]) {
-    if (itemIds.length === 0) return;
-    setActionFailedItemIds((previous) => new Set([...previous, ...itemIds]));
-  }
-
   function run(
     action: () => Promise<{ ok?: boolean; error?: string; failedItemIds?: string[] }>,
     optimisticItemIds: string[],
@@ -771,7 +744,6 @@ export function ApprovalsClient({
     if (!inFlightItemIds) return;
     if (optimisticItemIds.some((id) => inFlightItemIds.has(id))) return;
     for (const id of optimisticItemIds) inFlightItemIds.add(id);
-    clearActionFailures(optimisticItemIds);
     resolveItems(optimisticItemIds);
     markBusy(optimisticItemIds);
     startTransition(async () => {
@@ -790,11 +762,9 @@ export function ApprovalsClient({
               : [];
           const restoreItemIds = failedItemIds.length > 0 ? failedItemIds : optimisticItemIds;
           restoreItems(restoreItemIds);
-          markActionFailures(restoreItemIds);
         }
       } catch {
         restoreItems(optimisticItemIds);
-        markActionFailures(optimisticItemIds);
       } finally {
         for (const id of optimisticItemIds) inFlightItemIdsRef.current?.delete(id);
         clearBusy(optimisticItemIds);
@@ -826,7 +796,6 @@ export function ApprovalsClient({
       mergeReviewItemCount={mergeReviewItemCount}
       bulkRejectItemCount={bulkRejectItemCount}
       bulkRejectSuggestions={bulkRejectSuggestions}
-      actionFailedItemIds={actionFailedItemIds}
       busyItemIds={busyItemIds}
       pending={pending}
       run={run}
@@ -864,7 +833,6 @@ function ApprovalListBody({
   mergeReviewItemCount,
   bulkRejectItemCount,
   bulkRejectSuggestions,
-  actionFailedItemIds,
   busyItemIds,
   pending,
   run,
@@ -879,7 +847,6 @@ function ApprovalListBody({
   mergeReviewItemCount: number;
   bulkRejectItemCount: number;
   bulkRejectSuggestions: { suggestionId: string; itemIds: string[] }[];
-  actionFailedItemIds: Set<string>;
   busyItemIds: Set<string>;
   pending: boolean;
   run: ApprovalAction;
@@ -905,7 +872,6 @@ function ApprovalListBody({
       {visibleSuggestions.map((bundle) => (
         <ApprovalBundleRow
           allowBulkAccept={allowBulkAccept}
-          actionFailedItemIds={actionFailedItemIds}
           bundle={bundle}
           busyItemIds={busyItemIds}
           key={bundle.id}
@@ -1001,7 +967,6 @@ function PageBulkActions({
 
 function ApprovalBundleRow({
   allowBulkAccept,
-  actionFailedItemIds,
   bundle,
   busyItemIds,
   pending,
@@ -1010,7 +975,6 @@ function ApprovalBundleRow({
   taskCategoriesEnabled,
 }: {
   allowBulkAccept: boolean;
-  actionFailedItemIds: Set<string>;
   bundle: SuggestionBundle;
   busyItemIds: Set<string>;
   pending: boolean;
@@ -1052,7 +1016,6 @@ function ApprovalBundleRow({
         {bundle.items.map((item) => (
           <ApprovalItemRow
             bundle={bundle}
-            actionFailed={actionFailedItemIds.has(item.id)}
             busy={busyItemIds.has(item.id)}
             item={item}
             key={item.id}
@@ -1106,7 +1069,6 @@ function approvalSourceLabel(bundle: SuggestionBundle): string {
 }
 
 function ApprovalItemRow({
-  actionFailed,
   bundle,
   busy,
   item,
@@ -1115,7 +1077,6 @@ function ApprovalItemRow({
   timezone,
   taskCategoriesEnabled,
 }: {
-  actionFailed: boolean;
   bundle: SuggestionBundle;
   busy: boolean;
   item: SuggestionItem;
@@ -1126,7 +1087,7 @@ function ApprovalItemRow({
 }) {
   return (
     <li className="grid min-h-11 gap-2 px-3 py-2 md:grid-cols-[minmax(0,1.3fr)_minmax(10rem,0.8fr)_minmax(9rem,auto)] md:items-center">
-      <ApprovalItemMain actionFailed={actionFailed} item={item} timezone={timezone} />
+      <ApprovalItemMain item={item} timezone={timezone} />
       <ApprovalItemPayload
         bundle={bundle}
         item={item}
@@ -1147,16 +1108,7 @@ function ApprovalItemRow({
   );
 }
 
-function ApprovalItemMain({
-  actionFailed,
-  item,
-  timezone,
-}: {
-  actionFailed: boolean;
-  item: SuggestionItem;
-  timezone: string;
-}) {
-  const actionFailureReason = actionFailed ? localActionFailureReason(item) : null;
+function ApprovalItemMain({ item, timezone }: { item: SuggestionItem; timezone: string }) {
   return (
     <div className="min-w-0 self-center">
       {item.status !== 'pending' ? (
@@ -1169,11 +1121,6 @@ function ApprovalItemMain({
       </div>
       {item.description ? (
         <p className="mt-1 text-sm text-fg-muted">{displayText(item.description, { timezone })}</p>
-      ) : null}
-      {actionFailureReason ? (
-        <p className="mt-1 text-xs text-danger">{actionFailureReason}</p>
-      ) : actionFailed ? (
-        <p className="mt-1 text-xs text-danger">Needs attention</p>
       ) : null}
     </div>
   );

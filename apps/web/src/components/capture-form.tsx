@@ -436,7 +436,7 @@ function useCaptureSubmission({
           return { ok: true };
         },
       });
-      if (result.error) {
+      if ('error' in result && result.error) {
         if (!textCommitted && optimisticTextId) {
           removeOptimisticTextEvent(optimisticTextId);
         } else if (serverStateChanged) {
@@ -567,8 +567,11 @@ export function CaptureForm({
   const formRef = useRef<HTMLFormElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [{ isPrivate, clip, files, pending, error, recorderKey }, setCaptureUi] =
-    useReducer(captureUiReducer, initialVisibility, initCaptureUiState);
+  const [{ isPrivate, clip, files, pending, error, recorderKey }, setCaptureUi] = useReducer(
+    captureUiReducer,
+    initialVisibility,
+    initCaptureUiState,
+  );
   const handleSubmit = useCaptureSubmission({
     currentUser,
     filters,
