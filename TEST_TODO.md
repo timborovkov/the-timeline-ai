@@ -623,8 +623,9 @@ Covered frontend pieces are still narrow:
   status, confirmation, and finished archive display/pagination/error states.
 - Support form and team forms for inbound email whitelist, invite
   role/link/email-failure, and team-export panel states.
-- Calendar recurrence edit/delete, event-list URL controls for `eventQ`,
-  `eventScope`, and `eventPage`, filtered result/empty states for query/scope,
+- Calendar recurrence edit/delete, event-list URL controls for `eventQ` and
+  `eventScope`, infinite-scroll list paging, filtered result/empty states for
+  query/scope,
   create validation, normalized recurrence preset mapping, specific-user
   defaults, save failure recovery, optimistic state, and redacted busy
   rendering.

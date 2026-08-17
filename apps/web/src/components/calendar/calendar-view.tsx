@@ -853,7 +853,7 @@ function CalendarEventList({
   const eventCountLabel = formatCollectionCount({
     matching: total,
     total,
-    filtered: hasActiveFilters,
+    filtered: false,
   });
 
   useEffect(() => {
