@@ -21,10 +21,6 @@ interface KeyRow {
   createdAt: string;
 }
 
-function copyToClipboard(text: string): void {
-  void navigator.clipboard.writeText(text).catch(() => undefined);
-}
-
 function remoteJsonConfig(mcpUrl: string, mintedKey: MintedKey): string {
   return JSON.stringify(
     {
@@ -122,16 +118,7 @@ function McpEndpointCard({ mcpUrl }: { mcpUrl: string }) {
           <code className="flex-1 break-all rounded-sm border border-border bg-surface-2 px-2 py-1.5 font-mono text-xs">
             {mcpUrl || 'Loading…'}
           </code>
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={!mcpUrl}
-            onClick={() => {
-              copyToClipboard(mcpUrl);
-            }}
-          >
-            Copy
-          </Button>
+          {mcpUrl ? <CopyButton value={mcpUrl} /> : null}
         </div>
         <p className="text-xs text-fg-dim">
           Timeline currently advertises MCP protocol <code className="font-mono">2024-11-05</code>{' '}
@@ -407,14 +394,7 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
               <code className="flex-1 break-all rounded-sm border border-signal/40 bg-surface-2 px-2 py-1.5 font-mono text-xs">
                 {mintedKey.plaintext}
               </code>
-              <Button
-                size="sm"
-                onClick={() => {
-                  copyToClipboard(mintedKey.plaintext);
-                }}
-              >
-                Copy
-              </Button>
+              <CopyButton value={mintedKey.plaintext} />
             </div>
             <Button
               size="sm"

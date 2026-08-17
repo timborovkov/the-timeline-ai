@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useReducer } from 'react';
 
+import { CopyButton } from '@/components/copy-button';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -79,10 +80,6 @@ function reducer(state: State, action: Action): State {
         showCreate: false,
       };
   }
-}
-
-function copyToClipboard(text: string): void {
-  void navigator.clipboard.writeText(text).catch(() => undefined);
 }
 
 export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] }) {
@@ -222,14 +219,7 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
               <code className="flex-1 break-all rounded-sm border border-signal/40 bg-surface-2 px-2 py-1.5 font-mono text-xs">
                 {endpointFor(minted.plaintext)}
               </code>
-              <Button
-                size="sm"
-                onClick={() => {
-                  copyToClipboard(endpointFor(minted.plaintext));
-                }}
-              >
-                Copy
-              </Button>
+              <CopyButton value={endpointFor(minted.plaintext)} />
             </div>
             <Button
               size="sm"

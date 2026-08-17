@@ -11,15 +11,19 @@ const fakes = vi.hoisted(() => ({
   deleteFolderAction: vi.fn(),
   finalizeDocumentVersionAction: vi.fn(),
   requestDocumentUploadAction: vi.fn(),
-  toastError: vi.fn(),
-  toastSuccess: vi.fn(),
+  notifyAction: vi.fn(),
+  notifyError: vi.fn(),
   useQueryClient: vi.fn(),
   useDocumentListQuery: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: fakes.useQueryClient }));
-vi.mock('sonner', () => ({ toast: { error: fakes.toastError, success: fakes.toastSuccess } }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: (options: { run: () => Promise<{ error?: string }> }) =>
+    fakes.notifyAction(options),
+  notifyError: fakes.notifyError,
+}));
 vi.mock('@/lib/use-paginated-queries', () => ({
   useDocumentListQuery: fakes.useDocumentListQuery,
 }));
@@ -58,6 +62,9 @@ function renderDrive(overrides: Partial<Parameters<typeof DocumentDrive>[0]> = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fakes.notifyAction.mockImplementation(async ({ run }: { run: () => Promise<{ error?: string }> }) =>
+    run(),
+  );
   fakes.useQueryClient.mockReturnValue({ setQueryData: vi.fn() });
   fakes.useDocumentListQuery.mockImplementation((_folderId: string | null, initial: unknown) => ({
     data: { pages: [initial] },
@@ -249,14 +256,15 @@ describe('DocumentDrive', () => {
     );
 
     await waitFor(() => {
-      expect(fakes.toastError).toHaveBeenCalledWith(
-        'Unable to reach document storage. Check your connection, then try again.',
+      expect(fakes.notifyAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: 'Couldn’t upload document',
+        }),
       );
     });
-    expect(fakes.toastError).not.toHaveBeenCalledWith(
-      expect.stringContaining('S3_PUBLIC_ENDPOINT'),
-    );
-    expect(fakes.toastError).not.toHaveBeenCalledWith(expect.stringContaining('RustFS'));
+    expect(await screen.findByText(/Unable to reach document storage/)).toBeTruthy();
+    expect(screen.queryByText(/S3_PUBLIC_ENDPOINT/)).toBeNull();
+    expect(screen.queryByText(/RustFS/)).toBeNull();
   });
 
   it('opens document provenance with the full timeline event id', async () => {

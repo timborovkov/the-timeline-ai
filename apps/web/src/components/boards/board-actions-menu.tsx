@@ -3,7 +3,6 @@
 import { MoreHorizontal, Pencil, Save, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMemo, useReducer, useState, useTransition } from 'react';
-import { toast } from 'sonner';
 
 import type * as boards from '@timeline/shared/boards';
 
@@ -25,6 +24,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { notifyAction } from '@/lib/notify';
 
 export function BoardActionsMenu({
   id,
@@ -53,11 +53,17 @@ export function BoardActionsMenu({
     });
     if (!confirmed) return;
     startTransition(async () => {
-      const result = await deleteBoardAction({ id });
-      if ('error' in result && result.error) {
-        toast.error(result.error);
-        return;
-      }
+      const result = await notifyAction({
+        id: `board:${id}:delete`,
+        loading: 'Deleting board…',
+        success: 'Board deleted',
+        error: 'Couldn’t delete board',
+        run: async () => {
+          const deleted = await deleteBoardAction({ id });
+          return deleted.error ? { error: deleted.error } : {};
+        },
+      });
+      if (result.error) return;
       router.push('/app/boards');
       router.refresh();
     });
@@ -132,6 +138,7 @@ function BoardSettingsDialog({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [fieldError, setFieldError] = useState<'name' | 'stages' | null>(null);
   const [draft, dispatchDraft] = useReducer(settingsDraftReducer, {
     name: initialName,
     purpose: initialPurpose,
@@ -141,24 +148,47 @@ function BoardSettingsDialog({
   function saveSettings(): void {
     const stages = draft.stages.map((stage) => ({ ...stage, name: stage.name.trim() }));
     if (!draft.name.trim()) {
-      toast.error('Board name is required');
+      setFieldError('name');
       return;
     }
     if (stages.some((stage) => !stage.name)) {
-      toast.error('Stage names are required');
+      setFieldError('stages');
       return;
     }
+    setFieldError(null);
     startTransition(async () => {
-      const result = await updateBoardSettingsAction({
-        id,
-        name: draft.name.trim(),
-        purpose: draft.purpose.trim(),
-        lanes: stages,
+      const result = await notifyAction({
+        id: `board:${id}:settings`,
+        loading: 'Saving board settings…',
+        success: 'Board settings saved',
+        error: 'Couldn’t save board settings',
+        run: async () => {
+          const saved = await updateBoardSettingsAction({
+            id,
+            name: draft.name.trim(),
+            purpose: draft.purpose.trim(),
+            lanes: stages,
+          });
+          return saved.error ? { error: saved.error } : {};
+        },
+        undo: {
+          run: async () => {
+            const restored = await updateBoardSettingsAction({
+              id,
+              name: initialName,
+              purpose: initialPurpose,
+              lanes: initialLanes.map((lane) => ({
+                id: lane.id,
+                name: lane.name,
+                kind: lane.kind,
+              })),
+            });
+            if (!restored.error) router.refresh();
+            return restored.error ? { error: restored.error } : {};
+          },
+        },
       });
-      if ('error' in result && result.error) {
-        toast.error(result.error);
-        return;
-      }
+      if (result.error) return;
       onOpenChange(false);
       router.refresh();
     });
@@ -179,9 +209,16 @@ function BoardSettingsDialog({
               disabled={pending}
               onChange={(event) => {
                 dispatchDraft({ type: 'name', name: event.target.value });
+                if (fieldError === 'name') setFieldError(null);
               }}
+              aria-invalid={fieldError === 'name' ? true : undefined}
               className="w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm focus-visible:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-60"
             />
+            {fieldError === 'name' ? (
+              <p role="alert" className="mt-1 text-xs text-danger">
+                Board name is required
+              </p>
+            ) : null}
           </label>
           <label className="block">
             <span className="mb-1 block text-xs text-fg-dim">Description</span>
@@ -200,9 +237,15 @@ function BoardSettingsDialog({
             stages={draft.stages}
             onChange={(stages) => {
               dispatchDraft({ type: 'stages', stages });
+              if (fieldError === 'stages') setFieldError(null);
             }}
             disabled={pending}
           />
+          {fieldError === 'stages' ? (
+            <p role="alert" className="text-xs text-danger">
+              Stage names are required
+            </p>
+          ) : null}
           <div className="flex justify-end">
             <button
               type="button"

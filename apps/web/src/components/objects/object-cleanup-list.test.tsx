@@ -11,7 +11,8 @@ const fakes = vi.hoisted(() => ({
   confirm: vi.fn(),
   bulkArchiveObjectsAction: vi.fn(),
   updateObjectAction: vi.fn(),
-  toastError: vi.fn(),
+  notifyAction: vi.fn(),
+  notifyError: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
@@ -22,7 +23,11 @@ vi.mock('@/app/actions/objects', () => ({
   bulkArchiveObjectsAction: fakes.bulkArchiveObjectsAction,
   updateObjectAction: fakes.updateObjectAction,
 }));
-vi.mock('sonner', () => ({ toast: { error: fakes.toastError, success: vi.fn() } }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: (options: { run: () => Promise<{ error?: string }> }) =>
+    fakes.notifyAction(options),
+  notifyError: fakes.notifyError,
+}));
 
 const { ObjectCleanupList } = await import('./object-cleanup-list.js');
 
@@ -59,6 +64,9 @@ describe('ObjectCleanupList', () => {
     fakes.confirm.mockResolvedValue(false);
     fakes.bulkArchiveObjectsAction.mockResolvedValue({ ok: true });
     fakes.updateObjectAction.mockResolvedValue({ ok: true });
+    fakes.notifyAction.mockImplementation(async ({ run }: { run: () => Promise<{ error?: string }> }) =>
+      run(),
+    );
   });
 
   it('does not render legacy agentSuggested badges on object rows', () => {
@@ -143,11 +151,16 @@ describe('ObjectCleanupList', () => {
     await user.selectOptions(screen.getByRole('combobox', { name: 'Priority' }), '1');
 
     await waitFor(() => {
-      expect(screen.getByRole('alert').textContent).toBe('Connection lost');
+      expect(
+        screen.getByRole('button', { name: 'Priority for Legacy suggested cleanup row' })
+          .textContent,
+      ).toContain('No priority');
+      expect(fakes.notifyAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: 'Couldn’t update priority',
+        }),
+      );
     });
-    expect(
-      screen.getByRole('button', { name: 'Priority for Legacy suggested cleanup row' }).textContent,
-    ).toContain('No priority');
-    expect(fakes.toastError).toHaveBeenCalledWith('Connection lost');
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });

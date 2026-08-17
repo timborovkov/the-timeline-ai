@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TimelineEvent } from '@/lib/use-paginated-queries';
 import type { ComponentProps, ReactNode } from 'react';
@@ -14,7 +14,8 @@ const fakes = vi.hoisted(() => ({
   hideInspector: vi.fn(),
   refresh: vi.fn(),
   removeConversationalEvent: vi.fn(),
-  toastSuccess: vi.fn(),
+  notifyAction: vi.fn(),
+  notifyError: vi.fn(),
 }));
 
 vi.mock('@/app/actions/events', () => ({
@@ -47,7 +48,11 @@ vi.mock('@/components/inspector-context', () => ({
   }),
 }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
-vi.mock('sonner', () => ({ toast: { success: fakes.toastSuccess } }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: (options: { run: () => Promise<{ error?: string }> }) =>
+    fakes.notifyAction(options),
+  notifyError: fakes.notifyError,
+}));
 
 const { TimelineList } = await import('./timeline-list.js');
 
@@ -55,13 +60,19 @@ interface InspectorContentForTest {
   render: () => ReactNode;
 }
 
+beforeEach(() => {
+  fakes.notifyAction.mockImplementation(async ({ run }: { run: () => Promise<{ error?: string }> }) =>
+    run(),
+  );
+});
+
 afterEach(() => {
   cleanup();
   fakes.showInspector.mockClear();
   fakes.hideInspector.mockClear();
   fakes.refresh.mockClear();
   fakes.removeConversationalEvent.mockReset();
-  fakes.toastSuccess.mockClear();
+  fakes.notifyAction.mockClear();
 });
 
 function renderLastInspector(): string {
@@ -620,7 +631,12 @@ describe('TimelineList evidence-owned actions', () => {
     await openRemoval();
     await user.click(screen.getByRole('button', { name: 'Remove evidence' }));
     await waitFor(() => {
-      expect(screen.getByRole('alert').textContent).toContain('Removal failed');
+      expect(fakes.notifyAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: 'Evidence removed',
+          error: 'Couldn’t remove evidence',
+        }),
+      );
     });
     expect(fakes.hideInspector).not.toHaveBeenCalled();
 
@@ -630,7 +646,12 @@ describe('TimelineList evidence-owned actions', () => {
     await waitFor(() => {
       expect(fakes.hideInspector).toHaveBeenCalledTimes(1);
       expect(fakes.refresh).toHaveBeenCalledTimes(1);
-      expect(fakes.toastSuccess).toHaveBeenCalledWith('Evidence removed from Timeline');
+      expect(fakes.notifyAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: 'Evidence removed',
+          error: 'Couldn’t remove evidence',
+        }),
+      );
     });
   });
 });

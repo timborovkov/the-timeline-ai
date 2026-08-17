@@ -5,17 +5,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { chatHandoffKey } from '@/lib/chat-handoff';
 
-const fakes = vi.hoisted(() => ({ push: vi.fn(), toastError: vi.fn() }));
+const fakes = vi.hoisted(() => ({ push: vi.fn(), notifyError: vi.fn() }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: fakes.push }) }));
-vi.mock('sonner', () => ({ toast: { error: fakes.toastError } }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: vi.fn(async ({ run }: { run: () => Promise<{ error?: string }> }) => run()),
+  notifyError: (...args: unknown[]) => fakes.notifyError(...args),
+}));
 
 const { ContextualAskLink } = await import('@/components/chat/contextual-ask-link');
 
 describe('ContextualAskLink', () => {
   beforeEach(() => {
     fakes.push.mockReset();
-    fakes.toastError.mockReset();
+    fakes.notifyError.mockReset();
     window.sessionStorage.clear();
   });
 

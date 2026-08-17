@@ -31,7 +31,6 @@ import {
   useRef,
   useTransition,
 } from 'react';
-import { toast } from 'sonner';
 
 import {
   createFolderAction,
@@ -47,6 +46,7 @@ import { useAppDialog } from '@/components/ui/app-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ItemActionGroup } from '@/components/ui/item-actions';
+import { notifyAction } from '@/lib/notify';
 import { queryKeys } from '@/lib/query-keys';
 import { type DocumentListPage, useDocumentListQuery } from '@/lib/use-paginated-queries';
 
@@ -311,92 +311,96 @@ export function DocumentDrive({
       upload: { id: uploadId, name: file.name, phase: 'preparing' },
     });
     let optimisticDocumentId: string | null = null;
-    try {
-      const req = await requestDocumentUploadAction({
-        folderId: currentFolderId,
-        name: file.name,
-        filename: file.name,
-        contentType: file.type || 'application/octet-stream',
-        visibility,
-        visibilityUserIds: visibility === 'specific_users' ? visibilityUserIds : [],
-      });
-      if (!req.ok || !req.url || !req.versionId) {
-        const message = req.error ?? 'Upload failed';
-        toast.error(message);
-        failUpload(uploadId, message);
-        return;
-      }
-      if (req.maxBytes && file.size > req.maxBytes) {
-        const message = `File exceeds ${String(Math.round(req.maxBytes / 1024 / 1024))} MiB limit`;
-        toast.error(message);
-        failUpload(uploadId, message);
-        return;
-      }
-      if (req.documentId) {
-        optimisticDocumentId = req.documentId;
-        addOptimisticDocument({
-          id: req.documentId,
-          fileKind: 'document',
-          name: file.name,
-          metadata: {},
-          visibility,
-          updatedAt: new Date().toISOString(),
-          ownerUserId: null,
-          pinned: false,
-          currentVersion: null,
-          provenance: {
-            source: 'manual',
-            sourceEventId: null,
-            parentEventId: null,
-            occurredAt: null,
-            summary: null,
-          },
-          description: null,
-          presentation: documentPresentation({
+    await notifyAction({
+      id: `document:upload:${uploadId}`,
+      loading: 'Uploading document…',
+      success: `Uploaded ${file.name}`,
+      error: 'Couldn’t upload document',
+      run: async () => {
+        try {
+          const req = await requestDocumentUploadAction({
+            folderId: currentFolderId,
             name: file.name,
+            filename: file.name,
             contentType: file.type || 'application/octet-stream',
-            metadata: {},
-            fileKind: 'document',
-          }),
-          optimistic: true,
-        });
-      }
-      updateUpload(uploadId, { phase: 'uploading' });
-      const put = await fetch(req.url, {
-        method: 'PUT',
-        body: file,
-        headers: { 'Content-Type': file.type || 'application/octet-stream' },
-      });
-      if (!put.ok) {
-        if (optimisticDocumentId) removeOptimisticDocument(optimisticDocumentId);
-        const message = `Storage upload failed (${String(put.status)})`;
-        toast.error(message);
-        failUpload(uploadId, message);
-        return;
-      }
-      updateUpload(uploadId, { phase: 'finalizing' });
-      const fin = await finalizeDocumentVersionAction({ versionId: req.versionId });
-      if (!fin.ok) {
-        if (optimisticDocumentId) removeOptimisticDocument(optimisticDocumentId);
-        const message = fin.error ?? 'Finalize failed';
-        toast.error(message);
-        failUpload(uploadId, message);
-        return;
-      }
-      toast.success(`Uploaded ${file.name}`);
-      clearUpload(uploadId);
-      router.refresh();
-    } catch (err) {
-      if (optimisticDocumentId) removeOptimisticDocument(optimisticDocumentId);
-      const message =
-        err instanceof TypeError
-          ? 'Unable to reach document storage. Check your connection, then try again.'
-          : err instanceof Error
-            ? err.message
-            : 'Upload error';
-      toast.error(message);
-      failUpload(uploadId, message);
-    }
+            visibility,
+            visibilityUserIds: visibility === 'specific_users' ? visibilityUserIds : [],
+          });
+          if (!req.ok || !req.url || !req.versionId) {
+            const message = req.error ?? 'Couldn’t upload document';
+            failUpload(uploadId, message);
+            return { error: message };
+          }
+          if (req.maxBytes && file.size > req.maxBytes) {
+            const message = `File exceeds ${String(Math.round(req.maxBytes / 1024 / 1024))} MiB limit`;
+            failUpload(uploadId, message);
+            return { error: message };
+          }
+          if (req.documentId) {
+            optimisticDocumentId = req.documentId;
+            addOptimisticDocument({
+              id: req.documentId,
+              fileKind: 'document',
+              name: file.name,
+              metadata: {},
+              visibility,
+              updatedAt: new Date().toISOString(),
+              ownerUserId: null,
+              pinned: false,
+              currentVersion: null,
+              provenance: {
+                source: 'manual',
+                sourceEventId: null,
+                parentEventId: null,
+                occurredAt: null,
+                summary: null,
+              },
+              description: null,
+              presentation: documentPresentation({
+                name: file.name,
+                contentType: file.type || 'application/octet-stream',
+                metadata: {},
+                fileKind: 'document',
+              }),
+              optimistic: true,
+            });
+          }
+          updateUpload(uploadId, { phase: 'uploading' });
+          const put = await fetch(req.url, {
+            method: 'PUT',
+            body: file,
+            headers: { 'Content-Type': file.type || 'application/octet-stream' },
+          });
+          if (!put.ok) {
+            if (optimisticDocumentId) removeOptimisticDocument(optimisticDocumentId);
+            const message = `Storage upload failed (${String(put.status)})`;
+            failUpload(uploadId, message);
+            return { error: message };
+          }
+          updateUpload(uploadId, { phase: 'finalizing' });
+          const fin = await finalizeDocumentVersionAction({ versionId: req.versionId });
+          if (!fin.ok) {
+            if (optimisticDocumentId) removeOptimisticDocument(optimisticDocumentId);
+            const message = fin.error ?? 'Couldn’t finish upload';
+            failUpload(uploadId, message);
+            return { error: message };
+          }
+          clearUpload(uploadId);
+          router.refresh();
+          return {};
+        } catch (err) {
+          if (optimisticDocumentId) removeOptimisticDocument(optimisticDocumentId);
+          const message =
+            err instanceof TypeError
+              ? 'Unable to reach document storage. Check your connection, then try again.'
+              : err instanceof Error
+                ? err.message
+                : 'Couldn’t upload document';
+          failUpload(uploadId, message);
+          return { error: message };
+        }
+      },
+    });
   }
 
   function onFileChange(e: ChangeEvent<HTMLInputElement>): void {
@@ -424,22 +428,45 @@ export function DocumentDrive({
     };
     dispatchDriveUi({ type: 'add-optimistic-folder', folder: optimisticFolder });
     startTransition(async () => {
-      const res = await createFolderAction({
-        name: trimmedName,
-        parentFolderId: currentFolderId,
-        visibility,
-        visibilityUserIds: visibility === 'specific_users' ? visibilityUserIds : [],
+      await notifyAction({
+        id: `folder:create:${tempId}`,
+        loading: 'Creating folder…',
+        success: 'Folder created',
+        error: 'Couldn’t create folder',
+        run: async () => {
+          const res = await createFolderAction({
+            name: trimmedName,
+            parentFolderId: currentFolderId,
+            visibility,
+            visibilityUserIds: visibility === 'specific_users' ? visibilityUserIds : [],
+          });
+          if (!res.ok) {
+            dispatchDriveUi({ type: 'remove-optimistic-folder', id: tempId });
+            return { error: res.error ?? 'Couldn’t create folder' };
+          }
+          const createdId = typeof res.id === 'string' ? res.id : null;
+          if (createdId) {
+            dispatchDriveUi({ type: 'confirm-folder', tempId, id: createdId });
+          }
+          router.refresh();
+          return createdId ? { id: createdId } : {};
+        },
+        undo: {
+          run: async (result) => {
+            const createdId = 'id' in result && typeof result.id === 'string' ? result.id : null;
+            if (!createdId) return { error: 'Couldn’t undo' };
+            dispatchDriveUi({ type: 'hide-folder', id: createdId });
+            const res = await deleteFolderAction(createdId);
+            if (!res.ok) {
+              dispatchDriveUi({ type: 'restore-folder', id: createdId });
+              return { error: res.error ?? 'Couldn’t undo' };
+            }
+            router.refresh();
+            return {};
+          },
+          success: 'Folder deleted',
+        },
       });
-      if (!res.ok) {
-        dispatchDriveUi({ type: 'remove-optimistic-folder', id: tempId });
-        toast.error(res.error ?? 'Failed to create folder');
-      } else {
-        const createdId = typeof res.id === 'string' ? res.id : null;
-        if (createdId) {
-          dispatchDriveUi({ type: 'confirm-folder', tempId, id: createdId });
-        }
-        router.refresh();
-      }
     });
   }
 
@@ -453,11 +480,18 @@ export function DocumentDrive({
     if (!confirmed) return;
     dispatchDriveUi({ type: 'hide-folder', id });
     startTransition(async () => {
-      const res = await deleteFolderAction(id);
-      if (!res.ok) {
-        dispatchDriveUi({ type: 'restore-folder', id });
-        toast.error(res.error ?? 'Delete failed');
-      } else router.refresh();
+      const result = await notifyAction({
+        id: `folder:delete:${id}`,
+        loading: 'Deleting folder…',
+        success: 'Folder deleted',
+        error: 'Couldn’t delete folder',
+        run: async () => {
+          const res = await deleteFolderAction(id);
+          return res.ok ? {} : { error: res.error ?? 'Couldn’t delete folder' };
+        },
+      });
+      if (result.error) dispatchDriveUi({ type: 'restore-folder', id });
+      else router.refresh();
     });
   }
 

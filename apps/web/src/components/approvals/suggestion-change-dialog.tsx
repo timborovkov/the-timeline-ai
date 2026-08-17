@@ -3,7 +3,6 @@
 import { Pencil } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useId, useState, useTransition } from 'react';
-import { toast } from 'sonner';
 
 import { reviseSuggestionItemAction } from '@/app/actions/suggestions';
 import { Button } from '@/components/ui/button';
@@ -18,6 +17,7 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { notifyAction } from '@/lib/notify';
 
 export function SuggestionChangeDialog({
   itemId,
@@ -62,13 +62,15 @@ export function SuggestionChangeDialog({
     }
     setError(null);
     startTransition(async () => {
-      const result = await reviseSuggestionItemAction({ itemId, feedback: trimmed });
-      if (result.error) {
-        setError(result.error);
-        return;
-      }
-      if (result.revisedItem) onRevised?.(result.revisedItem);
-      toast.success('Proposal updated');
+      const result = await notifyAction({
+        id: `suggestion:${itemId}`,
+        loading: 'Updating proposal…',
+        success: 'Proposal updated',
+        error: 'Couldn’t update proposal',
+        run: () => reviseSuggestionItemAction({ itemId, feedback: trimmed }),
+      });
+      if (result.error) return;
+      if ('revisedItem' in result && result.revisedItem) onRevised?.(result.revisedItem);
       setOpen(false);
       setFeedback('');
       setError(null);

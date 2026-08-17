@@ -2,12 +2,12 @@
 
 import { MessageCircleQuestion } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
 
 import type { ChatHandoffContext } from '@/lib/chat-handoff';
 
 import { Button } from '@/components/ui/button';
 import { storeChatContextHandoff } from '@/lib/chat-handoff';
+import { notifyError } from '@/lib/notify';
 import { cn } from '@/lib/utils';
 
 interface Props {
@@ -44,7 +44,8 @@ export function ContextualAskLink({
           });
           router.push('/app/chat');
         } catch {
-          toast.error(
+          notifyError(
+            'chat:handoff',
             'Ask could not preserve this page context. Check browser storage and try again.',
           );
         }

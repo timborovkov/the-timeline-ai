@@ -3,10 +3,10 @@
 import { Eye, Loader2 } from 'lucide-react';
 import Image from 'next/image';
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
-import { toast } from 'sonner';
 
 import { getDocumentPreviewUrlAction } from '@/app/actions/documents';
 import { Button } from '@/components/ui/button';
+import { notifyError } from '@/lib/notify';
 import { cn } from '@/lib/utils';
 
 type DocumentPreviewHandle =
@@ -70,7 +70,7 @@ export function DocumentPreview({
         if (requestSeqRef.current !== requestSeq || inFlightKeyRef.current !== requestKey) return;
         inFlightKeyRef.current = null;
         setPreviewError('Preview unavailable');
-        toast.error('Preview unavailable');
+        notifyError('document:preview', 'Couldn’t open preview');
         return;
       }
       if (requestSeqRef.current !== requestSeq || inFlightKeyRef.current !== requestKey) return;
@@ -79,7 +79,7 @@ export function DocumentPreview({
         if (loadedKeyRef.current === requestKey) loadedKeyRef.current = null;
         const message = res.error ?? 'Preview unavailable';
         setPreviewError(message);
-        toast.error(message);
+        notifyError('document:preview', 'Couldn’t open preview');
         return;
       }
       loadedKeyRef.current = requestKey;

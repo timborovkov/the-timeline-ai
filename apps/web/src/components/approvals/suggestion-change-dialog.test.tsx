@@ -7,11 +7,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const fakes = vi.hoisted(() => ({
   refresh: vi.fn(),
   reviseSuggestionItemAction: vi.fn(),
-  toastSuccess: vi.fn(),
+  notifyAction: vi.fn(),
+  notifyError: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
-vi.mock('sonner', () => ({ toast: { success: fakes.toastSuccess } }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: (options: { run: () => Promise<{ error?: string }> }) =>
+    fakes.notifyAction(options),
+  notifyError: fakes.notifyError,
+}));
 vi.mock('@/app/actions/suggestions', () => ({
   reviseSuggestionItemAction: fakes.reviseSuggestionItemAction,
 }));
@@ -21,6 +26,9 @@ const { SuggestionChangeDialog } = await import('./suggestion-change-dialog.js')
 beforeEach(() => {
   vi.clearAllMocks();
   fakes.reviseSuggestionItemAction.mockResolvedValue({ ok: true });
+  fakes.notifyAction.mockImplementation(async ({ run }: { run: () => Promise<{ error?: string }> }) =>
+    run(),
+  );
 });
 
 afterEach(cleanup);
@@ -71,7 +79,12 @@ describe('SuggestionChangeDialog', () => {
       description: 'Miku made the promise.',
       proposedPayload: { ownerName: 'Miku' },
     });
-    expect(fakes.toastSuccess).toHaveBeenCalledWith('Proposal updated');
+    expect(fakes.notifyAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: 'Proposal updated',
+        error: 'Couldn’t update proposal',
+      }),
+    );
     expect(fakes.refresh).toHaveBeenCalled();
   });
 
@@ -90,9 +103,14 @@ describe('SuggestionChangeDialog', () => {
     await user.type(within(dialog).getByLabelText('What should change?'), 'Use Miku.');
     await user.click(within(dialog).getByRole('button', { name: 'Update proposal' }));
 
-    expect((await within(dialog).findByRole('alert')).textContent).toBe(
-      'Proposal is no longer editable',
-    );
+    await waitFor(() => {
+      expect(fakes.notifyAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: 'Couldn’t update proposal',
+        }),
+      );
+    });
+    expect(screen.getByRole('dialog', { name: 'Change “PRH company registration”' })).toBeTruthy();
     expect(fakes.refresh).not.toHaveBeenCalled();
   });
 });

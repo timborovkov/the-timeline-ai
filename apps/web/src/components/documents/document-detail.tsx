@@ -8,7 +8,6 @@ import { Download, EyeOff, FileText, Link2, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useId, useState, useTransition } from 'react';
-import { toast } from 'sonner';
 
 import type { ReactNode } from 'react';
 
@@ -27,6 +26,7 @@ import { useAppDialog } from '@/components/ui/app-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { notifyAction, notifyError } from '@/lib/notify';
 import { statusLabel } from '@/lib/status-labels';
 
 interface VersionItem {
@@ -136,19 +136,41 @@ export function DocumentDetail({
     const trimmedName = name?.trim();
     if (!trimmedName || trimmedName === currentDocument.name) return;
     const previousRename = optimisticRename;
+    const previousName = currentDocument.name;
     setOptimisticRename({
       id: currentDocument.id,
       name: trimmedName,
       updatedAt: new Date().toISOString(),
     });
     startTransition(async () => {
-      const res = await renameDocumentAction({ id: currentDocument.id, name: trimmedName });
-      if (!res.ok) {
-        setOptimisticRename(previousRename);
-        toast.error(res.error ?? 'Rename failed');
-      } else {
-        router.refresh();
-      }
+      const result = await notifyAction({
+        id: `document:${currentDocument.id}`,
+        loading: 'Renaming document…',
+        success: 'Document renamed',
+        error: 'Couldn’t rename document',
+        run: async () => {
+          const res = await renameDocumentAction({ id: currentDocument.id, name: trimmedName });
+          return res.ok ? {} : { error: res.error ?? 'Couldn’t rename document' };
+        },
+        undo: {
+          run: async () => {
+            setOptimisticRename({
+              id: currentDocument.id,
+              name: previousName,
+              updatedAt: new Date().toISOString(),
+            });
+            const res = await renameDocumentAction({
+              id: currentDocument.id,
+              name: previousName,
+            });
+            if (res.ok) router.refresh();
+            return res.ok ? {} : { error: res.error ?? 'Couldn’t undo' };
+          },
+          success: 'Document renamed',
+        },
+      });
+      if (result.error) setOptimisticRename(previousRename);
+      else router.refresh();
     });
   }
 
@@ -161,16 +183,22 @@ export function DocumentDetail({
     });
     if (!confirmed) return;
     startTransition(async () => {
-      const res = await deleteDocumentAction(currentDocument.id);
-      if (!res.ok) toast.error(res.error ?? 'Delete failed');
-      else {
-        toast.success('Document deleted');
-        router.push(
-          currentDocument.folderId
-            ? `/app/documents?folder=${currentDocument.folderId}`
-            : '/app/documents',
-        );
-      }
+      const result = await notifyAction({
+        id: `document:${currentDocument.id}:delete`,
+        loading: 'Deleting document…',
+        success: 'Document deleted',
+        error: 'Couldn’t delete document',
+        run: async () => {
+          const res = await deleteDocumentAction(currentDocument.id);
+          return res.ok ? {} : { error: res.error ?? 'Couldn’t delete document' };
+        },
+      });
+      if (result.error) return;
+      router.push(
+        currentDocument.folderId
+          ? `/app/documents?folder=${currentDocument.folderId}`
+          : '/app/documents',
+      );
     });
   }
 
@@ -179,7 +207,7 @@ export function DocumentDetail({
     try {
       const res = await getDocumentDownloadUrlAction({ versionId });
       if (!res.ok || !res.url) {
-        toast.error(res.error ?? 'Failed to fetch download URL');
+        notifyError('document:download', 'Couldn’t download document');
         return;
       }
       window.open(res.url, '_blank', 'noopener,noreferrer');

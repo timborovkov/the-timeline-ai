@@ -4,7 +4,6 @@ import { presentDueDate } from '@timeline/shared/time';
 import { ExternalLink, Save } from 'lucide-react';
 import Link from 'next/link';
 import { useState, useTransition } from 'react';
-import { toast } from 'sonner';
 
 import type {
   BoardItemOptimisticPatch,
@@ -33,6 +32,7 @@ import {
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { boardViewHref } from '@/lib/board-links';
 import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/display-dates';
+import { notifyAction } from '@/lib/notify';
 import { isSchedulableObjectType } from '@/lib/due-dates';
 import { objectDetailHref } from '@/lib/object-links';
 import { displayObjectTitle } from '@/lib/object-title';
@@ -126,12 +126,20 @@ export function BoardCardDetail({
 
   function savePatch(patch: BoardItemOptimisticPatch, onSuccess?: () => void): void {
     if (!item || !onUpdateItem) return;
+    const previous = previousBoardItemPatch(item, patch);
+    const label = boardItemPatchLabel(patch);
     startTransition(async () => {
-      const result = await onUpdateItem(item.id, patch);
-      if ('error' in result && result.error) {
-        toast.error(result.error);
-        return;
-      }
+      const result = await notifyAction({
+        id: `board-item:${item.id}`,
+        loading: `Updating ${label}…`,
+        success: `${capitalizeLabel(label)} updated`,
+        error: `Couldn’t update ${label}`,
+        run: () => onUpdateItem(item.id, patch),
+        undo: {
+          run: () => onUpdateItem(item.id, previous),
+        },
+      });
+      if (result.error) return;
       onSuccess?.();
     });
   }
@@ -792,6 +800,34 @@ function Detail({
       <dd className={cn('mt-1 truncate text-sm text-fg', danger && 'text-danger')}>{value}</dd>
     </div>
   );
+}
+
+function previousBoardItemPatch(
+  item: boards.BoardItemRow,
+  patch: BoardItemOptimisticPatch,
+): BoardItemOptimisticPatch {
+  const previous: BoardItemOptimisticPatch = {};
+  if (patch.laneId !== undefined) previous.laneId = item.laneId;
+  if (patch.responsibleUserId !== undefined) previous.responsibleUserId = item.responsibleUserId;
+  if (patch.dueAt !== undefined) previous.dueAt = item.dueAt;
+  if (patch.priority !== undefined) previous.priority = item.priority;
+  if (patch.nextStep !== undefined) previous.nextStep = item.nextStep;
+  if (patch.notes !== undefined) previous.notes = item.notes;
+  return previous;
+}
+
+function boardItemPatchLabel(patch: BoardItemOptimisticPatch): string {
+  if (patch.laneId !== undefined) return 'lane';
+  if (patch.responsibleUserId !== undefined) return 'responsible';
+  if (patch.dueAt !== undefined) return 'due date';
+  if (patch.priority !== undefined) return 'priority';
+  if (patch.nextStep !== undefined) return 'next step';
+  if (patch.notes !== undefined) return 'notes';
+  return 'card';
+}
+
+function capitalizeLabel(value: string): string {
+  return value.slice(0, 1).toUpperCase() + value.slice(1);
 }
 
 function dateInputValue(value: Date, timezone: string): string {
