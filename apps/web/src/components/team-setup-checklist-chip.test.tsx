@@ -42,9 +42,9 @@ describe('TeamSetupChecklistChip', () => {
 
     render(<TeamSetupChecklistChip />);
 
-    expect(screen.getByRole('link', { name: 'Team setup checklist 1/2' }).getAttribute('href')).toBe(
-      '/app#team-setup-checklist-panel',
-    );
+    expect(
+      screen.getByRole('link', { name: 'Team setup checklist 1/2' }).getAttribute('href'),
+    ).toBe('/app#team-setup-checklist-panel');
   });
 
   it('stays hidden on Home, after hide, and when every step is done', () => {
