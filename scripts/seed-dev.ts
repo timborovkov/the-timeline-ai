@@ -41,7 +41,8 @@ import { hashPassword } from '@timeline/shared/passwords';
 import { getDocumentsBucket, getS3Client, putObject } from '@timeline/shared/s3';
 import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
 
-import { CORPUS_DOCUMENTS, CORPUS_PEOPLE, insertExpandedDemoCorpus } from './demo-corpus/index.js';
+import { CORPUS_DOCUMENTS, CORPUS_PEOPLE } from './demo-corpus/index.js';
+import { insertExpandedDemoCorpus } from './demo-corpus/insert.js';
 import {
   assertDemoSeedEnvironment,
   DEMO_DOCUMENT_BYTE_SIZE,

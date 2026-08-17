@@ -470,6 +470,9 @@ describe('reconciliation cutover contracts', () => {
       .map(relativeRepoPath)
       .sort();
 
-    expect(approvalProjectionWriterFiles).toEqual(['packages/shared/src/suggestions/index.ts']);
+    expect(approvalProjectionWriterFiles).toEqual([
+      'packages/shared/src/suggestions/index.ts',
+      'scripts/demo-corpus/insert.ts',
+    ]);
   });
 });

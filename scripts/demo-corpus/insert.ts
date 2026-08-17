@@ -688,6 +688,8 @@ async function insertEventsAndFacts(tx: SeedTx): Promise<void> {
         eventType: `${row.source}.captured`,
         occurredAt: new Date(row.occurredAt),
         visibility: 'team' as const,
+        visibilityOwnerUserId: null,
+        visibilityUserIds: null,
         actor: { user_id: row.authorId },
         contentDigest: `sha256:demo-seed:content:${row.id}`,
         title: row.contentText.slice(0, 80),
@@ -837,27 +839,32 @@ async function insertObjects(tx: SeedTx): Promise<void> {
   await tx
     .insert(artifactEvidenceAssociations)
     .values(
-      CORPUS_FACTS.map((row, index) => {
-        const evidenceId = evidenceIdForEvent(row.rawEventId);
-        const clusterId = clusterIdForEntity(row.entityId);
-        return {
-          id: CORPUS_UUID.association(index + 1),
-          teamId: TEAM_ID,
-          clusterId,
-          evidenceId,
-          rawEventId: row.rawEventId,
-          role: 'update' as const,
-          strength: 'human' as const,
-          confidence: 'high',
-          associationSource: 'human' as const,
-          rationale: row.statement,
-          sourceRefs: [{ rawEventId: row.rawEventId, evidenceId }],
-          visibility: 'team' as const,
-          visibilityFloor: 'team' as const,
-          metadata: { fixture_version: DEMO_FIXTURE_VERSION },
-          dedupeKey: `demo-seed:assoc:${row.id}`,
-        };
-      }),
+      CORPUS_FACTS.map((row, index) => ({
+        id: CORPUS_UUID.association(index + 1),
+        teamId: TEAM_ID,
+        clusterId: clusterIdForEntity(row.entityId),
+        evidenceId: evidenceIdForEvent(row.rawEventId),
+        rawEventId: row.rawEventId,
+        role: 'update' as const,
+        strength: 'human' as const,
+        confidence: 'high',
+        associationSource: 'human' as const,
+        rationale: row.statement,
+        sourceRefs: [
+          {
+            rawEventId: row.rawEventId,
+            evidenceId: evidenceIdForEvent(row.rawEventId),
+          },
+        ],
+        visibility: 'team' as const,
+        visibilityOwnerUserId: null,
+        visibilityUserIds: null,
+        visibilityFloor: 'team' as const,
+        visibilityFloorOwnerUserId: null,
+        visibilityFloorUserIds: null,
+        metadata: { fixture_version: DEMO_FIXTURE_VERSION },
+        dedupeKey: `demo-seed:assoc:${row.id}`,
+      })),
     )
     .onConflictDoNothing();
 }
