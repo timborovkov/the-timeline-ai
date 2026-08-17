@@ -664,11 +664,14 @@ describe('GitHub task proposal persistence', () => {
       status: 'done',
       assigneeUserId: USER_ID,
     });
-    expect(items[0]?.proposedPayload).toEqual(
-      expect.objectContaining({
-        aliases: expect.arrayContaining(['PR-timborovkov/audit-ai-10']),
-      }),
-    );
+    const pendingPayload =
+      items[0]?.proposedPayload && typeof items[0].proposedPayload === 'object'
+        ? items[0].proposedPayload
+        : {};
+    const aliases = Object.hasOwn(pendingPayload, 'aliases')
+      ? (pendingPayload as { aliases: unknown }).aliases
+      : [];
+    expect(Array.isArray(aliases) ? aliases : []).toContain('PR-timborovkov/audit-ai-10');
     const evidence = await db.select().from(agentSuggestionEvidence);
     expect(evidence).toHaveLength(1);
   });
