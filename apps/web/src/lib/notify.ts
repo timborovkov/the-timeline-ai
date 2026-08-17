@@ -13,7 +13,7 @@ export interface ActionResult {
   failedItemIds?: string[];
 }
 
-export interface NotifyUndo<T extends ActionResult = ActionResult> {
+interface NotifyUndo<T extends ActionResult = ActionResult> {
   run: (result: T) => Promise<ActionResult>;
   loading?: string;
   success?: string;
