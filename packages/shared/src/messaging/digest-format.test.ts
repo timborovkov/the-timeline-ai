@@ -122,7 +122,9 @@ describe('absoluteDigestAppUrl', () => {
     expect(
       absoluteDigestAppUrl('https://timeline.test/app/digests', 'https://evil.test/app/objects/t1'),
     ).toBeNull();
-    expect(absoluteDigestAppUrl('https://timeline.test/app/digests', '//evil.test/app/x')).toBeNull();
+    expect(
+      absoluteDigestAppUrl('https://timeline.test/app/digests', '//evil.test/app/x'),
+    ).toBeNull();
   });
 });
 

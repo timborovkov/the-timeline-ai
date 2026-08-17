@@ -104,11 +104,10 @@ function htmlList(items: string[]): string {
     : '<p style="font-size: 14px; color: #747b7b;">None</p>';
 }
 
-function htmlAppLinks(
-  title: string,
-  items: { href: string | null; label: string }[],
-): string {
-  const links = items.flatMap((item) => (item.href ? [{ href: item.href, label: item.label }] : []));
+function htmlAppLinks(title: string, items: { href: string | null; label: string }[]): string {
+  const links = items.flatMap((item) =>
+    item.href ? [{ href: item.href, label: item.label }] : [],
+  );
   if (links.length === 0) return '';
   return `<p style="font-size: 13px; line-height: 1.55; margin: 20px 0 0">${escapeHtml(
     title,
@@ -382,9 +381,7 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
     ...(dashboardLinks.some((link) => link.href)
       ? [
           'Open on the dashboard:',
-          ...dashboardLinks.flatMap((link) =>
-            link.href ? [`- ${link.label}: ${link.href}`] : [],
-          ),
+          ...dashboardLinks.flatMap((link) => (link.href ? [`- ${link.label}: ${link.href}`] : [])),
           '',
         ]
       : []),
