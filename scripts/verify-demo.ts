@@ -45,6 +45,7 @@ import {
   CORPUS_MEETINGS,
   CORPUS_PEOPLE,
   CORPUS_SLACK,
+  CORPUS_WEBHOOK,
 } from './demo-corpus/index.js';
 import {
   assertDemoFixture,
@@ -433,6 +434,7 @@ async function readExpandedDemoCorpusSnapshot(): Promise<
     slackWorkspaceRows,
     telegramCount,
     webhookCount,
+    webhookRows,
     integrationRows,
     mcpRows,
     onboardingCount,
@@ -497,6 +499,12 @@ async function readExpandedDemoCorpusSnapshot(): Promise<
       .select({ value: count() })
       .from(ingestWebhooks)
       .where(eq(ingestWebhooks.teamId, DEMO_IDS.team)),
+    db
+      .select({ eventClass: ingestWebhooks.eventClass })
+      .from(ingestWebhooks)
+      .where(
+        and(eq(ingestWebhooks.teamId, DEMO_IDS.team), eq(ingestWebhooks.id, CORPUS_WEBHOOK.id)),
+      ),
     db
       .select({ provider: integrations.provider, enabled: integrations.enabled })
       .from(integrations)
@@ -629,6 +637,7 @@ async function readExpandedDemoCorpusSnapshot(): Promise<
     slackWorkspaceEnabled: slackWorkspaceRows[0]?.enabled === true,
     telegramBindings: Number(telegramCount[0]?.value ?? 0),
     ingestWebhooks: Number(webhookCount[0]?.value ?? 0),
+    ingestWebhookEventClass: webhookRows[0]?.eventClass ?? null,
     extraProviders: integrationRows.map((row) => row.provider),
     disabledIntegrationProviders: integrationRows
       .filter((row) => row.enabled === false)

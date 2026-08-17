@@ -1,3 +1,5 @@
+import { timelineGroupKey } from '@timeline/shared/timeline-moments';
+
 import { CORPUS_UUID } from './ids.js';
 import type { CorpusPerson } from './people.js';
 
@@ -343,42 +345,18 @@ function slackMeta(
 }
 
 export function cadenceBeatGroupKey(beat: CadenceBeat): string {
-  const extra = beat.extra;
-  if (beat.source === 'meeting') {
-    return `meeting:${String(extra.meeting_id ?? beat.n)}`;
-  }
-  if (beat.source === 'email') {
-    return `email:${String(extra.thread_root_id ?? beat.n)}`;
-  }
-  if (beat.source === 'slack') {
-    return `slack:${String(extra.slack_channel_id)}:${String(extra.slack_thread_ts)}`;
-  }
-  if (beat.source === 'telegram') {
-    return `telegram:${String(extra.tg_chat_id)}:${beat.occurredAt.slice(0, 10)}:${beat.occurredAt.slice(11, 13)}:${String(Math.floor(Number(beat.occurredAt.slice(14, 16)) / 15) * 15).padStart(2, '0')}`;
-  }
-  if (beat.source === 'calendar') {
-    return `calendar:${String(extra.calendar_event_id ?? beat.n)}`;
-  }
-  if (beat.source === 'document') {
-    return `document:${String(extra.document_id ?? beat.n)}:${beat.occurredAt.slice(0, 10)}:${String(extra.action ?? 'activity')}`;
-  }
-  if (beat.source === 'ingest_webhook') {
-    return `ingest_webhook:${String(extra.ingest_webhook_id)}:${beat.occurredAt.slice(0, 10)}:${beat.occurredAt.slice(11, 13)}:${String(Math.floor(Number(beat.occurredAt.slice(14, 16)) / 15) * 15).padStart(2, '0')}`;
-  }
-  if (beat.source === 'integration') {
-    const github = extra.github;
-    if (github && typeof github === 'object' && !Array.isArray(github)) {
-      const nested = github as Record<string, unknown>;
-      if (nested.type === 'workflow_run') {
-        return `integration:github:workflow_run:${String(nested.repo)}:${String(nested.workflow_name)}:${String(nested.head_branch)}:${beat.occurredAt.slice(0, 10)}`;
-      }
-      if (nested.type === 'pull_request' || nested.type === 'review') {
-        return `integration:github:pr:${String(nested.repo)}:${String(nested.pr_number)}`;
-      }
-    }
-    return `integration:${String(extra.provider)}:${String(extra.external_object_id ?? beat.n)}`;
-  }
-  return `${beat.source}:${String(beat.n)}`;
+  return timelineGroupKey(
+    {
+      id: CORPUS_UUID.event(beat.n),
+      authorUserId: null,
+      contentText: beat.contentText,
+      contentAudioUrl: null,
+      occurredAt: beat.occurredAt,
+      sourceMetadata: beat.extra,
+      source: beat.source,
+    },
+    'Europe/Helsinki',
+  );
 }
 
 function pushWorkflows(
@@ -548,8 +526,10 @@ function pushWorkday(
       contentText: `Sentry ${sentry.id}: ${sentry.text}`,
       extra: {
         provider: 'sentry',
-        event_type: 'issue',
+        event_type: 'issue.updated',
         external_object_id: sentry.id,
+        sentry_issue_id: sentry.id,
+        sentry_short_id: sentry.id,
       },
       payloadRef: `inline://timeline/demo-seed/sentry/${sentry.id}-${day}-${String(index)}`,
     });

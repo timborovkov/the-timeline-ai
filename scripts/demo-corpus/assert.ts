@@ -36,6 +36,7 @@ export interface ExpandedDemoCorpusSnapshot {
   slackWorkspaceEnabled: boolean;
   telegramBindings: number;
   ingestWebhooks: number;
+  ingestWebhookEventClass: string | null;
   extraProviders: string[];
   disabledIntegrationProviders: string[];
   mcpEnabled: boolean;
@@ -76,6 +77,9 @@ export function assertExpandedDemoCorpus(snapshot: ExpandedDemoCorpusSnapshot): 
   atLeast('slack workspaces', snapshot.slackWorkspaces, 1);
   atLeast('telegram bindings', snapshot.telegramBindings, 1);
   atLeast('ingest webhooks', snapshot.ingestWebhooks, 1);
+  if (snapshot.ingestWebhookEventClass !== 'pulse') {
+    errors.push('Ledger ingest webhook Timeline type is missing or not pulse');
+  }
   atLeast('onboarding steps', snapshot.onboardingStepsCompleted, 11);
   exact('corpus raw events', snapshot.corpusRawEventCount, CORPUS_EVENTS.length);
   exact('northstar raw events', snapshot.northstarRawEventCount, DEMO_EVENTS.length);

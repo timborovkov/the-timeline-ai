@@ -15,5 +15,6 @@ export {
   CORPUS_EVENT_NEEDLES,
   CORPUS_PROPOSALS,
   CORPUS_SLACK,
+  CORPUS_WEBHOOK,
   DEALFLOW_ITEMS,
 } from './workspace.js';

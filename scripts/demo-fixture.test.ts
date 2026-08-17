@@ -352,6 +352,27 @@ for (const event of CORPUS_EVENTS.filter((row) => row.source === 'slack')) {
 for (const event of CORPUS_EVENTS) {
   assert.equal(typeof event.sourceMetadata.event_class, 'string', event.id);
 }
+for (const event of CORPUS_EVENTS.filter((row) => row.sourceMetadata.provider === 'sentry')) {
+  assert.equal(event.sourceMetadata.event_class, 'incident', event.id);
+  assert.equal(typeof event.sourceMetadata.sentry_issue_id, 'string', event.id);
+}
+for (const event of CORPUS_EVENTS.filter(
+  (row) =>
+    row.source === 'integration' &&
+    (row.sourceMetadata.github as { type?: string } | undefined)?.type === 'workflow_run',
+)) {
+  assert.equal(event.sourceMetadata.event_class, 'pulse', event.id);
+}
+for (const event of CORPUS_EVENTS.filter(
+  (row) =>
+    row.source === 'integration' &&
+    (row.sourceMetadata.github as { type?: string } | undefined)?.type === 'pull_request',
+)) {
+  assert.equal(event.sourceMetadata.event_class, 'work_record', event.id);
+}
+for (const event of CORPUS_EVENTS.filter((row) => row.source === 'ingest_webhook')) {
+  assert.equal(event.sourceMetadata.event_class, 'pulse', event.id);
+}
 for (const event of CORPUS_EVENTS.filter((row) => row.source === 'email')) {
   assert.equal(typeof event.sourceMetadata.html_body, 'string', event.id);
 }
@@ -456,6 +477,7 @@ assert.doesNotThrow(() =>
     slackWorkspaceEnabled: true,
     telegramBindings: 1,
     ingestWebhooks: 1,
+    ingestWebhookEventClass: 'pulse',
     extraProviders: ['github', 'linear', 'monday', 'sentry', 'google_drive'],
     disabledIntegrationProviders: ['github', 'linear', 'monday', 'sentry', 'google_drive'],
     mcpEnabled: false,
@@ -498,6 +520,7 @@ assert.throws(
       slackWorkspaceEnabled: false,
       telegramBindings: 0,
       ingestWebhooks: 0,
+      ingestWebhookEventClass: null,
       extraProviders: ['github'],
       disabledIntegrationProviders: [],
       mcpEnabled: true,

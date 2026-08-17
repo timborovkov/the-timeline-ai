@@ -222,6 +222,8 @@ const STORY_EVENTS: CorpusEvent[] = [
       provider: 'sentry',
       event_type: 'issue.created',
       external_object_id: 'ATLAS-218',
+      sentry_issue_id: 'ATLAS-218',
+      sentry_short_id: 'ATLAS-218',
     },
     'inline://timeline/demo-seed/sentry/atlas-218',
   ),
@@ -479,6 +481,8 @@ const STORY_EVENTS: CorpusEvent[] = [
       provider: 'sentry',
       event_type: 'issue.resolved',
       external_object_id: 'ATLAS-218',
+      sentry_issue_id: 'ATLAS-218',
+      sentry_short_id: 'ATLAS-218',
     },
     'inline://timeline/demo-seed/sentry/atlas-218-resolved',
   ),
@@ -2115,6 +2119,11 @@ function enrichCaptureMetadata(row: CorpusEvent): CorpusEvent {
         };
       }
     }
+  }
+  if (row.source === 'integration' && extra.provider === 'sentry') {
+    extra.sentry_issue_id ??= extra.external_object_id;
+    extra.sentry_short_id ??= extra.external_object_id;
+    extra.event_class ??= 'incident';
   }
   if (row.source === 'calendar') {
     extra.calendar_event_id ??= extra.calendar_event_id;

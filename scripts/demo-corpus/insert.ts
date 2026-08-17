@@ -634,9 +634,13 @@ async function insertCaptureSurfaces(tx: SeedTx): Promise<void> {
     .onConflictDoUpdate({
       target: ingestWebhooks.id,
       set: {
+        name: sql`excluded.name`,
+        ownerUserId: sql`excluded.owner_user_id`,
         eventClass: sql`excluded.event_class`,
         visibilityDefault: sql`excluded.visibility_default`,
         proposalGenerationEnabled: sql`excluded.proposal_generation_enabled`,
+        disabledAt: null,
+        updatedAt: NOW,
       },
     });
   await tx
@@ -1063,6 +1067,7 @@ async function insertDocuments(tx: SeedTx): Promise<void> {
         contentType: doc.contentType,
         checksumSha256: doc.checksumSha256,
         uploadedByUserId: doc.ownerUserId,
+        sourceEventId: null,
         processingStatus: 'chunked',
         extractionModelVersion: DEMO_FIXTURE_VERSION,
         embeddingModelVersion: null,
@@ -1074,6 +1079,7 @@ async function insertDocuments(tx: SeedTx): Promise<void> {
           objectKey: sql`excluded.object_key`,
           byteSize: sql`excluded.byte_size`,
           checksumSha256: sql`excluded.checksum_sha256`,
+          sourceEventId: null,
           processingStatus: sql`excluded.processing_status`,
           processingError: null,
           embeddingModelVersion: null,
