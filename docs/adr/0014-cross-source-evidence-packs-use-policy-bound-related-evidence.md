@@ -1,5 +1,10 @@
 # ADR 0014 — Cross-source evidence packs use policy-bound related evidence
 
+Canonical engine narrative:
+[`docs/relational-memory.md`](../relational-memory.md). This ADR records the
+pack-builder decision. Pack rollout gates live in
+[`cross-source-evidence.md`](../cross-source-evidence.md).
+
 ## Status
 
 Accepted.

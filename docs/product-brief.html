@@ -103,16 +103,14 @@
         does the work, Timeline generates the communication and memory from the evidence.
       </p>
       <p>
-        The north-star memory model is
-        <strong>cross-source evidence</strong> under the
-        <a href="./relational-memory.md">relational operating memory</a>
-        contract: a commitment discussed in chat, confirmed in a meeting, tracked in a work system,
-        and clarified by email should become one cited record — not four siloed tool histories, and
-        not an LLM dump of every pulse from the same hour. See
-        <a href="./cross-source-evidence.md">Cross-source evidence</a> for the pack builder, current
-        gaps, decided admission rules, safe website messaging, and the linked implementation plan.
-        The pack implementation is available behind a default-off rollout switch; pack-backed
-        proposals are not yet shipped.
+        The north-star memory model is the
+        <a href="./relational-memory.md">operating memory engine</a>: a commitment discussed in
+        chat, confirmed in a meeting, tracked in a work system, and clarified by email should become
+        one cited record — not four siloed tool histories, and not an LLM dump of every pulse from
+        the same hour.
+        <a href="./cross-source-evidence.md">Pack rollout and website copy</a>
+        stay on their own page. The pack implementation is available behind a default-off rollout
+        switch; pack-backed proposals are not yet shipped.
       </p>
 
       <h2 id="target-user">Target user</h2>
@@ -152,8 +150,8 @@
 
       <h2 id="architecture-overview">Architecture overview</h2>
       <p>
-        Ingest, relations, proposals, retrieval, and durable objects follow
-        <a href="./relational-memory.md">Relational operating memory</a>: classify each event as
+        Ingest, relations, proposals, retrieval, and durable objects follow the
+        <a href="./relational-memory.md">operating memory engine</a>: classify each event as
         communication, captured work, or a pulse; adapters emit a source-independent envelope;
         cross-source stories meet at a work hub rather than a shared provider; embeddings recall
         candidate hubs and do not prove a write; spend LLMs only on bounded related evidence.
@@ -225,15 +223,14 @@
           <strong>Extraction.</strong> Communication and unstructured captured work may run the
           extract model. Structured captured work (merged PRs, issue/ticket lifecycle, provider
           status fields) and pulses (CI, Sentry, most heartbeats) persist and embed without that
-          call. See <a href="./relational-memory.md">Relational operating memory</a>. When
-          extraction runs, the LLM pulls useful facts and durable-work signals from the
-          transcribed/raw/file representation text. Output is structured JSON linked back to the raw
-          event or document version; noisy message mechanics stay raw evidence, while normalized
-          shared links can become non-authoritative artifact-cluster evidence for timeline grouping.
-          Extracted emails, phone numbers, and conservatively labeled addresses stay on raw-event
-          metadata first; email and phone values graduate into person identity facets only through
-          reviewable memory paths, while addresses remain location/object metadata unless explicitly
-          promoted.
+          call. See <a href="./relational-memory.md">Operating memory engine</a>. When extraction
+          runs, the LLM pulls useful facts and durable-work signals from the transcribed/raw/file
+          representation text. Output is structured JSON linked back to the raw event or document
+          version; noisy message mechanics stay raw evidence, while normalized shared links can
+          become non-authoritative artifact-cluster evidence for timeline grouping. Extracted
+          emails, phone numbers, and conservatively labeled addresses stay on raw-event metadata
+          first; email and phone values graduate into person identity facets only through reviewable
+          memory paths, while addresses remain location/object metadata unless explicitly promoted.
         </li>
         <li>
           <strong>Object resolution.</strong> Facts link to existing objects when names or aliases
@@ -572,10 +569,11 @@
         <li>
           <strong>Cross-source evidence packs</strong>: shared visibility-safe packs that let
           Approvals and answers cite related chat, meeting, email, document, and integration
-          evidence for the same work item without changing source authority. The implementation is
-          default-off and unshipped until its rollout gates pass. Direction and messaging live in
-          <a href="./cross-source-evidence.md">Cross-source evidence</a>; the phased work lives in
-          the <a href="./cross-source-evidence-implementation-plan.md">implementation plan</a>.
+          evidence for the same work item without changing source authority. Engine behavior lives
+          in the <a href="./relational-memory.md">operating memory engine</a>. Pack rollout and
+          website copy live in <a href="./cross-source-evidence.md">Cross-source evidence packs</a>;
+          the phased work lives in the
+          <a href="./cross-source-evidence-implementation-plan.md">implementation plan</a>.
         </li>
         <li>
           <strong>More work-system integrations</strong>: expand first-party adapters across CRM,

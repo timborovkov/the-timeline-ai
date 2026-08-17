@@ -18,9 +18,10 @@ the audit trail.
 existing `withTeam` workspace port, artifact reconciliation, suggestion worker,
 Agent Ask retrieval, and approval UI.
 
+**Engine:** [Operating memory engine](./relational-memory.md).
 **Durable decision:**
 [ADR 0014](./adr/0014-cross-source-evidence-packs-use-policy-bound-related-evidence.md).
-**Product contract:** [Cross-source evidence](./cross-source-evidence.md).
+**Pack rollout / website copy:** [Cross-source evidence](./cross-source-evidence.md).
 
 ## Implementation state
 

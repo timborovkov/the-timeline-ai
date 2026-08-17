@@ -1,61 +1,85 @@
-# Relational operating memory
+# Operating memory engine
 
-**Status:** Architecture contract. Parts are shipped; the classifier and
-pack-backed consumers are not finished.
+**Status:** Living architecture contract. Sections mark **Shipped** vs
+**Target**. Code that disagrees with a Shipped rule is a bug. Code that
+disagrees with a Target rule is unfinished work, not a license to invent a
+fourth model.
 
 **Audience:** Product, engineering, and anyone changing ingest, proposals,
 retrieval, or object memory.
 
 **Last updated:** 2026-08-17
 
-Timeline's job is not "run an LLM over the firehose." It is to keep an
-evidence-backed working history, relate events that are about the same real
-work, and spend model calls only where they change a decision.
+This is the single narrative for how Timeline turns mixed source events into
+durable workspace memory. Decision records stay in ADRs. Object UI, routes, and
+schema history stay in [`objects.html`](./objects.html). Pack rollout gates stay
+in [`cross-source-evidence.md`](./cross-source-evidence.md). If those pages
+restate this engine, they are stale.
 
-This document is the contract for that system. Cross-source packs
-([`cross-source-evidence.md`](./cross-source-evidence.md),
-[ADR 0014](./adr/0014-cross-source-evidence-packs-use-policy-bound-related-evidence.md))
-are the bounded read primitive. Artifact clusters
-([ADR 0005](./adr/0005-workspace-reconciliation-is-artifact-centered-and-approval-backed.md))
-are the consistency boundary. Approval-backed objects
-([ADR 0003](./adr/0003-object-memory-is-approval-backed-workspace-state.md))
-are the durable write. Signal class decides what an event is *allowed to
-spend* on the way in.
+Glossary terms live in [`CONTEXT.md`](../CONTEXT.md). Use them.
 
-## The problem
+## The question this engine exists to answer
 
-A GitHub org, a Slack workspace, a Sentry project, and a meeting bot do not
-produce the same kind of evidence. A merged PR, a CI run, and a standup
-message can all mention the same ticket. Only some of those events should be
-allowed to change Timeline memory. Almost none of them should be concatenated
-into a prompt because they happened in the same hour.
+Five historical evidence items (Slack, Telegram, a meeting, an email, a note)
+become an approved Timeline task with an assignee and a due date. Weeks later a
+GitHub PR merges. Its description says the issue is solved.
 
-Time-window context fails in both directions:
+**Does that become a `status: done` proposal?**
 
-- Unrelated pulses share a minute with a real decision.
-- Related captured work is often days or weeks apart from the conversation
-  that created the Timeline task.
+Only if the PR can **attach to that task as a hub**. Topic similarity is not
+enough. "Looks related" is Ask, not a write.
 
-Dumping the firehose into extract or suggestion models is also the wrong cost
-model. GitHub and Sentry are high-volume structured streams. They are useful
-as evidence. They are expensive and low-yield as free-text extraction.
+| What the later PR actually contains | Shipped | Target |
+| --- | --- | --- |
+| Hard join: same GitHub id already on the task (`metadata.integration_external_id`), cluster `canonicalEntityId`, or an alias such as `PR-acme/app-88` / `acme/app#88` | **Yes.** Coalesced non-LLM `done` (and assignee if the task has none) | Same, via envelope `objectMap`, not `github.type` |
+| Unique title match: the open task's name/aliases mention that repo **and** `#88` / `PR #88`, and titles align, and no other open task also matches | **Yes**, one fuzzy hit | Same; still refuse if two tasks match |
+| PR body says "fixed the Engagements 404" / "this issue is solved", task is titled "Fix Engagements 404", no repo, number, URL, or alias overlap | **No.** Matcher never runs on prose similarity | Embeddings may **recall** the task. A second qualify step (unique title, explicit ref, or one pairwise confirm on a shortlist) may propose a **link**, then `done`. Cosine alone never writes |
+| CI run, review comment, or Sentry spike on the same SHA | **No.** Not a captured-work work item | Pulse **attaches** to the PR/SHA hub. Still never originates `done` |
+| The 5-item task proposal is still pending; nobody accepted it | **No.** Matcher only sees open `entities` rows | Pending create and later captured work **merge/supersede** into one bundle (`create` already `done`, or create + `status: done`) |
 
-## The thesis
+The five source events do not get dumped into a second LLM when the PR arrives.
+They already created the hub. The PR is structured captured work: parse
+`objectMap.status`, match the hub, write an approval bundle cited to **that PR
+event**. Assignee and due date already on the task stay unless the new evidence
+carries those fields and policy allows them to move (today: GitHub may fill
+empty assignee/owner; it does not touch due).
 
-Every selected source plays a role. Not every source pays for a model call.
+```mermaid
+sequenceDiagram
+  participant Slack
+  participant Meet as Meeting
+  participant Review as Conversation review
+  participant Approvals
+  participant Task as Timeline task hub
+  participant GitHub
+  participant Matcher as Captured-work matcher
 
-1. **Classify the event, not the integration.** GitHub is not one behavior.
-   A merged PR is captured work. A workflow run is a pulse. A review comment
-   is communication-lite attached to captured work.
-2. **Relations attach to shared hubs, not to a surface.** Provider ids,
-   conversation keys, and URLs are how an event finds a cluster or object.
-   Telegram, a PR, a meeting, and last month's email meet because they all
-   point at the same hub, not because they share a provider. Embeddings
-   recall candidate hubs. They do not prove the link.
-3. **LLMs read bounded packs of already-related evidence.** They do not
-   discover the graph by dumping sources together. Semantic search may rank
-   eligible rows and may answer questions. It does not admit a pulse into a
-   durable proposal.
+  Slack->>Review: 5 communication events, debounced window
+  Meet->>Review: same hub candidates in linked context
+  Review->>Approvals: create task, assignee, due, citations
+  Approvals->>Task: accepted memory
+  Note over Task: Hub now exists. Embed type: canonicalName + aliases.
+  GitHub->>GitHub: PR merged, objectMap status=done, no extract LLM
+  GitHub->>Matcher: coalesce by externalObjectId
+  alt hard or unique title join
+    Matcher->>Approvals: status done, optional assignee, GitHub aliases
+  else topic-only / ambiguous
+    Matcher-->>Matcher: no write
+    Note over Matcher: Ask can still retrieve Slack + Meet + PR together
+  end
+```
+
+## Thesis
+
+1. **Classify the event, not the OAuth app.** A GitHub merged PR is captured
+   work. A GitHub workflow run is a pulse. A review comment is
+   communication-lite attached to captured work.
+2. **Relations attach to shared hubs, not to a surface.** Telegram, a PR, a
+   meeting, and last month's email meet because they point at the same task,
+   project, person, or artifact cluster.
+3. **LLMs read bounded packs of already-related evidence.** They do not discover
+   the graph by concatenating sources. Embeddings recall candidate hubs. They
+   do not prove a write.
 4. **Durable inferred memory stays approval-backed.** A provider may update
    fields it authoritatively owns. Timeline-owned tasks, notes, owners, and
    object memory do not silently rewrite themselves from a webhook.
@@ -80,75 +104,63 @@ capture surfaces
       /        \
  answers      proposals
  retrieval    durable writes
+      |
+      v
+ accepted workspace objects
+ the hubs later events attach to
 ```
 
-## Signal classes
+## How to read the rest of this file
 
-Class is a property of the **event**, not the OAuth app. One provider can emit
-all three.
+The engine is seven layers. Data moves downward. Writes never skip a layer.
 
-| Class | What it is | Examples | Default job |
-| --- | --- | --- | --- |
-| **Communication** | People talking, deciding, committing | Slack/Telegram threads, meetings, email, voice notes, PR review discussion | Persist, embed, extract facts, conversation review |
-| **Captured work** | A durable work record or lifecycle change | Merged PR, closed issue, Linear/Jira status, Monday item, CRM call log, signed contract | Persist, embed, reconcile; structured proposal only when Timeline memory should move |
-| **Pulse** | A telemetry or heartbeat event that can explain or impact work | CI runs, Sentry events, deploy pings, noisy issue-alert repeats, most comments that are not a decision | Persist, embed, attach as supporting evidence; never originate a proposal |
+| Layer | What it is | What it is allowed to do |
+| --- | --- | --- |
+| 1. Capture | Adapters turn provider payloads into an envelope | Be provider-specific |
+| 2. Persist | Immutable `raw_events` | Never update captured content |
+| 3. Classify + fan-out | Signal class chooses jobs | Spend or refuse LLMs |
+| 4. Graph | Hubs, clusters, conversations, ids, URLs | Attach; do not invent objects from pulses |
+| 5. Pack | Visibility-safe related evidence | Read; not authority |
+| 6. Proposal | Conversation LLM or captured-work parser | Cite exact events; wait for a human |
+| 7. Object memory | Accepted `entities` and relationships | Canonical until a new accepted proposal |
 
-Communication and captured work are the clearest signals. Pulses are not
-noise — a failing workflow or a Sentry spike can be the reason a PR stalled —
-but they are supporting context, not a license to mint tasks.
+ADRs record why a layer exists. This file records how they run together.
 
-Unstructured captured work (a CRM call log, a forwarded client email that is
-really a work record) may still extract. Structured captured work (PR merged,
-issue closed, Linear state) must not. Pulses never extract.
+- [ADR 0003](./adr/0003-object-memory-is-approval-backed-workspace-state.md) —
+  inferred memory is visible workspace state
+- [ADR 0004](./adr/0004-conversation-reviews-drive-conversational-proposals.md) —
+  conversations do not mint tasks from one message
+- [ADR 0005](./adr/0005-workspace-reconciliation-is-artifact-centered-and-approval-backed.md) —
+  clusters are the consistency boundary
+- [ADR 0006](./adr/0006-object-relationship-proposals-use-bundle-local-refs.md) —
+  create+link in one bundle
+- [ADR 0010](./adr/0010-artifact-provenance-is-tiered-and-evidence-backed.md) —
+  why it exists / what changed it / related evidence
+- [ADR 0014](./adr/0014-cross-source-evidence-packs-use-policy-bound-related-evidence.md) —
+  pack admission vs ranking
 
-```mermaid
-flowchart LR
-  subgraph sources [Selected sources]
-    Slack
-    Meetings
-    GitHub
-    Sentry
-    CRM
-  end
-
-  subgraph classes [Signal class]
-    Comm[Communication]
-    Work[Captured work]
-    Pulse[Pulse]
-  end
-
-  Slack --> Comm
-  Meetings --> Comm
-  GitHub -->|PR merged / issue closed| Work
-  GitHub -->|workflow run / most comments| Pulse
-  Sentry --> Pulse
-  CRM -->|call logged / stage changed| Work
-  CRM -->|heartbeat / page view| Pulse
-```
-
-## Source-independent envelope
+## Layer 1 — Source-independent envelope
 
 The core must not switch on `provider === 'github'`. GitHub-specific parsing
-belongs in the GitHub adapter, the same way Linear parsing belongs in the
-Linear adapter. Independence is preserved when every adapter emits the same
-envelope and the rest of the system only reads that envelope.
+belongs in the GitHub adapter. Independence is preserved when every adapter
+emits the same envelope.
 
-The envelope already exists in spirit as `IntegrationEvent`:
+The envelope already exists as `IntegrationEvent` + optional `ObjectMapping` in
+`packages/shared/src/integrations/types.ts`.
 
 | Field | Independent meaning | GitHub PR | GitHub CI |
 | --- | --- | --- | --- |
-| `signalClass` (target) | Spend and proposal rights | `captured_work` | `pulse` |
-| `objectMap` | Durable work record, if any | `type=task`, `externalId=repo#88`, `status=done` | absent |
+| `signalClass` (**Target**) | Spend and proposal rights | `captured_work` | `pulse` |
+| `objectMap` | Durable work record, if any. Does **not** create a Timeline task | `type=task`, `externalId=repo#88`, `status=done` | absent |
 | `externalObjectId` | Stable subject of this event | `acme/app#88` | `acme/app#workflow_run:123` |
-| `relatedExternalObjectId` (target) | Work item this pulse attaches to | — | PR or SHA when known |
+| `relatedExternalObjectId` (**Target**) | Work item this pulse attaches to | — | PR or SHA when known |
 | `contentText` | Human-facing narrative to embed | `GitHub PR acme/app#88 — Fix Engagements 404` | `GitHub workflow CI #12 failed on acme/app` |
-| `url` / aliases | Cross-source join bait | `https://github.com/acme/app/pull/88`, `PR-acme/app-88` | workflow URL, `head_sha` |
+| `url` / aliases | Cross-source join bait | PR URL, `PR-acme/app-88` | workflow URL, `head_sha` |
+| `dedupKey` | Idempotent persist | webhook replay is a no-op | same |
 
-Today the GitHub adapter already does this split: PRs and issues carry
-`objectMap`; workflow runs do not. The leak is that proposal code then
-re-parses `github.type` in shared code. The target is: **adapters classify
-and map; the proposal engine matches `objectMap` + `signalClass` + status
-the same way for GitHub, Linear, Jira, or a future CRM.**
+`objectMap` is a reconciliation hint. The event-writer uses it for artifact
+anchors and associations. It does not insert or update `entities`. Timeline
+tasks appear only when a human creates them or accepts a proposal.
 
 ```mermaid
 flowchart LR
@@ -177,190 +189,37 @@ flowchart LR
   E --> Pack
 ```
 
-Writing `if (github.type === 'pull_request')` in the suggestion worker is
-what destroys independence. Writing it once in `providers/github.ts` is the
-adapter doing its job.
+Writing `if (github.type === 'pull_request')` in the suggestion worker is what
+destroys independence. Writing it once in `providers/github.ts` is the adapter
+doing its job.
 
-## Cost law
+## Layer 2 — Immutable persist
 
-Model spend is reserved for decisions. Indexing is reserved for everything
-selected.
+Every selected event becomes a `raw_events` row, team-scoped, visibility-tagged.
+Captured content does not get `UPDATE`d. Derived facts, associations, rankings,
+and proposals may change. Calendar raw-event rows are the documented exception:
+they are derived schedule mirrors and may refresh timeline text when the owning
+calendar event changes.
 
-| Spend | Allowed | Forbidden |
-| --- | --- | --- |
-| Persist + visibility + source snapshot | All selected events | Dropping a selected source because it is noisy |
-| Embed, rate-limited per connection | All selected events | Skipping embeddings for pulses so Ask cannot find them |
-| Hard-anchor into a cluster / object | Any event with a stable id, URL, or conversation key | Creating a new object from a pulse |
-| Extract LLM | Communication; unstructured captured work | Pulses; structured captured work |
-| Suggestion / conversation-review LLM | Communication; pack-backed corrections | Pulses; parser-complete lifecycle fields |
-| Structured non-LLM proposal | Captured-work field changes Timeline should review | Using this path for CI, Sentry, or comments |
-| Answer LLM | Viewer-visible Ask / digest / handoff over a pack | Prompting with "last N events from this hour" |
+Team isolation is sacred. Every Postgres query goes through `withTeam`. Every
+Qdrant query filters on `team_id`.
 
-Today's coarse gate `github | linear | monday | sentry` skip extract because
-those providers are mostly structured. The target gate is **signal class +
-payload shape**, so a future CRM note can extract while a future CRM
-heartbeat cannot, and a GitHub review discussion can be treated as
-communication attached to a PR without extracting every `workflow_run`.
+## Layer 3 — Signal class and ingest fan-out
 
-Per-connection ingest rate limits stay in front of extract, embed, and
-coalesced proposal jobs. They are a fuse, not a classifier.
+Class is a property of the **event**, not the OAuth app.
 
-## Relation graph
+| Class | What it is | Examples | Default jobs |
+| --- | --- | --- | --- |
+| **Communication** | People talking, deciding, committing | Slack/Telegram threads, meetings, email, voice notes, PR review discussion | Persist, embed, extract facts, conversation review |
+| **Captured work** | A durable work record or lifecycle change | Merged PR, closed issue, Linear/Jira status, Monday item, CRM call log, signed contract | Persist, embed, reconcile; structured proposal only when Timeline memory should move |
+| **Pulse** | Telemetry that can explain or impact work | CI runs, Sentry events, deploy pings, noisy issue-alert repeats | Persist, embed, attach as supporting evidence; never originate a proposal |
 
-The graph is how related work finds itself without a time window.
+Unstructured captured work (a CRM call log) may still extract. Structured
+captured work (PR merged, Linear state) must not. Pulses never extract.
 
-```mermaid
-flowchart TB
-  subgraph hard [Cheap join keys - no LLM]
-    ProviderId["provider + external object id\ngithub:acme/app#88"]
-    Conversation["conversation key\nSlack thread, meeting id, email root"]
-    URL["canonical URL / explicit reference"]
-    Identity["approved identity facets\nGitHub login, email, Slack id"]
-  end
-
-  subgraph durable [Durable nodes]
-    Cluster[Artifact cluster]
-    Object[Workspace object / task]
-    ConversationReview[Conversation review]
-  end
-
-  ProviderId --> Cluster
-  URL --> Cluster
-  Conversation --> ConversationReview
-  Identity --> Object
-  Cluster --> Object
-  ConversationReview -->|"proposal cites cluster"| Object
-```
-
-Qualifying relationships for a **proposal pack** are direct and one-hop
-([ADR 0014](./adr/0014-cross-source-evidence-packs-use-policy-bound-related-evidence.md)):
-
-- same conversation
-- canonical artifact or object association
-- provider or external id
-- canonical URL or explicit reference
-- human-curated object link
-
-A model-extracted fact may *create a candidate*, but it cannot *qualify* that
-candidate by itself. Semantic similarity never admits proposal evidence.
-
-Pulses use the same join keys. A Sentry issue attaches to the incident
-cluster. A workflow run attaches to the PR or SHA cluster via
-`relatedExternalObjectId`. They become supporting evidence when a later
-communication or captured-work review asks for a pack. They do not start
-that review.
-
-### Cross-source stories need a hub
-
-Same-surface keys are not enough for "Telegram + GitHub PR + Google Meet +
-an email from last month." Those four never share a conversation key or a
-provider id. They share a **hub**: a Timeline task, project, person, or
-artifact cluster.
-
-```mermaid
-flowchart TB
-  Telegram["Telegram: I'll fix the Engagements 404"]
-  Meet[Meet transcript confirms Friday]
-  PR[GitHub PR acme/app#88 merged]
-  Email[Email last month with the bug report]
-  CI[CI pulse on the same SHA]
-
-  Hub["Hub: task / cluster\nFix Engagements 404"]
-
-  Telegram -->|"extract proposes task"| Hub
-  Email -->|"URL, ticket key, or accepted object link"| Hub
-  PR -->|"objectMap.externalId / title / URL"| Hub
-  Meet -->|"mentions the task, PR URL, or project"| Hub
-  CI -->|"relatedExternalObjectId = PR or SHA"| Hub
-```
-
-How the first link gets created, cheapest first:
-
-1. **Explicit reference.** A URL, `acme/app#88`, `ENG-42`, or an accepted
-   object mention in the text. Parse without an LLM when the pattern is
-   stable. This is the best cross-source join.
-2. **Object already exists.** Communication extract created a task last
-   week. Captured work later matches it by provider id, alias, or a unique
-   title. The GitHub `done` proposal already does this match. That is
-   cross-source without vectors.
-3. **Deterministic rendered titles.** Structured events already have a
-   standard form: `task: acme/app#88: Fix command palette Engagements route
-   404`. Embed that, not the webhook JSON. Slack "Engagements 404" can
-   retrieve the object. Lexical overlap is a recall hint, still not a write
-   proof.
-4. **Vector recall, then qualify.** When there is no URL and no unique
-   title, embeddings retrieve *candidates*. A second step must qualify:
-   shared object, shared URL, unique title, or one pairwise "are these the
-   same work item?" check on the shortlist. Never promote cosine similarity
-   alone into a durable link.
-
-The email from last month joins the story when it already pointed at the
-bug, the URL, the customer, or the project — or when Ask retrieves it as
-**labeled semantic evidence**. A proposal still cannot use it until a hard
-link exists. That is the difference between "the full story for a human
-question" and "rewrite Timeline memory."
-
-## Embeddings: recall, not a second source of truth
-
-Do not LLM-summarize every event into a canonical paragraph just to make
-Telegram and GitHub comparable. That is a second extract pass on the
-firehose. Pulses would dominate the bill and still would not be safe write
-keys.
-
-What to embed instead:
-
-| Source | Embed this | Extra LLM rewrite? |
-| --- | --- | --- |
-| Structured captured work | Deterministic `contentText` + `objectMap.canonicalName` | No. The adapter already wrote the standard form. |
-| Pulse | Short human-facing `contentText` plus parent work-item id when known | No. |
-| Communication | The message or transcript (`renderRawEventForAi`) | No extra summarizer. |
-| Extracted facts | The fact statement, already a standard sentence | Reuse extract. Do not summarize again. |
-| Workspace objects / clusters | `type: canonicalName` plus aliases | No. This hub embedding is the cross-source translator. |
-
-The comparable "standard form" is **the hub object's name and aliases**,
-plus the adapter's human-facing `contentText`. A PR and a Telegram note
-relate because both can hit `task: Fix command palette Engagements route
-404`, not because we asked a model to rewrite the webhook into a poem.
-
-When extract already ran for communication, its fact statements and linked
-entities *are* the LLM-created embeddable text. Pay that cost once, on the
-signal class that earned it.
-
-```mermaid
-flowchart LR
-  subgraph cheap [Always]
-    Render[Adapter contentText / object title]
-    HubEmbed[Embed the hub object]
-  end
-
-  subgraph paid [Only if communication or unstructured captured work]
-    Extract[Extract facts]
-    FactEmbed[Embed fact statements]
-  end
-
-  subgraph recall [Ask and candidate recall]
-    Qdrant[Qdrant]
-  end
-
-  subgraph write [Durable write]
-    Qualify[Hard key, unique title, or pairwise confirm]
-    Propose[Proposal]
-  end
-
-  Render --> Qdrant
-  HubEmbed --> Qdrant
-  Extract --> FactEmbed --> Qdrant
-  Qdrant -->|"Ask: labeled retrieval"| Answer[Answer pack]
-  Qdrant -->|"Proposal: candidates only"| Qualify --> Propose
-```
-
-There is no cheaper option that still finds last month's email: you must
-index it. There is a much more expensive option that still fails as a write
-key: summarize every CI run and hope cosine equals "same work." Index
-everything selected. Summarize only the classes that already pay for
-extract. Confirm cross-source writes with a hub, not with a vibe.
-
-## Ingest fan-out
+**Shipped:** skip extract/suggestion LLM for providers `github | linear | monday | sentry`.
+**Target:** stamp `signalClass` on the envelope so a GitHub PR and a GitHub CI
+run diverge without a provider skip list.
 
 ```mermaid
 flowchart TD
@@ -395,12 +254,102 @@ flowchart TD
 ```
 
 Coalescing is by **work-item id**, not by clock. A burst of PR events for
-`acme/app#88` collapses into one delayed job that loads the latest
-team-visible event for that id. Unrelated PRs in the same minute do not share
-a prompt. The same PR from last week is still findable because the id did not
-move.
+`acme/app#88` collapses into one delayed job that loads the latest team-visible
+event for that id. Unrelated PRs in the same minute do not share a prompt.
 
-## Proposal engine
+Per-connection Redis token buckets sit in front of extract, embed, and coalesced
+proposal jobs. They are a fuse, not a classifier.
+
+## Layer 4 — Relation graph and work hubs
+
+Same-surface keys are how an event finds a hub. They are not themselves the
+story.
+
+```mermaid
+flowchart TB
+  subgraph hard [Cheap join keys - no LLM]
+    ProviderId["provider + external object id"]
+    Conversation["conversation key"]
+    URL["canonical URL / explicit reference"]
+    Identity["approved identity facets"]
+  end
+
+  subgraph durable [Durable hubs]
+    Cluster[Artifact cluster]
+    Object[Workspace object / task]
+    ConversationReview[Conversation review]
+  end
+
+  ProviderId --> Cluster
+  URL --> Cluster
+  Conversation --> ConversationReview
+  Identity --> Object
+  Cluster --> Object
+  ConversationReview -->|"accepted proposal"| Object
+```
+
+### How a cross-source story actually links
+
+```mermaid
+flowchart TB
+  Telegram["Telegram: I'll fix the Engagements 404"]
+  Meet[Meet transcript confirms Friday]
+  PR[GitHub PR acme/app#88 merged]
+  Email[Email last month with the bug report]
+  CI[CI pulse on the same SHA]
+
+  Hub["Hub: task / cluster\nFix Engagements 404"]
+
+  Telegram -->|"extract proposes task"| Hub
+  Email -->|"URL, ticket key, or accepted object link"| Hub
+  PR -->|"objectMap.externalId / title / URL"| Hub
+  Meet -->|"mentions the task, PR URL, or project"| Hub
+  CI -->|"relatedExternalObjectId = PR or SHA"| Hub
+```
+
+Attach cheapest first:
+
+1. **Explicit reference.** A URL, `acme/app#88`, `ENG-42`. Parse without an LLM
+   when the pattern is stable.
+2. **Object already exists.** Communication extract created a task last week.
+   Captured work later matches it by provider id, alias, or a unique title.
+3. **Deterministic rendered titles.** Embed `task: acme/app#88: Fix Engagements
+   404`, not webhook JSON.
+4. **Vector recall, then qualify.** Embeddings retrieve candidates. A second
+   step must qualify: shared object, shared URL, unique title, or one pairwise
+   "are these the same work item?" check on the shortlist. Never promote cosine
+   similarity alone into a durable link.
+
+A qualifying relationship for a **proposal pack** is direct and one-hop
+([ADR 0014](./adr/0014-cross-source-evidence-packs-use-policy-bound-related-evidence.md)):
+same conversation, canonical artifact or object association, provider or
+external id, canonical URL, or a human-curated object link. A model-extracted
+fact may create a candidate. It cannot qualify that candidate by itself.
+
+## Layer 5 — Evidence packs
+
+A pack is a bounded, visibility-safe read of already-related evidence. It is
+not a new source of truth.
+
+| Consumer | Admission | Why |
+| --- | --- | --- |
+| Proposal pack | Direct one-hop only | A weak similarity must not rewrite memory |
+| Answer pack | Viewer-visible semantic matches allowed, labeled as retrieval | Questions need recall; they do not change canonical state |
+| Digest / handoff | Pack plus typed adjacent objects, tasks, calendar | Generated communication is cited memory |
+
+**Shipped:** builder exists; `CROSS_SOURCE_EVIDENCE_MODE` defaults to `off`.
+Generic ingest webhooks can shadow/enforce. Slack/Telegram still use the
+conversation-review window. Agent Ask already returns an answer-policy pack for
+raw-event evidence.
+
+**Target:** every proposal consumer reads a pack. Conversation reviews migrate
+onto proposal-policy packs. Pulses enter only as supporting evidence when a
+hard join already exists.
+
+Rollout gates and website-copy rules live in
+[`cross-source-evidence.md`](./cross-source-evidence.md).
+
+## Layer 6 — Proposal engine
 
 Proposals are how inferred Timeline memory moves. They are not how providers
 update fields they own.
@@ -429,88 +378,246 @@ flowchart LR
 
 Rules:
 
-- **Communication** proposes through a conversation review and, once migrated,
-  a proposal-policy pack. Isolated Slack messages do not mint tasks
-  ([ADR 0004](./adr/0004-conversation-reviews-drive-conversational-proposals.md)).
+- **Communication** proposes through a conversation review (and, once migrated,
+  a proposal-policy pack). Isolated Slack messages do not mint tasks.
 - **Captured work** proposes only when a Timeline-owned field should change
   (task `done`, assignee, aliases). Provider-owned cluster status can move
-  without a suggestion model. GitHub merged PR → Timeline task `done` is this
-  path: parse fields, match an existing open task, write an approval bundle.
+  without a suggestion model.
 - **Pulses** never originate bundles. They may appear as supporting citations
   inside a pack started by communication or captured work.
 - Every proposed item names exact raw-event ids from the supplied pack or the
-  structured source event. Empty, hidden, or invented citations invalidate
-  the bundle.
+  structured source event. Empty, hidden, or invented citations invalidate the
+  bundle.
 - Accepted memory is canonical until a new proposal is accepted. Pending
   bundles may merge or supersede as related evidence arrives.
 
 Vectors do not sit on this write path as a join key. Stored embeddings may
-tie-break already-qualified pack candidates. Missing vectors skip the
-tie-breaker; they never trigger a new embedding for ranking.
+tie-break already-qualified pack candidates.
+
+### Communication path — how five events become one task
+
+**Shipped.**
+
+1. Slack/Telegram/meeting/email rows persist as communication.
+2. Extract pulls facts and entity mentions. It does not create the task.
+3. If the event has a conversation identity and is team-visible, schedule a
+   conversation review: debounce ~10 minutes, window last 2 days / ≤24 events,
+   plus ≤8 linked-context events that already share fact-linked entities.
+4. One structured LLM call over that window proposes creates/updates
+   (task, assignee, due, project edge, notes). Evidence quotes multiple
+   `rawEventId`s from the window.
+5. A teammate accepts in Approvals. That write creates the `entities` row —
+   the hub. Category classification may run after accept.
+6. Later communication in the same conversation can merge or supersede the
+   pending bundle. It does not silently rewrite the accepted task.
+
+### Captured-work path — how a later PR proposes `done`
+
+**Shipped for GitHub PRs and issues. Target: any adapter that emits
+`objectMap` + `signalClass=captured_work`.**
+
+1. Adapter emits envelope with `objectMap.status` in `{done, cancelled, open}`.
+2. Event-writer persists, embeds, reconciles the cluster, and enqueues a
+   coalesced job keyed by `externalObjectId` (8s delay today).
+3. Matcher loads the latest team-visible event for that id. Comments, reviews,
+   commits, and CI never enter this matcher.
+4. Match open **task** entities only (not done/cancelled/archived/merged):
+   - hard: cluster `canonicalEntityId`, or
+     `metadata.integration_provider=github` + `integration_external_id`, or
+     alias overlap (`PR-acme/app-88`, `acme/app#88`, `PR #88`)
+   - else unique fuzzy title: repo + number mentioned **and** titles align
+   - multiple fuzzy hits → no proposal
+5. Plan field changes: `status: done` for merged PR / closed issue;
+   `cancelled` for closed-unmerged PR; assignee/owner only when the task has
+   none and the GitHub login maps uniquely to a teammate; merge GitHub aliases
+   onto the task.
+6. Write an approval bundle citing that raw event. Human accepts. Now the hub
+   carries GitHub aliases, so future pulses and PRs hard-match.
+
+GitHub `objectMap` never creates the task. If the five-event proposal is still
+pending, today's matcher has nothing to update. **Target:** merge that pending
+create with the captured-work lifecycle so the human sees one bundle.
+
+## Layer 7 — Object types and hub roles
+
+Workspace objects are the durable hubs. Schema, routes, and UI live in
+[`objects.html`](./objects.html). This table is how each type participates in
+the engine.
+
+Postgres enum `entity_type` / runtime `OBJECT_TYPES`:
+
+| Type | Role in the engine | Typical status vocabulary |
+| --- | --- | --- |
+| `task` | Primary captured-work hub. GitHub/Linear lifecycle proposes status/assignee here | backlog · open · doing · blocked · done · cancelled |
+| `follow_up` | Lighter commitment hub; conversation review may mint these | todo · doing · done · cancelled |
+| `project` | Grouping hub. Optional primary-project edge from a task (`child`) | planning · active · on_hold · shipped · cancelled |
+| `person` | Identity hub. Approved facets (email, GitHub login, Slack) map actors | open · active · archived |
+| `company` / `vendor` | Account/org hub | open · active · archived |
+| `deal` | CRM captured-work hub | open · qualified · proposal · won · lost |
+| `incident` | Incident hub; Sentry pulses attach, they do not close it | open · mitigated · resolved · postmortem |
+| `hiring_loop` | Hiring hub | sourcing · interviewing · offer · hired · closed |
+| `decision` | Decision hub | draft · proposed · accepted · rejected |
+| `document` | Curated document hub; captured files are not this until promoted | open · active · archived |
+| `topic` / `other` | Weak extraction mentions; do not become hubs by default | open · active · archived |
+| `link` | Runtime artifact type for shared URLs; not a first-class `entities` enum value in `OBJECT_TYPES` | — |
+
+Shared fields that the engine cares about:
+
+| Field | Engine use |
+| --- | --- |
+| `canonical_name` | Unique per `(team, type, lower(name))` among unmerged rows. Embedded as `type: canonicalName` |
+| `aliases` | Hard join bait (`ENG-42`, `PR-acme/app-88`) |
+| `metadata.integration_provider` + `integration_external_id` | Provider-id join |
+| `status` / `stage` / `priority` / `due_at` | Lifecycle; captured work may propose a subset |
+| `owner_user_id` / `assignee_user_id` | People; GitHub fills only when empty and login maps |
+| `task_category*` | Derived, reversible ([ADR 0011](./adr/0011-task-category-is-reversible-derived-state.md)); not a join key |
+
+Relationships (`entity_relationships`): `parent`, `child`, `related`, `blocks`,
+`blocked_by`, `duplicate_of`. A task's primary project is task → project with
+`kind='child'`. Create+link in one approval bundle uses `localRef`
+([ADR 0006](./adr/0006-object-relationship-proposals-use-bundle-local-refs.md)).
+
+### Artifact cluster vs workspace object
+
+An artifact cluster can exist **before** a canonical object. A GitHub PR
+cluster, a Sentry issue cluster, and a pending task approval can describe the
+same real-world work. Evidence association is not authority: GitHub may mark
+the cluster resolved (`direct_write`) without marking the Timeline task done.
+
+Provenance tiers ([ADR 0010](./adr/0010-artifact-provenance-is-tiered-and-evidence-backed.md)):
+
+1. Why the artifact exists (the five communication events, once accepted)
+2. What changed it (the later PR `done` proposal, once accepted)
+3. Related observed evidence (CI pulses, Sentry, drive-by comments)
+
+### Authority matrix
+
+| Field | Authoritative without Timeline approval | Needs a proposal |
+| --- | --- | --- |
+| Provider cluster status for the object the provider owns | That provider, via `objectMap` / reconciliation | — |
+| Timeline task / follow_up / deal / incident status | Human edit | Communication review or captured-work matcher |
+| Timeline assignee / owner | Human edit | Matcher may fill **empty** slots from a mapped actor |
+| Timeline due date | Human edit | Communication review; GitHub does not set due |
+| Aliases / external ids on a Timeline task | Human edit | Matcher may merge provider aliases after a qualified match |
+| New Timeline object | Human create | Communication / unstructured captured-work proposal |
+| Pulse-only telemetry | Never writes Timeline fields | May attach as related evidence |
+
+Generic ingest webhooks are evidence-only
+([ADR 0009](./adr/0009-ingest-webhooks-are-evidence-only.md)).
+
+## Data stores
+
+```mermaid
+flowchart TB
+  subgraph postgres [Postgres - team scoped]
+    RE[raw_events immutable]
+    Facts[facts / fact_entities]
+    Ent[entities + relationships + notes]
+    Clus[artifact_clusters + anchors + associations]
+    Rev[conversation_reviews]
+    Sug[agent_suggestions + items + evidence]
+    Rec[reconciliation runs / outputs / outbox]
+  end
+
+  subgraph qdrant [Qdrant - team_id filter]
+    EmbRE[raw event vectors]
+    EmbFact[fact vectors]
+    EmbObj[object / hub vectors]
+  end
+
+  subgraph queues [BullMQ]
+    ExtractQ[extract]
+    EmbedQ[embed]
+    SugQ[suggestions / conversation_review / github_task_proposal]
+    RecQ[reconciliation]
+  end
+
+  RE --> ExtractQ --> Facts
+  RE --> EmbedQ --> EmbRE
+  Facts --> EmbFact
+  Ent --> EmbObj
+  Facts --> Rev --> SugQ --> Sug
+  RE --> SugQ
+  RE --> Clus
+  Sug --> Ent
+  Clus --> Rec
+```
+
+Raw events feed everything. Objects do not feed back into raw event content.
+Embeddings are an index, not a store of record.
+
+## Embeddings: recall, not a second source of truth
+
+Do not LLM-summarize every event into a canonical paragraph just to make
+Telegram and GitHub comparable. That is a second extract pass on the firehose.
+
+| Source | Embed this | Extra LLM rewrite? |
+| --- | --- | --- |
+| Structured captured work | Deterministic `contentText` + `objectMap.canonicalName` | No |
+| Pulse | Short `contentText` plus parent work-item id when known | No |
+| Communication | Message or transcript (`renderRawEventForAi`) | No extra summarizer |
+| Extracted facts | The fact statement | Reuse extract |
+| Workspace objects / clusters | `type: canonicalName` plus aliases | No. This is the cross-source translator |
+
+When extract already ran for communication, its fact statements **are** the
+LLM-created embeddable text. Pay that cost once, on the class that earned it.
+
+There is no cheaper option that still finds last month's email: index it. There
+is a much more expensive option that still fails as a write key: summarize
+every CI run and hope cosine equals "same work."
+
+## Cost law
+
+| Spend | Allowed | Forbidden |
+| --- | --- | --- |
+| Persist + visibility + source snapshot | All selected events | Dropping a selected source because it is noisy |
+| Embed, rate-limited per connection | All selected events | Skipping embeddings for pulses so Ask cannot find them |
+| Hard-anchor into a cluster / object | Any event with a stable id, URL, or conversation key | Creating a new object from a pulse |
+| Extract LLM | Communication; unstructured captured work | Pulses; structured captured work |
+| Suggestion / conversation-review LLM | Communication; pack-backed corrections | Pulses; parser-complete lifecycle fields |
+| Structured non-LLM proposal | Captured-work field changes Timeline should review | Using this path for CI, Sentry, or comments |
+| Answer LLM | Viewer-visible Ask / digest / handoff over a pack | Prompting with "last N events from this hour" |
+| Ingest summarizer "for better embeddings" | Never | A second LLM on every event |
 
 ## Retrieval and generated communication
 
-Ask, digests, and handoffs are readers of the same graph.
+Ask, digests, and handoffs are readers of the same graph. Pulses are
+first-class for Ask ("why did the release fail?") and for moment bundling.
+They stay second-class for approvals.
 
-| Consumer | Admission | Why |
-| --- | --- | --- |
-| Proposal pack | Direct one-hop only | A weak similarity must not rewrite memory |
-| Answer pack | Viewer-visible semantic matches allowed, labeled as retrieval | Questions need recall; they do not change canonical state |
-| Digest / handoff | Pack plus typed adjacent objects, tasks, calendar | Generated communication is cited memory, not a new source of truth |
+The five historical events plus the later PR **should** appear together in Ask
+once each is indexed, even when the matcher refused a `done` write. That is
+labeled retrieval, not new memory.
 
-Pulses are first-class for Ask ("why did the release fail?") and for moment
-bundling on the timeline. They stay second-class for approvals.
-
-## Durable objects
-
-The write model does not change with signal class.
-
-- **Raw events stay immutable.** Derived associations, rankings, and proposals
-  may change.
-- **Artifact clusters** exist before a canonical object. A Sentry issue, a
-  GitHub PR, and a Slack commitment can share a cluster without each source
-  being allowed to change canonical state.
-- **Workspace objects and tasks** are approval-backed when Timeline infers
-  the change. Provider-owned fields follow authority policy.
-- **Provenance is tiered:** why the artifact exists, what changed it, and
-  related observed evidence ([ADR 0010](./adr/0010-artifact-provenance-is-tiered-and-evidence-backed.md)).
-
-Pulses thicken the "related observed evidence" tier. They do not become the
-reason the object exists.
-
-## Worked example
+## Worked example — full story
 
 Slack: "I'll land the Engagements 404 fix in audit-ai today."
 Meeting: confirms Friday.
-GitHub: PR `timborovkov/audit-ai#88` merges.
+Email from last month: original bug report with a URL.
+GitHub: PR `timborovkov/audit-ai#88` merges, body says it fixes the 404.
 Sentry: login crash in the same release spikes, then resolves.
 CI: workflow runs go red, then green.
 
-```mermaid
-sequenceDiagram
-  participant Slack
-  participant Review as Conversation review
-  participant Task as Timeline task
-  participant GitHub
-  participant Sentry
-  participant Pack as Evidence pack
+What must happen:
 
-  Slack->>Review: communication, extract + review
-  Review->>Task: approval-backed create/update
-  GitHub->>GitHub: captured work, no extract LLM
-  GitHub->>Task: coalesced done/assignee proposal by repo#number
-  Sentry->>Sentry: pulse, attach to issue cluster
-  Note over GitHub,Sentry: CI workflow runs attach to the PR/SHA cluster as pulses.\nThey never originate a task-done proposal.
-  Note over Pack: Later Ask or correction loads Slack + meeting + PR + related Sentry.\nNever everything from Friday.
-```
+1. Conversation review proposes the task from Slack + meeting (+ email if a
+   hard join or unique title already exists). Human sets or accepts assignee
+   and due.
+2. GitHub PR matches that open task (alias, provider id, or unique
+   repo+number title). Coalesced `done` proposal. CI does not.
+3. Sentry and CI attach to the PR/SHA cluster as pulses.
+4. Later Ask loads Slack + meeting + PR + related Sentry. Never everything
+   from Friday.
 
 What must not happen:
 
 - Extract every GitHub and Sentry row with "5 recent events" as context.
-- Mark the Timeline task done because a workflow run finished in the same
-  minute.
+- Mark the task done because a workflow run finished in the same minute.
+- Mark the task done because the PR body and the task title share the word
+  "404" and nothing else.
 - Assign the task to whoever connected GitHub.
 - Drop Sentry so the later "why did this regress?" question has no evidence.
+- Run a summarizer LLM on the CI firehose so it "embeds more like Slack."
 
 ## What is shipped vs target
 
@@ -519,16 +626,15 @@ What must not happen:
 | Immutable ingest + team isolation | Shipped | Unchanged |
 | Embed every selected integration event, rate-limited | Shipped | Unchanged |
 | Skip extract/suggestion LLM for GitHub, Linear, Monday, Sentry | Shipped as a provider list | Replace with signal class + payload shape |
-| GitHub PR/issue lifecycle → coalesced task proposals | Shipped | Template for other captured-work providers |
+| Conversation review → approval-backed task create | Shipped | Migrate onto proposal packs |
+| GitHub PR/issue lifecycle → coalesced task proposals | Shipped, GitHub-specific parser | Envelope-driven matcher on `objectMap` + status + aliases |
+| Match pending create bundles when the PR arrives first | Not shipped | Merge/supersede with captured-work lifecycle |
+| Topic-only PR → task `done` | Not shipped, and must not ship as cosine-write | Optional pairwise qualify after recall; still approval-backed |
 | Artifact clusters + authority policy | Shipped | Pulses attach; they do not gain authority |
-| Conversation reviews for Slack/Telegram | Shipped | Migrate onto proposal packs |
 | Evidence-pack builder | Implemented, default off | Enforced per adapter after gates |
-| First-class signal-class field on ingest | Not shipped | Classifier at write time, inspectable on the envelope |
-| Provider-blind captured-work matcher | GitHub-specific parser in shared code | Match `objectMap` + status + aliases for any adapter |
-| Pulse parent work-item id | Partial (`head_sha` in metadata, not a core field) | `relatedExternalObjectId` on the envelope |
+| First-class `signalClass` on ingest | Not shipped | Classifier at write time on the envelope |
+| `relatedExternalObjectId` for pulses | Partial (`head_sha` in metadata) | Core envelope field |
 | LLM rewrite of every event for embedding | Not done, and must not be | Reuse extract facts + object titles only |
-| Pulse-as-supporting-evidence in proposal packs | Partial (eligible as integration evidence, not a class policy) | Explicit admission as supporting only |
-| Time-window extract context for Slack/Drive | Still used as local conversation hint | Keep only inside a conversation key, never across providers |
 
 ## Non-negotiables
 
@@ -545,45 +651,59 @@ What must not happen:
 7. A pack supplies evidence, not authority.
 8. Every proposed Timeline-owned change is approval-backed and cited.
 9. Do not add a second LLM summarizer on ingest to make sources "more
-   embeddable." Adapters already emit human-facing `contentText`. Extract
-   already emits fact statements for the classes that pay for it.
+   embeddable."
+10. `objectMap` does not create Timeline tasks. Captured work updates hubs
+    that already exist, or waits for a communication proposal to create them.
 
 ## Implementation seams
 
 When code changes ingest or proposals, update this file in the same change.
 
-- Classifier target: adapters set `signalClass` (and parent
-  `relatedExternalObjectId` for pulses) on the existing `IntegrationEvent`
-  envelope. Shared ingest and proposal code must not switch on provider
-  name.
-- Captured-work proposals: today's GitHub parser in
-  `packages/shared/src/integrations/github-task-proposals.ts` is the first
-  slice. The target matcher reads `objectMap` + status + aliases for any
-  provider.
-- Embeddings: `renderRawEventForAi` plus object/fact embeddings. No ingest
-  summarizer job.
-- Packs: `docs/cross-source-evidence.md` and ADR 0014 remain the admission
-  and citation contract.
-- Cost fuses: `RATE_LIMITS.integrationExtract`, `integrationEmbed`, and
-  `integrationGithubTaskProposal` in
-  `packages/shared/src/rate-limit/buckets.ts`.
+- Envelope: `packages/shared/src/integrations/types.ts`
+- Adapters: `packages/shared/src/integrations/providers/*.ts`
+- Persist + fan-out: `packages/shared/src/integrations/event-writer.ts`,
+  `ingest-processing.ts`
+- Conversation reviews: `packages/shared/src/conversation-review/`
+- Captured-work proposals: `packages/shared/src/integrations/github-task-proposals.ts`
+  (first slice; target matcher is envelope-driven)
+- Packs: `packages/shared/src/evidence-pack/`
+- Objects: `packages/shared/src/objects/`
+- Embeddings: `packages/shared/src/embedding/raw-event-renderer.ts`,
+  `sources.ts`
+- Rate limits: `packages/shared/src/rate-limit/buckets.ts`
+  (`integrationExtract`, `integrationEmbed`, `integrationGithubTaskProposal`)
 
 ## Open work this contract implies
 
-- Lift the provider skip list into an event-level signal class on the
-  envelope.
+- Lift the provider skip list into an event-level `signalClass` on the envelope.
 - Replace GitHub-specific proposal parsing in shared code with an
   envelope-driven captured-work matcher.
-- Treat GitHub review discussion as communication attached to a PR cluster,
-  not as another extract firehose and not as a task-done parser.
-- Set pulse parent ids (`relatedExternalObjectId`) so CI/Sentry attach to
-  the work-item hub without provider switches in core.
+- Merge pending communication creates with later captured-work lifecycle.
+- Treat GitHub review discussion as communication attached to a PR cluster.
+- Set pulse parent ids (`relatedExternalObjectId`).
 - Let pulses into proposal packs only as supporting evidence when a hard join
-  key already exists.
-- Reuse the captured-work proposal template for Linear/Jira-style status and
-  assignee fields without an LLM.
+  already exists.
+- Reuse the captured-work template for Linear/Jira-style status and assignee
+  fields without an LLM.
 - Keep CRM, contracts, and call logs on the captured-work path even when the
   payload is unstructured enough to extract.
+- Do not add an ingest summarizer whose only job is prettier embeddings.
 - Stop describing GitHub, Sentry, Linear, or Monday as "going through the
   suggestion model."
-- Do not add an ingest summarizer whose only job is prettier embeddings.
+
+## Doc map
+
+This file replaced the overlapping architecture narrative. Do not grow a
+second engine doc.
+
+| Keep | Role |
+| --- | --- |
+| This file | Living engine |
+| [`CONTEXT.md`](../CONTEXT.md) | Glossary |
+| [`design.md`](../design.md) | UI language; do not put signal class in chrome |
+| [`objects.html`](./objects.html) | Object schema, routes, helpers, Phase 8 surface |
+| [`cross-source-evidence.md`](./cross-source-evidence.md) | Pack product claims, rollout modes, website copy |
+| [`cross-source-evidence-implementation-plan.md`](./cross-source-evidence-implementation-plan.md) | Engineering checklist until promotion |
+| ADRs 0003, 0004, 0005, 0006, 0009, 0010, 0011, 0014 | Frozen decisions |
+| [`todo.md`](../todo.md) | Open work |
+| [`product-brief.html`](./product-brief.html) | Product vision; points here |

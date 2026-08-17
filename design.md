@@ -33,6 +33,8 @@ database implementation details in ordinary product views.
 - **Artifact clusters** connect evidence that describes the same real-world
   work while keeping evidence association separate from source authority.
 - **Approval-backed state** is durable work state that passed human review.
+  How events become that state is
+  [`docs/relational-memory.md`](docs/relational-memory.md).
 
 Count chrome: Moments mode and digest headlines count **moments**; Audit trail,
 source filters, and technical disclosures count **source events**. Moment rows

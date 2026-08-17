@@ -11,7 +11,7 @@
     <main id="main">
       <h1>Workspace objects</h1>
       <div class="meta">
-        <span class="kind">Architecture</span><span>Last updated 2026-07-17</span>
+        <span class="kind">Implementation</span><span>Last updated 2026-08-17</span>
       </div>
       <p class="tldr">
         Phase 8 turned <code>entities</code> from an extraction artifact into the workspace's
@@ -19,6 +19,11 @@
         a team tracks lives in the same table, behind the same <code>withTeam</code> scope, with the
         same agent tools, with one immutable audit trail. Tasks also carry a reversible LLM-derived
         functional category and an optional singular primary-project edge.
+      </p>
+      <p>
+        How objects participate in ingest, hubs, proposals, and captured-work lifecycle lives in
+        <a href="./relational-memory.md">Operating memory engine</a>. This page is the schema,
+        routes, helpers, and UI surface.
       </p>
 
       <nav class="toc" aria-label="On this page">

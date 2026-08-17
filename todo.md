@@ -189,12 +189,16 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       event-level classifier on the source envelope so GitHub PRs and GitHub
       CI can differ without a core `if (provider === "github")`. Replace the
       GitHub-specific proposal parser with an envelope-driven captured-work
-      matcher on `objectMap` + status. Cross-source stories join at a work
+      matcher on `objectMap` + status. Merge pending communication-created task
+      bundles with later captured-work lifecycle so a PR that arrives before
+      accept still becomes one approval. Cross-source stories join at a work
       hub (task/cluster); embeddings recall candidates and do not prove
       writes. Do not add an ingest summarizer whose only job is prettier
       embeddings. Do not use time windows as the join key.
 - [ ] Ship the cross-source evidence pack north star in
-      [`docs/cross-source-evidence.md`](./docs/cross-source-evidence.md): a shared
+      [`docs/cross-source-evidence.md`](./docs/cross-source-evidence.md) (rollout
+      and copy; engine behavior is
+      [`docs/relational-memory.md`](./docs/relational-memory.md)): a shared
       visibility-safe pack builder with policy-bound admission, deterministic
       ranking, exact per-item citations, conversation reviews and event-local
       paths that eventually cite multi-surface evidence, integrations remaining

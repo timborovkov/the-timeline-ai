@@ -1,4 +1,4 @@
-# Cross-source evidence product brief
+# Cross-source evidence packs — rollout and copy
 
 **Status:** Implemented behind a default-off rollout switch; not shipped
 
@@ -6,33 +6,17 @@
 
 **Last updated:** 2026-08-17
 
-Timeline's cross-source evidence direction is one operating memory backed by the
-tools where work happened. Signal class, the source-independent envelope, work
-hubs, and LLM spend are defined in [`relational-memory.md`](./relational-memory.md).
-This brief covers
-the evidence-pack builder that sits on top of that contract. The shared
-builder, proposal and answer adapters, exact citations, revision handling,
-approval UI, and redacted metrics are now implemented, but pack-backed
-proposals remain disabled by default and are not shipped. Current product copy
-must describe today's behavior; present-tense cross-source proposal claims
-remain gated on each source path shipping.
+Architecture, signal class, hubs, the proposal engine, and when a later PR
+becomes a `done` proposal live in
+[`relational-memory.md`](./relational-memory.md). This page is only the pack
+builder's product claims, rollout gates, and website copy. Do not restate the
+engine here.
 
-## The promise
-
-Timeline should not ask a team to maintain another system of record. It captures
-work from chat, meetings, email, documents, boards, tickets, and provider tools,
-then connects evidence that refers to the same real-world work.
-
-The target product story is:
-
-> **One memory from every surface.** A commitment in Slack, confirmed on a call,
-> tracked in Monday, and clarified by email becomes one cited record instead of
-> four disconnected histories.
-
-This is not AI chat over notes or a generic integration sync. The
-differentiation is compounding operational memory across the tools a team
-already uses while preserving citations, visibility, source authority, and
-human review.
+The shared builder, proposal and answer adapters, exact citations, revision
+handling, approval UI, and redacted metrics are implemented, but pack-backed
+proposals remain disabled by default. Current product copy must describe today's
+behavior; present-tense cross-source proposal claims remain gated on each source
+path shipping.
 
 ## Current state
 

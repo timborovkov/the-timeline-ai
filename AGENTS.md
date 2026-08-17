@@ -114,7 +114,7 @@ Treat this file as an operating contract for agents, not a loose README.
 - When instructions here conflict with code, package scripts, or CI, fix the
   stale instruction or the stale implementation before handing back.
 - Prefer concise hard rules in `AGENTS.md`; put long product explanation in
-  [CONTEXT.md](CONTEXT.md), ingest/proposal architecture in
+  [CONTEXT.md](CONTEXT.md), the operating memory engine in
   [docs/relational-memory.md](docs/relational-memory.md), roadmap state in
   [todo.md](todo.md), and design language in [design.md](design.md).
 

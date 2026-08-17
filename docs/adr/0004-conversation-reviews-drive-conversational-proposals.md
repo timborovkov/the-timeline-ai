@@ -1,5 +1,9 @@
 # Conversation reviews drive conversational proposals
 
+Canonical engine narrative:
+[`docs/relational-memory.md`](../relational-memory.md). This ADR records the
+decision, not the living workflow.
+
 Conversational capture surfaces should not create tasks, calendar changes, or
 object memory proposals from isolated Slack or Telegram messages. Durable
 proposals should be based on a Conversation Review: an ongoing review of the

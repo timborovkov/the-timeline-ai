@@ -37,7 +37,8 @@ it. Communication is people talking or deciding (Slack, meetings, email).
 Captured work is a durable work record or lifecycle change (merged PR, Jira
 status, CRM call log). A pulse is telemetry that can explain or impact work
 (CI runs, Sentry events) without originating proposals. Classify the event,
-not the integration. See [docs/relational-memory.md](docs/relational-memory.md).
+not the integration. The living workflow is
+[docs/relational-memory.md](docs/relational-memory.md).
 _Avoid_: Source, provider, integration type when discussing LLM spend or proposal rights
 
 **Communication Signal**:
@@ -70,7 +71,8 @@ The Timeline task, project, person, or artifact cluster that events from
 different surfaces attach to. Telegram, a GitHub PR, a meeting, and last
 month's email become one story when they point at the same hub, not when they
 share a provider id. Embeddings recall candidate hubs; they do not prove the
-link.
+link. The living workflow is
+[docs/relational-memory.md](docs/relational-memory.md).
 _Avoid_: Conversation, thread, or source when describing cross-surface identity
 
 **Timeline Moment**:
