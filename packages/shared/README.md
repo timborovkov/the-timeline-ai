@@ -71,5 +71,5 @@ pnpm --filter @timeline/shared test
 - Provider strategy and pinning: [docs/setup/openrouter.html](../../docs/setup/openrouter.html).
 - Native integration setup and provider connections:
   [docs/setup/integrations.html](../../docs/setup/integrations.html).
-- Telegram dispatch and Postmark-backed messaging: [docs/setup/telegram.html](../../docs/setup/telegram.html), [docs/setup/postmark.html](../../docs/setup/postmark.html).
+- Telegram dispatch, `/` command-menu registration, and Postmark-backed messaging: [docs/setup/telegram.html](../../docs/setup/telegram.html), [docs/setup/postmark.html](../../docs/setup/postmark.html).
 - Meeting bots (Phase 10): [docs/setup/meeting-bots.html](../../docs/setup/meeting-bots.html).
