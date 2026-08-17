@@ -1013,6 +1013,14 @@ inside a Slack workspace. Installation creates a shared capture surface; it is
 separate from a member's Slack user link.
 _Avoid_: Personal Slack link
 
+**Digest Destination**:
+A workspace-configured place the daily digest is sent. Email every member is
+the default. Admins can add Slack channels, Telegram groups, and bot DMs to
+linked members, and can remove email so the digest is chat-only. Shared chats
+receive one team-visible digest; email and DMs stay personalized and honor the
+personal opt-out.
+_Avoid_: Notification channel when referring to digest routing
+
 **Visibility Default**:
 The initial visibility applied to future items from a capture surface. Changing
 a default does not retroactively change existing items.
@@ -1059,17 +1067,25 @@ bypassing private or restricted items.
 _Avoid_: Backup, database dump
 
 **Onboarding Checklist**:
-A dismissible progress model that helps a team learn capture surfaces. Home
-surfaces only the next incomplete setup step and its direct action; full
-connection management belongs in Connections. It teaches the product loop; it
-is not a requirement that external data has successfully arrived.
+A dismissible team setup checklist that teaches the product loop: capture,
+invite teammates, connect chat and email, upload a document, ask the agent,
+invite the bot to a call, review a proposal, configure daily digests, and
+connect a source, webhook, or Timeline MCP. Home keeps it open under Ask
+until a member hides it; Hide persists even with zero completions. The open
+panel uses the same quiet label as the folded toggle. Later incomplete steps
+are links so the list stays usable. After Hide, a quiet Team setup checklist
+toggle with a chevron remains in that slot, and a matching header chip on
+other app pages returns to the panel until setup is done or hidden. Full
+connection management belongs in Connections. It is not a requirement that
+external data has successfully arrived.
 _Avoid_: Setup wizard, activation gate
 
 **Home**:
-The signed-in landing surface for a team member. It leads with Ask and actionable
-attention, keeps capture in a focused dialog, and follows with the latest digest,
-pinned work, up to three recent moments, and one next setup step. It does not
-duplicate the canonical Timeline, Work navigation, or Connections management.
+The signed-in landing surface for a team member. It leads with Ask, the team
+setup checklist, and actionable attention, keeps capture in a focused dialog,
+and follows with the latest digest, pinned work, and a dense scan of recent
+moments. It does not duplicate the canonical Timeline, Work navigation, or
+Connections management.
 _Avoid_: Timeline when referring to the landing page
 
 **Workspace Time Context**:

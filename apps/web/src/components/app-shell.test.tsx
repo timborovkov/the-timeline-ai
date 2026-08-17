@@ -49,6 +49,10 @@ vi.mock('@/components/mobile-nav', () => ({
   MobileNav: () => createElement('button', { type: 'button' }, 'Menu'),
 }));
 
+vi.mock('@/components/team-setup-checklist-chip', () => ({
+  TeamSetupChecklistChip: () => null,
+}));
+
 vi.mock('@/components/theme-toggle', () => ({
   ThemeToggle: () => createElement('button', { type: 'button' }, 'Theme'),
 }));

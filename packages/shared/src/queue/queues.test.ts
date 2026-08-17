@@ -1148,6 +1148,12 @@ describe('queue wrappers', () => {
       digestId: '33333333-3333-4333-8333-333333333333',
       email: 'tim@example.test',
     });
+    await queues.enqueueDailyDigestWorkspaceSendJob({
+      kind: 'workspace-send',
+      teamId: '22222222-2222-4222-8222-222222222222',
+      windowStart: '2026-06-15T12:00:00.000Z',
+      windowEnd: '2026-06-16T12:00:00.000Z',
+    });
 
     expect(fakes.queues[0]?.addCalls[0]).toMatchObject({
       name: 'recipient',
@@ -1159,6 +1165,13 @@ describe('queue wrappers', () => {
     expect(fakes.queues[0]?.addCalls[1]).toMatchObject({
       name: 'send',
       opts: { jobId: 'daily-digest-send|33333333-3333-4333-8333-333333333333' },
+    });
+    expect(fakes.queues[0]?.addCalls[2]).toMatchObject({
+      name: 'workspace-send',
+      opts: {
+        jobId:
+          'daily-digest-workspace|22222222-2222-4222-8222-222222222222|2026-06-15T12%3A00%3A00.000Z|2026-06-16T12%3A00%3A00.000Z',
+      },
     });
     for (const call of fakes.queues[0]?.addCalls ?? []) {
       const opts = call.opts as { jobId?: string } | undefined;

@@ -1,6 +1,6 @@
 'use client';
 
-import { BookOpen, ExternalLink, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { BookOpen, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
@@ -65,36 +65,44 @@ export function DesktopSidebar({
       )}
     >
       <div
-        className={cn(
-          'flex w-full items-center gap-2',
-          expanded ? 'justify-between px-1' : 'flex-col',
-        )}
+        className={cn('flex w-full items-center gap-2', expanded ? 'justify-between' : 'flex-col')}
       >
-        {expanded ? (
-          <Wordmark compact className="min-w-0 flex-1 text-fg" />
-        ) : (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="grid size-7 place-items-center">
-                <Logo className="size-5 text-fg" />
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="right">The Timeline</TooltipContent>
-          </Tooltip>
-        )}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Link
+              href="/app"
+              aria-label="The Timeline home"
+              className={cn(
+                'rounded-sm text-fg transition-colors',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg',
+                expanded
+                  ? 'flex h-9 min-w-0 items-center px-3'
+                  : 'grid size-9 place-items-center hover:bg-surface-2',
+              )}
+            >
+              {expanded ? (
+                <Wordmark compact className="min-w-0 gap-3" />
+              ) : (
+                <Logo ariaHidden className="size-4 text-fg" />
+              )}
+            </Link>
+          </TooltipTrigger>
+          {!expanded ? <TooltipContent side="right">The Timeline</TooltipContent> : null}
+        </Tooltip>
 
         <Tooltip>
           <TooltipTrigger asChild>
             <button
               type="button"
               aria-label={expanded ? 'Collapse sidebar' : 'Expand sidebar'}
+              aria-expanded={expanded}
               onClick={toggleExpanded}
               className="grid size-9 shrink-0 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg"
             >
               {expanded ? (
-                <PanelLeftClose aria-hidden="true" className="size-4" />
+                <ChevronLeft aria-hidden="true" className="size-4" />
               ) : (
-                <PanelLeftOpen aria-hidden="true" className="size-4" />
+                <ChevronRight aria-hidden="true" className="size-4" />
               )}
             </button>
           </TooltipTrigger>
