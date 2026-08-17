@@ -2222,7 +2222,7 @@ async function getObjectProvenance(
           rawEventId: event.id,
           quote: null,
           source: event.source,
-          contentText: null,
+          contentText: objectProvenancePreview(event.contentText, 320),
           occurredAt: event.occurredAt,
         },
       ],
@@ -2244,11 +2244,11 @@ async function getObjectProvenance(
   };
 }
 
-function objectProvenancePreview(contentText: string | null): string {
+function objectProvenancePreview(contentText: string | null, maxChars = 160): string {
   const cleaned = (contentText ?? 'Related source event').replace(/\s+/g, ' ').trim();
   if (cleaned.length === 0) return 'Related source event';
-  if (cleaned.length <= 160) return cleaned;
-  return `${cleaned.slice(0, 157)}...`;
+  if (cleaned.length <= maxChars) return cleaned;
+  return `${cleaned.slice(0, Math.max(0, maxChars - 3))}...`;
 }
 
 async function sourceRefRawEventIdsBySuggestionItem(

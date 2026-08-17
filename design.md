@@ -30,6 +30,9 @@ database implementation details in ordinary product views.
 - **Work hubs** (internal) are the tasks, projects, people, and artifact
   clusters that events from different surfaces attach to. Ordinary chrome
   still names the task or project, not "hub."
+- **Memory grade** (internal) is the hub's role: goal, work, finding, or
+  mention. Ordinary chrome still names the task or company. Do not add a
+  second importance slider; `priority` 1–4 stays urgency on goals and work.
 - **Artifact clusters** connect evidence that describes the same real-world
   work while keeping evidence association separate from source authority.
 - **Approval-backed state** is durable work state that passed human review.

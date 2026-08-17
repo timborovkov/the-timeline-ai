@@ -39,6 +39,7 @@ code-complete; remaining work is rollout, listed in the pack page and
 - [The question this engine exists to answer](#the-question-this-engine-exists-to-answer)
 - [Thesis](#thesis)
 - [Layers](#how-to-read-the-rest-of-this-file)
+- [Memory grade](#memory-grade)
 - [Cost, quality, and distance](#cost-quality-and-distance-from-ideal)
 - [Shipped vs target](#what-is-shipped-vs-target)
 - [Non-negotiables](#non-negotiables)
@@ -497,6 +498,42 @@ Shared fields that the engine cares about:
 | `owner_user_id` / `assignee_user_id` | People; GitHub fills only when empty and login maps |
 | `task_category*` | Derived, reversible ([ADR 0011](./adr/0011-task-category-is-reversible-derived-state.md)); not a join key |
 
+### Memory grade
+
+Do **not** add a second numeric "importance" field. `priority` 1–4 already
+exists and is underused. The missing dimension is **what kind of hub this is**,
+not a score.
+
+| Grade | What it is | Example | Mint a Timeline object? |
+| --- | --- | --- | --- |
+| **goal** | A team commitment with a horizon | "Technically run an audit end-to-end by mid-July" | Yes. Propose priority, due, assignee. Summarize. |
+| **work** | Work the team is actually tracking | A Linear issue they own; a PR they treat as a task | Optional Timeline task linked to the provider id. |
+| **finding** | A tool finding on a parent work item | Cursor Bugbot / Codex / CI comment on a PR | **No.** Attach to the PR/issue hub as pulse or communication-lite. |
+| **mention** | A name that appeared once | A company named in a PR | **No.** Stay as fact text until a human treats it as an account. |
+
+A Bugbot comment is not in the same league as a mid-July audit goal because it
+is a **finding**, not a **goal**. Putting both in `entities` as `task` with
+`priority=null` is the bug. The empty summary is a symptom: GitHub findings
+skip extract (no facts), have no due/priority, and until now the summarizer
+ignored the accepted create-evidence event, so it correctly said "not enough
+object memory." That object should usually not exist. If it does exist, one
+cited source event is enough to summarize *what Bugbot wrote, which repo, and
+when*.
+
+**Create as done.** If a finding or work item is already addressed when the
+proposal is generated — or still addressed when the human accepts — propose
+`status: done` (or do not create). ADR 0005: trivial completed work may remain
+raw evidence with no proposal. Accepting an open task weeks after you already
+fixed the PR is the failure mode in the Bugbot screenshot.
+
+**Priority.** Propose 1–4 on **goal** and **work** when the evidence has
+severity, a date, or a blocker. Leave null only when silent. Findings do not
+get a Timeline priority because they should not be Timeline tasks.
+
+**Target column:** `memory_grade` on `entities` (`goal | work | finding |
+mention`) only after the behavioral rules above are live. Do not ship a
+free-floating importance slider first.
+
 Relationships (`entity_relationships`): `parent`, `child`, `related`, `blocks`,
 `blocked_by`, `duplicate_of`. A task's primary project is task → project with
 `kind='child'`. Create+link in one approval bundle uses `localRef`
@@ -526,6 +563,8 @@ Provenance tiers ([ADR 0010](./adr/0010-artifact-provenance-is-tiered-and-eviden
 | Aliases / external ids on a Timeline task | Human edit | Matcher may merge provider aliases after a qualified match |
 | New Timeline object | Human create | Communication / unstructured captured-work proposal |
 | Pulse-only telemetry | Never writes Timeline fields | May attach as related evidence |
+| Timeline `priority` 1–4 | Human edit | Communication review should propose it on goals and tracked work when urgency is in evidence |
+| New Timeline object from a finding or one-off mention | Never | Stay on the parent hub or as fact text |
 
 Generic ingest webhooks are evidence-only
 ([ADR 0009](./adr/0009-ingest-webhooks-are-evidence-only.md)).
@@ -689,6 +728,8 @@ skipping pulse embeddings or we lose "why did the release fail?"
 | Assignee mapping is identity-based | Pack-backed conversation proposals are not shipped (`MODE=off`) |
 | Pulses remain searchable | Core matcher still parses `github.type`; Linear/Jira cannot reuse it yet |
 | Ask can show the full story without rewriting memory | Topic-only PR → task still must not become a silent write |
+| One cited create-evidence event is enough to summarize | Historical Bugbot/CI tasks still exist until humans archive them |
+| Suggestion prompt refuses findings and asks for priority / create-as-done | Accept-time GitHub reconcile is not shipped; the model can still miss a merged PR |
 
 Quality improves by **refusing bad joins**, not by summarizing everything into
 comparable prose.
@@ -709,6 +750,10 @@ is half; source independence and packs are the rest.**
 | Evidence packs | Builder exists, default `off`; Ask uses answer packs | Enforce per adapter after gates in [`cross-source-evidence.md`](./cross-source-evidence.md) |
 | Pairwise qualify after vector recall | Not started | Shortlist only; never cosine-as-write |
 | Linear/Jira/CRM captured-work matcher | Not started | Falls out of envelope matcher |
+| Object summary from accepted create evidence | Shipped: one cited event is enough; packet includes create-evidence | Unchanged |
+| Do not mint findings / one-off mentions as objects | Suggestion prompt shipped | `memory_grade` column after the behavioral rules hold |
+| Propose `priority` 1–4 on goal/work creates | Prompt shipped; schema already accepts | Captured-work matcher should copy provider priority when the envelope has it |
+| Create already-done when the PR was already fixed | Prompt only | Accept-time captured-work reconcile + pending-create merge |
 
 Do not start the pairwise-qualify slice before alias stamping and pending-create
 merge. Those two close most dogfood misses without a new model call.
@@ -729,6 +774,11 @@ merge. Those two close most dogfood misses without a new model call.
 | First-class `signalClass` on ingest | Not shipped | Classifier at write time on the envelope |
 | `relatedExternalObjectId` for pulses | Partial (`head_sha` in metadata) | Core envelope field |
 | LLM rewrite of every event for embedding | Not done, and must not be | Reuse extract facts + object titles only |
+| Memory grade (`goal` / `work` / `finding` / `mention`) | Behavioral: prompt + summarizer + provenance excerpt | Optional `entities.memory_grade` after the rules are live. Not a second score. |
+| Object summary when GitHub skip-extract left zero facts | Shipped: accepted create-evidence counts as the source event | Unchanged |
+| Provenance shows what the source wrote | Shipped: source links include a 320-character excerpt | Unchanged |
+| Propose priority on new tasks | Suggestion prompt shipped | Captured-work envelope copies provider priority when present |
+| Create-as-done / skip findings | Prompt shipped | Accept-time matcher + pending-create merge |
 
 ## Non-negotiables
 
@@ -790,6 +840,11 @@ pending creates with later captured work. Do not start pairwise qualify first.
 - Do not add an ingest summarizer whose only job is prettier embeddings.
 - Stop describing GitHub, Sentry, Linear, or Monday as "going through the
   suggestion model."
+- Do not mint Timeline tasks from automated findings (Bugbot, CI, Codex);
+  attach those to the parent PR/issue hub. Propose `priority` 1–4 on goals
+  and tracked work. Create already-done when the evidence shows the work is
+  already addressed.
+- Do not add a second numeric importance field. Hub role is memory grade.
 
 ## Doc map
 
@@ -797,7 +852,7 @@ pending creates with later captured work. Do not start pairwise qualify first.
 | --- | --- |
 | This file | Living engine |
 | [`CONTEXT.md`](../CONTEXT.md) | Glossary |
-| [`design.md`](../design.md) | UI language; do not put signal class in chrome |
+| [`design.md`](../design.md) | UI language; do not put signal class or memory grade in chrome |
 | [`objects.html`](./objects.html) | Object schema, routes, helpers |
 | [`cross-source-evidence.md`](./cross-source-evidence.md) | Pack rollout gates and website copy |
 | ADRs 0003, 0004, 0005, 0006, 0009, 0010, 0011, 0014 | Frozen decisions |

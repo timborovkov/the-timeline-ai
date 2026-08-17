@@ -196,7 +196,11 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       accept still becomes one approval. Cross-source stories join at a work
       hub (task/cluster); embeddings recall candidates and do not prove
       writes. Do not add an ingest summarizer whose only job is prettier
-      embeddings. Do not use time windows as the join key.
+      embeddings. Do not use time windows as the join key. Do not mint Timeline
+      tasks from automated findings (Bugbot, CI, Codex); attach those to the
+      parent PR/issue hub. Propose priority 1–4 on goals and tracked work.
+      Create already-done when the evidence shows the work is already
+      addressed.
 - [ ] Ship the cross-source evidence pack north star in
       [`docs/cross-source-evidence.md`](./docs/cross-source-evidence.md) (rollout
       and copy; engine behavior is

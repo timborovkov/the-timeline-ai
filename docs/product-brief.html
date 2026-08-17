@@ -236,7 +236,10 @@
           <strong>Object resolution.</strong> Facts link to existing objects when names or aliases
           match a durable, non-generic workspace item. Generic topic phrases stay as fact text
           rather than becoming object memory by default, and everyday SaaS/tools should not become
-          company objects just because the team mentioned them. Durable tool choices are modeled as
+          company objects just because the team mentioned them. Automated review findings (Bugbot,
+          CI, Codex) stay on the parent pull request or issue rather than minting a sibling task;
+          one-off company mentions stay fact text until the team treats them as an account.
+          Durable tool choices are modeled as
           decisions or updates to a specific existing artifact. New object memory goes through
           approval-backed proposals, and plausible duplicates are merged through human-reviewed
           cleanup.

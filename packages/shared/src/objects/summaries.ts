@@ -2,6 +2,9 @@ import { createHash } from 'node:crypto';
 
 import {
   type Db,
+  agentSuggestionEvidence,
+  agentSuggestionItems,
+  agentSuggestions,
   artifactClusters,
   artifactEvidenceAssociations,
   entities,
@@ -16,7 +19,7 @@ import {
   reconciliationEvidence,
   reconciliationOutputs,
 } from '@timeline/db';
-import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type { TeamScopeCore } from '#src/team-scope.js';
@@ -233,8 +236,9 @@ function sourceKey(ref: ObjectSummarySourceRef): string {
 function sufficiency(counts: ObjectSummarySourceCounts, meaningfulFields: number) {
   if (counts.facts >= 2) return { canGenerate: true, reason: null };
   if (counts.facts >= 1 && meaningfulFields >= 1) return { canGenerate: true, reason: null };
-  if (counts.events >= 2) return { canGenerate: true, reason: null };
-  if (counts.events >= 1 && meaningfulFields >= 1) return { canGenerate: true, reason: null };
+  // One cited source event is enough. GitHub skip-extract objects have no facts;
+  // accepted create-evidence is the "why this exists" packet for those hubs.
+  if (counts.events >= 1) return { canGenerate: true, reason: null };
   if (counts.notes >= 1) return { canGenerate: true, reason: null };
   if (counts.tasks >= 1 && counts.facts + counts.notes + counts.relationships >= 1) {
     return { canGenerate: true, reason: null };
@@ -307,6 +311,7 @@ async function buildObjectSummaryPacket(
     taskRows,
     changeRows,
     associationRows,
+    createEvidenceRows,
   ] = await Promise.all([
     db
       .select({
@@ -471,6 +476,40 @@ async function buildObjectSummaryPacket(
       )
       .orderBy(desc(reconciliationEvidence.occurredAt), desc(artifactEvidenceAssociations.id))
       .limit(8),
+    db
+      .select({
+        rawEventId: rawEvents.id,
+        contentText: rawEvents.contentText,
+        occurredAt: rawEvents.occurredAt,
+        source: rawEvents.source,
+        quote: agentSuggestionEvidence.quote,
+      })
+      .from(agentSuggestionItems)
+      .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+      .innerJoin(
+        agentSuggestionEvidence,
+        eq(agentSuggestionEvidence.suggestionId, agentSuggestions.id),
+      )
+      .innerJoin(rawEvents, eq(rawEvents.id, agentSuggestionEvidence.rawEventId))
+      .where(
+        and(
+          eq(agentSuggestions.teamId, scope.teamId),
+          eq(agentSuggestionItems.teamId, scope.teamId),
+          eq(agentSuggestionEvidence.teamId, scope.teamId),
+          eq(rawEvents.teamId, scope.teamId),
+          eq(agentSuggestionItems.status, 'accepted'),
+          eq(agentSuggestionItems.operation, 'create'),
+          eq(agentSuggestions.visibility, 'team'),
+          eq(rawEvents.visibility, 'team'),
+          sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+          or(
+            eq(agentSuggestionItems.targetId, entityId),
+            eq(agentSuggestionItems.resultId, entityId),
+          ),
+        ),
+      )
+      .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
+      .limit(8),
   ]);
 
   const factSources: SummaryPacketSource[] = factRows.map((fact) => ({
@@ -486,18 +525,33 @@ async function buildObjectSummaryPacket(
       kind: 'timeline_event' as const,
       id: association.rawEventId,
     })),
+    ...createEvidenceRows.map((row) => ({
+      kind: 'timeline_event' as const,
+      id: row.rawEventId,
+    })),
   ]).map((ref) => {
     const fact = factRows.find((row) => row.rawEventId === ref.id);
     const association = associationRows.find((row) => row.rawEventId === ref.id);
+    const created = createEvidenceRows.find((row) => row.rawEventId === ref.id);
     return {
       ref,
-      label: association ? `Reconciliation ${association.role}` : 'Source event',
+      label: association
+        ? `Reconciliation ${association.role}`
+        : created
+          ? 'Creation evidence'
+          : 'Source event',
       text:
+        created?.quote ||
+        created?.contentText ||
         association?.summary ??
         association?.title ??
         fact?.statement ??
-        `${association?.source ?? 'source'} event`,
-      occurredAt: association?.occurredAt.toISOString() ?? fact?.occurredAt.toISOString() ?? null,
+        `${association?.source ?? created?.source ?? 'source'} event`,
+      occurredAt:
+        created?.occurredAt.toISOString() ??
+        association?.occurredAt.toISOString() ??
+        fact?.occurredAt.toISOString() ??
+        null,
       confidence: fact?.confidence ?? null,
     };
   });
@@ -577,6 +631,7 @@ function promptForPacket(packet: ObjectSummaryPacket): string {
         instructions: [
           'Write a compact operational object summary.',
           'Infer current state from newer confirmed sources; older tentative facts can be superseded.',
+          'If creation evidence is present, say what the source wrote, which system or repo, and when.',
           'Do not invent names, dates, owners, recommendations, or source ids.',
           'Use currentState for concrete source-backed dates, next steps, blockers, owners, or risks.',
           'Use conflicts only when sources materially disagree and recency does not resolve it.',

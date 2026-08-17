@@ -1,5 +1,6 @@
 import {
   type Db,
+  agentSuggestionEvidence,
   agentSuggestionItems,
   agentSuggestions,
   artifactClusterMembers,
@@ -2650,7 +2651,8 @@ describe('object scope — notes and suggestions', () => {
       expect(entry.title).toHaveLength(160);
       expect(entry.title.endsWith('...')).toBe(true);
       expect(entry.evidence).toHaveLength(1);
-      expect(entry.evidence[0]?.contentText).toBeNull();
+      expect(entry.evidence[0]?.contentText).toHaveLength(320);
+      expect(entry.evidence[0]?.contentText?.endsWith('...')).toBe(true);
       expect(typeof entry.evidence[0]?.rawEventId).toBe('string');
     }
   });
@@ -4348,6 +4350,64 @@ describe('object scope — merge cleanup', () => {
     expect(detail?.notes).toHaveLength(9);
     expect(detail?.summary?.canGenerate).toBe(false);
     expect(detail?.summary?.cannotGenerateReason).toBe('not_enough_object_memory');
+  });
+
+  it('can generate a summary from one accepted create-evidence event', async () => {
+    const workspace = withTeam(db, TEAM_A, USER_OWNER);
+    const object = await workspace.objects.createObject({
+      type: 'task',
+      canonicalName: 'Fix M-14 effectOnTotalAssets sign',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const [event] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'integration',
+        contentText:
+          'Cursor Bugbot flagged a Medium-severity defect in timborovkov/audit-ai#88: M-14 effectOnTotalAssets sign.',
+        occurredAt: new Date('2026-05-11T12:10:00.000Z'),
+        visibility: 'team',
+      })
+      .returning({ id: rawEvents.id });
+    if (!event) throw new Error('failed to insert event');
+    const [suggestion] = await db
+      .insert(agentSuggestions)
+      .values({
+        teamId: TEAM_A,
+        source: 'background',
+        title: 'Create Bugbot task',
+        dedupeKey: 'create-bugbot-task',
+        visibility: 'team',
+      })
+      .returning({ id: agentSuggestions.id });
+    if (!suggestion) throw new Error('failed to insert suggestion');
+    await db.insert(agentSuggestionItems).values({
+      suggestionId: suggestion.id,
+      teamId: TEAM_A,
+      status: 'accepted',
+      operation: 'create',
+      targetKind: 'task',
+      targetId: object.id,
+      resultId: object.id,
+      title: 'Fix M-14 effectOnTotalAssets sign',
+      dedupeKey: 'create-bugbot-task:item',
+      proposedPayload: { canonicalName: 'Fix M-14 effectOnTotalAssets sign' },
+    });
+    await db.insert(agentSuggestionEvidence).values({
+      suggestionId: suggestion.id,
+      teamId: TEAM_A,
+      rawEventId: event.id,
+      quote:
+        'Cursor Bugbot flagged a Medium-severity defect in timborovkov/audit-ai#88.',
+    });
+
+    const detail = await workspace.objects.getObject(object.id);
+    expect(detail?.summary?.canGenerate).toBe(true);
+    await expect(
+      workspace.objects.enqueueObjectSummaryRefresh(object.id, { trigger: 'manual' }),
+    ).resolves.toMatchObject({ canGenerate: true, enqueued: true });
   });
 
   it('does not count legacy object-change source_event_id rows as summary change sources', async () => {

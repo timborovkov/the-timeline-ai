@@ -75,6 +75,15 @@ link. The living workflow is
 [docs/relational-memory.md](docs/relational-memory.md).
 _Avoid_: Conversation, thread, or source when describing cross-surface identity
 
+**Memory Grade**:
+The role of a hub, not a numeric importance score. Goal is a team commitment
+with a horizon. Work is something the team is actually tracking. Finding is a
+tool finding on a parent work item (Bugbot, CI, Codex) and must not mint a
+sibling Timeline task. Mention is a name that appeared once and stays fact
+text until promoted. Priority 1–4 stays the urgency field on goals and work.
+See [docs/relational-memory.md](docs/relational-memory.md).
+_Avoid_: Importance, score, weight when a grade would do
+
 **Timeline Moment**:
 A user-facing cluster of related raw events shown together on the timeline so
 team members can understand a meaningful slice of work before drilling into

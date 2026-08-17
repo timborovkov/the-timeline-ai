@@ -1210,8 +1210,8 @@ function timelinePreview(contentText: string | null): string {
   const cleaned = displayText(contentText ?? 'Timeline event')
     .replace(/\s+/g, ' ')
     .trim();
-  if (cleaned.length <= 160) return cleaned;
-  return `${cleaned.slice(0, 157)}...`;
+  if (cleaned.length <= 320) return cleaned;
+  return `${cleaned.slice(0, 317)}...`;
 }
 
 function ProvenanceEntryList({
@@ -1231,7 +1231,7 @@ function ProvenanceEntryList({
             muted && 'border-border bg-bg text-fg-muted',
           )}
         >
-          <p className="line-clamp-2 break-words font-medium leading-5 text-fg">
+          <p className="line-clamp-4 break-words font-medium leading-5 text-fg">
             {timelinePreview(entry.title)}
           </p>
           {entry.reason ? (
@@ -1287,6 +1287,11 @@ function ProvenanceSourceLink({
       className="block break-words text-xs text-fg-muted underline-offset-2 hover:text-fg hover:underline"
     >
       {displayText(source.source)} · {formatDisplayDateTime(source.occurredAt, { timezone })}
+      {source.contentText || source.quote ? (
+        <span className="mt-0.5 block line-clamp-4 break-words text-fg-muted no-underline">
+          {timelinePreview(source.contentText ?? source.quote)}
+        </span>
+      ) : null}
     </Link>
   );
 }
