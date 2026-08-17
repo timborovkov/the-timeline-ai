@@ -1,7 +1,17 @@
 import { loadEnvFile } from 'node:process';
 
 import { PGlite } from '@electric-sql/pglite';
-import { conversationReviews, entities, rawEvents, teamMembers, teams, users } from '@timeline/db';
+import {
+  calendarEventEntities,
+  calendarEvents,
+  conversationReviews,
+  entities,
+  meetings,
+  rawEvents,
+  teamMembers,
+  teams,
+  users,
+} from '@timeline/db';
 import { embedding, llm, qdrant } from '@timeline/shared';
 import { withTeam } from '@timeline/shared/team-scope';
 import { eq } from 'drizzle-orm';
@@ -18,10 +28,12 @@ if (process.env.PROPOSAL_ENGINE_LIVE_ENV_FILE) {
 /**
  * Opt-in messy proposal-engine eval. Not CI.
  *
- * Real OpenRouter models generate the bundles. Deterministic hub attach still
- * has to land the unique Slack/Monday/meeting qualify. When Qdrant is
- * configured, real embeddings prove recall without becoming the write join.
- * Each run uses an isolated PGlite team and deletes any Qdrant points it wrote.
+ * Real OpenRouter models generate the bundles. Deterministic hub attach,
+ * alias stamp, and envelope signal class still have to land. About 90% of
+ * fixtures are noisy (Sentry, CI pulses, overlapping clients, typos,
+ * fragments). Safe name-maps are the minority. When Qdrant is configured,
+ * real embeddings prove recall without becoming the write join. Each run
+ * uses an isolated PGlite team and deletes any Qdrant points it wrote.
  */
 const maybeDescribe = process.env.PROPOSAL_ENGINE_LIVE_EVAL === '1' ? describe : describe.skip;
 
@@ -118,20 +130,53 @@ maybeDescribe('live messy proposal-engine eval', () => {
     ).toBe(true);
   }, 240_000);
 
-  it('attaches Faba from a meeting title when the transcript never repeats the client', async () => {
+  it('inherits Faba from a silent Weekly meeting linked to a calendar object', async () => {
     const eventId = seedId('31');
+    const calendarId = seedId('32');
+    const meetingId = seedId('33');
+    await db.insert(calendarEvents).values({
+      id: calendarId,
+      teamId: TEAM_ID,
+      createdByUserId: USER_ID,
+      title: 'Weekly',
+      startAt: new Date('2026-05-27T10:00:00.000Z'),
+      endAt: new Date('2026-05-27T10:30:00.000Z'),
+      timezone: 'UTC',
+    });
+    await db.insert(calendarEventEntities).values({
+      calendarEventId: calendarId,
+      entityId: FABA_COMPANY_ID,
+      teamId: TEAM_ID,
+    });
+    await db.insert(meetings).values({
+      id: meetingId,
+      teamId: TEAM_ID,
+      createdByUserId: USER_ID,
+      platform: 'meet',
+      meetingUrl: 'https://meet.example.test/weekly',
+      title: 'Weekly',
+      status: 'completed',
+      linkedCalendarEventId: calendarId,
+    });
     await seedCapture(db, {
       id: eventId,
-      text: 'ok so we should prepare the login page, I can take it, maybe Friday',
-      sourceMetadata: { meeting_title: 'Faba weekly' },
+      text: 'ok so we should prepare the login page, I can take it, maybe Friday, also the sentry map thing is still exploding in prod I think',
+      sourceMetadata: {
+        meeting_id: meetingId,
+        meeting_title: 'Weekly',
+        calendar_event_id: calendarId,
+      },
     });
 
     await runEventLocal(db, eventId);
 
-    const tasks = await pendingTaskCreates(db);
-    expect(tasks.some((item) => item.proposedPayload.parentObjectId === FABA_PROJECT_ID)).toBe(
-      true,
-    );
+    expect(
+      (await pendingItems(db)).some(
+        (item) =>
+          item.targetKind === 'object_relationship' &&
+          item.proposedPayload.toEntityId === FABA_COMPANY_ID,
+      ),
+    ).toBe(true);
   }, 240_000);
 
   it('does not unique-attach from a generic #general Slack channel', async () => {
@@ -241,8 +286,9 @@ maybeDescribe('live messy proposal-engine eval', () => {
       visibility: 'team',
       sourceMetadata: {
         provider: 'github',
-        github: { type: 'check_run', repo: 'acme/app' },
-        event_type: 'check_run.completed',
+        signal_class: 'pulse',
+        github: { type: 'workflow_run', repo: 'acme/app' },
+        event_type: 'workflow_run.failure',
       },
     });
 
@@ -254,6 +300,281 @@ maybeDescribe('live messy proposal-engine eval', () => {
 
     expect(await pendingItems(db)).toEqual([]);
   }, 120_000);
+
+  it('does not originate proposals from a messy Sentry spike', async () => {
+    const eventId = seedId('72');
+    await db.insert(rawEvents).values({
+      id: eventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'integration',
+      contentText:
+        'Sentry issue FABA-APP-1821: TypeError: Cannot read properties of undefined (reading "map") in /engagements?client=faba&view=broken 482 events 19 users culprits minified',
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+      visibility: 'team',
+      sourceMetadata: {
+        provider: 'sentry',
+        signal_class: 'finding',
+        event_type: 'issue.created',
+        object_map: {
+          type: 'incident',
+          canonicalName: 'FABA-APP-1821: TypeError',
+          externalId: '1821',
+          aliases: ['FABA-APP-1821'],
+        },
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: eventId, teamId: TEAM_ID },
+      { getEnv: liveEnv },
+    );
+
+    expect(await pendingItems(db)).toEqual([]);
+  }, 120_000);
+
+  it('does not mint a sibling task from a Bugbot finding on a PR', async () => {
+    const eventId = seedId('73');
+    await db.insert(rawEvents).values({
+      id: eventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'integration',
+      contentText:
+        'Cursor Bugbot: this PR introduces an N+1 in the engagements loader, also the Faba client filter looks wrong, please fix before merge',
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+      visibility: 'team',
+      sourceMetadata: {
+        provider: 'github',
+        signal_class: 'finding',
+        event_type: 'issue_comment.created',
+        github: {
+          type: 'issue_comment',
+          repo: 'acme/app',
+          parent: { type: 'pull_request', number: 88 },
+        },
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: eventId, teamId: TEAM_ID },
+      { getEnv: liveEnv },
+    );
+
+    expect(await pendingItems(db)).toEqual([]);
+  }, 120_000);
+
+  it('stamps a buried acme/app#88 alias from a messy Slack thread', async () => {
+    const eventId = seedId('74');
+    const reviewId = seedId('75');
+    await seedSlackThread(db, {
+      eventId,
+      reviewId,
+      channelId: 'C_NOISE',
+      channelName: 'random',
+      text: 'idk wait https://github.com/acme/app/pull/88 is the one from last week, someone just close the loop after qa, also pizza?',
+    });
+
+    await runConversationReview(db, reviewId);
+
+    const tasks = await pendingTaskCreates(db);
+    expect(tasks.length).toBeGreaterThan(0);
+    expect(
+      tasks.some((item) => {
+        const aliases = item.proposedPayload.aliases;
+        return (
+          Array.isArray(aliases) && aliases.some((alias) => String(alias).includes('acme/app#88'))
+        );
+      }),
+    ).toBe(true);
+  }, 240_000);
+
+  it('does not unique-attach when a typo-ridden fragment names both clients', async () => {
+    const eventId = seedId('76');
+    const reviewId = seedId('77');
+    await seedSlackThread(db, {
+      eventId,
+      reviewId,
+      channelId: 'C_FRAG',
+      channelName: 'standup-notes',
+      text: 'the login from yesterday thread got split across two clients, also sentry is screaming about map of undefined in engagements, idk who owns it',
+    });
+
+    await runConversationReview(db, reviewId);
+
+    expect(await attachedExistingHubs(db)).toEqual([]);
+  }, 240_000);
+
+  it('does not originate from a Drive file-changed pulse that mentions both clients in the filename', async () => {
+    const eventId = seedId('78');
+    await db.insert(rawEvents).values({
+      id: eventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'integration',
+      contentText: 'Drive file "Acme x Faba login QA notes.pdf" (application/pdf) was modified',
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+      visibility: 'team',
+      sourceMetadata: {
+        provider: 'google_drive',
+        signal_class: 'pulse',
+        event_type: 'file.changed',
+        object_map: {
+          type: 'document',
+          canonicalName: 'Acme x Faba login QA notes.pdf',
+          externalId: 'drive-file-9',
+        },
+      },
+    });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: eventId, teamId: TEAM_ID },
+      { getEnv: liveEnv },
+    );
+    expect(await pendingItems(db)).toEqual([]);
+  }, 120_000);
+
+  it('does not originate from a Linear comment finding that names Faba', async () => {
+    const eventId = seedId('79');
+    await db.insert(rawEvents).values({
+      id: eventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'integration',
+      contentText:
+        'Linear ENG-42 comment: this still 500s on the Faba engagements filter, also the Acme demo env is dirty, please check before we close',
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+      visibility: 'team',
+      sourceMetadata: {
+        provider: 'linear',
+        signal_class: 'finding',
+        event_type: 'comment.updated',
+        linear: { kind: 'comment', issue: { identifier: 'ENG-42' } },
+      },
+    });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: eventId, teamId: TEAM_ID },
+      { getEnv: liveEnv },
+    );
+    expect(await pendingItems(db)).toEqual([]);
+  }, 120_000);
+
+  it('does not originate from a GitHub Actions pulse whose job name contains Faba', async () => {
+    const eventId = seedId('80');
+    await db.insert(rawEvents).values({
+      id: eventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'integration',
+      contentText:
+        'GitHub workflow "faba-ext / e2e-login" #441 attempt 2 on acme/app failure\nJob: e2e-login\nConclusion: failure\nhead_sha: deadbeefcafebabe\nError: Timeout waiting for [data-client=faba] after 30000ms, also saw TypeError map of undefined in /engagements',
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+      visibility: 'team',
+      sourceMetadata: {
+        provider: 'github',
+        signal_class: 'pulse',
+        event_type: 'workflow_run.failure',
+        github: {
+          type: 'workflow_run',
+          repo: 'acme/app',
+          conclusion: 'failure',
+          head_sha: 'deadbeefcafebabe',
+        },
+      },
+    });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: eventId, teamId: TEAM_ID },
+      { getEnv: liveEnv },
+    );
+    expect(await pendingItems(db)).toEqual([]);
+  }, 120_000);
+
+  it('does not originate from a Monday conversation update that looks like a status change', async () => {
+    const eventId = seedId('84');
+    await db.insert(rawEvents).values({
+      id: eventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'integration',
+      contentText:
+        'Monday update on login QA: moved this to done after qa, ping me if it slips lol also faba wants a screenshot',
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+      visibility: 'team',
+      sourceMetadata: {
+        provider: 'monday',
+        signal_class: 'finding',
+        event_type: 'update.created',
+        monday_item_id: '1771812728',
+        monday_board_name: 'Faba-ext',
+        object_map: {
+          type: 'other',
+          canonicalName: 'Monday update 1771812728',
+          externalId: 'update-9',
+        },
+      },
+    });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: eventId, teamId: TEAM_ID },
+      { getEnv: liveEnv },
+    );
+    expect(await pendingItems(db)).toEqual([]);
+  }, 120_000);
+
+  it('stamps a buried Linear key from a rambling Slack thread and ignores RFC lookalikes', async () => {
+    const eventId = seedId('85');
+    const reviewId = seedId('86');
+    await seedSlackThread(db, {
+      eventId,
+      reviewId,
+      channelId: 'C_NOISE2',
+      channelName: 'random',
+      text: 'wait ENG-42 is the one from last week I think, also see RFC-5545 for the calendar dump, utf-8 is fine, someone just close the loop after qa',
+    });
+    await runConversationReview(db, reviewId);
+    const tasks = await pendingTaskCreates(db);
+    expect(tasks.length).toBeGreaterThan(0);
+    expect(
+      tasks.some((item) => {
+        const aliases = item.proposedPayload.aliases;
+        return Array.isArray(aliases) && aliases.some((alias) => String(alias) === 'ENG-42');
+      }),
+    ).toBe(true);
+    expect(
+      tasks.every((item) => {
+        const aliases = item.proposedPayload.aliases;
+        if (!Array.isArray(aliases)) return true;
+        return aliases.every((alias) => String(alias) !== 'RFC-5545');
+      }),
+    ).toBe(true);
+  }, 240_000);
+
+  it('refuses to stamp aliases when two GitHub ids appear in the same messy thread', async () => {
+    const eventId = seedId('87');
+    const reviewId = seedId('88');
+    await seedSlackThread(db, {
+      eventId,
+      reviewId,
+      channelId: 'C_TWO',
+      channelName: 'eng-firehose',
+      text: 'idk wait acme/app#88 and acme/app#91 are both in flight, also the sentry spike on /engagements is unrelated I hope, pizza?',
+    });
+    await runConversationReview(db, reviewId);
+    const tasks = await pendingTaskCreates(db);
+    expect(
+      tasks.every((item) => {
+        const aliases = item.proposedPayload.aliases;
+        if (!Array.isArray(aliases)) return true;
+        const has88 = aliases.some((alias) => String(alias).includes('acme/app#88'));
+        const has91 = aliases.some((alias) => String(alias).includes('acme/app#91'));
+        return !(has88 || has91);
+      }),
+    ).toBe(true);
+  }, 240_000);
 
   it.skipIf(!process.env.QDRANT_URL?.trim())(
     'recalls the messy Slack event with real vectors without using cosine as the write join',
