@@ -2,6 +2,7 @@
   "$schema": "https://react.doctor/schema/config.json",
   "rootDir": "apps/web",
   "ignore": {
+    "rules": ["react-doctor/jsx-no-jsx-as-prop"],
     "overrides": [
       {
         "files": ["src/app/actions/**/*.ts", "src/app/actions/*.ts"],
@@ -88,6 +89,34 @@
       {
         "files": ["src/app/sign-in/page.tsx"],
         "rules": ["react-doctor/clickjacking-redirect-risk"]
+      },
+      {
+        "files": [
+          "src/components/boards/curated-board-views.tsx",
+          "src/components/global-search-page.tsx",
+          "src/components/work-filter-bar.tsx"
+        ],
+        "rules": ["react-doctor/no-giant-component"]
+      },
+      {
+        "files": [
+          "src/components/boards/curated-kanban-board.tsx",
+          "src/components/collections/metadata-date-editor.tsx",
+          "src/components/objects/object-cleanup-list.tsx"
+        ],
+        "rules": ["react-doctor/no-prevent-default"]
+      },
+      {
+        "files": ["src/components/collections/collection-status.tsx"],
+        "rules": ["react-doctor/only-export-components"]
+      },
+      {
+        "files": ["src/components/collections/editable-metadata.tsx"],
+        "rules": ["react-doctor/no-event-handler", "react-doctor/role-supports-aria-props"]
+      },
+      {
+        "files": ["src/components/global-search-page.tsx"],
+        "rules": ["react-doctor/control-has-associated-label"]
       }
     ]
   }

@@ -89,16 +89,20 @@ export function digestActivityStats(
 }
 
 export function formatDigestActivityLines(activity: DailyDigestActivity): string[] {
-  return [
+  const lines = [
     formatDigestCount(activity.newMoments, 'new moment'),
     formatDigestCount(activity.newProposals, 'new proposal'),
     formatDigestCount(activity.newTasks, 'new task'),
     formatDigestCount(activity.completedTasks, 'completed task'),
     formatDigestCount(activity.newProjects, 'new project'),
     ...Object.entries(activity.newObjectsByType)
-      .filter(([type]) => type !== 'task' && type !== 'follow_up' && type !== 'project')
+      .filter(
+        ([type, count]) =>
+          type !== 'task' && type !== 'follow_up' && type !== 'project' && count > 0,
+      )
       .map(([type, count]) => formatDigestCount(count, `new ${type.replaceAll('_', ' ')}`)),
-  ];
+  ].filter((line) => !line.startsWith('0 '));
+  return lines.length > 0 ? lines : ['No new moments, proposals, tasks, or objects'];
 }
 
 function formatDigestCount(count: number, singular: string): string {

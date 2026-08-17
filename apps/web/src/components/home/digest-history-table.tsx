@@ -22,11 +22,16 @@ export function DigestHistoryTable({
   digests: DigestHistoryRow[];
   selectedId?: string;
 }) {
-  const [openId, setOpenId] = useState<string | null>(selectedId ?? null);
+  const [userOpenId, setUserOpenId] = useState<string | null | undefined>(undefined);
+  const [prevSelectedId, setPrevSelectedId] = useState(selectedId);
+  if (selectedId !== prevSelectedId) {
+    setPrevSelectedId(selectedId);
+    setUserOpenId(undefined);
+  }
+  const openId = userOpenId === undefined ? (selectedId ?? null) : userOpenId;
 
   useEffect(() => {
     if (!selectedId) return;
-    setOpenId(selectedId);
     document.getElementById(selectedId)?.scrollIntoView({ block: 'start' });
   }, [selectedId]);
 
@@ -50,7 +55,7 @@ export function DigestHistoryTable({
             const open = openId === digest.id;
             const timezone = digest.timezone ?? digest.payload.timezone;
             const toggleOpen = () => {
-              setOpenId(open ? null : digest.id);
+              setUserOpenId(open ? null : digest.id);
             };
             return (
               <Fragment key={digest.id}>

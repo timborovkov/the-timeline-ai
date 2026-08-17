@@ -101,6 +101,11 @@ function htmlList(items: string[]): string {
     : '<p style="font-size: 14px; color: #747b7b;">None</p>';
 }
 
+function htmlNamedList(title: string, items: string[]): string {
+  if (items.length === 0) return '';
+  return `<h2 style="font-size: 14px; margin: 20px 0 8px">${escapeHtml(title)}</h2>\n${htmlList(items)}`;
+}
+
 function htmlParagraphs(items: string[]): string {
   return items
     .map(
@@ -309,21 +314,31 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
     'Activity over the past day',
     ...activityLines.map((line) => `- ${line}`),
     '',
-    'New tasks:',
     ...(p.tasks.length
-      ? p.tasks.map((task) => `- ${formatDigestTask(task, timezone, new Date(p.windowEnd))}`)
-      : ['- None']),
-    '',
-    'Completed tasks:',
+      ? [
+          'New tasks:',
+          ...p.tasks.map((task) => `- ${formatDigestTask(task, timezone, new Date(p.windowEnd))}`),
+          '',
+        ]
+      : []),
     ...(completedTasks.length
-      ? completedTasks.map((task) => `- ${formatDigestTask(task, timezone, new Date(p.windowEnd))}`)
-      : ['- None']),
-    '',
-    'Upcoming calendar:',
+      ? [
+          'Completed tasks:',
+          ...completedTasks.map(
+            (task) => `- ${formatDigestTask(task, timezone, new Date(p.windowEnd))}`,
+          ),
+          '',
+        ]
+      : []),
     ...(p.upcomingCalendar.length
-      ? p.upcomingCalendar.map((event) => `- ${formatDigestCalendarEvent(event, timezone)}`)
-      : ['- None']),
-    '',
+      ? [
+          'Upcoming calendar:',
+          ...p.upcomingCalendar.map(
+            (event) => `- ${formatDigestCalendarEvent(event, timezone)}`,
+          ),
+          '',
+        ]
+      : []),
     `Open digest: ${input.digestUrl}`,
   ].join('\n');
   const htmlBody = htmlLayout({
@@ -336,13 +351,16 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
         summaryBlock: htmlParagraphs(summaryParagraphs),
         summarySections: htmlDigestSections(sections),
         snapshotList: htmlList([`Digest date: ${windowEnd}`, ...activityLines]),
-        tasksList: htmlList(
+        newTasksBlock: htmlNamedList(
+          'New tasks',
           p.tasks.map((task) => formatDigestTask(task, timezone, new Date(p.windowEnd))),
         ),
-        completedTasksList: htmlList(
+        completedTasksBlock: htmlNamedList(
+          'Completed tasks',
           completedTasks.map((task) => formatDigestTask(task, timezone, new Date(p.windowEnd))),
         ),
-        calendarList: htmlList(
+        calendarBlock: htmlNamedList(
+          'Upcoming calendar',
           p.upcomingCalendar.map((event) => formatDigestCalendarEvent(event, timezone)),
         ),
       },

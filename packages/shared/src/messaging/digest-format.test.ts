@@ -2,11 +2,27 @@ import { describe, expect, it } from 'vitest';
 
 import {
   collapseDigestCalendarEvents,
+  formatDigestActivityLines,
   formatDigestCalendarEvent,
   formatDigestTask,
 } from '#src/messaging/digest-format.js';
 
 const NOW = new Date('2026-07-20T12:00:00.000Z');
+
+describe('formatDigestActivityLines', () => {
+  it('omits zero counts and keeps the new-work totals', () => {
+    expect(
+      formatDigestActivityLines({
+        newMoments: 10,
+        newProposals: 0,
+        newTasks: 2,
+        completedTasks: 0,
+        newProjects: 1,
+        newObjectsByType: { task: 2, project: 1, person: 0, company: 3 },
+      }),
+    ).toEqual(['10 new moments', '2 new tasks', '1 new project', '3 new companies']);
+  });
+});
 
 describe('formatDigestTask', () => {
   it.each([

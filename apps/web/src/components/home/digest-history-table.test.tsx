@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 
 import { cleanup, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { DailyDigestPayload } from '@timeline/shared/messaging';
@@ -71,5 +72,35 @@ describe('DigestHistoryTable', () => {
     expect(
       screen.getByRole('button', { name: 'Earlier quiet day.' }).getAttribute('aria-expanded'),
     ).toBe('false');
+  });
+
+  it('lets a teammate open another day without a selected query', async () => {
+    const user = userEvent.setup();
+    render(
+      <DigestHistoryTable
+        digests={[
+          {
+            id: 'digest-1',
+            status: 'sent',
+            summary: 'Earlier quiet day.',
+            windowEnd: '2026-07-15T00:00:00.000Z',
+            timezone: 'UTC',
+            payload: { ...PAYLOAD, summary: 'Earlier quiet day.' },
+          },
+          {
+            id: 'digest-2',
+            status: 'generated',
+            summary: 'The launch moved forward.',
+            windowEnd: '2026-07-16T00:00:00.000Z',
+            timezone: 'UTC',
+            payload: PAYLOAD,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.queryByText('The invite flow is ready for the next review.')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'The launch moved forward.' }));
+    expect(screen.getByText('The invite flow is ready for the next review.')).toBeTruthy();
   });
 });

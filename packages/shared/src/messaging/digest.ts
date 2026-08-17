@@ -903,15 +903,14 @@ export async function generateDailyDigest(
     newObjectsByType[object.type] = (newObjectsByType[object.type] ?? 0) + 1;
   }
 
-  const taskRows = createdTaskObjects
-    .filter((task) => task.type === 'task' || task.type === 'follow_up')
-    .slice(0, 12)
-    .map(toDigestTask);
-
-  const completedTaskRows = completedTaskObjects
-    .filter((task) => task.type === 'task' || task.type === 'follow_up')
-    .slice(0, 12)
-    .map(toDigestTask);
+  const createdTasks = createdTaskObjects.filter(
+    (task) => task.type === 'task' || task.type === 'follow_up',
+  );
+  const completedTasks = completedTaskObjects.filter(
+    (task) => task.type === 'task' || task.type === 'follow_up',
+  );
+  const taskRows = createdTasks.slice(0, 12).map(toDigestTask);
+  const completedTaskRows = completedTasks.slice(0, 12).map(toDigestTask);
 
   const calendarRows = collapseDigestCalendarEvents(
     upcomingCalendar.map((event) => ({
@@ -939,8 +938,8 @@ export async function generateDailyDigest(
   const activity = {
     newMoments: builtMoments.length,
     newProposals: newProposalCount,
-    newTasks: taskRows.length,
-    completedTasks: completedTaskRows.length,
+    newTasks: createdTasks.length,
+    completedTasks: completedTasks.length,
     newProjects: newObjectsByType.project ?? 0,
     newObjectsByType,
   };
