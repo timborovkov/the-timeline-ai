@@ -1041,9 +1041,20 @@ async function loadOpenTaskCandidates(
       }),
     ),
   ].filter((name) => name.length >= 3);
-  const likeClauses = repoNames.map(
-    (name) => sql`lower(${entities.canonicalName}) like ${`%${escapeLike(name.toLowerCase())}%`}`,
-  );
+  const aliasNeedles = [
+    ...new Set(
+      sources.flatMap((source) => [source.workItem.externalId, ...source.workItem.aliases]),
+    ),
+  ].filter((name) => name.length >= 3);
+  const likeClauses = [
+    ...repoNames.map(
+      (name) => sql`lower(${entities.canonicalName}) like ${`%${escapeLike(name.toLowerCase())}%`}`,
+    ),
+    ...aliasNeedles.map(
+      (name) =>
+        sql`lower(coalesce(${entities.aliases}::text, '')) like ${`%${escapeLike(name.toLowerCase())}%`}`,
+    ),
+  ];
   const providers = [...new Set(sources.map((source) => source.workItem.provider))];
   const identityClauses = [
     and(

@@ -5,6 +5,7 @@ import {
   agentSuggestions,
   entities,
   integrations,
+  rawEvents,
 } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -21,6 +22,7 @@ import {
   matchOpenTasksToGithubWorkItem,
   planGithubTaskProposal,
   proposeGithubTaskUpdatesForTeam,
+  proposeGithubTaskUpdatesFromRawEvent,
   resolveGithubLoginToUserId,
 } from '#src/integrations/github-task-proposals.js';
 import { GITHUB_TASK_PROPOSAL_COALESCE_MS } from '#src/integrations/ingest-processing.js';
@@ -950,6 +952,59 @@ describe('GitHub task proposal persistence', () => {
     });
 
     await proposeGithubTaskUpdatesForTeam({ db: db as never, teamId: TEAM_ID });
+    const items = await db.select().from(agentSuggestionItems);
+    expect(items).toHaveLength(1);
+    expect(items[0]?.targetId).toBe(task.id);
+    expect(items[0]?.proposedPayload).toMatchObject({ status: 'done' });
+  });
+
+  it('proposes done for Linear captured work matched only by task aliases', async () => {
+    const [task] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'Fix login',
+        aliases: ['ENG-42'],
+        status: 'todo',
+      })
+      .returning();
+    if (!task) throw new Error('task insert failed');
+    const [event] = await db
+      .insert(rawEvents)
+      .values({
+        id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa42',
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'integration',
+        contentText: 'Linear ENG-42: Fix login',
+        occurredAt: new Date('2026-06-01T12:00:00Z'),
+        visibility: 'team',
+        sourceMetadata: {
+          provider: 'linear',
+          signal_class: 'captured_work',
+          event_type: 'issue.completed',
+          external_object_id: 'linear-issue-1',
+          linear: { kind: 'issue', identifier: 'ENG-42' },
+          object_map: {
+            type: 'task',
+            canonicalName: 'ENG-42: Fix login',
+            displayTitle: 'Fix login',
+            externalId: 'linear-issue-1',
+            status: 'done',
+            aliases: ['ENG-42'],
+          },
+        },
+      })
+      .returning();
+    if (!event) throw new Error('raw event insert failed');
+
+    const wrote = await proposeGithubTaskUpdatesFromRawEvent({
+      db: db as never,
+      teamId: TEAM_ID,
+      rawEvent: event,
+    });
+    expect(wrote).toBe(1);
     const items = await db.select().from(agentSuggestionItems);
     expect(items).toHaveLength(1);
     expect(items[0]?.targetId).toBe(task.id);
