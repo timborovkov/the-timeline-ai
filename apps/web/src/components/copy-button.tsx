@@ -1,18 +1,38 @@
 'use client';
 
+import { Check, Copy } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
-export function CopyButton({ value, label = 'Copy' }: { value: string; label?: string }) {
+const COPIED_MS = 1_600;
+
+export function copyAnnouncement(label: string): string {
+  const noun = label.replace(/^Copy\s+/iu, '').trim();
+  return noun && noun.toLowerCase() !== 'copy' ? `Copied ${noun}.` : 'Copied.';
+}
+
+export function CopyButton({
+  value,
+  label = 'Copy',
+  appearance = 'button',
+  className,
+}: {
+  value: string;
+  label?: string;
+  appearance?: 'button' | 'icon';
+  className?: string;
+}) {
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
+  const accessibleLabel = label.toLowerCase().startsWith('copy') ? label : `Copy ${label}`;
 
   useEffect(() => {
     if (!copied) return;
     const timer = window.setTimeout(() => {
       setCopied(false);
-    }, 1600);
+    }, COPIED_MS);
     return () => {
       window.clearTimeout(timer);
     };
@@ -22,11 +42,14 @@ export function CopyButton({ value, label = 'Copy' }: { value: string; label?: s
     <>
       <Button
         type="button"
-        size="sm"
+        size={appearance === 'icon' ? 'sm' : 'sm'}
         variant="ghost"
+        aria-label={copied ? copyAnnouncement(label) : accessibleLabel}
+        className={cn(appearance === 'icon' && 'h-7 shrink-0 px-2', className)}
         onClick={() => {
           const clipboard = Reflect.get(navigator, 'clipboard') as Clipboard | undefined;
           if (!clipboard?.writeText) {
+            setCopied(false);
             setCopyError(true);
             return;
           }
@@ -37,19 +60,21 @@ export function CopyButton({ value, label = 'Copy' }: { value: string; label?: s
               setCopied(true);
             })
             .catch(() => {
+              setCopied(false);
               setCopyError(true);
             });
         }}
       >
-        {copied ? 'Copied' : label}
+        {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+        {appearance === 'icon' ? (copied ? 'Copied' : 'Copy') : copied ? 'Copied' : label}
       </Button>
       {copyError ? (
-        <output className="text-xs text-destructive" aria-live="polite">
+        <output className="text-xs text-danger" aria-live="polite">
           Could not copy. Try again or select the text and copy it manually.
         </output>
       ) : (
         <output className="sr-only" aria-live="polite">
-          {copied ? `${label} copied.` : ''}
+          {copied ? copyAnnouncement(label) : ''}
         </output>
       )}
     </>

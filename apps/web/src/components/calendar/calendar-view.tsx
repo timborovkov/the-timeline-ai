@@ -64,8 +64,8 @@ import { Input } from '@/components/ui/input';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { notifyAction } from '@/lib/notify';
 import { statusLabel } from '@/lib/status-labels';
-import { errorMessage } from '@/lib/utils';
 
 type CalendarViewMode = 'month' | 'week' | 'day';
 
@@ -655,52 +655,90 @@ function useCalendarViewModel({
       if (savedTimer.current) clearTimeout(savedTimer.current);
       dispatchCalendarUi({ saveState: 'saving', open: false });
       dispatchEventOverlay({ type: 'upsert', event: optimisticEvent });
-      try {
-        const result = editing
-          ? await updateCalendarEventAction({ id: editing.id, ...input })
-          : await createCalendarEventAction(input);
-        if (!result.ok) {
-          throw new Error(result.error ?? 'Failed to save event.');
-        }
-        const savedId = result.id;
-        if (!editing && typeof savedId === 'string') {
-          dispatchEventOverlay({
-            type: 'replace-id',
-            previousId: optimisticId,
-            event: { ...optimisticEvent, id: savedId },
-          });
-        }
-        dispatchCalendarUi({ saveState: 'saved' });
-        router.refresh();
-        savedTimer.current = setTimeout(() => {
-          dispatchCalendarUi({ saveState: 'idle' });
-        }, 1600);
-      } catch (err) {
-        const message = errorMessage(err, 'Failed to save event.');
+      const result = await notifyAction({
+        id: editing ? `calendar:${editing.id}` : 'calendar:create',
+        loading: editing ? 'Updating event…' : 'Creating event…',
+        success: editing ? 'Event updated' : 'Event created',
+        error: editing ? 'Couldn’t update event' : 'Couldn’t create event',
+        run: async () => {
+          const saved = editing
+            ? await updateCalendarEventAction({ id: editing.id, ...input })
+            : await createCalendarEventAction(input);
+          return saved.ok ? saved : { error: saved.error ?? 'Failed to save event.' };
+        },
+        undo:
+          editing && originalEvent
+            ? {
+                run: async () => {
+                  dispatchEventOverlay({ type: 'restore', event: originalEvent });
+                  const undoResult = await updateCalendarEventAction({
+                    id: editing.id,
+                    title: originalEvent.title,
+                    description: originalEvent.description ?? undefined,
+                    startAt: originalEvent.startAt,
+                    endAt: originalEvent.endAt,
+                    timezone: originalEvent.timezone,
+                    allDay: originalEvent.allDay,
+                    location: originalEvent.location ?? undefined,
+                    visibility: originalEvent.visibility,
+                    showAs: originalEvent.showAs,
+                    rrule: originalEvent.rrule,
+                    recurrenceEditMode: draft.recurrenceEditMode,
+                    ...(originalEvent.visibility === 'specific_users'
+                      ? { visibilityUserIds: originalEvent.visibilityUserIds ?? [] }
+                      : {}),
+                  });
+                  if (!undoResult.error && undoResult.ok !== false) router.refresh();
+                  return undoResult.ok ? undoResult : { error: undoResult.error };
+                },
+              }
+            : undefined,
+      });
+      if (result.error) {
         if (editing && originalEvent) {
           dispatchEventOverlay({ type: 'restore', event: originalEvent });
         } else {
           dispatchEventOverlay({ type: 'discard', id: optimisticId });
         }
-        dispatchCalendarUi({ saveState: 'idle', surfaceError: message });
+        dispatchCalendarUi({ saveState: 'idle' });
         if (dialogContextRef.current === saveDialogContext) {
-          dispatchCalendarUi({ open: true, error: message });
+          dispatchCalendarUi({ open: true });
         }
         router.refresh();
+        return;
       }
+      const savedId = 'id' in result ? result.id : undefined;
+      if (!editing && typeof savedId === 'string') {
+        dispatchEventOverlay({
+          type: 'replace-id',
+          previousId: optimisticId,
+          event: { ...optimisticEvent, id: savedId },
+        });
+      }
+      dispatchCalendarUi({ saveState: 'saved' });
+      router.refresh();
+      savedTimer.current = setTimeout(() => {
+        dispatchCalendarUi({ saveState: 'idle' });
+      }, 1600);
     });
   }
 
   function remove() {
     if (!editing) return;
     startTransition(async () => {
-      const result = await deleteCalendarEventAction(editing.id, {
-        recurrenceEditMode: draft.recurrenceEditMode,
+      const result = await notifyAction({
+        id: `calendar:${editing.id}:delete`,
+        loading: 'Deleting event…',
+        success: 'Event deleted',
+        error: 'Couldn’t delete event',
+        run: async () => {
+          const deleted = await deleteCalendarEventAction(editing.id, {
+            recurrenceEditMode: draft.recurrenceEditMode,
+          });
+          return deleted.ok ? deleted : { error: deleted.error ?? 'Failed to delete event.' };
+        },
       });
-      if (!result.ok) {
-        dispatchCalendarUi({ error: result.error ?? 'Failed to delete event.' });
-        return;
-      }
+      if (result.error) return;
       dispatchEventOverlay({ type: 'remove', id: editing.id });
       dispatchCalendarUi({ open: false });
       router.refresh();
@@ -758,7 +796,6 @@ function CalendarViewLayout({ model }: { model: ReturnType<typeof useCalendarVie
           model.openCreate();
         }}
       />
-      <CalendarSaveStatus saveState={model.saveState} surfaceError={model.surfaceError} />
       <CalendarBody
         mode={model.safeMode}
         gridCols={model.gridCols}
@@ -1149,25 +1186,6 @@ function CalendarToolbar({
         </Button>
       </div>
     </section>
-  );
-}
-
-function CalendarSaveStatus({
-  saveState,
-  surfaceError,
-}: {
-  saveState: SaveState;
-  surfaceError: string | null;
-}) {
-  if (saveState === 'idle' && !surfaceError) return null;
-  return (
-    <div
-      role={surfaceError ? 'alert' : 'status'}
-      aria-live="polite"
-      className={`text-xs ${surfaceError ? 'text-danger' : 'text-fg-dim'}`}
-    >
-      {surfaceError ?? (saveState === 'saving' ? 'Saving…' : 'Saved')}
-    </div>
   );
 }
 

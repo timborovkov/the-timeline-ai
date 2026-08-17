@@ -29,6 +29,15 @@ vi.mock('@/app/actions/suggestions', () => ({
   reviseTaskSuggestionItemAction: fakes.reviseTaskSuggestionItemAction,
 }));
 vi.mock('@/app/actions/objects', () => ({ searchObjectsAction: fakes.searchObjectsAction }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => {
+    try {
+      return await run();
+    } catch {
+      return { error: 'failed' };
+    }
+  },
+}));
 
 const { ApprovalsClient } = await import('./approvals-client.js');
 

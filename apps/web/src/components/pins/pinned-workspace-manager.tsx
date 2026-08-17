@@ -9,6 +9,7 @@ import type { PinPage, PinTargetKind, PinnedItem } from '@timeline/shared/pins';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { PinnedItemRow } from '@/components/pins/pinned-item-row';
 import { Button } from '@/components/ui/button';
+import { notifyAction, notifyError } from '@/lib/notify';
 import { readJson } from '@/lib/paginated-api';
 import { cn } from '@/lib/utils';
 
@@ -128,7 +129,13 @@ export function PinnedWorkspaceManager({
     const previous = items;
     dispatch({ type: 'optimistic-move', items: nextItems });
     startTransition(async () => {
-      const result = await movePin({ pinId: item.pinId, ...input });
+      const result = await notifyAction({
+        id: `pin:${item.pinId}:move`,
+        loading: 'Reordering pin…',
+        success: 'Pin reordered',
+        error: 'Couldn’t reorder pin',
+        run: () => movePin({ pinId: item.pinId, ...input }),
+      });
       if (result.error) {
         dispatch({ type: 'move-failed', items: previous, error: result.error });
         return;
@@ -166,7 +173,13 @@ export function PinnedWorkspaceManager({
               type: 'replace-page',
               page: { items: reorder(expanded, index, index + 1), nextCursor: page.nextCursor },
             });
-            const result = await movePin({ pinId: item.pinId, afterPinId: adjacent.pinId });
+            const result = await notifyAction({
+              id: `pin:${item.pinId}:move`,
+              loading: 'Reordering pin…',
+              success: 'Pin reordered',
+              error: 'Couldn’t reorder pin',
+              run: () => movePin({ pinId: item.pinId, afterPinId: adjacent.pinId }),
+            });
             if (result.error) {
               dispatch({ type: 'move-failed', items: previous, error: result.error });
             } else {
@@ -176,6 +189,7 @@ export function PinnedWorkspaceManager({
           })
           .catch(() => {
             dispatch({ type: 'error', error: 'Could not load the next pinned item.' });
+            notifyError('pins:load', 'Couldn’t load the next pinned item');
           });
       });
       return;
@@ -343,6 +357,7 @@ export function PinnedWorkspaceManager({
                   })
                   .catch(() => {
                     dispatch({ type: 'error', error: 'Could not load more pinned items.' });
+                    notifyError('pins:load', 'Couldn’t load more pinned items');
                   });
               });
             }}
@@ -354,11 +369,7 @@ export function PinnedWorkspaceManager({
       <p aria-live="polite" className="sr-only">
         {announcement}
       </p>
-      {error ? (
-        <p role="alert" className="text-sm text-danger">
-          {error}
-        </p>
-      ) : null}
+      {error ? <p className="sr-only">{error}</p> : null}
     </section>
   );
 }

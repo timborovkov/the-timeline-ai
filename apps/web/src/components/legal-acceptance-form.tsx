@@ -5,6 +5,7 @@ import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
 
 import { acceptLegalAction, type AcceptLegalState } from '@/app/actions/legal';
+import { FormActionToast } from '@/components/form-action-toast';
 import { Button } from '@/components/ui/button';
 import { LEGAL_EFFECTIVE_DATE, PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
 
@@ -47,7 +48,11 @@ export function LegalAcceptanceForm({ returnTo }: { returnTo?: string }) {
           .
         </span>
       </label>
-      {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
+      <FormActionToast
+        id="legal:accept"
+        error={state.error}
+        success={state.ok ? 'Legal terms accepted' : undefined}
+      />
       <SubmitButton />
     </form>
   );

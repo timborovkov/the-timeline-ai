@@ -10,6 +10,7 @@ import {
   revokeInviteAction,
 } from '@/app/actions/teams';
 import { useAppDialog } from '@/components/ui/app-dialog';
+import { notifyAction } from '@/lib/notify';
 import { Button } from '@/components/ui/button';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 
@@ -96,7 +97,21 @@ export function MemberRoleForm({
   const helpId = `${controlId}-help`;
 
   return (
-    <form action={changeMemberRoleAction} className="w-full space-y-2 sm:w-auto">
+    <form
+      action={async (formData) => {
+        await notifyAction({
+          id: `member-role:${userId}`,
+          loading: 'Updating role…',
+          success: 'Role updated',
+          error: 'Couldn’t update role',
+          run: async () => {
+            await changeMemberRoleAction(formData);
+            return { ok: true };
+          },
+        });
+      }}
+      className="w-full space-y-2 sm:w-auto"
+    >
       <input type="hidden" name="userId" value={userId} />
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
         <div className="min-w-0 space-y-1">
@@ -128,7 +143,18 @@ export function MemberRoleForm({
 export function RemoveMemberForm({ memberLabel, userId }: { memberLabel: string; userId: string }) {
   return (
     <ConfirmingActionForm
-      action={removeMemberAction}
+      action={async (formData) => {
+        await notifyAction({
+          id: `member:remove:${userId}`,
+          loading: 'Removing member…',
+          success: 'Member removed',
+          error: 'Couldn’t remove member',
+          run: async () => {
+            await removeMemberAction(formData);
+            return { ok: true };
+          },
+        });
+      }}
       title={`Remove ${memberLabel}?`}
       description={`${memberLabel} will lose access to this team. You can review removed members below.`}
       confirmLabel="Remove member"
@@ -148,12 +174,37 @@ export function PendingInviteActions({
 }) {
   return (
     <ItemActionGroup label={`Actions for invite to ${inviteEmail}`}>
-      <form action={resendInviteAction} className="w-full sm:w-auto">
+      <form
+        action={async (formData) => {
+          await notifyAction({
+            id: `invite:resend:${inviteId}`,
+            loading: 'Resending invite…',
+            success: 'Invite resent',
+            error: 'Couldn’t resend invite',
+            run: async () => {
+              await resendInviteAction(formData);
+              return { ok: true };
+            },
+          });
+        }}
+        className="w-full sm:w-auto"
+      >
         <input type="hidden" name="inviteId" value={inviteId} />
         <SubmitButton label="Resend invite" pendingLabel="Resending invite…" />
       </form>
       <ConfirmingActionForm
-        action={revokeInviteAction}
+        action={async (formData) => {
+          await notifyAction({
+            id: `invite:revoke:${inviteId}`,
+            loading: 'Revoking invite…',
+            success: 'Invite revoked',
+            error: 'Couldn’t revoke invite',
+            run: async () => {
+              await revokeInviteAction(formData);
+              return { ok: true };
+            },
+          });
+        }}
         title={`Revoke invite for ${inviteEmail}?`}
         description="The current invite link will stop working. You can create a new invite later."
         confirmLabel="Revoke invite"

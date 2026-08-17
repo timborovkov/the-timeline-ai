@@ -17,6 +17,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { notifyAction } from '@/lib/notify';
 import { DEFAULT_TIMEZONE, timezoneOptions } from '@/lib/timezones';
 
 const EMPTY_MEMBERS: { id: string; label: string }[] = [];
@@ -379,16 +380,6 @@ function focusFormError(errorRef: React.RefObject<HTMLParagraphElement | null>) 
   });
 }
 
-function ActionError({ id, message }: { id: string; message: string | null }) {
-  if (!message) return null;
-
-  return (
-    <p id={id} role="alert" className="text-sm text-danger">
-      {message}
-    </p>
-  );
-}
-
 function VisibilityField({
   idPrefix,
   visibility,
@@ -511,27 +502,29 @@ export function ScheduleMeetingBotForm({
     const rawTitle = form.get('title');
     const meetingUrl = (typeof rawUrl === 'string' ? rawUrl : '').trim();
     const title = (typeof rawTitle === 'string' ? rawTitle : '').trim();
-    try {
-      const res = await scheduleMeetingBotAction({
-        meetingUrl,
-        title: title || undefined,
-        visibility,
-        visibilityUserIds: visibility === 'specific_users' ? visibilityUserIds : [],
-        consentGiven: consent,
-      });
-      if (!res.ok) {
-        showError(res.error ?? 'Unable to invite the notetaker. Try again.');
-        return;
-      }
-      if (res.meetingId) {
-        router.push(`/app/meetings/${res.meetingId}`);
-      } else {
-        router.refresh();
-      }
-    } catch {
-      showError('Unable to invite the notetaker. Try again.');
-    } finally {
-      dispatch({ type: 'pending', pending: false });
+    const result = await notifyAction({
+      id: 'meeting:invite',
+      loading: 'Inviting notetaker…',
+      success: 'Notetaker invited',
+      error: 'Couldn’t invite notetaker',
+      run: () =>
+        scheduleMeetingBotAction({
+          meetingUrl,
+          title: title || undefined,
+          visibility,
+          visibilityUserIds: visibility === 'specific_users' ? visibilityUserIds : [],
+          consentGiven: consent,
+        }),
+    });
+    dispatch({ type: 'pending', pending: false });
+    if (result.error) {
+      showError(result.error);
+      return;
+    }
+    if ('meetingId' in result && result.meetingId) {
+      router.push(`/app/meetings/${String(result.meetingId)}`);
+    } else {
+      router.refresh();
     }
   }
 
@@ -596,36 +589,27 @@ export function ScheduleMeetingBotForm({
 export function CancelMeetingButton({ meetingId }: { meetingId: string }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const errorId = useId();
   return (
-    <div className="space-y-2">
-      <Button
-        aria-describedby={error ? errorId : undefined}
-        variant="outline"
-        size="sm"
-        disabled={pending}
-        onClick={async () => {
-          setError(null);
-          setPending(true);
-          try {
-            const result = await cancelMeetingBotAction(meetingId);
-            if (!result.ok) {
-              setError(result.error ?? 'Unable to cancel the notetaker. Try again.');
-              return;
-            }
-            router.refresh();
-          } catch {
-            setError('Unable to cancel the notetaker. Try again.');
-          } finally {
-            setPending(false);
-          }
-        }}
-      >
-        {pending ? 'Cancelling notetaker…' : 'Cancel notetaker'}
-      </Button>
-      <ActionError id={errorId} message={error} />
-    </div>
+    <Button
+      variant="outline"
+      size="sm"
+      disabled={pending}
+      onClick={() => {
+        setPending(true);
+        void notifyAction({
+          id: `meeting:${meetingId}:cancel`,
+          loading: 'Cancelling notetaker…',
+          success: 'Notetaker cancelled',
+          error: 'Couldn’t cancel notetaker',
+          run: () => cancelMeetingBotAction(meetingId),
+        }).then((result) => {
+          setPending(false);
+          if (!result.error) router.refresh();
+        });
+      }}
+    >
+      {pending ? 'Cancelling notetaker…' : 'Cancel notetaker'}
+    </Button>
   );
 }
 
@@ -689,33 +673,32 @@ export function SavedMeetingForm({
     }
     dispatch({ type: 'scheduleError', scheduleError: null });
     dispatch({ type: 'pending', pending: true });
-    try {
-      const result = await createSavedMeetingAction({
-        title: formString(form, 'title').trim(),
-        description: formString(form, 'description').trim() || undefined,
-        meetingUrl: formString(form, 'meetingUrl').trim(),
-        aliases: formAliases(form),
-        visibility,
-        visibilityUserIds: visibility === 'specific_users' ? visibilityUserIds : [],
-        permissionConfirmed: form.get('permissionConfirmed') === 'on',
-        scheduleConfig,
-        durationMinutes: formNumber(form, 'durationMinutes', 30),
-        autoJoinEnabled: scheduled && autoJoin,
-      });
-      if (!result.ok) {
-        showError(result.error ?? 'Unable to save the meeting. Try again.');
-        return;
-      }
-      router.refresh();
-      formElement.reset();
-      dispatch({ type: 'scheduled', scheduled: false });
-      dispatch({ type: 'autoJoin', autoJoin: false });
-      dispatch({ type: 'timezone', timezone: browserTimezone() });
-    } catch {
-      showError('Unable to save the meeting. Try again.');
-    } finally {
-      dispatch({ type: 'pending', pending: false });
-    }
+    const result = await notifyAction({
+      id: 'meeting:save',
+      loading: 'Saving meeting…',
+      success: 'Meeting saved',
+      error: 'Couldn’t save meeting',
+      run: () =>
+        createSavedMeetingAction({
+          title: formString(form, 'title').trim(),
+          description: formString(form, 'description').trim() || undefined,
+          meetingUrl: formString(form, 'meetingUrl').trim(),
+          aliases: formAliases(form),
+          visibility,
+          visibilityUserIds: visibility === 'specific_users' ? visibilityUserIds : [],
+          permissionConfirmed: form.get('permissionConfirmed') === 'on',
+          scheduleConfig,
+          durationMinutes: formNumber(form, 'durationMinutes', 30),
+          autoJoinEnabled: scheduled && autoJoin,
+        }),
+    });
+    dispatch({ type: 'pending', pending: false });
+    if (result.error) return;
+    router.refresh();
+    formElement.reset();
+    dispatch({ type: 'scheduled', scheduled: false });
+    dispatch({ type: 'autoJoin', autoJoin: false });
+    dispatch({ type: 'timezone', timezone: browserTimezone() });
   }
 
   return (
@@ -890,29 +873,27 @@ export function EditSavedMeetingForm({
     }
     dispatch({ type: 'scheduleError', scheduleError: null });
     dispatch({ type: 'pending', pending: true });
-    try {
-      const result = await updateSavedMeetingAction({
-        savedMeetingId: saved.id,
-        title: formString(form, 'title').trim(),
-        description: formString(form, 'description').trim() || undefined,
-        meetingUrl: formString(form, 'meetingUrl').trim(),
-        aliases: formAliases(form),
-        visibility,
-        visibilityUserIds: visibility === 'specific_users' ? visibilityUserIds : [],
-        scheduleConfig,
-        durationMinutes: formNumber(form, 'durationMinutes', saved.durationMinutes),
-        autoJoinEnabled: scheduled && autoJoin,
-      });
-      if (!result.ok) {
-        showError(result.error ?? 'Unable to update the meeting. Try again.');
-        return;
-      }
-      router.refresh();
-    } catch {
-      showError('Unable to update the meeting. Try again.');
-    } finally {
-      dispatch({ type: 'pending', pending: false });
-    }
+    const result = await notifyAction({
+      id: `meeting:${saved.id}:update`,
+      loading: 'Updating meeting…',
+      success: 'Meeting updated',
+      error: 'Couldn’t update meeting',
+      run: () =>
+        updateSavedMeetingAction({
+          savedMeetingId: saved.id,
+          title: formString(form, 'title').trim(),
+          description: formString(form, 'description').trim() || undefined,
+          meetingUrl: formString(form, 'meetingUrl').trim(),
+          aliases: formAliases(form),
+          visibility,
+          visibilityUserIds: visibility === 'specific_users' ? visibilityUserIds : [],
+          scheduleConfig,
+          durationMinutes: formNumber(form, 'durationMinutes', saved.durationMinutes),
+          autoJoinEnabled: scheduled && autoJoin,
+        }),
+    });
+    dispatch({ type: 'pending', pending: false });
+    if (!result.error) router.refresh();
   }
 
   return (
@@ -1027,108 +1008,85 @@ export function EditSavedMeetingForm({
 export function JoinSavedMeetingButton({ query }: { query: string }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const errorId = useId();
   return (
-    <div className="space-y-2">
-      <Button
-        aria-describedby={error ? errorId : undefined}
-        variant="outline"
-        size="sm"
-        disabled={pending}
-        onClick={async () => {
-          setError(null);
-          setPending(true);
-          try {
-            const result = await joinSavedMeetingAction({ query });
-            if (!result.ok) {
-              setError(result.error ?? 'Unable to join the meeting. Try again.');
-              return;
-            }
-            if (result.meetingId) router.push(`/app/meetings/${result.meetingId}`);
-            else router.refresh();
-          } catch {
-            setError('Unable to join the meeting. Try again.');
-          } finally {
-            setPending(false);
+    <Button
+      variant="outline"
+      size="sm"
+      disabled={pending}
+      onClick={() => {
+        setPending(true);
+        void notifyAction({
+          id: 'meeting:join',
+          loading: 'Joining meeting…',
+          success: 'Joining meeting',
+          error: 'Couldn’t join meeting',
+          run: () => joinSavedMeetingAction({ query }),
+        }).then((result) => {
+          setPending(false);
+          if (result.error) return;
+          if ('meetingId' in result && result.meetingId) {
+            router.push(`/app/meetings/${String(result.meetingId)}`);
+            return;
           }
-        }}
-      >
-        {pending ? 'Joining meeting…' : 'Join meeting'}
-      </Button>
-      <ActionError id={errorId} message={error} />
-    </div>
+          router.refresh();
+        });
+      }}
+    >
+      {pending ? 'Joining meeting…' : 'Join meeting'}
+    </Button>
   );
 }
 
 export function ArchiveSavedMeetingButton({ savedMeetingId }: { savedMeetingId: string }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const errorId = useId();
   return (
-    <div className="space-y-2">
-      <Button
-        aria-describedby={error ? errorId : undefined}
-        variant="outline"
-        size="sm"
-        disabled={pending}
-        onClick={async () => {
-          setError(null);
-          setPending(true);
-          try {
-            const result = await archiveSavedMeetingAction(savedMeetingId);
-            if (!result.ok) {
-              setError(result.error ?? 'Unable to archive the saved meeting. Try again.');
-              return;
-            }
-            router.refresh();
-          } catch {
-            setError('Unable to archive the saved meeting. Try again.');
-          } finally {
-            setPending(false);
-          }
-        }}
-      >
-        {pending ? 'Archiving meeting…' : 'Archive meeting'}
-      </Button>
-      <ActionError id={errorId} message={error} />
-    </div>
+    <Button
+      variant="outline"
+      size="sm"
+      disabled={pending}
+      onClick={() => {
+        setPending(true);
+        void notifyAction({
+          id: `meeting:${savedMeetingId}:archive`,
+          loading: 'Archiving meeting…',
+          success: 'Meeting archived',
+          error: 'Couldn’t archive meeting',
+          run: () => archiveSavedMeetingAction(savedMeetingId),
+        }).then((result) => {
+          setPending(false);
+          if (!result.error) router.refresh();
+        });
+      }}
+    >
+      {pending ? 'Archiving meeting…' : 'Archive meeting'}
+    </Button>
   );
 }
 
 export function SkipScheduledMeetingButton({ meetingId }: { meetingId: string }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const errorId = useId();
   return (
-    <div className="space-y-2">
-      <Button
-        aria-describedby={error ? errorId : undefined}
-        variant="outline"
-        size="sm"
-        disabled={pending}
-        onClick={async () => {
-          setError(null);
-          setPending(true);
-          try {
-            const result = await skipScheduledMeetingAction(meetingId);
-            if (!result.ok) {
-              setError(result.error ?? 'Unable to skip this occurrence. Try again.');
-              return;
-            }
-            router.refresh();
-          } catch {
-            setError('Unable to skip this occurrence. Try again.');
-          } finally {
-            setPending(false);
-          }
-        }}
-      >
-        {pending ? 'Skipping occurrence…' : 'Skip this occurrence'}
-      </Button>
-      <ActionError id={errorId} message={error} />
-    </div>
+    <Button
+      variant="outline"
+      size="sm"
+      disabled={pending}
+      onClick={() => {
+        setPending(true);
+        void notifyAction({
+          id: `meeting:${meetingId}:skip`,
+          loading: 'Skipping occurrence…',
+          success: 'Occurrence skipped',
+          error: 'Couldn’t skip occurrence',
+          run: () => skipScheduledMeetingAction(meetingId),
+        }).then((result) => {
+          setPending(false);
+          if (!result.error) router.refresh();
+        });
+      }}
+    >
+      {pending ? 'Skipping occurrence…' : 'Skip this occurrence'}
+    </Button>
   );
 }

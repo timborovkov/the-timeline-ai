@@ -12,6 +12,9 @@ const fakes = vi.hoisted(() => ({
 }));
 
 vi.mock('@/app/actions/teams', () => fakes);
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
+}));
 
 const { MemberRoleForm, PendingInviteActions, RemoveMemberForm } =
   await import('./team-member-actions.js');

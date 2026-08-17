@@ -44,9 +44,10 @@ import { DueDateDisplay } from '@/components/due-date-display';
 import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { boardViewHref } from '@/lib/board-links';
 import { displayText } from '@/lib/display-dates';
+import { notifyAction } from '@/lib/notify';
 import { displayObjectTitle } from '@/lib/object-title';
 import { statusLabel } from '@/lib/status-labels';
-import { cn, errorMessage } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
 interface Props {
   boardId: string;
@@ -220,28 +221,31 @@ export function CuratedKanbanBoard({
     markSaving(id, true);
     startTransition(async () => {
       moveOptimistic({ id, patch: { laneId } });
-      let failed = false;
-      try {
-        const result = await updateBoardItemAction({ id, laneId });
-        failed = 'error' in result && Boolean(result.error);
-        if ('error' in result && result.error) {
-          if (focusMoveControl) {
-            pendingMoveControlFocusRef.current = { id, laneValue: item.laneId ?? 'unset' };
-          }
-          moveOptimistic({ id, patch: { laneId: item.laneId } });
-          setErrors((current) => ({ ...current, [id]: result.error ?? 'Move failed' }));
-        }
-      } catch (err) {
-        failed = true;
+      const previousLaneId = item.laneId;
+      const result = await notifyAction({
+        id: `board-item:${id}`,
+        loading: 'Updating status…',
+        success: 'Status updated',
+        error: 'Couldn’t update status',
+        run: () => updateBoardItemAction({ id, laneId }),
+        undo: {
+          run: async () => {
+            moveOptimistic({ id, patch: { laneId: previousLaneId } });
+            const undoResult = await updateBoardItemAction({ id, laneId: previousLaneId });
+            if (!undoResult.error) router.refresh();
+            return undoResult;
+          },
+        },
+      });
+      const failed = Boolean(result.error);
+      if (failed) {
         if (focusMoveControl) {
-          pendingMoveControlFocusRef.current = { id, laneValue: item.laneId ?? 'unset' };
+          pendingMoveControlFocusRef.current = { id, laneValue: previousLaneId ?? 'unset' };
         }
-        moveOptimistic({ id, patch: { laneId: item.laneId } });
-        setErrors((current) => ({ ...current, [id]: errorMessage(err, 'Move failed') }));
-      } finally {
-        markSaving(id, false, failed);
-        router.refresh();
+        moveOptimistic({ id, patch: { laneId: previousLaneId } });
       }
+      markSaving(id, false, failed);
+      router.refresh();
     });
   }
 
@@ -259,28 +263,39 @@ export function CuratedKanbanBoard({
     markSaving(id, true);
     startTransition(async () => {
       moveOptimistic({ id, patch });
-      let failed = false;
-      try {
-        const result = await updateBoardItemAction({
-          id,
-          ...patch,
-          ...(patch.dueAt !== undefined
-            ? { dueAt: patch.dueAt ? patch.dueAt.toISOString() : null }
-            : {}),
-        });
-        failed = 'error' in result && Boolean(result.error);
-        if ('error' in result && result.error) {
-          moveOptimistic({ id, patch: baseline });
-          setErrors((current) => ({ ...current, [id]: result.error ?? 'Save failed' }));
-        }
-      } catch (err) {
-        failed = true;
-        moveOptimistic({ id, patch: baseline });
-        setErrors((current) => ({ ...current, [id]: errorMessage(err, 'Save failed') }));
-      } finally {
-        markSaving(id, false, failed);
-        router.refresh();
-      }
+      const label = Object.keys(patch)[0] === 'dueAt' ? 'due date' : (Object.keys(patch)[0] ?? 'item');
+      const result = await notifyAction({
+        id: `board-item:${id}`,
+        loading: `Updating ${label}…`,
+        success: `${label.slice(0, 1).toUpperCase()}${label.slice(1)} updated`,
+        error: `Couldn’t update ${label}`,
+        run: () =>
+          updateBoardItemAction({
+            id,
+            ...patch,
+            ...(patch.dueAt !== undefined
+              ? { dueAt: patch.dueAt ? patch.dueAt.toISOString() : null }
+              : {}),
+          }),
+        undo: {
+          run: async () => {
+            moveOptimistic({ id, patch: baseline });
+            const undoResult = await updateBoardItemAction({
+              id,
+              ...baseline,
+              ...(baseline.dueAt !== undefined
+                ? { dueAt: baseline.dueAt ? baseline.dueAt.toISOString() : null }
+                : {}),
+            });
+            if (!undoResult.error) router.refresh();
+            return undoResult;
+          },
+        },
+      });
+      const failed = Boolean(result.error);
+      if (failed) moveOptimistic({ id, patch: baseline });
+      markSaving(id, false, failed);
+      router.refresh();
     });
   }
 
@@ -325,11 +340,6 @@ export function CuratedKanbanBoard({
             />
           ))}
         </section>
-        {saveState !== 'idle' ? (
-          <output className="px-4 pb-2 text-xs text-fg-dim md:px-8" aria-live="polite">
-            {saveState === 'saving' ? 'Saving…' : 'Saved'}
-          </output>
-        ) : null}
       </div>
     </DndContext>
   );
@@ -609,11 +619,6 @@ function KanbanCard({
           label={`Lane for ${displayText(title)}`}
           value={lane.name}
           pending={saving}
-          error={
-            error
-              ? `Unable to move ${displayText(title)}. ${error} Choose a lane to try again.`
-              : null
-          }
           className="mt-1"
           triggerRef={registerMoveControl}
           editor={
@@ -622,7 +627,6 @@ function KanbanCard({
               value={lane.id}
               disabled={saving}
               aria-label="Move to lane"
-              aria-invalid={error ? true : undefined}
               aria-describedby={titleId}
               onPointerDown={(event) => {
                 event.stopPropagation();

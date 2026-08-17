@@ -38,6 +38,7 @@ import { TechnicalDetails } from '@/components/technical-details';
 import { Button } from '@/components/ui/button';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { notifyAction } from '@/lib/notify';
 import { useProjectSearch } from '@/hooks/use-project-search';
 import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/display-dates';
 import { evidenceSourceContextLabel, evidenceSourceLabel } from '@/lib/evidence-source-label';
@@ -640,7 +641,6 @@ export function ApprovalsClient({
   const resolvedTimezone = timezone ?? workspaceTimezone;
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
   const [resolvedItemSignatures, setResolvedItemSignatures] = useState<Map<string, string>>(
     () => new Map(),
   );
@@ -771,25 +771,28 @@ export function ApprovalsClient({
     if (!inFlightItemIds) return;
     if (optimisticItemIds.some((id) => inFlightItemIds.has(id))) return;
     for (const id of optimisticItemIds) inFlightItemIds.add(id);
-    setError(null);
     clearActionFailures(optimisticItemIds);
     resolveItems(optimisticItemIds);
     markBusy(optimisticItemIds);
     startTransition(async () => {
       try {
-        const result = await action();
+        const result = await notifyAction({
+          id: `approval:${optimisticItemIds[0] ?? 'bulk'}`,
+          loading: 'Updating approval…',
+          success: 'Approval updated',
+          error: 'Couldn’t update approval',
+          run: action,
+        });
         if (result.error) {
           const failedItemIds =
             result.failedItemIds?.filter((id) => optimisticItemIds.includes(id)) ?? [];
           const restoreItemIds = failedItemIds.length > 0 ? failedItemIds : optimisticItemIds;
           restoreItems(restoreItemIds);
           markActionFailures(restoreItemIds);
-          setError(result.error);
         }
-      } catch (err) {
+      } catch {
         restoreItems(optimisticItemIds);
         markActionFailures(optimisticItemIds);
-        setError(err instanceof Error ? err.message : 'Approval action failed');
       } finally {
         for (const id of optimisticItemIds) inFlightItemIdsRef.current?.delete(id);
         clearBusy(optimisticItemIds);
@@ -823,7 +826,6 @@ export function ApprovalsClient({
       bulkRejectSuggestions={bulkRejectSuggestions}
       actionFailedItemIds={actionFailedItemIds}
       busyItemIds={busyItemIds}
-      error={error}
       pending={pending}
       run={run}
       timezone={resolvedTimezone}
@@ -862,7 +864,6 @@ function ApprovalListBody({
   bulkRejectSuggestions,
   actionFailedItemIds,
   busyItemIds,
-  error,
   pending,
   run,
   timezone,
@@ -878,7 +879,6 @@ function ApprovalListBody({
   bulkRejectSuggestions: { suggestionId: string; itemIds: string[] }[];
   actionFailedItemIds: Set<string>;
   busyItemIds: Set<string>;
-  error: string | null;
   pending: boolean;
   run: ApprovalAction;
   timezone: string;
@@ -887,7 +887,6 @@ function ApprovalListBody({
 }) {
   return (
     <div className="space-y-3">
-      {error ? <ApprovalError message={error} /> : null}
       {(allowBulkAccept && bulkAcceptItemCount > 1) ||
       (allowBulkReject && bulkRejectItemCount > 1) ? (
         <PageBulkActions
@@ -923,18 +922,6 @@ function ApprovalUpdatingState() {
     <output className="border border-border bg-muted/30 px-3 py-2 text-xs text-fg-dim">
       Updating approvals...
     </output>
-  );
-}
-
-function ApprovalError({ message }: { message: string }) {
-  return (
-    <div
-      aria-live="assertive"
-      className="border border-danger/40 px-3 py-2 text-sm text-danger"
-      role="alert"
-    >
-      {message}
-    </div>
   );
 }
 
@@ -1248,7 +1235,6 @@ function TaskApprovalPayload({
   const router = useRouter();
   const [saving, startSaving] = useTransition();
   const { query, setQuery, projects } = useProjectSearch();
-  const [error, setError] = useState<string | null>(null);
   const category = payloadString(item.proposedPayload, 'taskCategory') as TaskCategory | null;
   const categoryMode = payloadString(item.proposedPayload, 'taskCategoryMode');
   const projectName =
@@ -1276,11 +1262,15 @@ function TaskApprovalPayload({
       | { kind: 'existing'; projectId: string }
       | { kind: 'create'; projectName: string };
   }): void {
-    setError(null);
     startSaving(async () => {
-      const result = await reviseTaskSuggestionItemAction({ itemId: item.id, ...input });
-      if (result.error) setError(result.error);
-      else router.refresh();
+      const result = await notifyAction({
+        id: `approval:${item.id}:change`,
+        loading: 'Updating proposal…',
+        success: 'Proposal updated',
+        error: 'Couldn’t update proposal',
+        run: () => reviseTaskSuggestionItemAction({ itemId: item.id, ...input }),
+      });
+      if (!result.error) router.refresh();
     });
   }
 
@@ -1397,7 +1387,6 @@ function TaskApprovalPayload({
           </div>
         </details>
       ) : null}
-      {error ? <p className="text-xs text-danger">{error}</p> : null}
       {item.failureReason ? (
         <p className="text-xs text-danger">{displayText(item.failureReason)}</p>
       ) : null}

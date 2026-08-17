@@ -5,40 +5,38 @@ import { useState } from 'react';
 
 import type * as integrationsLib from '@timeline/shared/integrations';
 
-import { InlineError } from '@/components/inline-error';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { notifyAction } from '@/lib/notify';
 import { connectionErrorMessage } from '@/lib/ux-errors';
 
 type CatalogEntry = ReturnType<typeof integrationsLib.listAvailableProviders>[number];
 
 export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
   const [pending, setPending] = useState<string | null>(null);
-  const [error, setError] = useState<{ id: string; message: string; details: string } | null>(null);
 
   async function startConnect(id: string) {
     setPending(id);
-    setError(null);
-    try {
-      const res = await fetch(`/api/integrations/${id}/start`, { method: 'POST' });
-      if (!res.ok) {
-        const text = await res.text();
-        setError({ id, message: connectionErrorMessage(text, res.status), details: text });
-        return;
-      }
-      const data = (await res.json()) as { url?: string; error?: string };
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        setError({
-          id,
-          message: connectionErrorMessage(data.error, res.status),
-          details: data.error ?? 'unknown',
-        });
-      }
-    } finally {
-      setPending(null);
-    }
+    await notifyAction({
+      id: `integration:connect:${id}`,
+      loading: 'Opening sign-in…',
+      success: 'Opening sign-in',
+      error: 'Couldn’t start connection',
+      run: async () => {
+        const res = await fetch(`/api/integrations/${id}/start`, { method: 'POST' });
+        if (!res.ok) {
+          const text = await res.text();
+          return { error: connectionErrorMessage(text, res.status) };
+        }
+        const data = (await res.json()) as { url?: string; error?: string };
+        if (data.url) {
+          window.location.href = data.url;
+          return { ok: true };
+        }
+        return { error: connectionErrorMessage(data.error, res.status) };
+      },
+    });
+    setPending(null);
   }
 
   const available = catalog.filter((provider) => provider.available);
@@ -69,7 +67,6 @@ export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
                 key={provider.id}
                 provider={provider}
                 pending={pending}
-                error={error}
                 onConnect={startConnect}
               />
             ))}
@@ -97,7 +94,6 @@ export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
                   key={provider.id}
                   provider={provider}
                   pending={pending}
-                  error={error}
                   onConnect={startConnect}
                 />
               ))}
@@ -112,12 +108,10 @@ export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
 function ProviderCard({
   provider,
   pending,
-  error,
   onConnect,
 }: {
   provider: CatalogEntry;
   pending: string | null;
-  error: { id: string; message: string; details: string } | null;
   onConnect: (id: string) => Promise<void>;
 }) {
   const setupStatusId = `provider-${provider.id}-setup-status`;
@@ -149,15 +143,6 @@ function ProviderCard({
           Creates a personal provider account first. Team sync is activated after sources are
           shared.
         </p>
-        {error?.id === provider.id ? (
-          <InlineError
-            message={error.message}
-            details={error.details}
-            onRetry={() => void onConnect(provider.id)}
-            retrying={pending === provider.id}
-            className="mt-3"
-          />
-        ) : null}
         <div className="mt-auto pt-3">
           <Button
             size="sm"

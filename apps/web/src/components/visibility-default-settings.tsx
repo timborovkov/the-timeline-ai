@@ -3,6 +3,7 @@
 import { useActionState, useState } from 'react';
 
 import { setVisibilityDefaultAction } from '@/app/actions/visibility';
+import { FormActionToast } from '@/components/form-action-toast';
 import { Button } from '@/components/ui/button';
 
 type Source =
@@ -108,6 +109,11 @@ function VisibilityDefaultForm({ row, members }: { row: DefaultRow; members: Mem
         <Button type="submit" size="sm" variant="secondary" disabled={pending}>
           {pending ? 'Saving' : 'Save'}
         </Button>
+        <FormActionToast
+          id={`visibility-default:${row.source}`}
+          error={state.error}
+          success={state.ok ? 'Visibility default saved' : undefined}
+        />
       </div>
       {specificAllowed && selectedVisibility === 'specific_users' ? (
         <div className="flex flex-wrap gap-3 border-t border-border/60 pt-2">
@@ -124,8 +130,6 @@ function VisibilityDefaultForm({ row, members }: { row: DefaultRow; members: Mem
           ))}
         </div>
       ) : null}
-      {state.error ? <p className="text-xs text-destructive">{state.error}</p> : null}
-      {state.ok ? <p className="text-xs text-muted-foreground">Saved</p> : null}
     </form>
   );
 }

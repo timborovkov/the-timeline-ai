@@ -11,6 +11,7 @@ import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { Skeleton } from '@/components/ui/skeleton';
+import { notifyAction } from '@/lib/notify';
 import { queryKeys } from '@/lib/query-keys';
 import { groupResourcesByKind, providerLabel, shareDisplayName } from '@/lib/resource-labels';
 import { connectionErrorMessage } from '@/lib/ux-errors';
@@ -843,7 +844,6 @@ export function TeamSourcesUi({
     [activeSelectedByConnection, selectedOverrides],
   );
   const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
 
   if (rows.length === 0) {
@@ -863,51 +863,45 @@ export function TeamSourcesUi({
 
   async function activate(providerConnectionId: string) {
     setBusy(providerConnectionId);
-    setError(null);
     setSyncNotice(null);
-    try {
-      const res = await fetch('/api/team/integrations/activate', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          providerConnectionId,
-          resourceShareIds: [...(selectedByConnection[providerConnectionId] ?? new Set())],
-        }),
-      });
-      const result = await readJsonResponse<{
-        error?: string;
-        syncRequired?: boolean;
-        syncQueued?: boolean;
-      }>(res);
-      setSyncNotice(
-        !result.syncRequired
-          ? 'Team sync sources saved. No historical import was needed.'
-          : result.syncQueued
-            ? 'Initial import queued. Older items will be available after the first sync completes.'
-            : 'Sources were saved, but the initial import could not be queued. Retry team sync.',
-      );
-      setSelectedOverrides({});
-      router.refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Activation failed');
-    } finally {
-      setBusy(null);
-    }
+    const result = await notifyAction({
+      id: `integration:activate:${providerConnectionId}`,
+      loading: 'Saving team sync…',
+      success: 'Team sync saved',
+      error: 'Couldn’t save team sync',
+      run: async () => {
+        const res = await fetch('/api/team/integrations/activate', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            providerConnectionId,
+            resourceShareIds: [...(selectedByConnection[providerConnectionId] ?? new Set())],
+          }),
+        });
+        const payload = await readJsonResponse<{
+          error?: string;
+          syncRequired?: boolean;
+          syncQueued?: boolean;
+        }>(res);
+        if (payload.error) return { error: payload.error };
+        setSyncNotice(
+          !payload.syncRequired
+            ? 'Team sync sources saved. No historical import was needed.'
+            : payload.syncQueued
+              ? 'Initial import queued. Older items will be available after the first sync completes.'
+              : 'Sources were saved, but the initial import could not be queued. Retry team sync.',
+        );
+        setSelectedOverrides({});
+        return { ok: true };
+      },
+    });
+    setBusy(null);
+    if (!result.error) router.refresh();
   }
 
   return (
     <div className="space-y-3">
       <TeamSyncFlow isAdmin={isAdmin} />
-      {error ? (
-        <InlineError
-          message={connectionErrorMessage(error)}
-          details={error}
-          onRetry={() => {
-            setError(null);
-          }}
-          retryLabel="Dismiss"
-        />
-      ) : null}
       {syncNotice ? (
         <output className="rounded-sm border border-signal/30 bg-signal-soft px-3 py-2 text-sm text-fg">
           {syncNotice}

@@ -1,0 +1,108 @@
+'use client';
+
+import { toast } from 'sonner';
+
+export const ACTION_TOAST_LOADING_DELAY_MS = 150;
+export const ACTION_TOAST_SUCCESS_MS = 2_000;
+export const ACTION_TOAST_ERROR_MS = 6_000;
+
+export type ActionResult = { error?: string };
+
+export interface NotifyUndo<T extends ActionResult = ActionResult> {
+  run: (result: T) => Promise<ActionResult>;
+  loading?: string;
+  success?: string;
+  error?: string;
+}
+
+export interface NotifyActionOptions<T extends ActionResult = ActionResult> {
+  id: string;
+  loading: string;
+  success: string;
+  error: string;
+  run: () => Promise<T>;
+  undo?: NotifyUndo<T>;
+}
+
+const generations = new Map<string, number>();
+
+function nextGeneration(id: string): number {
+  const generation = (generations.get(id) ?? 0) + 1;
+  generations.set(id, generation);
+  return generation;
+}
+
+function isCurrent(id: string, generation: number): boolean {
+  return generations.get(id) === generation;
+}
+
+function resultError(result: ActionResult | undefined): string | undefined {
+  return result?.error ? result.error : undefined;
+}
+
+export async function notifyAction<T extends ActionResult>(
+  options: NotifyActionOptions<T>,
+): Promise<T | { error: string }> {
+  const generation = nextGeneration(options.id);
+  let loadingTimer: ReturnType<typeof setTimeout> | undefined;
+  let showedLoading = false;
+
+  loadingTimer = setTimeout(() => {
+    if (!isCurrent(options.id, generation)) return;
+    showedLoading = true;
+    toast.loading(options.loading, { id: options.id, duration: Infinity });
+  }, ACTION_TOAST_LOADING_DELAY_MS);
+
+  const finish = (failed: boolean, message: string, undo?: NotifyUndo<T>, result?: T): void => {
+    if (loadingTimer) clearTimeout(loadingTimer);
+    if (!isCurrent(options.id, generation)) return;
+    if (failed) {
+      toast.error(message, { id: options.id, duration: ACTION_TOAST_ERROR_MS });
+      return;
+    }
+    toast.success(message, {
+      id: options.id,
+      duration: ACTION_TOAST_SUCCESS_MS,
+      action: undo
+        ? {
+            label: 'Undo',
+            onClick: () => {
+              void notifyAction({
+                id: options.id,
+                loading: undo.loading ?? 'Undoing…',
+                success: undo.success ?? 'Undone',
+                error: undo.error ?? 'Couldn’t undo',
+                run: () => undo.run(result ?? ({} as T)),
+              });
+            },
+          }
+        : undefined,
+    });
+  };
+
+  try {
+    const result = await options.run();
+    const failed = Boolean(resultError(result));
+    finish(
+      failed,
+      failed ? options.error : options.success,
+      failed ? undefined : options.undo,
+      result,
+    );
+    return result;
+  } catch {
+    finish(true, options.error);
+    return { error: options.error };
+  } finally {
+    if (loadingTimer && !showedLoading) clearTimeout(loadingTimer);
+  }
+}
+
+export function notifyError(id: string, message: string): void {
+  nextGeneration(id);
+  toast.error(message, { id, duration: ACTION_TOAST_ERROR_MS });
+}
+
+export function resetNotifyActionState(): void {
+  generations.clear();
+}

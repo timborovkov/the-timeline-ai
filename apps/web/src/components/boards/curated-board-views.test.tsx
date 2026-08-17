@@ -13,6 +13,9 @@ const fakes = vi.hoisted(() => ({
 vi.mock('@/app/actions/objects', () => ({
   loadTaskCategoryStatesAction: vi.fn(),
 }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
+}));
 
 const { CuratedBoardList, CuratedBoardTable } = await import('./curated-board-views.js');
 
@@ -192,10 +195,9 @@ describe('CuratedBoardTable', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole('alert').textContent).toContain(
-        'Unable to save Launch review. Connection lost',
-      );
+      expect(fakes.updateItem).toHaveBeenCalled();
     });
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('announces bulk update failures as errors', async () => {

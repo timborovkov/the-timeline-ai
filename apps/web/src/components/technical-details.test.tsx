@@ -31,16 +31,17 @@ describe('TechnicalDetails', () => {
     expect(details?.open).toBe(true);
   });
 
-  it('copies an explicit technical value and announces the result', async () => {
+  it('copies an explicit technical value with the shared copy control', async () => {
     render(
       <TechnicalDetails items={[{ label: 'Event ID', value: 'evt_123', copyValue: 'evt_123' }]} />,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Copy Event ID' }));
     await waitFor(() => {
       expect(writeText).toHaveBeenCalledWith('evt_123');
-      const status = screen.getByRole('status');
-      expect(status.textContent).toBe('Copied Event ID.');
-      expect(status.closest('details')).toBeNull();
+      expect(screen.getByRole('status').textContent).toBe('Copied Event ID.');
+      expect(screen.getByRole('button', { name: 'Copied Event ID.' }).textContent).toContain(
+        'Copied',
+      );
     });
   });
 

@@ -81,14 +81,7 @@ export function EditableMetadata({
           {editor}
         </PopoverContent>
       </Popover>
-      {error ? (
-        <span
-          role="alert"
-          className="absolute left-2 top-full z-10 whitespace-nowrap text-[10px] text-danger"
-        >
-          {error}
-        </span>
-      ) : null}
+      {error ? <span className="sr-only">{error}</span> : null}
     </span>
   );
 }

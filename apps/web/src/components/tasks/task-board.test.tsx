@@ -43,6 +43,15 @@ vi.mock('@/app/actions/pins', () => ({
   pinTargetAction: fakes.pinObjectAction,
   unpinTargetAction: fakes.unpinObjectAction,
 }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => {
+    try {
+      return await run();
+    } catch {
+      return { error: 'failed' };
+    }
+  },
+}));
 vi.mock('@/lib/task-board-config', () => ({
   TASK_BOARD_COLUMN_RENDER_LIMIT: 3,
   TASK_BOARD_LIST_RENDER_LIMIT: 5,

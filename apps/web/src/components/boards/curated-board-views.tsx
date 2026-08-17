@@ -18,6 +18,7 @@ import { DueDateDisplay } from '@/components/due-date-display';
 import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { boardViewHref, type BoardLayout } from '@/lib/board-links';
+import { notifyAction } from '@/lib/notify';
 import { displayText } from '@/lib/display-dates';
 import { displayObjectTitle } from '@/lib/object-title';
 import { statusLabel } from '@/lib/status-labels';
@@ -57,28 +58,6 @@ interface BoardItemUpdateResult {
   id?: string;
 }
 
-function BoardItemSavingNotice({ field }: { field?: string }) {
-  if (!field) return null;
-  return <span className="mt-1 block text-[11px] text-fg-dim">Saving {field}...</span>;
-}
-
-function BoardItemSaveError({
-  objectTitle,
-  error,
-  suppressAlert,
-}: {
-  objectTitle: string;
-  error?: string;
-  suppressAlert: boolean;
-}) {
-  if (!error) return null;
-  return (
-    <span className="mt-1 block text-xs text-danger" role={suppressAlert ? undefined : 'alert'}>
-      Unable to save {displayText(objectTitle)}. {error}
-    </span>
-  );
-}
-
 export function CuratedBoardTable({
   boardId,
   view,
@@ -102,8 +81,6 @@ export function CuratedBoardTable({
   const timezone = useWorkspaceTimezone();
   const [, startTransition] = useTransition();
   const [saving, setSaving] = useState<Record<string, string>>({});
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [bulkErrorIds, setBulkErrorIds] = useState<ReadonlySet<string>>(new Set());
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const selectableItems = useMemo(() => items.filter((item) => !isOptimisticItem(item)), [items]);
   const visibleSelectedIds = useMemo(() => {
@@ -115,41 +92,26 @@ export function CuratedBoardTable({
   function updateItem(
     id: string,
     patch: BoardItemOptimisticPatch,
-    suppressErrorAlert = false,
+    _suppressErrorAlert = false,
   ): Promise<BoardItemUpdateResult> {
     if (!onUpdateItem) return Promise.resolve({ error: 'Board item editing is unavailable.' });
     const field = Object.keys(patch)[0] ?? 'field';
     setSaving((current) => ({ ...current, [id]: field }));
-    setErrors((current) => {
-      const { [id]: _cleared, ...rest } = current;
-      return rest;
-    });
-    if (!suppressErrorAlert) {
-      setBulkErrorIds((current) => {
-        if (!current.has(id)) return current;
-        const next = new Set(current);
-        next.delete(id);
-        return next;
-      });
-    }
     return new Promise((resolve) => {
       startTransition(async () => {
-        try {
-          const result = await onUpdateItem(id, patch);
-          if ('error' in result && result.error) {
-            setErrors((current) => ({ ...current, [id]: result.error ?? 'Save failed' }));
-          }
-          resolve(result);
-        } catch (err) {
-          const message = err instanceof Error ? err.message : 'Save failed';
-          setErrors((current) => ({ ...current, [id]: message }));
-          resolve({ error: message });
-        } finally {
-          setSaving((current) => {
-            const { [id]: _done, ...rest } = current;
-            return rest;
-          });
-        }
+        const label = field === 'dueAt' ? 'due date' : field;
+        const result = await notifyAction({
+          id: `board-item:${id}`,
+          loading: `Updating ${label}…`,
+          success: `${label.slice(0, 1).toUpperCase()}${label.slice(1)} updated`,
+          error: `Couldn’t update ${label}`,
+          run: () => onUpdateItem(id, patch),
+        });
+        resolve(result);
+        setSaving((current) => {
+          const { [id]: _done, ...rest } = current;
+          return rest;
+        });
       });
     });
   }
@@ -158,7 +120,6 @@ export function CuratedBoardTable({
     ids: string[],
     patch: BoardItemOptimisticPatch,
   ): Promise<{ failed: number }> {
-    setBulkErrorIds(new Set(ids));
     const results = await Promise.allSettled(ids.map((id) => updateItem(id, patch, true)));
     return {
       failed: results.filter(
@@ -405,12 +366,6 @@ export function CuratedBoardTable({
                           }}
                         />
                       }
-                    />
-                    <BoardItemSavingNotice field={saving[item.id]} />
-                    <BoardItemSaveError
-                      objectTitle={objectTitle}
-                      error={errors[item.id]}
-                      suppressAlert={bulkErrorIds.has(item.id)}
                     />
                   </td>
                 </tr>

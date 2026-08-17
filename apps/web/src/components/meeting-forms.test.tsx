@@ -16,6 +16,15 @@ const fakes = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: fakes.push, refresh: fakes.refresh }),
 }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string; ok?: boolean }> }) => {
+    try {
+      return await run();
+    } catch {
+      return { error: 'failed' };
+    }
+  },
+}));
 vi.mock('@/app/actions/meetings', () => ({
   archiveSavedMeetingAction: fakes.archiveSavedMeetingAction,
   cancelMeetingBotAction: vi.fn(),
@@ -325,11 +334,10 @@ describe('ArchiveSavedMeetingButton', () => {
 
     await user.click(screen.getByRole('button', { name: 'Archive meeting' }));
 
-    const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toContain('The saved meeting could not be archived.');
-    expect(
-      screen.getByRole('button', { name: 'Archive meeting' }).getAttribute('aria-describedby'),
-    ).toBe(alert.id);
+    await waitFor(() => {
+      expect(fakes.archiveSavedMeetingAction).toHaveBeenCalledWith('saved-meeting-1');
+    });
+    expect(screen.queryByRole('alert')).toBeNull();
     expect(fakes.refresh).not.toHaveBeenCalled();
   });
 });

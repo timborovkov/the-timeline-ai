@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useActionState, useId, useState } from 'react';
 
 import { setIntegrationVisibilityDefaultAction } from '@/app/actions/visibility';
+import { FormActionToast } from '@/components/form-action-toast';
 import { InlineError } from '@/components/inline-error';
 import { Button } from '@/components/ui/button';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
@@ -434,14 +435,11 @@ function IntegrationVisibilityForm({
       <Button type="submit" size="sm" variant="outline" className="min-h-9" disabled={pending}>
         {pending ? 'Saving' : 'Save default'}
       </Button>
-      {state.error ? (
-        <p role="alert" className="basis-full text-xs text-destructive">
-          {state.error}
-        </p>
-      ) : null}
-      {state.ok ? (
-        <output className="basis-full text-xs text-fg-muted">Default visibility saved.</output>
-      ) : null}
+      <FormActionToast
+        id={`integration-visibility:${integration.id}`}
+        error={state.error}
+        success={state.ok ? 'Default visibility saved' : undefined}
+      />
     </form>
   );
 }

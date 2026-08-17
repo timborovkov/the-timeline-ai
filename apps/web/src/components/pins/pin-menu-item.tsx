@@ -2,11 +2,11 @@
 
 import { Pin, PinOff } from 'lucide-react';
 import { useState } from 'react';
-import { toast } from 'sonner';
 
 import type { PinTargetRef } from '@timeline/shared/pins';
 
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { notifyAction } from '@/lib/notify';
 
 async function mutatePin(target: PinTargetRef, pinned: boolean) {
   const { pinTargetAction, unpinTargetAction } = await import('@/app/actions/pins');
@@ -26,42 +26,45 @@ export function PinMenuItem({
 }) {
   const [pinned, setPinned] = useState(initialPinned);
   const [pending, setPending] = useState(false);
-  const [pendingAction, setPendingAction] = useState<'pin' | 'unpin' | null>(null);
   const Icon = pinned ? PinOff : Pin;
   const action = pinned ? 'Unpin' : 'Pin';
-  const pendingLabel = `Saving ${pendingAction ?? action.toLowerCase()}…`;
   return (
     <DropdownMenuItem
       disabled={pending}
-      aria-label={pending ? `${pendingLabel} ${title}` : `${action} ${title}`}
+      aria-label={`${action} ${title}`}
       aria-busy={pending}
       onSelect={(event) => {
         event.preventDefault();
         const next = !pinned;
+        const previous = pinned;
         setPinned(next);
         setPending(true);
-        setPendingAction(next ? 'pin' : 'unpin');
-        void mutatePin(target, next)
-          .then((result) => {
-            if (result.error) {
-              setPinned(!next);
-              toast.error(result.error);
-              return;
-            }
+        void notifyAction({
+          id: `pin:${target.kind}:${target.key}`,
+          loading: next ? 'Pinning…' : 'Unpinning…',
+          success: next ? 'Pinned' : 'Unpinned',
+          error: next ? 'Couldn’t pin item' : 'Couldn’t unpin item',
+          run: () => mutatePin(target, next),
+          undo: {
+            run: async () => {
+              setPinned(previous);
+              onPinnedChange?.(previous);
+              return mutatePin(target, previous);
+            },
+            success: previous ? 'Pinned' : 'Unpinned',
+          },
+        }).then((result) => {
+          if (result.error) {
+            setPinned(previous);
+          } else {
             onPinnedChange?.(next);
-          })
-          .catch(() => {
-            setPinned(!next);
-            toast.error(next ? 'Failed to pin item' : 'Failed to unpin item');
-          })
-          .finally(() => {
-            setPending(false);
-            setPendingAction(null);
-          });
+          }
+          setPending(false);
+        });
       }}
     >
       <Icon aria-hidden="true" className="size-4" />
-      {pending ? pendingLabel : `${action} item`}
+      {`${action} item`}
     </DropdownMenuItem>
   );
 }

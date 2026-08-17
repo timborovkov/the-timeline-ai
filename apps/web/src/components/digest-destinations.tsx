@@ -8,6 +8,7 @@ import {
   removeDigestDestinationAction,
   type DigestDestinationState,
 } from '@/app/actions/teams';
+import { FormActionToast } from '@/components/form-action-toast';
 import { Button } from '@/components/ui/button';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { Label } from '@/components/ui/label';
@@ -147,9 +148,10 @@ function AddDestinationForm({
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <Submit label="Add destination" />
-        <FormStatus
+        <FormActionToast
+          id="digest:destination:add"
           error={state.error}
-          success={state.ok ? 'Digest destination added.' : undefined}
+          success={state.ok ? 'Digest destination added' : undefined}
         />
       </div>
     </form>
@@ -167,7 +169,11 @@ function RemoveDestinationForm({ destinationId }: { destinationId: string }) {
       <ItemActionGroup label="Remove digest destination">
         <Submit label="Remove" pendingLabel="Removing…" />
       </ItemActionGroup>
-      <FormStatus error={state.error} />
+      <FormActionToast
+        id={`digest:destination:remove:${destinationId}`}
+        error={state.error}
+        success={state.ok ? 'Digest destination removed' : undefined}
+      />
     </form>
   );
 }
@@ -181,21 +187,3 @@ function Submit({ label, pendingLabel = 'Working…' }: { label: string; pending
   );
 }
 
-function FormStatus({ error, success }: { error?: string; success?: string }) {
-  const { pending } = useFormStatus();
-  const status = pending ? 'Saving changes…' : error ? undefined : success;
-  return (
-    <>
-      {status ? (
-        <p aria-live="polite" className="text-sm text-muted-foreground" role="status">
-          {status}
-        </p>
-      ) : null}
-      {pending || !error ? null : (
-        <p className="text-sm text-danger" role="alert">
-          {error}
-        </p>
-      )}
-    </>
-  );
-}

@@ -10,6 +10,7 @@ import type * as objects from '@timeline/shared/objects/types';
 import { mergeObjectsAction } from '@/app/actions/objects';
 import { Button } from '@/components/ui/button';
 import { displayText } from '@/lib/display-dates';
+import { notifyAction } from '@/lib/notify';
 import { statusLabel } from '@/lib/status-labels';
 
 interface Props {
@@ -75,7 +76,6 @@ export function ObjectMergeForm({
 }: Props) {
   const router = useRouter();
   const [survivorId, setSurvivorId] = useState(initialSurvivorId);
-  const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const aliases = useMemo(() => aliasAdditions(objects, survivorId), [objects, survivorId]);
   const survivor = objects.find((row) => row.id === survivorId);
@@ -83,19 +83,24 @@ export function ObjectMergeForm({
 
   function confirmMerge() {
     if (!survivor || isPending) return;
-    setError(null);
     startTransition(async () => {
       const mergedIds: string[] = [];
       for (const row of objects) {
         if (row.id !== survivorId) mergedIds.push(row.id);
       }
-      const result = await mergeObjectsAction({
-        survivorId,
-        mergedIds,
-        suggestionItemId,
+      const result = await notifyAction({
+        id: `objects:merge:${survivorId}`,
+        loading: 'Merging objects…',
+        success: 'Objects merged',
+        error: 'Couldn’t merge objects',
+        run: () =>
+          mergeObjectsAction({
+            survivorId,
+            mergedIds,
+            suggestionItemId,
+          }),
       });
       if (result.error) {
-        setError(result.error);
         return;
       }
       if (onMerged) {
@@ -195,12 +200,6 @@ export function ObjectMergeForm({
           Merged objects leave active lists. Old object links redirect to the kept object.
         </p>
       </section>
-
-      {error ? (
-        <p className="border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
-          {error}
-        </p>
-      ) : null}
 
       <div className="flex flex-wrap justify-end gap-2">
         {onReject ? (

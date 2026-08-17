@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.6 · Team setup loop and Home timeline links (2026-08-17). Replaces v3.5 Team setup checklist on Home.
+**Version:** v3.7 · Action toasts and shared copy controls (2026-08-17). Replaces v3.6 Team setup loop and Home timeline links.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -177,8 +177,8 @@ table.
 - `EditableMetadata` is a quiet, borderless trigger with a minimum 40px hit
   target. Select-like changes save immediately and optimistically. Text and
   date changes commit with Apply or Enter and cancel with Escape. Failed saves
-  roll back, return focus, show an inline row error, and keep the existing
-  toast feedback.
+  roll back, return focus, and report through the shared action toast. Do not
+  add a second inline row error.
 - `SelectionBar` appears only after selection. Desktop checkboxes may fade in
   on row hover or focus and remain visible while selection is active. Touch
   layouts expose selection explicitly and keep its checkboxes visible.
@@ -365,7 +365,8 @@ page gutters around the rows. Kanban/List view controls sit on the CollectionToo
 row with search and filters, not on a second strip. Loading placeholders match the
 requested view and default to list. Kanban cards stay compact: a clamped title plus
 one metadata row, with no redundant type label. Team settings render one URL-selected
-section at a time. Save state stays local to the edited form. Member, object, source,
+section at a time. Field validation stays on the edited form; pending, success,
+and server failures use the shared action toast. Member, object, source,
 and artifact labels never fall back to UUIDs.
 
 Work → Pinned is the complete pin-management surface. It is a single
@@ -379,7 +380,8 @@ Detail pages use a visible Pin/Unpin button with `aria-pressed`. Dense rows,
 cards, calendar entries, timeline moments, and global-search results keep the
 same action inside their overflow menu, whose accessible label includes the
 target title. Controls update optimistically, retain focus, and restore the
-prior state with a concise error when a mutation fails.
+prior state when a mutation fails. The shared action toast is the busy,
+success, and error signal.
 
 Item-owned actions stay inside the row, card, inspector evidence block, or
 detail region for the item they affect. Use the shared row placement for dense
@@ -556,6 +558,40 @@ Jobs, Reconciliation, Audit, and Integration Audit preserve filters, retries,
 replay actions, and copy access. Human summaries and actionable failures lead.
 UUIDs, raw IDs, refs, and JSON remain closed inside `TechnicalDetails`.
 
+## Action toasts
+
+Actions, edits, and other mutations use one toast lifecycle. Page and query
+loads keep skeletons. Field validation stays on the field. Route and query
+failures keep `InlineError` with a specific retry.
+
+1. Apply the change locally immediately.
+2. After 150ms, if the request is still in flight, show one processing toast
+   with a spinner (`Updating status…`).
+3. The same toast morphs to success or error. Do not spawn a second toast.
+4. On error, roll back the optimistic state and restore focus to the control.
+5. Success lasts 2s. Error lasts 6s and is dismissible.
+
+Rapid edits on the same entity share one toast id and replace in place. Two
+entities may show two toasts. The stack caps at three.
+
+Copy is sentence case and names the thing: `Updating status…`, `Status updated`,
+`Couldn’t update status`. Do not toast raw server strings, UUIDs, or
+`Update failed`. Undo is a compensating second request after the original write
+lands. The first request is not cancelled. Show Undo when the client can invert
+the mutation (previous field value, pin toggle, archive/unarchive, or a server
+undo token). Hard deletes and canonical approval decisions have no Undo.
+
+Toasts use the popover surface, a hairline border, 6px radius, and an overlay
+shadow. Color lives on the icon only. Position is bottom-right on desktop and
+bottom-center on small screens, above a `SelectionBar`. Reduced motion replaces
+the spinner with a static glyph. Feature code calls `notifyAction` rather than
+`toast` from `sonner`.
+
+Copyable values use the shared `CopyButton`. The control shows a copy icon plus
+label, then a check and `Copied`. Dense technical rows use the icon appearance
+with the same swap. Copy success stays on the control. Copy failure stays on
+the control with recovery copy. Do not invent a second clipboard helper.
+
 ## States and responsive behavior
 
 - Loading skeletons mirror the new page structure and announce busy state.
@@ -634,3 +670,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Ask session search and title | Filters chat history from the session rail and shows the selected title beside Ask instead of a session count. |
 | 2026-08-17 | Ask mobile session title | Reuses the resolved conversation title in the mobile session summary, including deep-linked chats outside the recent list. |
 | 2026-08-17 | Quiet sidebar brand and fold control | Aligns the product mark with primary nav, sends it to Home, and replaces the boxed fold glyph with a lighter chevron. |
+| 2026-08-17 | Action toasts and shared copy controls | Replaces inline Saving/Saved/error chips for mutations with one optimistic toast lifecycle, compensating Undo, and a single CopyButton for clipboard fields. |
