@@ -119,7 +119,9 @@ Ask, Work, Documents, Meetings, Connections, and Team.
   labeled groups: Overview (Home, Timeline, Ask), Workspace (Work, Documents,
   Meetings), and Manage (Connections, Team). Collapsed rails retain the same
   order and expose every destination through its icon label and tooltip.
-- Expanded sidebar: 240px. Collapsed rail: 56px.
+- Expanded sidebar: 240px. Collapsed rail: 56px. The product mark uses the
+  same 12px inset as primary destinations and links to Home (`/app`). Fold and
+  unfold is a quiet chevron, not a boxed panel glyph.
 - Shell header: 48px.
 - Main page container: one shell-owned `max-w-6xl`; routes must not create a
   competing outer page width.
@@ -574,3 +576,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-14 | Customer-facing public language | Keeps review cadence, implementation state, indexing terms, and capability taxonomy in metadata while public pages explain concrete actions and availability. |
 | 2026-08-15 | Evidence-backed public product story | Makes the working-history problem, deliberate capture boundary, cited-versus-unused evidence, Telegram entry point, inspectable answers, and human approval contract explicit across the landing and how-it-works journey. |
 | 2026-08-16 | Unified workspace collection density | Replaces stacked form chrome and card grids with compact headers, one filter toolbar, 44px rows, semantic status glyphs, optimistic metadata triggers, and contextual selection without changing domain behavior. |
+| 2026-08-17 | Quiet sidebar brand and fold control | Aligns the product mark with primary nav, sends it to Home, and replaces the boxed fold glyph with a lighter chevron. |

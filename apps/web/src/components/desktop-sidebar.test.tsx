@@ -57,6 +57,9 @@ describe('DesktopSidebar', () => {
       />,
     );
 
+    expect(html).toContain('data-expanded="true"');
+    expect(html).toContain('href="/app"');
+    expect(html).toContain('aria-label="The Timeline home"');
     expect(html).toContain('transition-[width] duration-200 motion-reduce:transition-none');
   });
 
