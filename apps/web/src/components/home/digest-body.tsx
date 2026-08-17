@@ -148,7 +148,10 @@ function DigestList({
         {items.map((item) => (
           <li key={item.key}>
             {item.href ? (
-              <Link href={item.href} className="text-fg hover:text-signal">
+              <Link
+                href={item.href}
+                className="text-fg underline decoration-border underline-offset-4 transition-colors hover:text-signal hover:decoration-signal"
+              >
                 {item.label}
               </Link>
             ) : (
