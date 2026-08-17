@@ -1104,6 +1104,7 @@ async function insertBoards(tx: SeedTx): Promise<void> {
     )
     .onConflictDoNothing();
 
+  await tx.delete(boardItems).where(eq(boardItems.id, CORPUS_UUID.board(31)));
   await tx
     .insert(boardItems)
     .values([
@@ -1193,7 +1194,16 @@ async function insertProposals(tx: SeedTx): Promise<void> {
         updatedAt: NOW,
       })),
     )
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: agentSuggestions.id,
+      set: {
+        title: sql`excluded.title`,
+        summary: sql`excluded.summary`,
+        reason: sql`excluded.reason`,
+        source: sql`excluded.source`,
+        updatedAt: NOW,
+      },
+    });
   await tx
     .insert(agentSuggestionItems)
     .values(
@@ -1212,7 +1222,17 @@ async function insertProposals(tx: SeedTx): Promise<void> {
         metadata: { fixture_version: DEMO_FIXTURE_VERSION },
       })),
     )
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: agentSuggestionItems.id,
+      set: {
+        operation: sql`excluded.operation`,
+        targetKind: sql`excluded.target_kind`,
+        targetId: sql`excluded.target_id`,
+        title: sql`excluded.title`,
+        description: sql`excluded.description`,
+        proposedPayload: sql`excluded.proposed_payload`,
+      },
+    });
   await tx
     .insert(agentSuggestionEvidence)
     .values(
