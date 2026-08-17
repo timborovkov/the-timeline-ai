@@ -9,6 +9,7 @@ import {
 } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef } from 'react';
 
+import type { OnboardingChecklistView } from '@/lib/onboarding-checklist';
 import type { TimelineCapturedFile } from '@/lib/timeline-captured-files';
 import type {
   ImpactItem,
@@ -349,15 +350,12 @@ export function useFinishedJobsInfiniteQuery() {
   });
 }
 
-export function useOnboardingChecklistQuery() {
+export function useOnboardingChecklistQuery(initialData?: OnboardingChecklistView) {
   const queryClient = useQueryClient();
   const { data, isPending, isError, refetch } = useQuery({
     queryKey: queryKeys.onboarding(),
-    queryFn: async () =>
-      readJson<{
-        dismissed: boolean;
-        items: { key: string; label: string; completed: boolean }[];
-      }>(await fetch('/api/onboarding/checklist')),
+    queryFn: async () => readJson<OnboardingChecklistView>(await fetch('/api/onboarding/checklist')),
+    ...(initialData ? { initialData } : {}),
   });
   const mutation = useMutation({
     mutationFn: async (input: { action: 'dismiss' | 'reopen' | 'complete'; key?: string }) =>
@@ -370,10 +368,7 @@ export function useOnboardingChecklistQuery() {
       ),
     onMutate: async (input) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.onboarding() });
-      const previous = queryClient.getQueryData<{
-        dismissed: boolean;
-        items: { key: string; label: string; completed: boolean }[];
-      }>(queryKeys.onboarding());
+      const previous = queryClient.getQueryData<OnboardingChecklistView>(queryKeys.onboarding());
       if (previous) {
         queryClient.setQueryData<typeof previous>(queryKeys.onboarding(), {
           ...previous,

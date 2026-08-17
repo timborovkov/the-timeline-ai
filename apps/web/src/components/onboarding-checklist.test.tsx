@@ -2,6 +2,7 @@
 
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fakes = vi.hoisted(() => ({
@@ -63,6 +64,44 @@ describe('OnboardingChecklist', () => {
     cleanup();
     renderChecklist(null);
     expect(screen.queryByText('Team setup checklist')).toBeNull();
+  });
+
+  it('SSR-renders the loading shell when the client query already has dismissed data', () => {
+    fakes.useOnboardingChecklistQuery.mockReturnValue({
+      isPending: false,
+      checklistLoadFailed: false,
+      checklistMutationFailed: false,
+      data: { dismissed: true, items: [] },
+      mutateChecklist: vi.fn(),
+      retryChecklist: vi.fn(),
+      retryChecklistMutation: vi.fn(),
+      checklistPending: false,
+    });
+
+    const html = renderToStaticMarkup(<OnboardingChecklist />);
+    expect(html).toContain('Loading team setup checklist');
+    expect(html).toContain('aria-busy="true"');
+    expect(html).not.toContain('aria-expanded="false"');
+  });
+
+  it('SSR-renders the provided checklist snapshot instead of the loading shell', () => {
+    fakes.useOnboardingChecklistQuery.mockReturnValue({
+      isPending: true,
+      checklistLoadFailed: false,
+      checklistMutationFailed: false,
+      data: undefined,
+      mutateChecklist: vi.fn(),
+      retryChecklist: vi.fn(),
+      retryChecklistMutation: vi.fn(),
+      checklistPending: false,
+    });
+
+    const html = renderToStaticMarkup(
+      <OnboardingChecklist initialData={{ dismissed: true, items: [] }} />,
+    );
+    expect(html).toContain('Team setup checklist');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain('Loading team setup checklist');
   });
 
   it('explains a loading failure and retries from the keyboard', async () => {
