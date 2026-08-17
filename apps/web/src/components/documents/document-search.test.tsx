@@ -2,7 +2,10 @@
 
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { ReactNode } from 'react';
 
 const fakes = vi.hoisted(() => ({
   useDocumentSearchQuery: vi.fn(),
@@ -12,6 +15,24 @@ const fakes = vi.hoisted(() => ({
 
 vi.mock('@/lib/use-paginated-queries', () => ({
   useDocumentSearchQuery: fakes.useDocumentSearchQuery,
+}));
+vi.mock('@/components/collections/virtual-list', () => ({
+  VirtualList: ({
+    items,
+    renderItem,
+    getItemKey,
+  }: {
+    items: { documentChunkId: string }[];
+    renderItem: (item: { documentChunkId: string }, index: number) => ReactNode;
+    getItemKey: (item: { documentChunkId: string }, index: number) => string;
+  }) =>
+    createElement(
+      'div',
+      null,
+      items.map((item, index) =>
+        createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+      ),
+    ),
 }));
 
 const { DocumentSearch } = await import('./document-search.js');
@@ -39,6 +60,12 @@ function documentHit(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  class FakeIntersectionObserver {
+    observe = vi.fn();
+    unobserve = vi.fn();
+    disconnect = vi.fn();
+  }
+  vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
   fakes.fetchNextPage.mockResolvedValue(undefined);
   fakes.refetch.mockResolvedValue(undefined);
   fakes.useDocumentSearchQuery.mockReturnValue({
@@ -53,6 +80,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
 });
 
 describe('DocumentSearch', () => {
@@ -112,9 +140,8 @@ describe('DocumentSearch', () => {
     const searching = await screen.findByRole('button', { name: 'Searching' });
     expect(searching).toBeInstanceOf(HTMLButtonElement);
     expect((searching as HTMLButtonElement).disabled).toBe(true);
-    const loadMore = await screen.findByRole('button', { name: 'Loading…' });
-    expect(loadMore).toBeInstanceOf(HTMLButtonElement);
-    expect((loadMore as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText('Loading more…')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
     expect(screen.getByText('Full chunk text about Acme launch security signoff.')).toBeTruthy();
   });
 
