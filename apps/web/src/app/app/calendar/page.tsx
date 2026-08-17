@@ -1,10 +1,11 @@
 import { teamCalendarSubscriptions, users } from '@timeline/db';
+import type { CalendarLinkedObjectRow } from '@timeline/shared/calendar';
 import { getEnv } from '@timeline/shared/env';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, eq, inArray } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
-import type { CalendarEvent } from '@/components/calendar/calendar-overlay';
+import type { CalendarEvent, CalendarLinkedObject } from '@/components/calendar/calendar-overlay';
 import type { Metadata } from 'next';
 
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
@@ -60,6 +61,7 @@ function serializeCalendarEvent(
     visibilityUserIds: string[] | null;
   },
   pinned: boolean,
+  linkedObjects: CalendarLinkedObject[],
 ): CalendarEvent {
   return {
     id: e.id,
@@ -80,7 +82,25 @@ function serializeCalendarEvent(
     visibility: e.visibility,
     visibilityUserIds: e.visibilityUserIds,
     pinned,
+    linkedObjects: e.redacted ? [] : linkedObjects,
   };
+}
+
+function groupLinkedObjectsByEvent(
+  rows: CalendarLinkedObjectRow[],
+): Map<string, CalendarLinkedObject[]> {
+  const grouped = new Map<string, CalendarLinkedObject[]>();
+  for (const row of rows) {
+    const current = grouped.get(row.calendarEventId) ?? [];
+    current.push({
+      id: row.id,
+      title: row.title,
+      type: row.type,
+      relationshipType: row.relationshipType,
+    });
+    grouped.set(row.calendarEventId, current);
+  }
+  return grouped;
 }
 
 const EVENT_LIST_PAGE_SIZE = 12;
@@ -181,6 +201,10 @@ export default async function CalendarPage({ searchParams }: PageProps) {
       .limit(1),
   ]);
   const allEvents = [...events, ...initialEventList.events];
+  const linkedRows = await scope.calendar.listLinkedObjectsForEvents(
+    allEvents.map((event) => event.id),
+  );
+  const linkedByEventId = groupLinkedObjectsByEvent(linkedRows);
   const pinState = await scope.pins.isPinnedMany(
     allEvents.flatMap((event) =>
       event.redacted ? [] : [{ kind: 'calendar_event' as const, key: event.id }],
@@ -202,10 +226,18 @@ export default async function CalendarPage({ searchParams }: PageProps) {
   const memberUserMap = new Map(memberUsers.map((u) => [u.id, u] as const));
 
   const serialized = events.map((event) =>
-    serializeCalendarEvent(event, pinState[`calendar_event:${event.id}`] ?? false),
+    serializeCalendarEvent(
+      event,
+      pinState[`calendar_event:${event.id}`] ?? false,
+      linkedByEventId.get(event.id) ?? [],
+    ),
   );
   const serializedEventList = eventList.events.map((event) =>
-    serializeCalendarEvent(event, pinState[`calendar_event:${event.id}`] ?? false),
+    serializeCalendarEvent(
+      event,
+      pinState[`calendar_event:${event.id}`] ?? false,
+      linkedByEventId.get(event.id) ?? [],
+    ),
   );
   const calendarSuggestions = pendingSuggestions.flatMap((bundle) => {
     const items = bundle.items.filter(

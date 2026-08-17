@@ -1875,7 +1875,12 @@ function ConnectedCalendarList({
               key={event.id}
               className="grid gap-1 rounded-sm border border-border bg-surface px-3 py-2 text-sm"
             >
-              <span className="font-medium">{displayText(event.title)}</span>
+              <Link
+                href={`/app/calendar?event=${encodeURIComponent(event.id)}&date=${event.startAt.toISOString().slice(0, 10)}&view=day`}
+                className="font-medium hover:underline"
+              >
+                {displayText(event.title)}
+              </Link>
               <span className="text-[11px] text-fg-dim">
                 {formatDisplayDateTime(event.startAt, { timezone })} · {statusLabel(event.showAs)}
               </span>

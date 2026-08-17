@@ -8,6 +8,7 @@ import {
   startOfIsoWeek,
 } from '@timeline/shared/time';
 import { CalendarDays, Check, ChevronLeft, ChevronRight, Plus, Search, Trash2 } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Suspense,
@@ -641,6 +642,7 @@ function useCalendarViewModel({
         redacted: false,
         visibility: draft.visibility,
         visibilityUserIds: draft.visibility === 'specific_users' ? draft.visibilityUserIds : null,
+        linkedObjects: editing?.linkedObjects ?? [],
       };
       dispatchCalendarUi({ surfaceError: null });
       if (savedTimer.current) clearTimeout(savedTimer.current);
@@ -1268,6 +1270,35 @@ function CalendarBody({
   );
 }
 
+function linkedObjectContext(object: CalendarEvent['linkedObjects'][number]): string {
+  const typeLabel = statusLabel(object.type);
+  if (object.relationshipType === 'due_date') return `Due date · ${typeLabel}`;
+  if (object.relationshipType === 'related') return typeLabel;
+  return `${statusLabel(object.relationshipType)} · ${typeLabel}`;
+}
+
+function CalendarLinkedObjectList({ objects }: { objects: CalendarEvent['linkedObjects'] }) {
+  if (objects.length === 0) return null;
+  return (
+    <div className="border-t border-border pt-3">
+      <p className="text-[11px] font-medium uppercase tracking-wide text-fg-dim">Linked objects</p>
+      <ul className="mt-2 space-y-1.5">
+        {objects.map((object) => (
+          <li key={object.id} className="flex min-w-0 items-baseline gap-2">
+            <Link
+              href={`/app/objects/${object.id}`}
+              className="min-w-0 truncate text-sm font-medium text-fg hover:underline"
+            >
+              {object.title}
+            </Link>
+            <span className="shrink-0 text-[11px] text-fg-dim">{linkedObjectContext(object)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function CalendarEventDialog({
   open,
   editing,
@@ -1331,6 +1362,9 @@ function CalendarEventDialog({
             >
               {error}
             </p>
+          ) : null}
+          {editing && !editing.redacted ? (
+            <CalendarLinkedObjectList objects={editing.linkedObjects} />
           ) : null}
         </div>
         <DialogFooter className="gap-2 sm:justify-between">

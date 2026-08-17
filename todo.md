@@ -166,6 +166,8 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       live object/event diffs, title-first calendar chips, and the same
       toolbar/button/toast/skeleton contract on Approvals, Calendar,
       Connections, Team, Meetings, Timeline, and remaining work surfaces.
+      Calendar Edit event dialogs link to inspectable workspace objects;
+      object Calendar sections link back to the focused event.
 
 ## Workspace Reconciliation
 

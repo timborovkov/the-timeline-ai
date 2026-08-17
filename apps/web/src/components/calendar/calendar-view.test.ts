@@ -58,6 +58,7 @@ function event(id: string, title = id): CalendarEvent {
     visibility: 'team',
     visibilityUserIds: null,
     pinned: false,
+    linkedObjects: [],
   };
 }
 
@@ -625,5 +626,37 @@ describe('CalendarView recurrence and tentative UI', () => {
     await user.click(screen.getByRole('button', { name: 'Create event' }));
 
     expect(screen.getByRole('dialog', { name: 'New event' })).toBeTruthy();
+  });
+
+  it('links inspectable workspace objects from the edit event dialog', async () => {
+    const user = userEvent.setup();
+    const objectId = 'a0000000-0000-4000-8000-000000000001';
+    render(
+      createElement(CalendarView, {
+        events: [
+          {
+            ...event('event-1', 'Atlas kickoff'),
+            linkedObjects: [
+              {
+                id: objectId,
+                title: 'Project Atlas',
+                type: 'project',
+                relationshipType: 'related',
+              },
+            ],
+          },
+        ],
+        eventListEvents: [],
+        timezone: 'UTC',
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: /Atlas kickoff/ }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Edit event' });
+    const objectLink = within(dialog).getByRole('link', { name: 'Project Atlas' });
+    expect(objectLink.getAttribute('href')).toBe(`/app/objects/${objectId}`);
+    expect(within(dialog).getByText('Project')).toBeTruthy();
+    expect(within(dialog).queryByRole('button', { name: /Open object/i })).toBeNull();
   });
 });

@@ -401,6 +401,11 @@ date. Selected or editing events keep a quiet ring. Chips use `text-[11px]`
 and tight padding so names remain readable in a seven-column grid. Week
 numbers belong on the week column, not inside every month cell.
 
+The Edit event dialog stays a calendar-event editor. When the event is linked
+to workspace objects, those objects appear as quiet title links under
+**Linked objects**, never as a large Open button. Object Calendar sections
+link the other way to the focused calendar event.
+
 Work → Pinned is the complete pin-management surface. It is a single
 side-to-side list with cursor pagination and All, Objects, Boards, Documents,
 Meetings, Calendar, and Timeline filters. Reordering is available only under
@@ -675,3 +680,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-15 | Evidence-backed public product story | Makes the working-history problem, deliberate capture boundary, cited-versus-unused evidence, Telegram entry point, inspectable answers, and human approval contract explicit across the landing and how-it-works journey. |
 | 2026-08-16 | Unified workspace collection density | Replaces stacked form chrome and card grids with compact headers, one filter toolbar, 44px rows, semantic status glyphs, optimistic metadata triggers, and contextual selection without changing domain behavior. |
 | 2026-08-17 | Feedback, preview, and remaining collection density | Locks viewport-sticky mutation toasts, Linear-style optimistic rows, view-only approval previews with live diffs, selection-bar bulk actions, title-first calendar chips, and collection rows for Connections, Team members, Meetings, and Approvals. |
+| 2026-08-17 | Calendar object navigation | Edit event dialogs expose quiet linked-object title links; object Calendar sections link back to the focused event. |

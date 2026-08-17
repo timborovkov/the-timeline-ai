@@ -545,6 +545,7 @@ describe('ObjectDetailClient', () => {
     expect(html).toContain(
       'title="AgACAgQAAyEFAATcv6dYAAIBuWo4jeyMZiYwKT1k92NCNuPTCoTcAALpDWsbBCfJUUAcqaMvf4JYAQADAgADdwADPAQ.jpg"',
     );
+    expect(html).toContain('/app/calendar?event=calendar-1&amp;date=2026-06-17&amp;view=day');
   });
 
   it('shows connected open tasks once on the object detail page', () => {

@@ -1343,4 +1343,123 @@ describe('calendar scope', () => {
       .where(eq(calendarEventEntities.calendarEventId, CALENDAR_EVENT_ID));
     expect(rows).toHaveLength(1);
   });
+
+  it('lists inspectable linked objects and hides private busy-block links', async () => {
+    const archivedId = 'ffffffff-eeee-eeee-eeee-eeeeeeeeeeee';
+    const mergedId = 'ffffffff-dddd-dddd-dddd-dddddddddddd';
+    await db.insert(entities).values([
+      {
+        id: ENTITY_ID,
+        teamId: TEAM_ID,
+        type: 'project',
+        canonicalName: 'Launch',
+        metadata: {
+          display_title: 'Launch program',
+          display_title_canonical_name: 'Launch',
+        },
+      },
+      {
+        id: archivedId,
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'Archived follow-up',
+        archivedAt: new Date('2026-05-01T00:00:00Z'),
+      },
+    ]);
+    await db.insert(entities).values({
+      id: mergedId,
+      teamId: TEAM_ID,
+      type: 'task',
+      canonicalName: 'Merged follow-up',
+      mergedIntoId: ENTITY_ID,
+    });
+    await db.insert(calendarEvents).values([
+      {
+        id: CALENDAR_EVENT_ID,
+        teamId: TEAM_ID,
+        createdByUserId: USER_ID,
+        title: 'Team launch review',
+        startAt: new Date('2026-05-27T09:00:00Z'),
+        endAt: new Date('2026-05-27T10:00:00Z'),
+        timezone: 'UTC',
+        visibility: 'team',
+        metadata: {},
+      },
+      {
+        id: 'cccccccc-cccc-cccc-cccc-ccccccccccce',
+        teamId: TEAM_ID,
+        createdByUserId: USER_ID,
+        title: 'Private launch review',
+        startAt: new Date('2026-05-27T11:00:00Z'),
+        endAt: new Date('2026-05-27T12:00:00Z'),
+        timezone: 'UTC',
+        visibility: 'private',
+        metadata: {},
+      },
+    ]);
+    await db.insert(calendarEventEntities).values([
+      {
+        calendarEventId: CALENDAR_EVENT_ID,
+        entityId: ENTITY_ID,
+        teamId: TEAM_ID,
+        relationshipType: 'related',
+      },
+      {
+        calendarEventId: CALENDAR_EVENT_ID,
+        entityId: archivedId,
+        teamId: TEAM_ID,
+      },
+      {
+        calendarEventId: CALENDAR_EVENT_ID,
+        entityId: mergedId,
+        teamId: TEAM_ID,
+      },
+      {
+        calendarEventId: 'cccccccc-cccc-cccc-cccc-ccccccccccce',
+        entityId: ENTITY_ID,
+        teamId: TEAM_ID,
+      },
+    ]);
+
+    const ownerScope = withTeam(db as never, TEAM_ID, USER_ID);
+    const teammateScope = withTeam(db as never, TEAM_ID, USER_B_ID);
+
+    await expect(
+      ownerScope.calendar.listLinkedObjectsForEvents([
+        CALENDAR_EVENT_ID,
+        'cccccccc-cccc-cccc-cccc-ccccccccccce',
+      ]),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        calendarEventId: CALENDAR_EVENT_ID,
+        id: ENTITY_ID,
+        title: 'Launch program',
+        type: 'project',
+        relationshipType: 'related',
+      }),
+      expect.objectContaining({
+        calendarEventId: 'cccccccc-cccc-cccc-cccc-ccccccccccce',
+        id: ENTITY_ID,
+        title: 'Launch program',
+      }),
+    ]);
+    await expect(
+      teammateScope.calendar.listLinkedObjectsForEvents([
+        CALENDAR_EVENT_ID,
+        'cccccccc-cccc-cccc-cccc-ccccccccccce',
+      ]),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        calendarEventId: CALENDAR_EVENT_ID,
+        id: ENTITY_ID,
+        title: 'Launch program',
+      }),
+    ]);
+    await expect(teammateScope.calendar.getLinkedEntities(CALENDAR_EVENT_ID)).resolves.toEqual([
+      expect.objectContaining({ entityId: ENTITY_ID }),
+    ]);
+    await expect(
+      teammateScope.calendar.getLinkedEntities('cccccccc-cccc-cccc-cccc-ccccccccccce'),
+    ).resolves.toEqual([]);
+  });
 });
