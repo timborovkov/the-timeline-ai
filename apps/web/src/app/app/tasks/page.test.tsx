@@ -1,6 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { ReactNode } from 'react';
+
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveActiveTeam: vi.fn(),
@@ -104,15 +106,18 @@ vi.mock('@/components/work-filter-bar', () => ({
     resultCount,
     totalCount,
     projects = [],
+    viewControls,
   }: {
     resultCount: number;
     totalCount: number;
     projects?: { label: string }[];
+    viewControls?: ReactNode;
   }) => {
     fakes.filterProjects = projects;
     return (
       <div data-testid="work-filter-bar">
         {resultCount}/{totalCount}
+        {viewControls}
       </div>
     );
   },
@@ -516,6 +521,16 @@ describe('TasksPage', () => {
     const html = renderToStaticMarkup(await TasksPage(pageProps()));
 
     expect(html).toContain('view list');
+  });
+
+  it('puts the kanban and list toggle on the filter toolbar', async () => {
+    fakes.listObjects.mockResolvedValue([taskRow()]);
+    const html = renderToStaticMarkup(await TasksPage(pageProps({ view: 'list' })));
+
+    expect(html).toContain('data-testid="work-filter-bar"');
+    expect(html).toContain('aria-label="Task view"');
+    expect(html).toContain('href="/app/tasks?view=kanban"');
+    expect(html).toContain('href="/app/tasks?view=list"');
   });
 
   it('passes workflow columns in active-to-terminal order', async () => {

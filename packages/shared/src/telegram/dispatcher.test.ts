@@ -19,6 +19,7 @@ import type { TelegramApi } from '#src/telegram/api.js';
 
 import { resetEnvForTests } from '#src/env.js';
 import { resetMeetingBotProviderForTests } from '#src/meeting-bots/index.js';
+import { TELEGRAM_DM_COMMANDS, TELEGRAM_GROUP_COMMANDS } from '#src/telegram/commands.js';
 import { createTelegramConversationDeliveryAdapter } from '#src/telegram/conversation-adapter.js';
 import {
   formatCachedTelegramAskAnswer,
@@ -805,19 +806,8 @@ describe('handleUpdate telegram edit visibility', () => {
     );
 
     expect(messages).toHaveLength(1);
-    for (const command of [
-      '/start',
-      '/ask',
-      '/note',
-      '/new',
-      '/join',
-      '/link',
-      '/team',
-      '/whereami',
-      '/unlink',
-      '/help',
-    ]) {
-      expect(messages[0]).toContain(command);
+    for (const spec of TELEGRAM_DM_COMMANDS) {
+      expect(messages[0]).toContain(`/${spec.command}`);
     }
   });
 
@@ -843,17 +833,8 @@ describe('handleUpdate telegram edit visibility', () => {
     );
 
     expect(messages).toHaveLength(1);
-    for (const command of [
-      '/start',
-      '/ask',
-      '/join',
-      '/link',
-      '/team',
-      '/whereami',
-      '/unlink',
-      '/help',
-    ]) {
-      expect(messages[0]).toContain(command);
+    for (const spec of TELEGRAM_GROUP_COMMANDS) {
+      expect(messages[0]).toContain(`/${spec.command}`);
     }
   });
 

@@ -18,6 +18,7 @@ const BOT_SCOPES = [
   'groups:read',
   'im:history',
   'im:read',
+  'im:write',
   'reactions:write',
   'users:read',
   'users:read.email',

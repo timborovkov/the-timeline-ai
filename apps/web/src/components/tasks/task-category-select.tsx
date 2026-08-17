@@ -18,6 +18,7 @@ import {
   undoTaskCategoryChangeAction,
 } from '@/app/actions/objects';
 import { useTaskCategoryPolling } from '@/components/tasks/task-category-polling';
+import { isoTimestamp } from '@/lib/iso-timestamp';
 import { errorMessage } from '@/lib/utils';
 
 const AUTOMATIC_VALUE = '__automatic__';
@@ -33,7 +34,7 @@ export function TaskCategorySelect({
   category: TaskCategory | null;
   mode: TaskCategoryMode | null;
   status: TaskCategoryStatus | null;
-  updatedAt?: Date | null;
+  updatedAt?: Date | string | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -41,7 +42,7 @@ export function TaskCategorySelect({
   const categoryQuery = useTaskCategoryPolling(
     status === 'pending' ? [taskId] : [],
     3_000,
-    updatedAt?.toISOString(),
+    isoTimestamp(updatedAt),
   );
   const categoryState = categoryQuery.data.rows[0];
   const effectiveCategory = categoryState?.taskCategory ?? category;

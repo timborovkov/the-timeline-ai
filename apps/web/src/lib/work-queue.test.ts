@@ -42,7 +42,7 @@ describe('objectQueueItem', () => {
     expect(item?.title).toBe('the-timeline-ai: Add cursor pagination');
   });
 
-  it('humanizes multiword object types and statuses', () => {
+  it('humanizes multiword object types without repeating them in the subtitle', () => {
     const item = objectQueueItem(
       task({ type: 'follow_up', status: 'in_progress' }),
       'user-1',
@@ -50,7 +50,9 @@ describe('objectQueueItem', () => {
       'UTC',
     );
 
-    expect(item?.subtitle).toBe('Follow up · In progress');
+    expect(item?.sourceLabel).toBe('Follow up');
+    expect(item?.status).toBe('in_progress');
+    expect(item?.subtitle).toBe('');
     expect(item?.subtitle).not.toContain('_');
   });
 

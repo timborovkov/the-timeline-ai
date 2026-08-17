@@ -92,6 +92,7 @@ describe('onboarding checklist scope', () => {
 
     expect(completedKeys(state)).toEqual([
       'first_note',
+      'invite_teammate',
       'telegram',
       'slack',
       'email_forwarding',
@@ -102,6 +103,7 @@ describe('onboarding checklist scope', () => {
       telegramUserTeams: 1,
       slackWorkspaceTeams: 1,
       teamMcpServers: 1,
+      activeMembers: 2,
     });
     expect(ensureMemberMock).toHaveBeenCalled();
   });
@@ -111,7 +113,10 @@ describe('onboarding checklist scope', () => {
     await expect(scope().markStepComplete('first_note')).resolves.toBe(false);
     await expect(scope(OTHER_TEAM_ID).markStepComplete('first_document')).resolves.toBe(true);
 
-    expect(completedKeys(await scope().getChecklistState())).toEqual(['first_note']);
+    expect(completedKeys(await scope().getChecklistState())).toEqual([
+      'first_note',
+      'invite_teammate',
+    ]);
     expect(completedKeys(await scope(OTHER_TEAM_ID).getChecklistState())).toEqual([
       'first_document',
     ]);
@@ -125,7 +130,10 @@ describe('onboarding checklist scope', () => {
         ('${OTHER_TEAM_ID}', '${OWNER_ID}', 'ingest_webhook', 'captured elsewhere');
     `);
 
-    expect(completedKeys(await scope().getChecklistState())).toEqual(['first_note']);
+    expect(completedKeys(await scope().getChecklistState())).toEqual([
+      'first_note',
+      'invite_teammate',
+    ]);
 
     await pg.exec(`
       DELETE FROM raw_events WHERE team_id = '${TEAM_ID}';
@@ -133,7 +141,10 @@ describe('onboarding checklist scope', () => {
       VALUES ('${TEAM_ID}', 'ingest_webhook', 'captured from webhook');
     `);
 
-    expect(completedKeys(await scope().getChecklistState())).toEqual(['first_note']);
+    expect(completedKeys(await scope().getChecklistState())).toEqual([
+      'first_note',
+      'invite_teammate',
+    ]);
   });
 
   it('dismisses and reopens per user and team', async () => {
@@ -146,5 +157,83 @@ describe('onboarding checklist scope', () => {
 
     await scope().reopenChecklist();
     await expect(scope().getChecklistState()).resolves.toMatchObject({ dismissed: false });
+  });
+
+  it('infers teammate invite from a pending invite without a second member', async () => {
+    await pg.exec(`
+      INSERT INTO team_invites (team_id, email, token, invited_by_user_id, expires_at)
+      VALUES (
+        '${OTHER_TEAM_ID}',
+        'new@example.test',
+        'invite-token',
+        '${OWNER_ID}',
+        now() + interval '7 days'
+      );
+    `);
+
+    expect(completedKeys(await scope(OTHER_TEAM_ID).getChecklistState())).toEqual([
+      'invite_teammate',
+    ]);
+  });
+
+  it('does not treat an expired invite as teammate setup', async () => {
+    await pg.exec(`
+      INSERT INTO team_invites (team_id, email, token, invited_by_user_id, expires_at)
+      VALUES (
+        '${OTHER_TEAM_ID}',
+        'stale@example.test',
+        'expired-invite-token',
+        '${OWNER_ID}',
+        now() - interval '1 day'
+      );
+    `);
+
+    expect(completedKeys(await scope(OTHER_TEAM_ID).getChecklistState())).toEqual([]);
+  });
+
+  it('infers ask, meeting, proposal, digest, webhook, and outbound MCP steps', async () => {
+    await pg.exec(`
+      INSERT INTO chat_sessions (id, team_id, created_by)
+      VALUES ('66666666-6666-4666-8666-666666666666', '${TEAM_ID}', '${OWNER_ID}');
+      INSERT INTO chat_messages (team_id, session_id, role, content)
+      VALUES (
+        '${TEAM_ID}',
+        '66666666-6666-4666-8666-666666666666',
+        'user',
+        '{"text":"what changed?"}'::jsonb
+      );
+      INSERT INTO meetings (team_id, platform, meeting_url)
+      VALUES ('${TEAM_ID}', 'meet', 'https://meet.google.com/abc-defg-hij');
+      INSERT INTO agent_suggestions (team_id, source, status, title, dedupe_key)
+      VALUES ('${TEAM_ID}', 'background', 'accepted', 'Create follow-up', 'proposal-1');
+      INSERT INTO daily_digests (team_id, user_id, window_start, window_end, summary)
+      VALUES (
+        '${TEAM_ID}',
+        '${OWNER_ID}',
+        '2026-08-17T00:00:00Z',
+        '2026-08-17T23:59:59Z',
+        'Morning summary'
+      );
+      INSERT INTO ingest_webhooks (team_id, name)
+      VALUES ('${TEAM_ID}', 'Ops webhook');
+    `);
+
+    expect(completedKeys(await scope().getChecklistState())).toEqual([
+      'invite_teammate',
+      'first_ask',
+      'first_meeting',
+      'review_proposal',
+      'daily_digest',
+      'first_integration',
+    ]);
+
+    await pg.exec(`
+      DELETE FROM ingest_webhooks WHERE team_id = '${TEAM_ID}';
+      INSERT INTO mcp_outbound_keys (team_id, name, key_hash, key_prefix)
+      VALUES ('${TEAM_ID}', 'Claude Desktop', 'abc123hash', 'tla_abc');
+    `);
+
+    expect(completedKeys(await scope().getChecklistState())).toContain('first_integration');
+    expect((await scope().getChecklistState()).connectionCounts.outboundMcpKeys).toBe(1);
   });
 });
