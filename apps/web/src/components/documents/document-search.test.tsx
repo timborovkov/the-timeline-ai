@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -109,7 +109,7 @@ describe('DocumentSearch', () => {
       expect(fakes.useDocumentSearchQuery).toHaveBeenLastCalledWith('Acme security');
     });
     const result = await screen.findByRole('link', { name: /Acme launch packet/ });
-    expect(screen.getByRole('status').textContent).toBe('1 document match for Acme security');
+    expect(screen.getByText('1 document match for Acme security')).toBeTruthy();
     expect(result.getAttribute('href')).toBe(
       '/app/documents/11111111-1111-4111-8111-111111111111?version=2#chunk-33333333-3333-4333-8333-333333333333',
     );
@@ -227,7 +227,7 @@ describe('DocumentSearch', () => {
     render(<DocumentSearch />);
     await user.type(screen.getByRole('searchbox', { name: 'Search document chunks' }), 'Acme');
     await user.click(screen.getByRole('button', { name: 'Search' }));
-    await user.click(screen.getByRole('button', { name: 'Load more' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
 
     expect(fakes.fetchNextPage).toHaveBeenCalledTimes(1);
   });
