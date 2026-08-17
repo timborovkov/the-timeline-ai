@@ -525,6 +525,8 @@ A company must not go in `parentObjectId`. That field is the primary project.
    bundle.
 5. Deterministic attach: unique project → `parentObjectId`; unique client hub →
    `object_relationship`. Two named clients or projects → no silent attach.
+   A model-copied `parentObjectId` is overwritten by the unique qualified
+   project, or stripped when qualify is silent.
 6. A teammate accepts in Approvals. That write creates the `entities` row —
    the hub. Category classification may run after accept.
 7. Later communication in the same conversation can merge or supersede the
