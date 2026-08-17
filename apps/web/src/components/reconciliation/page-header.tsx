@@ -34,11 +34,7 @@ export function ReconciliationPageHeader({
       <PageHeader
         title={RECONCILIATION_PAGE_TITLE}
         subtitle={subtitle}
-        metadata={[
-          { label: 'access', value: 'Admins only' },
-          ...(teamName ? ([{ label: 'team', value: teamName, signal: true }] as const) : []),
-          ...metadata,
-        ]}
+        metadata={metadata}
         srLabel={
           srLabel ??
           `${RECONCILIATION_PAGE_TITLE}${teamName ? ` for ${teamName}` : ''}. Admins only.`

@@ -132,13 +132,10 @@ export default async function ReconciliationDashboardPage({
         coverageLimit={dashboard.coverageLimit}
       />
 
-      <section className="space-y-4">
-        <SectionHeading>Recently reconciled</SectionHeading>
-        <div className="grid gap-6 xl:grid-cols-2">
-          <RecentClusters rows={dashboard.clusters.recent} timeZone={timezone} />
-          <RecentOutputs rows={dashboard.outputs.recent} timeZone={timezone} />
-        </div>
-      </section>
+      <div className="grid gap-6 xl:grid-cols-2">
+        <RecentClusters rows={dashboard.clusters.recent} timeZone={timezone} />
+        <RecentOutputs rows={dashboard.outputs.recent} timeZone={timezone} />
+      </div>
 
       <details className="group rounded-sm border border-border bg-surface">
         <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-surface-2 [&::-webkit-details-marker]:hidden">
@@ -789,7 +786,7 @@ function RecentClusters({
 }) {
   return (
     <section className="space-y-3">
-      <SectionTitle label="Recent clusters" level={3} />
+      <SectionHeading>Recent clusters</SectionHeading>
       {rows.length === 0 ? (
         <p className="px-1 py-4 text-sm text-fg-muted">No reconciliation clusters yet.</p>
       ) : (
@@ -840,7 +837,7 @@ function RecentOutputs({
 }) {
   return (
     <section className="space-y-3">
-      <SectionTitle label="Recent outputs" level={3} />
+      <SectionHeading>Recent outputs</SectionHeading>
       {rows.length === 0 ? (
         <p className="px-1 py-4 text-sm text-fg-muted">No reconciliation outputs yet.</p>
       ) : (

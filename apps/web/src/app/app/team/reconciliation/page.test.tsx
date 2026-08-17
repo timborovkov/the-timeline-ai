@@ -110,8 +110,11 @@ describe('ReconciliationDashboardPage', () => {
     expect(html).toContain('Planner replay source');
     expect(html).toContain('Planner replay from');
     expect(html).toContain('Planner replay until');
-    expect(html).toMatch(/<h3[^>]*>Recent clusters<\/h3>/);
-    expect(html).toMatch(/<h3[^>]*>Recent outputs<\/h3>/);
+    expect(html).not.toContain('Recently reconciled');
+    expect(html).not.toContain('>access</dt>');
+    expect(html).not.toContain('>team</dt>');
+    expect(html).toMatch(/<h2[^>]*>Recent clusters<\/h2>/);
+    expect(html).toMatch(/<h2[^>]*>Recent outputs<\/h2>/);
     expect(html).toContain('Lumen onboarding pilot');
     expect(html).toContain('href="/app/team/reconciliation/clusters/cluster-1"');
     expect(html).toContain('href="/app/team/reconciliation/clusters/cluster-2"');
