@@ -278,6 +278,67 @@ for (const needle of CORPUS_EVENT_NEEDLES) {
 }
 assert.ok(DEALFLOW_ITEMS.every((item) => item.entityName !== 'Polar Studio'));
 assert.equal(new Set(CORPUS_EVENTS.map((row) => row.id)).size, CORPUS_EVENTS.length);
+
+function metadataStrings(source: string, key: string): string[] {
+  return CORPUS_EVENTS.filter((row) => row.source === source)
+    .map((row) => row.sourceMetadata[key])
+    .filter((value): value is string => typeof value === 'string' && value.length > 0);
+}
+
+function assertUnique(values: string[], label: string): void {
+  assert.equal(new Set(values).size, values.length, label);
+}
+
+assertUnique(
+  CORPUS_EVENTS.map((row) => String(row.sourceMetadata.source_payload_ref ?? '')),
+  'source_payload_ref',
+);
+assertUnique(
+  CORPUS_EVENTS.map((row) => String(row.sourceMetadata.payload_digest ?? '')),
+  'payload_digest',
+);
+assertUnique(metadataStrings('slack', 'slack_event_id'), 'slack_event_id');
+assert.equal(
+  metadataStrings('slack', 'slack_event_id').length,
+  CORPUS_EVENTS.filter((row) => row.source === 'slack').length,
+);
+assertUnique(metadataStrings('email', 'message_id'), 'email message_id');
+assert.equal(
+  metadataStrings('email', 'message_id').length,
+  CORPUS_EVENTS.filter((row) => row.source === 'email').length,
+);
+assertUnique(metadataStrings('telegram', 'tg_update_id'), 'tg_update_id');
+assert.equal(
+  metadataStrings('telegram', 'tg_update_id').length,
+  CORPUS_EVENTS.filter((row) => row.source === 'telegram').length,
+);
+assertUnique(
+  metadataStrings('ingest_webhook', 'ingest_webhook_dedup_key'),
+  'ingest_webhook_dedup_key',
+);
+assert.equal(
+  metadataStrings('ingest_webhook', 'ingest_webhook_dedup_key').length,
+  CORPUS_EVENTS.filter((row) => row.source === 'ingest_webhook').length,
+);
+assertUnique(
+  CORPUS_EVENTS.filter((row) => row.source === 'integration')
+    .map((row) => row.sourceMetadata.dedup_key)
+    .filter((value): value is string => typeof value === 'string' && value.length > 0),
+  'integration dedup_key',
+);
+assert.equal(
+  CORPUS_EVENTS.filter((row) => row.source === 'integration').every(
+    (row) => typeof row.sourceMetadata.dedup_key === 'string',
+  ),
+  true,
+);
+assertUnique(
+  CORPUS_EVENTS.flatMap((row) => {
+    const match = /GitHub workflow "([^"]+)" #(\d+)/.exec(row.contentText);
+    return match ? [`${match[1]}#${match[2]}`, `#${match[2]}`] : [];
+  }),
+  'GitHub workflow run numbers',
+);
 assert.equal(
   new Set(CORPUS_DOCUMENTS.flatMap((doc) => [doc.id, doc.versionId, ...doc.chunkIds])).size,
   CORPUS_DOCUMENTS.reduce((count, doc) => count + 2 + doc.chunkIds.length, 0),

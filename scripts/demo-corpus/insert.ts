@@ -680,7 +680,7 @@ async function insertEventsAndFacts(tx: SeedTx): Promise<void> {
         sourceMetadata: row.sourceMetadata,
       })),
     )
-    .onConflictDoNothing();
+    .onConflictDoNothing({ target: rawEvents.id });
 
   await tx
     .insert(facts)

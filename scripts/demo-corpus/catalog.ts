@@ -1965,6 +1965,16 @@ function slackChannelId(name: unknown): string {
   return 'C0ENG';
 }
 
+function eventSerial(id: string): number {
+  const suffix = id.split('-').at(-1);
+  if (!suffix) throw new Error(`corpus event id missing serial: ${id}`);
+  const n = Number.parseInt(suffix, 16);
+  if (!Number.isInteger(n) || n < 1) {
+    throw new Error(`corpus event id serial invalid: ${id}`);
+  }
+  return n;
+}
+
 function enrichCaptureMetadata(row: CorpusEvent): CorpusEvent {
   const extra: Record<string, unknown> = { ...row.sourceMetadata };
   if (row.source === 'slack') {
@@ -1978,9 +1988,14 @@ function enrichCaptureMetadata(row: CorpusEvent): CorpusEvent {
   if (row.source === 'telegram') {
     extra.tg_chat_id ??= '-100710000003';
     extra.tg_chat_title ??= extra.telegram_chat_title ?? 'Acme leadership';
+    extra.tg_update_id ??= String(710_000_000 + eventSerial(row.id));
   }
   if (row.source === 'ingest_webhook') {
     extra.ingest_webhook_id ??= CORPUS_UUID.webhook(1);
+    extra.ingest_webhook_dedup_key ??= String(extra.source_payload_ref ?? row.id);
+  }
+  if (row.source === 'integration') {
+    extra.dedup_key ??= `demo-seed:${String(extra.provider ?? 'integration')}:${row.id}`;
   }
   if (row.source === 'integration' && extra.provider === 'github') {
     const github = extra.github;

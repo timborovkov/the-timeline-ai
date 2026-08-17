@@ -286,6 +286,11 @@ function slackTs(day: string, hhmm: string, index: number): string {
   return `${stamp(day)}.${hhmm}${String(index).padStart(2, '0')}`;
 }
 
+function workflowRunNumber(name: string, dayIndex: number, index: number): number {
+  const offset = name === 'Importer' ? 0 : name === 'Lint' ? 20 : 40;
+  return 2000 + dayIndex * 60 + offset + index;
+}
+
 function githubWorkflow(name: string, branch = 'main'): Record<string, unknown> {
   return {
     provider: 'github',
@@ -384,7 +389,7 @@ function pushWorkflows(
       author: input.author,
       source: 'integration',
       occurredAt: at(input.day, hour, clock),
-      contentText: `GitHub workflow "${input.name}" #${String(1200 + input.dayIndex * 20 + index)} on ${REPO} success`,
+      contentText: `GitHub workflow "${input.name}" #${String(workflowRunNumber(input.name, input.dayIndex, index))} on ${REPO} success`,
       extra: githubWorkflow(input.name),
       payloadRef: `inline://timeline/demo-seed/github/${input.name.toLowerCase()}-${input.day}-${String(index)}`,
     });
@@ -422,7 +427,7 @@ function pushSlackThread(
         messageTs,
         `Ev${input.channelId}${stamp(input.day)}${input.threadKey}${String(index)}`,
       ),
-      payloadRef: `inline://timeline/demo-seed/slack/${input.channelName.slice(1)}-${input.day}-${String(index)}`,
+      payloadRef: `inline://timeline/demo-seed/slack/${input.channelName.slice(1)}-${input.day}-${input.threadKey}-${String(index)}`,
     });
   }
 }
