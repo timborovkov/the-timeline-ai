@@ -56,9 +56,9 @@ import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { isInternalIdentifier } from '@/lib/display-labels';
 import { isSchedulableObjectType } from '@/lib/due-dates';
+import { notifyAction } from '@/lib/notify';
 import { formatTaskCategoryChangeValue } from '@/lib/object-change-format';
 import { displayObjectTitle } from '@/lib/object-title';
-import { notifyAction } from '@/lib/notify';
 import { readJson } from '@/lib/paginated-api';
 import { queryKeys } from '@/lib/query-keys';
 import { statusLabel } from '@/lib/status-labels';
@@ -493,10 +493,7 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
       queuedFieldValuesRef.current[field] === undefined &&
       sameEditableValue(field, localDetailRef.current[field], value)
     ) {
-      applyFieldLocally(
-        field,
-        field === 'dueAt' ? toDateOrNull(rollbackValue) : (rollbackValue as EditableValue),
-      );
+      applyFieldLocally(field, field === 'dueAt' ? toDateOrNull(rollbackValue) : rollbackValue);
     }
   }
 
@@ -514,7 +511,7 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
         lastSuccessfulValue ??
         (field === 'dueAt'
           ? toDateOrNull(serverDetailRef.current[field])
-          : (serverDetailRef.current[field] as EditableValue));
+          : serverDetailRef.current[field]);
       beginFieldSave(field, queuedValue, previousForQueued, {
         preserveBatchFailure: batchHadFailureRef.current,
       });

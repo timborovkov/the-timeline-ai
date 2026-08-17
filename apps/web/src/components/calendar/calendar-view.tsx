@@ -688,7 +688,7 @@ function useCalendarViewModel({
                       ? { visibilityUserIds: originalEvent.visibilityUserIds ?? [] }
                       : {}),
                   });
-                  if (!undoResult.error && undoResult.ok !== false) router.refresh();
+                  if (!undoResult.error && undoResult.ok) router.refresh();
                   return undoResult.ok ? undoResult : { error: undoResult.error };
                 },
               }

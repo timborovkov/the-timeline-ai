@@ -11,7 +11,7 @@ import type { PinnedItem } from '@timeline/shared/pins';
 const fakes = vi.hoisted(() => ({
   pinTargetAction: vi.fn(),
   unpinTargetAction: vi.fn(),
-  notifyAction: vi.fn(),
+  notifyAction: vi.fn(async (options: { run: () => Promise<{ error?: string }> }) => options.run()),
 }));
 
 vi.mock('@/app/actions/pins', () => ({
@@ -19,8 +19,7 @@ vi.mock('@/app/actions/pins', () => ({
   unpinTargetAction: fakes.unpinTargetAction,
 }));
 vi.mock('@/lib/notify', () => ({
-  notifyAction: (options: { run: () => Promise<{ error?: string }> }) =>
-    fakes.notifyAction(options),
+  notifyAction: fakes.notifyAction,
 }));
 
 const { PinButton } = await import('@/components/pins/pin-button');

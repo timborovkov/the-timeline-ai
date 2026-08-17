@@ -6,12 +6,12 @@ export const ACTION_TOAST_LOADING_DELAY_MS = 150;
 export const ACTION_TOAST_SUCCESS_MS = 2_000;
 export const ACTION_TOAST_ERROR_MS = 6_000;
 
-export type ActionResult = {
+export interface ActionResult {
   error?: string;
   ok?: boolean;
   id?: string;
   failedItemIds?: string[];
-};
+}
 
 export interface NotifyUndo<T extends ActionResult = ActionResult> {
   run: (result: T) => Promise<ActionResult>;
@@ -42,24 +42,20 @@ function isCurrent(id: string, generation: number): boolean {
 }
 
 function resultError(result: ActionResult | undefined): string | undefined {
-  return result?.error ? result.error : undefined;
+  return result?.error;
 }
 
 export async function notifyAction<T extends ActionResult>(
   options: NotifyActionOptions<T>,
 ): Promise<T | { error: string }> {
   const generation = nextGeneration(options.id);
-  let loadingTimer: ReturnType<typeof setTimeout> | undefined;
-  let showedLoading = false;
-
-  loadingTimer = setTimeout(() => {
+  const loadingTimer = setTimeout(() => {
     if (!isCurrent(options.id, generation)) return;
-    showedLoading = true;
     toast.loading(options.loading, { id: options.id, duration: Infinity });
   }, ACTION_TOAST_LOADING_DELAY_MS);
 
   const finish = (failed: boolean, message: string, undo?: NotifyUndo<T>, result?: T): void => {
-    if (loadingTimer) clearTimeout(loadingTimer);
+    clearTimeout(loadingTimer);
     if (!isCurrent(options.id, generation)) return;
     if (failed) {
       toast.error(message, { id: options.id, duration: ACTION_TOAST_ERROR_MS });
@@ -99,7 +95,7 @@ export async function notifyAction<T extends ActionResult>(
     finish(true, options.error);
     return { error: options.error };
   } finally {
-    if (loadingTimer && !showedLoading) clearTimeout(loadingTimer);
+    clearTimeout(loadingTimer);
   }
 }
 

@@ -10,9 +10,9 @@ import {
   revokeInviteAction,
 } from '@/app/actions/teams';
 import { useAppDialog } from '@/components/ui/app-dialog';
-import { notifyAction } from '@/lib/notify';
 import { Button } from '@/components/ui/button';
 import { ItemActionGroup } from '@/components/ui/item-actions';
+import { notifyAction } from '@/lib/notify';
 
 type TeamAction = (formData: FormData) => void | Promise<void>;
 

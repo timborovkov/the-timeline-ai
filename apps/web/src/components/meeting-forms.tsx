@@ -522,7 +522,7 @@ export function ScheduleMeetingBotForm({
       return;
     }
     if ('meetingId' in result && result.meetingId) {
-      router.push(`/app/meetings/${String(result.meetingId)}`);
+      router.push(`/app/meetings/${result.meetingId}`);
     } else {
       router.refresh();
     }
@@ -1025,7 +1025,7 @@ export function JoinSavedMeetingButton({ query }: { query: string }) {
           setPending(false);
           if (result.error) return;
           if ('meetingId' in result && result.meetingId) {
-            router.push(`/app/meetings/${String(result.meetingId)}`);
+            router.push(`/app/meetings/${result.meetingId}`);
             return;
           }
           router.refresh();

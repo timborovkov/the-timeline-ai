@@ -73,16 +73,15 @@ describe('notifyAction', () => {
     resolveRun({ ok: true });
     await pending;
 
-    expect(toast.success).toHaveBeenCalledWith(
-      'Status updated',
-      expect.objectContaining({
-        id: 'object:1',
-        duration: 2_000,
-        action: expect.objectContaining({ label: 'Undo' }),
-      }),
-    );
-
-    toast.success.mock.calls[0]?.[1]?.action?.onClick();
+    const successOptions = toast.success.mock.calls[0]?.[1] as
+      | { id?: string; duration?: number; action?: { label?: string; onClick?: () => void } }
+      | undefined;
+    expect(successOptions).toMatchObject({
+      id: 'object:1',
+      duration: 2_000,
+      action: { label: 'Undo' },
+    });
+    successOptions?.action?.onClick?.();
     await vi.advanceTimersByTimeAsync(0);
     expect(undoRun).toHaveBeenCalledWith({ ok: true });
   });
@@ -93,7 +92,7 @@ describe('notifyAction', () => {
       loading: 'Updating status…',
       success: 'Status updated',
       error: 'Couldn’t update status',
-      run: async () => ({ error: 'stale' }),
+      run: () => Promise.resolve({ error: 'stale' }),
     });
 
     expect(result).toEqual({ error: 'stale' });
@@ -120,7 +119,7 @@ describe('notifyAction', () => {
       loading: 'Updating due date…',
       success: 'Due date updated',
       error: 'Couldn’t update due date',
-      run: async () => ({ ok: true }),
+      run: () => Promise.resolve({ ok: true }),
     });
 
     await second;
