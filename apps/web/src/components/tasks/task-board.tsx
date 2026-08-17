@@ -61,7 +61,7 @@ import { TaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { useTaskCategoryPolling } from '@/components/tasks/task-category-polling';
 import { TaskCategorySelect } from '@/components/tasks/task-category-select';
 import { TaskProjectSelect } from '@/components/tasks/task-project-select';
-import { taskViewHref, type TaskView } from '@/components/tasks/task-view-toggle';
+import { taskViewHref, type TaskView } from '@/components/tasks/task-view';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';

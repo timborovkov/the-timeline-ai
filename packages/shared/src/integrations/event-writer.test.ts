@@ -1522,6 +1522,57 @@ describe('writeIntegrationEvents visibility', () => {
     ]);
   });
 
+  it('does not promote pulse objectMap into artifact identity', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'github',
+        displayName: 'GitHub',
+        externalAccountId: 'acct-pulse-no-object',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const insertedIds = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'github:workflow_run:3201:in_progress',
+          provider: 'github',
+          externalObjectId: 'timborovkov/audit-ai#workflow_run:3201',
+          eventType: 'workflow_run.in_progress',
+          occurredAt: new Date('2026-06-17T09:00:00Z'),
+          contentText: 'GitHub workflow "CI" #2162 on timborovkov/audit-ai in_progress',
+          extra: {
+            github: {
+              type: 'workflow_run',
+              repo: 'timborovkov/audit-ai',
+              head_branch: 'main',
+            },
+          },
+          objectMap: {
+            type: 'other',
+            canonicalName: 'timborovkov/audit-ai#workflow_run:3201',
+            externalId: 'timborovkov/audit-ai#workflow_run:3201',
+            status: 'in_progress',
+          },
+        },
+      ],
+    });
+    expect(insertedIds).toHaveLength(1);
+    const [row] = await db
+      .select()
+      .from(rawEvents)
+      .where(eq(rawEvents.id, insertedIds[0] ?? ''));
+    expect(row?.sourceMetadata).toMatchObject({ event_class: 'pulse' });
+    await expect(db.select().from(artifactClusters)).resolves.toEqual([]);
+    await expect(db.select().from(entities)).resolves.toEqual([]);
+  });
+
   it('keeps integration output source refs stable when a raw event has multiple evidence rows', async () => {
     const [integration] = await db
       .insert(integrations)

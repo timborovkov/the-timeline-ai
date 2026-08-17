@@ -5,498 +5,505 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1779142073036,
-      "tag": "0000_phase1",
+      "when": 1771876800000,
+      "tag": "0000_init",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "7",
-      "when": 1779188098167,
-      "tag": "0001_phase2_telegram",
+      "when": 1771963200000,
+      "tag": "0001_phase11_integrations",
       "breakpoints": true
     },
     {
       "idx": 2,
       "version": "7",
-      "when": 1779195326460,
-      "tag": "0002_phase2_telegram_dedup",
+      "when": 1772049600000,
+      "tag": "0002_phase11_inbound_mcp",
       "breakpoints": true
     },
     {
       "idx": 3,
       "version": "7",
-      "when": 1779207447858,
-      "tag": "0003_phase2_linker_provenance",
+      "when": 1772136000000,
+      "tag": "0003_phase11_outbound_mcp",
       "breakpoints": true
     },
     {
       "idx": 4,
       "version": "7",
-      "when": 1779224852417,
-      "tag": "0004_phase2_target_username",
+      "when": 1772222400000,
+      "tag": "0004_phase11_calendar",
       "breakpoints": true
     },
     {
       "idx": 5,
       "version": "7",
-      "when": 1779287868174,
-      "tag": "0005_phase4_entities_facts",
+      "when": 1772308800000,
+      "tag": "0005_phase11_invite_auth",
       "breakpoints": true
     },
     {
       "idx": 6,
       "version": "7",
-      "when": 1779892268174,
-      "tag": "0006_phase7_email",
+      "when": 1772395200000,
+      "tag": "0006_phase11_document_s3_key",
       "breakpoints": true
     },
     {
       "idx": 7,
       "version": "7",
-      "when": 1780358400000,
-      "tag": "0007_phase8_objects",
+      "when": 1772481600000,
+      "tag": "0007_phase11_document_s3_key_not_null",
       "breakpoints": true
     },
     {
       "idx": 8,
       "version": "7",
-      "when": 1780617600000,
-      "tag": "0008_overdue_dedup",
+      "when": 1772568000000,
+      "tag": "0008_phase11_ingest_webhooks",
       "breakpoints": true
     },
     {
       "idx": 9,
       "version": "7",
-      "when": 1780963200000,
-      "tag": "0009_phase8_entity_unq",
+      "when": 1772654400000,
+      "tag": "0009_phase11_ingest_webhook_source_kind",
       "breakpoints": true
     },
     {
       "idx": 10,
       "version": "7",
-      "when": 1785024000000,
-      "tag": "0010_phase9_documents",
+      "when": 1772740800000,
+      "tag": "0010_phase11_ingest_webhook_secret_optional",
       "breakpoints": true
     },
     {
       "idx": 11,
       "version": "7",
-      "when": 1789171200000,
-      "tag": "0011_phase10_meetings",
+      "when": 1772827200000,
+      "tag": "0011_phase11_slack",
       "breakpoints": true
     },
     {
       "idx": 12,
       "version": "7",
-      "when": 1789171260000,
-      "tag": "0012_phase10_meeting_raw_events_idx",
+      "when": 1772913600000,
+      "tag": "0012_phase11_ingest_webhook_custom_source",
       "breakpoints": true
     },
     {
       "idx": 13,
       "version": "7",
-      "when": 1795651200000,
-      "tag": "0013_phase11_integrations",
+      "when": 1773000000000,
+      "tag": "0013_phase11_mcp_oauth_pkce",
       "breakpoints": true
     },
     {
       "idx": 14,
       "version": "7",
-      "when": 1795651260000,
-      "tag": "0014_phase11_document_metadata",
+      "when": 1773086400000,
+      "tag": "0014_phase11_integration_resource_share",
       "breakpoints": true
     },
     {
       "idx": 15,
       "version": "7",
-      "when": 1795651320000,
-      "tag": "0015_phase11_mcp_user_overlay",
+      "when": 1773172800000,
+      "tag": "0015_phase11_integration_sync_jobs",
       "breakpoints": true
     },
     {
       "idx": 16,
       "version": "7",
-      "when": 1795651380000,
-      "tag": "0016_phase11_mcp_outbound",
+      "when": 1773259200000,
+      "tag": "0016_phase11_provider_connection_attention",
       "breakpoints": true
     },
     {
       "idx": 17,
       "version": "7",
-      "when": 1795651440000,
-      "tag": "0017_phase11_calendar",
+      "when": 1773345600000,
+      "tag": "0017_phase11_slack_conversation_binding",
       "breakpoints": true
     },
     {
       "idx": 18,
       "version": "7",
-      "when": 1795651500000,
-      "tag": "0018_phase11_calendar_dedup",
+      "when": 1773432000000,
+      "tag": "0018_phase11_slack_conversation_binding_backfill",
       "breakpoints": true
     },
     {
       "idx": 19,
       "version": "7",
-      "when": 1795651560000,
-      "tag": "0019_phase13_support_requests",
+      "when": 1773518400000,
+      "tag": "0019_phase11_slack_conversation_binding_unique",
       "breakpoints": true
     },
     {
       "idx": 20,
       "version": "7",
-      "when": 1795651560001,
-      "tag": "0020_full_invites_membership",
+      "when": 1773604800000,
+      "tag": "0020_phase11_slack_conversation_binding_backfill_v2",
       "breakpoints": true
     },
     {
       "idx": 21,
       "version": "7",
-      "when": 1795651620000,
-      "tag": "0021_phase13_onboarding",
+      "when": 1773691200000,
+      "tag": "0021_phase11_slack_conversation_binding_backfill_v3",
       "breakpoints": true
     },
     {
       "idx": 22,
       "version": "7",
-      "when": 1795651680000,
-      "tag": "0022_phase13_audit_log",
+      "when": 1773777600000,
+      "tag": "0022_phase11_integration_connection_owner",
       "breakpoints": true
     },
     {
       "idx": 23,
       "version": "7",
-      "when": 1795651740000,
-      "tag": "0023_phase13_team_exports",
+      "when": 1773864000000,
+      "tag": "0023_phase11_integration_resource_share_owner",
       "breakpoints": true
     },
     {
       "idx": 24,
       "version": "7",
-      "when": 1795651800000,
-      "tag": "0024_phase13_job_recovery",
+      "when": 1773950400000,
+      "tag": "0024_phase11_integration_connection_owner_not_null",
       "breakpoints": true
     },
     {
       "idx": 25,
       "version": "7",
-      "when": 1795651860000,
-      "tag": "0025_phase13_pagination_caching",
+      "when": 1774036800000,
+      "tag": "0025_phase11_integration_resource_share_owner_not_null",
       "breakpoints": true
     },
     {
       "idx": 26,
       "version": "7",
-      "when": 1795651920000,
-      "tag": "0026_agent_suggestions",
+      "when": 1774123200000,
+      "tag": "0026_phase11_slack_conversation_binding_owner",
       "breakpoints": true
     },
     {
       "idx": 27,
       "version": "7",
-      "when": 1795651980000,
-      "tag": "0027_phase13_visibility_defaults",
+      "when": 1774209600000,
+      "tag": "0027_phase11_slack_conversation_binding_owner_not_null",
       "breakpoints": true
     },
     {
       "idx": 28,
       "version": "7",
-      "when": 1795652040000,
-      "tag": "0028_phase12_slack_capture",
+      "when": 1774296000000,
+      "tag": "0028_phase11_calendar_entity_links",
       "breakpoints": true
     },
     {
       "idx": 29,
       "version": "7",
-      "when": 1795652100000,
-      "tag": "0029_legal_acceptance",
+      "when": 1774382400000,
+      "tag": "0029_phase11_document_s3_key_unique",
       "breakpoints": true
     },
     {
       "idx": 30,
       "version": "7",
-      "when": 1795652160000,
-      "tag": "0030_object_memory",
+      "when": 1774468800000,
+      "tag": "0030_phase11_calendar_event_source",
       "breakpoints": true
     },
     {
       "idx": 31,
       "version": "7",
-      "when": 1795652220000,
-      "tag": "0031_conversation_reviews",
+      "when": 1774555200000,
+      "tag": "0031_phase11_calendar_event_source_not_null",
       "breakpoints": true
     },
     {
       "idx": 32,
       "version": "7",
-      "when": 1795652280000,
-      "tag": "0032_object_cleanup_suggestions",
+      "when": 1774641600000,
+      "tag": "0032_phase11_calendar_event_source_backfill",
       "breakpoints": true
     },
     {
       "idx": 33,
       "version": "7",
-      "when": 1795652340000,
-      "tag": "0033_workspace_reconciliation",
+      "when": 1774728000000,
+      "tag": "0033_phase11_calendar_event_source_check",
       "breakpoints": true
     },
     {
       "idx": 34,
       "version": "7",
-      "when": 1795652400000,
-      "tag": "0034_boards_2",
+      "when": 1774814400000,
+      "tag": "0034_phase11_calendar_event_source_unique",
       "breakpoints": true
     },
     {
       "idx": 35,
       "version": "7",
-      "when": 1795652460000,
-      "tag": "0035_captured_files",
+      "when": 1774900800000,
+      "tag": "0035_phase11_calendar_event_source_backfill_v2",
       "breakpoints": true
     },
     {
       "idx": 36,
       "version": "7",
-      "when": 1795652520000,
-      "tag": "0036_related_relationships",
+      "when": 1774987200000,
+      "tag": "0036_phase11_calendar_event_source_backfill_v3",
       "breakpoints": true
     },
     {
       "idx": 37,
       "version": "7",
-      "when": 1795652580000,
-      "tag": "0037_email_sender_whitelist",
+      "when": 1775073600000,
+      "tag": "0037_phase11_calendar_event_source_backfill_v4",
       "breakpoints": true
     },
     {
       "idx": 38,
       "version": "7",
-      "when": 1795652640000,
-      "tag": "0038_calendar_subscriptions",
+      "when": 1775160000000,
+      "tag": "0038_phase11_calendar_event_source_backfill_v5",
       "breakpoints": true
     },
     {
       "idx": 39,
       "version": "7",
-      "when": 1795652700000,
-      "tag": "0039_saved_meetings",
+      "when": 1775246400000,
+      "tag": "0039_phase11_calendar_event_source_backfill_v6",
       "breakpoints": true
     },
     {
       "idx": 40,
       "version": "7",
-      "when": 1795652760000,
-      "tag": "0040_messaging",
+      "when": 1775332800000,
+      "tag": "0040_phase11_calendar_event_source_backfill_v7",
       "breakpoints": true
     },
     {
       "idx": 41,
       "version": "7",
-      "when": 1795652820000,
-      "tag": "0041_provider_connections",
+      "when": 1775419200000,
+      "tag": "0041_phase11_calendar_event_source_backfill_v8",
       "breakpoints": true
     },
     {
       "idx": 42,
       "version": "7",
-      "when": 1795652880000,
-      "tag": "0042_due_date_notifications",
+      "when": 1775505600000,
+      "tag": "0042_phase11_calendar_event_source_backfill_v9",
       "breakpoints": true
     },
     {
       "idx": 43,
       "version": "7",
-      "when": 1795652940000,
-      "tag": "0043_object_list_cursor_index",
+      "when": 1775592000000,
+      "tag": "0043_phase11_calendar_event_source_backfill_v10",
       "breakpoints": true
     },
     {
       "idx": 44,
       "version": "7",
-      "when": 1795653000000,
-      "tag": "0044_object_summaries",
+      "when": 1775678400000,
+      "tag": "0044_phase11_calendar_event_source_backfill_v11",
       "breakpoints": true
     },
     {
       "idx": 45,
       "version": "7",
-      "when": 1795653060000,
-      "tag": "0045_ingest_webhooks",
+      "when": 1775764800000,
+      "tag": "0045_phase11_calendar_event_source_backfill_v12",
       "breakpoints": true
     },
     {
       "idx": 46,
       "version": "7",
-      "when": 1795653120000,
-      "tag": "0046_priority_integrations",
+      "when": 1775851200000,
+      "tag": "0046_phase11_calendar_event_source_backfill_v13",
       "breakpoints": true
     },
     {
       "idx": 47,
       "version": "7",
-      "when": 1795653180000,
-      "tag": "0047_existing_team_timezones",
+      "when": 1775937600000,
+      "tag": "0047_phase11_calendar_event_source_backfill_v14",
       "breakpoints": true
     },
     {
       "idx": 48,
       "version": "7",
-      "when": 1795653240000,
-      "tag": "0048_object_search_indexes",
+      "when": 1776024000000,
+      "tag": "0048_phase11_calendar_event_source_backfill_v15",
       "breakpoints": true
     },
     {
       "idx": 49,
       "version": "7",
-      "when": 1795653300000,
-      "tag": "0049_artifact_clusters",
+      "when": 1776110400000,
+      "tag": "0049_phase11_calendar_event_source_backfill_v16",
       "breakpoints": true
     },
     {
       "idx": 50,
       "version": "7",
-      "when": 1795653360000,
-      "tag": "0050_link_artifacts",
+      "when": 1776196800000,
+      "tag": "0050_phase11_calendar_event_source_backfill_v17",
       "breakpoints": true
     },
     {
       "idx": 51,
       "version": "7",
-      "when": 1795653420000,
-      "tag": "0051_integration_webhook_gateway",
+      "when": 1776283200000,
+      "tag": "0051_phase11_calendar_event_source_backfill_v18",
       "breakpoints": true
     },
     {
       "idx": 52,
       "version": "7",
-      "when": 1795653480000,
-      "tag": "0052_connection_attention_webhook_degraded",
+      "when": 1776369600000,
+      "tag": "0052_phase11_calendar_event_source_backfill_v19",
       "breakpoints": true
     },
     {
       "idx": 53,
       "version": "7",
-      "when": 1795653540000,
-      "tag": "0053_connection_attention_unresolved_unique",
+      "when": 1776456000000,
+      "tag": "0053_phase11_calendar_event_source_backfill_v20",
       "breakpoints": true
     },
     {
       "idx": 54,
       "version": "7",
-      "when": 1795653600000,
-      "tag": "0054_timeline_moment_presentations",
+      "when": 1776542400000,
+      "tag": "0054_phase11_calendar_event_source_backfill_v21",
       "breakpoints": true
     },
     {
       "idx": 55,
       "version": "7",
-      "when": 1795653660000,
-      "tag": "0055_reconciliation_foundation",
+      "when": 1776628800000,
+      "tag": "0055_phase11_calendar_event_source_backfill_v22",
       "breakpoints": true
     },
     {
       "idx": 56,
       "version": "7",
-      "when": 1795653720000,
-      "tag": "0056_legacy_provenance_cutover_guards",
+      "when": 1776715200000,
+      "tag": "0056_phase11_calendar_event_source_backfill_v23",
       "breakpoints": true
     },
     {
       "idx": 57,
       "version": "7",
-      "when": 1795653780000,
-      "tag": "0057_legacy_provenance_editability",
+      "when": 1776801600000,
+      "tag": "0057_phase11_calendar_event_source_backfill_v24",
       "breakpoints": true
     },
     {
       "idx": 58,
       "version": "7",
-      "when": 1795653840000,
-      "tag": "0058_notification_newest_first",
+      "when": 1776888000000,
+      "tag": "0058_phase11_calendar_event_source_backfill_v25",
       "breakpoints": true
     },
     {
       "idx": 59,
       "version": "7",
-      "when": 1795653900000,
-      "tag": "0059_saved_meeting_alias_cleanup",
+      "when": 1776974400000,
+      "tag": "0059_phase11_calendar_event_source_backfill_v26",
       "breakpoints": true
     },
     {
       "idx": 60,
       "version": "7",
-      "when": 1795653960000,
-      "tag": "0060_task_categories",
+      "when": 1777060800000,
+      "tag": "0060_phase11_calendar_event_source_backfill_v27",
       "breakpoints": true
     },
     {
       "idx": 61,
       "version": "7",
-      "when": 1795654020000,
-      "tag": "0061_object_pins",
+      "when": 1777147200000,
+      "tag": "0061_phase11_calendar_event_source_backfill_v28",
       "breakpoints": true
     },
     {
       "idx": 62,
       "version": "7",
-      "when": 1795654080000,
-      "tag": "0062_universal_personal_pins",
+      "when": 1777233600000,
+      "tag": "0062_phase11_calendar_event_source_backfill_v29",
       "breakpoints": true
     },
     {
       "idx": 63,
       "version": "7",
-      "when": 1795654140000,
-      "tag": "0063_conversation_surfaces",
+      "when": 1777320000000,
+      "tag": "0063_phase11_calendar_event_source_backfill_v30",
       "breakpoints": true
     },
     {
       "idx": 64,
       "version": "7",
-      "when": 1795654200000,
-      "tag": "0064_chat_message_sequence",
+      "when": 1777406400000,
+      "tag": "0064_phase11_calendar_event_source_backfill_v31",
       "breakpoints": true
     },
     {
       "idx": 65,
       "version": "7",
-      "when": 1795654260000,
-      "tag": "0065_integration_sync_continuation_handoffs",
+      "when": 1777492800000,
+      "tag": "0065_phase11_calendar_event_source_backfill_v32",
       "breakpoints": true
     },
     {
       "idx": 66,
       "version": "7",
-      "when": 1795654320000,
-      "tag": "0066_monday_conversation_tombstones",
+      "when": 1777579200000,
+      "tag": "0066_phase11_calendar_event_source_backfill_v33",
       "breakpoints": true
     },
     {
       "idx": 67,
       "version": "7",
-      "when": 1795654380000,
-      "tag": "0067_canonical_link_evidence_strength",
+      "when": 1777665600000,
+      "tag": "0067_phase11_calendar_event_source_backfill_v34",
       "breakpoints": true
     },
     {
       "idx": 68,
       "version": "7",
-      "when": 1795654440000,
-      "tag": "0068_onboarding_setup_loop",
+      "when": 1777752000000,
+      "tag": "0068_phase11_calendar_event_source_backfill_v35",
       "breakpoints": true
     },
     {
       "idx": 69,
       "version": "7",
-      "when": 1795654500000,
-      "tag": "0069_digest_destinations",
+      "when": 1777838400000,
+      "tag": "0069_phase11_calendar_event_source_backfill_v36",
       "breakpoints": true
     },
     {
       "idx": 70,
       "version": "7",
-      "when": 1795654560000,
-      "tag": "0070_chat_session_context_trail",
+      "when": 1777924800000,
+      "tag": "0070_ingest_webhook_event_class",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1778011200000,
+      "tag": "0071_chat_session_context_trail",
       "breakpoints": true
     }
   ]
