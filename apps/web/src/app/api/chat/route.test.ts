@@ -18,6 +18,7 @@ const fakes = vi.hoisted(() => ({
   fakeChatSessionExists: vi.fn(),
   fakeChatSessionTitleStatus: vi.fn(),
   fakeCreateChatSession: vi.fn(),
+  fakeMergeChatSessionContextTrail: vi.fn(),
   fakeListChatSessions: vi.fn(),
   fakeSetChatSessionTitle: vi.fn(),
   fakeSetUniqueChatSessionTitle: vi.fn(),
@@ -70,6 +71,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
       chatSessionExists: fakes.fakeChatSessionExists,
       chatSessionTitleStatus: fakes.fakeChatSessionTitleStatus,
       createChatSession: fakes.fakeCreateChatSession,
+      mergeChatSessionContextTrail: fakes.fakeMergeChatSessionContextTrail,
       listChatSessions: fakes.fakeListChatSessions,
       setChatSessionTitle: fakes.fakeSetChatSessionTitle,
       setUniqueChatSessionTitle: fakes.fakeSetUniqueChatSessionTitle,
@@ -206,6 +208,7 @@ beforeEach(() => {
   fakes.fakeChatSessionExists.mockResolvedValue(true);
   fakes.fakeChatSessionTitleStatus.mockResolvedValue({ exists: true, needsTitle: false });
   fakes.fakeCreateChatSession.mockResolvedValue({ id: SESSION_ID, title: null });
+  fakes.fakeMergeChatSessionContextTrail.mockResolvedValue([]);
   fakes.fakeListChatSessions.mockResolvedValue([]);
   fakes.fakeSetChatSessionTitle.mockResolvedValue(undefined);
   fakes.fakeSetUniqueChatSessionTitle.mockResolvedValue(undefined);
@@ -445,6 +448,40 @@ describe('POST /api/chat', () => {
     expect(streamCall?.[0].system).toEqual(
       expect.stringContaining('use tools before making claims'),
     );
+  });
+
+  it('prioritizes the current view in a persisted context trail', async () => {
+    const response = await POST(
+      request(
+        validBody({
+          sessionId: SESSION_ID,
+          contextTrail: [
+            {
+              kind: 'document',
+              href: '/app/documents/55555555-5555-4555-8555-555555555555',
+              label: 'Q3 contract',
+              documentId: '55555555-5555-4555-8555-555555555555',
+            },
+            {
+              kind: 'object',
+              href: `/app/objects/${PINNED_ID}`,
+              label: 'Launch plan',
+              objectId: PINNED_ID,
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(fakes.fakeMergeChatSessionContextTrail).toHaveBeenCalled();
+    const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
+      | [{ system?: string }]
+      | undefined;
+    expect(streamCall?.[0].system).toEqual(expect.stringContaining('CURRENT VIEW (priority)'));
+    expect(streamCall?.[0].system).toEqual(expect.stringContaining('Q3 contract'));
+    expect(streamCall?.[0].system).toEqual(expect.stringContaining('EARLIER VIEWS (background)'));
+    expect(streamCall?.[0].system).toEqual(expect.stringContaining('Launch plan'));
   });
 
   it('adds object tools when dashboard context points at an object', async () => {
@@ -883,7 +920,10 @@ describe('POST /api/chat', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get('x-tl-session-id')).toBe(SESSION_ID);
-    expect(fakes.fakeCreateChatSession).toHaveBeenCalledWith({ pinnedEntityId: PINNED_ID });
+    expect(fakes.fakeCreateChatSession).toHaveBeenCalledWith({
+      pinnedEntityId: PINNED_ID,
+      contextTrail: [],
+    });
   });
 
   it('titles a newly-created session from the first user turn without renaming existing sessions', async () => {

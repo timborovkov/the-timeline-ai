@@ -1,5 +1,6 @@
 'use server';
 
+import type { ChatContextRef } from '@timeline/shared/chat-context';
 import { type UIMessage } from 'ai';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
@@ -13,6 +14,7 @@ interface LoadChatSessionActionResult {
   ok: boolean;
   error?: string;
   messages?: UIMessage[];
+  contextTrail?: ChatContextRef[];
 }
 
 export async function archiveChatSessionAction(input: unknown): Promise<ActionState> {
@@ -66,7 +68,11 @@ export async function loadChatSessionAction(input: unknown): Promise<LoadChatSes
     try {
       const loaded = await r.scope.objects.getChatSession(parsed.data.sessionId);
       if (!loaded) return { ok: false, error: 'Session not found' };
-      return { ok: true, messages: hydrateChatSessionMessages(loaded) };
+      return {
+        ok: true,
+        messages: hydrateChatSessionMessages(loaded),
+        contextTrail: loaded.session?.contextTrail ?? [],
+      };
     } catch (err) {
       return {
         ok: false,

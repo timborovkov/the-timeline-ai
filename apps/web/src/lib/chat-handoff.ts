@@ -13,6 +13,9 @@ export interface ChatHandoffContext {
   calendarEventId?: string;
   documentId?: string;
   taskId?: string;
+  meetingId?: string;
+  timelineEventId?: string;
+  timelineMomentId?: string;
 }
 
 export interface ChatHandoff {

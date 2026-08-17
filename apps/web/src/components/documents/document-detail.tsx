@@ -18,7 +18,7 @@ import {
   renameDocumentAction,
 } from '@/app/actions/documents';
 import { Breadcrumb } from '@/components/breadcrumb';
-import { ContextualAskLink } from '@/components/chat/contextual-ask-link';
+import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { DocumentPreview } from '@/components/documents/document-preview';
 import { EvidenceLink } from '@/components/evidence-link';
 import { StatusBadge } from '@/components/status-badge';
@@ -93,7 +93,6 @@ function mediaKind(contentType: string | null): 'image' | 'audio' | 'pdf' | null
 }
 
 export function DocumentDetail({
-  teamId,
   document,
   versions,
   requestedVersion,
@@ -228,17 +227,13 @@ export function DocumentDetail({
             {currentDocument.visibility !== 'team' && (
               <Badge variant="outline">{statusLabel(currentDocument.visibility)}</Badge>
             )}
-            {teamId ? (
-              <ContextualAskLink
-                teamId={teamId}
-                context={{
-                  pathname: `/app/documents/${currentDocument.id}`,
-                  routeKind: 'document-detail',
-                  documentId: currentDocument.id,
-                }}
-                label="Ask about document"
-              />
-            ) : null}
+            <ChatViewContextBinder
+              viewKey={`document:${currentDocument.id}`}
+              kind="document"
+              href={`/app/documents/${currentDocument.id}`}
+              label={currentDocument.name}
+              documentId={currentDocument.id}
+            />
             <Button size="sm" variant="outline" onClick={() => void onRename()} disabled={pending}>
               Rename
             </Button>

@@ -8,6 +8,8 @@ import type { ReactNode } from 'react';
 
 import { AppDocumentScrollLock } from '@/components/app-document-scroll-lock';
 import { AppMainScrollRestoration } from '@/components/app-shell-scroll-restoration';
+import { ChatViewProvider } from '@/components/chat/chat-view-context';
+import { FloatingAgentChat } from '@/components/chat/floating-agent-chat';
 import { DesktopSidebar } from '@/components/desktop-sidebar';
 import { GlobalSearchPalette } from '@/components/global-search-palette';
 import { InboxBell, type InboxBellNotification } from '@/components/inbox/inbox-bell';
@@ -60,7 +62,8 @@ export function AppShell({
 }: Props) {
   return (
     <WorkspaceTimezoneProvider timezone={workspaceTimezone}>
-      <InspectorProvider>
+      <ChatViewProvider>
+        <InspectorProvider>
         <AppDocumentScrollLock />
         <SkipLink />
         <div className="flex h-dvh w-full overflow-hidden bg-bg">
@@ -125,8 +128,10 @@ export function AppShell({
 
           {/* ── Inspector pane (desktop, collapsible) ───────────────── */}
           <InspectorPane />
+          <FloatingAgentChat teamId={active.teamId} teamName={active.teamName} />
         </div>
-      </InspectorProvider>
+        </InspectorProvider>
+      </ChatViewProvider>
     </WorkspaceTimezoneProvider>
   );
 }

@@ -113,6 +113,7 @@ describe('chat actions', () => {
     await expect(loadChatSessionAction({ sessionId: SESSION_ID })).resolves.toEqual({
       ok: true,
       messages: [{ id: 'message-1', role: 'assistant', parts: [{ type: 'text', text: 'Hello' }] }],
+      contextTrail: [],
     });
     expect(fakes.getChatSession).toHaveBeenCalledWith(SESSION_ID);
     expect(fakes.hydrateChatSessionMessages).toHaveBeenCalledWith({ id: SESSION_ID, messages: [] });

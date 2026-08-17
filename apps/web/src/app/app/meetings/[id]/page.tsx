@@ -4,6 +4,7 @@ import { notFound, redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
+import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { HistoryBackLink } from '@/components/history-back-link';
 import { MeetingExportButtons } from '@/components/meeting-export-buttons';
 import { CancelMeetingButton } from '@/components/meeting-forms';
@@ -110,6 +111,13 @@ export default async function MeetingDetailPage({ params }: Props) {
 
   return (
     <div className="space-y-6">
+      <ChatViewContextBinder
+        viewKey={`meeting:${meeting.id}`}
+        kind="meeting"
+        href={`/app/meetings/${meeting.id}`}
+        label={title}
+        meetingId={meeting.id}
+      />
       <HistoryBackLink fallbackHref="/app/meetings" label="Back" />
       <PageHeader
         title={title}

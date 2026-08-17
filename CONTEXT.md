@@ -985,6 +985,13 @@ moments. It does not duplicate the canonical Timeline, Work navigation, or
 Connections management.
 _Avoid_: Timeline when referring to the landing page
 
+**Ask**:
+The agent chat surface. Full Ask is the research view with session history.
+Elsewhere in the dashboard, a floating Ask opens on the current page, keeps
+one thread per team until New, and remembers a short trail of views the
+conversation touched. Home still hands questions into full Ask.
+_Avoid_: Copilot, chatbot, assistant sidebar
+
 **Workspace Time Context**:
 The team's default frame for interpreting relative dates, day boundaries, week
 numbers, and calendar display when no user-specific timezone is explicitly

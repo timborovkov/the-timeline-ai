@@ -11,6 +11,8 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 
+import type { ChatContextRef } from '@timeline/shared/chat-context';
+
 import type { ChatHandoff, ChatHandoffContext } from '@/lib/chat-handoff';
 
 import { unpinChatSessionAction } from '@/app/actions/chat';
@@ -29,6 +31,7 @@ interface Props {
   initialMessages: UIMessage[];
   pinnedEntityId: string | null;
   pinnedEntityName: string | null;
+  contextTrail?: ChatContextRef[];
 }
 
 export type DashboardChatContext = ChatHandoffContext;
@@ -51,7 +54,10 @@ export function ChatSurface(
   props: Props & {
     compact?: boolean;
     dashboardContext?: DashboardChatContext | null;
+    contextTrail?: ChatContextRef[];
+    emptyHint?: string | null;
     onSessionIdChange?: (sessionId: string) => void;
+    onStatusChange?: (status: string) => void;
     updateUrlOnSessionCreate?: boolean;
   },
 ) {
@@ -72,12 +78,18 @@ function ChatSurfaceContent({
   pinnedEntityName,
   compact = false,
   dashboardContext,
+  contextTrail,
+  emptyHint,
   onSessionIdChange,
+  onStatusChange,
   updateUrlOnSessionCreate = false,
 }: Props & {
   compact?: boolean;
   dashboardContext?: DashboardChatContext | null;
+  contextTrail?: ChatContextRef[];
+  emptyHint?: string | null;
   onSessionIdChange?: (sessionId: string) => void;
+  onStatusChange?: (status: string) => void;
   updateUrlOnSessionCreate?: boolean;
 }) {
   const router = useRouter();
@@ -89,6 +101,7 @@ function ChatSurfaceContent({
     chatHandoffRef,
     search,
     dashboardContext,
+    contextTrail,
     onSessionIdChange,
     updateUrlOnSessionCreate,
   });
@@ -104,6 +117,9 @@ function ChatSurfaceContent({
   const handoffConsumedRef = useRef(false);
 
   const isStreaming = status === 'streaming' || status === 'submitted';
+  useEffect(() => {
+    onStatusChange?.(status);
+  }, [onStatusChange, status]);
   const handoffPin = initialSessionId === null ? consumedHandoff : null;
   const visiblePinnedEntity = handoffPin?.pinnedEntityId
     ? { id: handoffPin.pinnedEntityId, name: handoffPin.pinnedEntityName ?? null }
@@ -158,8 +174,10 @@ function ChatSurfaceContent({
           router.refresh();
         }}
       />
+      <ChatContextBadges refs={contextTrail ?? []} compact={compact} />
       <ChatTranscript
         compact={compact}
+        emptyHint={emptyHint}
         isStreaming={isStreaming}
         messages={messages}
         onToolApprovalResponse={addToolApprovalResponse}
@@ -179,6 +197,7 @@ function useChatSessionTransport({
   chatHandoffRef,
   search,
   dashboardContext,
+  contextTrail,
   onSessionIdChange,
   updateUrlOnSessionCreate,
 }: {
@@ -187,6 +206,7 @@ function useChatSessionTransport({
   chatHandoffRef: RefObject<ChatHandoff | null>;
   search: URLSearchParams;
   dashboardContext?: DashboardChatContext | null;
+  contextTrail?: ChatContextRef[];
   onSessionIdChange?: (sessionId: string) => void;
   updateUrlOnSessionCreate: boolean;
 }) {
@@ -194,6 +214,7 @@ function useChatSessionTransport({
   const sessionIdRef = useRef<string | null>(initialSessionId);
   const searchRef = useRef(search);
   const dashboardContextRef = useRef<DashboardChatContext | null | undefined>(dashboardContext);
+  const contextTrailRef = useRef<ChatContextRef[] | undefined>(contextTrail);
   const pinnedEntityIdRef = useRef<string | null>(initialPinnedEntityId);
   const onSessionIdChangeRef = useRef(onSessionIdChange);
   const sessionCreateAttempted = useRef(initialSessionId !== null);
@@ -210,6 +231,10 @@ function useChatSessionTransport({
   useEffect(() => {
     dashboardContextRef.current = dashboardContext;
   }, [dashboardContext]);
+
+  useEffect(() => {
+    contextTrailRef.current = contextTrail;
+  }, [contextTrail]);
 
   useEffect(() => {
     pinnedEntityIdRef.current = initialPinnedEntityId;
@@ -248,6 +273,7 @@ function useChatSessionTransport({
               ? (handoff?.pinnedEntityId ?? pinnedEntityIdRef.current ?? undefined)
               : undefined,
             dashboardContext: handoff?.context ?? dashboardContextRef.current ?? undefined,
+            contextTrail: contextTrailRef.current,
           };
         },
         fetch: async (url, init) => {
@@ -335,8 +361,41 @@ function PinnedEntityBanner({
   );
 }
 
+function ChatContextBadges({
+  refs,
+  compact,
+}: {
+  refs: ChatContextRef[];
+  compact: boolean;
+}) {
+  if (refs.length === 0) return null;
+  return (
+    <div
+      className={cn('flex flex-wrap gap-1.5', compact && 'max-h-16 overflow-y-auto')}
+      aria-label="Conversation context"
+    >
+      {refs.map((ref, index) => (
+        <Link
+          key={`${ref.kind}:${ref.href}`}
+          href={ref.href}
+          className={cn(
+            'max-w-full truncate rounded-sm border px-2 py-0.5 text-xs no-underline',
+            index === 0
+              ? 'border-signal/30 bg-signal-soft text-signal'
+              : 'border-border bg-surface text-fg-muted hover:text-fg',
+          )}
+          title={ref.label}
+        >
+          {ref.label}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
 function ChatTranscript({
   compact,
+  emptyHint,
   isStreaming,
   messages,
   onToolApprovalResponse,
@@ -345,6 +404,7 @@ function ChatTranscript({
   teamName,
 }: {
   compact: boolean;
+  emptyHint?: string | null;
   isStreaming: boolean;
   messages: UIMessage[];
   onToolApprovalResponse: (input: { id: string; approved: boolean; reason?: string }) => void;
@@ -355,7 +415,12 @@ function ChatTranscript({
   return (
     <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
       {messages.length === 0 ? (
-        <ChatEmptyState compact={compact} onSuggestion={onSuggestion} teamName={teamName} />
+        <ChatEmptyState
+          compact={compact}
+          emptyHint={emptyHint}
+          onSuggestion={onSuggestion}
+          teamName={teamName}
+        />
       ) : (
         <MessageList
           compact={compact}
@@ -370,27 +435,31 @@ function ChatTranscript({
 
 function ChatEmptyState({
   compact,
+  emptyHint,
   onSuggestion,
   teamName,
 }: {
   compact: boolean;
+  emptyHint?: string | null;
   onSuggestion: (text: string) => void;
   teamName: string;
 }) {
+  if (compact) {
+    return (
+      <p className="pt-1 text-sm text-fg-muted">
+        {emptyHint ?? `Ask about ${teamName}'s timeline`}
+      </p>
+    );
+  }
   return (
-    <div className={cn('flex flex-col gap-6', compact ? 'pt-2' : 'pt-8')}>
+    <div className="flex flex-col gap-6 pt-8">
       <div>
         <p className="text-xs font-medium text-fg-muted">Try asking</p>
-        <h2
-          className={cn(
-            'mt-2 font-medium tracking-tight text-fg',
-            compact ? 'text-base' : 'text-xl',
-          )}
-        >
+        <h2 className="mt-2 text-xl font-medium tracking-tight text-fg">
           Ask anything about {teamName}&apos;s timeline
         </h2>
       </div>
-      <div className={cn('flex flex-wrap gap-2', compact && 'hidden sm:flex')}>
+      <div className="flex flex-wrap gap-2">
         {SUGGESTIONS.map((suggestion) => (
           <button
             key={suggestion}

@@ -1,4 +1,11 @@
 import * as agent from '@timeline/shared/agent';
+import {
+  CHAT_CONTEXT_TRAIL_MAX,
+  chatContextPrompt,
+  contextIdsFromTrail,
+  parseChatContextTrail,
+  pinnedObjectIdFromContext,
+} from '@timeline/shared/chat-context';
 import { getEnv } from '@timeline/shared/env';
 import * as llm from '@timeline/shared/llm';
 import { childLogger } from '@timeline/shared/logger';
@@ -63,7 +70,11 @@ const dashboardContextSchema = z.strictObject({
   calendarEventId: z.string().regex(UUID_RE).optional(),
   documentId: z.string().regex(UUID_RE).optional(),
   taskId: z.string().regex(UUID_RE).optional(),
+  meetingId: z.string().regex(UUID_RE).optional(),
+  timelineEventId: z.string().regex(UUID_RE).optional(),
+  timelineMomentId: z.string().trim().min(1).max(200).optional(),
 });
+const contextTrailSchema = z.array(z.unknown()).max(CHAT_CONTEXT_TRAIL_MAX);
 
 const reportChatAgentToolError: agent.AgentToolErrorReporter = (err, context) => {
   reportCaughtError(err, {
@@ -96,6 +107,7 @@ const chatRequestSchema = z.object({
   // pinnedEntityId stays authoritative.
   pinnedEntityId: z.string().regex(UUID_RE).optional(),
   dashboardContext: dashboardContextSchema.optional(),
+  contextTrail: contextTrailSchema.optional(),
 });
 
 function deterministicChatEnabled(): boolean {
@@ -142,7 +154,10 @@ function normalizeChatTitle(title: string, question: string): string {
 
 function dashboardContextPrompt(
   context: z.infer<typeof dashboardContextSchema> | undefined,
+  trail: ReturnType<typeof parseChatContextTrail>,
 ): string | null {
+  const fromTrail = chatContextPrompt(trail);
+  if (fromTrail) return fromTrail;
   if (!context) return null;
   const entries: [string, string | undefined][] = [
     ['route', context.pathname],
@@ -155,6 +170,9 @@ function dashboardContextPrompt(
     ['calendar_date', context.calendarDate],
     ['calendar_view', context.calendarView],
     ['document_id', context.documentId],
+    ['meeting_id', context.meetingId],
+    ['timeline_event_id', context.timelineEventId],
+    ['timeline_moment_id', context.timelineMomentId],
   ];
   const lines = entries
     .filter((entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1] !== '')
@@ -166,6 +184,7 @@ function dashboardContextPrompt(
   return [
     'DASHBOARD CONTEXT:',
     'The user opened chat from the dashboard surface below. Use it to interpret phrases like "this object", "this board", "here", or "current page". Do not treat this context as verified data; use tools before making claims.',
+    'For how-to, setup, connections, or "where do I…" questions, use search_app_guide and get_app_route, then link the matching dashboard or /help page.',
     ...lines,
   ].join('\n');
 }
@@ -238,16 +257,24 @@ function matchesAny(value: string, patterns: RegExp[]): boolean {
 function selectAgentToolGroups(input: {
   question: string;
   dashboardContext?: z.infer<typeof dashboardContextSchema> | undefined;
+  contextTrail?: ReturnType<typeof parseChatContextTrail>;
 }): ToolSelection {
+  const trailIds = contextIdsFromTrail(input.contextTrail ?? []);
+  const objectId = input.dashboardContext?.objectId ?? trailIds.objectId;
+  const taskId = input.dashboardContext?.taskId ?? trailIds.taskId;
+  const boardId = input.dashboardContext?.boardId ?? trailIds.boardId;
+  const boardItemId = input.dashboardContext?.boardItemId ?? trailIds.boardItemId;
+  const documentId = input.dashboardContext?.documentId ?? trailIds.documentId;
+  const calendarEventId = input.dashboardContext?.calendarEventId ?? trailIds.calendarEventId;
+  const meetingId = input.dashboardContext?.meetingId ?? trailIds.meetingId;
   const text = `${input.question} ${input.dashboardContext?.routeKind ?? ''} ${
     input.dashboardContext?.pathname ?? ''
   }`.toLowerCase();
   const groups = new Set<NativeToolGroup>(['core', 'guide']);
-  const hasObjectContext = Boolean(
-    input.dashboardContext?.objectId ??
-    input.dashboardContext?.taskId ??
-    input.dashboardContext?.boardItemId,
-  );
+  const hasObjectContext = Boolean(objectId ?? taskId ?? boardItemId);
+  const onSetupSurface = matchesAny(text, [
+    /\b(team|sources|connections|integrations|slack|telegram|mcp|settings)\b/,
+  ]);
   const hasObjectMemoryIntent = matchesAny(text, [
     /\b(remember|memory|note|alias|aka|also known as|typo|rename|relationship|related|owner|owns|assignee|responsible|status|stage|priority|due)\b/,
     /\b(calls? this|known as|same as|belongs to|works? with|reports? to)\b/,
@@ -256,8 +283,8 @@ function selectAgentToolGroups(input: {
   const hasContrastiveCorrection = hasObjectMemoryIntent && /\bnot\b/.test(text);
 
   if (
-    input.dashboardContext?.objectId ||
-    input.dashboardContext?.taskId ||
+    objectId ||
+    taskId ||
     matchesAny(text, [
       /\b(object|person|company|project|topic|deal|vendor|incident|decision|hiring|task|todo|follow[- ]?up|status|stage|archive|merge)\b/,
     ])
@@ -270,23 +297,20 @@ function selectAgentToolGroups(input: {
     groups.add('objectMemory');
   }
 
-  if (
-    input.dashboardContext?.boardId ||
-    input.dashboardContext?.boardItemId ||
-    matchesAny(text, [/\b(board|kanban|lane|card|pipeline)\b/])
-  ) {
+  if (boardId || boardItemId || matchesAny(text, [/\b(board|kanban|lane|card|pipeline)\b/])) {
     groups.add('boards');
   }
 
   if (
-    input.dashboardContext?.documentId ||
+    documentId ||
     matchesAny(text, [/\b(document|doc|file|pdf|contract|policy|drive|chunk)\b/])
   ) {
     groups.add('documents');
   }
 
   if (
-    input.dashboardContext?.calendarEventId ||
+    calendarEventId ||
+    meetingId ||
     input.dashboardContext?.calendarDate ||
     matchesAny(text, [
       /\b(calendar|schedule|meeting|today|tomorrow|yesterday|week|month|date|time)\b/,
@@ -316,11 +340,7 @@ function selectAgentToolGroups(input: {
     groups.add('actions');
     groups.add('objects');
     if (hasObjectMemoryIntent) groups.add('objectMemory');
-    if (
-      input.dashboardContext?.boardId ||
-      input.dashboardContext?.boardItemId ||
-      matchesAny(text, [/\b(board|kanban|lane|card|pipeline)\b/])
-    ) {
+    if (boardId || boardItemId || matchesAny(text, [/\b(board|kanban|lane|card|pipeline)\b/])) {
       groups.add('boards');
     }
   }
@@ -338,8 +358,9 @@ function selectAgentToolGroups(input: {
   }
 
   if (
+    onSetupSurface ||
     matchesAny(text, [
-      /\b(integration|source|slack|telegram|tg|github|linear|drive|email|connected|external|mcp)\b/,
+      /\b(integration|source|slack|telegram|tg|github|linear|drive|email|connected|external|mcp|invite|setup)\b/,
     ])
   ) {
     groups.add('integrations');
@@ -779,8 +800,11 @@ export async function POST(req: Request): Promise<Response> {
     shouldTitleSession = titleStatus.needsTitle;
   } else if (parsed.data.startNewSession) {
     try {
+      const contextTrail = parseChatContextTrail(parsed.data.contextTrail);
       const created = await scope.objects.createChatSession({
-        pinnedEntityId: parsed.data.pinnedEntityId ?? null,
+        pinnedEntityId:
+          parsed.data.pinnedEntityId ?? pinnedObjectIdFromContext(contextTrail) ?? null,
+        contextTrail,
       });
       sessionId = created.id;
       shouldTitleSession = created.title === null;
@@ -840,13 +864,18 @@ export async function POST(req: Request): Promise<Response> {
     presentation,
     workspaceTime: time.workspaceTimeContext(calendarSettings.defaultTimezone, currentDate),
   });
-  const contextPrompt = dashboardContextPrompt(parsed.data.dashboardContext);
+  const contextTrail = parseChatContextTrail(parsed.data.contextTrail);
+  if (sessionId && contextTrail.length > 0) {
+    await scope.objects.mergeChatSessionContextTrail(sessionId, contextTrail);
+  }
+  const contextPrompt = dashboardContextPrompt(parsed.data.dashboardContext, contextTrail);
   const system = contextPrompt ? `${baseSystem}\n\n${contextPrompt}` : baseSystem;
 
   const latestQuestion = messageText(latestUserMessage);
   const toolSelection = selectAgentToolGroups({
     question: latestQuestion,
     dashboardContext: parsed.data.dashboardContext,
+    contextTrail,
   });
   const nativeTools = agent.buildAgentTools(scope, {
     onToolError: reportChatAgentToolError,

@@ -53,6 +53,12 @@
       "import": "./dist/app-guide.js",
       "default": "./dist/app-guide.js"
     },
+    "./chat-context": {
+      "types": "./src/chat-context.ts",
+      "development": "./src/chat-context.ts",
+      "import": "./dist/chat-context.js",
+      "default": "./dist/chat-context.js"
+    },
     "./calendar": {
       "types": "./src/calendar/index.ts",
       "development": "./src/calendar/index.ts",

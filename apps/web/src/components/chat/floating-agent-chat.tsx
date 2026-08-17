@@ -1,21 +1,17 @@
 'use client';
 
+import { type ChatContextRef, mergeChatContextTrail } from '@timeline/shared/chat-context';
 import { type UIMessage } from 'ai';
 import { ExternalLink, MessageSquare, MessageSquarePlus, X } from 'lucide-react';
 import Link from 'next/link';
-import { usePathname, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { usePathname } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 
 import { loadChatSessionAction } from '@/app/actions/chat';
-import { ChatSurface, type DashboardChatContext } from '@/components/chat/chat-pane';
+import { ChatSurface } from '@/components/chat/chat-pane';
+import { useCurrentChatView } from '@/components/chat/chat-view-context';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { chatShortcutLabel } from '@/lib/chat-view';
 import { cn } from '@/lib/utils';
 
 interface FloatingAgentChatProps {
@@ -23,10 +19,17 @@ interface FloatingAgentChatProps {
   teamName: string;
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 interface FloatingSessionState {
   sessionId: string | null;
   initialMessages: UIMessage[];
+  contextTrail: ChatContextRef[];
+}
+
+const EXCLUDED_PREFIXES = ['/app/chat'];
+
+function isExcludedPath(pathname: string | null): boolean {
+  if (!pathname) return true;
+  return pathname === '/app' || EXCLUDED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 }
 
 export function FloatingAgentChat({ teamId, teamName }: FloatingAgentChatProps) {
@@ -39,32 +42,49 @@ export function FloatingAgentChat({ teamId, teamName }: FloatingAgentChatProps) 
 
 function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
+  const { current, dashboardContext } = useCurrentChatView();
   const [open, setOpen] = useState(false);
+  const [status, setStatus] = useState('ready');
   const storageKey = `timeline:floating-agent-chat:${teamId}:session`;
-  const [{ sessionId, initialMessages }, setSessionState] = useState<FloatingSessionState>(() => ({
-    sessionId: readStoredSessionId(storageKey),
-    initialMessages: [],
-  }));
+  const [{ sessionId, initialMessages, contextTrail }, setSessionState] =
+    useState<FloatingSessionState>(() => ({
+      sessionId: readStoredSessionId(storageKey),
+      initialMessages: [],
+      contextTrail: [current],
+    }));
   const hydratedSessionIdRef = useRef<string | null>(null);
   const sessionGenerationRef = useRef(0);
-  const context = useMemo(
-    () => buildDashboardChatContext(pathname, searchParams),
-    [pathname, searchParams],
-  );
-  const resetFloatingSession = () => {
+  const launcherRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const isStreaming = status === 'streaming' || status === 'submitted';
+  const excluded = isExcludedPath(pathname);
+  const liveTrail = mergeChatContextTrail(contextTrail, [current]);
+  const pinnedEntityId = current.objectId ?? null;
+  const resetFloatingSession = useCallback(() => {
     sessionGenerationRef.current += 1;
     window.localStorage.removeItem(storageKey);
     hydratedSessionIdRef.current = null;
-    setSessionState({ sessionId: null, initialMessages: [] });
-  };
+    setSessionState({ sessionId: null, initialMessages: [], contextTrail: [current] });
+  }, [current, storageKey]);
+
+  useEffect(() => {
+    setSessionState((state) => {
+      const nextTrail = mergeChatContextTrail(state.contextTrail, [current]);
+      if (
+        nextTrail.length === state.contextTrail.length &&
+        nextTrail.every((ref, index) => ref.href === state.contextTrail[index]?.href)
+      ) {
+        return state;
+      }
+      return { ...state, contextTrail: nextTrail };
+    });
+  }, [current]);
 
   useEffect(() => {
     if (!sessionId) {
       hydratedSessionIdRef.current = null;
       return;
     }
-
     if (hydratedSessionIdRef.current === sessionId) return;
     const activeSessionId = sessionId;
     hydratedSessionIdRef.current = activeSessionId;
@@ -72,7 +92,7 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
       if (hydratedSessionIdRef.current !== activeSessionId) return;
       window.localStorage.removeItem(storageKey);
       hydratedSessionIdRef.current = null;
-      setSessionState({ sessionId: null, initialMessages: [] });
+      setSessionState({ sessionId: null, initialMessages: [], contextTrail: [current] });
     };
 
     void loadChatSessionAction({ sessionId: activeSessionId })
@@ -81,7 +101,11 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
         if (loaded.ok) {
           setSessionState((state) =>
             state.sessionId === activeSessionId
-              ? { ...state, initialMessages: loaded.messages ?? [] }
+              ? {
+                  ...state,
+                  initialMessages: loaded.messages ?? [],
+                  contextTrail: mergeChatContextTrail(loaded.contextTrail ?? [], [current]),
+                }
               : state,
           );
         } else {
@@ -92,89 +116,136 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
         if (hydratedSessionIdRef.current !== activeSessionId) return;
         clearStaleSession();
       });
-  }, [sessionId, storageKey]);
+  }, [current, sessionId, storageKey]);
 
-  if (!pathname || pathname.startsWith('/app/chat')) return null;
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (isExcludedPath(pathname)) return;
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'j') return;
+      event.preventDefault();
+      setOpen((value) => !value);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [pathname]);
 
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      setOpen(false);
+      launcherRef.current?.focus();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const showChrome = !excluded;
+  const showPanel = open && showChrome;
+  const mountChat = showPanel || isStreaming;
   const fullChatHref = sessionId ? `/app/chat?session=${sessionId}` : '/app/chat';
   const activeSessionGeneration = sessionGenerationRef.current;
+  const shortcut = chatShortcutLabel();
 
   return (
     <>
-      <Button
-        type="button"
-        aria-label="Open floating agent chat"
-        className={cn(
-          'fixed bottom-5 right-5 z-40 hidden h-11 gap-2 rounded-sm border border-signal/40 bg-signal px-4 text-signal-fg shadow-lg shadow-black/10 sm:inline-flex',
-          'hover:bg-signal/90 focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
-        )}
-        onClick={() => {
-          setOpen(true);
-        }}
-      >
-        <MessageSquare className="size-4" />
-        <span className="hidden sm:inline">Ask</span>
-      </Button>
-
-      <Dialog
-        open={open}
-        onOpenChange={(nextOpen) => {
-          setOpen(nextOpen);
-          if (!nextOpen) resetFloatingSession();
-        }}
-      >
-        <DialogContent
-          className="flex h-[min(720px,calc(100vh-2rem))] max-h-[calc(100vh-2rem)] flex-col border-border bg-bg p-0 sm:max-w-2xl"
-          showCloseButton={false}
+      {showChrome ? (
+        <Button
+          ref={launcherRef}
+          type="button"
+          size="icon"
+          aria-label={`Open floating agent chat (${shortcut})`}
+          aria-expanded={open}
+          aria-controls="floating-agent-chat-panel"
+          title={`Ask · ${shortcut}`}
+          className={cn(
+            'fixed z-40 size-10 rounded-sm border border-border bg-surface text-fg shadow-lg shadow-black/10',
+            'bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-[max(1.25rem,env(safe-area-inset-right))]',
+            'hover:border-signal/40 hover:bg-signal-soft hover:text-signal',
+            'focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
+          )}
+          onClick={() => {
+            setOpen(true);
+          }}
         >
-          <DialogHeader className="flex-row items-start justify-between gap-3 border-b border-border px-4 py-3">
-            <div className="min-w-0">
-              <DialogTitle className="truncate text-base">Ask {teamName}</DialogTitle>
-              <DialogDescription className="truncate">
-                {context.routeKind === 'dashboard'
-                  ? 'Context from the current dashboard page is included.'
-                  : `Context: ${context.routeKind}`}
-              </DialogDescription>
-            </div>
-            <div className="flex shrink-0 items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon"
-                type="button"
-                className="shrink-0"
-                aria-label="Start new conversation"
-                title="Start new conversation"
-                onClick={resetFloatingSession}
-              >
-                <MessageSquarePlus className="size-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="shrink-0"
-                asChild
-                aria-label="Open full chat"
-              >
-                <Link href={fullChatHref}>
-                  <ExternalLink className="size-4" />
-                </Link>
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                type="button"
-                className="shrink-0"
-                aria-label="Close floating agent chat"
-                onClick={() => {
-                  setOpen(false);
-                  resetFloatingSession();
-                }}
-              >
-                <X className="size-4" />
-              </Button>
-            </div>
-          </DialogHeader>
-          <div className="min-h-0 flex-1 p-4">
+          <MessageSquare className="size-4" />
+          <span className="sr-only">{shortcut}</span>
+        </Button>
+      ) : null}
+
+      {showPanel ? (
+        <div
+          className="fixed inset-0 z-[60] bg-bg/50 md:hidden"
+          onClick={() => {
+            setOpen(false);
+            launcherRef.current?.focus();
+          }}
+        />
+      ) : null}
+
+      <div
+        ref={panelRef}
+        id="floating-agent-chat-panel"
+        role="dialog"
+        aria-modal={showPanel}
+        aria-labelledby="floating-agent-chat-title"
+        hidden={!showPanel}
+        className={cn(
+          'fixed z-[60] flex flex-col border-border bg-bg shadow-2xl shadow-black/20',
+          'inset-x-0 bottom-0 h-[min(82dvh,42rem)] rounded-t-md border-t',
+          'md:inset-auto md:bottom-20 md:right-5 md:h-[min(36rem,calc(100dvh-8rem))] md:w-[min(26rem,calc(100vw-2.5rem))] md:rounded-sm md:border',
+          !showPanel && 'invisible pointer-events-none',
+        )}
+      >
+        <div className="flex items-start justify-between gap-2 border-b border-border px-3 py-2.5">
+          <div className="min-w-0">
+            <h2 id="floating-agent-chat-title" className="truncate text-sm font-semibold text-fg">
+              {current.label}
+            </h2>
+            <p className="truncate text-xs text-fg-muted">
+              {shortcut}
+              {liveTrail.length > 1 ? ` · ${String(liveTrail.length - 1)} earlier` : ''}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-0.5">
+            <Button
+              variant="ghost"
+              size="icon"
+              type="button"
+              className="size-8"
+              aria-label="Start new conversation"
+              title="New"
+              onClick={resetFloatingSession}
+            >
+              <MessageSquarePlus className="size-4" />
+            </Button>
+            <Button variant="ghost" size="icon" className="size-8" asChild aria-label="Open full chat">
+              <Link href={fullChatHref}>
+                <ExternalLink className="size-4" />
+              </Link>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              type="button"
+              className="size-8"
+              aria-label="Close floating agent chat"
+              onClick={() => {
+                setOpen(false);
+                launcherRef.current?.focus();
+              }}
+            >
+              <X className="size-4" />
+            </Button>
+          </div>
+        </div>
+        {mountChat ? (
+          <div className="min-h-0 flex-1 px-3 py-3">
             <ChatSurface
               key={activeSessionGeneration}
               compact
@@ -182,20 +253,21 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
               teamName={teamName}
               sessionId={sessionId}
               initialMessages={initialMessages}
-              pinnedEntityId={null}
-              pinnedEntityName={null}
-              dashboardContext={context}
+              pinnedEntityId={pinnedEntityId}
+              pinnedEntityName={pinnedEntityId ? current.label : null}
+              dashboardContext={dashboardContext}
+              contextTrail={liveTrail}
+              emptyHint={`Ask about ${current.label}`}
+              onStatusChange={setStatus}
               onSessionIdChange={(id) => {
-                if (activeSessionGeneration !== sessionGenerationRef.current) {
-                  return;
-                }
+                if (activeSessionGeneration !== sessionGenerationRef.current) return;
                 window.localStorage.setItem(storageKey, id);
                 setSessionState((state) => ({ ...state, sessionId: id }));
               }}
             />
           </div>
-        </DialogContent>
-      </Dialog>
+        ) : null}
+      </div>
     </>
   );
 }
@@ -203,42 +275,4 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
 function readStoredSessionId(storageKey: string): string | null {
   if (typeof window === 'undefined') return null;
   return window.localStorage.getItem(storageKey);
-}
-
-function buildDashboardChatContext(
-  pathname: string | null,
-  searchParams: URLSearchParams,
-): DashboardChatContext {
-  const path = pathname ?? '/app';
-  const segments = path.split('/').filter(Boolean);
-  const search: Record<string, string> = {};
-  for (const [key, value] of searchParams.entries()) {
-    if (value) search[key] = value;
-  }
-  const context: DashboardChatContext = {
-    pathname: path,
-    routeKind: routeKind(path, segments),
-  };
-  if (Object.keys(search).length > 0) context.search = search;
-  if (segments[1] === 'objects' && isUuid(segments[2])) context.objectId = segments[2];
-  if (segments[1] === 'boards' && isUuid(segments[2])) context.boardId = segments[2];
-  if (segments[1] === 'documents' && isUuid(segments[2])) context.documentId = segments[2];
-  if (segments[1] === 'tasks' && isUuid(search.id)) context.taskId = search.id;
-  if (segments[1] === 'calendar') {
-    if (search.date) context.calendarDate = search.date;
-    if (search.view) context.calendarView = search.view;
-    if (isUuid(search.event)) context.calendarEventId = search.event;
-  }
-  if (isUuid(search.item)) context.boardItemId = search.item;
-  return context;
-}
-
-function routeKind(pathname: string, segments: string[]): string {
-  if (pathname === '/app') return 'home';
-  if (segments[0] !== 'app') return 'dashboard';
-  return segments[1] ?? 'dashboard';
-}
-
-function isUuid(value: string | undefined): value is string {
-  return typeof value === 'string' && UUID_RE.test(value);
 }

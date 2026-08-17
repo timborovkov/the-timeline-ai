@@ -131,6 +131,43 @@ describe('ChatPane', () => {
     expect(container.textContent).not.toContain(uuid);
   });
 
+  it('renders linked context badges for the conversation trail', () => {
+    fakes.useChat.mockReturnValue({
+      messages: [],
+      sendMessage: vi.fn(),
+      status: 'ready',
+      error: null,
+    });
+    const html = renderToStaticMarkup(
+      createElement(ChatPane, {
+        teamId: 'team-1',
+        teamName: 'Acme',
+        sessionId: 'session-1',
+        initialMessages: [],
+        pinnedEntityId: null,
+        pinnedEntityName: null,
+        contextTrail: [
+          {
+            kind: 'document',
+            href: '/app/documents/55555555-5555-4555-8555-555555555555',
+            label: 'Q3 contract',
+            documentId: '55555555-5555-4555-8555-555555555555',
+          },
+          {
+            kind: 'object',
+            href: '/app/objects/44444444-4444-4444-8444-444444444444',
+            label: 'Launch plan',
+            objectId: '44444444-4444-4444-8444-444444444444',
+          },
+        ],
+      }),
+    );
+    expect(html).toContain('Conversation context');
+    expect(html).toContain('Q3 contract');
+    expect(html).toContain('Launch plan');
+    expect(html).toContain('/app/documents/55555555-5555-4555-8555-555555555555');
+  });
+
   it('submits the Ask composer with Enter', async () => {
     const user = userEvent.setup();
     const sendMessage = vi.fn();

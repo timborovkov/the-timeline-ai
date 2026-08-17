@@ -1,4 +1,5 @@
 import { entities, type Db } from '@timeline/db';
+import type { ChatContextRef } from '@timeline/shared/chat-context';
 import { withTeam } from '@timeline/shared/team-scope';
 import { type UIMessage } from 'ai';
 import { and, eq, inArray } from 'drizzle-orm';
@@ -68,6 +69,7 @@ export default async function ChatPage({
   let pinnedEntityId: string | null = null;
   let pinnedEntityName: string | null = null;
   let loadedTitle: string | null = null;
+  let contextTrail: ChatContextRef[] = [];
   if (requestedSessionId) {
     const loaded = await scope.objects.getChatSession(requestedSessionId);
     if (loaded) {
@@ -75,6 +77,7 @@ export default async function ChatPage({
       initialMessages = hydrateChatSessionMessages(loaded);
       loadedTitle = loaded.session.title;
       pinnedEntityId = loaded.session.pinnedEntityId;
+      contextTrail = loaded.session.contextTrail;
       // Deep-linked or older sessions can fall outside the top-50 sidebar
       // window, so their pinnedEntityId isn't in `pinnedNames`. Fetch the
       // active session's pinned name on demand so the chip shows the
@@ -139,6 +142,7 @@ export default async function ChatPage({
             initialMessages={initialMessages}
             pinnedEntityId={pinnedEntityId}
             pinnedEntityName={pinnedEntityName}
+            contextTrail={contextTrail}
           />
         </div>
       </div>

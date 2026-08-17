@@ -347,6 +347,15 @@ sits beside the heading as truncated muted text. The mobile session summary
 uses that same resolved title, including deep-linked chats outside the recent
 list. Session counts do not appear in the header.
 
+A context-aware floating Ask sits on every authenticated page except Home and
+the full Ask route. It is a quiet icon button in the bottom-right corner, with
+`⌘J` / `Ctrl+J` as the shortcut. Desktop opens a non-modal panel over the page;
+mobile opens a bottom sheet. The header shows the current view label, a New
+control, and a link into full Ask. Closing keeps the thread; New starts a
+blank one. The agent receives the current view first and a capped trail of
+earlier views from the same conversation. Full Ask shows those views as
+compact linked badges on the conversation.
+
 The web Ask surface is the rich research view: answers may be thorough and use
 sections, lists, or tables, while inline citations remain inspectable links to
 evidence. External chat delivery uses the same retrieval and grounding but a
@@ -634,3 +643,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Ask session search and title | Filters chat history from the session rail and shows the selected title beside Ask instead of a session count. |
 | 2026-08-17 | Ask mobile session title | Reuses the resolved conversation title in the mobile session summary, including deep-linked chats outside the recent list. |
 | 2026-08-17 | Quiet sidebar brand and fold control | Aligns the product mark with primary nav, sends it to Home, and replaces the boxed fold glyph with a lighter chevron. |
+| 2026-08-17 | Floating Ask | Replaces per-page Ask-about buttons with a context-aware float, keeps one thread on close, and shows linked context badges in full Ask. |

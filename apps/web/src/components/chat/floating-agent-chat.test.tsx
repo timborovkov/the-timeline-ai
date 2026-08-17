@@ -5,6 +5,8 @@ import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ChatViewProvider } from '@/components/chat/chat-view-context';
+
 const fakes = vi.hoisted(() => ({
   pathname: vi.fn(),
   searchParams: vi.fn(),
@@ -18,6 +20,7 @@ const fakes = vi.hoisted(() => ({
   }[],
 }));
 const boardItemId = '55555555-5555-4555-8555-555555555555';
+const objectId = '44444444-4444-4444-8444-444444444444';
 
 vi.mock('next/navigation', () => ({
   usePathname: fakes.pathname,
@@ -43,10 +46,18 @@ vi.mock('@/components/chat/tool-step', () => ({
 
 const { FloatingAgentChat } = await import('./floating-agent-chat.js');
 
+function renderChat() {
+  return render(
+    <ChatViewProvider>
+      <FloatingAgentChat teamId="team-1" teamName="AuditAI" />
+    </ChatViewProvider>,
+  );
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   fakes.transports.length = 0;
-  fakes.pathname.mockReturnValue('/app/objects/44444444-4444-4444-8444-444444444444');
+  fakes.pathname.mockReturnValue(`/app/objects/${objectId}`);
   fakes.searchParams.mockReturnValue(new URLSearchParams(`tab=notes&item=${boardItemId}`));
   fakes.useChat.mockReturnValue({
     messages: [],
@@ -54,7 +65,7 @@ beforeEach(() => {
     status: 'ready',
     error: null,
   });
-  fakes.loadChatSessionAction.mockResolvedValue({ ok: true, messages: [] });
+  fakes.loadChatSessionAction.mockResolvedValue({ ok: true, messages: [], contextTrail: [] });
   window.localStorage.clear();
 });
 
@@ -64,36 +75,87 @@ afterEach(() => {
 });
 
 describe('FloatingAgentChat', () => {
-  it('hides on the full chat page', () => {
+  it('hides on the full chat page and home', () => {
     fakes.pathname.mockReturnValue('/app/chat');
+    renderChat();
+    expect(screen.queryByRole('button', { name: /Open floating agent chat/ })).toBeNull();
 
-    render(<FloatingAgentChat teamId="team-1" teamName="AuditAI" />);
-
-    expect(screen.queryByRole('button', { name: 'Open floating agent chat' })).toBeNull();
+    cleanup();
+    fakes.pathname.mockReturnValue('/app');
+    renderChat();
+    expect(screen.queryByRole('button', { name: /Open floating agent chat/ })).toBeNull();
   });
 
-  it('passes current dashboard route context through the chat transport', async () => {
+  it('shows a mobile-visible launcher and passes current plus earlier context', async () => {
     const user = userEvent.setup();
-    render(<FloatingAgentChat teamId="team-1" teamName="AuditAI" />);
+    renderChat();
 
-    const trigger = screen.getByRole('button', { name: 'Open floating agent chat' });
-    expect(trigger.className).toContain('hidden');
-    expect(trigger.className).toContain('sm:inline-flex');
+    const trigger = screen.getByRole('button', { name: /Open floating agent chat/ });
+    expect(trigger.className).not.toContain('hidden');
+    expect(trigger.className).not.toContain('sm:inline-flex');
     await user.click(trigger);
 
-    expect(await screen.findByRole('heading', { name: 'Ask AuditAI' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Object' })).toBeTruthy();
+    expect(screen.getAllByText('⌘J').length).toBeGreaterThan(0);
     const body = fakes.transports.at(-1)?.options.body?.() as {
       dashboardContext?: Record<string, unknown>;
+      contextTrail?: { kind: string; objectId?: string }[];
+      pinnedEntityId?: string;
       startNewSession?: boolean;
     };
     expect(body.startNewSession).toBe(true);
+    expect(body.pinnedEntityId).toBe(objectId);
     expect(body.dashboardContext).toMatchObject({
-      pathname: '/app/objects/44444444-4444-4444-8444-444444444444',
-      routeKind: 'objects',
-      objectId: '44444444-4444-4444-8444-444444444444',
-      search: { tab: 'notes', item: boardItemId },
-      boardItemId,
+      pathname: `/app/objects/${objectId}`,
+      objectId,
     });
+    expect(body.contextTrail?.[0]).toMatchObject({ kind: 'object', objectId });
+  });
+
+  it('keeps the session when the panel closes and resets only on New', async () => {
+    const user = userEvent.setup();
+    const storedSession = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa';
+    const storageKey = 'timeline:floating-agent-chat:team-1:session';
+    window.localStorage.setItem(storageKey, storedSession);
+
+    renderChat();
+    await user.click(screen.getByRole('button', { name: /Open floating agent chat/ }));
+    await waitFor(() => {
+      expect(
+        (fakes.transports.at(-1)?.options.body?.() as { sessionId?: string | null }).sessionId,
+      ).toBe(storedSession);
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Close floating agent chat' }));
+    expect(window.localStorage.getItem(storageKey)).toBe(storedSession);
+
+    await user.click(screen.getByRole('button', { name: /Open floating agent chat/ }));
+    await waitFor(() => {
+      expect(
+        (fakes.transports.at(-1)?.options.body?.() as { sessionId?: string | null }).sessionId,
+      ).toBe(storedSession);
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Start new conversation' }));
+    expect(window.localStorage.getItem(storageKey)).toBeNull();
+    await waitFor(() => {
+      expect(
+        fakes.transports.at(-1)?.options.body?.() as {
+          sessionId?: string | null;
+          startNewSession?: boolean;
+        },
+      ).toMatchObject({ sessionId: undefined, startNewSession: true });
+    });
+  });
+
+  it('opens and closes from the keyboard shortcut', async () => {
+    const user = userEvent.setup();
+    renderChat();
+
+    await user.keyboard('{Meta>}j{/Meta}');
+    expect(await screen.findByRole('heading', { name: 'Object' })).toBeTruthy();
+    await user.keyboard('{Meta>}j{/Meta}');
+    expect(screen.queryByRole('heading', { name: 'Object' })).toBeNull();
   });
 
   it('clears stale floating session id when hydration fails', async () => {
@@ -102,7 +164,7 @@ describe('FloatingAgentChat', () => {
     window.localStorage.setItem(storageKey, staleSessionId);
     fakes.loadChatSessionAction.mockResolvedValueOnce({ ok: false, error: 'Session not found' });
 
-    render(<FloatingAgentChat teamId="team-1" teamName="AuditAI" />);
+    renderChat();
 
     await waitFor(() => {
       expect(window.localStorage.getItem(storageKey)).toBeNull();
@@ -114,95 +176,32 @@ describe('FloatingAgentChat', () => {
     const user = userEvent.setup();
     const team1Session = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa';
     const team2Session = 'bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb';
-    const team1StorageKey = 'timeline:floating-agent-chat:team-1:session';
-    const team2StorageKey = 'timeline:floating-agent-chat:team-2:session';
+    window.localStorage.setItem('timeline:floating-agent-chat:team-1:session', team1Session);
+    window.localStorage.setItem('timeline:floating-agent-chat:team-2:session', team2Session);
 
-    window.localStorage.setItem(team1StorageKey, team1Session);
-    window.localStorage.setItem(team2StorageKey, team2Session);
-
-    const { rerender } = render(<FloatingAgentChat teamId="team-1" teamName="AuditAI" />);
-    await user.click(screen.getByRole('button', { name: 'Open floating agent chat' }));
+    const { rerender } = render(
+      <ChatViewProvider>
+        <FloatingAgentChat teamId="team-1" teamName="AuditAI" />
+      </ChatViewProvider>,
+    );
+    await user.click(screen.getByRole('button', { name: /Open floating agent chat/ }));
     await waitFor(() => {
       expect(fakes.loadChatSessionAction).toHaveBeenCalledWith({ sessionId: team1Session });
-      expect(
-        (fakes.transports.at(-1)?.options.body?.() as { sessionId?: string | null }).sessionId,
-      ).toBe(team1Session);
     });
 
     fakes.loadChatSessionAction.mockClear();
-    rerender(<FloatingAgentChat teamId="team-2" teamName="AuditAI" />);
-    await user.click(screen.getByRole('button', { name: 'Open floating agent chat' }));
-
+    rerender(
+      <ChatViewProvider>
+        <FloatingAgentChat teamId="team-2" teamName="AuditAI" />
+      </ChatViewProvider>,
+    );
+    await user.click(screen.getByRole('button', { name: /Open floating agent chat/ }));
     await waitFor(() => {
       expect(fakes.loadChatSessionAction).toHaveBeenCalledWith({ sessionId: team2Session });
-      expect(
-        (fakes.transports.at(-1)?.options.body?.() as { sessionId?: string | null }).sessionId,
-      ).toBe(team2Session);
     });
   });
 
-  it('starts a fresh floating session after the modal closes', async () => {
-    const user = userEvent.setup();
-    const storedSession = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa';
-    const storageKey = 'timeline:floating-agent-chat:team-1:session';
-    window.localStorage.setItem(storageKey, storedSession);
-
-    render(<FloatingAgentChat teamId="team-1" teamName="AuditAI" />);
-    await user.click(screen.getByRole('button', { name: 'Open floating agent chat' }));
-
-    await waitFor(() => {
-      expect(
-        (fakes.transports.at(-1)?.options.body?.() as { sessionId?: string | null }).sessionId,
-      ).toBe(storedSession);
-    });
-
-    await user.click(screen.getByRole('button', { name: 'Close floating agent chat' }));
-    expect(window.localStorage.getItem(storageKey)).toBeNull();
-
-    await user.click(screen.getByRole('button', { name: 'Open floating agent chat' }));
-
-    await waitFor(() => {
-      expect(fakes.transports.length).toBeGreaterThanOrEqual(2);
-    });
-    expect(
-      fakes.transports.at(-1)?.options.body?.() as {
-        sessionId?: string | null;
-        startNewSession?: boolean;
-      },
-    ).toMatchObject({ sessionId: undefined, startNewSession: true });
-  });
-
-  it('starts a fresh floating session while the modal stays open', async () => {
-    const user = userEvent.setup();
-    const storedSession = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa';
-    const storageKey = 'timeline:floating-agent-chat:team-1:session';
-    window.localStorage.setItem(storageKey, storedSession);
-
-    render(<FloatingAgentChat teamId="team-1" teamName="AuditAI" />);
-    await user.click(screen.getByRole('button', { name: 'Open floating agent chat' }));
-
-    await waitFor(() => {
-      expect(
-        (fakes.transports.at(-1)?.options.body?.() as { sessionId?: string | null }).sessionId,
-      ).toBe(storedSession);
-    });
-
-    await user.click(screen.getByRole('button', { name: 'Start new conversation' }));
-
-    expect(window.localStorage.getItem(storageKey)).toBeNull();
-    expect(screen.getByRole('heading', { name: 'Ask AuditAI' })).toBeTruthy();
-    await waitFor(() => {
-      expect(fakes.transports.length).toBeGreaterThanOrEqual(2);
-    });
-    expect(
-      fakes.transports.at(-1)?.options.body?.() as {
-        sessionId?: string | null;
-        startNewSession?: boolean;
-      },
-    ).toMatchObject({ sessionId: undefined, startNewSession: true });
-  });
-
-  it('ignores late session ids from requests that finish after close', async () => {
+  it('ignores late session ids from requests that finish after New', async () => {
     const user = userEvent.setup();
     const storageKey = 'timeline:floating-agent-chat:team-1:session';
     const lateSession = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
@@ -210,25 +209,15 @@ describe('FloatingAgentChat', () => {
       new Response(null, { headers: { 'x-tl-session-id': lateSession } }),
     );
 
-    render(<FloatingAgentChat teamId="team-1" teamName="AuditAI" />);
-    await user.click(screen.getByRole('button', { name: 'Open floating agent chat' }));
+    renderChat();
+    await user.click(screen.getByRole('button', { name: /Open floating agent chat/ }));
     const transport = fakes.transports.at(-1)?.options;
 
-    await user.click(screen.getByRole('button', { name: 'Close floating agent chat' }));
-    await transport?.fetch?.('/api/chat', {});
+    await user.click(screen.getByRole('button', { name: 'Start new conversation' }));
+    await (
+      transport as { fetch?: (url: string, init?: RequestInit) => Promise<Response> }
+    ).fetch?.('/api/chat', {});
 
     expect(window.localStorage.getItem(storageKey)).toBeNull();
-
-    await user.click(screen.getByRole('button', { name: 'Open floating agent chat' }));
-
-    await waitFor(() => {
-      expect(fakes.transports.length).toBeGreaterThanOrEqual(2);
-    });
-    expect(
-      fakes.transports.at(-1)?.options.body?.() as {
-        sessionId?: string | null;
-        startNewSession?: boolean;
-      },
-    ).toMatchObject({ sessionId: undefined, startNewSession: true });
   });
 });
