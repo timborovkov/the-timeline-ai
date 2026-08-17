@@ -375,8 +375,9 @@ Job recovery is an admin-only queue, not a processing inventory.
 Members who open `/app/team/jobs` see an Admins-only empty state. Home
 “recoverable jobs” and the jobs page share the same 7-day failed/stuck count,
 and only admins see that Home link. The page uses a sentence-case `PageHeader`
-titled Job recovery, with Team breadcrumbs like other team drill-downs and an
-“Admins only” access label. It groups Failed then Stuck. Kind filters appear
+titled Job recovery, with Team breadcrumbs like other team drill-downs. The
+header is the title and the 7-day subtitle; it has no access, team, or count
+metadata row. It groups Failed then Stuck. Kind filters appear
 only when more than one job kind is present. Rows show status, label, and
 relative time. Retry and dismiss live in the row overflow menu; bulk Retry
 failed and Dismiss all stay on the toolbar. Hovering a row’s label or time
@@ -592,8 +593,10 @@ IDs, raw enum keys, and provider errors stay in the row hover title. Copy access
 for reconciliation JSON payloads lives in the row overflow menu. Audit and
 Integration Audit still keep UUIDs, refs, and JSON closed inside
 `TechnicalDetails`. Job recovery pages the 7-day snapshot and finished archive
-with the shared infinite-scroll sentinel. Reconciliation has no stat-card strip
-and no release-gate banner; coverage actions sit on a toolbar with hover hints. The dashboard
+with the shared infinite-scroll sentinel. Job recovery’s header is title and
+subtitle only; older hidden jobs stay in the body banner. Reconciliation has no
+stat-card strip and no release-gate banner; coverage actions sit on a toolbar
+with hover hints. The dashboard
 header metadata is checked / needs repair / updated, not access or team.
 Recent clusters and Recent outputs use the same sentence-case section title as
 the rest of the product. Manual UUID reconcile stays in Advanced tools.
@@ -683,3 +686,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Quiet reconciliation dashboard | Drops the How it works primer, release-gate banner, and stat cards, and puts coverage actions on a hinted toolbar above recent rows. |
 | 2026-08-17 | Reconciliation header and column titles | Drops access and team from the metadata row, removes Recently reconciled, and uses sentence-case Recent clusters / Recent outputs titles. |
 | 2026-08-17 | Job recovery infinite scroll | Pages the 7-day snapshot and finished archive with the shared InfiniteScroll sentinel instead of a Load more button. |
+| 2026-08-17 | Quiet job recovery header | Drops the access, team, last-7-days, and older-hidden metadata row so the page leads with title and subtitle. |

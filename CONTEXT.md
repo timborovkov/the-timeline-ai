@@ -959,7 +959,8 @@ failed and stuck product jobs from the last 7 days, tied to visible team
 artifacts such as transcription, extraction, embedding, document processing,
 meeting finalization, and integration sync. Home “recoverable jobs” uses this
 same 7-day count and is hidden from members. Members who open the page see an
-Admins-only empty state. Older failed or stuck work is hidden from attention;
+Admins-only empty state. The header is the page title and a 7-day subtitle.
+Older failed or stuck work is hidden from attention;
 workers retry it a few times, then give up. Admins can dismiss that older set in
 bulk; the page continues until the hidden count is cleared. The list shows
 status, artifact label, and relative time. Job IDs, artifact UUIDs, and raw

@@ -26,23 +26,6 @@ export function JobsPageHeader({
       <PageHeader
         title={JOB_RECOVERY_PAGE_TITLE}
         subtitle={jobsPageSubtitle()}
-        metadata={[
-          { label: 'access', value: 'Admins only' },
-          ...(teamName ? ([{ label: 'team', value: teamName, signal: true }] as const) : []),
-          ...(typeof itemCount === 'number'
-            ? ([
-                {
-                  label: 'last 7 days',
-                  value: itemCount,
-                  mono: true,
-                  danger: itemCount > 0,
-                },
-              ] as const)
-            : []),
-          ...(olderCount > 0
-            ? ([{ label: 'older hidden', value: olderCount, mono: true }] as const)
-            : []),
-        ]}
         srLabel={`${JOB_RECOVERY_PAGE_TITLE}${teamName ? ` for ${teamName}` : ''}. Admins only.${typeof itemCount === 'number' ? ` ${String(itemCount)} from the last ${String(JOBS_ATTENTION_DAYS)} days.` : ''}${olderCount > 0 ? ` ${String(olderCount)} older jobs are hidden.` : ''}`}
       />
     </>

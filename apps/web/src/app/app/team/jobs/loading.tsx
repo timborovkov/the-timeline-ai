@@ -14,7 +14,7 @@ export default function JobsLoading() {
         <Breadcrumb
           items={[{ label: 'Team', href: '/app/team' }, { label: JOB_RECOVERY_PAGE_TITLE }]}
         />
-        <PageHeaderSkeleton />
+        <PageHeaderSkeleton showMetadata={false} />
 
         <section
           aria-hidden="true"

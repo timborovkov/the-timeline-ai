@@ -76,10 +76,10 @@ describe('Job recovery page', () => {
   it('shows the admin recovery queue and keeps older backlog out of the list', async () => {
     const html = renderToStaticMarkup(await JobRecoveryPage({ searchParams: Promise.resolve({}) }));
 
-    expect(html).toContain('Admins only');
-    expect(html).toContain('AuditAI');
-    expect(html).toContain('last 7 days');
-    expect(html).toContain('older hidden');
+    expect(html).not.toContain('>access</dt>');
+    expect(html).not.toContain('>team</dt>');
+    expect(html).not.toContain('>last 7 days</dt>');
+    expect(html).not.toContain('>older hidden</dt>');
     expect(html).toContain('Dismiss older jobs');
     expect(html).toContain('Embedding · calendar event from Aug 16, 2026, 12:00 PM');
     expect(html).not.toContain('need attention');

@@ -26,6 +26,7 @@ describe('Job recovery route states', () => {
     expect(announcement.parentElement?.getAttribute('aria-busy')).toBeNull();
     expect(screen.getByLabelText('Loading job recovery').getAttribute('aria-busy')).toBe('true');
     expect(screen.getAllByRole('heading', { level: 1, name: 'Job recovery' })).toHaveLength(1);
+    expect(screen.getByLabelText('Loading').children).toHaveLength(2);
     expect(screen.getByRole('link', { name: 'Back' }).getAttribute('href')).toBe('/app/team');
     expect(screen.queryByRole('region')).toBeNull();
     expect(screen.queryByRole('heading', { level: 2, name: 'Processing summary' })).toBeNull();
@@ -61,9 +62,11 @@ describe('Job recovery route states', () => {
     const user = userEvent.setup();
     const reset = vi.fn();
 
-    render(<JobsError error={new Error('route failed')} reset={reset} />);
+    const { container } = render(<JobsError error={new Error('route failed')} reset={reset} />);
 
     expect(screen.getAllByRole('heading', { level: 1, name: 'Job recovery' })).toHaveLength(1);
+    expect(container.innerHTML).not.toContain('>access</dt>');
+    expect(container.innerHTML).not.toContain('>team</dt>');
     expect(screen.getByText('Admins only')).toBeTruthy();
     expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Back' }).getAttribute('href')).toBe('/app/team');
