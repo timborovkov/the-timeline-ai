@@ -2,7 +2,7 @@
 
 import { Breadcrumb } from '@/components/breadcrumb';
 import { ErrorState } from '@/components/error-state';
-import { IndexStrip } from '@/components/index-strip';
+import { PageHeader } from '@/components/page-header';
 
 export default function JobsError({
   error,
@@ -14,7 +14,10 @@ export default function JobsError({
   return (
     <div className="space-y-8">
       <Breadcrumb items={[{ label: 'Team', href: '/app/team' }, { label: 'Background jobs' }]} />
-      <IndexStrip segments={[{ value: 'BACKGROUND JOBS' }]} srLabel="Background jobs" />
+      <PageHeader
+        title="Background jobs"
+        subtitle="Retry or dismiss failed processing from the last 7 days."
+      />
       <ErrorState
         title="Unable to load background jobs"
         description="No background work has been retried, dismissed, or changed. Check your connection, then try again."

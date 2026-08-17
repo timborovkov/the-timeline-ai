@@ -18,13 +18,13 @@ export function JobDashboard() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         {query.data ? (
           <p role="status" className="text-xs text-fg-dim">
-            Updated{' '}
+            Unprocessed backlog, not the recovery queue. Updated{' '}
             <time dateTime={query.data.updatedAt} className="font-mono tabular-nums">
               {new Date(query.data.updatedAt).toLocaleTimeString()}
             </time>
           </p>
         ) : (
-          <p className="text-xs text-fg-dim">Processing activity</p>
+          <p className="text-xs text-fg-dim">Unprocessed backlog</p>
         )}
         <Button
           type="button"
@@ -120,7 +120,7 @@ function JobDashboardSummaries({
             {summary.needsAttention}
           </p>
           <p className="mt-1 text-xs text-fg-muted">
-            {summary.needsAttention === 1 ? 'item needs attention' : 'items need attention'}
+            {summary.needsAttention === 1 ? 'unprocessed event' : 'unprocessed events'}
           </p>
         </li>
       ))}

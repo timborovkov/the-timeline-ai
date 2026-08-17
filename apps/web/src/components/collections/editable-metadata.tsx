@@ -32,8 +32,11 @@ export function EditableMetadata({
   const wasPendingRef = useRef(pending);
   const previousErrorRef = useRef(error);
 
+  if (pending && open) {
+    setOpen(false);
+  }
+
   useEffect(() => {
-    if (pending) setOpen(false);
     const completedSave = wasPendingRef.current && !pending;
     const receivedError = Boolean(error && error !== previousErrorRef.current);
     if (completedSave || receivedError) {

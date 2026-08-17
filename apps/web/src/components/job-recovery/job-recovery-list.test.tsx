@@ -19,12 +19,34 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/lib/use-paginated-queries', () => ({
   useFinishedJobsInfiniteQuery: fakes.useFinishedJobsInfiniteQuery,
+  useJobDashboardQuery: () => ({
+    data: undefined,
+    error: null,
+    isError: false,
+    isFetching: false,
+    isPending: true,
+    refetch: vi.fn(),
+  }),
 }));
 
 const { JobRecoveryList } = await import('./job-recovery-list.js');
 
 type JobRecoveryItem = jobRecovery.JobRecoveryItem;
+type JobRecoveryKind = jobRecovery.JobRecoveryKind;
 type FinishedJobArchiveItem = jobRecovery.FinishedJobArchiveItem;
+
+function renderList(
+  items: JobRecoveryItem[],
+  props: Partial<{ defaultFilter: JobRecoveryKind; olderCount: number }> = {},
+) {
+  return render(
+    <JobRecoveryList
+      items={items}
+      olderCount={props.olderCount ?? 0}
+      defaultFilter={props.defaultFilter}
+    />,
+  );
+}
 
 function recoverableJob(overrides: Partial<JobRecoveryItem> = {}): JobRecoveryItem {
   return {
@@ -103,22 +125,18 @@ afterEach(() => {
 describe('JobRecoveryList', () => {
   it('renders product recovery language, filters by kind, and avoids queue internals', async () => {
     const user = userEvent.setup();
-    render(
-      <JobRecoveryList
-        items={[
-          recoverableJob(),
-          recoverableJob({
-            id: 'job-2',
-            kind: 'integration_sync',
-            artifactKind: 'integration',
-            artifactId: 'integration-1',
-            label: 'Sync Sentry issues',
-            error: 'Provider budget paused',
-            syncKind: 'incremental',
-          }),
-        ]}
-      />,
-    );
+    renderList([
+      recoverableJob(),
+      recoverableJob({
+        id: 'job-2',
+        kind: 'integration_sync',
+        artifactKind: 'integration',
+        artifactId: 'integration-1',
+        label: 'Sync Sentry issues',
+        error: 'Provider budget paused',
+        syncKind: 'incremental',
+      }),
+    ]);
 
     expect(screen.getByText('Transcription')).toBeTruthy();
     expect(screen.getByText('Integrations')).toBeTruthy();
@@ -149,7 +167,7 @@ describe('JobRecoveryList', () => {
       }),
     );
 
-    render(<JobRecoveryList items={[recoverableJob()]} />);
+    renderList([recoverableJob()]);
 
     await user.click(screen.getByRole('button', { name: 'Retry' }));
 
@@ -159,8 +177,8 @@ describe('JobRecoveryList', () => {
         method: 'POST',
       });
     });
-    expect(screen.getByText('retrying')).toBeTruthy();
-    expect(screen.getByText('Retry queued. Watching finished jobs below.')).toBeTruthy();
+    expect(screen.getByText('Retrying')).toBeTruthy();
+    expect(screen.getByText('Retry queued.')).toBeTruthy();
     expect(fakes.refetchFinishedJobs).toHaveBeenCalledOnce();
 
     await user.click(screen.getByRole('button', { name: 'Dismiss' }));
@@ -172,7 +190,7 @@ describe('JobRecoveryList', () => {
       });
     });
     expect(screen.queryByText('Transcribe customer call')).toBeNull();
-    expect(screen.getByText('No jobs need attention in this view.')).toBeTruthy();
+    expect(screen.getByText('Nothing needs attention from the last 7 days.')).toBeTruthy();
     expect(fakes.routerRefresh).toHaveBeenCalledOnce();
   });
 
@@ -195,7 +213,7 @@ describe('JobRecoveryList', () => {
       vi.fn(() => Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }))),
     );
 
-    render(<JobRecoveryList items={[recoverableJob()]} />);
+    renderList([recoverableJob()]);
     await userEvent
       .setup({ advanceTimers: vi.advanceTimersByTime })
       .click(screen.getByRole('button', { name: 'Retry' }));
@@ -232,19 +250,15 @@ describe('JobRecoveryList', () => {
       }),
     );
 
-    render(
-      <JobRecoveryList
-        items={[
-          recoverableJob(),
-          recoverableJob({
-            id: 'job-2',
-            artifactId: 'raw-event-2',
-            label: 'Transcribe board update',
-            detectedAt: new Date('2026-07-02T11:00:00.000Z'),
-          }),
-        ]}
-      />,
-    );
+    renderList([
+      recoverableJob(),
+      recoverableJob({
+        id: 'job-2',
+        artifactId: 'raw-event-2',
+        label: 'Transcribe board update',
+        detectedAt: new Date('2026-07-02T11:00:00.000Z'),
+      }),
+    ]);
 
     await user.click(screen.getByRole('button', { name: 'Retry failed (2)' }));
 
@@ -262,7 +276,7 @@ describe('JobRecoveryList', () => {
       ],
     });
     expect(screen.getByText('Retried 1 failed jobs; 1 could not be queued.')).toBeTruthy();
-    expect(screen.getByText('Retry queued. Watching finished jobs below.')).toBeTruthy();
+    expect(screen.getByText('Retry queued.')).toBeTruthy();
     expect(fakes.refetchFinishedJobs).toHaveBeenCalledOnce();
     expect(fakes.routerRefresh).toHaveBeenCalledOnce();
   });
@@ -282,41 +296,82 @@ describe('JobRecoveryList', () => {
       }),
     );
 
-    render(
-      <JobRecoveryList
-        defaultFilter="integration_sync"
-        items={[
-          recoverableJob(),
-          recoverableJob({
-            id: 'job-2',
-            kind: 'integration_sync',
-            artifactKind: 'integration',
-            artifactId: 'integration-1',
-            label: 'Sync Sentry issues',
-            detectedAt: new Date('2026-07-02T11:00:00.000Z'),
-          }),
-        ]}
-      />,
+    renderList(
+      [
+        recoverableJob(),
+        recoverableJob({
+          id: 'job-2',
+          kind: 'integration_sync',
+          artifactKind: 'integration',
+          artifactId: 'integration-1',
+          label: 'Sync Sentry issues',
+          detectedAt: new Date('2026-07-02T11:00:00.000Z'),
+        }),
+      ],
+      { defaultFilter: 'integration_sync' },
     );
 
     expect(screen.queryByText('Transcribe customer call')).toBeNull();
-    await user.click(screen.getByRole('button', { name: 'Dismiss failed (1)' }));
-    expect(screen.getByText('Dismiss 1 failed integration sync?')).toBeTruthy();
-    await user.click(screen.getByRole('button', { name: 'Dismiss failed' }));
+    await user.click(screen.getByRole('button', { name: 'Dismiss all (1)' }));
+    expect(
+      screen.getByText(
+        'Dismiss 1 integration sync job from the last 7 days? They leave this list. Timeline can still retry them in the background.',
+      ),
+    ).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Dismiss all' }));
 
     await waitFor(() => {
       expect(requests[0]).toMatchObject({
-        url: '/api/team/job-recovery/dismiss-failed',
+        url: '/api/team/job-recovery/dismiss-matching',
         method: 'POST',
       });
     });
     expect(requests[0]?.body).toMatchObject({
       kind: 'integration_sync',
-      expectedCount: 1,
-      items: [{ id: 'job-2', detectedAt: '2026-07-02T11:00:00.000Z' }],
+      window: 'recent',
     });
     expect(screen.queryByText('Sync Sentry issues')).toBeNull();
-    expect(screen.getByText('No jobs need attention in this view.')).toBeTruthy();
+    expect(screen.getByText('Nothing needs attention from the last 7 days.')).toBeTruthy();
+    expect(fakes.routerRefresh).toHaveBeenCalledOnce();
+  });
+
+  it('offers to dismiss jobs older than the attention window', async () => {
+    const user = userEvent.setup();
+    const requests: { body: unknown; method: string; url: string }[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        requests.push({
+          url: fetchUrl(input),
+          method: init?.method ?? 'GET',
+          body: fetchJsonBody(init),
+        });
+        return Promise.resolve(
+          new Response(JSON.stringify({ dismissed: 12, remaining: 0 }), { status: 200 }),
+        );
+      }),
+    );
+
+    renderList([], { olderCount: 12 });
+
+    expect(screen.getByText(/older jobs are hidden/)).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Dismiss older jobs' }));
+    expect(
+      screen.getByText(
+        'Dismiss 12 jobs older than 7 days? Timeline will stop asking you to recover them. Background workers may still retry a few times, then give up.',
+      ),
+    ).toBeTruthy();
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Dismiss older jobs' }),
+    );
+
+    await waitFor(() => {
+      expect(requests[0]).toMatchObject({
+        url: '/api/team/job-recovery/dismiss-matching',
+        method: 'POST',
+      });
+    });
+    expect(requests[0]?.body).toEqual({ window: 'older' });
     expect(fakes.routerRefresh).toHaveBeenCalledOnce();
   });
 
@@ -341,8 +396,9 @@ describe('JobRecoveryList', () => {
       ],
     });
 
-    render(<JobRecoveryList items={[]} />);
+    renderList([]);
 
+    await user.click(screen.getByText('Advanced tools'));
     const archive = screen.getByRole('table');
     expect(within(archive).getByText('Transcribe customer call')).toBeTruthy();
     expect(within(archive).getByText('Sync Sentry issues')).toBeTruthy();
@@ -353,7 +409,8 @@ describe('JobRecoveryList', () => {
 
     cleanup();
     installFinishedJobsQuery({ error: new Error('archive offline') });
-    render(<JobRecoveryList items={[]} />);
+    renderList([]);
+    await userEvent.setup().click(screen.getByText('Advanced tools'));
     expect(screen.getByText('archive offline')).toBeTruthy();
   });
 });

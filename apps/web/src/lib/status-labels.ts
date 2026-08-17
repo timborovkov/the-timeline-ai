@@ -17,7 +17,8 @@ const LABELS: Record<string, string> = {
   pending: 'Pending',
   processing: 'Processing',
   ready: 'Ready',
-  scheduled: 'Scheduled',
+  retrying: 'Retrying',
+  stuck: 'Stuck',
   shipped: 'Shipped',
   todo: 'To do',
 };

@@ -1,11 +1,15 @@
 'use client';
 
+import { JOB_RECOVERY_ATTENTION_DAYS } from '@timeline/shared/job-recovery';
 import { CheckCircle2, CircleAlert, LoaderCircle, RotateCcw, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 
 import type * as jobRecovery from '@timeline/shared/job-recovery';
 
+import { CollectionGroup } from '@/components/collections/collection-group';
+import { CollectionStatus } from '@/components/collections/collection-status';
+import { JobDashboard } from '@/components/jobs/job-dashboard';
 import { TechnicalDetails } from '@/components/technical-details';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Badge } from '@/components/ui/badge';
@@ -35,8 +39,14 @@ interface RetryFailedResponse {
   failedIds?: string[];
 }
 
+interface DismissMatchingResponse {
+  dismissed?: number;
+  remaining?: number;
+}
+
 interface JobRecoveryListProps {
   items: JobRecoveryItem[];
+  olderCount: number;
   defaultFilter?: JobRecoveryKind;
 }
 
@@ -114,7 +124,7 @@ function jobRecoveryUiReducer(
   }
 }
 
-export function JobRecoveryList({ items, defaultFilter }: JobRecoveryListProps) {
+export function JobRecoveryList({ items, olderCount, defaultFilter }: JobRecoveryListProps) {
   const router = useRouter();
   const dialog = useAppDialog();
   const finishedJobs = useFinishedJobsInfiniteQuery();
@@ -226,40 +236,63 @@ export function JobRecoveryList({ items, defaultFilter }: JobRecoveryListProps) 
     }
   }
 
-  async function dismissFailed() {
-    if (failedCount === 0) return;
-    const scopeLabel = filter === 'all' ? 'all failed jobs' : `failed ${filter.replace(/_/g, ' ')}`;
+  async function dismissVisible() {
+    if (filtered.length === 0) return;
+    const kindLabel = filter === 'all' ? '' : `${filter.replace(/_/g, ' ')} `;
+    const jobWord = filtered.length === 1 ? 'job' : 'jobs';
     const confirmed = await dialog.confirm({
-      title: 'Dismiss failed jobs?',
-      description: `Dismiss ${String(failedCount)} ${scopeLabel}?`,
-      confirmLabel: 'Dismiss failed',
+      title: 'Dismiss these jobs?',
+      description: `Dismiss ${String(filtered.length)} ${kindLabel}${jobWord} from the last ${String(JOB_RECOVERY_ATTENTION_DAYS)} days? They leave this list. Timeline can still retry them in the background.`,
+      confirmLabel: 'Dismiss all',
       destructive: true,
     });
     if (!confirmed) return;
-    dispatchUi({ type: 'busy', busy: 'dismiss-failed' });
+    await dismissMatching('recent', 'dismiss-visible');
+  }
+
+  async function dismissOlder() {
+    if (olderCount === 0) return;
+    const confirmed = await dialog.confirm({
+      title: 'Dismiss older jobs?',
+      description: `Dismiss ${String(olderCount)} jobs older than ${String(JOB_RECOVERY_ATTENTION_DAYS)} days? Timeline will stop asking you to recover them. Background workers may still retry a few times, then give up.`,
+      confirmLabel: 'Dismiss older jobs',
+      destructive: true,
+    });
+    if (!confirmed) return;
+    await dismissMatching('older', 'dismiss-older');
+  }
+
+  async function dismissMatching(window: 'recent' | 'older', busyKey: string) {
+    dispatchUi({ type: 'busy', busy: busyKey });
     dispatchUi({ type: 'error', error: null });
     try {
-      const res = await fetch('/api/team/job-recovery/dismiss-failed', {
+      const res = await fetch('/api/team/job-recovery/dismiss-matching', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          ...(filter === 'all' ? {} : { kind: filter }),
-          items: failedItems.map((item) => ({
-            id: item.id,
-            detectedAt: new Date(item.detectedAt).toISOString(),
-          })),
-          expectedCount: failedCount,
+          window,
+          ...(window === 'older' || filter === 'all' ? {} : { kind: filter }),
         }),
       });
       if (!res.ok) {
         const text = await res.text();
-        dispatchUi({ type: 'error', error: `Dismiss failed jobs failed: ${text}` });
+        dispatchUi({ type: 'error', error: `Dismiss failed: ${text}` });
         return;
       }
-      dispatchUi({
-        type: 'dismissMany',
-        keys: failedItems.map((item) => itemSnapshotKey(item)),
-      });
+      const body = (await res.json().catch(() => ({}))) as DismissMatchingResponse;
+      if (window === 'recent') {
+        dispatchUi({
+          type: 'dismissMany',
+          keys: filtered.map((item) => itemSnapshotKey(item)),
+        });
+      }
+      if ((body.remaining ?? 0) > 0) {
+        const remainingLabel = window === 'older' ? 'older jobs' : 'jobs';
+        dispatchUi({
+          type: 'error',
+          error: `Dismissed ${String(body.dismissed ?? 0)} ${remainingLabel}; ${String(body.remaining)} remain. Dismiss again to continue.`,
+        });
+      }
       router.refresh();
     } finally {
       dispatchUi({ type: 'busy', busy: null });
@@ -316,12 +349,37 @@ export function JobRecoveryList({ items, defaultFilter }: JobRecoveryListProps) 
   }
 
   return (
-    <section className="space-y-3">
-      <ConversationSuggestionRecovery
-        onQueued={() => {
-          router.refresh();
-        }}
-      />
+    <section className="space-y-6">
+      {olderCount > 0 ? (
+        <div className="flex flex-col gap-3 rounded-sm border border-border bg-surface px-3 py-3 md:flex-row md:items-center md:justify-between">
+          <div className="space-y-1">
+            <p className="text-sm font-medium text-fg">
+              <span className="font-mono tabular-nums">{olderCount.toLocaleString()}</span> older
+              jobs are hidden
+            </p>
+            <p className="text-xs text-fg-muted">
+              These are more than {String(JOB_RECOVERY_ATTENTION_DAYS)} days old. Workers retry them
+              a few times, then stop. Dismiss them if you do not want them recovered.
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={busy !== null}
+            onClick={() => {
+              void dismissOlder();
+            }}
+          >
+            {busy === 'dismiss-older' ? (
+              <LoaderCircle aria-hidden="true" className="mr-1 size-3.5 animate-spin" />
+            ) : (
+              <X aria-hidden="true" className="mr-1 size-3.5" />
+            )}
+            {busy === 'dismiss-older' ? 'Dismissing older' : 'Dismiss older jobs'}
+          </Button>
+        </div>
+      ) : null}
 
       {actionError ? (
         <div className="rounded-sm border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -334,7 +392,8 @@ export function JobRecoveryList({ items, defaultFilter }: JobRecoveryListProps) 
         failedCount={failedCount}
         filter={filter}
         hasQueuedFailedRetry={hasQueuedFailedRetry}
-        onDismissFailed={dismissFailed}
+        visibleCount={filtered.length}
+        onDismissVisible={dismissVisible}
         onRetryFailed={retryFailed}
         onSetFilter={(nextFilter) => {
           dispatchUi({ type: 'filter', filter: nextFilter });
@@ -342,7 +401,13 @@ export function JobRecoveryList({ items, defaultFilter }: JobRecoveryListProps) 
       />
 
       <JobRecoveryItems busy={busy} items={filtered} onAction={call} retryStates={retryStates} />
-      <FinishedJobsArchive items={finishedArchiveItems} query={finishedJobs} />
+      <AdvancedJobTools
+        finishedItems={finishedArchiveItems}
+        finishedQuery={finishedJobs}
+        onQueued={() => {
+          router.refresh();
+        }}
+      />
       {dialog.node}
     </section>
   );
@@ -353,7 +418,8 @@ function JobRecoveryToolbar({
   failedCount,
   filter,
   hasQueuedFailedRetry,
-  onDismissFailed,
+  visibleCount,
+  onDismissVisible,
   onRetryFailed,
   onSetFilter,
 }: {
@@ -361,7 +427,8 @@ function JobRecoveryToolbar({
   failedCount: number;
   filter: JobRecoveryKind | 'all';
   hasQueuedFailedRetry: boolean;
-  onDismissFailed: () => Promise<void>;
+  visibleCount: number;
+  onDismissVisible: () => Promise<void>;
   onRetryFailed: () => Promise<void>;
   onSetFilter: (filter: JobRecoveryKind | 'all') => void;
 }) {
@@ -412,15 +479,15 @@ function JobRecoveryToolbar({
           type="button"
           size="sm"
           variant="ghost"
-          disabled={busy !== null || failedCount === 0}
+          disabled={busy !== null || visibleCount === 0}
           onClick={() => {
-            void onDismissFailed();
+            void onDismissVisible();
           }}
         >
           <X aria-hidden="true" className="mr-1 size-3.5" />
-          {busy === 'dismiss-failed'
-            ? 'Dismissing failed'
-            : `Dismiss failed${failedCount > 0 ? ` (${String(failedCount)})` : ''}`}
+          {busy === 'dismiss-visible'
+            ? 'Dismissing'
+            : `Dismiss all${visibleCount > 0 ? ` (${String(visibleCount)})` : ''}`}
         </Button>
       </div>
     </div>
@@ -438,55 +505,113 @@ function JobRecoveryItems({
   onAction: (action: 'retry' | 'dismiss', id: string) => Promise<void>;
   retryStates: RetryStates;
 }) {
+  const failedItems = items.filter((item) => item.status === 'failed');
+  const stuckItems = items.filter((item) => item.status !== 'failed');
+
+  if (items.length === 0) {
+    return (
+      <p className="px-1 py-4 text-sm text-fg-muted">
+        Nothing needs attention from the last {String(JOB_RECOVERY_ATTENTION_DAYS)} days.
+      </p>
+    );
+  }
+
   return (
-    <ul className="divide-y divide-border rounded-sm border border-border bg-surface">
-      {items.length === 0 ? (
-        <li className="px-3 py-4 text-sm text-fg-muted">No jobs need attention in this view.</li>
-      ) : (
-        items.map((item) => {
-          const retry = retryStates[item.id];
-          return (
-            <li key={item.id} className="flex flex-col gap-3 p-3 md:flex-row md:items-center">
-              <div className="min-w-0 flex-1 space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant={item.status === 'failed' ? 'destructive' : 'outline'}>
-                    {retry?.status === 'queued' ? 'retrying' : item.status}
-                  </Badge>
-                  <span className="truncate text-sm font-medium">{item.label}</span>
-                </div>
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-muted">
-                  <span>{new Date(item.detectedAt).toLocaleString()}</span>
-                  {item.error ? (
-                    <span className="text-destructive">
-                      Processing failed. Retry this job or dismiss it.
-                    </span>
-                  ) : null}
-                </div>
-                {retry ? <RetryStatus snapshot={retry} /> : null}
-                <TechnicalDetails
-                  items={[
-                    { label: 'Job ID', value: item.id, copyValue: item.id },
-                    { label: 'Artifact ID', value: item.artifactId, copyValue: item.artifactId },
-                    ...(item.error
-                      ? [{ label: 'Raw error', value: item.error, copyValue: item.error }]
-                      : []),
-                    ...(retry?.status === 'failed' && retry.error
-                      ? [
-                          {
-                            label: 'Raw retry error',
-                            value: retry.error,
-                            copyValue: retry.error,
-                          },
-                        ]
-                      : []),
-                  ]}
+    <div className="space-y-4">
+      {failedItems.length > 0 ? (
+        <CollectionGroup title="Failed" count={failedItems.length} tone="danger">
+          <JobRecoveryRows
+            busy={busy}
+            items={failedItems}
+            onAction={onAction}
+            retryStates={retryStates}
+          />
+        </CollectionGroup>
+      ) : null}
+      {stuckItems.length > 0 ? (
+        <CollectionGroup title="Stuck" count={stuckItems.length} tone="progress">
+          <JobRecoveryRows
+            busy={busy}
+            items={stuckItems}
+            onAction={onAction}
+            retryStates={retryStates}
+          />
+        </CollectionGroup>
+      ) : null}
+    </div>
+  );
+}
+
+function JobRecoveryRows({
+  busy,
+  items,
+  onAction,
+  retryStates,
+}: {
+  busy: string | null;
+  items: JobRecoveryItem[];
+  onAction: (action: 'retry' | 'dismiss', id: string) => Promise<void>;
+  retryStates: RetryStates;
+}) {
+  return (
+    <ul>
+      {items.map((item) => {
+        const retry = retryStates[item.id];
+        return (
+          <li
+            key={item.id}
+            className="flex flex-col gap-2 border-b border-border/80 px-2 py-2 last:border-b-0 sm:flex-row sm:items-center sm:px-3"
+          >
+            <div className="min-w-0 flex-1 space-y-1">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <CollectionStatus
+                  value={retry?.status === 'queued' ? 'retrying' : item.status}
+                  tone={
+                    retry?.status === 'queued'
+                      ? 'progress'
+                      : item.status === 'failed'
+                        ? 'danger'
+                        : 'progress'
+                  }
                 />
+                <span className="truncate text-sm font-medium text-fg">{item.label}</span>
               </div>
-              <JobRecoveryItemActions busy={busy} item={item} onAction={onAction} retry={retry} />
-            </li>
-          );
-        })
-      )}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-muted">
+                <span>{new Date(item.detectedAt).toLocaleString()}</span>
+                {item.error ? (
+                  <span className="text-destructive">
+                    Processing failed. Retry this job or dismiss it.
+                  </span>
+                ) : null}
+              </div>
+              {retry ? <RetryStatus snapshot={retry} /> : null}
+              <TechnicalDetails
+                items={[
+                  { label: 'Job ID', value: item.id, copyValue: item.id },
+                  {
+                    label: 'Artifact ID',
+                    value: item.artifactId,
+                    copyValue: item.artifactId,
+                  },
+                  ...(item.error
+                    ? [{ label: 'Raw error', value: item.error, copyValue: item.error }]
+                    : []),
+                  ...(retry?.status === 'failed' && retry.error
+                    ? [
+                        {
+                          label: 'Raw retry error',
+                          value: retry.error,
+                          copyValue: retry.error,
+                        },
+                      ]
+                    : []),
+                ]}
+              />
+            </div>
+            <JobRecoveryItemActions busy={busy} item={item} onAction={onAction} retry={retry} />
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -533,6 +658,33 @@ function JobRecoveryItemActions({
         {busy === `dismiss:${item.id}` ? 'Dismissing' : 'Dismiss'}
       </Button>
     </ItemActionGroup>
+  );
+}
+
+function AdvancedJobTools({
+  finishedItems,
+  finishedQuery,
+  onQueued,
+}: {
+  finishedItems: FinishedJobArchivePage['items'];
+  finishedQuery: ReturnType<typeof useFinishedJobsInfiniteQuery>;
+  onQueued: () => void;
+}) {
+  return (
+    <TechnicalDetails summary="Advanced tools">
+      <div className="space-y-8">
+        <section className="space-y-3">
+          <h2 className="text-sm font-medium text-fg">Unprocessed backlog</h2>
+          <p className="text-xs text-fg-muted">
+            These counts are events still waiting for extraction or embedding. They are not the
+            recovery queue on this page. Workers keep retrying them automatically.
+          </p>
+          <JobDashboard />
+        </section>
+        <ConversationSuggestionRecovery onQueued={onQueued} />
+        <FinishedJobsArchive items={finishedItems} query={finishedQuery} />
+      </div>
+    </TechnicalDetails>
   );
 }
 
@@ -644,7 +796,7 @@ function RetryStatus({ snapshot }: { snapshot: RetrySnapshot }) {
   return (
     <p className="flex items-center gap-1 text-xs text-fg-muted">
       <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
-      Retry queued. Watching finished jobs below.
+      Retry queued.
     </p>
   );
 }
@@ -659,9 +811,7 @@ function FinishedJobsArchive({
   return (
     <section className="space-y-3 pt-5">
       <div className="border-y border-border py-2">
-        <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-fg-muted">
-          Finished jobs
-        </h2>
+        <h2 className="text-sm font-semibold text-fg-muted">Finished jobs</h2>
       </div>
       <div className="overflow-x-auto rounded-sm border border-border bg-surface">
         <table className="w-full min-w-[760px] text-left text-sm">

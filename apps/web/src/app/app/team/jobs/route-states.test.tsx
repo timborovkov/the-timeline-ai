@@ -30,6 +30,7 @@ describe('Background jobs route states', () => {
     expect(screen.queryByRole('region')).toBeNull();
     expect(screen.queryByRole('heading', { level: 2, name: 'Processing summary' })).toBeNull();
     expect(screen.queryByRole('heading', { level: 2, name: 'Finished jobs' })).toBeNull();
+    expect(screen.queryByRole('heading', { level: 2, name: 'Unprocessed backlog' })).toBeNull();
 
     const visualPlaceholders = container.querySelectorAll(
       '[aria-busy="true"] > section[aria-hidden="true"][inert]',
@@ -38,12 +39,8 @@ describe('Background jobs route states', () => {
     const [placeholder] = visualPlaceholders;
     expect(placeholder?.querySelectorAll('a, button, input, select, textarea')).toHaveLength(0);
     expect(placeholder?.className).toContain('motion-reduce:[&_.animate-pulse]:animate-none');
-
-    const dashboard = placeholder?.querySelector('[aria-label="Loading job dashboard"]');
-    if (!dashboard) throw new Error('Expected the visual job dashboard placeholder');
-    expect(dashboard.tagName).toBe('UL');
-    expect(dashboard.children).toHaveLength(6);
-    expect(dashboard.firstElementChild?.className).toContain('rounded-lg');
+    expect(placeholder?.querySelector('[aria-label="Loading job dashboard"]')).toBeNull();
+    expect(placeholder?.querySelector('table')).toBeNull();
     const recoveryControls = placeholder?.querySelector(
       '[aria-label="Job recovery controls loading placeholder"]',
     );
@@ -55,11 +52,6 @@ describe('Background jobs route states', () => {
     expect(recoveryControls.querySelector('[data-loading-action="dismiss"]')?.className).toContain(
       'h-8 w-32',
     );
-    const finishedJobsTable = placeholder?.querySelector('table');
-    if (!finishedJobsTable) throw new Error('Expected the visual finished jobs table placeholder');
-    expect(finishedJobsTable.className).toContain('min-w-[760px]');
-    expect(finishedJobsTable.querySelectorAll('th')).toHaveLength(6);
-    expect(finishedJobsTable.parentElement?.className).toContain('overflow-x-auto');
   });
 
   it.each([

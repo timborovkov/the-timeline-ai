@@ -321,6 +321,14 @@ links. Team settings render one URL-selected section at a time. Save state stays
 local to the edited form. Member, object, source, and artifact labels never
 fall back to UUIDs.
 
+Background jobs is an admin recovery queue, not a processing inventory. Home
+“recoverable jobs” and `/app/team/jobs` share the same 7-day failed/stuck count.
+The page uses a sentence-case `PageHeader`, groups Failed then Stuck, and keeps
+retry/dismiss on each row. Jobs older than 7 days are hidden from attention;
+admins can dismiss them in bulk. Unprocessed backlog counts (events still
+waiting for extraction or embedding) stay inside closed Advanced tools and never
+use “needs attention” language.
+
 Work → Pinned is the complete pin-management surface. It is a single
 side-to-side list with cursor pagination and All, Objects, Boards, Documents,
 Meetings, Calendar, and Timeline filters. Reordering is available only under
@@ -574,3 +582,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-14 | Customer-facing public language | Keeps review cadence, implementation state, indexing terms, and capability taxonomy in metadata while public pages explain concrete actions and availability. |
 | 2026-08-15 | Evidence-backed public product story | Makes the working-history problem, deliberate capture boundary, cited-versus-unused evidence, Telegram entry point, inspectable answers, and human approval contract explicit across the landing and how-it-works journey. |
 | 2026-08-16 | Unified workspace collection density | Replaces stacked form chrome and card grids with compact headers, one filter toolbar, 44px rows, semantic status glyphs, optimistic metadata triggers, and contextual selection without changing domain behavior. |
+| 2026-08-17 | 7-day job recovery queue | Makes Home and Background jobs share one recent failed/stuck count, hides older backlog from attention, and keeps unprocessed inventory in Advanced tools. |

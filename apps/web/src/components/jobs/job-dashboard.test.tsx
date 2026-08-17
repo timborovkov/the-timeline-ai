@@ -60,18 +60,18 @@ describe('JobDashboard', () => {
     expect(screen.getByLabelText('Loading job dashboard').getAttribute('aria-busy')).toBe('true');
   });
 
-  it('renders the current processing summary with readable attention counts', () => {
+  it('renders the current unprocessed backlog counts', () => {
     render(<JobDashboard />);
 
     const transcription = screen.getByText('Transcription').closest('li');
     expect(transcription).not.toBeNull();
     expect(within(transcription as HTMLElement).getByText('2')).toBeTruthy();
-    expect(within(transcription as HTMLElement).getByText('items need attention')).toBeTruthy();
+    expect(within(transcription as HTMLElement).getByText('unprocessed events')).toBeTruthy();
 
     const extraction = screen.getByText('Extraction').closest('li');
     expect(extraction).not.toBeNull();
     expect(within(extraction as HTMLElement).getByText('1')).toBeTruthy();
-    expect(within(extraction as HTMLElement).getByText('item needs attention')).toBeTruthy();
+    expect(within(extraction as HTMLElement).getByText('unprocessed event')).toBeTruthy();
     expect(screen.getByRole('status').textContent).toContain('Updated');
     expect(document.querySelector('time')?.dateTime).toBe(dashboardData.updatedAt);
   });

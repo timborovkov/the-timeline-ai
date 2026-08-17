@@ -12,7 +12,20 @@ import {
   rawEvents,
   type Db,
 } from '@timeline/db';
-import { and, desc, eq, inArray, isNotNull, isNull, lt, notExists, or, sql } from 'drizzle-orm';
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  notExists,
+  or,
+  sql,
+} from 'drizzle-orm';
 
 import type { JobType } from 'bullmq';
 
@@ -56,11 +69,32 @@ export interface JobRecoveryItem {
   syncKind?: 'backfill' | 'incremental';
 }
 
+export const JOB_RECOVERY_ATTENTION_MS = 7 * 24 * 60 * 60 * 1000;
+export const JOB_RECOVERY_ATTENTION_DAYS = 7;
+
+export type JobRecoveryAgeWindow = 'recent' | 'older' | 'all';
+
+export interface RecoverableJobQueue {
+  items: JobRecoveryItem[];
+  olderCount: number;
+}
+
 export interface DismissFailedRecoverableJobsInput {
   kind?: JobRecoveryKind;
   items: { id: string; detectedAt: Date }[];
   expectedCount: number;
   reason?: string;
+}
+
+export interface DismissMatchingRecoverableJobsInput {
+  kind?: JobRecoveryKind;
+  window: Exclude<JobRecoveryAgeWindow, 'all'>;
+  reason?: string;
+}
+
+export interface DismissMatchingRecoverableJobsResult {
+  dismissed: number;
+  remaining: number;
 }
 
 export interface RetryFailedRecoverableJobsInput {
@@ -180,7 +214,16 @@ const DOCUMENT_PENDING_MS = 5 * 60 * 1000;
 const DOCUMENT_EXTRACTING_MS = 60 * 60 * 1000;
 const MEETING_PROCESSING_MS = 30 * 60 * 1000;
 const LIMIT = 200;
+const DISMISS_OLDER_BATCH_LIMIT = 500;
+const DISMISS_OLDER_MAX_BATCHES = 60;
+const DISMISS_RECENT_MAX_BATCHES = 10;
 const FINISHED_ARCHIVE_SCAN_BATCH = 100;
+
+export interface RecoveryListOptions {
+  window?: JobRecoveryAgeWindow;
+  collectLimit?: number;
+  now?: Date;
+}
 
 const KIND_LABELS: Record<JobRecoveryKind, string> = {
   transcription: 'Transcription',
@@ -218,9 +261,32 @@ export function createJobRecoveryScope(deps: JobRecoveryScopeDeps) {
     await deps.ensureMember('admin');
   }
 
-  async function listRecoverableJobs(): Promise<JobRecoveryItem[]> {
+  async function listRecoverableJobs(opts: RecoveryListOptions = {}): Promise<JobRecoveryItem[]> {
     await requireAdmin();
-    const candidates = await collectCandidates(deps.db, deps.teamId, deps.userId, q);
+    return listUndismissedJobs({ window: 'recent', ...opts });
+  }
+
+  async function getRecoverableJobQueue(
+    opts: RecoveryListOptions = {},
+  ): Promise<RecoverableJobQueue> {
+    await requireAdmin();
+    const now = opts.now ?? new Date();
+    const [items, olderCount] = await Promise.all([
+      listUndismissedJobs({ ...opts, window: 'recent', now }),
+      countOlderUndismissedJobs(now),
+    ]);
+    return { items, olderCount };
+  }
+
+  async function listUndismissedJobs(opts: RecoveryListOptions = {}): Promise<JobRecoveryItem[]> {
+    const now = opts.now ?? new Date();
+    const window = opts.window ?? 'recent';
+    const collectLimit = opts.collectLimit ?? LIMIT;
+    const candidates = await collectCandidates(deps.db, deps.teamId, deps.userId, q, {
+      window,
+      collectLimit,
+      now,
+    });
     const dismissals = await deps.db
       .select({
         jobKind: jobRecoveryDismissals.jobKind,
@@ -241,6 +307,7 @@ export function createJobRecoveryScope(deps: JobRecoveryScopeDeps) {
       ]),
     );
     return dedupe(candidates)
+      .filter((item) => inAgeWindow(item.detectedAt, window, now))
       .filter((item) => {
         const dismissalCreatedAt = dismissedAt.get(
           dismissalKey(item.kind, item.artifactKind, item.artifactId),
@@ -248,6 +315,20 @@ export function createJobRecoveryScope(deps: JobRecoveryScopeDeps) {
         return !dismissalCreatedAt || dismissalCreatedAt < item.detectedAt;
       })
       .sort((a, b) => b.detectedAt.getTime() - a.detectedAt.getTime());
+  }
+
+  async function countOlderUndismissedJobs(now: Date): Promise<number> {
+    const older = await listUndismissedJobs({
+      window: 'older',
+      collectLimit: DISMISS_OLDER_BATCH_LIMIT,
+      now,
+    });
+    const listedExtraction = older.filter((item) => item.kind === 'extraction').length;
+    const listedOther = older.length - listedExtraction;
+    const extractionStuckOlder = await countStuckExtraction(deps.db, deps.teamId, {
+      until: attentionCutoff(now),
+    });
+    return listedOther + Math.max(listedExtraction, extractionStuckOlder);
   }
 
   async function dismissRecoverableJob(id: string, reason?: string): Promise<JobRecoveryTarget> {
@@ -274,6 +355,63 @@ export function createJobRecoveryScope(deps: JobRecoveryScopeDeps) {
       preserveNewerDismissals: true,
     });
     return { dismissed: unique.length };
+  }
+
+  async function dismissMatchingRecoverableJobs(
+    input: DismissMatchingRecoverableJobsInput,
+  ): Promise<DismissMatchingRecoverableJobsResult> {
+    await requireAdmin();
+    const now = new Date();
+    const reason = input.reason ?? 'bulk dismiss matching jobs';
+    let dismissed = 0;
+    let remaining = 0;
+    const maxBatches =
+      input.window === 'older' ? DISMISS_OLDER_MAX_BATCHES : DISMISS_RECENT_MAX_BATCHES;
+    const collectLimit = input.window === 'older' ? DISMISS_OLDER_BATCH_LIMIT : LIMIT;
+    for (let batch = 0; batch < maxBatches; batch += 1) {
+      const candidates = await listUndismissedJobs({
+        window: input.window,
+        collectLimit,
+        now,
+      });
+      const selected = candidates.filter(
+        (candidate) => !input.kind || candidate.kind === input.kind,
+      );
+      if (selected.length === 0) {
+        remaining = 0;
+        break;
+      }
+      await insertDismissals(
+        deps.db,
+        deps.teamId,
+        deps.userId,
+        selected.map((candidate) => ({
+          kind: candidate.kind,
+          artifactKind: candidate.artifactKind,
+          artifactId: candidate.artifactId,
+          detectedAt: candidate.detectedAt,
+        })),
+        reason,
+        { preserveNewerDismissals: true },
+      );
+      dismissed += selected.length;
+      if (selected.length < collectLimit) {
+        remaining = 0;
+        break;
+      }
+      remaining = selected.length;
+    }
+    if (remaining > 0) {
+      const leftover = await listUndismissedJobs({
+        window: input.window,
+        collectLimit,
+        now,
+      });
+      remaining = leftover.filter(
+        (candidate) => !input.kind || candidate.kind === input.kind,
+      ).length;
+    }
+    return { dismissed, remaining };
   }
 
   async function retryFailedRecoverableJobs(
@@ -330,9 +468,11 @@ export function createJobRecoveryScope(deps: JobRecoveryScopeDeps) {
 
   return {
     listRecoverableJobs,
+    getRecoverableJobQueue,
     listFinishedJobs,
     dismissRecoverableJob,
     dismissFailedRecoverableJobs,
+    dismissMatchingRecoverableJobs,
     retryFailedRecoverableJobs,
     retryRecoverableJob,
   };
@@ -447,14 +587,14 @@ async function collectCandidates(
   teamId: string,
   userId: string,
   q: Required<RecoveryQueues>,
+  opts: { window: JobRecoveryAgeWindow; collectLimit: number; now: Date },
 ): Promise<JobRecoveryItem[]> {
-  const now = new Date();
-  const staleCutoff = new Date(now.getTime() - STALE_MS);
+  const staleCutoff = new Date(opts.now.getTime() - STALE_MS);
   const [raw, docs, meetingRows, integrationRows, queueRows] = await Promise.all([
-    collectRawEventCandidates(db, teamId, userId, staleCutoff),
-    collectDocumentCandidates(db, teamId),
-    collectMeetingCandidates(db, teamId, userId),
-    collectIntegrationCandidates(db, teamId),
+    collectRawEventCandidates(db, teamId, userId, staleCutoff, opts),
+    collectDocumentCandidates(db, teamId, opts.window, opts.now, opts.collectLimit),
+    collectMeetingCandidates(db, teamId, userId, opts.window, opts.now, opts.collectLimit),
+    collectIntegrationCandidates(db, teamId, opts.window, opts.now, opts.collectLimit),
     collectQueueCandidates(db, teamId, userId, q),
   ]);
   return [...raw, ...docs, ...meetingRows, ...integrationRows, ...queueRows];
@@ -655,7 +795,9 @@ async function collectRawEventCandidates(
   teamId: string,
   userId: string,
   staleCutoff: Date,
+  opts: { window: JobRecoveryAgeWindow; collectLimit: number; now: Date },
 ): Promise<JobRecoveryItem[]> {
+  const createdAtFilter = timestampAgeFilter(rawEvents.createdAt, opts.window, opts.now);
   const rows = await db
     .select({
       id: rawEvents.id,
@@ -668,9 +810,11 @@ async function collectRawEventCandidates(
       visibility: rawEvents.visibility,
     })
     .from(rawEvents)
-    .where(and(eq(rawEvents.teamId, teamId), visibleRawEvent(userId), activeRawEvent()))
+    .where(
+      and(eq(rawEvents.teamId, teamId), visibleRawEvent(userId), activeRawEvent(), createdAtFilter),
+    )
     .orderBy(desc(rawEvents.createdAt))
-    .limit(LIMIT * 2);
+    .limit(opts.collectLimit * 2);
 
   const items: JobRecoveryItem[] = [];
   for (const row of rows) {
@@ -736,6 +880,7 @@ async function collectRawEventCandidates(
         activeRawEvent(),
         isNotNull(rawEvents.contentText),
         lt(rawEvents.createdAt, staleCutoff),
+        createdAtFilter,
         sql`${rawEvents.sourceMetadata} ->> 'extracted_at' IS NULL`,
         sql`${rawEvents.sourceMetadata} ->> 'extraction_model_version' IS NULL`,
         sql`${rawEvents.sourceMetadata} ->> 'extraction_failed_at' IS NULL`,
@@ -748,7 +893,8 @@ async function collectRawEventCandidates(
         ),
       ),
     )
-    .limit(LIMIT);
+    .orderBy(desc(rawEvents.createdAt))
+    .limit(opts.collectLimit);
   for (const row of extractionStuck) {
     items.push(
       item('extraction', 'raw_event', row.id, rawEventLabel(row), {
@@ -762,9 +908,60 @@ async function collectRawEventCandidates(
   return items;
 }
 
-async function collectDocumentCandidates(db: Db, teamId: string): Promise<JobRecoveryItem[]> {
-  const pendingCutoff = new Date(Date.now() - DOCUMENT_PENDING_MS);
-  const extractingCutoff = new Date(Date.now() - DOCUMENT_EXTRACTING_MS);
+async function countStuckExtraction(
+  db: Db,
+  teamId: string,
+  createdAt: { since?: Date; until?: Date },
+): Promise<number> {
+  const rows = await db
+    .select({ count: count() })
+    .from(rawEvents)
+    .where(
+      and(
+        eq(rawEvents.teamId, teamId),
+        eq(rawEvents.visibility, 'team'),
+        activeRawEvent(),
+        isNotNull(rawEvents.contentText),
+        createdAt.since ? gte(rawEvents.createdAt, createdAt.since) : undefined,
+        createdAt.until ? lt(rawEvents.createdAt, createdAt.until) : undefined,
+        sql`${rawEvents.sourceMetadata} ->> 'extracted_at' IS NULL`,
+        sql`${rawEvents.sourceMetadata} ->> 'extraction_model_version' IS NULL`,
+        sql`${rawEvents.sourceMetadata} ->> 'extraction_failed_at' IS NULL`,
+        sql`${rawEvents.sourceMetadata} ->> 'reconcile_giveup_extract' IS NULL`,
+        notExists(
+          db
+            .select({ one: sql`1` })
+            .from(facts)
+            .where(eq(facts.rawEventId, rawEvents.id)),
+        ),
+        notExists(
+          db
+            .select({ one: sql`1` })
+            .from(jobRecoveryDismissals)
+            .where(
+              and(
+                eq(jobRecoveryDismissals.teamId, teamId),
+                eq(jobRecoveryDismissals.jobKind, 'extraction'),
+                eq(jobRecoveryDismissals.artifactKind, 'raw_event'),
+                eq(jobRecoveryDismissals.artifactId, rawEvents.id),
+                sql`${jobRecoveryDismissals.createdAt} >= ${rawEvents.createdAt}`,
+              ),
+            ),
+        ),
+      ),
+    );
+  return rows[0]?.count ?? 0;
+}
+
+async function collectDocumentCandidates(
+  db: Db,
+  teamId: string,
+  window: JobRecoveryAgeWindow,
+  now: Date,
+  collectLimit: number,
+): Promise<JobRecoveryItem[]> {
+  const pendingCutoff = new Date(now.getTime() - DOCUMENT_PENDING_MS);
+  const extractingCutoff = new Date(now.getTime() - DOCUMENT_EXTRACTING_MS);
   const rows = await db
     .select({ version: documentVersions, document: documents })
     .from(documentVersions)
@@ -774,6 +971,7 @@ async function collectDocumentCandidates(db: Db, teamId: string): Promise<JobRec
         eq(documentVersions.teamId, teamId),
         eq(documents.visibility, 'team'),
         isNull(documents.deletedAt),
+        timestampAgeFilter(documentVersions.createdAt, window, now),
         or(
           eq(documentVersions.processingStatus, 'failed'),
           and(
@@ -789,7 +987,7 @@ async function collectDocumentCandidates(db: Db, teamId: string): Promise<JobRec
       ),
     )
     .orderBy(desc(documentVersions.createdAt))
-    .limit(LIMIT);
+    .limit(collectLimit);
   return rows.map(({ version, document }) =>
     item(
       'document_processing',
@@ -809,8 +1007,11 @@ async function collectMeetingCandidates(
   db: Db,
   teamId: string,
   userId: string,
+  window: JobRecoveryAgeWindow,
+  now: Date,
+  collectLimit: number,
 ): Promise<JobRecoveryItem[]> {
-  const cutoff = new Date(Date.now() - MEETING_PROCESSING_MS);
+  const cutoff = new Date(now.getTime() - MEETING_PROCESSING_MS);
   const rows = await db
     .select()
     .from(meetings)
@@ -820,10 +1021,11 @@ async function collectMeetingCandidates(
         visibleMeeting(userId),
         eq(meetings.status, 'processing'),
         lt(meetings.updatedAt, cutoff),
+        timestampAgeFilter(meetings.updatedAt, window, now),
       ),
     )
     .orderBy(desc(meetings.updatedAt))
-    .limit(LIMIT);
+    .limit(collectLimit);
   return rows.map((m) =>
     item('meeting_finalization', 'meeting', m.id, m.title ?? `${m.platform} meeting`, {
       status: 'stuck',
@@ -833,7 +1035,13 @@ async function collectMeetingCandidates(
   );
 }
 
-async function collectIntegrationCandidates(db: Db, teamId: string): Promise<JobRecoveryItem[]> {
+async function collectIntegrationCandidates(
+  db: Db,
+  teamId: string,
+  window: JobRecoveryAgeWindow,
+  now: Date,
+  collectLimit: number,
+): Promise<JobRecoveryItem[]> {
   const rows = await db
     .select({
       integration: integrations,
@@ -850,13 +1058,14 @@ async function collectIntegrationCandidates(db: Db, teamId: string): Promise<Job
       ),
     )
     .orderBy(desc(integrations.updatedAt))
-    .limit(LIMIT);
+    .limit(collectLimit);
 
   const byId = new Map<string, JobRecoveryItem>();
   for (const row of rows) {
     const error = row.integration.lastError ?? row.stateError;
     if (row.stateStatus === 'rate_limited' || isProviderCooldownErrorMessage(error)) continue;
     const detectedAt = row.stateUpdatedAt ?? row.integration.updatedAt;
+    if (!inAgeWindow(detectedAt, window, now)) continue;
     const existing = byId.get(row.integration.id);
     if (existing && existing.detectedAt >= detectedAt) continue;
     byId.set(
@@ -1490,6 +1699,27 @@ async function clearRawEventStage(
       sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) - ${keys[0]} - ${keys[1]} - ${keys[2]} - ${keys[3]}`,
     })
     .where(eq(rawEvents.id, rawEventId));
+}
+
+function attentionCutoff(now: Date): Date {
+  return new Date(now.getTime() - JOB_RECOVERY_ATTENTION_MS);
+}
+
+function inAgeWindow(detectedAt: Date, window: JobRecoveryAgeWindow, now: Date): boolean {
+  if (window === 'all') return true;
+  const cutoff = attentionCutoff(now).getTime();
+  const detected = detectedAt.getTime();
+  return window === 'recent' ? detected >= cutoff : detected < cutoff;
+}
+
+function timestampAgeFilter(
+  column: Parameters<typeof gte>[0],
+  window: JobRecoveryAgeWindow,
+  now: Date,
+) {
+  if (window === 'all') return undefined;
+  const cutoff = attentionCutoff(now);
+  return window === 'recent' ? gte(column, cutoff) : lt(column, cutoff);
 }
 
 function item(

@@ -933,10 +933,13 @@ _Avoid_: Timeline, activity feed
 
 **Job Recovery Dashboard**:
 A team-scoped owner/admin surface for retrying or dismissing failed and stuck
-product jobs tied to visible team artifacts, such as transcription,
-extraction, embedding, document processing, meeting finalization, and
-integration sync.
-_Avoid_: Operator dashboard, BullMQ dashboard, queue admin
+product jobs from the last 7 days, tied to visible team artifacts such as
+transcription, extraction, embedding, document processing, meeting
+finalization, and integration sync. Home “recoverable jobs” uses this same
+7-day count. Older failed or stuck work is hidden from attention; workers
+retry it a few times, then give up. Unprocessed backlog (events that never
+started extraction or embedding) is inventory, not this recovery queue.
+_Avoid_: Operator dashboard, BullMQ dashboard, queue admin, processing inventory
 
 **Environment Reset**:
 A development-only operational action that destroys all data and derived state

@@ -322,8 +322,8 @@ export const QUICK_LINKS: readonly QuickLinkSeed[] = [
   {
     id: 'job-recovery',
     kind: 'quick_link',
-    title: 'Job recovery',
-    snippet: 'Review failed background jobs.',
+    title: 'Background jobs',
+    snippet: 'Retry or dismiss failed processing from the last 7 days.',
     href: '/app/team/jobs',
     group: 'Team',
     keywords: ['jobs', 'job recovery', 'failed jobs', 'background'],

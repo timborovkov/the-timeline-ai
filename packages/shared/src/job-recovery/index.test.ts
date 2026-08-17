@@ -24,6 +24,18 @@ const FAILED_EXTRACTION_RAW_ID = '12121212-1212-1212-1212-121212121212';
 const DOCUMENT_ID = '13131313-1313-1313-1313-131313131313';
 const DOCUMENT_VERSION_ID = '14141414-1414-1414-1414-141414141414';
 
+function hoursAgoIso(hours: number): string {
+  return new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+}
+
+function extractionFailedMeta(at = hoursAgoIso(1)): string {
+  return JSON.stringify({
+    extraction_failed_at: at,
+    extraction_error: 'model failed',
+    embedded_at: at,
+  });
+}
+
 let pg: PGlite;
 let db: ReturnType<typeof drizzle>;
 
@@ -52,6 +64,54 @@ describe('job recovery scope', () => {
     expect(items.every((item) => item.kind === 'transcription')).toBe(true);
     expect(items[0]?.label).toContain('Transcription');
     expect(items[0]?.label).not.toContain('transcribe');
+  });
+
+  it('hides jobs older than 7 days from the default attention list', async () => {
+    await seedRawEventFailure(pg, RAW_ID, TEAM_ID, ADMIN_ID, 'team');
+    await seedOldStuckExtraction(pg, ZERO_FACT_RAW_ID);
+
+    const scope = scopeFor(ADMIN_ID, 'admin');
+    const recent = await scope.listRecoverableJobs();
+    const queue = await scope.getRecoverableJobQueue();
+    const older = await scope.listRecoverableJobs({ window: 'older' });
+
+    expect(recent.map((item) => item.artifactId)).toEqual([RAW_ID]);
+    expect(queue.items.map((item) => item.artifactId)).toEqual([RAW_ID]);
+    expect(queue.olderCount).toBeGreaterThanOrEqual(1);
+    expect(older.some((item) => item.artifactId === ZERO_FACT_RAW_ID)).toBe(true);
+  });
+
+  it('dismisses older jobs without hiding recent failures', async () => {
+    await seedRawEventFailure(pg, RAW_ID, TEAM_ID, ADMIN_ID, 'team');
+    await seedOldStuckExtraction(pg, ZERO_FACT_RAW_ID);
+    const scope = scopeFor(ADMIN_ID, 'admin');
+
+    const result = await scope.dismissMatchingRecoverableJobs({
+      window: 'older',
+      reason: 'dismiss older jobs',
+    });
+
+    expect(result.dismissed).toBeGreaterThanOrEqual(1);
+    expect(result.remaining).toBe(0);
+    const queue = await scope.getRecoverableJobQueue();
+    expect(queue.items.map((item) => item.artifactId)).toEqual([RAW_ID]);
+    expect(queue.olderCount).toBe(0);
+  });
+
+  it('dismisses recent failed and stuck jobs together', async () => {
+    await seedRawEventFailure(pg, RAW_ID, TEAM_ID, ADMIN_ID, 'team');
+    await seedTextRawEvent(pg, ZERO_FACT_RAW_ID, { sourceMetadata: '{}' });
+    const scope = scopeFor(ADMIN_ID, 'admin');
+    const before = await scope.listRecoverableJobs();
+    expect(before.length).toBeGreaterThanOrEqual(2);
+
+    const result = await scope.dismissMatchingRecoverableJobs({
+      window: 'recent',
+      reason: 'dismiss recent jobs',
+    });
+
+    expect(result).toEqual({ dismissed: before.length, remaining: 0 });
+    await expect(scope.listRecoverableJobs()).resolves.toEqual([]);
   });
 
   it('requires admin role for list, retry, and dismiss', async () => {
@@ -83,8 +143,7 @@ describe('job recovery scope', () => {
 
   it('does not let an old dismissal hide a newer failure for the same artifact', async () => {
     await seedTextRawEvent(pg, FAILED_EXTRACTION_RAW_ID, {
-      sourceMetadata:
-        '{"extraction_failed_at":"2026-05-27T10:00:00.000Z","extraction_error":"model failed","embedded_at":"2026-05-27T10:00:00.000Z"}',
+      sourceMetadata: extractionFailedMeta(),
     });
     const scope = scopeFor(ADMIN_ID, 'admin');
     const [item] = await scope.listRecoverableJobs();
@@ -113,8 +172,7 @@ describe('job recovery scope', () => {
 
   it('rejects bulk dismiss when the same artifact failed again after the user snapshot', async () => {
     await seedTextRawEvent(pg, FAILED_EXTRACTION_RAW_ID, {
-      sourceMetadata:
-        '{"extraction_failed_at":"2026-05-27T10:00:00.000Z","extraction_error":"model failed","embedded_at":"2026-05-27T10:00:00.000Z"}',
+      sourceMetadata: extractionFailedMeta(),
     });
     const scope = scopeFor(ADMIN_ID, 'admin');
     const [staleItem] = await scope.listRecoverableJobs();
@@ -138,9 +196,11 @@ describe('job recovery scope', () => {
   });
 
   it('bulk dismisses a visible re-failure that already has an older dismissal row', async () => {
+    const firstFailedAt = hoursAgoIso(2);
+    const dismissalAt = hoursAgoIso(1.5);
+    const secondFailedAt = hoursAgoIso(1);
     await seedTextRawEvent(pg, FAILED_EXTRACTION_RAW_ID, {
-      sourceMetadata:
-        '{"extraction_failed_at":"2026-05-27T10:00:00.000Z","extraction_error":"model failed","embedded_at":"2026-05-27T10:00:00.000Z"}',
+      sourceMetadata: extractionFailedMeta(firstFailedAt),
     });
     const scope = scopeFor(ADMIN_ID, 'admin');
     const [oldItem] = await scope.listRecoverableJobs();
@@ -148,16 +208,16 @@ describe('job recovery scope', () => {
     await scope.dismissRecoverableJob(oldItem.id, 'old failure');
     await pg.exec(`
       UPDATE job_recovery_dismissals
-      SET created_at = '2026-05-27T10:00:01.000Z'
+      SET created_at = '${dismissalAt}'
       WHERE team_id = '${TEAM_ID}'
         AND job_kind = 'extraction'
         AND artifact_kind = 'raw_event'
         AND artifact_id = '${FAILED_EXTRACTION_RAW_ID}';
       UPDATE raw_events
       SET source_metadata = '{
-        "extraction_failed_at":"2026-05-27T10:00:02.000Z",
+        "extraction_failed_at":"${secondFailedAt}",
         "extraction_error":"model failed again",
-        "embedded_at":"2026-05-27T10:00:02.000Z"
+        "embedded_at":"${secondFailedAt}"
       }'::jsonb
       WHERE id = '${FAILED_EXTRACTION_RAW_ID}';
     `);
@@ -176,8 +236,7 @@ describe('job recovery scope', () => {
   it('bulk dismisses failed jobs without hiding stuck jobs', async () => {
     await seedRawEventFailure(pg, RAW_ID, TEAM_ID, ADMIN_ID, 'team');
     await seedTextRawEvent(pg, FAILED_EXTRACTION_RAW_ID, {
-      sourceMetadata:
-        '{"extraction_failed_at":"2026-05-27T10:00:00.000Z","extraction_error":"model failed","embedded_at":"2026-05-27T10:00:00.000Z"}',
+      sourceMetadata: extractionFailedMeta(),
     });
     await seedTextRawEvent(pg, ZERO_FACT_RAW_ID, {
       sourceMetadata: '{"embedded_at":"2026-05-27T10:00:00.000Z"}',
@@ -205,8 +264,7 @@ describe('job recovery scope', () => {
   it('bulk dismisses failed jobs by kind', async () => {
     await seedRawEventFailure(pg, RAW_ID, TEAM_ID, ADMIN_ID, 'team');
     await seedTextRawEvent(pg, FAILED_EXTRACTION_RAW_ID, {
-      sourceMetadata:
-        '{"extraction_failed_at":"2026-05-27T10:00:00.000Z","extraction_error":"model failed","embedded_at":"2026-05-27T10:00:00.000Z"}',
+      sourceMetadata: extractionFailedMeta(),
     });
     const scope = scopeFor(ADMIN_ID, 'admin');
 
@@ -230,8 +288,7 @@ describe('job recovery scope', () => {
   it('rejects stale bulk dismiss snapshots', async () => {
     await seedRawEventFailure(pg, RAW_ID, TEAM_ID, ADMIN_ID, 'team');
     await seedTextRawEvent(pg, FAILED_EXTRACTION_RAW_ID, {
-      sourceMetadata:
-        '{"extraction_failed_at":"2026-05-27T10:00:00.000Z","extraction_error":"model failed","embedded_at":"2026-05-27T10:00:00.000Z"}',
+      sourceMetadata: extractionFailedMeta(),
     });
     const scope = scopeFor(ADMIN_ID, 'admin');
     const failed = (await scope.listRecoverableJobs()).filter((item) => item.status === 'failed');
@@ -275,8 +332,7 @@ describe('job recovery scope', () => {
   it('bulk retries failed jobs by kind', async () => {
     await seedRawEventFailure(pg, RAW_ID, TEAM_ID, ADMIN_ID, 'team');
     await seedTextRawEvent(pg, FAILED_EXTRACTION_RAW_ID, {
-      sourceMetadata:
-        '{"extraction_failed_at":"2026-05-27T10:00:00.000Z","extraction_error":"model failed","embedded_at":"2026-05-27T10:00:00.000Z"}',
+      sourceMetadata: extractionFailedMeta(),
     });
     const enqueueExtractJob = vi.fn().mockResolvedValue(undefined);
     const enqueueTranscribeJob = vi.fn().mockResolvedValue(undefined);
@@ -303,8 +359,7 @@ describe('job recovery scope', () => {
   it('bulk retry reports partial enqueue failures without hiding successful retries', async () => {
     await seedRawEventFailure(pg, RAW_ID, TEAM_ID, ADMIN_ID, 'team');
     await seedTextRawEvent(pg, FAILED_EXTRACTION_RAW_ID, {
-      sourceMetadata:
-        '{"extraction_failed_at":"2026-05-27T10:00:00.000Z","extraction_error":"model failed","embedded_at":"2026-05-27T10:00:00.000Z"}',
+      sourceMetadata: extractionFailedMeta(),
     });
     const enqueueTranscribeJob = vi.fn().mockResolvedValue(undefined);
     const enqueueExtractJob = vi.fn().mockRejectedValue(new Error('redis down'));
@@ -379,8 +434,7 @@ describe('job recovery scope', () => {
 
   it('rejects stale bulk retry snapshots', async () => {
     await seedTextRawEvent(pg, FAILED_EXTRACTION_RAW_ID, {
-      sourceMetadata:
-        '{"extraction_failed_at":"2026-05-27T10:00:00.000Z","extraction_error":"model failed","embedded_at":"2026-05-27T10:00:00.000Z"}',
+      sourceMetadata: extractionFailedMeta(),
     });
     const scope = scopeFor(ADMIN_ID, 'admin');
     const [staleItem] = await scope.listRecoverableJobs();
@@ -424,8 +478,10 @@ describe('job recovery scope', () => {
       sourceMetadata: '{}',
     });
     await seedTextRawEvent(pg, FAILED_EXTRACTION_RAW_ID, {
-      sourceMetadata:
-        '{"extraction_failed_at":"2026-05-27T10:00:00.000Z","extraction_error":"model failed"}',
+      sourceMetadata: JSON.stringify({
+        extraction_failed_at: hoursAgoIso(1),
+        extraction_error: 'model failed',
+      }),
     });
 
     const scope = scopeFor(ADMIN_ID, 'admin');
@@ -937,6 +993,7 @@ async function seedRawEventFailure(
   visibility: 'private' | 'team',
   visibilityOwnerUserId = authorUserId,
 ): Promise<void> {
+  const failedAt = hoursAgoIso(1);
   await pg.exec(`
     INSERT INTO raw_events (
       id,
@@ -960,7 +1017,34 @@ async function seedRawEventFailure(
       now() - interval '1 hour',
       now() - interval '1 hour',
       '${visibility}',
-      '{"transcription_failed_at":"2026-05-27T10:00:00.000Z","transcription_error":"codec failed"}'::jsonb
+      '{"transcription_failed_at":"${failedAt}","transcription_error":"codec failed"}'::jsonb
+    );
+  `);
+}
+
+async function seedOldStuckExtraction(pg: PGlite, id: string): Promise<void> {
+  await pg.exec(`
+    INSERT INTO raw_events (
+      id,
+      team_id,
+      author_user_id,
+      source,
+      content_text,
+      occurred_at,
+      created_at,
+      visibility,
+      source_metadata
+    )
+    VALUES (
+      '${id}',
+      '${TEAM_ID}',
+      '${ADMIN_ID}',
+      'web',
+      'Old backlog',
+      now() - interval '10 days',
+      now() - interval '10 days',
+      'team',
+      '{}'::jsonb
     );
   `);
 }
