@@ -66,6 +66,8 @@ describe('Work route states', () => {
     const pinnedSkeleton = document.querySelector('[data-work-loading-view="pinned"]');
     expect(pinnedSkeleton).toBeTruthy();
     expect(pinnedSkeleton?.firstElementChild?.className).toContain('border-b');
+    expect(pinnedSkeleton?.innerHTML).not.toContain('overflow-hidden border border-border');
+    expect(pinnedSkeleton?.innerHTML).not.toContain('border-x');
 
     rerender(<WorkError error={new Error('route failed')} reset={vi.fn()} />);
 
