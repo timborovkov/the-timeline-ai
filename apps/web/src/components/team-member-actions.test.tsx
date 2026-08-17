@@ -64,8 +64,9 @@ describe('MemberRoleForm', () => {
     await waitFor(() => {
       expect(fakes.changeMemberRoleAction).toHaveBeenCalledOnce();
     });
-    const result = await fakes.notifyAction.mock.results[0]?.value;
-    expect(result).toEqual({ error: 'Only owners can change roles' });
+    expect(await fakes.notifyAction.mock.results[0]?.value).toEqual({
+      error: 'Only owners can change roles',
+    });
     expect(fakes.refresh).not.toHaveBeenCalled();
   });
 });

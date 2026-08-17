@@ -576,7 +576,8 @@ entities may show two toasts. The stack caps at three.
 
 Copy is sentence case and names the thing: `Updating status…`, `Status updated`,
 `Couldn’t update status`. Do not toast raw server strings, UUIDs, or
-`Update failed`. Undo is a compensating second request after the original write
+`Update failed`. A mapped, sentence-like action error may replace the generic
+fallback. Undo is a compensating second request after the original write
 lands. The first request is not cancelled. Show Undo when the client can invert
 the mutation (previous field value, pin toggle, archive/unarchive, or a server
 undo token). Hard deletes and canonical approval decisions have no Undo.

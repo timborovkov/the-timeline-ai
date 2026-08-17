@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 
-import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as objects from '@timeline/shared/objects/types';
@@ -13,7 +13,9 @@ const fakes = vi.hoisted(() => ({
   findObjectCleanupSuggestionsAction: vi.fn(),
   acceptSuggestionItemAction: vi.fn(),
   rejectSuggestionItemAction: vi.fn(),
-  notifyAction: vi.fn(async ({ run }: { run: () => Promise<{ error?: string }> }) => run()),
+  notifyAction: vi.fn(async ({ run }: { id?: string; run: () => Promise<{ error?: string }> }) =>
+    run(),
+  ),
   notifySuccess: vi.fn(),
 }));
 
@@ -27,7 +29,7 @@ vi.mock('@/app/actions/suggestions', () => ({
   rejectSuggestionItemAction: fakes.rejectSuggestionItemAction,
 }));
 vi.mock('@/lib/notify', () => ({
-  notifyAction: (options: { run: () => Promise<{ error?: string }> }) =>
+  notifyAction: (options: { id?: string; run: () => Promise<{ error?: string }> }) =>
     fakes.notifyAction(options),
   notifySuccess: fakes.notifySuccess,
 }));
@@ -250,7 +252,7 @@ describe('ObjectCleanupSuggestions', () => {
       );
     });
     const findOptions = fakes.notifyAction.mock.calls.find(
-      (call) => call[0]?.id === 'cleanup:find',
+      (call) => call[0].id === 'cleanup:find',
     )?.[0] as { success?: string } | undefined;
     expect(findOptions?.success).toBe('Scan queued');
     expect(screen.queryByText('Scan queued')).toBeNull();

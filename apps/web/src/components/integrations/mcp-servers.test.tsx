@@ -12,7 +12,9 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: routerRefresh }),
 }));
 const notify = vi.hoisted(() => ({
-  notifyAction: vi.fn(async ({ run }: { run: () => Promise<{ error?: string }> }) => run()),
+  notifyAction: vi.fn(async ({ run }: { id?: string; run: () => Promise<{ error?: string }> }) =>
+    run(),
+  ),
   notifyError: vi.fn(),
 }));
 vi.mock('@/lib/notify', () => ({
@@ -221,7 +223,7 @@ describe('McpServersUi', () => {
         expect(screen.queryByText('Add MCP server')).toBeNull();
       });
       const addOptions = notify.notifyAction.mock.calls.find(
-        (call) => call[0]?.id === 'mcp:add-server',
+        (call) => call[0].id === 'mcp:add-server',
       )?.[0] as { success?: string } | undefined;
       expect(addOptions?.success).toBe('Server added. Connect it again to finish authorization.');
       expect(screen.queryByText('Unable to start authorization')).toBeNull();
