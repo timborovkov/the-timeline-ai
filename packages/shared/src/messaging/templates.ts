@@ -333,9 +333,7 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
     ...(p.upcomingCalendar.length
       ? [
           'Upcoming calendar:',
-          ...p.upcomingCalendar.map(
-            (event) => `- ${formatDigestCalendarEvent(event, timezone)}`,
-          ),
+          ...p.upcomingCalendar.map((event) => `- ${formatDigestCalendarEvent(event, timezone)}`),
           '',
         ]
       : []),
