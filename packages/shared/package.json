@@ -149,6 +149,12 @@
       "import": "./dist/visibility.js",
       "default": "./dist/visibility.js"
     },
+    "./event-class": {
+      "types": "./src/event-class.ts",
+      "development": "./src/event-class.ts",
+      "import": "./dist/event-class.js",
+      "default": "./dist/event-class.js"
+    },
     "./timeline-moments": {
       "types": "./src/timeline-moments/index.ts",
       "development": "./src/timeline-moments/index.ts",

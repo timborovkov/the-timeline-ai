@@ -23,11 +23,12 @@ interface ActiveFilter {
   key: string;
   label: ReactNode;
   value?: ReactNode;
+  clear?: ReactNode;
   href?: string;
   onRemove?: () => void;
 }
 
-const EMPTY_FILTERS: ActiveFilter[] = [];
+const EMPTY_ACTIVE_FILTERS: ActiveFilter[] = [];
 
 const CollectionToolbarSearch = createCollectionSlot('search');
 const CollectionToolbarCount = createCollectionSlot('count');
@@ -51,7 +52,7 @@ function filterLabelText(label: ReactNode, fallback: string): string {
 
 export function CollectionToolbar({
   children,
-  activeFilters = EMPTY_FILTERS,
+  activeFilters = EMPTY_ACTIVE_FILTERS,
   filterTitle = 'Filters',
   className,
 }: {
@@ -89,7 +90,16 @@ export function CollectionToolbar({
       <div className="flex min-h-11 min-w-0 flex-wrap items-center gap-1.5 px-2 sm:px-3">
         {search ? <div className="min-w-48 flex-1 sm:max-w-sm">{search}</div> : null}
         {resolvedCount ? (
-          <output className="px-1.5 text-xs tabular-nums text-fg-dim">{resolvedCount}</output>
+          <output
+            aria-label={
+              typeof resolvedCount === 'string' || typeof resolvedCount === 'number'
+                ? String(resolvedCount)
+                : undefined
+            }
+            className="px-1.5 text-xs tabular-nums text-fg-dim"
+          >
+            {resolvedCount}
+          </output>
         ) : null}
         {filters ? (
           <>
@@ -138,26 +148,27 @@ export function CollectionToolbar({
             >
               <span>{filter.label}</span>
               {filter.value ? <span className="text-fg">{filter.value}</span> : null}
-              {filter.href ? (
-                <a
-                  href={filter.href}
-                  aria-label={`Remove ${filterLabelText(filter.label, filter.key)} filter`}
-                  className="inline-flex size-6 items-center justify-center rounded-sm hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
-                >
+              {filter.clear ??
+                (filter.href ? (
+                  <a
+                    href={filter.href}
+                    aria-label={`Remove ${filterLabelText(filter.label, filter.key)} filter`}
+                    className="inline-flex size-6 items-center justify-center rounded-sm hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
+                  >
+                    <X aria-hidden="true" className="size-3" />
+                  </a>
+                ) : filter.onRemove ? (
+                  <button
+                    type="button"
+                    onClick={filter.onRemove}
+                    aria-label={`Remove ${filterLabelText(filter.label, filter.key)} filter`}
+                    className="inline-flex size-6 items-center justify-center rounded-sm hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
+                  >
+                    <X aria-hidden="true" className="size-3" />
+                  </button>
+                ) : (
                   <X aria-hidden="true" className="size-3" />
-                </a>
-              ) : filter.onRemove ? (
-                <button
-                  type="button"
-                  onClick={filter.onRemove}
-                  aria-label={`Remove ${filterLabelText(filter.label, filter.key)} filter`}
-                  className="inline-flex size-6 items-center justify-center rounded-sm hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
-                >
-                  <X aria-hidden="true" className="size-3" />
-                </button>
-              ) : (
-                <X aria-hidden="true" className="size-3" />
-              )}
+                ))}
             </span>
           ))}
           {clearAll ? <span className="ml-1 shrink-0">{clearAll}</span> : null}

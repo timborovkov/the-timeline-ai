@@ -30,6 +30,7 @@ import {
   deleteCalendarEventAction,
   updateCalendarEventAction,
 } from '@/app/actions/calendar';
+import { loadCalendarEventListPageAction } from '@/app/actions/collection-pages';
 import {
   EMPTY_CALENDAR_OVERLAY,
   applyCalendarPageOverlay,
@@ -40,6 +41,8 @@ import {
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
+import { InfiniteScroll } from '@/components/collections/infinite-scroll';
+import { VirtualList } from '@/components/collections/virtual-list';
 import { PinButton } from '@/components/pins/pin-button';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { Button } from '@/components/ui/button';
@@ -55,6 +58,7 @@ import { Input } from '@/components/ui/input';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { formatCollectionCount } from '@/lib/collection-count';
 import { toastMutation } from '@/lib/mutation-toast';
 import { statusLabel } from '@/lib/status-labels';
 import { errorMessage } from '@/lib/utils';
@@ -65,7 +69,7 @@ interface CalendarViewProps {
   events: CalendarEvent[];
   eventListEvents?: CalendarEvent[];
   eventListTotal?: number;
-  eventListPage?: number;
+  eventListNextOffset?: number | null;
   eventListQuery?: string;
   eventListScope?: 'future' | 'past' | 'all';
   timezone: string;
@@ -132,28 +136,24 @@ const WEEKDAYS = [
   { short: 'Sat', label: 'Saturday' },
   { short: 'Sun', label: 'Sunday' },
 ] as const;
-const EVENT_LIST_PAGE_SIZE = 12;
 const TITLE_REQUIRED_ERROR = 'Enter a title for this event.';
 type EventListScope = 'future' | 'past' | 'all';
 interface EventListParams {
   query: string;
   scope: EventListScope;
-  page: number;
 }
 
 function sameEventListParams(a: EventListParams, b: EventListParams): boolean {
-  return a.query === b.query && a.scope === b.scope && a.page === b.page;
+  return a.query === b.query && a.scope === b.scope;
 }
 
 function eventListParamsFromSearch(searchParams: {
   get(name: string): string | null;
 }): EventListParams {
   const scope = searchParams.get('eventScope');
-  const parsedPage = Number.parseInt(searchParams.get('eventPage') ?? '1', 10);
   return {
     query: searchParams.get('eventQ')?.trim() ?? '',
     scope: scope === 'past' || scope === 'all' ? scope : 'future',
-    page: Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage - 1 : 0,
   };
 }
 
@@ -352,7 +352,7 @@ function useCalendarViewModel({
   events,
   eventListEvents = events,
   eventListTotal = eventListEvents.length,
-  eventListPage = 0,
+  eventListNextOffset = null,
   eventListQuery = '',
   eventListScope = 'future',
   timezone,
@@ -404,15 +404,13 @@ function useCalendarViewModel({
     () => ({
       query: eventListQuery.trim(),
       scope: eventListScope,
-      page: eventListPage,
     }),
-    [eventListPage, eventListQuery, eventListScope],
+    [eventListQuery, eventListScope],
   );
   const eventListUrlParams = useMemo(() => {
     if (
       eventListRawUrlParams.query === eventListServerParams.query &&
-      eventListRawUrlParams.scope === eventListServerParams.scope &&
-      eventListRawUrlParams.page !== eventListServerParams.page
+      eventListRawUrlParams.scope === eventListServerParams.scope
     ) {
       return eventListServerParams;
     }
@@ -495,21 +493,12 @@ function useCalendarViewModel({
   }, [displayEvents, timezone, visibleDays]);
 
   const updateEventListParams = useCallback(
-    ({
-      query,
-      scope,
-      page,
-    }: {
-      query?: string;
-      scope?: 'future' | 'past' | 'all';
-      page?: number;
-    }) => {
+    ({ query, scope }: { query?: string; scope?: 'future' | 'past' | 'all' }) => {
       const next = new URLSearchParams(searchParams.toString());
       const current = eventListParamsRef.current ?? eventListUrlParams;
       const nextQuery = query ?? current.query;
       const nextScope = scope ?? current.scope;
-      const nextPage = page ?? current.page;
-      const nextParams = { query: nextQuery.trim(), scope: nextScope, page: nextPage };
+      const nextParams = { query: nextQuery.trim(), scope: nextScope };
       eventListParamsRef.current = nextParams;
       setOptimisticEventListParams({ params: nextParams, sourceSearchParamsKey: searchParamsKey });
 
@@ -517,8 +506,7 @@ function useCalendarViewModel({
       else next.delete('eventQ');
       if (nextScope === 'future') next.delete('eventScope');
       else next.set('eventScope', nextScope);
-      if (nextPage > 0) next.set('eventPage', String(nextPage + 1));
-      else next.delete('eventPage');
+      next.delete('eventPage');
 
       router.push(`/app/calendar?${next.toString()}`);
     },
@@ -719,9 +707,9 @@ function useCalendarViewModel({
     draft,
     editing,
     error,
-    eventListPage: eventListDisplayParams.page,
     eventListQuery: eventListDisplayParams.query,
     eventListScope: eventListDisplayParams.scope,
+    eventListNextOffset,
     eventListTotal,
     eventsByDay,
     gridCols,
@@ -779,24 +767,21 @@ function CalendarViewLayout({ model }: { model: ReturnType<typeof useCalendarVie
       <CalendarEventList
         events={model.displayEventListEvents}
         total={model.eventListTotal}
+        nextOffset={model.eventListNextOffset}
         timezone={model.timezone}
         query={model.eventListQuery}
         scope={model.eventListScope}
-        page={model.eventListPage}
         onQueryChange={(query) => {
-          model.updateEventListParams({ query, page: 0 });
+          model.updateEventListParams({ query });
         }}
         onScopeChange={(scope) => {
-          model.updateEventListParams({ scope, page: 0 });
-        }}
-        onPageChange={(page) => {
-          model.updateEventListParams({ page });
+          model.updateEventListParams({ scope });
         }}
         onCreate={() => {
           model.openCreate(model.anchor);
         }}
         onClearFilters={() => {
-          model.updateEventListParams({ query: '', scope: 'future', page: 0 });
+          model.updateEventListParams({ query: '', scope: 'future' });
         }}
         onEdit={model.openEdit}
       />
@@ -825,46 +810,43 @@ function CalendarViewLayout({ model }: { model: ReturnType<typeof useCalendarVie
   );
 }
 
-function CalendarEventList({
-  events,
-  total,
-  timezone,
-  query,
-  scope,
-  page,
-  onQueryChange,
-  onScopeChange,
-  onPageChange,
-  onCreate,
-  onClearFilters,
-  onEdit,
-}: {
+interface CalendarEventListProps {
   events: CalendarEvent[];
   total: number;
+  nextOffset: number | null;
   timezone: string;
   query: string;
   scope: 'future' | 'past' | 'all';
-  page: number;
   onQueryChange: (query: string) => void;
   onScopeChange: (scope: 'future' | 'past' | 'all') => void;
-  onPageChange: (page: number) => void;
   onCreate: () => void;
   onClearFilters: () => void;
   onEdit: (event: CalendarEvent) => void;
-}) {
+}
+
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- Search stays mounted while extra pages remount on filter changes.
+function CalendarEventList({
+  events,
+  total,
+  nextOffset,
+  timezone,
+  query,
+  scope,
+  onQueryChange,
+  onScopeChange,
+  onCreate,
+  onClearFilters,
+  onEdit,
+}: CalendarEventListProps) {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const committedSearchRef = useRef(query);
-  const pageCount = Math.max(1, Math.ceil(total / EVENT_LIST_PAGE_SIZE));
-  const effectivePage = Math.min(page, pageCount - 1);
-  const pageStart = effectivePage * EVENT_LIST_PAGE_SIZE;
   const hasActiveFilters = Boolean(query) || scope !== 'future';
-  const eventCountLabel =
-    scope === 'future'
-      ? `${total} upcoming event${total === 1 ? '' : 's'}`
-      : scope === 'past'
-        ? `${total} past event${total === 1 ? '' : 's'}`
-        : `${total} event${total === 1 ? '' : 's'}`;
+  const eventCountLabel = formatCollectionCount({
+    matching: total,
+    total,
+    filtered: false,
+  });
 
   useEffect(() => {
     if (query === committedSearchRef.current) return;
@@ -955,47 +937,104 @@ function CalendarEventList({
           </fieldset>
         </CollectionToolbar.View>
       </CollectionToolbar>
+      <CalendarEventListPages
+        key={`${scope}:${query}`}
+        events={events}
+        nextOffset={nextOffset}
+        timezone={timezone}
+        query={query}
+        scope={scope}
+        hasActiveFilters={hasActiveFilters}
+        onCreate={onCreate}
+        onClearFilters={onClearFilters}
+        onEdit={onEdit}
+      />
+    </section>
+  );
+}
 
+interface CalendarEventListPagesProps {
+  events: CalendarEvent[];
+  nextOffset: number | null;
+  timezone: string;
+  query: string;
+  scope: 'future' | 'past' | 'all';
+  hasActiveFilters: boolean;
+  onCreate: () => void;
+  onClearFilters: () => void;
+  onEdit: (event: CalendarEvent) => void;
+}
+
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- Extra pages remount with the filter key instead of syncing props in an effect.
+function CalendarEventListPages({
+  events,
+  nextOffset,
+  timezone,
+  query,
+  scope,
+  hasActiveFilters,
+  onCreate,
+  onClearFilters,
+  onEdit,
+}: CalendarEventListPagesProps) {
+  const [extraEvents, setExtraEvents] = useState<CalendarEvent[]>([]);
+  const [extraOffset, setExtraOffset] = useState<number | null>(null);
+  const [paged, setPaged] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, startLoading] = useTransition();
+  const offset = paged ? extraOffset : nextOffset;
+  const loadedEvents = useMemo(() => {
+    const seen = new Set(events.map((event) => event.id));
+    return [...events, ...extraEvents.filter((event) => !seen.has(event.id))];
+  }, [events, extraEvents]);
+
+  return (
+    <>
       <div className="border-x border-border bg-bg">
-        {events.length > 0 ? (
-          events.map((event) => (
-            <CollectionRow key={event.id} className="min-h-13">
-              <CollectionRow.Title>
-                <button
-                  type="button"
-                  disabled={event.redacted}
-                  className="block min-w-0 truncate rounded-sm text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-100"
-                  onClick={() => {
-                    onEdit(event);
-                  }}
-                >
-                  {event.redacted ? 'Busy' : event.title}
-                </button>
-              </CollectionRow.Title>
-              <CollectionRow.Context>
-                {[event.location, event.description].filter(Boolean).join(' · ') ||
-                  (event.allDay ? 'All day' : statusLabel(event.showAs))}
-              </CollectionRow.Context>
-              <CollectionRow.Metadata>
-                <>
-                  <span className="text-xs text-fg-dim">{formatEventRange(event, timezone)}</span>
-                  <CollectionStatus value={event.showAs} label={statusLabel(event.showAs)} />
-                  <span className="text-xs text-fg-dim">{statusLabel(event.visibility)}</span>
-                </>
-              </CollectionRow.Metadata>
-              <CollectionRow.Actions>
-                {!event.redacted ? (
-                  <ItemActionGroup label={`Actions for ${event.title}`}>
-                    <PinOverflowMenu
-                      target={{ kind: 'calendar_event', key: event.id }}
-                      title={event.title}
-                      initialPinned={event.pinned}
-                    />
-                  </ItemActionGroup>
-                ) : null}
-              </CollectionRow.Actions>
-            </CollectionRow>
-          ))
+        {loadedEvents.length > 0 ? (
+          <VirtualList
+            items={loadedEvents}
+            getItemKey={(event) => event.id}
+            estimateSize={56}
+            renderItem={(event) => (
+              <CollectionRow className="min-h-13">
+                <CollectionRow.Title>
+                  <button
+                    type="button"
+                    disabled={event.redacted}
+                    className="block min-w-0 truncate rounded-sm text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-100"
+                    onClick={() => {
+                      onEdit(event);
+                    }}
+                  >
+                    {event.redacted ? 'Busy' : event.title}
+                  </button>
+                </CollectionRow.Title>
+                <CollectionRow.Context>
+                  {[event.location, event.description].filter(Boolean).join(' · ') ||
+                    (event.allDay ? 'All day' : statusLabel(event.showAs))}
+                </CollectionRow.Context>
+                <CollectionRow.Metadata>
+                  <>
+                    <span className="text-xs text-fg-dim">{formatEventRange(event, timezone)}</span>
+                    <CollectionStatus value={event.showAs} label={statusLabel(event.showAs)} />
+                    <span className="text-xs text-fg-dim">{statusLabel(event.visibility)}</span>
+                  </>
+                </CollectionRow.Metadata>
+                <CollectionRow.Actions>
+                  {!event.redacted ? (
+                    <ItemActionGroup label={`Actions for ${event.title}`}>
+                      <PinOverflowMenu
+                        target={{ kind: 'calendar_event', key: event.id }}
+                        title={event.title}
+                        initialPinned={event.pinned}
+                      />
+                    </ItemActionGroup>
+                  ) : null}
+                </CollectionRow.Actions>
+              </CollectionRow>
+            )}
+          />
         ) : (
           <div className="p-4">
             <p className="text-sm font-medium text-fg">
@@ -1019,46 +1058,35 @@ function CalendarEventList({
         )}
       </div>
 
-      {total > EVENT_LIST_PAGE_SIZE ? (
-        <nav
-          className="mt-3 flex flex-wrap items-center justify-between gap-3"
-          aria-label="Calendar events pages"
-        >
-          <p className="text-xs text-fg-dim">
-            {pageStart + 1}-{Math.min(pageStart + events.length, total)} of {total}
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              size="icon"
-              variant="outline"
-              disabled={effectivePage === 0}
-              aria-label="Previous events"
-              onClick={() => {
-                onPageChange(Math.max(0, effectivePage - 1));
-              }}
-            >
-              <ChevronLeft className="size-4" />
-            </Button>
-            <p className="text-xs text-fg-dim">
-              Page {effectivePage + 1} / {pageCount}
-            </p>
-            <Button
-              type="button"
-              size="icon"
-              variant="outline"
-              disabled={effectivePage >= pageCount - 1}
-              aria-label="Next events"
-              onClick={() => {
-                onPageChange(Math.min(pageCount - 1, effectivePage + 1));
-              }}
-            >
-              <ChevronRight className="size-4" />
-            </Button>
-          </div>
-        </nav>
-      ) : null}
-    </section>
+      <InfiniteScroll
+        hasMore={offset !== null}
+        loading={loading}
+        error={error}
+        onLoadMore={() => {
+          if (offset === null || loading) return;
+          startLoading(async () => {
+            const page = await loadCalendarEventListPageAction({
+              offset,
+              search: query,
+              scope,
+            });
+            if (page.error) {
+              setError(page.error);
+              return;
+            }
+            setError(null);
+            setPaged(true);
+            setExtraEvents((current) => {
+              const seen = new Set(current.map((event) => event.id));
+              return [...current, ...page.events.filter((event) => !seen.has(event.id))];
+            });
+            setExtraOffset(page.nextOffset);
+          });
+        }}
+        boundLabel="No more matching events"
+        hideBound={loadedEvents.length === 0}
+      />
+    </>
   );
 }
 

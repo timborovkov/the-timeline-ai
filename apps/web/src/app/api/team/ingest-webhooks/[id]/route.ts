@@ -1,4 +1,5 @@
 import { auditLog, ingestWebhookCredentials, ingestWebhooks } from '@timeline/db';
+import { TIMELINE_EVENT_CLASSES } from '@timeline/shared/event-class';
 import * as ingestWebhookKeys from '@timeline/shared/ingest-webhooks';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -15,6 +16,7 @@ export const dynamic = 'force-dynamic';
 const patchSchema = z.object({
   name: z.string().trim().min(1).max(80).optional(),
   visibilityDefault: z.enum(['team', 'private']).optional(),
+  eventClass: z.enum(TIMELINE_EVENT_CLASSES).optional(),
   proposalGenerationEnabled: z.boolean().optional(),
   disabled: z.boolean().optional(),
 });
@@ -59,6 +61,9 @@ export async function PATCH(
   if (parsed.data.name !== undefined) patch.name = parsed.data.name;
   if (parsed.data.visibilityDefault !== undefined) {
     patch.visibilityDefault = parsed.data.visibilityDefault;
+  }
+  if (parsed.data.eventClass !== undefined) {
+    patch.eventClass = parsed.data.eventClass;
   }
   if (parsed.data.proposalGenerationEnabled !== undefined) {
     patch.proposalGenerationEnabled = parsed.data.proposalGenerationEnabled;

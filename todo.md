@@ -72,8 +72,14 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       into bundled, evidence-backed work moments with deterministic grouping,
       source-specific adapters, AI-assisted titles/summaries, and an advanced
       raw source event mode.
-      First slice shipped the Moments/Audit trail mode split, clearer rows and
-      inspector copy, GitHub workflow bundling, and the
+      First slice shipped the Moments/All events mode split, quieter chrome,
+      weighted rows (story / record / pulse), Linear-style single-icon rows,
+      a wider family-aware inspector with collapsed original-source viewers,
+      Ask citation previews that name transcript/calendar/document/Timeline
+      destinations and reuse that original-source viewer,
+      sentinel infinite scroll with virtualized archive rows and no inventory
+      chip,
+      GitHub workflow bundling, and the
       `search_timeline_moments`/`get_timeline_moment` agent tools, and the
       shared `@timeline/shared/timeline-moments` projection. Outbound MCP now
       has team-visible moment search/list/expand tools. Bounded server-side
@@ -120,8 +126,8 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       and per-source detail. It durably skips quiet windows before summarization
       and email delivery unless the recipient has fresh local-cycle activity,
       pending approvals, or upcoming calendar context. Timeline Moments chrome
-      and IndexStrip loaded counts also lead with moments (Audit trail keeps
-      source-event counts). The
+      no longer uses IndexStrip loaded counts; All events keeps source-event
+      grouping with uniform pulse weight. The
       `timeline-moment-presentations` worker script now provides bounded,
       dry-run-first production prewarming for missing AI presentation cache jobs.
       Timeline page/API reads now emit privacy-safe `timeline_moments_viewed`
@@ -138,8 +144,8 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       handoff/update DTO design, and live adapter payload fixtures for providers
       as they ship.
 - [x] U1 — Design-language softening: new `PageHeader` + `SectionHeading`,
-      surface split (`IndexStrip` stays on Timeline and explicit audit/operator
-      views; standard pages get a sentence-case `H1`),
+      surface split (`IndexStrip` stays on explicit audit/operator
+      views; Timeline uses a sticky collection toolbar; standard pages get a sentence-case `H1`),
       update `design.md` in the same PR.
 - [x] U2 — Connect-flow wizard: one guided Connect → Choose → Done flow
       per provider; hide `externalId` / `resourceKind` / `.org` kinds;

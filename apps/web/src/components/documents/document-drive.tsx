@@ -41,6 +41,8 @@ import {
 } from '@/app/actions/documents';
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
+import { InfiniteScroll } from '@/components/collections/infinite-scroll';
+import { VirtualList } from '@/components/collections/virtual-list';
 import { EvidenceLink } from '@/components/evidence-link';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { useAppDialog } from '@/components/ui/app-dialog';
@@ -828,25 +830,23 @@ function DocumentList({
   if (documents.length === 0) return null;
   return (
     <CollectionGroup title="Documents" count={documents.length}>
-      <ul className="border-x border-border">
-        {documents.map((d) => (
-          <DocumentListItem key={d.id} document={d} />
-        ))}
-      </ul>
-      {query.hasNextPage || query.isFetchingNextPage ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="mt-3"
-          disabled={query.isFetchingNextPage}
-          onClick={() => {
-            void query.fetchNextPage();
-          }}
-        >
-          {query.isFetchingNextPage ? 'Loading…' : 'Load more'}
-        </Button>
-      ) : null}
+      <div className="border-x border-border">
+        <VirtualList
+          items={documents}
+          getItemKey={(document) => document.id}
+          estimateSize={56}
+          renderItem={(document) => <DocumentListItem document={document} />}
+        />
+      </div>
+      <InfiniteScroll
+        hasMore={query.hasNextPage}
+        loading={query.isFetchingNextPage}
+        error={query.isFetchNextPageError ? 'Could not load more documents.' : null}
+        onLoadMore={() => {
+          void query.fetchNextPage();
+        }}
+        boundLabel="No more matching documents"
+      />
     </CollectionGroup>
   );
 }
@@ -882,7 +882,7 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
       normalizeDocumentSummary(document.provenance.summary, document.name, title));
 
   return (
-    <li style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 52px' }}>
+    <div style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 52px' }}>
       <CollectionRow className="min-h-13">
         <CollectionRow.Title>
           <DocumentTitleRow
@@ -928,7 +928,7 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
           </ItemActionGroup>
         </CollectionRow.Actions>
       </CollectionRow>
-    </li>
+    </div>
   );
 }
 

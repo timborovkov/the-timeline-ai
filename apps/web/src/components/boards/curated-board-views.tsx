@@ -15,6 +15,7 @@ import { priorityTone } from '@/components/collections/collection-status-tone';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { SelectionBar } from '@/components/collections/selection-bar';
+import { VirtualList } from '@/components/collections/virtual-list';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
@@ -783,8 +784,11 @@ export function CuratedBoardList({
       <div className="border-x border-border bg-surface">
         {laneGroups.map((group) => (
           <CollectionGroup key={group.id || 'unset'} title={group.name} count={group.items.length}>
-            <ul>
-              {group.items.map((item) => {
+            <VirtualList
+              items={group.items}
+              getItemKey={(item) => item.id}
+              estimateSize={48}
+              renderItem={(item) => {
                 const optimistic = isOptimisticItem(item);
                 const objectTitle = displayObjectTitle(item.object);
                 const title = optimistic ? (
@@ -798,10 +802,7 @@ export function CuratedBoardList({
                   </Link>
                 );
                 return (
-                  <li
-                    key={item.id}
-                    style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 44px' }}
-                  >
+                  <div style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 44px' }}>
                     <CollectionRow selected={visibleSelectedIds.has(item.id)}>
                       <CollectionRow.Leading>
                         {onUpdateItem ? (
@@ -957,10 +958,10 @@ export function CuratedBoardList({
                         </>
                       </CollectionRow.Metadata>
                     </CollectionRow>
-                  </li>
+                  </div>
                 );
-              })}
-            </ul>
+              }}
+            />
           </CollectionGroup>
         ))}
       </div>

@@ -5,8 +5,9 @@ import { presentDueDate } from '@timeline/shared/time';
 import { Check, ExternalLink, Eye, GitMerge, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useReducer, useRef, useTransition } from 'react';
+import { useMemo, useReducer, useRef, useState, useTransition } from 'react';
 
+import { loadSuggestionsPageAction } from '@/app/actions/collection-pages';
 import {
   acceptSuggestionItemAction,
   acceptVisibleSuggestionsAction,
@@ -17,7 +18,9 @@ import { ApprovalPreviewDialog } from '@/components/approvals/approval-preview-d
 import { SuggestionChangeDialog } from '@/components/approvals/suggestion-change-dialog';
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
+import { InfiniteScroll } from '@/components/collections/infinite-scroll';
 import { SelectionBar } from '@/components/collections/selection-bar';
+import { VirtualList } from '@/components/collections/virtual-list';
 import { EmptyAction } from '@/components/empty-action';
 import { EvidenceLink } from '@/components/evidence-link';
 import { Button } from '@/components/ui/button';
@@ -208,6 +211,8 @@ const INITIAL_APPROVALS_QUEUE: ApprovalsQueueState = {
 
 interface Props {
   suggestions: SuggestionBundle[];
+  nextCursor?: string | null;
+  status?: 'pending' | 'failed' | 'resolved' | 'all';
   taskCategoriesEnabled?: boolean;
   allowBulkAccept?: boolean;
   allowBulkReject?: boolean;
@@ -645,6 +650,8 @@ function foldedSummaryText(
 
 export function ApprovalsClient({
   suggestions,
+  nextCursor = null,
+  status = 'pending',
   taskCategoriesEnabled = true,
   allowBulkAccept = true,
   allowBulkReject = true,
@@ -656,6 +663,18 @@ export function ApprovalsClient({
   const resolvedTimezone = timezone ?? workspaceTimezone;
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [pageState, setPageState] = useState<{
+    extraSuggestions: SuggestionBundle[];
+    extraCursor: string | null;
+    paged: boolean;
+    loadError: string | null;
+  }>({ extraSuggestions: [], extraCursor: null, paged: false, loadError: null });
+  const [loadingMore, startLoadingMore] = useTransition();
+  const pageCursor = pageState.paged ? pageState.extraCursor : nextCursor;
+  const loadedSuggestions = useMemo(() => {
+    const seen = new Set(suggestions.map((bundle) => bundle.id));
+    return [...suggestions, ...pageState.extraSuggestions.filter((bundle) => !seen.has(bundle.id))];
+  }, [pageState.extraSuggestions, suggestions]);
   const [
     { error, selectedIds, previewItem, resolvedItemSignatures, busyItemIds, actionFailedItemIds },
     dispatch,
@@ -665,11 +684,11 @@ export function ApprovalsClient({
   const serverItemSignatures = useMemo(
     () =>
       new Map(
-        suggestions.flatMap((bundle) =>
+        loadedSuggestions.flatMap((bundle) =>
           bundle.items.map((item) => [item.id, suggestionItemSignature(item)] as const),
         ),
       ),
-    [suggestions],
+    [loadedSuggestions],
   );
   const effectiveResolvedItemIds = useMemo(() => {
     const next = new Set<string>();
@@ -680,11 +699,11 @@ export function ApprovalsClient({
   }, [resolvedItemSignatures, serverItemSignatures]);
   const visibleSuggestions = useMemo(
     () =>
-      suggestions.flatMap((bundle) => {
+      loadedSuggestions.flatMap((bundle) => {
         const items = bundle.items.filter((item) => !effectiveResolvedItemIds.has(item.id));
         return items.length > 0 ? [{ ...bundle, items }] : [];
       }),
-    [effectiveResolvedItemIds, suggestions],
+    [effectiveResolvedItemIds, loadedSuggestions],
   );
   const visiblePendingItemCount = visibleSuggestions.reduce(
     (sum, bundle) =>
@@ -747,7 +766,33 @@ export function ApprovalsClient({
     });
   }
 
-  if (suggestions.length === 0) {
+  function loadMore(): void {
+    if (!pageCursor || loadingMore) return;
+    startLoadingMore(async () => {
+      const page = await loadSuggestionsPageAction({ cursor: pageCursor, status });
+      if (page.error) {
+        setPageState((current) => ({
+          ...current,
+          loadError: page.error ?? 'Could not load more.',
+        }));
+        return;
+      }
+      setPageState((current) => {
+        const seen = new Set(current.extraSuggestions.map((bundle) => bundle.id));
+        return {
+          extraSuggestions: [
+            ...current.extraSuggestions,
+            ...page.suggestions.filter((bundle) => !seen.has(bundle.id)),
+          ],
+          extraCursor: page.nextCursor,
+          paged: true,
+          loadError: null,
+        };
+      });
+    });
+  }
+
+  if (loadedSuggestions.length === 0 && pageCursor === null) {
     return (
       <EmptyAction
         title={emptyState?.title ?? 'No pending approvals'}
@@ -768,7 +813,10 @@ export function ApprovalsClient({
         allowBulkReject={allowBulkReject}
         actionFailedItemIds={actionFailedItemIds}
         busyItemIds={busyItemIds}
-        error={error}
+        error={error ?? pageState.loadError}
+        hasMore={pageCursor !== null}
+        loadingMore={loadingMore}
+        onLoadMore={loadMore}
         pending={pending}
         run={run}
         selectedIds={selectedIds}
@@ -863,6 +911,9 @@ function ApprovalListBody({
   actionFailedItemIds,
   busyItemIds,
   error,
+  hasMore,
+  loadingMore,
+  onLoadMore,
   pending,
   run,
   selectedIds,
@@ -878,6 +929,9 @@ function ApprovalListBody({
   actionFailedItemIds: Set<string>;
   busyItemIds: Set<string>;
   error: string | null;
+  hasMore: boolean;
+  loadingMore: boolean;
+  onLoadMore: () => void;
   pending: boolean;
   run: ApprovalAction;
   selectedIds: Set<string>;
@@ -969,24 +1023,36 @@ function ApprovalListBody({
       ) : null}
       {pending && visibleSuggestions.length === 0 ? <ApprovalUpdatingState /> : null}
       <div className="border-x border-border">
-        {visibleSuggestions.map((bundle) => (
-          <ApprovalBundleRow
-            actionFailedItemIds={actionFailedItemIds}
-            bundle={bundle}
-            busyItemIds={busyItemIds}
-            key={bundle.id}
-            pending={pending}
-            run={run}
-            selectable={selectable}
-            selectedIds={selectedIds}
-            selectionActive={selectedItems.length > 0}
-            timezone={timezone}
-            taskCategoriesEnabled={taskCategoriesEnabled}
-            onPreview={onPreview}
-            onSelectedChange={onSelectedChange}
-          />
-        ))}
+        <VirtualList
+          items={visibleSuggestions}
+          getItemKey={(bundle) => bundle.id}
+          estimateSize={220}
+          renderItem={(bundle) => (
+            <ApprovalBundleRow
+              actionFailedItemIds={actionFailedItemIds}
+              bundle={bundle}
+              busyItemIds={busyItemIds}
+              pending={pending}
+              run={run}
+              selectable={selectable}
+              selectedIds={selectedIds}
+              selectionActive={selectedItems.length > 0}
+              timezone={timezone}
+              taskCategoriesEnabled={taskCategoriesEnabled}
+              onPreview={onPreview}
+              onSelectedChange={onSelectedChange}
+            />
+          )}
+        />
       </div>
+      <InfiniteScroll
+        hasMore={hasMore}
+        loading={loadingMore}
+        error={null}
+        onLoadMore={onLoadMore}
+        boundLabel="No more matching approvals"
+        hideBound={visibleSuggestions.length === 0 && !hasMore}
+      />
     </div>
   );
 }

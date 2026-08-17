@@ -140,7 +140,9 @@ Treat this file as an operating contract for agents, not a loose README.
   Turborepo; `pnpm -r build` is the canonical build.
 - **Use the dev seed for local demo data.** `pnpm dev:seed` creates the
   documented Acme Labs team, fake login users, events, objects, board, and
-  encrypted fake integration credentials after migrations. The fake
+  encrypted fake integration credentials after migrations. `pnpm dev:seed:heavy`
+  adds enough extra Acme Labs rows to force infinite-scroll fetches and
+  virtualization. The fake
   integrations stay disabled for sync so local workers do not call real
   providers. Keep the credential list in [README.md](README.md) current when
   the seed changes.
@@ -235,7 +237,10 @@ packages/
             module (Phase 11 — Drive/Linear/GitHub/Monday.com/Slack/Sentry
             providers, person-owned provider connections, team resource
             shares, active source paths, connection attention, event-writer,
-            registry catalog, AES-GCM secrets helper), artifact/workspace
+            registry catalog, AES-GCM secrets helper), event-class taxonomy
+            (provider-agnostic communication / work_record / pulse / incident /
+            artifact / schedule; ingest webhooks set class in settings),
+            artifact/workspace
             reconciliation modules (evidence clusters, anchors, source refs,
             raw-event normalization, anchor resolution, reconciliation outputs,
             approval projection outbox, and field-scoped authority policy),

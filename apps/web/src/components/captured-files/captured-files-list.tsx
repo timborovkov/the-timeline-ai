@@ -11,6 +11,8 @@ import { promoteCapturedFileAction } from '@/app/actions/documents';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
+import { InfiniteScroll } from '@/components/collections/infinite-scroll';
+import { VirtualList } from '@/components/collections/virtual-list';
 import { DocumentPreview } from '@/components/documents/document-preview';
 import { EvidenceLink } from '@/components/evidence-link';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
@@ -28,6 +30,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { ItemActionGroup } from '@/components/ui/item-actions';
+import { formatCollectionCount } from '@/lib/collection-count';
 import { displaySourceLabel } from '@/lib/display-labels';
 import { selectedValues } from '@/lib/filter-values';
 import { toastMutation } from '@/lib/mutation-toast';
@@ -331,11 +334,15 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
             : []),
         ]}
       >
-        <CollectionToolbar.Count>
-          {activeFilterCount > 0
-            ? `Showing ${capturedFileCountLabel(visibleFiles.length)} of ${String(loadedFiles.length)}`
-            : `Showing ${capturedFileCountLabel(loadedFiles.length)}`}
-        </CollectionToolbar.Count>
+        {cursor ? null : (
+          <CollectionToolbar.Count>
+            {formatCollectionCount({
+              matching: visibleFiles.length,
+              total: loadedFiles.length,
+              filtered: activeFilterCount > 0,
+            })}
+          </CollectionToolbar.Count>
+        )}
         <CollectionToolbar.Filters>
           <div className="flex min-w-0 flex-wrap items-end gap-2">
             <FilterMultiSelect
@@ -400,17 +407,21 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
           if (!open) dispatchUi({ type: 'promote', file: null });
         }}
       >
-        <ul className="overflow-hidden border-x border-border bg-surface">
-          {visibleFiles.map((file) => (
-            <CapturedFileRow
-              key={file.id}
-              file={file}
-              onPromote={() => {
-                dispatchUi({ type: 'promote', file });
-              }}
-            />
-          ))}
-        </ul>
+        <div className="overflow-hidden border-x border-border bg-surface">
+          <VirtualList
+            items={visibleFiles}
+            getItemKey={(file) => file.id}
+            estimateSize={56}
+            renderItem={(file) => (
+              <CapturedFileRow
+                file={file}
+                onPromote={() => {
+                  dispatchUi({ type: 'promote', file });
+                }}
+              />
+            )}
+          />
+        </div>
         {uiState.promoting ? (
           <PromoteDialog
             file={uiState.promoting}
@@ -427,36 +438,18 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
           <p className="text-sm font-medium text-fg">No captured files match these filters</p>
           <p className="mt-1 text-sm leading-6 text-fg-muted">
             {cursor
-              ? 'Load older captures to keep searching, or clear the filters to view every loaded file.'
+              ? 'Keep scrolling to search older captures, or clear the filters to view every loaded file.'
               : 'Clear the filters to view every captured file.'}
           </p>
         </div>
       ) : null}
-      {loadMoreError ? (
-        <InlineError
-          message={loadMoreError}
-          onRetry={loadMore}
-          retrying={loadingMore}
-          retryLabel="Retry loading older files"
-        />
-      ) : null}
-      {cursor ? (
-        <>
-          <output className="sr-only" aria-live="polite">
-            {loadingMore ? 'Loading older captured files' : ''}
-          </output>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={loadMore}
-            disabled={loadingMore}
-            aria-busy={loadingMore}
-          >
-            {loadingMore ? 'Loading…' : 'Load older captured files'}
-          </Button>
-        </>
-      ) : null}
+      <InfiniteScroll
+        hasMore={Boolean(cursor)}
+        loading={loadingMore}
+        error={loadMoreError}
+        onLoadMore={loadMore}
+        boundLabel="No more matching files"
+      />
     </section>
   );
 }
@@ -507,7 +500,7 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
     : null;
 
   return (
-    <li style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 52px' }}>
+    <div style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 52px' }}>
       <CollectionRow className="min-h-13">
         <CollectionRow.Leading>
           <span className="grid size-8 shrink-0 place-items-center rounded-sm bg-surface-2 text-fg-muted">
@@ -596,7 +589,7 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
           </ItemActionGroup>
         </CollectionRow.Actions>
       </CollectionRow>
-    </li>
+    </div>
   );
 }
 
@@ -831,10 +824,6 @@ function matchesDateFilter(value: string, filter: string): boolean {
 
 function formatDate(value: string): string {
   return capturedFileDateFormatter.format(new Date(value));
-}
-
-function capturedFileCountLabel(count: number): string {
-  return `${String(count)} captured ${count === 1 ? 'file' : 'files'}`;
 }
 
 function fileTypeLabel(contentType: string): string {
