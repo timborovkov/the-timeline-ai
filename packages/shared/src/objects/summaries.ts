@@ -541,8 +541,8 @@ async function buildObjectSummaryPacket(
           ? 'Creation evidence'
           : 'Source event',
       text:
-        created?.quote ||
-        created?.contentText ||
+        created?.contentText ??
+        created?.quote ??
         association?.summary ??
         association?.title ??
         fact?.statement ??
