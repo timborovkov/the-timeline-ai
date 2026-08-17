@@ -1,6 +1,9 @@
 'use client';
 
+import { createElement } from 'react';
 import { toast } from 'sonner';
+
+import { UndoToastButton } from '@/components/ui/undo-toast-button';
 
 export const ACTION_TOAST_LOADING_DELAY_MS = 150;
 export const ACTION_TOAST_SUCCESS_MS = 2_000;
@@ -75,8 +78,7 @@ export async function notifyAction<T extends ActionResult>(
       id: options.id,
       duration: ACTION_TOAST_SUCCESS_MS,
       action: undo
-        ? {
-            label: 'Undo',
+        ? createElement(UndoToastButton, {
             onClick: () => {
               void notifyAction({
                 id: options.id,
@@ -86,7 +88,7 @@ export async function notifyAction<T extends ActionResult>(
                 run: () => undo.run(result ?? ({} as T)),
               });
             },
-          }
+          })
         : undefined,
     });
   };

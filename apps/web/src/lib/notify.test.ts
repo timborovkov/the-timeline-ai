@@ -1,4 +1,7 @@
+import { isValidElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { UndoToastButton } from '@/components/ui/undo-toast-button';
 
 const toast = vi.hoisted(() => ({
   loading: vi.fn(),
@@ -106,14 +109,19 @@ describe('notifyAction', () => {
     await pending;
 
     const successOptions = toast.success.mock.calls[0]?.[1] as
-      | { id?: string; duration?: number; action?: { label?: string; onClick?: () => void } }
+      | { id?: string; duration?: number; action?: { onClick?: () => void } }
       | undefined;
     expect(successOptions).toMatchObject({
       id: 'object:1',
       duration: 2_000,
-      action: { label: 'Undo' },
     });
-    successOptions?.action?.onClick?.();
+    expect(isValidElement(successOptions?.action)).toBe(true);
+    expect(isValidElement(successOptions?.action) && successOptions.action.type).toBe(
+      UndoToastButton,
+    );
+    if (isValidElement<{ onClick?: () => void }>(successOptions?.action)) {
+      successOptions.action.props.onClick?.();
+    }
     await vi.advanceTimersByTimeAsync(0);
     expect(undoRun).toHaveBeenCalledWith({ ok: true });
   });
