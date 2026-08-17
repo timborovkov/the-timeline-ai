@@ -41,6 +41,9 @@ import {
 } from '@/app/actions/documents';
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
+import { CollectionRowContext } from '@/components/collections/collection-row-context';
+import { CollectionRowLeading } from '@/components/collections/collection-row-leading';
+import { CollectionRowMetadata } from '@/components/collections/collection-row-metadata';
 import { EvidenceLink } from '@/components/evidence-link';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { useAppDialog } from '@/components/ui/app-dialog';
@@ -751,7 +754,6 @@ function FolderList({
         {folders.map((f) => (
           <li key={f.id}>
             <CollectionRow
-              leading={<FolderIcon className="size-4 text-muted-foreground" aria-hidden />}
               title={
                 f.optimistic ? (
                   <span className="opacity-70">{f.name}</span>
@@ -765,7 +767,6 @@ function FolderList({
                 )
               }
               context={f.visibility}
-              metadata={<time dateTime={f.updatedAt}>{formatDate(f.updatedAt)}</time>}
               actions={
                 <ItemActionGroup label={`Actions for ${f.name}`}>
                   <Button
@@ -783,7 +784,14 @@ function FolderList({
                   </Button>
                 </ItemActionGroup>
               }
-            />
+            >
+              <CollectionRowLeading>
+                <FolderIcon className="size-4 text-muted-foreground" aria-hidden />
+              </CollectionRowLeading>
+              <CollectionRowMetadata>
+                <time dateTime={f.updatedAt}>{formatDate(f.updatedAt)}</time>
+              </CollectionRowMetadata>
+            </CollectionRow>
           </li>
         ))}
       </ul>
@@ -867,15 +875,6 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
             fullStoredName={usingFriendlyTitle ? document.name : null}
           />
         }
-        context={summary ?? <DocumentMetaLine items={metaItems} />}
-        metadata={
-          <>
-            <SourceBadge source={source} />
-            <ProcessingBadge status={status} optimistic={document.optimistic === true} />
-            <VisibilityBadge visibility={document.visibility} />
-            <span className="hidden text-xs text-fg-dim sm:inline">{updatedAt}</span>
-          </>
-        }
         actions={
           <ItemActionGroup label={`Actions for ${title}`}>
             {sourceEventId ? (
@@ -899,7 +898,19 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
             ) : null}
           </ItemActionGroup>
         }
-      />
+      >
+        <CollectionRowContext>
+          {summary ?? <DocumentMetaLine items={metaItems} />}
+        </CollectionRowContext>
+        <CollectionRowMetadata>
+          <>
+            <SourceBadge source={source} />
+            <ProcessingBadge status={status} optimistic={document.optimistic === true} />
+            <VisibilityBadge visibility={document.visibility} />
+            <span className="hidden text-xs text-fg-dim sm:inline">{updatedAt}</span>
+          </>
+        </CollectionRowMetadata>
+      </CollectionRow>
     </li>
   );
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { Loader2 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 import type { ReactNode } from 'react';
 
@@ -11,36 +11,45 @@ import { cn } from '@/lib/utils';
 export function EditableMetadata({
   label,
   value,
-  editor,
   pending = false,
   disabled = false,
   error,
   className,
   triggerRef,
+  children,
 }: {
   label: string;
   value: ReactNode;
-  editor: ReactNode;
   pending?: boolean;
   disabled?: boolean;
   error?: string | null;
   className?: string;
   triggerRef?: (node: HTMLButtonElement | null) => void;
+  children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const internalTriggerRef = useRef<HTMLButtonElement>(null);
-  const wasPendingRef = useRef(pending);
-  const previousErrorRef = useRef(error);
+  const suppressOpenRef = useRef(false);
+  const wasPendingRef = useRef(false);
+  const previousErrorRef = useRef<string | null | undefined>(undefined);
+  const errorId = useId();
 
-  if (pending && open) {
-    setOpen(false);
+  if (pending) suppressOpenRef.current = true;
+  const popoverOpen = pending || suppressOpenRef.current ? false : open;
+
+  function handleOpenChange(next: boolean): void {
+    if (pending) return;
+    if (next) suppressOpenRef.current = false;
+    setOpen(next);
   }
 
   // Restore focus after a parent-driven save finishes. pending/error are the
   // completion signals; there is no local event handler for that commit.
   // react-doctor-disable-next-line react-doctor/no-event-handler -- Focus restoration is keyed to parent pending/error, not a local click.
   useEffect(() => {
+    // react-doctor-disable-next-line react-doctor/no-event-handler -- Focus restoration is keyed to parent pending/error, not a local click.
     const completedSave = wasPendingRef.current && !pending;
+    // react-doctor-disable-next-line react-doctor/no-event-handler -- Focus restoration is keyed to parent pending/error, not a local click.
     const receivedError = Boolean(error && error !== previousErrorRef.current);
     if (completedSave || receivedError) {
       internalTriggerRef.current?.focus();
@@ -51,7 +60,7 @@ export function EditableMetadata({
 
   return (
     <span className="relative inline-flex min-w-0 flex-col">
-      <Popover open={pending ? false : open} onOpenChange={setOpen}>
+      <Popover open={popoverOpen} onOpenChange={handleOpenChange}>
         <PopoverTrigger asChild>
           <button
             ref={(node) => {
@@ -60,7 +69,7 @@ export function EditableMetadata({
             }}
             type="button"
             aria-label={label}
-            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? errorId : undefined}
             disabled={disabled || pending}
             className={cn(
               'inline-flex min-h-10 min-w-0 items-center gap-1.5 rounded-sm px-2 text-xs text-fg-muted transition-[background-color,color,transform] duration-150 hover:bg-surface-2 hover:text-fg active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50 disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none motion-reduce:active:scale-100',
@@ -78,11 +87,12 @@ export function EditableMetadata({
           </button>
         </PopoverTrigger>
         <PopoverContent role="dialog" aria-label={label} className="min-w-52 p-2">
-          {editor}
+          {children}
         </PopoverContent>
       </Popover>
       {error ? (
         <span
+          id={errorId}
           role="alert"
           className="absolute left-2 top-full z-10 whitespace-nowrap text-[10px] text-danger"
         >

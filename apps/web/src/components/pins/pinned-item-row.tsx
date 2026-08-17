@@ -4,6 +4,7 @@ import Link from 'next/link';
 import type { PinnedItem } from '@timeline/shared/pins';
 
 import { CollectionRow } from '@/components/collections/collection-row';
+import { CollectionRowLeading } from '@/components/collections/collection-row-leading';
 import { PinTargetIcon } from '@/components/pins/pin-icon';
 import { PinMenuItem } from '@/components/pins/pin-menu-item';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
@@ -36,11 +37,6 @@ export function PinnedItemRow({
       className={cn('group min-w-0', draggable && 'cursor-grab active:cursor-grabbing')}
     >
       <CollectionRow
-        leading={
-          <span className="flex size-7 shrink-0 items-center justify-center text-fg-muted">
-            <PinTargetIcon kind={item.iconKind} className="size-3.5" />
-          </span>
-        }
         title={
           <Link
             href={item.href}
@@ -65,7 +61,13 @@ export function PinnedItemRow({
             </ItemOverflowMenu>
           </ItemActionGroup>
         }
-      />
+      >
+        <CollectionRowLeading>
+          <span className="flex size-7 shrink-0 items-center justify-center text-fg-muted">
+            <PinTargetIcon kind={item.iconKind} className="size-3.5" />
+          </span>
+        </CollectionRowLeading>
+      </CollectionRow>
     </div>
   );
 }

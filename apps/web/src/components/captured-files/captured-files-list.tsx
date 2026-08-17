@@ -10,8 +10,11 @@ import type { ReactNode } from 'react';
 
 import { promoteCapturedFileAction } from '@/app/actions/documents';
 import { CollectionRow } from '@/components/collections/collection-row';
+import { CollectionRowLeading } from '@/components/collections/collection-row-leading';
+import { CollectionRowMetadata } from '@/components/collections/collection-row-metadata';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
+import { CollectionToolbarFilters } from '@/components/collections/collection-toolbar-filters';
 import { DocumentPreview } from '@/components/documents/document-preview';
 import { EvidenceLink } from '@/components/evidence-link';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
@@ -284,48 +287,6 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
             ? `Showing ${capturedFileCountLabel(visibleFiles.length)} of ${String(loadedFiles.length)}`
             : `Showing ${capturedFileCountLabel(loadedFiles.length)}`
         }
-        filters={
-          <div className="flex min-w-0 flex-wrap items-end gap-2">
-            <FilterMultiSelect
-              label="Source"
-              value={uiState.sourceFilter}
-              onValueChange={(value) => {
-                dispatchUi({ type: 'source', value });
-              }}
-              placeholder="All sources"
-              options={sourceOptions}
-            />
-            <FilterMultiSelect
-              label="Type"
-              value={uiState.typeFilter}
-              onValueChange={(value) => {
-                dispatchUi({ type: 'fileType', value });
-              }}
-              placeholder="All types"
-              options={typeOptions}
-            />
-            <FilterMultiSelect
-              label="Status"
-              value={uiState.statusFilter}
-              onValueChange={(value) => {
-                dispatchUi({ type: 'status', value });
-              }}
-              placeholder="All statuses"
-              options={statusOptions}
-            />
-            <FilterSelect
-              label="Date"
-              value={uiState.dateFilter}
-              onChange={(value) => {
-                dispatchUi({ type: 'date', value });
-              }}
-            >
-              <option value={ALL}>Any time</option>
-              <option value="7d">Last 7 days</option>
-              <option value="30d">Last 30 days</option>
-            </FilterSelect>
-          </div>
-        }
         activeFilters={[
           ...(uiState.sourceFilter
             ? [
@@ -390,7 +351,50 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
             </Button>
           ) : null
         }
-      />
+      >
+        <CollectionToolbarFilters>
+          <div className="flex min-w-0 flex-wrap items-end gap-2">
+            <FilterMultiSelect
+              label="Source"
+              value={uiState.sourceFilter}
+              onValueChange={(value) => {
+                dispatchUi({ type: 'source', value });
+              }}
+              placeholder="All sources"
+              options={sourceOptions}
+            />
+            <FilterMultiSelect
+              label="Type"
+              value={uiState.typeFilter}
+              onValueChange={(value) => {
+                dispatchUi({ type: 'fileType', value });
+              }}
+              placeholder="All types"
+              options={typeOptions}
+            />
+            <FilterMultiSelect
+              label="Status"
+              value={uiState.statusFilter}
+              onValueChange={(value) => {
+                dispatchUi({ type: 'status', value });
+              }}
+              placeholder="All statuses"
+              options={statusOptions}
+            />
+            <FilterSelect
+              label="Date"
+              value={uiState.dateFilter}
+              onChange={(value) => {
+                dispatchUi({ type: 'date', value });
+              }}
+            >
+              <option value={ALL}>Any time</option>
+              <option value="7d">Last 7 days</option>
+              <option value="30d">Last 30 days</option>
+            </FilterSelect>
+          </div>
+        </CollectionToolbarFilters>
+      </CollectionToolbar>
 
       <Dialog
         open={uiState.promoting !== null}
@@ -508,11 +512,6 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
     <li style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 52px' }}>
       <CollectionRow
         className="min-h-13"
-        leading={
-          <span className="grid size-8 shrink-0 place-items-center rounded-sm bg-surface-2 text-fg-muted">
-            <Icon aria-hidden="true" className="size-4" />
-          </span>
-        }
         title={
           <span className="min-w-0">
             <span
@@ -539,23 +538,6 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
           </span>
         }
         context={file.description ?? fileTypeLabel(contentType)}
-        metadata={
-          <>
-            <Badge variant="secondary" className="text-[11px] text-fg-muted">
-              {displaySourceLabel(file.provenance.source)}
-            </Badge>
-            <CollectionStatus
-              value={file.currentVersion?.processingStatus ?? 'pending'}
-              label={processingStatusLabel(file.currentVersion?.processingStatus ?? 'pending')}
-            />
-            <Badge variant="outline" className="text-[11px] text-fg-muted">
-              {visibilityLabel(file.visibility)}
-            </Badge>
-            <span className="text-xs tabular-nums text-fg-dim">
-              Updated {formatDate(file.updatedAt)}
-            </span>
-          </>
-        }
         actions={
           <ItemActionGroup label={`Actions for ${presentation.displayTitle}`}>
             <PinOverflowMenu
@@ -592,7 +574,30 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
             </DialogTrigger>
           </ItemActionGroup>
         }
-      />
+      >
+        <CollectionRowLeading>
+          <span className="grid size-8 shrink-0 place-items-center rounded-sm bg-surface-2 text-fg-muted">
+            <Icon aria-hidden="true" className="size-4" />
+          </span>
+        </CollectionRowLeading>
+        <CollectionRowMetadata>
+          <>
+            <Badge variant="secondary" className="text-[11px] text-fg-muted">
+              {displaySourceLabel(file.provenance.source)}
+            </Badge>
+            <CollectionStatus
+              value={file.currentVersion?.processingStatus ?? 'pending'}
+              label={processingStatusLabel(file.currentVersion?.processingStatus ?? 'pending')}
+            />
+            <Badge variant="outline" className="text-[11px] text-fg-muted">
+              {visibilityLabel(file.visibility)}
+            </Badge>
+            <span className="text-xs tabular-nums text-fg-dim">
+              Updated {formatDate(file.updatedAt)}
+            </span>
+          </>
+        </CollectionRowMetadata>
+      </CollectionRow>
     </li>
   );
 }

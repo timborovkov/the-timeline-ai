@@ -6,12 +6,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
-import {
-  CollectionStatus,
-  priorityTone,
-  statusTone,
-} from '@/components/collections/collection-status';
+import { CollectionRowMetadata } from '@/components/collections/collection-row-metadata';
+import { CollectionStatus } from '@/components/collections/collection-status';
+import { priorityTone, statusTone } from '@/components/collections/collection-status-tone';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
+import { CollectionToolbarFilters } from '@/components/collections/collection-toolbar-filters';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { SelectionBar } from '@/components/collections/selection-bar';
@@ -70,7 +69,11 @@ describe('collection primitives', () => {
 
   it('uses a 44px desktop row with a two-line responsive content structure', () => {
     const { container } = render(
-      <CollectionRow title="Launch plan" context="Acme" metadata={<span>P2</span>} />,
+      <CollectionRow title="Launch plan" context="Acme">
+        <CollectionRowMetadata>
+          <span>P2</span>
+        </CollectionRowMetadata>
+      </CollectionRow>,
     );
     const row = container.firstElementChild;
     expect(row?.className).toContain('min-h-11');
@@ -85,13 +88,14 @@ describe('collection primitives', () => {
     render(
       <CollectionToolbar
         count="4 results"
-        filters={
+        activeFilters={[{ key: 'owner', label: 'Owner', value: 'Ada', onRemove: remove }]}
+      >
+        <CollectionToolbarFilters>
           <label>
             Owner <input aria-label="Owner" />
           </label>
-        }
-        activeFilters={[{ key: 'owner', label: 'Owner', value: 'Ada', onRemove: remove }]}
-      />,
+        </CollectionToolbarFilters>
+      </CollectionToolbar>,
     );
 
     expect(screen.getByRole('button', { name: 'Remove Owner filter' }).className).toContain(
@@ -116,21 +120,16 @@ describe('collection primitives', () => {
   it('keeps metadata triggers accessible, reports row errors, and restores focus on Escape', async () => {
     const user = userEvent.setup();
     render(
-      <EditableMetadata
-        label="Priority for Launch plan"
-        value="P2"
-        error="Save failed"
-        editor={
-          <select aria-label="Priority" defaultValue="2">
-            <option value="2">P2</option>
-          </select>
-        }
-      />,
+      <EditableMetadata label="Priority for Launch plan" value="P2" error="Save failed">
+        <select aria-label="Priority" defaultValue="2">
+          <option value="2">P2</option>
+        </select>
+      </EditableMetadata>,
     );
 
     const trigger = screen.getByRole('button', { name: 'Priority for Launch plan' });
     expect(trigger.className).toContain('min-h-10');
-    expect(trigger.getAttribute('aria-invalid')).toBe('true');
+    expect(trigger.getAttribute('aria-describedby')).toBeTruthy();
     expect(screen.getByRole('alert').textContent).toBe('Save failed');
 
     await user.click(trigger);
@@ -145,11 +144,9 @@ describe('collection primitives', () => {
     const user = userEvent.setup();
     const apply = vi.fn();
     render(
-      <EditableMetadata
-        label="Due date for Launch plan"
-        value="Jul 1"
-        editor={<MetadataDateEditor defaultValue="2026-07-01" onApply={apply} />}
-      />,
+      <EditableMetadata label="Due date for Launch plan" value="Jul 1">
+        <MetadataDateEditor defaultValue="2026-07-01" onApply={apply} />
+      </EditableMetadata>,
     );
 
     const trigger = screen.getByRole('button', { name: 'Due date for Launch plan' });

@@ -8,8 +8,11 @@ import type { MeetingRow, SavedMeetingRow } from '@timeline/shared/meetings';
 import type { Metadata } from 'next';
 
 import { CollectionRow } from '@/components/collections/collection-row';
+import { CollectionRowMetadata } from '@/components/collections/collection-row-metadata';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
+import { CollectionToolbarFilters } from '@/components/collections/collection-toolbar-filters';
+import { CollectionToolbarSearch } from '@/components/collections/collection-toolbar-search';
 import { EmptyAction } from '@/components/empty-action';
 import {
   ArchiveSavedMeetingButton,
@@ -281,42 +284,6 @@ function MeetingSearchControls({
     <form action="/app/meetings" role="search">
       <input name="tab" type="hidden" value={tab === 'saved' ? 'saved' : ''} />
       <CollectionToolbar
-        search={
-          <label className="block min-w-0">
-            <span className="sr-only">
-              {tab === 'saved' ? 'Search saved meetings' : 'Search captures'}
-            </span>
-            <input
-              id="meeting-search"
-              name="q"
-              type="search"
-              defaultValue={query}
-              placeholder={
-                tab === 'saved' ? 'Title, alias, or platform' : 'Title, platform, or status'
-              }
-              className="h-9 w-full rounded-sm border-0 bg-transparent px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40"
-            />
-          </label>
-        }
-        filters={
-          tab === 'captures' ? (
-            <label className="space-y-1">
-              <span className="block text-[11px] text-fg-dim">Capture status</span>
-              <select
-                id="capture-status"
-                name="status"
-                defaultValue={filter}
-                className="flex h-9 w-full min-w-0 rounded-sm border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
-                {CAPTURE_FILTERS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null
-        }
         activeFilters={[
           ...(query
             ? [{ key: 'query', label: 'Search', value: query, href: meetingHref({ tab, filter }) }]
@@ -344,7 +311,44 @@ function MeetingSearchControls({
             ) : null}
           </div>
         }
-      />
+      >
+        <CollectionToolbarSearch>
+          <label className="block min-w-0">
+            <span className="sr-only">
+              {tab === 'saved' ? 'Search saved meetings' : 'Search captures'}
+            </span>
+            <input
+              id="meeting-search"
+              name="q"
+              type="search"
+              defaultValue={query}
+              placeholder={
+                tab === 'saved' ? 'Title, alias, or platform' : 'Title, platform, or status'
+              }
+              className="h-9 w-full rounded-sm border-0 bg-transparent px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40"
+            />
+          </label>
+        </CollectionToolbarSearch>
+        <CollectionToolbarFilters>
+          {tab === 'captures' ? (
+            <label className="space-y-1">
+              <span className="block text-[11px] text-fg-dim">Capture status</span>
+              <select
+                id="capture-status"
+                name="status"
+                defaultValue={filter}
+                className="flex h-9 w-full min-w-0 rounded-sm border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                {CAPTURE_FILTERS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+        </CollectionToolbarFilters>
+      </CollectionToolbar>
     </form>
   );
 }
@@ -400,15 +404,6 @@ function SavedMeetingsSection({
                   saved.description ??
                   (saved.aliases.length ? saved.aliases.join(', ') : 'No aliases')
                 }
-                metadata={
-                  <>
-                    <span>{displaySourceLabel(saved.platform)}</span>
-                    <CollectionStatus
-                      value={saved.autoJoinEnabled ? 'active' : 'manual'}
-                      label={saved.autoJoinEnabled ? 'Auto-join' : 'Manual join'}
-                    />
-                  </>
-                }
                 actions={
                   <ItemActionGroup label={`Actions for ${displayMeetingLabel(saved)}`}>
                     <JoinSavedMeetingButton query={saved.aliases[0] ?? saved.title} />
@@ -420,7 +415,17 @@ function SavedMeetingsSection({
                     <ArchiveSavedMeetingButton savedMeetingId={saved.id} />
                   </ItemActionGroup>
                 }
-              />
+              >
+                <CollectionRowMetadata>
+                  <>
+                    <span>{displaySourceLabel(saved.platform)}</span>
+                    <CollectionStatus
+                      value={saved.autoJoinEnabled ? 'active' : 'manual'}
+                      label={saved.autoJoinEnabled ? 'Auto-join' : 'Manual join'}
+                    />
+                  </>
+                </CollectionRowMetadata>
+              </CollectionRow>
               <div className="border-b border-border/80 px-3 pb-2">
                 <EditSavedMeetingForm saved={saved} defaultTimezone={timezone} members={members} />
               </div>
@@ -493,7 +498,20 @@ function MeetingCapturesSection({
                   </Link>
                 }
                 context={displaySourceLabel(meeting.platform)}
-                metadata={
+                actions={
+                  <ItemActionGroup label={`Actions for ${displayMeetingLabel(meeting)}`}>
+                    {meeting.status === 'scheduled' ? (
+                      <SkipScheduledMeetingButton meetingId={meeting.id} />
+                    ) : null}
+                    <PinOverflowMenu
+                      target={{ kind: 'meeting', key: meeting.id }}
+                      title={displayMeetingLabel(meeting)}
+                      initialPinned={pinState[`meeting:${meeting.id}`] ?? false}
+                    />
+                  </ItemActionGroup>
+                }
+              >
+                <CollectionRowMetadata>
                   <>
                     <CollectionStatus value={meeting.status} />
                     <time
@@ -507,20 +525,8 @@ function MeetingCapturesSection({
                       })}
                     </time>
                   </>
-                }
-                actions={
-                  <ItemActionGroup label={`Actions for ${displayMeetingLabel(meeting)}`}>
-                    {meeting.status === 'scheduled' ? (
-                      <SkipScheduledMeetingButton meetingId={meeting.id} />
-                    ) : null}
-                    <PinOverflowMenu
-                      target={{ kind: 'meeting', key: meeting.id }}
-                      title={displayMeetingLabel(meeting)}
-                      initialPinned={pinState[`meeting:${meeting.id}`] ?? false}
-                    />
-                  </ItemActionGroup>
-                }
-              />
+                </CollectionRowMetadata>
+              </CollectionRow>
             </li>
           ))}
         </ul>

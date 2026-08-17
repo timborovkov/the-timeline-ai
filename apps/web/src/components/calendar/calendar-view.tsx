@@ -47,8 +47,10 @@ import {
   mergeCalendarEvents,
 } from '@/components/calendar/calendar-overlay';
 import { CollectionRow } from '@/components/collections/collection-row';
+import { CollectionRowMetadata } from '@/components/collections/collection-row-metadata';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
+import { CollectionToolbarSearch } from '@/components/collections/collection-toolbar-search';
 import { PinButton } from '@/components/pins/pin-button';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { Button } from '@/components/ui/button';
@@ -879,29 +881,6 @@ function CalendarEventList({
       </h2>
       <CollectionToolbar
         count={eventCountLabel}
-        search={
-          <div className="flex w-full items-center gap-2 px-2">
-            <Search className="size-4 shrink-0 text-fg-dim" aria-hidden="true" />
-            <Label htmlFor="calendar-event-search" className="sr-only">
-              Search calendar events
-            </Label>
-            <Input
-              id="calendar-event-search"
-              ref={searchInputRef}
-              defaultValue={query}
-              onChange={(event) => {
-                const nextQuery = event.target.value;
-                if (searchTimer.current) clearTimeout(searchTimer.current);
-                searchTimer.current = setTimeout(() => {
-                  committedSearchRef.current = nextQuery.trim();
-                  onQueryChange(nextQuery);
-                }, 350);
-              }}
-              placeholder="Search events"
-              className="h-9 border-0 bg-transparent px-0"
-            />
-          </div>
-        }
         activeFilters={[
           ...(query
             ? [
@@ -947,7 +926,31 @@ function CalendarEventList({
             ))}
           </fieldset>
         }
-      />
+      >
+        <CollectionToolbarSearch>
+          <div className="flex w-full items-center gap-2 px-2">
+            <Search className="size-4 shrink-0 text-fg-dim" aria-hidden="true" />
+            <Label htmlFor="calendar-event-search" className="sr-only">
+              Search calendar events
+            </Label>
+            <Input
+              id="calendar-event-search"
+              ref={searchInputRef}
+              defaultValue={query}
+              onChange={(event) => {
+                const nextQuery = event.target.value;
+                if (searchTimer.current) clearTimeout(searchTimer.current);
+                searchTimer.current = setTimeout(() => {
+                  committedSearchRef.current = nextQuery.trim();
+                  onQueryChange(nextQuery);
+                }, 350);
+              }}
+              placeholder="Search events"
+              className="h-9 border-0 bg-transparent px-0"
+            />
+          </div>
+        </CollectionToolbarSearch>
+      </CollectionToolbar>
 
       <div className="border-x border-border bg-bg">
         {events.length > 0 ? (
@@ -971,13 +974,6 @@ function CalendarEventList({
                 [event.location, event.description].filter(Boolean).join(' · ') ||
                 (event.allDay ? 'All day' : statusLabel(event.showAs))
               }
-              metadata={
-                <>
-                  <span className="text-xs text-fg-dim">{formatEventRange(event, timezone)}</span>
-                  <CollectionStatus value={event.showAs} label={statusLabel(event.showAs)} />
-                  <span className="text-xs text-fg-dim">{statusLabel(event.visibility)}</span>
-                </>
-              }
               actions={
                 !event.redacted ? (
                   <ItemActionGroup label={`Actions for ${event.title}`}>
@@ -989,7 +985,15 @@ function CalendarEventList({
                   </ItemActionGroup>
                 ) : null
               }
-            />
+            >
+              <CollectionRowMetadata>
+                <>
+                  <span className="text-xs text-fg-dim">{formatEventRange(event, timezone)}</span>
+                  <CollectionStatus value={event.showAs} label={statusLabel(event.showAs)} />
+                  <span className="text-xs text-fg-dim">{statusLabel(event.visibility)}</span>
+                </>
+              </CollectionRowMetadata>
+            </CollectionRow>
           ))
         ) : (
           <div className="p-4">

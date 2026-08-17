@@ -6,6 +6,7 @@ import type { Metadata } from 'next';
 
 import { BoardCreateDialog } from '@/components/boards/board-create-form';
 import { CollectionRow } from '@/components/collections/collection-row';
+import { CollectionRowMetadata } from '@/components/collections/collection-row-metadata';
 import { PageHeader } from '@/components/page-header';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { ItemActionGroup } from '@/components/ui/item-actions';
@@ -77,7 +78,17 @@ export default async function BoardsIndexPage() {
                     </Link>
                   }
                   context={description ?? board.templateKind.replaceAll('_', ' ')}
-                  metadata={
+                  actions={
+                    <ItemActionGroup label={`Actions for ${board.name}`}>
+                      <PinOverflowMenu
+                        target={{ kind: 'board', key: board.id }}
+                        title={board.name}
+                        initialPinned={board.pinned}
+                      />
+                    </ItemActionGroup>
+                  }
+                >
+                  <CollectionRowMetadata>
                     <>
                       <span className="capitalize">{board.templateKind.replaceAll('_', ' ')}</span>
                       <time dateTime={board.updatedAt.toISOString()}>
@@ -89,17 +100,8 @@ export default async function BoardsIndexPage() {
                         {board.itemCount} {board.itemCount === 1 ? 'item' : 'items'}
                       </span>
                     </>
-                  }
-                  actions={
-                    <ItemActionGroup label={`Actions for ${board.name}`}>
-                      <PinOverflowMenu
-                        target={{ kind: 'board', key: board.id }}
-                        title={board.name}
-                        initialPinned={board.pinned}
-                      />
-                    </ItemActionGroup>
-                  }
-                />
+                  </CollectionRowMetadata>
+                </CollectionRow>
               </li>
             );
           })}

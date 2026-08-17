@@ -10,6 +10,7 @@ import type { ComponentProps } from 'react';
 
 import { Coachmark } from '@/components/coachmark';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
+import { CollectionToolbarFilters } from '@/components/collections/collection-toolbar-filters';
 import { DebouncedFilterForm } from '@/components/debounced-filter-form';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
 import { IndexStrip } from '@/components/index-strip';
@@ -614,56 +615,6 @@ function TimelineFilterPanel({
       {baseParams.mode ? <input type="hidden" name="mode" value={baseParams.mode} /> : null}
       <CollectionToolbar
         count={`${timelinePresetCountLabel(mode, momentCount, eventCount)}${hasFilters ? ' · filtered' : ''}`}
-        filters={
-          <div className="flex min-w-0 flex-wrap items-end gap-2">
-            <TimelineSourceFilterControls
-              key={`timeline-source-filters:${sourceFilterValue}:${originFilterValue}`}
-              source={sourceFilterValue}
-              origin={originFilterValue}
-              originOptions={originOptions}
-              form={formId}
-            />
-            <FilterMultiSelect
-              key={`timeline-impact:${impactFilterValue}`}
-              name="impact"
-              label="Impact"
-              defaultValue={impactFilterValue}
-              placeholder="All impact"
-              options={TIMELINE_IMPACT_FILTERS.map((value) => ({ value, label: value }))}
-              form={formId}
-            />
-            <FilterMultiSelect
-              key={`timeline-author:${authorFilterValue}`}
-              name="author"
-              label="Author"
-              defaultValue={authorFilterValue}
-              placeholder="Everyone"
-              options={members.map((member) => {
-                const user = userMap.get(member.userId);
-                return {
-                  value: member.userId,
-                  label: displayMemberLabel(user),
-                };
-              })}
-              form={formId}
-            />
-            <TimelineDateField name="from" label="From" value={fromValue} form={formId} />
-            <TimelineDateField
-              name="to"
-              label="To"
-              value={toValue}
-              form={formId}
-              max={maxUpcomingInput}
-            />
-            <Link
-              href={upcomingHref}
-              aria-current={upcomingActive ? 'page' : undefined}
-              className={upcomingClassName}
-            >
-              Upcoming · {TIMELINE_UPCOMING_DAYS} days
-            </Link>
-          </div>
-        }
         activeFilters={
           hasPanelFilters
             ? [
@@ -739,7 +690,58 @@ function TimelineFilterPanel({
             })}
           </nav>
         }
-      />
+      >
+        <CollectionToolbarFilters>
+          <div className="flex min-w-0 flex-wrap items-end gap-2">
+            <TimelineSourceFilterControls
+              key={`timeline-source-filters:${sourceFilterValue}:${originFilterValue}`}
+              source={sourceFilterValue}
+              origin={originFilterValue}
+              originOptions={originOptions}
+              form={formId}
+            />
+            <FilterMultiSelect
+              key={`timeline-impact:${impactFilterValue}`}
+              name="impact"
+              label="Impact"
+              defaultValue={impactFilterValue}
+              placeholder="All impact"
+              options={TIMELINE_IMPACT_FILTERS.map((value) => ({ value, label: value }))}
+              form={formId}
+            />
+            <FilterMultiSelect
+              key={`timeline-author:${authorFilterValue}`}
+              name="author"
+              label="Author"
+              defaultValue={authorFilterValue}
+              placeholder="Everyone"
+              options={members.map((member) => {
+                const user = userMap.get(member.userId);
+                return {
+                  value: member.userId,
+                  label: displayMemberLabel(user),
+                };
+              })}
+              form={formId}
+            />
+            <TimelineDateField name="from" label="From" value={fromValue} form={formId} />
+            <TimelineDateField
+              name="to"
+              label="To"
+              value={toValue}
+              form={formId}
+              max={maxUpcomingInput}
+            />
+            <Link
+              href={upcomingHref}
+              aria-current={upcomingActive ? 'page' : undefined}
+              className={upcomingClassName}
+            >
+              Upcoming · {TIMELINE_UPCOMING_DAYS} days
+            </Link>
+          </div>
+        </CollectionToolbarFilters>
+      </CollectionToolbar>
       <div className="sr-only">
         {hasPanelFilters ? (
           <Link

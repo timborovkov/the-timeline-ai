@@ -7,6 +7,7 @@ import type { Metadata } from 'next';
 
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
+import { CollectionRowMetadata } from '@/components/collections/collection-row-metadata';
 import { EmptyAction } from '@/components/empty-action';
 import { PageHeader } from '@/components/page-header';
 import { PinnedWorkspaceManager } from '@/components/pins/pinned-workspace-manager';
@@ -161,7 +162,8 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
                     </Link>
                   }
                   context={`Updated ${dateLabel(board.updatedAt, timezone)}`}
-                  metadata={
+                >
+                  <CollectionRowMetadata>
                     <>
                       <span className="px-2 text-xs tabular-nums text-fg-dim">
                         {board.itemCount} items
@@ -170,8 +172,8 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
                         <span className="px-2 text-xs font-medium text-signal">Pinned</span>
                       ) : null}
                     </>
-                  }
-                />
+                  </CollectionRowMetadata>
+                </CollectionRow>
               ))}
             </div>
           )}

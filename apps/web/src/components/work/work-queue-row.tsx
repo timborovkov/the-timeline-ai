@@ -6,11 +6,10 @@ import { useState } from 'react';
 
 import { updateObjectAction } from '@/app/actions/objects';
 import { CollectionRow } from '@/components/collections/collection-row';
-import {
-  CollectionStatus,
-  priorityTone,
-  statusTone,
-} from '@/components/collections/collection-status';
+import { CollectionRowContext } from '@/components/collections/collection-row-context';
+import { CollectionRowMetadata } from '@/components/collections/collection-row-metadata';
+import { CollectionStatus } from '@/components/collections/collection-status';
+import { priorityTone, statusTone } from '@/components/collections/collection-status-tone';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { DueDateDisplay } from '@/components/due-date-display';
@@ -75,11 +74,6 @@ export function WorkQueueRow({
   const contextReasons = item.reasons.filter(
     (reason) => reason !== 'overdue' && reason !== 'due_soon',
   );
-  const context = saving ? (
-    <span>Saving {fieldLabel(saving)}…</span>
-  ) : item.subtitle ? (
-    displayText(item.subtitle)
-  ) : undefined;
 
   function save(key: EditableKey, value: EditableValue): void {
     if (!objectId) return;
@@ -124,8 +118,13 @@ export function WorkQueueRow({
           {displayText(item.title)}
         </Link>
       }
-      context={context}
-      metadata={
+    >
+      {saving || item.subtitle ? (
+        <CollectionRowContext>
+          {saving ? <span>Saving {fieldLabel(saving)}…</span> : displayText(item.subtitle)}
+        </CollectionRowContext>
+      ) : null}
+      <CollectionRowMetadata>
         <>
           {error ? (
             <span className="px-2 text-xs text-danger" role="alert">
@@ -150,59 +149,56 @@ export function WorkQueueRow({
                     tone={statusTone(displayStatus)}
                   />
                 }
-                editor={
-                  <select
-                    aria-label="Status"
-                    value={displayStatus}
-                    onChange={(event) => {
-                      save('status', event.currentTarget.value);
-                    }}
-                    className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-                  >
-                    {statusOptions.map((option) => (
-                      <option key={option} value={option}>
-                        {statusLabel(option)}
-                      </option>
-                    ))}
-                  </select>
-                }
-              />
+              >
+                <select
+                  aria-label="Status"
+                  value={displayStatus}
+                  onChange={(event) => {
+                    save('status', event.currentTarget.value);
+                  }}
+                  className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+                >
+                  {statusOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {statusLabel(option)}
+                    </option>
+                  ))}
+                </select>
+              </EditableMetadata>
               <EditableMetadata
                 label={`Assignee for ${displayText(item.title)}`}
                 pending={saving === 'assigneeUserId'}
                 value={assignee?.label ?? 'Unassigned'}
-                editor={
-                  <select
-                    aria-label="Assignee"
-                    value={assigneeUserId ?? ''}
-                    onChange={(event) => {
-                      save('assigneeUserId', event.currentTarget.value || null);
-                    }}
-                    className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-                  >
-                    <option value="">Unassigned</option>
-                    {members.map((member) => (
-                      <option key={member.id} value={member.id}>
-                        {member.label}
-                      </option>
-                    ))}
-                  </select>
-                }
-              />
+              >
+                <select
+                  aria-label="Assignee"
+                  value={assigneeUserId ?? ''}
+                  onChange={(event) => {
+                    save('assigneeUserId', event.currentTarget.value || null);
+                  }}
+                  className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+                >
+                  <option value="">Unassigned</option>
+                  {members.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.label}
+                    </option>
+                  ))}
+                </select>
+              </EditableMetadata>
               {isSchedulableObjectType(item.objectType ?? '') || item.dueAt ? (
                 <EditableMetadata
                   label={`Due date for ${displayText(item.title)}`}
                   pending={saving === 'dueAt'}
                   value={<DueDateDisplay value={dueAt} timezone={timezone} variant="compact" />}
-                  editor={
-                    <MetadataDateEditor
-                      defaultValue={dateInputValue(dueAt)}
-                      onApply={(value) => {
-                        save('dueAt', value ? new Date(`${value}T00:00:00.000Z`) : null);
-                      }}
-                    />
-                  }
-                />
+                >
+                  <MetadataDateEditor
+                    defaultValue={dateInputValue(dueAt)}
+                    onApply={(value) => {
+                      save('dueAt', value ? new Date(`${value}T00:00:00.000Z`) : null);
+                    }}
+                  />
+                </EditableMetadata>
               ) : null}
               <EditableMetadata
                 label={`Priority for ${displayText(item.title)}`}
@@ -214,27 +210,26 @@ export function WorkQueueRow({
                     label={priority ? `P${priority}` : 'No priority'}
                   />
                 }
-                editor={
-                  <select
-                    aria-label="Priority"
-                    value={priority ?? ''}
-                    onChange={(event) => {
-                      save(
-                        'priority',
-                        event.currentTarget.value ? Number(event.currentTarget.value) : null,
-                      );
-                    }}
-                    className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-                  >
-                    <option value="">None</option>
-                    {[1, 2, 3, 4].map((value) => (
-                      <option key={value} value={value}>
-                        P{value}
-                      </option>
-                    ))}
-                  </select>
-                }
-              />
+              >
+                <select
+                  aria-label="Priority"
+                  value={priority ?? ''}
+                  onChange={(event) => {
+                    save(
+                      'priority',
+                      event.currentTarget.value ? Number(event.currentTarget.value) : null,
+                    );
+                  }}
+                  className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+                >
+                  <option value="">None</option>
+                  {[1, 2, 3, 4].map((value) => (
+                    <option key={value} value={value}>
+                      P{value}
+                    </option>
+                  ))}
+                </select>
+              </EditableMetadata>
             </>
           ) : item.source !== 'approval' ? (
             <DueDateDisplay value={item.dueAt} timezone={timezone} variant="compact" />
@@ -248,8 +243,8 @@ export function WorkQueueRow({
             />
           ) : null}
         </>
-      }
-    />
+      </CollectionRowMetadata>
+    </CollectionRow>
   );
 }
 

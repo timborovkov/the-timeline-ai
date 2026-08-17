@@ -11,11 +11,11 @@ import type * as objects from '@timeline/shared/objects/types';
 import { bulkArchiveObjectsAction, updateObjectAction } from '@/app/actions/objects';
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
-import {
-  CollectionStatus,
-  priorityTone,
-  statusTone,
-} from '@/components/collections/collection-status';
+import { CollectionRowContext } from '@/components/collections/collection-row-context';
+import { CollectionRowLeading } from '@/components/collections/collection-row-leading';
+import { CollectionRowMetadata } from '@/components/collections/collection-row-metadata';
+import { CollectionStatus } from '@/components/collections/collection-status';
+import { priorityTone, statusTone } from '@/components/collections/collection-status-tone';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { SelectionBar } from '@/components/collections/selection-bar';
 import { DueDateDisplay } from '@/components/due-date-display';
@@ -395,8 +395,23 @@ function ObjectCollectionItem({
     <li style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 44px' }}>
       <CollectionRow
         selected={selected}
-        leading={
-          selecting ? (
+        title={
+          <Link href={`/app/objects/${object.id}`} className="block truncate hover:underline">
+            {displayText(object.canonicalName)}
+          </Link>
+        }
+        actions={
+          <ItemActionGroup label={`Actions for ${displayText(object.canonicalName)}`}>
+            <PinOverflowMenu
+              target={{ kind: 'object', key: object.id }}
+              title={displayText(object.canonicalName)}
+              initialPinned={object.pinned ?? false}
+            />
+          </ItemActionGroup>
+        }
+      >
+        <CollectionRowLeading>
+          {selecting ? (
             <input
               type="checkbox"
               checked={selected}
@@ -404,15 +419,12 @@ function ObjectCollectionItem({
               aria-label={`Select ${displayText(object.canonicalName)}`}
               className="size-4 accent-[var(--signal)]"
             />
-          ) : null
-        }
-        title={
-          <Link href={`/app/objects/${object.id}`} className="block truncate hover:underline">
-            {displayText(object.canonicalName)}
-          </Link>
-        }
-        context={error ? <span className="text-danger">{error}</span> : typeLabel}
-        metadata={
+          ) : null}
+        </CollectionRowLeading>
+        <CollectionRowContext>
+          {error ? <span className="text-danger">{error}</span> : typeLabel}
+        </CollectionRowContext>
+        <CollectionRowMetadata>
           <>
             {object.type === 'task' ? (
               <EditableMetadata
@@ -425,16 +437,15 @@ function ObjectCollectionItem({
                     updatedAt={object.taskCategoryUpdatedAt}
                   />
                 }
-                editor={
-                  <TaskCategorySelect
-                    taskId={object.id}
-                    category={object.taskCategory}
-                    mode={object.taskCategoryMode}
-                    status={object.taskCategoryStatus}
-                    updatedAt={object.taskCategoryUpdatedAt}
-                  />
-                }
-              />
+              >
+                <TaskCategorySelect
+                  taskId={object.id}
+                  category={object.taskCategory}
+                  mode={object.taskCategoryMode}
+                  status={object.taskCategoryStatus}
+                  updatedAt={object.taskCategoryUpdatedAt}
+                />
+              </EditableMetadata>
             ) : null}
             <EditableMetadata
               label={`Status for ${displayText(object.canonicalName)}`}
@@ -447,26 +458,25 @@ function ObjectCollectionItem({
                   tone={statusTone(status)}
                 />
               }
-              editor={
-                <select
-                  aria-label="Status"
-                  value={status}
-                  onChange={(event) => {
-                    save('status', event.currentTarget.value);
-                  }}
-                  className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-                >
-                  {statusOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {statusLabel(option)}
-                    </option>
-                  ))}
-                  {!statusOptions.includes(status) ? (
-                    <option value={status}>{statusLabel(status)}</option>
-                  ) : null}
-                </select>
-              }
-            />
+            >
+              <select
+                aria-label="Status"
+                value={status}
+                onChange={(event) => {
+                  save('status', event.currentTarget.value);
+                }}
+                className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+              >
+                {statusOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {statusLabel(option)}
+                  </option>
+                ))}
+                {!statusOptions.includes(status) ? (
+                  <option value={status}>{statusLabel(status)}</option>
+                ) : null}
+              </select>
+            </EditableMetadata>
             <EditableMetadata
               label={`Priority for ${displayText(object.canonicalName)}`}
               pending={saving === 'priority'}
@@ -477,54 +487,43 @@ function ObjectCollectionItem({
                   label={priority ? `P${priority}` : 'No priority'}
                 />
               }
-              editor={
-                <select
-                  aria-label="Priority"
-                  value={priority ?? ''}
-                  onChange={(event) => {
-                    save(
-                      'priority',
-                      event.currentTarget.value ? Number(event.currentTarget.value) : null,
-                    );
-                  }}
-                  className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-                >
-                  <option value="">None</option>
-                  {[1, 2, 3, 4].map((value) => (
-                    <option key={value} value={value}>
-                      P{value}
-                    </option>
-                  ))}
-                </select>
-              }
-            />
+            >
+              <select
+                aria-label="Priority"
+                value={priority ?? ''}
+                onChange={(event) => {
+                  save(
+                    'priority',
+                    event.currentTarget.value ? Number(event.currentTarget.value) : null,
+                  );
+                }}
+                className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+              >
+                <option value="">None</option>
+                {[1, 2, 3, 4].map((value) => (
+                  <option key={value} value={value}>
+                    P{value}
+                  </option>
+                ))}
+              </select>
+            </EditableMetadata>
             {isSchedulableObjectType(object.type) ? (
               <EditableMetadata
                 label={`Due date for ${displayText(object.canonicalName)}`}
                 pending={saving === 'dueAt'}
                 value={<DueDateDisplay value={dueAt} timezone={timezone} variant="compact" />}
-                editor={
-                  <ObjectDueDateEditor
-                    value={dueAt}
-                    onSave={(value) => {
-                      save('dueAt', value);
-                    }}
-                  />
-                }
-              />
+              >
+                <ObjectDueDateEditor
+                  value={dueAt}
+                  onSave={(value) => {
+                    save('dueAt', value);
+                  }}
+                />
+              </EditableMetadata>
             ) : null}
           </>
-        }
-        actions={
-          <ItemActionGroup label={`Actions for ${displayText(object.canonicalName)}`}>
-            <PinOverflowMenu
-              target={{ kind: 'object', key: object.id }}
-              title={displayText(object.canonicalName)}
-              initialPinned={object.pinned ?? false}
-            />
-          </ItemActionGroup>
-        }
-      />
+        </CollectionRowMetadata>
+      </CollectionRow>
     </li>
   );
 }
@@ -536,12 +535,11 @@ function ObjectDueDateEditor({
   value: Date | string | null;
   onSave: (value: Date | null) => void;
 }) {
-  const [draft, setDraft] = useState(dateInputValue(value));
+  const [draft, setDraft] = useState(() => dateInputValue(value));
   return (
     <form
       className="flex items-center gap-2"
-      onSubmit={(event) => {
-        event.preventDefault();
+      action={() => {
         onSave(draft ? new Date(`${draft}T00:00:00.000Z`) : null);
       }}
     >

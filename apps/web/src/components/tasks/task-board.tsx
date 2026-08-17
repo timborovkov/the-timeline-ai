@@ -41,11 +41,11 @@ import {
 } from '@/app/actions/objects';
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
-import {
-  CollectionStatus,
-  priorityTone,
-  statusTone,
-} from '@/components/collections/collection-status';
+import { CollectionRowContext } from '@/components/collections/collection-row-context';
+import { CollectionRowLeading } from '@/components/collections/collection-row-leading';
+import { CollectionRowMetadata } from '@/components/collections/collection-row-metadata';
+import { CollectionStatus } from '@/components/collections/collection-status';
+import { priorityTone, statusTone } from '@/components/collections/collection-status-tone';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { SelectionBar } from '@/components/collections/selection-bar';
@@ -57,7 +57,7 @@ import { TaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { useTaskCategoryPolling } from '@/components/tasks/task-category-polling';
 import { TaskCategorySelect } from '@/components/tasks/task-category-select';
 import { TaskProjectSelect } from '@/components/tasks/task-project-select';
-import { taskViewHref, type TaskView } from '@/components/tasks/task-view-toggle';
+import { taskViewHref, type TaskView } from '@/components/tasks/task-view';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
@@ -1232,7 +1232,25 @@ function TaskListRow({
     <li style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 44px' }}>
       <CollectionRow
         selected={highlighted || selected}
-        leading={
+        title={
+          <Link
+            href={taskViewHref('list', row.id, filterParams)}
+            className="block truncate hover:underline"
+          >
+            {displayText(title)}
+          </Link>
+        }
+        actions={
+          <ItemActionGroup label={`Actions for ${displayText(title)}`}>
+            <PinOverflowMenu
+              target={{ kind: 'object', key: row.id }}
+              title={displayText(title)}
+              initialPinned={pinned}
+            />
+          </ItemActionGroup>
+        }
+      >
+        <CollectionRowLeading>
           <input
             type="checkbox"
             checked={selected}
@@ -1245,25 +1263,17 @@ function TaskListRow({
               selected && 'md:opacity-100',
             )}
           />
-        }
-        title={
-          <Link
-            href={taskViewHref('list', row.id, filterParams)}
-            className="block truncate hover:underline"
-          >
-            {displayText(title)}
-          </Link>
-        }
-        context={
-          error ? (
+        </CollectionRowLeading>
+        <CollectionRowContext>
+          {error ? (
             <span className="text-danger" role="alert">
               {error}
             </span>
           ) : saving ? (
             <span>Saving {saving}…</span>
-          ) : undefined
-        }
-        metadata={
+          ) : undefined}
+        </CollectionRowContext>
+        <CollectionRowMetadata>
           <>
             <EditableMetadata
               label={`Status for ${displayText(title)}`}
@@ -1274,102 +1284,97 @@ function TaskListRow({
                   label={statusLabel(taskDisplayStatus(row.status))}
                 />
               }
-              editor={
-                <select
-                  value={taskDisplayStatus(row.status)}
-                  onChange={(event) => {
-                    save('status', { status: event.currentTarget.value });
-                  }}
-                  className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-                  aria-label="Status"
-                >
-                  {columns.map((column) => (
-                    <option key={column} value={column}>
-                      {statusLabel(column)}
-                    </option>
-                  ))}
-                  {!columns.includes(taskDisplayStatus(row.status)) ? (
-                    <option value={row.status}>{statusLabel(row.status)}</option>
-                  ) : null}
-                </select>
-              }
-            />
+            >
+              <select
+                value={taskDisplayStatus(row.status)}
+                onChange={(event) => {
+                  save('status', { status: event.currentTarget.value });
+                }}
+                className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+                aria-label="Status"
+              >
+                {columns.map((column) => (
+                  <option key={column} value={column}>
+                    {statusLabel(column)}
+                  </option>
+                ))}
+                {!columns.includes(taskDisplayStatus(row.status)) ? (
+                  <option value={row.status}>{statusLabel(row.status)}</option>
+                ) : null}
+              </select>
+            </EditableMetadata>
             {taskCategoriesEnabled ? (
               <EditableMetadata
                 label={`Category for ${displayText(title)}`}
                 value={
                   <TaskCategoryBadge category={row.taskCategory} status={row.taskCategoryStatus} />
                 }
-                editor={
-                  <TaskCategorySelect
-                    taskId={row.id}
-                    category={row.taskCategory}
-                    mode={row.taskCategoryMode}
-                    status={row.taskCategoryStatus}
-                    updatedAt={row.taskCategoryUpdatedAt}
-                  />
-                }
-              />
+              >
+                <TaskCategorySelect
+                  taskId={row.id}
+                  category={row.taskCategory}
+                  mode={row.taskCategoryMode}
+                  status={row.taskCategoryStatus}
+                  updatedAt={row.taskCategoryUpdatedAt}
+                />
+              </EditableMetadata>
             ) : null}
             <EditableMetadata
               label={`Project for ${displayText(title)}`}
               value={primaryProject?.projectName ?? 'No project'}
-              editor={
-                <TaskProjectSelect
-                  taskId={row.id}
-                  projectId={primaryProject?.projectId ?? null}
-                  currentProjectLabel={primaryProject?.projectName}
-                  projectArchived={Boolean(primaryProject?.archivedAt)}
-                  projects={projects}
-                  onProjectChange={(project) => {
-                    onProjectChange(row.id, project);
-                  }}
-                  onProjectChangeCommitted={() => {
-                    onProjectChangeCommitted(row.id);
-                  }}
-                  onProjectChangeReverted={() => {
-                    onProjectChangeReverted(row.id);
-                  }}
-                />
-              }
-            />
+            >
+              <TaskProjectSelect
+                taskId={row.id}
+                projectId={primaryProject?.projectId ?? null}
+                currentProjectLabel={primaryProject?.projectName}
+                projectArchived={Boolean(primaryProject?.archivedAt)}
+                projects={projects}
+                onProjectChange={(project) => {
+                  onProjectChange(row.id, project);
+                }}
+                onProjectChangeCommitted={() => {
+                  onProjectChangeCommitted(row.id);
+                }}
+                onProjectChangeReverted={() => {
+                  onProjectChangeReverted(row.id);
+                }}
+              />
+            </EditableMetadata>
             <EditableMetadata
               label={`Assignee for ${displayText(title)}`}
               pending={saving === 'assignee'}
               value={assignee?.label ?? 'Unassigned'}
-              editor={
-                <select
-                  value={row.assigneeUserId ?? ''}
-                  onChange={(event) => {
-                    save('assignee', { assigneeUserId: event.currentTarget.value || null });
-                  }}
-                  className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-                  aria-label="Assignee"
-                >
-                  <option value="">Unassigned</option>
-                  {members.map((member) => (
-                    <option key={member.id} value={member.id}>
-                      {member.label}
-                    </option>
-                  ))}
-                </select>
-              }
-            />
+            >
+              <select
+                value={row.assigneeUserId ?? ''}
+                onChange={(event) => {
+                  save('assignee', { assigneeUserId: event.currentTarget.value || null });
+                }}
+                className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+                aria-label="Assignee"
+              >
+                <option value="">Unassigned</option>
+                {members.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.label}
+                  </option>
+                ))}
+              </select>
+            </EditableMetadata>
             <EditableMetadata
               label={`Due date for ${displayText(title)}`}
               pending={saving === 'due date'}
               value={<DueDateDisplay value={row.dueAt} variant="field-hint" />}
-              editor={
-                <MetadataDateEditor
-                  defaultValue={row.dueAt ? dateInputValue(row.dueAt, timezone) : ''}
-                  onApply={(value) => {
-                    save('due date', {
-                      dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
-                    });
-                  }}
-                />
-              }
-            />
+            >
+              <MetadataDateEditor
+                defaultValue={row.dueAt ? dateInputValue(row.dueAt, timezone) : ''}
+                onApply={(value) => {
+                  save('due date', {
+                    dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
+                  });
+                }}
+              />
+            </EditableMetadata>
             <EditableMetadata
               label={`Priority for ${displayText(title)}`}
               pending={saving === 'priority'}
@@ -1380,40 +1385,28 @@ function TaskListRow({
                   label={row.priority ? `P${row.priority}` : 'No priority'}
                 />
               }
-              editor={
-                <select
-                  value={row.priority ?? ''}
-                  onChange={(event) => {
-                    save('priority', {
-                      priority: event.currentTarget.value
-                        ? Number(event.currentTarget.value)
-                        : null,
-                    });
-                  }}
-                  className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-                  aria-label="Priority"
-                >
-                  <option value="">None</option>
-                  {[1, 2, 3, 4].map((priority) => (
-                    <option key={priority} value={priority}>
-                      P{priority}
-                    </option>
-                  ))}
-                </select>
-              }
-            />
+            >
+              <select
+                value={row.priority ?? ''}
+                onChange={(event) => {
+                  save('priority', {
+                    priority: event.currentTarget.value ? Number(event.currentTarget.value) : null,
+                  });
+                }}
+                className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+                aria-label="Priority"
+              >
+                <option value="">None</option>
+                {[1, 2, 3, 4].map((priority) => (
+                  <option key={priority} value={priority}>
+                    P{priority}
+                  </option>
+                ))}
+              </select>
+            </EditableMetadata>
           </>
-        }
-        actions={
-          <ItemActionGroup label={`Actions for ${displayText(title)}`}>
-            <PinOverflowMenu
-              target={{ kind: 'object', key: row.id }}
-              title={displayText(title)}
-              initialPinned={pinned}
-            />
-          </ItemActionGroup>
-        }
-      />
+        </CollectionRowMetadata>
+      </CollectionRow>
     </li>
   );
 }
@@ -1826,75 +1819,71 @@ function TaskCard({
             value={
               <TaskCategoryBadge category={row.taskCategory} status={row.taskCategoryStatus} />
             }
-            editor={
-              <TaskCategorySelect
-                taskId={row.id}
-                category={row.taskCategory}
-                mode={row.taskCategoryMode}
-                status={row.taskCategoryStatus}
-                updatedAt={row.taskCategoryUpdatedAt}
-              />
-            }
-          />
+          >
+            <TaskCategorySelect
+              taskId={row.id}
+              category={row.taskCategory}
+              mode={row.taskCategoryMode}
+              status={row.taskCategoryStatus}
+              updatedAt={row.taskCategoryUpdatedAt}
+            />
+          </EditableMetadata>
         ) : null}
         <EditableMetadata
           label={`Project for ${displayText(title)}`}
           value={primaryProject?.projectName ?? 'No project'}
-          editor={
-            <TaskProjectSelect
-              taskId={row.id}
-              projectId={primaryProject?.projectId ?? null}
-              currentProjectLabel={primaryProject?.projectName}
-              projectArchived={Boolean(primaryProject?.archivedAt)}
-              projects={projects}
-              onProjectChange={(project) => {
-                onProjectChange(row.id, project);
-              }}
-              onProjectChangeCommitted={() => {
-                onProjectChangeCommitted(row.id);
-              }}
-              onProjectChangeReverted={() => {
-                onProjectChangeReverted(row.id);
-              }}
-            />
-          }
-        />
+        >
+          <TaskProjectSelect
+            taskId={row.id}
+            projectId={primaryProject?.projectId ?? null}
+            currentProjectLabel={primaryProject?.projectName}
+            projectArchived={Boolean(primaryProject?.archivedAt)}
+            projects={projects}
+            onProjectChange={(project) => {
+              onProjectChange(row.id, project);
+            }}
+            onProjectChangeCommitted={() => {
+              onProjectChangeCommitted(row.id);
+            }}
+            onProjectChangeReverted={() => {
+              onProjectChangeReverted(row.id);
+            }}
+          />
+        </EditableMetadata>
         <EditableMetadata
           label={`Assignee for ${displayText(title)}`}
           value={memberLabel(row.assigneeUserId, members)}
           pending={metadataSaving}
-          editor={
-            <select
-              value={row.assigneeUserId ?? ''}
-              onChange={(event) => {
-                saveMetadata({ assigneeUserId: event.currentTarget.value || null });
-              }}
-              className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-            >
-              <option value="">Unassigned</option>
-              {members.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.label}
-                </option>
-              ))}
-            </select>
-          }
-        />
+        >
+          <select
+            value={row.assigneeUserId ?? ''}
+            onChange={(event) => {
+              saveMetadata({ assigneeUserId: event.currentTarget.value || null });
+            }}
+            className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+          >
+            <option value="">Unassigned</option>
+            {members.map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.label}
+              </option>
+            ))}
+          </select>
+        </EditableMetadata>
         <EditableMetadata
           label={`Due date for ${displayText(title)}`}
           value={<DueDateDisplay value={row.dueAt} variant="compact" />}
           pending={metadataSaving}
-          editor={
-            <MetadataDateEditor
-              defaultValue={row.dueAt ? row.dueAt.toISOString().slice(0, 10) : ''}
-              onApply={(value) => {
-                saveMetadata({
-                  dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
-                });
-              }}
-            />
-          }
-        />
+        >
+          <MetadataDateEditor
+            defaultValue={row.dueAt ? row.dueAt.toISOString().slice(0, 10) : ''}
+            onApply={(value) => {
+              saveMetadata({
+                dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
+              });
+            }}
+          />
+        </EditableMetadata>
         <EditableMetadata
           label={`Priority for ${displayText(title)}`}
           value={
@@ -1905,25 +1894,24 @@ function TaskCard({
             />
           }
           pending={metadataSaving}
-          editor={
-            <select
-              value={row.priority ?? ''}
-              onChange={(event) => {
-                saveMetadata({
-                  priority: event.currentTarget.value ? Number(event.currentTarget.value) : null,
-                });
-              }}
-              className="h-10 rounded-sm border border-border bg-bg px-2 text-xs"
-            >
-              <option value="">None</option>
-              {[1, 2, 3, 4].map((priority) => (
-                <option key={priority} value={priority}>
-                  P{priority}
-                </option>
-              ))}
-            </select>
-          }
-        />
+        >
+          <select
+            value={row.priority ?? ''}
+            onChange={(event) => {
+              saveMetadata({
+                priority: event.currentTarget.value ? Number(event.currentTarget.value) : null,
+              });
+            }}
+            className="h-10 rounded-sm border border-border bg-bg px-2 text-xs"
+          >
+            <option value="">None</option>
+            {[1, 2, 3, 4].map((priority) => (
+              <option key={priority} value={priority}>
+                P{priority}
+              </option>
+            ))}
+          </select>
+        </EditableMetadata>
       </div>
       {metadataError ? (
         <p className="mt-1 text-xs text-danger" role="alert">

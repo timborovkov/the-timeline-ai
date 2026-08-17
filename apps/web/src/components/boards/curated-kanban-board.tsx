@@ -37,7 +37,8 @@ import {
   curatedKanbanSaveState,
   type CuratedKanbanSaveState,
 } from '@/components/boards/curated-kanban-state';
-import { CollectionStatus, priorityTone } from '@/components/collections/collection-status';
+import { CollectionStatus } from '@/components/collections/collection-status';
+import { priorityTone } from '@/components/collections/collection-status-tone';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { DueDateDisplay } from '@/components/due-date-display';
@@ -507,40 +508,38 @@ function KanbanCard({
           value={ownerLabel(item.responsibleUserId, members)}
           pending={saving}
           disabled={optimistic}
-          editor={
-            <select
-              value={item.responsibleUserId ?? ''}
-              onChange={(event) => {
-                onUpdateItem(item.id, { responsibleUserId: event.currentTarget.value || null });
-              }}
-              className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-              aria-label="Responsible person"
-            >
-              <option value="">Unassigned</option>
-              {members.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.label}
-                </option>
-              ))}
-            </select>
-          }
-        />
+        >
+          <select
+            value={item.responsibleUserId ?? ''}
+            onChange={(event) => {
+              onUpdateItem(item.id, { responsibleUserId: event.currentTarget.value || null });
+            }}
+            className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+            aria-label="Responsible person"
+          >
+            <option value="">Unassigned</option>
+            {members.map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.label}
+              </option>
+            ))}
+          </select>
+        </EditableMetadata>
         <EditableMetadata
           label={`Due date for ${displayText(title)}`}
           value={<DueDateDisplay value={item.dueAt} variant="compact" />}
           pending={saving}
           disabled={optimistic}
-          editor={
-            <MetadataDateEditor
-              defaultValue={item.dueAt ? item.dueAt.toISOString().slice(0, 10) : ''}
-              onApply={(value) => {
-                onUpdateItem(item.id, {
-                  dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
-                });
-              }}
-            />
-          }
-        />
+        >
+          <MetadataDateEditor
+            defaultValue={item.dueAt ? item.dueAt.toISOString().slice(0, 10) : ''}
+            onApply={(value) => {
+              onUpdateItem(item.id, {
+                dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
+              });
+            }}
+          />
+        </EditableMetadata>
         <EditableMetadata
           label={`Priority for ${displayText(title)}`}
           value={
@@ -552,57 +551,53 @@ function KanbanCard({
           }
           pending={saving}
           disabled={optimistic}
-          editor={
-            <select
-              value={item.priority ?? ''}
-              onChange={(event) => {
-                onUpdateItem(item.id, {
-                  priority: event.currentTarget.value ? Number(event.currentTarget.value) : null,
-                });
-              }}
-              className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-              aria-label="Priority"
-            >
-              <option value="">None</option>
-              {[1, 2, 3, 4].map((priority) => (
-                <option key={priority} value={priority}>
-                  P{priority}
-                </option>
-              ))}
-            </select>
-          }
-        />
+        >
+          <select
+            value={item.priority ?? ''}
+            onChange={(event) => {
+              onUpdateItem(item.id, {
+                priority: event.currentTarget.value ? Number(event.currentTarget.value) : null,
+              });
+            }}
+            className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+            aria-label="Priority"
+          >
+            <option value="">None</option>
+            {[1, 2, 3, 4].map((priority) => (
+              <option key={priority} value={priority}>
+                P{priority}
+              </option>
+            ))}
+          </select>
+        </EditableMetadata>
         <EditableMetadata
           label={`Next step for ${displayText(title)}`}
           value={item.nextStep ?? 'No next step'}
           pending={saving}
           disabled={optimistic}
-          editor={
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                const data = new FormData(event.currentTarget);
-                const rawNextStep = data.get('nextStep');
-                const nextStep = (typeof rawNextStep === 'string' ? rawNextStep : '').trim();
-                onUpdateItem(item.id, { nextStep: nextStep || null });
-              }}
-              className="flex items-center gap-2"
+        >
+          <form
+            className="flex items-center gap-2"
+            action={(formData) => {
+              const rawNextStep = formData.get('nextStep');
+              const nextStep = (typeof rawNextStep === 'string' ? rawNextStep : '').trim();
+              onUpdateItem(item.id, { nextStep: nextStep || null });
+            }}
+          >
+            <input
+              name="nextStep"
+              defaultValue={item.nextStep ?? ''}
+              className="h-10 min-w-56 rounded-sm border border-border bg-bg px-2 text-xs"
+              aria-label="Next step"
+            />
+            <button
+              type="submit"
+              className="min-h-10 rounded-sm bg-signal px-3 text-xs font-medium text-signal-fg"
             >
-              <input
-                name="nextStep"
-                defaultValue={item.nextStep ?? ''}
-                className="h-10 min-w-56 rounded-sm border border-border bg-bg px-2 text-xs"
-                aria-label="Next step"
-              />
-              <button
-                type="submit"
-                className="min-h-10 rounded-sm bg-signal px-3 text-xs font-medium text-signal-fg"
-              >
-                Apply
-              </button>
-            </form>
-          }
-        />
+              Apply
+            </button>
+          </form>
+        </EditableMetadata>
       </div>
       {!optimistic ? (
         <EditableMetadata
@@ -616,32 +611,31 @@ function KanbanCard({
           }
           className="mt-1"
           triggerRef={registerMoveControl}
-          editor={
-            <select
-              id={moveControlId}
-              value={lane.id}
-              disabled={saving}
-              aria-label="Move to lane"
-              aria-invalid={error ? true : undefined}
-              aria-describedby={titleId}
-              onPointerDown={(event) => {
-                event.stopPropagation();
-              }}
-              onChange={(event) => {
-                const nextLaneId =
-                  event.currentTarget.value === 'unset' ? null : event.currentTarget.value;
-                onMoveItem(item.id, nextLaneId, true);
-              }}
-              className="h-9 w-full min-w-0 rounded-sm border border-border bg-surface px-2 text-base text-fg transition-colors focus-visible:border-signal/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-progress disabled:opacity-60 sm:text-sm"
-            >
-              {moveTargets.map((target) => (
-                <option key={target.id} value={target.id}>
-                  {target.name}
-                </option>
-              ))}
-            </select>
-          }
-        />
+        >
+          <select
+            id={moveControlId}
+            value={lane.id}
+            disabled={saving}
+            aria-label="Move to lane"
+            aria-invalid={error ? true : undefined}
+            aria-describedby={titleId}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
+            onChange={(event) => {
+              const nextLaneId =
+                event.currentTarget.value === 'unset' ? null : event.currentTarget.value;
+              onMoveItem(item.id, nextLaneId, true);
+            }}
+            className="h-9 w-full min-w-0 rounded-sm border border-border bg-surface px-2 text-base text-fg transition-colors focus-visible:border-signal/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-progress disabled:opacity-60 sm:text-sm"
+          >
+            {moveTargets.map((target) => (
+              <option key={target.id} value={target.id}>
+                {target.name}
+              </option>
+            ))}
+          </select>
+        </EditableMetadata>
       ) : null}
     </li>
   );

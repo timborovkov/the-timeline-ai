@@ -1,24 +1,31 @@
 import type { ReactNode } from 'react';
 
+import { CollectionRowContext } from '@/components/collections/collection-row-context';
+import { CollectionRowLeading } from '@/components/collections/collection-row-leading';
+import { CollectionRowMetadata } from '@/components/collections/collection-row-metadata';
+import { findSlot } from '@/components/collections/collection-slots';
 import { cn } from '@/lib/utils';
 
 export function CollectionRow({
-  leading,
   title,
   context,
-  metadata,
   actions,
   selected = false,
   className,
+  children,
 }: {
-  leading?: ReactNode;
   title: ReactNode;
   context?: ReactNode;
-  metadata?: ReactNode;
   actions?: ReactNode;
   selected?: boolean;
   className?: string;
+  children?: ReactNode;
 }) {
+  const leading = findSlot(children, CollectionRowLeading);
+  const metadata = findSlot(children, CollectionRowMetadata);
+  const contextSlot = findSlot(children, CollectionRowContext);
+  const resolvedContext = contextSlot?.props.children ?? context;
+
   return (
     <div
       className={cn(
@@ -27,26 +34,22 @@ export function CollectionRow({
         className,
       )}
     >
-      <div className="flex min-h-10 shrink-0 items-center">{leading}</div>
+      {leading ?? <div className="flex min-h-10 shrink-0 items-center" />}
       <div className="flex min-w-0 flex-col justify-center py-1 sm:flex-row sm:items-center sm:gap-3">
         <div className="min-w-0 flex-1">
           <div className="min-w-0 truncate text-sm font-medium leading-5 text-fg">{title}</div>
-          {context ? (
+          {resolvedContext ? (
             <div className="min-w-0 truncate text-[11px] leading-4 text-fg-dim sm:hidden">
-              {context}
+              {resolvedContext}
             </div>
           ) : null}
         </div>
-        {context ? (
+        {resolvedContext ? (
           <div className="hidden min-w-0 max-w-[22rem] truncate text-xs text-fg-dim sm:block">
-            {context}
+            {resolvedContext}
           </div>
         ) : null}
-        {metadata ? (
-          <div className="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5 sm:ml-auto sm:flex-nowrap sm:justify-end">
-            {metadata}
-          </div>
-        ) : null}
+        {metadata}
       </div>
       <div className="flex min-h-10 shrink-0 items-center">{actions}</div>
     </div>

@@ -41,6 +41,11 @@ export const metadata: Metadata = {
 
 const OBJECTS_PAGE_SIZE = 48;
 const OBJECTS_SECTION_PREVIEW_SIZE = 8;
+const NEW_OBJECT_BUTTON = (
+  <Button asChild>
+    <Link href="/app/objects/new">New object</Link>
+  </Button>
+);
 
 type ObjectCountFilter = Omit<objects.ObjectListFilter, 'cursor' | 'limit' | 'offset'>;
 
@@ -197,11 +202,7 @@ export default async function ObjectsIndexPage({
             ? [{ label: 'Type', value: OBJECT_TYPE_LABELS[singleType] ?? singleType }]
             : []),
         ]}
-        trailing={
-          <Button asChild>
-            <Link href="/app/objects/new">New object</Link>
-          </Button>
-        }
+        trailing={NEW_OBJECT_BUTTON}
       />
       <WorkSubnav current="/app/objects" />
 
