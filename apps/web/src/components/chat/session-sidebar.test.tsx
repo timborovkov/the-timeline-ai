@@ -5,6 +5,8 @@ import userEvent from '@testing-library/user-event';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { ReactNode } from 'react';
+
 import { formatDisplayDateTime } from '@/lib/display-dates';
 import { DEFAULT_TIMEZONE } from '@/lib/timezones';
 
@@ -16,6 +18,30 @@ const fakes = vi.hoisted(() => ({
 }));
 
 vi.mock('@/app/actions/chat', () => ({ archiveChatSessionAction: fakes.archive }));
+vi.mock('@/app/actions/collection-pages', () => ({
+  loadChatSessionsPageAction: vi.fn(() => Promise.resolve({ sessions: [], nextCursor: null })),
+}));
+vi.mock('@/components/collections/virtual-list', async () => {
+  const { createElement: h } = await import('react');
+  return {
+    VirtualList: ({
+      items,
+      renderItem,
+      getItemKey,
+    }: {
+      items: { id: string }[];
+      renderItem: (item: { id: string }, index: number) => ReactNode;
+      getItemKey: (item: { id: string }, index: number) => string;
+    }) =>
+      h(
+        'div',
+        null,
+        items.map((item, index) =>
+          h('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+        ),
+      ),
+  };
+});
 vi.mock('@/components/ui/app-dialog', () => ({
   useAppDialog: () => ({ confirm: fakes.confirm, node: null }),
 }));

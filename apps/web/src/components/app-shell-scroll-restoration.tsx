@@ -3,7 +3,8 @@
 import { usePathname } from 'next/navigation';
 import { useEffect } from 'react';
 
-const MAIN_ID = 'main';
+import { APP_MAIN_SCROLL_ID } from '@/lib/app-scroll';
+
 const MAX_HASH_SCROLL_ATTEMPTS = 8;
 
 function targetFromHash(): HTMLElement | null {
@@ -84,7 +85,7 @@ function scheduleMainScrollToRouteTarget(): () => void {
     frame = null;
     if (cancelled) return;
 
-    const main = document.getElementById(MAIN_ID);
+    const main = document.getElementById(APP_MAIN_SCROLL_ID);
     const target = targetFromHash();
     if (!window.location.hash) {
       main?.scrollTo({ top: 0, left: 0 });

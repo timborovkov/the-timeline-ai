@@ -9,11 +9,8 @@ import {
   isTimelinePresetActive,
   TIMELINE_PRESETS,
   timelineHref,
-  timelineLoadedCount,
-  timelineLoadedSrLabel,
   timelineOriginOptions,
   timelineOriginValue,
-  timelinePresetCountLabel,
   timelineSourceValues,
   resolveTimelineDateWindow,
   updateTimelineSourceSelection,
@@ -171,17 +168,5 @@ describe('timeline controls', () => {
       effectiveToInput: '2026-08-23',
       wasUpcomingClamped: true,
     });
-  });
-
-  it('uses one primary count matching Moments vs Audit trail mode', () => {
-    expect(timelineLoadedCount('moments', 7, 12)).toBe(7);
-    expect(timelineLoadedCount('events', 7, 12)).toBe(12);
-    expect(timelineLoadedSrLabel('moments', 7)).toBe('7 moments loaded');
-    expect(timelineLoadedSrLabel('moments', 1)).toBe('1 moment loaded');
-    expect(timelineLoadedSrLabel('events', 12)).toBe('12 events loaded');
-    expect(timelinePresetCountLabel('moments', 7, 12)).toBe('7 moments');
-    expect(timelinePresetCountLabel('moments', 1, 12)).toBe('1 moment');
-    expect(timelinePresetCountLabel('events', 7, 12)).toBe('12 source events');
-    expect(timelinePresetCountLabel('events', 7, 1)).toBe('1 source event');
   });
 });
