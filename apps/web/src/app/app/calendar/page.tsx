@@ -6,7 +6,6 @@ import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
-import { CALENDAR_EVENT_LIST_PAGE_SIZE } from '@/app/actions/collection-pages';
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { CalendarSubscriptionPanel } from '@/components/calendar/calendar-subscription-panel';
 import { CalendarView } from '@/components/calendar/calendar-view';
@@ -15,6 +14,7 @@ import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { calendarEventListWindow } from '@/lib/calendar-event-list-range';
+import { CALENDAR_EVENT_LIST_PAGE_SIZE } from '@/lib/collection-page-sizes';
 import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
 import { serializeCalendarEvent } from '@/lib/serialize-calendar-event';

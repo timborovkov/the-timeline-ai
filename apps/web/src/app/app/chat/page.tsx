@@ -7,7 +7,6 @@ import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
-import { CHAT_SESSIONS_PAGE_SIZE } from '@/app/actions/collection-pages';
 import { AskHeader } from '@/components/chat/ask-header';
 import { ChatPane } from '@/components/chat/chat-pane';
 import { MobileSessionNav, SessionSidebar } from '@/components/chat/session-sidebar';
@@ -15,6 +14,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { hydrateChatSessionMessages } from '@/lib/chat-session';
 import { chatSessionLabel } from '@/lib/chat-session-list';
+import { CHAT_SESSIONS_PAGE_SIZE } from '@/lib/collection-page-sizes';
 import { db } from '@/lib/db';
 import { displayObjectLabel } from '@/lib/display-labels';
 

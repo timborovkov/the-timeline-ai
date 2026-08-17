@@ -4,7 +4,6 @@ import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
-import { INBOX_PAGE_SIZE } from '@/app/actions/collection-pages';
 import { EmptyAction } from '@/components/empty-action';
 import { HistoryBackLink } from '@/components/history-back-link';
 import { InboxList } from '@/components/inbox/inbox-list';
@@ -12,6 +11,7 @@ import { MarkAllReadButton } from '@/components/inbox/mark-all-read-button';
 import { PageHeader } from '@/components/page-header';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
+import { INBOX_PAGE_SIZE } from '@/lib/collection-page-sizes';
 import { db } from '@/lib/db';
 
 export const metadata: Metadata = {

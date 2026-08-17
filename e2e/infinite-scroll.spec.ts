@@ -32,11 +32,13 @@ test.describe('Infinite scroll collections', () => {
 
     const oldest = `${marker} moment 45`;
     const main = page.locator('#main');
-    for (let attempt = 0; attempt < 12; attempt += 1) {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
       if ((await page.getByText(oldest).count()) > 0) break;
       await main.evaluate((node) => {
         node.scrollTo({ top: node.scrollHeight });
       });
+      const loadMore = page.getByRole('button', { name: 'Load more' });
+      if ((await loadMore.count()) > 0) await loadMore.first().click({ force: true });
       await page.waitForTimeout(400);
     }
     await expect(page.getByText(oldest)).toBeVisible();

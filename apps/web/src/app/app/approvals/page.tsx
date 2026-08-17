@@ -6,13 +6,13 @@ import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
-import { SUGGESTIONS_PAGE_SIZE } from '@/app/actions/collection-pages';
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { PageHeader } from '@/components/page-header';
 import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
+import { SUGGESTIONS_PAGE_SIZE } from '@/lib/collection-page-sizes';
 import { db } from '@/lib/db';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 import { serializeSuggestionBundle } from '@/lib/suggestions';

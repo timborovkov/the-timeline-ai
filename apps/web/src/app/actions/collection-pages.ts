@@ -7,18 +7,19 @@ import type { CalendarEvent } from '@/components/calendar/calendar-overlay';
 
 import { resolveScope } from '@/lib/action-scope';
 import { calendarEventListWindow } from '@/lib/calendar-event-list-range';
+import {
+  CALENDAR_EVENT_LIST_PAGE_SIZE,
+  CHAT_SESSIONS_PAGE_SIZE,
+  INBOX_PAGE_SIZE,
+  MEETINGS_PAGE_SIZE,
+  SUGGESTIONS_PAGE_SIZE,
+} from '@/lib/collection-page-sizes';
 import { displayObjectLabel } from '@/lib/display-labels';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { serializeCalendarEvent } from '@/lib/serialize-calendar-event';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
 
 const cursorSchema = z.string().max(500).nullable().optional();
-
-export const MEETINGS_PAGE_SIZE = 30;
-export const SUGGESTIONS_PAGE_SIZE = 40;
-export const CHAT_SESSIONS_PAGE_SIZE = 50;
-export const INBOX_PAGE_SIZE = 25;
-export const CALENDAR_EVENT_LIST_PAGE_SIZE = 12;
 
 export async function loadMeetingsPageAction(input: unknown): Promise<{
   meetings: {

@@ -8,7 +8,6 @@ import { redirect } from 'next/navigation';
 import type { SavedMeetingRow } from '@timeline/shared/meetings';
 import type { Metadata } from 'next';
 
-import { MEETINGS_PAGE_SIZE } from '@/app/actions/collection-pages';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
@@ -29,6 +28,7 @@ import { ItemActionGroup } from '@/components/ui/item-actions';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { formatCollectionCount } from '@/lib/collection-count';
+import { MEETINGS_PAGE_SIZE } from '@/lib/collection-page-sizes';
 import { db } from '@/lib/db';
 import { displayMeetingLabel, displayMemberLabel, displaySourceLabel } from '@/lib/display-labels';
 import { CAPTURE_FILTERS, type CaptureFilter } from '@/lib/meeting-capture-filters';
