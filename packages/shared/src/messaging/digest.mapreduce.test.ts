@@ -129,6 +129,9 @@ describe('digest map-reduce summarization', () => {
     const firstCall = fakes.chatStructured.mock.calls[0]?.[0] as { system?: string };
     expect(firstCall.system).toContain('Pull-request numbers');
     expect(firstCall.system).toContain('banned');
+    expect(firstCall.system).toContain('Status');
+    expect(firstCall.system).not.toContain('Product status');
+    expect(firstCall.system).toContain('4-7 sentences');
     expect(result.payload.summary).toBe('Single batch summary.');
     expect(result.payload.eventCount).toBe(10);
     expect(result.payload.momentCount).toBe(10);

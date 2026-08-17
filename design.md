@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.6 · Team setup loop and Home timeline links (2026-08-17). Replaces v3.5 Team setup checklist on Home.
+**Version:** v3.7 · Digest status, window range, and linked rows (2026-08-17). Replaces v3.6 Team setup loop and Home timeline links.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -302,13 +302,20 @@ The latest digest stays folded until opened. Its summary and section bodies are
 readable prose, not inventories of pull requests or IDs. The generator bans
 pull-request numbers, commit hashes, CI run IDs, ticket keys, and object
 UUIDs: it scrubs them from the briefing packet, retries a draft that still
-lists them, and discards that draft if the rewrite fails. Activity counts new
-moments, proposals, pending approvals, tasks, and objects from the digest
-window. Task and calendar blocks show change: newly created or completed work,
-and repeating calendar series as one upcoming entry. Task titles open the
-object on the dashboard, calendar rows open Calendar, and both the in-app
-digest and the email include dashboard shortcuts. Work → Digests lists every
-stored digest as collapsed rows so a teammate can open a specific day.
+lists them, and discards that draft if the rewrite fails. Narrative sections
+use Highlights, Status, Completed, In progress, Decisions, Risks, and
+Follow-ups; Status is the current state of work, not a product-specific label.
+Empty sections and empty task, object, or calendar groups are omitted. Activity
+counts new moments, proposals, pending approvals, tasks, and objects from the
+digest window and is hidden when every count is zero. Task, object, and
+calendar blocks are dense linked rows: newly created or completed tasks, new
+non-task objects, calendar events that fell in the digest window, and upcoming
+events. Repeating calendar series collapse to one upcoming entry. Titles open
+the object or the specific calendar event on the dashboard. Both the in-app
+digest and the email show the covering time range for the window and include
+dashboard shortcuts. Work → Digests lists generated days as collapsed rows so
+a teammate can open a specific day. Quiet windows stay skipped and are not
+emailed; upcoming calendar alone does not make an inactive team look busy.
 
 Pinned work is one personal, mixed collection. It may contain canonical
 objects (including tasks, projects, deals, people, and object-type documents),
@@ -647,3 +654,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Ask session search and title | Filters chat history from the session rail and shows the selected title beside Ask instead of a session count. |
 | 2026-08-17 | Ask mobile session title | Reuses the resolved conversation title in the mobile session summary, including deep-linked chats outside the recent list. |
 | 2026-08-17 | Quiet sidebar brand and fold control | Aligns the product mark with primary nav, sends it to Home, and replaces the boxed fold glyph with a lighter chevron. |
+| 2026-08-17 | Digest status, window range, and linked rows | Replaces Product status with Status, shows the covering time range, uses dense linked task/object/calendar rows, and omits empty groups including source inventories. |

@@ -121,12 +121,17 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       scrubs them from the briefing packet and rejects a draft that still lists
       them. Home, Work → Digests, and email reuse that
       payload: the latest digest stays folded, activity counts new moments,
-      proposals, pending approvals, tasks, and objects, task blocks cover created or completed
-      work and link to the object on the dashboard, calendar rows link to Calendar, and email includes dashboard shortcuts. Repeating calendar series collapse to one upcoming entry. Raw
+      proposals, pending approvals, tasks, and objects, task and object blocks
+      cover created or completed work and link to the object on the dashboard,
+      calendar rows in the window and upcoming link to the specific event, and
+      email includes dashboard shortcuts. Repeating calendar series collapse to
+      one upcoming entry. Empty sections and empty groups are omitted. Quiet
+      windows skip summarization and outbound delivery unless the recipient has
+      fresh local-cycle activity, pending approvals, new or completed objects,
+      or calendar events in the digest window; upcoming calendar alone does not
+      trigger a send. Raw
       eventCount / sourceDistribution remain for internal metrics and per-source
-      detail. It durably skips quiet windows before summarization
-      and email delivery unless the recipient has fresh local-cycle activity,
-      pending approvals, or upcoming calendar context. Timeline Moments chrome
+      detail. Timeline Moments chrome
       and IndexStrip loaded counts also lead with moments (Audit trail keeps
       source-event counts). The
       `timeline-moment-presentations` worker script now provides bounded,

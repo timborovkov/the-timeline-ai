@@ -67,6 +67,23 @@ const DIGEST: DailyDigestPayload = {
       occurrenceCount: 4,
     },
   ],
+  newObjects: [
+    {
+      id: 'person-1',
+      title: 'Ada Lovelace',
+      type: 'person',
+      href: '/app/objects/person-1',
+    },
+  ],
+  windowCalendar: [
+    {
+      id: 'cal-window',
+      title: 'Launch review',
+      startAt: '2026-07-15T15:00:00.000Z',
+      endAt: '2026-07-15T16:00:00.000Z',
+      href: '/app/calendar?view=day&date=2026-07-15&event=cal-window',
+    },
+  ],
   links: [],
 };
 
@@ -89,7 +106,8 @@ describe('DailyDigestBlock', () => {
       'The launch moved forward after customer feedback arrived.',
     );
     expect(details?.textContent).toContain('The launch review finished');
-    expect(details?.textContent).toContain('Activity over the past day');
+    expect(details?.textContent).toContain('Activity');
+    expect(details?.textContent).not.toContain('Activity over the past day');
     expect(details?.textContent).toContain('7 new moments');
     expect(details?.textContent).toContain('2 new proposals');
     expect(details?.textContent).toContain('2 pending approvals');
@@ -102,11 +120,22 @@ describe('DailyDigestBlock', () => {
     expect(screen.getByRole('link', { name: 'Close review' }).getAttribute('href')).toBe(
       '/app/objects/task-2',
     );
-    expect(details?.textContent).toContain('Internal daily call (repeating');
+    expect(details?.textContent).toContain('Internal daily call');
+    expect(details?.textContent).toContain('repeating · next');
     expect(screen.getByRole('link', { name: 'Internal daily call' }).getAttribute('href')).toBe(
       '/app/calendar',
     );
-    expect(details?.textContent).toContain('GitHub · 5');
+    expect(details?.textContent).toContain('Covering');
+    expect(details?.textContent).not.toContain('GitHub · 5');
+    expect(details?.textContent).not.toContain('Sources in this window');
+    expect(details?.textContent).toContain('Ada Lovelace');
+    expect(screen.getByRole('link', { name: 'Ada Lovelace' }).getAttribute('href')).toBe(
+      '/app/objects/person-1',
+    );
+    expect(details?.textContent).toContain('Launch review');
+    expect(screen.getByRole('link', { name: 'Launch review' }).getAttribute('href')).toBe(
+      '/app/calendar?view=day&date=2026-07-15&event=cal-window',
+    );
     expect(details?.textContent).toContain('Grace Hopper');
   });
 

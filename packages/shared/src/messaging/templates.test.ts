@@ -43,7 +43,7 @@ describe('messaging templates', () => {
             items: [],
           },
           {
-            title: 'Product status',
+            title: 'Status',
             body: 'The pilot invite flow is close to launch.',
             items: [],
           },
@@ -87,6 +87,23 @@ describe('messaging templates', () => {
             href: '/app/objects/task-id',
           },
         ],
+        newObjects: [
+          {
+            id: 'person-id',
+            title: 'Ada Lovelace',
+            type: 'person',
+            href: '/app/objects/person-id',
+          },
+        ],
+        windowCalendar: [
+          {
+            id: 'standup-id',
+            title: 'Morning standup',
+            startAt: '2026-06-14T07:00:00.000Z',
+            endAt: '2026-06-14T07:15:00.000Z',
+            href: '/app/calendar?view=day&date=2026-06-14&event=standup-id',
+          },
+        ],
         upcomingCalendar: [
           {
             id: 'calendar-id',
@@ -101,7 +118,9 @@ describe('messaging templates', () => {
     });
 
     expect(message.subject).toBe('Daily digest for AuditAI');
-    expect(message.textBody).toContain('Activity over the past day');
+    expect(message.textBody).toContain('Covering');
+    expect(message.textBody).toContain('Activity');
+    expect(message.textBody).not.toContain('Activity over the past day');
     expect(message.textBody).toContain('5 new moments');
     expect(message.textBody).toContain('2 new proposals');
     expect(message.textBody).toContain('4 pending approvals');
@@ -110,21 +129,28 @@ describe('messaging templates', () => {
     expect(message.textBody).toContain(
       'Highlights\nThe team kept the pilot recap moving after new Slack follow-ups arrived.',
     );
-    expect(message.textBody).toContain('Product status\nThe pilot invite flow is close to launch.');
+    expect(message.textBody).toContain('Status\nThe pilot invite flow is close to launch.');
     expect(message.textBody).toContain(
       'Completed\nThe lock feature was removed from incomplete-step progression.',
     );
     expect(message.textBody).toContain('In progress\nAn automated testing agent is being created.');
     expect(message.textBody).toContain('Decisions\nLaunch timing still needs a decision.');
     expect(message.textBody).toContain('New tasks:');
+    expect(message.textBody).toContain('New objects:');
+    expect(message.textBody).toContain('Ada Lovelace (person)');
+    expect(message.textBody).toContain('https://timeline.test/app/objects/person-id');
+    expect(message.textBody).toContain('Calendar this window:');
+    expect(message.textBody).toContain('Morning standup');
+    expect(message.textBody).toContain(
+      'https://timeline.test/app/calendar?view=day&date=2026-06-14&event=standup-id',
+    );
+    expect(message.textBody).not.toContain('Sources in this window');
     expect(message.textBody).toContain('Send pilot recap (todo, Due soon · Jun 17, 2026)');
     expect(message.textBody).toContain('https://timeline.test/app/objects/task-id');
     expect(message.textBody).toContain('https://timeline.test/app/calendar');
     expect(message.textBody).toContain('Open on the dashboard:');
     expect(message.textBody).toContain('Dashboard: https://timeline.test/app');
-    expect(message.textBody.indexOf('Product status')).toBeLessThan(
-      message.textBody.indexOf('Completed'),
-    );
+    expect(message.textBody.indexOf('Status')).toBeLessThan(message.textBody.indexOf('Completed'));
     expect(message.textBody.indexOf('Completed')).toBeLessThan(
       message.textBody.indexOf('In progress'),
     );
@@ -132,15 +158,21 @@ describe('messaging templates', () => {
     expect(message.textBody).not.toContain('2026-06-17T14:00:00.000Z');
     expect(message.htmlBody).toContain('Highlights');
     expect(message.htmlBody).toContain('Send the pilot recap before the next planning review.');
-    expect(message.htmlBody).toContain('href="https://timeline.test/app/objects/task-id"');
+    expect(message.htmlBody).toContain('href="https://timeline.test/app/objects/person-id"');
+    expect(message.htmlBody).toContain('Ada Lovelace');
+    expect(message.htmlBody).toContain(
+      'href="https://timeline.test/app/calendar?view=day&amp;date=2026-06-14&amp;event=standup-id"',
+    );
     expect(message.htmlBody).toContain('Send pilot recap');
-    expect(message.htmlBody).toContain('(todo, Due soon · Jun 17, 2026)');
+    expect(message.htmlBody).toContain('todo, Due soon · Jun 17, 2026');
     expect(message.htmlBody).toContain('href="https://timeline.test/app/calendar"');
     expect(message.htmlBody).toContain('href="https://timeline.test/app"');
     expect(message.htmlBody).toContain('Open on the dashboard:');
-    expect(message.htmlBody).toContain('Digest date: Jun 14, 2026');
+    expect(message.htmlBody).toContain('Covering');
     expect(message.htmlBody).toContain('5 new moments');
-    expect(message.htmlBody).toContain('Activity over the past day');
+    expect(message.htmlBody).toContain('Activity');
+    expect(message.htmlBody).not.toContain('Activity over the past day');
+    expect(message.htmlBody).not.toContain('Digest date:');
     expect(message.htmlBody).not.toContain('from 12 source events');
     expect(message.htmlBody).toContain(
       'The team kept the pilot recap moving after new Slack follow-ups arrived.',

@@ -23,9 +23,10 @@ import {
   formatDigestActivityLines,
   formatDigestCalendarEvent,
   formatDigestCalendarEventDetail,
-  formatDigestDate,
+  formatDigestObjectType,
   formatDigestTask,
   formatDigestTaskDetail,
+  formatDigestWindowRange,
 } from '#src/messaging/digest-format.js';
 
 type TemplateName =
@@ -124,16 +125,18 @@ function htmlNamedLinkedList(
   items: { href: string | null; label: string; detail: string }[],
 ): string {
   if (items.length === 0) return '';
-  const list = `<ul style="font-size: 14px; line-height: 1.55; padding-left: 20px;">${items
+  const list = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse;">${items
     .map((item) => {
       const label = item.href
-        ? `<a href="${escapeHtml(item.href)}" style="color: #68a500; text-decoration: underline;">${escapeHtml(item.label)}</a>`
-        : escapeHtml(item.label);
-      const detail = item.detail ? ` ${escapeHtml(item.detail)}` : '';
-      return `<li>${label}${detail}</li>`;
+        ? `<a href="${escapeHtml(item.href)}" style="color: #171717; font-weight: 600; text-decoration: underline; text-decoration-color: #68a500;">${escapeHtml(item.label)}</a>`
+        : `<span style="color: #171717; font-weight: 600;">${escapeHtml(item.label)}</span>`;
+      const detail = item.detail
+        ? `<div style="font-size: 12px; color: #747b7b; margin-top: 2px;">${escapeHtml(item.detail.replace(/^\(|\)$/g, ''))}</div>`
+        : '';
+      return `<tr><td style="padding: 10px 0; border-bottom: 1px solid #e6eaea;">${label}${detail}</td></tr>`;
     })
-    .join('')}</ul>`;
-  return `<h2 style="font-size: 14px; margin: 20px 0 8px">${escapeHtml(title)}</h2>\n${list}`;
+    .join('')}</table>`;
+  return `<h2 style="font-size: 13px; letter-spacing: 0.02em; margin: 24px 0 4px">${escapeHtml(title)}</h2>\n${list}`;
 }
 
 function textLinkedLines(items: { href: string | null; text: string }[]): string[] {
@@ -146,9 +149,23 @@ function htmlParagraphs(items: string[]): string {
   return items
     .map(
       (item) =>
-        `<p style="font-size: 15px; line-height: 1.55; margin: 0 0 14px">${escapeHtml(item)}</p>`,
+        `<p style="font-size: 15px; line-height: 1.6; margin: 0 0 14px">${escapeHtml(item)}</p>`,
     )
     .join('\n');
+}
+
+function htmlActivityBlock(lines: string[]): string {
+  if (lines.length === 0) return '';
+  return [
+    `<h2 style="font-size: 13px; letter-spacing: 0.02em; margin: 24px 0 8px">Activity</h2>`,
+    `<p style="font-size: 13px; line-height: 1.6; color: #3d4444; margin: 0;">${lines
+      .map((line) => escapeHtml(line))
+      .join(' · ')}</p>`,
+  ].join('\n');
+}
+
+function htmlWindowBlock(range: string): string {
+  return `<p style="font-size: 12px; line-height: 1.5; color: #747b7b; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin: 0 0 18px;">Covering ${escapeHtml(range)}</p>`;
 }
 
 function htmlDigestSections(sections: ReturnType<typeof digestContentSections>): string {
@@ -156,11 +173,13 @@ function htmlDigestSections(sections: ReturnType<typeof digestContentSections>):
     .map((section) => {
       const body = digestSectionBody(section);
       const content = section.body
-        ? `<p style="font-size: 14px; line-height: 1.55; margin: 0 0 8px">${escapeHtml(body)}</p>`
+        ? `<p style="font-size: 14px; line-height: 1.6; margin: 0; color: #3d4444;">${escapeHtml(body)}</p>`
         : htmlList(section.items);
       return [
-        `<h2 style="font-size: 14px; margin: 20px 0 8px">${escapeHtml(section.title)}</h2>`,
+        `<div style="border-top: 1px solid #e6eaea; padding: 16px 0 4px">`,
+        `<h2 style="font-size: 13px; letter-spacing: 0.02em; margin: 0 0 8px">${escapeHtml(section.title)}</h2>`,
         content,
+        `</div>`,
       ].join('\n');
     })
     .join('\n');
@@ -331,12 +350,14 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
   const p = input.payload;
   const subject = `Daily digest for ${p.teamName}`;
   const timezone = p.timezone;
-  const windowEnd = formatDigestDate(p.windowEnd, timezone);
+  const windowRange = formatDigestWindowRange(p.windowStart, p.windowEnd, timezone);
   const summaryParagraphs = digestSummaryParagraphs(p.summary);
   const sections = digestContentSections(p);
   const activity = digestActivityStats(p);
   const activityLines = formatDigestActivityLines(activity);
   const completedTasks = p.completedTasks ?? [];
+  const newObjects = p.newObjects ?? [];
+  const windowCalendar = p.windowCalendar ?? [];
   const now = new Date(p.windowEnd);
   const newTaskItems = p.tasks.map((task) => ({
     href: absoluteDigestAppUrl(input.digestUrl, task.href),
@@ -350,6 +371,18 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
     detail: formatDigestTaskDetail(task, timezone, now),
     text: formatDigestTask(task, timezone, now),
   }));
+  const newObjectItems = newObjects.map((object) => ({
+    href: absoluteDigestAppUrl(input.digestUrl, object.href),
+    label: object.title,
+    detail: `(${formatDigestObjectType(object.type)})`,
+    text: `${object.title} (${formatDigestObjectType(object.type)})`,
+  }));
+  const windowCalendarItems = windowCalendar.map((event) => ({
+    href: absoluteDigestAppUrl(input.digestUrl, event.href),
+    label: event.title,
+    detail: formatDigestCalendarEventDetail(event, timezone),
+    text: formatDigestCalendarEvent(event, timezone),
+  }));
   const calendarItems = p.upcomingCalendar.map((event) => ({
     href: absoluteDigestAppUrl(input.digestUrl, event.href),
     label: event.title,
@@ -361,7 +394,8 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
     label: link.label,
   }));
   const textBody = [
-    `Daily digest for ${p.teamName} · ${windowEnd}`,
+    `Daily digest for ${p.teamName}`,
+    `Covering ${windowRange}`,
     '',
     ...summaryParagraphs.flatMap((paragraph) => [paragraph, '']),
     ...sections.flatMap((section) => {
@@ -369,13 +403,14 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
       if (section.body || section.items.length === 0) return [section.title, body, ''];
       return [section.title, ...section.items.map((item) => `- ${item}`), ''];
     }),
-    '',
-    'Activity over the past day',
-    ...activityLines.map((line) => `- ${line}`),
-    '',
+    ...(activityLines.length ? ['Activity', ...activityLines.map((line) => `- ${line}`), ''] : []),
     ...(newTaskItems.length ? ['New tasks:', ...textLinkedLines(newTaskItems), ''] : []),
     ...(completedTaskItems.length
       ? ['Completed tasks:', ...textLinkedLines(completedTaskItems), '']
+      : []),
+    ...(newObjectItems.length ? ['New objects:', ...textLinkedLines(newObjectItems), ''] : []),
+    ...(windowCalendarItems.length
+      ? ['Calendar this window:', ...textLinkedLines(windowCalendarItems), '']
       : []),
     ...(calendarItems.length ? ['Upcoming calendar:', ...textLinkedLines(calendarItems), ''] : []),
     ...(dashboardLinks.some((link) => link.href)
@@ -394,11 +429,14 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
       'daily-digest',
       {},
       {
+        windowBlock: htmlWindowBlock(windowRange),
         summaryBlock: htmlParagraphs(summaryParagraphs),
         summarySections: htmlDigestSections(sections),
-        snapshotList: htmlList([`Digest date: ${windowEnd}`, ...activityLines]),
+        activityBlock: htmlActivityBlock(activityLines),
         newTasksBlock: htmlNamedLinkedList('New tasks', newTaskItems),
         completedTasksBlock: htmlNamedLinkedList('Completed tasks', completedTaskItems),
+        newObjectsBlock: htmlNamedLinkedList('New objects', newObjectItems),
+        windowCalendarBlock: htmlNamedLinkedList('Calendar this window', windowCalendarItems),
         calendarBlock: htmlNamedLinkedList('Upcoming calendar', calendarItems),
         linksBlock: htmlAppLinks('Open on the dashboard:', dashboardLinks),
       },

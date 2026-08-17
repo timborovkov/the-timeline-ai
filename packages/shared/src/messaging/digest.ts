@@ -25,10 +25,12 @@ import { chatStructured } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
 import {
   collapseDigestCalendarEvents,
+  digestCalendarHref,
   digestContainsBannedInventory,
+  digestContentSections,
   scrubDigestArtifactIds,
 } from '#src/messaging/digest-format.js';
-import { displayObjectTitle } from '#src/objects/index.js';
+import { displayObjectTitle, OBJECT_TYPES } from '#src/objects/index.js';
 import { withTeam } from '#src/team-scope.js';
 import { assertValidTimezone, dateFromInstant, zonedDateTimeFromDate } from '#src/time/index.js';
 import { buildTimelineMoments, type TimelineMoment } from '#src/timeline-moments/index.js';
@@ -47,7 +49,7 @@ const QUIET_DIGEST_REASON = 'No useful digest content in this window.';
 
 const digestSectionTitleSchema = z.enum([
   'Highlights',
-  'Product status',
+  'Status',
   'Completed',
   'In progress',
   'Decisions',
@@ -56,12 +58,12 @@ const digestSectionTitleSchema = z.enum([
 ]);
 
 const digestSummarySchema = z.object({
-  summary: z.string().min(1).max(1400),
+  summary: z.string().min(1).max(2800),
   sections: z
     .array(
       z.object({
         title: digestSectionTitleSchema,
-        body: z.string().min(1).max(900),
+        body: z.string().min(1).max(1600),
       }),
     )
     .max(7),
@@ -109,6 +111,14 @@ interface DigestPromptContext {
     repeating?: boolean;
     occurrenceCount?: number;
   }[];
+  windowCalendar: {
+    title: string;
+    startAt: string;
+    endAt: string;
+    repeating?: boolean;
+    occurrenceCount?: number;
+  }[];
+  newObjects: { title: string; type: string }[];
   newTeamMembers: { label: string; createdAt: string }[];
 }
 
@@ -116,6 +126,10 @@ interface DigestActivityEvent {
   occurredAt: Date;
   createdAt: Date;
 }
+
+const DIGEST_LIST_OBJECT_TYPES = OBJECT_TYPES.filter(
+  (type) => type !== 'task' && type !== 'follow_up' && type !== 'decision' && type !== 'link',
+);
 
 const SUMMARIZE_BATCH_SIZE = 50;
 
@@ -126,13 +140,14 @@ const SUMMARIZE_SYSTEM_PROMPT = [
   'Pull-request numbers, commit hashes, CI or workflow run IDs, ticket keys, and object UUIDs are banned.',
   'Never list GitHub PRs, commits, checks, or tickets. Describe the work that changed, not the artifacts that carried it.',
   'A digest whose substance is PR numbers or run IDs is invalid.',
-  'Each section body is 1-3 sentences of prose, not bullets.',
-  'The overview summary is 2-4 sentences that tell the story of the window, not a count of artifacts.',
-  'Cover product/development status, completed work, work in progress, decisions, risks/blockers, follow-ups, and notable upcoming context when evidence exists.',
-  'Use section titles only from: Highlights, Product status, Completed, In progress, Decisions, Risks, Follow-ups.',
-  'Use Product status for current product/development state, Completed for things finished in the digest window, and In progress for active work that is not done yet.',
-  'Task changes and calendar context are supporting facts: summarize newly created or completed work, and treat repeating calendar series as one upcoming commitment.',
-  'Omit sections that have no evidence. Do not invent facts.',
+  'Each section body is 2-5 sentences of prose, not bullets.',
+  'The overview summary is 4-7 sentences that tell the story of the window, not a count of artifacts.',
+  'Cover current status of work, completed work, work in progress, decisions, risks/blockers, follow-ups, and notable calendar context when evidence exists.',
+  'Use section titles only from: Highlights, Status, Completed, In progress, Decisions, Risks, Follow-ups.',
+  'Use Status for where work currently stands across clients, workstreams, or teams — never call it product status.',
+  'Use Completed for things finished in the digest window, and In progress for active work that is not done yet.',
+  'Task changes, new objects, and calendar context are supporting facts: summarize newly created or completed work, and treat repeating calendar series as one commitment.',
+  'Omit sections that have no evidence. Do not invent facts. Never return an empty section.',
   'Return JSON.',
 ].join(' ');
 
@@ -153,11 +168,11 @@ function buildDigestPrompt(
         purpose:
           'Write a readable briefing of what happened since the previous digest for a busy teammate catching up.',
         include:
-          'what the team shipped or finished, what is in flight, decisions, risks, follow-ups, newly created or completed tasks, and notable upcoming calendar context',
+          'what the team finished, what is in flight, current status of work, decisions, risks, follow-ups, newly created or completed tasks, new objects, calendar events in this window, and notable upcoming calendar context',
         style:
-          'plain English prose, 2-4 sentence overview, 1-3 sentence section bodies, no cheerleading, no vague filler, no unsupported claims, no PR numbers, commit hashes, CI run IDs, ticket keys, or object UUIDs',
+          'plain English prose, 4-7 sentence overview, 2-5 sentence section bodies, no cheerleading, no vague filler, no unsupported claims, no PR numbers, commit hashes, CI run IDs, ticket keys, or object UUIDs',
         structure:
-          'Return summary as 2-4 narrative sentences. Return sections as titled prose bodies using only Highlights, Product status, Completed, In progress, Decisions, Risks, Follow-ups. Omit empty sections.',
+          'Return summary as 4-7 narrative sentences. Return sections as titled prose bodies using only Highlights, Status, Completed, In progress, Decisions, Risks, Follow-ups. Omit empty sections.',
         ...(batchInfo
           ? {
               batch: `You are summarizing batch ${batchInfo.index + 1} of ${batchInfo.total}. Focus only on the events in this batch; the final digest will merge all batches.`,
@@ -166,6 +181,8 @@ function buildDigestPrompt(
       },
       metrics: ctx.metrics,
       taskChanges: ctx.taskChanges,
+      newObjects: ctx.newObjects,
+      windowCalendar: ctx.windowCalendar,
       upcomingCalendar: ctx.upcomingCalendar,
       newTeamMembers: ctx.newTeamMembers,
       visibleMoments: briefs.map(sanitizeMomentBriefForPrompt),
@@ -185,12 +202,14 @@ function buildReducePrompt(ctx: DigestPromptContext, batchSummaries: DigestText[
         purpose:
           'Synthesize partial batch summaries into one coherent daily briefing a busy teammate can read.',
         style:
-          'plain English prose, 2-4 sentence overview, 1-3 sentence section bodies, no cheerleading, no vague filler, no unsupported claims, no PR numbers, commit hashes, CI run IDs, ticket keys, or object UUIDs',
+          'plain English prose, 4-7 sentence overview, 2-5 sentence section bodies, no cheerleading, no vague filler, no unsupported claims, no PR numbers, commit hashes, CI run IDs, ticket keys, or object UUIDs',
         structure:
-          'Return summary as 2-4 narrative sentences. Return sections as titled prose bodies using only Highlights, Product status, Completed, In progress, Decisions, Risks, Follow-ups. Deduplicate overlapping points across batches. Omit empty sections.',
+          'Return summary as 4-7 narrative sentences. Return sections as titled prose bodies using only Highlights, Status, Completed, In progress, Decisions, Risks, Follow-ups. Deduplicate overlapping points across batches. Omit empty sections.',
       },
       metrics: ctx.metrics,
       taskChanges: ctx.taskChanges,
+      newObjects: ctx.newObjects,
+      windowCalendar: ctx.windowCalendar,
       upcomingCalendar: ctx.upcomingCalendar,
       newTeamMembers: ctx.newTeamMembers,
       batchSummaries: batchSummaries.map((batch) => ({
@@ -339,7 +358,7 @@ function mergeSections(sections: DailyDigestSection[]): DailyDigestSection[] {
   }
   const sectionOrder = [
     'Highlights',
-    'Product status',
+    'Status',
     'Completed',
     'In progress',
     'Decisions',
@@ -394,6 +413,8 @@ function disabledDigestPayload(
     newTeamMembers: [],
     tasks: [],
     completedTasks: [],
+    newObjects: [],
+    windowCalendar: [],
     upcomingCalendar: [],
     links: [],
   };
@@ -456,6 +477,77 @@ function toDigestTask(task: {
   };
 }
 
+function toDigestObject(object: {
+  id: string;
+  type: string;
+  canonicalName: string;
+  metadata: Record<string, unknown>;
+}): NonNullable<DailyDigestPayload['newObjects']>[number] {
+  return {
+    id: object.id,
+    title: displayObjectTitle(object),
+    type: object.type,
+    href: `/app/objects/${object.id}`,
+  };
+}
+
+function toDigestCalendarRows(
+  events: {
+    id: string;
+    title: string;
+    startAt: Date | string;
+    endAt: Date | string;
+    recurringParentId?: string | null;
+    rrule?: string | null;
+  }[],
+  timezone: string,
+): DailyDigestPayload['upcomingCalendar'] {
+  return collapseDigestCalendarEvents(
+    events.map((event) => {
+      const row: {
+        id: string;
+        title: string;
+        startAt: Date | string;
+        endAt: Date | string;
+        recurringParentId?: string | null;
+        rrule?: string | null;
+      } = {
+        id: event.id,
+        title: event.title,
+        startAt: event.startAt,
+        endAt: event.endAt,
+      };
+      if (event.recurringParentId !== undefined) row.recurringParentId = event.recurringParentId;
+      if (event.rrule !== undefined) row.rrule = event.rrule;
+      return row;
+    }),
+  )
+    .map((event) => ({
+      ...event,
+      href: digestCalendarHref(event, timezone),
+    }))
+    .slice(0, 12);
+}
+
+function splitCalendarEvents<T extends { startAt: Date | string }>(
+  events: T[],
+  input: { windowStart: Date; windowEnd: Date; now: Date },
+): { inWindow: T[]; upcoming: T[] } {
+  const windowStartMs = input.windowStart.getTime();
+  const windowEndMs = input.windowEnd.getTime();
+  const nowMs = input.now.getTime();
+  const inWindow: T[] = [];
+  const upcoming: T[] = [];
+  for (const event of events) {
+    const start =
+      event.startAt instanceof Date ? event.startAt.getTime() : new Date(event.startAt).getTime();
+    if (Number.isNaN(start)) continue;
+    if (start >= windowStartMs && start < windowEndMs) inWindow.push(event);
+    if (start >= nowMs) upcoming.push(event);
+  }
+  return { inWindow, upcoming };
+}
+
 function totalsByType(rows: { type: string; total: number }[]): Record<string, number> {
   return Object.fromEntries(rows.map((row) => [row.type, row.total]));
 }
@@ -496,7 +588,9 @@ function hasUsefulDigestContent(input: {
   objectChangesByType: Record<string, number>;
   newMemberCount: number;
   pendingApprovals: number;
-  upcomingCalendarCount: number;
+  windowCalendarCount: number;
+  newObjectCount: number;
+  completedTaskCount: number;
 }): boolean {
   const cutoff = input.freshCutoff.getTime();
   return (
@@ -506,7 +600,9 @@ function hasUsefulDigestContent(input: {
     Object.values(input.objectChangesByType).some((total) => total > 0) ||
     input.newMemberCount > 0 ||
     input.pendingApprovals > 0 ||
-    input.upcomingCalendarCount > 0
+    input.windowCalendarCount > 0 ||
+    input.newObjectCount > 0 ||
+    input.completedTaskCount > 0
   );
 }
 
@@ -675,7 +771,7 @@ export async function listDailyDigests(input: {
       and(
         eq(dailyDigests.teamId, input.teamId),
         eq(dailyDigests.userId, input.userId),
-        inArray(dailyDigests.status, ['generated', 'sent', 'skipped']),
+        inArray(dailyDigests.status, ['generated', 'sent']),
       ),
     )
     .orderBy(desc(dailyDigests.windowEnd), desc(dailyDigests.generatedAt))
@@ -909,7 +1005,8 @@ export async function generateDailyDigest(
     eventsInEvidenceWindow,
     pendingApprovals,
     createdTaskObjects,
-    upcomingCalendar,
+    createdOtherObjects,
+    calendarEvents,
     newMembers,
   ] = await Promise.all([
     scope.timeline.team(),
@@ -929,7 +1026,14 @@ export async function generateDailyDigest(
       archived: false,
       limit: 12,
     }),
-    scope.calendar.listCalendarEvents({ from: now, to: upcomingTo, limit: 200 }),
+    scope.objects.listObjects({
+      type: [...DIGEST_LIST_OBJECT_TYPES],
+      createdAfter: freshCutoff,
+      createdBefore: input.windowEnd,
+      archived: false,
+      limit: 12,
+    }),
+    scope.calendar.listCalendarEvents({ from: input.windowStart, to: upcomingTo, limit: 400 }),
     input.db
       .select({
         userId: teamMembers.userId,
@@ -1045,18 +1149,19 @@ export async function generateDailyDigest(
       : [];
   const taskRows = createdTasks.map(toDigestTask);
   const completedTaskRows = completedTaskObjects.map(toDigestTask);
+  const newObjectRows = createdOtherObjects
+    .filter(
+      (object) =>
+        object.type !== 'task' && object.type !== 'follow_up' && object.type !== 'decision',
+    )
+    .map(toDigestObject);
 
-  const calendarRows = collapseDigestCalendarEvents(
-    upcomingCalendar.map((event) => ({
-      id: event.id,
-      title: event.title,
-      startAt: event.startAt,
-      endAt: event.endAt,
-      href: '/app/calendar',
-      recurringParentId: event.recurringParentId,
-      rrule: event.rrule,
-    })),
-  ).slice(0, 12);
+  const { inWindow: windowCalendarEvents, upcoming: upcomingCalendarEvents } = splitCalendarEvents(
+    calendarEvents,
+    { windowStart: input.windowStart, windowEnd: input.windowEnd, now },
+  );
+  const windowCalendarRows = toDigestCalendarRows(windowCalendarEvents, preference.timezone);
+  const calendarRows = toDigestCalendarRows(upcomingCalendarEvents, preference.timezone);
 
   const teamName = team?.name ?? 'your team';
   const user = persist ? (userRows[0] ?? null) : null;
@@ -1092,6 +1197,8 @@ export async function generateDailyDigest(
     })),
     tasks: taskRows,
     completedTasks: completedTaskRows,
+    newObjects: newObjectRows,
+    windowCalendar: windowCalendarRows,
     upcomingCalendar: calendarRows,
     links: [
       { label: 'Dashboard', href: '/app' },
@@ -1111,7 +1218,9 @@ export async function generateDailyDigest(
       objectChangesByType,
       newMemberCount: newMembers.length,
       pendingApprovals,
-      upcomingCalendarCount: calendarRows.length,
+      windowCalendarCount: windowCalendarRows.length,
+      newObjectCount: createdTaskCount + newObjectRows.length,
+      completedTaskCount,
     })
   ) {
     return persist
@@ -1175,6 +1284,20 @@ export async function generateDailyDigest(
         dueAt: task.dueAt,
       })),
     },
+    newObjects: newObjectRows.map((object) => ({
+      title: object.title,
+      type: object.type,
+    })),
+    windowCalendar: windowCalendarRows.map((event) => {
+      const row: DigestPromptContext['windowCalendar'][number] = {
+        title: event.title,
+        startAt: event.startAt,
+        endAt: event.endAt,
+      };
+      if (event.repeating) row.repeating = true;
+      if (typeof event.occurrenceCount === 'number') row.occurrenceCount = event.occurrenceCount;
+      return row;
+    }),
     upcomingCalendar: calendarRows.map((event) => {
       const row: DigestPromptContext['upcomingCalendar'][number] = {
         title: event.title,
@@ -1195,7 +1318,10 @@ export async function generateDailyDigest(
   const payload: DailyDigestPayload = {
     ...payloadBase,
     summary: digestText.summary,
-    sections: digestText.sections,
+    sections: digestContentSections({
+      summary: digestText.summary,
+      sections: digestText.sections,
+    }),
     momentCount: moments.length,
     activity: {
       ...activity,

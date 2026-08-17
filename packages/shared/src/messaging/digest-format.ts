@@ -5,7 +5,7 @@ import type {
   DailyDigestSection,
 } from '#src/messaging/types.js';
 
-import { presentDueDate } from '#src/time/index.js';
+import { localDateFromInstant, presentDueDate } from '#src/time/index.js';
 
 const SENTENCE_BOUNDARY = /(?<=[.!?])\s+(?=[A-Z0-9])/;
 const BANNED_PR_NUMBER = /(?:\bPR\s*#?\s*\d+\b|\bpull requests?\s+#?\d+|#\d{2,}\b)/gi;
@@ -15,13 +15,26 @@ const BANNED_UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const BANNED_CI_RUN = /\b(?:workflow run|ci run|run id)\s*[#:]?\s*\d+\b/gi;
 const SECTION_ORDER = new Map<string, number>([
   ['Highlights', 0],
-  ['Product status', 1],
+  ['Status', 1],
   ['Completed', 2],
   ['In progress', 3],
   ['Decisions', 4],
   ['Risks', 5],
   ['Follow-ups', 6],
 ]);
+
+const OBJECT_TYPE_LABELS: Record<string, string> = {
+  person: 'person',
+  company: 'company',
+  project: 'project',
+  topic: 'topic',
+  other: 'object',
+  deal: 'deal',
+  vendor: 'vendor',
+  incident: 'incident',
+  document: 'document',
+  hiring_loop: 'hiring loop',
+};
 
 export function digestContainsBannedInventory(text: string): boolean {
   const normalized = text.trim();
@@ -86,21 +99,39 @@ export function digestSectionBody(section: DailyDigestSection): string {
     .join(' ');
 }
 
+export function canonicalDigestSectionTitle(
+  title: DailyDigestSection['title'],
+): Exclude<DailyDigestSection['title'], 'Product status'> {
+  return title === 'Product status' ? 'Status' : title;
+}
+
 export function digestContentSections(
   digest: Pick<DailyDigestPayload, 'summary' | 'sections'>,
 ): DailyDigestSection[] {
-  const sections =
-    digest.sections?.map((section) => {
-      const body = section.body?.replace(/\s+/g, ' ').trim();
-      return {
-        title: section.title,
-        ...(body ? { body } : {}),
-        items: section.items.map((item) => item.replace(/\s+/g, ' ').trim()).filter(Boolean),
-      };
-    }) ?? [];
-  return sections
-    .filter((section) => Boolean(section.body) || section.items.length > 0)
-    .sort((a, b) => (SECTION_ORDER.get(a.title) ?? 99) - (SECTION_ORDER.get(b.title) ?? 99));
+  const byTitle = new Map<string, DailyDigestSection>();
+  for (const section of digest.sections ?? []) {
+    const title = canonicalDigestSectionTitle(section.title);
+    const body = section.body?.replace(/\s+/g, ' ').trim();
+    const items = section.items.map((item) => item.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    if (!body && items.length === 0) continue;
+    const existing = byTitle.get(title);
+    if (!existing) {
+      byTitle.set(title, { title, ...(body ? { body } : {}), items: body ? [] : items });
+      continue;
+    }
+    const mergedBody = [existing.body, body].filter(Boolean).join(' ').trim();
+    if (mergedBody) {
+      existing.body = mergedBody;
+      existing.items = [];
+    } else {
+      for (const item of items) {
+        if (!existing.items.includes(item)) existing.items.push(item);
+      }
+    }
+  }
+  return [...byTitle.values()].sort(
+    (a, b) => (SECTION_ORDER.get(a.title) ?? 99) - (SECTION_ORDER.get(b.title) ?? 99),
+  );
 }
 
 export function digestActivityStats(
@@ -147,9 +178,7 @@ export function formatDigestActivityLines(activity: DailyDigestActivity): string
       )
       .map(([type, count]) => formatDigestCount(count, `new ${type.replaceAll('_', ' ')}`)),
   ].filter((line) => !line.startsWith('0 '));
-  return lines.length > 0
-    ? lines
-    : ['No new moments, proposals, tasks, objects, or pending approvals'];
+  return lines;
 }
 
 function formatDigestCount(count: number, singular: string): string {
@@ -173,6 +202,48 @@ export function formatDigestDateTime(value: string, timezone?: string): string {
     minute: '2-digit',
     timeZoneName: 'short',
   });
+}
+
+export function formatDigestWindowRange(
+  windowStart: string,
+  windowEnd: string,
+  timezone?: string,
+): string {
+  const start = formatDigestDateValue(windowStart, timezone, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  const end = formatDigestDateValue(windowEnd, timezone, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
+  return `${start} – ${end}`;
+}
+
+export function formatDigestObjectType(type: string): string {
+  return OBJECT_TYPE_LABELS[type] ?? type.replaceAll('_', ' ');
+}
+
+export function digestCalendarHref(
+  event: Pick<DailyDigestCalendarEvent, 'id' | 'startAt'>,
+  timezone?: string,
+): string {
+  const params = new URLSearchParams();
+  params.set('view', 'day');
+  try {
+    params.set('date', localDateFromInstant(event.startAt, timezone ?? 'UTC'));
+  } catch {
+    const fallback = event.startAt.slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(fallback)) params.set('date', fallback);
+  }
+  params.set('event', event.id);
+  return `/app/calendar?${params.toString()}`;
 }
 
 export function formatDigestTaskStatus(status: string): string {
@@ -334,13 +405,17 @@ export function formatDigestChatText(input: {
 }): string {
   const payload = input.payload;
   const timezone = payload.timezone;
-  const date = formatDigestDate(payload.windowEnd, timezone);
+  const range = formatDigestWindowRange(payload.windowStart, payload.windowEnd, timezone);
   const sections = digestContentSections(payload);
   const summaryParagraphs = digestSummaryParagraphs(payload.summary);
   const tasks = payload.tasks.slice(0, 5);
+  const objects = (payload.newObjects ?? []).slice(0, 5);
+  const windowCalendar = (payload.windowCalendar ?? []).slice(0, 3);
   const calendar = payload.upcomingCalendar.slice(0, 3);
+  const activity = formatDigestActivityLines(digestActivityStats(payload));
   const lines = [
-    `Daily digest · ${payload.teamName} · ${date}`,
+    `Daily digest · ${payload.teamName}`,
+    `Covering ${range}`,
     '',
     ...summaryParagraphs,
     '',
@@ -348,14 +423,28 @@ export function formatDigestChatText(input: {
       if (section.body) return [section.title, digestSectionBody(section), ''];
       return [section.title, ...section.items.map((item) => `• ${item}`), ''];
     }),
-    `${payload.pendingApprovals} pending approvals · ${payload.momentCount ?? payload.eventCount} moments`,
+    ...(activity.length ? [activity.join(' · ')] : []),
     ...(tasks.length
       ? [
           '',
-          'Tasks',
+          'New tasks',
           ...tasks.map(
             (task) => `• ${formatDigestTask(task, timezone, new Date(payload.windowEnd))}`,
           ),
+        ]
+      : []),
+    ...(objects.length
+      ? [
+          '',
+          'New objects',
+          ...objects.map((object) => `• ${object.title} (${formatDigestObjectType(object.type)})`),
+        ]
+      : []),
+    ...(windowCalendar.length
+      ? [
+          '',
+          'Calendar this window',
+          ...windowCalendar.map((event) => `• ${formatDigestCalendarEvent(event, timezone)}`),
         ]
       : []),
     ...(calendar.length

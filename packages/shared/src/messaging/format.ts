@@ -2,6 +2,7 @@ export type {
   DailyDigestActivity,
   DailyDigestCalendarEvent,
   DailyDigestLink,
+  DailyDigestObject,
   DailyDigestPayload,
   DailyDigestSection,
   DailyDigestTask,

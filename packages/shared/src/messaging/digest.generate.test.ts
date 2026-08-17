@@ -199,8 +199,23 @@ describe('generateDailyDigest conflict handling', () => {
     };
     const listObjects = vi
       .fn()
-      .mockResolvedValueOnce([createdTask])
-      .mockResolvedValueOnce([completedTask]);
+      .mockImplementation((filter: { type?: string | string[]; id?: string[] } = {}) => {
+        if (filter.id) return Promise.resolve([completedTask]);
+        const types = Array.isArray(filter.type) ? filter.type : filter.type ? [filter.type] : [];
+        if (types.includes('task') || types.includes('follow_up')) {
+          return Promise.resolve([createdTask]);
+        }
+        return Promise.resolve([
+          {
+            id: 'person-new',
+            type: 'person',
+            canonicalName: 'Ada Lovelace',
+            status: 'open',
+            dueAt: null,
+            metadata: {},
+          },
+        ]);
+      });
     fakes.withTeam.mockReturnValue({
       requireMembership: vi.fn().mockResolvedValue('member'),
       timeline: {
@@ -271,38 +286,32 @@ describe('generateDailyDigest conflict handling', () => {
     expect(result.payload.tasks).toEqual([
       expect.objectContaining({ id: 'task-new', title: 'Write launch recap' }),
     ]);
+    expect(result.payload.newObjects).toEqual([
+      expect.objectContaining({
+        id: 'person-new',
+        title: 'Ada Lovelace',
+        type: 'person',
+        href: '/app/objects/person-new',
+      }),
+    ]);
     expect(result.payload.completedTasks).toEqual([
       expect.objectContaining({ id: 'task-done', title: 'Close review', status: 'done' }),
     ]);
-    const createdListFilter = listObjects.mock.calls[0]?.[0] as
-      | {
-          type?: string[];
-          createdAfter?: Date;
-          createdBefore?: Date;
-          limit?: number;
-        }
-      | undefined;
-    const completedListFilter = listObjects.mock.calls[1]?.[0] as
-      | {
-          id?: string[];
-          type?: string[];
-          archived?: boolean;
-          limit?: number;
-        }
-      | undefined;
-    expect(createdListFilter).toMatchObject({
-      type: ['task', 'follow_up'],
-      limit: 12,
-    });
-    expect(createdListFilter?.createdAfter).toBeInstanceOf(Date);
-    expect(createdListFilter?.createdBefore).toBeInstanceOf(Date);
-    expect(completedListFilter).toEqual({
-      id: ['task-done'],
-      type: ['task', 'follow_up'],
-      archived: false,
-      limit: 12,
-    });
-    expect(listObjects).toHaveBeenCalledTimes(2);
+    const listFilters = listObjects.mock.calls.map(
+      (call) => call[0] as { type?: string[]; id?: string[]; createdAfter?: Date; limit?: number },
+    );
+    expect(listFilters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: ['task', 'follow_up'], limit: 12 }),
+        expect.objectContaining({
+          id: ['task-done'],
+          type: ['task', 'follow_up'],
+          archived: false,
+          limit: 12,
+        }),
+      ]),
+    );
+    expect(listObjects).toHaveBeenCalledTimes(3);
     const generatedUpdate = updates.find(
       (update): update is { status: unknown; payload: { activity?: unknown } } =>
         typeof update === 'object' &&

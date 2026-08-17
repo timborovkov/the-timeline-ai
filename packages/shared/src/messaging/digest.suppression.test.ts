@@ -52,9 +52,11 @@ function makeScope(
     pendingApprovals?: number;
     tasks?: unknown[];
     createdTasks?: unknown[];
+    createdObjects?: unknown[];
     completedTasks?: unknown[];
     suggestions?: unknown[];
     upcomingCalendar?: unknown[];
+    windowCalendar?: unknown[];
   } = {},
 ) {
   return {
@@ -71,18 +73,31 @@ function makeScope(
       listSuggestions: vi.fn().mockResolvedValue(input.suggestions ?? []),
     },
     objects: {
-      listObjects: vi
-        .fn()
-        .mockImplementation(
-          (filter: { createdAfter?: Date; status?: unknown; id?: unknown } = {}) => {
-            if (filter.id) return Promise.resolve(input.completedTasks ?? []);
-            if (filter.status) return Promise.resolve(input.completedTasks ?? []);
-            if (filter.createdAfter) return Promise.resolve(input.createdTasks ?? []);
-            return Promise.resolve(input.tasks ?? []);
-          },
-        ),
+      listObjects: vi.fn().mockImplementation(
+        (
+          filter: {
+            createdAfter?: Date;
+            status?: unknown;
+            id?: unknown;
+            type?: string | string[];
+          } = {},
+        ) => {
+          if (filter.id) return Promise.resolve(input.completedTasks ?? []);
+          if (filter.status) return Promise.resolve(input.completedTasks ?? []);
+          const types = Array.isArray(filter.type) ? filter.type : filter.type ? [filter.type] : [];
+          if (types.includes('task') || types.includes('follow_up')) {
+            return Promise.resolve(input.createdTasks ?? []);
+          }
+          if (filter.createdAfter) return Promise.resolve(input.createdObjects ?? []);
+          return Promise.resolve(input.tasks ?? []);
+        },
+      ),
     },
-    calendar: { listCalendarEvents: vi.fn().mockResolvedValue(input.upcomingCalendar ?? []) },
+    calendar: {
+      listCalendarEvents: vi
+        .fn()
+        .mockResolvedValue([...(input.windowCalendar ?? []), ...(input.upcomingCalendar ?? [])]),
+    },
   };
 }
 
@@ -346,14 +361,14 @@ describe('daily digest useful-content suppression', () => {
       db: makeDb({}),
     },
     {
-      label: 'an upcoming calendar item',
+      label: 'a calendar event in the digest window',
       scope: makeScope({
-        upcomingCalendar: [
+        windowCalendar: [
           {
             id: 'calendar-1',
             title: 'Planning review',
-            startAt: new Date('2026-06-15T09:00:00Z'),
-            endAt: new Date('2026-06-15T10:00:00Z'),
+            startAt: new Date('2026-06-13T16:00:00Z'),
+            endAt: new Date('2026-06-13T17:00:00Z'),
           },
         ],
       }),
@@ -387,6 +402,29 @@ describe('daily digest useful-content suppression', () => {
       payload: { summary: 'Useful digest.' },
     });
     expect(summarize).toHaveBeenCalledOnce();
+  });
+
+  it('skips a window that only has upcoming calendar and no current activity', async () => {
+    fakes.withTeam.mockReturnValue(
+      makeScope({
+        upcomingCalendar: [
+          {
+            id: 'calendar-1',
+            title: 'Planning review',
+            startAt: new Date('2026-06-15T09:00:00Z'),
+            endAt: new Date('2026-06-15T10:00:00Z'),
+          },
+        ],
+      }),
+    );
+    const db = makeDb({});
+    const summarize = vi.fn().mockResolvedValue('Should not be used.');
+
+    await expect(generate({ db, summarize })).resolves.toMatchObject({
+      skipped: true,
+      payload: { summary: 'No useful activity for this digest window.' },
+    });
+    expect(summarize).not.toHaveBeenCalled();
   });
 
   it('does not let an already-seen overlap event trigger another digest', async () => {

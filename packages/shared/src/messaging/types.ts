@@ -63,15 +63,19 @@ export interface DailyDigestLink {
   href: string;
 }
 
+export type DailyDigestSectionTitle =
+  | 'Highlights'
+  | 'Status'
+  | 'Completed'
+  | 'In progress'
+  | 'Decisions'
+  | 'Risks'
+  | 'Follow-ups'
+  /** @deprecated Stored on older payloads; renderers remap this to Status. */
+  | 'Product status';
+
 export interface DailyDigestSection {
-  title:
-    | 'Highlights'
-    | 'Product status'
-    | 'Completed'
-    | 'In progress'
-    | 'Decisions'
-    | 'Risks'
-    | 'Follow-ups';
+  title: DailyDigestSectionTitle;
   /** Narrative paragraph for this section. Preferred over `items` for new digests. */
   body?: string;
   /** Legacy bullet inventory. Rendered only when `body` is absent. */
@@ -106,6 +110,13 @@ export interface DailyDigestCalendarEvent {
   occurrenceCount?: number;
 }
 
+export interface DailyDigestObject {
+  id: string;
+  title: string;
+  type: string;
+  href: string;
+}
+
 export interface DailyDigestPayload {
   teamName: string;
   userName: string | null;
@@ -125,6 +136,10 @@ export interface DailyDigestPayload {
   tasks: DailyDigestTask[];
   /** Tasks marked done or cancelled during this digest window. */
   completedTasks?: DailyDigestTask[];
+  /** Non-task, non-decision objects created during this digest window. */
+  newObjects?: DailyDigestObject[];
+  /** Calendar events whose start falls inside this digest window. */
+  windowCalendar?: DailyDigestCalendarEvent[];
   upcomingCalendar: DailyDigestCalendarEvent[];
   links: DailyDigestLink[];
 }

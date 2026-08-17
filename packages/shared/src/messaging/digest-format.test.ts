@@ -2,14 +2,18 @@ import { describe, expect, it } from 'vitest';
 
 import {
   absoluteDigestAppUrl,
+  canonicalDigestSectionTitle,
   collapseDigestCalendarEvents,
   digestActivityStats,
   digestAppHref,
+  digestCalendarHref,
   digestContainsBannedInventory,
+  digestContentSections,
   formatDigestActivityLines,
   formatDigestCalendarEvent,
   formatDigestChatText,
   formatDigestTask,
+  formatDigestWindowRange,
   scrubDigestArtifactIds,
 } from '#src/messaging/digest-format.js';
 
@@ -34,6 +38,20 @@ describe('formatDigestActivityLines', () => {
       '1 new project',
       '3 new deals',
     ]);
+  });
+
+  it('hides activity entirely when every count is zero', () => {
+    expect(
+      formatDigestActivityLines({
+        newMoments: 0,
+        newProposals: 0,
+        pendingApprovals: 0,
+        newTasks: 0,
+        completedTasks: 0,
+        newProjects: 0,
+        newObjectsByType: {},
+      }),
+    ).toEqual([]);
   });
 
   it('fills pending approvals from the payload when stored activity omitted them', () => {
@@ -221,6 +239,12 @@ describe('formatDigestChatText', () => {
         payload,
         digestUrl: 'https://timeline.test/app',
       }),
+    ).toContain('Covering');
+    expect(
+      formatDigestChatText({
+        payload,
+        digestUrl: 'https://timeline.test/app',
+      }),
     ).toContain('• Pilot invites shipped.');
     expect(
       formatDigestChatText({
@@ -295,5 +319,46 @@ describe('scrubDigestArtifactIds', () => {
       'Merged login timeout fix',
     );
     expect(scrubDigestArtifactIds('Legal review ENG-441 for Atlas')).toBe('Legal review for Atlas');
+  });
+});
+
+describe('canonicalDigestSectionTitle', () => {
+  it('remaps product status to status', () => {
+    expect(canonicalDigestSectionTitle('Product status')).toBe('Status');
+    expect(canonicalDigestSectionTitle('Highlights')).toBe('Highlights');
+  });
+});
+
+describe('digestContentSections', () => {
+  it('drops empty sections and remaps product status', () => {
+    expect(
+      digestContentSections({
+        summary: 'Overview.',
+        sections: [
+          { title: 'Product status', body: 'The invite flow is close.', items: [] },
+          { title: 'Risks', body: '   ', items: [] },
+          { title: 'Completed', body: 'The recap went out.', items: [] },
+        ],
+      }).map((section) => section.title),
+    ).toEqual(['Status', 'Completed']);
+  });
+});
+
+describe('formatDigestWindowRange', () => {
+  it('renders the digest window as a local time range', () => {
+    expect(
+      formatDigestWindowRange('2026-06-13T11:00:00.000Z', '2026-06-14T12:00:00.000Z', 'UTC'),
+    ).toContain('Jun 13');
+    expect(
+      formatDigestWindowRange('2026-06-13T11:00:00.000Z', '2026-06-14T12:00:00.000Z', 'UTC'),
+    ).toContain('Jun 14');
+  });
+});
+
+describe('digestCalendarHref', () => {
+  it('opens the specific calendar event on the dashboard', () => {
+    expect(digestCalendarHref({ id: 'cal-1', startAt: '2026-07-17T08:00:00.000Z' }, 'UTC')).toBe(
+      '/app/calendar?view=day&date=2026-07-17&event=cal-1',
+    );
   });
 });
