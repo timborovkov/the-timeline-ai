@@ -190,7 +190,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       toolbar/button/toast/skeleton contract on Approvals, Calendar,
       Connections, Team, Meetings, Timeline, and remaining work surfaces.
       Calendar Edit event dialogs link to inspectable workspace objects;
-      object Calendar sections link back to the focused event.
+      object Calendar sections link back to the focused event. Job recovery
+      and Reconciliation reuse the same dense collection rows, with IDs and
+      raw errors in Title/Context hover titles.
 
 ## Workspace Reconciliation
 

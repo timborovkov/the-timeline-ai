@@ -2,12 +2,17 @@ import { Children, isValidElement, type ReactElement, type ReactNode } from 'rea
 
 const SLOT_NAME = Symbol('collectionSlotName');
 
-type CollectionSlotComponent = ((props: { children?: ReactNode }) => ReactElement | null) & {
+type CollectionSlotProps = {
+  children?: ReactNode;
+  title?: string;
+};
+
+type CollectionSlotComponent = ((props: CollectionSlotProps) => ReactElement | null) & {
   [SLOT_NAME]: string;
 };
 
 export function createCollectionSlot(name: string): CollectionSlotComponent {
-  function CollectionSlot({ children }: { children?: ReactNode }) {
+  function CollectionSlot({ children }: CollectionSlotProps) {
     return (children as ReactElement | null | undefined) ?? null;
   }
   CollectionSlot.displayName = `CollectionSlot(${name})`;

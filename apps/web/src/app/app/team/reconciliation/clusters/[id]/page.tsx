@@ -1,5 +1,5 @@
 import { withTeam } from '@timeline/shared/team-scope';
-import { ArrowLeft, Play } from 'lucide-react';
+import { Play } from 'lucide-react';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
@@ -10,6 +10,12 @@ import type {
 import type { Metadata } from 'next';
 
 import { queueReconciliationJobFormAction } from '@/app/actions/reconciliation';
+import { Breadcrumb } from '@/components/breadcrumb';
+import { CollectionRow } from '@/components/collections/collection-row';
+import { CollectionStatus } from '@/components/collections/collection-status';
+import { PageHeader } from '@/components/page-header';
+import { ClusterOutputRow } from '@/components/reconciliation/cluster-output-row';
+import { ReconciliationForbiddenView } from '@/components/reconciliation/forbidden-view';
 import {
   artifactClusterKindLabel,
   artifactTypeLabel,
@@ -19,19 +25,19 @@ import {
   evidenceStrengthLabel,
   outputActionLabel,
   outputKindLabel,
-  outputStatusLabel,
-} from '@/app/app/team/reconciliation/clusters/[id]/presentation';
-import { Breadcrumb } from '@/components/breadcrumb';
-import { PageHeader } from '@/components/page-header';
+} from '@/components/reconciliation/presentation';
+import {
+  reconciliationClusterRowHint,
+  reconciliationEvidenceRowHint,
+  reconciliationOutputRowHint,
+} from '@/components/reconciliation/row-hint';
 import { SectionHeading } from '@/components/section-heading';
 import { StatusBadge } from '@/components/status-badge';
-import { TechnicalDetails } from '@/components/technical-details';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { formatDisplayDateTime } from '@/lib/display-dates';
+import { formatDisplayDateTime, formatRelativeAge } from '@/lib/display-dates';
 import { displayArtifactLabel, displaySourceLabel } from '@/lib/display-labels';
 
 export const metadata: Metadata = {
@@ -52,11 +58,25 @@ export default async function ReconciliationClusterPage({
   if (!active) redirect('/sign-in');
 
   const scope = withTeam(db, active.teamId, session.user.id);
+  try {
+    await scope.requireMembership('admin');
+  } catch {
+    return <ReconciliationForbiddenView teamName={active.teamName} />;
+  }
+
   const detail = await scope.reconciliation.getClusterDetail({ clusterId: id });
   if (!detail) notFound();
   const calendarSettings = await scope.calendar.getCalendarSettings();
   const timezone = calendarSettings.defaultTimezone;
   const { cluster } = detail;
+  const clusterHint = reconciliationClusterRowHint({
+    artifactClusterKind: cluster.artifactClusterKind,
+    artifactType: cluster.artifactType,
+    clusterId: cluster.id,
+    status: cluster.status,
+    timeZone: timezone,
+    updatedAt: cluster.updatedAt,
+  });
 
   return (
     <div className="space-y-8">
@@ -68,7 +88,7 @@ export default async function ReconciliationClusterPage({
         ]}
       />
       <PageHeader
-        title={displayArtifactLabel(cluster)}
+        title={<span title={clusterHint}>{displayArtifactLabel(cluster)}</span>}
         subtitle={
           <>
             {artifactTypeLabel(cluster.artifactType)} ·{' '}
@@ -88,65 +108,26 @@ export default async function ReconciliationClusterPage({
           { label: 'Outputs', value: detail.outputs.length, mono: true },
           { label: 'Time zone', value: timezone },
         ]}
+        trailing={
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {cluster.canonicalEntityId ? (
+              <Button asChild variant="secondary" size="sm">
+                <Link href={`/app/objects/${cluster.canonicalEntityId}`}>View workspace item</Link>
+              </Button>
+            ) : null}
+            <form action={queueReconciliationJobFormAction}>
+              <input type="hidden" name="mode" value="scope" />
+              <input type="hidden" name="scope" value="cluster" />
+              <input type="hidden" name="targetId" value={cluster.id} />
+              <Button type="submit" variant="outline" size="sm">
+                <Play className="size-4" />
+                Reconcile cluster
+              </Button>
+            </form>
+          </div>
+        }
         srLabel={`Reconciliation cluster ${displayArtifactLabel(cluster)}. ${clusterStatusLabel(cluster.status)}. ${String(detail.evidence.length)} evidence items and ${String(detail.outputs.length)} outputs. Times in ${timezone}.`}
       />
-
-      <section className="grid gap-4 lg:grid-cols-[1fr_360px]">
-        <div className="space-y-3 rounded-sm border border-border bg-surface p-4">
-          <Link
-            href="/app/team/reconciliation"
-            className="inline-flex items-center gap-2 text-sm text-fg-muted hover:text-signal"
-          >
-            <ArrowLeft className="size-4" />
-            Reconciliation dashboard
-          </Link>
-          <div className="flex flex-wrap gap-2">
-            <Badge variant="outline" className="rounded-sm">
-              {artifactClusterKindLabel(cluster.artifactClusterKind)}
-            </Badge>
-            {cluster.canonicalEntityId ? (
-              <Link href={`/app/objects/${cluster.canonicalEntityId}`}>
-                <Badge className="rounded-sm">View workspace item</Badge>
-              </Link>
-            ) : null}
-          </div>
-          <TechnicalDetails
-            items={[
-              { label: 'Cluster ID', value: cluster.id, copyValue: cluster.id },
-              ...(cluster.canonicalEntityId
-                ? [
-                    {
-                      label: 'Object ID',
-                      value: cluster.canonicalEntityId,
-                      copyValue: cluster.canonicalEntityId,
-                    },
-                  ]
-                : []),
-              { label: 'Cluster kind', value: cluster.artifactClusterKind },
-              { label: 'Artifact type', value: cluster.artifactType },
-              { label: 'Status', value: cluster.status },
-              {
-                label: 'Updated at',
-                value: cluster.updatedAt.toISOString(),
-                copyValue: cluster.updatedAt.toISOString(),
-              },
-            ]}
-          />
-        </div>
-
-        <section className="space-y-3 rounded-sm border border-border bg-surface p-4">
-          <SectionHeading>Manual reconcile</SectionHeading>
-          <form action={queueReconciliationJobFormAction} className="space-y-3">
-            <input type="hidden" name="mode" value="scope" />
-            <input type="hidden" name="scope" value="cluster" />
-            <input type="hidden" name="targetId" value={cluster.id} />
-            <Button type="submit" variant="outline">
-              <Play className="size-4" />
-              Reconcile cluster
-            </Button>
-          </form>
-        </section>
-      </section>
 
       <section className="grid gap-4 xl:grid-cols-2">
         <EvidenceList rows={detail.evidence} />
@@ -159,57 +140,40 @@ export default async function ReconciliationClusterPage({
 function EvidenceList({ rows }: { rows: ReconciliationClusterDetailEvidence[] }) {
   return (
     <section className="space-y-3">
-      <SectionTitle label="Evidence" />
-      <ul className="divide-y divide-border rounded-sm border border-border bg-surface text-sm">
-        {rows.length === 0 ? (
-          <li className="px-3 py-2 text-fg-muted">No visible evidence for this cluster.</li>
-        ) : (
-          rows.map((row, index) => (
-            <li
-              key={`${row.rawEventId ?? 'no-event'}:${row.role}:${String(index)}`}
-              className="p-3"
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline" className="rounded-sm">
-                  {evidenceRoleLabel(row.role)}
-                </Badge>
-                {row.authoritative ? (
-                  <Badge variant="outline" className="rounded-sm">
-                    Authoritative source
-                  </Badge>
-                ) : null}
-                <span className="text-xs text-fg-muted">{evidenceStrengthLabel(row.strength)}</span>
-                {row.provider ? (
-                  <span className="text-xs text-fg-muted">{displaySourceLabel(row.provider)}</span>
-                ) : null}
-              </div>
-              <div className="mt-2 line-clamp-3 text-fg">
-                {row.objectName ?? row.contentText ?? 'Unavailable evidence'}
-              </div>
-              <TechnicalDetails
-                className="mt-3"
-                items={[
-                  ...(row.rawEventId
-                    ? [{ label: 'Raw event ID', value: row.rawEventId, copyValue: row.rawEventId }]
-                    : []),
-                  ...(row.externalObjectId
-                    ? [
-                        {
-                          label: 'External object ID',
-                          value: row.externalObjectId,
-                          copyValue: row.externalObjectId,
-                        },
-                      ]
-                    : []),
-                  { label: 'Evidence role', value: row.role },
-                  { label: 'Evidence strength', value: row.strength },
-                  { label: 'Authoritative', value: String(row.authoritative) },
-                ]}
-              />
-            </li>
-          ))
-        )}
-      </ul>
+      <SectionHeading>Evidence</SectionHeading>
+      {rows.length === 0 ? (
+        <p className="px-1 py-4 text-sm text-fg-muted">No visible evidence for this cluster.</p>
+      ) : (
+        <ul className="border-y border-border">
+          {rows.map((row, index) => {
+            const hint = reconciliationEvidenceRowHint({
+              authoritative: row.authoritative,
+              externalObjectId: row.externalObjectId,
+              rawEventId: row.rawEventId,
+              role: row.role,
+              strength: row.strength,
+            });
+            const contextParts = [
+              evidenceStrengthLabel(row.strength),
+              row.provider ? displaySourceLabel(row.provider) : null,
+              row.authoritative ? 'Authoritative source' : null,
+            ].filter((part): part is string => Boolean(part));
+            return (
+              <li key={`${row.rawEventId ?? 'no-event'}:${row.role}:${String(index)}`}>
+                <CollectionRow>
+                  <CollectionRow.Leading>
+                    <CollectionStatus value={row.role} label={evidenceRoleLabel(row.role)} />
+                  </CollectionRow.Leading>
+                  <CollectionRow.Title title={hint}>
+                    {row.objectName ?? row.contentText ?? 'Unavailable evidence'}
+                  </CollectionRow.Title>
+                  <CollectionRow.Context title={hint}>{contextParts.join(' · ')}</CollectionRow.Context>
+                </CollectionRow>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </section>
   );
 }
@@ -223,87 +187,49 @@ function OutputList({
 }) {
   return (
     <section className="space-y-3">
-      <SectionTitle label="Outputs" />
-      <ul className="divide-y divide-border rounded-sm border border-border bg-surface text-sm">
-        {rows.length === 0 ? (
-          <li className="px-3 py-2 text-fg-muted">
-            No visible reconciliation outputs for this cluster.
-          </li>
-        ) : (
-          rows.map((row) => (
-            <li key={row.id} className="space-y-2 p-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge
-                  variant={row.status === 'failed' ? 'destructive' : 'outline'}
-                  className="rounded-sm"
-                >
-                  {outputStatusLabel(row.status)}
-                </Badge>
-                {row.requiresApproval ? <Badge className="rounded-sm">Needs approval</Badge> : null}
-                <span className="text-xs text-fg-muted">{outputKindLabel(row.outputKind)}</span>
-              </div>
-              <div className="font-medium">{outputActionLabel(row)}</div>
-              <div className="flex flex-wrap gap-x-2 text-xs text-fg-muted">
-                <span>{confidenceLabel(row.confidence)}</span>
-                <span aria-hidden="true">·</span>
-                <time
-                  dateTime={row.createdAt.toISOString()}
-                  className="font-mono tabular-nums text-fg-dim"
-                >
-                  Created {formatDisplayDateTime(row.createdAt, { timezone })}
-                </time>
-              </div>
-              <TechnicalDetails
-                items={[
-                  { label: 'Output ID', value: row.id, copyValue: row.id },
-                  { label: 'Output kind', value: row.outputKind },
-                  { label: 'Target kind', value: row.targetKind },
-                  { label: 'Operation', value: row.operation },
-                  { label: 'Confidence', value: row.confidence },
-                  { label: 'Status', value: row.status },
-                  { label: 'Requires approval', value: String(row.requiresApproval) },
-                  ...(row.targetId
-                    ? [{ label: 'Target ID', value: row.targetId, copyValue: row.targetId }]
-                    : []),
-                  {
-                    id: `${row.id}:created-at`,
-                    label: 'Created at',
-                    value: row.createdAt.toISOString(),
-                    copyValue: row.createdAt.toISOString(),
-                  },
-                  {
-                    id: `${row.id}:updated-at`,
-                    label: 'Updated at',
-                    value: row.updatedAt.toISOString(),
-                    copyValue: row.updatedAt.toISOString(),
-                  },
-                  {
-                    label: 'Source refs',
-                    ...jsonDetail(row.sourceRefs),
-                  },
-                  {
-                    label: 'Payload refs',
-                    ...jsonDetail(row.sourcePayloadRefs),
-                  },
-                  {
-                    label: 'Payload',
-                    ...jsonDetail(row.payload),
-                  },
-                ]}
-              />
-            </li>
-          ))
-        )}
-      </ul>
+      <SectionHeading>Outputs</SectionHeading>
+      {rows.length === 0 ? (
+        <p className="px-1 py-4 text-sm text-fg-muted">
+          No visible reconciliation outputs for this cluster.
+        </p>
+      ) : (
+        <ul className="border-y border-border">
+          {rows.map((row) => {
+            const title = outputActionLabel(row);
+            const hint = reconciliationOutputRowHint({
+              clusterId: row.clusterId,
+              confidence: row.confidence,
+              createdAt: row.createdAt,
+              outputId: row.id,
+              outputKind: row.outputKind,
+              sourcePayloadRefs: row.sourcePayloadRefs,
+              sourceRefs: row.sourceRefs,
+              status: row.status,
+              targetId: row.targetId,
+              targetKind: row.targetKind,
+              timeZone: timezone,
+            });
+            const contextParts = [
+              outputKindLabel(row.outputKind),
+              confidenceLabel(row.confidence),
+              row.requiresApproval ? 'Needs approval' : null,
+            ].filter((part): part is string => Boolean(part));
+            return (
+              <li key={row.id}>
+                <ClusterOutputRow
+                  context={contextParts.join(' · ')}
+                  createdAtIso={row.createdAt.toISOString()}
+                  payloadJson={JSON.stringify(row.payload ?? {})}
+                  relativeAge={formatRelativeAge(row.createdAt)}
+                  status={row.status}
+                  title={title}
+                  titleHint={hint}
+                />
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </section>
   );
-}
-
-function SectionTitle({ label }: { label: string }) {
-  return <SectionHeading>{label}</SectionHeading>;
-}
-
-function jsonDetail(value: unknown): { value: string; copyValue: string } {
-  const serialized = JSON.stringify(value ?? {}, null, 2);
-  return { value: serialized.slice(0, 2_000), copyValue: serialized };
 }

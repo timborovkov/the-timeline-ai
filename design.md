@@ -181,7 +181,9 @@ table.
   type cue, human title, compact context, metadata, and overflow. Mobile uses
   two lines: title plus context, then wrapping metadata. Domain content uses
   named children (`CollectionRow.Leading`, `.Title`, `.Context`, `.Metadata`,
-  `.Actions`) rather than JSX props. Non-board collections must never force
+  `.Actions`) rather than JSX props. Pass a native `title` on `.Title` and
+  `.Context` when hover should show IDs, timestamps, or raw errors.
+  Non-board collections must never force
   horizontal viewport scrolling. Row actions use the shared `ItemActionGroup`,
   `ItemIconButton`, and `ItemOverflowMenu` primitives so item-owned controls
   stay labeled, wrap without scrolling, and remain visible without hover.
@@ -511,6 +513,43 @@ to workspace objects, those objects appear as quiet title links under
 **Linked objects**, never as a large Open button. Object Calendar sections
 link the other way to the focused calendar event.
 
+Job recovery is an admin-only queue, not a processing inventory.
+Members who open `/app/team/jobs` see an Admins-only empty state. Home
+“recoverable jobs” and the jobs page share the same 7-day failed/stuck count,
+and only admins see that Home link. The page uses a sentence-case `PageHeader`
+titled Job recovery, with Team breadcrumbs like other team drill-downs. The
+header is the title and the 7-day subtitle; it has no access, team, or count
+metadata row. It groups Failed then Stuck. Kind filters appear
+only when more than one job kind is present. Rows show status, label, and
+relative time. Retry and dismiss live in the row overflow menu; bulk Retry
+failed and Dismiss all stay on the toolbar. Hovering a row’s label or time
+shows the formatted timestamp, job ID, artifact UUID, and raw provider error
+when one exists. Jobs older than 7 days are hidden from attention; admins can
+dismiss them in bulk, and the action keeps going with a loading toast until the
+hidden count is cleared. The visible 7-day list pages through the current
+snapshot with the shared infinite-scroll sentinel. Retry and dismiss
+use a loading toast that becomes success, warning, or error. Unprocessed
+backlog counts (events still waiting for extraction or embedding) and the
+conversation-suggestion backfill stay inside closed Advanced tools and never
+use “needs attention” language. That fold lists backlog counts as dense rows,
+not a card grid, and shows finished jobs as status, label, and time.
+
+Reconciliation is an admin-only health view, not a retry queue. Members who
+open `/app/team/reconciliation` see an Admins-only empty state. The page
+explains itself in the header. The header is the title and subtitle; it has no
+access, team, or coverage-count metadata row. Sources that still need evidence
+appear as dense rows, then a Check coverage / Preview repair toolbar with hover
+hints, then Recent clusters and Recent outputs as ordinary section titles. There
+is no How it works primer,
+Recently reconciled heading, release-gate banner, or stat-card strip.
+Evidence-by-source counts, manual UUID reconcile, and run history stay inside
+closed Advanced tools. That fold uses the same quiet disclosure, sentence-case
+section titles, and dense count/history rows as the rest of the page — not
+uppercase eyebrows, badge clouds, or a metric strip. Cluster IDs, output IDs, raw-event IDs, and raw enum keys
+stay in the row hover title. Cluster output JSON copy lives in the row overflow
+menu. Cluster detail uses Team / Reconciliation breadcrumbs without a second
+back link; Reconcile and View workspace item sit in the header.
+
 Work → Pinned is the complete pin-management surface. It is a single
 side-to-side list with infinite scroll, virtualization, and All, Objects, Boards, Documents,
 Meetings, Calendar, and Timeline filters. Reordering is available only under
@@ -711,9 +750,21 @@ second indexable destination.
 
 ### Administrator dashboards
 
-Jobs, Reconciliation, Audit, and Integration Audit preserve filters, retries,
-replay actions, and copy access. Human summaries and actionable failures lead.
-UUIDs, raw IDs, refs, and JSON remain closed inside `TechnicalDetails`.
+Jobs and Reconciliation list rows show status, a human label, and relative time.
+IDs, raw enum keys, and provider errors stay in the row hover title. Copy access
+for reconciliation JSON payloads lives in the row overflow menu. Audit and
+Integration Audit still keep UUIDs, refs, and JSON closed inside
+`TechnicalDetails`. Job recovery pages the 7-day snapshot and finished archive
+with the shared infinite-scroll sentinel. Job recovery’s header is title and
+subtitle only; older hidden jobs stay in the body banner. Reconciliation has no
+stat-card strip and no release-gate banner; coverage actions sit on a toolbar
+with hover hints. The dashboard header is title and subtitle only; coverage
+counts stay in the screen-reader summary and Advanced tools. Recent clusters
+and Recent outputs use the same sentence-case section title as
+the rest of the product. Manual UUID reconcile stays in Advanced tools. Job
+recovery Advanced tools uses the same quiet disclosure: unprocessed backlog as
+count rows, conversation suggestions as a heading with actions, and finished
+jobs as status/label/time rows with queue names in the hover title.
 
 ## States and responsive behavior
 
@@ -806,3 +857,14 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Infinite scroll with Linear timeline rows | Replaces Load more and numbered pagers with sentinel paging and virtualized rows; Timeline keeps Linear archive rows, sticky dates under the toolbar, and no inventory chip. |
 | 2026-08-17 | Digest status, window range, and linked lists | Replaces Product status with Status, shows the covering time range, lists tasks/objects/calendar with existing Home and email type, and omits empty groups including source inventories. |
 | 2026-08-17 | Digest date header, footer window, and activity strip | Puts the digest date in the header, moves the covering range to footer metadata, and turns web activity into a Home-style mono lime count strip. |
+| 2026-08-17 | 7-day job recovery queue | Makes Home and Background jobs share one recent failed/stuck count, hides older backlog from attention, and keeps unprocessed inventory in Advanced tools. |
+| 2026-08-17 | Jobs recovery dismiss at scale | Makes older-job dismiss a batch write with progress toasts, windows the 7-day snapshot behind Load more, and keeps retry/dismiss on the shared mutation-toast path. |
+| 2026-08-17 | Dense jobs recovery rows | Drops per-row Technical details so the admin queue is status, label, time, and retry/dismiss. |
+| 2026-08-17 | Job recovery row overflow | Renames the page Job recovery, moves per-row retry/dismiss into the overflow menu, and keeps IDs plus raw errors in the row hover title. |
+| 2026-08-17 | Quiet reconciliation dashboard | Drops the How it works primer, release-gate banner, and stat cards, and puts coverage actions on a hinted toolbar above recent rows. |
+| 2026-08-17 | Reconciliation header and column titles | Drops access and team from the metadata row, removes Recently reconciled, and uses sentence-case Recent clusters / Recent outputs titles. |
+| 2026-08-17 | Job recovery infinite scroll | Pages the 7-day snapshot and finished archive with the shared InfiniteScroll sentinel instead of a Load more button. |
+| 2026-08-17 | Quiet job recovery header | Drops the access, team, last-7-days, and older-hidden metadata row so the page leads with title and subtitle. |
+| 2026-08-17 | Quiet reconciliation header | Drops the checked / needs repair / updated metadata row so Reconciliation also leads with title and subtitle. |
+| 2026-08-17 | Quiet admin Advanced tools | Replaces job-recovery stat cards and reconciliation uppercase/badge chrome with sentence-case headings and dense count or history rows. |
+| 2026-08-18 | Collection chrome named children | Passes CollectionRow, CollectionToolbar, EditableMetadata, and PageHeader chrome through named children; Title/Context `title` carries hover IDs and errors. |

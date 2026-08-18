@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { Children, isValidElement, type ReactNode } from 'react';
 
 import {
   createCollectionSlot,
@@ -38,6 +38,18 @@ type CollectionRowProps = {
     }
 );
 
+function readRowHints(children: ReactNode): { titleHint?: string; contextTitle?: string } {
+  let titleHint: string | undefined;
+  let contextTitle: string | undefined;
+  Children.forEach(children, (child) => {
+    if (!isValidElement(child)) return;
+    const hint = (child.props as { title?: string }).title;
+    if (child.type === CollectionRowTitle) titleHint = hint;
+    if (child.type === CollectionRowContext) contextTitle = hint;
+  });
+  return { titleHint, contextTitle };
+}
+
 export function CollectionRow({
   children,
   selected = false,
@@ -46,6 +58,7 @@ export function CollectionRow({
   className,
 }: CollectionRowProps) {
   const slots = readCollectionSlots(children, ROW_SLOTS);
+  const { titleHint, contextTitle } = readRowHints(children);
   const leading = slots.leading;
   const title = slots.title;
   const context = slots.context;
@@ -77,15 +90,23 @@ export function CollectionRow({
         )}
       >
         <div className="min-w-0 flex-1">
-          <div className="min-w-0 truncate text-sm font-medium leading-5 text-fg">{title}</div>
+          <div className="min-w-0 truncate text-sm font-medium leading-5 text-fg" title={titleHint}>
+            {title}
+          </div>
           {context ? (
-            <div className="min-w-0 truncate text-[11px] leading-4 text-fg-dim sm:hidden">
+            <div
+              className="min-w-0 truncate text-[11px] leading-4 text-fg-dim sm:hidden"
+              title={contextTitle}
+            >
               {context}
             </div>
           ) : null}
         </div>
         {context ? (
-          <div className="hidden min-w-0 max-w-[22rem] truncate text-xs text-fg-dim sm:block">
+          <div
+            className="hidden min-w-0 max-w-[22rem] truncate text-xs text-fg-dim sm:block"
+            title={contextTitle}
+          >
             {context}
           </div>
         ) : null}

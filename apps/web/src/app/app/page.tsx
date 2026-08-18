@@ -88,6 +88,7 @@ export default async function HomeDashboardPage() {
     latestDigest,
     connectionAttention,
     initialChecklist,
+    recoverableJobs,
   ] = await Promise.all([
     getWorkAttentionSummary(scope, now, calendarSettings.defaultTimezone),
     getHomeOpenObjectCounts(scope),
@@ -105,8 +106,8 @@ export default async function HomeDashboardPage() {
       reportCaughtError(err, { surface: 'render', operation: 'onboarding_checklist' });
       return null;
     }),
+    isAdmin ? scope.jobRecovery.listRecoverableJobs() : Promise.resolve([]),
   ]);
-  const recoverableJobs = isAdmin ? await scope.jobRecovery.listRecoverableJobs() : [];
   const events = eventPage.items;
   const pendingApprovals = workAttention.pendingApprovals;
   const urgentWorkCount = homeWorkNeedingAttentionCount(workAttention);
@@ -201,14 +202,18 @@ export default async function HomeDashboardPage() {
             action: 'People, companies, projects, and more',
             icon: <Boxes aria-hidden="true" />,
           },
-          {
-            href: '/app/team/jobs',
-            label: 'Recoverable jobs',
-            count: recoverableJobs.length,
-            action: 'Retry processing',
-            icon: <Wrench aria-hidden="true" />,
-            danger: true,
-          },
+          ...(isAdmin
+            ? [
+                {
+                  href: '/app/team/jobs',
+                  label: 'Recoverable jobs',
+                  count: recoverableJobs.length,
+                  action: 'Retry processing',
+                  icon: <Wrench aria-hidden="true" />,
+                  danger: true,
+                },
+              ]
+            : []),
           {
             href: '/app/sources',
             label: 'Connection issues',

@@ -5,8 +5,10 @@ import { Skeleton } from '@/components/ui/skeleton';
  */
 export function PageHeaderSkeleton({
   variant = 'default',
+  showMetadata = true,
 }: {
   variant?: 'default' | 'collection';
+  showMetadata?: boolean;
 }) {
   if (variant === 'collection') {
     return (
@@ -27,10 +29,12 @@ export function PageHeaderSkeleton({
     <div className="space-y-2 py-1" aria-busy="true" aria-label="Loading">
       <Skeleton className="h-7 w-40" />
       <Skeleton className="h-4 w-full max-w-md" />
-      <div className="flex gap-3 pt-1">
-        <Skeleton className="h-3 w-16" />
-        <Skeleton className="h-3 w-20" />
-      </div>
+      {showMetadata ? (
+        <div className="flex gap-3 pt-1">
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="h-3 w-20" />
+        </div>
+      ) : null}
     </div>
   );
 }

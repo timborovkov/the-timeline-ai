@@ -19,6 +19,8 @@ describe('collection primitives', () => {
   it('maps workflow and priority semantics to stable icon-and-text tones', () => {
     expect(statusTone('backlog')).toBe('neutral');
     expect(statusTone('in progress')).toBe('progress');
+    expect(statusTone('stuck')).toBe('progress');
+    expect(statusTone('retrying')).toBe('progress');
     expect(statusTone('review')).toBe('review');
     expect(statusTone('shipped')).toBe('success');
     expect(statusTone('overdue')).toBe('danger');
@@ -80,6 +82,19 @@ describe('collection primitives', () => {
     expect(row?.querySelector('.sm\\:flex-row')).toBeTruthy();
     expect(screen.getAllByText('Acme')).toHaveLength(2);
     expect(screen.getByText('P2')).toBeTruthy();
+  });
+
+  it('puts hover titles from Title and Context slots onto the visible row copy', () => {
+    render(
+      <CollectionRow>
+        <CollectionRow.Title title="Job ID: job-1">Audio extract</CollectionRow.Title>
+        <CollectionRow.Context title="Job ID: job-1">2h ago</CollectionRow.Context>
+      </CollectionRow>,
+    );
+
+    const hints = screen.getAllByTitle('Job ID: job-1');
+    expect(hints).toHaveLength(3);
+    expect(hints[0]?.textContent).toBe('Audio extract');
   });
 
   it('activates the row when clicking non-interactive content', async () => {
