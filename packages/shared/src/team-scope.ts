@@ -200,6 +200,12 @@ export interface EventListFilters {
    * origins are ORed together, then combined with the other filters.
    */
   origins?: TimelineOriginFilter[];
+  /**
+   * Narrow integration events to one provider work item. Pushes
+   * `source_metadata.external_object_id` into SQL so `limit` bounds the
+   * matching rows.
+   */
+  externalObjectId?: string;
   limit?: number;
   cursor?: string | null;
 }
@@ -1732,6 +1738,11 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     } else if (filters.source) {
       conditions.push(
         eq(rawEvents.source, filters.source as (typeof rawEvents.source.enumValues)[number]),
+      );
+    }
+    if (filters.externalObjectId) {
+      conditions.push(
+        sql`${rawEvents.sourceMetadata} ->> 'external_object_id' = ${filters.externalObjectId}`,
       );
     }
     const originCondition = timelineOriginFilterCondition(filters.origins);

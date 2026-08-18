@@ -181,6 +181,9 @@ describe('retrieveWorkspaceContext', () => {
     expect(scope.timeline.searchEvents).toHaveBeenCalledWith(
       expect.objectContaining({ entityIds: [OBJECT_ID], limit: 5 }),
     );
+    expect(scope.documents.searchDocumentChunks).toHaveBeenCalledWith(
+      expect.objectContaining({ query: 'What do we know about Otto Silventola?', limit: 5 }),
+    );
     expect(result.recipe).toBe('object_profile');
     expect(result.evidencePack).toMatchObject({
       version: 'evidence-pack-v1',
@@ -338,6 +341,7 @@ describe('retrieveWorkspaceContext', () => {
     expect(scope.timeline.searchEvents).toHaveBeenCalledWith(
       expect.objectContaining({ query: 'What happened in the timeline last week?', limit: 5 }),
     );
+    expect(scope.documents.searchDocumentChunks).not.toHaveBeenCalled();
     expect(result.events[0]).toMatchObject({
       citation: '[ev:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb]',
     });

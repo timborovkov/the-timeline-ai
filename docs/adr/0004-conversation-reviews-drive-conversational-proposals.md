@@ -1,5 +1,9 @@
 # Conversation reviews drive conversational proposals
 
+Canonical engine narrative:
+[`docs/relational-memory.md`](../relational-memory.md). This ADR records the
+decision, not the living workflow.
+
 Conversational capture surfaces should not create tasks, calendar changes, or
 object memory proposals from isolated Slack or Telegram messages. Durable
 proposals should be based on a Conversation Review: an ongoing review of the
@@ -34,4 +38,8 @@ Conversation Reviews may successfully produce no action, and they should not
 create canonical conversation summaries in v1. General fact extraction remains
 event-anchored; Conversation Reviews drive proposal decisions. Cross-source
 context requires explicit or object-backed relationship signals rather than
-semantic similarity, same sender, or nearby time alone.
+semantic similarity, same sender, or nearby time alone. Unique name mentions
+and container labels (Slack channel, Monday board, meeting title, Telegram
+chat title) qualify an existing company or project on the proposal write path;
+they are not semantic joins. See
+[ADR 0015](./0015-proposal-writes-qualify-hubs-from-mentions-and-container-labels.md).

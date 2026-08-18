@@ -1,5 +1,9 @@
 # Artifact provenance is tiered and evidence-backed
 
+Canonical engine narrative:
+[`docs/relational-memory.md`](../relational-memory.md). This ADR records the
+decision, not the living workflow.
+
 Derived workspace artifacts need provenance that explains why they exist,
 belong on a board, or changed; a single `source_event_id` cannot represent
 conversation windows, attachments, links, later clarifying evidence, or

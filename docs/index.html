@@ -15,8 +15,10 @@
         handoffs, and answers.
       </p>
       <p class="intro">
-        Start with the <a href="../README.md">README</a> if you're new. Everything else lives below,
-        grouped by purpose.
+        Start with the
+        <a href="./relational-memory.md">operating memory engine</a>
+        for how capture becomes memory. The <a href="../README.md">README</a> is local setup.
+        Everything else below is by purpose.
       </p>
       <p>
         <a
@@ -35,12 +37,75 @@
       </p>
 
       <!-- docs:index:start -->
+      <h2>Architecture</h2>
+      <ul class="group">
+        <li>
+          <a href="./relational-memory.md"
+            >Operating memory engine<span class="desc"
+              >The living contract: capture, hubs, proposals, cost, quality, and how far the code is
+              from the ideal. Read this first.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="./adr/0015-proposal-writes-qualify-hubs-from-mentions-and-container-labels.md"
+            >ADR 0015 — mention and container-label qualify<span class="desc"
+              >Why proposal writes attach existing hubs from unique names, Slack channels, and
+              Monday boards — not from cosine similarity.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="./adr/0016-ingest-signal-class-lives-on-the-envelope.md"
+            >ADR 0016 — envelope signal class<span class="desc"
+              >Why ingest rights live on the source envelope so GitHub PRs and GitHub CI can differ
+              without a core provider switch.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="./adr/0014-cross-source-evidence-packs-use-policy-bound-related-evidence.md"
+            >ADR 0014 — evidence packs<span class="desc"
+              >Why answers and proposals share a policy-bound evidence builder.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="./objects.html"
+            >Workspace objects<span class="desc"
+              >Schema, routes, helpers, and UI surface. Lifecycle lives in the engine.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="./adr/0012-direct-chat-surfaces-share-one-agent-runtime.md"
+            >Direct chat surface runtime<span class="desc"
+              >Why Telegram, Slack, and future DMs share one agent runtime.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="./native-provider-template.md"
+            >Native provider template<span class="desc"
+              >Checklist for adding providers on the shared webhook path.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="./public-site-registry.md"
+            >Public document registry<span class="desc"
+              >Canonical public routes, sitemap, and LLM discovery.</span
+            ></a
+          >
+        </li>
+      </ul>
+
       <h2>Product</h2>
       <ul class="group">
         <li>
           <a href="./product-brief.html"
             >Product brief<span class="desc"
-              >What we're building, why, and the architecture at a glance.</span
+              >What we're building, why, and a pointer at the engine.</span
             ></a
           >
         </li>
@@ -48,26 +113,15 @@
         <li>
           <a href="./captured-files.md"
             >Captured files and documents<span class="desc"
-              >Planned semantics for captured files, curated documents, extraction, promotion, and
-              agent use.</span
+              >Captured files vs curated documents, extraction, promotion, and agent use.</span
             ></a
           >
         </li>
 
         <li>
           <a href="./cross-source-evidence.md"
-            >Cross-source evidence<span class="desc"
-              >Implemented behind a default-off rollout switch, with production promotion still
-              gated by shadow, safety, quality, and operations evidence.</span
-            ></a
-          >
-        </li>
-
-        <li>
-          <a href="./cross-source-evidence-implementation-plan.md"
-            >Cross-source evidence implementation plan<span class="desc"
-              >Implemented architecture, exact file seams, test matrix, rollout gates, and
-              source-adapter promotion milestones.</span
+            >Evidence-pack rollout<span class="desc"
+              >Rollout modes, website copy, and promotion gates. Not the engine.</span
             ></a
           >
         </li>
@@ -77,50 +131,6 @@
             >Calendar guide<span class="desc"
               >Approval-backed calendar suggestions, recurring series, occurrence exceptions, and
               tentative slot groups.</span
-            ></a
-          >
-        </li>
-      </ul>
-
-      <h2>Architecture</h2>
-      <ul class="group">
-        <li>
-          <a href="./public-site-registry.md"
-            >Public document registry<span class="desc"
-              >Typed contribution interface for canonical public routes, sitemap and LLM discovery,
-              capability truth, and structured data.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="./adr/0014-cross-source-evidence-packs-use-policy-bound-related-evidence.md"
-            >Cross-source evidence packs<span class="desc"
-              >Why answers and proposals share a policy-bound evidence builder while preserving
-              visibility and source authority.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="./adr/0012-direct-chat-surfaces-share-one-agent-runtime.md"
-            >Direct chat surface runtime<span class="desc"
-              >Why Telegram, Slack, and future direct-message providers share durable sessions,
-              turns, history, worker execution, and fail-closed external-chat presentation.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="./objects.html"
-            >Workspace objects<span class="desc"
-              >Object relation model, generated summaries, connected work, approval-backed memory,
-              audit, notifications, and persisted chat.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="./native-provider-template.md"
-            >Native provider template<span class="desc"
-              >Checklist and skeleton for adding providers on the shared webhook, budget, and
-              reconciliation path.</span
             ></a
           >
         </li>

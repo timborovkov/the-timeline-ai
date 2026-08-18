@@ -131,7 +131,8 @@ export type ObjectSummarySourceRef =
   | { kind: 'object_note'; id: string }
   | { kind: 'relationship'; id: string }
   | { kind: 'task'; id: string }
-  | { kind: 'object_change'; id: string };
+  | { kind: 'object_change'; id: string }
+  | { kind: 'document_chunk'; id: string; documentId: string; version: number };
 
 export interface ObjectSummaryView {
   status: 'missing' | 'pending' | 'ready' | 'stale' | 'failed';

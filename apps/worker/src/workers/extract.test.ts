@@ -53,6 +53,7 @@ async function seedEvent(
     id: string;
     text: string | null;
     teamId?: string;
+    source?: (typeof rawEvents.$inferInsert)['source'];
     visibility?: 'team' | 'private' | 'specific_users';
     occurredAt?: Date;
     metadata?: Record<string, unknown>;
@@ -62,7 +63,7 @@ async function seedEvent(
     id: input.id,
     teamId: input.teamId ?? TEAM_ID,
     authorUserId: OWNER_ID,
-    source: 'web',
+    source: input.source ?? 'web',
     contentText: input.text,
     occurredAt: input.occurredAt ?? new Date('2026-06-01T10:00:00.000Z'),
     visibility: input.visibility ?? 'team',
@@ -645,6 +646,126 @@ describe('processExtractJobForTests', () => {
     });
   });
 
+  it('skips GitHub integration events without calling the LLM or requiring OPENROUTER_API_KEY', async () => {
+    const rawEventId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
+    await seedEvent(db, {
+      id: rawEventId,
+      source: 'integration',
+      text: 'GitHub PR timborovkov/audit-ai#88 — Fix command palette Engagements route 404',
+      metadata: {
+        provider: 'github',
+        integration_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        event_type: 'pr.merged',
+      },
+    });
+    const chatStructured = modelWithFacts([]);
+    const testIO = io({
+      getEnv: () => ({ OPENROUTER_API_KEY: undefined }) as never,
+      chatStructured,
+    });
+
+    await expect(
+      processExtractJobForTests({ db }, { rawEventId, teamId: TEAM_ID }, testIO),
+    ).resolves.toMatchObject({
+      skipped: true,
+      reason: 'integration_structured_source',
+    });
+    expect(chatStructured).not.toHaveBeenCalled();
+    expect(testIO.enqueueSuggestionJob).not.toHaveBeenCalled();
+    const [row] = await db
+      .select({ sourceMetadata: rawEvents.sourceMetadata })
+      .from(rawEvents)
+      .where(eq(rawEvents.id, rawEventId));
+    expect(row?.sourceMetadata).toMatchObject({
+      extraction_skipped_reason: 'integration_structured_source',
+    });
+  });
+
+  it('skips document lifecycle events and Drive file-change pulses without calling the LLM', async () => {
+    const documentEventId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3';
+    const driveEventId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4';
+    await seedEvent(db, {
+      id: documentEventId,
+      source: 'document',
+      text: 'Uploaded Acme MSA.pdf',
+      metadata: { action: 'upload', document_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' },
+    });
+    await seedEvent(db, {
+      id: driveEventId,
+      source: 'integration',
+      text: 'Drive file "Acme MSA.pdf" (application/pdf) was modified',
+      metadata: {
+        provider: 'google_drive',
+        integration_id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        event_type: 'file.changed',
+      },
+    });
+    const chatStructured = modelWithFacts([]);
+    const testIO = io({
+      getEnv: () => ({ OPENROUTER_API_KEY: undefined }) as never,
+      chatStructured,
+    });
+
+    await expect(
+      processExtractJobForTests({ db }, { rawEventId: documentEventId, teamId: TEAM_ID }, testIO),
+    ).resolves.toMatchObject({ skipped: true, reason: 'document_lifecycle_event' });
+    await expect(
+      processExtractJobForTests({ db }, { rawEventId: driveEventId, teamId: TEAM_ID }, testIO),
+    ).resolves.toMatchObject({ skipped: true, reason: 'integration_pulse_source' });
+    expect(chatStructured).not.toHaveBeenCalled();
+    expect(testIO.enqueueSuggestionJob).not.toHaveBeenCalled();
+  });
+
+  it('delays remaining integration extract jobs when the connection budget is exhausted', async () => {
+    const rawEventId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2';
+    await seedEvent(db, {
+      id: rawEventId,
+      source: 'integration',
+      text: 'Slack note: ship the pricing page tomorrow',
+      metadata: {
+        provider: 'slack',
+        integration_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      },
+    });
+    const chatStructured = modelWithFacts([]);
+    const testIO = io({
+      chatStructured,
+      takeIngestProcessingSlot: vi.fn().mockResolvedValue({ allowed: false, retryAfterMs: 2_000 }),
+    });
+
+    await expect(
+      processExtractJobForTests({ db }, { rawEventId, teamId: TEAM_ID }, testIO),
+    ).resolves.toMatchObject({ delayed: true, retryAfterMs: 2_000 });
+    expect(chatStructured).not.toHaveBeenCalled();
+  });
+
+  it('delays remaining integration embed jobs when the connection budget is exhausted', async () => {
+    const rawEventId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3';
+    await seedEvent(db, {
+      id: rawEventId,
+      source: 'integration',
+      text: 'GitHub PR timborovkov/audit-ai#91 updated',
+      metadata: {
+        provider: 'github',
+        integration_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      },
+    });
+
+    await expect(
+      processEmbedJobForTests(
+        { db },
+        { scope: 'raw_event', rawEventId, teamId: TEAM_ID },
+        {
+          getEnv: () =>
+            ({ OPENROUTER_API_KEY: 'test-key', QDRANT_URL: 'http://qdrant.test' }) as never,
+          takeIngestProcessingSlot: vi
+            .fn()
+            .mockResolvedValue({ allowed: false, retryAfterMs: 3_000 }),
+        },
+      ),
+    ).resolves.toMatchObject({ delayed: true, retryAfterMs: 3_000 });
+  });
+
   it('filters private recent context from the extraction prompt', async () => {
     const currentId = '77777777-7777-4777-8777-777777777777';
     await seedEvent(db, {
@@ -674,6 +795,44 @@ describe('processExtractJobForTests', () => {
     const prompt = (chatStructured.mock.calls[0]?.[0] as { prompt: string }).prompt;
     expect(prompt).toContain('Team context may be included');
     expect(prompt).not.toContain('Private context must not leak');
+  });
+
+  it('does not dump unrelated sources into extract recent context', async () => {
+    const currentId = '77777777-7777-4777-8777-777777777778';
+    await seedEvent(db, {
+      id: '88888888-8888-4888-8888-888888888889',
+      text: 'Slack firehose from another client must not leak into this note',
+      source: 'slack',
+      occurredAt: new Date('2026-06-01T09:45:00.000Z'),
+      metadata: {
+        slack_workspace_id: 'T1',
+        slack_channel_id: 'C1',
+        slack_channel_name: 'general',
+      },
+    });
+    await seedEvent(db, {
+      id: '99999999-9999-4999-8999-999999999998',
+      text: 'Same-source web note may be included',
+      source: 'web',
+      occurredAt: new Date('2026-06-01T09:50:00.000Z'),
+    });
+    await seedEvent(db, {
+      id: currentId,
+      text: 'Extract this current web note',
+      source: 'web',
+      occurredAt: new Date('2026-06-01T10:00:00.000Z'),
+    });
+    const chatStructured = modelWithFacts([]);
+
+    await processExtractJobForTests(
+      { db },
+      { rawEventId: currentId, teamId: TEAM_ID },
+      io({ chatStructured }),
+    );
+
+    const prompt = (chatStructured.mock.calls[0]?.[0] as { prompt: string }).prompt;
+    expect(prompt).toContain('Same-source web note may be included');
+    expect(prompt).not.toContain('Slack firehose from another client must not leak into this note');
   });
 
   it('throws unrecoverable failures for missing rows, team mismatch, and missing text', async () => {

@@ -30,7 +30,7 @@ import {
   digestContentSections,
   scrubDigestArtifactIds,
 } from '#src/messaging/digest-format.js';
-import { displayObjectTitle, OBJECT_TYPES } from '#src/objects/index.js';
+import { displayObjectTitle, OBJECT_TYPES } from '#src/objects/types.js';
 import { withTeam } from '#src/team-scope.js';
 import { assertValidTimezone, dateFromInstant, zonedDateTimeFromDate } from '#src/time/index.js';
 import { buildTimelineMoments, type TimelineMoment } from '#src/timeline-moments/index.js';
@@ -127,8 +127,9 @@ interface DigestActivityEvent {
   createdAt: Date;
 }
 
+// `link` is a type-only ObjectType extra, not a member of OBJECT_TYPES.
 const DIGEST_LIST_OBJECT_TYPES = OBJECT_TYPES.filter(
-  (type) => type !== 'task' && type !== 'follow_up' && type !== 'decision' && type !== 'link',
+  (type) => type !== 'task' && type !== 'follow_up' && type !== 'decision',
 );
 
 const SUMMARIZE_BATCH_SIZE = 50;

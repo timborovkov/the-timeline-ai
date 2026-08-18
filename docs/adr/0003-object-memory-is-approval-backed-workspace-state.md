@@ -1,5 +1,9 @@
 # Object memory is approval-backed workspace state
 
+Canonical engine narrative:
+[`docs/relational-memory.md`](../relational-memory.md). This ADR records the
+decision, not the living workflow.
+
 The agent's durable memory lives in visible workspace state, not in a hidden
 agent notebook. When the agent learns durable information about people,
 companies, tasks, deals, calendar commitments, projects, or other first-class

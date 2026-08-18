@@ -57,6 +57,14 @@ export const RATE_LIMITS = {
   mcpServer: { capacity: 600, refillPerSec: 600 / 60 },
   /** Generic ingest webhooks: 300/min per credential for provider bursts. */
   ingestWebhook: { capacity: 300, refillPerSec: 300 / 60 },
+  /** Per-connection extract LLM for conversational integrations (Slack, Drive).
+   *  GitHub/Sentry/Linear/Monday skip this path entirely. */
+  integrationExtract: { capacity: 20, refillPerSec: 20 / 60 },
+  /** Per-connection embedding for every persisted integration event. */
+  integrationEmbed: { capacity: 60, refillPerSec: 60 / 60 },
+  /** Per-connection GitHub PR/issue task-proposal jobs. Cheap DB work, still
+   *  bounded so a noisy repo cannot stampede the suggestions worker. */
+  integrationGithubTaskProposal: { capacity: 30, refillPerSec: 30 / 60 },
   /** 401/lookup lockout for ingest webhooks: 60/min per source IP. */
   ingestWebhookAuth: { capacity: 60, refillPerSec: 60 / 60 },
 } as const;

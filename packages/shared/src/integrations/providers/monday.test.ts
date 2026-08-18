@@ -335,7 +335,7 @@ describe('mondayProvider', () => {
       externalObjectId: '1771812728',
       externalEventId: '645fc8d8709d35718f1ae00ceded91e9',
       objectMap: {
-        type: 'other',
+        type: 'task',
         externalId: '1771812728',
         status: 'done',
       },
@@ -471,7 +471,7 @@ describe('mondayProvider', () => {
         'monday:item:1771812698:1771812728:observed:update_column_value:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       eventType: 'column.changed',
       objectMap: {
-        type: 'other',
+        type: 'task',
         externalId: '1771812728',
       },
     });
@@ -2114,7 +2114,7 @@ describe('mondayProvider', () => {
     ]);
     expect(events[1]?.contentText).toContain('Monday status changed on Pipeline: Acme renewal');
     expect(events[2]?.objectMap).toMatchObject({
-      type: 'other',
+      type: 'task',
       displayTitle: 'Acme renewal',
       status: 'done',
       metadata: {
@@ -2135,7 +2135,7 @@ describe('mondayProvider', () => {
     ]);
     expect(events[3]?.contentText).toContain('Legal approved the renewal');
     expect(events[4]?.objectMap).toMatchObject({
-      type: 'other',
+      type: 'task',
       displayTitle: 'Security review',
       metadata: {
         monday_record_kind: 'subitem',

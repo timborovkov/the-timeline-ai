@@ -178,7 +178,8 @@ export async function closeExtractQueue(): Promise<void> {
 export type SuggestionJobData =
   | SuggestionRawEventJobData
   | SuggestionConversationReviewJobData
-  | SuggestionObjectCleanupJobData;
+  | SuggestionObjectCleanupJobData
+  | SuggestionGithubTaskProposalJobData;
 
 export interface SuggestionRawEventJobData {
   rawEventId: string;
@@ -198,6 +199,13 @@ export interface SuggestionObjectCleanupJobData {
   objectId?: string;
 }
 
+export interface SuggestionGithubTaskProposalJobData {
+  scope: 'github_task_proposal';
+  teamId: string;
+  integrationId: string;
+  externalObjectId: string;
+}
+
 let _suggestionQueue: TimelineQueue<SuggestionJobData> | undefined;
 
 function bullmqCustomJobId(parts: string[]): string {
@@ -210,6 +218,14 @@ function suggestionJobId(data: SuggestionJobData, jobIdSuffix?: string): string 
       return bullmqCustomJobId([
         'conversation-review',
         data.conversationReviewId,
+        ...(jobIdSuffix ? [jobIdSuffix] : []),
+      ]);
+    }
+    if (data.scope === 'github_task_proposal') {
+      return bullmqCustomJobId([
+        'github-task-proposal',
+        data.teamId,
+        data.externalObjectId,
         ...(jobIdSuffix ? [jobIdSuffix] : []),
       ]);
     }

@@ -725,6 +725,7 @@ describe('ObjectDetailClient', () => {
     expect(html).toContain('Mikael asked for this from the Telegram discussion.');
     expect(html).toContain('telegram');
     expect(html).toContain(`/app/timeline?event=${sourceEventId}#ev-${sourceEventId}`);
+    expect(html).toContain('Research the founding process and use the screenshots.');
   });
 
   it('keeps large provenance bundles compact while preserving source access', async () => {
@@ -803,9 +804,10 @@ describe('ObjectDetailClient', () => {
     expect(relatedDisclosure.closest('details')?.open).toBe(true);
     expect(screen.getAllByRole('link', { name: /^integration ·/ })).toHaveLength(8);
     expect(screen.queryByText(longBody)).toBeNull();
+    expect(screen.getAllByText(/GitHub evidence multi-kilobyte payload/).length).toBeGreaterThan(0);
     expect(
       screen.getAllByText(/GitHub evidence multi-kilobyte payload/)[0]?.textContent.length,
-    ).toBe(160);
+    ).toBe(320);
   });
 
   it('shows manual generation for missing summaries with enough source material', () => {

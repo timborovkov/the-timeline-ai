@@ -24,9 +24,28 @@ by exposing database implementation details in ordinary product views.
 - **Digests** are recurring summaries of change and attention.
 - **Handoffs** are evidence-backed context packs for a teammate or stakeholder.
 - **Operational memory** is durable, queryable work state derived from history.
+- **Signal classes** (internal) split events into communication, captured
+  work, and pulses so the product can relate evidence without treating every
+  source event as a model prompt. Intentional captures stay communication.
+  Curated documents are reference knowledge, not a fourth class. Timeline
+  **event class** is the presentation family (communication, work record,
+  pulse, incident, artifact, schedule), not signal class: a Drive
+  file-changed ping can be a pulse for ingest and an artifact for the
+  inspector. Do not put either label in ordinary chrome.
+- **Work hubs** (internal) are the tasks, projects, people, and artifact
+  clusters that events from different surfaces attach to. Ordinary chrome
+  still names the task or project, not "hub." Proposal chrome should show the
+  attached client or project when one was qualified; it should not invent a
+  "hub" label. Channel and board names that uniquely name a client are qualify
+  evidence, not chrome.
+- **Memory grade** (internal) is the hub's role: goal, work, finding, or
+  mention. Ordinary chrome still names the task or company. Do not add a
+  second importance slider; `priority` 1–4 stays urgency on goals and work.
 - **Artifact clusters** connect evidence that describes the same real-world
   work while keeping evidence association separate from source authority.
 - **Approval-backed state** is durable work state that passed human review.
+  How events become that state is
+  [`docs/relational-memory.md`](docs/relational-memory.md).
 
 Count chrome: Moments mode and digest headlines count **moments**; All events,
 source filters, and technical disclosures count **source events**. Moment rows

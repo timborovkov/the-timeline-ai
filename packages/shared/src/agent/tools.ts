@@ -15,6 +15,7 @@ import {
   serializeObjectRow,
   serializeObjectRowsWithProjects,
 } from '#src/objects/tool-serialization.js';
+import { OBJECT_TYPES } from '#src/objects/types.js';
 import { PIN_TARGET_KINDS } from '#src/pins/index.js';
 import { recordMcpToolResultEvidence } from '#src/reconciliation/mcp-capture.js';
 import { suggestionDedupeKey, type CreateSuggestionInput } from '#src/suggestions/index.js';
@@ -98,9 +99,7 @@ const eventSourceSchema = z.enum([
   'slack',
   'ingest_webhook',
 ]);
-const objectTypeSchema = z.enum(
-  objects.OBJECT_TYPES as [objects.ObjectType, ...objects.ObjectType[]],
-);
+const objectTypeSchema = z.enum(OBJECT_TYPES);
 const pinTargetRefSchema = z.object({
   kind: z.enum(PIN_TARGET_KINDS),
   key: z.string().trim().min(1).max(500),

@@ -1,5 +1,9 @@
 # Object relationship proposals use bundle-local refs
 
+Canonical engine narrative:
+[`docs/relational-memory.md`](../relational-memory.md). This ADR records the
+decision, not the living workflow.
+
 Object relationship proposals can depend on endpoint objects that do not exist
 yet, such as a single evidence bundle proposing "Create John Doe", "Create Acme",
 and "Link John Doe to Acme". We will represent those dependencies with
