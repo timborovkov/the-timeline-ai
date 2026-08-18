@@ -125,6 +125,22 @@ Semantic similarity can suggest review candidates but is not enough to merge
 evidence into the same artifact cluster by itself.
 _Avoid_: Cleanup, removal, sync, extraction
 
+**Reconciliation Dashboard**:
+A team-scoped owner/admin health view for evidence coverage, clusters, and
+proposed workspace updates. Members who open the page see an Admins-only empty
+state. The header explains that captures are grouped into work and proposed
+updates wait for review. The header is the page title and that subtitle, with no
+access, team, or coverage-count metadata row. Sources that still need evidence
+appear as dense rows. Check coverage and Preview repair sit on a toolbar with
+hover hints. Recent clusters and Recent outputs use ordinary section titles.
+Cluster evidence/output lists show status, a human label, and relative time.
+Cluster IDs, output IDs, raw-event IDs, and raw enum keys stay in the row hover
+title. Copying an output payload lives in the row overflow menu.
+Evidence-by-source counts and manual UUID reconcile stay in Advanced tools,
+using sentence-case headings and dense count or history rows rather than
+uppercase labels, badge clouds, or a metric strip.
+_Avoid_: Recovery queue, retry dashboard, operator console, release gate, stat cards
+
 **Lifecycle Update**:
 A workspace reconciliation outcome that changes the state of a derived artifact
 because timeline evidence shows progress, completion, cancellation, blocking,
@@ -960,11 +976,22 @@ not to track every ordinary page view.
 _Avoid_: Timeline, activity feed
 
 **Job Recovery Dashboard**:
-A team-scoped owner/admin surface for retrying or dismissing failed and stuck
-product jobs tied to visible team artifacts, such as transcription,
-extraction, embedding, document processing, meeting finalization, and
-integration sync.
-_Avoid_: Operator dashboard, BullMQ dashboard, queue admin
+A team-scoped owner/admin surface titled Job recovery for retrying or dismissing
+failed and stuck product jobs from the last 7 days, tied to visible team
+artifacts such as transcription, extraction, embedding, document processing,
+meeting finalization, and integration sync. Home “recoverable jobs” uses this
+same 7-day count and is hidden from members. Members who open the page see an
+Admins-only empty state. The header is the page title and a 7-day subtitle.
+Older failed or stuck work is hidden from attention;
+workers retry it a few times, then give up. Admins can dismiss that older set in
+bulk; the page continues until the hidden count is cleared. The list shows
+status, artifact label, and relative time. Job IDs, artifact UUIDs, and raw
+provider errors stay in the row hover title. Per-row retry and dismiss live in
+the overflow menu. Unprocessed backlog (events that never started extraction or
+embedding) and conversation-suggestion backfill stay in Advanced tools as
+count rows and a heading with actions, not a card grid. Finished jobs in that
+fold use the same status, label, and time rows as the recovery queue.
+_Avoid_: Operator dashboard, BullMQ dashboard, queue admin, processing inventory
 
 **Environment Reset**:
 A development-only operational action that destroys all data and derived state

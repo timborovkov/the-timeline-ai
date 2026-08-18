@@ -3,15 +3,17 @@ import { Skeleton } from '@/components/ui/skeleton';
 /**
  * Quiet page-header skeleton matching title, subtitle, and optional metadata.
  */
-export function PageHeaderSkeleton() {
+export function PageHeaderSkeleton({ showMetadata = true }: { showMetadata?: boolean }) {
   return (
     <div className="space-y-2 py-1" aria-busy="true" aria-label="Loading">
       <Skeleton className="h-7 w-40" />
       <Skeleton className="h-4 w-full max-w-md" />
-      <div className="flex gap-3 pt-1">
-        <Skeleton className="h-3 w-16" />
-        <Skeleton className="h-3 w-20" />
-      </div>
+      {showMetadata ? (
+        <div className="flex gap-3 pt-1">
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="h-3 w-20" />
+        </div>
+      ) : null}
     </div>
   );
 }

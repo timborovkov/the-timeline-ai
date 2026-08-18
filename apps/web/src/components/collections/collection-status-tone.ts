@@ -4,7 +4,15 @@ import type { ComponentType, SVGProps } from 'react';
 
 export type StatusTone = 'neutral' | 'progress' | 'review' | 'success' | 'danger';
 
-const PROGRESS = new Set(['active', 'doing', 'in_progress', 'in progress', 'processing']);
+const PROGRESS = new Set([
+  'active',
+  'doing',
+  'in_progress',
+  'in progress',
+  'processing',
+  'stuck',
+  'retrying',
+]);
 const REVIEW = new Set(['proposed', 'pending', 'review', 'in_review', 'in review', 'suggested']);
 const SUCCESS = new Set(['done', 'shipped', 'complete', 'completed', 'accepted', 'ready']);
 const DANGER = new Set(['blocked', 'failed', 'overdue', 'rejected']);

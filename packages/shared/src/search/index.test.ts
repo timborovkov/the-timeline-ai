@@ -101,4 +101,13 @@ describe('global search ranking', () => {
   it('routes digest history searches to Work → Digests', () => {
     expect(searchQuickLinks({ query: 'daily digest', includeAdmin: true })[0]?.id).toBe('digests');
   });
+
+  it('routes failed-job searches to admin Job recovery', () => {
+    expect(searchQuickLinks({ query: 'failed jobs', includeAdmin: true })[0]?.id).toBe(
+      'job-recovery',
+    );
+    expect(
+      searchQuickLinks({ query: 'failed jobs', includeAdmin: false }).map((item) => item.id),
+    ).not.toContain('job-recovery');
+  });
 });

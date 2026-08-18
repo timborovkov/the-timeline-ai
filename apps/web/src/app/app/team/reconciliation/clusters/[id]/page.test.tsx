@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -17,6 +18,7 @@ const fakes = vi.hoisted(() => ({
   notFound: vi.fn(() => {
     throw new Error('notFound');
   }),
+  requireMembership: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({
@@ -26,6 +28,7 @@ vi.mock('next/navigation', () => ({
 }));
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
+    requireMembership: fakes.requireMembership,
     calendar: { getCalendarSettings: fakes.getCalendarSettings },
     reconciliation: { getClusterDetail: fakes.getClusterDetail },
   }),
@@ -42,7 +45,10 @@ const { default: ReconciliationClusterPage } = await import('./page.js');
 beforeEach(() => {
   vi.clearAllMocks();
   fakes.auth.mockResolvedValue({ user: { id: 'user-1' } });
-  fakes.resolveActiveTeam.mockResolvedValue({ active: { teamId: 'team-1' } });
+  fakes.resolveActiveTeam.mockResolvedValue({
+    active: { teamId: 'team-1', teamName: 'Acme Labs' },
+  });
+  fakes.requireMembership.mockResolvedValue('admin');
   fakes.getCalendarSettings.mockResolvedValue({ defaultTimezone: 'America/Los_Angeles' });
   fakes.getClusterDetail.mockResolvedValue(sampleDetail());
 });
@@ -60,18 +66,19 @@ describe('ReconciliationClusterPage', () => {
     expect(html.match(/<h1/g)).toHaveLength(1);
     expect(fakes.getClusterDetail).toHaveBeenCalledWith({ clusterId: CLUSTER_ID });
     expect(html).toContain('Lumen onboarding pilot');
-    expect(html).toContain('Reconciliation dashboard');
+    expect(html).not.toContain('Reconciliation dashboard');
     expect(html).toContain('Customer project');
     expect(html).toContain('Decision');
-    expect(html).toContain('monday');
+    expect(html).toContain('Monday.com');
     expect(html).toContain('Launch pilot in July');
     expect(html).toContain('Suggestion projection');
-    expect(html).toContain('Output ID');
-    expect(html).toContain('raw-event-1');
-    expect(html).toContain('evidence-1');
+    expect(html).toContain('Output ID: output-1');
+    expect(html).toContain('Raw event ID: raw-event-1');
+    expect(html).toContain('Evidence ID: evidence-1');
     expect(html).toContain('inline://monday/pulse-123');
     expect(html).toContain('View workspace item');
     expect(html).toContain(`name="targetId" value="${CLUSTER_ID}"`);
+    expect(html).not.toContain('Technical details');
   });
 
   it('does not render rows omitted by the visibility-filtered detail model', async () => {
@@ -82,11 +89,10 @@ describe('ReconciliationClusterPage', () => {
     expect(html).not.toContain('Private founder note');
   });
 
-  it('leads with human labels and team-local times while keeping diagnostics in technical details', async () => {
+  it('leads with human labels and team-local times while keeping ids in hover titles', async () => {
     const html = renderToStaticMarkup(
       await ReconciliationClusterPage({ params: Promise.resolve({ id: CLUSTER_ID }) }),
     );
-    const primaryContent = html.replace(/<details[\s\S]*?<\/details>/g, '');
 
     expect(fakes.getCalendarSettings).toHaveBeenCalledOnce();
     expect(html).toContain('Monday board');
@@ -101,21 +107,11 @@ describe('ReconciliationClusterPage', () => {
     expect(html).toContain('America/Los_Angeles');
     expect(html).toContain('Times in America/Los_Angeles');
     expect(html).toContain('dateTime="2026-06-30T10:00:00.000Z"');
-
-    expect(primaryContent).not.toContain('monday_board');
-    expect(primaryContent).not.toContain('customer_project');
-    expect(primaryContent).not.toContain('agent_suggestion_projection');
-    expect(primaryContent).not.toContain('approval_created');
-
-    expect(technicalDetailsContaining(html, 'monday_board')).toContain('Artifact type');
-    expect(technicalDetailsContaining(html, 'customer_project')).toContain('Cluster kind');
-    expect(technicalDetailsContaining(html, 'provider')).toContain('Evidence strength');
-    expect(technicalDetailsContaining(html, 'agent_suggestion_projection')).toContain(
-      'Output kind',
-    );
-    expect(technicalDetailsContaining(html, 'update')).toContain('Operation');
-    expect(technicalDetailsContaining(html, 'high')).toContain('Confidence');
-    expect(technicalDetailsContaining(html, 'approval_created')).toContain('Status');
+    expect(html).toContain('Cluster ID:');
+    expect(html).toContain(CLUSTER_ID);
+    expect(html).toContain('customer_project · monday_board · active');
+    expect(html).toContain('agent_suggestion_projection');
+    expect(html).toContain('approval_created');
   });
 
   it('renders output timestamps that match without duplicate technical-detail keys', async () => {
@@ -132,7 +128,9 @@ describe('ReconciliationClusterPage', () => {
       consoleError.mockRestore();
     }
   });
-  it('copies complete output JSON while keeping the rendered preview bounded', async () => {
+
+  it('copies complete output JSON from the row overflow menu', async () => {
+    const user = userEvent.setup();
     const writeText = vi.fn<(value: string) => Promise<void>>().mockResolvedValue();
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
@@ -146,7 +144,8 @@ describe('ReconciliationClusterPage', () => {
     });
 
     render(await ReconciliationClusterPage({ params: Promise.resolve({ id: CLUSTER_ID }) }));
-    fireEvent.click(screen.getByRole('button', { name: /^Copy Payload$/ }));
+    await user.click(screen.getByRole('button', { name: 'Actions for Update workspace memory' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Copy payload' }));
 
     await waitFor(() => {
       expect(writeText).toHaveBeenCalledOnce();
@@ -154,6 +153,19 @@ describe('ReconciliationClusterPage', () => {
     const copied = writeText.mock.calls[0]?.[0] ?? '';
     expect(copied.length).toBeGreaterThan(2_000);
     expect(JSON.parse(copied)).toEqual(payload);
+  });
+
+  it('tells members the cluster view is admins only without loading detail', async () => {
+    fakes.requireMembership.mockRejectedValueOnce(new Error('Requires admin role'));
+
+    const html = renderToStaticMarkup(
+      await ReconciliationClusterPage({ params: Promise.resolve({ id: CLUSTER_ID }) }),
+    );
+
+    expect(html).toContain('Admins only');
+    expect(html).toContain('Ask an admin if you need the latest snapshot.');
+    expect(html).not.toContain('Lumen onboarding pilot');
+    expect(fakes.getClusterDetail).not.toHaveBeenCalled();
   });
 
   it('redirects unauthenticated users before loading cluster detail', async () => {
@@ -224,12 +236,4 @@ function sampleDetail() {
       },
     ],
   };
-}
-
-function technicalDetailsContaining(html: string, value: string): string {
-  return (
-    [...html.matchAll(/<details[\s\S]*?<\/details>/g)].find(([details]) =>
-      details.includes(value),
-    )?.[0] ?? ''
-  );
 }

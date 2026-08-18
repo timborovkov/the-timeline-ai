@@ -97,6 +97,8 @@
           "src/app/app/objects/page.tsx",
           "src/app/app/timeline/page.tsx",
           "src/app/app/work/page.tsx",
+          "src/app/app/team/reconciliation/clusters/[id]/page.tsx",
+          "src/app/app/team/reconciliation/page.tsx",
           "src/components/approvals/approvals-client.tsx",
           "src/components/boards/curated-board-views.tsx",
           "src/components/boards/curated-kanban-board.tsx",
@@ -109,10 +111,12 @@
           "src/components/global-search-page.tsx",
           "src/components/inbox/inbox-list.tsx",
           "src/components/job-recovery/job-recovery-list.tsx",
+          "src/components/reconciliation/advanced-tools.tsx",
           "src/components/meetings/meeting-captures-list.tsx",
           "src/components/objects/object-cleanup-list.tsx",
           "src/components/objects/object-cleanup-suggestions.tsx",
           "src/components/objects/object-section-feed.tsx",
+          "src/components/reconciliation/cluster-output-row.tsx",
           "src/components/pins/pinned-item-row.tsx",
           "src/components/pins/pinned-workspace-manager.tsx",
           "src/components/tasks/task-board.tsx",
@@ -122,6 +126,10 @@
           "src/components/work/work-queue-row.tsx"
         ],
         "rules": ["react-doctor/jsx-no-jsx-as-prop"]
+      },
+      {
+        "files": ["src/components/job-recovery/job-recovery-list.tsx"],
+        "rules": ["react-doctor/no-giant-component"]
       },
       {
         "files": ["src/components/meetings/meeting-captures-list.tsx"],

@@ -1,8 +1,7 @@
 'use client';
 
-import { Breadcrumb } from '@/components/breadcrumb';
 import { ErrorState } from '@/components/error-state';
-import { IndexStrip } from '@/components/index-strip';
+import { JobsPageHeader } from '@/components/job-recovery/jobs-page-header';
 
 export default function JobsError({
   error,
@@ -13,11 +12,10 @@ export default function JobsError({
 }) {
   return (
     <div className="space-y-8">
-      <Breadcrumb items={[{ label: 'Team', href: '/app/team' }, { label: 'Background jobs' }]} />
-      <IndexStrip segments={[{ value: 'BACKGROUND JOBS' }]} srLabel="Background jobs" />
+      <JobsPageHeader />
       <ErrorState
-        title="Unable to load background jobs"
-        description="No background work has been retried, dismissed, or changed. Check your connection, then try again."
+        title="Unable to load job recovery"
+        description="No jobs have been retried, dismissed, or changed. Check your connection, then try again."
         error={error}
         reset={reset}
       />

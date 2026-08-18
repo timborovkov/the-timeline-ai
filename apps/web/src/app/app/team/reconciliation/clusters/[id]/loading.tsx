@@ -25,10 +25,6 @@ export default function ClusterLoading() {
         <div aria-hidden="true" className="space-y-4">
           <PageHeaderSkeleton />
           <section aria-label="Reconciliation cluster loading placeholder" className="space-y-4">
-            <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
-              <ClusterSummarySkeleton />
-              <ClusterActionSkeleton />
-            </div>
             <div className="grid gap-4 xl:grid-cols-2">
               <ClusterListSkeleton titleWidth="w-24" />
               <ClusterListSkeleton titleWidth="w-20" />
@@ -40,42 +36,16 @@ export default function ClusterLoading() {
   );
 }
 
-function ClusterSummarySkeleton() {
-  return (
-    <div className="space-y-4 rounded-sm border border-border bg-surface p-4">
-      <Skeleton className="h-4 w-44 max-w-full" />
-      <div className="flex flex-wrap gap-2">
-        <Skeleton className="h-6 w-28" />
-        <Skeleton className="h-6 w-36" />
-      </div>
-      <Skeleton className="h-20 w-full" />
-    </div>
-  );
-}
-
-function ClusterActionSkeleton() {
-  return (
-    <div className="space-y-3 rounded-sm border border-border bg-surface p-4">
-      <Skeleton className="h-5 w-36 max-w-full" />
-      <Skeleton className="h-4 w-full" />
-      <Skeleton className="h-9 w-36 max-w-full" />
-    </div>
-  );
-}
-
 function ClusterListSkeleton({ titleWidth }: { titleWidth: string }) {
   return (
     <div className="space-y-3">
       <Skeleton className={`h-5 ${titleWidth}`} />
-      <div className="divide-y divide-border rounded-sm border border-border bg-surface">
+      <div className="divide-y divide-border border-y border-border bg-surface">
         {Array.from({ length: 3 }).map((_, index) => (
-          <div key={index} className="space-y-3 p-3">
-            <div className="flex gap-2">
-              <Skeleton className="h-5 w-24" />
-              <Skeleton className="h-4 w-20" />
-            </div>
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-3 w-3/4 max-w-full" />
+          <div key={index} className="flex min-h-11 items-center gap-3 px-3">
+            <Skeleton className="h-3.5 w-16" />
+            <Skeleton className="h-4 w-3/5 max-w-full" />
+            <Skeleton className="ml-auto h-3 w-16" />
           </div>
         ))}
       </div>

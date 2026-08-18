@@ -19,6 +19,8 @@ describe('collection primitives', () => {
   it('maps workflow and priority semantics to stable icon-and-text tones', () => {
     expect(statusTone('backlog')).toBe('neutral');
     expect(statusTone('in progress')).toBe('progress');
+    expect(statusTone('stuck')).toBe('progress');
+    expect(statusTone('retrying')).toBe('progress');
     expect(statusTone('review')).toBe('review');
     expect(statusTone('shipped')).toBe('success');
     expect(statusTone('overdue')).toBe('danger');
