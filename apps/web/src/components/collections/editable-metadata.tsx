@@ -92,7 +92,6 @@ export function EditableMetadata({
             }}
             type="button"
             aria-label={label}
-            aria-invalid={error ? true : undefined}
             aria-describedby={error ? errorId : undefined}
             disabled={disabled || pending}
             className={cn(

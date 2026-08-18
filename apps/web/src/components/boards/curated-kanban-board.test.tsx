@@ -410,7 +410,6 @@ describe('CuratedKanbanBoard', () => {
     expect(alert.textContent).toContain('Unable to move Recovery card.');
     expect(alert.textContent).toContain('Choose a lane to try again.');
     const recoveredTrigger = screen.getByRole('button', { name: 'Lane for Recovery card' });
-    expect(recoveredTrigger.getAttribute('aria-invalid')).toBe('true');
     expect(recoveredTrigger.getAttribute('aria-describedby')).toBe(alert.id);
     expect(document.activeElement).toBe(recoveredTrigger);
 
