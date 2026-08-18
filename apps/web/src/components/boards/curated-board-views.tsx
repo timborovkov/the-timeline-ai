@@ -871,29 +871,6 @@ export function CuratedBoardList({
                               </select>
                             }
                           />
-                          <EditableMetadata
-                            label={`Lane for ${displayText(objectTitle)}`}
-                            value={group.name}
-                            disabled={optimistic || !onUpdateItem}
-                            editor={
-                              <select
-                                value={item.laneId ?? ''}
-                                onChange={(event) =>
-                                  void onUpdateItem?.(item.id, {
-                                    laneId: event.currentTarget.value || null,
-                                  })
-                                }
-                                className="h-10 rounded-sm border border-border bg-bg px-2 text-xs"
-                              >
-                                <option value="">Unset</option>
-                                {lanes.map((lane) => (
-                                  <option key={lane.id} value={lane.id}>
-                                    {displayText(lane.name)}
-                                  </option>
-                                ))}
-                              </select>
-                            }
-                          />
                         </>
                       }
                     />

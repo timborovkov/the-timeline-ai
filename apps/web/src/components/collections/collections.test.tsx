@@ -81,9 +81,7 @@ describe('collection primitives', () => {
         titleHint="job-1 · artifact-2"
       />,
     );
-    expect(screen.getByText('Recover extraction').getAttribute('title')).toBe(
-      'job-1 · artifact-2',
-    );
+    expect(screen.getByText('Recover extraction').getAttribute('title')).toBe('job-1 · artifact-2');
     expect(screen.getByText('Timed out')).toBeTruthy();
   });
 
