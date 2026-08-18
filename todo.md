@@ -188,6 +188,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       restoration, merge/deletion handling, and explicit-intent Ask tools.
 - [x] U8 — Collection density, action toasts, and view-only approval
       previews: Linear-style optimistic rows, selection-bar bulk actions,
+      Approvals select-all on the loaded queue and multi-item bundle headers,
       live object/event diffs, title-first calendar chips, and the same
       toolbar/button/skeleton contract on Approvals, Calendar, Connections,
       Team, Meetings, Timeline, and remaining work surfaces. Mutations use

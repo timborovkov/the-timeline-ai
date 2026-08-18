@@ -128,6 +128,7 @@ interface ApprovalsQueueState {
 type ApprovalsQueueAction =
   | { type: 'setError'; error: string | null }
   | { type: 'selectChange'; itemId: string; checked: boolean }
+  | { type: 'selectMany'; itemIds: string[]; checked: boolean }
   | { type: 'clearSelection' }
   | { type: 'openPreview'; bundle: SuggestionBundle; item: SuggestionItem }
   | { type: 'closePreview' }
@@ -158,6 +159,11 @@ function approvalsQueueReducer(
       else selectedIds.delete(action.itemId);
       return { ...state, selectedIds };
     }
+    case 'selectMany':
+      return {
+        ...state,
+        selectedIds: mutateSet(state.selectedIds, action.itemIds, action.checked),
+      };
     case 'clearSelection':
       return { ...state, selectedIds: new Set() };
     case 'openPreview':
@@ -837,6 +843,9 @@ export function ApprovalsClient({
         onSelectedChange={(itemId, checked) => {
           dispatch({ type: 'selectChange', itemId, checked });
         }}
+        onSelectedMany={(itemIds, checked) => {
+          dispatch({ type: 'selectMany', itemIds, checked });
+        }}
         onClearSelection={() => {
           dispatch({ type: 'clearSelection' });
         }}
@@ -932,6 +941,7 @@ function ApprovalListBody({
   visibleSuggestions,
   onPreview,
   onSelectedChange,
+  onSelectedMany,
   onClearSelection,
 }: {
   allowBulkAccept: boolean;
@@ -950,6 +960,7 @@ function ApprovalListBody({
   visibleSuggestions: SuggestionBundle[];
   onPreview: (bundle: SuggestionBundle, item: SuggestionItem) => void;
   onSelectedChange: (itemId: string, checked: boolean) => void;
+  onSelectedMany: (itemIds: string[], checked: boolean) => void;
   onClearSelection: () => void;
 }) {
   const selectable = allowBulkAccept || allowBulkReject;
@@ -957,11 +968,14 @@ function ApprovalListBody({
   const selectedAccept: SuggestionItem[] = [];
   const selectedByBundle: { suggestionId: string; itemIds: string[] }[] = [];
   const selectedAcceptByBundle: { suggestionId: string; itemIds: string[] }[] = [];
+  const actionableIds: string[] = [];
   for (const bundle of visibleSuggestions) {
     const bundleItemIds: string[] = [];
     const acceptItemIds: string[] = [];
     for (const item of bundle.items) {
-      if (!selectedIds.has(item.id) || !isActionableSuggestionStatus(item.status)) continue;
+      if (!isActionableSuggestionStatus(item.status)) continue;
+      actionableIds.push(item.id);
+      if (!selectedIds.has(item.id)) continue;
       selectedItems.push(item);
       bundleItemIds.push(item.id);
       if (item.targetKind !== 'object_merge' && item.evidenceStatus !== 'stale') {
@@ -976,6 +990,8 @@ function ApprovalListBody({
       selectedAcceptByBundle.push({ suggestionId: bundle.id, itemIds: acceptItemIds });
     }
   }
+  const allVisibleSelected =
+    actionableIds.length > 0 && actionableIds.every((id) => selectedIds.has(id));
 
   return (
     <div className="space-y-0">
@@ -1033,6 +1049,19 @@ function ApprovalListBody({
       ) : null}
       {pending && visibleSuggestions.length === 0 ? <ApprovalUpdatingState /> : null}
       <div>
+        {selectable && actionableIds.length > 0 ? (
+          <div className="flex min-h-10 items-center border-b border-border bg-surface/70 px-1 sm:px-2">
+            <ApprovalSelectAllControl
+              checked={allVisibleSelected}
+              count={actionableIds.length}
+              label="Select all visible proposals"
+              visibleLabel="Select all visible"
+              onChange={(checked) => {
+                onSelectedMany(actionableIds, checked);
+              }}
+            />
+          </div>
+        ) : null}
         <VirtualList
           items={visibleSuggestions}
           getItemKey={(bundle) => bundle.id}
@@ -1051,6 +1080,7 @@ function ApprovalListBody({
               taskCategoriesEnabled={taskCategoriesEnabled}
               onPreview={onPreview}
               onSelectedChange={onSelectedChange}
+              onSelectedMany={onSelectedMany}
             />
           )}
         />
@@ -1071,6 +1101,45 @@ function ApprovalUpdatingState() {
   return <output className="px-3 py-2 text-xs text-fg-dim">Updating approvals…</output>;
 }
 
+function ApprovalSelectAllControl({
+  checked,
+  count,
+  label,
+  onChange,
+  visibleLabel,
+}: {
+  checked: boolean;
+  count: number;
+  label: string;
+  onChange: (checked: boolean) => void;
+  visibleLabel?: string;
+}) {
+  return (
+    <label className="flex min-h-10 min-w-0 items-center gap-2 px-2">
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={count === 0}
+        aria-label={label}
+        className="size-4 rounded-sm border-border accent-signal"
+        onChange={(event) => {
+          onChange(event.currentTarget.checked);
+        }}
+      />
+      {visibleLabel ? (
+        <>
+          <span aria-hidden="true" className="truncate text-xs font-medium text-fg">
+            {visibleLabel}
+          </span>
+          <span aria-hidden="true" className="font-mono tabular-nums text-fg-dim">
+            {count}
+          </span>
+        </>
+      ) : null}
+    </label>
+  );
+}
+
 function ApprovalBundleRow({
   actionFailedItemIds,
   bundle,
@@ -1084,6 +1153,7 @@ function ApprovalBundleRow({
   taskCategoriesEnabled,
   onPreview,
   onSelectedChange,
+  onSelectedMany,
 }: {
   actionFailedItemIds: Set<string>;
   bundle: SuggestionBundle;
@@ -1097,7 +1167,14 @@ function ApprovalBundleRow({
   taskCategoriesEnabled: boolean;
   onPreview: (bundle: SuggestionBundle, item: SuggestionItem) => void;
   onSelectedChange: (itemId: string, checked: boolean) => void;
+  onSelectedMany: (itemIds: string[], checked: boolean) => void;
 }) {
+  const bundleActionableIds: string[] = [];
+  for (const item of bundle.items) {
+    if (isActionableSuggestionStatus(item.status)) bundleActionableIds.push(item.id);
+  }
+  const bundleAllSelected =
+    bundleActionableIds.length > 0 && bundleActionableIds.every((id) => selectedIds.has(id));
   const items = (
     <>
       {bundle.items.map((item) => (
@@ -1130,9 +1207,25 @@ function ApprovalBundleRow({
   if (bundle.items.length === 1) {
     return <article>{items}</article>;
   }
+  const bundleTitle = displayText(bundle.title, { timezone });
   return (
     <article>
-      <CollectionGroup count={bundle.items.length} title={displayText(bundle.title, { timezone })}>
+      <CollectionGroup
+        count={bundle.items.length}
+        title={bundleTitle}
+        actions={
+          selectable && bundleActionableIds.length > 0 ? (
+            <ApprovalSelectAllControl
+              checked={bundleAllSelected}
+              count={bundleActionableIds.length}
+              label={`Select all ${bundleTitle} proposals`}
+              onChange={(checked) => {
+                onSelectedMany(bundleActionableIds, checked);
+              }}
+            />
+          ) : undefined
+        }
+      >
         {items}
       </CollectionGroup>
     </article>
