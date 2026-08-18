@@ -648,7 +648,10 @@ function TimelineFilterPanel({
           </div>
         </CollectionToolbar.Filters>
         <CollectionToolbar.Actions>
-          <nav aria-label="Timeline presets" className="flex max-w-full flex-nowrap gap-1.5 overflow-x-auto">
+          <nav
+            aria-label="Timeline presets"
+            className="flex max-w-full flex-nowrap gap-1.5 overflow-x-auto"
+          >
             <Link
               href={upcomingHref}
               aria-current={upcomingActive ? 'page' : undefined}

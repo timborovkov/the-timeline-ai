@@ -95,29 +95,22 @@ export function InfiniteScroll({
   }
 
   return (
-    <div
-      className={cn('flex flex-col items-center py-2', className)}
-      aria-busy={loading || undefined}
-    >
+    <div className={cn('flex justify-center py-2', className)} aria-busy={loading || undefined}>
       {loading ? (
         <p role="status" className="m-0 px-3 py-2 text-xs text-fg-dim">
           Loading more…
         </p>
-      ) : null}
-      <button
-        ref={sentinelRef}
-        type="button"
-        onFocus={requestMore}
-        onClick={requestMore}
-        disabled={loading}
-        aria-hidden={loading || undefined}
-        className={cn(
-          'h-px w-full max-w-xs cursor-default border-0 bg-transparent p-0 text-[0] text-transparent outline-none focus-visible:h-auto focus-visible:rounded-sm focus-visible:border focus-visible:border-border focus-visible:bg-surface focus-visible:px-3 focus-visible:py-2 focus-visible:text-xs focus-visible:text-fg-muted',
-          loading && 'sr-only',
-        )}
-      >
-        Load more
-      </button>
+      ) : (
+        <button
+          ref={sentinelRef}
+          type="button"
+          onFocus={requestMore}
+          onClick={requestMore}
+          className="h-px w-full max-w-xs cursor-default border-0 bg-transparent p-0 text-[0] text-transparent outline-none focus-visible:h-auto focus-visible:rounded-sm focus-visible:border focus-visible:border-border focus-visible:bg-surface focus-visible:px-3 focus-visible:py-2 focus-visible:text-xs focus-visible:text-fg-muted"
+        >
+          Load more
+        </button>
+      )}
     </div>
   );
 }
