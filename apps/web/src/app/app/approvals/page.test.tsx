@@ -132,6 +132,7 @@ describe('ApprovalsPage', () => {
     expect(html).toContain('pending 0');
     expect(html).toContain('failed 4');
     expect(html).toContain('No pending approvals');
+    expect(html).not.toMatch(/<output\b[^>]*>\s*\d+\s*<\/output>/);
   });
 
   it('marks only the selected approval status filter as the current page', async () => {

@@ -1032,7 +1032,7 @@ function ApprovalListBody({
         />
       ) : null}
       {pending && visibleSuggestions.length === 0 ? <ApprovalUpdatingState /> : null}
-      <div className="border-x border-border">
+      <div>
         <VirtualList
           items={visibleSuggestions}
           getItemKey={(bundle) => bundle.id}

@@ -68,7 +68,7 @@ export function CollectionRow({
   return (
     <div
       className={cn(
-        'group/collection-row relative grid min-h-11 min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border-b border-border/80 px-2 transition-[background-color,border-color] duration-150 last:border-b-0 hover:bg-surface focus-within:bg-surface motion-reduce:transition-none sm:px-3',
+        'group/collection-row relative grid min-h-11 min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border-b border-border/80 px-2 transition-[background-color,border-color] duration-150 hover:bg-surface focus-within:bg-surface motion-reduce:transition-none sm:px-3',
         selected && 'bg-signal-soft shadow-[inset_2px_0_0_var(--color-signal)]',
         onActivate && 'cursor-pointer',
         className,

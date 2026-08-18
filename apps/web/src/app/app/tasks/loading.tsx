@@ -79,7 +79,7 @@ export default function TasksLoading() {
                   {Array.from({ length: 4 }).map((_, index) => (
                     <div
                       key={index}
-                      className="flex min-h-11 items-center gap-3 border-b border-border/80 px-2 last:border-b-0 sm:px-3"
+                      className="flex min-h-11 items-center gap-3 border-b border-border px-2 sm:px-3"
                     >
                       <Skeleton className="size-4 shrink-0" />
                       <Skeleton className="h-4 w-2/5" />

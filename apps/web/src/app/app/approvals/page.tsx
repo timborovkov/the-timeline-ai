@@ -12,7 +12,6 @@ import { PageHeader } from '@/components/page-header';
 import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
-import { formatCollectionCount } from '@/lib/collection-count';
 import { SUGGESTIONS_PAGE_SIZE } from '@/lib/collection-page-sizes';
 import { db } from '@/lib/db';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
@@ -102,15 +101,6 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
       />
       <WorkSubnav current="/app/approvals" />
       <CollectionToolbar>
-        {inventoryCount !== null ? (
-          <CollectionToolbar.Count>
-            {formatCollectionCount({
-              matching: inventoryCount,
-              total: inventoryCount,
-              filtered: false,
-            })}
-          </CollectionToolbar.Count>
-        ) : null}
         <CollectionToolbar.View>
           <nav className="flex flex-wrap gap-1" aria-label="Approval status filters">
             {STATUS_FILTERS.map((filter) => (

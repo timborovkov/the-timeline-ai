@@ -314,7 +314,7 @@ export function ObjectCleanupList({
         {visibleRows.length === 0 ? (
           <p className="py-10 text-center text-sm text-fg-dim">No objects visible</p>
         ) : (
-          <div className="border-x border-border">
+          <div>
             {typeKeys.map((typeKey) => {
               const list = grouped.get(typeKey) ?? [];
               return (
