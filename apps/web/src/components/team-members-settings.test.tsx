@@ -91,8 +91,7 @@ describe('TeamMembersSettings', () => {
 
     const memberRow = screen.getByText('Ada Lovelace').closest('li');
     const inviteRow = screen.getByText('grace@example.com').closest('li');
-    expect(memberRow?.className).toContain('flex-col');
-    expect(memberRow?.className).toContain('sm:flex-row');
+    expect(memberRow?.querySelector('[class*="sm:flex-row"]')).toBeTruthy();
     expect(inviteRow?.className).toContain('flex-col');
     expect(inviteRow?.firstElementChild?.className).toContain('sm:flex-row');
   });

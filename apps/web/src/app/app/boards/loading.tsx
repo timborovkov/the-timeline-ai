@@ -1,4 +1,4 @@
-import { PageHeaderSkeleton } from '@/components/loading-states';
+import { CollectionRowsSkeleton, PageHeaderSkeleton } from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function BoardsLoading() {
@@ -17,23 +17,7 @@ export default function BoardsLoading() {
             ))}
           </div>
           <section aria-label="Boards list loading placeholder">
-            <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <li key={i} className="bg-bg">
-                  <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-start">
-                    <div className="min-w-0 flex-1 space-y-2">
-                      <Skeleton className="h-4 w-40 max-w-full motion-reduce:animate-none" />
-                      <Skeleton className="h-3 w-full max-w-lg motion-reduce:animate-none" />
-                      <Skeleton className="h-3 w-48 max-w-full motion-reduce:animate-none" />
-                    </div>
-                    <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-start">
-                      <Skeleton className="h-3 w-16 motion-reduce:animate-none" />
-                      <Skeleton className="h-8 w-8 rounded-sm motion-reduce:animate-none" />
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <CollectionRowsSkeleton count={3} />
           </section>
         </div>
       </div>

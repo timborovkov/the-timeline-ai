@@ -532,10 +532,13 @@ function KanbanCard({
       <div className="mt-1 flex flex-wrap items-center gap-0.5">
         <EditableMetadata
           label={`Responsible person for ${displayText(title)}`}
-          value={ownerLabel(item.responsibleUserId, members)}
           pending={saving}
           disabled={optimistic}
-          editor={
+        >
+          <EditableMetadata.Value>
+            {ownerLabel(item.responsibleUserId, members)}
+          </EditableMetadata.Value>
+          <EditableMetadata.Editor>
             <select
               value={item.responsibleUserId ?? ''}
               onChange={(event) => {
@@ -551,14 +554,17 @@ function KanbanCard({
                 </option>
               ))}
             </select>
-          }
-        />
+          </EditableMetadata.Editor>
+        </EditableMetadata>
         <EditableMetadata
           label={`Due date for ${displayText(title)}`}
-          value={<DueDateDisplay value={item.dueAt} variant="compact" />}
           pending={saving}
           disabled={optimistic}
-          editor={
+        >
+          <EditableMetadata.Value>
+            <DueDateDisplay value={item.dueAt} variant="compact" />
+          </EditableMetadata.Value>
+          <EditableMetadata.Editor>
             <MetadataDateEditor
               defaultValue={item.dueAt ? item.dueAt.toISOString().slice(0, 10) : ''}
               onApply={(value) => {
@@ -567,20 +573,21 @@ function KanbanCard({
                 });
               }}
             />
-          }
-        />
+          </EditableMetadata.Editor>
+        </EditableMetadata>
         <EditableMetadata
           label={`Priority for ${displayText(title)}`}
-          value={
+          pending={saving}
+          disabled={optimistic}
+        >
+          <EditableMetadata.Value>
             <CollectionStatus
               value={item.priority ? `p${item.priority}` : 'none'}
               tone={priorityTone(item.priority)}
               label={item.priority ? `P${item.priority}` : 'No priority'}
             />
-          }
-          pending={saving}
-          disabled={optimistic}
-          editor={
+          </EditableMetadata.Value>
+          <EditableMetadata.Editor>
             <select
               value={item.priority ?? ''}
               onChange={(event) => {
@@ -598,14 +605,15 @@ function KanbanCard({
                 </option>
               ))}
             </select>
-          }
-        />
+          </EditableMetadata.Editor>
+        </EditableMetadata>
         <EditableMetadata
           label={`Next step for ${displayText(title)}`}
-          value={item.nextStep ?? 'No next step'}
           pending={saving}
           disabled={optimistic}
-          editor={
+        >
+          <EditableMetadata.Value>{item.nextStep ?? 'No next step'}</EditableMetadata.Value>
+          <EditableMetadata.Editor>
             <form
               action={(formData) => {
                 const rawNextStep = formData.get('nextStep');
@@ -627,13 +635,12 @@ function KanbanCard({
                 Apply
               </button>
             </form>
-          }
-        />
+          </EditableMetadata.Editor>
+        </EditableMetadata>
       </div>
       {!optimistic ? (
         <EditableMetadata
           label={`Lane for ${displayText(title)}`}
-          value={lane.name}
           pending={saving}
           error={
             error
@@ -642,7 +649,9 @@ function KanbanCard({
           }
           className="mt-1"
           triggerRef={registerMoveControl}
-          editor={
+        >
+          <EditableMetadata.Value>{lane.name}</EditableMetadata.Value>
+          <EditableMetadata.Editor>
             <select
               id={moveControlId}
               value={lane.id}
@@ -666,8 +675,8 @@ function KanbanCard({
                 </option>
               ))}
             </select>
-          }
-        />
+          </EditableMetadata.Editor>
+        </EditableMetadata>
       ) : null}
     </article>
   );

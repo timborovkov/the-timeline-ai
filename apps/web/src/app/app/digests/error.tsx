@@ -13,7 +13,11 @@ export default function DigestsError({
 }) {
   return (
     <div className="space-y-6">
-      <PageHeader title="Digests" subtitle="Browse every daily digest and open a specific day." />
+      <PageHeader
+        variant="collection"
+        title="Digests"
+        subtitle="Browse every daily digest and open a specific day."
+      />
       <WorkSubnav current="/app/digests" />
       <ErrorState
         title="Unable to load digests"

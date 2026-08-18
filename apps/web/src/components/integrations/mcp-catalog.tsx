@@ -4,11 +4,12 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useMemo, useReducer, useState } from 'react';
 
+import { CollectionRow } from '@/components/collections/collection-row';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { toastMutation } from '@/lib/mutation-toast';
 
 interface CatalogEntryProps {
   id: string;
@@ -48,7 +49,7 @@ function patchCardState(
 }
 
 /**
- * One-click connect catalog for curated MCP servers. Each card knows its
+ * One-click connect catalog for curated MCP servers. Each row knows its
  * pre-baked URL + auth type server-side (sourced from
  * `integrations.listCatalog()`); the client just posts the catalogId
  * (and a bearer token / header value when the entry needs one) to
@@ -145,9 +146,11 @@ export function McpCatalog({
       ) : null}
 
       {filtered.length === 0 ? (
-        <p className="text-sm text-fg-muted">No MCP servers match this filter.</p>
+        <p className="border-y border-border py-4 text-sm text-fg-muted">
+          No MCP servers match this filter.
+        </p>
       ) : (
-        <div className="grid auto-rows-fr gap-3 md:grid-cols-2">
+        <div className="border-x border-border">
           {filtered.map((e) => (
             <CatalogCard key={e.id} entry={e} localConnectionsEnabled={localConnectionsEnabled} />
           ))}
@@ -186,38 +189,38 @@ function CatalogCard({
   async function connect(body: Record<string, unknown>) {
     setCardState({ busy: true });
     try {
-      const res = await fetch('/api/team/mcp-servers', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ catalogId: entry.id, ...body }),
-      });
-      if (!res.ok) {
-        await dialog.alert({ title: 'Connect failed', description: await res.text() });
-        return;
-      }
-      const data = (await res.json()) as { id: string; needsOauth?: boolean };
-      if (data.needsOauth && data.id) {
-        const oauth = await fetch('/api/mcp/oauth/start', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ mcpServerId: data.id }),
-        });
-        if (!oauth.ok) {
-          await dialog.alert({ title: 'OAuth start failed', description: await oauth.text() });
-          router.refresh();
-          return;
-        }
-        const oauthData = (await oauth.json()) as { url?: string; error?: string };
-        if (oauthData.url) {
-          window.location.href = oauthData.url;
-          return;
-        }
-        await dialog.alert({
-          title: 'OAuth start failed',
-          description: oauthData.error ?? 'unknown',
-        });
-      }
-      router.refresh();
+      const result = await toastMutation(
+        (async () => {
+          const res = await fetch('/api/team/mcp-servers', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ catalogId: entry.id, ...body }),
+          });
+          if (!res.ok) return { ok: false, error: await res.text() };
+          const data = (await res.json()) as { id: string; needsOauth?: boolean };
+          if (data.needsOauth && data.id) {
+            const oauth = await fetch('/api/mcp/oauth/start', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ mcpServerId: data.id }),
+            });
+            if (!oauth.ok) return { ok: false, error: await oauth.text() };
+            const oauthData = (await oauth.json()) as { url?: string; error?: string };
+            if (oauthData.url) {
+              window.location.href = oauthData.url;
+              return { ok: true, redirected: true };
+            }
+            return { ok: false, error: oauthData.error ?? 'unknown' };
+          }
+          return { ok: true };
+        })(),
+        {
+          loading: `Connecting ${entry.label}`,
+          success: `Connected ${entry.label}`,
+          error: `Could not connect ${entry.label}`,
+        },
+      );
+      if (result.ok && !('redirected' in result && result.redirected)) router.refresh();
     } finally {
       setCardState({ busy: false });
     }
@@ -253,78 +256,31 @@ function CatalogCard({
   }
 
   return (
-    <Card className="flex h-full flex-col">
-      <CardHeader className="flex flex-row items-center gap-3">
-        <Image
-          src={entry.logo}
-          alt=""
-          width={28}
-          height={28}
-          className="size-7 rounded-sm bg-surface-2 p-1"
-        />
-        <CardTitle className="text-sm font-medium">{entry.label}</CardTitle>
-        <span className="ml-auto rounded-sm border border-border bg-surface-2 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.14em] text-fg-muted">
-          {entry.category}
-        </span>
-      </CardHeader>
-      <CardContent className="flex flex-1 flex-col">
-        <p className="text-sm text-fg-muted">{entry.description}</p>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span className="rounded-sm border border-border bg-surface-2 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.14em] text-fg-muted">
-            {statusLabel}
-          </span>
-          {entry.ingestStatus === 'coming_soon' ? (
-            <span className="rounded-sm border border-border bg-surface px-1.5 py-0.5 text-[10px] uppercase tracking-[0.14em] text-fg-dim">
-              Native ingest planned
-            </span>
-          ) : null}
-        </div>
-        {entry.authHint && isConnectable ? (
-          <p className="mt-2 text-xs text-fg-dim">{entry.authHint}</p>
-        ) : null}
-
-        {open && entry.authType === 'bearer' ? (
-          <div className="mt-3 space-y-2">
-            <Label htmlFor={`bearer-${entry.id}`}>Bearer token</Label>
-            <Input
-              id={`bearer-${entry.id}`}
-              type="password"
-              value={bearer}
-              onChange={(e) => {
-                setCardState({ bearer: e.target.value });
-              }}
-            />
-          </div>
-        ) : null}
-        {open && entry.authType === 'header' ? (
-          <div className="mt-3 space-y-2">
-            <div>
-              <Label htmlFor={`hn-${entry.id}`}>Header name</Label>
-              <Input
-                id={`hn-${entry.id}`}
-                value={headerName}
-                onChange={(e) => {
-                  setCardState({ headerName: e.target.value });
-                }}
-              />
-            </div>
-            <div>
-              <Label htmlFor={`hv-${entry.id}`}>Header value</Label>
-              <Input
-                id={`hv-${entry.id}`}
-                type="password"
-                value={headerValue}
-                onChange={(e) => {
-                  setCardState({ headerValue: e.target.value });
-                }}
-              />
-            </div>
-          </div>
-        ) : null}
-
-        <div className="mt-auto flex items-center gap-2 pt-3">
+    <div>
+      <CollectionRow>
+        <CollectionRow.Leading>
+          <Image
+            src={entry.logo}
+            alt=""
+            width={28}
+            height={28}
+            className="size-7 rounded-sm bg-surface-2 p-1"
+          />
+        </CollectionRow.Leading>
+        <CollectionRow.Title>{entry.label}</CollectionRow.Title>
+        <CollectionRow.Context>{entry.description}</CollectionRow.Context>
+        <CollectionRow.Metadata>
+          <>
+            <span className="text-[11px] text-fg-dim">{statusLabel}</span>
+            <span className="text-[11px] text-fg-dim">{entry.category}</span>
+            {entry.ingestStatus === 'coming_soon' ? (
+              <span className="text-[11px] text-fg-dim">Native ingest planned</span>
+            ) : null}
+          </>
+        </CollectionRow.Metadata>
+        <CollectionRow.Actions>
           {open && (entry.authType === 'bearer' || entry.authType === 'header') ? (
-            <>
+            <div className="flex items-center gap-2">
               <Button
                 size="sm"
                 disabled={busy}
@@ -343,10 +299,11 @@ function CatalogCard({
               >
                 Cancel
               </Button>
-            </>
+            </div>
           ) : (
             <Button
               size="sm"
+              variant={isConnectable ? 'default' : 'outline'}
               disabled={busy || !isConnectable}
               onClick={() => {
                 void onClickConnect();
@@ -365,10 +322,50 @@ function CatalogCard({
                       : 'Connect with token'}
             </Button>
           )}
-          <span className="ml-auto text-[11px] text-fg-dim">{entry.authType ?? 'planned'}</span>
+        </CollectionRow.Actions>
+      </CollectionRow>
+      {entry.authHint && isConnectable ? (
+        <p className="px-3 pb-2 text-xs text-fg-dim">{entry.authHint}</p>
+      ) : null}
+      {open && entry.authType === 'bearer' ? (
+        <div className="space-y-2 px-3 pb-3">
+          <Label htmlFor={`bearer-${entry.id}`}>Bearer token</Label>
+          <Input
+            id={`bearer-${entry.id}`}
+            type="password"
+            value={bearer}
+            onChange={(e) => {
+              setCardState({ bearer: e.target.value });
+            }}
+          />
         </div>
-      </CardContent>
+      ) : null}
+      {open && entry.authType === 'header' ? (
+        <div className="space-y-2 px-3 pb-3">
+          <div>
+            <Label htmlFor={`hn-${entry.id}`}>Header name</Label>
+            <Input
+              id={`hn-${entry.id}`}
+              value={headerName}
+              onChange={(e) => {
+                setCardState({ headerName: e.target.value });
+              }}
+            />
+          </div>
+          <div>
+            <Label htmlFor={`hv-${entry.id}`}>Header value</Label>
+            <Input
+              id={`hv-${entry.id}`}
+              type="password"
+              value={headerValue}
+              onChange={(e) => {
+                setCardState({ headerValue: e.target.value });
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
       {dialog.node}
-    </Card>
+    </div>
   );
 }

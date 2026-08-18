@@ -66,11 +66,14 @@ describe('PageHeader', () => {
 
   it('renders leading navigation before the title and trailing actions after', () => {
     const { container } = render(
-      <PageHeader
-        title="Calendar"
-        leading={<a href="/app/work">Back to Work</a>}
-        trailing={<button type="button">New event</button>}
-      />,
+      <PageHeader title="Calendar">
+        <PageHeader.Leading>
+          <a href="/app/work">Back to Work</a>
+        </PageHeader.Leading>
+        <PageHeader.Trailing>
+          <button type="button">New event</button>
+        </PageHeader.Trailing>
+      </PageHeader>,
     );
     const header = container.querySelector('header');
     const headerText = header?.textContent ?? '';

@@ -567,7 +567,29 @@ function TimelineFilterPanel({
     <DebouncedFilterForm id={formId} basePath="/app/timeline">
       {baseParams.mode ? <input type="hidden" name="mode" value={baseParams.mode} /> : null}
       <CollectionToolbar
-        filters={
+        activeFilters={
+          hasPanelFilters
+            ? [
+                {
+                  key: 'filters',
+                  label: 'Timeline filters',
+                  value: upcomingActive
+                    ? `Upcoming · ${String(TIMELINE_UPCOMING_DAYS)} days`
+                    : 'On',
+                  href: timelineHref(baseParams, {
+                    author: null,
+                    from: null,
+                    to: null,
+                    source: null,
+                    origin: null,
+                    impact: null,
+                  }),
+                },
+              ]
+            : []
+        }
+      >
+        <CollectionToolbar.Filters>
           <div className="flex min-w-0 flex-wrap items-end gap-2">
             <TimelineSourceFilterControls
               key={`timeline-source-filters:${sourceFilterValue}:${originFilterValue}`}
@@ -616,29 +638,8 @@ function TimelineFilterPanel({
               Upcoming · {TIMELINE_UPCOMING_DAYS} days
             </Link>
           </div>
-        }
-        activeFilters={
-          hasPanelFilters
-            ? [
-                {
-                  key: 'filters',
-                  label: 'Timeline filters',
-                  value: upcomingActive
-                    ? `Upcoming · ${String(TIMELINE_UPCOMING_DAYS)} days`
-                    : 'On',
-                  href: timelineHref(baseParams, {
-                    author: null,
-                    from: null,
-                    to: null,
-                    source: null,
-                    origin: null,
-                    impact: null,
-                  }),
-                },
-              ]
-            : []
-        }
-        actions={
+        </CollectionToolbar.Filters>
+        <CollectionToolbar.Actions>
           <nav aria-label="Timeline presets" className="hidden flex-wrap gap-1.5 lg:flex">
             <Link
               href={upcomingHref}
@@ -669,8 +670,8 @@ function TimelineFilterPanel({
               );
             })}
           </nav>
-        }
-        viewControls={
+        </CollectionToolbar.Actions>
+        <CollectionToolbar.View>
           <nav aria-label="Timeline view" className="flex rounded-sm bg-surface p-0.5">
             {(
               [
@@ -697,8 +698,8 @@ function TimelineFilterPanel({
               );
             })}
           </nav>
-        }
-      />
+        </CollectionToolbar.View>
+      </CollectionToolbar>
       <div className="sr-only">
         {hasPanelFilters ? (
           <Link

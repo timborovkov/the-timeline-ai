@@ -3,8 +3,20 @@
 import { Loader2 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 
+import {
+  createCollectionSlot,
+  readCollectionSlots,
+} from '@/components/collections/collection-slot';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
+
+const EditableMetadataValue = createCollectionSlot('value');
+const EditableMetadataEditor = createCollectionSlot('editor');
+
+const METADATA_SLOTS = {
+  value: EditableMetadataValue,
+  editor: EditableMetadataEditor,
+};
 
 function restoreFocusAfterSave(
   trigger: HTMLButtonElement | null,
@@ -23,8 +35,7 @@ function restoreFocusAfterSave(
 
 export function EditableMetadata({
   label,
-  value,
-  editor,
+  children,
   pending = false,
   disabled = false,
   error,
@@ -32,24 +43,26 @@ export function EditableMetadata({
   triggerRef,
 }: {
   label: string;
-  value: ReactNode;
-  editor: ReactNode;
+  children?: ReactNode;
   pending?: boolean;
   disabled?: boolean;
   error?: string | null;
   className?: string;
   triggerRef?: (node: HTMLButtonElement | null) => void;
 }) {
+  const slots = readCollectionSlots(children, METADATA_SLOTS);
   const [open, setOpen] = useState(false);
   const internalTriggerRef = useRef<HTMLButtonElement>(null);
   const wasPendingRef = useRef(false);
   const previousErrorRef = useRef<string | null | undefined>(undefined);
   const errorId = `${label.replaceAll(/\s+/g, '-').toLowerCase()}-error`;
 
-  if (pending && open) {
+  if ((pending || disabled) && open) {
     setOpen(false);
   }
 
+  // Restore focus after a parent-driven save finishes. pending/error are the
+  // completion signals; there is no local event handler for that commit.
   // react-doctor-disable-next-line react-doctor/no-event-handler -- Focus restoration is keyed to parent pending/error, not a local click.
   useEffect(() => {
     restoreFocusAfterSave(
@@ -65,7 +78,7 @@ export function EditableMetadata({
     <span className="relative inline-flex min-w-0 flex-col">
       <Popover
         key={pending ? 'pending' : 'idle'}
-        open={pending ? false : open}
+        open={pending || disabled ? false : open}
         onOpenChange={setOpen}
       >
         <PopoverTrigger asChild>
@@ -90,11 +103,11 @@ export function EditableMetadata({
                 className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none"
               />
             ) : null}
-            <span className="min-w-0 truncate">{value}</span>
+            <span className="min-w-0 truncate">{slots.value}</span>
           </button>
         </PopoverTrigger>
         <PopoverContent role="dialog" aria-label={label} className="min-w-52 p-2">
-          {editor}
+          {slots.editor}
         </PopoverContent>
       </Popover>
       {error ? (
@@ -109,3 +122,6 @@ export function EditableMetadata({
     </span>
   );
 }
+
+EditableMetadata.Value = EditableMetadataValue;
+EditableMetadata.Editor = EditableMetadataEditor;

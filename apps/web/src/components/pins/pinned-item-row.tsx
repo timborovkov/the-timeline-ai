@@ -35,22 +35,24 @@ export function PinnedItemRow({
       onDrop={onDrop}
       className={cn('group min-w-0', draggable && 'cursor-grab active:cursor-grabbing')}
     >
-      <CollectionRow
-        leading={
+      <CollectionRow>
+        <CollectionRow.Leading>
           <span className="flex size-7 shrink-0 items-center justify-center text-fg-muted">
             <PinTargetIcon kind={item.iconKind} className="size-3.5" />
           </span>
-        }
-        title={
+        </CollectionRow.Leading>
+        <CollectionRow.Title>
           <Link
             href={item.href}
             className="block truncate rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {displayText(item.title)}
           </Link>
-        }
-        context={item.subtitle ? displayText(item.subtitle) : undefined}
-        actions={
+        </CollectionRow.Title>
+        <CollectionRow.Context>
+          {item.subtitle ? displayText(item.subtitle) : undefined}
+        </CollectionRow.Context>
+        <CollectionRow.Actions>
           <ItemActionGroup label={`Actions for ${item.title}`}>
             {actions}
             <ItemOverflowMenu targetLabel={item.title}>
@@ -64,8 +66,8 @@ export function PinnedItemRow({
               />
             </ItemOverflowMenu>
           </ItemActionGroup>
-        }
-      />
+        </CollectionRow.Actions>
+      </CollectionRow>
     </div>
   );
 }

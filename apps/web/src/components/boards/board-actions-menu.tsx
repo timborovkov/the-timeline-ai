@@ -25,6 +25,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { toastMutation } from '@/lib/mutation-toast';
 
 export function BoardActionsMenu({
   id,
@@ -53,9 +54,12 @@ export function BoardActionsMenu({
     });
     if (!confirmed) return;
     startTransition(async () => {
-      const result = await deleteBoardAction({ id });
+      const result = await toastMutation(deleteBoardAction({ id }), {
+        loading: 'Deleting board',
+        success: `Deleted ${name}`,
+        error: 'Delete failed',
+      });
       if ('error' in result && result.error) {
-        toast.error(result.error);
         return;
       }
       router.push('/app/boards');
@@ -149,14 +153,20 @@ function BoardSettingsDialog({
       return;
     }
     startTransition(async () => {
-      const result = await updateBoardSettingsAction({
-        id,
-        name: draft.name.trim(),
-        purpose: draft.purpose.trim(),
-        lanes: stages,
-      });
+      const result = await toastMutation(
+        updateBoardSettingsAction({
+          id,
+          name: draft.name.trim(),
+          purpose: draft.purpose.trim(),
+          lanes: stages,
+        }),
+        {
+          loading: 'Saving board',
+          success: `Saved ${draft.name.trim()}`,
+          error: 'Save failed',
+        },
+      );
       if ('error' in result && result.error) {
-        toast.error(result.error);
         return;
       }
       onOpenChange(false);

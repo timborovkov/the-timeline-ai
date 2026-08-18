@@ -1,8 +1,11 @@
 // @vitest-environment happy-dom
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { ReactNode } from 'react';
 
 const fakes = vi.hoisted(() => ({
   useDocumentSearchQuery: vi.fn(),
@@ -12,6 +15,24 @@ const fakes = vi.hoisted(() => ({
 
 vi.mock('@/lib/use-paginated-queries', () => ({
   useDocumentSearchQuery: fakes.useDocumentSearchQuery,
+}));
+vi.mock('@/components/collections/virtual-list', () => ({
+  VirtualList: ({
+    items,
+    renderItem,
+    getItemKey,
+  }: {
+    items: { documentChunkId: string }[];
+    renderItem: (item: { documentChunkId: string }, index: number) => ReactNode;
+    getItemKey: (item: { documentChunkId: string }, index: number) => string;
+  }) =>
+    createElement(
+      'div',
+      null,
+      items.map((item, index) =>
+        createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+      ),
+    ),
 }));
 
 const { DocumentSearch } = await import('./document-search.js');
@@ -39,6 +60,12 @@ function documentHit(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  class FakeIntersectionObserver {
+    observe = vi.fn();
+    unobserve = vi.fn();
+    disconnect = vi.fn();
+  }
+  vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
   fakes.fetchNextPage.mockResolvedValue(undefined);
   fakes.refetch.mockResolvedValue(undefined);
   fakes.useDocumentSearchQuery.mockReturnValue({
@@ -53,6 +80,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
 });
 
 describe('DocumentSearch', () => {
@@ -81,7 +109,10 @@ describe('DocumentSearch', () => {
       expect(fakes.useDocumentSearchQuery).toHaveBeenLastCalledWith('Acme security');
     });
     const result = await screen.findByRole('link', { name: /Acme launch packet/ });
-    expect(screen.getByRole('status').textContent).toBe('1 document match for Acme security');
+    expect(screen.getAllByRole('status').map((node) => node.textContent)).toEqual([
+      '1 document match for Acme security',
+      'No more matching documents',
+    ]);
     expect(result.getAttribute('href')).toBe(
       '/app/documents/11111111-1111-4111-8111-111111111111?version=2#chunk-33333333-3333-4333-8333-333333333333',
     );
@@ -112,9 +143,8 @@ describe('DocumentSearch', () => {
     const searching = await screen.findByRole('button', { name: 'Searching' });
     expect(searching).toBeInstanceOf(HTMLButtonElement);
     expect((searching as HTMLButtonElement).disabled).toBe(true);
-    const loadMore = await screen.findByRole('button', { name: 'Loading…' });
-    expect(loadMore).toBeInstanceOf(HTMLButtonElement);
-    expect((loadMore as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText('Loading more…')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
     expect(screen.getByText('Full chunk text about Acme launch security signoff.')).toBeTruthy();
   });
 
@@ -200,7 +230,7 @@ describe('DocumentSearch', () => {
     render(<DocumentSearch />);
     await user.type(screen.getByRole('searchbox', { name: 'Search document chunks' }), 'Acme');
     await user.click(screen.getByRole('button', { name: 'Search' }));
-    await user.click(screen.getByRole('button', { name: 'Load more' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
 
     expect(fakes.fetchNextPage).toHaveBeenCalledTimes(1);
   });

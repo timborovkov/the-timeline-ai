@@ -2,7 +2,8 @@ import { toast } from 'sonner';
 
 /**
  * Linear-style mutation toast: one loading toast that becomes success, warning,
- * or error. Swap this for the shared `toastMutation` helper when that lands.
+ * or error. Kept separate from `toastMutation` because bulk dismiss needs
+ * mid-work progress updates and a warning tone.
  */
 export async function jobsMutationToast<T>(
   work: (update: (message: string) => void) => Promise<T>,

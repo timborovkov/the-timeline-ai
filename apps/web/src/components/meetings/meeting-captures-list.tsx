@@ -151,17 +151,17 @@ export function MeetingCapturesList({
         estimateSize={52}
         ariaLabel="Meeting captures"
         renderItem={(meeting) => (
-          <CollectionRow
-            title={
+          <CollectionRow>
+            <CollectionRow.Title>
               <Link
                 href={`/app/meetings/${meeting.id}`}
                 className="block truncate rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
               >
                 {displayMeetingLabel(meeting)}
               </Link>
-            }
-            context={displaySourceLabel(meeting.platform)}
-            metadata={
+            </CollectionRow.Title>
+            <CollectionRow.Context>{displaySourceLabel(meeting.platform)}</CollectionRow.Context>
+            <CollectionRow.Metadata>
               <>
                 <CollectionStatus value={meeting.status} />
                 <time
@@ -173,8 +173,8 @@ export function MeetingCapturesList({
                   })}
                 </time>
               </>
-            }
-            actions={
+            </CollectionRow.Metadata>
+            <CollectionRow.Actions>
               <ItemActionGroup label={`Actions for ${displayMeetingLabel(meeting)}`}>
                 {meeting.status === 'scheduled' ? (
                   <SkipScheduledMeetingButton meetingId={meeting.id} />
@@ -185,8 +185,8 @@ export function MeetingCapturesList({
                   initialPinned={meeting.pinned}
                 />
               </ItemActionGroup>
-            }
-          />
+            </CollectionRow.Actions>
+          </CollectionRow>
         )}
       />
       <InfiniteScroll

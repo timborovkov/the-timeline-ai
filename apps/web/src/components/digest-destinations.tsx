@@ -8,12 +8,13 @@ import {
   removeDigestDestinationAction,
   type DigestDestinationState,
 } from '@/app/actions/teams';
+import { CollectionRow } from '@/components/collections/collection-row';
 import { Button } from '@/components/ui/button';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { Label } from '@/components/ui/label';
 
 const SELECT_CLASS =
-  'h-9 w-full rounded-sm border border-input bg-background px-3 text-sm transition-colors hover:border-border-strong ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
+  'h-9 w-full rounded-sm border border-border bg-bg px-3 text-sm text-fg transition-colors hover:border-border-strong ring-offset-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50 focus-visible:ring-offset-2';
 
 export interface DigestDestinationRow {
   id: string;
@@ -60,23 +61,27 @@ export function DigestDestinationsForm({
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">
+      <p className="text-sm text-fg-muted">
         Choose where the daily digest should go. Shared chats get one team-visible digest from the
         bot. Email and direct messages stay personalized per member.
       </p>
       {destinations.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-fg-muted">
           No destinations yet. Email every member remains the default until you add one.
         </p>
       ) : (
-        <ul className="divide-y divide-border rounded-sm border border-border">
+        <ul className="border-x border-border">
           {destinations.map((destination) => (
-            <li
-              key={destination.id}
-              className="flex flex-wrap items-center justify-between gap-3 px-3 py-2"
-            >
-              <span className="text-sm font-medium">{destinationLabel(destination)}</span>
-              <RemoveDestinationForm destinationId={destination.id} />
+            <li key={destination.id}>
+              <CollectionRow>
+                <CollectionRow.Title>{destinationLabel(destination)}</CollectionRow.Title>
+                <CollectionRow.Actions>
+                  <RemoveDestinationForm
+                    destinationId={destination.id}
+                    label={destinationLabel(destination)}
+                  />
+                </CollectionRow.Actions>
+              </CollectionRow>
             </li>
           ))}
         </ul>
@@ -88,7 +93,7 @@ export function DigestDestinationsForm({
           onSelectedChange={setSelected}
         />
       ) : (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-fg-muted">
           Connect Slack or Telegram, or bind a chat, to add more destinations.
         </p>
       )}
@@ -156,7 +161,7 @@ function AddDestinationForm({
   );
 }
 
-function RemoveDestinationForm({ destinationId }: { destinationId: string }) {
+function RemoveDestinationForm({ destinationId, label }: { destinationId: string; label: string }) {
   const [state, action] = useActionState<DigestDestinationState, FormData>(
     removeDigestDestinationAction,
     {},
@@ -164,18 +169,31 @@ function RemoveDestinationForm({ destinationId }: { destinationId: string }) {
   return (
     <form action={action}>
       <input type="hidden" name="destinationId" value={destinationId} />
-      <ItemActionGroup label="Remove digest destination">
-        <Submit label="Remove" pendingLabel="Removing…" />
+      <ItemActionGroup label={`Remove ${label}`}>
+        <Submit label="Remove" pendingLabel="Removing…" variant="ghost" />
       </ItemActionGroup>
       <FormStatus error={state.error} />
     </form>
   );
 }
 
-function Submit({ label, pendingLabel = 'Working…' }: { label: string; pendingLabel?: string }) {
+function Submit({
+  label,
+  pendingLabel = 'Working…',
+  variant = 'default',
+}: {
+  label: string;
+  pendingLabel?: string;
+  variant?: 'default' | 'ghost';
+}) {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" variant="outline" disabled={pending}>
+    <Button
+      type="submit"
+      variant={variant}
+      size={variant === 'ghost' ? 'sm' : 'default'}
+      disabled={pending}
+    >
       {pending ? pendingLabel : label}
     </Button>
   );
@@ -187,7 +205,7 @@ function FormStatus({ error, success }: { error?: string; success?: string }) {
   return (
     <>
       {status ? (
-        <p aria-live="polite" className="text-sm text-muted-foreground" role="status">
+        <p aria-live="polite" className="text-sm text-fg-muted" role="status">
           {status}
         </p>
       ) : null}

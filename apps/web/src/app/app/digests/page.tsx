@@ -39,6 +39,7 @@ export default async function DigestsPage({
   return (
     <div className="space-y-6">
       <PageHeader
+        variant="collection"
         title="Digests"
         subtitle="Every generated daily digest, one day at a time."
         metadata={[{ label: 'days', value: rows.length, mono: true }]}

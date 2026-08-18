@@ -43,7 +43,9 @@ vi.mock('@/components/collections/virtual-list', () => ({
       ),
     ),
 }));
-vi.mock('sonner', () => ({ toast: { error: fakes.toastError, success: vi.fn() } }));
+vi.mock('sonner', () => ({
+  toast: { error: fakes.toastError, success: vi.fn(), loading: vi.fn(() => 'toast-1') },
+}));
 
 const { ObjectCleanupList } = await import('./object-cleanup-list.js');
 
@@ -173,6 +175,6 @@ describe('ObjectCleanupList', () => {
     expect(
       screen.getByRole('button', { name: 'Priority for Legacy suggested cleanup row' }).textContent,
     ).toContain('No priority');
-    expect(fakes.toastError).toHaveBeenCalledWith('Connection lost');
+    expect(fakes.toastError).toHaveBeenCalledWith('Connection lost', { id: 'toast-1' });
   });
 });

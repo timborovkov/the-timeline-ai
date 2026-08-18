@@ -11,7 +11,13 @@ const fakes = vi.hoisted(() => ({
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
-vi.mock('sonner', () => ({ toast: { success: fakes.toastSuccess } }));
+vi.mock('sonner', () => ({
+  toast: {
+    success: fakes.toastSuccess,
+    loading: vi.fn(() => 'toast-1'),
+    error: vi.fn(),
+  },
+}));
 vi.mock('@/app/actions/suggestions', () => ({
   reviseSuggestionItemAction: fakes.reviseSuggestionItemAction,
 }));
@@ -71,7 +77,7 @@ describe('SuggestionChangeDialog', () => {
       description: 'Miku made the promise.',
       proposedPayload: { ownerName: 'Miku' },
     });
-    expect(fakes.toastSuccess).toHaveBeenCalledWith('Proposal updated');
+    expect(fakes.toastSuccess).toHaveBeenCalledWith('Proposal updated', { id: 'toast-1' });
     expect(fakes.refresh).toHaveBeenCalled();
   });
 

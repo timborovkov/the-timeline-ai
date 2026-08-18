@@ -5,6 +5,10 @@ import { SlidersHorizontal, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import {
+  createCollectionSlot,
+  readCollectionSlots,
+} from '@/components/collections/collection-slot';
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -24,37 +28,47 @@ interface ActiveFilter {
   onRemove?: () => void;
 }
 
+const EMPTY_ACTIVE_FILTERS: ActiveFilter[] = [];
+
+const CollectionToolbarSearch = createCollectionSlot('search');
+const CollectionToolbarCount = createCollectionSlot('count');
+const CollectionToolbarFilters = createCollectionSlot('filters');
+const CollectionToolbarClearAll = createCollectionSlot('clearAll');
+const CollectionToolbarView = createCollectionSlot('view');
+const CollectionToolbarActions = createCollectionSlot('actions');
+
+const TOOLBAR_SLOTS = {
+  search: CollectionToolbarSearch,
+  count: CollectionToolbarCount,
+  filters: CollectionToolbarFilters,
+  clearAll: CollectionToolbarClearAll,
+  view: CollectionToolbarView,
+  actions: CollectionToolbarActions,
+};
+
 function filterLabelText(label: ReactNode, fallback: string): string {
   return typeof label === 'string' || typeof label === 'number' ? String(label) : fallback;
 }
 
-const EMPTY_ACTIVE_FILTERS: ActiveFilter[] = [];
-
 export function CollectionToolbar({
-  search,
-  count,
-  filters,
+  children,
   activeFilters = EMPTY_ACTIVE_FILTERS,
-  clearAll,
-  view,
-  viewControls,
-  actions,
   filterTitle = 'Filters',
   className,
 }: {
-  search?: ReactNode;
-  count?: ReactNode;
-  filters?: ReactNode;
+  children?: ReactNode;
   activeFilters?: ActiveFilter[];
-  clearAll?: ReactNode;
-  view?: ReactNode;
-  viewControls?: ReactNode;
-  actions?: ReactNode;
   filterTitle?: string;
   className?: string;
 }) {
+  const slots = readCollectionSlots(children, TOOLBAR_SLOTS);
+  const search = slots.search;
+  const resolvedCount = slots.count;
+  const filters = slots.filters;
+  const clearAll = slots.clearAll;
+  const resolvedView = slots.view;
+  const actions = slots.actions;
   const filterCount = activeFilters.length;
-  const resolvedView = viewControls ?? view;
   const filterTrigger = (
     <button
       type="button"
@@ -75,14 +89,16 @@ export function CollectionToolbar({
     <div className={cn('border-b border-border bg-bg', className)}>
       <div className="flex min-h-11 min-w-0 flex-wrap items-center gap-1.5 px-2 sm:px-3">
         {search ? <div className="min-w-48 flex-1 sm:max-w-sm">{search}</div> : null}
-        {count ? (
+        {resolvedCount ? (
           <output
             aria-label={
-              typeof count === 'string' || typeof count === 'number' ? String(count) : undefined
+              typeof resolvedCount === 'string' || typeof resolvedCount === 'number'
+                ? String(resolvedCount)
+                : undefined
             }
             className="px-1.5 text-xs tabular-nums text-fg-dim"
           >
-            {count}
+            {resolvedCount}
           </output>
         ) : null}
         {filters ? (
@@ -161,3 +177,10 @@ export function CollectionToolbar({
     </div>
   );
 }
+
+CollectionToolbar.Search = CollectionToolbarSearch;
+CollectionToolbar.Count = CollectionToolbarCount;
+CollectionToolbar.Filters = CollectionToolbarFilters;
+CollectionToolbar.ClearAll = CollectionToolbarClearAll;
+CollectionToolbar.View = CollectionToolbarView;
+CollectionToolbar.Actions = CollectionToolbarActions;

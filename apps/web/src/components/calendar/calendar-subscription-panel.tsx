@@ -3,7 +3,6 @@
 import { Link2, RefreshCw, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useReducer } from 'react';
-import { toast } from 'sonner';
 
 import { CopyButton } from '@/components/copy-button';
 import { Button } from '@/components/ui/button';
@@ -17,6 +16,7 @@ import {
 } from '@/components/ui/dialog';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
+import { toastMutation } from '@/lib/mutation-toast';
 
 interface CalendarSubscription {
   prefix: string;
@@ -72,42 +72,66 @@ export function CalendarSubscriptionPanel({
 
   async function createOrReset() {
     const action = subscription ? 'reset' : 'create';
+    const message =
+      action === 'reset'
+        ? 'Unable to reset the calendar URL. Try again.'
+        : 'Unable to create the calendar URL. Try again.';
     dispatch({ busy: true, error: null });
     try {
-      const res = await fetch('/api/team/calendar-subscription', { method: 'POST' });
-      if (!res.ok) {
-        throw new Error('calendar_subscription_update_failed');
+      const res = await toastMutation(
+        (async () => {
+          const response = await fetch('/api/team/calendar-subscription', { method: 'POST' });
+          if (!response.ok) return { error: message };
+          const data = (await response.json()) as SubscriptionResponse;
+          dispatch({
+            subscription: data.subscription,
+            revealedUrl: data.url,
+            confirmAction: null,
+          });
+          return { ok: true };
+        })(),
+        {
+          loading: action === 'reset' ? 'Resetting calendar URL' : 'Creating calendar URL',
+          success: action === 'reset' ? 'Calendar URL reset' : 'Calendar URL created',
+          error: message,
+        },
+      );
+      if (res.error) {
+        dispatch({ error: message });
+        return;
       }
-      const data = (await res.json()) as SubscriptionResponse;
-      dispatch({ subscription: data.subscription, revealedUrl: data.url, confirmAction: null });
-      toast.success(action === 'reset' ? 'Calendar URL reset' : 'Calendar URL created');
       router.refresh();
     } catch {
-      const message =
-        action === 'reset'
-          ? 'Unable to reset the calendar URL. Try again.'
-          : 'Unable to create the calendar URL. Try again.';
       dispatch({ error: message });
-      toast.error(message);
     } finally {
       dispatch({ busy: false });
     }
   }
 
   async function disable() {
+    const message = 'Unable to disable the calendar URL. Try again.';
     dispatch({ busy: true, error: null });
     try {
-      const res = await fetch('/api/team/calendar-subscription', { method: 'DELETE' });
-      if (!res.ok) {
-        throw new Error('calendar_subscription_disable_failed');
+      const res = await toastMutation(
+        (async () => {
+          const response = await fetch('/api/team/calendar-subscription', { method: 'DELETE' });
+          if (!response.ok) return { error: message };
+          dispatch({ subscription: null, revealedUrl: null, confirmAction: null });
+          return { ok: true };
+        })(),
+        {
+          loading: 'Disabling calendar URL',
+          success: 'Calendar URL disabled',
+          error: message,
+        },
+      );
+      if (res.error) {
+        dispatch({ error: message });
+        return;
       }
-      dispatch({ subscription: null, revealedUrl: null, confirmAction: null });
-      toast.success('Calendar URL disabled');
       router.refresh();
     } catch {
-      const message = 'Unable to disable the calendar URL. Try again.';
       dispatch({ error: message });
-      toast.error(message);
     } finally {
       dispatch({ busy: false });
     }
@@ -115,7 +139,7 @@ export function CalendarSubscriptionPanel({
 
   return (
     <section
-      className="rounded-md border border-border bg-surface p-4"
+      className="space-y-3 border-y border-border py-4"
       aria-labelledby="calendar-subscription-heading"
       aria-busy={busy}
     >
