@@ -184,6 +184,13 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       calendar series, and timeline moments; add Home preview, Work management,
       detail/list/search controls, accessible reordering, visibility-safe
       restoration, merge/deletion handling, and explicit-intent Ask tools.
+- [x] U8 — Collection chrome: full-bleed board list/table, compact kanban cards
+      with next step under the title and no on-card Move control, view toggles
+      on the search/filter row, slim Add item / New object / Create board
+      actions, matching collection loading skeletons, and `N of M` infinite-
+      scroll counts. Board kanban and grouped list virtualize against their
+      inner scrollers; the board table stays a semantic table with
+      `content-visibility` row containment.
 
 ## Workspace Reconciliation
 
