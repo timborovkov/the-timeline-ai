@@ -3210,7 +3210,7 @@ async function runSuggestionExtraction(
   const evidenceCitationSystem = evidencePackEnforced
     ? ' Every returned item must include evidenceRawEventIds containing one or more exact raw event UUIDs from the cross-source evidence pack. Cite only pack rows that directly support that item; never invent, transform, or cite an id from another prompt section.'
     : '';
-  let result: Awaited<ReturnType<typeof chatStructured>>;
+  let result: { object: { bundles: SuggestionBundleOutput[] }; model: string };
   try {
     result = await chatStructured({
       schema: (evidencePackEnforced

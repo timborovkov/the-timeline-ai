@@ -4597,10 +4597,10 @@ describe('processSuggestionJobForTests', () => {
     expect(item?.proposedPayload).toMatchObject({
       aliases: ['ENG-42'],
     });
-    expect(
-      Array.isArray(item?.proposedPayload.aliases) &&
-        item.proposedPayload.aliases.every((alias) => String(alias) !== 'RFC-5545'),
-    ).toBe(true);
+    const aliases = (item?.proposedPayload as { aliases?: unknown }).aliases;
+    expect(Array.isArray(aliases) && aliases.every((alias) => String(alias) !== 'RFC-5545')).toBe(
+      true,
+    );
   });
 
   it('strips a guessed done when two related open tasks overlap the evidence', async () => {

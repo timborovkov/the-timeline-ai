@@ -119,7 +119,7 @@ export interface HubAttachableItem {
   title: string;
   description?: string | null | undefined;
   proposedPayload: Record<string, unknown>;
-  targetId?: string | null;
+  targetId?: string | null | undefined;
 }
 
 export interface HubAttachableBundle<T extends HubAttachableItem = HubAttachableItem> {
