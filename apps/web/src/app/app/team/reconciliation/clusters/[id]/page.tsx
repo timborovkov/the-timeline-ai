@@ -167,7 +167,9 @@ function EvidenceList({ rows }: { rows: ReconciliationClusterDetailEvidence[] })
                   <CollectionRow.Title title={hint}>
                     {row.objectName ?? row.contentText ?? 'Unavailable evidence'}
                   </CollectionRow.Title>
-                  <CollectionRow.Context title={hint}>{contextParts.join(' · ')}</CollectionRow.Context>
+                  <CollectionRow.Context title={hint}>
+                    {contextParts.join(' · ')}
+                  </CollectionRow.Context>
                 </CollectionRow>
               </li>
             );
