@@ -23,6 +23,7 @@ import {
   type ChangeEvent,
   type Dispatch,
   type DragEvent,
+  type ReactNode,
   type RefObject,
   type SetStateAction,
   useId,
@@ -234,44 +235,21 @@ function mergeVisibleFolders(
   return Array.from(byId.values());
 }
 
-export function DocumentDrive({
+function useDocumentDriveFileActions({
   currentFolderId,
-  breadcrumbs,
-  folders,
-  documents,
-  documentsNextCursor,
-  defaultVisibility,
-  defaultVisibilityUserIds,
-  members,
-}: Props) {
-  const router = useRouter();
-  const queryClient = useQueryClient();
-  const dialog = useAppDialog();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [pending, startTransition] = useTransition();
-  const [
-    { uploads, visibility, visibilityUserIds, optimisticFolders, deletedFolderIds },
-    dispatchDriveUi,
-  ] = useReducer(driveUiReducer, {
-    uploads: [],
-    visibility: defaultVisibility,
-    visibilityUserIds: defaultVisibilityUserIds ?? [],
-    optimisticFolders: [],
-    deletedFolderIds: new Set<string>(),
-  });
-  const initialDocumentPage = useMemo(
-    () => ({ items: documents, nextCursor: documentsNextCursor }),
-    [documents, documentsNextCursor],
-  );
-  const documentQuery = useDocumentListQuery(currentFolderId, initialDocumentPage);
-  const visibleDocuments: DocumentItem[] = documentQuery.data.pages.flatMap((page) => page.items);
-  const visibleFolders = useMemo(
-    () => mergeVisibleFolders(folders, optimisticFolders, deletedFolderIds),
-    [deletedFolderIds, folders, optimisticFolders],
-  );
-  const activeUploads = uploads.filter((upload) => upload.phase !== 'failed');
-  const uploadButtonLabel = driveUploadButtonLabel(activeUploads);
-
+  visibility,
+  visibilityUserIds,
+  queryClient,
+  router,
+  dispatchDriveUi,
+}: {
+  currentFolderId: string | null;
+  visibility: Props['defaultVisibility'];
+  visibilityUserIds: string[];
+  queryClient: ReturnType<typeof useQueryClient>;
+  router: ReturnType<typeof useRouter>;
+  dispatchDriveUi: Dispatch<DriveUiAction>;
+}) {
   function updateUpload(id: string, patch: Partial<UploadState>): void {
     dispatchDriveUi({ type: 'update-upload', id, patch });
   }
@@ -417,9 +395,58 @@ export function DocumentDrive({
     });
   }
 
+  return { handleUploadFile };
+}
+
+export function DocumentDrive({
+  currentFolderId,
+  breadcrumbs,
+  folders,
+  documents,
+  documentsNextCursor,
+  defaultVisibility,
+  defaultVisibilityUserIds,
+  members,
+}: Props) {
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const dialog = useAppDialog();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [pending, startTransition] = useTransition();
+  const [
+    { uploads, visibility, visibilityUserIds, optimisticFolders, deletedFolderIds },
+    dispatchDriveUi,
+  ] = useReducer(driveUiReducer, {
+    uploads: [],
+    visibility: defaultVisibility,
+    visibilityUserIds: defaultVisibilityUserIds ?? [],
+    optimisticFolders: [],
+    deletedFolderIds: new Set<string>(),
+  });
+  const initialDocumentPage = useMemo(
+    () => ({ items: documents, nextCursor: documentsNextCursor }),
+    [documents, documentsNextCursor],
+  );
+  const documentQuery = useDocumentListQuery(currentFolderId, initialDocumentPage);
+  const visibleDocuments: DocumentItem[] = documentQuery.data.pages.flatMap((page) => page.items);
+  const visibleFolders = useMemo(
+    () => mergeVisibleFolders(folders, optimisticFolders, deletedFolderIds),
+    [deletedFolderIds, folders, optimisticFolders],
+  );
+  const activeUploads = uploads.filter((upload) => upload.phase !== 'failed');
+  const uploadButtonLabel = driveUploadButtonLabel(activeUploads);
+  const driveActions = useDocumentDriveFileActions({
+    currentFolderId,
+    visibility,
+    visibilityUserIds,
+    queryClient,
+    router,
+    dispatchDriveUi,
+  });
+
   function onFileChange(e: ChangeEvent<HTMLInputElement>): void {
     const file = e.target.files?.[0];
-    if (file) void handleUploadFile(file);
+    if (file) void driveActions.handleUploadFile(file);
     e.target.value = '';
   }
 
@@ -512,16 +539,86 @@ export function DocumentDrive({
   function onDrop(e: DragEvent<HTMLDivElement>): void {
     e.preventDefault();
     const files = Array.from(e.dataTransfer.files);
-    for (const file of files) void handleUploadFile(file);
+    for (const file of files) void driveActions.handleUploadFile(file);
   }
 
+  return (
+    <DocumentDriveChrome
+      breadcrumbs={breadcrumbs}
+      pending={pending}
+      uploadButtonLabel={uploadButtonLabel}
+      uploadDisabled={activeUploads.length > 0}
+      fileInputRef={fileInputRef}
+      uploads={uploads}
+      visibility={visibility}
+      visibilityUserIds={visibilityUserIds}
+      members={members}
+      folders={visibleFolders}
+      documents={visibleDocuments}
+      query={documentQuery}
+      dialogNode={dialog.node}
+      onNewFolder={onNewFolder}
+      onFileChange={onFileChange}
+      onVisibilityChange={(nextVisibility) => {
+        dispatchDriveUi({ type: 'set-visibility', visibility: nextVisibility });
+      }}
+      onVisibilityUserIdsChange={(value) => {
+        dispatchDriveUi({ type: 'set-visibility-user-ids', value });
+      }}
+      onDrop={onDrop}
+      onDeleteFolder={onDeleteFolder}
+    />
+  );
+}
+
+function DocumentDriveChrome({
+  breadcrumbs,
+  pending,
+  uploadButtonLabel,
+  uploadDisabled,
+  fileInputRef,
+  uploads,
+  visibility,
+  visibilityUserIds,
+  members,
+  folders,
+  documents,
+  query,
+  dialogNode,
+  onNewFolder,
+  onFileChange,
+  onVisibilityChange,
+  onVisibilityUserIdsChange,
+  onDrop,
+  onDeleteFolder,
+}: {
+  breadcrumbs: Crumb[];
+  pending: boolean;
+  uploadButtonLabel: string;
+  uploadDisabled: boolean;
+  fileInputRef: RefObject<HTMLInputElement | null>;
+  uploads: readonly UploadState[];
+  visibility: Props['defaultVisibility'];
+  visibilityUserIds: string[];
+  members: Props['members'];
+  folders: FolderItem[];
+  documents: DocumentItem[];
+  query: ReturnType<typeof useDocumentListQuery>;
+  dialogNode: ReactNode;
+  onNewFolder: () => Promise<void>;
+  onFileChange: (e: ChangeEvent<HTMLInputElement>) => void;
+  onVisibilityChange: (visibility: Props['defaultVisibility']) => void;
+  onVisibilityUserIdsChange: Dispatch<SetStateAction<string[]>>;
+  onDrop: (e: DragEvent<HTMLDivElement>) => void;
+  onDeleteFolder: (id: string) => Promise<void>;
+}) {
   return (
     <div className="space-y-6">
       <DocumentDriveHeader
         breadcrumbs={breadcrumbs}
         pending={pending}
         uploadButtonLabel={uploadButtonLabel}
-        uploadDisabled={activeUploads.length > 0}
+        uploadDisabled={uploadDisabled}
         fileInputRef={fileInputRef}
         onNewFolder={onNewFolder}
         onFileChange={onFileChange}
@@ -531,22 +628,18 @@ export function DocumentDrive({
         visibility={visibility}
         visibilityUserIds={visibilityUserIds}
         members={members}
-        onVisibilityChange={(nextVisibility) => {
-          dispatchDriveUi({ type: 'set-visibility', visibility: nextVisibility });
-        }}
-        onVisibilityUserIdsChange={(value) => {
-          dispatchDriveUi({ type: 'set-visibility-user-ids', value });
-        }}
+        onVisibilityChange={onVisibilityChange}
+        onVisibilityUserIdsChange={onVisibilityUserIdsChange}
       />
       <DocumentDropZone
-        folders={visibleFolders}
-        documents={visibleDocuments}
-        query={documentQuery}
+        folders={folders}
+        documents={documents}
+        query={query}
         fileInputRef={fileInputRef}
         onDrop={onDrop}
         onDeleteFolder={onDeleteFolder}
       />
-      {dialog.node}
+      {dialogNode}
     </div>
   );
 }

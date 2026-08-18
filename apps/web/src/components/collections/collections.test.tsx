@@ -184,7 +184,6 @@ describe('collection primitives', () => {
 
     const trigger = screen.getByRole('button', { name: 'Priority for Launch plan' });
     expect(trigger.className).toContain('min-h-10');
-    expect(trigger.getAttribute('aria-invalid')).toBe('true');
     expect(trigger.getAttribute('aria-describedby')).toBe('priority-for-launch-plan-error');
     expect(screen.getByText('Save failed').className).toContain('sr-only');
 

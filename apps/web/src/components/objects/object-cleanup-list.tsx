@@ -132,15 +132,7 @@ export function ObjectCleanupList({
   const dialog = useAppDialog();
   const paginationKey = objectFilterKey(filterParams);
   const [
-    {
-      selecting,
-      selected,
-      archivedIds,
-      appendedRows,
-      cursor,
-      paginationKey: loadedKey,
-      loadError,
-    },
+    { selecting, selected, archivedIds, appendedRows, cursor, paginationKey: loadedKey, loadError },
     dispatchCleanupList,
   ] = useReducer(cleanupListReducer, {
     selecting: false,

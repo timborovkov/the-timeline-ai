@@ -262,7 +262,7 @@ export function JobRecoveryList({
       },
     });
     dispatchUi({ type: 'busy', busy: null });
-    if (result.error) return;
+    if ('error' in result && result.error) return;
     if (action === 'retry') {
       dispatchUi({ type: 'retryQueued', id, startedAt: retryStartedAt });
       void finishedJobs.refetch();
@@ -404,7 +404,7 @@ export function JobRecoveryList({
       },
     });
     dispatchUi({ type: 'busy', busy: null });
-    if (result.error && !result.error.includes('couldn’t be queued')) return;
+    if ('error' in result && result.error && !result.error.includes('couldn’t be queued')) return;
     void finishedJobs.refetch();
     router.refresh();
   }
@@ -794,7 +794,7 @@ function ConversationSuggestionRecovery({ onQueued }: { onQueued: () => void }) 
       },
     });
     setQueueing(false);
-    if (!result.error) onQueued();
+    if (!('error' in result && result.error)) onQueued();
   }
 
   return (

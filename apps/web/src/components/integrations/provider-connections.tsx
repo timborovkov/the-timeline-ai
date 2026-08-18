@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { ExternalLink } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useId, useMemo, useReducer, useRef, useState } from 'react';
+import { useId, useMemo, useReducer, useRef, useState, type RefObject } from 'react';
 
 import { InlineError } from '@/components/inline-error';
 import { Button } from '@/components/ui/button';
@@ -537,6 +537,100 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
   }
 
   return (
+    <ConnectionSourcesPanel
+      connection={connection}
+      selected={selected}
+      query={query}
+      searchInputId={searchInputId}
+      searchInputRef={searchInputRef}
+      deleteConfirmationId={deleteConfirmationId}
+      deleteButtonRef={deleteButtonRef}
+      busy={state.busy}
+      confirmDelete={state.confirmDelete}
+      error={error}
+      sourceLoadError={sourceLoadError}
+      picker={{
+        isLoading,
+        isFetching,
+        showEmptyResult,
+        hasSearchQuery,
+      }}
+      grouped={grouped}
+      onQueryChange={(nextQuery) => {
+        dispatch({ type: 'query', query: nextQuery });
+      }}
+      onSave={() => void save()}
+      onDelete={() => {
+        dispatch({ type: 'openDeleteConfirmation' });
+      }}
+      onConfirmDelete={() => void deleteConnection()}
+      onCancelDelete={() => {
+        dispatch({ type: 'closeDeleteConfirmation' });
+        deleteButtonRef.current?.focus();
+      }}
+      onReconnect={() => void reconnect()}
+      onRetry={() => {
+        void retrySourceLoad();
+      }}
+      onToggle={toggle}
+      onClearSearch={clearSearch}
+    />
+  );
+}
+
+function ConnectionSourcesPanel({
+  connection,
+  selected,
+  query,
+  searchInputId,
+  searchInputRef,
+  deleteConfirmationId,
+  deleteButtonRef,
+  busy,
+  confirmDelete,
+  error,
+  sourceLoadError,
+  picker,
+  grouped,
+  onQueryChange,
+  onSave,
+  onDelete,
+  onConfirmDelete,
+  onCancelDelete,
+  onReconnect,
+  onRetry,
+  onToggle,
+  onClearSearch,
+}: {
+  connection: ProviderConnection;
+  selected: Set<string>;
+  query: string;
+  searchInputId: string;
+  searchInputRef: RefObject<HTMLInputElement | null>;
+  deleteConfirmationId: string;
+  deleteButtonRef: RefObject<HTMLButtonElement | null>;
+  busy: SourcePickerState['busy'];
+  confirmDelete: boolean;
+  error: string | null;
+  sourceLoadError: string | null;
+  picker: {
+    isLoading: boolean;
+    isFetching: boolean;
+    showEmptyResult: boolean;
+    hasSearchQuery: boolean;
+  };
+  grouped: ReturnType<typeof groupResourcesByKind>;
+  onQueryChange: (query: string) => void;
+  onSave: () => void;
+  onDelete: () => void;
+  onConfirmDelete: () => void;
+  onCancelDelete: () => void;
+  onReconnect: () => void;
+  onRetry: () => void;
+  onToggle: (resource: ProviderResource) => void;
+  onClearSearch: () => void;
+}) {
+  return (
     <section
       aria-label={`${providerLabel(connection.provider)} account ${connection.displayName}`}
       className="border-y border-border"
@@ -550,13 +644,8 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
             <span className="rounded-sm border border-destructive/40 px-1.5 py-0.5 text-xs text-destructive">
               Needs reconnect
             </span>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={state.busy !== null}
-              onClick={() => void reconnect()}
-            >
-              {state.busy === 'reconnect' ? 'Redirecting…' : 'Reconnect'}
+            <Button size="sm" variant="outline" disabled={busy !== null} onClick={onReconnect}>
+              {busy === 'reconnect' ? 'Redirecting…' : 'Reconnect'}
             </Button>
           </>
         ) : null}
@@ -579,24 +668,22 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
               placeholder="Search by name or type"
               value={query}
               onChange={(event) => {
-                dispatch({ type: 'query', query: event.currentTarget.value });
+                onQueryChange(event.currentTarget.value);
               }}
             />
           </div>
           <PersonalConnectionToolbar
             selectedSize={selected.size}
-            busy={state.busy}
-            isSourcesLoading={isLoading}
+            busy={busy}
+            isSourcesLoading={picker.isLoading}
             hasSourceLoadError={Boolean(sourceLoadError)}
-            confirmingDeletion={state.confirmDelete}
+            confirmingDeletion={confirmDelete}
             deleteButtonRef={deleteButtonRef}
-            onSave={() => void save()}
-            onDelete={() => {
-              dispatch({ type: 'openDeleteConfirmation' });
-            }}
+            onSave={onSave}
+            onDelete={onDelete}
           />
         </div>
-        {state.confirmDelete ? (
+        {confirmDelete ? (
           <section
             id={deleteConfirmationId}
             aria-label="Confirm provider account deletion"
@@ -608,20 +695,12 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
             <Button
               size="sm"
               variant="destructive"
-              disabled={state.busy !== null}
-              onClick={() => void deleteConnection()}
+              disabled={busy !== null}
+              onClick={onConfirmDelete}
             >
-              {state.busy === 'delete' ? 'Deleting' : 'Delete provider account'}
+              {busy === 'delete' ? 'Deleting' : 'Delete provider account'}
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={state.busy !== null}
-              onClick={() => {
-                dispatch({ type: 'closeDeleteConfirmation' });
-                deleteButtonRef.current?.focus();
-              }}
-            >
+            <Button size="sm" variant="outline" disabled={busy !== null} onClick={onCancelDelete}>
               Cancel
             </Button>
           </section>
@@ -630,28 +709,26 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
           <InlineError
             message={connectionErrorMessage(error)}
             details={error}
-            onRetry={() => {
-              void retrySourceLoad();
-            }}
+            onRetry={onRetry}
             retryLabel="Retry loading sources"
-            retrying={isFetching}
+            retrying={picker.isFetching}
           />
         ) : null}
-        {isLoading ? <SourcePickerLoading /> : null}
+        {picker.isLoading ? <SourcePickerLoading /> : null}
         {grouped.map((group) => (
           <ResourceGroup
             key={group.kind}
             title={group.label}
             resources={group.resources}
             selected={selected}
-            onToggle={toggle}
+            onToggle={onToggle}
           />
         ))}
-        {showEmptyResult ? (
+        {picker.showEmptyResult ? (
           <SourcePickerEmptyState
             query={query}
-            hasSearchQuery={hasSearchQuery}
-            onClearSearch={clearSearch}
+            hasSearchQuery={picker.hasSearchQuery}
+            onClearSearch={onClearSearch}
           />
         ) : null}
       </div>

@@ -255,6 +255,65 @@ export function PinnedWorkspaceManager({
   }
 
   return (
+    <PinnedWorkspacePanel
+      items={items}
+      nextCursor={nextCursor}
+      filter={filter}
+      canReorder={canReorder}
+      reorderMode={reorderMode}
+      pending={pending}
+      error={error}
+      announcement={announcement}
+      draggedIdRef={draggedIdRef}
+      onToggleReorder={() => {
+        dispatch({ type: 'toggle-reorder' });
+      }}
+      onLoadMore={loadMorePins}
+      onRemoved={(pinId) => {
+        dispatch({ type: 'remove', pinId });
+      }}
+      onCommitMove={commitMove}
+      onMoveBy={moveBy}
+    />
+  );
+}
+
+function PinnedWorkspacePanel({
+  items,
+  nextCursor,
+  filter,
+  canReorder,
+  reorderMode,
+  pending,
+  error,
+  announcement,
+  draggedIdRef,
+  onToggleReorder,
+  onLoadMore,
+  onRemoved,
+  onCommitMove,
+  onMoveBy,
+}: {
+  items: PinnedItem[];
+  nextCursor: string | null;
+  filter: string;
+  canReorder: boolean;
+  reorderMode: boolean;
+  pending: boolean;
+  error: string | null;
+  announcement: string;
+  draggedIdRef: { current: string | null };
+  onToggleReorder: () => void;
+  onLoadMore: () => void;
+  onRemoved: (pinId: string) => void;
+  onCommitMove: (
+    item: PinnedItem,
+    placement: { beforePinId?: string; afterPinId?: string; edge?: 'top' | 'bottom' },
+    nextItems: PinnedItem[],
+  ) => void;
+  onMoveBy: (index: number, direction: 'up' | 'down' | 'top' | 'bottom') => void;
+}) {
+  return (
     <section aria-labelledby="pinned-work-title">
       <h2 id="pinned-work-title" className="sr-only">
         Pinned work
@@ -286,13 +345,7 @@ export function PinnedWorkspaceManager({
         </CollectionToolbar.View>
         <CollectionToolbar.Actions>
           {canReorder && items.length > 1 ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                dispatch({ type: 'toggle-reorder' });
-              }}
-            >
+            <Button variant="ghost" size="sm" onClick={onToggleReorder}>
               <GripVertical aria-hidden="true" />
               {reorderMode ? 'Done reordering' : 'Reorder'}
             </Button>
@@ -330,7 +383,7 @@ export function PinnedWorkspaceManager({
                   if (from < 0 || from === index) return;
                   const moving = items[from];
                   if (!moving) return;
-                  commitMove(
+                  onCommitMove(
                     moving,
                     from < index ? { afterPinId: item.pinId } : { beforePinId: item.pinId },
                     reorder(items, from, index),
@@ -338,7 +391,7 @@ export function PinnedWorkspaceManager({
                   draggedIdRef.current = null;
                 }}
                 onRemoved={() => {
-                  dispatch({ type: 'remove', pinId: item.pinId });
+                  onRemoved(item.pinId);
                 }}
                 actions={
                   reorderMode ? (
@@ -349,7 +402,7 @@ export function PinnedWorkspaceManager({
                         className="size-8"
                         disabled={pending || index === 0}
                         onClick={() => {
-                          moveBy(index, 'up');
+                          onMoveBy(index, 'up');
                         }}
                         aria-label={`Move ${item.title} up`}
                       >
@@ -361,7 +414,7 @@ export function PinnedWorkspaceManager({
                         className="size-8"
                         disabled={pending || (index === items.length - 1 && !nextCursor)}
                         onClick={() => {
-                          moveBy(index, 'down');
+                          onMoveBy(index, 'down');
                         }}
                         aria-label={`Move ${item.title} down`}
                       >
@@ -373,7 +426,7 @@ export function PinnedWorkspaceManager({
                         className="size-8"
                         disabled={pending || index === 0}
                         onClick={() => {
-                          moveBy(index, 'top');
+                          onMoveBy(index, 'top');
                         }}
                         aria-label={`Move ${item.title} to top`}
                       >
@@ -385,7 +438,7 @@ export function PinnedWorkspaceManager({
                         className="size-8"
                         disabled={pending || (index === items.length - 1 && !nextCursor)}
                         onClick={() => {
-                          moveBy(index, 'bottom');
+                          onMoveBy(index, 'bottom');
                         }}
                         aria-label={`Move ${item.title} to bottom`}
                       >
@@ -404,7 +457,7 @@ export function PinnedWorkspaceManager({
         hasMore={Boolean(nextCursor)}
         loading={pending}
         error={error === 'Could not load more pinned items.' ? error : null}
-        onLoadMore={loadMorePins}
+        onLoadMore={onLoadMore}
         boundLabel="No more matching pins"
         hideBound={items.length === 0}
       />

@@ -3,7 +3,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { CopyButton, copyAnnouncement } from '@/components/copy-button';
+import { CopyButton } from '@/components/copy-button';
+import { copyAnnouncement } from '@/lib/copy-announcement';
 
 describe('copyAnnouncement', () => {
   it('names the copied value when the label has a noun', () => {

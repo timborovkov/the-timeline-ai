@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect } from 'react';
+import { notifyError, notifySuccess } from '@/lib/notify';
 
-import { displayActionError, notifyError, notifySuccess } from '@/lib/notify';
+const announcedRedirects = new Set<string>();
 
 /**
  * Surfaces a completed redirect-result (OAuth callback, export download) on
  * the shared action-toast channel instead of a persistent page banner.
+ * Callers pass already-mapped sentence-like copy.
  */
 export function RedirectActionToast({
   id,
@@ -17,12 +18,11 @@ export function RedirectActionToast({
   error?: string | null;
   success?: string | null;
 }) {
-  useEffect(() => {
-    if (error) {
-      notifyError(id, displayActionError(error, 'Couldn’t finish this action'));
-      return;
-    }
-    if (success) notifySuccess(id, success);
-  }, [error, id, success]);
+  const key = `${id}:${error ?? ''}:${success ?? ''}`;
+  if ((error || success) && !announcedRedirects.has(key)) {
+    announcedRedirects.add(key);
+    if (error) notifyError(id, error);
+    else if (success) notifySuccess(id, success);
+  }
   return null;
 }

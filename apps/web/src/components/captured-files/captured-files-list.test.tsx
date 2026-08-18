@@ -431,7 +431,9 @@ describe('CapturedFilesList', () => {
     expect(fakes.notifyError).not.toHaveBeenCalled();
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Try again' }).hasAttribute('disabled')).toBe(false);
+      expect(screen.getByRole('button', { name: 'Try again' }).hasAttribute('disabled')).toBe(
+        false,
+      );
     });
     const retry = screen.getByRole('button', { name: 'Try again' });
     retry.focus();

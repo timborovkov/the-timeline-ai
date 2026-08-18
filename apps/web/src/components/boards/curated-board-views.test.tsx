@@ -397,16 +397,22 @@ describe('CuratedBoardList', () => {
     await user.selectOptions(screen.getByRole('combobox'), '2');
 
     await waitFor(() => {
-      expect(fakes.notifyAction).toHaveBeenCalledWith(
-        expect.objectContaining({
-          id: 'board-item:item-1',
-          loading: 'Updating priority…',
-          success: 'Priority updated',
-          error: 'Couldn’t update priority',
-          undo: expect.objectContaining({ run: expect.any(Function) }),
-        }),
-      );
+      expect(fakes.notifyAction).toHaveBeenCalled();
     });
+    const options = fakes.notifyAction.mock.calls.at(-1)?.[0] as {
+      id?: string;
+      loading?: string;
+      success?: string;
+      error?: string;
+      undo?: { run?: unknown };
+    };
+    expect(options).toMatchObject({
+      id: 'board-item:item-1',
+      loading: 'Updating priority…',
+      success: 'Priority updated',
+      error: 'Couldn’t update priority',
+    });
+    expect(typeof options.undo?.run).toBe('function');
     expect(fakes.updateItem).toHaveBeenCalledWith('item-1', { priority: 2 });
   });
 });

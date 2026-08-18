@@ -1,6 +1,6 @@
 'use client';
 
-import { type ReactNode, useActionState, useEffect, useMemo, useSyncExternalStore } from 'react';
+import { type ReactNode, useActionState, useMemo, useSyncExternalStore } from 'react';
 import { useFormStatus } from 'react-dom';
 
 import {
@@ -23,12 +23,12 @@ import {
   type RenameTeamState,
 } from '@/app/actions/teams';
 import { FormActionToast } from '@/components/form-action-toast';
+import { RedirectActionToast } from '@/components/redirect-action-toast';
 import { TechnicalDetails } from '@/components/technical-details';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { notifyError } from '@/lib/notify';
 import { DEFAULT_TIMEZONE, timezoneOptions } from '@/lib/timezones';
 
 function unsubscribeTimezone(): void {
@@ -477,11 +477,9 @@ export function TeamExportPanel({
     {},
   );
   const downloadErrorMessage = teamExportDownloadErrorMessage(downloadError);
-  useEffect(() => {
-    if (downloadErrorMessage) notifyError('team-export:download', downloadErrorMessage);
-  }, [downloadErrorMessage]);
   return (
     <div className="space-y-4">
+      <RedirectActionToast id="team-export:download" error={downloadErrorMessage} />
       <form
         action={action}
         className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"

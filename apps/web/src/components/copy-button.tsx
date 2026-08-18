@@ -4,14 +4,10 @@ import { Check, Copy } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { copyAnnouncement } from '@/lib/copy-announcement';
 import { cn } from '@/lib/utils';
 
 const COPIED_MS = 1_600;
-
-export function copyAnnouncement(label: string): string {
-  const noun = label.replace(/^Copy\s+/iu, '').trim();
-  return noun && noun.toLowerCase() !== 'copy' ? `Copied ${noun}.` : 'Copied.';
-}
 
 export function CopyButton({
   value,

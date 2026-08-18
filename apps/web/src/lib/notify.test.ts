@@ -245,9 +245,9 @@ describe('notifyProgress', () => {
 
   it('updates one loading toast then succeeds', async () => {
     const result = await notifyProgress(
-      async (update) => {
+      (update) => {
         update('Dismissed 10 of 20 older jobs…');
-        return { dismissedTotal: 20 };
+        return Promise.resolve({ dismissedTotal: 20 });
       },
       {
         loading: 'Dismissing 20 older jobs…',
@@ -272,8 +272,8 @@ describe('notifyProgress', () => {
   it('maps raw progress errors onto the generic fallback', async () => {
     await expect(
       notifyProgress(
-        async () => {
-          throw new Error('Update failed');
+        () => {
+          return Promise.reject(new Error('Update failed'));
         },
         { loading: 'Dismissing jobs…', success: 'Dismissed jobs.' },
       ),
