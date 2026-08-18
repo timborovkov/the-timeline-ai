@@ -3124,7 +3124,7 @@ describe('processSuggestionJobForTests', () => {
     });
   });
 
-  it('rejects model calendar updates that omit the target id', async () => {
+  it('does not persist model calendar updates that omit the target id', async () => {
     const rawEventId = '10000000-0000-0000-0000-000000000002';
     await seedRawEvent(db as never, {
       id: rawEventId,
@@ -3151,13 +3151,11 @@ describe('processSuggestionJobForTests', () => {
         Promise.resolve({ object: schema.parse(modelObject), model: MODEL_ID }),
       );
 
-    await expect(
-      processSuggestionJobForTests(
-        { db: db as never },
-        { rawEventId, teamId: TEAM_ID },
-        { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
-      ),
-    ).rejects.toThrow(/targetId/i);
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
     await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 0, items: 0 });
   });
 
