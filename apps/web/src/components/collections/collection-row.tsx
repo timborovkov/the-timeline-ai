@@ -5,7 +5,9 @@ import { cn } from '@/lib/utils';
 export function CollectionRow({
   leading,
   title,
+  titleHint,
   context,
+  contextTitle,
   metadata,
   actions,
   selected = false,
@@ -13,7 +15,9 @@ export function CollectionRow({
 }: {
   leading?: ReactNode;
   title: ReactNode;
+  titleHint?: string;
   context?: ReactNode;
+  contextTitle?: string;
   metadata?: ReactNode;
   actions?: ReactNode;
   selected?: boolean;
@@ -30,15 +34,23 @@ export function CollectionRow({
       <div className="flex min-h-10 shrink-0 items-center">{leading}</div>
       <div className="flex min-w-0 flex-col justify-center py-1 sm:flex-row sm:items-center sm:gap-3">
         <div className="min-w-0 flex-1">
-          <div className="min-w-0 truncate text-sm font-medium leading-5 text-fg">{title}</div>
+          <div className="min-w-0 truncate text-sm font-medium leading-5 text-fg" title={titleHint}>
+            {title}
+          </div>
           {context ? (
-            <div className="min-w-0 truncate text-[11px] leading-4 text-fg-dim sm:hidden">
+            <div
+              className="min-w-0 truncate text-[11px] leading-4 text-fg-dim sm:hidden"
+              title={contextTitle}
+            >
               {context}
             </div>
           ) : null}
         </div>
         {context ? (
-          <div className="hidden min-w-0 max-w-[22rem] truncate text-xs text-fg-dim sm:block">
+          <div
+            className="hidden min-w-0 max-w-[22rem] truncate text-xs text-fg-dim sm:block"
+            title={contextTitle}
+          >
             {context}
           </div>
         ) : null}

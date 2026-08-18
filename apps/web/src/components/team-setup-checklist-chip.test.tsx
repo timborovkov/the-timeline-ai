@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 
 import { cleanup, render, screen } from '@testing-library/react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fakes = vi.hoisted(() => ({
@@ -76,5 +77,20 @@ describe('TeamSetupChecklistChip', () => {
     });
     rerender(<TeamSetupChecklistChip />);
     expect(screen.queryByRole('link')).toBeNull();
+  });
+
+  it('stays empty during SSR even when checklist data is already available', () => {
+    fakes.useOnboardingChecklistQuery.mockReturnValue({
+      isPending: false,
+      data: {
+        dismissed: false,
+        items: [
+          { key: 'first_note', completed: true },
+          { key: 'invite_teammate', completed: false },
+        ],
+      },
+    });
+
+    expect(renderToStaticMarkup(<TeamSetupChecklistChip />)).toBe('');
   });
 });

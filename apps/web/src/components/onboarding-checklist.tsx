@@ -4,16 +4,23 @@ import { Check, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useRef, type ButtonHTMLAttributes, type RefObject } from 'react';
 
+import type { OnboardingChecklistView } from '@/lib/onboarding-checklist';
+
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useHydrated } from '@/lib/use-hydrated';
 import { useOnboardingChecklistQuery } from '@/lib/use-paginated-queries';
 import { cn } from '@/lib/utils';
 
 export const TEAM_SETUP_CHECKLIST_PANEL_ID = 'team-setup-checklist-panel';
 
-export function OnboardingChecklist() {
+export function OnboardingChecklist({
+  initialData = null,
+}: {
+  initialData?: OnboardingChecklistView | null;
+}) {
   const {
-    data,
+    data: queryData,
     isPending,
     checklistLoadFailed,
     retryChecklist,
@@ -21,7 +28,9 @@ export function OnboardingChecklist() {
     checklistPending,
     checklistMutationFailed,
     retryChecklistMutation,
-  } = useOnboardingChecklistQuery();
+  } = useOnboardingChecklistQuery(initialData ?? undefined);
+  const hydrated = useHydrated();
+  const data = hydrated ? (queryData ?? initialData) : initialData;
   const dismissButtonRef = useRef<HTMLButtonElement>(null);
   const reopenButtonRef = useRef<HTMLButtonElement>(null);
   const nextActionRef = useRef<HTMLButtonElement>(null);
@@ -74,7 +83,7 @@ export function OnboardingChecklist() {
     </output>
   );
 
-  if (isPending) {
+  if (!data && (!hydrated || isPending)) {
     return (
       <>
         {updateStatus}

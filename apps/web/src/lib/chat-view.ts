@@ -44,7 +44,7 @@ const PAGE_LABELS: Record<string, string> = {
   'team/mcp-servers': 'MCP servers',
   'team/mcp-share': 'MCP share',
   'team/audit': 'Audit',
-  'team/jobs': 'Jobs',
+  'team/jobs': 'Job recovery',
   'team/reconciliation': 'Reconciliation',
   'me/connections': 'Provider accounts',
   'me/mcp-servers': 'Personal MCP',

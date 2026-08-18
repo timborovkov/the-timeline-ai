@@ -87,4 +87,32 @@ describe('SourcesPage', () => {
     expect(memberHtml).not.toContain('Integration audit');
     expect(memberHtml).toContain('Provider resources and webhooks');
   });
+
+  it('sends meeting failures to job recovery for admins only', async () => {
+    const summary = {
+      attention: 1,
+      inboundEmail: 'acme+archive@inbound.timeline.test',
+      emailForwarded: false,
+      telegramConnections: 0,
+      slackConnections: 0,
+      documentsTotal: 0,
+      documentAttention: 0,
+      meetingsRecent: 4,
+      meetingsActive: 0,
+      meetingsFailed: 2,
+      meetingMinutesUsed: 0,
+      nativeIntegrations: 0,
+      integrationErrors: 0,
+      mcpServers: 0,
+      mcpErrors: 0,
+    };
+    fakes.getSourcesStatusSummary.mockResolvedValue(summary);
+
+    const adminHtml = renderToStaticMarkup(await SourcesPage());
+    expect(adminHtml).toContain('/app/team/jobs?kind=meeting_finalization');
+
+    fakes.requireMembership.mockResolvedValue('member');
+    const memberHtml = renderToStaticMarkup(await SourcesPage());
+    expect(memberHtml).not.toContain('/app/team/jobs');
+  });
 });

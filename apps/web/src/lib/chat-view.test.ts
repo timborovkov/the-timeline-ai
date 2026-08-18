@@ -88,6 +88,12 @@ describe('buildChatView', () => {
         searchParams: new URLSearchParams(),
       }).current,
     ).toMatchObject({ kind: 'page', label: 'Digests' });
+    expect(
+      buildChatView({
+        pathname: '/app/team/jobs',
+        searchParams: new URLSearchParams(),
+      }).current,
+    ).toMatchObject({ kind: 'page', label: 'Job recovery' });
   });
 
   it('truncates overlay labels and keeps a fallback', () => {
