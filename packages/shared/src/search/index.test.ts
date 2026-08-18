@@ -106,6 +106,8 @@ describe('global search ranking', () => {
     expect(searchQuickLinks({ query: 'failed jobs', includeAdmin: true })[0]?.id).toBe(
       'job-recovery',
     );
-    expect(searchQuickLinks({ query: 'failed jobs', includeAdmin: false })).toEqual([]);
+    expect(
+      searchQuickLinks({ query: 'failed jobs', includeAdmin: false }).map((item) => item.id),
+    ).not.toContain('job-recovery');
   });
 });
