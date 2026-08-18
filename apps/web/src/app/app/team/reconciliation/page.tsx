@@ -34,6 +34,7 @@ import {
 } from '@/components/reconciliation/row-hint';
 import { reconciliationOutputTone } from '@/components/reconciliation/row-status';
 import { ReconciliationRowTime } from '@/components/reconciliation/row-time';
+import { RedirectActionToast } from '@/components/redirect-action-toast';
 import { SectionHeading } from '@/components/section-heading';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -87,7 +88,13 @@ export default async function ReconciliationDashboardPage({
         teamName={active.teamName}
         srLabel={`Reconciliation for ${active.teamName}. Admins only. ${String(coverage.totalRawEvents)} captured items checked; ${String(coverage.missingRawEvents + coverage.degradedReplayEvidence)} need repair. Times in ${timezone}.`}
       />
-      {notice ? <Notice tone={notice.tone} message={notice.message} /> : null}
+      {notice ? (
+        <RedirectActionToast
+          id="reconciliation:notice"
+          error={notice.tone === 'error' ? notice.message : null}
+          success={notice.tone === 'success' ? notice.message : null}
+        />
+      ) : null}
 
       <CoverageSection
         failures={coverage.releaseGate.failures}
@@ -101,16 +108,6 @@ export default async function ReconciliationDashboardPage({
 
       <ReconciliationAdvancedTools dashboard={dashboard} />
     </div>
-  );
-}
-
-function Notice({ tone, message }: { tone: 'success' | 'error'; message: string }) {
-  const toneClass =
-    tone === 'success'
-      ? 'border-signal/30 bg-signal-soft text-fg'
-      : 'border-destructive/30 bg-destructive/10 text-destructive';
-  return (
-    <div className={`rounded-sm border px-4 py-3 text-sm font-medium ${toneClass}`}>{message}</div>
   );
 }
 

@@ -179,11 +179,10 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 - [x] U6 — Quiet Archive polish and verification: curated Linux visual baselines
       for a few high-value routes (not a full surface×theme matrix), full
       browser QA, `pnpm validate`, and React Doctor 100.
-- [x] U7 — Universal personal pinning: replace separate board/object pins with
-      one ordered mixed collection for objects, boards, documents, meetings,
-      calendar series, and timeline moments; add Home preview, Work management,
-      detail/list/search controls, accessible reordering, visibility-safe
-      restoration, merge/deletion handling, and explicit-intent Ask tools.
+- [x] U8 — Action toasts, compensating Undo, and shared copy: one
+      `notifyAction` / `notifyProgress` lifecycle instead of inline
+      Saving/Saved/error chips; CopyButton for clipboard fields; same-surface
+      Undo on light and dark toasts.
 
 ## Workspace Reconciliation
 

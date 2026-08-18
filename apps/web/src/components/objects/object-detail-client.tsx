@@ -1202,7 +1202,7 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
               : summary?.status === 'missing' && summary.canGenerate
                 ? 'Ready to generate'
                 : summary?.lastErrorCode
-                  ? 'Update failed'
+                  ? 'Couldn’t generate summary'
                   : 'No summary yet'}
         </p>
         {canRequest ? (

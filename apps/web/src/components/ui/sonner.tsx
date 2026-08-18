@@ -8,7 +8,24 @@ import {
   TriangleAlertIcon,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
+import { useEffect, useState } from 'react';
 import { Toaster as Sonner, type ToasterProps } from 'sonner';
+
+function useToastPosition(): NonNullable<ToasterProps['position']> {
+  const [position, setPosition] = useState<NonNullable<ToasterProps['position']>>('bottom-right');
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 639px)');
+    const apply = () => {
+      setPosition(media.matches ? 'bottom-center' : 'bottom-right');
+    };
+    apply();
+    media.addEventListener('change', apply);
+    return () => {
+      media.removeEventListener('change', apply);
+    };
+  }, []);
+  return position;
+}
 
 const toastActionButtonStyle = {
   background: 'var(--surface-2)',
@@ -39,6 +56,7 @@ const toastActionButtonOverride = `
 
 const Toaster = ({ ...props }: ToasterProps) => {
   const { theme = 'system' } = useTheme();
+  const position = useToastPosition();
 
   return (
     <>
@@ -46,7 +64,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
       <Sonner
         theme={theme as ToasterProps['theme']}
         className="toaster group"
-        position="bottom-right"
+        position={position}
         visibleToasts={3}
         closeButton
         icons={{

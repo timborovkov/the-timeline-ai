@@ -75,4 +75,12 @@ describe('useFormActionToast', () => {
       duration: 6_000,
     });
   });
+
+  it('maps raw Update failed and codes onto the generic fallback', () => {
+    render(<Probe id="team-timezone" pending={false} error="Update failed" />);
+    expect(toast.error).toHaveBeenCalledWith('Couldn’t save changes', {
+      id: 'team-timezone',
+      duration: 6_000,
+    });
+  });
 });

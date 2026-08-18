@@ -423,7 +423,10 @@ describe('JobRecoveryList', () => {
     });
     expect(screen.queryByText('Sync Sentry issues')).toBeNull();
     expect(screen.getByText('Nothing needs attention from the last 7 days.')).toBeTruthy();
-    expect(fakes.toastSuccess).toHaveBeenCalledWith('Dismissed 1 job.', { id: 'toast-1' });
+    expect(fakes.toastSuccess).toHaveBeenCalledWith('Dismissed 1 job.', {
+      id: 'toast-1',
+      duration: 2_000,
+    });
     expect(fakes.routerRefresh).toHaveBeenCalledOnce();
   });
 
@@ -464,7 +467,10 @@ describe('JobRecoveryList', () => {
       });
     });
     expect(requests[0]?.body).toEqual({ window: 'older' });
-    expect(fakes.toastSuccess).toHaveBeenCalledWith('Dismissed 12 older jobs.', { id: 'toast-1' });
+    expect(fakes.toastSuccess).toHaveBeenCalledWith('Dismissed 12 older jobs.', {
+      id: 'toast-1',
+      duration: 2_000,
+    });
     expect(screen.queryByRole('button', { name: 'Dismiss older jobs' })).toBeNull();
     expect(fakes.routerRefresh).toHaveBeenCalledOnce();
   });
@@ -499,8 +505,12 @@ describe('JobRecoveryList', () => {
     });
     expect(fakes.toastLoading).toHaveBeenCalledWith('Dismissed 500 of 512 older jobs…', {
       id: 'toast-1',
+      duration: Infinity,
     });
-    expect(fakes.toastSuccess).toHaveBeenCalledWith('Dismissed 512 older jobs.', { id: 'toast-1' });
+    expect(fakes.toastSuccess).toHaveBeenCalledWith('Dismissed 512 older jobs.', {
+      id: 'toast-1',
+      duration: 2_000,
+    });
     expect(screen.queryByRole('button', { name: 'Dismiss older jobs' })).toBeNull();
   });
 

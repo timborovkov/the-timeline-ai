@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.9 · Digest date header, footer window, and activity strip (2026-08-17). Replaces v3.8 Infinite scroll with Linear timeline rows.
+**Version:** v3.10 · Action toasts and shared copy controls (2026-08-18). Replaces v3.9 Digest date header, footer window, and activity strip.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -442,7 +442,8 @@ dismiss them in bulk, and the action keeps going with a loading toast until the
 hidden count is cleared. The visible 7-day list pages through the current
 snapshot with the shared infinite-scroll sentinel. Retry and dismiss
 use the shared action-toast lifecycle (`notifyAction`), including mapped
-sentence-like partial errors. Unprocessed
+sentence-like partial errors. Bulk older-job dismiss uses `notifyProgress` so
+one loading toast can update in place. Unprocessed
 backlog counts (events still waiting for extraction or embedding) and the
 conversation-suggestion backfill stay inside closed Advanced tools and never
 use “needs attention” language. That fold lists backlog counts as dense rows,
@@ -695,9 +696,11 @@ hairline border, not an inverted fill. In light mode the button stays light;
 in dark mode it stays dark. Position is bottom-right on desktop and
 bottom-center on small screens, above a `SelectionBar`. Reduced motion replaces
 the spinner with a static glyph. Feature code calls `notifyAction`,
-`notifyError`, or `notifySuccess` rather than `toast` from `sonner`. Completed
-redirect results (OAuth callback, export download) use that same toast channel
-instead of a page banner.
+`notifyError`, `notifySuccess`, or `notifyProgress` rather than `toast` from
+`sonner`. Long-running admin batches may update one loading toast in place
+through `notifyProgress`. Completed redirect results (OAuth callback, export
+download, queued reconciliation) use that same toast channel instead of a page
+banner.
 
 Copyable values use the shared `CopyButton`. The control shows a copy icon plus
 label, then a check and `Copied`. Dense technical rows use the icon appearance
@@ -787,6 +790,7 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Ask mobile session title | Reuses the resolved conversation title in the mobile session summary, including deep-linked chats outside the recent list. |
 | 2026-08-17 | Quiet sidebar brand and fold control | Aligns the product mark with primary nav, sends it to Home, and replaces the boxed fold glyph with a lighter chevron. |
 | 2026-08-17 | Action toasts and shared copy controls | Replaces inline Saving/Saved/error chips for mutations with one optimistic toast lifecycle, compensating Undo, and a single CopyButton for clipboard fields. |
+| 2026-08-18 | Shared progress toasts and redirect notices | Folds job-recovery batch progress into `notifyProgress` and sends reconciliation queue results through the toast channel. |
 | 2026-08-17 | Infinite scroll with Linear timeline rows | Replaces Load more and numbered pagers with sentinel paging and virtualized rows; Timeline keeps Linear archive rows, sticky dates under the toolbar, and no inventory chip. |
 | 2026-08-17 | Digest status, window range, and linked lists | Replaces Product status with Status, shows the covering time range, lists tasks/objects/calendar with existing Home and email type, and omits empty groups including source inventories. |
 | 2026-08-17 | Digest date header, footer window, and activity strip | Puts the digest date in the header, moves the covering range to footer metadata, and turns web activity into a Home-style mono lime count strip. |

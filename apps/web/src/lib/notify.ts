@@ -121,6 +121,41 @@ export function notifySuccess(id: string, message: string): void {
   toast.success(message, { id, duration: ACTION_TOAST_SUCCESS_MS });
 }
 
+export async function notifyProgress<T>(
+  work: (update: (message: string) => void) => Promise<T>,
+  messages: {
+    loading: string;
+    success: string | ((result: T) => string);
+    error?: string | ((error: unknown) => string);
+    tone?: (result: T) => 'success' | 'warning';
+  },
+): Promise<T> {
+  const toastId = toast.loading(messages.loading, { duration: Infinity });
+  try {
+    const result = await work((message) => {
+      toast.loading(message, { id: toastId, duration: Infinity });
+    });
+    const text =
+      typeof messages.success === 'function' ? messages.success(result) : messages.success;
+    if (messages.tone?.(result) === 'warning') {
+      toast.warning(text, { id: toastId, duration: ACTION_TOAST_ERROR_MS });
+    } else {
+      toast.success(text, { id: toastId, duration: ACTION_TOAST_SUCCESS_MS });
+    }
+    return result;
+  } catch (error) {
+    const raw =
+      typeof messages.error === 'function'
+        ? messages.error(error)
+        : (messages.error ?? (error instanceof Error ? error.message : undefined));
+    toast.error(displayActionError(raw, 'Couldn’t finish this job'), {
+      id: toastId,
+      duration: ACTION_TOAST_ERROR_MS,
+    });
+    throw error;
+  }
+}
+
 export function resetNotifyActionState(): void {
   generations.clear();
 }

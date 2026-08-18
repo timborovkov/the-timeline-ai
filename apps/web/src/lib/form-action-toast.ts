@@ -7,6 +7,7 @@ import {
   ACTION_TOAST_ERROR_MS,
   ACTION_TOAST_LOADING_DELAY_MS,
   ACTION_TOAST_SUCCESS_MS,
+  displayActionError,
 } from '@/lib/notify';
 
 /**
@@ -45,7 +46,10 @@ export function useFormActionToast({
     }
 
     if (error && !fieldError && error !== lastError.current) {
-      toast.error(error, { id, duration: ACTION_TOAST_ERROR_MS });
+      toast.error(displayActionError(error, 'Couldn’t save changes'), {
+        id,
+        duration: ACTION_TOAST_ERROR_MS,
+      });
     } else if (success && !error && success !== lastSuccess.current) {
       toast.success(success, { id, duration: ACTION_TOAST_SUCCESS_MS });
     } else {

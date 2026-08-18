@@ -4,9 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { UndoToastButton } from '@/components/ui/undo-toast-button';
 
 const toast = vi.hoisted(() => ({
-  loading: vi.fn(),
+  loading: vi.fn(() => 'toast-1'),
   success: vi.fn(),
   error: vi.fn(),
+  warning: vi.fn(),
 }));
 
 vi.mock('sonner', () => ({ toast }));
@@ -15,6 +16,7 @@ const {
   displayActionError,
   notifyAction,
   notifyError,
+  notifyProgress,
   notifySuccess,
   resetNotifyActionState,
   ACTION_TOAST_LOADING_DELAY_MS,
@@ -228,6 +230,57 @@ describe('notifySuccess', () => {
     expect(toast.success).toHaveBeenCalledWith('MCP server connected', {
       id: 'integrations:oauth',
       duration: 2_000,
+    });
+  });
+});
+
+describe('notifyProgress', () => {
+  beforeEach(() => {
+    toast.loading.mockReset();
+    toast.loading.mockReturnValue('toast-1');
+    toast.success.mockReset();
+    toast.error.mockReset();
+    toast.warning.mockReset();
+  });
+
+  it('updates one loading toast then succeeds', async () => {
+    const result = await notifyProgress(
+      async (update) => {
+        update('Dismissed 10 of 20 older jobs…');
+        return { dismissedTotal: 20 };
+      },
+      {
+        loading: 'Dismissing 20 older jobs…',
+        success: (value) => `Dismissed ${String(value.dismissedTotal)} older jobs.`,
+      },
+    );
+
+    expect(result).toEqual({ dismissedTotal: 20 });
+    expect(toast.loading).toHaveBeenCalledWith('Dismissing 20 older jobs…', {
+      duration: Infinity,
+    });
+    expect(toast.loading).toHaveBeenCalledWith('Dismissed 10 of 20 older jobs…', {
+      id: 'toast-1',
+      duration: Infinity,
+    });
+    expect(toast.success).toHaveBeenCalledWith('Dismissed 20 older jobs.', {
+      id: 'toast-1',
+      duration: 2_000,
+    });
+  });
+
+  it('maps raw progress errors onto the generic fallback', async () => {
+    await expect(
+      notifyProgress(
+        async () => {
+          throw new Error('Update failed');
+        },
+        { loading: 'Dismissing jobs…', success: 'Dismissed jobs.' },
+      ),
+    ).rejects.toThrow('Update failed');
+    expect(toast.error).toHaveBeenCalledWith('Couldn’t finish this job', {
+      id: 'toast-1',
+      duration: 6_000,
     });
   });
 });
