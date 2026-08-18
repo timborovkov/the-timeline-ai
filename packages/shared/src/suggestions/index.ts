@@ -100,6 +100,7 @@ export {
   qualifyWorkspaceHubs,
   recallRelatedOpenWork,
   selectPromptObjects,
+  stripAmbiguousLifecycleUpdates,
   WORKSPACE_HUB_TYPES,
   type QualifiedWorkspaceHubs,
   type WorkspaceHub,

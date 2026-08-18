@@ -544,15 +544,26 @@ A company must not go in `parentObjectId`. That field is the primary project.
 5. Deterministic attach: unique project → `parentObjectId`; unique client hub →
    `object_relationship`. Two named clients or projects → no silent attach.
    A model-copied `parentObjectId` is overwritten by the unique qualified
-   project, or stripped when qualify is silent.
-6. A teammate accepts in Approvals. That write creates the `entities` row —
+   project, or stripped when qualify is silent. Related-token recall listing
+   two or more open tasks strips a guessed `status: done` the same way —
+   the model does not own that write.
+6. If the suggestion model returns no bundles (or the call is aborted after
+   150s), event-local captures still mint from `I'll X tomorrow` **or** a
+   messy commitment / unique `repo#n` / Linear key. Conversation reviews use
+   that fallback only when the window names exactly one tracked id
+   (`ENG-42`, `acme/app#88`), so alias stamp can run without minting a sibling
+   next to a living pending create. Isolated firehose messages still do not
+   schedule that review from a single event. A file/link share with no
+   matching open task does not mint.
+7. A teammate accepts in Approvals. That write creates the `entities` row —
    the hub. Category classification may run after accept.
-7. Later communication in the same conversation can merge or supersede the
+8. Later communication in the same conversation can merge or supersede the
    pending bundle. If a later message uniquely names the client or project and
    overlaps the pending create's evidence, the pending item is **amended in
    place** (skip user-edited items). It does not silently rewrite the accepted
    task. Later outcome evidence that uniquely matches one accepted open task
    proposes `status: done` — including when nobody said the work is complete.
+   Two overlapping open tasks refuse; qualify strips a guessed completion.
 
 One-product teams (one implicit whole) often look fine even when hubs are
 omitted: there is little client collision. Multi-client teams fail if a
@@ -902,7 +913,7 @@ is half; source independence and packs are the rest.**
 | Object summaries cite related curated documents | Shipped | Document extract should enqueue summary refresh for name-matched hubs |
 | Proposals may read related curated documents | Shipped as supporting context; cannot originate | Pack admission for document chunks |
 | Mention-qualify existing company/project hubs on communication proposals | Shipped: unique mention + meeting title + container labels + calendar/Saved Meeting inherit | Do not cosine-write |
-| Implicit completion of an existing open task from outcome evidence | Shipped: related-token recall into the prompt + LLM lifecycle update when one open task uniquely matches the deliverable | Packs may add supporting captures; still not cosine-write |
+| Implicit completion of an existing open task from outcome evidence | Shipped: related-token recall into the prompt; LLM lifecycle update when one open task uniquely matches; qualify strips a guessed `done` when two recalled tasks overlap | Packs may add supporting captures; still not cosine-write |
 | Linear/Jira/CRM captured-work matcher | Shipped for Linear/Monday `objectMap` + aliases | Jira/CRM when those adapters exist |
 | Captured-work → coalesced task proposal | Shipped on envelope `objectMap` + status + aliases (GitHub, Linear, Monday) | Linear/Monday actor → Timeline user mapping |
 | Rate-limit extract/embed/proposal per connection | Shipped | Keep |
@@ -936,7 +947,7 @@ matcher are already shipped.
 | GitHub PR/issue lifecycle → coalesced task proposals | Shipped as envelope matcher on `objectMap` + status + aliases (GitHub, Linear, Monday) | Linear/Monday actor → Timeline user mapping; Jira/CRM later |
 | Match pending create bundles when the PR arrives first | Shipped: refresh the pending create (status/aliases/actor) instead of letting it rot | Same living-proposal refresh already covers Linear/Monday captured work |
 | Topic-only PR → task `done` | Not shipped, and must not ship as cosine-write | Optional pairwise qualify after recall; still approval-backed |
-| Implicit `done` on an existing Timeline task from later captures (brand book, accepted name) | Shipped when related-token recall uniquely lists one open task | Packs may add supporting captures |
+| Implicit `done` on an existing Timeline task from later captures (brand book, accepted name) | Shipped when related-token recall uniquely lists one open task; two overlaps strip guessed `done` | Packs may add supporting captures |
 | Artifact clusters + authority policy | Shipped | Pulses attach; they do not gain authority |
 | Evidence-pack builder | Implemented, default off | Enforced per adapter after gates |
 | First-class `signalClass` on ingest | Shipped on the envelope and `source_metadata.signal_class` | `relatedExternalObjectId` for pulse attach |
@@ -986,7 +997,8 @@ When code changes ingest or proposals, update this file in the same change.
 - Related open-work recall into the suggestion prompt:
   `recallRelatedOpenWork` in the same file. Distinctive title tokens fill the
   prompt so implicit completion can see a week-old task. Token overlap is
-  recall, not a write join.
+  recall, not a write join. `stripAmbiguousLifecycleUpdates` drops a guessed
+  `done` when two or more recalled open tasks could own the write.
 - Unique work-item alias stamp: `packages/shared/src/suggestions/work-item-aliases.ts`
 - Calendar / Saved Meeting hub inherit: `packages/shared/src/suggestions/linked-hubs.ts`
 - Envelope signal class: `packages/shared/src/integrations/signal-class.ts`
@@ -1024,11 +1036,14 @@ Shipped and frozen ([ADR 0015](./adr/0015-proposal-writes-qualify-hubs-from-ment
   clients refuse. Living pending amends unedited creates.
 - Related-token recall of open tasks into the suggestion prompt, so a week-old
   "Create branding and name proposal" can be proposed `done` when later
-  captures show the brand book / chosen name. Two matching open tasks refuse.
-  File shares that match no open task do not mint.
+  captures show the brand book / chosen name. Two matching open tasks refuse;
+  qualify strips a guessed `done`. File shares that match no open task do not
+  mint.
 - Informal, typo-ridden, mention-soup commitments still mint once a
   conversation review or intentional capture runs. Isolated firehose messages
-  still do not schedule that review from a single event.
+  still do not schedule that review from a single event. If the model returns
+  empty or times out, event-local captures still mint, and conversation
+  reviews mint only when the window names exactly one tracked work-item id.
 - Unique `repo#n` / Linear / Monday ids in the conversation window are stamped
   onto proposed task aliases (one id only). Silent "Weekly" meetings inherit a
   unique hub from calendar / Saved Meeting object links. Extract recent

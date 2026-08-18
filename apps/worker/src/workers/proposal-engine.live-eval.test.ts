@@ -180,7 +180,7 @@ maybeDescribe('live messy proposal-engine eval', () => {
           item.proposedPayload.toEntityId === FABA_COMPANY_ID,
       ),
     ).toBe(true);
-  }, 240_000);
+  }, 360_000);
 
   it('does not unique-attach from a generic #general Slack channel', async () => {
     const eventId = seedId('41');

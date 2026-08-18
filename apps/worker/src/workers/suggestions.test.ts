@@ -295,6 +295,51 @@ describe('fallbackBundles', () => {
       }),
     ).toEqual([]);
   });
+
+  it('mints a login task from messy event-local phrasing', () => {
+    const [bundle] = fallbackBundles({
+      text: 'move login to done after qa, ping me if it slips lol',
+      timezone: 'UTC',
+      occurredAt: REFERENCE_DATE,
+      authorUserId: OWNER_ID,
+    });
+    expect(bundle?.items).toEqual([
+      expect.objectContaining({
+        operation: 'create',
+        targetKind: 'task',
+        title: 'Prepare the login page',
+        proposedPayload: expect.objectContaining({
+          canonicalName: 'Prepare the login page',
+          metadata: { extracted_from_commitment: true, messy_commitment_fallback: true },
+        }) as unknown,
+      }),
+    ]);
+  });
+
+  it('mints a unique Linear follow-up without treating RFC lookalikes as aliases', () => {
+    const [bundle] = fallbackBundles({
+      text: 'wait ENG-42 is the one from last week I think, also see RFC-5545 for the calendar dump, utf-8 is fine, someone just close the loop after qa',
+      timezone: 'UTC',
+      occurredAt: REFERENCE_DATE,
+      authorUserId: OWNER_ID,
+    });
+    expect(bundle?.items[0]).toMatchObject({
+      operation: 'create',
+      targetKind: 'task',
+      title: 'Close the loop on ENG-42',
+    });
+  });
+
+  it('does not mint from a file share with no tracked work', () => {
+    expect(
+      fallbackBundles({
+        text: 'fyi https://drive.google.com/file/d/abc123/view shared the pdf',
+        timezone: 'UTC',
+        occurredAt: REFERENCE_DATE,
+        authorUserId: OWNER_ID,
+      }),
+    ).toEqual([]);
+  });
 });
 
 describe('processSuggestionJobForTests', () => {
@@ -4457,6 +4502,184 @@ describe('processSuggestionJobForTests', () => {
         }),
       ]),
     );
+  });
+
+  it('mints and attaches a messy Monday capture when the model returns nothing', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000e2';
+    const company = await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({
+      type: 'company',
+      canonicalName: 'Faba',
+      actor: { kind: 'user', userId: OWNER_ID },
+    });
+    const project = await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({
+      type: 'project',
+      canonicalName: 'Faba website redesign',
+      actor: { kind: 'user', userId: OWNER_ID },
+    });
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'move login to done after QA, ping me if it slips',
+      sourceMetadata: {
+        monday_board_id: 'board-faba-ext',
+        monday_board_name: 'Faba-ext',
+        monday_item_board_name: 'Faba-ext',
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: emptyModel(), modelId: MODEL_ID },
+    );
+
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundle?.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          targetKind: 'task',
+          title: 'Prepare the login page',
+          proposedPayload: expect.objectContaining({
+            parentObjectId: project.id,
+            projectName: 'Faba website redesign',
+          }) as unknown,
+        }),
+        expect.objectContaining({
+          targetKind: 'object_relationship',
+          proposedPayload: expect.objectContaining({
+            kind: 'related',
+            toEntityId: company.id,
+          }) as unknown,
+        }),
+      ]),
+    );
+  });
+
+  it('stamps a buried Linear key when conversation review gets an empty model', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000e3';
+    const reviewId = '20000000-0000-0000-0000-0000000000e3';
+    const conversationKey = `slack:${TEAM_ID}:T1:C_NOISE2`;
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      source: 'slack',
+      text: 'wait ENG-42 is the one from last week I think, also see RFC-5545 for the calendar dump, utf-8 is fine, someone just close the loop after qa',
+      sourceMetadata: {
+        slack_workspace_id: 'T1',
+        slack_channel_id: 'C_NOISE2',
+        slack_channel_name: 'random',
+        slack_message_ts: '1716810000.000100',
+      },
+    });
+    await seedConversationReview(db as never, {
+      id: reviewId,
+      conversationKey,
+      lastRawEventId: rawEventId,
+      quietUntil: new Date('2026-05-27T09:00:00.000Z'),
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: emptyModel(), modelId: MODEL_ID },
+    );
+
+    const [item] = await db.select().from(agentSuggestionItems);
+    expect(item).toMatchObject({
+      operation: 'create',
+      targetKind: 'task',
+      title: 'Close the loop on ENG-42',
+    });
+    expect(item?.proposedPayload).toMatchObject({
+      aliases: ['ENG-42'],
+    });
+    expect(
+      Array.isArray(item?.proposedPayload.aliases) &&
+        item.proposedPayload.aliases.every((alias) => String(alias) !== 'RFC-5545'),
+    ).toBe(true);
+  });
+
+  it('strips a guessed done when two related open tasks overlap the evidence', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000e4';
+    const brandingId = 'b0ad0001-0000-4000-8000-0000000000e4';
+    const printId = 'b0ad0002-0000-4000-8000-0000000000e4';
+    await db.insert(entities).values([
+      {
+        id: brandingId,
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'Create branding and name proposal',
+        status: 'open',
+      },
+      {
+        id: printId,
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'Print the brand book',
+        status: 'open',
+      },
+    ]);
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'brand book v3 is in drive, sending to print today',
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Mark branding done',
+            confidence: 'medium',
+            items: [
+              {
+                operation: 'update',
+                targetKind: 'task',
+                targetId: brandingId,
+                title: 'Mark branding done',
+                proposedPayload: { status: 'done' },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    expect(await suggestionCounts(pg)).toEqual({ suggestions: 0, items: 0 });
+  });
+
+  it('mints a messy meeting capture after the suggestion model times out', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000e5';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'ok so we should prepare the login page, I can take it, maybe Friday',
+    });
+    const timeout = Object.assign(new Error('This operation was aborted'), {
+      name: 'TimeoutError',
+    });
+    const chat = vi.fn().mockRejectedValue(timeout);
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const [item] = await db.select().from(agentSuggestionItems);
+    expect(item).toMatchObject({
+      operation: 'create',
+      targetKind: 'task',
+      title: 'Prepare the login page',
+    });
   });
 
   it('does not attach a client from a generic Slack #general channel', async () => {

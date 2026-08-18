@@ -119,6 +119,7 @@ export interface HubAttachableItem {
   title: string;
   description?: string | null | undefined;
   proposedPayload: Record<string, unknown>;
+  targetId?: string | null;
 }
 
 export interface HubAttachableBundle<T extends HubAttachableItem = HubAttachableItem> {
@@ -280,12 +281,13 @@ function aliasStrings(value: unknown): string[] {
     : [];
 }
 
+const CLOSED_LIFECYCLE_STATUSES = new Set(['done', 'shipped', 'complete', 'completed']);
+
 /**
  * Recall open tasks/follow-ups whose distinctive title tokens overlap the
  * evidence. This fills the suggestion prompt so a week-old branding task can
  * be updated to done when later captures show the deliverable. It is not a
- * write join: two overlaps stay listed, and the model must still refuse a
- * lifecycle guess.
+ * write join: two overlaps stay listed, and qualify strips a guessed `done`.
  */
 export function recallRelatedOpenWork<
   T extends {
@@ -456,6 +458,43 @@ export function attachUniqueHubsToBundles<T extends HubAttachableItem>(args: {
       }
     }
     return { ...bundle, items };
+  });
+}
+
+/**
+ * When related-token recall lists two or more open tasks, a guessed
+ * completion is not a unique write. Strip `status: done|shipped|complete`
+ * from updates targeting those ids and drop the item if nothing else remains.
+ */
+export function stripAmbiguousLifecycleUpdates<T extends HubAttachableItem>(args: {
+  bundles: HubAttachableBundle<T>[];
+  relatedOpenWorkIds: readonly string[];
+}): HubAttachableBundle<T>[] {
+  if (args.relatedOpenWorkIds.length < 2) return args.bundles;
+  const ambiguous = new Set(args.relatedOpenWorkIds);
+  return args.bundles.flatMap((bundle) => {
+    const items: T[] = [];
+    for (const item of bundle.items) {
+      if (item.operation !== 'update') {
+        items.push(item);
+        continue;
+      }
+      const targetId = item.targetId;
+      if (typeof targetId !== 'string' || !ambiguous.has(targetId)) {
+        items.push(item);
+        continue;
+      }
+      const status = item.proposedPayload.status;
+      if (typeof status !== 'string' || !CLOSED_LIFECYCLE_STATUSES.has(status.toLowerCase())) {
+        items.push(item);
+        continue;
+      }
+      const proposedPayload = { ...item.proposedPayload };
+      delete proposedPayload.status;
+      if (Object.keys(proposedPayload).length === 0) continue;
+      items.push({ ...item, proposedPayload });
+    }
+    return items.length > 0 ? [{ ...bundle, items }] : [];
   });
 }
 

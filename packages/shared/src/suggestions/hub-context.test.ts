@@ -10,6 +10,7 @@ import {
   qualifyWorkspaceHubs,
   recallRelatedOpenWork,
   selectPromptObjects,
+  stripAmbiguousLifecycleUpdates,
   type WorkspaceHub,
 } from '#src/suggestions/hub-context.js';
 
@@ -318,6 +319,66 @@ describe('recallRelatedOpenWork', () => {
       text: 'brand book v3 is in drive',
     });
     expect(recalled).toEqual([]);
+  });
+});
+
+describe('stripAmbiguousLifecycleUpdates', () => {
+  it('drops a guessed done when two related open tasks could own the write', () => {
+    const stripped = stripAmbiguousLifecycleUpdates({
+      relatedOpenWorkIds: ['task-branding', 'task-print'],
+      bundles: [
+        {
+          items: [
+            {
+              operation: 'update',
+              targetKind: 'task',
+              targetId: 'task-branding',
+              title: 'Mark branding done',
+              proposedPayload: { status: 'done' },
+            },
+          ],
+        },
+      ],
+    });
+    expect(stripped).toEqual([]);
+  });
+
+  it('keeps a unique related-task done and non-lifecycle fields on an ambiguous target', () => {
+    const unique = stripAmbiguousLifecycleUpdates({
+      relatedOpenWorkIds: ['task-branding'],
+      bundles: [
+        {
+          items: [
+            {
+              operation: 'update',
+              targetKind: 'task',
+              targetId: 'task-branding',
+              title: 'Mark branding done',
+              proposedPayload: { status: 'done' },
+            },
+          ],
+        },
+      ],
+    });
+    expect(unique[0]?.items[0]?.proposedPayload).toEqual({ status: 'done' });
+
+    const assigneeKept = stripAmbiguousLifecycleUpdates({
+      relatedOpenWorkIds: ['task-branding', 'task-print'],
+      bundles: [
+        {
+          items: [
+            {
+              operation: 'update',
+              targetKind: 'task',
+              targetId: 'task-branding',
+              title: 'Assign branding',
+              proposedPayload: { status: 'done', ownerUserId: 'user-1' },
+            },
+          ],
+        },
+      ],
+    });
+    expect(assigneeKept[0]?.items[0]?.proposedPayload).toEqual({ ownerUserId: 'user-1' });
   });
 });
 
