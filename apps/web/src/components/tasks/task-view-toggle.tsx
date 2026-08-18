@@ -1,5 +1,4 @@
 import { CollectionViewToggle } from '@/components/collections/collection-view-toggle';
-
 import { taskViewHref, type TaskView } from '@/components/tasks/task-view';
 
 const EMPTY_FILTER_PARAMS: Record<string, string> = {};
