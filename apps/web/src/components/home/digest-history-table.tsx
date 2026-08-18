@@ -64,7 +64,7 @@ export function DigestHistoryTable({
           >
             <summary
               aria-expanded={open}
-              className="grid cursor-pointer grid-cols-[8rem_minmax(0,1fr)_6rem] gap-4 py-3 text-sm"
+              className="grid min-h-11 cursor-pointer grid-cols-[8rem_minmax(0,1fr)_6rem] items-center gap-4 py-2 text-sm"
             >
               <span className="font-mono text-xs text-fg-dim">
                 {formatDigestDate(digest.windowEnd, timezone)}

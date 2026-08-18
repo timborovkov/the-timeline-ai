@@ -2,7 +2,7 @@ import { notifyProgress } from '@/lib/notify';
 
 /**
  * Long-running job-recovery batches update one loading toast in place.
- * The shared notify helper owns the Sonner import.
+ * `notifyProgress` owns the Sonner import and warning-tone mapping.
  */
 export const jobsMutationToast = notifyProgress;
 

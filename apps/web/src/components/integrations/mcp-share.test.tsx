@@ -153,6 +153,11 @@ describe('McpShareUi', () => {
     await user.type(label, 'Claude Desktop');
     await user.keyboard('{Enter}');
 
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.queryByRole('dialog', { name: 'Create failed' })).toBeNull();
+
     const createButton = await screen.findByRole<HTMLButtonElement>('button', {
       name: 'Create key',
     });
@@ -176,8 +181,8 @@ describe('McpShareUi', () => {
 
     const row = screen.getByRole('listitem');
     expect(within(row).getByText('CI agent')).toBeTruthy();
-    expect(within(row).getByText(/tl_mcp_abcd/)).toBeTruthy();
-    expect(within(row).getByText(/never used/)).toBeTruthy();
+    expect(within(row).getAllByText(/tl_mcp_abcd/).length).toBeGreaterThan(0);
+    expect(within(row).getAllByText(/never used/).length).toBeGreaterThan(0);
 
     await user.click(within(row).getByRole('button', { name: 'Revoke' }));
     expect(screen.getByText('"CI agent" will stop working for any agent using it.')).toBeTruthy();

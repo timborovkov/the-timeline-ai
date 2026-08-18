@@ -6,7 +6,6 @@ import { useId, useReducer, useRef, useState, type SyntheticEvent } from 'react'
 import { TechnicalDetails } from '@/components/technical-details';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
@@ -218,13 +217,9 @@ function AddCustomMcpServerForm({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle as="h3" className="text-sm">
-          Add MCP server
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
+    <div className="space-y-3 border-y border-border py-4">
+      <h3 className="text-sm font-medium text-fg">Add MCP server</h3>
+      <div className="space-y-3">
         <form ref={formRef} className="space-y-3" onSubmit={(event) => void submit(event)}>
           {ownership === 'personal' ? (
             <p className="text-sm text-fg-muted">
@@ -337,8 +332,8 @@ function AddCustomMcpServerForm({
             ) : null}
           </div>
         </form>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
@@ -497,7 +492,7 @@ export function McpServersUi({
       ) : null}
 
       {servers.length === 0 ? (
-        <div className="rounded-lg border border-border bg-surface p-4">
+        <div className="border-y border-border py-4">
           <h3 className="text-sm font-medium text-fg">
             {isPersonalServer ? 'No personal MCP servers' : 'No custom MCP servers'}
           </h3>
@@ -510,7 +505,7 @@ export function McpServersUi({
       ) : (
         <ul
           aria-label={isPersonalServer ? 'Personal MCP servers' : 'MCP servers'}
-          className="divide-y divide-border rounded-lg border border-border bg-surface"
+          className="divide-y divide-border border-y border-border"
         >
           {servers.map((s) => {
             const mutation = rowMutations[s.id] ?? { busy: null };

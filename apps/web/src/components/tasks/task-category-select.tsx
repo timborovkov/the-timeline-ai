@@ -112,7 +112,7 @@ export function TaskCategorySelect({
           onClick={() => {
             run(value, () => retryTaskCategoryAction({ id: taskId }));
           }}
-          className="font-mono text-[10px] uppercase tracking-[0.1em] text-signal hover:underline disabled:opacity-60"
+          className="text-[11px] text-signal hover:underline disabled:opacity-60"
         >
           Retry automatic category
         </button>

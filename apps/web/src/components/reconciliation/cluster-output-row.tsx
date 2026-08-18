@@ -57,19 +57,17 @@ export function ClusterOutputRow({
 
   return (
     <>
-      <CollectionRow
-        leading={
+      <CollectionRow>
+        <CollectionRow.Leading>
           <CollectionStatus
             value={status}
             label={outputStatusLabel(status)}
             tone={reconciliationOutputTone(status)}
           />
-        }
-        title={title}
-        titleHint={titleHint}
-        context={context}
-        contextTitle={titleHint}
-        metadata={
+        </CollectionRow.Leading>
+        <CollectionRow.Title title={titleHint}>{title}</CollectionRow.Title>
+        <CollectionRow.Context title={titleHint}>{context}</CollectionRow.Context>
+        <CollectionRow.Metadata>
           <time
             dateTime={createdAtIso}
             title={titleHint}
@@ -77,8 +75,8 @@ export function ClusterOutputRow({
           >
             {relativeAge}
           </time>
-        }
-        actions={
+        </CollectionRow.Metadata>
+        <CollectionRow.Actions>
           <ItemActionGroup label={`Actions for ${title}`}>
             <ItemOverflowMenu targetLabel={title}>
               <DropdownMenuItem
@@ -90,8 +88,8 @@ export function ClusterOutputRow({
               </DropdownMenuItem>
             </ItemOverflowMenu>
           </ItemActionGroup>
-        }
-      />
+        </CollectionRow.Actions>
+      </CollectionRow>
       <output
         aria-live="polite"
         aria-atomic="true"

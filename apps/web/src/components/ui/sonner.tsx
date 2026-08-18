@@ -8,23 +8,29 @@ import {
   TriangleAlertIcon,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 import { Toaster as Sonner, type ToasterProps } from 'sonner';
 
+const MOBILE_TOAST_QUERY = '(max-width: 639px)';
+
+function subscribeToastPosition(onStoreChange: () => void): () => void {
+  const media = window.matchMedia(MOBILE_TOAST_QUERY);
+  media.addEventListener('change', onStoreChange);
+  return () => {
+    media.removeEventListener('change', onStoreChange);
+  };
+}
+
+function getToastPosition(): NonNullable<ToasterProps['position']> {
+  return window.matchMedia(MOBILE_TOAST_QUERY).matches ? 'bottom-center' : 'bottom-right';
+}
+
+function getServerToastPosition(): NonNullable<ToasterProps['position']> {
+  return 'bottom-right';
+}
+
 function useToastPosition(): NonNullable<ToasterProps['position']> {
-  const [position, setPosition] = useState<NonNullable<ToasterProps['position']>>('bottom-right');
-  useEffect(() => {
-    const media = window.matchMedia('(max-width: 639px)');
-    const apply = () => {
-      setPosition(media.matches ? 'bottom-center' : 'bottom-right');
-    };
-    apply();
-    media.addEventListener('change', apply);
-    return () => {
-      media.removeEventListener('change', apply);
-    };
-  }, []);
-  return position;
+  return useSyncExternalStore(subscribeToastPosition, getToastPosition, getServerToastPosition);
 }
 
 const toastActionButtonStyle = {
@@ -66,6 +72,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
         className="toaster group"
         position={position}
         visibleToasts={3}
+        gap={8}
         closeButton
         icons={{
           success: <CircleCheckIcon className="size-4 text-status-success" />,

@@ -8,6 +8,8 @@ import type { ReactNode } from 'react';
 
 import { AppDocumentScrollLock } from '@/components/app-document-scroll-lock';
 import { AppMainScrollRestoration } from '@/components/app-shell-scroll-restoration';
+import { ChatViewProvider } from '@/components/chat/chat-view-context';
+import { FloatingAgentChat } from '@/components/chat/floating-agent-chat';
 import { DesktopSidebar } from '@/components/desktop-sidebar';
 import { GlobalSearchPalette } from '@/components/global-search-palette';
 import { InboxBell, type InboxBellNotification } from '@/components/inbox/inbox-bell';
@@ -62,73 +64,76 @@ export function AppShell({
 }: Props) {
   return (
     <WorkspaceTimezoneProvider timezone={workspaceTimezone}>
-      <InspectorProvider>
-        <AppDocumentScrollLock />
-        <SkipLink />
-        <div className="flex h-dvh w-full overflow-hidden bg-bg">
-          {/* ── Left rail (desktop) ─────────────────────────────────── */}
-          <TooltipProvider>
-            <DesktopSidebar
-              active={active}
-              memberships={memberships}
-              recipientInvites={recipientInvites}
-              badges={badges}
-              initialExpanded={sidebarInitiallyExpanded}
-            />
-          </TooltipProvider>
-
-          {/* ── Main column ─────────────────────────────────────────── */}
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            <header className="sticky top-0 z-30 flex h-12 items-center gap-2 border-b border-border bg-bg/90 px-3 backdrop-blur md:px-4">
-              <div className="flex items-center gap-2 md:hidden">
-                <MobileNav
-                  active={active}
-                  memberships={memberships}
-                  recipientInvites={recipientInvites}
-                  badges={badges}
-                />
-                <span className="text-sm font-semibold tracking-tight text-fg">The Timeline</span>
-              </div>
-              <GlobalSearchPalette
-                hint={active.teamName ? `team · ${active.teamName}` : undefined}
-                className="hidden md:block"
+      <ChatViewProvider>
+        <InspectorProvider>
+          <AppDocumentScrollLock />
+          <SkipLink />
+          <div className="flex h-dvh w-full overflow-hidden bg-bg">
+            {/* ── Left rail (desktop) ─────────────────────────────────── */}
+            <TooltipProvider>
+              <DesktopSidebar
+                active={active}
+                memberships={memberships}
+                recipientInvites={recipientInvites}
+                badges={badges}
+                initialExpanded={sidebarInitiallyExpanded}
               />
-              <div className="ml-auto flex items-center gap-1">
-                <Link
-                  href="/app/search"
-                  aria-label="Open search"
-                  className="grid size-9 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg md:hidden"
-                >
-                  <Search aria-hidden="true" className="size-4" />
-                </Link>
-                <InboxBell unreadCount={inbox.unreadCount} notifications={inbox.notifications} />
-                <TeamSetupChecklistChip />
-                <InspectorToggle />
-                <ThemeToggle />
-                <UserMenu user={user} />
-              </div>
-            </header>
-            {/* Every app route shares one frame so page headers and content do
+            </TooltipProvider>
+
+            {/* ── Main column ─────────────────────────────────────────── */}
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+              <header className="sticky top-0 z-30 flex h-12 items-center gap-2 border-b border-border bg-bg/90 px-3 backdrop-blur md:px-4">
+                <div className="flex items-center gap-2 md:hidden">
+                  <MobileNav
+                    active={active}
+                    memberships={memberships}
+                    recipientInvites={recipientInvites}
+                    badges={badges}
+                  />
+                  <span className="text-sm font-semibold tracking-tight text-fg">The Timeline</span>
+                </div>
+                <GlobalSearchPalette
+                  hint={active.teamName ? `team · ${active.teamName}` : undefined}
+                  className="hidden md:block"
+                />
+                <div className="ml-auto flex items-center gap-1">
+                  <Link
+                    href="/app/search"
+                    aria-label="Open search"
+                    className="grid size-9 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg md:hidden"
+                  >
+                    <Search aria-hidden="true" className="size-4" />
+                  </Link>
+                  <InboxBell unreadCount={inbox.unreadCount} notifications={inbox.notifications} />
+                  <TeamSetupChecklistChip />
+                  <InspectorToggle />
+                  <ThemeToggle />
+                  <UserMenu user={user} />
+                </div>
+              </header>
+              {/* Every app route shares one frame so page headers and content do
               not shift horizontally during navigation. Pages may constrain
               an inner prose region, but not their outer frame. */}
-            <main
-              id={APP_MAIN_SCROLL_ID}
-              className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-24 pt-6 md:px-8 md:py-8"
-            >
-              <AppMainScrollRestoration />
-              <div
-                data-slot="app-page-container"
-                className="app-page-container mx-auto w-full max-w-6xl"
+              <main
+                id={APP_MAIN_SCROLL_ID}
+                className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-24 pt-6 md:px-8 md:py-8"
               >
-                {children}
-              </div>
-            </main>
-          </div>
+                <AppMainScrollRestoration />
+                <div
+                  data-slot="app-page-container"
+                  className="app-page-container mx-auto w-full max-w-6xl"
+                >
+                  {children}
+                </div>
+              </main>
+            </div>
 
-          {/* ── Inspector pane (desktop, collapsible) ───────────────── */}
-          <InspectorPane />
-        </div>
-      </InspectorProvider>
+            {/* ── Inspector pane (desktop, collapsible) ───────────────── */}
+            <InspectorPane />
+            <FloatingAgentChat teamId={active.teamId} teamName={active.teamName} />
+          </div>
+        </InspectorProvider>
+      </ChatViewProvider>
     </WorkspaceTimezoneProvider>
   );
 }

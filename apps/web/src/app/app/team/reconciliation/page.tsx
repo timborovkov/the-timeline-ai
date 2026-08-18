@@ -151,14 +151,15 @@ function RepairAttention({
           rawEventCount: failure.rawEventCount,
         });
         return (
-          <CollectionRow
-            key={`${failure.source}:${failure.code}`}
-            leading={<CollectionStatus value="failed" label={copy.status} tone="danger" />}
-            title={copy.detail}
-            titleHint={copy.hint}
-            context={eventSourceLabel(failure.source)}
-            contextTitle={copy.hint}
-          />
+          <CollectionRow key={`${failure.source}:${failure.code}`}>
+            <CollectionRow.Leading>
+              <CollectionStatus value="failed" label={copy.status} tone="danger" />
+            </CollectionRow.Leading>
+            <CollectionRow.Title title={copy.hint}>{copy.detail}</CollectionRow.Title>
+            <CollectionRow.Context title={copy.hint}>
+              {eventSourceLabel(failure.source)}
+            </CollectionRow.Context>
+          </CollectionRow>
         );
       })}
     </div>
@@ -248,23 +249,25 @@ function RecentClusters({
             });
             return (
               <li key={row.id}>
-                <CollectionRow
-                  leading={
+                <CollectionRow>
+                  <CollectionRow.Leading>
                     <CollectionStatus value={row.status} label={clusterStatusLabel(row.status)} />
-                  }
-                  title={
+                  </CollectionRow.Leading>
+                  <CollectionRow.Title title={hint}>
                     <Link
                       href={`/app/team/reconciliation/clusters/${row.id}`}
                       className="block truncate hover:underline"
                     >
                       {row.canonicalName}
                     </Link>
-                  }
-                  titleHint={hint}
-                  context={`${artifactClusterKindLabel(row.artifactClusterKind)} · ${artifactTypeLabel(row.artifactType)}`}
-                  contextTitle={hint}
-                  metadata={<ReconciliationRowTime value={row.updatedAt} hint={hint} />}
-                />
+                  </CollectionRow.Title>
+                  <CollectionRow.Context title={hint}>
+                    {`${artifactClusterKindLabel(row.artifactClusterKind)} · ${artifactTypeLabel(row.artifactType)}`}
+                  </CollectionRow.Context>
+                  <CollectionRow.Metadata>
+                    <ReconciliationRowTime value={row.updatedAt} hint={hint} />
+                  </CollectionRow.Metadata>
+                </CollectionRow>
               </li>
             );
           })}
@@ -307,16 +310,16 @@ function RecentOutputs({
             ].filter((part): part is string => Boolean(part));
             return (
               <li key={row.id}>
-                <CollectionRow
-                  leading={
+                <CollectionRow>
+                  <CollectionRow.Leading>
                     <CollectionStatus
                       value={row.status}
                       label={outputStatusLabel(row.status)}
                       tone={reconciliationOutputTone(row.status)}
                     />
-                  }
-                  title={
-                    row.clusterId ? (
+                  </CollectionRow.Leading>
+                  <CollectionRow.Title title={hint}>
+                    {row.clusterId ? (
                       <Link
                         href={`/app/team/reconciliation/clusters/${row.clusterId}`}
                         className="block truncate hover:underline"
@@ -325,13 +328,15 @@ function RecentOutputs({
                       </Link>
                     ) : (
                       action
-                    )
-                  }
-                  titleHint={hint}
-                  context={contextParts.join(' · ')}
-                  contextTitle={hint}
-                  metadata={<ReconciliationRowTime value={row.createdAt} hint={hint} />}
-                />
+                    )}
+                  </CollectionRow.Title>
+                  <CollectionRow.Context title={hint}>
+                    {contextParts.join(' · ')}
+                  </CollectionRow.Context>
+                  <CollectionRow.Metadata>
+                    <ReconciliationRowTime value={row.createdAt} hint={hint} />
+                  </CollectionRow.Metadata>
+                </CollectionRow>
               </li>
             );
           })}

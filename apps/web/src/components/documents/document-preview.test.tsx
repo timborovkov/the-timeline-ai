@@ -73,7 +73,7 @@ describe('DocumentPreview', () => {
     expect((await screen.findByRole('alert')).textContent).toContain(
       'Could not load this preview: Preview service is unavailable. The original file remains unchanged.',
     );
-    expect(fakes.notifyError).toHaveBeenCalledWith('document:preview', 'Couldn’t open preview');
+    expect(fakes.notifyError).not.toHaveBeenCalled();
     const retry = screen.getByRole('button', { name: 'Try again' });
     await user.tab();
     expect(document.activeElement).toBe(retry);

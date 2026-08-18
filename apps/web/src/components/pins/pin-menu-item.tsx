@@ -26,12 +26,14 @@ export function PinMenuItem({
 }) {
   const [pinned, setPinned] = useState(initialPinned);
   const [pending, setPending] = useState(false);
-  const action = pending === pinned ? 'Pin' : 'Unpin';
-  const Icon = action === 'Unpin' ? PinOff : Pin;
+  const [pendingAction, setPendingAction] = useState<'pin' | 'unpin' | null>(null);
+  const Icon = pinned ? PinOff : Pin;
+  const action = pinned ? 'Unpin' : 'Pin';
+  const pendingLabel = `Saving ${pendingAction ?? action.toLowerCase()}…`;
   return (
     <DropdownMenuItem
       disabled={pending}
-      aria-label={`${action} ${title}`}
+      aria-label={pending ? `${pendingLabel} ${title}` : `${action} ${title}`}
       aria-busy={pending}
       onSelect={(event) => {
         event.preventDefault();
@@ -39,6 +41,7 @@ export function PinMenuItem({
         const previous = pinned;
         setPinned(next);
         setPending(true);
+        setPendingAction(next ? 'pin' : 'unpin');
         void notifyAction({
           id: `pin:${target.kind}:${target.key}`,
           loading: next ? 'Pinning…' : 'Unpinning…',
@@ -53,18 +56,25 @@ export function PinMenuItem({
             },
             success: previous ? 'Pinned' : 'Unpinned',
           },
-        }).then((result) => {
-          if (result.error) {
+        })
+          .then((result) => {
+            if (result.error) {
+              setPinned(previous);
+            } else {
+              onPinnedChange?.(next);
+            }
+          })
+          .catch(() => {
             setPinned(previous);
-          } else {
-            onPinnedChange?.(next);
-          }
-          setPending(false);
-        });
+          })
+          .finally(() => {
+            setPending(false);
+            setPendingAction(null);
+          });
       }}
     >
       <Icon aria-hidden="true" className="size-4" />
-      {`${action} item`}
+      {pending ? pendingLabel : `${action} item`}
     </DropdownMenuItem>
   );
 }

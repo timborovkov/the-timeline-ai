@@ -150,18 +150,17 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
           ) : (
             <div className="border-x border-border">
               {boardModules.map((board) => (
-                <CollectionRow
-                  key={board.id}
-                  title={
+                <CollectionRow key={board.id}>
+                  <CollectionRow.Title>
                     <Link
                       href={`/app/boards/${board.id}`}
                       className="block truncate hover:underline"
                     >
                       {board.name}
                     </Link>
-                  }
-                  context={`Updated ${dateLabel(board.updatedAt, timezone)}`}
-                  metadata={
+                  </CollectionRow.Title>
+                  <CollectionRow.Context>{`Updated ${dateLabel(board.updatedAt, timezone)}`}</CollectionRow.Context>
+                  <CollectionRow.Metadata>
                     <>
                       <span className="px-2 text-xs tabular-nums text-fg-dim">
                         {board.itemCount} items
@@ -170,8 +169,8 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
                         <span className="px-2 text-xs font-medium text-signal">Pinned</span>
                       ) : null}
                     </>
-                  }
-                />
+                  </CollectionRow.Metadata>
+                </CollectionRow>
               ))}
             </div>
           )}

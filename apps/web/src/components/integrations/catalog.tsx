@@ -5,8 +5,9 @@ import { useState } from 'react';
 
 import type * as integrationsLib from '@timeline/shared/integrations';
 
+import { CollectionRow } from '@/components/collections/collection-row';
+import { InlineError } from '@/components/inline-error';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { notifyAction } from '@/lib/notify';
 import { connectionErrorMessage } from '@/lib/ux-errors';
 
@@ -14,10 +15,13 @@ type CatalogEntry = ReturnType<typeof integrationsLib.listAvailableProviders>[nu
 
 export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
   const [pending, setPending] = useState<string | null>(null);
+  const [error, setError] = useState<{ id: string; message: string; details: string } | null>(null);
 
   async function startConnect(id: string) {
     setPending(id);
-    await notifyAction({
+    setError(null);
+    let details = '';
+    const result = await notifyAction({
       id: `integration:connect:${id}`,
       loading: 'Opening sign-in…',
       success: 'Opening sign-in',
@@ -26,6 +30,7 @@ export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
         const res = await fetch(`/api/integrations/${id}/start`, { method: 'POST' });
         if (!res.ok) {
           const text = await res.text();
+          details = text;
           return { error: connectionErrorMessage(text, res.status) };
         }
         const data = (await res.json()) as { url?: string; error?: string };
@@ -33,9 +38,13 @@ export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
           window.location.href = data.url;
           return { ok: true };
         }
+        details = data.error ?? 'unknown';
         return { error: connectionErrorMessage(data.error, res.status) };
       },
     });
+    if (result.error) {
+      setError({ id, message: result.error, details: details || result.error });
+    }
     setPending(null);
   }
 
@@ -59,24 +68,22 @@ export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
       <output className="sr-only" aria-live="polite">
         {pendingProvider ? `Opening ${pendingProvider.label} sign-in` : ''}
       </output>
-      <div className="space-y-3" aria-busy={pending !== null}>
+      <div className="space-y-4" aria-busy={pending !== null}>
         {available.length > 0 ? (
-          <div className="grid auto-rows-fr gap-3 md:grid-cols-2">
+          <div className="border-x border-border">
             {available.map((provider) => (
-              <ProviderCard
+              <ProviderRow
                 key={provider.id}
                 provider={provider}
                 pending={pending}
+                error={error}
                 onConnect={startConnect}
               />
             ))}
           </div>
         ) : null}
         {unavailable.length > 0 ? (
-          <details
-            open={available.length === 0}
-            className="rounded-lg border border-border bg-surface p-4"
-          >
+          <details open={available.length === 0} className="border-y border-border py-3">
             <summary className="cursor-pointer text-sm font-medium text-fg-muted hover:text-fg">
               {available.length === 0
                 ? `Provider setup required · ${String(unavailable.length)}`
@@ -88,12 +95,13 @@ export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
                 connect an account.
               </p>
             ) : null}
-            <div className="mt-4 grid auto-rows-fr gap-3 border-t border-border pt-4 md:grid-cols-2">
+            <div className="mt-3 border-x border-border">
               {unavailable.map((provider) => (
-                <ProviderCard
+                <ProviderRow
                   key={provider.id}
                   provider={provider}
                   pending={pending}
+                  error={error}
                   onConnect={startConnect}
                 />
               ))}
@@ -105,47 +113,45 @@ export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
   );
 }
 
-function ProviderCard({
+function ProviderRow({
   provider,
   pending,
+  error,
   onConnect,
 }: {
   provider: CatalogEntry;
   pending: string | null;
+  error: { id: string; message: string; details: string } | null;
   onConnect: (id: string) => Promise<void>;
 }) {
   const setupStatusId = `provider-${provider.id}-setup-status`;
   const isPending = pending === provider.id;
 
   return (
-    <Card id={provider.id} className="flex h-full scroll-mt-24 flex-col">
-      <CardHeader className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
-        <Image
-          src={provider.logo}
-          alt=""
-          width={28}
-          height={28}
-          className="size-7 rounded-sm bg-surface-2 p-1"
-        />
-        <CardTitle className="text-sm font-medium">{provider.label}</CardTitle>
-        {!provider.available ? (
-          <p
-            id={setupStatusId}
-            className="text-xs text-fg-muted sm:ml-auto sm:max-w-48 sm:text-right"
-          >
-            Provider setup is required before you can connect this account.
-          </p>
-        ) : null}
-      </CardHeader>
-      <CardContent className="flex flex-1 flex-col">
-        <p className="text-sm text-fg-muted">{provider.description}</p>
-        <p className="mt-2 text-xs text-fg-muted">
-          Creates a personal provider account first. Team sync is activated after sources are
-          shared.
-        </p>
-        <div className="mt-auto pt-3">
+    <div id={provider.id} className="scroll-mt-24">
+      <CollectionRow>
+        <CollectionRow.Leading>
+          <Image
+            src={provider.logo}
+            alt=""
+            width={28}
+            height={28}
+            className="size-7 rounded-sm bg-surface-2 p-1"
+          />
+        </CollectionRow.Leading>
+        <CollectionRow.Title>{provider.label}</CollectionRow.Title>
+        <CollectionRow.Context>{provider.description}</CollectionRow.Context>
+        <CollectionRow.Metadata>
+          {!provider.available ? (
+            <span className="text-[11px] text-fg-dim">Setup required</span>
+          ) : (
+            <span className="text-[11px] text-fg-dim">Personal account first</span>
+          )}
+        </CollectionRow.Metadata>
+        <CollectionRow.Actions>
           <Button
             size="sm"
+            variant={provider.available ? 'default' : 'outline'}
             aria-busy={isPending || undefined}
             aria-describedby={!provider.available ? setupStatusId : undefined}
             disabled={!provider.available || pending !== null}
@@ -153,8 +159,23 @@ function ProviderCard({
           >
             {isPending ? 'Opening sign-in…' : 'Connect account'}
           </Button>
+        </CollectionRow.Actions>
+      </CollectionRow>
+      {error?.id === provider.id ? (
+        <div className="px-3 pb-3">
+          <InlineError
+            message={error.message}
+            details={error.details}
+            onRetry={() => void onConnect(provider.id)}
+            retrying={pending === provider.id}
+          />
         </div>
-      </CardContent>
-    </Card>
+      ) : null}
+      {!provider.available ? (
+        <p id={setupStatusId} className="px-3 pb-3 text-xs text-fg-muted">
+          Provider setup is required before you can connect this account.
+        </p>
+      ) : null}
+    </div>
   );
 }

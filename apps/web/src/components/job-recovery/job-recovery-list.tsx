@@ -676,8 +676,8 @@ function JobRecoveryRows({
         const relative = isClient && iso ? formatRelativeAge(iso) : '\u00a0';
         return (
           <li key={item.id}>
-            <CollectionRow
-              leading={
+            <CollectionRow>
+              <CollectionRow.Leading>
                 <CollectionStatus
                   value={retry?.status === 'queued' ? 'retrying' : item.status}
                   tone={
@@ -688,16 +688,20 @@ function JobRecoveryRows({
                         : 'progress'
                   }
                 />
-              }
-              title={item.label}
-              titleHint={hint}
-              context={relative}
-              contextTitle={isClient ? hint : undefined}
-              metadata={retry ? <RetryStatus snapshot={retry} /> : null}
-              actions={
+              </CollectionRow.Leading>
+              <CollectionRow.Title title={hint}>{item.label}</CollectionRow.Title>
+              <CollectionRow.Context title={isClient ? hint : undefined}>
+                {relative}
+              </CollectionRow.Context>
+              {retry ? (
+                <CollectionRow.Metadata>
+                  <RetryStatus snapshot={retry} />
+                </CollectionRow.Metadata>
+              ) : null}
+              <CollectionRow.Actions>
                 <JobRecoveryItemActions busy={busy} item={item} onAction={onAction} retry={retry} />
-              }
-            />
+              </CollectionRow.Actions>
+            </CollectionRow>
           </li>
         );
       })}
@@ -916,13 +920,15 @@ function FinishedJobsArchive({
             const relative = isClient && iso ? formatRelativeAge(iso) : '\u00a0';
             return (
               <li key={item.id}>
-                <CollectionRow
-                  leading={<CollectionStatus value={item.status} />}
-                  title={item.label}
-                  titleHint={hint}
-                  context={relative}
-                  contextTitle={isClient ? hint : undefined}
-                />
+                <CollectionRow>
+                  <CollectionRow.Leading>
+                    <CollectionStatus value={item.status} />
+                  </CollectionRow.Leading>
+                  <CollectionRow.Title title={hint}>{item.label}</CollectionRow.Title>
+                  <CollectionRow.Context title={isClient ? hint : undefined}>
+                    {relative}
+                  </CollectionRow.Context>
+                </CollectionRow>
               </li>
             );
           })}

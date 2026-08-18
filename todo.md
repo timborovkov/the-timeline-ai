@@ -179,10 +179,33 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 - [x] U6 — Quiet Archive polish and verification: curated Linux visual baselines
       for a few high-value routes (not a full surface×theme matrix), full
       browser QA, `pnpm validate`, and React Doctor 100.
-- [x] U8 — Action toasts, compensating Undo, and shared copy: one
-      `notifyAction` / `notifyProgress` lifecycle instead of inline
-      Saving/Saved/error chips; CopyButton for clipboard fields; same-surface
-      Undo on light and dark toasts.
+- [x] U7 — Universal personal pinning: replace separate board/object pins with
+      one ordered mixed collection for objects, boards, documents, meetings,
+      calendar series, and timeline moments; add Home preview, Work management,
+      detail/list/search controls, accessible reordering, visibility-safe
+      restoration, merge/deletion handling, and explicit-intent Ask tools.
+- [x] U8 — Collection density, action toasts, and view-only approval
+      previews: Linear-style optimistic rows, selection-bar bulk actions,
+      live object/event diffs, title-first calendar chips, and the same
+      toolbar/button/skeleton contract on Approvals, Calendar, Connections,
+      Team, Meetings, Timeline, and remaining work surfaces. Mutations use
+      one `notifyAction` / `notifyProgress` lifecycle (150ms delayed spinner,
+      mapped sentence-like errors, compensating Undo, CopyButton, same-surface
+      Undo on light and dark toasts) instead of inline Saving/Saved chips.
+      Calendar Edit event dialogs link to inspectable workspace objects;
+      object Calendar sections link back to the focused event. Job recovery
+      and Reconciliation reuse the same dense collection rows, with IDs and
+      raw errors in Title/Context hover titles.
+- [x] Floating Ask: replace per-page Ask-about buttons with one context-aware
+      float on every authenticated page except Home and full Ask. Close keeps
+      the thread; New resets it. The agent sees the current view first and a
+      capped trail of earlier views (documents, timeline events/moments,
+      meetings, calendar events, tasks, boards, and setup pages). Selected
+      items supply names; empty list pages keep the route label. `⌘J` /
+      `Ctrl+J` lives on the launcher. Desktop is a non-modal panel; mobile is
+      a modal sheet. Home still hands questions into `/app/chat`. Full Ask
+      shows linked context badges. `search_app_guide` / `get_app_route` cover
+      the float; Telegram and suggestions stay out.
 
 ## Workspace Reconciliation
 

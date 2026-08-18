@@ -167,9 +167,12 @@
           </tr>
           <tr>
             <td><code>chat_sessions</code></td>
-            <td>Persisted conversations, optionally pinned to an object.</td>
             <td>
-              <code>created_by</code>, <code>pinned_entity_id</code>, <code>archived_at</code>
+              Persisted conversations, optionally pinned to an object, with a dashboard view trail.
+            </td>
+            <td>
+              <code>created_by</code>, <code>pinned_entity_id</code>, <code>context_trail</code>,
+              <code>archived_at</code>
             </td>
           </tr>
           <tr>
@@ -406,11 +409,13 @@
       <p>
         <code>/api/chat</code> accepts an optional <code>sessionId</code> in the request body. If
         absent, the endpoint auto-creates a session (optionally pinned to an object via
-        <code>pinnedEntityId</code>) and returns the new id via the
-        <code>x-tl-session-id</code> response header. On stream finalize, the endpoint persists the
-        latest user turn and the assistant turn (text + tool calls + finish reason + usage + prompt
-        version) into <code>chat_messages</code> — the delta only, since
-        <code>useChat</code> re-sends the whole transcript on every request.
+        <code>pinnedEntityId</code>, and with a capped <code>contextTrail</code> of dashboard views)
+        and returns the new id via the <code>x-tl-session-id</code> response header. On stream
+        finalize, the endpoint persists the latest user turn and the assistant turn (text + tool
+        calls + finish reason + usage + prompt version) into <code>chat_messages</code> — the delta
+        only, since <code>useChat</code> re-sends the whole transcript on every request. The
+        session's <code>context_trail</code> is merged on later turns so full Ask can show what the
+        conversation was looking at.
       </p>
       <p>
         Sessions without a title get a short title from the first user turn on stream finalize,

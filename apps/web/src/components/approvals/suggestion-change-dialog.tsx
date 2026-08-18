@@ -63,13 +63,16 @@ export function SuggestionChangeDialog({
     setError(null);
     startTransition(async () => {
       const result = await notifyAction({
-        id: `suggestion:${itemId}`,
+        id: `approval:${itemId}:change`,
         loading: 'Updating proposal…',
         success: 'Proposal updated',
         error: 'Couldn’t update proposal',
         run: () => reviseSuggestionItemAction({ itemId, feedback: trimmed }),
       });
-      if (result.error) return;
+      if (result.error) {
+        setError(result.error);
+        return;
+      }
       if ('revisedItem' in result && result.revisedItem) onRevised?.(result.revisedItem);
       setOpen(false);
       setFeedback('');
@@ -85,10 +88,11 @@ export function SuggestionChangeDialog({
           <button
             type="button"
             disabled={disabled}
-            className="rounded-sm border border-border px-2 py-1 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+            className="inline-flex size-8 items-center justify-center rounded-sm text-fg-dim hover:bg-surface-2 hover:text-fg disabled:opacity-50"
             aria-label={`Change ${title}`}
+            title={`Change ${title}`}
           >
-            <Pencil className="size-3.5" />
+            <Pencil className="size-4" />
           </button>
         ) : (
           <Button type="button" size="sm" variant="ghost" disabled={disabled}>

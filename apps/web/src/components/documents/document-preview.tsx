@@ -6,7 +6,6 @@ import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 
 import { getDocumentPreviewUrlAction } from '@/app/actions/documents';
 import { Button } from '@/components/ui/button';
-import { notifyError } from '@/lib/notify';
 import { cn } from '@/lib/utils';
 
 type DocumentPreviewHandle =
@@ -70,7 +69,6 @@ export function DocumentPreview({
         if (requestSeqRef.current !== requestSeq || inFlightKeyRef.current !== requestKey) return;
         inFlightKeyRef.current = null;
         setPreviewError('Preview unavailable');
-        notifyError('document:preview', 'Couldn’t open preview');
         return;
       }
       if (requestSeqRef.current !== requestSeq || inFlightKeyRef.current !== requestKey) return;
@@ -79,7 +77,6 @@ export function DocumentPreview({
         if (loadedKeyRef.current === requestKey) loadedKeyRef.current = null;
         const message = res.error ?? 'Preview unavailable';
         setPreviewError(message);
-        notifyError('document:preview', 'Couldn’t open preview');
         return;
       }
       loadedKeyRef.current = requestKey;

@@ -519,11 +519,7 @@ export function ScheduleMeetingBotForm({
   }
 
   return (
-    <form
-      aria-busy={pending}
-      onSubmit={onSubmit}
-      className="space-y-4 rounded-md border border-border bg-surface p-4"
-    >
+    <form aria-busy={pending} onSubmit={onSubmit} className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor="meetingUrl">Meeting URL</Label>
         <Input
@@ -691,11 +687,7 @@ export function SavedMeetingForm({
   }
 
   return (
-    <form
-      aria-busy={pending}
-      onSubmit={onSubmit}
-      className="space-y-4 rounded-md border border-border bg-surface p-4"
-    >
+    <form aria-busy={pending} onSubmit={onSubmit} className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="saved-title">Meeting title</Label>
@@ -999,7 +991,6 @@ export function JoinSavedMeetingButton({ query }: { query: string }) {
   const [pending, setPending] = useState(false);
   return (
     <Button
-      variant="outline"
       size="sm"
       disabled={pending}
       onClick={() => {

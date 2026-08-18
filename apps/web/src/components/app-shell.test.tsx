@@ -11,6 +11,10 @@ vi.mock('@/components/app-document-scroll-lock', () => ({
   AppDocumentScrollLock: () => createElement('div', { 'data-testid': 'app-document-scroll-lock' }),
 }));
 
+vi.mock('@/components/chat/chat-view-context', () => ({
+  ChatViewProvider: ({ children }: { children: ReactNode }) =>
+    createElement('div', { 'data-testid': 'chat-view-provider' }, children),
+}));
 vi.mock('@/components/chat/floating-agent-chat', () => ({
   FloatingAgentChat: () => createElement('div', { 'data-testid': 'floating-agent-chat' }),
 }));
@@ -98,5 +102,6 @@ describe('AppShell', () => {
     expect(html).toContain(
       'data-slot="app-page-container" class="app-page-container mx-auto w-full max-w-6xl"',
     );
+    expect(html).toContain('data-testid="floating-agent-chat"');
   });
 });

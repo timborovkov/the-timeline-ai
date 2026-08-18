@@ -102,7 +102,7 @@ describe('shared pin controls', () => {
     await user.click(screen.getByRole('menuitem', { name: 'Unpin Launch plan' }));
 
     expect(screen.getByText('Launch plan')).toBeTruthy();
-    const pendingUnpin = screen.getByRole('menuitem', { name: 'Unpin Launch plan' });
+    const pendingUnpin = screen.getByRole('menuitem', { name: 'Saving unpin… Launch plan' });
     expect(pendingUnpin.getAttribute('aria-busy')).toBe('true');
     expect(pendingUnpin.hasAttribute('data-disabled')).toBe(true);
     resolveUnpin?.({ ok: true });

@@ -13,14 +13,17 @@ export default function MeetingsLoading() {
         aria-label="Loading meetings"
       >
         <h1 className="sr-only">Meetings</h1>
-        <PageHeaderSkeleton />
+        <PageHeaderSkeleton variant="collection" />
         <nav aria-label="Loading meeting views" className="flex gap-1 border-b border-border">
           <Skeleton className="h-9 w-20 rounded-t-sm" />
           <Skeleton className="h-9 w-16 rounded-t-sm" />
         </nav>
-        <section aria-label="Meeting setup loading placeholder" className="space-y-3">
+        <section
+          aria-label="Meeting setup loading placeholder"
+          className="space-y-3 border-y border-border py-4"
+        >
           <Skeleton className="h-5 w-44 max-w-full" />
-          <div className="space-y-4 rounded-sm border border-border bg-surface p-4 sm:p-5">
+          <div className="space-y-4">
             <Skeleton className="h-4 w-full max-w-xl" />
             <div className="grid gap-3 sm:grid-cols-2">
               <Skeleton className="h-9 w-full rounded-sm" />

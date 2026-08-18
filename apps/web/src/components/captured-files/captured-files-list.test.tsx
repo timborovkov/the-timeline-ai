@@ -408,7 +408,7 @@ describe('CapturedFilesList', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/documents/captured?cursor=older-cursor');
   });
 
-  it('keeps loaded files visible and toasts when loading older files fails', async () => {
+  it('keeps loaded files visible and offers inline retry when loading older files fails', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'));
     const user = userEvent.setup();
     render(
@@ -422,15 +422,18 @@ describe('CapturedFilesList', () => {
 
     await user.click(screen.getByRole('button', { name: 'Load more' }));
 
-    await waitFor(() => {
-      expect(fakes.notifyError).toHaveBeenCalledWith(
-        'captured-files:load-more',
-        'Couldn’t load older captured files',
-      );
-    });
+    expect(
+      await screen.findByText(
+        'Could not load older captured files. The files already shown remain available. Check your connection, then try again.',
+      ),
+    ).toBeTruthy();
     expect(screen.getByText('Whiteboard planning photo')).toBeTruthy();
+    expect(fakes.notifyError).not.toHaveBeenCalled();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Try again' }).hasAttribute('disabled')).toBe(false);
+    });
     const retry = screen.getByRole('button', { name: 'Try again' });
-    expect(retry.hasAttribute('disabled')).toBe(false);
     retry.focus();
     await user.keyboard('{Enter}');
     await waitFor(() => {

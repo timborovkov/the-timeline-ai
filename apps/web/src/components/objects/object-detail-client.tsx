@@ -37,7 +37,7 @@ import {
 } from '@/app/actions/objects';
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { ArtifactReferenceChip } from '@/components/artifact-reference-chip';
-import { ContextualAskLink } from '@/components/chat/contextual-ask-link';
+import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { ObjectPinButton } from '@/components/objects/object-pin-button';
 import {
@@ -81,7 +81,6 @@ type DraftField = 'canonicalName' | 'aliases' | 'stage' | 'dueAt';
 
 interface Props {
   detail: ObjectDetail;
-  teamId?: string;
   userId: string;
   initialPinned?: boolean;
   suggestions: LocalSuggestion[];
@@ -948,7 +947,6 @@ function ObjectDetailView(props: Props) {
     <div className="space-y-5">
       <ObjectDetailHeader
         detail={view.viewDetail}
-        teamId={props.teamId}
         initialPinned={props.initialPinned ?? false}
         pending={view.pending}
         repairPending={view.repairPending}
@@ -1455,9 +1453,7 @@ function ProvenanceSourceLink({
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
-        {label}
-      </span>
+      <span className="mb-1 block text-xs text-fg-dim">{label}</span>
       {children}
     </label>
   );
@@ -1465,14 +1461,12 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 function ObjectDetailHeader({
   detail,
-  teamId,
   initialPinned,
   pending,
   repairPending,
   onRepairMemory,
 }: {
   detail: ObjectDetail;
-  teamId?: string;
   initialPinned: boolean;
   pending: boolean;
   repairPending: boolean;
@@ -1523,19 +1517,13 @@ function ObjectDetailHeader({
         </div>
         <div className="flex flex-wrap items-center gap-2 lg:justify-end">
           <ObjectPinButton objectId={detail.id} initialPinned={initialPinned} compact />
-          {teamId ? (
-            <ContextualAskLink
-              teamId={teamId}
-              context={{
-                pathname: `/app/objects/${detail.id}`,
-                routeKind: 'object-detail',
-                objectId: detail.id,
-              }}
-              pinnedEntityId={detail.id}
-              pinnedEntityName={displayObjectTitle(detail)}
-              label="Ask about object"
-            />
-          ) : null}
+          <ChatViewContextBinder
+            viewKey={`object:${detail.id}`}
+            kind="object"
+            href={`/app/objects/${detail.id}`}
+            label={displayObjectTitle(detail)}
+            objectId={detail.id}
+          />
           {detail.type === 'project' && detail.archivedAt === null ? (
             <Link
               href={`/app/objects/new?project=${encodeURIComponent(detail.id)}&returnTo=${encodeURIComponent(`/app/objects/${detail.id}`)}`}
@@ -2016,7 +2004,12 @@ function ConnectedCalendarList({
               key={event.id}
               className="grid gap-1 rounded-sm border border-border bg-surface px-3 py-2 text-sm"
             >
-              <span className="font-medium">{displayText(event.title)}</span>
+              <Link
+                href={`/app/calendar?event=${encodeURIComponent(event.id)}&date=${event.startAt.toISOString().slice(0, 10)}&view=day`}
+                className="font-medium hover:underline"
+              >
+                {displayText(event.title)}
+              </Link>
               <span className="text-[11px] text-fg-dim">
                 {formatDisplayDateTime(event.startAt, { timezone })} · {statusLabel(event.showAs)}
               </span>
@@ -2259,9 +2252,7 @@ function ObjectRelationshipsSection({
     <ObjectPanel title="Related" eyebrow={String(relationships.length)}>
       <div className="mb-4 grid gap-2">
         <label>
-          <span className="mb-1 block text-[11px] uppercase tracking-wide text-muted-foreground">
-            Link to object
-          </span>
+          <span className="mb-1 block text-[11px] text-fg-dim">Link to object</span>
           <input
             value={linkQuery}
             onChange={(e) => {
@@ -2273,9 +2264,7 @@ function ObjectRelationshipsSection({
         </label>
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
           <label>
-            <span className="mb-1 block text-[11px] uppercase tracking-wide text-muted-foreground">
-              Kind
-            </span>
+            <span className="mb-1 block text-[11px] text-fg-dim">Kind</span>
             <select
               value={linkKind}
               onChange={(e) => {
@@ -2342,7 +2331,7 @@ function ObjectRelationshipsSection({
                 {displayText(relationship.otherName)}
               </a>
               <div className="flex items-center justify-between gap-3">
-                <span className="text-xs uppercase tracking-wide text-muted-foreground">
+                <span className="text-xs text-fg-dim">
                   {relationship.kind === 'related'
                     ? relationship.kind
                     : relationship.direction === 'out'
@@ -2433,7 +2422,7 @@ function ObjectRecentChangeItem({
     >
       <div className="flex min-w-0 items-start justify-between gap-3">
         <span className="min-w-0 break-words font-medium">{changeFieldLabel(change.field)}</span>
-        <span className="shrink-0 text-[11px] uppercase tracking-wide text-muted-foreground">
+        <span className="shrink-0 text-[11px] text-fg-dim">
           {statusLabel(change.actorKind)} · {statusLabel(change.status)}
         </span>
       </div>

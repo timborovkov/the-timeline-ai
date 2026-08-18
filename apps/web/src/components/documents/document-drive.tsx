@@ -208,6 +208,32 @@ function uploadPhaseLabel(upload: UploadState): string {
   return 'Finishing';
 }
 
+function driveUploadButtonLabel(activeUploads: UploadState[]): string {
+  const activeUpload = activeUploads[0];
+  if (activeUploads.length === 0) return 'Upload';
+  if (activeUploads.length === 1) {
+    return `${activeUpload ? uploadPhaseLabel(activeUpload) : 'Uploading'}...`;
+  }
+  return `Uploading ${String(activeUploads.length)} files...`;
+}
+
+function mergeVisibleFolders(
+  folders: readonly FolderItem[],
+  optimisticFolders: readonly FolderItem[],
+  deletedFolderIds: ReadonlySet<string>,
+): FolderItem[] {
+  const serverFolderIds = new Set(folders.map((folder) => folder.id));
+  const activeOptimisticFolders = optimisticFolders.filter(
+    (folder) => !serverFolderIds.has(folder.id),
+  );
+  const merged = [...activeOptimisticFolders, ...folders];
+  const byId = new Map<string, FolderItem>();
+  for (const folder of merged) {
+    if (!deletedFolderIds.has(folder.id) && !byId.has(folder.id)) byId.set(folder.id, folder);
+  }
+  return Array.from(byId.values());
+}
+
 export function DocumentDrive({
   currentFolderId,
   breadcrumbs,
@@ -239,26 +265,12 @@ export function DocumentDrive({
   );
   const documentQuery = useDocumentListQuery(currentFolderId, initialDocumentPage);
   const visibleDocuments: DocumentItem[] = documentQuery.data.pages.flatMap((page) => page.items);
-  const visibleFolders = useMemo(() => {
-    const serverFolderIds = new Set(folders.map((folder) => folder.id));
-    const activeOptimisticFolders = optimisticFolders.filter(
-      (folder) => !serverFolderIds.has(folder.id),
-    );
-    const merged = [...activeOptimisticFolders, ...folders];
-    const byId = new Map<string, FolderItem>();
-    for (const folder of merged) {
-      if (!deletedFolderIds.has(folder.id) && !byId.has(folder.id)) byId.set(folder.id, folder);
-    }
-    return Array.from(byId.values());
-  }, [deletedFolderIds, folders, optimisticFolders]);
+  const visibleFolders = useMemo(
+    () => mergeVisibleFolders(folders, optimisticFolders, deletedFolderIds),
+    [deletedFolderIds, folders, optimisticFolders],
+  );
   const activeUploads = uploads.filter((upload) => upload.phase !== 'failed');
-  const activeUpload = activeUploads[0];
-  const uploadButtonLabel =
-    activeUploads.length === 0
-      ? 'Upload'
-      : activeUploads.length === 1
-        ? `${activeUpload ? uploadPhaseLabel(activeUpload) : 'Uploading'}...`
-        : `Uploading ${String(activeUploads.length)} files...`;
+  const uploadButtonLabel = driveUploadButtonLabel(activeUploads);
 
   function updateUpload(id: string, patch: Partial<UploadState>): void {
     dispatchDriveUi({ type: 'update-upload', id, patch });
@@ -626,7 +638,7 @@ function Breadcrumbs({ breadcrumbs }: { breadcrumbs: Crumb[] }) {
 function UploadStatusList({ uploads }: { uploads: readonly UploadState[] }) {
   if (uploads.length === 0) return null;
   return (
-    <output className="space-y-2 rounded-lg border border-border bg-card/40 p-3" aria-live="polite">
+    <output className="space-y-2 border-y border-border py-3" aria-live="polite">
       {uploads.map((upload) => (
         <div key={upload.id} className="flex items-center justify-between gap-3 text-sm">
           <span className="truncate font-medium">{upload.name}</span>
@@ -661,7 +673,7 @@ function NewItemVisibilityPicker({
   const visibilityId = useId();
 
   return (
-    <fieldset className="flex flex-wrap items-center gap-3 rounded-lg border border-border p-3 text-sm">
+    <fieldset className="flex flex-wrap items-center gap-3 border-y border-border py-3 text-sm">
       <legend className="px-1 text-xs text-fg-dim">New item visibility</legend>
       <label className="sr-only" htmlFor={visibilityId}>
         Default visibility for new documents and folders
@@ -734,7 +746,7 @@ function DocumentDropZone({
         e.preventDefault();
       }}
       onDrop={onDrop}
-      className="rounded-md border border-border bg-surface p-4"
+      className="border-y border-border py-4"
     >
       {isEmpty ? (
         <EmptyDocumentDrive fileInputRef={fileInputRef} />
@@ -786,10 +798,12 @@ function FolderList({
       <ul className="border-x border-border">
         {folders.map((f) => (
           <li key={f.id}>
-            <CollectionRow
-              leading={<FolderIcon className="size-4 text-muted-foreground" aria-hidden />}
-              title={
-                f.optimistic ? (
+            <CollectionRow>
+              <CollectionRow.Leading>
+                <FolderIcon className="size-4 text-muted-foreground" aria-hidden />
+              </CollectionRow.Leading>
+              <CollectionRow.Title>
+                {f.optimistic ? (
                   <span className="opacity-70">{f.name}</span>
                 ) : (
                   <Link
@@ -798,11 +812,13 @@ function FolderList({
                   >
                     {f.name}
                   </Link>
-                )
-              }
-              context={f.visibility}
-              metadata={<time dateTime={f.updatedAt}>{formatDate(f.updatedAt)}</time>}
-              actions={
+                )}
+              </CollectionRow.Title>
+              <CollectionRow.Context>{f.visibility}</CollectionRow.Context>
+              <CollectionRow.Metadata>
+                <time dateTime={f.updatedAt}>{formatDate(f.updatedAt)}</time>
+              </CollectionRow.Metadata>
+              <CollectionRow.Actions>
                 <ItemActionGroup label={`Actions for ${f.name}`}>
                   <Button
                     type="button"
@@ -818,8 +834,8 @@ function FolderList({
                     Delete
                   </Button>
                 </ItemActionGroup>
-              }
-            />
+              </CollectionRow.Actions>
+            </CollectionRow>
           </li>
         ))}
       </ul>
@@ -890,9 +906,8 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
 
   return (
     <div style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 52px' }}>
-      <CollectionRow
-        className="min-h-13"
-        title={
+      <CollectionRow className="min-h-13">
+        <CollectionRow.Title>
           <DocumentTitleRow
             document={document}
             fileKind={fileKind}
@@ -900,17 +915,19 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
             storedName={usingFriendlyTitle ? truncateFilenameMiddle(document.name) : null}
             fullStoredName={usingFriendlyTitle ? document.name : null}
           />
-        }
-        context={summary ?? <DocumentMetaLine items={metaItems} />}
-        metadata={
+        </CollectionRow.Title>
+        <CollectionRow.Context>
+          {summary ?? <DocumentMetaLine items={metaItems} />}
+        </CollectionRow.Context>
+        <CollectionRow.Metadata>
           <>
             <SourceBadge source={source} />
             <ProcessingBadge status={status} optimistic={document.optimistic === true} />
             <VisibilityBadge visibility={document.visibility} />
             <span className="hidden text-xs text-fg-dim sm:inline">{updatedAt}</span>
           </>
-        }
-        actions={
+        </CollectionRow.Metadata>
+        <CollectionRow.Actions>
           <ItemActionGroup label={`Actions for ${title}`}>
             {sourceEventId ? (
               <EvidenceLink
@@ -932,8 +949,8 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
               />
             ) : null}
           </ItemActionGroup>
-        }
-      />
+        </CollectionRow.Actions>
+      </CollectionRow>
     </div>
   );
 }

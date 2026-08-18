@@ -31,8 +31,9 @@ describe('Boards route states', () => {
     expect(listSkeleton).toBeTruthy();
     expect(listSkeleton?.querySelectorAll('a, button, input, select, textarea')).toHaveLength(0);
     expect(
-      document.querySelector('[aria-label="Boards list loading placeholder"] ul')?.className,
-    ).toContain('overflow-hidden rounded-lg border border-border');
+      document.querySelector('[aria-label="Boards list loading placeholder"]')?.firstElementChild
+        ?.className,
+    ).toContain('border-t border-border');
 
     rerender(<BoardDetailLoading />);
 

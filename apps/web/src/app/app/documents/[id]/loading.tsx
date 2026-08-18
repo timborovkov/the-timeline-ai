@@ -1,4 +1,4 @@
-import { CardSkeleton } from '@/components/loading-states';
+import { HairlineSectionSkeleton } from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function DocumentDetailLoading() {
@@ -14,9 +14,9 @@ export default function DocumentDetailLoading() {
         </div>
         <div className="space-y-5">
           <Skeleton className="h-4 w-16" />
-          <CardSkeleton />
-          <div className="rounded-sm border border-border bg-surface p-4">
-            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <HairlineSectionSkeleton lines={2} />
+          <section className="space-y-3 border-y border-border py-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="space-y-2">
                 <Skeleton className="h-5 w-32" />
                 <Skeleton className="h-3 w-56" />
@@ -31,10 +31,10 @@ export default function DocumentDetailLoading() {
                 <Skeleton className="h-16 w-full rounded-sm" />
               </div>
             </div>
-          </div>
-          <div className="rounded-sm border border-border bg-surface p-4">
-            <Skeleton className="mb-4 h-5 w-28" />
-            <ul className="divide-y divide-border">
+          </section>
+          <section className="space-y-3 border-y border-border py-4">
+            <Skeleton className="h-5 w-28" />
+            <ul className="divide-y divide-border border-y border-border">
               {Array.from({ length: 3 }).map((_, index) => (
                 <li
                   key={index}
@@ -51,7 +51,7 @@ export default function DocumentDetailLoading() {
                 </li>
               ))}
             </ul>
-          </div>
+          </section>
         </div>
       </div>
     </>

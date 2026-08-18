@@ -495,10 +495,9 @@ function ObjectCollectionItem({
 
   return (
     <div style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 44px' }}>
-      <CollectionRow
-        selected={selected}
-        leading={
-          selecting ? (
+      <CollectionRow selected={selected}>
+        <CollectionRow.Leading>
+          {selecting ? (
             <input
               type="checkbox"
               checked={selected}
@@ -506,28 +505,27 @@ function ObjectCollectionItem({
               aria-label={`Select ${displayText(object.canonicalName)}`}
               className="size-4 accent-[var(--signal)]"
             />
-          ) : null
-        }
-        title={
+          ) : null}
+        </CollectionRow.Leading>
+        <CollectionRow.Title>
           <Link href={`/app/objects/${object.id}`} className="block truncate hover:underline">
             {displayText(object.canonicalName)}
           </Link>
-        }
-        context={typeLabel}
-        metadata={
+        </CollectionRow.Title>
+        <CollectionRow.Context>{typeLabel}</CollectionRow.Context>
+        <CollectionRow.Metadata>
           <>
             {object.type === 'task' ? (
-              <EditableMetadata
-                label={`Category for ${displayText(object.canonicalName)}`}
-                value={
+              <EditableMetadata label={`Category for ${displayText(object.canonicalName)}`}>
+                <EditableMetadata.Value>
                   <LiveTaskCategoryBadge
                     taskId={object.id}
                     category={object.taskCategory}
                     status={object.taskCategoryStatus}
                     updatedAt={object.taskCategoryUpdatedAt}
                   />
-                }
-                editor={
+                </EditableMetadata.Value>
+                <EditableMetadata.Editor>
                   <TaskCategorySelect
                     taskId={object.id}
                     category={object.taskCategory}
@@ -535,20 +533,21 @@ function ObjectCollectionItem({
                     status={object.taskCategoryStatus}
                     updatedAt={object.taskCategoryUpdatedAt}
                   />
-                }
-              />
+                </EditableMetadata.Editor>
+              </EditableMetadata>
             ) : null}
             <EditableMetadata
               label={`Status for ${displayText(object.canonicalName)}`}
               pending={saving === 'status'}
-              value={
+            >
+              <EditableMetadata.Value>
                 <CollectionStatus
                   value={status}
                   label={statusLabel(status)}
                   tone={statusTone(status)}
                 />
-              }
-              editor={
+              </EditableMetadata.Value>
+              <EditableMetadata.Editor>
                 <select
                   aria-label="Status"
                   value={status}
@@ -566,19 +565,20 @@ function ObjectCollectionItem({
                     <option value={status}>{statusLabel(status)}</option>
                   ) : null}
                 </select>
-              }
-            />
+              </EditableMetadata.Editor>
+            </EditableMetadata>
             <EditableMetadata
               label={`Priority for ${displayText(object.canonicalName)}`}
               pending={saving === 'priority'}
-              value={
+            >
+              <EditableMetadata.Value>
                 <CollectionStatus
                   value={priority ? `p${priority}` : 'none'}
                   tone={priorityTone(priority)}
                   label={priority ? `P${priority}` : 'No priority'}
                 />
-              }
-              editor={
+              </EditableMetadata.Value>
+              <EditableMetadata.Editor>
                 <select
                   aria-label="Priority"
                   value={priority ?? ''}
@@ -597,26 +597,29 @@ function ObjectCollectionItem({
                     </option>
                   ))}
                 </select>
-              }
-            />
+              </EditableMetadata.Editor>
+            </EditableMetadata>
             {isSchedulableObjectType(object.type) ? (
               <EditableMetadata
                 label={`Due date for ${displayText(object.canonicalName)}`}
                 pending={saving === 'dueAt'}
-                value={<DueDateDisplay value={dueAt} timezone={timezone} variant="compact" />}
-                editor={
+              >
+                <EditableMetadata.Value>
+                  <DueDateDisplay value={dueAt} timezone={timezone} variant="compact" />
+                </EditableMetadata.Value>
+                <EditableMetadata.Editor>
                   <ObjectDueDateEditor
                     value={dueAt}
                     onSave={(value) => {
                       save('dueAt', value);
                     }}
                   />
-                }
-              />
+                </EditableMetadata.Editor>
+              </EditableMetadata>
             ) : null}
           </>
-        }
-        actions={
+        </CollectionRow.Metadata>
+        <CollectionRow.Actions>
           <ItemActionGroup label={`Actions for ${displayText(object.canonicalName)}`}>
             <PinOverflowMenu
               target={{ kind: 'object', key: object.id }}
@@ -624,8 +627,8 @@ function ObjectCollectionItem({
               initialPinned={object.pinned ?? false}
             />
           </ItemActionGroup>
-        }
-      />
+        </CollectionRow.Actions>
+      </CollectionRow>
     </div>
   );
 }

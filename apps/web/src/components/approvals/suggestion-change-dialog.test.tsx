@@ -8,7 +8,6 @@ const fakes = vi.hoisted(() => ({
   refresh: vi.fn(),
   reviseSuggestionItemAction: vi.fn(),
   notifyAction: vi.fn(),
-  notifyError: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
@@ -16,9 +15,6 @@ vi.mock('@/lib/notify', () => ({
   notifyAction: async (options: { run: () => Promise<{ error?: string }> }) => {
     fakes.notifyAction(options);
     return options.run();
-  },
-  notifyError: (id: string, message: string) => {
-    fakes.notifyError(id, message);
   },
 }));
 vi.mock('@/app/actions/suggestions', () => ({
@@ -82,6 +78,8 @@ describe('SuggestionChangeDialog', () => {
     });
     expect(fakes.notifyAction).toHaveBeenCalledWith(
       expect.objectContaining({
+        id: 'approval:11111111-1111-4111-8111-111111111111:change',
+        loading: 'Updating proposal…',
         success: 'Proposal updated',
         error: 'Couldn’t update proposal',
       }),
@@ -104,14 +102,15 @@ describe('SuggestionChangeDialog', () => {
     await user.type(within(dialog).getByLabelText('What should change?'), 'Use Miku.');
     await user.click(within(dialog).getByRole('button', { name: 'Update proposal' }));
 
-    await waitFor(() => {
-      expect(fakes.notifyAction).toHaveBeenCalledWith(
-        expect.objectContaining({
-          error: 'Couldn’t update proposal',
-        }),
-      );
-    });
-    expect(screen.getByRole('dialog', { name: 'Change “PRH company registration”' })).toBeTruthy();
+    expect((await within(dialog).findByRole('alert')).textContent).toBe(
+      'Proposal is no longer editable',
+    );
+    expect(fakes.notifyAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'approval:11111111-1111-4111-8111-111111111111:change',
+        error: 'Couldn’t update proposal',
+      }),
+    );
     expect(fakes.refresh).not.toHaveBeenCalled();
   });
 });

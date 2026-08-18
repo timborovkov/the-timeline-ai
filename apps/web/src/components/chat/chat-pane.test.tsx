@@ -41,7 +41,7 @@ vi.mock('@/components/chat/tool-step', () => ({
   ToolStep: ({ name }: { name: string }) => createElement('span', null, name),
 }));
 
-const { ChatPane } = await import('./chat-pane.js');
+const { ChatPane, ChatSurface } = await import('./chat-pane.js');
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -129,6 +129,43 @@ describe('ChatPane', () => {
     );
     expect(container.textContent).toContain('Unavailable object');
     expect(container.textContent).not.toContain(uuid);
+  });
+
+  it('renders linked context badges for the conversation trail', () => {
+    fakes.useChat.mockReturnValue({
+      messages: [],
+      sendMessage: vi.fn(),
+      status: 'ready',
+      error: null,
+    });
+    const html = renderToStaticMarkup(
+      createElement(ChatPane, {
+        teamId: 'team-1',
+        teamName: 'Acme',
+        sessionId: 'session-1',
+        initialMessages: [],
+        pinnedEntityId: null,
+        pinnedEntityName: null,
+        contextTrail: [
+          {
+            kind: 'document',
+            href: '/app/documents/55555555-5555-4555-8555-555555555555',
+            label: 'Q3 contract',
+            documentId: '55555555-5555-4555-8555-555555555555',
+          },
+          {
+            kind: 'object',
+            href: '/app/objects/44444444-4444-4444-8444-444444444444',
+            label: 'Launch plan',
+            objectId: '44444444-4444-4444-8444-444444444444',
+          },
+        ],
+      }),
+    );
+    expect(html).toContain('Conversation context');
+    expect(html).toContain('Q3 contract');
+    expect(html).toContain('Launch plan');
+    expect(html).toContain('/app/documents/55555555-5555-4555-8555-555555555555');
   });
 
   it('submits the Ask composer with Enter', async () => {
@@ -252,8 +289,11 @@ describe('ChatPane', () => {
       chatHandoffKey('team-1'),
       JSON.stringify({
         createdAt: Date.now(),
-        context: { pathname: '/app/objects/object-1', routeKind: 'object-detail' },
-        pinnedEntityId: 'object-1',
+        context: {
+          pathname: '/app/objects/44444444-4444-4444-8444-444444444444',
+          routeKind: 'object-detail',
+        },
+        pinnedEntityId: '44444444-4444-4444-8444-444444444444',
       }),
     );
     vi.stubGlobal(
@@ -280,13 +320,13 @@ describe('ChatPane', () => {
     await waitFor(() => {
       expect(fakes.transports.at(-1)?.options.body?.()).toMatchObject({
         startNewSession: true,
-        pinnedEntityId: 'object-1',
+        pinnedEntityId: '44444444-4444-4444-8444-444444444444',
       });
     });
     await expect(fakes.transports.at(-1)?.options.fetch?.('/api/chat')).rejects.toThrow();
     expect(fakes.transports.at(-1)?.options.body?.()).toMatchObject({
       startNewSession: true,
-      pinnedEntityId: 'object-1',
+      pinnedEntityId: '44444444-4444-4444-8444-444444444444',
       dashboardContext: { routeKind: 'object-detail' },
     });
   });
@@ -302,8 +342,11 @@ describe('ChatPane', () => {
       chatHandoffKey('team-1'),
       JSON.stringify({
         createdAt: Date.now(),
-        context: { pathname: '/app/boards/board-1', routeKind: 'board-detail' },
-        pinnedEntityId: 'board-1',
+        context: {
+          pathname: '/app/boards/66666666-6666-4666-8666-666666666666',
+          routeKind: 'board-detail',
+        },
+        pinnedEntityId: '66666666-6666-4666-8666-666666666666',
       }),
     );
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('streamed answer')));
@@ -322,7 +365,7 @@ describe('ChatPane', () => {
     await waitFor(() => {
       expect(fakes.transports.at(-1)?.options.body?.()).toMatchObject({
         startNewSession: true,
-        pinnedEntityId: 'board-1',
+        pinnedEntityId: '66666666-6666-4666-8666-666666666666',
       });
     });
     await expect(fakes.transports.at(-1)?.options.fetch?.('/api/chat')).resolves.toBeInstanceOf(
@@ -330,7 +373,7 @@ describe('ChatPane', () => {
     );
     expect(fakes.transports.at(-1)?.options.body?.()).toMatchObject({
       startNewSession: true,
-      pinnedEntityId: 'board-1',
+      pinnedEntityId: '66666666-6666-4666-8666-666666666666',
       dashboardContext: { routeKind: 'board-detail' },
     });
   });
@@ -575,5 +618,126 @@ describe('ChatPane', () => {
       sessionId: undefined,
       startNewSession: true,
     });
+  });
+
+  it('shows context badges from a floating-Ask handoff on a new full Ask', async () => {
+    fakes.useChat.mockReturnValue({
+      messages: [],
+      sendMessage: vi.fn(),
+      status: 'ready',
+      error: null,
+    });
+    window.sessionStorage.setItem(
+      chatHandoffKey('team-1'),
+      JSON.stringify({
+        createdAt: Date.now(),
+        context: { pathname: '/app/sources', routeKind: 'sources' },
+        contextTrail: [
+          { kind: 'page', href: '/app/sources', label: 'Connections' },
+          {
+            kind: 'object',
+            href: '/app/objects/44444444-4444-4444-8444-444444444444',
+            label: 'Project Atlas',
+            objectId: '44444444-4444-4444-8444-444444444444',
+          },
+        ],
+      }),
+    );
+
+    render(
+      createElement(ChatPane, {
+        teamId: 'team-1',
+        teamName: 'Acme',
+        sessionId: null,
+        initialMessages: [],
+        pinnedEntityId: null,
+        pinnedEntityName: null,
+      }),
+    );
+
+    expect(await screen.findByLabelText('Conversation context')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Connections' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Project Atlas' })).toBeTruthy();
+  });
+
+  it('applies handoff dashboard context to an existing session without sending a prompt', async () => {
+    const sendMessage = vi.fn();
+    fakes.useChat.mockReturnValue({
+      messages: [],
+      sendMessage,
+      status: 'ready',
+      error: null,
+    });
+    window.sessionStorage.setItem(
+      chatHandoffKey('team-1'),
+      JSON.stringify({
+        createdAt: Date.now(),
+        prompt: 'What changed?',
+        context: {
+          pathname: '/app/calendar',
+          routeKind: 'calendar',
+          calendarDate: '2026-08-17',
+          calendarView: 'week',
+          search: { date: '2026-08-17' },
+        },
+        contextTrail: [{ kind: 'page', href: '/app/calendar', label: 'Calendar' }],
+      }),
+    );
+
+    render(
+      createElement(ChatPane, {
+        teamId: 'team-1',
+        teamName: 'Acme',
+        sessionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        initialMessages: [],
+        pinnedEntityId: null,
+        pinnedEntityName: null,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(fakes.transports.at(-1)?.options.body?.()).toMatchObject({
+        sessionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        startNewSession: false,
+        dashboardContext: {
+          routeKind: 'calendar',
+          calendarDate: '2026-08-17',
+          search: { date: '2026-08-17' },
+        },
+      });
+    });
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(await screen.findByRole('link', { name: 'Calendar' })).toBeTruthy();
+  });
+
+  it('can skip consuming a pending handoff', () => {
+    fakes.useChat.mockReturnValue({
+      messages: [],
+      sendMessage: vi.fn(),
+      status: 'ready',
+      error: null,
+    });
+    window.sessionStorage.setItem(
+      chatHandoffKey('team-1'),
+      JSON.stringify({
+        createdAt: Date.now(),
+        contextTrail: [{ kind: 'page', href: '/app/sources', label: 'Connections' }],
+      }),
+    );
+
+    render(
+      createElement(ChatSurface, {
+        teamId: 'team-1',
+        teamName: 'Acme',
+        sessionId: null,
+        initialMessages: [],
+        pinnedEntityId: null,
+        pinnedEntityName: null,
+        consumeHandoff: false,
+      }),
+    );
+
+    expect(window.sessionStorage.getItem(chatHandoffKey('team-1'))).not.toBeNull();
+    expect(screen.queryByLabelText('Conversation context')).toBeNull();
   });
 });
