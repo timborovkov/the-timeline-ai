@@ -1,6 +1,7 @@
 import { Children, isValidElement, type ReactElement, type ReactNode } from 'react';
 
 const SLOT_NAME = Symbol('collectionSlotName');
+const COLLECTION_SLOT_ATTR = 'data-collection-slot';
 
 interface CollectionSlotProps {
   children?: ReactNode;
@@ -12,13 +13,29 @@ type CollectionSlotComponent = ((props: CollectionSlotProps) => ReactElement | n
 };
 
 export function createCollectionSlot(name: string): CollectionSlotComponent {
-  function CollectionSlot({ children }: CollectionSlotProps) {
-    return (children as ReactElement | null | undefined) ?? null;
+  function CollectionSlot({ children, title }: CollectionSlotProps) {
+    return (
+      <div className="contents" data-collection-slot={name} title={title}>
+        {children}
+      </div>
+    );
   }
   CollectionSlot.displayName = `CollectionSlot(${name})`;
   const slot = CollectionSlot as unknown as CollectionSlotComponent;
   slot[SLOT_NAME] = name;
   return slot;
+}
+
+function slotNameFromChild(
+  child: ReactElement<{ children?: ReactNode }>,
+  typeToKey: Map<unknown, string>,
+  slotTypes: Record<string, CollectionSlotComponent>,
+): string | undefined {
+  const fromType = typeToKey.get(child.type);
+  if (fromType) return fromType;
+  const props = child.props as { [COLLECTION_SLOT_ATTR]?: unknown };
+  const fromAttr = props[COLLECTION_SLOT_ATTR];
+  return typeof fromAttr === 'string' && fromAttr in slotTypes ? fromAttr : undefined;
 }
 
 export function readCollectionSlots(
@@ -32,7 +49,11 @@ export function readCollectionSlots(
   const result: Record<string, ReactNode> = {};
   Children.forEach(children, (child) => {
     if (!isValidElement(child)) return;
-    const key = typeToKey.get(child.type);
+    const key = slotNameFromChild(
+      child as ReactElement<{ children?: ReactNode }>,
+      typeToKey,
+      slotTypes,
+    );
     if (!key) return;
     result[key] = (child.props as { children?: ReactNode }).children;
   });

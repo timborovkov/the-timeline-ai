@@ -172,18 +172,24 @@ describe('collection primitives', () => {
     expect(screen.getByText('Refine the visible collection.')).toBeTruthy();
   });
 
-  it('keeps toolbar chrome when slots are passed as props instead of compound children', () => {
+  it('keeps toolbar chrome when slot markers survive the RSC client boundary', () => {
     render(
-      <CollectionToolbar
-        search={<input aria-label="Search timeline" type="search" />}
-        filters={
+      <CollectionToolbar>
+        <div data-collection-slot="search">
+          <input aria-label="Search timeline" type="search" />
+        </div>
+        <div data-collection-slot="filters">
           <label>
             Owner <input aria-label="Owner" />
           </label>
-        }
-        actions={<a href="/app/timeline?source=linear">Linear</a>}
-        view={<a href="/app/timeline">Moments</a>}
-      />,
+        </div>
+        <div data-collection-slot="actions">
+          <a href="/app/timeline?source=linear">Linear</a>
+        </div>
+        <div data-collection-slot="view">
+          <a href="/app/timeline">Moments</a>
+        </div>
+      </CollectionToolbar>,
     );
 
     expect(screen.getByRole('searchbox', { name: 'Search timeline' })).toBeTruthy();
