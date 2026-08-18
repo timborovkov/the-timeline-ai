@@ -52,20 +52,75 @@ describe('chat handoff', () => {
       'team-a',
       {
         context: {
-          pathname: '/app/objects/object-id',
+          pathname: '/app/objects/44444444-4444-4444-8444-444444444444',
           routeKind: 'object-detail',
-          objectId: 'object-id',
+          objectId: '44444444-4444-4444-8444-444444444444',
         },
-        pinnedEntityId: 'object-id',
+        pinnedEntityId: '44444444-4444-4444-8444-444444444444',
         pinnedEntityName: 'Launch plan',
       },
       1_000,
     );
     expect(consumeChatHandoffEntry(storage, 'team-a', 2_000)).toMatchObject({
-      context: { routeKind: 'object-detail', objectId: 'object-id' },
-      pinnedEntityId: 'object-id',
+      context: {
+        routeKind: 'object-detail',
+        objectId: '44444444-4444-4444-8444-444444444444',
+      },
+      pinnedEntityId: '44444444-4444-4444-8444-444444444444',
       pinnedEntityName: 'Launch plan',
     });
     expect(consumeChatHandoffEntry(storage, 'team-a', 2_000)).toBeNull();
+  });
+
+  it('hands a dashboard context trail off without a prompt', () => {
+    const storage = memoryStorage();
+    storeChatContextHandoff(
+      storage,
+      'team-a',
+      {
+        context: { pathname: '/app/sources', routeKind: 'sources' },
+        contextTrail: [
+          { kind: 'page', href: '/app/sources', label: 'Connections' },
+          {
+            kind: 'object',
+            href: '/app/objects/44444444-4444-4444-8444-444444444444',
+            label: 'Project Atlas',
+            objectId: '44444444-4444-4444-8444-444444444444',
+          },
+        ],
+      },
+      1_000,
+    );
+    expect(consumeChatHandoffEntry(storage, 'team-a', 2_000)).toMatchObject({
+      contextTrail: [
+        { kind: 'page', href: '/app/sources', label: 'Connections' },
+        { kind: 'object', label: 'Project Atlas' },
+      ],
+    });
+  });
+
+  it('strips invalid dashboard context ids from a handoff', () => {
+    const storage = memoryStorage();
+    storeChatContextHandoff(
+      storage,
+      'team-a',
+      {
+        context: {
+          pathname: '/app/objects/nope',
+          routeKind: 'objects',
+          objectId: 'not-a-uuid',
+        },
+        pinnedEntityId: 'also-bad',
+        pinnedEntityName: 'Launch plan',
+      },
+      1_000,
+    );
+    const handoff = consumeChatHandoffEntry(storage, 'team-a', 2_000);
+    expect(handoff).toMatchObject({
+      context: { pathname: '/app/objects/nope', routeKind: 'objects' },
+      pinnedEntityName: 'Launch plan',
+    });
+    expect(handoff?.context).not.toHaveProperty('objectId');
+    expect(handoff?.pinnedEntityId).toBeUndefined();
   });
 });

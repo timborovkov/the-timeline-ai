@@ -16,6 +16,7 @@ import { useEffect, useMemo, useReducer } from 'react';
 import type { GlobalSearchKind, GlobalSearchResult } from '@timeline/shared/search';
 import type { ComponentType, SVGProps } from 'react';
 
+import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { DueDateDisplay } from '@/components/due-date-display';
@@ -24,6 +25,7 @@ import { PageHeader } from '@/components/page-header';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { Skeleton } from '@/components/ui/skeleton';
+import { chatViewLabel } from '@/lib/chat-view';
 import { isSchedulableObjectType } from '@/lib/due-dates';
 import { selectedValues } from '@/lib/filter-values';
 import { fetchGlobalSearch } from '@/lib/global-search';
@@ -435,8 +437,24 @@ export function GlobalSearchPage({
       ? 'Search unavailable'
       : `${state.results.length} results`;
 
+  const searchHref = searchPath({
+    query: state.query,
+    typeFilters: state.typeFilters,
+    source: state.source,
+    from: state.from,
+    to: state.to,
+  });
+
   return (
     <div className="space-y-5">
+      {state.query ? (
+        <ChatViewContextBinder
+          viewKey={`search:${state.query}`}
+          kind="page"
+          href={searchHref}
+          label={chatViewLabel(`Search: ${state.query}`, 'Search')}
+        />
+      ) : null}
       <PageHeader
         variant="collection"
         title="Search"

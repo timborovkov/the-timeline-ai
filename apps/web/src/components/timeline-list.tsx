@@ -35,6 +35,7 @@ import type { TimelineArtifactCluster, TimelineEvent } from '@/lib/use-paginated
 
 import { removeConversationalEventAction } from '@/app/actions/events';
 import { CitationCopyChip } from '@/components/artifact-reference-chip';
+import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { VirtualList } from '@/components/collections/virtual-list';
 import { DocumentPreview } from '@/components/documents/document-preview';
 import { EmptyAction } from '@/components/empty-action';
@@ -55,6 +56,7 @@ import {
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { chatViewLabel } from '@/lib/chat-view';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { statusLabel } from '@/lib/status-labels';
 import {
@@ -1258,6 +1260,16 @@ function TimelineMomentRow({
     ...contextParts.filter((part) => !previewText.includes(part)),
     previewOverlapsTitle ? null : previewText,
   ].filter((part): part is string => Boolean(part));
+  const selectedChatBinder = selected ? (
+    <ChatViewContextBinder
+      viewKey={`timeline:${moment.id}`}
+      kind={moment.rawEvents[0]?.id ? 'timeline-event' : 'timeline-moment'}
+      href={compactTimelineMomentHref(moment)}
+      label={chatViewLabel(title, 'Timeline moment')}
+      {...(moment.rawEvents[0]?.id ? { timelineEventId: moment.rawEvents[0].id } : {})}
+      timelineMomentId={moment.id}
+    />
+  ) : null;
   if (compact) {
     return (
       <li
@@ -1269,6 +1281,7 @@ function TimelineMomentRow({
         )}
         data-moment-id={moment.id}
       >
+        {selectedChatBinder}
         <Link
           href={compactTimelineMomentHref(moment)}
           className="flex min-h-9 min-w-0 items-center gap-3 py-1.5 text-left"
@@ -1309,6 +1322,7 @@ function TimelineMomentRow({
       data-visual-weight={moment.visualWeight}
       data-event-class={moment.eventClass}
     >
+      {selectedChatBinder}
       {moment.rawEvents.map((event) => (
         <span
           key={event.id}
@@ -1512,6 +1526,25 @@ export function TimelineList({
     );
   }
 
+  const focusedEvent =
+    focusEventId === null ? null : (events.find((event) => event.id === focusEventId) ?? null);
+  const focusedLabel = focusedMoment
+    ? chatViewLabel(
+        displayMomentTitle(focusedMoment),
+        focusMomentId ? 'Timeline moment' : 'Timeline event',
+      )
+    : chatViewLabel(
+        focusedEvent?.contentText?.split(/\r?\n/, 1)[0] ?? '',
+        focusEventId ? 'Timeline event' : 'Timeline moment',
+      );
+  const focusedHref = (() => {
+    const params = new URLSearchParams();
+    if (focusEventId) params.set('event', focusEventId);
+    if (focusMomentId) params.set('moment', focusMomentId);
+    const query = params.toString();
+    return query ? `/app/timeline?${query}` : '/app/timeline';
+  })();
+
   return (
     <div
       aria-label={
@@ -1519,6 +1552,16 @@ export function TimelineList({
       }
       data-timeline-mode={mode}
     >
+      {focusEventId || focusMomentId ? (
+        <ChatViewContextBinder
+          viewKey={`timeline:${focusMomentId ?? focusEventId ?? 'focus'}`}
+          kind={focusEventId ? 'timeline-event' : 'timeline-moment'}
+          href={focusedHref}
+          label={focusedLabel}
+          {...(focusEventId ? { timelineEventId: focusEventId } : {})}
+          {...(focusMomentId ? { timelineMomentId: focusMomentId } : {})}
+        />
+      ) : null}
       {compact || typeof maxMoments === 'number' ? (
         dateGroups.map(([date, group]) => (
           <section key={date} aria-labelledby={`timeline-date-${date}`}>

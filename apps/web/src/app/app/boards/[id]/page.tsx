@@ -138,7 +138,6 @@ export default async function BoardDetailPage({
         />
       ) : null}
       <BoardDetailClient
-        teamId={active.teamId}
         boardId={board.id}
         boardName={board.name}
         purpose={board.purpose}

@@ -70,7 +70,6 @@ export default async function DocumentDetailPage({ params, searchParams }: Props
         <PinButton target={{ kind: 'document', key: document.id }} initialPinned={initialPinned} />
       </div>
       <DocumentDetail
-        teamId={active.teamId}
         document={{
           id: document.id,
           fileKind: document.fileKind,

@@ -15,7 +15,7 @@ import type * as objects from '@timeline/shared/objects/types';
 import type { ReactNode } from 'react';
 
 import { RemoveBoardItemButton } from '@/components/boards/remove-board-item-button';
-import { ContextualAskLink } from '@/components/chat/contextual-ask-link';
+import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { ObjectRelatedContext } from '@/components/objects/object-related-context';
 import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
@@ -40,7 +40,6 @@ import { statusLabel } from '@/lib/status-labels';
 import { cn } from '@/lib/utils';
 
 interface Props {
-  teamId?: string;
   boardId: string;
   view: BoardLayout;
   item: boards.BoardItemRow | null;
@@ -99,7 +98,6 @@ function reconcileDraftState(state: DraftState, item: boards.BoardItemRow | null
 }
 
 export function BoardCardDetail({
-  teamId,
   boardId,
   view,
   item,
@@ -199,7 +197,6 @@ export function BoardCardDetail({
       />
       <BoardActions
         boardId={boardId}
-        teamId={teamId}
         view={view}
         item={item}
         filterParams={filterParams}
@@ -463,14 +460,12 @@ function BoardNotesSection({
 
 function BoardActions({
   boardId,
-  teamId,
   view,
   item,
   filterParams,
   onItemRemoved,
 }: {
   boardId: string;
-  teamId?: string;
   view: BoardLayout;
   item: boards.BoardItemRow;
   filterParams: Record<string, string>;
@@ -480,22 +475,15 @@ function BoardActions({
   return (
     <div className="flex flex-wrap gap-2 border-b border-border p-4">
       <ObjectPreviewDialog item={item} view={view} filterParams={filterParams} />
-      {teamId ? (
-        <ContextualAskLink
-          teamId={teamId}
-          context={{
-            pathname: `/app/boards/${boardId}`,
-            routeKind: 'board-item',
-            boardId,
-            boardItemId: item.id,
-            objectId: item.entityId,
-          }}
-          pinnedEntityId={item.entityId}
-          pinnedEntityName={item.object.canonicalName}
-          label="Ask about object"
-          className="h-7 px-2 text-xs"
-        />
-      ) : null}
+      <ChatViewContextBinder
+        viewKey={`board-item:${item.id}`}
+        kind="board-item"
+        href={`/app/boards/${boardId}?item=${item.id}`}
+        label={item.object.canonicalName}
+        objectId={item.entityId}
+        boardId={boardId}
+        boardItemId={item.id}
+      />
       <Link
         href={timelineHref}
         className="rounded-sm border border-border px-2 py-1 text-xs font-medium hover:bg-bg"

@@ -15,7 +15,7 @@ import { BoardAddItemForm } from '@/components/boards/board-add-item-form';
 import { BoardCardDetail } from '@/components/boards/board-card-detail';
 import { CuratedBoardList, CuratedBoardTable } from '@/components/boards/curated-board-views';
 import { CuratedKanbanBoard } from '@/components/boards/curated-kanban-board';
-import { ContextualAskLink } from '@/components/chat/contextual-ask-link';
+import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { HistoryBackLink } from '@/components/history-back-link';
 import { PageHeader } from '@/components/page-header';
 import { PinButton } from '@/components/pins/pin-button';
@@ -43,7 +43,6 @@ interface BoardItemPatchOverlay {
 }
 
 interface Props {
-  teamId?: string;
   boardId: string;
   boardName: string;
   purpose: string | null;
@@ -90,7 +89,6 @@ const EMPTY_FILTER_PARAMS: Record<string, string> = {};
 const EMPTY_TYPE_LABELS: Record<string, string> = {};
 
 export function BoardDetailClient({
-  teamId,
   boardId,
   boardName,
   purpose,
@@ -255,13 +253,13 @@ export function BoardDetailClient({
   const boardHeaderTrailing = useMemo(
     () => (
       <div className="flex items-center gap-2">
-        {teamId ? (
-          <ContextualAskLink
-            teamId={teamId}
-            context={{ pathname: `/app/boards/${boardId}`, routeKind: 'board', boardId }}
-            label="Ask about board"
-          />
-        ) : null}
+        <ChatViewContextBinder
+          viewKey={`board:${boardId}`}
+          kind="board"
+          href={`/app/boards/${boardId}`}
+          label={boardName}
+          boardId={boardId}
+        />
         <PinButton target={{ kind: 'board', key: boardId }} initialPinned={pinned} compact />
         <BoardActionsMenu
           id={boardId}
@@ -272,7 +270,7 @@ export function BoardDetailClient({
         />
       </div>
     ),
-    [boardId, boardName, lanes, pinned, purpose, teamId],
+    [boardId, boardName, lanes, pinned, purpose],
   );
 
   return (
@@ -368,7 +366,6 @@ export function BoardDetailClient({
         {selectedItem ? (
           <BoardCardDetail
             key={selectedItem.id}
-            teamId={teamId}
             boardId={boardId}
             view={view}
             item={selectedItem}

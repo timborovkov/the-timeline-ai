@@ -38,6 +38,7 @@ import {
   calendarOverlayReducer,
   mergeCalendarEvents,
 } from '@/components/calendar/calendar-overlay';
+import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
@@ -58,6 +59,7 @@ import { Input } from '@/components/ui/input';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { chatViewLabel } from '@/lib/chat-view';
 import { formatCollectionCount } from '@/lib/collection-count';
 import { toastMutation } from '@/lib/mutation-toast';
 import { statusLabel } from '@/lib/status-labels';
@@ -730,12 +732,37 @@ function useCalendarViewModel({
     updateEventListParams,
     visibleDays,
     dispatchCalendarUi,
+    focusEventId,
+    displayEvents,
+    searchParamsKey,
   };
 }
 
 function CalendarViewLayout({ model }: { model: ReturnType<typeof useCalendarViewModel> }) {
+  const focusedEvent =
+    model.open && model.editing && !model.editing.redacted
+      ? model.editing
+      : model.focusEventId
+        ? (model.displayEvents.find((event) => event.id === model.focusEventId) ?? null)
+        : null;
+  const focusedHref = (() => {
+    const params = new URLSearchParams(model.searchParamsKey);
+    if (focusedEvent) params.set('event', focusedEvent.id);
+    const query = params.toString();
+    return query ? `/app/calendar?${query}` : '/app/calendar';
+  })();
+
   return (
     <div className="space-y-4">
+      {focusedEvent ? (
+        <ChatViewContextBinder
+          viewKey={`calendar-event:${focusedEvent.id}`}
+          kind="calendar-event"
+          href={focusedHref}
+          label={chatViewLabel(focusedEvent.title, 'Calendar event')}
+          calendarEventId={focusedEvent.id}
+        />
+      ) : null}
       <CalendarToolbar
         mode={model.safeMode}
         anchor={model.anchor}

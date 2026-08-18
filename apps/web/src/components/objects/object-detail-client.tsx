@@ -36,7 +36,7 @@ import {
 } from '@/app/actions/objects';
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { ArtifactReferenceChip } from '@/components/artifact-reference-chip';
-import { ContextualAskLink } from '@/components/chat/contextual-ask-link';
+import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { ObjectPinButton } from '@/components/objects/object-pin-button';
 import {
@@ -79,7 +79,6 @@ type DraftField = 'canonicalName' | 'aliases' | 'stage' | 'dueAt';
 
 interface Props {
   detail: ObjectDetail;
-  teamId?: string;
   userId: string;
   initialPinned?: boolean;
   suggestions: LocalSuggestion[];
@@ -780,7 +779,6 @@ function ObjectDetailView(props: Props) {
     <div className="space-y-5">
       <ObjectDetailHeader
         detail={view.viewDetail}
-        teamId={props.teamId}
         initialPinned={props.initialPinned ?? false}
         error={view.error}
         pending={view.pending}
@@ -1302,7 +1300,6 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 function ObjectDetailHeader({
   detail,
-  teamId,
   initialPinned,
   error,
   pending,
@@ -1312,7 +1309,6 @@ function ObjectDetailHeader({
   onRepairMemory,
 }: {
   detail: ObjectDetail;
-  teamId?: string;
   initialPinned: boolean;
   error: string | null;
   pending: boolean;
@@ -1382,19 +1378,13 @@ function ObjectDetailHeader({
         </div>
         <div className="flex flex-wrap items-center gap-2 lg:justify-end">
           <ObjectPinButton objectId={detail.id} initialPinned={initialPinned} compact />
-          {teamId ? (
-            <ContextualAskLink
-              teamId={teamId}
-              context={{
-                pathname: `/app/objects/${detail.id}`,
-                routeKind: 'object-detail',
-                objectId: detail.id,
-              }}
-              pinnedEntityId={detail.id}
-              pinnedEntityName={displayObjectTitle(detail)}
-              label="Ask about object"
-            />
-          ) : null}
+          <ChatViewContextBinder
+            viewKey={`object:${detail.id}`}
+            kind="object"
+            href={`/app/objects/${detail.id}`}
+            label={displayObjectTitle(detail)}
+            objectId={detail.id}
+          />
           {detail.type === 'project' && detail.archivedAt === null ? (
             <Link
               href={`/app/objects/new?project=${encodeURIComponent(detail.id)}&returnTo=${encodeURIComponent(`/app/objects/${detail.id}`)}`}
