@@ -51,12 +51,15 @@ export function EditableMetadata({
   triggerRef?: (node: HTMLButtonElement | null) => void;
 }) {
   const slots = readCollectionSlots(children, METADATA_SLOTS);
-  const [userOpen, setUserOpen] = useState(false);
+  const [open, setOpen] = useState(false);
   const internalTriggerRef = useRef<HTMLButtonElement>(null);
   const wasPendingRef = useRef(false);
   const previousErrorRef = useRef<string | null | undefined>(undefined);
   const errorId = `${label.replaceAll(/\s+/g, '-').toLowerCase()}-error`;
-  const open = userOpen && !pending && !disabled;
+
+  if ((pending || disabled) && open) {
+    setOpen(false);
+  }
 
   // Restore focus after a parent-driven save finishes. pending/error are the
   // completion signals; there is no local event handler for that commit.
@@ -75,14 +78,8 @@ export function EditableMetadata({
     <span className="relative inline-flex min-w-0 flex-col">
       <Popover
         key={pending ? 'pending' : 'idle'}
-        open={open}
-        onOpenChange={(next) => {
-          if (pending || disabled) {
-            setUserOpen(false);
-            return;
-          }
-          setUserOpen(next);
-        }}
+        open={pending || disabled ? false : open}
+        onOpenChange={setOpen}
       >
         <PopoverTrigger asChild>
           <button
