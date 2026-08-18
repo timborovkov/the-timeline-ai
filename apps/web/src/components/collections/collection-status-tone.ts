@@ -1,3 +1,7 @@
+import { Circle, CircleCheck, CircleDashed, CircleDot, CircleX } from 'lucide-react';
+
+import type { ComponentType, SVGProps } from 'react';
+
 export type StatusTone = 'neutral' | 'progress' | 'review' | 'success' | 'danger';
 
 const PROGRESS = new Set(['active', 'doing', 'in_progress', 'in progress', 'processing']);
@@ -26,6 +30,14 @@ export const STATUS_TONE_CLASS: Record<StatusTone, string> = {
   review: 'text-status-review',
   success: 'text-status-success',
   danger: 'text-danger',
+};
+
+export const STATUS_TONE_ICON: Record<StatusTone, ComponentType<SVGProps<SVGSVGElement>>> = {
+  neutral: Circle,
+  progress: CircleDot,
+  review: CircleDashed,
+  success: CircleCheck,
+  danger: CircleX,
 };
 
 export function statusToneClass(tone: StatusTone): string {

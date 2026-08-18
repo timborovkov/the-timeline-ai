@@ -204,51 +204,115 @@ export function CuratedBoardTable({
           onUpdateItems={updateItems}
         />
       ) : null}
-      <div className="overflow-x-auto rounded-sm border border-border bg-surface">
-        <table className="w-full text-sm">
-          <thead className="border-b border-border bg-bg text-left text-xs text-fg-dim">
-            <tr>
-              {onUpdateItem ? (
-                <th className="w-10 px-3 py-2 font-normal">
-                  <input
-                    type="checkbox"
-                    checked={allVisibleSelected}
-                    disabled={selectableItems.length === 0}
-                    onChange={(event) => {
-                      toggleAll(event.currentTarget.checked);
-                    }}
-                    aria-label="Select all visible board items"
-                    className="size-4 rounded-sm border-border"
-                  />
-                </th>
-              ) : null}
-              <th className="px-3 py-2 font-normal">Name</th>
-              <th className="px-3 py-2 font-normal">Type</th>
-              <th className="px-3 py-2 font-normal">Responsible</th>
-              <th className="px-3 py-2 font-normal">Due</th>
-              <th className="px-3 py-2 font-normal">Priority</th>
-              <th className="px-3 py-2 font-normal">Lane</th>
-              <th className="px-3 py-2 font-normal">Next step</th>
-            </tr>
-          </thead>
-          <CuratedBoardTableBody
-            boardId={boardId}
-            view={view}
-            filterParams={filterParams}
-            items={items}
-            lanes={lanes}
-            members={members}
-            timezone={timezone}
-            canUpdate={Boolean(onUpdateItem)}
-            visibleSelectedIds={visibleSelectedIds}
-            saving={saving}
-            errors={errors}
-            bulkErrorIds={bulkErrorIds}
-            onToggle={toggleOne}
-            onUpdateItem={updateItem}
-          />
-        </table>
-      </div>
+      <CuratedBoardTableGrid
+        boardId={boardId}
+        view={view}
+        items={items}
+        lanes={lanes}
+        members={members}
+        filterParams={filterParams}
+        timezone={timezone}
+        saving={saving}
+        errors={errors}
+        bulkErrorIds={bulkErrorIds}
+        selectableItems={selectableItems}
+        visibleSelectedIds={visibleSelectedIds}
+        allVisibleSelected={allVisibleSelected}
+        canEdit={Boolean(onUpdateItem)}
+        onToggleAll={toggleAll}
+        onToggleOne={toggleOne}
+        onUpdateItem={updateItem}
+      />
+    </div>
+  );
+}
+
+function CuratedBoardTableGrid({
+  boardId,
+  view,
+  items,
+  lanes,
+  members,
+  filterParams,
+  timezone,
+  saving,
+  errors,
+  bulkErrorIds,
+  selectableItems,
+  visibleSelectedIds,
+  allVisibleSelected,
+  canEdit,
+  onToggleAll,
+  onToggleOne,
+  onUpdateItem,
+}: {
+  boardId: string;
+  view: BoardLayout;
+  items: boards.BoardItemRow[];
+  lanes: boards.BoardLaneRow[];
+  members: BoardMemberOption[];
+  filterParams: Record<string, string>;
+  timezone: string;
+  saving: Record<string, string>;
+  errors: Record<string, string>;
+  bulkErrorIds: ReadonlySet<string>;
+  selectableItems: boards.BoardItemRow[];
+  visibleSelectedIds: ReadonlySet<string>;
+  allVisibleSelected: boolean;
+  canEdit: boolean;
+  onToggleAll: (checked: boolean) => void;
+  onToggleOne: (id: string, checked: boolean) => void;
+  onUpdateItem: (
+    id: string,
+    patch: BoardItemOptimisticPatch,
+    suppressErrorAlert?: boolean,
+  ) => Promise<BoardItemUpdateResult>;
+}) {
+  return (
+    <div className="overflow-x-auto rounded-sm border border-border bg-surface">
+      <table className="w-full text-sm">
+        <thead className="border-b border-border bg-bg text-left text-xs text-fg-dim">
+          <tr>
+            {canEdit ? (
+              <th className="w-10 px-3 py-2 font-normal">
+                <input
+                  type="checkbox"
+                  checked={allVisibleSelected}
+                  disabled={selectableItems.length === 0}
+                  onChange={(event) => {
+                    onToggleAll(event.currentTarget.checked);
+                  }}
+                  aria-label="Select all visible board items"
+                  className="size-4 rounded-sm border-border"
+                />
+              </th>
+            ) : null}
+            <th className="px-3 py-2 font-normal">Name</th>
+            <th className="px-3 py-2 font-normal">Type</th>
+            <th className="px-3 py-2 font-normal">Responsible</th>
+            <th className="px-3 py-2 font-normal">Due</th>
+            <th className="px-3 py-2 font-normal">Priority</th>
+            <th className="px-3 py-2 font-normal">Lane</th>
+            <th className="px-3 py-2 font-normal">Next step</th>
+          </tr>
+        </thead>
+        <CuratedBoardTableBody
+          boardId={boardId}
+          view={view}
+          filterParams={filterParams}
+          items={items}
+          lanes={lanes}
+          members={members}
+          timezone={timezone}
+          canUpdate={canEdit}
+          visibleSelectedIds={visibleSelectedIds}
+          saving={saving}
+          errors={errors}
+          bulkErrorIds={bulkErrorIds}
+          onToggle={onToggleOne}
+          onUpdateItem={onUpdateItem}
+        />
+      </table>
     </div>
   );
 }

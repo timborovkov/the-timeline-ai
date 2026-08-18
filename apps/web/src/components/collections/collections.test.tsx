@@ -170,7 +170,7 @@ describe('collection primitives', () => {
     const trigger = screen.getByRole('button', { name: 'Priority for Launch plan' });
     expect(trigger.className).toContain('min-h-10');
     expect(trigger.getAttribute('aria-invalid')).toBe('true');
-    expect(trigger.getAttribute('aria-describedby')).toBeTruthy();
+    expect(trigger.getAttribute('aria-describedby')).toBe('priority-for-launch-plan-error');
     expect(screen.getByRole('alert').textContent).toBe('Save failed');
 
     await user.click(trigger);
@@ -179,6 +179,43 @@ describe('collection primitives', () => {
     await waitFor(() => {
       expect(document.activeElement).toBe(trigger);
     });
+  });
+
+  it('closes the editor while a parent save is pending and does not reopen when it settles', async () => {
+    const user = userEvent.setup();
+    const editor = (
+      <select aria-label="Priority" defaultValue="2">
+        <option value="2">P2</option>
+      </select>
+    );
+    const view = render(
+      <EditableMetadata label="Priority for Launch plan">
+        <EditableMetadata.Value>P2</EditableMetadata.Value>
+        <EditableMetadata.Editor>{editor}</EditableMetadata.Editor>
+      </EditableMetadata>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Priority for Launch plan' }));
+    expect(screen.getByRole('combobox', { name: 'Priority' })).toBeTruthy();
+
+    view.rerender(
+      <EditableMetadata pending label="Priority for Launch plan">
+        <EditableMetadata.Value>P2</EditableMetadata.Value>
+        <EditableMetadata.Editor>{editor}</EditableMetadata.Editor>
+      </EditableMetadata>,
+    );
+    expect(screen.queryByRole('combobox', { name: 'Priority' })).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'Priority for Launch plan' }).hasAttribute('disabled'),
+    ).toBe(true);
+
+    view.rerender(
+      <EditableMetadata label="Priority for Launch plan">
+        <EditableMetadata.Value>P2</EditableMetadata.Value>
+        <EditableMetadata.Editor>{editor}</EditableMetadata.Editor>
+      </EditableMetadata>,
+    );
+    expect(screen.queryByRole('combobox', { name: 'Priority' })).toBeNull();
   });
 
   it('cancels date drafts on Escape and commits them with Enter', async () => {

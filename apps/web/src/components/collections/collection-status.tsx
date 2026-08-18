@@ -1,22 +1,11 @@
-import { Circle, CircleCheck, CircleDashed, CircleDot, CircleX } from 'lucide-react';
-
-import type { ComponentType, SVGProps } from 'react';
-
 import {
   STATUS_TONE_CLASS,
+  STATUS_TONE_ICON,
   statusTone,
   type StatusTone,
 } from '@/components/collections/collection-status-tone';
 import { statusLabel } from '@/lib/status-labels';
 import { cn } from '@/lib/utils';
-
-const TONE_ICON: Record<StatusTone, ComponentType<SVGProps<SVGSVGElement>>> = {
-  neutral: Circle,
-  progress: CircleDot,
-  review: CircleDashed,
-  success: CircleCheck,
-  danger: CircleX,
-};
 
 export function CollectionStatus({
   value,
@@ -31,7 +20,7 @@ export function CollectionStatus({
   compact?: boolean;
   className?: string;
 }) {
-  const Icon = TONE_ICON[tone];
+  const Icon = STATUS_TONE_ICON[tone];
   return (
     <span
       className={cn(

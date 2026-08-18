@@ -633,12 +633,13 @@ function ObjectDueDateEditor({
   onSave: (value: Date | null) => void;
 }) {
   const [draft, setDraft] = useState(() => dateInputValue(value));
-
-  function commit() {
-    onSave(draft ? new Date(`${draft}T00:00:00.000Z`) : null);
-  }
   return (
-    <div className="flex items-center gap-2">
+    <form
+      className="flex items-center gap-2"
+      action={() => {
+        onSave(draft ? new Date(`${draft}T00:00:00.000Z`) : null);
+      }}
+    >
       <input
         aria-label="Due date"
         type="date"
@@ -646,19 +647,14 @@ function ObjectDueDateEditor({
         onChange={(event) => {
           setDraft(event.currentTarget.value);
         }}
-        onKeyDown={(event) => {
-          if (event.key !== 'Enter') return;
-          commit();
-        }}
         className="h-10 rounded-sm border border-border bg-bg px-2 text-xs"
       />
       <button
-        type="button"
-        onClick={commit}
+        type="submit"
         className="min-h-10 rounded-sm bg-signal px-3 text-xs font-medium text-signal-fg"
       >
         Apply
       </button>
-    </div>
+    </form>
   );
 }

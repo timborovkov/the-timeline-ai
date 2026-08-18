@@ -164,6 +164,9 @@ export interface SearchOpts {
   folderIds?: string[];
   /** Restrict doc_chunk search by captured/document row kind. */
   fileKinds?: ('captured' | 'document')[];
+  /** Restrict results to points written by one embedding model. Useful for
+   * model migrations where old and new deterministic point ids coexist. */
+  embeddingModel?: string;
 }
 
 export interface SearchHit {
@@ -425,9 +428,11 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
       );
     }
     await ensureCollection();
-    const res = await request('PUT', `/collections/${encodeURIComponent(collection)}/points`, {
-      points: [{ id, vector, payload }],
-    });
+    const res = await request(
+      'PUT',
+      `/collections/${encodeURIComponent(collection)}/points?wait=true`,
+      { points: [{ id, vector, payload }] },
+    );
     if (res.status !== 200 && res.status !== 202) {
       throw new Error(`Qdrant upsert failed: ${String(res.status)} ${JSON.stringify(res.data)}`);
     }
@@ -501,6 +506,9 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     }
     if (searchOpts.entityIds && searchOpts.entityIds.length > 0) {
       extraMust.push({ key: 'entity_ids', match: { any: searchOpts.entityIds } });
+    }
+    if (searchOpts.embeddingModel) {
+      extraMust.push({ key: 'embedding_model', match: { value: searchOpts.embeddingModel } });
     }
     if (searchOpts.eventIds && searchOpts.eventIds.length > 0) {
       extraMust.push({ key: 'event_id', match: { any: searchOpts.eventIds } });

@@ -614,12 +614,27 @@ function KanbanCard({
         >
           <EditableMetadata.Value>{item.nextStep ?? 'No next step'}</EditableMetadata.Value>
           <EditableMetadata.Editor>
-            <KanbanNextStepEditor
-              nextStep={item.nextStep}
-              onSave={(nextStep) => {
-                onUpdateItem(item.id, { nextStep });
+            <form
+              action={(formData) => {
+                const rawNextStep = formData.get('nextStep');
+                const nextStep = (typeof rawNextStep === 'string' ? rawNextStep : '').trim();
+                onUpdateItem(item.id, { nextStep: nextStep || null });
               }}
-            />
+              className="flex items-center gap-2"
+            >
+              <input
+                name="nextStep"
+                defaultValue={item.nextStep ?? ''}
+                className="h-10 min-w-56 rounded-sm border border-border bg-bg px-2 text-xs"
+                aria-label="Next step"
+              />
+              <button
+                type="submit"
+                className="min-h-10 rounded-sm bg-signal px-3 text-xs font-medium text-signal-fg"
+              >
+                Apply
+              </button>
+            </form>
           </EditableMetadata.Editor>
         </EditableMetadata>
       </div>
@@ -670,39 +685,4 @@ function KanbanCard({
 function ownerLabel(userId: string | null, members: BoardMemberOption[]): string {
   if (!userId) return 'Unassigned';
   return members.find((member) => member.id === userId)?.label ?? 'Assigned';
-}
-
-function KanbanNextStepEditor({
-  nextStep,
-  onSave,
-}: {
-  nextStep: string | null;
-  onSave: (nextStep: string | null) => void;
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <input
-        name="nextStep"
-        defaultValue={nextStep ?? ''}
-        className="h-10 min-w-56 rounded-sm border border-border bg-bg px-2 text-xs"
-        aria-label="Next step"
-        onKeyDown={(event) => {
-          if (event.key !== 'Enter') return;
-          const trimmed = event.currentTarget.value.trim();
-          onSave(trimmed || null);
-        }}
-      />
-      <button
-        type="button"
-        onClick={(event) => {
-          const input = event.currentTarget.parentElement?.querySelector('input');
-          const trimmed = (input instanceof HTMLInputElement ? input.value : '').trim();
-          onSave(trimmed || null);
-        }}
-        className="min-h-10 rounded-sm bg-signal px-3 text-xs font-medium text-signal-fg"
-      >
-        Apply
-      </button>
-    </div>
-  );
 }
