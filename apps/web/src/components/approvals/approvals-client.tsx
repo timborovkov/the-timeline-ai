@@ -1169,9 +1169,10 @@ function ApprovalBundleRow({
   onSelectedChange: (itemId: string, checked: boolean) => void;
   onSelectedMany: (itemIds: string[], checked: boolean) => void;
 }) {
-  const bundleActionableIds = bundle.items
-    .filter((item) => isActionableSuggestionStatus(item.status))
-    .map((item) => item.id);
+  const bundleActionableIds: string[] = [];
+  for (const item of bundle.items) {
+    if (isActionableSuggestionStatus(item.status)) bundleActionableIds.push(item.id);
+  }
   const bundleAllSelected =
     bundleActionableIds.length > 0 && bundleActionableIds.every((id) => selectedIds.has(id));
   const items = (
