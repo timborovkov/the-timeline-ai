@@ -145,6 +145,9 @@ describe('collection primitives', () => {
         activeFilters={[{ key: 'owner', label: 'Owner', value: 'Ada', onRemove: remove }]}
       >
         <CollectionToolbar.Count>4 results</CollectionToolbar.Count>
+        <CollectionToolbar.Search>
+          <input aria-label="Search timeline" type="search" />
+        </CollectionToolbar.Search>
         <CollectionToolbar.Filters>
           <label>
             Owner <input aria-label="Owner" />
@@ -153,6 +156,7 @@ describe('collection primitives', () => {
       </CollectionToolbar>,
     );
 
+    expect(screen.getByRole('searchbox', { name: 'Search timeline' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Remove Owner filter' }).className).toContain(
       'size-6',
     );
