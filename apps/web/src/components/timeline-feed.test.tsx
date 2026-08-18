@@ -235,6 +235,9 @@ describe('TimelineFeed', () => {
         ],
       }),
     );
+    expect(fakes.timelineList).toHaveBeenCalledWith(
+      expect.objectContaining({ onEndReached: expect.any(Function) }),
+    );
   });
 
   it('passes source-event mode to fetching and the timeline list', () => {

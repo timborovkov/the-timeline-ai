@@ -27,6 +27,8 @@ test.describe('Infinite scroll collections', () => {
     const page = await newSignedInPage(browser, 'owner');
     await page.goto('/app/timeline');
     await expect(page.getByRole('link', { name: 'Moments' })).toBeVisible();
+    await expect(page.getByRole('searchbox', { name: 'Search timeline' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Filters' })).toBeVisible();
     await expect(page.getByText(/\d+ loaded/i)).toHaveCount(0);
     await expect(page.getByText(/\d+ moments/i)).toHaveCount(0);
 

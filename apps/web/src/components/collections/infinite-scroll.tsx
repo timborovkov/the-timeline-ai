@@ -48,12 +48,11 @@ export function InfiniteScroll({
     onLoadMoreRef.current();
   }
 
-  // The observer callback reads onLoadMore/loading through refs so attaching
-  // stays stable while those values change.
-  // react-doctor-disable-next-line react-doctor/exhaustive-deps
+  // Re-attach after loading finishes so a sentinel that is still in view can
+  // fetch the next page. onLoadMore stays in a ref.
   useEffect(() => {
     const node = sentinelRef.current;
-    if (!node || !hasMore || disabled) return;
+    if (!node || !hasMore || disabled || loading) return;
     // A passed-in root of null means the overflow parent is not mounted yet.
     // Do not fall back to #main — that auto-fetches every page from a nested list.
     if (root === null) return;
@@ -71,7 +70,7 @@ export function InfiniteScroll({
     return () => {
       observer.disconnect();
     };
-  }, [disabled, hasMore, root]);
+  }, [disabled, hasMore, loading, root]);
 
   if (error) {
     return (
@@ -96,22 +95,29 @@ export function InfiniteScroll({
   }
 
   return (
-    <div className={cn('flex justify-center py-2', className)} aria-busy={loading || undefined}>
+    <div
+      className={cn('flex flex-col items-center py-2', className)}
+      aria-busy={loading || undefined}
+    >
       {loading ? (
         <p role="status" className="m-0 px-3 py-2 text-xs text-fg-dim">
           Loading more…
         </p>
-      ) : (
-        <button
-          ref={sentinelRef}
-          type="button"
-          onFocus={requestMore}
-          onClick={requestMore}
-          className="h-px w-full max-w-xs cursor-default border-0 bg-transparent p-0 text-[0] text-transparent outline-none focus-visible:h-auto focus-visible:rounded-sm focus-visible:border focus-visible:border-border focus-visible:bg-surface focus-visible:px-3 focus-visible:py-2 focus-visible:text-xs focus-visible:text-fg-muted"
-        >
-          Load more
-        </button>
-      )}
+      ) : null}
+      <button
+        ref={sentinelRef}
+        type="button"
+        onFocus={requestMore}
+        onClick={requestMore}
+        disabled={loading}
+        aria-hidden={loading || undefined}
+        className={cn(
+          'h-px w-full max-w-xs cursor-default border-0 bg-transparent p-0 text-[0] text-transparent outline-none focus-visible:h-auto focus-visible:rounded-sm focus-visible:border focus-visible:border-border focus-visible:bg-surface focus-visible:px-3 focus-visible:py-2 focus-visible:text-xs focus-visible:text-fg-muted',
+          loading && 'sr-only',
+        )}
+      >
+        Load more
+      </button>
     </div>
   );
 }

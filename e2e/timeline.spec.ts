@@ -1172,13 +1172,13 @@ test('timeline filters source, author, and dates without leaving audit-trail mod
     });
 
     await ownerPage.goto('/app/timeline?mode=events');
+    await expect(ownerPage.getByRole('searchbox', { name: 'Search timeline' })).toBeVisible();
+    await expect(ownerPage.getByRole('button', { name: 'Filters' })).toBeVisible();
+    await expect(ownerPage.getByRole('navigation', { name: 'Timeline presets' })).toBeVisible();
     await expect(ownerPage.getByText(targetText).first()).toBeVisible();
     await expect(ownerPage.getByText(sourceMismatchText).first()).toBeVisible();
 
-    await ownerPage
-      .locator('summary')
-      .filter({ hasText: /^Filters$/ })
-      .click();
+    await ownerPage.getByRole('button', { name: 'Filters' }).click();
     await ownerPage.getByRole('button', { name: 'Source', exact: true }).click();
     await ownerPage.getByRole('menuitemcheckbox', { name: 'Email' }).click();
     await ownerPage.keyboard.press('Escape');

@@ -38,4 +38,54 @@ describe('VirtualList', () => {
     expect(screen.getByText('Alpha')).toBeTruthy();
     expect(screen.getByText('Beta')).toBeTruthy();
   });
+
+  it('asks for the next page when the rendered window reaches the end', () => {
+    const onEndReached = vi.fn();
+    const { rerender } = render(
+      <VirtualList
+        items={[
+          { id: 'a', label: 'Alpha' },
+          { id: 'b', label: 'Beta' },
+        ]}
+        getItemKey={(item) => item.id}
+        estimateSize={40}
+        overscan={1}
+        onEndReached={onEndReached}
+        renderItem={(item) => <p>{item.label}</p>}
+      />,
+    );
+    expect(onEndReached).toHaveBeenCalledOnce();
+
+    onEndReached.mockClear();
+    rerender(
+      <VirtualList
+        items={[
+          { id: 'a', label: 'Alpha' },
+          { id: 'b', label: 'Beta' },
+        ]}
+        getItemKey={(item) => item.id}
+        estimateSize={40}
+        overscan={1}
+        onEndReached={onEndReached}
+        renderItem={(item) => <p>{item.label}</p>}
+      />,
+    );
+    expect(onEndReached).not.toHaveBeenCalled();
+
+    rerender(
+      <VirtualList
+        items={[
+          { id: 'a', label: 'Alpha' },
+          { id: 'b', label: 'Beta' },
+          { id: 'c', label: 'Gamma' },
+        ]}
+        getItemKey={(item) => item.id}
+        estimateSize={40}
+        overscan={1}
+        onEndReached={onEndReached}
+        renderItem={(item) => <p>{item.label}</p>}
+      />,
+    );
+    expect(onEndReached).toHaveBeenCalledOnce();
+  });
 });

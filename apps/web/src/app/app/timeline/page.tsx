@@ -12,6 +12,7 @@ import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { DebouncedFilterForm } from '@/components/debounced-filter-form';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
 import { TimelineFeed } from '@/components/timeline-feed';
+import { TimelineSearchField } from '@/components/timeline-search-field';
 import { TimelineSourceFilterControls } from '@/components/timeline-source-filter-controls';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -589,6 +590,13 @@ function TimelineFilterPanel({
             : []
         }
       >
+        <CollectionToolbar.Search>
+          <TimelineSearchField
+            source={sourceFilterValue || null}
+            from={fromValue || null}
+            to={toValue || null}
+          />
+        </CollectionToolbar.Search>
         <CollectionToolbar.Filters>
           <div className="flex min-w-0 flex-wrap items-end gap-2">
             <TimelineSourceFilterControls
@@ -640,7 +648,7 @@ function TimelineFilterPanel({
           </div>
         </CollectionToolbar.Filters>
         <CollectionToolbar.Actions>
-          <nav aria-label="Timeline presets" className="hidden flex-wrap gap-1.5 lg:flex">
+          <nav aria-label="Timeline presets" className="flex max-w-full flex-nowrap gap-1.5 overflow-x-auto">
             <Link
               href={upcomingHref}
               aria-current={upcomingActive ? 'page' : undefined}

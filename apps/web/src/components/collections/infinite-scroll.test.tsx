@@ -62,6 +62,29 @@ describe('InfiniteScroll', () => {
     expect(onLoadMore).toHaveBeenCalledOnce();
   });
 
+  it('re-observes the sentinel after loading finishes so the next page can load', () => {
+    const onLoadMore = vi.fn();
+    const { rerender } = render(
+      <InfiniteScroll hasMore onLoadMore={onLoadMore} boundLabel="No older activity" />,
+    );
+    expect(FakeIntersectionObserver.instances).toHaveLength(1);
+    FakeIntersectionObserver.instances[0]?.trigger(true);
+    expect(onLoadMore).toHaveBeenCalledOnce();
+
+    rerender(
+      <InfiniteScroll hasMore loading onLoadMore={onLoadMore} boundLabel="No older activity" />,
+    );
+    expect(screen.getByRole('status').textContent).toBe('Loading more…');
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
+
+    onLoadMore.mockClear();
+    rerender(<InfiniteScroll hasMore onLoadMore={onLoadMore} boundLabel="No older activity" />);
+    const observer = FakeIntersectionObserver.instances.at(-1);
+    expect(observer).toBeTruthy();
+    observer?.trigger(true);
+    expect(onLoadMore).toHaveBeenCalledOnce();
+  });
+
   it('shows a quiet loading status and bound copy without a Load more button', () => {
     const { rerender } = render(
       <InfiniteScroll hasMore loading onLoadMore={vi.fn()} boundLabel="No older activity" />,

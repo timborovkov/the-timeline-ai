@@ -426,8 +426,11 @@ rest of the archive.
 ### Timeline
 
 Timeline is the strongest archive expression. Chrome is a sticky
-`CollectionToolbar` under the 48px shell header, with **Moments** and **All
-events** as the view control. Moments group related activity and give rows
+`CollectionToolbar` under the 48px shell header. The row includes **Search
+timeline**, a Filters trigger (source, origin, author, impact, and dates),
+source presets, and **Moments** / **All events** as the view control. Search
+submits on Enter and opens global search with the current source and date
+filters. Moments group related activity and give rows
 different visual weight. All events is a uniform compact log of every captured
 source event. The labels and the row density should make the difference
 obvious without a lecture. Timeline has no inventory chip; Moments versus All
@@ -938,4 +941,5 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Floating Ask context names | Names the float from the selected timeline, calendar, task, search, or folder item, and makes the mobile sheet modal while desktop stays non-modal. |
 | 2026-08-17 | Quiet floating Ask header | Keeps the shortcut on the launcher and drops the header shortcut plus earlier-count line. |
 | 2026-08-18 | Collection chrome named children | Passes CollectionRow, CollectionToolbar, EditableMetadata, and PageHeader chrome through named children; Title/Context `title` carries hover IDs and errors. |
+| 2026-08-18 | Timeline search and continued paging | Puts Search timeline on the archive toolbar, keeps source presets visible, and re-observes the infinite-scroll sentinel after each page so virtualized rows keep loading. |
 | 2026-08-17 | Linear collection rows | Collection rows use a full-width bottom hairline only. Pinned and Approvals drop unlabeled toolbar counts. |
