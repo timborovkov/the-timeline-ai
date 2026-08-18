@@ -1,5 +1,5 @@
 import { Breadcrumb } from '@/components/breadcrumb';
-import { PageHeaderSkeleton } from '@/components/loading-states';
+import { CollectionRowsSkeleton, PageHeaderSkeleton } from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function IntegrationsLoading() {
@@ -37,18 +37,19 @@ function IntegrationSectionSkeleton({ cards, grid = false }: { cards: number; gr
     <div aria-hidden="true" className="space-y-3">
       <Skeleton className="h-5 w-52 max-w-full" />
       <Skeleton className="h-4 w-full max-w-2xl" />
-      <div className={grid ? 'grid gap-3 md:grid-cols-2' : 'space-y-3'}>
-        {Array.from({ length: cards }).map((_, index) => (
-          <div
-            key={index}
-            className="space-y-3 rounded-lg border border-border bg-surface p-4 sm:p-5"
-          >
-            <Skeleton className="h-4 w-2/5 max-w-full" />
-            <Skeleton className="h-3 w-full" />
-            <Skeleton className="h-3 w-4/5 max-w-full" />
-            <Skeleton className="h-8 w-28 max-w-full" />
-          </div>
-        ))}
+      <div className={grid ? 'border-x border-border' : 'space-y-3'}>
+        {grid ? (
+          <CollectionRowsSkeleton count={cards} />
+        ) : (
+          Array.from({ length: cards }).map((_, index) => (
+            <div key={index} className="space-y-3 border-y border-border py-4">
+              <Skeleton className="h-4 w-2/5 max-w-full" />
+              <Skeleton className="h-3 w-full" />
+              <Skeleton className="h-3 w-4/5 max-w-full" />
+              <Skeleton className="h-8 w-28 max-w-full" />
+            </div>
+          ))
+        )}
       </div>
     </div>
   );

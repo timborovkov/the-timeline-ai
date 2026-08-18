@@ -27,6 +27,7 @@ import {
   setTaskProjectAction,
   updateNoteAction,
   updateObjectAction,
+  unarchiveObjectAction,
   unpinObjectAction,
 } from '@/app/actions/objects';
 import { expectPublicActionErrorReport } from '@/test/public-error';
@@ -53,6 +54,7 @@ const fakes = vi.hoisted(() => ({
     getObject: vi.fn(),
     updateObject: vi.fn(),
     archiveObject: vi.fn(),
+    unarchiveObject: vi.fn(),
     pinObject: vi.fn(),
     unpinObject: vi.fn(),
     mergeObjects: vi.fn(),
@@ -196,6 +198,10 @@ beforeEach(() => {
     id: OBJECT_ID,
     type: 'task',
     changedFields: ['archivedAt'],
+  });
+  fakes.fakeObjects.unarchiveObject.mockResolvedValue({
+    id: OBJECT_ID,
+    type: 'task',
   });
   fakes.fakePins.pin.mockResolvedValue({ pinId: 'pin-1', title: 'Current Object' });
   fakes.fakePins.unpin.mockResolvedValue(true);
@@ -647,6 +653,24 @@ describe('object CRUD actions', () => {
       reason: 'A teammate archived this object directly.',
     });
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/boards', 'layout');
+    expectWorkRevalidated();
+    expectApprovalsRevalidated();
+  });
+
+  it('unarchives an object and refreshes the same surfaces as an update', async () => {
+    await expect(unarchiveObjectAction({ id: OBJECT_ID })).resolves.toEqual({ ok: true });
+
+    expect(fakes.fakeObjects.unarchiveObject).toHaveBeenCalledWith(OBJECT_ID, {
+      kind: 'user',
+      userId: USER_ID,
+    });
+    expectCanonicalReconciliation({
+      targetKind: 'task',
+      targetId: OBJECT_ID,
+      operation: 'update',
+      patch: { archivedAt: true },
+      reason: 'A teammate updated this object directly.',
+    });
     expectWorkRevalidated();
     expectApprovalsRevalidated();
   });

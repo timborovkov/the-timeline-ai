@@ -129,21 +129,41 @@ _Avoid_: Importance, score, weight when a grade would do
 **Timeline Moment**:
 A user-facing cluster of related raw events shown together on the timeline so
 team members can understand a meaningful slice of work before drilling into
-individual source evidence. The timeline is date-first, with source clusters
-inside each date and impact shown as attached context. Timeline lists should
-show compact signals for extracted file representations; full transcripts,
-OCR text, and visual descriptions belong in event detail, citations, and agent
-tools. User-facing Moments chrome and digests count moments; Audit trail,
-filters, and technical disclosures count source events. Row chips use signals;
-inspectors use evidence items — do not pair moment and raw-event totals in the
-same chrome.
+individual source evidence. Archive rows are Linear-quiet: time, one source
+icon, a title, and at most one muted context line, with sticky dates under the
+filter toolbar. Impact stays in the inspector, not on the row. The archive
+pages older activity through infinite scroll and virtualizes mounted rows;
+Timeline has no inventory chip. Timeline lists should show compact signals for
+extracted file representations; full transcripts, OCR text, and visual
+descriptions belong in event detail, citations, and agent tools. User-facing
+Moments chrome and digests count moments; All events, filters, and technical
+disclosures count source events. Conversation inspectors use evidence items;
+pulses use a compact activity log — do not pair moment and raw-event totals in
+the same chrome. The inspector keeps original source (message, email HTML,
+transcript, webhook/JSON payload) in a collapsed disclosure; attached documents
+link to the document drive. Ask `[ev:]` citations name those raw source events;
+the inspector evidence item shows the matching chip so a cited source can be
+identified without putting IDs on the timeline list. Citation previews open the
+matching workspace destination (transcript, document, calendar event, object,
+or Timeline moment) and reuse the inspector original-source viewer for payloads.
 _Avoid_: Raw Event when referring to the grouped browsing unit
+
+**Timeline event class**:
+A provider-agnostic family for captured events: communication, work record,
+pulse, incident, artifact, or schedule. Native sources, integrations, and
+ingest webhooks all resolve to one class. The class chooses visual weight
+(story, record, pulse), whether `objectMap` may feed artifact identity, and
+how the inspector is laid out. Generic ingest webhooks let an admin set the
+class when creating the webhook; unknown deliveries default to pulse.
+_Avoid_: GitHub event, Sentry event, webhook type when discussing presentation
 
 **Impact Context**:
 The workspace consequences or links attached to a timeline moment, such as
 tasks, boards, objects, calendar events, documents, decisions, follow-ups, or
 pending approvals that were created, changed, referenced, or suggested from the
-underlying evidence. Extracted emails, phone numbers, and labeled addresses can
+underlying evidence. Work records (merged PRs, issue moves, deal stages) also
+surface deterministic structured facts from source metadata. Pulses do not
+invent impact from machine identifiers. Extracted emails, phone numbers, and labeled addresses can
 ride on raw-event metadata as evidence, but emails/phones become useful product
 state only when they are accepted as person identity facets; addresses remain
 location/object metadata unless a later workflow promotes them. Impact Context
@@ -199,6 +219,22 @@ contract IDs, deal IDs, event slugs, or explicitly supplied artifact keys.
 Semantic similarity can suggest review candidates but is not enough to merge
 evidence into the same artifact cluster by itself.
 _Avoid_: Cleanup, removal, sync, extraction
+
+**Reconciliation Dashboard**:
+A team-scoped owner/admin health view for evidence coverage, clusters, and
+proposed workspace updates. Members who open the page see an Admins-only empty
+state. The header explains that captures are grouped into work and proposed
+updates wait for review. The header is the page title and that subtitle, with no
+access, team, or coverage-count metadata row. Sources that still need evidence
+appear as dense rows. Check coverage and Preview repair sit on a toolbar with
+hover hints. Recent clusters and Recent outputs use ordinary section titles.
+Cluster evidence/output lists show status, a human label, and relative time.
+Cluster IDs, output IDs, raw-event IDs, and raw enum keys stay in the row hover
+title. Copying an output payload lives in the row overflow menu.
+Evidence-by-source counts and manual UUID reconcile stay in Advanced tools,
+using sentence-case headings and dense count or history rows rather than
+uppercase labels, badge clouds, or a metric strip.
+_Avoid_: Recovery queue, retry dashboard, operator console, release gate, stat cards
 
 **Lifecycle Update**:
 A workspace reconciliation outcome that changes the state of a derived artifact
@@ -1046,16 +1082,28 @@ not to track every ordinary page view.
 _Avoid_: Timeline, activity feed
 
 **Job Recovery Dashboard**:
-A team-scoped owner/admin surface for retrying or dismissing failed and stuck
-product jobs tied to visible team artifacts, such as transcription,
-extraction, embedding, document processing, meeting finalization, and
-integration sync.
-_Avoid_: Operator dashboard, BullMQ dashboard, queue admin
+A team-scoped owner/admin surface titled Job recovery for retrying or dismissing
+failed and stuck product jobs from the last 7 days, tied to visible team
+artifacts such as transcription, extraction, embedding, document processing,
+meeting finalization, and integration sync. Home “recoverable jobs” uses this
+same 7-day count and is hidden from members. Members who open the page see an
+Admins-only empty state. The header is the page title and a 7-day subtitle.
+Older failed or stuck work is hidden from attention;
+workers retry it a few times, then give up. Admins can dismiss that older set in
+bulk; the page continues until the hidden count is cleared. The list shows
+status, artifact label, and relative time. Job IDs, artifact UUIDs, and raw
+provider errors stay in the row hover title. Per-row retry and dismiss live in
+the overflow menu. Unprocessed backlog (events that never started extraction or
+embedding) and conversation-suggestion backfill stay in Advanced tools as
+count rows and a heading with actions, not a card grid. Finished jobs in that
+fold use the same status, label, and time rows as the recovery queue.
+_Avoid_: Operator dashboard, BullMQ dashboard, queue admin, processing inventory
 
 **Environment Reset**:
 A development-only operational action that destroys all data and derived state
 in a non-production Timeline environment so it can be rebuilt from migrations
-and seed data.
+and seed data. Locally, `pnpm demo:reset` wipes then reseeds the Acme Labs
+demo corpus documented in `docs/demo-corpus.md`.
 _Avoid_: Team reset, clear everything, backup restore
 
 **Integration Audit Log**:
@@ -1086,10 +1134,22 @@ _Avoid_: Setup wizard, activation gate
 **Home**:
 The signed-in landing surface for a team member. It leads with Ask, the team
 setup checklist, and actionable attention, keeps capture in a focused dialog,
-and follows with the latest digest, pinned work, and a dense scan of recent
-moments. It does not duplicate the canonical Timeline, Work navigation, or
-Connections management.
+and follows with a folded latest digest, pinned work, and a dense scan of
+recent moments. The digest header is the day; the covering time range stays
+footer metadata. Opened digests show narrative summaries of what changed and
+linked task, object, and calendar rows; Work → Digests lists generated days.
+It does not duplicate the canonical Timeline, Work navigation, or Connections
+management.
 _Avoid_: Timeline when referring to the landing page
+
+**Ask**:
+The agent chat surface. Full Ask is the research view with session history.
+Elsewhere in the dashboard, a floating Ask opens on the current page, keeps
+one thread per team until New, and remembers a short trail of views the
+conversation touched. Selected timeline, calendar, task, search, and folder
+items supply their names; other list pages keep the route label. Home still
+hands questions into full Ask.
+_Avoid_: Copilot, chatbot, assistant sidebar
 
 **Workspace Time Context**:
 The team's default frame for interpreting relative dates, day boundaries, week

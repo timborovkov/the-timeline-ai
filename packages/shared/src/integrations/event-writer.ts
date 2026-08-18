@@ -29,6 +29,7 @@ import {
   reconcileLinkArtifactsForRawEvent,
   textHasLinks,
 } from '#src/conversational/link-artifacts.js';
+import { classifyCapturedEvent, type TimelineEventClass } from '#src/event-class.js';
 import {
   enqueueGithubTaskProposalJob,
   capturedWorkItemFromIntegrationEvent,
@@ -155,6 +156,18 @@ function resolveEventVisibility(args: {
   }
 
   return args.requestedVisibility;
+}
+
+function integrationEventClass(event: IntegrationEvent): TimelineEventClass {
+  if (event.eventClass) return event.eventClass;
+  return classifyCapturedEvent({
+    source: 'integration',
+    metadata: {
+      ...(event.extra ?? {}),
+      provider: event.provider,
+      event_type: event.eventType,
+    },
+  });
 }
 
 export async function writeIntegrationEvents(deps: {
@@ -290,6 +303,7 @@ export async function writeIntegrationEvents(deps: {
             external_object_id: evt.externalObjectId,
             external_event_id: evt.externalEventId ?? null,
             event_type: evt.eventType,
+            event_class: integrationEventClass(evt),
             actor: evt.actor ?? null,
             dedup_key: evt.dedupKey,
             sync_at: new Date().toISOString(),
@@ -374,7 +388,8 @@ export async function writeIntegrationEvents(deps: {
   });
 
   const artifactEvents = activeWritableEvents.filter(
-    (evt): evt is IntegrationEvent & { objectMap: ObjectMapping } => Boolean(evt.objectMap),
+    (evt): evt is IntegrationEvent & { objectMap: ObjectMapping } =>
+      Boolean(evt.objectMap) && integrationEventClass(evt) !== 'pulse',
   );
   const linkEvents = activeWritableEvents.filter((evt) => textHasLinks(evt.contentText));
   await Promise.all(

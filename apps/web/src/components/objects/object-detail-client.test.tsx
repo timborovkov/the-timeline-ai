@@ -15,6 +15,11 @@ const fakes = vi.hoisted(() => ({
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => fakes }));
+vi.mock('@/lib/auth', () => ({ auth: vi.fn() }));
+vi.mock('next-auth', () => ({
+  default: () => ({ handlers: {}, auth: vi.fn(), signIn: vi.fn(), signOut: vi.fn() }),
+  CredentialsSignin: class CredentialsSignin extends Error {},
+}));
 vi.mock('@tanstack/react-query', async (importOriginal) => {
   const actual = await importOriginal<typeof ReactQuery>();
   return {
@@ -34,9 +39,19 @@ vi.mock('@/app/actions/objects', () => ({
   rejectObjectChangeAction: vi.fn(),
   removeRelationshipAction: vi.fn(),
   repairObjectMemoryAction: vi.fn(),
+  unarchiveObjectAction: vi.fn(),
   updateNoteAction: vi.fn(),
   updateObjectAction: vi.fn(),
   unpinObjectAction: vi.fn(),
+}));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => {
+    try {
+      return await run();
+    } catch {
+      return { error: 'failed' };
+    }
+  },
 }));
 vi.mock('@/app/actions/pins', () => ({
   pinTargetAction: vi.fn(),
@@ -545,6 +560,7 @@ describe('ObjectDetailClient', () => {
     expect(html).toContain(
       'title="AgACAgQAAyEFAATcv6dYAAIBuWo4jeyMZiYwKT1k92NCNuPTCoTcAALpDWsbBCfJUUAcqaMvf4JYAQADAgADdwADPAQ.jpg"',
     );
+    expect(html).toContain('/app/calendar?event=calendar-1&amp;date=2026-06-17&amp;view=day');
   });
 
   it('shows connected open tasks once on the object detail page', () => {

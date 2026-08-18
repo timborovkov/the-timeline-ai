@@ -40,13 +40,11 @@ import {
   setTaskCategoryAction,
   updateObjectAction,
 } from '@/app/actions/objects';
+import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
-import {
-  CollectionStatus,
-  priorityTone,
-  statusTone,
-} from '@/components/collections/collection-status';
+import { CollectionStatus } from '@/components/collections/collection-status';
+import { priorityTone, statusTone } from '@/components/collections/collection-status-tone';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { InfiniteScroll } from '@/components/collections/infinite-scroll';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
@@ -60,17 +58,19 @@ import { TaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { useTaskCategoryPolling } from '@/components/tasks/task-category-polling';
 import { TaskCategorySelect } from '@/components/tasks/task-category-select';
 import { TaskProjectSelect } from '@/components/tasks/task-project-select';
-import { taskViewHref, type TaskView } from '@/components/tasks/task-view-toggle';
+import { taskViewHref, type TaskView } from '@/components/tasks/task-view';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { chatViewLabel } from '@/lib/chat-view';
 import { displayText } from '@/lib/display-dates';
 import { kanbanCollisionDetection } from '@/lib/kanban-collision';
+import { notifyAction, notifyError } from '@/lib/notify';
 import { objectDetailHref } from '@/lib/object-links';
 import { displayObjectTitle } from '@/lib/object-title';
 import { statusLabel } from '@/lib/status-labels';
 import { taskDisplayStatus } from '@/lib/task-statuses';
-import { cn, errorMessage } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
 interface TaskMemberOption {
   id: string;
@@ -101,6 +101,35 @@ type TaskPatch = Partial<
   Pick<objects.ObjectRow, 'status' | 'assigneeUserId' | 'dueAt' | 'priority'>
 >;
 type TaskPatchKey = keyof TaskPatch;
+
+function taskPatchLabel(patch: TaskPatch): string {
+  if (patch.status !== undefined) return 'status';
+  if (patch.assigneeUserId !== undefined) return 'assignee';
+  if (patch.dueAt !== undefined) return 'due date';
+  if (patch.priority !== undefined) return 'priority';
+  return 'task';
+}
+
+function capitalizeLabel(value: string): string {
+  return value.slice(0, 1).toUpperCase() + value.slice(1);
+}
+
+function previousTaskPatch(row: objects.ObjectRow, patch: TaskPatch): TaskPatch {
+  const previous: TaskPatch = {};
+  if (patch.status !== undefined) previous.status = row.status;
+  if (patch.assigneeUserId !== undefined) previous.assigneeUserId = row.assigneeUserId;
+  if (patch.dueAt !== undefined) previous.dueAt = row.dueAt;
+  if (patch.priority !== undefined) previous.priority = row.priority;
+  return previous;
+}
+
+function serializeTaskPatch(patch: TaskPatch): Record<string, string | number | null | undefined> {
+  const { dueAt, ...rest } = patch;
+  return {
+    ...rest,
+    ...(dueAt !== undefined ? { dueAt: dueAt?.toISOString() ?? null } : {}),
+  };
+}
 type TaskPatchValue = TaskPatch[TaskPatchKey];
 type TaskPatchPendingValues = Partial<Record<TaskPatchKey, TaskPatchValue[]>>;
 interface TaskPatchOverlay {
@@ -644,7 +673,6 @@ function useTaskBoardController({
     list.push(row);
     byStatus.set(displayStatus, list);
   }
-  const moveErrors = Object.values(moveUi.cardErrors);
   const selectedVisibleIds = useMemo(() => {
     const visibleIds = new Set(visibleRows.map((row) => row.id));
     return new Set([...selectedIds].filter((id) => visibleIds.has(id)));
@@ -691,8 +719,32 @@ function useTaskBoardController({
         savingCardIds: new Set(activeSavingCardIds()),
       });
       try {
-        const result = await updateObjectAction({ id, status });
-        if ('error' in result && result.error) {
+        const previousStatus = row.status;
+        const result = await notifyAction({
+          id: `object:${id}`,
+          loading: 'Updating status…',
+          success: 'Status updated',
+          error: 'Couldn’t update status',
+          run: () => updateObjectAction({ id, status }),
+          undo: {
+            run: async () => {
+              setRowPatches((current) =>
+                previousStatusPatch === undefined
+                  ? removePatchKeys(current, id, ['status'])
+                  : patchTaskRow(
+                      current,
+                      id,
+                      { status: previousStatusPatch },
+                      { status: previousStatusBaseline },
+                    ),
+              );
+              const undoResult = await updateObjectAction({ id, status: previousStatus });
+              if (!undoResult.error) router.refresh();
+              return undoResult;
+            },
+          },
+        });
+        if (result.error) {
           batchHadFailureRef.current = true;
           setRowPatches((current) =>
             previousStatusPatch === undefined
@@ -704,9 +756,8 @@ function useTaskBoardController({
                   { status: previousStatusBaseline },
                 ),
           );
-          dispatchMoveUi({ type: 'move-fail', id, message: result.error });
         }
-      } catch (err) {
+      } catch {
         batchHadFailureRef.current = true;
         setRowPatches((current) =>
           previousStatusPatch === undefined
@@ -718,7 +769,6 @@ function useTaskBoardController({
                 { status: previousStatusBaseline },
               ),
         );
-        dispatchMoveUi({ type: 'move-fail', id, message: errorMessage(err, 'Move failed') });
       } finally {
         savingCountRef.current = Math.max(0, savingCountRef.current - 1);
         activeSavingCardIds().delete(id);
@@ -741,31 +791,50 @@ function useTaskBoardController({
   async function updateTask(
     id: string,
     patch: TaskPatch,
+    options: { silent?: boolean } = {},
   ): Promise<{ ok?: boolean; error?: string }> {
     const previousPatch = rowPatches[id];
     const row = effectiveRows.find((candidate) => candidate.id === id);
     setRowPatches((current) =>
       row ? patchTaskRow(current, id, patch, taskPatchBaseline(row, patch)) : current,
     );
-    const dueAt = patch.dueAt === undefined ? undefined : (patch.dueAt?.toISOString() ?? null);
-    const result = await updateObjectAction({
-      id,
-      ...patch,
-      ...(dueAt !== undefined ? { dueAt } : {}),
-    });
-    if ('error' in result && result.error) {
+    const rollback = () => {
       setRowPatches((current) => {
         if (previousPatch) return { ...current, [id]: previousPatch };
         const { [id]: _removed, ...rest } = current;
         return rest;
       });
-    }
+    };
+    const run = () => updateObjectAction({ id, ...serializeTaskPatch(patch) });
+    const previous = row ? previousTaskPatch(row, patch) : {};
+    const label = taskPatchLabel(patch);
+    const result = options.silent
+      ? await run()
+      : await notifyAction({
+          id: `object:${id}`,
+          loading: `Updating ${label}…`,
+          success: `${capitalizeLabel(label)} updated`,
+          error: `Couldn’t update ${label}`,
+          run,
+          undo: {
+            run: async () => {
+              rollback();
+              const undoResult = await updateObjectAction({
+                id,
+                ...serializeTaskPatch(previous),
+              });
+              if (!undoResult.error) router.refresh();
+              return undoResult;
+            },
+          },
+        });
+    if (result.error) rollback();
     router.refresh();
     return result;
   }
 
   async function updateTasks(ids: string[], patch: TaskPatch): Promise<{ failed: number }> {
-    const results = await runBulkActions(ids, (id) => updateTask(id, patch));
+    const results = await runBulkActions(ids, (id) => updateTask(id, patch, { silent: true }));
     return {
       failed: results.filter(
         (result) =>
@@ -794,14 +863,13 @@ function useTaskBoardController({
 
   function loadMoreTasks(): void {
     if (!cursor || loadingMore) return;
-    dispatchBoard({ type: 'load-error', message: null, filterKey });
     startLoadMore(async () => {
       const page = await loadTaskRowsAction({
         cursor,
         ...(Object.keys(filterParams).length > 0 ? { filters: filterParams } : {}),
       });
       if (page.error) {
-        dispatchBoard({ type: 'load-error', message: page.error, filterKey });
+        notifyError('tasks:load-more', 'Couldn’t load older tasks');
         return;
       }
       dispatchBoard({
@@ -822,7 +890,6 @@ function useTaskBoardController({
     loadError,
     loadingMore,
     loadMoreTasks,
-    moveErrors,
     moveUi,
     onDragEnd,
     selectedTask,
@@ -856,7 +923,6 @@ function TaskBoardView({
   loadMoreTasks,
   members,
   projects = EMPTY_PROJECT_OPTIONS,
-  moveErrors,
   moveUi,
   onDragEnd,
   selectedTask,
@@ -909,23 +975,6 @@ function TaskBoardView({
         onDragEnd={handleDragEnd}
       >
         <div className="flex h-full min-h-0 min-w-0 flex-col">
-          {moveUi.saveState !== 'idle' ? (
-            <output className="shrink-0 px-2 py-1.5 text-xs text-fg-dim sm:px-3" aria-live="polite">
-              {moveUi.saveState === 'saving'
-                ? `Saving${moveUi.savingCount > 1 ? ` ${moveUi.savingCount} moves` : ''}...`
-                : 'Saved'}
-            </output>
-          ) : null}
-          {moveErrors.length > 0 ? (
-            <p
-              className="mx-2 mb-3 shrink-0 rounded-sm border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger sm:mx-3"
-              role="alert"
-            >
-              {moveErrors.length === 1
-                ? moveErrors[0]
-                : `${moveErrors.length} task moves failed. Clear the filter to inspect affected cards.`}
-            </p>
-          ) : null}
           {view === 'kanban' ? (
             <section
               aria-label="Task status columns"
@@ -999,6 +1048,19 @@ function TaskBoardView({
           ) : null}
         </DragOverlay>
       </DndContext>
+      {selectedTask ? (
+        <ChatViewContextBinder
+          viewKey={`task:${selectedTask.id}`}
+          kind="task"
+          href={
+            view === 'kanban'
+              ? taskHref(selectedTask.id, filterParams)
+              : taskViewHref(view, selectedTask.id, filterParams)
+          }
+          label={chatViewLabel(displayObjectTitle(selectedTask), 'Task')}
+          taskId={selectedTask.id}
+        />
+      ) : null}
       {selectedTask ? (
         <TaskDetailPanel
           task={selectedTask}
@@ -1234,23 +1296,15 @@ function TaskListRow({
   pinned: boolean;
 }) {
   const [saving, setSaving] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   const timezone = useWorkspaceTimezone();
   const title = displayObjectTitle(row);
 
   function save(field: string, patch: TaskPatch): void {
     setSaving(field);
-    setError(null);
     startTransition(async () => {
-      try {
-        const result = await onUpdateTask(row.id, patch);
-        if ('error' in result && result.error) setError(result.error);
-      } catch (err) {
-        setError(errorMessage(err, 'Save failed'));
-      } finally {
-        setSaving(null);
-      }
+      await onUpdateTask(row.id, patch);
+      setSaving(null);
     });
   }
 
@@ -1258,9 +1312,8 @@ function TaskListRow({
 
   return (
     <div style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 44px' }}>
-      <CollectionRow
-        selected={highlighted || selected}
-        leading={
+      <CollectionRow selected={highlighted || selected}>
+        <CollectionRow.Leading>
           <input
             type="checkbox"
             checked={selected}
@@ -1273,36 +1326,28 @@ function TaskListRow({
               selected && 'md:opacity-100',
             )}
           />
-        }
-        title={
+        </CollectionRow.Leading>
+        <CollectionRow.Title>
           <Link
             href={taskViewHref('list', row.id, filterParams)}
             className="block truncate hover:underline"
           >
             {displayText(title)}
           </Link>
-        }
-        context={
-          error ? (
-            <span className="text-danger" role="alert">
-              {error}
-            </span>
-          ) : saving ? (
-            <span>Saving {saving}…</span>
-          ) : undefined
-        }
-        metadata={
+        </CollectionRow.Title>
+        <CollectionRow.Metadata>
           <>
             <EditableMetadata
               label={`Status for ${displayText(title)}`}
               pending={saving === 'status'}
-              value={
+            >
+              <EditableMetadata.Value>
                 <CollectionStatus
                   value={row.status}
                   label={statusLabel(taskDisplayStatus(row.status))}
                 />
-              }
-              editor={
+              </EditableMetadata.Value>
+              <EditableMetadata.Editor>
                 <select
                   value={taskDisplayStatus(row.status)}
                   onChange={(event) => {
@@ -1320,15 +1365,14 @@ function TaskListRow({
                     <option value={row.status}>{statusLabel(row.status)}</option>
                   ) : null}
                 </select>
-              }
-            />
+              </EditableMetadata.Editor>
+            </EditableMetadata>
             {taskCategoriesEnabled ? (
-              <EditableMetadata
-                label={`Category for ${displayText(title)}`}
-                value={
+              <EditableMetadata label={`Category for ${displayText(title)}`}>
+                <EditableMetadata.Value>
                   <TaskCategoryBadge category={row.taskCategory} status={row.taskCategoryStatus} />
-                }
-                editor={
+                </EditableMetadata.Value>
+                <EditableMetadata.Editor>
                   <TaskCategorySelect
                     taskId={row.id}
                     category={row.taskCategory}
@@ -1336,13 +1380,14 @@ function TaskListRow({
                     status={row.taskCategoryStatus}
                     updatedAt={row.taskCategoryUpdatedAt}
                   />
-                }
-              />
+                </EditableMetadata.Editor>
+              </EditableMetadata>
             ) : null}
-            <EditableMetadata
-              label={`Project for ${displayText(title)}`}
-              value={primaryProject?.projectName ?? 'No project'}
-              editor={
+            <EditableMetadata label={`Project for ${displayText(title)}`}>
+              <EditableMetadata.Value>
+                {primaryProject?.projectName ?? 'No project'}
+              </EditableMetadata.Value>
+              <EditableMetadata.Editor>
                 <TaskProjectSelect
                   taskId={row.id}
                   projectId={primaryProject?.projectId ?? null}
@@ -1359,13 +1404,14 @@ function TaskListRow({
                     onProjectChangeReverted(row.id);
                   }}
                 />
-              }
-            />
+              </EditableMetadata.Editor>
+            </EditableMetadata>
             <EditableMetadata
               label={`Assignee for ${displayText(title)}`}
               pending={saving === 'assignee'}
-              value={assignee?.label ?? 'Unassigned'}
-              editor={
+            >
+              <EditableMetadata.Value>{assignee?.label ?? 'Unassigned'}</EditableMetadata.Value>
+              <EditableMetadata.Editor>
                 <select
                   value={row.assigneeUserId ?? ''}
                   onChange={(event) => {
@@ -1381,13 +1427,16 @@ function TaskListRow({
                     </option>
                   ))}
                 </select>
-              }
-            />
+              </EditableMetadata.Editor>
+            </EditableMetadata>
             <EditableMetadata
               label={`Due date for ${displayText(title)}`}
               pending={saving === 'due date'}
-              value={<DueDateDisplay value={row.dueAt} variant="field-hint" />}
-              editor={
+            >
+              <EditableMetadata.Value>
+                <DueDateDisplay value={row.dueAt} variant="field-hint" />
+              </EditableMetadata.Value>
+              <EditableMetadata.Editor>
                 <MetadataDateEditor
                   defaultValue={row.dueAt ? dateInputValue(row.dueAt, timezone) : ''}
                   onApply={(value) => {
@@ -1396,19 +1445,20 @@ function TaskListRow({
                     });
                   }}
                 />
-              }
-            />
+              </EditableMetadata.Editor>
+            </EditableMetadata>
             <EditableMetadata
               label={`Priority for ${displayText(title)}`}
               pending={saving === 'priority'}
-              value={
+            >
+              <EditableMetadata.Value>
                 <CollectionStatus
                   value={row.priority ? `p${row.priority}` : 'none'}
                   tone={priorityTone(row.priority)}
                   label={row.priority ? `P${row.priority}` : 'No priority'}
                 />
-              }
-              editor={
+              </EditableMetadata.Value>
+              <EditableMetadata.Editor>
                 <select
                   value={row.priority ?? ''}
                   onChange={(event) => {
@@ -1428,11 +1478,11 @@ function TaskListRow({
                     </option>
                   ))}
                 </select>
-              }
-            />
+              </EditableMetadata.Editor>
+            </EditableMetadata>
           </>
-        }
-        actions={
+        </CollectionRow.Metadata>
+        <CollectionRow.Actions>
           <ItemActionGroup label={`Actions for ${displayText(title)}`}>
             <PinOverflowMenu
               target={{ kind: 'object', key: row.id }}
@@ -1440,8 +1490,8 @@ function TaskListRow({
               initialPinned={pinned}
             />
           </ItemActionGroup>
-        }
-      />
+        </CollectionRow.Actions>
+      </CollectionRow>
     </div>
   );
 }
@@ -1506,22 +1556,23 @@ function TaskBulkToolbar({
     }
     const patch = currentPatch();
     startTransition(async () => {
-      const result =
-        bulk.field === 'category'
-          ? await onUpdateTaskCategories(ids, bulk.category)
-          : await onUpdateTasks(ids, patch);
-      if (result.failed > 0) {
-        dispatchBulk({
-          type: 'message',
-          message: `${result.failed} of ${ids.length} updates failed.`,
-        });
-        return;
-      }
-      setSelectedIds(new Set());
-      dispatchBulk({
-        type: 'message',
-        message: `Updated ${ids.length} ${ids.length === 1 ? 'task' : 'tasks'}.`,
+      const result = await notifyAction({
+        id: 'tasks:bulk',
+        loading: 'Updating tasks…',
+        success: `Updated ${ids.length} ${ids.length === 1 ? 'task' : 'tasks'}`,
+        error: 'Couldn’t update tasks',
+        run: async () => {
+          const outcome =
+            bulk.field === 'category'
+              ? await onUpdateTaskCategories(ids, bulk.category)
+              : await onUpdateTasks(ids, patch);
+          return outcome.failed > 0
+            ? { error: `${outcome.failed} of ${ids.length} updates failed.` }
+            : { ok: true };
+        },
       });
+      if (result.error) return;
+      setSelectedIds(new Set());
     });
   }
 
@@ -1643,11 +1694,6 @@ function TaskBulkToolbar({
           </>
         }
       />
-      {bulk.message ? (
-        <p className="px-3 py-1.5 text-xs text-fg-dim" role="status">
-          {bulk.message}
-        </p>
-      ) : null}
     </>
   );
 }
@@ -1677,7 +1723,7 @@ function TaskColumn({
   rows,
   selectedTaskId,
   savingCardIds,
-  cardErrors,
+  cardErrors: _cardErrors,
   members,
   projects,
   primaryProjects,
@@ -1744,7 +1790,6 @@ function TaskColumn({
               href={taskHref(row.id)}
               selected={row.id === selectedTaskId}
               saving={savingCardIds.has(row.id)}
-              error={cardErrors[row.id]}
               members={members}
               projects={projects}
               primaryProject={primaryProjects.find((project) => project.taskId === row.id) ?? null}
@@ -1777,7 +1822,6 @@ function TaskCard({
   href,
   selected,
   saving,
-  error,
   members,
   projects,
   primaryProject,
@@ -1792,7 +1836,6 @@ function TaskCard({
   href: string;
   selected: boolean;
   saving: boolean;
-  error?: string;
   members: TaskMemberOption[];
   projects: TaskMemberOption[];
   primaryProject: objects.TaskPrimaryProjectRow | null;
@@ -1812,20 +1855,11 @@ function TaskCard({
     : undefined;
   const title = displayObjectTitle(row);
   const [metadataSaving, setMetadataSaving] = useState(false);
-  const [metadataError, setMetadataError] = useState<string | null>(null);
   const saveMetadata = (patch: TaskPatch) => {
     setMetadataSaving(true);
-    setMetadataError(null);
-    void onUpdateTask(row.id, patch)
-      .then((result) => {
-        if (result.error) setMetadataError(result.error);
-      })
-      .catch((cause: unknown) => {
-        setMetadataError(errorMessage(cause, 'Save failed'));
-      })
-      .finally(() => {
-        setMetadataSaving(false);
-      });
+    void onUpdateTask(row.id, patch).finally(() => {
+      setMetadataSaving(false);
+    });
   };
   return (
     <article
@@ -1836,7 +1870,6 @@ function TaskCard({
         selected && 'border-signal bg-signal-soft shadow-[inset_3px_0_0_var(--color-signal)]',
         isDragging && 'opacity-50',
         saving && 'opacity-80',
-        error && 'border-danger/50',
       )}
     >
       <div className="flex min-w-0 items-start gap-0.5">
@@ -1866,12 +1899,11 @@ function TaskCard({
       </div>
       <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-0 text-[11px]">
         {taskCategoriesEnabled ? (
-          <EditableMetadata
-            label={`Category for ${displayText(title)}`}
-            value={
+          <EditableMetadata label={`Category for ${displayText(title)}`}>
+            <EditableMetadata.Value>
               <TaskCategoryBadge category={row.taskCategory} status={row.taskCategoryStatus} />
-            }
-            editor={
+            </EditableMetadata.Value>
+            <EditableMetadata.Editor>
               <TaskCategorySelect
                 taskId={row.id}
                 category={row.taskCategory}
@@ -1879,13 +1911,14 @@ function TaskCard({
                 status={row.taskCategoryStatus}
                 updatedAt={row.taskCategoryUpdatedAt}
               />
-            }
-          />
+            </EditableMetadata.Editor>
+          </EditableMetadata>
         ) : null}
-        <EditableMetadata
-          label={`Project for ${displayText(title)}`}
-          value={primaryProject?.projectName ?? 'No project'}
-          editor={
+        <EditableMetadata label={`Project for ${displayText(title)}`}>
+          <EditableMetadata.Value>
+            {primaryProject?.projectName ?? 'No project'}
+          </EditableMetadata.Value>
+          <EditableMetadata.Editor>
             <TaskProjectSelect
               taskId={row.id}
               projectId={primaryProject?.projectId ?? null}
@@ -1902,13 +1935,13 @@ function TaskCard({
                 onProjectChangeReverted(row.id);
               }}
             />
-          }
-        />
-        <EditableMetadata
-          label={`Assignee for ${displayText(title)}`}
-          value={memberLabel(row.assigneeUserId, members)}
-          pending={metadataSaving}
-          editor={
+          </EditableMetadata.Editor>
+        </EditableMetadata>
+        <EditableMetadata label={`Assignee for ${displayText(title)}`} pending={metadataSaving}>
+          <EditableMetadata.Value>
+            {memberLabel(row.assigneeUserId, members)}
+          </EditableMetadata.Value>
+          <EditableMetadata.Editor>
             <select
               value={row.assigneeUserId ?? ''}
               onChange={(event) => {
@@ -1923,13 +1956,13 @@ function TaskCard({
                 </option>
               ))}
             </select>
-          }
-        />
-        <EditableMetadata
-          label={`Due date for ${displayText(title)}`}
-          value={<DueDateDisplay value={row.dueAt} variant="compact" />}
-          pending={metadataSaving}
-          editor={
+          </EditableMetadata.Editor>
+        </EditableMetadata>
+        <EditableMetadata label={`Due date for ${displayText(title)}`} pending={metadataSaving}>
+          <EditableMetadata.Value>
+            <DueDateDisplay value={row.dueAt} variant="compact" />
+          </EditableMetadata.Value>
+          <EditableMetadata.Editor>
             <MetadataDateEditor
               defaultValue={row.dueAt ? row.dueAt.toISOString().slice(0, 10) : ''}
               onApply={(value) => {
@@ -1938,19 +1971,17 @@ function TaskCard({
                 });
               }}
             />
-          }
-        />
-        <EditableMetadata
-          label={`Priority for ${displayText(title)}`}
-          value={
+          </EditableMetadata.Editor>
+        </EditableMetadata>
+        <EditableMetadata label={`Priority for ${displayText(title)}`} pending={metadataSaving}>
+          <EditableMetadata.Value>
             <CollectionStatus
               value={row.priority ? `p${row.priority}` : 'none'}
               tone={priorityTone(row.priority)}
               label={row.priority ? `P${row.priority}` : 'No priority'}
             />
-          }
-          pending={metadataSaving}
-          editor={
+          </EditableMetadata.Value>
+          <EditableMetadata.Editor>
             <select
               value={row.priority ?? ''}
               onChange={(event) => {
@@ -1967,15 +1998,9 @@ function TaskCard({
                 </option>
               ))}
             </select>
-          }
-        />
+          </EditableMetadata.Editor>
+        </EditableMetadata>
       </div>
-      {metadataError ? (
-        <p className="mt-1 text-xs text-danger" role="alert">
-          {metadataError}
-        </p>
-      ) : null}
-      {error ? <p className="mt-2 text-xs text-danger">{error}</p> : null}
     </article>
   );
 }
@@ -2012,24 +2037,11 @@ function TaskDetailPanel({
   onProjectChangeCommitted: () => void;
   onProjectChangeReverted: () => void;
 }) {
-  const [saving, setSaving] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const timezone = useWorkspaceTimezone();
   const title = displayObjectTitle(task);
 
-  function save(field: string, patch: TaskPatch): void {
-    setSaving(field);
-    setError(null);
-    void onUpdate(task.id, patch)
-      .then((result) => {
-        if ('error' in result && result.error) setError(result.error);
-      })
-      .catch((err: unknown) => {
-        setError(errorMessage(err, 'Save failed'));
-      })
-      .finally(() => {
-        setSaving(null);
-      });
+  function save(_field: string, patch: TaskPatch): void {
+    void onUpdate(task.id, patch);
   }
 
   return (
@@ -2159,12 +2171,6 @@ function TaskDetailPanel({
         <Detail label="Current priority" value={task.priority ? `P${task.priority}` : '-'} />
         <Detail label="Updated" value={dateLabel(task.updatedAt)} />
       </div>
-      {saving || error ? (
-        <div className="border-b border-border px-4 py-3 text-xs">
-          {saving ? <span className="text-fg-dim">Saving {saving}…</span> : null}
-          {error ? <span className="text-danger">{error}</span> : null}
-        </div>
-      ) : null}
       <ObjectRelatedContext connectedWork={connectedWork} compact />
       <div className="flex flex-wrap gap-2 p-4">
         <Link

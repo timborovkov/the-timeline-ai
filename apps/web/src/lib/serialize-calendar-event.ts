@@ -1,7 +1,27 @@
-import type { CalendarEvent } from '@/components/calendar/calendar-overlay';
+import type { CalendarEvent, CalendarLinkedObject } from '@/components/calendar/calendar-overlay';
+import type { CalendarLinkedObjectRow } from '@timeline/shared/calendar';
 
 function calendarShowAs(showAs: string): CalendarEvent['showAs'] {
   return showAs === 'free' || showAs === 'tentative' ? showAs : 'busy';
+}
+
+const EMPTY_LINKED_OBJECTS: CalendarLinkedObject[] = [];
+
+export function groupLinkedObjectsByEvent(
+  rows: CalendarLinkedObjectRow[],
+): Map<string, CalendarLinkedObject[]> {
+  const grouped = new Map<string, CalendarLinkedObject[]>();
+  for (const row of rows) {
+    const current = grouped.get(row.calendarEventId) ?? [];
+    current.push({
+      id: row.id,
+      title: row.title,
+      type: row.type,
+      relationshipType: row.relationshipType,
+    });
+    grouped.set(row.calendarEventId, current);
+  }
+  return grouped;
 }
 
 export function serializeCalendarEvent(
@@ -25,6 +45,7 @@ export function serializeCalendarEvent(
     visibilityUserIds: string[] | null;
   },
   pinned: boolean,
+  linkedObjects: CalendarLinkedObject[] = EMPTY_LINKED_OBJECTS,
 ): CalendarEvent {
   return {
     id: event.id,
@@ -45,5 +66,6 @@ export function serializeCalendarEvent(
     visibility: event.visibility,
     visibilityUserIds: event.visibilityUserIds,
     pinned,
+    linkedObjects: event.redacted ? [] : linkedObjects,
   };
 }

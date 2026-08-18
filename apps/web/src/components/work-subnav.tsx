@@ -9,6 +9,7 @@ const WORK_LINKS = [
   { label: 'Tasks', href: '/app/tasks' },
   { label: 'Boards', href: '/app/boards' },
   { label: 'Calendar', href: '/app/calendar' },
+  { label: 'Digests', href: '/app/digests' },
   { label: 'Approvals', href: '/app/approvals' },
 ] as const;
 

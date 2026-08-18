@@ -3,17 +3,15 @@ import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
-import { Breadcrumb } from '@/components/breadcrumb';
-import { IndexStrip } from '@/components/index-strip';
-import { JobRecoveryList } from '@/components/job-recovery/job-recovery-list';
-import { JobDashboard } from '@/components/jobs/job-dashboard';
+import { jobsPageSubtitle } from '@/components/job-recovery/jobs-attention';
+import { JobsForbiddenView, JobsPageView } from '@/components/job-recovery/jobs-page-view';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 
 export const metadata: Metadata = {
-  title: 'Jobs',
-  description: 'Review background jobs, retries, and finished history.',
+  title: 'Job recovery',
+  description: jobsPageSubtitle(),
 };
 
 const VALID_JOB_KINDS = [
@@ -40,9 +38,11 @@ export default async function JobRecoveryPage(props: { searchParams: Promise<{ k
   } catch {
     canViewJobs = false;
   }
-  if (!canViewJobs) redirect('/app/team');
+  if (!canViewJobs) {
+    return <JobsForbiddenView teamName={active.teamName} />;
+  }
 
-  const items = await scope.jobRecovery.listRecoverableJobs();
+  const queue = await scope.jobRecovery.getRecoverableJobQueue();
 
   const defaultFilter =
     kind && VALID_JOB_KINDS.includes(kind as (typeof VALID_JOB_KINDS)[number])
@@ -50,23 +50,11 @@ export default async function JobRecoveryPage(props: { searchParams: Promise<{ k
       : undefined;
 
   return (
-    <div className="space-y-8">
-      <Breadcrumb items={[{ label: 'Team', href: '/app/team' }, { label: 'Background jobs' }]} />
-      <IndexStrip
-        srLabel={`Background jobs · ${String(items.length)} items need attention`}
-        segments={[
-          { value: 'BACKGROUND JOBS' },
-          { label: 'team', value: active.teamName, signal: true },
-          { label: 'needs attention', value: items.length },
-        ]}
-      />
-      <section aria-labelledby="processing-summary-heading" className="space-y-3">
-        <h2 id="processing-summary-heading" className="text-base font-semibold text-fg">
-          Processing summary
-        </h2>
-        <JobDashboard />
-      </section>
-      <JobRecoveryList items={items} defaultFilter={defaultFilter} />
-    </div>
+    <JobsPageView
+      teamName={active.teamName}
+      items={queue.items}
+      olderCount={queue.olderCount}
+      defaultFilter={defaultFilter}
+    />
   );
 }

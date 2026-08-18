@@ -11,6 +11,7 @@ import { InfiniteScroll } from '@/components/collections/infinite-scroll';
 import { VirtualList } from '@/components/collections/virtual-list';
 import { PinnedItemRow } from '@/components/pins/pinned-item-row';
 import { Button } from '@/components/ui/button';
+import { notifyAction, notifyError } from '@/lib/notify';
 import { readJson } from '@/lib/paginated-api';
 import { cn } from '@/lib/utils';
 
@@ -32,6 +33,16 @@ async function movePin(input: {
 }) {
   const { movePinAction } = await import('@/app/actions/pins');
   return movePinAction(input);
+}
+
+function restorePinOrder(
+  previous: PinnedItem[],
+  pinId: string,
+): { beforePinId?: string; afterPinId?: string; edge?: 'top' | 'bottom' } {
+  const index = previous.findIndex((item) => item.pinId === pinId);
+  if (index <= 0) return { edge: 'top' };
+  const before = previous[index - 1];
+  return before ? { afterPinId: before.pinId } : { edge: 'top' };
 }
 
 function reorder(items: PinnedItem[], from: number, to: number): PinnedItem[] {
@@ -124,6 +135,7 @@ export function PinnedWorkspaceManager({
         })
         .catch(() => {
           dispatch({ type: 'error', error: 'Could not load more pinned items.' });
+          notifyError('pins:load', 'Couldn’t load more pinned items');
         });
     });
   }
@@ -146,7 +158,24 @@ export function PinnedWorkspaceManager({
     const previous = items;
     dispatch({ type: 'optimistic-move', items: nextItems });
     startTransition(async () => {
-      const result = await movePin({ pinId: item.pinId, ...input });
+      const result = await notifyAction({
+        id: `pin:${item.pinId}:move`,
+        loading: 'Reordering pin…',
+        success: 'Pin reordered',
+        error: 'Couldn’t reorder pin',
+        run: () => movePin({ pinId: item.pinId, ...input }),
+        undo: {
+          run: async () => {
+            dispatch({ type: 'optimistic-move', items: previous });
+            const undone = await movePin({
+              pinId: item.pinId,
+              ...restorePinOrder(previous, item.pinId),
+            });
+            if (undone.error) dispatch({ type: 'optimistic-move', items: nextItems });
+            return undone;
+          },
+        },
+      });
       if (result.error) {
         dispatch({ type: 'move-failed', items: previous, error: result.error });
         return;
@@ -184,7 +213,26 @@ export function PinnedWorkspaceManager({
               type: 'replace-page',
               page: { items: reorder(expanded, index, index + 1), nextCursor: page.nextCursor },
             });
-            const result = await movePin({ pinId: item.pinId, afterPinId: adjacent.pinId });
+            const result = await notifyAction({
+              id: `pin:${item.pinId}:move`,
+              loading: 'Reordering pin…',
+              success: 'Pin reordered',
+              error: 'Couldn’t reorder pin',
+              run: () => movePin({ pinId: item.pinId, afterPinId: adjacent.pinId }),
+              undo: {
+                run: async () => {
+                  dispatch({ type: 'optimistic-move', items: previous });
+                  const undone = await movePin({
+                    pinId: item.pinId,
+                    ...restorePinOrder(previous, item.pinId),
+                  });
+                  if (undone.error) {
+                    dispatch({ type: 'optimistic-move', items: expanded });
+                  }
+                  return undone;
+                },
+              },
+            });
             if (result.error) {
               dispatch({ type: 'move-failed', items: previous, error: result.error });
             } else {
@@ -194,6 +242,7 @@ export function PinnedWorkspaceManager({
           })
           .catch(() => {
             dispatch({ type: 'error', error: 'Could not load the next pinned item.' });
+            notifyError('pins:load', 'Couldn’t load the next pinned item');
           });
       });
       return;
@@ -206,13 +255,74 @@ export function PinnedWorkspaceManager({
   }
 
   return (
+    <PinnedWorkspacePanel
+      items={items}
+      nextCursor={nextCursor}
+      filter={filter}
+      canReorder={canReorder}
+      reorderMode={reorderMode}
+      pending={pending}
+      error={error}
+      announcement={announcement}
+      draggedIdRef={draggedIdRef}
+      onToggleReorder={() => {
+        dispatch({ type: 'toggle-reorder' });
+      }}
+      onLoadMore={loadMorePins}
+      onRemoved={(pinId) => {
+        dispatch({ type: 'remove', pinId });
+      }}
+      onCommitMove={commitMove}
+      onMoveBy={moveBy}
+    />
+  );
+}
+
+function PinnedWorkspacePanel({
+  items,
+  nextCursor,
+  filter,
+  canReorder,
+  reorderMode,
+  pending,
+  error,
+  announcement,
+  draggedIdRef,
+  onToggleReorder,
+  onLoadMore,
+  onRemoved,
+  onCommitMove,
+  onMoveBy,
+}: {
+  items: PinnedItem[];
+  nextCursor: string | null;
+  filter: string;
+  canReorder: boolean;
+  reorderMode: boolean;
+  pending: boolean;
+  error: string | null;
+  announcement: string;
+  draggedIdRef: { current: string | null };
+  onToggleReorder: () => void;
+  onLoadMore: () => void;
+  onRemoved: (pinId: string) => void;
+  onCommitMove: (
+    item: PinnedItem,
+    placement: { beforePinId?: string; afterPinId?: string; edge?: 'top' | 'bottom' },
+    nextItems: PinnedItem[],
+  ) => void;
+  onMoveBy: (index: number, direction: 'up' | 'down' | 'top' | 'bottom') => void;
+}) {
+  return (
     <section aria-labelledby="pinned-work-title">
       <h2 id="pinned-work-title" className="sr-only">
         Pinned work
       </h2>
-      <CollectionToolbar
-        count={nextCursor ? undefined : String(items.length)}
-        viewControls={
+      <CollectionToolbar>
+        {nextCursor ? null : (
+          <CollectionToolbar.Count>{String(items.length)}</CollectionToolbar.Count>
+        )}
+        <CollectionToolbar.View>
           <nav aria-label="Pinned work filters" className="flex items-center gap-0.5">
             {FILTERS.map((entry) => (
               <Link
@@ -232,22 +342,16 @@ export function PinnedWorkspaceManager({
               </Link>
             ))}
           </nav>
-        }
-        actions={
-          canReorder && items.length > 1 ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                dispatch({ type: 'toggle-reorder' });
-              }}
-            >
+        </CollectionToolbar.View>
+        <CollectionToolbar.Actions>
+          {canReorder && items.length > 1 ? (
+            <Button variant="ghost" size="sm" onClick={onToggleReorder}>
               <GripVertical aria-hidden="true" />
               {reorderMode ? 'Done reordering' : 'Reorder'}
             </Button>
-          ) : null
-        }
-      />
+          ) : null}
+        </CollectionToolbar.Actions>
+      </CollectionToolbar>
 
       {items.length === 0 ? (
         <div className="border-b border-border py-10 text-center">
@@ -279,7 +383,7 @@ export function PinnedWorkspaceManager({
                   if (from < 0 || from === index) return;
                   const moving = items[from];
                   if (!moving) return;
-                  commitMove(
+                  onCommitMove(
                     moving,
                     from < index ? { afterPinId: item.pinId } : { beforePinId: item.pinId },
                     reorder(items, from, index),
@@ -287,7 +391,7 @@ export function PinnedWorkspaceManager({
                   draggedIdRef.current = null;
                 }}
                 onRemoved={() => {
-                  dispatch({ type: 'remove', pinId: item.pinId });
+                  onRemoved(item.pinId);
                 }}
                 actions={
                   reorderMode ? (
@@ -298,7 +402,7 @@ export function PinnedWorkspaceManager({
                         className="size-8"
                         disabled={pending || index === 0}
                         onClick={() => {
-                          moveBy(index, 'up');
+                          onMoveBy(index, 'up');
                         }}
                         aria-label={`Move ${item.title} up`}
                       >
@@ -310,7 +414,7 @@ export function PinnedWorkspaceManager({
                         className="size-8"
                         disabled={pending || (index === items.length - 1 && !nextCursor)}
                         onClick={() => {
-                          moveBy(index, 'down');
+                          onMoveBy(index, 'down');
                         }}
                         aria-label={`Move ${item.title} down`}
                       >
@@ -322,7 +426,7 @@ export function PinnedWorkspaceManager({
                         className="size-8"
                         disabled={pending || index === 0}
                         onClick={() => {
-                          moveBy(index, 'top');
+                          onMoveBy(index, 'top');
                         }}
                         aria-label={`Move ${item.title} to top`}
                       >
@@ -334,7 +438,7 @@ export function PinnedWorkspaceManager({
                         className="size-8"
                         disabled={pending || (index === items.length - 1 && !nextCursor)}
                         onClick={() => {
-                          moveBy(index, 'bottom');
+                          onMoveBy(index, 'bottom');
                         }}
                         aria-label={`Move ${item.title} to bottom`}
                       >
@@ -353,7 +457,7 @@ export function PinnedWorkspaceManager({
         hasMore={Boolean(nextCursor)}
         loading={pending}
         error={error === 'Could not load more pinned items.' ? error : null}
-        onLoadMore={loadMorePins}
+        onLoadMore={onLoadMore}
         boundLabel="No more matching pins"
         hideBound={items.length === 0}
       />
@@ -361,9 +465,7 @@ export function PinnedWorkspaceManager({
         {announcement}
       </p>
       {error && error !== 'Could not load more pinned items.' ? (
-        <p role="alert" className="text-sm text-danger">
-          {error}
-        </p>
+        <p className="sr-only">{error}</p>
       ) : null}
     </section>
   );

@@ -14,7 +14,8 @@ const fakes = vi.hoisted(() => ({
   hideInspector: vi.fn(),
   refresh: vi.fn(),
   removeConversationalEvent: vi.fn(),
-  toastSuccess: vi.fn(),
+  notifyAction: vi.fn(),
+  notifyError: vi.fn(),
 }));
 
 vi.mock('@/app/actions/events', () => ({
@@ -47,7 +48,15 @@ vi.mock('@/components/inspector-context', () => ({
   }),
 }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
-vi.mock('sonner', () => ({ toast: { success: fakes.toastSuccess } }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async (options: { run: () => Promise<{ error?: string }> }) => {
+    fakes.notifyAction(options);
+    return options.run();
+  },
+  notifyError: (id: string, message: string) => {
+    fakes.notifyError(id, message);
+  },
+}));
 vi.mock('@/components/collections/virtual-list', () => ({
   VirtualList: ({
     items,
@@ -82,7 +91,7 @@ afterEach(() => {
   fakes.hideInspector.mockClear();
   fakes.refresh.mockClear();
   fakes.removeConversationalEvent.mockReset();
-  fakes.toastSuccess.mockClear();
+  fakes.notifyAction.mockClear();
 });
 
 function renderLastInspector(): string {
@@ -196,7 +205,7 @@ describe('TimelineList event anchors', () => {
     expect(html).toContain(`id="ev-${focusedEventId}"`);
     expect(html).toContain(`id="ev-${taskEventId}"`);
     expect(html.match(new RegExp(`id="ev-${focusedEventId}"`, 'g'))).toHaveLength(1);
-    expect(html).toContain('shadow-[inset_3px_0_0_var(--signal)]');
+    expect(html).toContain('shadow-[inset_2px_0_0_var(--signal)]');
   });
 
   it('keeps a focused moment visible through impact filters', () => {
@@ -221,7 +230,7 @@ describe('TimelineList event anchors', () => {
     expect(html).toContain('aria-current="true"');
     expect(html).toContain(`id="ev-${focusedEventId}"`);
     expect(html).toContain(`id="ev-${taskEventId}"`);
-    expect(html).toContain('shadow-[inset_3px_0_0_var(--signal)]');
+    expect(html).toContain('shadow-[inset_2px_0_0_var(--signal)]');
   });
 });
 
@@ -259,6 +268,51 @@ describe('TimelineList compact home rows', () => {
       `href="/app/timeline?moment=moment%3Ameeting%3Ameeting-1&amp;event=${newerEventId}#tm-moment_3Ameeting_3Ameeting-1"`,
     );
     expect(html).not.toContain(`event=${olderEventId}`);
+  });
+});
+
+describe('TimelineList archive virtualization', () => {
+  it('virtualizes full archive rows with sticky dates under the toolbar', () => {
+    const html = renderTimeline([
+      timelineEvent({
+        id: '19191919-1919-4191-8191-191919191919',
+        occurredAt: '2026-06-03T13:10:00.000Z',
+        source: 'integration',
+        contentText: 'GitHub workflow "CI" #1603 on acme/app success',
+        sourceMetadata: {
+          provider: 'github',
+          event_type: 'workflow_run.success',
+          github: { type: 'workflow_run', repo: 'acme/app', head_branch: 'main' },
+        },
+      }),
+    ]);
+
+    expect(html).toContain('data-timeline-mode="moments"');
+    expect(html).toContain('sticky top-11');
+    expect(html).not.toContain('sticky top-0');
+    expect(html).not.toContain('<ol');
+    expect(html).not.toContain('[ev:');
+    expect(html).not.toContain('View evidence');
+    expect(html).toContain('data-visual-weight="pulse"');
+  });
+
+  it('keeps Home compact rows grouped instead of virtualized', () => {
+    const html = renderTimeline(
+      [
+        timelineEvent({
+          id: '11111111-1111-4111-8111-111111111111',
+          occurredAt: '2026-06-03T13:04:00.000Z',
+        }),
+      ],
+      {
+        compact: true,
+        maxMoments: 8,
+      },
+    );
+
+    expect(html).toContain('<ol');
+    expect(html).not.toContain('sticky top-11');
+    expect(html).toContain('aria-label="Recent timeline moments"');
   });
 });
 
@@ -413,6 +467,59 @@ describe('TimelineList document attachments', () => {
 });
 
 describe('TimelineList moment presentation', () => {
+  it('renders CI pulses as one muted line and conversations as story rows', () => {
+    const html = renderTimeline([
+      timelineEvent({
+        id: '19191919-1919-4191-8191-191919191919',
+        occurredAt: '2026-06-03T13:10:00.000Z',
+        source: 'integration',
+        contentText: 'GitHub workflow "CI" #1603 on acme/app success',
+        sourceMetadata: {
+          provider: 'github',
+          event_type: 'workflow_run.success',
+          github: { type: 'workflow_run', repo: 'acme/app', head_branch: 'main' },
+        },
+      }),
+      timelineEvent({
+        id: '20202020-2020-4202-8202-202020202020',
+        occurredAt: '2026-06-03T13:04:00.000Z',
+        source: 'telegram',
+        contentText: 'Standup notes from Maya',
+        sourceMetadata: { tg_chat_title: 'Engineering', tg_sender_name: 'Maya' },
+      }),
+    ]);
+
+    expect(html).toContain('data-visual-weight="pulse"');
+    expect(html).toContain('data-event-class="pulse"');
+    expect(html).toContain('data-visual-weight="story"');
+    expect(html).toContain('data-event-class="communication"');
+    expect(html).toContain('CI passed on acme/app · main');
+    expect(html).not.toContain('[ev:');
+    expect(html).not.toContain('View evidence');
+    expect(html).not.toContain('workflow_run:1603');
+    expect(html).not.toContain('right-[-7px]');
+    expect(html).not.toContain('w-px bg-border');
+  });
+
+  it('keeps All events as a uniform compact log', () => {
+    const html = renderTimeline(
+      [
+        timelineEvent({
+          id: '21212121-2121-4121-8121-212121212121',
+          occurredAt: '2026-06-03T13:04:00.000Z',
+          source: 'telegram',
+          contentText: 'Standup notes from Maya',
+          sourceMetadata: { tg_chat_title: 'Engineering', tg_sender_name: 'Maya' },
+        }),
+      ],
+      { mode: 'events' },
+    );
+
+    expect(html).toContain('aria-label="All events"');
+    expect(html).toContain('data-timeline-mode="events"');
+    expect(html).toContain('data-visual-weight="pulse"');
+  });
+
   it('keeps short actor names that only match part of the moment title', () => {
     render(
       createElement(TimelineList, {
@@ -486,15 +593,16 @@ describe('TimelineList moment presentation', () => {
       }),
     );
 
-    expect(screen.getByText('View evidence · 1 signal')).toBeTruthy();
+    expect(screen.queryByText('View evidence · 1 signal')).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: /^Done \/ 16\.20.*View evidence$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Done \/ 16\.20/i }));
     const inspector = renderLastInspector();
-    expect(inspector).toContain('Moment');
-    expect(inspector).toContain('Evidence summary');
-    expect(inspector).toContain('1 evidence item');
     expect(inspector).toContain('Source evidence');
+    expect(inspector).toContain('[ev:14141414]');
+    expect(inspector).toContain('Copy citation [ev:14141414]');
     expect(inspector).toContain('Technical details');
+    expect(inspector).not.toContain('Evidence summary');
+    expect(inspector).not.toContain('1 evidence item');
     expect(inspector).not.toContain('Why this row exists');
     expect(inspector).not.toContain('Source truth');
     expect(inspector).not.toContain('1 source event');
@@ -521,7 +629,6 @@ describe('TimelineList moment presentation', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Voice note summary/i }));
     const inspector = renderLastInspector();
-    expectTextOrder(inspector, 'Moment', 'Source evidence');
     expectTextOrder(inspector, 'Source evidence', 'Audio for Meeting evidence');
     expectTextOrder(inspector, 'Audio for Meeting evidence', 'Technical details');
     expect(inspector).not.toContain('>Controls<');
@@ -567,7 +674,7 @@ describe('TimelineList evidence-owned actions', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /Telegram message 4/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Telegram message 4 ·/i }));
     renderLastInspectorContent();
 
     expect(
@@ -618,9 +725,7 @@ describe('TimelineList evidence-owned actions', () => {
         isAdmin={false}
       />,
     );
-    await user.click(
-      screen.getByRole('button', { name: /^Remove this captured message .*View evidence$/i }),
-    );
+    await user.click(screen.getByRole('button', { name: /^Remove this captured message/i }));
     renderLastInspectorContent();
 
     const openRemoval = async () => {
@@ -641,7 +746,12 @@ describe('TimelineList evidence-owned actions', () => {
     await openRemoval();
     await user.click(screen.getByRole('button', { name: 'Remove evidence' }));
     await waitFor(() => {
-      expect(screen.getByRole('alert').textContent).toContain('Removal failed');
+      expect(fakes.notifyAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: 'Evidence removed',
+          error: 'Couldn’t remove evidence',
+        }),
+      );
     });
     expect(fakes.hideInspector).not.toHaveBeenCalled();
 
@@ -651,7 +761,12 @@ describe('TimelineList evidence-owned actions', () => {
     await waitFor(() => {
       expect(fakes.hideInspector).toHaveBeenCalledTimes(1);
       expect(fakes.refresh).toHaveBeenCalledTimes(1);
-      expect(fakes.toastSuccess).toHaveBeenCalledWith('Evidence removed from Timeline');
+      expect(fakes.notifyAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: 'Evidence removed',
+          error: 'Couldn’t remove evidence',
+        }),
+      );
     });
   });
 });
@@ -714,13 +829,9 @@ describe('TimelineList inspector source caps', () => {
           timelineEvent({
             id: '16161616-1616-4161-8161-161616161616',
             occurredAt: '2026-06-03T13:04:00.000Z',
-            source: 'integration',
+            source: 'telegram',
             contentText: longBody,
-            sourceMetadata: {
-              provider: 'github',
-              event: 'workflow_run.success',
-              external_object_id: 'github:workflow:1234567890',
-            },
+            sourceMetadata: { tg_chat_title: 'AuditAI', tg_sender_name: 'Tim' },
           }),
         ],
         authorMap: new Map(),
@@ -729,7 +840,9 @@ describe('TimelineList inspector source caps', () => {
       }),
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /Incident report for Apple Pay/i }));
+    fireEvent.click(
+      screen.getByRole('button', { name: /^Incident report for Apple Pay checkout/i }),
+    );
     renderLastInspectorContent();
 
     fireEvent.click(screen.getByRole('button', { name: 'View full evidence' }));
@@ -761,6 +874,41 @@ describe('TimelineList inspector source caps', () => {
     renderLastInspectorContent();
 
     expect(screen.queryByRole('button', { name: 'View full evidence' })).toBeNull();
+  });
+
+  it('keeps original email HTML behind a collapsed inspector disclosure', () => {
+    render(
+      createElement(TimelineList, {
+        events: [
+          timelineEvent({
+            id: '19191919-1919-4191-8191-191919191918',
+            occurredAt: '2026-06-03T13:04:00.000Z',
+            source: 'email',
+            contentText: 'Please review the appendix.',
+            sourceMetadata: {
+              subject: 'Vendor contract review',
+              html_body: '<p>Please review the <b>appendix</b>.</p>',
+              source_snapshot: {
+                provider: 'postmark',
+                subject: 'Vendor contract review',
+                html_body: '<p>Please review the <b>appendix</b>.</p>',
+                from: { email: 'mika@example.com' },
+              },
+            },
+          }),
+        ],
+        authorMap: new Map(),
+        currentUserId: 'user-1',
+        isAdmin: false,
+      }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^Vendor contract review/i }));
+    const inspector = renderLastInspector();
+    expect(inspector).toContain('Original email');
+    expect(inspector).toContain('sandbox=""');
+    expect(inspector).toContain('Please review the &lt;b&gt;appendix&lt;/b&gt;.');
+    expect(inspector).not.toContain('sha256:deadbeef');
   });
 });
 
@@ -819,7 +967,7 @@ describe('TimelineList related evidence bundles', () => {
       }),
     );
 
-    expect(screen.getByText(/Related · Apple Pay checkout crash · 2 signals/i)).toBeTruthy();
+    expect(screen.queryByText(/Related · Apple Pay checkout crash · 2 signals/i)).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: /^Checkout crashes on Apple Pay/i }));
     const inspector = renderLastInspector();

@@ -74,7 +74,7 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
         <a href={`/app/objects/${String(row.otherId)}`} className="font-medium hover:underline">
           {text(row.otherName, 'Object')}
         </a>
-        <span className="text-xs uppercase tracking-wide text-muted-foreground">
+        <span className="text-xs text-fg-dim">
           {text(row.direction)} · {text(row.kind)}
         </span>
       </div>
@@ -136,7 +136,7 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
     <div className="min-w-0">
       <div className="flex min-w-0 items-start justify-between gap-3">
         <span className="min-w-0 break-words font-medium">{changeFieldLabel(text(row.field))}</span>
-        <span className="shrink-0 text-[11px] uppercase tracking-wide text-muted-foreground">
+        <span className="shrink-0 text-[11px] text-fg-dim">
           {text(row.actorKind)} · {text(row.status)}
         </span>
       </div>

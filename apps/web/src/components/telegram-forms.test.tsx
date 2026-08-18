@@ -32,6 +32,9 @@ vi.mock('@/app/actions/telegram', () => ({
   generateGroupLinkTokenAction: vi.fn(),
   generatePersonalLinkTokenAction: vi.fn(),
 }));
+vi.mock('@/components/form-action-toast', () => ({
+  FormActionToast: () => null,
+}));
 
 const { GenerateGroupTokenForm, GeneratePersonalTokenForm } = await import('./telegram-forms.js');
 
@@ -122,7 +125,8 @@ describe('Telegram link token forms', () => {
     cleanup();
     mockTokenState({ error: 'Not signed in' });
     render(<GeneratePersonalTokenForm botUsername="timeline_bot" />);
-    expect(screen.getByRole('alert').textContent).toContain('Not signed in');
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText('Not signed in')).toBeNull();
     expect(
       screen.getByLabelText('Your Telegram @username').getAttribute('aria-invalid'),
     ).toBeNull();

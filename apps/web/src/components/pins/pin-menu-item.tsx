@@ -2,11 +2,11 @@
 
 import { Pin, PinOff } from 'lucide-react';
 import { useState } from 'react';
-import { toast } from 'sonner';
 
 import type { PinTargetRef } from '@timeline/shared/pins';
 
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { notifyAction } from '@/lib/notify';
 
 async function mutatePin(target: PinTargetRef, pinned: boolean) {
   const { pinTargetAction, unpinTargetAction } = await import('@/app/actions/pins');
@@ -38,21 +38,34 @@ export function PinMenuItem({
       onSelect={(event) => {
         event.preventDefault();
         const next = !pinned;
+        const previous = pinned;
         setPinned(next);
         setPending(true);
         setPendingAction(next ? 'pin' : 'unpin');
-        void mutatePin(target, next)
+        void notifyAction({
+          id: `pin:${target.kind}:${target.key}`,
+          loading: next ? 'Pinning…' : 'Unpinning…',
+          success: next ? 'Pinned' : 'Unpinned',
+          error: next ? 'Couldn’t pin item' : 'Couldn’t unpin item',
+          run: () => mutatePin(target, next),
+          undo: {
+            run: async () => {
+              setPinned(previous);
+              onPinnedChange?.(previous);
+              return mutatePin(target, previous);
+            },
+            success: previous ? 'Pinned' : 'Unpinned',
+          },
+        })
           .then((result) => {
             if (result.error) {
-              setPinned(!next);
-              toast.error(result.error);
-              return;
+              setPinned(previous);
+            } else {
+              onPinnedChange?.(next);
             }
-            onPinnedChange?.(next);
           })
           .catch(() => {
-            setPinned(!next);
-            toast.error(next ? 'Failed to pin item' : 'Failed to unpin item');
+            setPinned(previous);
           })
           .finally(() => {
             setPending(false);

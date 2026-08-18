@@ -1766,6 +1766,41 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       .limit(filters.limit ?? 200);
   }
 
+  async function listEventsArrivedInWindow(filters: {
+    from: Date;
+    to: Date;
+    limit: number;
+    cursor?: string | null;
+  }): Promise<(typeof rawEvents.$inferSelect)[]> {
+    await ensureMember();
+    const conditions = [
+      eq(rawEvents.teamId, teamId),
+      visibilityFilter,
+      activeRawEventFilter,
+      or(
+        and(gte(rawEvents.occurredAt, filters.from), lt(rawEvents.occurredAt, filters.to)),
+        and(gte(rawEvents.createdAt, filters.from), lt(rawEvents.createdAt, filters.to)),
+      ),
+    ];
+    const cursor = decodeCursor(filters.cursor);
+    if (filters.cursor && !cursor) throw new Error('Invalid cursor');
+    if (cursor) {
+      const cursorDate = new Date(cursor.at);
+      conditions.push(
+        or(
+          lt(rawEvents.occurredAt, cursorDate),
+          and(eq(rawEvents.occurredAt, cursorDate), lt(rawEvents.id, cursor.id)),
+        ),
+      );
+    }
+    return db
+      .select()
+      .from(rawEvents)
+      .where(and(...conditions))
+      .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
+      .limit(filters.limit);
+  }
+
   function timelineOriginFilterCondition(origins: TimelineOriginFilter[] | undefined) {
     if (!origins?.length) return undefined;
     const predicates = origins.map((origin) => {
@@ -3059,7 +3094,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         const all: (typeof rawEvents.$inferSelect)[] = [];
         let cursor: string | null = null;
         do {
-          const rows = await listEvents({
+          const rows = await listEventsArrivedInWindow({
             from: filters.from,
             to: filters.to,
             limit: 101,

@@ -6,7 +6,6 @@ import type { Metadata } from 'next';
 
 import { BoardCreateDialog } from '@/components/boards/board-create-form';
 import { CollectionRow } from '@/components/collections/collection-row';
-import { CollectionRowMetadata } from '@/components/collections/collection-row-metadata';
 import { PageHeader } from '@/components/page-header';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { ItemActionGroup } from '@/components/ui/item-actions';
@@ -68,27 +67,19 @@ export default async function BoardsIndexPage() {
             const description = visibleBoardDescription(board.purpose);
             return (
               <li key={board.id}>
-                <CollectionRow
-                  title={
+                <CollectionRow>
+                  <CollectionRow.Title>
                     <Link
                       href={`/app/boards/${board.id}`}
                       className="block truncate rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {board.name}
                     </Link>
-                  }
-                  context={description ?? board.templateKind.replaceAll('_', ' ')}
-                  actions={
-                    <ItemActionGroup label={`Actions for ${board.name}`}>
-                      <PinOverflowMenu
-                        target={{ kind: 'board', key: board.id }}
-                        title={board.name}
-                        initialPinned={board.pinned}
-                      />
-                    </ItemActionGroup>
-                  }
-                >
-                  <CollectionRowMetadata>
+                  </CollectionRow.Title>
+                  <CollectionRow.Context>
+                    {description ?? board.templateKind.replaceAll('_', ' ')}
+                  </CollectionRow.Context>
+                  <CollectionRow.Metadata>
                     <>
                       <span className="capitalize">{board.templateKind.replaceAll('_', ' ')}</span>
                       <time dateTime={board.updatedAt.toISOString()}>
@@ -100,7 +91,16 @@ export default async function BoardsIndexPage() {
                         {board.itemCount} {board.itemCount === 1 ? 'item' : 'items'}
                       </span>
                     </>
-                  </CollectionRowMetadata>
+                  </CollectionRow.Metadata>
+                  <CollectionRow.Actions>
+                    <ItemActionGroup label={`Actions for ${board.name}`}>
+                      <PinOverflowMenu
+                        target={{ kind: 'board', key: board.id }}
+                        title={board.name}
+                        initialPinned={board.pinned}
+                      />
+                    </ItemActionGroup>
+                  </CollectionRow.Actions>
                 </CollectionRow>
               </li>
             );

@@ -370,7 +370,7 @@ async function finalizeSourceEmbedding(input: {
   }
 }
 
-async function processEmbedJob(
+export async function processEmbedJob(
   deps: EmbedWorkerDeps,
   data: queue.EmbedJobData,
   io: EmbedWorkerIO = {},

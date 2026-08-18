@@ -10,7 +10,8 @@ import type { Dispatch, SetStateAction } from 'react';
 
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
-import { CollectionStatus, priorityTone } from '@/components/collections/collection-status';
+import { CollectionStatus } from '@/components/collections/collection-status';
+import { priorityTone } from '@/components/collections/collection-status-tone';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { SelectionBar } from '@/components/collections/selection-bar';
@@ -20,9 +21,9 @@ import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { boardViewHref, type BoardLayout } from '@/lib/board-links';
 import { displayText } from '@/lib/display-dates';
+import { notifyAction } from '@/lib/notify';
 import { displayObjectTitle } from '@/lib/object-title';
 import { statusLabel } from '@/lib/status-labels';
-import { cn } from '@/lib/utils';
 
 export interface BoardMemberOption {
   id: string;
@@ -41,7 +42,6 @@ interface BoardBulkState {
   due: string;
   priority: string;
   laneId: string;
-  message: string | null;
 }
 
 type BoardBulkAction =
@@ -49,8 +49,7 @@ type BoardBulkAction =
   | { type: 'responsible'; responsibleUserId: string }
   | { type: 'due'; due: string }
   | { type: 'priority'; priority: string }
-  | { type: 'lane'; laneId: string }
-  | { type: 'message'; message: string | null };
+  | { type: 'lane'; laneId: string };
 
 interface BoardItemUpdateResult {
   ok?: boolean;
@@ -58,26 +57,45 @@ interface BoardItemUpdateResult {
   id?: string;
 }
 
-function BoardItemSavingNotice({ field }: { field?: string }) {
-  if (!field) return null;
-  return <span className="mt-1 block text-[11px] text-fg-dim">Saving {field}...</span>;
+function previousBoardItemPatch(
+  items: boards.BoardItemRow[],
+  id: string,
+  patch: BoardItemOptimisticPatch,
+): BoardItemOptimisticPatch {
+  const item = items.find((row) => row.id === id);
+  if (!item) return {};
+  const previous: BoardItemOptimisticPatch = {};
+  if ('laneId' in patch) previous.laneId = item.laneId;
+  if ('responsibleUserId' in patch) previous.responsibleUserId = item.responsibleUserId;
+  if ('dueAt' in patch) previous.dueAt = item.dueAt;
+  if ('priority' in patch) previous.priority = item.priority;
+  if ('nextStep' in patch) previous.nextStep = item.nextStep;
+  if ('notes' in patch) previous.notes = item.notes;
+  return previous;
 }
 
-function BoardItemSaveError({
-  objectTitle,
-  error,
-  suppressAlert,
-}: {
-  objectTitle: string;
-  error?: string;
-  suppressAlert: boolean;
-}) {
-  if (!error) return null;
-  return (
-    <span className="mt-1 block text-xs text-danger" role={suppressAlert ? undefined : 'alert'}>
-      Unable to save {displayText(objectTitle)}. {error}
-    </span>
-  );
+function boardItemFieldLabel(patch: BoardItemOptimisticPatch): string {
+  const field = Object.keys(patch)[0] ?? 'field';
+  return field === 'dueAt' ? 'due date' : field;
+}
+
+function notifyBoardItemUpdate(
+  id: string,
+  patch: BoardItemOptimisticPatch,
+  previous: BoardItemOptimisticPatch,
+  persist: (itemId: string, next: BoardItemOptimisticPatch) => Promise<BoardItemUpdateResult>,
+): Promise<BoardItemUpdateResult> {
+  const label = boardItemFieldLabel(patch);
+  return notifyAction({
+    id: `board-item:${id}`,
+    loading: `Updating ${label}…`,
+    success: `${label.slice(0, 1).toUpperCase()}${label.slice(1)} updated`,
+    error: `Couldn’t update ${label}`,
+    run: () => persist(id, patch),
+    undo: {
+      run: () => persist(id, previous),
+    },
+  });
 }
 
 export function CuratedBoardTable({
@@ -103,8 +121,6 @@ export function CuratedBoardTable({
   const timezone = useWorkspaceTimezone();
   const [, startTransition] = useTransition();
   const [saving, setSaving] = useState<Record<string, string>>({});
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [bulkErrorIds, setBulkErrorIds] = useState<ReadonlySet<string>>(new Set());
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const selectableItems = useMemo(() => items.filter((item) => !isOptimisticItem(item)), [items]);
   const visibleSelectedIds = useMemo(() => {
@@ -113,44 +129,28 @@ export function CuratedBoardTable({
   }, [selectableItems, selectedIds]);
   if (items.length === 0) return <EmptyBoardItems />;
 
-  function updateItem(
+  async function persistItem(
     id: string,
     patch: BoardItemOptimisticPatch,
-    suppressErrorAlert = false,
   ): Promise<BoardItemUpdateResult> {
-    if (!onUpdateItem) return Promise.resolve({ error: 'Board item editing is unavailable.' });
+    if (!onUpdateItem) return { error: 'Board item editing is unavailable.' };
     const field = Object.keys(patch)[0] ?? 'field';
     setSaving((current) => ({ ...current, [id]: field }));
-    setErrors((current) => {
-      const { [id]: _cleared, ...rest } = current;
-      return rest;
-    });
-    if (!suppressErrorAlert) {
-      setBulkErrorIds((current) => {
-        if (!current.has(id)) return current;
-        const next = new Set(current);
-        next.delete(id);
-        return next;
+    try {
+      return await onUpdateItem(id, patch);
+    } finally {
+      setSaving((current) => {
+        const { [id]: _done, ...rest } = current;
+        return rest;
       });
     }
+  }
+
+  function updateItem(id: string, patch: BoardItemOptimisticPatch): Promise<BoardItemUpdateResult> {
+    const previous = previousBoardItemPatch(items, id, patch);
     return new Promise((resolve) => {
       startTransition(async () => {
-        try {
-          const result = await onUpdateItem(id, patch);
-          if ('error' in result && result.error) {
-            setErrors((current) => ({ ...current, [id]: result.error ?? 'Save failed' }));
-          }
-          resolve(result);
-        } catch (err) {
-          const message = err instanceof Error ? err.message : 'Save failed';
-          setErrors((current) => ({ ...current, [id]: message }));
-          resolve({ error: message });
-        } finally {
-          setSaving((current) => {
-            const { [id]: _done, ...rest } = current;
-            return rest;
-          });
-        }
+        resolve(await notifyBoardItemUpdate(id, patch, previous, persistItem));
       });
     });
   }
@@ -159,8 +159,7 @@ export function CuratedBoardTable({
     ids: string[],
     patch: BoardItemOptimisticPatch,
   ): Promise<{ failed: number }> {
-    setBulkErrorIds(new Set(ids));
-    const results = await Promise.allSettled(ids.map((id) => updateItem(id, patch, true)));
+    const results = await Promise.allSettled(ids.map((id) => persistItem(id, patch)));
     return {
       failed: results.filter(
         (result) =>
@@ -203,224 +202,325 @@ export function CuratedBoardTable({
           onUpdateItems={updateItems}
         />
       ) : null}
-      <div className="overflow-x-auto rounded-sm border border-border bg-surface">
-        <table className="w-full text-sm">
-          <thead className="border-b border-border bg-bg text-left text-xs text-fg-dim">
-            <tr>
-              {onUpdateItem ? (
-                <th className="w-10 px-3 py-2 font-normal">
-                  <input
-                    type="checkbox"
-                    checked={allVisibleSelected}
-                    disabled={selectableItems.length === 0}
-                    onChange={(event) => {
-                      toggleAll(event.currentTarget.checked);
-                    }}
-                    aria-label="Select all visible board items"
-                    className="size-4 rounded-sm border-border"
-                  />
-                </th>
-              ) : null}
-              <th className="px-3 py-2 font-normal">Name</th>
-              <th className="px-3 py-2 font-normal">Type</th>
-              <th className="px-3 py-2 font-normal">Responsible</th>
-              <th className="px-3 py-2 font-normal">Due</th>
-              <th className="px-3 py-2 font-normal">Priority</th>
-              <th className="px-3 py-2 font-normal">Lane</th>
-              <th className="px-3 py-2 font-normal">Next step</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((item) => {
-              const optimistic = isOptimisticItem(item);
-              const objectTitle = displayObjectTitle(item.object);
-              return (
-                <tr key={item.id} className="border-t border-border transition-colors hover:bg-bg">
-                  {onUpdateItem ? (
-                    <td className="px-3 py-2 align-top">
-                      <input
-                        type="checkbox"
-                        checked={visibleSelectedIds.has(item.id)}
-                        disabled={optimistic}
-                        onChange={(event) => {
-                          toggleOne(item.id, event.currentTarget.checked);
-                        }}
-                        aria-label={`Select ${displayText(objectTitle)}`}
-                        className="size-4 rounded-sm border-border disabled:opacity-50"
-                      />
-                    </td>
-                  ) : null}
-                  <td className="px-3 py-2">
-                    {optimistic ? (
-                      <span className="font-medium text-fg">{displayText(objectTitle)}</span>
-                    ) : (
-                      <Link
-                        href={boardViewHref(boardId, view, item.id, filterParams)}
-                        className="font-medium hover:underline"
-                      >
-                        {displayText(objectTitle)}
-                      </Link>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-xs text-fg-muted">
-                    <span className="flex flex-wrap items-center gap-1.5">
-                      {statusLabel(item.object.type)}
-                      {item.object.type === 'task' ? (
-                        <LiveTaskCategoryBadge
-                          taskId={item.object.id}
-                          category={item.object.taskCategory}
-                          status={item.object.taskCategoryStatus}
-                          updatedAt={item.object.taskCategoryUpdatedAt}
-                        />
-                      ) : null}
-                    </span>
-                  </td>
-                  <td className="min-w-40 px-3 py-2">
-                    <EditableMetadata
-                      label={`Responsible person for ${displayText(objectTitle)}`}
-                      value={
-                        members.find((member) => member.id === item.responsibleUserId)?.label ??
-                        'Unassigned'
-                      }
-                      pending={saving[item.id] === 'responsibleUserId'}
-                      disabled={optimistic || !onUpdateItem}
-                      editor={
-                        <select
-                          value={item.responsibleUserId ?? ''}
-                          disabled={optimistic || !onUpdateItem}
-                          onChange={(event) => {
-                            void updateItem(item.id, {
-                              responsibleUserId: event.target.value || null,
-                            });
-                          }}
-                          className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs disabled:opacity-60"
-                          aria-label="Responsible person"
-                        >
-                          <option value="">Unassigned</option>
-                          {members.map((member) => (
-                            <option key={member.id} value={member.id}>
-                              {member.label}
-                            </option>
-                          ))}
-                        </select>
-                      }
-                    />
-                  </td>
-                  <td className="min-w-36 px-3 py-2">
-                    <EditableMetadata
-                      label={`Due date for ${displayText(objectTitle)}`}
-                      value={<DueDateDisplay value={item.dueAt} variant="field-hint" />}
-                      pending={saving[item.id] === 'dueAt'}
-                      disabled={optimistic || !onUpdateItem}
-                      editor={
-                        <MetadataDateEditor
-                          defaultValue={
-                            item.dueAt
-                              ? (presentDueDate(item.dueAt, { timezone }).dateKey ?? '')
-                              : ''
-                          }
-                          disabled={optimistic || !onUpdateItem}
-                          onApply={(value) => {
-                            void updateItem(item.id, {
-                              dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
-                            });
-                          }}
-                        />
-                      }
-                    />
-                  </td>
-                  <td className="min-w-28 px-3 py-2">
-                    <EditableMetadata
-                      label={`Priority for ${displayText(objectTitle)}`}
-                      value={
-                        <CollectionStatus
-                          value={item.priority ? `p${item.priority}` : 'none'}
-                          tone={priorityTone(item.priority)}
-                          label={item.priority ? `P${item.priority}` : 'No priority'}
-                        />
-                      }
-                      pending={saving[item.id] === 'priority'}
-                      disabled={optimistic || !onUpdateItem}
-                      editor={
-                        <select
-                          value={item.priority ?? ''}
-                          disabled={optimistic || !onUpdateItem}
-                          onChange={(event) => {
-                            void updateItem(item.id, {
-                              priority: event.target.value ? Number(event.target.value) : null,
-                            });
-                          }}
-                          className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs disabled:opacity-60"
-                          aria-label="Priority"
-                        >
-                          <option value="">None</option>
-                          {[1, 2, 3, 4].map((priority) => (
-                            <option key={priority} value={priority}>
-                              P{priority}
-                            </option>
-                          ))}
-                        </select>
-                      }
-                    />
-                  </td>
-                  <td className="min-w-36 px-3 py-2">
-                    <EditableMetadata
-                      label={`Lane for ${displayText(objectTitle)}`}
-                      value={lanes.find((lane) => lane.id === item.laneId)?.name ?? 'Unset'}
-                      pending={saving[item.id] === 'laneId'}
-                      disabled={optimistic || !onUpdateItem}
-                      editor={
-                        <select
-                          value={item.laneId ?? ''}
-                          disabled={optimistic || !onUpdateItem}
-                          onChange={(event) => {
-                            void updateItem(item.id, { laneId: event.target.value || null });
-                          }}
-                          className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs disabled:opacity-60"
-                          aria-label="Lane"
-                        >
-                          <option value="">Unset</option>
-                          {lanes.map((lane) => (
-                            <option key={lane.id} value={lane.id}>
-                              {displayText(lane.name)}
-                            </option>
-                          ))}
-                        </select>
-                      }
-                    />
-                  </td>
-                  <td className="min-w-64 px-3 py-2">
-                    <EditableMetadata
-                      label={`Next step for ${displayText(objectTitle)}`}
-                      value={item.nextStep ?? 'No next step'}
-                      pending={saving[item.id] === 'nextStep'}
-                      disabled={optimistic || !onUpdateItem}
-                      editor={
-                        <BoardNextStepInput
-                          key={`${item.id}:${item.nextStep ?? ''}`}
-                          objectName={objectTitle}
-                          nextStep={item.nextStep}
-                          disabled={optimistic || !onUpdateItem}
-                          onSave={(nextStep) => {
-                            void updateItem(item.id, { nextStep });
-                          }}
-                        />
-                      }
-                    />
-                    <BoardItemSavingNotice field={saving[item.id]} />
-                    <BoardItemSaveError
-                      objectTitle={objectTitle}
-                      error={errors[item.id]}
-                      suppressAlert={bulkErrorIds.has(item.id)}
-                    />
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      <CuratedBoardTableGrid
+        boardId={boardId}
+        view={view}
+        items={items}
+        lanes={lanes}
+        members={members}
+        filterParams={filterParams}
+        timezone={timezone}
+        saving={saving}
+        selectableItems={selectableItems}
+        visibleSelectedIds={visibleSelectedIds}
+        allVisibleSelected={allVisibleSelected}
+        canEdit={Boolean(onUpdateItem)}
+        onToggleAll={toggleAll}
+        onToggleOne={toggleOne}
+        onUpdateItem={updateItem}
+      />
     </div>
+  );
+}
+
+function CuratedBoardTableGrid({
+  boardId,
+  view,
+  items,
+  lanes,
+  members,
+  filterParams,
+  timezone,
+  saving,
+  selectableItems,
+  visibleSelectedIds,
+  allVisibleSelected,
+  canEdit,
+  onToggleAll,
+  onToggleOne,
+  onUpdateItem,
+}: {
+  boardId: string;
+  view: BoardLayout;
+  items: boards.BoardItemRow[];
+  lanes: boards.BoardLaneRow[];
+  members: BoardMemberOption[];
+  filterParams: Record<string, string>;
+  timezone: string;
+  saving: Record<string, string>;
+  selectableItems: boards.BoardItemRow[];
+  visibleSelectedIds: ReadonlySet<string>;
+  allVisibleSelected: boolean;
+  canEdit: boolean;
+  onToggleAll: (checked: boolean) => void;
+  onToggleOne: (id: string, checked: boolean) => void;
+  onUpdateItem: (id: string, patch: BoardItemOptimisticPatch) => Promise<BoardItemUpdateResult>;
+}) {
+  return (
+    <div className="overflow-x-auto rounded-sm border border-border bg-surface">
+      <table className="w-full text-sm">
+        <thead className="border-b border-border bg-bg text-left text-xs text-fg-dim">
+          <tr>
+            {canEdit ? (
+              <th className="w-10 px-3 py-2 font-normal">
+                <input
+                  type="checkbox"
+                  checked={allVisibleSelected}
+                  disabled={selectableItems.length === 0}
+                  onChange={(event) => {
+                    onToggleAll(event.currentTarget.checked);
+                  }}
+                  aria-label="Select all visible board items"
+                  className="size-4 rounded-sm border-border"
+                />
+              </th>
+            ) : null}
+            <th className="px-3 py-2 font-normal">Name</th>
+            <th className="px-3 py-2 font-normal">Type</th>
+            <th className="px-3 py-2 font-normal">Responsible</th>
+            <th className="px-3 py-2 font-normal">Due</th>
+            <th className="px-3 py-2 font-normal">Priority</th>
+            <th className="px-3 py-2 font-normal">Lane</th>
+            <th className="px-3 py-2 font-normal">Next step</th>
+          </tr>
+        </thead>
+        <CuratedBoardTableBody
+          boardId={boardId}
+          view={view}
+          filterParams={filterParams}
+          items={items}
+          lanes={lanes}
+          members={members}
+          timezone={timezone}
+          canUpdate={canEdit}
+          visibleSelectedIds={visibleSelectedIds}
+          saving={saving}
+          onToggle={onToggleOne}
+          onUpdateItem={onUpdateItem}
+        />
+      </table>
+    </div>
+  );
+}
+
+function CuratedBoardTableBody({
+  boardId,
+  view,
+  filterParams,
+  items,
+  lanes,
+  members,
+  timezone,
+  canUpdate,
+  visibleSelectedIds,
+  saving,
+  onToggle,
+  onUpdateItem,
+}: {
+  boardId: string;
+  view: BoardLayout;
+  filterParams: Record<string, string>;
+  items: boards.BoardItemRow[];
+  lanes: boards.BoardLaneRow[];
+  members: BoardMemberOption[];
+  timezone: string;
+  canUpdate: boolean;
+  visibleSelectedIds: ReadonlySet<string>;
+  saving: Record<string, string>;
+  onToggle: (id: string, checked: boolean) => void;
+  onUpdateItem: (id: string, patch: BoardItemOptimisticPatch) => Promise<BoardItemUpdateResult>;
+}) {
+  return (
+    <tbody>
+      {items.map((item) => {
+        const optimistic = isOptimisticItem(item);
+        const objectTitle = displayObjectTitle(item.object);
+        const disabled = optimistic || !canUpdate;
+        return (
+          <tr key={item.id} className="border-t border-border transition-colors hover:bg-bg">
+            {canUpdate ? (
+              <td className="px-3 py-2 align-top">
+                <input
+                  type="checkbox"
+                  checked={visibleSelectedIds.has(item.id)}
+                  disabled={optimistic}
+                  onChange={(event) => {
+                    onToggle(item.id, event.currentTarget.checked);
+                  }}
+                  aria-label={`Select ${displayText(objectTitle)}`}
+                  className="size-4 rounded-sm border-border disabled:opacity-50"
+                />
+              </td>
+            ) : null}
+            <td className="px-3 py-2">
+              {optimistic ? (
+                <span className="font-medium text-fg">{displayText(objectTitle)}</span>
+              ) : (
+                <Link
+                  href={boardViewHref(boardId, view, item.id, filterParams)}
+                  className="font-medium hover:underline"
+                >
+                  {displayText(objectTitle)}
+                </Link>
+              )}
+            </td>
+            <td className="px-3 py-2 text-xs text-fg-muted">
+              <span className="flex flex-wrap items-center gap-1.5">
+                {statusLabel(item.object.type)}
+                {item.object.type === 'task' ? (
+                  <LiveTaskCategoryBadge
+                    taskId={item.object.id}
+                    category={item.object.taskCategory}
+                    status={item.object.taskCategoryStatus}
+                    updatedAt={item.object.taskCategoryUpdatedAt}
+                  />
+                ) : null}
+              </span>
+            </td>
+            <td className="min-w-40 px-3 py-2">
+              <EditableMetadata
+                label={`Responsible person for ${displayText(objectTitle)}`}
+                pending={saving[item.id] === 'responsibleUserId'}
+                disabled={disabled}
+              >
+                <EditableMetadata.Value>
+                  {members.find((member) => member.id === item.responsibleUserId)?.label ??
+                    'Unassigned'}
+                </EditableMetadata.Value>
+                <EditableMetadata.Editor>
+                  <select
+                    value={item.responsibleUserId ?? ''}
+                    disabled={disabled}
+                    onChange={(event) => {
+                      void onUpdateItem(item.id, {
+                        responsibleUserId: event.target.value || null,
+                      });
+                    }}
+                    className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs disabled:opacity-60"
+                    aria-label="Responsible person"
+                  >
+                    <option value="">Unassigned</option>
+                    {members.map((member) => (
+                      <option key={member.id} value={member.id}>
+                        {member.label}
+                      </option>
+                    ))}
+                  </select>
+                </EditableMetadata.Editor>
+              </EditableMetadata>
+            </td>
+            <td className="min-w-36 px-3 py-2">
+              <EditableMetadata
+                label={`Due date for ${displayText(objectTitle)}`}
+                pending={saving[item.id] === 'dueAt'}
+                disabled={disabled}
+              >
+                <EditableMetadata.Value>
+                  <DueDateDisplay value={item.dueAt} variant="field-hint" />
+                </EditableMetadata.Value>
+                <EditableMetadata.Editor>
+                  <MetadataDateEditor
+                    defaultValue={
+                      item.dueAt ? (presentDueDate(item.dueAt, { timezone }).dateKey ?? '') : ''
+                    }
+                    disabled={disabled}
+                    onApply={(value) => {
+                      void onUpdateItem(item.id, {
+                        dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
+                      });
+                    }}
+                  />
+                </EditableMetadata.Editor>
+              </EditableMetadata>
+            </td>
+            <td className="min-w-28 px-3 py-2">
+              <EditableMetadata
+                label={`Priority for ${displayText(objectTitle)}`}
+                pending={saving[item.id] === 'priority'}
+                disabled={disabled}
+              >
+                <EditableMetadata.Value>
+                  <CollectionStatus
+                    value={item.priority ? `p${item.priority}` : 'none'}
+                    tone={priorityTone(item.priority)}
+                    label={item.priority ? `P${item.priority}` : 'No priority'}
+                  />
+                </EditableMetadata.Value>
+                <EditableMetadata.Editor>
+                  <select
+                    value={item.priority ?? ''}
+                    disabled={disabled}
+                    onChange={(event) => {
+                      void onUpdateItem(item.id, {
+                        priority: event.target.value ? Number(event.target.value) : null,
+                      });
+                    }}
+                    className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs disabled:opacity-60"
+                    aria-label="Priority"
+                  >
+                    <option value="">None</option>
+                    {[1, 2, 3, 4].map((priority) => (
+                      <option key={priority} value={priority}>
+                        P{priority}
+                      </option>
+                    ))}
+                  </select>
+                </EditableMetadata.Editor>
+              </EditableMetadata>
+            </td>
+            <td className="min-w-36 px-3 py-2">
+              <EditableMetadata
+                label={`Lane for ${displayText(objectTitle)}`}
+                pending={saving[item.id] === 'laneId'}
+                disabled={disabled}
+              >
+                <EditableMetadata.Value>
+                  {lanes.find((lane) => lane.id === item.laneId)?.name ?? 'Unset'}
+                </EditableMetadata.Value>
+                <EditableMetadata.Editor>
+                  <select
+                    value={item.laneId ?? ''}
+                    disabled={disabled}
+                    onChange={(event) => {
+                      void onUpdateItem(item.id, { laneId: event.target.value || null });
+                    }}
+                    className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs disabled:opacity-60"
+                    aria-label="Lane"
+                  >
+                    <option value="">Unset</option>
+                    {lanes.map((lane) => (
+                      <option key={lane.id} value={lane.id}>
+                        {displayText(lane.name)}
+                      </option>
+                    ))}
+                  </select>
+                </EditableMetadata.Editor>
+              </EditableMetadata>
+            </td>
+            <td className="min-w-64 px-3 py-2">
+              <EditableMetadata
+                label={`Next step for ${displayText(objectTitle)}`}
+                pending={saving[item.id] === 'nextStep'}
+                disabled={disabled}
+              >
+                <EditableMetadata.Value>{item.nextStep ?? 'No next step'}</EditableMetadata.Value>
+                <EditableMetadata.Editor>
+                  <BoardNextStepInput
+                    key={`${item.id}:${item.nextStep ?? ''}`}
+                    objectName={objectTitle}
+                    nextStep={item.nextStep}
+                    disabled={disabled}
+                    onSave={(nextStep) => {
+                      void onUpdateItem(item.id, { nextStep });
+                    }}
+                  />
+                </EditableMetadata.Editor>
+              </EditableMetadata>
+            </td>
+          </tr>
+        );
+      })}
+    </tbody>
   );
 }
 
@@ -443,7 +543,6 @@ function BoardBulkToolbar({
     due: '',
     priority: '',
     laneId,
-    message: null,
   }));
   const [pending, startTransition] = useTransition();
   const selectedCount = selectedIds.size;
@@ -460,23 +559,23 @@ function BoardBulkToolbar({
 
   function applyBulk(): void {
     if (selectedCount === 0) return;
-    dispatchBulk({ type: 'message', message: null });
     const ids = [...selectedIds];
     const patch = currentPatch();
     startTransition(async () => {
-      const result = await onUpdateItems(ids, patch);
-      if (result.failed > 0) {
-        dispatchBulk({
-          type: 'message',
-          message: `${result.failed} of ${ids.length} updates failed.`,
-        });
-        return;
-      }
-      setSelectedIds(new Set());
-      dispatchBulk({
-        type: 'message',
-        message: `Updated ${ids.length} ${ids.length === 1 ? 'item' : 'items'}.`,
+      const result = await notifyAction({
+        id: 'board-items:bulk',
+        loading: `Updating ${ids.length} ${ids.length === 1 ? 'item' : 'items'}…`,
+        success: `Updated ${ids.length} ${ids.length === 1 ? 'item' : 'items'}`,
+        error: 'Couldn’t update items',
+        run: async () => {
+          const outcome = await onUpdateItems(ids, patch);
+          return outcome.failed > 0
+            ? { error: `${outcome.failed} of ${ids.length} updates failed.` }
+            : { ok: true };
+        },
       });
+      if (result.error) return;
+      setSelectedIds(new Set());
     });
   }
 
@@ -572,17 +671,6 @@ function BoardBulkToolbar({
           >
             {pending ? 'Applying…' : 'Apply'}
           </button>
-          {bulk.message ? (
-            <span
-              className={cn(
-                'text-xs',
-                bulk.message.includes('failed') ? 'text-danger' : 'text-fg-dim',
-              )}
-              role={bulk.message.includes('failed') ? 'alert' : 'status'}
-            >
-              {bulk.message}
-            </span>
-          ) : null}
         </>
       }
     />
@@ -592,17 +680,15 @@ function BoardBulkToolbar({
 function boardBulkReducer(state: BoardBulkState, action: BoardBulkAction): BoardBulkState {
   switch (action.type) {
     case 'field':
-      return { ...state, field: action.field, message: null };
+      return { ...state, field: action.field };
     case 'responsible':
-      return { ...state, responsibleUserId: action.responsibleUserId, message: null };
+      return { ...state, responsibleUserId: action.responsibleUserId };
     case 'due':
-      return { ...state, due: action.due, message: null };
+      return { ...state, due: action.due };
     case 'priority':
-      return { ...state, priority: action.priority, message: null };
+      return { ...state, priority: action.priority };
     case 'lane':
-      return { ...state, laneId: action.laneId, message: null };
-    case 'message':
-      return { ...state, message: action.message };
+      return { ...state, laneId: action.laneId };
   }
 }
 
@@ -660,6 +746,7 @@ export function CuratedBoardList({
   ) => Promise<{ ok?: boolean; error?: string; id?: string }>;
 }) {
   const timezone = useWorkspaceTimezone();
+  const [, startTransition] = useTransition();
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const selectableItems = useMemo(() => items.filter((item) => !isOptimisticItem(item)), [items]);
   const visibleSelectedIds = useMemo(() => {
@@ -668,12 +755,29 @@ export function CuratedBoardList({
   }, [selectableItems, selectedIds]);
   if (items.length === 0) return <EmptyBoardItems />;
 
+  async function persistItem(
+    id: string,
+    patch: BoardItemOptimisticPatch,
+  ): Promise<BoardItemUpdateResult> {
+    if (!onUpdateItem) return { error: 'Board item editing is unavailable.' };
+    return onUpdateItem(id, patch);
+  }
+
+  function updateItem(id: string, patch: BoardItemOptimisticPatch): Promise<BoardItemUpdateResult> {
+    const previous = previousBoardItemPatch(items, id, patch);
+    return new Promise((resolve) => {
+      startTransition(async () => {
+        resolve(await notifyBoardItemUpdate(id, patch, previous, persistItem));
+      });
+    });
+  }
+
   async function updateItems(
     ids: string[],
     patch: BoardItemOptimisticPatch,
   ): Promise<{ failed: number }> {
     if (!onUpdateItem) return { failed: ids.length };
-    const results = await Promise.allSettled(ids.map((id) => onUpdateItem(id, patch)));
+    const results = await Promise.allSettled(ids.map((id) => persistItem(id, patch)));
     return {
       failed: results.filter(
         (result) =>
@@ -739,10 +843,9 @@ export function CuratedBoardList({
                 );
                 return (
                   <div style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 44px' }}>
-                    <CollectionRow
-                      selected={visibleSelectedIds.has(item.id)}
-                      leading={
-                        onUpdateItem ? (
+                    <CollectionRow selected={visibleSelectedIds.has(item.id)}>
+                      <CollectionRow.Leading>
+                        {onUpdateItem ? (
                           <input
                             type="checkbox"
                             checked={visibleSelectedIds.has(item.id)}
@@ -753,11 +856,11 @@ export function CuratedBoardList({
                             aria-label={`Select ${displayText(objectTitle)}`}
                             className="size-4 shrink-0 rounded-sm border-border disabled:opacity-50"
                           />
-                        ) : null
-                      }
-                      title={title}
-                      context={statusLabel(item.object.type)}
-                      metadata={
+                        ) : null}
+                      </CollectionRow.Leading>
+                      <CollectionRow.Title>{title}</CollectionRow.Title>
+                      <CollectionRow.Context>{statusLabel(item.object.type)}</CollectionRow.Context>
+                      <CollectionRow.Metadata>
                         <>
                           {item.object.type === 'task' ? (
                             <LiveTaskCategoryBadge
@@ -769,16 +872,17 @@ export function CuratedBoardList({
                           ) : null}
                           <EditableMetadata
                             label={`Responsible person for ${displayText(objectTitle)}`}
-                            value={
-                              members.find((member) => member.id === item.responsibleUserId)
-                                ?.label ?? 'Unassigned'
-                            }
                             disabled={optimistic || !onUpdateItem}
-                            editor={
+                          >
+                            <EditableMetadata.Value>
+                              {members.find((member) => member.id === item.responsibleUserId)
+                                ?.label ?? 'Unassigned'}
+                            </EditableMetadata.Value>
+                            <EditableMetadata.Editor>
                               <select
                                 value={item.responsibleUserId ?? ''}
                                 onChange={(event) =>
-                                  void onUpdateItem?.(item.id, {
+                                  void updateItem(item.id, {
                                     responsibleUserId: event.currentTarget.value || null,
                                   })
                                 }
@@ -791,19 +895,20 @@ export function CuratedBoardList({
                                   </option>
                                 ))}
                               </select>
-                            }
-                          />
+                            </EditableMetadata.Editor>
+                          </EditableMetadata>
                           <EditableMetadata
                             label={`Due date for ${displayText(objectTitle)}`}
-                            value={
+                            disabled={optimistic || !onUpdateItem}
+                          >
+                            <EditableMetadata.Value>
                               <DueDateDisplay
                                 value={item.dueAt}
                                 timezone={timezone}
                                 variant="compact"
                               />
-                            }
-                            disabled={optimistic || !onUpdateItem}
-                            editor={
+                            </EditableMetadata.Value>
+                            <EditableMetadata.Editor>
                               <MetadataDateEditor
                                 defaultValue={
                                   item.dueAt
@@ -811,28 +916,29 @@ export function CuratedBoardList({
                                     : ''
                                 }
                                 onApply={(value) =>
-                                  void onUpdateItem?.(item.id, {
+                                  void updateItem(item.id, {
                                     dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
                                   })
                                 }
                               />
-                            }
-                          />
+                            </EditableMetadata.Editor>
+                          </EditableMetadata>
                           <EditableMetadata
                             label={`Priority for ${displayText(objectTitle)}`}
-                            value={
+                            disabled={optimistic || !onUpdateItem}
+                          >
+                            <EditableMetadata.Value>
                               <CollectionStatus
                                 value={item.priority ? `p${item.priority}` : 'none'}
                                 tone={priorityTone(item.priority)}
                                 label={item.priority ? `P${item.priority}` : 'No priority'}
                               />
-                            }
-                            disabled={optimistic || !onUpdateItem}
-                            editor={
+                            </EditableMetadata.Value>
+                            <EditableMetadata.Editor>
                               <select
                                 value={item.priority ?? ''}
                                 onChange={(event) =>
-                                  void onUpdateItem?.(item.id, {
+                                  void updateItem(item.id, {
                                     priority: event.currentTarget.value
                                       ? Number(event.currentTarget.value)
                                       : null,
@@ -847,17 +953,18 @@ export function CuratedBoardList({
                                   </option>
                                 ))}
                               </select>
-                            }
-                          />
+                            </EditableMetadata.Editor>
+                          </EditableMetadata>
                           <EditableMetadata
                             label={`Lane for ${displayText(objectTitle)}`}
-                            value={group.name}
                             disabled={optimistic || !onUpdateItem}
-                            editor={
+                          >
+                            <EditableMetadata.Value>{group.name}</EditableMetadata.Value>
+                            <EditableMetadata.Editor>
                               <select
                                 value={item.laneId ?? ''}
                                 onChange={(event) =>
-                                  void onUpdateItem?.(item.id, {
+                                  void updateItem(item.id, {
                                     laneId: event.currentTarget.value || null,
                                   })
                                 }
@@ -870,24 +977,27 @@ export function CuratedBoardList({
                                   </option>
                                 ))}
                               </select>
-                            }
-                          />
+                            </EditableMetadata.Editor>
+                          </EditableMetadata>
                           <EditableMetadata
                             label={`Next step for ${displayText(objectTitle)}`}
-                            value={item.nextStep ?? 'No next step'}
                             disabled={optimistic || !onUpdateItem}
-                            editor={
+                          >
+                            <EditableMetadata.Value>
+                              {item.nextStep ?? 'No next step'}
+                            </EditableMetadata.Value>
+                            <EditableMetadata.Editor>
                               <BoardNextStepInput
                                 objectName={objectTitle}
                                 nextStep={item.nextStep}
                                 disabled={optimistic || !onUpdateItem}
-                                onSave={(nextStep) => void onUpdateItem?.(item.id, { nextStep })}
+                                onSave={(nextStep) => void updateItem(item.id, { nextStep })}
                               />
-                            }
-                          />
+                            </EditableMetadata.Editor>
+                          </EditableMetadata>
                         </>
-                      }
-                    />
+                      </CollectionRow.Metadata>
+                    </CollectionRow>
                   </div>
                 );
               }}

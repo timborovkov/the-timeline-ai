@@ -18,6 +18,15 @@ vi.mock('@/app/actions/boards', () => ({
   addBoardItemAction: fakes.addBoardItemAction,
   quickCreateBoardItemAction: fakes.quickCreateBoardItemAction,
 }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => {
+    try {
+      return await run();
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : 'failed' };
+    }
+  },
+}));
 
 const { BoardAddItemForm } = await import('./board-add-item-form.js');
 
@@ -232,7 +241,7 @@ describe('BoardAddItemForm', () => {
       const rolledBackItem = rollback.mock.calls[0]?.[0];
       expect(optimisticItem?.id).toMatch(/^optimistic-/);
       expect(rolledBackItem?.id).toBe(optimisticItem?.id);
-      expect(screen.getByRole('alert').textContent).toContain('Network lost');
+      expect(screen.queryByRole('alert')).toBeNull();
     });
   });
 

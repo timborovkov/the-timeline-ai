@@ -44,6 +44,15 @@ vi.mock('@/app/actions/pins', () => ({
   pinTargetAction: fakes.pinObjectAction,
   unpinTargetAction: fakes.unpinObjectAction,
 }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => {
+    try {
+      return await run();
+    } catch {
+      return { error: 'failed' };
+    }
+  },
+}));
 vi.mock('@/lib/task-board-config', () => ({
   TASK_BOARD_PAGE_SIZE: 80,
   TASK_OPEN_STATUSES_EXCLUDED: ['done', 'cancelled'],
@@ -1211,7 +1220,7 @@ describe('TaskBoard', () => {
         await Promise.resolve();
       });
       await waitFor(() => {
-        expect(screen.getByText('Updated 5 tasks.')).toBeTruthy();
+        expect(fakes.setTaskCategoryAction).toHaveBeenCalledTimes(5);
       });
     }
   });

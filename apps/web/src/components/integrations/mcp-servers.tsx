@@ -6,12 +6,12 @@ import { useId, useReducer, useRef, useState, type SyntheticEvent } from 'react'
 import { TechnicalDetails } from '@/components/technical-details';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { Label } from '@/components/ui/label';
 import { networkActionError, readPublicApiError } from '@/lib/client-api-error';
+import { notifyAction, notifyError } from '@/lib/notify';
 
 interface McpServerRow {
   id: string;
@@ -68,7 +68,7 @@ function authTypeLabel(authType: string): string {
   return labels[authType] ?? authType;
 }
 
-async function startOAuth(server: McpServerRow, dialog: AppDialogApi): Promise<void> {
+async function startOAuth(server: McpServerRow): Promise<void> {
   try {
     const res = await fetch('/api/mcp/oauth/start', {
       method: 'POST',
@@ -76,25 +76,16 @@ async function startOAuth(server: McpServerRow, dialog: AppDialogApi): Promise<v
       body: JSON.stringify({ mcpServerId: server.id }),
     });
     if (!res.ok) {
-      await dialog.alert({
-        title: 'Unable to start authorization',
-        description: 'Authorization could not start. Check your connection and try again.',
-      });
+      notifyError('mcp:oauth-start', 'Couldn’t start authorization');
       return;
     }
     const data = (await res.json()) as { url?: string };
     if (data.url) window.location.href = data.url;
     else {
-      await dialog.alert({
-        title: 'Unable to start authorization',
-        description: 'Authorization could not start. Check your connection and try again.',
-      });
+      notifyError('mcp:oauth-start', 'Couldn’t start authorization');
     }
   } catch {
-    await dialog.alert({
-      title: 'Unable to start authorization',
-      description: 'Authorization could not start. Check your connection and try again.',
-    });
+    notifyError('mcp:oauth-start', 'Couldn’t start authorization');
   }
 }
 
@@ -131,18 +122,11 @@ async function testCall(
       typeof parsed.mcp_server_name === 'string' && parsed.mcp_server_name.trim()
         ? parsed.mcp_server_name
         : server.name;
-    await dialog.alert({
-      title: 'Reconnect required',
-      description: `${serverName} needs to be reconnected before this tool can run.`,
-    });
+    notifyError('mcp:test-call', `${serverName} needs to be reconnected before this tool can run.`);
     return;
   }
   if (!res.ok || parsed?.ok === false) {
-    const error = typeof parsed?.error === 'string' && parsed.error.trim() ? parsed.error : text;
-    await dialog.alert({
-      title: 'Tool call failed',
-      description: error,
-    });
+    notifyError('mcp:test-call', 'Couldn’t run tool');
     return;
   }
   await dialog.alert({ title: 'Tool response', description: text });
@@ -169,7 +153,6 @@ function AddCustomMcpServerForm({
   onCancel?: () => void;
 }) {
   const router = useRouter();
-  const dialog = useAppDialog();
   const formId = useId();
   const formRef = useRef<HTMLFormElement>(null);
   const [{ name, url, authType, token, headerName, headerValue, busy }, setFormState] = useReducer(
@@ -181,78 +164,62 @@ function AddCustomMcpServerForm({
     event.preventDefault();
     if (!formRef.current?.reportValidity()) return;
     setFormState({ busy: true });
-    try {
-      const body: Record<string, unknown> = { name, url, authType };
-      if (ownership === 'personal') body.ownership = 'personal';
-      if (authType === 'bearer') body.authConfig = { token };
-      else if (authType === 'header') body.authConfig = { name: headerName, value: headerValue };
-      const res = await fetch('/api/team/mcp-servers', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        await dialog.alert({
-          title: 'Unable to add server',
-          description: await readPublicApiError(
-            res,
-            'The server could not be added. Check its settings and try again.',
-          ),
+    const outcome = { success: 'Server added' };
+    const result = await notifyAction({
+      id: 'mcp:add-server',
+      loading: 'Adding server…',
+      get success() {
+        return outcome.success;
+      },
+      error: 'Couldn’t add server',
+      run: async () => {
+        const body: Record<string, unknown> = { name, url, authType };
+        if (ownership === 'personal') body.ownership = 'personal';
+        if (authType === 'bearer') body.authConfig = { token };
+        else if (authType === 'header') body.authConfig = { name: headerName, value: headerValue };
+        const res = await fetch('/api/team/mcp-servers', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
         });
-        return;
-      }
-      // Start authorization immediately so a new OAuth server is not left disabled.
-      const data = (await res.json().catch(() => ({}))) as {
-        id?: string;
-        needsOauth?: boolean;
-      };
-      if (data.needsOauth && data.id) {
-        try {
-          const oauth = await fetch('/api/mcp/oauth/start', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ mcpServerId: data.id }),
-          });
-          const oauthData = oauth.ok
-            ? ((await oauth.json().catch(() => null)) as { url?: string } | null)
-            : null;
-          if (oauthData?.url) {
-            window.location.href = oauthData.url;
-            return;
+        if (!res.ok)
+          return { error: await readPublicApiError(res, networkActionError('add this server')) };
+        const data = (await res.json().catch(() => ({}))) as {
+          id?: string;
+          needsOauth?: boolean;
+        };
+        if (data.needsOauth && data.id) {
+          try {
+            const oauth = await fetch('/api/mcp/oauth/start', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ mcpServerId: data.id }),
+            });
+            const oauthData = oauth.ok
+              ? ((await oauth.json().catch(() => null)) as { url?: string } | null)
+              : null;
+            if (oauthData?.url) {
+              window.location.href = oauthData.url;
+              return { ok: true };
+            }
+          } catch {
+            // The server was created, so OAuth failure is recoverable from its Connect action.
           }
-        } catch {
-          // The server was created, so OAuth failure is recoverable from its Connect action.
+          outcome.success = 'Server added. Connect it again to finish authorization.';
         }
-
-        await dialog.alert({
-          title: 'Unable to start authorization',
-          description:
-            'The server was added, but authorization must be retried. Connect it again to retry.',
-        });
-        router.refresh();
-        if (onDone) onDone();
-        return;
-      }
-      router.refresh();
-      if (onDone) onDone();
-    } catch {
-      await dialog.alert({
-        title: 'Unable to add server',
-        description: networkActionError('add this server'),
-      });
-    } finally {
-      setFormState({ busy: false });
-    }
+        return { ok: true };
+      },
+    });
+    setFormState({ busy: false });
+    if (result.error) return;
+    router.refresh();
+    if (onDone) onDone();
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle as="h3" className="text-sm">
-          Add MCP server
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
+    <div className="space-y-3 border-y border-border py-4">
+      <h3 className="text-sm font-medium text-fg">Add MCP server</h3>
+      <div className="space-y-3">
         <form ref={formRef} className="space-y-3" onSubmit={(event) => void submit(event)}>
           {ownership === 'personal' ? (
             <p className="text-sm text-fg-muted">
@@ -365,9 +332,8 @@ function AddCustomMcpServerForm({
             ) : null}
           </div>
         </form>
-        {dialog.node}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
@@ -416,7 +382,7 @@ export function McpServersUi({
   const addFormId = useId();
   const addServerTrigger = useRef<HTMLButtonElement>(null);
   const [rowMutations, setRowMutations] = useState<
-    Record<string, { busy: 'toggle' | 'remove' | null; error: string | null }>
+    Record<string, { busy: 'toggle' | 'remove' | null }>
   >({});
   const busyIds = useRef<Set<string> | null>(null);
 
@@ -425,13 +391,10 @@ export function McpServersUi({
     return busyIds.current;
   }
 
-  function setRowMutation(
-    id: string,
-    patch: Partial<{ busy: 'toggle' | 'remove' | null; error: string | null }>,
-  ) {
+  function setRowMutation(id: string, patch: Partial<{ busy: 'toggle' | 'remove' | null }>) {
     setRowMutations((current) => ({
       ...current,
-      [id]: { busy: null, error: null, ...current[id], ...patch },
+      [id]: { busy: null, ...current[id], ...patch },
     }));
   }
 
@@ -446,28 +409,25 @@ export function McpServersUi({
   async function toggleEnabled(server: McpServerRow) {
     if (activeBusyIds().has(server.id)) return;
     activeBusyIds().add(server.id);
-    setRowMutation(server.id, { busy: 'toggle', error: null });
-    try {
-      const response = await fetch(`/api/team/mcp-servers/${server.id}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ enabled: !server.enabled }),
-      });
-      if (!response.ok) {
-        setRowMutation(server.id, {
-          error: await readPublicApiError(response, 'The server could not be updated. Try again.'),
+    setRowMutation(server.id, { busy: 'toggle' });
+    const result = await notifyAction({
+      id: `mcp:${server.id}:toggle`,
+      loading: server.enabled ? 'Disabling server…' : 'Enabling server…',
+      success: server.enabled ? 'Server disabled' : 'Server enabled',
+      error: server.enabled ? 'Couldn’t disable server' : 'Couldn’t enable server',
+      run: async () => {
+        const response = await fetch(`/api/team/mcp-servers/${server.id}`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ enabled: !server.enabled }),
         });
-        return;
-      }
-      router.refresh();
-    } catch {
-      setRowMutation(server.id, {
-        error: networkActionError(server.enabled ? 'disable this server' : 'enable this server'),
-      });
-    } finally {
-      activeBusyIds().delete(server.id);
-      setRowMutation(server.id, { busy: null });
-    }
+        if (!response.ok) return { error: 'failed' };
+        return { ok: true };
+      },
+    });
+    activeBusyIds().delete(server.id);
+    setRowMutation(server.id, { busy: null });
+    if (!result.error) router.refresh();
   }
 
   async function remove(server: McpServerRow) {
@@ -484,22 +444,21 @@ export function McpServersUi({
     if (!confirmed) return;
     if (activeBusyIds().has(server.id)) return;
     activeBusyIds().add(server.id);
-    setRowMutation(server.id, { busy: 'remove', error: null });
-    try {
-      const response = await fetch(`/api/team/mcp-servers/${server.id}`, { method: 'DELETE' });
-      if (!response.ok) {
-        setRowMutation(server.id, {
-          error: await readPublicApiError(response, 'The server could not be removed. Try again.'),
-        });
-        return;
-      }
-      router.refresh();
-    } catch {
-      setRowMutation(server.id, { error: networkActionError('remove this server') });
-    } finally {
-      activeBusyIds().delete(server.id);
-      setRowMutation(server.id, { busy: null });
-    }
+    setRowMutation(server.id, { busy: 'remove' });
+    const result = await notifyAction({
+      id: `mcp:${server.id}:remove`,
+      loading: 'Removing server…',
+      success: 'Server removed',
+      error: 'Couldn’t remove server',
+      run: async () => {
+        const response = await fetch(`/api/team/mcp-servers/${server.id}`, { method: 'DELETE' });
+        if (!response.ok) return { error: 'failed' };
+        return { ok: true };
+      },
+    });
+    activeBusyIds().delete(server.id);
+    setRowMutation(server.id, { busy: null });
+    if (!result.error) router.refresh();
   }
 
   return (
@@ -533,7 +492,7 @@ export function McpServersUi({
       ) : null}
 
       {servers.length === 0 ? (
-        <div className="rounded-lg border border-border bg-surface p-4">
+        <div className="border-y border-border py-4">
           <h3 className="text-sm font-medium text-fg">
             {isPersonalServer ? 'No personal MCP servers' : 'No custom MCP servers'}
           </h3>
@@ -546,10 +505,10 @@ export function McpServersUi({
       ) : (
         <ul
           aria-label={isPersonalServer ? 'Personal MCP servers' : 'MCP servers'}
-          className="divide-y divide-border rounded-lg border border-border bg-surface"
+          className="divide-y divide-border border-y border-border"
         >
           {servers.map((s) => {
-            const mutation = rowMutations[s.id] ?? { busy: null, error: null };
+            const mutation = rowMutations[s.id] ?? { busy: null };
             return (
               <li key={s.id} className="space-y-3 p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -571,7 +530,7 @@ export function McpServersUi({
                         size="sm"
                         variant="secondary"
                         onClick={() => {
-                          void startOAuth(s, dialog);
+                          void startOAuth(s);
                         }}
                       >
                         Connect
@@ -633,11 +592,6 @@ export function McpServersUi({
                       ]}
                     />
                   </div>
-                ) : null}
-                {mutation.error ? (
-                  <p className="text-xs text-destructive" role="alert">
-                    {mutation.error}
-                  </p>
                 ) : null}
                 {s.cachedTools.length > 0 ? (
                   <div className="space-y-2">

@@ -11,6 +11,12 @@ const fakes = vi.hoisted(() => ({
 vi.mock('@/app/actions/visibility', () => ({
   setEventVisibilityAction: fakes.setVisibility,
 }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
+}));
+vi.mock('@/components/form-action-toast', () => ({
+  FormActionToast: () => null,
+}));
 
 const { EventVisibilityForm } = await import('./event-visibility-form.js');
 
@@ -44,7 +50,6 @@ describe('EventVisibilityForm', () => {
     await user.click(screen.getByRole('button', { name: 'Save visibility' }));
 
     await waitFor(() => {
-      expect(screen.getByRole('status').textContent).toBe('Visibility saved');
       expect(onSaved).toHaveBeenCalledWith({
         visibility: 'specific_users',
         visibilityUserIds: ['bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'],
@@ -66,7 +71,10 @@ describe('EventVisibilityForm', () => {
 
     await user.click(screen.getByRole('button', { name: 'Save visibility' }));
 
-    expect((await screen.findByRole('alert')).textContent).toBe('Could not save visibility');
+    await waitFor(() => {
+      expect(fakes.setVisibility).toHaveBeenCalled();
+    });
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });
 

@@ -59,9 +59,9 @@ describe('InspectorPane', () => {
 
     const pane = screen.getByLabelText('Inspector');
     expect(pane.className).toContain('fixed inset-x-0 bottom-0');
-    expect(pane.className).toContain('max-h-[min(82dvh,42rem)]');
+    expect(pane.className).toContain('max-h-[min(90dvh,52rem)]');
     expect(pane.className).toContain('lg:sticky');
-    expect(pane.className).toContain('lg:w-96');
+    expect(pane.className).toContain('lg:w-[min(40%,36rem)]');
     expect(screen.getByText('CI passed')).toBeTruthy();
     expect(screen.getByText('2 source events')).toBeTruthy();
   });

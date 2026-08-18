@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
+import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { DocumentDrive } from '@/components/documents/document-drive';
 import { DocumentSearch } from '@/components/documents/document-search';
 import { PageHeader } from '@/components/page-header';
@@ -69,6 +70,14 @@ export default async function DocumentsPage({ searchParams }: Props) {
 
   return (
     <div className="space-y-6">
+      {currentFolder ? (
+        <ChatViewContextBinder
+          viewKey={`documents-folder:${currentFolder.id}`}
+          kind="page"
+          href={`/app/documents?folder=${currentFolder.id}`}
+          label={currentFolder.name}
+        />
+      ) : null}
       <PageHeader
         variant="collection"
         title="Documents"

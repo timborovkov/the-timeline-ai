@@ -28,7 +28,7 @@ export default function TelegramLoading() {
 
 function TelegramSetupSkeleton() {
   return (
-    <div className="space-y-3 rounded-sm border border-border bg-surface p-4 sm:p-5">
+    <div className="space-y-3 border-y border-border py-4">
       <Skeleton className="h-5 w-44 max-w-full" />
       <Skeleton className="h-4 w-full max-w-xl" />
       <Skeleton className="h-9 w-40 max-w-full" />
@@ -38,7 +38,7 @@ function TelegramSetupSkeleton() {
 
 function TelegramListSkeleton() {
   return (
-    <div className="space-y-3 rounded-sm border border-border bg-surface p-4 sm:p-5">
+    <div className="space-y-3 border-y border-border py-4">
       <Skeleton className="h-5 w-48 max-w-full" />
       <div className="space-y-3">
         {Array.from({ length: 2 }).map((_, index) => (

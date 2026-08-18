@@ -13,7 +13,8 @@ const fakes = vi.hoisted(() => ({
   confirm: vi.fn(),
   bulkArchiveObjectsAction: vi.fn(),
   updateObjectAction: vi.fn(),
-  toastError: vi.fn(),
+  notifyAction: vi.fn(),
+  notifyError: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
@@ -43,7 +44,15 @@ vi.mock('@/components/collections/virtual-list', () => ({
       ),
     ),
 }));
-vi.mock('sonner', () => ({ toast: { error: fakes.toastError, success: vi.fn() } }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async (options: { run: () => Promise<{ error?: string }> }) => {
+    fakes.notifyAction(options);
+    return options.run();
+  },
+  notifyError: (id: string, message: string) => {
+    fakes.notifyError(id, message);
+  },
+}));
 
 const { ObjectCleanupList } = await import('./object-cleanup-list.js');
 
@@ -168,11 +177,16 @@ describe('ObjectCleanupList', () => {
     await user.selectOptions(screen.getByRole('combobox', { name: 'Priority' }), '1');
 
     await waitFor(() => {
-      expect(screen.getByRole('alert').textContent).toBe('Connection lost');
+      expect(
+        screen.getByRole('button', { name: 'Priority for Legacy suggested cleanup row' })
+          .textContent,
+      ).toContain('No priority');
+      expect(fakes.notifyAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: 'Couldn’t update priority',
+        }),
+      );
     });
-    expect(
-      screen.getByRole('button', { name: 'Priority for Legacy suggested cleanup row' }).textContent,
-    ).toContain('No priority');
-    expect(fakes.toastError).toHaveBeenCalledWith('Connection lost');
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });

@@ -6,8 +6,6 @@ import { useState } from 'react';
 
 import { updateObjectAction } from '@/app/actions/objects';
 import { CollectionRow } from '@/components/collections/collection-row';
-import { CollectionRowContext } from '@/components/collections/collection-row-context';
-import { CollectionRowMetadata } from '@/components/collections/collection-row-metadata';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { priorityTone, statusTone } from '@/components/collections/collection-status-tone';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
@@ -17,10 +15,10 @@ import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { displayText } from '@/lib/display-dates';
 import { isSchedulableObjectType } from '@/lib/due-dates';
 import { dateInputValue, isoTimestamp, toDateOrNull } from '@/lib/iso-timestamp';
+import { notifyAction } from '@/lib/notify';
 import { statusOptionsForType } from '@/lib/object-status-options';
 import { statusLabel } from '@/lib/status-labels';
 import { TASK_STATUS_COLUMNS, taskDisplayStatus } from '@/lib/task-statuses';
-import { errorMessage } from '@/lib/utils';
 import {
   reasonLabel,
   reasonTone,
@@ -51,7 +49,6 @@ export function WorkQueueRow({
   const router = useRouter();
   const [overlays, setOverlays] = useState<Partial<Record<EditableKey, EditableValue>>>({});
   const [saving, setSaving] = useState<EditableKey | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   const objectId = item.entityId;
   const editable = item.source !== 'approval' && Boolean(objectId);
@@ -74,34 +71,45 @@ export function WorkQueueRow({
   const contextReasons = item.reasons.filter(
     (reason) => reason !== 'overdue' && reason !== 'due_soon',
   );
+  const context = item.subtitle ? displayText(item.subtitle) : undefined;
 
   function save(key: EditableKey, value: EditableValue): void {
     if (!objectId) return;
     const current = effectiveValue(key);
     if (sameValue(current, value)) return;
-    const previous = overlays[key];
-    setError(null);
+    const previousOverlay = overlays[key];
     setSaving(key);
     setOverlays((existing) => ({ ...existing, [key]: value }));
-    void updateObjectAction({
-      id: objectId,
-      [key]: value instanceof Date ? value.toISOString() : value,
-    })
-      .then((result) => {
-        if (result.error) {
-          setOverlays((existing) => ({ ...existing, [key]: previous }));
-          setError(result.error);
-          return;
-        }
+    const label = fieldLabel(key);
+    void notifyAction({
+      id: `object:${objectId}`,
+      loading: `Updating ${label}…`,
+      success: `${capitalize(label)} updated`,
+      error: `Couldn’t update ${label}`,
+      run: () =>
+        updateObjectAction({
+          id: objectId,
+          [key]: serializeValue(value),
+        }),
+      undo: {
+        run: async () => {
+          setOverlays((existing) => ({ ...existing, [key]: current }));
+          const result = await updateObjectAction({
+            id: objectId,
+            [key]: serializeValue(current),
+          });
+          if (!result.error) router.refresh();
+          return result;
+        },
+      },
+    }).then((result) => {
+      if (result.error) {
+        setOverlays((existing) => ({ ...existing, [key]: previousOverlay }));
+      } else {
         router.refresh();
-      })
-      .catch((cause: unknown) => {
-        setOverlays((existing) => ({ ...existing, [key]: previous }));
-        setError(errorMessage(cause, 'Update failed'));
-      })
-      .finally(() => {
-        setSaving(null);
-      });
+      }
+      setSaving(null);
+    });
   }
 
   function effectiveValue(key: EditableKey): EditableValue {
@@ -112,25 +120,15 @@ export function WorkQueueRow({
   }
 
   return (
-    <CollectionRow
-      title={
+    <CollectionRow>
+      <CollectionRow.Title>
         <Link href={item.href} className="block truncate hover:underline">
           {displayText(item.title)}
         </Link>
-      }
-    >
-      {saving || item.subtitle ? (
-        <CollectionRowContext>
-          {saving ? <span>Saving {fieldLabel(saving)}…</span> : displayText(item.subtitle)}
-        </CollectionRowContext>
-      ) : null}
-      <CollectionRowMetadata>
+      </CollectionRow.Title>
+      {context ? <CollectionRow.Context>{context}</CollectionRow.Context> : null}
+      <CollectionRow.Metadata>
         <>
-          {error ? (
-            <span className="px-2 text-xs text-danger" role="alert">
-              {error}
-            </span>
-          ) : null}
           {item.source === 'approval' ? (
             <span className="px-2 text-xs text-fg-dim">{item.sourceLabel}</span>
           ) : null}
@@ -142,93 +140,103 @@ export function WorkQueueRow({
               <EditableMetadata
                 label={`Status for ${displayText(item.title)}`}
                 pending={saving === 'status'}
-                value={
+              >
+                <EditableMetadata.Value>
                   <CollectionStatus
                     value={displayStatus}
                     label={statusLabel(displayStatus)}
                     tone={statusTone(displayStatus)}
                   />
-                }
-              >
-                <select
-                  aria-label="Status"
-                  value={displayStatus}
-                  onChange={(event) => {
-                    save('status', event.currentTarget.value);
-                  }}
-                  className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-                >
-                  {statusOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {statusLabel(option)}
-                    </option>
-                  ))}
-                </select>
+                </EditableMetadata.Value>
+                <EditableMetadata.Editor>
+                  <select
+                    aria-label="Status"
+                    value={displayStatus}
+                    onChange={(event) => {
+                      save('status', event.currentTarget.value);
+                    }}
+                    className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+                  >
+                    {statusOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {statusLabel(option)}
+                      </option>
+                    ))}
+                  </select>
+                </EditableMetadata.Editor>
               </EditableMetadata>
               <EditableMetadata
                 label={`Assignee for ${displayText(item.title)}`}
                 pending={saving === 'assigneeUserId'}
-                value={assignee?.label ?? 'Unassigned'}
               >
-                <select
-                  aria-label="Assignee"
-                  value={assigneeUserId ?? ''}
-                  onChange={(event) => {
-                    save('assigneeUserId', event.currentTarget.value || null);
-                  }}
-                  className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-                >
-                  <option value="">Unassigned</option>
-                  {members.map((member) => (
-                    <option key={member.id} value={member.id}>
-                      {member.label}
-                    </option>
-                  ))}
-                </select>
+                <EditableMetadata.Value>{assignee?.label ?? 'Unassigned'}</EditableMetadata.Value>
+                <EditableMetadata.Editor>
+                  <select
+                    aria-label="Assignee"
+                    value={assigneeUserId ?? ''}
+                    onChange={(event) => {
+                      save('assigneeUserId', event.currentTarget.value || null);
+                    }}
+                    className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+                  >
+                    <option value="">Unassigned</option>
+                    {members.map((member) => (
+                      <option key={member.id} value={member.id}>
+                        {member.label}
+                      </option>
+                    ))}
+                  </select>
+                </EditableMetadata.Editor>
               </EditableMetadata>
               {isSchedulableObjectType(item.objectType ?? '') || item.dueAt ? (
                 <EditableMetadata
                   label={`Due date for ${displayText(item.title)}`}
                   pending={saving === 'dueAt'}
-                  value={<DueDateDisplay value={dueAt} timezone={timezone} variant="compact" />}
                 >
-                  <MetadataDateEditor
-                    defaultValue={dateInputValue(dueAt)}
-                    onApply={(value) => {
-                      save('dueAt', value ? new Date(`${value}T00:00:00.000Z`) : null);
-                    }}
-                  />
+                  <EditableMetadata.Value>
+                    <DueDateDisplay value={dueAt} timezone={timezone} variant="compact" />
+                  </EditableMetadata.Value>
+                  <EditableMetadata.Editor>
+                    <MetadataDateEditor
+                      defaultValue={dateInputValue(dueAt)}
+                      onApply={(value) => {
+                        save('dueAt', value ? new Date(`${value}T00:00:00.000Z`) : null);
+                      }}
+                    />
+                  </EditableMetadata.Editor>
                 </EditableMetadata>
               ) : null}
               <EditableMetadata
                 label={`Priority for ${displayText(item.title)}`}
                 pending={saving === 'priority'}
-                value={
+              >
+                <EditableMetadata.Value>
                   <CollectionStatus
                     value={priority ? `p${priority}` : 'none'}
                     tone={priorityTone(priority)}
                     label={priority ? `P${priority}` : 'No priority'}
                   />
-                }
-              >
-                <select
-                  aria-label="Priority"
-                  value={priority ?? ''}
-                  onChange={(event) => {
-                    save(
-                      'priority',
-                      event.currentTarget.value ? Number(event.currentTarget.value) : null,
-                    );
-                  }}
-                  className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-                >
-                  <option value="">None</option>
-                  {[1, 2, 3, 4].map((value) => (
-                    <option key={value} value={value}>
-                      P{value}
-                    </option>
-                  ))}
-                </select>
+                </EditableMetadata.Value>
+                <EditableMetadata.Editor>
+                  <select
+                    aria-label="Priority"
+                    value={priority ?? ''}
+                    onChange={(event) => {
+                      save(
+                        'priority',
+                        event.currentTarget.value ? Number(event.currentTarget.value) : null,
+                      );
+                    }}
+                    className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+                  >
+                    <option value="">None</option>
+                    {[1, 2, 3, 4].map((value) => (
+                      <option key={value} value={value}>
+                        P{value}
+                      </option>
+                    ))}
+                  </select>
+                </EditableMetadata.Editor>
               </EditableMetadata>
             </>
           ) : item.source !== 'approval' ? (
@@ -243,7 +251,7 @@ export function WorkQueueRow({
             />
           ) : null}
         </>
-      </CollectionRowMetadata>
+      </CollectionRow.Metadata>
     </CollectionRow>
   );
 }
@@ -269,6 +277,14 @@ function fieldLabel(key: EditableKey): string {
   if (key === 'assigneeUserId') return 'assignee';
   if (key === 'dueAt') return 'due date';
   return key;
+}
+
+function capitalize(value: string): string {
+  return value.slice(0, 1).toUpperCase() + value.slice(1);
+}
+
+function serializeValue(value: EditableValue): string | number | null {
+  return value instanceof Date ? value.toISOString() : value;
 }
 
 function uniqueStatuses(values: string[]): string[] {

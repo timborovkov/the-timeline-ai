@@ -2838,6 +2838,65 @@ describe('object scope — chat session isolation', () => {
     const rows = await db.select().from(chatSessions).where(eq(chatSessions.id, session.id));
     expect(rows[0]?.pinnedEntityId).toBeNull();
   });
+
+  it('stores and appends a capped dashboard context trail on a chat session', async () => {
+    const ownerScope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const object = await ownerScope.createObject({
+      type: 'project',
+      canonicalName: 'Launch plan',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const session = await ownerScope.createChatSession({
+      contextTrail: [
+        {
+          kind: 'object',
+          href: `/app/objects/${object.id}`,
+          label: 'Launch plan',
+          objectId: object.id,
+        },
+      ],
+    });
+
+    expect(session.pinnedEntityId).toBe(object.id);
+    expect(session.contextTrail).toEqual([
+      {
+        kind: 'object',
+        href: `/app/objects/${object.id}`,
+        label: 'Launch plan',
+        objectId: object.id,
+      },
+    ]);
+
+    const documentId = '55555555-5555-4555-8555-555555555555';
+    const merged = await ownerScope.mergeChatSessionContextTrail(session.id, [
+      {
+        kind: 'document',
+        href: `/app/documents/${documentId}`,
+        label: 'Q3 contract',
+        documentId,
+      },
+      {
+        kind: 'object',
+        href: `/app/objects/${object.id}`,
+        label: 'Launch plan',
+        objectId: object.id,
+      },
+    ]);
+
+    expect(merged.map((ref) => ref.kind)).toEqual(['document', 'object']);
+    const loaded = await ownerScope.getChatSession(session.id);
+    expect(loaded?.session.contextTrail.map((ref) => ref.kind)).toEqual(['document', 'object']);
+
+    await ownerScope.archiveChatSession(session.id);
+    const afterArchive = await ownerScope.mergeChatSessionContextTrail(session.id, [
+      {
+        kind: 'page',
+        href: '/app/sources',
+        label: 'Connections',
+      },
+    ]);
+    expect(afterArchive).toEqual([]);
+  });
 });
 
 describe('object scope — archive visibility', () => {

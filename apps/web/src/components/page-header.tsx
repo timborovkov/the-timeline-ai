@@ -2,7 +2,18 @@ import Link from 'next/link';
 
 import type { ReactNode } from 'react';
 
+import {
+  createCollectionSlot,
+  readCollectionSlots,
+} from '@/components/collections/collection-slot';
 import { cn } from '@/lib/utils';
+
+const PageHeaderLeading = createCollectionSlot('leading');
+const PageHeaderTrailing = createCollectionSlot('trailing');
+const PAGE_HEADER_SLOTS = {
+  leading: PageHeaderLeading,
+  trailing: PageHeaderTrailing,
+};
 
 interface PageHeaderMetadataBase {
   /** Optional dim label (e.g. "team", "members"). */
@@ -43,6 +54,7 @@ function metadataKey(seg: PageHeaderMetadata, index: number): string {
 }
 
 interface PageHeaderProps {
+  children?: ReactNode;
   /** The page <h1>. Sentence-case, Switzer 600. One per page. */
   title: ReactNode;
   /** Optional one-line description below the title. */
@@ -69,19 +81,24 @@ interface PageHeaderProps {
  * on those pages: the title is a readable Switzer H1, while counts, IDs,
  * and status stay mono in a metadata strip below.
  *
- * Timeline and explicit audit/operator surfaces may keep `IndexStrip`.
+ * Timeline itself uses a sticky collection toolbar instead of IndexStrip.
+ * Explicit audit/operator surfaces may keep IndexStrip.
  */
 export function PageHeader({
+  children,
   title,
   subtitle,
   metadata,
-  leading,
-  trailing,
+  leading: leadingProp,
+  trailing: trailingProp,
   titleId,
   srLabel,
   className,
   variant = 'default',
 }: PageHeaderProps) {
+  const slots = readCollectionSlots(children, PAGE_HEADER_SLOTS);
+  const leading = slots.leading ?? leadingProp;
+  const trailing = slots.trailing ?? trailingProp;
   const metadataList = metadata ?? [];
   const hasMetadata = metadataList.length > 0;
   return (
@@ -185,3 +202,6 @@ function HeaderMetadata({
     </div>
   );
 }
+
+PageHeader.Leading = PageHeaderLeading;
+PageHeader.Trailing = PageHeaderTrailing;

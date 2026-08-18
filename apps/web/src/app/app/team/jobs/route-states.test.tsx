@@ -17,19 +17,21 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('Background jobs route states', () => {
+describe('Job recovery route states', () => {
   it('announces loading outside an inert, motion-safe placeholder while retaining route context', () => {
     const { container } = render(<JobsLoading />);
 
     const announcement = screen.getByRole('status');
-    expect(announcement.textContent).toBe('Loading background jobs');
+    expect(announcement.textContent).toBe('Loading job recovery');
     expect(announcement.parentElement?.getAttribute('aria-busy')).toBeNull();
-    expect(screen.getByLabelText('Loading background jobs').getAttribute('aria-busy')).toBe('true');
-    expect(screen.getAllByRole('heading', { level: 1, name: 'Background jobs' })).toHaveLength(1);
+    expect(screen.getByLabelText('Loading job recovery').getAttribute('aria-busy')).toBe('true');
+    expect(screen.getAllByRole('heading', { level: 1, name: 'Job recovery' })).toHaveLength(1);
+    expect(screen.getByLabelText('Loading').children).toHaveLength(2);
     expect(screen.getByRole('link', { name: 'Back' }).getAttribute('href')).toBe('/app/team');
     expect(screen.queryByRole('region')).toBeNull();
     expect(screen.queryByRole('heading', { level: 2, name: 'Processing summary' })).toBeNull();
     expect(screen.queryByRole('heading', { level: 2, name: 'Finished jobs' })).toBeNull();
+    expect(screen.queryByRole('heading', { level: 2, name: 'Unprocessed backlog' })).toBeNull();
 
     const visualPlaceholders = container.querySelectorAll(
       '[aria-busy="true"] > section[aria-hidden="true"][inert]',
@@ -38,28 +40,19 @@ describe('Background jobs route states', () => {
     const [placeholder] = visualPlaceholders;
     expect(placeholder?.querySelectorAll('a, button, input, select, textarea')).toHaveLength(0);
     expect(placeholder?.className).toContain('motion-reduce:[&_.animate-pulse]:animate-none');
-
-    const dashboard = placeholder?.querySelector('[aria-label="Loading job dashboard"]');
-    if (!dashboard) throw new Error('Expected the visual job dashboard placeholder');
-    expect(dashboard.tagName).toBe('UL');
-    expect(dashboard.children).toHaveLength(6);
-    expect(dashboard.firstElementChild?.className).toContain('rounded-lg');
+    expect(placeholder?.querySelector('[aria-label="Loading job dashboard"]')).toBeNull();
+    expect(placeholder?.querySelector('table')).toBeNull();
     const recoveryControls = placeholder?.querySelector(
       '[aria-label="Job recovery controls loading placeholder"]',
     );
     if (!recoveryControls) throw new Error('Expected the visual job recovery controls placeholder');
-    expect(recoveryControls.querySelectorAll('[data-loading-filter]')).toHaveLength(7);
+    expect(recoveryControls.querySelectorAll('[data-loading-filter]')).toHaveLength(0);
     expect(recoveryControls.querySelector('[data-loading-action="retry"]')?.className).toContain(
       'h-8 w-28',
     );
     expect(recoveryControls.querySelector('[data-loading-action="dismiss"]')?.className).toContain(
       'h-8 w-32',
     );
-    const finishedJobsTable = placeholder?.querySelector('table');
-    if (!finishedJobsTable) throw new Error('Expected the visual finished jobs table placeholder');
-    expect(finishedJobsTable.className).toContain('min-w-[760px]');
-    expect(finishedJobsTable.querySelectorAll('th')).toHaveLength(6);
-    expect(finishedJobsTable.parentElement?.className).toContain('overflow-x-auto');
   });
 
   it.each([
@@ -69,17 +62,23 @@ describe('Background jobs route states', () => {
     const user = userEvent.setup();
     const reset = vi.fn();
 
-    render(<JobsError error={new Error('route failed')} reset={reset} />);
+    const { container } = render(<JobsError error={new Error('route failed')} reset={reset} />);
 
-    expect(screen.getAllByRole('heading', { level: 1, name: 'Background jobs' })).toHaveLength(1);
+    expect(screen.getAllByRole('heading', { level: 1, name: 'Job recovery' })).toHaveLength(1);
+    expect(container.innerHTML).not.toContain('>access</dt>');
+    expect(container.innerHTML).not.toContain('>team</dt>');
+    expect(
+      screen.getByText('Admins can retry or dismiss failed processing from the last 7 days.'),
+    ).toBeTruthy();
+    expect(container.querySelector('.sr-only')?.textContent).toContain('Admins only');
     expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Back' }).getAttribute('href')).toBe('/app/team');
     expect(
-      screen.getByRole('heading', { level: 2, name: 'Unable to load background jobs' }),
+      screen.getByRole('heading', { level: 2, name: 'Unable to load job recovery' }),
     ).toBeTruthy();
     expect(
       screen.getByText(
-        'No background work has been retried, dismissed, or changed. Check your connection, then try again.',
+        'No jobs have been retried, dismissed, or changed. Check your connection, then try again.',
       ),
     ).toBeTruthy();
 

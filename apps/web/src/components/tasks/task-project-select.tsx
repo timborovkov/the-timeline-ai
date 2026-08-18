@@ -1,11 +1,11 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useId, useRef, useState, useTransition } from 'react';
+import { useRef, useTransition } from 'react';
 
 import { setTaskProjectAction } from '@/app/actions/objects';
 import { ProjectPicker } from '@/components/tasks/project-picker';
-import { errorMessage } from '@/lib/utils';
+import { notifyAction } from '@/lib/notify';
 
 export function TaskProjectSelect({
   taskId,
@@ -28,8 +28,6 @@ export function TaskProjectSelect({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-  const errorId = useId();
   const selectorRef = useRef<HTMLButtonElement>(null);
   const restoreSelectorFocus = () => {
     const selector = selectorRef.current;
@@ -54,36 +52,39 @@ export function TaskProjectSelect({
         selectedArchived={projectArchived}
         projects={projects}
         disabled={pending}
-        ariaDescribedBy={error ? errorId : undefined}
         triggerRef={selectorRef}
         onValueChange={(nextProject) => {
           const nextProjectId = nextProject?.id ?? null;
-          setError(null);
           onProjectChange?.(nextProject);
           startTransition(async () => {
-            try {
-              const result = await setTaskProjectAction({ id: taskId, projectId: nextProjectId });
-              if (result.error) {
-                onProjectChangeReverted?.();
-                setError(result.error);
-                restoreSelectorFocus();
-              } else {
-                onProjectChangeCommitted?.();
-                router.refresh();
-              }
-            } catch (cause) {
+            const result = await notifyAction({
+              id: `object:${taskId}`,
+              loading: 'Updating project…',
+              success: 'Project updated',
+              error: 'Couldn’t update project',
+              run: () => setTaskProjectAction({ id: taskId, projectId: nextProjectId }),
+              undo: {
+                run: async () => {
+                  onProjectChangeReverted?.();
+                  const undoResult = await setTaskProjectAction({
+                    id: taskId,
+                    projectId,
+                  });
+                  if (!undoResult.error) router.refresh();
+                  return undoResult;
+                },
+              },
+            });
+            if (result.error) {
               onProjectChangeReverted?.();
-              setError(errorMessage(cause, 'Project update failed'));
               restoreSelectorFocus();
+            } else {
+              onProjectChangeCommitted?.();
+              router.refresh();
             }
           });
         }}
       />
-      {error ? (
-        <p id={errorId} role="alert" className="mt-2 text-xs text-danger">
-          {error}
-        </p>
-      ) : null}
     </div>
   );
 }

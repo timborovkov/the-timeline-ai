@@ -3,15 +3,58 @@ import { Skeleton } from '@/components/ui/skeleton';
 /**
  * Quiet page-header skeleton matching title, subtitle, and optional metadata.
  */
-export function PageHeaderSkeleton() {
+export function PageHeaderSkeleton({
+  variant = 'default',
+  showMetadata = true,
+}: {
+  variant?: 'default' | 'collection';
+  showMetadata?: boolean;
+}) {
+  if (variant === 'collection') {
+    return (
+      <div
+        className="flex min-h-12 items-center justify-between gap-3 border-b border-border py-2"
+        aria-busy="true"
+        aria-label="Loading"
+      >
+        <Skeleton className="h-7 w-36" />
+        <div className="flex gap-3">
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="h-3 w-12" />
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="space-y-2 py-1" aria-busy="true" aria-label="Loading">
       <Skeleton className="h-7 w-40" />
       <Skeleton className="h-4 w-full max-w-md" />
-      <div className="flex gap-3 pt-1">
-        <Skeleton className="h-3 w-16" />
-        <Skeleton className="h-3 w-20" />
-      </div>
+      {showMetadata ? (
+        <div className="flex gap-3 pt-1">
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="h-3 w-20" />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function CollectionRowsSkeleton({ count = 6 }: { count?: number }) {
+  return (
+    <div className="border-t border-border" aria-busy="true" aria-label="Loading">
+      {Array.from({ length: count }).map((_, index) => (
+        <div
+          key={index}
+          className="grid min-h-11 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border-b border-border/80 px-3"
+        >
+          <Skeleton className="size-4 rounded-sm" />
+          <div className="flex min-w-0 items-center gap-3">
+            <Skeleton className="h-4 w-2/5 max-w-xs" />
+            <Skeleton className="hidden h-3 w-24 sm:block" />
+          </div>
+          <Skeleton className="h-7 w-16 rounded-sm" />
+        </div>
+      ))}
     </div>
   );
 }
@@ -50,47 +93,15 @@ export function TimelineFeedSkeleton({ count = 4 }: { count?: number }) {
   );
 }
 
-/**
- * Generic card skeleton — kept for non-timeline surfaces (objects, boards)
- * that haven't migrated to flat rows. Tighter chrome than v1.
- */
-export function CardSkeleton({ className }: { className?: string }) {
+export function HairlineSectionSkeleton({ lines = 3 }: { lines?: number }) {
   return (
-    <div
-      className={`rounded-sm border border-border bg-surface p-4 ${className ?? ''}`}
-      aria-busy="true"
-    >
-      <div className="flex items-start gap-3">
-        <Skeleton className="size-7 shrink-0 rounded-sm" />
-        <div className="flex-1 space-y-2">
-          <div className="flex items-center gap-2">
-            <Skeleton className="h-4 w-24" />
-            <Skeleton className="h-3 w-32" />
-          </div>
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-11/12" />
-          <Skeleton className="h-4 w-3/4" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export function EntityGridSkeleton({ count = 6 }: { count?: number }) {
-  return (
-    <div
-      className="grid grid-cols-1 gap-2 sm:grid-cols-2"
-      aria-busy="true"
-      aria-label="Loading entities"
-    >
-      {Array.from({ length: count }).map((_, i) => (
-        <div
-          key={i}
-          className="flex items-center justify-between rounded-sm border border-border bg-surface px-3 py-2"
-        >
-          <Skeleton className="h-4 w-32" />
-          <Skeleton className="h-3 w-12" />
-        </div>
+    <div className="space-y-3 border-y border-border py-4" aria-busy="true">
+      <Skeleton className="h-4 w-32" />
+      {Array.from({ length: lines }).map((_, index) => (
+        <Skeleton
+          key={index}
+          className={index === 0 ? 'h-3 w-full max-w-md' : 'h-3 w-2/3 max-w-sm'}
+        />
       ))}
     </div>
   );

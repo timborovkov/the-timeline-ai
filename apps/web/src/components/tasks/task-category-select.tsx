@@ -3,7 +3,6 @@
 import { TASK_CATEGORY_OPTIONS } from '@timeline/shared/task-categories/types';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
-import { toast } from 'sonner';
 
 import type {
   TaskCategory,
@@ -19,7 +18,7 @@ import {
 } from '@/app/actions/objects';
 import { useTaskCategoryPolling } from '@/components/tasks/task-category-polling';
 import { isoTimestamp } from '@/lib/iso-timestamp';
-import { errorMessage } from '@/lib/utils';
+import { notifyAction } from '@/lib/notify';
 
 const AUTOMATIC_VALUE = '__automatic__';
 
@@ -38,7 +37,7 @@ export function TaskCategorySelect({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
+  const [optimistic, setOptimistic] = useState<string | null>(null);
   const categoryQuery = useTaskCategoryPolling(
     status === 'pending' ? [taskId] : [],
     3_000,
@@ -49,34 +48,35 @@ export function TaskCategorySelect({
   const effectiveMode = categoryState?.taskCategoryMode ?? mode;
   const effectiveStatus = categoryState?.taskCategoryStatus ?? status;
   const value =
-    effectiveMode === 'manual' && effectiveCategory ? effectiveCategory : AUTOMATIC_VALUE;
+    optimistic ??
+    (effectiveMode === 'manual' && effectiveCategory ? effectiveCategory : AUTOMATIC_VALUE);
 
-  function run(action: () => Promise<{ error?: string; undoChangeId?: string }>): void {
-    setError(null);
+  function run(
+    nextValue: string,
+    action: () => Promise<{ error?: string; undoChangeId?: string }>,
+  ): void {
+    const previous = value;
+    setOptimistic(nextValue);
     startTransition(async () => {
-      try {
-        const result = await action();
-        if (result.error) setError(result.error);
-        else {
-          router.refresh();
-          if (result.undoChangeId) {
-            const changeId = result.undoChangeId;
-            toast.success('Category changed', {
-              action: {
-                label: 'Undo',
-                onClick: () => {
-                  void undoTaskCategoryChangeAction({ id: taskId, changeId }).then((undoResult) => {
-                    if (undoResult.error) toast.error(undoResult.error);
-                    else router.refresh();
-                  });
-                },
-              },
-            });
-          }
-        }
-      } catch (cause) {
-        setError(errorMessage(cause, 'Category update failed'));
-      }
+      const result = await notifyAction({
+        id: `object:${taskId}`,
+        loading: 'Updating category…',
+        success: 'Category updated',
+        error: 'Couldn’t update category',
+        run: action,
+        undo: {
+          run: async (saved) => {
+            const changeId = saved.undoChangeId;
+            if (!changeId) return { error: 'Couldn’t undo' };
+            setOptimistic(previous);
+            const undoResult = await undoTaskCategoryChangeAction({ id: taskId, changeId });
+            if (!undoResult.error) router.refresh();
+            return undoResult;
+          },
+        },
+      });
+      if (result.error) setOptimistic(previous);
+      else router.refresh();
     });
   }
 
@@ -89,9 +89,9 @@ export function TaskCategorySelect({
         onChange={(event) => {
           const next = event.currentTarget.value;
           if (next === AUTOMATIC_VALUE) {
-            run(() => resetTaskCategoryAction({ id: taskId }));
+            run(next, () => resetTaskCategoryAction({ id: taskId }));
           } else {
-            run(() => setTaskCategoryAction({ id: taskId, category: next }));
+            run(next, () => setTaskCategoryAction({ id: taskId, category: next }));
           }
         }}
         className="h-9 w-full rounded-sm border border-border bg-bg px-2 text-sm text-fg disabled:cursor-progress disabled:opacity-60"
@@ -110,14 +110,13 @@ export function TaskCategorySelect({
           type="button"
           disabled={pending}
           onClick={() => {
-            run(() => retryTaskCategoryAction({ id: taskId }));
+            run(value, () => retryTaskCategoryAction({ id: taskId }));
           }}
-          className="font-mono text-[10px] uppercase tracking-[0.1em] text-signal hover:underline disabled:opacity-60"
+          className="text-[11px] text-signal hover:underline disabled:opacity-60"
         >
           Retry automatic category
         </button>
       ) : null}
-      {error ? <p className="text-xs text-danger">{error}</p> : null}
     </div>
   );
 }

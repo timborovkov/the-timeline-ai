@@ -63,16 +63,58 @@ export interface DailyDigestLink {
   href: string;
 }
 
+export type DailyDigestSectionTitle =
+  | 'Highlights'
+  | 'Status'
+  | 'Completed'
+  | 'In progress'
+  | 'Decisions'
+  | 'Risks'
+  | 'Follow-ups'
+  /** @deprecated Stored on older payloads; renderers remap this to Status. */
+  | 'Product status';
+
 export interface DailyDigestSection {
-  title:
-    | 'Highlights'
-    | 'Product status'
-    | 'Completed'
-    | 'In progress'
-    | 'Decisions'
-    | 'Risks'
-    | 'Follow-ups';
+  title: DailyDigestSectionTitle;
+  /** Narrative paragraph for this section. Preferred over `items` for new digests. */
+  body?: string;
+  /** Legacy bullet inventory. Rendered only when `body` is absent. */
   items: string[];
+}
+
+export interface DailyDigestActivity {
+  newMoments: number;
+  newProposals: number;
+  pendingApprovals?: number;
+  newTasks: number;
+  completedTasks: number;
+  newProjects: number;
+  newObjectsByType: Record<string, number>;
+}
+
+export interface DailyDigestTask {
+  id: string;
+  title: string;
+  status: string;
+  dueAt: string | null;
+  href: string;
+}
+
+export interface DailyDigestCalendarEvent {
+  id: string;
+  title: string;
+  startAt: string;
+  endAt: string;
+  href: string;
+  repeating?: boolean;
+  occurrenceCount?: number;
+}
+
+export interface DailyDigestObject {
+  id: string;
+  title: string;
+  type: string;
+  href: string;
 }
 
 export interface DailyDigestPayload {
@@ -86,17 +128,19 @@ export interface DailyDigestPayload {
   pendingApprovals: number;
   eventCount: number;
   momentCount?: number;
+  activity?: DailyDigestActivity;
   sourceDistribution: Record<string, number>;
   objectChangesByType: Record<string, number>;
   newTeamMembers: { userId: string; label: string; createdAt: string }[];
-  tasks: { id: string; title: string; status: string; dueAt: string | null; href: string }[];
-  upcomingCalendar: {
-    id: string;
-    title: string;
-    startAt: string;
-    endAt: string;
-    href: string;
-  }[];
+  /** Tasks created during this digest window. */
+  tasks: DailyDigestTask[];
+  /** Tasks marked done or cancelled during this digest window. */
+  completedTasks?: DailyDigestTask[];
+  /** Non-task, non-decision objects created during this digest window. */
+  newObjects?: DailyDigestObject[];
+  /** Calendar events whose start falls inside this digest window. */
+  windowCalendar?: DailyDigestCalendarEvent[];
+  upcomingCalendar: DailyDigestCalendarEvent[];
   links: DailyDigestLink[];
 }
 

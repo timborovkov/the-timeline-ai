@@ -482,7 +482,12 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
         <li>Go to <code>/app/sources</code> as a team admin.</li>
         <li>
           Create a named webhook, for example <em>Pipedrive webhook</em>. Choose whether new events
-          default to team-visible evidence or private evidence owned by the creating admin.
+          default to team-visible evidence or private evidence owned by the creating admin. Choose a
+          <strong>Timeline type</strong> so the archive knows how to weigh the delivery:
+          conversation, work record, status pulse (the default), incident, document, or schedule.
+          Pulse is the right default for unknown or telemetry-like payloads; pick work record when
+          the webhook represents a named object such as a deal or ticket. The type is
+          presentation-only and never promotes the payload into workspace object identity.
         </li>
         <li>
           Copy the one-time secret URL or bearer token. Plaintext credentials are shown once; stored

@@ -11,6 +11,9 @@ const fakes = vi.hoisted(() => ({
 
 vi.mock('next/navigation', () => ({ useRouter: () => fakes }));
 vi.mock('@/app/actions/objects', () => ({ mergeObjectsAction: vi.fn() }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
+}));
 
 const { ObjectMergeForm } = await import('./object-merge-form.js');
 

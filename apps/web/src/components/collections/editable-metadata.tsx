@@ -1,69 +1,86 @@
 'use client';
 
 import { Loader2 } from 'lucide-react';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 
-import type { ReactNode } from 'react';
-
+import {
+  createCollectionSlot,
+  readCollectionSlots,
+} from '@/components/collections/collection-slot';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 
+const EditableMetadataValue = createCollectionSlot('value');
+const EditableMetadataEditor = createCollectionSlot('editor');
+
+const METADATA_SLOTS = {
+  value: EditableMetadataValue,
+  editor: EditableMetadataEditor,
+};
+
+function restoreFocusAfterSave(
+  trigger: HTMLButtonElement | null,
+  pending: boolean,
+  error: string | null | undefined,
+  wasPendingRef: RefObject<boolean>,
+  previousErrorRef: RefObject<string | null | undefined>,
+): void {
+  const completedSave = wasPendingRef.current && !pending;
+  const receivedError = Boolean(error && error !== previousErrorRef.current);
+  wasPendingRef.current = pending;
+  previousErrorRef.current = error;
+  if (!completedSave && !receivedError) return;
+  trigger?.focus();
+}
+
 export function EditableMetadata({
   label,
-  value,
-  editor,
+  children,
   pending = false,
   disabled = false,
   error,
   className,
   triggerRef,
-  children,
 }: {
   label: string;
-  value: ReactNode;
-  editor?: ReactNode;
+  children?: ReactNode;
   pending?: boolean;
   disabled?: boolean;
   error?: string | null;
   className?: string;
   triggerRef?: (node: HTMLButtonElement | null) => void;
-  children?: ReactNode;
 }) {
+  const slots = readCollectionSlots(children, METADATA_SLOTS);
   const [open, setOpen] = useState(false);
   const internalTriggerRef = useRef<HTMLButtonElement>(null);
-  const suppressOpenRef = useRef(false);
   const wasPendingRef = useRef(false);
   const previousErrorRef = useRef<string | null | undefined>(undefined);
-  const errorId = useId();
-  const resolvedEditor = children ?? editor;
+  const errorId = `${label.replaceAll(/\s+/g, '-').toLowerCase()}-error`;
 
-  if (pending) suppressOpenRef.current = true;
-  const popoverOpen = pending || suppressOpenRef.current ? false : open;
-
-  function handleOpenChange(next: boolean): void {
-    if (pending) return;
-    if (next) suppressOpenRef.current = false;
-    setOpen(next);
+  if ((pending || disabled) && open) {
+    setOpen(false);
   }
 
   // Restore focus after a parent-driven save finishes. pending/error are the
   // completion signals; there is no local event handler for that commit.
   // react-doctor-disable-next-line react-doctor/no-event-handler -- Focus restoration is keyed to parent pending/error, not a local click.
   useEffect(() => {
-    // react-doctor-disable-next-line react-doctor/no-event-handler -- Focus restoration is keyed to parent pending/error, not a local click.
-    const completedSave = wasPendingRef.current && !pending;
-    // react-doctor-disable-next-line react-doctor/no-event-handler -- Focus restoration is keyed to parent pending/error, not a local click.
-    const receivedError = Boolean(error && error !== previousErrorRef.current);
-    if (completedSave || receivedError) {
-      internalTriggerRef.current?.focus();
-    }
-    wasPendingRef.current = pending;
-    previousErrorRef.current = error;
+    restoreFocusAfterSave(
+      internalTriggerRef.current,
+      pending,
+      error,
+      wasPendingRef,
+      previousErrorRef,
+    );
   }, [error, pending]);
 
   return (
     <span className="relative inline-flex min-w-0 flex-col">
-      <Popover open={popoverOpen} onOpenChange={handleOpenChange}>
+      <Popover
+        key={pending ? 'pending' : 'idle'}
+        open={pending || disabled ? false : open}
+        onOpenChange={setOpen}
+      >
         <PopoverTrigger asChild>
           <button
             ref={(node) => {
@@ -72,7 +89,6 @@ export function EditableMetadata({
             }}
             type="button"
             aria-label={label}
-            aria-invalid={error ? true : undefined}
             aria-describedby={error ? errorId : undefined}
             disabled={disabled || pending}
             className={cn(
@@ -87,22 +103,21 @@ export function EditableMetadata({
                 className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none"
               />
             ) : null}
-            <span className="min-w-0 truncate">{value}</span>
+            <span className="min-w-0 truncate">{slots.value}</span>
           </button>
         </PopoverTrigger>
         <PopoverContent role="dialog" aria-label={label} className="min-w-52 p-2">
-          {resolvedEditor}
+          {slots.editor}
         </PopoverContent>
       </Popover>
       {error ? (
-        <span
-          id={errorId}
-          role="alert"
-          className="absolute left-2 top-full z-10 whitespace-nowrap text-[10px] text-danger"
-        >
+        <span id={errorId} className="sr-only">
           {error}
         </span>
       ) : null}
     </span>
   );
 }
+
+EditableMetadata.Value = EditableMetadataValue;
+EditableMetadata.Editor = EditableMetadataEditor;

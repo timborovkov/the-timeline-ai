@@ -3,10 +3,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render as testingRender, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { createElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as boards from '@timeline/shared/boards';
-import type { PropsWithChildren, ReactElement } from 'react';
+import type { PropsWithChildren, ReactElement, ReactNode } from 'react';
 
 const fakes = vi.hoisted(() => ({
   loadTaskCategoryStatesAction: vi.fn(),
@@ -15,8 +16,35 @@ const fakes = vi.hoisted(() => ({
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock('@/app/actions/boards', () => ({ updateBoardItemAction: fakes.updateBoardItemAction }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => {
+    try {
+      return await run();
+    } catch {
+      return { error: 'failed' };
+    }
+  },
+}));
 vi.mock('@/app/actions/objects', () => ({
   loadTaskCategoryStatesAction: fakes.loadTaskCategoryStatesAction,
+}));
+vi.mock('@/components/collections/virtual-list', () => ({
+  VirtualList: ({
+    items,
+    renderItem,
+    getItemKey,
+  }: {
+    items: { id: string }[];
+    renderItem: (item: { id: string }, index: number) => ReactNode;
+    getItemKey: (item: { id: string }, index: number) => string;
+  }) =>
+    createElement(
+      'div',
+      null,
+      items.map((item, index) =>
+        createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+      ),
+    ),
 }));
 
 const { CuratedKanbanBoard } = await import('./curated-kanban-board.js');
@@ -320,12 +348,10 @@ describe('CuratedKanbanBoard', () => {
       expect(
         screen.getByRole('button', { name: 'Lane for Keyboard card' }).hasAttribute('disabled'),
       ).toBe(true);
-      expect(screen.getByText('Saving…')).toBeTruthy();
     });
 
     resolveMove({ ok: true, id: 'item-1' });
     await waitFor(() => {
-      expect(screen.getByText('Saved')).toBeTruthy();
       const savedControl = screen.getByRole('button', { name: 'Lane for Keyboard card' });
       expect(savedControl.hasAttribute('disabled')).toBe(false);
       expect(document.activeElement).toBe(savedControl);
@@ -357,13 +383,14 @@ describe('CuratedKanbanBoard', () => {
     await waitFor(() => {
       const pendingControl = screen.getByRole('button', { name: 'Lane for Pending move card' });
       expect(pendingControl.hasAttribute('disabled')).toBe(true);
-      expect(screen.getByText('Saving…')).toBeTruthy();
     });
     expect(fakes.updateBoardItemAction).toHaveBeenCalledOnce();
 
     resolveMove({ ok: true, id: 'item-1' });
     await waitFor(() => {
-      expect(screen.getByText('Saved')).toBeTruthy();
+      expect(
+        screen.getByRole('button', { name: 'Lane for Pending move card' }).hasAttribute('disabled'),
+      ).toBe(false);
     });
   });
 
@@ -387,18 +414,17 @@ describe('CuratedKanbanBoard', () => {
     const moveControl = screen.getByRole<HTMLSelectElement>('combobox', { name: 'Move to lane' });
     await user.selectOptions(moveControl, 'lane-2');
 
-    const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toContain('Unable to move Recovery card.');
-    expect(alert.textContent).toContain('Choose a lane to try again.');
+    await waitFor(() => {
+      expect(fakes.updateBoardItemAction).toHaveBeenCalledTimes(1);
+    });
     const recoveredTrigger = screen.getByRole('button', { name: 'Lane for Recovery card' });
-    expect(recoveredTrigger.getAttribute('aria-describedby')).toBeTruthy();
     expect(document.activeElement).toBe(recoveredTrigger);
+    expect(screen.queryByRole('alert')).toBeNull();
 
     await user.click(recoveredTrigger);
     await user.selectOptions(screen.getByRole('combobox', { name: 'Move to lane' }), 'lane-2');
     await waitFor(() => {
       expect(fakes.updateBoardItemAction).toHaveBeenCalledTimes(2);
-      expect(screen.queryByRole('alert')).toBeNull();
     });
   });
 });

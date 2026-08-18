@@ -763,7 +763,7 @@ async function seedWorkerRepairState(): Promise<void> {
 
 async function openAdvancedTools(page: Page): Promise<void> {
   await page.waitForLoadState('networkidle');
-  const details = page.locator('details').filter({ hasText: 'Advanced tools and diagnostics' });
+  const details = page.locator('details').filter({ hasText: 'Advanced tools' });
   await expect(details).toBeVisible();
   if (!(await details.evaluate((element: HTMLDetailsElement) => element.open))) {
     await details.locator('summary').click();
@@ -786,15 +786,15 @@ test.describe.serial('reconciliation dashboard', () => {
     await page.goto('/app/team/reconciliation');
 
     await expect(page.getByRole('heading', { name: 'Reconciliation', exact: true })).toBeVisible();
-    const currentHealth = page.getByRole('region', { name: 'Current health' });
-    await expect(currentHealth).toBeVisible();
-    await expect(currentHealth.getByText(/Release gate/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Check coverage' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Preview repair' })).toBeVisible();
     await expect(page.getByText(fixtures.team.title).first()).toBeVisible();
+    await expect(page.getByText('Customer project').first()).toBeVisible();
+    await openAdvancedTools(page);
     await expect(page.getByText('customer_project').first()).toBeVisible();
     await expect(page.getByText('observed_association').first()).toBeVisible();
     await expect(page.getByText('approval_bundle').first()).toBeVisible();
     await expect(page.getByText('failed').first()).toBeVisible();
-    await openAdvancedTools(page);
     await expect(page.getByText('evidence').first()).toBeVisible();
     await expect(page.getByText('projections').first()).toBeVisible();
     await expect(page.getByText(fixtures.workerRepair.title).first()).toBeVisible();
@@ -815,10 +815,9 @@ test.describe.serial('reconciliation dashboard', () => {
       .locator('section')
       .filter({ has: page.getByRole('heading', { name: 'Evidence' }) });
     await expect(page.getByText(fixtures.team.rawText)).toBeVisible();
-    const teamRawEventId = teamEvidence.getByText(fixtures.team.rawEvent, { exact: true });
-    await expect(teamRawEventId).toBeHidden();
-    await teamEvidence.getByText('Technical details').first().click();
-    await expect(teamRawEventId).toBeVisible();
+    await expect(
+      teamEvidence.locator(`[title*="${fixtures.team.rawEvent}"]`).first(),
+    ).toBeVisible();
 
     await page.goto(`/app/team/reconciliation/clusters/${fixtures.workerRepair.cluster}`);
     await expect(
@@ -828,12 +827,9 @@ test.describe.serial('reconciliation dashboard', () => {
     const repairEvidence = page
       .locator('section')
       .filter({ has: page.getByRole('heading', { name: 'Evidence' }) });
-    const repairRawEventId = repairEvidence.getByText(fixtures.workerRepair.rawEvent, {
-      exact: true,
-    });
-    await expect(repairRawEventId).toBeHidden();
-    await repairEvidence.getByText('Technical details').first().click();
-    await expect(repairRawEventId).toBeVisible();
+    await expect(
+      repairEvidence.locator(`[title*="${fixtures.workerRepair.rawEvent}"]`).first(),
+    ).toBeVisible();
   });
 
   test('surfaces operator errors from invalid manual reconciliation requests', async ({ page }) => {
@@ -847,7 +843,7 @@ test.describe.serial('reconciliation dashboard', () => {
     await expect(
       page.getByText('Object and cluster reconciliation require a target id'),
     ).toBeVisible();
-    await expect(page.getByText('failed').first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Reconciliation', exact: true })).toBeVisible();
   });
 
   test('filters and paginates run history from the dashboard', async ({ page }) => {
@@ -879,11 +875,14 @@ test.describe.serial('reconciliation dashboard', () => {
 
     const approval = page.locator('article').filter({ hasText: fixtures.approval.title });
     await expect(approval).toBeVisible();
-    await approval.getByText('Technical details').click();
-    await approval.getByRole('link', { name: 'Open processing record' }).click();
-    await expect(page).toHaveURL(
-      new RegExp(`/app/team/reconciliation/clusters/${fixtures.team.cluster}`),
-    );
+    await expect(approval.getByText('Technical details')).toHaveCount(0);
+    await expect(approval.getByText('Open processing record')).toHaveCount(0);
+    await approval
+      .getByRole('button', { name: new RegExp(`Preview ${fixtures.approval.title}`) })
+      .click();
+    await expect(page.getByText(/Proposed record|Current record/)).toBeVisible();
+
+    await page.goto(`/app/team/reconciliation/clusters/${fixtures.team.cluster}`);
     await expect(
       page.getByRole('heading', { name: fixtures.team.title, exact: true }),
     ).toBeVisible();
@@ -908,7 +907,9 @@ test.describe.serial('reconciliation dashboard', () => {
       .locator('article')
       .filter({ hasText: fixtures.approvalActions.acceptTitle });
     await expect(acceptApproval).toBeVisible();
-    await acceptApproval.getByRole('button', { name: 'Accept' }).click();
+    await acceptApproval
+      .getByRole('button', { name: `Accept ${fixtures.approvalActions.acceptItemTitle}` })
+      .click();
     await expect(page.getByText(fixtures.approvalActions.acceptItemTitle)).toHaveCount(0);
     await expect.poll(() => countEntitiesByName(fixtures.approvalActions.acceptItemTitle)).toBe(1);
     await expect
@@ -921,7 +922,9 @@ test.describe.serial('reconciliation dashboard', () => {
       .locator('article')
       .filter({ hasText: fixtures.approvalActions.rejectTitle });
     await expect(rejectApproval).toBeVisible();
-    await rejectApproval.getByRole('button', { name: 'Reject' }).click();
+    await rejectApproval
+      .getByRole('button', { name: `Reject ${fixtures.approvalActions.rejectItemTitle}` })
+      .click();
     await expect(page.getByText(fixtures.approvalActions.rejectItemTitle)).toHaveCount(0);
     await expect.poll(() => countEntitiesByName(fixtures.approvalActions.rejectItemTitle)).toBe(0);
     await expect
@@ -940,7 +943,13 @@ test.describe.serial('reconciliation dashboard', () => {
       .locator('article')
       .filter({ hasText: fixtures.approvalBulkPartial.title });
     await expect(approval).toBeVisible();
-    await approval.getByRole('button', { name: 'Accept all' }).click();
+    await approval
+      .getByRole('checkbox', { name: `Select ${fixtures.approvalBulkPartial.taskTitle}` })
+      .check();
+    await approval
+      .getByRole('checkbox', { name: `Select ${fixtures.approvalBulkPartial.calendarTitle}` })
+      .check();
+    await page.getByRole('button', { name: 'Accept', exact: true }).click();
 
     await expect(approval.getByText(fixtures.approvalBulkPartial.taskTitle)).toHaveCount(0);
     await expect(

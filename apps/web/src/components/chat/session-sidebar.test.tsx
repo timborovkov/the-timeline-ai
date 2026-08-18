@@ -50,6 +50,9 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: fakes.push, refresh: fakes.refresh }),
   useSearchParams: () => new URLSearchParams('session=session-1'),
 }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
+}));
 
 const { MobileSessionNav, SessionSidebar } = await import('./session-sidebar.js');
 

@@ -4,7 +4,6 @@ import Link from 'next/link';
 import type { PinnedItem } from '@timeline/shared/pins';
 
 import { CollectionRow } from '@/components/collections/collection-row';
-import { CollectionRowLeading } from '@/components/collections/collection-row-leading';
 import { PinTargetIcon } from '@/components/pins/pin-icon';
 import { PinMenuItem } from '@/components/pins/pin-menu-item';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
@@ -36,17 +35,24 @@ export function PinnedItemRow({
       onDrop={onDrop}
       className={cn('group min-w-0', draggable && 'cursor-grab active:cursor-grabbing')}
     >
-      <CollectionRow
-        title={
+      <CollectionRow>
+        <CollectionRow.Leading>
+          <span className="flex size-7 shrink-0 items-center justify-center text-fg-muted">
+            <PinTargetIcon kind={item.iconKind} className="size-3.5" />
+          </span>
+        </CollectionRow.Leading>
+        <CollectionRow.Title>
           <Link
             href={item.href}
             className="block truncate rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {displayText(item.title)}
           </Link>
-        }
-        context={item.subtitle ? displayText(item.subtitle) : undefined}
-        actions={
+        </CollectionRow.Title>
+        <CollectionRow.Context>
+          {item.subtitle ? displayText(item.subtitle) : undefined}
+        </CollectionRow.Context>
+        <CollectionRow.Actions>
           <ItemActionGroup label={`Actions for ${item.title}`}>
             {actions}
             <ItemOverflowMenu targetLabel={item.title}>
@@ -60,13 +66,7 @@ export function PinnedItemRow({
               />
             </ItemOverflowMenu>
           </ItemActionGroup>
-        }
-      >
-        <CollectionRowLeading>
-          <span className="flex size-7 shrink-0 items-center justify-center text-fg-muted">
-            <PinTargetIcon kind={item.iconKind} className="size-3.5" />
-          </span>
-        </CollectionRowLeading>
+        </CollectionRow.Actions>
       </CollectionRow>
     </div>
   );
