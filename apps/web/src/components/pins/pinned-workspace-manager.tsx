@@ -210,9 +210,11 @@ export function PinnedWorkspaceManager({
       <h2 id="pinned-work-title" className="sr-only">
         Pinned work
       </h2>
-      <CollectionToolbar
-        count={nextCursor ? undefined : String(items.length)}
-        viewControls={
+      <CollectionToolbar>
+        {nextCursor ? null : (
+          <CollectionToolbar.Count>{String(items.length)}</CollectionToolbar.Count>
+        )}
+        <CollectionToolbar.View>
           <nav aria-label="Pinned work filters" className="flex items-center gap-0.5">
             {FILTERS.map((entry) => (
               <Link
@@ -232,9 +234,9 @@ export function PinnedWorkspaceManager({
               </Link>
             ))}
           </nav>
-        }
-        actions={
-          canReorder && items.length > 1 ? (
+        </CollectionToolbar.View>
+        <CollectionToolbar.Actions>
+          {canReorder && items.length > 1 ? (
             <Button
               variant="ghost"
               size="sm"
@@ -245,9 +247,9 @@ export function PinnedWorkspaceManager({
               <GripVertical aria-hidden="true" />
               {reorderMode ? 'Done reordering' : 'Reorder'}
             </Button>
-          ) : null
-        }
-      />
+          ) : null}
+        </CollectionToolbar.Actions>
+      </CollectionToolbar>
 
       {items.length === 0 ? (
         <div className="border-b border-border py-10 text-center">

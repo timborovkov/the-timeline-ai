@@ -6,6 +6,8 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { ReactNode } from 'react';
+
 const fakes = vi.hoisted(() => ({
   createFolderAction: vi.fn(),
   deleteFolderAction: vi.fn(),
@@ -19,7 +21,9 @@ const fakes = vi.hoisted(() => ({
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: fakes.useQueryClient }));
-vi.mock('sonner', () => ({ toast: { error: fakes.toastError, success: fakes.toastSuccess } }));
+vi.mock('sonner', () => ({
+  toast: { error: fakes.toastError, success: fakes.toastSuccess, loading: vi.fn(() => 'toast-1') },
+}));
 vi.mock('@/lib/use-paginated-queries', () => ({
   useDocumentListQuery: fakes.useDocumentListQuery,
 }));
@@ -32,6 +36,24 @@ vi.mock('@/app/actions/documents', () => ({
 vi.mock('@/app/actions/pins', () => ({
   pinTargetAction: vi.fn(),
   unpinTargetAction: vi.fn(),
+}));
+vi.mock('@/components/collections/virtual-list', () => ({
+  VirtualList: ({
+    items,
+    renderItem,
+    getItemKey,
+  }: {
+    items: { id: string }[];
+    renderItem: (item: { id: string }, index: number) => ReactNode;
+    getItemKey: (item: { id: string }, index: number) => string;
+  }) =>
+    createElement(
+      'div',
+      null,
+      items.map((item, index) =>
+        createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+      ),
+    ),
 }));
 
 const { DocumentDrive } = await import('./document-drive.js');
@@ -251,6 +273,7 @@ describe('DocumentDrive', () => {
     await waitFor(() => {
       expect(fakes.toastError).toHaveBeenCalledWith(
         'Unable to reach document storage. Check your connection, then try again.',
+        { id: 'toast-1' },
       );
     });
     expect(fakes.toastError).not.toHaveBeenCalledWith(

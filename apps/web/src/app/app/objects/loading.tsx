@@ -1,4 +1,4 @@
-import { EntityGridSkeleton, PageHeaderSkeleton } from '@/components/loading-states';
+import { CollectionRowsSkeleton, PageHeaderSkeleton } from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
 import { WorkSubnav } from '@/components/work-subnav';
 
@@ -15,7 +15,7 @@ export default function ObjectsLoading() {
       >
         <h1 className="sr-only">Objects</h1>
         <div aria-hidden="true" inert>
-          <PageHeaderSkeleton />
+          <PageHeaderSkeleton variant="collection" />
         </div>
         <WorkSubnav current="/app/objects" />
         <div aria-hidden="true" inert className="space-y-6">
@@ -31,7 +31,7 @@ export default function ObjectsLoading() {
                   <Skeleton className="h-3 w-24" />
                   <Skeleton className="h-3 w-6" />
                 </div>
-                <EntityGridSkeleton count={count} />
+                <CollectionRowsSkeleton count={count} />
               </div>
             ))}
           </section>

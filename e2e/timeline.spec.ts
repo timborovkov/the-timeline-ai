@@ -1560,7 +1560,7 @@ test('agentic core capture-to-approval journey creates durable task state', asyn
   await expect(ownerPage.getByRole('heading', { name: /Commitment:/ })).toBeVisible();
   await expect(ownerPage.getByText(commitment).first()).toBeVisible();
   await expect(ownerPage.getByText(expectedTask).first()).toBeVisible();
-  await ownerPage.getByRole('button', { name: 'Accept all', exact: true }).click();
+  await ownerPage.getByRole('button', { name: `Accept ${expectedTask}` }).click();
   await expect(ownerPage.getByText('No pending approvals')).toBeVisible();
 
   await ownerPage.goto('/app/tasks');
@@ -1737,8 +1737,8 @@ test('approvals page bulk accept leaves merge proposals for review', async ({ br
 
   try {
     await ownerPage.goto('/app/approvals');
-    await expect(ownerPage.getByText('1 merge proposal needs review')).toBeVisible();
-    await expect(ownerPage.getByRole('button', { name: 'Accept 2 visible' })).toBeVisible();
+    await expect(ownerPage.getByText('1 merge proposal needs review')).toHaveCount(0);
+    await expect(ownerPage.getByRole('button', { name: 'Accept 2 visible' })).toHaveCount(0);
     await expect(ownerPage.getByRole('button', { name: 'Accept all visible' })).toHaveCount(0);
     await expect(ownerPage.locator('article').filter({ hasText: taskTitle })).toBeVisible();
     await expect(ownerPage.locator('article').filter({ hasText: calendarTitle })).toBeVisible();
@@ -1746,8 +1746,10 @@ test('approvals page bulk accept leaves merge proposals for review', async ({ br
     await expect(mergeApproval).toBeVisible();
     await expect(mergeApproval.getByRole('link', { name: /Review merge/ })).toBeVisible();
 
+    await ownerPage.getByRole('checkbox', { name: `Select ${taskTitle}` }).check();
+    await ownerPage.getByRole('checkbox', { name: `Select ${calendarTitle}` }).check();
     await waitForPost(ownerPage, '/app/approvals', () =>
-      ownerPage.getByRole('button', { name: 'Accept 2 visible' }).click(),
+      ownerPage.getByRole('button', { name: 'Accept', exact: true }).click(),
     );
 
     await expect(ownerPage.locator('article').filter({ hasText: actionBundle.title })).toHaveCount(
@@ -1801,16 +1803,17 @@ test('approvals page bulk accept recovers failed proposal rows', async ({ browse
 
   try {
     await ownerPage.goto('/app/approvals?status=all');
-    await expect(ownerPage.getByRole('button', { name: 'Accept all visible' })).toBeVisible();
+    await ownerPage.getByRole('checkbox', { name: `Select ${taskTitle}` }).check();
+    await ownerPage.getByRole('checkbox', { name: `Select ${calendarTitle}` }).check();
     await waitForPost(ownerPage, '/app/approvals', () =>
-      ownerPage.getByRole('button', { name: 'Accept all visible' }).click(),
+      ownerPage.getByRole('button', { name: 'Accept', exact: true }).click(),
     );
 
     await expect(ownerPage.getByText('1 item(s) failed to apply')).toBeVisible();
-    await expect(ownerPage.locator('li').filter({ hasText: calendarTitle })).toHaveCount(0);
+    await expect(ownerPage.locator('article').filter({ hasText: calendarTitle })).toBeVisible();
 
     await ownerPage.goto('/app/approvals?status=failed');
-    const failedApproval = ownerPage.locator('li').filter({ hasText: calendarTitle });
+    const failedApproval = ownerPage.locator('article').filter({ hasText: calendarTitle });
     await expect(failedApproval).toBeVisible();
     await expect(
       failedApproval.getByText(
@@ -1863,7 +1866,8 @@ test('agentic core object update approval updates existing object', async ({ bro
   const approval = ownerPage.locator('article').filter({ hasText: objectName });
   await expect(approval).toBeVisible();
   await expect(approval.getByText(sourceText).first()).toBeVisible();
-  await expect(approval.getByText('Stage Proposal · Status Active')).toBeVisible();
+  await expect(approval.getByText('Status Active')).toBeVisible();
+  await expect(approval.getByText('Stage Proposal')).toBeVisible();
   await waitForPost(ownerPage, '/app/approvals', () =>
     approval.getByRole('button', { name: 'Accept' }).click(),
   );
@@ -2027,7 +2031,7 @@ test('chat answers from accepted durable task calendar and object state', async 
   const taskApproval = ownerPage.locator('article').filter({ hasText: expectedTask });
   await expect(taskApproval).toBeVisible();
   await waitForPost(ownerPage, '/app/approvals', () =>
-    taskApproval.getByRole('button', { name: 'Accept all', exact: true }).click(),
+    taskApproval.getByRole('button', { name: `Accept ${expectedTask}` }).click(),
   );
   await expect(taskApproval).toHaveCount(0);
 

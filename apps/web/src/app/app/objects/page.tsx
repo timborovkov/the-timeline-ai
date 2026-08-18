@@ -194,12 +194,13 @@ export default async function ObjectsIndexPage({
             ? [{ label: 'Type', value: OBJECT_TYPE_LABELS[singleType] ?? singleType }]
             : []),
         ]}
-        trailing={
+      >
+        <PageHeader.Trailing>
           <Button asChild>
             <Link href="/app/objects/new">New object</Link>
           </Button>
-        }
-      />
+        </PageHeader.Trailing>
+      </PageHeader>
       <WorkSubnav current="/app/objects" />
 
       <WorkFilterBar

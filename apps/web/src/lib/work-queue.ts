@@ -50,7 +50,7 @@ export function reasonLabel(reason: WorkQueueReason): string {
     case 'pending_approval':
       return 'Pending approval';
     case 'responsible_to_you':
-      return 'Responsible to you';
+      return "You're responsible";
     case 'team_due':
       return 'Team due';
     case 'overdue':

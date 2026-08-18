@@ -1255,9 +1255,8 @@ function TaskListRow({
 
   return (
     <div style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 44px' }}>
-      <CollectionRow
-        selected={highlighted || selected}
-        leading={
+      <CollectionRow selected={highlighted || selected}>
+        <CollectionRow.Leading>
           <input
             type="checkbox"
             checked={selected}
@@ -1270,36 +1269,39 @@ function TaskListRow({
               selected && 'md:opacity-100',
             )}
           />
-        }
-        title={
+        </CollectionRow.Leading>
+        <CollectionRow.Title>
           <Link
             href={taskViewHref('list', row.id, filterParams)}
             className="block truncate hover:underline"
           >
             {displayText(title)}
           </Link>
-        }
-        context={
-          error ? (
-            <span className="text-danger" role="alert">
-              {error}
-            </span>
-          ) : saving ? (
-            <span>Saving {saving}…</span>
-          ) : undefined
-        }
-        metadata={
+        </CollectionRow.Title>
+        {error || saving ? (
+          <CollectionRow.Context>
+            {error ? (
+              <span className="text-danger" role="alert">
+                {error}
+              </span>
+            ) : (
+              <span>Saving {saving}…</span>
+            )}
+          </CollectionRow.Context>
+        ) : null}
+        <CollectionRow.Metadata>
           <>
             <EditableMetadata
               label={`Status for ${displayText(title)}`}
               pending={saving === 'status'}
-              value={
+            >
+              <EditableMetadata.Value>
                 <CollectionStatus
                   value={row.status}
                   label={statusLabel(taskDisplayStatus(row.status))}
                 />
-              }
-              editor={
+              </EditableMetadata.Value>
+              <EditableMetadata.Editor>
                 <select
                   value={taskDisplayStatus(row.status)}
                   onChange={(event) => {
@@ -1317,15 +1319,14 @@ function TaskListRow({
                     <option value={row.status}>{statusLabel(row.status)}</option>
                   ) : null}
                 </select>
-              }
-            />
+              </EditableMetadata.Editor>
+            </EditableMetadata>
             {taskCategoriesEnabled ? (
-              <EditableMetadata
-                label={`Category for ${displayText(title)}`}
-                value={
+              <EditableMetadata label={`Category for ${displayText(title)}`}>
+                <EditableMetadata.Value>
                   <TaskCategoryBadge category={row.taskCategory} status={row.taskCategoryStatus} />
-                }
-                editor={
+                </EditableMetadata.Value>
+                <EditableMetadata.Editor>
                   <TaskCategorySelect
                     taskId={row.id}
                     category={row.taskCategory}
@@ -1333,13 +1334,14 @@ function TaskListRow({
                     status={row.taskCategoryStatus}
                     updatedAt={row.taskCategoryUpdatedAt}
                   />
-                }
-              />
+                </EditableMetadata.Editor>
+              </EditableMetadata>
             ) : null}
-            <EditableMetadata
-              label={`Project for ${displayText(title)}`}
-              value={primaryProject?.projectName ?? 'No project'}
-              editor={
+            <EditableMetadata label={`Project for ${displayText(title)}`}>
+              <EditableMetadata.Value>
+                {primaryProject?.projectName ?? 'No project'}
+              </EditableMetadata.Value>
+              <EditableMetadata.Editor>
                 <TaskProjectSelect
                   taskId={row.id}
                   projectId={primaryProject?.projectId ?? null}
@@ -1356,13 +1358,14 @@ function TaskListRow({
                     onProjectChangeReverted(row.id);
                   }}
                 />
-              }
-            />
+              </EditableMetadata.Editor>
+            </EditableMetadata>
             <EditableMetadata
               label={`Assignee for ${displayText(title)}`}
               pending={saving === 'assignee'}
-              value={assignee?.label ?? 'Unassigned'}
-              editor={
+            >
+              <EditableMetadata.Value>{assignee?.label ?? 'Unassigned'}</EditableMetadata.Value>
+              <EditableMetadata.Editor>
                 <select
                   value={row.assigneeUserId ?? ''}
                   onChange={(event) => {
@@ -1378,13 +1381,16 @@ function TaskListRow({
                     </option>
                   ))}
                 </select>
-              }
-            />
+              </EditableMetadata.Editor>
+            </EditableMetadata>
             <EditableMetadata
               label={`Due date for ${displayText(title)}`}
               pending={saving === 'due date'}
-              value={<DueDateDisplay value={row.dueAt} variant="field-hint" />}
-              editor={
+            >
+              <EditableMetadata.Value>
+                <DueDateDisplay value={row.dueAt} variant="field-hint" />
+              </EditableMetadata.Value>
+              <EditableMetadata.Editor>
                 <MetadataDateEditor
                   defaultValue={row.dueAt ? dateInputValue(row.dueAt, timezone) : ''}
                   onApply={(value) => {
@@ -1393,19 +1399,20 @@ function TaskListRow({
                     });
                   }}
                 />
-              }
-            />
+              </EditableMetadata.Editor>
+            </EditableMetadata>
             <EditableMetadata
               label={`Priority for ${displayText(title)}`}
               pending={saving === 'priority'}
-              value={
+            >
+              <EditableMetadata.Value>
                 <CollectionStatus
                   value={row.priority ? `p${row.priority}` : 'none'}
                   tone={priorityTone(row.priority)}
                   label={row.priority ? `P${row.priority}` : 'No priority'}
                 />
-              }
-              editor={
+              </EditableMetadata.Value>
+              <EditableMetadata.Editor>
                 <select
                   value={row.priority ?? ''}
                   onChange={(event) => {
@@ -1425,11 +1432,11 @@ function TaskListRow({
                     </option>
                   ))}
                 </select>
-              }
-            />
+              </EditableMetadata.Editor>
+            </EditableMetadata>
           </>
-        }
-        actions={
+        </CollectionRow.Metadata>
+        <CollectionRow.Actions>
           <ItemActionGroup label={`Actions for ${displayText(title)}`}>
             <PinOverflowMenu
               target={{ kind: 'object', key: row.id }}
@@ -1437,8 +1444,8 @@ function TaskListRow({
               initialPinned={pinned}
             />
           </ItemActionGroup>
-        }
-      />
+        </CollectionRow.Actions>
+      </CollectionRow>
     </div>
   );
 }
@@ -1863,12 +1870,11 @@ function TaskCard({
       </div>
       <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-0 text-[11px]">
         {taskCategoriesEnabled ? (
-          <EditableMetadata
-            label={`Category for ${displayText(title)}`}
-            value={
+          <EditableMetadata label={`Category for ${displayText(title)}`}>
+            <EditableMetadata.Value>
               <TaskCategoryBadge category={row.taskCategory} status={row.taskCategoryStatus} />
-            }
-            editor={
+            </EditableMetadata.Value>
+            <EditableMetadata.Editor>
               <TaskCategorySelect
                 taskId={row.id}
                 category={row.taskCategory}
@@ -1876,13 +1882,14 @@ function TaskCard({
                 status={row.taskCategoryStatus}
                 updatedAt={row.taskCategoryUpdatedAt}
               />
-            }
-          />
+            </EditableMetadata.Editor>
+          </EditableMetadata>
         ) : null}
-        <EditableMetadata
-          label={`Project for ${displayText(title)}`}
-          value={primaryProject?.projectName ?? 'No project'}
-          editor={
+        <EditableMetadata label={`Project for ${displayText(title)}`}>
+          <EditableMetadata.Value>
+            {primaryProject?.projectName ?? 'No project'}
+          </EditableMetadata.Value>
+          <EditableMetadata.Editor>
             <TaskProjectSelect
               taskId={row.id}
               projectId={primaryProject?.projectId ?? null}
@@ -1899,13 +1906,13 @@ function TaskCard({
                 onProjectChangeReverted(row.id);
               }}
             />
-          }
-        />
-        <EditableMetadata
-          label={`Assignee for ${displayText(title)}`}
-          value={memberLabel(row.assigneeUserId, members)}
-          pending={metadataSaving}
-          editor={
+          </EditableMetadata.Editor>
+        </EditableMetadata>
+        <EditableMetadata label={`Assignee for ${displayText(title)}`} pending={metadataSaving}>
+          <EditableMetadata.Value>
+            {memberLabel(row.assigneeUserId, members)}
+          </EditableMetadata.Value>
+          <EditableMetadata.Editor>
             <select
               value={row.assigneeUserId ?? ''}
               onChange={(event) => {
@@ -1920,13 +1927,13 @@ function TaskCard({
                 </option>
               ))}
             </select>
-          }
-        />
-        <EditableMetadata
-          label={`Due date for ${displayText(title)}`}
-          value={<DueDateDisplay value={row.dueAt} variant="compact" />}
-          pending={metadataSaving}
-          editor={
+          </EditableMetadata.Editor>
+        </EditableMetadata>
+        <EditableMetadata label={`Due date for ${displayText(title)}`} pending={metadataSaving}>
+          <EditableMetadata.Value>
+            <DueDateDisplay value={row.dueAt} variant="compact" />
+          </EditableMetadata.Value>
+          <EditableMetadata.Editor>
             <MetadataDateEditor
               defaultValue={row.dueAt ? row.dueAt.toISOString().slice(0, 10) : ''}
               onApply={(value) => {
@@ -1935,19 +1942,17 @@ function TaskCard({
                 });
               }}
             />
-          }
-        />
-        <EditableMetadata
-          label={`Priority for ${displayText(title)}`}
-          value={
+          </EditableMetadata.Editor>
+        </EditableMetadata>
+        <EditableMetadata label={`Priority for ${displayText(title)}`} pending={metadataSaving}>
+          <EditableMetadata.Value>
             <CollectionStatus
               value={row.priority ? `p${row.priority}` : 'none'}
               tone={priorityTone(row.priority)}
               label={row.priority ? `P${row.priority}` : 'No priority'}
             />
-          }
-          pending={metadataSaving}
-          editor={
+          </EditableMetadata.Value>
+          <EditableMetadata.Editor>
             <select
               value={row.priority ?? ''}
               onChange={(event) => {
@@ -1964,8 +1969,8 @@ function TaskCard({
                 </option>
               ))}
             </select>
-          }
-        />
+          </EditableMetadata.Editor>
+        </EditableMetadata>
       </div>
       {metadataError ? (
         <p className="mt-1 text-xs text-danger" role="alert">

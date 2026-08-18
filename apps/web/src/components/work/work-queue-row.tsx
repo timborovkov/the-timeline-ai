@@ -115,14 +115,14 @@ export function WorkQueueRow({
   }
 
   return (
-    <CollectionRow
-      title={
+    <CollectionRow>
+      <CollectionRow.Title>
         <Link href={item.href} className="block truncate hover:underline">
           {displayText(item.title)}
         </Link>
-      }
-      context={context}
-      metadata={
+      </CollectionRow.Title>
+      {context ? <CollectionRow.Context>{context}</CollectionRow.Context> : null}
+      <CollectionRow.Metadata>
         <>
           {error ? (
             <span className="px-2 text-xs text-danger" role="alert">
@@ -140,14 +140,15 @@ export function WorkQueueRow({
               <EditableMetadata
                 label={`Status for ${displayText(item.title)}`}
                 pending={saving === 'status'}
-                value={
+              >
+                <EditableMetadata.Value>
                   <CollectionStatus
                     value={displayStatus}
                     label={statusLabel(displayStatus)}
                     tone={statusTone(displayStatus)}
                   />
-                }
-                editor={
+                </EditableMetadata.Value>
+                <EditableMetadata.Editor>
                   <select
                     aria-label="Status"
                     value={displayStatus}
@@ -162,13 +163,14 @@ export function WorkQueueRow({
                       </option>
                     ))}
                   </select>
-                }
-              />
+                </EditableMetadata.Editor>
+              </EditableMetadata>
               <EditableMetadata
                 label={`Assignee for ${displayText(item.title)}`}
                 pending={saving === 'assigneeUserId'}
-                value={assignee?.label ?? 'Unassigned'}
-                editor={
+              >
+                <EditableMetadata.Value>{assignee?.label ?? 'Unassigned'}</EditableMetadata.Value>
+                <EditableMetadata.Editor>
                   <select
                     aria-label="Assignee"
                     value={assigneeUserId ?? ''}
@@ -184,34 +186,38 @@ export function WorkQueueRow({
                       </option>
                     ))}
                   </select>
-                }
-              />
+                </EditableMetadata.Editor>
+              </EditableMetadata>
               {isSchedulableObjectType(item.objectType ?? '') || item.dueAt ? (
                 <EditableMetadata
                   label={`Due date for ${displayText(item.title)}`}
                   pending={saving === 'dueAt'}
-                  value={<DueDateDisplay value={dueAt} timezone={timezone} variant="compact" />}
-                  editor={
+                >
+                  <EditableMetadata.Value>
+                    <DueDateDisplay value={dueAt} timezone={timezone} variant="compact" />
+                  </EditableMetadata.Value>
+                  <EditableMetadata.Editor>
                     <MetadataDateEditor
                       defaultValue={dateInputValue(dueAt)}
                       onApply={(value) => {
                         save('dueAt', value ? new Date(`${value}T00:00:00.000Z`) : null);
                       }}
                     />
-                  }
-                />
+                  </EditableMetadata.Editor>
+                </EditableMetadata>
               ) : null}
               <EditableMetadata
                 label={`Priority for ${displayText(item.title)}`}
                 pending={saving === 'priority'}
-                value={
+              >
+                <EditableMetadata.Value>
                   <CollectionStatus
                     value={priority ? `p${priority}` : 'none'}
                     tone={priorityTone(priority)}
                     label={priority ? `P${priority}` : 'No priority'}
                   />
-                }
-                editor={
+                </EditableMetadata.Value>
+                <EditableMetadata.Editor>
                   <select
                     aria-label="Priority"
                     value={priority ?? ''}
@@ -230,8 +236,8 @@ export function WorkQueueRow({
                       </option>
                     ))}
                   </select>
-                }
-              />
+                </EditableMetadata.Editor>
+              </EditableMetadata>
             </>
           ) : item.source !== 'approval' ? (
             <DueDateDisplay value={item.dueAt} timezone={timezone} variant="compact" />
@@ -245,8 +251,8 @@ export function WorkQueueRow({
             />
           ) : null}
         </>
-      }
-    />
+      </CollectionRow.Metadata>
+    </CollectionRow>
   );
 }
 

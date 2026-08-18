@@ -16,7 +16,7 @@ import {
 } from '@/lib/collection-page-sizes';
 import { displayObjectLabel } from '@/lib/display-labels';
 import { runSentryServerAction } from '@/lib/sentry-action';
-import { serializeCalendarEvent } from '@/lib/serialize-calendar-event';
+import { groupLinkedObjectsByEvent, serializeCalendarEvent } from '@/lib/serialize-calendar-event';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
 
 const cursorSchema = z.string().max(500).nullable().optional();
@@ -236,6 +236,10 @@ export async function loadCalendarEventListPageAction(input: unknown): Promise<{
       offset: parsed.data.offset,
     });
     const items = page.events.slice(0, CALENDAR_EVENT_LIST_PAGE_SIZE);
+    const linkedRows = await r.scope.calendar.listLinkedObjectsForEvents(
+      items.map((event) => event.id),
+    );
+    const linkedByEventId = groupLinkedObjectsByEvent(linkedRows);
     const pinState = await r.scope.pins.isPinnedMany(
       items.flatMap((event) =>
         event.redacted ? [] : [{ kind: 'calendar_event' as const, key: event.id }],
@@ -243,7 +247,11 @@ export async function loadCalendarEventListPageAction(input: unknown): Promise<{
     );
     return {
       events: items.map((event) =>
-        serializeCalendarEvent(event, pinState[`calendar_event:${event.id}`] ?? false),
+        serializeCalendarEvent(
+          event,
+          pinState[`calendar_event:${event.id}`] ?? false,
+          linkedByEventId.get(event.id) ?? [],
+        ),
       ),
       nextOffset:
         page.events.length > CALENDAR_EVENT_LIST_PAGE_SIZE

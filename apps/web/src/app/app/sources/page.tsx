@@ -1,7 +1,6 @@
 import { withTeam } from '@timeline/shared/team-scope';
 import {
   Bot,
-  ChevronDown,
   FileText,
   Mail,
   MessageSquare,
@@ -15,9 +14,12 @@ import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
+import { CollectionGroup } from '@/components/collections/collection-group';
+import { CollectionRow } from '@/components/collections/collection-row';
+import { CollectionStatus } from '@/components/collections/collection-status';
 import { CopyButton } from '@/components/copy-button';
 import { PageHeader } from '@/components/page-header';
-import { SectionHeading } from '@/components/section-heading';
+import { ItemActionGroup } from '@/components/ui/item-actions';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -232,6 +234,7 @@ export default async function SourcesPage() {
   return (
     <div className="space-y-6">
       <PageHeader
+        variant="collection"
         title="Connections"
         subtitle="Capture surfaces, native sync, and live external tools."
         srLabel={`Connections · ${active.teamName} · ${connectedCount} connected · ${attentionCount} need attention · ${notSetupCount} not set up`}
@@ -264,46 +267,35 @@ export default async function SourcesPage() {
         description="Forwarding and chat bindings attribute captured work to the person or conversation that sent it."
       />
       <section className="space-y-3">
-        <SectionHeading>Advanced tools</SectionHeading>
-        <details className="group rounded-md border border-border bg-surface p-4">
-          <summary className="flex min-h-9 cursor-pointer items-center justify-between gap-3 rounded-sm text-sm font-medium text-fg outline-none transition-colors hover:text-fg-muted focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg">
-            <span>MCP, webhooks, and audit tools</span>
-            <ChevronDown
-              aria-hidden="true"
-              data-disclosure-indicator
-              className="size-4 shrink-0 text-fg-muted transition-transform motion-reduce:transition-none group-open:rotate-180"
-            />
-          </summary>
-          <div className="mt-4 space-y-3 border-t border-border pt-4">
-            {advancedSources.map((source) => (
-              <SourceRow key={source.label} source={source} />
-            ))}
-            <div className="flex flex-wrap gap-2 text-sm">
-              <Link
-                href="/app/team/integrations"
-                className="rounded-sm border border-border px-3 py-2 hover:bg-surface-2"
-              >
-                Provider resources and webhooks
-              </Link>
-              {isAdmin ? (
-                <>
-                  <Link
-                    href="/app/team/mcp-share"
-                    className="rounded-sm border border-border px-3 py-2 hover:bg-surface-2"
-                  >
-                    Outbound MCP sharing
-                  </Link>
-                  <Link
-                    href="/app/team/integrations/audit"
-                    className="rounded-sm border border-border px-3 py-2 hover:bg-surface-2"
-                  >
-                    Integration audit
-                  </Link>
-                </>
-              ) : null}
-            </div>
+        <CollectionGroup count={advancedSources.length} title="Advanced tools">
+          {advancedSources.map((source) => (
+            <SourceRow key={source.label} source={source} />
+          ))}
+          <div className="flex flex-wrap gap-2 px-3 py-2 text-sm">
+            <Link
+              href="/app/team/integrations"
+              className="rounded-sm px-2.5 py-1.5 text-fg-muted hover:bg-surface-2 hover:text-fg"
+            >
+              Provider resources and webhooks
+            </Link>
+            {isAdmin ? (
+              <>
+                <Link
+                  href="/app/team/mcp-share"
+                  className="rounded-sm px-2.5 py-1.5 text-fg-muted hover:bg-surface-2 hover:text-fg"
+                >
+                  Outbound MCP sharing
+                </Link>
+                <Link
+                  href="/app/team/integrations/audit"
+                  className="rounded-sm px-2.5 py-1.5 text-fg-muted hover:bg-surface-2 hover:text-fg"
+                >
+                  Integration audit
+                </Link>
+              </>
+            ) : null}
           </div>
-        </details>
+        </CollectionGroup>
       </section>
     </div>
   );
@@ -321,15 +313,14 @@ function SourceGroup({
   empty?: string;
 }) {
   return (
-    <section className="space-y-3">
-      <SectionHeading>{title}</SectionHeading>
-      {description ? <p className="max-w-3xl text-sm text-fg-muted">{description}</p> : null}
+    <section className="space-y-2">
+      {description ? <p className="max-w-3xl px-1 text-sm text-fg-muted">{description}</p> : null}
       {sources.length > 0 ? (
-        <div className="space-y-2">
+        <CollectionGroup count={sources.length} title={title}>
           {sources.map((source) => (
             <SourceRow key={source.label} source={source} />
           ))}
-        </div>
+        </CollectionGroup>
       ) : empty ? (
         <p className="text-sm text-fg-muted">{empty}</p>
       ) : null}
@@ -338,57 +329,55 @@ function SourceGroup({
 }
 
 function SourceRow({ source }: { source: SourceEntry }) {
+  const tone =
+    source.status === 'attention'
+      ? 'danger'
+      : source.status === 'connected'
+        ? 'success'
+        : 'neutral';
   return (
-    <div className="flex flex-col gap-3 rounded-md border border-border bg-surface p-4 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex min-w-0 flex-1 items-start gap-3">
-        <source.icon className="mt-0.5 size-5 shrink-0 text-fg-muted" aria-hidden="true" />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-medium text-fg">{source.label}</span>
-            <span
-              className={
-                source.status === 'attention'
-                  ? 'text-xs font-medium text-danger'
-                  : source.status === 'connected'
-                    ? 'text-xs font-medium text-signal'
-                    : 'text-xs text-fg-muted'
-              }
-            >
-              {source.statusLabel}
-            </span>
-          </div>
-          <p className="mt-0.5 text-sm text-fg-muted">{source.description}</p>
+    <CollectionRow>
+      <CollectionRow.Leading>
+        <source.icon className="size-4 text-fg-dim" aria-hidden="true" />
+      </CollectionRow.Leading>
+      <CollectionRow.Title>{source.label}</CollectionRow.Title>
+      <CollectionRow.Context>{source.description}</CollectionRow.Context>
+      <CollectionRow.Metadata>
+        <>
+          <CollectionStatus value={source.status} label={source.statusLabel} tone={tone} />
           {source.copyValue ? (
-            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
-              <code className="min-w-0 break-all font-mono text-xs text-fg-dim">
+            <span className="inline-flex min-w-0 items-center gap-1">
+              <code className="max-w-[12rem] truncate font-mono text-[11px] text-fg-dim">
                 {source.detail}
               </code>
               <CopyButton value={source.copyValue} label="Copy address" />
-            </div>
+            </span>
           ) : (
-            <p className="mt-0.5 text-xs text-fg-dim">{source.detail}</p>
+            <span className="text-[11px] text-fg-dim">{source.detail}</span>
           )}
-          {source.note ? <p className="mt-1 text-xs text-fg-muted">{source.note}</p> : null}
-        </div>
-      </div>
-      <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0">
-        {source.secondaryActionHref ? (
+          {source.note ? <span className="text-[11px] text-fg-dim">{source.note}</span> : null}
+        </>
+      </CollectionRow.Metadata>
+      <CollectionRow.Actions>
+        <ItemActionGroup label={`Actions for ${source.label}`}>
+          {source.secondaryActionHref ? (
+            <Link
+              href={source.secondaryActionHref}
+              aria-label={`${source.secondaryActionLabel}: ${source.label}`}
+              className="inline-flex min-h-8 items-center rounded-sm px-2 text-xs text-fg-muted hover:bg-surface-2 hover:text-fg"
+            >
+              {source.secondaryActionLabel}
+            </Link>
+          ) : null}
           <Link
-            href={source.secondaryActionHref}
-            aria-label={`${source.secondaryActionLabel}: ${source.label}`}
-            className="inline-flex min-h-9 items-center rounded-sm px-2.5 text-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+            href={source.actionHref}
+            aria-label={`${source.actionLabel}: ${source.label}`}
+            className="inline-flex min-h-8 items-center rounded-sm px-2 text-xs text-fg-muted hover:bg-surface-2 hover:text-fg"
           >
-            {source.secondaryActionLabel}
+            {source.actionLabel}
           </Link>
-        ) : null}
-        <Link
-          href={source.actionHref}
-          aria-label={`${source.actionLabel}: ${source.label}`}
-          className="inline-flex min-h-9 items-center rounded-sm border border-border px-2.5 text-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
-        >
-          {source.actionLabel}
-        </Link>
-      </div>
-    </div>
+        </ItemActionGroup>
+      </CollectionRow.Actions>
+    </CollectionRow>
   );
 }

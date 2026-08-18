@@ -4,7 +4,6 @@ import { documentKindLabel, truncateFilenameMiddle } from '@timeline/shared/docu
 import { FileText, Image as ImageIcon, Link2, Upload } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMemo, useReducer, useRef, useState, useTransition } from 'react';
-import { toast } from 'sonner';
 
 import type { ReactNode } from 'react';
 
@@ -34,6 +33,7 @@ import { ItemActionGroup } from '@/components/ui/item-actions';
 import { formatCollectionCount } from '@/lib/collection-count';
 import { displaySourceLabel } from '@/lib/display-labels';
 import { selectedValues } from '@/lib/filter-values';
+import { toastMutation } from '@/lib/mutation-toast';
 import { statusLabel } from '@/lib/status-labels';
 
 interface CapturedFileItem {
@@ -259,17 +259,18 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
         const message =
           'Could not load older captured files. The files already shown remain available. Check your connection, then try again.';
         setLoadMoreError(message);
-        toast.error('Could not load older captured files');
+        await toastMutation(Promise.resolve({ error: 'Could not load older captured files' }), {
+          loading: 'Loading captured files',
+          success: 'Loaded captured files',
+          error: 'Could not load older captured files',
+        });
       }
     });
   }
 
   if (loadedFiles.length === 0) {
     return (
-      <section
-        aria-label="Captured files"
-        className="rounded-md border border-border bg-surface px-4 py-10 text-center"
-      >
+      <section aria-label="Captured files" className="border-y border-border py-10 text-center">
         <p className="text-sm font-semibold text-fg">No captured files yet</p>
         <p className="mx-auto mt-1 max-w-md text-sm leading-6 text-fg-muted">
           Attachments from conversations and connected sources appear here before you add them to
@@ -282,57 +283,6 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
   return (
     <section aria-label="Captured files" className="space-y-4">
       <CollectionToolbar
-        count={
-          cursor
-            ? undefined
-            : formatCollectionCount({
-                matching: visibleFiles.length,
-                total: loadedFiles.length,
-                filtered: activeFilterCount > 0,
-              })
-        }
-        filters={
-          <div className="flex min-w-0 flex-wrap items-end gap-2">
-            <FilterMultiSelect
-              label="Source"
-              value={uiState.sourceFilter}
-              onValueChange={(value) => {
-                dispatchUi({ type: 'source', value });
-              }}
-              placeholder="All sources"
-              options={sourceOptions}
-            />
-            <FilterMultiSelect
-              label="Type"
-              value={uiState.typeFilter}
-              onValueChange={(value) => {
-                dispatchUi({ type: 'fileType', value });
-              }}
-              placeholder="All types"
-              options={typeOptions}
-            />
-            <FilterMultiSelect
-              label="Status"
-              value={uiState.statusFilter}
-              onValueChange={(value) => {
-                dispatchUi({ type: 'status', value });
-              }}
-              placeholder="All statuses"
-              options={statusOptions}
-            />
-            <FilterSelect
-              label="Date"
-              value={uiState.dateFilter}
-              onChange={(value) => {
-                dispatchUi({ type: 'date', value });
-              }}
-            >
-              <option value={ALL}>Any time</option>
-              <option value="7d">Last 7 days</option>
-              <option value="30d">Last 30 days</option>
-            </FilterSelect>
-          </div>
-        }
         activeFilters={[
           ...(uiState.sourceFilter
             ? [
@@ -383,8 +333,60 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
               ]
             : []),
         ]}
-        actions={
-          activeFilterCount > 0 ? (
+      >
+        {cursor ? null : (
+          <CollectionToolbar.Count>
+            {formatCollectionCount({
+              matching: visibleFiles.length,
+              total: loadedFiles.length,
+              filtered: activeFilterCount > 0,
+            })}
+          </CollectionToolbar.Count>
+        )}
+        <CollectionToolbar.Filters>
+          <div className="flex min-w-0 flex-wrap items-end gap-2">
+            <FilterMultiSelect
+              label="Source"
+              value={uiState.sourceFilter}
+              onValueChange={(value) => {
+                dispatchUi({ type: 'source', value });
+              }}
+              placeholder="All sources"
+              options={sourceOptions}
+            />
+            <FilterMultiSelect
+              label="Type"
+              value={uiState.typeFilter}
+              onValueChange={(value) => {
+                dispatchUi({ type: 'fileType', value });
+              }}
+              placeholder="All types"
+              options={typeOptions}
+            />
+            <FilterMultiSelect
+              label="Status"
+              value={uiState.statusFilter}
+              onValueChange={(value) => {
+                dispatchUi({ type: 'status', value });
+              }}
+              placeholder="All statuses"
+              options={statusOptions}
+            />
+            <FilterSelect
+              label="Date"
+              value={uiState.dateFilter}
+              onChange={(value) => {
+                dispatchUi({ type: 'date', value });
+              }}
+            >
+              <option value={ALL}>Any time</option>
+              <option value="7d">Last 7 days</option>
+              <option value="30d">Last 30 days</option>
+            </FilterSelect>
+          </div>
+        </CollectionToolbar.Filters>
+        <CollectionToolbar.Actions>
+          {activeFilterCount > 0 ? (
             <Button
               type="button"
               variant="ghost"
@@ -395,9 +397,9 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
             >
               Clear all
             </Button>
-          ) : null
-        }
-      />
+          ) : null}
+        </CollectionToolbar.Actions>
+      </CollectionToolbar>
 
       <Dialog
         open={uiState.promoting !== null}
@@ -432,7 +434,7 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
         ) : null}
       </Dialog>
       {visibleFiles.length === 0 ? (
-        <div className="rounded-md border border-border bg-surface px-4 py-8 text-center">
+        <div className="border-y border-border py-8 text-center">
           <p className="text-sm font-medium text-fg">No captured files match these filters</p>
           <p className="mt-1 text-sm leading-6 text-fg-muted">
             {cursor
@@ -499,14 +501,13 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
 
   return (
     <div style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 52px' }}>
-      <CollectionRow
-        className="min-h-13"
-        leading={
+      <CollectionRow className="min-h-13">
+        <CollectionRow.Leading>
           <span className="grid size-8 shrink-0 place-items-center rounded-sm bg-surface-2 text-fg-muted">
             <Icon aria-hidden="true" className="size-4" />
           </span>
-        }
-        title={
+        </CollectionRow.Leading>
+        <CollectionRow.Title>
           <span className="min-w-0">
             <span
               className="block truncate text-sm font-semibold leading-5 text-fg"
@@ -530,9 +531,11 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
               ) : null}
             </span>
           </span>
-        }
-        context={file.description ?? fileTypeLabel(contentType)}
-        metadata={
+        </CollectionRow.Title>
+        <CollectionRow.Context>
+          {file.description ?? fileTypeLabel(contentType)}
+        </CollectionRow.Context>
+        <CollectionRow.Metadata>
           <>
             <Badge variant="secondary" className="text-[11px] text-fg-muted">
               {displaySourceLabel(file.provenance.source)}
@@ -548,8 +551,8 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
               Updated {formatDate(file.updatedAt)}
             </span>
           </>
-        }
-        actions={
+        </CollectionRow.Metadata>
+        <CollectionRow.Actions>
           <ItemActionGroup label={`Actions for ${presentation.displayTitle}`}>
             <PinOverflowMenu
               target={{ kind: 'document', key: file.id }}
@@ -584,8 +587,8 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
               </Button>
             </DialogTrigger>
           </ItemActionGroup>
-        }
-      />
+        </CollectionRow.Actions>
+      </CollectionRow>
     </div>
   );
 }
@@ -663,22 +666,28 @@ function PromoteDialog({
     setPromotionError(null);
     startTransition(async () => {
       try {
-        const result = await promoteCapturedFileAction({
-          id: file.id,
-          name: form.name,
-          folderId: form.folderId || null,
-          visibility: form.visibility,
-          visibilityUserIds: form.visibility === 'specific_users' ? form.visibilityUserIds : [],
-        });
+        const result = await toastMutation(
+          promoteCapturedFileAction({
+            id: file.id,
+            name: form.name,
+            folderId: form.folderId || null,
+            visibility: form.visibility,
+            visibilityUserIds: form.visibility === 'specific_users' ? form.visibilityUserIds : [],
+          }),
+          {
+            loading: `Promoting ${form.name}`,
+            success: `Promoted ${form.name} to documents`,
+            error: 'Could not promote captured file',
+          },
+        );
         if (!result.ok || !result.documentId) {
-          throw new Error(result.error ?? 'Promotion failed');
+          setPromotionError(result.error ?? 'Promotion failed');
+          return;
         }
-        toast.success('Promoted to documents');
         router.push(`/app/documents/${result.documentId}`);
       } catch (error) {
         const details = error instanceof Error ? error.message : undefined;
         setPromotionError(details ?? 'Promotion failed');
-        toast.error('Could not promote captured file');
       }
     });
   }

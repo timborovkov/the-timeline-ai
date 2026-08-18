@@ -151,6 +151,7 @@ export function DigestBody({
   );
 }
 
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- Digest linked lists share the briefing payload renderer.
 function DigestList({
   label,
   items,

@@ -68,6 +68,7 @@ describe('DigestDestinationsForm', () => {
     );
 
     expect(screen.getByText('Slack #general')).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'Remove Slack #general' })).toBeTruthy();
     const add = screen.getByLabelText<HTMLSelectElement>('Add destination');
     expect([...add.options].map((option) => option.textContent)).toEqual([
       'Email every member',

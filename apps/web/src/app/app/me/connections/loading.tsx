@@ -1,5 +1,5 @@
 import { Breadcrumb } from '@/components/breadcrumb';
-import { PageHeaderSkeleton } from '@/components/loading-states';
+import { CollectionRowsSkeleton, PageHeaderSkeleton } from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function PersonalConnectionsLoading() {
@@ -21,7 +21,7 @@ export default function PersonalConnectionsLoading() {
           </div>
           <section className="space-y-3">
             <Skeleton className="h-5 w-48" />
-            <div className="rounded-lg border border-border bg-surface p-4">
+            <div className="border-y border-border py-4">
               <Skeleton className="h-4 w-2/5" />
               <Skeleton className="mt-3 h-3 w-full" />
               <Skeleton className="mt-2 h-3 w-4/5" />
@@ -29,10 +29,7 @@ export default function PersonalConnectionsLoading() {
           </section>
           <section className="space-y-3">
             <Skeleton className="h-5 w-56" />
-            <div className="grid gap-3 md:grid-cols-2">
-              <Skeleton className="h-40 rounded-lg" />
-              <Skeleton className="h-40 rounded-lg" />
-            </div>
+            <CollectionRowsSkeleton count={3} />
           </section>
         </div>
       </div>

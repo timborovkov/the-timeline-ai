@@ -8,9 +8,9 @@ import {
 import { useRouter } from 'next/navigation';
 import { useEffect, useReducer } from 'react';
 
+import { CollectionRow } from '@/components/collections/collection-row';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
@@ -272,38 +272,34 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
       </div>
 
       {minted ? (
-        <Card className="border-signal/40">
-          <CardContent className="space-y-3 pt-4">
-            <div>
-              <div className="text-sm font-medium">Copy the new URL for {minted.webhookName}</div>
-              <p className="text-sm text-fg-muted">
-                This is the only time the secret URL is shown.
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <code className="flex-1 break-all rounded-sm border border-signal/40 bg-surface-2 px-2 py-1.5 font-mono text-xs">
-                {endpointFor(minted.plaintext)}
-              </code>
-              <Button
-                size="sm"
-                onClick={() => {
-                  copyToClipboard(endpointFor(minted.plaintext));
-                }}
-              >
-                Copy
-              </Button>
-            </div>
+        <div className="space-y-3 border-y border-border py-4">
+          <div>
+            <div className="text-sm font-medium">Copy the new URL for {minted.webhookName}</div>
+            <p className="text-sm text-fg-muted">This is the only time the secret URL is shown.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 break-all rounded-sm border border-signal/40 bg-surface-2 px-2 py-1.5 font-mono text-xs">
+              {endpointFor(minted.plaintext)}
+            </code>
             <Button
               size="sm"
-              variant="ghost"
               onClick={() => {
-                dispatch({ type: 'minted', minted: null });
+                copyToClipboard(endpointFor(minted.plaintext));
               }}
             >
-              I&apos;ve copied it, dismiss
+              Copy
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              dispatch({ type: 'minted', minted: null });
+            }}
+          >
+            I&apos;ve copied it, dismiss
+          </Button>
+        </div>
       ) : null}
 
       {showCreate ? (
@@ -319,11 +315,9 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
       ) : null}
 
       {webhooks.length === 0 ? (
-        <div className="rounded-lg border border-border bg-surface p-4 text-sm text-fg-muted">
-          No ingest webhooks yet.
-        </div>
+        <p className="border-y border-border py-4 text-sm text-fg-muted">No ingest webhooks yet.</p>
       ) : (
-        <ul className="divide-y divide-border rounded-md border border-border bg-surface">
+        <ul className="divide-y divide-border border-y border-border">
           {webhooks.map((webhook) => (
             <IngestWebhookListItem
               key={webhook.id}
@@ -359,65 +353,63 @@ function IngestWebhookCreateForm({
   onCreate: () => void;
 }) {
   return (
-    <Card>
-      <CardContent className="space-y-4 pt-4">
-        <div className="space-y-1">
-          <Label htmlFor="ingest-webhook-name">Name</Label>
-          <Input
-            id="ingest-webhook-name"
-            value={name}
+    <div className="space-y-4 border-y border-border py-4">
+      <div className="space-y-1">
+        <Label htmlFor="ingest-webhook-name">Name</Label>
+        <Input
+          id="ingest-webhook-name"
+          value={name}
+          onChange={(e) => {
+            dispatch({ type: 'name', name: e.target.value });
+          }}
+          placeholder="Pipedrive webhook"
+        />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={visibilityDefault === 'team'}
             onChange={(e) => {
-              dispatch({ type: 'name', name: e.target.value });
-            }}
-            placeholder="Pipedrive webhook"
-          />
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={visibilityDefault === 'team'}
-              onChange={(e) => {
-                dispatch({
-                  type: 'visibilityDefault',
-                  visibilityDefault: e.target.checked ? 'team' : 'private',
-                });
-              }}
-            />
-            Team-visible by default
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={proposalGenerationEnabled}
-              onChange={(e) => {
-                dispatch({
-                  type: 'proposalGenerationEnabled',
-                  proposalGenerationEnabled: e.target.checked,
-                });
-              }}
-            />
-            Generate approval proposals
-          </label>
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="ingest-webhook-event-class">Timeline type</Label>
-          <EventClassSelect
-            id="ingest-webhook-event-class"
-            value={eventClass}
-            onChange={(next) => {
-              dispatch({ type: 'eventClass', eventClass: next });
+              dispatch({
+                type: 'visibilityDefault',
+                visibilityDefault: e.target.checked ? 'team' : 'private',
+              });
             }}
           />
-          <p className="text-xs text-fg-muted">
-            {TIMELINE_EVENT_CLASS_OPTIONS.find((option) => option.value === eventClass)?.hint}
-          </p>
-        </div>
-        <Button size="sm" disabled={busy || !name.trim()} onClick={onCreate}>
-          {busy ? 'Creating…' : 'Create webhook'}
-        </Button>
-      </CardContent>
-    </Card>
+          Team-visible by default
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={proposalGenerationEnabled}
+            onChange={(e) => {
+              dispatch({
+                type: 'proposalGenerationEnabled',
+                proposalGenerationEnabled: e.target.checked,
+              });
+            }}
+          />
+          Generate approval proposals
+        </label>
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor="ingest-webhook-event-class">Timeline type</Label>
+        <EventClassSelect
+          id="ingest-webhook-event-class"
+          value={eventClass}
+          onChange={(next) => {
+            dispatch({ type: 'eventClass', eventClass: next });
+          }}
+        />
+        <p className="text-xs text-fg-muted">
+          {TIMELINE_EVENT_CLASS_OPTIONS.find((option) => option.value === eventClass)?.hint}
+        </p>
+      </div>
+      <Button size="sm" disabled={busy || !name.trim()} onClick={onCreate}>
+        {busy ? 'Creating…' : 'Create webhook'}
+      </Button>
+    </div>
   );
 }
 
@@ -435,84 +427,86 @@ function IngestWebhookListItem({
 }) {
   const credential = webhook.credentials[0];
   const disabled = Boolean(webhook.disabledAt);
+  const context = [
+    disabled ? 'disabled' : 'active',
+    eventClassLabel(webhook.eventClass),
+    `visibility ${webhook.visibilityDefault}`,
+    `proposals ${webhook.proposalGenerationEnabled ? 'on' : 'off'}`,
+    credential
+      ? `${credential.prefix}... · last used ${
+          credential.lastUsedAt ? new Date(credential.lastUsedAt).toLocaleString() : 'never'
+        }`
+      : 'no active credential',
+  ].join(' · ');
   return (
-    <li className="space-y-3 p-3">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-sm font-medium">{webhook.name}</div>
-          <div className="font-mono text-xs text-fg-muted">
-            {disabled ? 'disabled' : 'active'} · {eventClassLabel(webhook.eventClass)} · visibility{' '}
-            {webhook.visibilityDefault} · proposals{' '}
-            {webhook.proposalGenerationEnabled ? 'on' : 'off'}
-            {credential
-              ? ` · ${credential.prefix}... · last used ${
-                  credential.lastUsedAt ? new Date(credential.lastUsedAt).toLocaleString() : 'never'
-                }`
-              : ' · no active credential'}
-          </div>
-        </div>
-        <ItemActionGroup label={`Actions for ${webhook.name}`}>
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={disabled}
-            onClick={() => void onRotate(webhook.id, webhook.name)}
+    <li>
+      <CollectionRow>
+        <CollectionRow.Title>{webhook.name}</CollectionRow.Title>
+        <CollectionRow.Context>{context}</CollectionRow.Context>
+        <CollectionRow.Metadata>
+          <label
+            className="flex min-w-40 items-center gap-2"
+            htmlFor={`ingest-webhook-type-${webhook.id}`}
           >
-            Rotate
-          </Button>
-          <ItemOverflowMenu targetLabel={webhook.name}>
-            <DropdownMenuItem
+            <span className="sr-only">Timeline type</span>
+            <EventClassSelect
+              id={`ingest-webhook-type-${webhook.id}`}
+              value={webhook.eventClass}
               disabled={disabled}
-              className="text-destructive focus:text-destructive"
-              onSelect={() => void onDisable(webhook.id, webhook.name)}
+              onChange={(next) => {
+                void onPatch(webhook.id, { eventClass: next });
+              }}
+            />
+          </label>
+          <label className="flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={webhook.visibilityDefault === 'team'}
+              disabled={disabled}
+              onChange={(e) =>
+                void onPatch(webhook.id, {
+                  visibilityDefault: e.target.checked ? 'team' : 'private',
+                })
+              }
+            />
+            Team-visible
+          </label>
+          <label className="flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={webhook.proposalGenerationEnabled}
+              disabled={disabled}
+              onChange={(e) =>
+                void onPatch(webhook.id, {
+                  proposalGenerationEnabled: e.target.checked,
+                })
+              }
+            />
+            Proposals
+          </label>
+        </CollectionRow.Metadata>
+        <CollectionRow.Actions>
+          <ItemActionGroup label={`Actions for ${webhook.name}`}>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={disabled}
+              onClick={() => void onRotate(webhook.id, webhook.name)}
             >
-              Disable
-            </DropdownMenuItem>
-          </ItemOverflowMenu>
-        </ItemActionGroup>
-      </div>
-      <div className="flex flex-wrap items-end gap-3 text-sm">
-        <label
-          className="flex min-w-40 flex-col gap-1"
-          htmlFor={`ingest-webhook-type-${webhook.id}`}
-        >
-          <span className="text-xs text-fg-muted">Timeline type</span>
-          <EventClassSelect
-            id={`ingest-webhook-type-${webhook.id}`}
-            value={webhook.eventClass}
-            disabled={disabled}
-            onChange={(next) => {
-              void onPatch(webhook.id, { eventClass: next });
-            }}
-          />
-        </label>
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={webhook.visibilityDefault === 'team'}
-            disabled={disabled}
-            onChange={(e) =>
-              void onPatch(webhook.id, {
-                visibilityDefault: e.target.checked ? 'team' : 'private',
-              })
-            }
-          />
-          Team-visible
-        </label>
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={webhook.proposalGenerationEnabled}
-            disabled={disabled}
-            onChange={(e) =>
-              void onPatch(webhook.id, {
-                proposalGenerationEnabled: e.target.checked,
-              })
-            }
-          />
-          Proposals
-        </label>
-      </div>
+              Rotate
+            </Button>
+            <ItemOverflowMenu targetLabel={webhook.name}>
+              <DropdownMenuItem
+                disabled={disabled}
+                className="text-destructive focus:text-destructive"
+                onSelect={() => void onDisable(webhook.id, webhook.name)}
+              >
+                Disable
+              </DropdownMenuItem>
+            </ItemOverflowMenu>
+          </ItemActionGroup>
+        </CollectionRow.Actions>
+      </CollectionRow>
     </li>
   );
 }

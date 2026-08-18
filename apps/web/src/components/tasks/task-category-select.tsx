@@ -3,7 +3,6 @@
 import { TASK_CATEGORY_OPTIONS } from '@timeline/shared/task-categories/types';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
-import { toast } from 'sonner';
 
 import type {
   TaskCategory,
@@ -19,6 +18,7 @@ import {
 } from '@/app/actions/objects';
 import { useTaskCategoryPolling } from '@/components/tasks/task-category-polling';
 import { isoTimestamp } from '@/lib/iso-timestamp';
+import { toastMutation } from '@/lib/mutation-toast';
 import { errorMessage } from '@/lib/utils';
 
 const AUTOMATIC_VALUE = '__automatic__';
@@ -55,25 +55,32 @@ export function TaskCategorySelect({
     setError(null);
     startTransition(async () => {
       try {
-        const result = await action();
-        if (result.error) setError(result.error);
-        else {
-          router.refresh();
-          if (result.undoChangeId) {
-            const changeId = result.undoChangeId;
-            toast.success('Category changed', {
-              action: {
-                label: 'Undo',
-                onClick: () => {
-                  void undoTaskCategoryChangeAction({ id: taskId, changeId }).then((undoResult) => {
-                    if (undoResult.error) toast.error(undoResult.error);
-                    else router.refresh();
-                  });
-                },
+        const result = await toastMutation(action(), {
+          loading: 'Updating category',
+          success: 'Category changed',
+          error: 'Category update failed',
+          undo: (mutation) => {
+            const changeId = mutation.undoChangeId;
+            if (!changeId) return undefined;
+            return {
+              onClick: () => {
+                void undoTaskCategoryChangeAction({ id: taskId, changeId }).then((undoResult) => {
+                  if (undoResult.error) {
+                    void toastMutation(Promise.resolve(undoResult), {
+                      loading: 'Undoing category change',
+                      success: 'Category restored',
+                      error: undoResult.error,
+                    });
+                    return;
+                  }
+                  router.refresh();
+                });
               },
-            });
-          }
-        }
+            };
+          },
+        });
+        if (result.error) setError(result.error);
+        else router.refresh();
       } catch (cause) {
         setError(errorMessage(cause, 'Category update failed'));
       }
@@ -112,7 +119,7 @@ export function TaskCategorySelect({
           onClick={() => {
             run(() => retryTaskCategoryAction({ id: taskId }));
           }}
-          className="font-mono text-[10px] uppercase tracking-[0.1em] text-signal hover:underline disabled:opacity-60"
+          className="text-[11px] text-signal hover:underline disabled:opacity-60"
         >
           Retry automatic category
         </button>

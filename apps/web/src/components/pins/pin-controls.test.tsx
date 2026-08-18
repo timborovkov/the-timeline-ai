@@ -18,7 +18,13 @@ vi.mock('@/app/actions/pins', () => ({
   pinTargetAction: fakes.pinTargetAction,
   unpinTargetAction: fakes.unpinTargetAction,
 }));
-vi.mock('sonner', () => ({ toast: { error: fakes.toastError } }));
+vi.mock('sonner', () => ({
+  toast: {
+    error: fakes.toastError,
+    loading: vi.fn(() => 'toast-1'),
+    success: vi.fn(),
+  },
+}));
 
 const { PinButton } = await import('@/components/pins/pin-button');
 const { PinnedWorkspacePreview } = await import('@/components/pins/pinned-workspace-preview');
@@ -109,7 +115,9 @@ describe('shared pin controls', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Launch plan')).toBeTruthy();
-      expect(fakes.toastError).toHaveBeenCalledWith('Could not unpin that item.');
+      expect(fakes.toastError).toHaveBeenCalledWith('Could not unpin that item.', {
+        id: 'toast-1',
+      });
     });
   });
 });

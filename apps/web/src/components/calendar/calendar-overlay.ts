@@ -1,3 +1,10 @@
+export interface CalendarLinkedObject {
+  id: string;
+  title: string;
+  type: string;
+  relationshipType: string;
+}
+
 export interface CalendarEvent {
   id: string;
   title: string;
@@ -17,6 +24,7 @@ export interface CalendarEvent {
   visibility: string;
   visibilityUserIds: string[] | null;
   pinned: boolean;
+  linkedObjects: CalendarLinkedObject[];
 }
 
 export interface CalendarOverlayState {
@@ -138,6 +146,9 @@ export function calendarEventsSignature(events: CalendarEvent[]): string {
         String(event.redacted),
         event.visibility,
         event.visibilityUserIds?.join(',') ?? '',
+        event.linkedObjects
+          .map((object) => `${object.id}:${object.relationshipType}:${object.title}`)
+          .join(','),
       ].join('\u001f'),
     )
     .sort()
