@@ -2,10 +2,10 @@ import { Children, isValidElement, type ReactElement, type ReactNode } from 'rea
 
 const SLOT_NAME = Symbol('collectionSlotName');
 
-type CollectionSlotProps = {
+interface CollectionSlotProps {
   children?: ReactNode;
   title?: string;
-};
+}
 
 type CollectionSlotComponent = ((props: CollectionSlotProps) => ReactElement | null) & {
   [SLOT_NAME]: string;
