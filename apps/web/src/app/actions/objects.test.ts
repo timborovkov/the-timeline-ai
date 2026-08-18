@@ -11,6 +11,7 @@ import {
   generateObjectSummaryAction,
   loadTaskCategoryFilterStateAction,
   loadTaskRowsAction,
+  loadObjectRowsAction,
   markAllNotificationsReadAction,
   markNotificationReadAction,
   mergeObjectsAction,
@@ -368,7 +369,7 @@ describe('loadTaskRowsAction', () => {
     expect(fakes.fakeObjects.listObjects).toHaveBeenCalledWith({
       type: 'task',
       archived: false,
-      limit: 501,
+      limit: 81,
       cursor: 'older',
     });
   });
@@ -397,7 +398,27 @@ describe('loadTaskRowsAction', () => {
       type: 'task',
       status: ['todo'],
       archived: false,
-      limit: 501,
+      limit: 81,
+      cursor: 'older',
+    });
+  });
+});
+
+describe('loadObjectRowsAction', () => {
+  it('loads a cursor-paginated object window', async () => {
+    const result = await loadObjectRowsAction({ cursor: 'older', filters: { type: 'task' } });
+
+    expect(result.nextCursor).toBeNull();
+    expect(result.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: OBJECT_ID, canonicalName: 'Current Object' }),
+      ]),
+    );
+
+    expect(fakes.fakeObjects.listObjects).toHaveBeenCalledWith({
+      type: 'task',
+      archived: false,
+      limit: 49,
       cursor: 'older',
     });
   });

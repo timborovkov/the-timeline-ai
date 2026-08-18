@@ -159,21 +159,21 @@
         applies to this event, this and all future events, or the whole series.
       </p>
       <p>
-        The page leads with the calendar grid, then shows a paged event list. The list starts on
-        upcoming events from today, supports past and all-event scopes, and searches event title,
-        description, location, or redacted busy blocks through the team-scoped calendar query. These
-        scopes cover the rolling list window of two years before and after today, so
+        The page leads with the calendar grid, then shows an infinite-scrolling event list. The list
+        starts on upcoming events from today, supports past and all-event scopes, and searches event
+        title, description, location, or redacted busy blocks through the team-scoped calendar
+        query. These scopes cover the rolling list window of two years before and after today, so
         <code>eventScope=all</code> means all events in that window rather than the full historical
         archive. Past and future buckets are separated by event start time, while the all-event
         scope includes any event intersecting the rolling window. The list state is shareable
-        through <code>eventScope=past|all</code>, <code>eventQ</code>, and
-        <code>eventPage</code> URL parameters.
+        through <code>eventScope=past|all</code> and <code>eventQ</code> URL parameters.
       </p>
       <p>
         The Timeline is the historical activity surface, so its default query ends at the current
         instant even though recurrence workers materialize later occurrences. Teammates can opt in
         to a bounded seven-day upcoming Timeline view; longer future schedules belong here on the
-        Calendar page. Timeline date filters and pagination enforce the same seven-day future cap.
+        Calendar page. Timeline date filters and infinite scroll enforce the same seven-day future
+        cap.
       </p>
       <p>
         Manual edits use the same recurrence modes as accepted suggestions:
@@ -188,8 +188,8 @@
           <code>packages/shared/src/calendar/scope.ts</code> and
           <code>packages/shared/src/calendar/recurrence.ts</code>, with raw timeline event helpers
           in <code>packages/shared/src/calendar/raw-events.ts</code>. The scoped calendar port
-          exposes <code>listCalendarEventPage</code> for the paged/searchable event list in addition
-          to the grid-oriented <code>listCalendarEvents</code> range query.
+          exposes <code>listCalendarEventPage</code> for the searchable event list in addition to
+          the grid-oriented <code>listCalendarEvents</code> range query.
         </li>
         <li>
           Task and board due-date calendar mirroring lives in

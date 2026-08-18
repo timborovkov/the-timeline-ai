@@ -11,6 +11,7 @@ const IDS = {
   version: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
   chunk: '12121212-1212-4121-8121-121212121212',
   calendar: '34343434-3434-4343-8343-343434343434',
+  meeting: '56565656-5656-4565-8565-565656565650',
   board: '56565656-5656-4565-8565-565656565656',
   boardItem: '78787878-7878-4787-8787-787878787878',
   lane: '90909090-9090-4909-8909-909090909090',
@@ -28,6 +29,7 @@ const fakes = vi.hoisted(() => ({
   listDocumentVersions: vi.fn(),
   getCalendarEvent: vi.fn(),
   getCalendarSettings: vi.fn(),
+  listEventsForMomentLookup: vi.fn(),
   getBoard: vi.fn(),
   getBoardItem: vi.fn(),
   getS3PresignClient: vi.fn(),
@@ -49,6 +51,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
     timeline: {
       getEventsByIds: fakes.getEventsByIds,
       resolveEventSenders: fakes.resolveEventSenders,
+      listEventsForMomentLookup: fakes.listEventsForMomentLookup,
     },
     objects: {
       getObject: fakes.getObject,
@@ -121,6 +124,7 @@ beforeEach(() => {
   fakes.getAudioBucket.mockReturnValue('audio');
   fakes.getSignedGetObjectUrl.mockResolvedValue('https://signed-audio.test/file.mp3');
   fakes.getCalendarSettings.mockResolvedValue({ defaultTimezone: 'UTC' });
+  fakes.listEventsForMomentLookup.mockResolvedValue([]);
   fakes.getEventsByIds.mockResolvedValue([
     {
       id: IDS.event,
@@ -294,6 +298,141 @@ describe('POST /api/artifacts/preview', () => {
     expect(body).toContain('"label":"Source","value":"Telegram"');
     expect(body).toContain('"label":"Sender","value":"Mikael (Miku, @miku)"');
     expect(body).toContain('"label":"Conversation","value":"AuditAI Founders"');
+    expect(body).toContain('"label":"Open on Timeline"');
+    expect(body).toContain(`/app/timeline?event=${IDS.event}#ev-${IDS.event}`);
+    expect(body).toContain('"original":');
+    expect(body).toContain('Original message');
+  });
+
+  it('gives meeting events transcript, calendar, and timeline destinations plus original payload', async () => {
+    fakes.getEventsByIds.mockResolvedValueOnce([
+      {
+        id: IDS.event,
+        source: 'meeting',
+        contentText: '[0s] Mikael: Next up.',
+        contentAudioUrl: null,
+        occurredAt: new Date('2026-07-17T08:01:00.000Z'),
+        visibility: 'team',
+        authorUserId: null,
+        sourceMetadata: {
+          meeting_id: IDS.meeting,
+          calendar_event_id: IDS.calendar,
+          title: 'Daily standup',
+        },
+      },
+    ]);
+    fakes.resolveEventSenders.mockResolvedValueOnce(new Map());
+
+    const response = await POST(request({ ref: { kind: 'timeline_event', id: IDS.event } }));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      preview: {
+        title: 'Meeting event',
+        href: `/app/meetings/${IDS.meeting}`,
+        actions: [
+          {
+            href: `/app/meetings/${IDS.meeting}`,
+            label: 'Open transcript',
+            primary: true,
+          },
+          {
+            href: `/app/calendar?date=2026-06-15&view=day&event=${IDS.calendar}`,
+            label: 'Open calendar',
+            primary: false,
+          },
+          {
+            href: `/app/timeline?event=${IDS.event}#ev-${IDS.event}`,
+            label: 'Open on Timeline',
+            primary: false,
+          },
+        ],
+        original: { label: 'Original transcript' },
+      },
+    });
+    expect(fakes.getCalendarEvent).toHaveBeenCalledWith(IDS.calendar);
+  });
+
+  it('opens calendar citations on the event and can jump to the mirrored timeline moment', async () => {
+    fakes.listEventsForMomentLookup.mockResolvedValueOnce([
+      {
+        id: IDS.event,
+        source: 'calendar',
+        contentText: 'Pilot sync',
+        sourceMetadata: { calendar_event_id: IDS.calendar, title: 'Pilot sync' },
+      },
+    ]);
+
+    const response = await POST(request({ ref: { kind: 'calendar_event', id: IDS.calendar } }));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      preview: {
+        title: 'Pilot sync',
+        href: `/app/calendar?date=2026-06-15&view=day&event=${IDS.calendar}`,
+        actions: [
+          {
+            href: `/app/calendar?date=2026-06-15&view=day&event=${IDS.calendar}`,
+            label: 'Open calendar',
+            primary: true,
+          },
+          {
+            href: `/app/timeline?event=${IDS.event}#ev-${IDS.event}`,
+            label: 'Open on Timeline',
+            primary: false,
+          },
+        ],
+      },
+    });
+  });
+
+  it('links document chunks to the library and the capturing timeline event', async () => {
+    fakes.getDocument.mockResolvedValueOnce({
+      id: IDS.document,
+      fileKind: 'document',
+      name: 'Pilot Notes',
+      folderId: null,
+      currentVersionId: IDS.version,
+      ownerUserId: IDS.user,
+      visibility: 'team',
+      visibilityUserIds: null,
+      metadata: {},
+      sourceRawEventId: IDS.event,
+      createdAt: new Date('2026-06-14T09:00:00.000Z'),
+      updatedAt: new Date('2026-06-14T10:00:00.000Z'),
+    });
+
+    const response = await POST(
+      request({
+        ref: {
+          kind: 'document_chunk',
+          id: IDS.chunk,
+          documentId: IDS.document,
+          version: 2,
+          chunkId: IDS.chunk,
+        },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      preview: {
+        title: 'Pilot Notes',
+        href: `/app/documents/${IDS.document}?version=2#chunk-${IDS.chunk}`,
+        actions: [
+          {
+            href: `/app/documents/${IDS.document}?version=2#chunk-${IDS.chunk}`,
+            label: 'Open in Documents',
+            primary: true,
+          },
+          {
+            href: `/app/timeline?event=${IDS.event}#ev-${IDS.event}`,
+            label: 'Open on Timeline',
+            primary: false,
+          },
+        ],
+      },
+    });
   });
 
   it('returns generic not-found for invalid, missing, or mismatched refs', async () => {

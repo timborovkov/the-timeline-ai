@@ -1,21 +1,15 @@
 import Link from 'next/link';
 
-export type TaskView = 'kanban' | 'list';
-
-export function taskViewHref(
-  view: TaskView,
-  taskId: string | null,
-  extraParams: Record<string, string> = {},
-): string {
-  const params = new URLSearchParams({ ...extraParams, view });
-  if (taskId) params.set('task', taskId);
-  return `/app/tasks?${params.toString()}`;
-}
+import {
+  EMPTY_TASK_VIEW_FILTER_PARAMS,
+  taskViewHref,
+  type TaskView,
+} from '@/components/tasks/task-view';
 
 export function TaskViewToggle({
   view,
   selectedTaskId,
-  filterParams = {},
+  filterParams = EMPTY_TASK_VIEW_FILTER_PARAMS,
 }: {
   view: TaskView;
   selectedTaskId: string | null;

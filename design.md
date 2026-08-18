@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.7 · Action toasts and shared copy controls (2026-08-17). Replaces v3.6 Team setup loop and Home timeline links.
+**Version:** v3.9 · Digest date header, footer window, and activity strip (2026-08-17). Replaces v3.8 Infinite scroll with Linear timeline rows.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -12,9 +12,9 @@ update this document in the same change.
 Timeline is a calm working archive: concise enough to scan, rigorous enough to
 trust, and explicit about its evidence when a person asks for it.
 
-The evidence-driven identity remains structural through the timeline rail,
-citations, inspectors, and audit disclosures. It is not expressed by exposing
-database implementation details in ordinary product views.
+The evidence-driven identity remains structural through the timeline
+chronology, citations, inspectors, and audit disclosures. It is not expressed
+by exposing database implementation details in ordinary product views.
 
 ### Product language
 
@@ -28,10 +28,11 @@ database implementation details in ordinary product views.
   work while keeping evidence association separate from source authority.
 - **Approval-backed state** is durable work state that passed human review.
 
-Count chrome: Moments mode and digest headlines count **moments**; Audit trail,
+Count chrome: Moments mode and digest headlines count **moments**; All events,
 source filters, and technical disclosures count **source events**. Moment rows
-use **signals** for bundled evidence size; the inspector uses **evidence
-items**. Do not show competing moment and raw-event totals in the same chrome.
+do not show competing signal chips; the inspector uses **evidence items** for
+conversations and an **Activity** log for pulses. Do not show competing moment
+and raw-event totals in the same chrome.
 
 Prefer concrete customer language over internal architecture terms. A user
 should understand what happened, what needs attention, and what they can do
@@ -132,15 +133,16 @@ Ask, Work, Documents, Meetings, Connections, and Team.
   row shows last-activity age; archive stays hidden until hover or focus on
   desktop. A search field under New chat filters history. The Ask heading keeps
   the selected title on the same row and does not show a session count.
-- Inspector: hidden until content exists. Desktop uses the right pane; mobile
-  uses a focus-managed bottom sheet.
+- Inspector: hidden until content exists. Desktop uses a reading pane up to
+  `min(40%, 36rem)`; mobile uses a taller focus-managed bottom sheet.
 - Work routes share `WorkSubnav`: Overview, Pinned, Objects, Tasks, Boards,
   Calendar, Approvals.
 - Team settings use URL-backed `SettingsNav`: Members, General, Preferences,
   Visibility, Email, Exports, and admin-only Advanced.
 
-The `IndexStrip` is restricted to Timeline and explicit audit/operator views.
-It supplements the page title and must never create a second heading.
+The `IndexStrip` is restricted to explicit audit/operator views. Timeline uses
+a sticky collection toolbar under the 48px shell header instead of an index
+strip or loaded-count heading.
 
 ## Shared components
 
@@ -192,8 +194,11 @@ signal.
 
 Collection transitions last 150–200ms and are limited to background, border,
 opacity, and transform. They honor reduced motion. No collection introduces a
-new global keyboard shortcut; existing inspectors, drag handles, pagination,
-evidence links, and URL state remain the interaction contract.
+new global keyboard shortcut; existing inspectors, drag handles, infinite
+scroll with virtualization, evidence links, and URL state remain the interaction
+contract. Collection inventories use `24 of 847` when a filter is on and `847`
+when it is not. Timeline has no inventory chip; Moments versus All events is
+the page mode.
 
 ### SectionHeading
 
@@ -254,11 +259,27 @@ audit view.
 
 ### Evidence and citations
 
-Timeline evidence cues use a compact, mono, lime “View evidence · N signals”
-label that makes the inspector affordance explicit and remains keyboard
-operable. Opening the evidence inspector shows a human source summary first.
-Exact timestamps, ownership/visibility internals, source IDs, payloads, and raw
-provider data sit inside the inspector’s `TechnicalDetails`.
+Timeline rows themselves are the inspector affordance. Conversations and
+meetings read as stories; pull requests, issues, and other named records read
+as compact work records; CI, telemetry, and webhook chatter read as one-line
+pulses. Opening a row shows a human source summary first. Original source
+(full message, email HTML, transcript, or webhook/JSON payload) sits in a
+collapsed inspector disclosure with a readable preview: HTML in a sandboxed
+frame, text as prose, JSON in Commit Mono. Attached documents link to the
+document drive. Exact timestamps, ownership/visibility internals, source IDs,
+and other implementation keys stay inside `TechnicalDetails`. Ask answers cite
+raw source events as lime `[ev:…]` chips, objects as `[ent:…]`, and notes as
+`[note:…]`. Those tokens do not appear on timeline rows. Each inspector
+evidence item shows the matching copyable `[ev:…]` chip so a cited source can
+be identified without putting database IDs on the archive list. Clicking a
+citation opens a preview with the same evidence-first layout as the inspector:
+the readable excerpt, a collapsed original-source disclosure (HTML, text, or
+JSON payload), and named destinations instead of a generic “Open full page.”
+A meeting citation’s primary action is the transcript page, with calendar and
+Timeline moment links when those records exist. Document citations open the
+library (and the capturing timeline event when known); calendar citations open
+the event on Calendar and can jump to the mirrored Timeline moment. Other
+kinds keep one primary workspace page — object, task, board, or help route.
 
 Pack-backed approvals show a compact “Evidence for this change · N sources”
 disclosure beneath each proposed item, using source, sender, timestamp, bounded
@@ -298,6 +319,26 @@ when every group is zero. Pinned work, digest, and a dense recent-moments scan
 follow as full-width sections without duplicating Timeline or Connections.
 These sections prefer horizontal rules and rows over bordered dashboard cards.
 
+The latest digest stays folded until opened. Its summary and section bodies are
+readable prose, not inventories of pull requests or IDs. The generator bans
+pull-request numbers, commit hashes, CI run IDs, ticket keys, and object
+UUIDs: it scrubs them from the briefing packet, retries a draft that still
+lists them, and discards that draft if the rewrite fails. Narrative sections
+use Highlights, Status, Completed, In progress, Decisions, Risks, and
+Follow-ups; Status is the current state of work, not a product-specific label.
+Empty sections and empty task, object, or calendar groups are omitted. The
+header shows the digest date; the covering time range stays footer metadata.
+Activity is a hairline count strip using the same mono lime numbers as Home
+Attention, and is hidden when every count is zero. Task, object, and
+calendar blocks are ordinary linked lists: newly created or completed tasks,
+new non-task objects, calendar events that fell in the digest window, and
+upcoming events. Titles use the same underlined Home treatment in the app and
+the same lime underlined links as other mail. Repeating calendar series
+collapse to one upcoming entry. Titles open the object or the specific calendar
+event on the dashboard. Work → Digests lists generated days as collapsed rows
+so a teammate can open a specific day. Quiet windows stay skipped and are not
+emailed; upcoming calendar alone does not make an inactive team look busy.
+
 Pinned work is one personal, mixed collection. It may contain canonical
 objects (including tasks, projects, deals, people, and object-type documents),
 boards, library documents and captured files, meetings and saved meetings,
@@ -320,10 +361,23 @@ rest of the archive.
 
 ### Timeline
 
-Timeline is the strongest archive expression. Each row leads with time, source,
-human title, one supporting line, and meaningful impact/status. The rail, sticky
-dates, evidence quick view, and pagination remain. Exact capture and provider
-details move into the inspector. The default view ends at the current instant so
+Timeline is the strongest archive expression. Chrome is a sticky
+`CollectionToolbar` under the 48px shell header, with **Moments** and **All
+events** as the view control. Moments group related activity and give rows
+different visual weight. All events is a uniform compact log of every captured
+source event. The labels and the row density should make the difference
+obvious without a lecture. Timeline has no inventory chip; Moments versus All
+events is the page mode.
+
+Each Moments row is a Linear-style collection row: time, one source icon, a
+single title line, and at most one muted context line. Do not duplicate the
+icon on a rail node, and do not stack source, actor, title, and preview as
+separate competing headings. Stories and records share that same skeleton;
+pulses stay one muted line. Impact on the row is omitted; the inspector shows
+workspace consequences, structured facts, a matching `[ev:…]` citation chip per
+source evidence item, and a collapsed Original source
+disclosure. Attached files link to Documents. Sticky dates (`top-11` under the
+toolbar) and infinite scroll with virtualized rows remain. The default view ends at the current instant so
 materialized calendar occurrences do not displace recent work. Upcoming context
 is an explicit seven-day view; the Calendar surface owns the complete future
 schedule. Compact Home moments are a denser scan of the same formatter: time,
@@ -349,7 +403,9 @@ list. Session counts do not appear in the header.
 
 The web Ask surface is the rich research view: answers may be thorough and use
 sections, lists, or tables, while inline citations remain inspectable links to
-evidence. External chat delivery uses the same retrieval and grounding but a
+evidence. Citation previews reuse the inspector’s original-source viewer and
+named destinations (transcript, calendar, documents, Timeline moment) rather
+than a single unlabeled page jump. External chat delivery uses the same retrieval and grounding but a
 compact plain-text presentation, normally one short paragraph or three to five
 bullets. Telegram, Slack, and future external chat providers never expose
 Timeline citation syntax, raw-event IDs, or generic source footers. Explicit
@@ -358,19 +414,58 @@ requests for more detail may expand within the provider-safe reply limit.
 ### Work and settings
 
 Work pages share one subnavigation and lead with the task at hand, not a grid of
-links. Work overview puts pinned and team boards above the work queue so saved
-surfaces stay in reach before due and assigned items. Tasks default to the
-grouped list; the list table is full-bleed inside the work canvas, without extra
-page gutters around the rows. Kanban/List view controls sit on the CollectionToolbar
-row with search and filters, not on a second strip. Loading placeholders match the
-requested view and default to list. Kanban cards stay compact: a clamped title plus
-one metadata row, with no redundant type label. Team settings render one URL-selected
+links. Work → Digests is the day-by-day archive of those briefings. Work overview
+puts pinned and team boards above the work queue so saved surfaces stay in reach
+before due and assigned items. Tasks default to the grouped list; the list table
+is full-bleed inside the work canvas, without extra page gutters around the rows.
+Kanban/List view controls sit on the CollectionToolbar row with search and
+filters, not on a second strip. Loading placeholders match the requested view
+and default to list. Kanban cards stay compact: a clamped title plus one
+metadata row, with no redundant type label. Team settings render one URL-selected
 section at a time. Field validation stays on the edited form; pending, success,
 and server failures use the shared action toast. Member, object, source,
 and artifact labels never fall back to UUIDs.
 
+Job recovery is an admin-only queue, not a processing inventory.
+Members who open `/app/team/jobs` see an Admins-only empty state. Home
+“recoverable jobs” and the jobs page share the same 7-day failed/stuck count,
+and only admins see that Home link. The page uses a sentence-case `PageHeader`
+titled Job recovery, with Team breadcrumbs like other team drill-downs. The
+header is the title and the 7-day subtitle; it has no access, team, or count
+metadata row. It groups Failed then Stuck. Kind filters appear
+only when more than one job kind is present. Rows show status, label, and
+relative time. Retry and dismiss live in the row overflow menu; bulk Retry
+failed and Dismiss all stay on the toolbar. Hovering a row’s label or time
+shows the formatted timestamp, job ID, artifact UUID, and raw provider error
+when one exists. Jobs older than 7 days are hidden from attention; admins can
+dismiss them in bulk, and the action keeps going with a loading toast until the
+hidden count is cleared. The visible 7-day list pages through the current
+snapshot with the shared infinite-scroll sentinel. Retry and dismiss
+use the shared action-toast lifecycle (`notifyAction`), including mapped
+sentence-like partial errors. Unprocessed
+backlog counts (events still waiting for extraction or embedding) and the
+conversation-suggestion backfill stay inside closed Advanced tools and never
+use “needs attention” language. That fold lists backlog counts as dense rows,
+not a card grid, and shows finished jobs as status, label, and time.
+
+Reconciliation is an admin-only health view, not a retry queue. Members who
+open `/app/team/reconciliation` see an Admins-only empty state. The page
+explains itself in the header. The header is the title and subtitle; it has no
+access, team, or coverage-count metadata row. Sources that still need evidence
+appear as dense rows, then a Check coverage / Preview repair toolbar with hover
+hints, then Recent clusters and Recent outputs as ordinary section titles. There
+is no How it works primer,
+Recently reconciled heading, release-gate banner, or stat-card strip.
+Evidence-by-source counts, manual UUID reconcile, and run history stay inside
+closed Advanced tools. That fold uses the same quiet disclosure, sentence-case
+section titles, and dense count/history rows as the rest of the page — not
+uppercase eyebrows, badge clouds, or a metric strip. Cluster IDs, output IDs, raw-event IDs, and raw enum keys
+stay in the row hover title. Cluster output JSON copy lives in the row overflow
+menu. Cluster detail uses Team / Reconciliation breadcrumbs without a second
+back link; Reconcile and View workspace item sit in the header.
+
 Work → Pinned is the complete pin-management surface. It is a single
-side-to-side list with cursor pagination and All, Objects, Boards, Documents,
+side-to-side list with infinite scroll, virtualization, and All, Objects, Boards, Documents,
 Meetings, Calendar, and Timeline filters. Reordering is available only under
 All so filtered adjacency never changes the mixed global order implicitly.
 Drag reorder has equivalent keyboard actions for move up, down, top, and
@@ -554,9 +649,21 @@ second indexable destination.
 
 ### Administrator dashboards
 
-Jobs, Reconciliation, Audit, and Integration Audit preserve filters, retries,
-replay actions, and copy access. Human summaries and actionable failures lead.
-UUIDs, raw IDs, refs, and JSON remain closed inside `TechnicalDetails`.
+Jobs and Reconciliation list rows show status, a human label, and relative time.
+IDs, raw enum keys, and provider errors stay in the row hover title. Copy access
+for reconciliation JSON payloads lives in the row overflow menu. Audit and
+Integration Audit still keep UUIDs, refs, and JSON closed inside
+`TechnicalDetails`. Job recovery pages the 7-day snapshot and finished archive
+with the shared infinite-scroll sentinel. Job recovery’s header is title and
+subtitle only; older hidden jobs stay in the body banner. Reconciliation has no
+stat-card strip and no release-gate banner; coverage actions sit on a toolbar
+with hover hints. The dashboard header is title and subtitle only; coverage
+counts stay in the screen-reader summary and Advanced tools. Recent clusters
+and Recent outputs use the same sentence-case section title as
+the rest of the product. Manual UUID reconcile stays in Advanced tools. Job
+recovery Advanced tools uses the same quiet disclosure: unprocessed backlog as
+count rows, conversation suggestions as a heading with actions, and finished
+jobs as status/label/time rows with queue names in the hover title.
 
 ## Action toasts
 
@@ -666,6 +773,10 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-14 | Customer-facing public language | Keeps review cadence, implementation state, indexing terms, and capability taxonomy in metadata while public pages explain concrete actions and availability. |
 | 2026-08-15 | Evidence-backed public product story | Makes the working-history problem, deliberate capture boundary, cited-versus-unused evidence, Telegram entry point, inspectable answers, and human approval contract explicit across the landing and how-it-works journey. |
 | 2026-08-16 | Unified workspace collection density | Replaces stacked form chrome and card grids with compact headers, one filter toolbar, 44px rows, semantic status glyphs, optimistic metadata triggers, and contextual selection without changing domain behavior. |
+| 2026-08-17 | Timeline event families | Gives Moments weighted story/record/pulse rows and All events a uniform compact log, with provider-agnostic classification. |
+| 2026-08-17 | Linear timeline rows and original source | Drops duplicate rail icons and stacked row chrome; original payloads open from a collapsed inspector viewer. |
+| 2026-08-17 | Inspector citation chips | Ask `[ev:…]` tokens stay off timeline rows and appear as copyable chips on inspector evidence items. |
+| 2026-08-17 | Citation preview destinations | Citation popups name the matching workspace page, Timeline moment, and original payload instead of a generic full-page jump. |
 | 2026-08-17 | Work overview and task canvas density | Puts pinned boards above the work queue, removes extra task-list gutters, matches the default list loading skeleton, puts Kanban/List on the search/filter row, and compacts task kanban cards to a clamped title plus one metadata row. |
 | 2026-08-17 | Home open objects and inline queue edits | Adds open tasks, people, companies, projects, deals, and follow-ups to Home Attention, stops repeating “Task” on work-queue rows, and lets queue status, assignee, due date, and priority change inline. |
 | 2026-08-17 | Quiet Home attention and dense recent moments | Collapses typed open-people/company/project rows into one open-objects count, drops the Attention and Recent moments headings, and replaces the Home timeline preview with denser title-only rows plus a clear Open timeline path. |
@@ -676,3 +787,16 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Ask mobile session title | Reuses the resolved conversation title in the mobile session summary, including deep-linked chats outside the recent list. |
 | 2026-08-17 | Quiet sidebar brand and fold control | Aligns the product mark with primary nav, sends it to Home, and replaces the boxed fold glyph with a lighter chevron. |
 | 2026-08-17 | Action toasts and shared copy controls | Replaces inline Saving/Saved/error chips for mutations with one optimistic toast lifecycle, compensating Undo, and a single CopyButton for clipboard fields. |
+| 2026-08-17 | Infinite scroll with Linear timeline rows | Replaces Load more and numbered pagers with sentinel paging and virtualized rows; Timeline keeps Linear archive rows, sticky dates under the toolbar, and no inventory chip. |
+| 2026-08-17 | Digest status, window range, and linked lists | Replaces Product status with Status, shows the covering time range, lists tasks/objects/calendar with existing Home and email type, and omits empty groups including source inventories. |
+| 2026-08-17 | Digest date header, footer window, and activity strip | Puts the digest date in the header, moves the covering range to footer metadata, and turns web activity into a Home-style mono lime count strip. |
+| 2026-08-17 | 7-day job recovery queue | Makes Home and Background jobs share one recent failed/stuck count, hides older backlog from attention, and keeps unprocessed inventory in Advanced tools. |
+| 2026-08-17 | Jobs recovery dismiss at scale | Makes older-job dismiss a batch write with progress toasts, windows the 7-day snapshot behind Load more, and keeps retry/dismiss on the shared mutation-toast path. |
+| 2026-08-17 | Dense jobs recovery rows | Drops per-row Technical details so the admin queue is status, label, time, and retry/dismiss. |
+| 2026-08-17 | Job recovery row overflow | Renames the page Job recovery, moves per-row retry/dismiss into the overflow menu, and keeps IDs plus raw errors in the row hover title. |
+| 2026-08-17 | Quiet reconciliation dashboard | Drops the How it works primer, release-gate banner, and stat cards, and puts coverage actions on a hinted toolbar above recent rows. |
+| 2026-08-17 | Reconciliation header and column titles | Drops access and team from the metadata row, removes Recently reconciled, and uses sentence-case Recent clusters / Recent outputs titles. |
+| 2026-08-17 | Job recovery infinite scroll | Pages the 7-day snapshot and finished archive with the shared InfiniteScroll sentinel instead of a Load more button. |
+| 2026-08-17 | Quiet job recovery header | Drops the access, team, last-7-days, and older-hidden metadata row so the page leads with title and subtitle. |
+| 2026-08-17 | Quiet reconciliation header | Drops the checked / needs repair / updated metadata row so Reconciliation also leads with title and subtitle. |
+| 2026-08-17 | Quiet admin Advanced tools | Replaces job-recovery stat cards and reconciliation uppercase/badge chrome with sentence-case headings and dense count or history rows. |

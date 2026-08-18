@@ -1,3 +1,5 @@
+import { displaySourceLabel } from '@/lib/display-labels';
+
 const ARTIFACT_CLUSTER_KIND_LABELS: Record<string, string> = {
   customer_project: 'Customer project',
   account: 'Account',
@@ -100,6 +102,7 @@ const CONFIDENCE_LABELS: Record<string, string> = {
 const CLUSTER_STATUS_LABELS: Record<string, string> = {
   open: 'Open',
   active: 'Active',
+  candidate: 'Candidate',
   blocked: 'Blocked',
   resolved: 'Resolved',
   cancelled: 'Cancelled',
@@ -113,6 +116,22 @@ const OUTPUT_STATUS_LABELS: Record<string, string> = {
   rejected: 'Rejected',
   superseded: 'Superseded',
   failed: 'Failed',
+};
+
+const RUN_TRIGGER_LABELS: Record<string, string> = {
+  raw_event: 'Capture',
+  evidence_batch: 'Evidence batch',
+  cluster_replay: 'Cluster replay',
+  manual_repair: 'Manual repair',
+  eval: 'Evaluation',
+  backfill: 'Repair preview',
+};
+
+const LEGACY_PROVENANCE_LABELS: Record<string, string> = {
+  'object source_event_id': 'Object source event ID',
+  'object agent_suggested': 'Object agent suggested',
+  'object_change source_event_id': 'Object change source event ID',
+  'board_history source_event_id': 'Board history source event ID',
 };
 
 export function artifactClusterKindLabel(value: string): string {
@@ -152,6 +171,27 @@ export function clusterStatusLabel(value: string): string {
 
 export function outputStatusLabel(value: string): string {
   return OUTPUT_STATUS_LABELS[value] ?? humanizeToken(value);
+}
+
+export function runTriggerLabel(value: string): string {
+  return RUN_TRIGGER_LABELS[value] ?? humanizeToken(value);
+}
+
+export function runStatusLabel(value: string): string {
+  return outputStatusLabel(value);
+}
+
+export function legacyProvenanceLabel(value: string): string {
+  return LEGACY_PROVENANCE_LABELS[value] ?? humanizeToken(value);
+}
+
+export function eventSourceLabel(value: string): string {
+  const label = displaySourceLabel(value);
+  return label === 'Unavailable source' ? humanizeToken(value) : label;
+}
+
+export function diagnosticLabel(value: string): string {
+  return humanizeToken(value);
 }
 
 function humanizeToken(value: string): string {

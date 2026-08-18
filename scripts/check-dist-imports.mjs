@@ -154,6 +154,28 @@ const checks = [
     },
   },
   {
+    name: '@timeline/shared event class',
+    run: async () => {
+      const eventClass = await import('@timeline/shared/event-class');
+      const classified = eventClass.classifyCapturedEvent({
+        source: 'integration',
+        metadata: {
+          provider: 'gitlab',
+          gitlab: { type: 'pipeline' },
+        },
+      });
+      if (classified !== 'pulse') {
+        throw new Error(`Unexpected GitLab pipeline class: ${classified}`);
+      }
+      if (eventClass.visualWeightForEventClass('communication', 'events') !== 'pulse') {
+        throw new Error('All events mode should force pulse weight');
+      }
+      if (eventClass.promotesWorkspaceObject('pulse')) {
+        throw new Error('Pulses must not promote workspace objects');
+      }
+    },
+  },
+  {
     name: '@timeline/shared timeline moments',
     run: async () => {
       const timelineMoments = await import('@timeline/shared/timeline-moments');
@@ -186,8 +208,13 @@ const checks = [
         { now: new Date('2026-07-01T10:00:00.000Z'), timezone: 'UTC' },
       );
 
-      if (moments[0]?.title !== 'CI passed on timborovkov/audit-ai') {
+      if (moments[0]?.title !== 'CI passed on timborovkov/audit-ai · main') {
         throw new Error(`Unexpected timeline moment title: ${moments[0]?.title ?? 'missing'}`);
+      }
+      if (moments[0]?.eventClass !== 'pulse' || moments[0]?.visualWeight !== 'pulse') {
+        throw new Error(
+          `Unexpected timeline moment family: ${moments[0]?.eventClass ?? 'missing'}/${moments[0]?.visualWeight ?? 'missing'}`,
+        );
       }
       if (moments[0]?.version !== 'timeline_moment.v1') {
         throw new Error(`Unexpected timeline moment version: ${moments[0]?.version ?? 'missing'}`);
@@ -205,6 +232,31 @@ const checks = [
         throw new Error(
           `Unexpected timeline moment presentation hash: ${key.visibleSourceContentHash}`,
         );
+      }
+    },
+  },
+  {
+    name: '@timeline/shared messaging format',
+    run: async () => {
+      const format = await import('@timeline/shared/messaging/format');
+      const labeled = format.formatDigestDate('2026-08-17T12:00:00.000Z', 'UTC');
+      if (!labeled.includes('Aug') || !labeled.includes('17')) {
+        throw new Error(`Unexpected digest date label: ${labeled}`);
+      }
+      if ('generateDailyDigest' in format) {
+        throw new Error('messaging/format must not export digest generation');
+      }
+      const { readFileSync } = await import('node:fs');
+      const source = readFileSync(
+        new URL('../packages/shared/dist/messaging/format.js', import.meta.url),
+        'utf8',
+      );
+      if (
+        source.includes('digest.js') ||
+        source.includes('templates.js') ||
+        source.includes('node:fs')
+      ) {
+        throw new Error('messaging/format compiled output pulled Node digest generation');
       }
     },
   },

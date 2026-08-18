@@ -23,6 +23,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useRef, useState, useTransition } from 'react';
 
+import { loadSuggestionsPageAction } from '@/app/actions/collection-pages';
 import {
   acceptAllSuggestionAction,
   acceptSuggestionItemAction,
@@ -32,6 +33,8 @@ import {
   reviseTaskSuggestionItemAction,
 } from '@/app/actions/suggestions';
 import { SuggestionChangeDialog } from '@/components/approvals/suggestion-change-dialog';
+import { InfiniteScroll } from '@/components/collections/infinite-scroll';
+import { VirtualList } from '@/components/collections/virtual-list';
 import { EmptyAction } from '@/components/empty-action';
 import { EvidenceLink } from '@/components/evidence-link';
 import { TechnicalDetails } from '@/components/technical-details';
@@ -130,6 +133,8 @@ type ApprovalAction = (
 
 interface Props {
   suggestions: SuggestionBundle[];
+  nextCursor?: string | null;
+  status?: 'pending' | 'failed' | 'resolved' | 'all';
   taskCategoriesEnabled?: boolean;
   allowBulkAccept?: boolean;
   allowBulkReject?: boolean;
@@ -618,6 +623,8 @@ function foldedSummaryText(
 
 export function ApprovalsClient({
   suggestions,
+  nextCursor = null,
+  status = 'pending',
   taskCategoriesEnabled = true,
   allowBulkAccept = true,
   allowBulkReject = true,
@@ -629,6 +636,18 @@ export function ApprovalsClient({
   const resolvedTimezone = timezone ?? workspaceTimezone;
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [pageState, setPageState] = useState<{
+    extraSuggestions: SuggestionBundle[];
+    extraCursor: string | null;
+    paged: boolean;
+    loadError: string | null;
+  }>({ extraSuggestions: [], extraCursor: null, paged: false, loadError: null });
+  const [loadingMore, startLoadingMore] = useTransition();
+  const pageCursor = pageState.paged ? pageState.extraCursor : nextCursor;
+  const loadedSuggestions = useMemo(() => {
+    const seen = new Set(suggestions.map((bundle) => bundle.id));
+    return [...suggestions, ...pageState.extraSuggestions.filter((bundle) => !seen.has(bundle.id))];
+  }, [pageState.extraSuggestions, suggestions]);
   const [resolvedItemSignatures, setResolvedItemSignatures] = useState<Map<string, string>>(
     () => new Map(),
   );
@@ -638,11 +657,11 @@ export function ApprovalsClient({
   const serverItemSignatures = useMemo(
     () =>
       new Map(
-        suggestions.flatMap((bundle) =>
+        loadedSuggestions.flatMap((bundle) =>
           bundle.items.map((item) => [item.id, suggestionItemSignature(item)] as const),
         ),
       ),
-    [suggestions],
+    [loadedSuggestions],
   );
   const effectiveResolvedItemIds = useMemo(() => {
     const next = new Set<string>();
@@ -653,11 +672,11 @@ export function ApprovalsClient({
   }, [resolvedItemSignatures, serverItemSignatures]);
   const visibleSuggestions = useMemo(
     () =>
-      suggestions.flatMap((bundle) => {
+      loadedSuggestions.flatMap((bundle) => {
         const items = bundle.items.filter((item) => !effectiveResolvedItemIds.has(item.id));
         return items.length > 0 ? [{ ...bundle, items }] : [];
       }),
-    [effectiveResolvedItemIds, suggestions],
+    [effectiveResolvedItemIds, loadedSuggestions],
   );
   const bulkAcceptSuggestions = visibleSuggestions.flatMap((bundle) => {
     const itemIds = bundle.items.reduce<string[]>((ids, item) => {
@@ -773,7 +792,33 @@ export function ApprovalsClient({
     });
   }
 
-  if (suggestions.length === 0) {
+  function loadMore(): void {
+    if (!pageCursor || loadingMore) return;
+    startLoadingMore(async () => {
+      const page = await loadSuggestionsPageAction({ cursor: pageCursor, status });
+      if (page.error) {
+        setPageState((current) => ({
+          ...current,
+          loadError: page.error ?? 'Could not load more.',
+        }));
+        return;
+      }
+      setPageState((current) => {
+        const seen = new Set(current.extraSuggestions.map((bundle) => bundle.id));
+        return {
+          extraSuggestions: [
+            ...current.extraSuggestions,
+            ...page.suggestions.filter((bundle) => !seen.has(bundle.id)),
+          ],
+          extraCursor: page.nextCursor,
+          paged: true,
+          loadError: null,
+        };
+      });
+    });
+  }
+
+  if (loadedSuggestions.length === 0 && pageCursor === null) {
     return (
       <EmptyAction
         title={emptyState?.title ?? 'No pending approvals'}
@@ -797,6 +842,10 @@ export function ApprovalsClient({
       bulkRejectItemCount={bulkRejectItemCount}
       bulkRejectSuggestions={bulkRejectSuggestions}
       busyItemIds={busyItemIds}
+      hasMore={pageCursor !== null}
+      loadError={pageState.loadError}
+      loadingMore={loadingMore}
+      onLoadMore={loadMore}
       pending={pending}
       run={run}
       timezone={resolvedTimezone}
@@ -834,6 +883,10 @@ function ApprovalListBody({
   bulkRejectItemCount,
   bulkRejectSuggestions,
   busyItemIds,
+  hasMore,
+  loadError,
+  loadingMore,
+  onLoadMore,
   pending,
   run,
   timezone,
@@ -848,6 +901,10 @@ function ApprovalListBody({
   bulkRejectItemCount: number;
   bulkRejectSuggestions: { suggestionId: string; itemIds: string[] }[];
   busyItemIds: Set<string>;
+  hasMore: boolean;
+  loadError: string | null;
+  loadingMore: boolean;
+  onLoadMore: () => void;
   pending: boolean;
   run: ApprovalAction;
   timezone: string;
@@ -869,25 +926,41 @@ function ApprovalListBody({
         />
       ) : null}
       {pending && visibleSuggestions.length === 0 ? <ApprovalUpdatingState /> : null}
-      {visibleSuggestions.map((bundle) => (
-        <ApprovalBundleRow
-          allowBulkAccept={allowBulkAccept}
-          bundle={bundle}
-          busyItemIds={busyItemIds}
-          key={bundle.id}
-          pending={pending}
-          run={run}
-          timezone={timezone}
-          taskCategoriesEnabled={taskCategoriesEnabled}
-        />
-      ))}
+      <VirtualList
+        items={visibleSuggestions}
+        getItemKey={(bundle) => bundle.id}
+        estimateSize={220}
+        gap={12}
+        renderItem={(bundle) => (
+          <ApprovalBundleRow
+            allowBulkAccept={allowBulkAccept}
+            bundle={bundle}
+            busyItemIds={busyItemIds}
+            pending={pending}
+            run={run}
+            timezone={timezone}
+            taskCategoriesEnabled={taskCategoriesEnabled}
+          />
+        )}
+      />
+      <InfiniteScroll
+        hasMore={hasMore}
+        loading={loadingMore}
+        error={loadError}
+        onLoadMore={onLoadMore}
+        boundLabel="No more matching approvals"
+        hideBound={visibleSuggestions.length === 0 && !hasMore}
+      />
     </div>
   );
 }
 
 function ApprovalUpdatingState() {
   return (
-    <output className="border border-border bg-muted/30 px-3 py-2 text-xs text-fg-dim">
+    <output
+      aria-label="Updating approvals"
+      className="border border-border bg-muted/30 px-3 py-2 text-xs text-fg-dim"
+    >
       Updating approvals...
     </output>
   );

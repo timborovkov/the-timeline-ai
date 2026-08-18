@@ -2,7 +2,7 @@
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { createElement } from 'react';
+import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -38,6 +38,30 @@ vi.mock('@/lib/notify', () => ({
     }
   },
 }));
+vi.mock('@/app/actions/collection-pages', () => ({
+  loadSuggestionsPageAction: vi.fn(() => Promise.resolve({ suggestions: [], nextCursor: null })),
+}));
+vi.mock('@/components/collections/virtual-list', async () => {
+  const { createElement: h } = await import('react');
+  return {
+    VirtualList: ({
+      items,
+      renderItem,
+      getItemKey,
+    }: {
+      items: { id: string }[];
+      renderItem: (item: { id: string }, index: number) => ReactNode;
+      getItemKey: (item: { id: string }, index: number) => string;
+    }) =>
+      h(
+        'div',
+        null,
+        items.map((item, index) =>
+          h('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+        ),
+      ),
+  };
+});
 
 const { ApprovalsClient } = await import('./approvals-client.js');
 
@@ -970,7 +994,7 @@ describe('ApprovalsClient', () => {
     expect(JSON.parse(init.body)).toEqual({
       ref: { kind: 'timeline_event', id: EVENT_ID },
     });
-    const fullPage = await screen.findByRole('link', { name: /Open full page/ });
+    const fullPage = await screen.findByRole('link', { name: /Open on Timeline/ });
     expect(fullPage.getAttribute('href')).toBe(`/app/timeline?event=${EVENT_ID}#ev-${EVENT_ID}`);
   });
 
@@ -2597,7 +2621,9 @@ describe('ApprovalsClient', () => {
     fireEvent.click(getByRole('button', { name: /^Accept$/ }));
 
     await waitFor(() => {
-      expect(getByRole('status').textContent).toContain('Updating approvals');
+      expect(getByRole('status', { name: /Updating approvals/ }).textContent).toContain(
+        'Updating approvals',
+      );
     });
     expect(fakes.acceptSuggestionItemAction).toHaveBeenCalledWith({ itemId: 'item-1' });
   });

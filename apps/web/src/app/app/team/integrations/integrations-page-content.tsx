@@ -62,6 +62,7 @@ function ingestWebhookListFromRows(
       id: webhookId,
       name: row.webhook.name,
       visibilityDefault: row.webhook.visibilityDefault,
+      eventClass: row.webhook.eventClass,
       proposalGenerationEnabled: row.webhook.proposalGenerationEnabled,
       disabledAt: row.webhook.disabledAt ? row.webhook.disabledAt.toISOString() : null,
       createdAt: row.webhook.createdAt.toISOString(),

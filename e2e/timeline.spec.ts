@@ -1415,7 +1415,7 @@ test('job recovery dashboard retries and dismisses failed work from the browser'
   try {
     await signIn(page, e2eUsers.owner.email);
     await page.goto('/app/team/jobs');
-    await expect(page.getByRole('heading', { name: 'Processing summary' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Job recovery' })).toBeVisible();
 
     await page.getByRole('button', { name: 'Embedding' }).click();
     const retryRow = page.locator('li').filter({ hasText: 'E2E retry embedding failed' });
@@ -1424,12 +1424,12 @@ test('job recovery dashboard retries and dismisses failed work from the browser'
     await expect(dismissRow).toBeVisible();
     await expect(retryRow.getByText('Embedding · web event from')).toBeVisible();
 
+    await retryRow.getByRole('button', { name: 'Actions for E2E retry embedding failed' }).click();
     await Promise.all([
       page.waitForResponse((res) => res.url().includes('/retry') && res.ok()),
-      retryRow.getByRole('button', { name: 'Retry' }).click(),
+      page.getByRole('menuitem', { name: 'Retry' }).click(),
     ]);
-    await expect(retryRow.getByText('retrying')).toBeVisible();
-    await expect(retryRow.getByText('Retry queued. Watching finished jobs below.')).toBeVisible();
+    await expect(retryRow.getByText('Retry queued.')).toBeVisible();
     await expect
       .poll(() => rawEventMetadataHasKey(seed.retryEventId, 'embedding_failed_at'))
       .toBe(false);
@@ -1437,9 +1437,12 @@ test('job recovery dashboard retries and dismisses failed work from the browser'
       .poll(() => rawEventMetadataHasKey(seed.retryEventId, 'embedding_error'))
       .toBe(false);
 
+    await dismissRow
+      .getByRole('button', { name: 'Actions for E2E dismiss embedding failed' })
+      .click();
     await Promise.all([
       page.waitForResponse((res) => res.url().includes('/dismiss') && res.ok()),
-      dismissRow.getByRole('button', { name: 'Dismiss' }).click(),
+      page.getByRole('menuitem', { name: 'Dismiss' }).click(),
     ]);
     await expect(dismissRow).toHaveCount(0);
     await expect.poll(() => jobRecoveryDismissalExists(seed.dismissEventId)).toBe(true);
@@ -1526,7 +1529,6 @@ test('saved meeting setup and finalized notes render in meetings and timeline', 
     ).toBeVisible();
 
     await page.goto('/app/timeline');
-    await expect(page.getByText('Meeting summary captured').first()).toBeVisible();
     await expect(page.getByText(summary).first()).toBeVisible();
     await expect(page.getByRole('link', { name: 'Open transcript' })).toHaveAttribute(
       'href',
@@ -2644,7 +2646,7 @@ test('calendar events can be created, edited, deleted, and visibility-scoped', a
   await memberPage.context().close();
 });
 
-test('calendar event list search, scope, and pagination use real page data', async ({
+test('calendar event list search, scope, and infinite scroll use real page data', async ({
   browser,
 }) => {
   const ownerPage = await newSignedInPage(browser, 'owner');
@@ -2680,27 +2682,30 @@ test('calendar event list search, scope, and pagination use real page data', asy
     await ownerPage.goto(`/app/calendar?view=month&date=2026-08-01&eventQ=${stamp}`);
     const eventList = ownerPage.locator('section').filter({ hasText: 'Calendar events' });
 
-    await expect(eventList.getByText('13 upcoming events')).toBeVisible();
-    await expect(eventList.getByText('Page 1 / 2')).toBeVisible();
+    await expect(eventList.getByText('13', { exact: true })).toBeVisible();
+    await expect(eventList.getByRole('button', { name: 'Next events' })).toHaveCount(0);
     await expect(
       eventList.getByRole('button', {
         name: new RegExp(`${E2E_PREFIX} calendar list future 01 ${stamp}`),
       }),
     ).toBeVisible();
 
-    await eventList.getByRole('button', { name: 'Next events' }).click();
-    await expect(ownerPage).toHaveURL(/eventPage=2/);
-    await expect(eventList.getByText('13-13 of 13')).toBeVisible();
-    await expect(
-      eventList.getByRole('button', {
-        name: new RegExp(`${E2E_PREFIX} calendar list future 13 ${stamp}`),
-      }),
-    ).toBeVisible();
+    const oldest = `${E2E_PREFIX} calendar list future 13 ${stamp}`;
+    const main = ownerPage.locator('#main');
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      if ((await ownerPage.getByRole('button', { name: new RegExp(oldest) }).count()) > 0) break;
+      await main.evaluate((node) => {
+        node.scrollTo({ top: node.scrollHeight });
+      });
+      await ownerPage.waitForTimeout(400);
+    }
+    await expect(ownerPage.getByRole('button', { name: new RegExp(oldest) })).toBeVisible();
+    await expect(eventList.getByText('No more matching events')).toBeVisible();
+    await expect(ownerPage).not.toHaveURL(/eventPage=/);
 
     await eventList.getByRole('button', { name: 'past' }).click();
     await expect(ownerPage).toHaveURL(/eventScope=past/);
-    await expect(ownerPage).not.toHaveURL(/eventPage=2/);
-    await expect(eventList.getByText('1 past event')).toBeVisible();
+    await expect(eventList.getByText('1', { exact: true })).toBeVisible();
     await expect(
       eventList.getByRole('button', {
         name: new RegExp(`${E2E_PREFIX} calendar list past ${stamp}`),
@@ -2709,7 +2714,7 @@ test('calendar event list search, scope, and pagination use real page data', asy
 
     await eventList.getByRole('button', { name: 'all' }).click();
     await expect(ownerPage).toHaveURL(/eventScope=all/);
-    await expect(eventList.getByText('14 all events')).toBeVisible();
+    await expect(eventList.getByText('14', { exact: true })).toBeVisible();
   } finally {
     await sql`
       DELETE FROM calendar_events

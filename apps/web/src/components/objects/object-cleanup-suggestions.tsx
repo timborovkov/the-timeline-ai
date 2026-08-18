@@ -1,6 +1,6 @@
 'use client';
 
-import { Archive, ChevronLeft, ChevronRight, GitMerge, RefreshCw, X } from 'lucide-react';
+import { Archive, GitMerge, RefreshCw, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useReducer } from 'react';
@@ -9,6 +9,8 @@ import type * as objects from '@timeline/shared/objects/types';
 
 import { findObjectCleanupSuggestionsAction } from '@/app/actions/objects';
 import { acceptSuggestionItemAction, rejectSuggestionItemAction } from '@/app/actions/suggestions';
+import { InfiniteScroll } from '@/components/collections/infinite-scroll';
+import { VirtualList } from '@/components/collections/virtual-list';
 import { ObjectMergeForm } from '@/components/objects/object-merge-form';
 import { Button } from '@/components/ui/button';
 import {
@@ -47,14 +49,12 @@ interface Props {
 }
 
 const EMPTY_MERGE_PREVIEWS: Record<string, objects.ObjectMergePreview> = {};
-const PAGE_SIZE = 10;
 
 interface CleanupReviewState {
   resolvedItemIds: Set<string>;
   busyItemIds: Set<string>;
   findingSuggestions: boolean;
   reviewingItemId: string | null;
-  page: number;
 }
 
 type CleanupReviewAction =
@@ -64,8 +64,7 @@ type CleanupReviewAction =
   | { type: 'finish_item_action'; itemId: string }
   | { type: 'start_find' }
   | { type: 'finish_find' }
-  | { type: 'review_item'; itemId: string | null }
-  | { type: 'page'; page: number };
+  | { type: 'review_item'; itemId: string | null };
 
 function cleanupReviewReducer(
   state: CleanupReviewState,
@@ -98,8 +97,6 @@ function cleanupReviewReducer(
       return { ...state, findingSuggestions: false };
     case 'review_item':
       return { ...state, reviewingItemId: action.itemId };
-    case 'page':
-      return { ...state, page: action.page };
   }
 }
 
@@ -109,7 +106,6 @@ function initialCleanupReviewState(): CleanupReviewState {
     busyItemIds: new Set(),
     findingSuggestions: false,
     reviewingItemId: null,
-    page: 0,
   };
 }
 
@@ -151,10 +147,6 @@ export function ObjectCleanupSuggestions({
   const reviewingPreview = state.reviewingItemId
     ? mergePreviewsByItemId[state.reviewingItemId]
     : undefined;
-  const pageCount = Math.max(1, Math.ceil(pendingItems.length / PAGE_SIZE));
-  const effectivePage = Math.min(state.page, pageCount - 1);
-  const pageStart = effectivePage * PAGE_SIZE;
-  const visibleItems = pendingItems.slice(pageStart, pageStart + PAGE_SIZE);
 
   function resolveItem(itemId: string) {
     dispatch({ type: 'resolve_item', itemId });
@@ -251,15 +243,16 @@ export function ObjectCleanupSuggestions({
         </div>
 
         {pendingItems.length > 0 ? (
-          <ul className="mt-4 divide-y divide-border border border-border">
-            {visibleItems.map(({ bundle, item }) => {
+          <VirtualList
+            items={pendingItems}
+            getItemKey={({ item }) => item.id}
+            estimateSize={96}
+            className="mt-4"
+            renderItem={({ bundle, item }) => {
               const mergeIds = item.targetKind === 'object_merge' ? objectIdsForMerge(item) : [];
               const itemBusy = state.busyItemIds.has(item.id);
               return (
-                <li
-                  key={item.id}
-                  className="grid gap-3 bg-bg p-3 md:grid-cols-[minmax(0,1fr)_auto]"
-                >
+                <div className="grid gap-3 border border-border bg-bg p-3 md:grid-cols-[minmax(0,1fr)_auto]">
                   <div className="min-w-0">
                     <div className="text-xs text-fg-dim">
                       {item.targetKind === 'object_merge' ? 'merge' : 'archive'} ·{' '}
@@ -337,49 +330,17 @@ export function ObjectCleanupSuggestions({
                       Dismiss
                     </Button>
                   </div>
-                </li>
+                </div>
               );
-            })}
-          </ul>
+            }}
+          />
         ) : null}
-
-        {pendingItems.length > PAGE_SIZE ? (
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
-            <p className="text-xs text-fg-dim">
-              {pageStart + 1}-{Math.min(pageStart + PAGE_SIZE, pendingItems.length)} of{' '}
-              {pendingItems.length}
-            </p>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                size="icon"
-                variant="outline"
-                disabled={effectivePage === 0}
-                title="Previous suggestions"
-                onClick={() => {
-                  dispatch({ type: 'page', page: Math.max(0, state.page - 1) });
-                }}
-              >
-                <ChevronLeft className="size-4" />
-              </Button>
-              <p className="text-xs text-fg-dim">
-                Page {effectivePage + 1} / {pageCount}
-              </p>
-              <Button
-                type="button"
-                size="icon"
-                variant="outline"
-                disabled={effectivePage >= pageCount - 1}
-                title="Next suggestions"
-                onClick={() => {
-                  dispatch({ type: 'page', page: Math.min(pageCount - 1, state.page + 1) });
-                }}
-              >
-                <ChevronRight className="size-4" />
-              </Button>
-            </div>
-          </div>
-        ) : null}
+        <InfiniteScroll
+          hasMore={false}
+          onLoadMore={() => undefined}
+          boundLabel="No more matching suggestions"
+          hideBound={pendingItems.length === 0}
+        />
       </details>
 
       <Dialog

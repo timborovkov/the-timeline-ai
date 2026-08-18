@@ -50,8 +50,11 @@ records:
       more expensive than text extraction; text-based PDFs now extract locally
       via Daytona sandbox text extract, but scanned/mixed PDFs and images still need a clear
       budget guardrail before heavy dogfooding.
-- [ ] Add dogfood document content: contracts, deal docs, internal guides,
-      policies, office rules, onboarding docs, and customer notes.
+- [x] Add dogfood document content: contracts, deal docs, internal guides,
+      policies, office rules, onboarding docs, and customer notes. The reusable
+      Acme Labs demo corpus now seeds those documents plus the broader month of
+      weekday-scale use (about a hundred events per workday, collapsing into
+      moments); see `docs/demo-corpus.md`.
 - [ ] Surface terminal meeting bot failed states in the operations/job dashboard
       with a manual retry or rejoin path. Scheduled Saved Meetings already retry
       one in-window no-show automatically; final failures are captured as
@@ -72,8 +75,14 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       into bundled, evidence-backed work moments with deterministic grouping,
       source-specific adapters, AI-assisted titles/summaries, and an advanced
       raw source event mode.
-      First slice shipped the Moments/Audit trail mode split, clearer rows and
-      inspector copy, GitHub workflow bundling, and the
+      First slice shipped the Moments/All events mode split, quieter chrome,
+      weighted rows (story / record / pulse), Linear-style single-icon rows,
+      a wider family-aware inspector with collapsed original-source viewers,
+      Ask citation previews that name transcript/calendar/document/Timeline
+      destinations and reuse that original-source viewer,
+      sentinel infinite scroll with virtualized archive rows and no inventory
+      chip,
+      GitHub workflow bundling, and the
       `search_timeline_moments`/`get_timeline_moment` agent tools, and the
       shared `@timeline/shared/timeline-moments` projection. Outbound MCP now
       has team-visible moment search/list/expand tools. Bounded server-side
@@ -115,13 +124,27 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       reads without blocking the page/API response, then filled asynchronously
       by the worker after rebuilding the same visible cache key. Daily digest
       generation now summarizes bundled moment briefs, applies matching cached
-      AI presentations, and leads user-facing digest copy with moment counts
-      while retaining raw eventCount / sourceDistribution for internal metrics
-      and per-source detail. It durably skips quiet windows before summarization
-      and email delivery unless the recipient has fresh local-cycle activity,
-      pending approvals, or upcoming calendar context. Timeline Moments chrome
-      and IndexStrip loaded counts also lead with moments (Audit trail keeps
-      source-event counts). The
+      AI presentations, and writes narrative overview and section prose instead
+      of PR or CI inventories. Pull-request numbers, commit hashes, CI run IDs,
+      ticket keys, and object UUIDs are banned from digest text: the generator
+      scrubs them from the briefing packet and rejects a draft that still lists
+      them. Home, Work → Digests, and email reuse that
+      payload: the latest digest stays folded, the header shows the digest
+      date, and the covering range stays footer metadata. Activity is a count
+      strip of new moments, proposals, pending approvals, tasks, and objects.
+      Task and object blocks
+      cover created or completed work and link to the object on the dashboard,
+      calendar rows in the window and upcoming link to the specific event, and
+      email includes dashboard shortcuts. Repeating calendar series collapse to
+      one upcoming entry. Empty sections and empty groups are omitted. Quiet
+      windows skip summarization and outbound delivery unless the recipient has
+      fresh local-cycle activity, pending approvals, new or completed objects,
+      or calendar events in the digest window; upcoming calendar alone does not
+      trigger a send. Raw
+      eventCount / sourceDistribution remain for internal metrics and per-source
+      detail. Timeline Moments chrome
+      no longer uses IndexStrip loaded counts; All events keeps source-event
+      grouping with uniform pulse weight. The
       `timeline-moment-presentations` worker script now provides bounded,
       dry-run-first production prewarming for missing AI presentation cache jobs.
       Timeline page/API reads now emit privacy-safe `timeline_moments_viewed`
@@ -138,8 +161,8 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       handoff/update DTO design, and live adapter payload fixtures for providers
       as they ship.
 - [x] U1 — Design-language softening: new `PageHeader` + `SectionHeading`,
-      surface split (`IndexStrip` stays on Timeline and explicit audit/operator
-      views; standard pages get a sentence-case `H1`),
+      surface split (`IndexStrip` stays on explicit audit/operator
+      views; Timeline uses a sticky collection toolbar; standard pages get a sentence-case `H1`),
       update `design.md` in the same PR.
 - [x] U2 — Connect-flow wizard: one guided Connect → Choose → Done flow
       per provider; hide `externalId` / `resourceKind` / `.org` kinds;

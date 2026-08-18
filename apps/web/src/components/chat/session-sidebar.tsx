@@ -3,9 +3,12 @@
 import { Plus, Search, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useMemo, useState, useSyncExternalStore, useTransition } from 'react';
+import { Suspense, useMemo, useRef, useState, useSyncExternalStore, useTransition } from 'react';
 
 import { archiveChatSessionAction } from '@/app/actions/chat';
+import { loadChatSessionsPageAction } from '@/app/actions/collection-pages';
+import { InfiniteScroll } from '@/components/collections/infinite-scroll';
+import { VirtualList } from '@/components/collections/virtual-list';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
 import { ItemActionGroup } from '@/components/ui/item-actions';
@@ -145,7 +148,7 @@ async function archiveChatSession({
   pathname: string;
   search: { toString(): string };
   router: { push: (href: string) => void; refresh: () => void };
-}): Promise<void> {
+}): Promise<{ error?: string }> {
   const result = await notifyAction({
     id: `chat:${sessionId}:archive`,
     loading: 'Archiving chat…',
@@ -153,13 +156,14 @@ async function archiveChatSession({
     error: 'Couldn’t archive chat',
     run: () => archiveChatSessionAction({ sessionId }),
   });
-  if (result.error) return;
+  if (result.error) return result;
   if (isActive) {
     const params = new URLSearchParams(search.toString());
     params.delete('session');
     router.push(params.toString() ? `${pathname}?${params.toString()}` : pathname);
   }
   router.refresh();
+  return result;
 }
 
 function NewChatButton({ onClick, className }: { onClick: () => void; className?: string }) {
@@ -176,9 +180,44 @@ function NewChatButton({ onClick, className }: { onClick: () => void; className?
   );
 }
 
+function useChatSessionPages(initialSessions: SessionEntry[], nextCursor: string | null) {
+  const [extra, setExtra] = useState<SessionEntry[]>([]);
+  const [cursor, setCursor] = useState(nextCursor);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, startLoading] = useTransition();
+  const sessions = useMemo(() => {
+    const seen = new Set(initialSessions.map((session) => session.id));
+    return [...initialSessions, ...extra.filter((session) => !seen.has(session.id))];
+  }, [extra, initialSessions]);
+
+  function loadMore(): void {
+    if (!cursor || loading) return;
+    startLoading(async () => {
+      const page = await loadChatSessionsPageAction({ cursor });
+      if (page.error) {
+        setError(page.error);
+        return;
+      }
+      setError(null);
+      setExtra((current) => {
+        const seen = new Set(current.map((session) => session.id));
+        return [...current, ...page.sessions.filter((session) => !seen.has(session.id))];
+      });
+      setCursor(page.nextCursor);
+    });
+  }
+
+  function remove(id: string): void {
+    setExtra((current) => current.filter((session) => session.id !== id));
+  }
+
+  return { sessions, cursor, error, loading, loadMore, remove };
+}
+
 export function SessionSidebar(props: {
   sessions: SessionEntry[];
   activeSessionId: string | null;
+  nextCursor?: string | null;
 }) {
   return (
     <Suspense fallback={null}>
@@ -190,9 +229,11 @@ export function SessionSidebar(props: {
 function SessionSidebarContent({
   sessions,
   activeSessionId,
+  nextCursor = null,
 }: {
   sessions: SessionEntry[];
   activeSessionId: string | null;
+  nextCursor?: string | null;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -200,7 +241,12 @@ function SessionSidebarContent({
   const dialog = useAppDialog();
   const [pending, startTransition] = useTransition();
   const [query, setQuery] = useState('');
-  const visibleSessions = useMemo(() => filterChatSessions(sessions, query), [sessions, query]);
+  const list = useChatSessionPages(sessions, nextCursor);
+  const visibleSessions = useMemo(
+    () => filterChatSessions(list.sessions, query),
+    [list.sessions, query],
+  );
+  const scrollParentRef = useRef<HTMLDivElement | null>(null);
 
   function newChat(): void {
     const params = new URLSearchParams(search.toString());
@@ -214,67 +260,84 @@ function SessionSidebarContent({
       <NewChatButton onClick={newChat} className="mb-2 w-full" />
       <SessionSearch id="desktop-chat-search" query={query} onQueryChange={setQuery} />
       <div data-visual-dynamic="chat-sessions" className="min-h-0 flex-1">
-        {sessions.length === 0 ? (
+        {list.sessions.length === 0 ? (
           <p className="px-1 text-xs text-fg-muted">
             No chats yet. Start a new chat to ask about your timeline.
           </p>
-        ) : visibleSessions.length === 0 ? (
+        ) : visibleSessions.length === 0 && list.cursor === null ? (
           <p className="px-1 text-xs text-fg-muted">No chats match that search.</p>
         ) : (
-          <ul className="h-full overflow-y-auto">
-            {visibleSessions.map((s, index) => {
-              const isActive = s.id === activeSessionId;
-              const label = chatSessionLabel(s);
-              return (
-                <li key={s.id} className="group relative">
-                  {index > 0 ? <SessionHairline /> : null}
-                  <Link
-                    href={`/app/chat?session=${s.id}`}
-                    aria-current={isActive ? 'page' : undefined}
-                    className={cn(
-                      'block rounded-sm px-2 py-1.5 pr-9 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
-                      isActive
-                        ? 'bg-signal-soft text-signal'
-                        : 'text-fg-muted hover:bg-surface-2 hover:text-fg',
-                    )}
-                  >
-                    <SessionSummary session={s} />
-                  </Link>
-                  <ItemActionGroup
-                    label={`Actions for ${label}`}
-                    className="pointer-events-none absolute right-0.5 top-1 w-auto opacity-0 transition-opacity duration-[80ms] ease-out group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100 motion-reduce:transition-none"
-                  >
-                    <button
-                      type="button"
-                      disabled={pending}
-                      aria-label={`Archive chat: ${label}`}
-                      onClick={async () => {
-                        const confirmed = await dialog.confirm({
-                          title: 'Archive chat?',
-                          description: 'This hides the conversation from the sidebar.',
-                          confirmLabel: 'Archive chat',
-                          destructive: true,
-                        });
-                        if (!confirmed) return;
-                        startTransition(async () => {
-                          await archiveChatSession({
-                            sessionId: s.id,
-                            isActive,
-                            pathname,
-                            search,
-                            router,
-                          });
-                        });
-                      }}
-                      className="grid size-8 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-50"
+          <div ref={scrollParentRef} className="h-full overflow-y-auto">
+            <VirtualList
+              items={visibleSessions}
+              getItemKey={(session) => session.id}
+              estimateSize={56}
+              getScrollElement={() => scrollParentRef.current}
+              renderItem={(s, index) => {
+                const isActive = s.id === activeSessionId;
+                const label = chatSessionLabel(s);
+                return (
+                  <div className="group relative">
+                    {index > 0 ? <SessionHairline /> : null}
+                    <Link
+                      href={`/app/chat?session=${s.id}`}
+                      aria-current={isActive ? 'page' : undefined}
+                      className={cn(
+                        'block rounded-sm px-2 py-1.5 pr-9 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
+                        isActive
+                          ? 'bg-signal-soft text-signal'
+                          : 'text-fg-muted hover:bg-surface-2 hover:text-fg',
+                      )}
                     >
-                      <Trash2 aria-hidden="true" className="size-3" />
-                    </button>
-                  </ItemActionGroup>
-                </li>
-              );
-            })}
-          </ul>
+                      <SessionSummary session={s} />
+                    </Link>
+                    <ItemActionGroup
+                      label={`Actions for ${label}`}
+                      className="pointer-events-none absolute right-0.5 top-1 w-auto opacity-0 transition-opacity duration-[80ms] ease-out group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100 motion-reduce:transition-none"
+                    >
+                      <button
+                        type="button"
+                        disabled={pending}
+                        aria-label={`Archive chat: ${label}`}
+                        onClick={async () => {
+                          const confirmed = await dialog.confirm({
+                            title: 'Archive chat?',
+                            description: 'This hides the conversation from the sidebar.',
+                            confirmLabel: 'Archive chat',
+                            destructive: true,
+                          });
+                          if (!confirmed) return;
+                          startTransition(async () => {
+                            const result = await archiveChatSession({
+                              sessionId: s.id,
+                              isActive,
+                              pathname,
+                              search,
+                              router,
+                            });
+                            if (result.error) return;
+                            list.remove(s.id);
+                          });
+                        }}
+                        className="grid size-8 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-50"
+                      >
+                        <Trash2 aria-hidden="true" className="size-3" />
+                      </button>
+                    </ItemActionGroup>
+                  </div>
+                );
+              }}
+            />
+            <InfiniteScroll
+              hasMore={list.cursor !== null}
+              loading={list.loading}
+              error={list.error}
+              onLoadMore={list.loadMore}
+              boundLabel="No more matching chats"
+              root={scrollParentRef.current}
+              hideBound={visibleSessions.length === 0}
+            />
+          </div>
         )}
       </div>
       {dialog.node}
@@ -286,6 +349,7 @@ export function MobileSessionNav(props: {
   sessions: SessionEntry[];
   activeSessionId: string | null;
   activeTitle: string | null;
+  nextCursor?: string | null;
 }) {
   return (
     <Suspense fallback={null}>
@@ -298,10 +362,12 @@ function MobileSessionNavContent({
   sessions,
   activeSessionId,
   activeTitle,
+  nextCursor = null,
 }: {
   sessions: SessionEntry[];
   activeSessionId: string | null;
   activeTitle: string | null;
+  nextCursor?: string | null;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -309,7 +375,12 @@ function MobileSessionNavContent({
   const dialog = useAppDialog();
   const [pending, startTransition] = useTransition();
   const [query, setQuery] = useState('');
-  const visibleSessions = useMemo(() => filterChatSessions(sessions, query), [sessions, query]);
+  const list = useChatSessionPages(sessions, nextCursor);
+  const visibleSessions = useMemo(
+    () => filterChatSessions(list.sessions, query),
+    [list.sessions, query],
+  );
+  const scrollParentRef = useRef<HTMLDivElement | null>(null);
 
   function newChat(): void {
     const params = new URLSearchParams(search.toString());
@@ -326,68 +397,85 @@ function MobileSessionNavContent({
             {activeTitle ?? (activeSessionId ? 'Current chat' : 'Chats')}
           </span>
         </summary>
-        <div className="max-h-56 space-y-2 overflow-y-auto border-t p-2">
+        <div ref={scrollParentRef} className="max-h-56 space-y-2 overflow-y-auto border-t p-2">
           <NewChatButton onClick={newChat} className="w-full" />
           <SessionSearch id="mobile-chat-search" query={query} onQueryChange={setQuery} />
-          {sessions.length === 0 ? (
+          {list.sessions.length === 0 ? (
             <p className="px-1 py-2 text-xs text-fg-muted">
               No chats yet. Start a new chat to ask about your timeline.
             </p>
-          ) : visibleSessions.length === 0 ? (
+          ) : visibleSessions.length === 0 && list.cursor === null ? (
             <p className="px-1 py-2 text-xs text-fg-muted">No chats match that search.</p>
           ) : (
-            <ul data-visual-dynamic="mobile-chat-sessions">
-              {visibleSessions.map((session, index) => {
-                const isActive = session.id === activeSessionId;
-                return (
-                  <li key={session.id}>
-                    {index > 0 ? <SessionHairline /> : null}
-                    <div className="flex items-center gap-1">
-                      <Link
-                        href={`/app/chat?session=${session.id}`}
-                        aria-current={isActive ? 'page' : undefined}
-                        className={cn(
-                          'min-w-0 flex-1 rounded-sm px-2 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
-                          isActive
-                            ? 'bg-signal-soft text-signal'
-                            : 'text-fg-muted hover:bg-surface-2 hover:text-fg',
-                        )}
-                      >
-                        <SessionSummary session={session} />
-                      </Link>
-                      <ItemActionGroup label={`Actions for ${chatSessionLabel(session)}`}>
-                        <button
-                          type="button"
-                          disabled={pending}
-                          aria-label={`Archive chat: ${chatSessionLabel(session)}`}
-                          onClick={async () => {
-                            const confirmed = await dialog.confirm({
-                              title: 'Archive chat?',
-                              description: 'This hides the conversation from the session list.',
-                              confirmLabel: 'Archive chat',
-                              destructive: true,
-                            });
-                            if (!confirmed) return;
-                            startTransition(async () => {
-                              await archiveChatSession({
-                                sessionId: session.id,
-                                isActive,
-                                pathname,
-                                search,
-                                router,
-                              });
-                            });
-                          }}
-                          className="grid size-9 shrink-0 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-50"
+            <div data-visual-dynamic="mobile-chat-sessions">
+              <VirtualList
+                items={visibleSessions}
+                getItemKey={(session) => session.id}
+                estimateSize={56}
+                getScrollElement={() => scrollParentRef.current}
+                renderItem={(session, index) => {
+                  const isActive = session.id === activeSessionId;
+                  return (
+                    <div>
+                      {index > 0 ? <SessionHairline /> : null}
+                      <div className="flex items-center gap-1">
+                        <Link
+                          href={`/app/chat?session=${session.id}`}
+                          aria-current={isActive ? 'page' : undefined}
+                          className={cn(
+                            'min-w-0 flex-1 rounded-sm px-2 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
+                            isActive
+                              ? 'bg-signal-soft text-signal'
+                              : 'text-fg-muted hover:bg-surface-2 hover:text-fg',
+                          )}
                         >
-                          <Trash2 aria-hidden="true" className="size-3.5" />
-                        </button>
-                      </ItemActionGroup>
+                          <SessionSummary session={session} />
+                        </Link>
+                        <ItemActionGroup label={`Actions for ${chatSessionLabel(session)}`}>
+                          <button
+                            type="button"
+                            disabled={pending}
+                            aria-label={`Archive chat: ${chatSessionLabel(session)}`}
+                            onClick={async () => {
+                              const confirmed = await dialog.confirm({
+                                title: 'Archive chat?',
+                                description: 'This hides the conversation from the session list.',
+                                confirmLabel: 'Archive chat',
+                                destructive: true,
+                              });
+                              if (!confirmed) return;
+                              startTransition(async () => {
+                                const result = await archiveChatSession({
+                                  sessionId: session.id,
+                                  isActive,
+                                  pathname,
+                                  search,
+                                  router,
+                                });
+                                if (result.error) return;
+                                list.remove(session.id);
+                              });
+                            }}
+                            className="grid size-9 shrink-0 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-50"
+                          >
+                            <Trash2 aria-hidden="true" className="size-3.5" />
+                          </button>
+                        </ItemActionGroup>
+                      </div>
                     </div>
-                  </li>
-                );
-              })}
-            </ul>
+                  );
+                }}
+              />
+              <InfiniteScroll
+                hasMore={list.cursor !== null}
+                loading={list.loading}
+                error={list.error}
+                onLoadMore={list.loadMore}
+                boundLabel="No more matching chats"
+                root={scrollParentRef.current}
+                hideBound={visibleSessions.length === 0}
+              />
+            </div>
           )}
         </div>
       </details>
