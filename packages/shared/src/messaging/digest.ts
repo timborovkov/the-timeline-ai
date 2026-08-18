@@ -127,8 +127,9 @@ interface DigestActivityEvent {
   createdAt: Date;
 }
 
+// `link` is a type-only ObjectType extra, not a member of OBJECT_TYPES.
 const DIGEST_LIST_OBJECT_TYPES = OBJECT_TYPES.filter(
-  (type) => type !== 'task' && type !== 'follow_up' && type !== 'decision' && type !== 'link',
+  (type) => type !== 'task' && type !== 'follow_up' && type !== 'decision',
 );
 
 const SUMMARIZE_BATCH_SIZE = 50;
