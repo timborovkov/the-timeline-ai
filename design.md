@@ -197,7 +197,9 @@ table.
   use danger color; the resting state stays quiet.
 - Bulk work uses selection, then `SelectionBar`. Do not mount a persistent
   filled Accept-all / Reject-all bar. Checkboxes may fade in on desktop hover
-  or focus and stay visible while selection is active.
+  or focus and stay visible while selection is active. Collection headers may
+  keep a Select-all checkbox visible so bulk selection does not require
+  per-row clicks.
 - `EditableMetadata` is a quiet, borderless trigger with a minimum 40px hit
   target. Pass the displayed value and editor through `EditableMetadata.Value`
   and `EditableMetadata.Editor` children. Select-like changes save immediately
@@ -640,7 +642,10 @@ Actionable rows use ghost icon `Accept`, `Change`, `Preview`, and `Reject`.
 Accepting or rejecting hides the row immediately, shows a loading toast,
 then replaces it with success or error. Failures restore the row. Bulk
 accept and reject run from `SelectionBar` after the reviewer selects rows.
-The selection bar is the only bulk chrome.
+The selection bar is the only accept/reject bulk chrome. Approvals keep a
+visible Select-all checkbox for the loaded queue, and the same control on
+multi-item bundle headers, matching Tasks. Reviewers do not have to tick
+every row before Accept or Reject.
 
 Approval counts use individual review items, not proposal bundles. “Pending”
 means the item status is literally pending. Failed items remain retryable or
@@ -932,3 +937,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Floating Ask context names | Names the float from the selected timeline, calendar, task, search, or folder item, and makes the mobile sheet modal while desktop stays non-modal. |
 | 2026-08-17 | Quiet floating Ask header | Keeps the shortcut on the launcher and drops the header shortcut plus earlier-count line. |
 | 2026-08-18 | Collection chrome named children | Passes CollectionRow, CollectionToolbar, EditableMetadata, and PageHeader chrome through named children; Title/Context `title` carries hover IDs and errors. |
+| 2026-08-18 | Approvals select-all | Restores bulk review without a persistent Accept-all bar: a visible Select-all checkbox for loaded proposals, plus the same control on multi-item bundle headers. |
