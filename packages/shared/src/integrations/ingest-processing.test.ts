@@ -1,0 +1,81 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+  GITHUB_TASK_PROPOSAL_COALESCE_MS,
+  integrationExtractSkipReason,
+  integrationIdFromSourceMetadata,
+  integrationSkipsExtract,
+  integrationSkipsLlmIngest,
+  isDelayedIngestResult,
+  takeConnectionIngestSlot,
+} from '#src/integrations/ingest-processing.js';
+
+describe('structured ingest processing', () => {
+  it('skips LLM ingest by envelope signal class, not by OAuth app name alone', () => {
+    expect(integrationSkipsLlmIngest('github')).toBe(true);
+    expect(integrationSkipsLlmIngest('sentry')).toBe(true);
+    expect(integrationSkipsLlmIngest('linear')).toBe(true);
+    expect(integrationSkipsLlmIngest('monday')).toBe(true);
+    expect(integrationSkipsLlmIngest('slack')).toBe(false);
+    expect(integrationSkipsLlmIngest('google_drive')).toBe(true);
+    expect(integrationSkipsExtract('google_drive')).toBe(true);
+    expect(integrationExtractSkipReason('google_drive')).toBe('integration_pulse_source');
+    expect(integrationSkipsExtract('slack')).toBe(false);
+    expect(integrationExtractSkipReason('github')).toBe('integration_structured_source');
+    expect(integrationExtractSkipReason({ extra: { github: { type: 'workflow_run' } } })).toBe(
+      'integration_pulse_source',
+    );
+    expect(integrationExtractSkipReason({ extra: { github: { type: 'pull_request' } } })).toBe(
+      'integration_structured_source',
+    );
+    expect(integrationExtractSkipReason({ extra: { github: { type: 'commit' } } })).toBe(
+      'integration_finding_source',
+    );
+  });
+
+  it('reads the connection id from stored integration metadata', () => {
+    expect(
+      integrationIdFromSourceMetadata({
+        provider: 'github',
+        integration_id: '11111111-1111-4111-8111-111111111111',
+      }),
+    ).toBe('11111111-1111-4111-8111-111111111111');
+    expect(integrationIdFromSourceMetadata({ provider: 'github' })).toBeNull();
+  });
+
+  it('coalesces GitHub task proposals on a short delay instead of a time window', () => {
+    expect(GITHUB_TASK_PROPOSAL_COALESCE_MS).toBeGreaterThanOrEqual(1_000);
+    expect(GITHUB_TASK_PROPOSAL_COALESCE_MS).toBeLessThanOrEqual(30_000);
+  });
+
+  it('rate-limits ingest processing per connection and stage', async () => {
+    let remaining = 1;
+    const checkRateLimit = () => {
+      if (remaining <= 0) {
+        return Promise.resolve({ ok: false as const, remaining: 0, retryAfterMs: 1_000 });
+      }
+      remaining -= 1;
+      return Promise.resolve({ ok: true as const, remaining });
+    };
+    await expect(
+      takeConnectionIngestSlot({
+        integrationId: 'conn-1',
+        stage: 'embed',
+        checkRateLimit,
+      }),
+    ).resolves.toEqual({ allowed: true });
+    await expect(
+      takeConnectionIngestSlot({
+        integrationId: 'conn-1',
+        stage: 'embed',
+        checkRateLimit,
+      }),
+    ).resolves.toEqual({ allowed: false, retryAfterMs: 1_000 });
+  });
+
+  it('recognizes delayed ingest worker results', () => {
+    expect(isDelayedIngestResult({ delayed: true, retryAfterMs: 500 })).toBe(true);
+    expect(isDelayedIngestResult({ skipped: true })).toBe(false);
+    expect(isDelayedIngestResult(undefined)).toBe(false);
+  });
+});

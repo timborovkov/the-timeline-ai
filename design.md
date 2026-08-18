@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.12 · Linear collection rows (2026-08-18). Replaces v3.11 Action toasts, collection density, and floating Ask.
+**Version:** v3.13 · Approvals select-all (2026-08-18). Replaces v3.12 Linear collection rows.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -24,9 +24,28 @@ by exposing database implementation details in ordinary product views.
 - **Digests** are recurring summaries of change and attention.
 - **Handoffs** are evidence-backed context packs for a teammate or stakeholder.
 - **Operational memory** is durable, queryable work state derived from history.
+- **Signal classes** (internal) split events into communication, captured
+  work, and pulses so the product can relate evidence without treating every
+  source event as a model prompt. Intentional captures stay communication.
+  Curated documents are reference knowledge, not a fourth class. Timeline
+  **event class** is the presentation family (communication, work record,
+  pulse, incident, artifact, schedule), not signal class: a Drive
+  file-changed ping can be a pulse for ingest and an artifact for the
+  inspector. Do not put either label in ordinary chrome.
+- **Work hubs** (internal) are the tasks, projects, people, and artifact
+  clusters that events from different surfaces attach to. Ordinary chrome
+  still names the task or project, not "hub." Proposal chrome should show the
+  attached client or project when one was qualified; it should not invent a
+  "hub" label. Channel and board names that uniquely name a client are qualify
+  evidence, not chrome.
+- **Memory grade** (internal) is the hub's role: goal, work, finding, or
+  mention. Ordinary chrome still names the task or company. Do not add a
+  second importance slider; `priority` 1–4 stays urgency on goals and work.
 - **Artifact clusters** connect evidence that describes the same real-world
   work while keeping evidence association separate from source authority.
 - **Approval-backed state** is durable work state that passed human review.
+  How events become that state is
+  [`docs/relational-memory.md`](docs/relational-memory.md).
 
 Count chrome: Moments mode and digest headlines count **moments**; All events,
 source filters, and technical disclosures count **source events**. Moment rows
@@ -204,7 +223,9 @@ table.
   use danger color; the resting state stays quiet.
 - Bulk work uses selection, then `SelectionBar`. Do not mount a persistent
   filled Accept-all / Reject-all bar. Checkboxes may fade in on desktop hover
-  or focus and stay visible while selection is active.
+  or focus and stay visible while selection is active. Collection headers may
+  keep a Select-all checkbox visible so bulk selection does not require
+  per-row clicks.
 - `EditableMetadata` is a quiet, borderless trigger with a minimum 40px hit
   target. Pass the displayed value and editor through `EditableMetadata.Value`
   and `EditableMetadata.Editor` children. Select-like changes save immediately
@@ -651,7 +672,10 @@ Actionable rows use ghost icon `Accept`, `Change`, `Preview`, and `Reject`.
 Accepting or rejecting hides the row immediately, shows a loading toast,
 then replaces it with success or error. Failures restore the row. Bulk
 accept and reject run from `SelectionBar` after the reviewer selects rows.
-The selection bar is the only bulk chrome.
+The selection bar is the only accept/reject bulk chrome. Approvals keep a
+visible Select-all checkbox for the loaded queue, and the same control on
+multi-item bundle headers, matching Tasks. Reviewers do not have to tick
+every row before Accept or Reject.
 
 Approval counts use individual review items, not proposal bundles. “Pending”
 means the item status is literally pending. Failed items remain retryable or
@@ -946,3 +970,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-18 | Timeline search and continued paging | Puts Search timeline on the archive toolbar, keeps source presets visible, and re-observes the infinite-scroll sentinel after each page so virtualized rows keep loading. |
 | 2026-08-18 | RSC collection toolbar slots | CollectionToolbar compound slots render a `data-collection-slot` marker so search/filters/view/actions survive the RSC client boundary. |
 | 2026-08-17 | Linear collection rows | Collection rows use a full-width bottom hairline only. Pinned and Approvals drop unlabeled toolbar counts. |
+| 2026-08-18 | Approvals select-all | Restores bulk review without a persistent Accept-all bar: a visible Select-all checkbox for loaded proposals, plus the same control on multi-item bundle headers. |

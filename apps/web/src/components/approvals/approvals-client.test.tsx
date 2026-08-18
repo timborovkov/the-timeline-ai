@@ -1251,7 +1251,207 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('Select Send proposal');
     expect(html).toContain('Send proposal');
     expect(html).toContain('Proposal meeting');
+    expect(html).toContain('Select all visible proposals');
     expect(html).not.toContain('Accept all visible');
+    expect(html).not.toContain('border-x border-border');
+  });
+
+  it('accepts every visible actionable proposal after select all', async () => {
+    const user = userEvent.setup();
+
+    render(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-1',
+            source: 'background',
+            status: 'pending',
+            title: 'Follow up with Acme',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-1',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Send proposal',
+                description: null,
+                proposedPayload: { canonicalName: 'Send proposal' },
+                failureReason: null,
+              },
+            ],
+          },
+          {
+            id: 'bundle-2',
+            source: 'background',
+            status: 'pending',
+            title: 'Book review',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:05:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-2',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'calendar_event',
+                targetId: null,
+                title: 'Proposal meeting',
+                description: null,
+                proposedPayload: { title: 'Proposal meeting' },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(screen.queryByRole('button', { name: /^Accept$/ })).toBeNull();
+    await user.click(screen.getByRole('checkbox', { name: 'Select all visible proposals' }));
+    expect(screen.getByLabelText('2 proposals selected')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: /^Accept$/ }));
+
+    expect(fakes.acceptVisibleSuggestionsAction).toHaveBeenCalledWith({
+      suggestions: [
+        { suggestionId: 'bundle-1', itemIds: ['item-1'] },
+        { suggestionId: 'bundle-2', itemIds: ['item-2'] },
+      ],
+    });
+  });
+
+  it('selects one bundle from the group header without per-row clicks', async () => {
+    const user = userEvent.setup();
+
+    render(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-acme',
+            source: 'background',
+            status: 'pending',
+            title: 'Follow up with Acme',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-1',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Send proposal',
+                description: null,
+                proposedPayload: { canonicalName: 'Send proposal' },
+                failureReason: null,
+              },
+              {
+                id: 'item-2',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Book review',
+                description: null,
+                proposedPayload: { canonicalName: 'Book review' },
+                failureReason: null,
+              },
+            ],
+          },
+          {
+            id: 'bundle-other',
+            source: 'background',
+            status: 'pending',
+            title: 'Other follow-up',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:05:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-3',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Write recap',
+                description: null,
+                proposedPayload: { canonicalName: 'Write recap' },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    await user.click(
+      screen.getByRole('checkbox', { name: 'Select all Follow up with Acme proposals' }),
+    );
+    expect(screen.getByLabelText('2 proposals selected')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: /^Accept$/ }));
+
+    expect(fakes.acceptVisibleSuggestionsAction).toHaveBeenCalledWith({
+      suggestions: [
+        {
+          suggestionId: 'bundle-acme',
+          itemIds: ['item-1', 'item-2'],
+        },
+      ],
+    });
+  });
+
+  it('clears the loaded queue selection from the select-all checkbox', async () => {
+    const user = userEvent.setup();
+
+    render(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-1',
+            source: 'background',
+            status: 'pending',
+            title: 'Follow up with Acme',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-1',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Send proposal',
+                description: null,
+                proposedPayload: { canonicalName: 'Send proposal' },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    const selectAll = screen.getByRole('checkbox', { name: 'Select all visible proposals' });
+    await user.click(selectAll);
+    expect(screen.getByLabelText('1 proposal selected')).toBeTruthy();
+    await user.click(selectAll);
+    expect(screen.queryByLabelText('1 proposal selected')).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Accept$/ })).toBeNull();
   });
 
   it('renders calendar-specific approval summaries and resolution hints', () => {
@@ -2238,8 +2438,7 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    await user.click(screen.getByRole('checkbox', { name: 'Select Merge Acme duplicates' }));
-    await user.click(screen.getByRole('checkbox', { name: 'Select Merge Globex duplicates' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Select all visible proposals' }));
     await user.click(screen.getByRole('button', { name: /^Reject$/ }));
 
     expect(fakes.rejectVisibleSuggestionsAction).toHaveBeenCalledWith({

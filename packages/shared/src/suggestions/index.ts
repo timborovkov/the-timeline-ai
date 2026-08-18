@@ -69,8 +69,8 @@ import {
 } from '#src/calendar/locking.js';
 import { chatStructured as defaultChatStructured } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
-import { OBJECT_TYPES } from '#src/objects/index.js';
 import { suggestedProjectIsUnusedCondition } from '#src/objects/suggested-projects.js';
+import { OBJECT_TYPES } from '#src/objects/types.js';
 import { decodeCursor } from '#src/pagination.js';
 import {
   buildOutputDedupeKey,
@@ -93,6 +93,26 @@ import {
 } from '#src/visibility.js';
 
 export { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
+export {
+  attachUniqueHubsToBundles,
+  hubEvidenceText,
+  hubsChanged,
+  qualifyWorkspaceHubs,
+  recallRelatedOpenWork,
+  selectPromptObjects,
+  stripAmbiguousLifecycleUpdates,
+  WORKSPACE_HUB_TYPES,
+  type QualifiedWorkspaceHubs,
+  type WorkspaceHub,
+} from '#src/suggestions/hub-context.js';
+export {
+  mergeInheritedLinkedHubs,
+  loadLinkedWorkspaceHubsForRawEvent,
+} from '#src/suggestions/linked-hubs.js';
+export {
+  stampUniqueWorkItemAliasesOntoBundles,
+  uniqueWorkItemAliasesFromText,
+} from '#src/suggestions/work-item-aliases.js';
 
 type Visibility = 'private' | 'team' | 'specific_users';
 type SuggestionStatus = 'pending' | 'partially_resolved' | 'accepted' | 'rejected' | 'superseded';
@@ -6053,7 +6073,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (item.targetKind === 'task') return 'task';
     if (item.targetKind !== 'object') return null;
     const payloadType = stringPayloadValue(payload, 'type');
-    return payloadType && OBJECT_TYPES.includes(payloadType as ArtifactType)
+    return payloadType && (OBJECT_TYPES as readonly string[]).includes(payloadType)
       ? (payloadType as ArtifactType)
       : null;
   }

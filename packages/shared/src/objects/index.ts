@@ -2229,7 +2229,7 @@ async function getObjectProvenance(
           rawEventId: event.id,
           quote: null,
           source: event.source,
-          contentText: null,
+          contentText: objectProvenancePreview(event.contentText, 320),
           occurredAt: event.occurredAt,
         },
       ],
@@ -2251,11 +2251,11 @@ async function getObjectProvenance(
   };
 }
 
-function objectProvenancePreview(contentText: string | null): string {
+function objectProvenancePreview(contentText: string | null, maxChars = 160): string {
   const cleaned = (contentText ?? 'Related source event').replace(/\s+/g, ' ').trim();
   if (cleaned.length === 0) return 'Related source event';
-  if (cleaned.length <= 160) return cleaned;
-  return `${cleaned.slice(0, 157)}...`;
+  if (cleaned.length <= maxChars) return cleaned;
+  return `${cleaned.slice(0, Math.max(0, maxChars - 3))}...`;
 }
 
 async function sourceRefRawEventIdsBySuggestionItem(
@@ -3310,6 +3310,7 @@ export async function getObject(
     summaryRelationshipInCountRows,
     summaryTaskCountRows,
     summaryChangeCountRows,
+    createEvidenceCountRows,
   ] = await Promise.all([
     db
       .select({
@@ -3557,6 +3558,34 @@ export async function getObject(
           .limit(8)
           .as('summary_change_sources'),
       ),
+    db
+      .select({
+        events: sql<number>`count(distinct ${rawEvents.id})::int`,
+      })
+      .from(agentSuggestionItems)
+      .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+      .innerJoin(
+        agentSuggestionEvidence,
+        eq(agentSuggestionEvidence.suggestionId, agentSuggestions.id),
+      )
+      .innerJoin(rawEvents, eq(rawEvents.id, agentSuggestionEvidence.rawEventId))
+      .where(
+        and(
+          eq(agentSuggestions.teamId, scope.teamId),
+          eq(agentSuggestionItems.teamId, scope.teamId),
+          eq(agentSuggestionEvidence.teamId, scope.teamId),
+          eq(rawEvents.teamId, scope.teamId),
+          eq(agentSuggestionItems.status, 'accepted'),
+          eq(agentSuggestionItems.operation, 'create'),
+          eq(agentSuggestions.visibility, 'team'),
+          eq(rawEvents.visibility, 'team'),
+          sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+          or(
+            eq(agentSuggestionItems.targetId, entityRow.id),
+            eq(agentSuggestionItems.resultId, entityRow.id),
+          ),
+        ),
+      ),
   ]);
 
   const lastVisitedAt = viewRows[0]?.lastVisitedAt ?? null;
@@ -3605,7 +3634,7 @@ export async function getObject(
     entityRow.id,
     objectSummarySourceSnapshot(entityRow, {
       facts: factCountRows[0]?.facts ?? 0,
-      events: factCountRows[0]?.events ?? 0,
+      events: (factCountRows[0]?.events ?? 0) + (createEvidenceCountRows[0]?.events ?? 0),
       notes: summaryNoteCountRows[0]?.notes ?? 0,
       relationships:
         (summaryRelationshipOutCountRows[0]?.relationships ?? 0) +

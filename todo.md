@@ -35,7 +35,9 @@ records:
   did.
 - Object/project/account state: durable operational memory emerges from the
   event history through extraction, retrieval, and approval-backed state
-  changes.
+  changes. Events are classified as communication, captured work, or pulses
+  so related records can join without dumping high-volume streams into LLMs.
+  See [`docs/relational-memory.md`](./docs/relational-memory.md).
 - Self-maintaining CRM/project layer: for teams that trust the evidence and
   approval path, Timeline should reduce or replace manual CRM and project
   tracker upkeep rather than asking people to maintain parallel records.
@@ -186,6 +188,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       restoration, merge/deletion handling, and explicit-intent Ask tools.
 - [x] U8 — Collection density, action toasts, and view-only approval
       previews: Linear-style optimistic rows, selection-bar bulk actions,
+      Approvals select-all on the loaded queue and multi-item bundle headers,
       live object/event diffs, title-first calendar chips, and the same
       toolbar/button/skeleton contract on Approvals, Calendar, Connections,
       Team, Meetings, Timeline, and remaining work surfaces. Mutations use
@@ -212,16 +215,81 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 - [x] Build the replacement reconciliation engine architecture: normalized
       evidence, artifact resolution, authority policy, output-backed approvals,
       and deterministic/live reconciliation evals.
-- [ ] Wire workspace reconciliation into future authoritative external sync
-      paths when calendar/provider imports directly update artifacts they own.
+- [x] Propose Timeline task status and assignee updates from GitHub PR/issue
+      lifecycle fields without running the suggestion or extract models: merged
+      PRs and closed issues enqueue a coalesced approval-backed `done` job
+      keyed by GitHub work-item id, not by a time window of unrelated events.
+      GitHub actor/assignee logins map to team members through the person-owned
+      GitHub connection (identity: that login belongs to this teammate), a unique
+      compact name match, or a unique email local-part — never by attributing
+      work to whoever connected the integration. Matching uses provider ids,
+      aliases, and high-confidence repo+PR-number titles. Pending unaccepted
+      task creates are living: later merged PRs or closed issues refresh the
+      same approval in place (status, aliases, actor, new evidence) instead of
+      rotting. Comments, reviews, commits, and CI stay out of this path because
+      they are not completion. Per-connection ingest processing is rate-limited.
+      Daily object cleanup backfills the same proposals for already-ingested
+      GitHub clusters.
+- [x] Attach communication task proposals to existing client/project hubs by
+      unique name mention **and container labels**: a Faba meeting, Slack
+      channel `acme-project-development`, or Monday board `Faba-ext` can use
+      the matching company/project even when they are not in the 40 most
+      recently updated objects. Distinctive tokens match (`Faba` in
+      `Faba website redesign`, `acme` in `acme-project-development`); generic
+      words and generic containers (`website`, `meeting`, `#general`) do not.
+      Two named clients stay unattached. Unedited pending creates whose
+      evidence overlaps a later window are amended in place when that later
+      evidence uniquely names the hub. Ask retrieval is unchanged —
+      embeddings still recall; they still do not write. Frozen by
+      [ADR 0015](./docs/adr/0015-proposal-writes-qualify-hubs-from-mentions-and-container-labels.md).
+      Path from this point to the ideal engine:
+      [`docs/relational-memory.md`](./docs/relational-memory.md)
+      (Path from here to the ideal engine).
+- [x] Opt-in live messy proposal-engine eval
+      (`pnpm test:proposal-engine:live`): real models, real embeddings/Qdrant
+      when configured, realistic noisy payloads (~90% messy: Sentry spikes,
+      GitHub Actions pulses, Bugbot findings, buried ids, typo fragments,
+      mention soup, truncated paste, silent calendar-linked meetings, outcome
+      evidence without "this is complete"), isolated team, cleanup afterwards.
+      Not part of CI. Safe name-maps are the minority. Covers Slack/Monday
+      qualify, generic `#general` refuse, mixed-client refuse, living pending
+      amend, pulse/finding skip, alias stamp, cosine-recall-is-not-a-write,
+      implicit branding `done`, two-task refuse (qualify strips a guessed
+      `done`), file-share no-create, pending-create prompt section, and
+      empty-model / timeout / invalid-JSON fallback mint (event-local always;
+      conversation review only when the window names exactly one tracked id).
+- [x] Stamp unique provider work-item aliases from the conversation window
+      onto proposed tasks (`acme/app#88`, Linear keys, Monday item ids) so a
+      later captured-work matcher can hard-join. Deterministic copy only when
+      one id is named.
+- [x] When a meeting transcript never names the client **and** the container
+      is silent, inherit a unique company/project hub from the owning
+      calendar event or Saved Meeting's existing object links. Still refuse
+      when two hubs are linked. Do not silently rewrite already-accepted
+      unscoped tasks; propose a relationship or use memory repair.
+- [x] Replace extract's time-ordered team dump (`RECENT_CONTEXT_LIMIT = 5`)
+      with conversation-keyed / same-source context so facts that feed linked
+      context are not five unrelated recent events.
+- [x] Classify ingest by signal class rather than by OAuth app, following
+      [`docs/relational-memory.md`](./docs/relational-memory.md) and
+      [ADR 0016](./docs/adr/0016-ingest-signal-class-lives-on-the-envelope.md):
+      communication may extract and review; structured captured work parses
+      `objectMap` and may write coalesced approval-backed field changes;
+      pulses persist, embed, and never originate; findings (Bugbot, CI,
+      Sentry incidents) attach to the parent hub and do not mint sibling
+      Timeline tasks. GitHub PRs and GitHub CI differ without a core
+      `if (provider === "github")`. Linear/Monday item completion reuses the
+      GitHub living-pending matcher. Opt-in live eval
+      (`pnpm test:proposal-engine:live`) stays messy-first and is not CI.
 - [ ] Ship the cross-source evidence pack north star in
-      [`docs/cross-source-evidence.md`](./docs/cross-source-evidence.md): a shared
+      [`docs/cross-source-evidence.md`](./docs/cross-source-evidence.md) (rollout
+      and copy; engine behavior is
+      [`docs/relational-memory.md`](./docs/relational-memory.md)): a shared
       visibility-safe pack builder with policy-bound admission, deterministic
       ranking, exact per-item citations, conversation reviews and event-local
       paths that eventually cite multi-surface evidence, integrations remaining
       pack-eligible, evals/cost caps, and milestone-gated website copy. Follow
-      the [implementation plan](./docs/cross-source-evidence-implementation-plan.md)
-      and [ADR 0014](./docs/adr/0014-cross-source-evidence-packs-use-policy-bound-related-evidence.md).
+      [ADR 0014](./docs/adr/0014-cross-source-evidence-packs-use-policy-bound-related-evidence.md).
       First concrete slice: generic ingest webhook evidence combined with
       directly related conversation and provider events before proposal
       generation. The shared builder, Agent Ask adapter, and first generic

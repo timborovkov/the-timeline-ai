@@ -1,5 +1,14 @@
 import { type Db, entities, facts as factsTable, factEntities, rawEvents } from '@timeline/db';
-import { childLogger, embedding, extract, getEnv, llm, queue } from '@timeline/shared';
+import {
+  childLogger,
+  conversationReview,
+  embedding,
+  extract,
+  getEnv,
+  integrations,
+  llm,
+  queue,
+} from '@timeline/shared';
 import { reconcileLinkArtifactsForRawEvent } from '@timeline/shared/conversational/link-artifacts';
 import {
   currentExtractionModelVersions,
@@ -7,7 +16,7 @@ import {
 } from '@timeline/shared/extraction-model-version';
 import { fireAndForgetObjectSummaryRefresh } from '@timeline/shared/objects';
 import { withTeam } from '@timeline/shared/team-scope';
-import { UnrecoverableError, Worker, type Job } from 'bullmq';
+import { DelayedError, UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, asc, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
@@ -21,6 +30,74 @@ interface ExtractWorkerDeps {
 
 const RECENT_CONTEXT_LIMIT = 5;
 
+function metadataString(value: unknown, key: string): string | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const raw = (value as Record<string, unknown>)[key];
+  if (typeof raw !== 'string' && typeof raw !== 'number') return null;
+  const text = String(raw).trim();
+  return text.length > 0 ? text : null;
+}
+
+async function loadExtractRecentContext(
+  db: ExtractWorkerDeps['db'],
+  row: RawEventRow,
+  teamId: string,
+): Promise<
+  {
+    contentText: string | null;
+    occurredAt: Date;
+    source: (typeof rawEvents.$inferSelect)['source'];
+    sourceMetadata: unknown;
+  }[]
+> {
+  const identity = conversationReview.conversationIdentityForRawEvent(row);
+  if (identity) {
+    const window = await conversationReview.buildConversationEvidenceWindow(db, {
+      teamId,
+      identity,
+      anchorOccurredAt: row.occurredAt,
+      limit: RECENT_CONTEXT_LIMIT + 1,
+    });
+    return window
+      .filter((event) => event.id !== row.id)
+      .slice(-RECENT_CONTEXT_LIMIT)
+      .map((event) => ({
+        contentText: event.contentText,
+        occurredAt: event.occurredAt,
+        source: identity.source,
+        sourceMetadata: event.sourceMetadata,
+      }));
+  }
+
+  const meetingId = metadataString(row.sourceMetadata, 'meeting_id');
+  const calendarEventId = metadataString(row.sourceMetadata, 'calendar_event_id');
+  const sameThread =
+    meetingId !== null
+      ? sql`${rawEvents.sourceMetadata} ->> 'meeting_id' = ${meetingId}`
+      : calendarEventId !== null
+        ? sql`${rawEvents.sourceMetadata} ->> 'calendar_event_id' = ${calendarEventId}`
+        : eq(rawEvents.source, row.source);
+
+  return db
+    .select({
+      contentText: rawEvents.contentText,
+      occurredAt: rawEvents.occurredAt,
+      source: rawEvents.source,
+      sourceMetadata: rawEvents.sourceMetadata,
+    })
+    .from(rawEvents)
+    .where(
+      and(
+        eq(rawEvents.teamId, teamId),
+        lt(rawEvents.occurredAt, row.occurredAt),
+        eq(rawEvents.visibility, 'team'),
+        sameThread,
+      ),
+    )
+    .orderBy(desc(rawEvents.occurredAt))
+    .limit(RECENT_CONTEXT_LIMIT);
+}
+
 export interface ExtractProcessorIO {
   getEnv?: typeof getEnv;
   chatStructured?: typeof llm.chatStructured;
@@ -28,6 +105,7 @@ export interface ExtractProcessorIO {
   enqueueSuggestionJob?: typeof queue.enqueueSuggestionJob;
   enqueueEmbedJob?: typeof queue.enqueueEmbedJob;
   enqueueObjectSummaryRefresh?: ((objectId: string) => Promise<void>) | undefined;
+  takeIngestProcessingSlot?: typeof integrations.takeConnectionIngestSlot;
 }
 
 interface RawEventRow {
@@ -35,7 +113,7 @@ interface RawEventRow {
   teamId: string;
   contentText: string | null;
   occurredAt: Date;
-  source: string;
+  source: (typeof rawEvents.$inferSelect)['source'];
   visibility: 'private' | 'team' | 'specific_users';
   sourceMetadata: unknown;
 }
@@ -57,14 +135,10 @@ export async function processExtractJobForTests(
   | { rawEventId: string; factsInserted: number; modelVersion: string }
   | { rawEventId: string; skipped: true; reason: string }
   | { rawEventId: string; skipped: true; modelVersion: string }
+  | { rawEventId: string; delayed: true; retryAfterMs: number }
 > {
   const { rawEventId, teamId } = jobData;
   const env = (io.getEnv ?? getEnv)();
-  if (!env.OPENROUTER_API_KEY) {
-    throw new UnrecoverableError(
-      `extract: OPENROUTER_API_KEY not configured; cannot run extraction`,
-    );
-  }
   const modelId = io.modelId ?? llm.TIMELINE_MODELS.extraction.id;
   const modelVersion = makeExtractionModelVersion(modelId);
   const currentModelVersions =
@@ -130,6 +204,44 @@ export async function processExtractJobForTests(
     return { rawEventId, skipped: true, reason: `visibility=${row.visibility}` };
   }
 
+  if (row.source === 'document') {
+    const skipPatch = JSON.stringify({
+      extraction_skipped_at: new Date().toISOString(),
+      extraction_skipped_reason: 'document_lifecycle_event',
+      extraction_model_version: modelVersion,
+    });
+    await deps.db
+      .update(rawEvents)
+      .set({
+        sourceMetadata: sql`(COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) - 'extraction_failed_at' - 'extraction_error') || ${skipPatch}::jsonb`,
+      })
+      .where(eq(rawEvents.id, rawEventId));
+    return { rawEventId, skipped: true, reason: 'document_lifecycle_event' };
+  }
+
+  const provider = integrations.providerFromSourceMetadata(row.sourceMetadata);
+  const extractSkipReason =
+    row.source === 'integration'
+      ? integrations.integrationExtractSkipReason({
+          provider,
+          sourceMetadata: row.sourceMetadata,
+        })
+      : null;
+  if (extractSkipReason) {
+    const skipPatch = JSON.stringify({
+      extraction_skipped_at: new Date().toISOString(),
+      extraction_skipped_reason: extractSkipReason,
+      extraction_model_version: modelVersion,
+    });
+    await deps.db
+      .update(rawEvents)
+      .set({
+        sourceMetadata: sql`(COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) - 'extraction_failed_at' - 'extraction_error') || ${skipPatch}::jsonb`,
+      })
+      .where(eq(rawEvents.id, rawEventId));
+    return { rawEventId, skipped: true, reason: extractSkipReason };
+  }
+
   const meta =
     row.sourceMetadata && typeof row.sourceMetadata === 'object'
       ? (row.sourceMetadata as Record<string, unknown>)
@@ -141,28 +253,24 @@ export async function processExtractJobForTests(
     return { rawEventId, skipped: true, modelVersion: meta.extraction_model_version };
   }
 
-  const recentRows = (await deps.db
-    .select({
-      contentText: rawEvents.contentText,
-      occurredAt: rawEvents.occurredAt,
-      source: rawEvents.source,
-      sourceMetadata: rawEvents.sourceMetadata,
-    })
-    .from(rawEvents)
-    .where(
-      and(
-        eq(rawEvents.teamId, teamId),
-        lt(rawEvents.occurredAt, row.occurredAt),
-        eq(rawEvents.visibility, 'team'),
-      ),
-    )
-    .orderBy(desc(rawEvents.occurredAt))
-    .limit(RECENT_CONTEXT_LIMIT)) as {
-    contentText: string | null;
-    occurredAt: Date;
-    source: string;
-    sourceMetadata: unknown;
-  }[];
+  if (!env.OPENROUTER_API_KEY) {
+    throw new UnrecoverableError(
+      `extract: OPENROUTER_API_KEY not configured; cannot run extraction`,
+    );
+  }
+
+  const integrationId = integrations.integrationIdFromSourceMetadata(row.sourceMetadata);
+  if (row.source === 'integration' && integrationId) {
+    const slot = await (io.takeIngestProcessingSlot ?? integrations.takeConnectionIngestSlot)({
+      integrationId,
+      stage: 'extract',
+    });
+    if (!slot.allowed) {
+      return { rawEventId, delayed: true, retryAfterMs: slot.retryAfterMs };
+    }
+  }
+
+  const recentRows = await loadExtractRecentContext(deps.db, row, teamId);
 
   const prompt = llm.truncateTextToTokenBudget(
     extract.buildExtractionPrompt({
@@ -441,7 +549,14 @@ function isBullMqStallFailure(err: unknown): boolean {
 export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.ExtractJobData> {
   const worker = new Worker<queue.ExtractJobData>(
     queue.QUEUE_NAMES.extract,
-    async (job: Job<queue.ExtractJobData>) => processExtractJobForTests(deps, job.data),
+    async (job: Job<queue.ExtractJobData>, token?: string) => {
+      const result = await processExtractJobForTests(deps, job.data);
+      if (integrations.isDelayedIngestResult(result)) {
+        await job.moveToDelayed(Date.now() + result.retryAfterMs, token);
+        throw new DelayedError();
+      }
+      return result;
+    },
     {
       connection: queue.getRedisConnection(),
       // One in-flight extraction per process. Extraction is heavier than
@@ -454,6 +569,7 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
   );
 
   worker.on('failed', (job, err) => {
+    if (err instanceof DelayedError) return;
     log.error({ jobId: job?.id, err }, 'job failed');
     captureWorkerJobFailure(err, job, extractFailureTags(job));
     if (!job) return;
