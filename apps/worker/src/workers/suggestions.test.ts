@@ -4682,6 +4682,64 @@ describe('processSuggestionJobForTests', () => {
     });
   });
 
+  it('mints a messy Monday capture when the suggestion model returns invalid JSON', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000e6';
+    const company = await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({
+      type: 'company',
+      canonicalName: 'Faba',
+      actor: { kind: 'user', userId: OWNER_ID },
+    });
+    const project = await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({
+      type: 'project',
+      canonicalName: 'Faba website redesign',
+      actor: { kind: 'user', userId: OWNER_ID },
+    });
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'move login to done after QA, ping me if it slips',
+      sourceMetadata: {
+        monday_board_id: 'board-faba-ext',
+        monday_board_name: 'Faba-ext',
+        monday_item_board_name: 'Faba-ext',
+      },
+    });
+    const chat = vi.fn().mockRejectedValue(
+      Object.assign(new Error('llm.chatStructured failed'), {
+        name: 'TimelineAiError',
+        causeName: 'AI_NoObjectGeneratedError',
+      }),
+    );
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundle?.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          targetKind: 'task',
+          title: 'Prepare the login page',
+          proposedPayload: expect.objectContaining({
+            parentObjectId: project.id,
+          }) as unknown,
+        }),
+        expect.objectContaining({
+          targetKind: 'object_relationship',
+          proposedPayload: expect.objectContaining({
+            toEntityId: company.id,
+          }) as unknown,
+        }),
+      ]),
+    );
+  });
+
   it('does not attach a client from a generic Slack #general channel', async () => {
     const rawEventId = '10000000-0000-0000-0000-0000000000d3';
     await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({

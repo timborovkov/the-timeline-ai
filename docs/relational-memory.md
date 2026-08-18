@@ -547,8 +547,8 @@ A company must not go in `parentObjectId`. That field is the primary project.
    project, or stripped when qualify is silent. Related-token recall listing
    two or more open tasks strips a guessed `status: done` the same way —
    the model does not own that write.
-6. If the suggestion model returns no bundles (or the call is aborted after
-   150s), event-local captures still mint from `I'll X tomorrow` **or** a
+6. If the suggestion model returns no bundles, times out, or fails schema
+   validation, event-local captures still mint from `I'll X tomorrow` **or** a
    messy commitment / unique `repo#n` / Linear key. Conversation reviews use
    that fallback only when the window names exactly one tracked id
    (`ENG-42`, `acme/app#88`), so alias stamp can run without minting a sibling
@@ -1042,8 +1042,9 @@ Shipped and frozen ([ADR 0015](./adr/0015-proposal-writes-qualify-hubs-from-ment
 - Informal, typo-ridden, mention-soup commitments still mint once a
   conversation review or intentional capture runs. Isolated firehose messages
   still do not schedule that review from a single event. If the model returns
-  empty or times out, event-local captures still mint, and conversation
-  reviews mint only when the window names exactly one tracked work-item id.
+  empty, times out, or fails schema validation, event-local captures still
+  mint, and conversation reviews mint only when the window names exactly one
+  tracked work-item id.
 - Unique `repo#n` / Linear / Monday ids in the conversation window are stamped
   onto proposed task aliases (one id only). Silent "Weekly" meetings inherit a
   unique hub from calendar / Saved Meeting object links. Extract recent

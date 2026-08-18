@@ -879,23 +879,6 @@ function shouldUseCommitmentFallback(args: {
   return suggestions.uniqueWorkItemAliasesFromText(args.evidenceText)?.length === 1;
 }
 
-function isAbortLikeError(err: unknown): boolean {
-  const names = new Set<string>();
-  const walk = (value: unknown, depth: number): void => {
-    if (!value || depth > 5) return;
-    if (value instanceof Error) {
-      names.add(value.name);
-      walk(value.cause, depth + 1);
-    }
-    if (typeof value === 'object' && 'causeName' in value) {
-      const causeName = (value as { causeName?: unknown }).causeName;
-      if (typeof causeName === 'string') names.add(causeName);
-    }
-  };
-  walk(err, 0);
-  return names.has('AbortError') || names.has('TimeoutError');
-}
-
 function fallbackDecisionBundle(text: string): SuggestionBundleOutput | null {
   const match = DECISION_PATTERN.exec(text.trim());
   const decision = match?.[1]?.replace(/\s+/g, ' ').trim();
@@ -3225,8 +3208,11 @@ async function runSuggestionExtraction(
       prompt,
     });
   } catch (err) {
-    if (!isAbortLikeError(err)) throw err;
-    log.warn({ err, rawEventId, teamId }, 'suggestion extraction timed out; using fallback');
+    if (evidencePackEnforced) throw err;
+    log.warn(
+      { err, rawEventId, teamId },
+      'suggestion extraction failed; using commitment fallback',
+    );
     result = { object: { bundles: [] }, model: modelId };
   }
 
