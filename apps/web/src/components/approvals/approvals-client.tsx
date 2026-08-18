@@ -925,7 +925,6 @@ function ApprovalListBody({
           run={run}
         />
       ) : null}
-      {pending && visibleSuggestions.length === 0 ? <ApprovalUpdatingState /> : null}
       <VirtualList
         items={visibleSuggestions}
         getItemKey={(bundle) => bundle.id}
@@ -952,17 +951,6 @@ function ApprovalListBody({
         hideBound={visibleSuggestions.length === 0 && !hasMore}
       />
     </div>
-  );
-}
-
-function ApprovalUpdatingState() {
-  return (
-    <output
-      aria-label="Updating approvals"
-      className="border border-border bg-muted/30 px-3 py-2 text-xs text-fg-dim"
-    >
-      Updating approvals...
-    </output>
   );
 }
 

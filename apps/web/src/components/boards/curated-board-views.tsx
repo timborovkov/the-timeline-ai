@@ -57,6 +57,47 @@ interface BoardItemUpdateResult {
   id?: string;
 }
 
+function previousBoardItemPatch(
+  items: boards.BoardItemRow[],
+  id: string,
+  patch: BoardItemOptimisticPatch,
+): BoardItemOptimisticPatch {
+  const item = items.find((row) => row.id === id);
+  if (!item) return {};
+  const previous: BoardItemOptimisticPatch = {};
+  if ('laneId' in patch) previous.laneId = item.laneId;
+  if ('responsibleUserId' in patch) previous.responsibleUserId = item.responsibleUserId;
+  if ('dueAt' in patch) previous.dueAt = item.dueAt;
+  if ('priority' in patch) previous.priority = item.priority;
+  if ('nextStep' in patch) previous.nextStep = item.nextStep;
+  if ('notes' in patch) previous.notes = item.notes;
+  return previous;
+}
+
+function boardItemFieldLabel(patch: BoardItemOptimisticPatch): string {
+  const field = Object.keys(patch)[0] ?? 'field';
+  return field === 'dueAt' ? 'due date' : field;
+}
+
+function notifyBoardItemUpdate(
+  id: string,
+  patch: BoardItemOptimisticPatch,
+  previous: BoardItemOptimisticPatch,
+  persist: (itemId: string, next: BoardItemOptimisticPatch) => Promise<BoardItemUpdateResult>,
+): Promise<BoardItemUpdateResult> {
+  const label = boardItemFieldLabel(patch);
+  return notifyAction({
+    id: `board-item:${id}`,
+    loading: `Updating ${label}…`,
+    success: `${label.slice(0, 1).toUpperCase()}${label.slice(1)} updated`,
+    error: `Couldn’t update ${label}`,
+    run: () => persist(id, patch),
+    undo: {
+      run: () => persist(id, previous),
+    },
+  });
+}
+
 export function CuratedBoardTable({
   boardId,
   view,
@@ -106,19 +147,10 @@ export function CuratedBoardTable({
   }
 
   function updateItem(id: string, patch: BoardItemOptimisticPatch): Promise<BoardItemUpdateResult> {
-    const field = Object.keys(patch)[0] ?? 'field';
-    const label = field === 'dueAt' ? 'due date' : field;
+    const previous = previousBoardItemPatch(items, id, patch);
     return new Promise((resolve) => {
       startTransition(async () => {
-        resolve(
-          await notifyAction({
-            id: `board-item:${id}`,
-            loading: `Updating ${label}…`,
-            success: `${label.slice(0, 1).toUpperCase()}${label.slice(1)} updated`,
-            error: `Couldn’t update ${label}`,
-            run: () => persistItem(id, patch),
-          }),
-        );
+        resolve(await notifyBoardItemUpdate(id, patch, previous, persistItem));
       });
     });
   }
@@ -659,6 +691,7 @@ export function CuratedBoardList({
   ) => Promise<{ ok?: boolean; error?: string; id?: string }>;
 }) {
   const timezone = useWorkspaceTimezone();
+  const [, startTransition] = useTransition();
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const selectableItems = useMemo(() => items.filter((item) => !isOptimisticItem(item)), [items]);
   const visibleSelectedIds = useMemo(() => {
@@ -667,12 +700,29 @@ export function CuratedBoardList({
   }, [selectableItems, selectedIds]);
   if (items.length === 0) return <EmptyBoardItems />;
 
+  async function persistItem(
+    id: string,
+    patch: BoardItemOptimisticPatch,
+  ): Promise<BoardItemUpdateResult> {
+    if (!onUpdateItem) return { error: 'Board item editing is unavailable.' };
+    return onUpdateItem(id, patch);
+  }
+
+  function updateItem(id: string, patch: BoardItemOptimisticPatch): Promise<BoardItemUpdateResult> {
+    const previous = previousBoardItemPatch(items, id, patch);
+    return new Promise((resolve) => {
+      startTransition(async () => {
+        resolve(await notifyBoardItemUpdate(id, patch, previous, persistItem));
+      });
+    });
+  }
+
   async function updateItems(
     ids: string[],
     patch: BoardItemOptimisticPatch,
   ): Promise<{ failed: number }> {
     if (!onUpdateItem) return { failed: ids.length };
-    const results = await Promise.allSettled(ids.map((id) => onUpdateItem(id, patch)));
+    const results = await Promise.allSettled(ids.map((id) => persistItem(id, patch)));
     return {
       failed: results.filter(
         (result) =>
@@ -777,7 +827,7 @@ export function CuratedBoardList({
                               <select
                                 value={item.responsibleUserId ?? ''}
                                 onChange={(event) =>
-                                  void onUpdateItem?.(item.id, {
+                                  void updateItem(item.id, {
                                     responsibleUserId: event.currentTarget.value || null,
                                   })
                                 }
@@ -810,7 +860,7 @@ export function CuratedBoardList({
                                     : ''
                                 }
                                 onApply={(value) =>
-                                  void onUpdateItem?.(item.id, {
+                                  void updateItem(item.id, {
                                     dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
                                   })
                                 }
@@ -831,7 +881,7 @@ export function CuratedBoardList({
                               <select
                                 value={item.priority ?? ''}
                                 onChange={(event) =>
-                                  void onUpdateItem?.(item.id, {
+                                  void updateItem(item.id, {
                                     priority: event.currentTarget.value
                                       ? Number(event.currentTarget.value)
                                       : null,
@@ -856,7 +906,7 @@ export function CuratedBoardList({
                               <select
                                 value={item.laneId ?? ''}
                                 onChange={(event) =>
-                                  void onUpdateItem?.(item.id, {
+                                  void updateItem(item.id, {
                                     laneId: event.currentTarget.value || null,
                                   })
                                 }
@@ -880,7 +930,7 @@ export function CuratedBoardList({
                                 objectName={objectTitle}
                                 nextStep={item.nextStep}
                                 disabled={optimistic || !onUpdateItem}
-                                onSave={(nextStep) => void onUpdateItem?.(item.id, { nextStep })}
+                                onSave={(nextStep) => void updateItem(item.id, { nextStep })}
                               />
                             }
                           />

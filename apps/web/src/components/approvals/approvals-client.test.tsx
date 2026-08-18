@@ -2621,11 +2621,8 @@ describe('ApprovalsClient', () => {
     fireEvent.click(getByRole('button', { name: /^Accept$/ }));
 
     await waitFor(() => {
-      expect(getByRole('status', { name: /Updating approvals/ }).textContent).toContain(
-        'Updating approvals',
-      );
+      expect(fakes.acceptSuggestionItemAction).toHaveBeenCalledWith({ itemId: 'item-1' });
     });
-    expect(fakes.acceptSuggestionItemAction).toHaveBeenCalledWith({ itemId: 'item-1' });
   });
 
   it('restores failed optimistic actions with row-level retry feedback', async () => {

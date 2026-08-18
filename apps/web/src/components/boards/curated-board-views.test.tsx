@@ -379,4 +379,34 @@ describe('CuratedBoardList', () => {
       });
     });
   });
+
+  it('toasts list-view field edits with undo', async () => {
+    const user = userEvent.setup();
+    render(
+      <CuratedBoardList
+        boardId="board-1"
+        view="list"
+        lanes={LANES}
+        items={[boardItem({ canonicalName: 'Launch review' }, { priority: 3 })]}
+        members={[]}
+        onUpdateItem={fakes.updateItem}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Priority for Launch review' }));
+    await user.selectOptions(screen.getByRole('combobox'), '2');
+
+    await waitFor(() => {
+      expect(fakes.notifyAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'board-item:item-1',
+          loading: 'Updating priority…',
+          success: 'Priority updated',
+          error: 'Couldn’t update priority',
+          undo: expect.objectContaining({ run: expect.any(Function) }),
+        }),
+      );
+    });
+    expect(fakes.updateItem).toHaveBeenCalledWith('item-1', { priority: 2 });
+  });
 });

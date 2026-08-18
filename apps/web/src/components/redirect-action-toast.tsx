@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 
-import { notifyError, notifySuccess } from '@/lib/notify';
+import { displayActionError, notifyError, notifySuccess } from '@/lib/notify';
 
 /**
  * Surfaces a completed redirect-result (OAuth callback, export download) on
@@ -19,7 +19,7 @@ export function RedirectActionToast({
 }) {
   useEffect(() => {
     if (error) {
-      notifyError(id, error);
+      notifyError(id, displayActionError(error, 'Couldn’t finish this action'));
       return;
     }
     if (success) notifySuccess(id, success);
