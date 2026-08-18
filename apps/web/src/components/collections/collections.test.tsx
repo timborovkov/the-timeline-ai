@@ -172,6 +172,26 @@ describe('collection primitives', () => {
     expect(screen.getByText('Refine the visible collection.')).toBeTruthy();
   });
 
+  it('keeps toolbar chrome when slots are passed as props instead of compound children', () => {
+    render(
+      <CollectionToolbar
+        search={<input aria-label="Search timeline" type="search" />}
+        filters={
+          <label>
+            Owner <input aria-label="Owner" />
+          </label>
+        }
+        actions={<a href="/app/timeline?source=linear">Linear</a>}
+        view={<a href="/app/timeline">Moments</a>}
+      />,
+    );
+
+    expect(screen.getByRole('searchbox', { name: 'Search timeline' })).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: /Filters/ }).length).toBeGreaterThan(0);
+    expect(screen.getByRole('link', { name: 'Linear' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Moments' })).toBeTruthy();
+  });
+
   it('keeps metadata triggers accessible, reports row errors, and restores focus on Escape', async () => {
     const user = userEvent.setup();
     render(

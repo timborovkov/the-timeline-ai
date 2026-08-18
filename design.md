@@ -171,12 +171,14 @@ table.
 - `CollectionToolbar` is one 44px control row for search, result count, a
   Filters trigger, view controls, and primary actions. Filters open in a
   popover on desktop and a bottom dialog on mobile. Active filters appear in a
-  removable chip row only while active. Pass chrome through named children
-  (`CollectionToolbar.Search`, `.Count`, `.Filters`, `.View`, `.Actions`,
-  `.ClearAll`) rather than JSX props. Inventory counts belong next to search
-  (`24 of 847` filtered, `847` unfiltered). Filter-only toolbars such as Work →
-  Pinned and Approvals have no inventory chip; labeled totals stay in page
-  metadata or group headers.
+  removable chip row only while active. Client trees can pass chrome through
+  named children (`CollectionToolbar.Search`, `.Count`, `.Filters`, `.View`,
+  `.Actions`, `.ClearAll`). Server pages must pass the same chrome as props
+  (`search`, `count`, `filters`, `view`, `actions`, `clearAll`) because compound
+  slot components do not keep their type across the RSC client boundary.
+  Inventory counts belong next to search (`24 of 847` filtered, `847`
+  unfiltered). Filter-only toolbars such as Work → Pinned and Approvals have no
+  inventory chip; labeled totals stay in page metadata or group headers.
 - `CollectionGroup` uses a 40px header with glyph, readable status label,
   count, and optional action. Groups start open; collapse state lasts only for
   the mounted session and is never saved as a preference.
@@ -942,4 +944,5 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Quiet floating Ask header | Keeps the shortcut on the launcher and drops the header shortcut plus earlier-count line. |
 | 2026-08-18 | Collection chrome named children | Passes CollectionRow, CollectionToolbar, EditableMetadata, and PageHeader chrome through named children; Title/Context `title` carries hover IDs and errors. |
 | 2026-08-18 | Timeline search and continued paging | Puts Search timeline on the archive toolbar, keeps source presets visible, and re-observes the infinite-scroll sentinel after each page so virtualized rows keep loading. |
+| 2026-08-18 | RSC collection toolbar props | Server pages pass CollectionToolbar search/filters/view/actions as props because compound slot children lose their type across the client boundary. |
 | 2026-08-17 | Linear collection rows | Collection rows use a full-width bottom hairline only. Pinned and Approvals drop unlabeled toolbar counts. |

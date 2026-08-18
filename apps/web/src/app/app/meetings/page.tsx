@@ -278,8 +278,7 @@ function MeetingSearchControls({
               ]
             : []),
         ]}
-      >
-        <CollectionToolbar.Search>
+        search={
           <label className="block min-w-0">
             <span className="sr-only">
               {tab === 'saved' ? 'Search saved meetings' : 'Search captures'}
@@ -295,9 +294,9 @@ function MeetingSearchControls({
               className="h-9 w-full rounded-sm border-0 bg-transparent px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40"
             />
           </label>
-        </CollectionToolbar.Search>
-        <CollectionToolbar.Filters>
-          {tab === 'captures' ? (
+        }
+        filters={
+          tab === 'captures' ? (
             <label className="space-y-1">
               <span className="block text-[11px] text-fg-dim">Capture status</span>
               <select
@@ -313,9 +312,9 @@ function MeetingSearchControls({
                 ))}
               </select>
             </label>
-          ) : null}
-        </CollectionToolbar.Filters>
-        <CollectionToolbar.Actions>
+          ) : null
+        }
+        actions={
           <div className="flex items-center gap-1">
             <Button type="submit" variant="outline">
               Apply
@@ -326,8 +325,8 @@ function MeetingSearchControls({
               </Button>
             ) : null}
           </div>
-        </CollectionToolbar.Actions>
-      </CollectionToolbar>
+        }
+      />
     </form>
   );
 }

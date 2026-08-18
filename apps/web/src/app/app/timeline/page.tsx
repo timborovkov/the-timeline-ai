@@ -589,15 +589,14 @@ function TimelineFilterPanel({
               ]
             : []
         }
-      >
-        <CollectionToolbar.Search>
+        search={
           <TimelineSearchField
             source={sourceFilterValue || null}
             from={fromValue || null}
             to={toValue || null}
           />
-        </CollectionToolbar.Search>
-        <CollectionToolbar.Filters>
+        }
+        filters={
           <div className="flex min-w-0 flex-wrap items-end gap-2">
             <TimelineSourceFilterControls
               key={`timeline-source-filters:${sourceFilterValue}:${originFilterValue}`}
@@ -646,8 +645,8 @@ function TimelineFilterPanel({
               Upcoming · {TIMELINE_UPCOMING_DAYS} days
             </Link>
           </div>
-        </CollectionToolbar.Filters>
-        <CollectionToolbar.Actions>
+        }
+        actions={
           <nav
             aria-label="Timeline presets"
             className="flex max-w-full flex-nowrap gap-1.5 overflow-x-auto"
@@ -681,8 +680,8 @@ function TimelineFilterPanel({
               );
             })}
           </nav>
-        </CollectionToolbar.Actions>
-        <CollectionToolbar.View>
+        }
+        view={
           <nav aria-label="Timeline view" className="flex rounded-sm bg-surface p-0.5">
             {(
               [
@@ -709,8 +708,8 @@ function TimelineFilterPanel({
               );
             })}
           </nav>
-        </CollectionToolbar.View>
-      </CollectionToolbar>
+        }
+      />
       <div className="sr-only">
         {hasPanelFilters ? (
           <Link

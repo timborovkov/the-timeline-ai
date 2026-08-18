@@ -100,8 +100,8 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
         ]}
       />
       <WorkSubnav current="/app/approvals" />
-      <CollectionToolbar>
-        <CollectionToolbar.View>
+      <CollectionToolbar
+        view={
           <nav className="flex flex-wrap gap-1" aria-label="Approval status filters">
             {STATUS_FILTERS.map((filter) => (
               <Link
@@ -119,8 +119,8 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
               </Link>
             ))}
           </nav>
-        </CollectionToolbar.View>
-      </CollectionToolbar>
+        }
+      />
       <ApprovalsClient
         key={status}
         suggestions={visibleSuggestions}

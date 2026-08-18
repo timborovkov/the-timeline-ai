@@ -55,19 +55,31 @@ export function CollectionToolbar({
   activeFilters = EMPTY_ACTIVE_FILTERS,
   filterTitle = 'Filters',
   className,
+  search: searchProp,
+  count: countProp,
+  filters: filtersProp,
+  clearAll: clearAllProp,
+  view: viewProp,
+  actions: actionsProp,
 }: {
   children?: ReactNode;
   activeFilters?: ActiveFilter[];
   filterTitle?: string;
   className?: string;
+  search?: ReactNode;
+  count?: ReactNode;
+  filters?: ReactNode;
+  clearAll?: ReactNode;
+  view?: ReactNode;
+  actions?: ReactNode;
 }) {
   const slots = readCollectionSlots(children, TOOLBAR_SLOTS);
-  const search = slots.search;
-  const resolvedCount = slots.count;
-  const filters = slots.filters;
-  const clearAll = slots.clearAll;
-  const resolvedView = slots.view;
-  const actions = slots.actions;
+  const search = searchProp ?? slots.search;
+  const resolvedCount = countProp ?? slots.count;
+  const filters = filtersProp ?? slots.filters;
+  const clearAll = clearAllProp ?? slots.clearAll;
+  const resolvedView = viewProp ?? slots.view;
+  const actions = actionsProp ?? slots.actions;
   const filterCount = activeFilters.length;
   const filterTrigger = (
     <button
