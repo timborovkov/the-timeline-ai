@@ -1,12 +1,14 @@
 import { CollectionViewToggle } from '@/components/collections/collection-view-toggle';
-import { taskViewHref, type TaskView } from '@/components/tasks/task-view';
-
-const EMPTY_FILTER_PARAMS: Record<string, string> = {};
+import {
+  EMPTY_TASK_VIEW_FILTER_PARAMS,
+  taskViewHref,
+  type TaskView,
+} from '@/components/tasks/task-view';
 
 export function TaskViewToggle({
   view,
   selectedTaskId,
-  filterParams = EMPTY_FILTER_PARAMS,
+  filterParams = EMPTY_TASK_VIEW_FILTER_PARAMS,
 }: {
   view: TaskView;
   selectedTaskId: string | null;

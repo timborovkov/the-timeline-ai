@@ -4,7 +4,13 @@ import { cn } from '@/lib/utils';
 /**
  * Quiet page-header skeleton matching title, subtitle, and optional metadata.
  */
-export function PageHeaderSkeleton({ action = false }: { action?: boolean }) {
+export function PageHeaderSkeleton({
+  action = false,
+  showMetadata = true,
+}: {
+  action?: boolean;
+  showMetadata?: boolean;
+}) {
   return (
     <div
       className="flex items-start justify-between gap-4 py-1"
@@ -14,10 +20,12 @@ export function PageHeaderSkeleton({ action = false }: { action?: boolean }) {
       <div className="min-w-0 flex-1 space-y-2">
         <Skeleton className="h-7 w-40" />
         <Skeleton className="h-4 w-full max-w-md" />
-        <div className="flex gap-3 pt-1">
-          <Skeleton className="h-3 w-16" />
-          <Skeleton className="h-3 w-20" />
-        </div>
+        {showMetadata ? (
+          <div className="flex gap-3 pt-1">
+            <Skeleton className="h-3 w-16" />
+            <Skeleton className="h-3 w-20" />
+          </div>
+        ) : null}
       </div>
       {action ? <Skeleton className="h-9 w-24 shrink-0" /> : null}
     </div>

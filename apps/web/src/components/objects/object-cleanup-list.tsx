@@ -15,11 +15,8 @@ import {
 } from '@/app/actions/objects';
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
-import {
-  CollectionStatus,
-  priorityTone,
-  statusTone,
-} from '@/components/collections/collection-status';
+import { CollectionStatus } from '@/components/collections/collection-status';
+import { priorityTone, statusTone } from '@/components/collections/collection-status-tone';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { InfiniteScroll } from '@/components/collections/infinite-scroll';
 import { SelectionBar } from '@/components/collections/selection-bar';
@@ -633,8 +630,7 @@ function ObjectDueDateEditor({
   return (
     <form
       className="flex items-center gap-2"
-      onSubmit={(event) => {
-        event.preventDefault();
+      action={() => {
         onSave(draft ? new Date(`${draft}T00:00:00.000Z`) : null);
       }}
     >

@@ -8,6 +8,7 @@ import {
   CollectionTableSkeleton,
   CollectionToolbarSkeleton,
   CompactKanbanSkeleton,
+  PageHeaderSkeleton,
 } from '@/components/loading-states';
 
 afterEach(cleanup);
@@ -39,6 +40,15 @@ describe('collection loading skeletons', () => {
     const table = render(<CollectionTableSkeleton />);
     expect(table.container.querySelectorAll('.min-h-11').length).toBeGreaterThan(0);
     expect(table.container.querySelector('.overflow-auto')).toBeTruthy();
+  });
+
+  it('can omit header metadata and show a compact header action', () => {
+    const quiet = render(<PageHeaderSkeleton showMetadata={false} />);
+    expect(quiet.container.querySelectorAll('.animate-pulse').length).toBe(2);
+    quiet.unmount();
+
+    const withAction = render(<PageHeaderSkeleton action />);
+    expect(withAction.container.querySelectorAll('.animate-pulse').length).toBe(5);
   });
 
   it('renders grouped collection rows', () => {

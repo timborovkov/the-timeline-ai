@@ -145,213 +145,21 @@ export function WorkFilterBar({
           </label>
         }
         filters={
-          <div key={filterKey} className="flex min-w-0 flex-wrap items-end gap-2">
-            {mode === 'board' ? (
-              <FilterSelect name="lane" label="Lane" defaultValue={filters.lane} form={domFormId}>
-                <option value="">Any lane</option>
-                <option value={NONE_FILTER_VALUE}>Unset</option>
-                {lanes.map((lane) => (
-                  <option key={lane.id} value={lane.id}>
-                    {displayText(lane.name)}
-                  </option>
-                ))}
-              </FilterSelect>
-            ) : null}
-
-            {mode === 'objects' || mode === 'board' ? (
-              <FilterMultiSelect
-                key={`type:${filters.type}`}
-                name="type"
-                label={mode === 'board' ? 'Object type' : 'Type'}
-                defaultValue={filters.type}
-                placeholder="Any type"
-                options={Object.entries(typeLabels).map(([value, label]) => ({ value, label }))}
-                form={domFormId}
-              />
-            ) : null}
-
-            <StatusControl
-              defaultValue={filters.status}
-              mode={mode}
-              statusOptions={statusOptions}
-              form={domFormId}
-            />
-
-            <div className="task-category-ui">
-              <FilterMultiSelect
-                key={`category:${filters.category}`}
-                name="category"
-                label="Category"
-                defaultValue={filters.category}
-                placeholder="Any category"
-                options={[
-                  ...TASK_CATEGORY_OPTIONS,
-                  { value: 'uncategorized', label: 'Uncategorized' },
-                ]}
-                form={domFormId}
-              />
-            </div>
-
-            <ProjectFilterControl
-              key={`project:${filters.project}`}
-              defaultValue={filters.project}
-              projects={projects}
-              form={domFormId}
-            />
-
-            {mode === 'objects' ? (
-              <FilterInput
-                name="stage"
-                label="Stage"
-                defaultValue={filters.stage}
-                placeholder="Any stage"
-                form={domFormId}
-              />
-            ) : null}
-
-            {mode === 'objects' ? (
-              <PersonSelect
-                name="owner"
-                label="Owner"
-                defaultValue={filters.owner}
-                members={members}
-                form={domFormId}
-              />
-            ) : null}
-
-            {mode === 'board' ? (
-              <PersonSelect
-                name="responsible"
-                label="Responsible"
-                defaultValue={filters.responsible}
-                members={members}
-                form={domFormId}
-              />
-            ) : (
-              <PersonSelect
-                name="assignee"
-                label="Assignee"
-                defaultValue={filters.assignee}
-                members={members}
-                form={domFormId}
-              />
-            )}
-
-            {mode === 'board' ? (
-              <PersonSelect
-                name="assignee"
-                label="Object assignee"
-                defaultValue={filters.assignee}
-                members={members}
-                form={domFormId}
-              />
-            ) : null}
-
-            <FilterSelect
-              name="priority"
-              label="Priority"
-              defaultValue={filters.priority}
-              form={domFormId}
-            >
-              <option value="">Any priority</option>
-              <option value={NONE_FILTER_VALUE}>No priority</option>
-              {[1, 2, 3, 4].map((priority) => (
-                <option key={priority} value={priority}>
-                  P{priority}
-                </option>
-              ))}
-            </FilterSelect>
-
-            <FilterSelect
-              name="due"
-              label={mode === 'board' ? 'Board due' : 'Due'}
-              defaultValue={filters.due}
-              form={domFormId}
-              onChange={(value) => {
-                if (value === 'range') setDateRangeToggle({ state: 'open' });
-              }}
-            >
-              <option value="">Any due date</option>
-              <option value="overdue">Overdue</option>
-              <option value="today">Today</option>
-              <option value="next7">Next 7 days</option>
-              <option value="none">No due date</option>
-              <option value="range">Date range</option>
-            </FilterSelect>
-
-            <button
-              type="button"
-              aria-expanded={showDateRanges}
-              aria-controls={`${formId}-date-ranges`}
-              onClick={() => {
-                setDateRangeToggle(
-                  showDateRanges ? { state: 'closed', filterKey } : { state: 'open' },
-                );
-              }}
-              className={cn(
-                'inline-flex h-9 items-center gap-2 rounded-sm border border-border bg-surface px-3 text-xs text-fg-muted transition-colors hover:border-border-strong hover:text-fg focus-visible:border-signal/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
-                (showDateRanges || hasRangeFilters) && 'border-border-strong text-fg',
-              )}
-            >
-              Date ranges
-              <ChevronDown
-                className={cn(
-                  'size-3.5 text-fg-dim transition-transform',
-                  showDateRanges && 'rotate-180',
-                )}
-                aria-hidden
-              />
-            </button>
-
-            <div
-              id={`${formId}-date-ranges`}
-              hidden={!showDateRanges}
-              className="grid min-w-full gap-2 pt-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
-            >
-              <FilterInput
-                name="dueFrom"
-                label="Due from"
-                defaultValue={filters.dueFrom}
-                type="date"
-                form={domFormId}
-              />
-              <FilterInput
-                name="dueTo"
-                label="Due to"
-                defaultValue={filters.dueTo}
-                type="date"
-                form={domFormId}
-              />
-              <FilterInput
-                name="createdFrom"
-                label={mode === 'board' ? 'Item created from' : 'Created from'}
-                defaultValue={filters.createdFrom}
-                type="date"
-                form={domFormId}
-              />
-              <FilterInput
-                name="createdTo"
-                label={mode === 'board' ? 'Item created to' : 'Created to'}
-                defaultValue={filters.createdTo}
-                type="date"
-                form={domFormId}
-              />
-              <FilterInput
-                name="updatedFrom"
-                label={mode === 'board' ? 'Item updated from' : 'Updated from'}
-                defaultValue={filters.updatedFrom}
-                type="date"
-                form={domFormId}
-              />
-              <FilterInput
-                name="updatedTo"
-                label={mode === 'board' ? 'Item updated to' : 'Updated to'}
-                type="date"
-                defaultValue={filters.updatedTo}
-                form={domFormId}
-              />
-            </div>
-          </div>
+          <WorkFilterFields
+            mode={mode}
+            filters={filters}
+            filterKey={filterKey}
+            formId={formId}
+            domFormId={domFormId}
+            lanes={lanes}
+            typeLabels={typeLabels}
+            statusOptions={statusOptions}
+            projects={projects}
+            members={members}
+            showDateRanges={showDateRanges}
+            hasRangeFilters={hasRangeFilters}
+            onDateRangeToggle={setDateRangeToggle}
+          />
         }
         activeFilters={activeFilterEntries.map(([key, label]) => ({
           key,
@@ -371,6 +179,241 @@ export function WorkFilterBar({
         actions={actions}
       />
     </DebouncedFilterForm>
+  );
+}
+
+function WorkFilterFields({
+  mode,
+  filters,
+  filterKey,
+  formId,
+  domFormId,
+  lanes,
+  typeLabels,
+  statusOptions,
+  projects,
+  members,
+  showDateRanges,
+  hasRangeFilters,
+  onDateRangeToggle,
+}: {
+  mode: Props['mode'];
+  filters: WorkFilterState;
+  filterKey: string;
+  formId: string;
+  domFormId: string;
+  lanes: boards.BoardLaneRow[];
+  typeLabels: Record<string, string>;
+  statusOptions: readonly string[];
+  projects: MemberFilterOption[];
+  members: MemberFilterOption[];
+  showDateRanges: boolean;
+  hasRangeFilters: boolean;
+  onDateRangeToggle: (value: DateRangeToggle) => void;
+}) {
+  return (
+    <div key={filterKey} className="flex min-w-0 flex-wrap items-end gap-2">
+      {mode === 'board' ? (
+        <FilterSelect name="lane" label="Lane" defaultValue={filters.lane} form={domFormId}>
+          <option value="">Any lane</option>
+          <option value={NONE_FILTER_VALUE}>Unset</option>
+          {lanes.map((lane) => (
+            <option key={lane.id} value={lane.id}>
+              {displayText(lane.name)}
+            </option>
+          ))}
+        </FilterSelect>
+      ) : null}
+
+      {mode === 'objects' || mode === 'board' ? (
+        <FilterMultiSelect
+          key={`type:${filters.type}`}
+          name="type"
+          label={mode === 'board' ? 'Object type' : 'Type'}
+          defaultValue={filters.type}
+          placeholder="Any type"
+          options={Object.entries(typeLabels).map(([value, label]) => ({ value, label }))}
+          form={domFormId}
+        />
+      ) : null}
+
+      <StatusControl
+        defaultValue={filters.status}
+        mode={mode}
+        statusOptions={statusOptions}
+        form={domFormId}
+      />
+
+      <div className="task-category-ui">
+        <FilterMultiSelect
+          key={`category:${filters.category}`}
+          name="category"
+          label="Category"
+          defaultValue={filters.category}
+          placeholder="Any category"
+          options={[...TASK_CATEGORY_OPTIONS, { value: 'uncategorized', label: 'Uncategorized' }]}
+          form={domFormId}
+        />
+      </div>
+
+      <ProjectFilterControl
+        key={`project:${filters.project}`}
+        defaultValue={filters.project}
+        projects={projects}
+        form={domFormId}
+      />
+
+      {mode === 'objects' ? (
+        <FilterInput
+          name="stage"
+          label="Stage"
+          defaultValue={filters.stage}
+          placeholder="Any stage"
+          form={domFormId}
+        />
+      ) : null}
+
+      {mode === 'objects' ? (
+        <PersonSelect
+          name="owner"
+          label="Owner"
+          defaultValue={filters.owner}
+          members={members}
+          form={domFormId}
+        />
+      ) : null}
+
+      {mode === 'board' ? (
+        <PersonSelect
+          name="responsible"
+          label="Responsible"
+          defaultValue={filters.responsible}
+          members={members}
+          form={domFormId}
+        />
+      ) : (
+        <PersonSelect
+          name="assignee"
+          label="Assignee"
+          defaultValue={filters.assignee}
+          members={members}
+          form={domFormId}
+        />
+      )}
+
+      {mode === 'board' ? (
+        <PersonSelect
+          name="assignee"
+          label="Object assignee"
+          defaultValue={filters.assignee}
+          members={members}
+          form={domFormId}
+        />
+      ) : null}
+
+      <FilterSelect
+        name="priority"
+        label="Priority"
+        defaultValue={filters.priority}
+        form={domFormId}
+      >
+        <option value="">Any priority</option>
+        <option value={NONE_FILTER_VALUE}>No priority</option>
+        {[1, 2, 3, 4].map((priority) => (
+          <option key={priority} value={priority}>
+            P{priority}
+          </option>
+        ))}
+      </FilterSelect>
+
+      <FilterSelect
+        name="due"
+        label={mode === 'board' ? 'Board due' : 'Due'}
+        defaultValue={filters.due}
+        form={domFormId}
+        onChange={(value) => {
+          if (value === 'range') onDateRangeToggle({ state: 'open' });
+        }}
+      >
+        <option value="">Any due date</option>
+        <option value="overdue">Overdue</option>
+        <option value="today">Today</option>
+        <option value="next7">Next 7 days</option>
+        <option value="none">No due date</option>
+        <option value="range">Date range</option>
+      </FilterSelect>
+
+      <button
+        type="button"
+        aria-expanded={showDateRanges}
+        aria-controls={`${formId}-date-ranges`}
+        onClick={() => {
+          onDateRangeToggle(showDateRanges ? { state: 'closed', filterKey } : { state: 'open' });
+        }}
+        className={cn(
+          'inline-flex h-9 items-center gap-2 rounded-sm border border-border bg-surface px-3 text-xs text-fg-muted transition-colors hover:border-border-strong hover:text-fg focus-visible:border-signal/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
+          (showDateRanges || hasRangeFilters) && 'border-border-strong text-fg',
+        )}
+      >
+        Date ranges
+        <ChevronDown
+          className={cn(
+            'size-3.5 text-fg-dim transition-transform',
+            showDateRanges && 'rotate-180',
+          )}
+          aria-hidden
+        />
+      </button>
+
+      <div
+        id={`${formId}-date-ranges`}
+        hidden={!showDateRanges}
+        className="grid min-w-full gap-2 pt-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
+      >
+        <FilterInput
+          name="dueFrom"
+          label="Due from"
+          defaultValue={filters.dueFrom}
+          type="date"
+          form={domFormId}
+        />
+        <FilterInput
+          name="dueTo"
+          label="Due to"
+          defaultValue={filters.dueTo}
+          type="date"
+          form={domFormId}
+        />
+        <FilterInput
+          name="createdFrom"
+          label={mode === 'board' ? 'Item created from' : 'Created from'}
+          defaultValue={filters.createdFrom}
+          type="date"
+          form={domFormId}
+        />
+        <FilterInput
+          name="createdTo"
+          label={mode === 'board' ? 'Item created to' : 'Created to'}
+          defaultValue={filters.createdTo}
+          type="date"
+          form={domFormId}
+        />
+        <FilterInput
+          name="updatedFrom"
+          label={mode === 'board' ? 'Item updated from' : 'Updated from'}
+          defaultValue={filters.updatedFrom}
+          type="date"
+          form={domFormId}
+        />
+        <FilterInput
+          name="updatedTo"
+          label={mode === 'board' ? 'Item updated to' : 'Updated to'}
+          type="date"
+          defaultValue={filters.updatedTo}
+          form={domFormId}
+        />
+      </div>
+    </div>
   );
 }
 

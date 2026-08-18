@@ -49,7 +49,7 @@ interface SourceEntry {
   note?: string;
 }
 
-function buildSources(summary: SourcesStatusSummary): SourceEntry[] {
+function buildSources(summary: SourcesStatusSummary, isAdmin: boolean): SourceEntry[] {
   const emailConnected = Boolean(summary.inboundEmail);
   const emailForwarded = summary.emailForwarded;
   const email: SourceEntry = {
@@ -137,9 +137,15 @@ function buildSources(summary: SourcesStatusSummary): SourceEntry[] {
           ? 'Connected'
           : 'Not set up',
     actionHref:
-      summary.meetingsFailed > 0 ? '/app/team/jobs?kind=meeting_finalization' : '/app/meetings',
+      isAdmin && summary.meetingsFailed > 0
+        ? '/app/team/jobs?kind=meeting_finalization'
+        : '/app/meetings',
     actionLabel:
-      summary.meetingsFailed > 0 ? 'Review failures' : meetingsAny ? 'Manage' : 'Invite notetaker',
+      isAdmin && summary.meetingsFailed > 0
+        ? 'Review failures'
+        : meetingsAny
+          ? 'Manage'
+          : 'Invite notetaker',
     secondaryActionHref: summary.meetingsFailed > 0 ? '/app/meetings' : undefined,
     secondaryActionLabel: summary.meetingsFailed > 0 ? 'Open meetings' : undefined,
     detail: meetingsAny ? `${summary.meetingsRecent} recent` : 'No meetings captured yet',
@@ -205,7 +211,7 @@ export default async function SourcesPage() {
     getSourcesStatusSummary(scope),
   ]);
   const isAdmin = role === 'owner' || role === 'admin';
-  const sources = buildSources(summary);
+  const sources = buildSources(summary, isAdmin);
   const attentionSources = sources.filter((s) => s.status === 'attention');
   const notSetupSources = sources.filter((s) => s.status === 'not-setup');
   const connectedSources = sources.filter((s) => s.status === 'connected');

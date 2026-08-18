@@ -16,7 +16,7 @@ export default function ReconciliationError({
       <Breadcrumb items={[{ label: 'Team', href: '/app/team' }, { label: 'Reconciliation' }]} />
       <PageHeader
         title="Reconciliation"
-        subtitle="Review evidence coverage and proposed workspace updates for this team."
+        subtitle="Groups related captures into the same work, then proposes updates for review."
       />
       <ErrorState
         title="Unable to load reconciliation"
