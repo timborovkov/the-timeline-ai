@@ -152,7 +152,9 @@
       <p>
         Ingest, relations, proposals, retrieval, and durable objects follow the
         <a href="./relational-memory.md">operating memory engine</a>: classify each event as
-        communication, captured work, or a pulse; adapters emit a source-independent envelope;
+        communication, captured work, a pulse, or a finding; adapters emit a source-independent
+        envelope; timeline presentation uses a sibling
+        <code>event_class</code> family and does not decide extract or proposals;
         cross-source stories meet at a work hub rather than a shared provider; embeddings recall
         candidate hubs and do not prove a write; spend LLMs only on bounded related evidence.
       </p>

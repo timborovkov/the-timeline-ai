@@ -37,7 +37,11 @@ it. Communication is people talking or deciding (Slack, meetings, email).
 Captured work is a durable work record or lifecycle change (merged PR, Jira
 status, CRM call log). A pulse is telemetry that can explain or impact work
 (CI runs, Sentry events) without originating proposals. Classify the event,
-not the integration. The living workflow is
+not the integration. Writers stamp this as `source_metadata.signal_class`.
+It is not Timeline event class: a Drive `file.changed` ping is
+`signalClass=pulse` and `event_class=artifact`; a merged GitHub PR is
+`captured_work` and `work_record`. Ingest, extract skip, and proposals read
+`signalClass` only. The living workflow is
 [docs/relational-memory.md](docs/relational-memory.md).
 _Avoid_: Source, provider, integration type when discussing LLM spend or proposal rights
 
@@ -111,7 +115,9 @@ or a container label such as Slack `#acme-project-development`, Monday board
 `Faba-ext`, or Telegram chat title). Generic words and generic containers
 (`#general`, `#dev`, "Customer Projects") do not qualify. Two hits of the
 same type refuse rather than guess. The primary-project edge is
-`parentObjectId`; a client attaches as `object_relationship` `related`. This
+`parentObjectId`; a client attaches as `object_relationship` `related`.
+Qualify owns that parent: a unique project overwrites a model-copied hub
+UUID, and silent qualify strips it. Models cannot copy hub UUIDs. This
 is a write-path qualify step, not Ask retrieval and not a recency dump of
 workspace objects. Frozen by
 [ADR 0015](docs/adr/0015-proposal-writes-qualify-hubs-from-mentions-and-container-labels.md).
@@ -149,12 +155,15 @@ or Timeline moment) and reuse the inspector original-source viewer for payloads.
 _Avoid_: Raw Event when referring to the grouped browsing unit
 
 **Timeline event class**:
-A provider-agnostic family for captured events: communication, work record,
-pulse, incident, artifact, or schedule. Native sources, integrations, and
-ingest webhooks all resolve to one class. The class chooses visual weight
-(story, record, pulse), whether `objectMap` may feed artifact identity, and
-how the inspector is laid out. Generic ingest webhooks let an admin set the
-class when creating the webhook; unknown deliveries default to pulse.
+A provider-agnostic presentation family for captured events: communication,
+work record, pulse, incident, artifact, or schedule. Native sources,
+integrations, and ingest webhooks all resolve to one class. Writers stamp
+`source_metadata.event_class`. The class chooses visual weight (story, record,
+pulse), whether `objectMap` may feed artifact identity, and how the inspector
+is laid out. Generic ingest webhooks let an admin set the class when creating
+the webhook; unknown deliveries default to pulse. This is not Signal Class.
+Ingest rights live on `signalClass`
+([ADR 0016](docs/adr/0016-ingest-signal-class-lives-on-the-envelope.md)).
 _Avoid_: GitHub event, Sentry event, webhook type when discussing presentation
 
 **Impact Context**:

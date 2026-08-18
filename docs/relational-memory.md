@@ -244,6 +244,13 @@ calendar event changes.
 Team isolation is sacred. Every Postgres query goes through `withTeam`. Every
 Qdrant query filters on `team_id`.
 
+Writers also stamp `source_metadata.event_class` for timeline presentation
+(communication / work_record / pulse / incident / artifact / schedule). That
+family is not a substitute for `signalClass`. A merged GitHub PR is
+`signalClass=captured_work` and `event_class=work_record`. A Drive
+`file.changed` ping is `signalClass=pulse` and `event_class=artifact`. Ingest,
+extract skip, and proposals read `signalClass` only.
+
 ## Layer 3 — Signal class and ingest fan-out
 
 Class is a property of the **event**, not the OAuth app.
@@ -1051,9 +1058,11 @@ Shipped and frozen ([ADR 0015](./adr/0015-proposal-writes-qualify-hubs-from-ment
   context is conversation-keyed or same-source, not a team-time dump.
 - Envelope `signalClass` (`communication` / `captured_work` / `pulse` /
   `finding`) plus compact `object_map` persist on `source_metadata`. Core
-  ingest and the captured-work matcher read the envelope. GitHub PR/issue,
-  Linear issue, and Monday item completion share living-pending refresh.
-  Workflow pulses, review comments, and Sentry incidents do not originate.
+  ingest and the captured-work matcher read the envelope. Timeline
+  `event_class` is a sibling presentation stamp, not a substitute. GitHub
+  PR/issue, Linear issue, and Monday item completion share living-pending
+  refresh. Workflow pulses, review comments, and Sentry incidents do not
+  originate.
 - Intentional captures may propose from one event; group firehose uses
   conversation review; pulses never originate.
 - Ask uses embeddings. Proposal writes do not.

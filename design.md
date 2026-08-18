@@ -27,8 +27,11 @@ by exposing database implementation details in ordinary product views.
 - **Signal classes** (internal) split events into communication, captured
   work, and pulses so the product can relate evidence without treating every
   source event as a model prompt. Intentional captures stay communication.
-  Curated documents are reference knowledge, not a fourth class. Do not put
-  these labels in ordinary chrome.
+  Curated documents are reference knowledge, not a fourth class. Timeline
+  **event class** is the presentation family (communication, work record,
+  pulse, incident, artifact, schedule), not signal class: a Drive
+  file-changed ping can be a pulse for ingest and an artifact for the
+  inspector. Do not put either label in ordinary chrome.
 - **Work hubs** (internal) are the tasks, projects, people, and artifact
   clusters that events from different surfaces attach to. Ordinary chrome
   still names the task or project, not "hub." Proposal chrome should show the

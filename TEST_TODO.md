@@ -356,7 +356,10 @@ Legend:
   Bugbot findings, buried `repo#n` / Linear keys, typo fragments, mention soup,
   truncated paste, silent calendar-linked meetings, branding outcome evidence
   without "this is complete"). Safe name-maps are the minority. Cleanup of any
-  Qdrant points afterwards. Not CI. Set
+  Qdrant points afterwards. Not CI. Covers implicit `done`, two-task refuse
+  (qualify strips a guessed `done`), pending-create prompt listing, and
+  empty-model / timeout / invalid-JSON fallback mint (event-local always;
+  conversation review only when the window names exactly one tracked id). Set
   `PROPOSAL_ENGINE_LIVE_ENV_FILE=/path/to/.env` when the shell has not already
   loaded live credentials.
 - `pnpm test:transcribe-eval:live` runs an opt-in live OpenRouter speech

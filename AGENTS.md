@@ -148,6 +148,9 @@ Treat this file as an operating contract for agents, not a loose README.
   id, alias, or unique `repo#n`. Envelope `signalClass` decides extract vs
   parse vs pulse; see
   [ADR 0016](docs/adr/0016-ingest-signal-class-lives-on-the-envelope.md).
+  Do not substitute timeline `event_class` (`communication` / `work_record` /
+  `pulse` / `incident` / `artifact` / `schedule`) for envelope `signalClass`.
+  Writers stamp both; ingest and proposals read `signalClass`.
   Do not add an ingest summarizer whose only job is prettier embeddings.
 - **Design system lives in [design.md](design.md).** If a screen disagrees with
   it, fix the screen — not the doc. If you're intentionally evolving the design

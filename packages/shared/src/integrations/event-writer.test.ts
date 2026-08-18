@@ -889,6 +889,7 @@ describe('writeIntegrationEvents visibility', () => {
       {
         dedupKey: 'sentry:issue:789:resolved',
         provider: 'sentry',
+        signalClass: 'finding' as const,
         externalObjectId: 'issue-789',
         externalEventId: 'evt-sentry-1',
         eventType: 'issue.resolved',
@@ -915,11 +916,27 @@ describe('writeIntegrationEvents visibility', () => {
       const metadata = row.sourceMetadata as {
         extraction_skipped_reason?: string;
         event_type?: string;
+        event_class?: string;
+        signal_class?: string;
       };
       if (metadata.event_type === 'comment.created') {
         expect(metadata.extraction_skipped_reason).toBe('integration_finding_source');
+        expect(metadata).toMatchObject({
+          signal_class: 'finding',
+          event_class: 'communication',
+        });
+      } else if (metadata.event_type === 'issue.resolved') {
+        expect(metadata.extraction_skipped_reason).toBe('integration_finding_source');
+        expect(metadata).toMatchObject({
+          signal_class: 'finding',
+          event_class: 'incident',
+        });
       } else {
         expect(metadata.extraction_skipped_reason).toBe('integration_structured_source');
+        expect(metadata).toMatchObject({
+          signal_class: 'captured_work',
+          event_class: 'work_record',
+        });
       }
     }
     for (const rawEventId of insertedIds) {
@@ -1505,6 +1522,8 @@ describe('writeIntegrationEvents visibility', () => {
     const [row] = await db.select().from(rawEvents).where(eq(rawEvents.id, eventId));
     expect(row?.sourceMetadata).toMatchObject({
       extraction_skipped_reason: 'integration_pulse_source',
+      signal_class: 'pulse',
+      event_class: 'artifact',
     });
   });
 
@@ -1588,6 +1607,14 @@ describe('writeIntegrationEvents visibility', () => {
       ],
     });
     expect(insertedIds).toHaveLength(1);
+    const [prRow] = await db
+      .select()
+      .from(rawEvents)
+      .where(eq(rawEvents.id, insertedIds[0] ?? ''));
+    expect(prRow?.sourceMetadata).toMatchObject({
+      signal_class: 'captured_work',
+      event_class: 'work_record',
+    });
 
     await expect(db.select().from(entities)).resolves.toEqual([]);
 
@@ -1667,7 +1694,10 @@ describe('writeIntegrationEvents visibility', () => {
       .select()
       .from(rawEvents)
       .where(eq(rawEvents.id, insertedIds[0] ?? ''));
-    expect(row?.sourceMetadata).toMatchObject({ event_class: 'pulse' });
+    expect(row?.sourceMetadata).toMatchObject({
+      event_class: 'pulse',
+      signal_class: 'pulse',
+    });
     await expect(db.select().from(artifactClusters)).resolves.toEqual([]);
     await expect(db.select().from(entities)).resolves.toEqual([]);
   });

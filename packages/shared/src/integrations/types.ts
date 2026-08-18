@@ -88,9 +88,13 @@ export interface IntegrationEvent {
    */
   extra?: Record<string, unknown>;
   /**
-   * Optional presentation family. When omitted, the event-writer classifies
-   * from provider, event type, and nested record kind. Pulses never promote
-   * `objectMap` into artifact identity.
+   * Optional timeline presentation family (`communication` / `work_record` /
+   * `pulse` / `incident` / `artifact` / `schedule`). When omitted, the
+   * event-writer classifies from provider, event type, and nested record
+   * kind. This is not `signalClass`: a Drive `file.changed` ping is
+   * `signalClass=pulse` and `eventClass=artifact`. Presentation `pulse`
+   * never promotes `objectMap` into artifact identity. Ingest and proposals
+   * read `signalClass` only.
    */
   eventClass?: TimelineEventClass;
   /**

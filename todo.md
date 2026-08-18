@@ -253,7 +253,10 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       Not part of CI. Safe name-maps are the minority. Covers Slack/Monday
       qualify, generic `#general` refuse, mixed-client refuse, living pending
       amend, pulse/finding skip, alias stamp, cosine-recall-is-not-a-write,
-      implicit branding `done`, two-task refuse, and file-share no-create.
+      implicit branding `done`, two-task refuse (qualify strips a guessed
+      `done`), file-share no-create, pending-create prompt section, and
+      empty-model / timeout / invalid-JSON fallback mint (event-local always;
+      conversation review only when the window names exactly one tracked id).
 - [x] Stamp unique provider work-item aliases from the conversation window
       onto proposed tasks (`acme/app#88`, Linear keys, Monday item ids) so a
       later captured-work matcher can hard-join. Deterministic copy only when

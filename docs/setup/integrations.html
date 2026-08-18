@@ -163,8 +163,9 @@ LINEAR_WEBHOOK_SECRET=...</code></pre>
           A team admin activates shared Linear teams from <code>/app/sources</code>. Issue and
           project dedup keys are lifecycle-stable (status/state, not <code>updatedAt</code>), and
           comments key by id, so description or timestamp churn reuses the same raw event instead of
-          minting another embed job. Linear, GitHub, Monday, and Sentry skip the extract and
-          suggestion models; they persist, embed, and reconcile as structured evidence.
+          minting another embed job. Envelope <code>signalClass</code> decides extract vs parse:
+          Linear issues are captured work; comments are findings. Timeline
+          <code>event_class</code> is presentation only and does not skip extract.
         </li>
       </ol>
 
@@ -175,9 +176,12 @@ LINEAR_WEBHOOK_SECRET=...</code></pre>
         person-owned OAuth, team source selection, audit rows, encrypted tokens, worker sync, and
         cited timeline events. Synced external work items can also map to task objects; visible task
         titles stay human-facing while provider IDs, issue keys, numbers, and URLs stay in
-        integration metadata, aliases, or evidence. GitHub events do not run the extract or
-        suggestion models. Merged PRs and closed issues enqueue a coalesced, approval-backed
-        Timeline task update keyed by <code>repo#number</code>, not by nearby unrelated events.
+        integration metadata, aliases, or evidence. Envelope <code>signalClass</code> decides
+        extract vs parse: merged PRs and closed issues are captured work and skip the models;
+        workflow runs are pulses; review comments are findings. Timeline
+        <code>event_class</code> is the inspector family and does not decide that skip. Merged PRs
+        and closed issues enqueue a coalesced, approval-backed Timeline task update keyed by
+        <code>repo#number</code>, not by nearby unrelated events.
       </p>
       <ol>
         <li>
@@ -434,7 +438,8 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
           events; Sentry issues map to cited incident evidence. Dedup keys are issue-plus-lifecycle
           (not <code>lastSeen</code>), so repeated error occurrences and noisy issue-alert
           timestamps reuse the same raw event instead of minting a new embed job on every bump.
-          Sentry skips the extract and suggestion models.
+          Sentry issues stamp <code>signalClass=finding</code> and skip extract; they attach to the
+          parent hub and do not mint sibling Timeline tasks.
         </li>
         <li>
           For Sentry issue alert, issue lifecycle, and release webhooks, point the Sentry

@@ -303,6 +303,8 @@ export async function writeIntegrationEvents(deps: {
             external_object_id: evt.externalObjectId,
             external_event_id: evt.externalEventId ?? null,
             event_type: evt.eventType,
+            // Presentation family (`work_record` / `artifact` / …). Ingest
+            // rights live on `signal_class` and must not be substituted.
             event_class: integrationEventClass(evt),
             actor: evt.actor ?? null,
             dedup_key: evt.dedupKey,
